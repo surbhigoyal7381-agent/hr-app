@@ -4,6 +4,10 @@
 # from the host backup at /workspace/backups/latest instead of wiping the DB.
 set -e
 
+# ── Credentials: override via environment; the defaults below are LOCAL-DEV ONLY ──
+DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-123}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
+
 # ── Fast path: bench already present (normal restart) → just start, never re-init ──
 if [ -d "/home/frappe/frappe-bench/apps/frappe" ]; then
     echo "Bench already exists, skipping init"
@@ -43,14 +47,14 @@ if [ -n "$DBGZ" ]; then
     echo "Restoring Grace Drinks from host backup: $DBGZ"
     PUB=$(ls -t /workspace/backups/latest/*-files.tar 2>/dev/null | grep -v private | head -1 || true)
     PRIV=$(ls -t /workspace/backups/latest/*-private-files.tar 2>/dev/null | head -1 || true)
-    bench new-site hrms.localhost --force --mariadb-root-password 123 --admin-password admin --no-mariadb-socket
+    bench new-site hrms.localhost --force --mariadb-root-password "$DB_ROOT_PASSWORD" --admin-password "$ADMIN_PASSWORD" --no-mariadb-socket
     bench --site hrms.localhost restore "$DBGZ" \
         ${PUB:+--with-public-files "$PUB"} \
         ${PRIV:+--with-private-files "$PRIV"} \
-        --mariadb-root-password 123
+        --mariadb-root-password "$DB_ROOT_PASSWORD"
 else
     echo "No host backup found — creating a fresh site"
-    bench new-site hrms.localhost --force --mariadb-root-password 123 --admin-password admin --no-mariadb-socket
+    bench new-site hrms.localhost --force --mariadb-root-password "$DB_ROOT_PASSWORD" --admin-password "$ADMIN_PASSWORD" --no-mariadb-socket
     bench --site hrms.localhost install-app hrms
 fi
 

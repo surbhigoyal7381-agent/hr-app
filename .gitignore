@@ -22,5 +22,9 @@ hrms/docker/backups/
 *.sql.gz
 *-site_config_backup.json
 
+# Production credentials – NEVER commit the real .env
+deploy/.env
+backups/
+
 # Logs
 *debug.log

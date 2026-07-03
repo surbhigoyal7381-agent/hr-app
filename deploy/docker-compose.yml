@@ -1,0 +1,81 @@
+version: "3.8"
+
+# ── Grace Drinks HRMS – Production Stack (Oracle Arm A1 Free Tier) ──
+# Run from the deploy/ directory:
+#   docker compose up -d
+#
+# First startup installs Frappe + ERPNext + HRMS (~20-30 min).
+# The frappe-bench named volume persists across container restarts so init
+# only runs once.  The hrms/ bind-mount means a plain `git pull` on the VM
+# immediately makes updated Python/JS visible inside the container without
+# rebuilding an image.
+
+services:
+
+  # ── MariaDB ─────────────────────────────────────────────────────────
+  mariadb:
+    image: mariadb:10.8
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compressed
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost",
+             "-u", "root", "--password=${DB_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  # ── Redis ────────────────────────────────────────────────────────────
+  redis:
+    image: redis:alpine
+    restart: unless-stopped
+
+  # ── Frappe bench ─────────────────────────────────────────────────────
+  frappe:
+    image: frappe/bench:latest
+    command: bash /workspace/init-prod.sh
+    environment:
+      - SHELL=/bin/bash
+      - DB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+    working_dir: /home/frappe
+    volumes:
+      # init script (read-only so git pull on host updates it automatically)
+      - ./init-prod.sh:/workspace/init-prod.sh:ro
+      # bench core lives in a named volume – survives container recreation
+      - frappe-bench:/home/frappe/frappe-bench
+      # HRMS app is a bind-mount of the git repo folder on the host.
+      # `git pull` on the host immediately refreshes the Python/JS inside
+      # the running container – no image rebuild needed.
+      - ../hrms:/home/frappe/frappe-bench/apps/hrms
+      # optional: host backup folder for bench restore on re-creation
+      - ../backups:/workspace/backups
+    expose:
+      - "8000"
+      - "9000"
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Nginx reverse proxy ───────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frappe
+    restart: unless-stopped
+
+volumes:
+  mariadb-data:
+  frappe-bench:

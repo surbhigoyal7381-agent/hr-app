@@ -1,0 +1,135 @@
+{
+  "actions": [],
+  "autoname": "RTL-.YYYY.-.####",
+  "creation": "2026-06-22 00:00:00.000000",
+  "custom": 1,
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "employee",
+    "date",
+    "vehicle",
+    "route_category",
+    "section_break_metrics",
+    "completed_drops",
+    "rto_count",
+    "section_break_flags",
+    "penalty_logged",
+    "remarks"
+  ],
+  "fields": [
+    {
+      "default": "frappe.session.data.employee",
+      "fieldname": "employee",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Employee",
+      "options": "Employee",
+      "reqd": 1
+    },
+    {
+      "default": "Today",
+      "fieldname": "date",
+      "fieldtype": "Date",
+      "in_list_view": 1,
+      "label": "Date",
+      "reqd": 1
+    },
+    {
+      "fieldname": "vehicle",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Vehicle",
+      "options": "Vehicle",
+      "reqd": 1
+    },
+    {
+      "fieldname": "route_category",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Route Category",
+      "options": "Q-Comm\nGT\nHORECA\nInstitution",
+      "reqd": 1
+    },
+    {
+      "fieldname": "section_break_metrics",
+      "fieldtype": "Section Break",
+      "label": "Delivery Metrics"
+    },
+    {
+      "default": "0",
+      "fieldname": "completed_drops",
+      "fieldtype": "Int",
+      "in_list_view": 1,
+      "label": "Completed Drops"
+    },
+    {
+      "default": "0",
+      "fieldname": "rto_count",
+      "fieldtype": "Int",
+      "in_list_view": 1,
+      "label": "Return to Origin Count"
+    },
+    {
+      "fieldname": "section_break_flags",
+      "fieldtype": "Section Break",
+      "label": "Flags & Remarks"
+    },
+    {
+      "default": "0",
+      "fieldname": "penalty_logged",
+      "fieldtype": "Check",
+      "label": "SLA Delay / Penalty Logged"
+    },
+    {
+      "fieldname": "remarks",
+      "fieldtype": "Small Text",
+      "label": "Remarks"
+    }
+  ],
+  "is_submittable": 1,
+  "links": [],
+  "modified": "2026-06-22 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "HR",
+  "name": "Daily Route Log",
+  "naming_rule": "Expression",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "doctype": "DocPerm",
+      "email": 0,
+      "export": 0,
+      "if_owner": 1,
+      "permlevel": 0,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "Employee",
+      "share": 0,
+      "submit": 0,
+      "write": 1
+    },
+    {
+      "create": 0,
+      "doctype": "DocPerm",
+      "email": 1,
+      "export": 1,
+      "if_owner": 0,
+      "permlevel": 0,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "Logistics Manager",
+      "share": 1,
+      "submit": 1,
+      "write": 1
+    }
+  ],
+  "sort_field": "date",
+  "sort_order": "DESC",
+  "states": [],
+  "track_changes": 1
+}

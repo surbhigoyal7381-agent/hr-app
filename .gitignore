@@ -1,0 +1,26 @@
+# Python
+*.pyc
+__pycache__/
+*.egg-info/
+
+# Node / build artifacts
+node_modules/
+dist/
+hrms/public/dist
+hrms/public/node_modules
+
+# Editors / OS
+.DS_Store
+*.swp
+.vscode
+.vs
+tags
+
+# Local DB dumps & site backups (contain credentials and employee data — keep local only)
+docker/backups/
+hrms/docker/backups/
+*.sql.gz
+*-site_config_backup.json
+
+# Logs
+*debug.log

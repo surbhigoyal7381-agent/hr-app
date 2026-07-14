@@ -23,6 +23,8 @@ services:
     working_dir: /home/frappe
     volumes:
       - .:/workspace
+      - ../../grace_goals:/home/frappe/frappe-bench/apps/grace_goals
+      - ../../grace_vendor_portal:/home/frappe/frappe-bench/apps/grace_vendor_portal
     ports:
       - 8000:8000
       - 9000:9000

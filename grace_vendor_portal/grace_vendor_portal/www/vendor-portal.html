@@ -1,0 +1,1444 @@
+{% extends "templates/web.html" %}
+{% block title %}Grace Vendor Portal{% endblock %}
+
+{% block head_include %}
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+/* ── Reset & Frappe override ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+/* Push portal to full container width and remove page padding */
+.page-content { padding-top: 0 !important; padding-bottom: 0 !important; }
+.page-content > .container,
+section.page-content,
+.page-content.container {
+  max-width: 100% !important;
+  width: 100% !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  margin-top: 0 !important;
+}
+
+/* ── Root ────────────────────────────────────────────────────────────────── */
+#gvp-root {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f0f2f5;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 60px);
+  color: #1a202c;
+  line-height: 1.4;
+}
+
+/* ── Demo / Admin Bar ────────────────────────────────────────────────────── */
+#gvp-demo-bar {
+  display: none;
+  background: #0F1929;
+  padding: 10px 24px;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+  border-bottom: 3px solid #E8891A;
+}
+#gvp-demo-bar.visible { display: flex; }
+
+.demo-pill {
+  background: #E8891A;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+#gvp-demo-bar label {
+  color: #8899bb;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+#demo-vendor-select {
+  background: #1a2744;
+  border: 1px solid #2d3f66;
+  color: #e2e8f0;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  min-width: 220px;
+  cursor: pointer;
+}
+#demo-vendor-select:focus { outline: 2px solid #E8891A; border-color: transparent; }
+
+/* ── Two-Panel Layout ────────────────────────────────────────────────────── */
+#gvp-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  height: calc(100vh - 115px);
+}
+
+/* ── Left: Orders Panel ──────────────────────────────────────────────────── */
+#gvp-orders {
+  width: 35%;
+  min-width: 300px;
+  max-width: 420px;
+  background: #0F1929;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.orders-hd {
+  padding: 18px 18px 0;
+  flex-shrink: 0;
+}
+.orders-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 3px;
+}
+.orders-title-row h2 {
+  color: #fff;
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0;
+}
+#orders-badge {
+  background: #E8891A;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 12px;
+  min-width: 24px;
+  text-align: center;
+}
+#orders-vendor-tag {
+  color: #8899bb;
+  font-size: 11px;
+  min-height: 16px;
+  margin-bottom: 14px;
+}
+
+/* Tabs */
+.orders-tabs {
+  display: flex;
+  border-bottom: 1px solid #1c2d44;
+}
+.tab-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  color: #5a7099;
+  padding: 9px 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  transition: color .15s, border-color .15s;
+}
+.tab-btn.active { color: #E8891A; border-bottom-color: #E8891A; }
+.tab-btn:hover:not(.active) { color: #a0b4cc; }
+
+/* Scrollable list */
+.orders-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: #2d3f66 transparent;
+}
+.orders-list::-webkit-scrollbar { width: 4px; }
+.orders-list::-webkit-scrollbar-thumb { background: #2d3f66; border-radius: 4px; }
+
+/* Order card */
+.o-card {
+  background: #152035;
+  border: 1px solid #1e2f4a;
+  border-radius: 10px;
+  padding: 13px 14px;
+  margin-bottom: 7px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.o-card:hover  { border-color: rgba(232,137,26,.35); background: #1a2744; }
+.o-card.active { border-color: #E8891A; background: #1e2a40; box-shadow: 0 0 0 1px rgba(232,137,26,.2); }
+
+.o-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 9px;
+}
+.o-id {
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+  letter-spacing: .3px;
+}
+.o-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.o-meta-left { display: flex; flex-direction: column; gap: 3px; }
+.o-amount { color: #E8891A; font-size: 14px; font-weight: 700; }
+.o-date   { color: #4a5f7a; font-size: 11px; }
+
+/* Status badges */
+.sbadge {
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.s-pending     { background: #1e2f4a;      color: #8899bb; }
+.s-assigned    { background: #1e3558;      color: #60a5fa; border: 1px solid rgba(59,130,246,.35); }
+.s-picked-up   { background: #1e3558;      color: #93c5fd; border: 1px solid rgba(59,130,246,.2); }
+.s-in-transit  { background: #5a3200;      color: #fbbf24; border: 1px solid rgba(245,158,11,.35); }
+.s-nearby      { background: #3d1a52;      color: #c084fc; border: 1px solid rgba(168,85,247,.35); }
+.s-at-location { background: #5a2200;      color: #fb923c; border: 1px solid rgba(249,115,22,.35); }
+.s-delivered   { background: #0f3d22;      color: #4ade80; border: 1px solid rgba(34,197,94,.35); }
+
+/* Track button */
+.track-btn {
+  background: linear-gradient(135deg, #E8891A 0%, #f09d2c 100%);
+  color: #fff;
+  border: none;
+  padding: 5px 13px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: transform .15s, box-shadow .15s;
+  white-space: nowrap;
+}
+.track-btn:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(232,137,26,.45); }
+.track-btn svg { width: 12px; height: 12px; }
+
+.awaiting-label { color: #4a5f7a; font-size: 11px; }
+
+/* Delivered card — not interactive */
+.o-card.delivered-card { cursor: default; }
+.o-card.delivered-card:hover { border-color: #1e2f4a; background: #152035; }
+
+/* Star display */
+.stars-display { display: flex; gap: 2px; }
+.star-on  { color: #E8891A; font-size: 14px; }
+.star-off { color: #2d3f66; font-size: 14px; }
+
+/* Rate button */
+.rate-btn {
+  background: #1e3558;
+  color: #60a5fa;
+  border: 1px solid rgba(59,130,246,.3);
+  padding: 5px 11px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.rate-btn:hover { background: #253f6a; }
+
+/* Empty / loading states */
+.list-empty {
+  text-align: center;
+  padding: 44px 16px;
+  color: #3d5270;
+}
+.list-empty-icon { font-size: 38px; margin-bottom: 10px; opacity: .55; }
+.list-empty p { font-size: 13px; line-height: 1.5; }
+
+.list-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 36px;
+  color: #5a7099;
+  gap: 10px;
+  font-size: 13px;
+}
+
+/* ── Right: Map Panel ────────────────────────────────────────────────────── */
+#gvp-map-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* Map wrapper */
+#map-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+#gvp-map {
+  width: 100%;
+  height: 100%;
+}
+
+/* Empty state overlay */
+#map-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #f8fafc;
+  color: #94a3b8;
+  gap: 10px;
+  z-index: 400;
+}
+#map-empty.hidden { display: none; }
+.map-empty-icon { font-size: 56px; opacity: .35; }
+#map-empty h3 { font-size: 16px; font-weight: 600; color: #64748b; margin: 0; }
+#map-empty p  { font-size: 13px; color: #94a3b8; margin: 0; }
+
+/* Live tracking badge */
+#live-badge {
+  display: none;
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 500;
+  background: rgba(15,25,41,.9);
+  border: 1px solid #E8891A;
+  color: #fff;
+  padding: 5px 13px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  align-items: center;
+  gap: 7px;
+  backdrop-filter: blur(4px);
+}
+#live-badge.visible { display: flex; }
+.pulse-dot {
+  width: 8px; height: 8px;
+  background: #E8891A;
+  border-radius: 50%;
+  animation: pdot 1.4s ease-in-out infinite;
+}
+@keyframes pdot {
+  0%,100% { opacity:1; transform:scale(1); }
+  50%      { opacity:.35; transform:scale(.65); }
+}
+
+/* Driver info strip */
+#driver-strip {
+  display: none;
+  background: #0F1929;
+  padding: 12px 20px;
+  flex-shrink: 0;
+}
+#driver-strip.visible { display: block; }
+.driver-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.dg-cell label {
+  display: block;
+  font-size: 9px;
+  font-weight: 700;
+  color: #5a7099;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  margin-bottom: 3px;
+}
+.dg-cell span {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+.dg-cell .eta-val { color: #E8891A; }
+.dg-cell .upd-time {
+  display: block;
+  font-size: 10px;
+  color: #3d5270;
+  font-weight: 400;
+  margin-top: 2px;
+}
+.gps-waiting {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #5a7099;
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* ── Call buttons ─────────────────────────────────────────────────────────── */
+.o-card-call {
+  padding: 8px 14px 12px;
+  border-top: 1px solid rgba(0,0,0,.06);
+}
+.call-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: opacity .15s, transform .1s;
+  white-space: nowrap;
+  line-height: 1;
+}
+.call-btn:hover { opacity: .84; transform: scale(.97); }
+.call-btn.call-driver    { background: #dcfce7; color: #166534; }
+.call-btn.call-warehouse { background: #dbeafe; color: #1e40af; }
+.call-strip-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #22c55e;
+  color: #fff;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background .15s;
+}
+.call-strip-link:hover { background: #16a34a; }
+
+/* Status timeline */
+#status-tl {
+  display: none;
+  background: #fff;
+  border-top: 1px solid #e2e8f0;
+  padding: 14px 20px 10px;
+  flex-shrink: 0;
+}
+#status-tl.visible { display: block; }
+.tl-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  margin-bottom: 12px;
+}
+.tl-steps {
+  display: flex;
+  align-items: center;
+}
+.tl-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  position: relative;
+  z-index: 1;
+}
+.tl-circle {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 2px solid #e2e8f0;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  transition: all .25s;
+  position: relative;
+}
+.tl-step-lbl {
+  font-size: 9px;
+  font-weight: 600;
+  color: #94a3b8;
+  margin-top: 5px;
+  text-align: center;
+  white-space: nowrap;
+}
+.tl-step.done .tl-circle  { background: #22c55e; border-color: #22c55e; color: #fff; }
+.tl-step.done .tl-step-lbl { color: #22c55e; }
+.tl-step.curr .tl-circle  {
+  background: #E8891A; border-color: #E8891A; color: #fff;
+  animation: tl-pulse 2s ease-in-out infinite;
+  box-shadow: 0 0 0 4px rgba(232,137,26,.2);
+}
+.tl-step.curr .tl-step-lbl { color: #E8891A; }
+@keyframes tl-pulse {
+  0%,100% { box-shadow: 0 0 0 4px rgba(232,137,26,.2); }
+  50%      { box-shadow: 0 0 0 8px rgba(232,137,26,.08); }
+}
+.tl-conn {
+  flex: 1;
+  height: 2px;
+  background: #e2e8f0;
+  margin-bottom: 22px;
+  transition: background .25s;
+}
+.tl-conn.done { background: #22c55e; }
+
+/* ── Rating Modal ────────────────────────────────────────────────────────── */
+#rating-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.65);
+  z-index: 9000;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(3px);
+}
+#rating-modal.open { display: flex; }
+.modal-box {
+  background: #fff;
+  border-radius: 16px;
+  padding: 32px 28px 24px;
+  width: 380px;
+  max-width: 92vw;
+  box-shadow: 0 24px 60px rgba(0,0,0,.35);
+  animation: modal-in .2s ease;
+}
+@keyframes modal-in {
+  from { opacity:0; transform:translateY(8px) scale(.97); }
+  to   { opacity:1; transform:none; }
+}
+.modal-h { font-size: 20px; font-weight: 700; color: #1a202c; margin: 0 0 6px; }
+.modal-sub { font-size: 13px; color: #718096; margin: 0 0 22px; }
+.star-picker { display: flex; gap: 8px; justify-content: center; margin-bottom: 20px; }
+.star-btn {
+  background: none;
+  border: none;
+  font-size: 38px;
+  cursor: pointer;
+  color: #e2e8f0;
+  transition: color .1s, transform .1s;
+  line-height: 1;
+  padding: 0;
+}
+.star-btn:hover, .star-btn.lit { color: #E8891A; }
+.star-btn:hover { transform: scale(1.18); }
+.modal-textarea {
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-family: inherit;
+  color: #1a202c;
+  resize: none;
+  margin-bottom: 20px;
+  transition: border-color .15s;
+}
+.modal-textarea:focus { outline: none; border-color: #E8891A; }
+.modal-actions { display: flex; gap: 10px; }
+.btn-cancel {
+  flex: 1;
+  background: #f7fafc;
+  border: 1px solid #e2e8f0;
+  color: #718096;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.btn-cancel:hover { background: #edf2f7; }
+.btn-submit-rating {
+  flex: 2;
+  background: linear-gradient(135deg, #E8891A 0%, #f09d2c 100%);
+  border: none;
+  color: #fff;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform .15s, box-shadow .15s, opacity .15s;
+}
+.btn-submit-rating:hover:not(:disabled)  { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(232,137,26,.45); }
+.btn-submit-rating:disabled { opacity: .55; cursor: default; transform: none; }
+
+/* ── Spinner util ────────────────────────────────────────────────────────── */
+.spinner {
+  width: 18px; height: 18px;
+  border: 2px solid #2d3f66;
+  border-top-color: #E8891A;
+  border-radius: 50%;
+  animation: spin .75s linear infinite;
+  flex-shrink: 0;
+}
+.spinner.sm { width: 14px; height: 14px; border-width: 2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Leaflet custom icons ────────────────────────────────────────────────── */
+.driver-dot {
+  width: 14px !important;
+  height: 14px !important;
+  background: #3b82f6;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 3px #3b82f6, 0 0 14px rgba(59,130,246,.6);
+  animation: driver-glow 2s ease-in-out infinite;
+}
+@keyframes driver-glow {
+  0%,100% { box-shadow: 0 0 0 3px #3b82f6, 0 0 14px rgba(59,130,246,.6); }
+  50%      { box-shadow: 0 0 0 6px rgba(59,130,246,.2), 0 0 24px rgba(59,130,246,.35); }
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 800px) {
+  #gvp-body { flex-direction: column; height: auto; min-height: 0; }
+  #gvp-orders { width: 100%; max-width: 100%; min-width: 0; height: 50vh; max-height: 420px; }
+  #gvp-map-panel { min-height: 50vh; flex: 1; }
+  #gvp-map { min-height: 280px; }
+  .driver-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tl-step-lbl { font-size: 8px; }
+  .tl-circle { width: 22px; height: 22px; font-size: 9px; }
+  #gvp-demo-bar label { display: none; }
+  #gvp-demo-bar { padding: 8px 12px; gap: 8px; }
+  #demo-vendor-select { min-width: 0; flex: 1; }
+  .orders-hd { padding: 12px 12px 0; }
+  .orders-title-row h2 { font-size: 15px; }
+  .o-card { padding: 11px 12px; }
+  .o-id { font-size: 11px; }
+  .o-amount { font-size: 13px; }
+  .track-btn { padding: 5px 10px; font-size: 11px; }
+  #driver-strip { padding: 10px 14px; }
+  .dg-cell span { font-size: 12px; }
+}
+@media (max-width: 480px) {
+  #gvp-orders { height: 45vh; max-height: 340px; }
+  #gvp-map-panel { min-height: 55vh; }
+  .driver-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tl-steps { gap: 0; }
+  .tl-step-lbl { display: none; }
+  .tl-conn { flex: 1; }
+  .modal-box { padding: 24px 16px 16px; }
+  .star-btn { font-size: 30px; }
+  .modal-actions { flex-direction: column; }
+  .btn-cancel, .btn-submit-rating { flex: none; width: 100%; }
+  .orders-tabs { gap: 0; }
+  .tab-btn { font-size: 12px; padding: 8px 4px; }
+  #orders-badge { font-size: 9px; }
+}
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div id="gvp-root">
+
+  <!-- Admin demo bar -->
+  <div id="gvp-demo-bar">
+    <span class="demo-pill">Admin Demo</span>
+    <label for="demo-vendor-select">Viewing as:</label>
+    <select id="demo-vendor-select" onchange="gvp.onDemoVendorChange(this.value)">
+      <option value="">— Select a vendor —</option>
+    </select>
+  </div>
+
+  <!-- Two-panel body -->
+  <div id="gvp-body">
+
+    <!-- LEFT: Orders panel -->
+    <div id="gvp-orders">
+      <div class="orders-hd">
+        <div class="orders-title-row">
+          <h2>My Orders</h2>
+          <span id="orders-badge">0</span>
+        </div>
+        <div id="orders-vendor-tag"></div>
+        <div class="orders-tabs">
+          <button class="tab-btn active" id="tab-active"     onclick="gvp.switchTab('active')">Active</button>
+          <button class="tab-btn"        id="tab-delivered"  onclick="gvp.switchTab('delivered')">Delivered</button>
+        </div>
+      </div>
+      <div class="orders-list" id="orders-list">
+        <div class="list-empty">
+          <div class="list-empty-icon">📦</div>
+          <p>Loading portal…</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Map + info -->
+    <div id="gvp-map-panel">
+
+      <!-- Leaflet map -->
+      <div id="map-wrap">
+        <div id="gvp-map"></div>
+        <div id="map-empty">
+          <div class="map-empty-icon">🗺️</div>
+          <h3>Select an order to track</h3>
+          <p>Click <strong>Track</strong> on any active order to see live delivery</p>
+        </div>
+        <div id="live-badge">
+          <div class="pulse-dot"></div>
+          <span>Live Tracking</span>
+        </div>
+      </div>
+
+      <!-- Driver info strip -->
+      <div id="driver-strip">
+        <div id="driver-grid" class="driver-grid"></div>
+      </div>
+
+      <!-- Status timeline -->
+      <div id="status-tl">
+        <div class="tl-label">Delivery Progress</div>
+        <div class="tl-steps" id="tl-steps"></div>
+      </div>
+
+    </div><!-- /map panel -->
+  </div><!-- /body -->
+</div><!-- /root -->
+
+<!-- Rating modal -->
+<div id="rating-modal" onclick="gvp.ratingModalBackdrop(event)">
+  <div class="modal-box">
+    <h3 class="modal-h">Rate this Delivery</h3>
+    <p class="modal-sub" id="modal-order-label">Order #—</p>
+    <div class="star-picker" id="star-picker">
+      <button class="star-btn" data-v="1" onclick="gvp.setRating(1)" title="1 star">★</button>
+      <button class="star-btn" data-v="2" onclick="gvp.setRating(2)" title="2 stars">★</button>
+      <button class="star-btn" data-v="3" onclick="gvp.setRating(3)" title="3 stars">★</button>
+      <button class="star-btn" data-v="4" onclick="gvp.setRating(4)" title="4 stars">★</button>
+      <button class="star-btn" data-v="5" onclick="gvp.setRating(5)" title="5 stars">★</button>
+    </div>
+    <textarea class="modal-textarea" id="modal-comment" rows="3"
+              placeholder="Optional comment about this delivery…"></textarea>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="gvp.closeRatingModal()">Cancel</button>
+      <button class="btn-submit-rating" id="modal-submit" disabled onclick="gvp.submitRating()">
+        Submit Rating
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ─── Session ────────────────────────────────────────────────────────────────
+window.PORTAL_USER  = "{{ frappe.session.user }}";
+window.CSRF_TOKEN   = "{{ frappe.session.csrf_token }}";
+
+// ─── Grace Vendor Portal namespace ──────────────────────────────────────────
+(function() {
+  "use strict";
+
+  // ── Constants ──────────────────────────────────────────────────────────
+  var HUB        = [30.7060, 76.8001];
+  var CH_CENTER  = [30.7333, 76.7794];
+  var CH_ZOOM    = 13;
+  var DEF_CUST   = [30.7404, 76.7871];
+  var POLL_MS    = 8000;
+
+  var TIMELINE_STEPS = [
+    "Approved", "Packing", "Ready for Dispatch", "Dispatched", "In Transit", "Delivered"
+  ];
+
+  var STATUS_CLS = {
+    "Pending":            "s-pending",
+    "Draft":              "s-pending",
+    "Under Review":       "s-pending",
+    "Approved":           "s-assigned",
+    "Packing":            "s-picked-up",
+    "Ready for Dispatch": "s-picked-up",
+    "Assigned":           "s-assigned",
+    "Dispatched":         "s-in-transit",
+    "Picked Up":          "s-picked-up",
+    "In Transit":         "s-in-transit",
+    "Nearby":             "s-nearby",
+    "At Location":        "s-at-location",
+    "Delivered":          "s-delivered",
+    "Cancelled":          "s-pending"
+  };
+
+  // ── State ──────────────────────────────────────────────────────────────
+  var st = {
+    userType:       null,
+    vendorId:       null,
+    vendorName:     "",
+    activeOrders:   [],
+    deliveredOrders: [],
+    tab:            "active",
+    selOrderName:   null,
+    selDelivName:   null,
+    pollTimer:      null,
+    ratingOrder:    null,
+    ratingVal:      0
+  };
+
+  // ── Map state ──────────────────────────────────────────────────────────
+  var map = null;
+  var mk  = { hub: null, cust: null, driver: null };
+  var routeLayer = null;
+
+  // ── DOM helpers ────────────────────────────────────────────────────────
+  function $id(id) { return document.getElementById(id); }
+  function show(id) { $id(id).classList.add("visible"); }
+  function hide(id) { $id(id).classList.remove("visible"); }
+  function vis(el)  { el.classList.add("visible"); }
+  function unvis(el){ el.classList.remove("visible"); }
+
+  function esc(s) {
+    if (s == null) return "";
+    return String(s)
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+  }
+
+  function fmtDate(d) {
+    if (!d) return "";
+    var dt = new Date(d);
+    if (isNaN(dt)) return d;
+    return dt.toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" });
+  }
+
+  function fmtTime(ts) {
+    if (!ts) return "";
+    var d = new Date(ts);
+    if (isNaN(d)) return String(ts);
+    var diff = Math.floor((Date.now() - d) / 1000);
+    if (diff < 60)   return diff + "s ago";
+    if (diff < 3600) return Math.floor(diff/60) + "m ago";
+    return d.toLocaleTimeString("en-IN", { hour:"2-digit", minute:"2-digit" });
+  }
+
+  function fmtETA(eta) {
+    if (!eta) return "Calculating…";
+    var d = new Date(eta);
+    if (isNaN(d)) return String(eta);
+    var mins = Math.floor((d - Date.now()) / 60000);
+    if (mins <= 0) return "Arriving now";
+    if (mins < 60) return "~" + mins + " min";
+    return "~" + Math.floor(mins/60) + "h " + (mins%60) + "m";
+  }
+
+  function fmtAmount(v) {
+    if (!v && v !== 0) return "—";
+    return "₹" + parseFloat(v).toLocaleString("en-IN",
+      { minimumFractionDigits:0, maximumFractionDigits:0 });
+  }
+
+  function parseCoords(str) {
+    if (!str) return null;
+    var parts = String(str).split(",");
+    if (parts.length < 2) return null;
+    var lat = parseFloat(parts[0].trim());
+    var lng = parseFloat(parts[1].trim());
+    if (isNaN(lat) || isNaN(lng)) return null;
+    return [lat, lng];
+  }
+
+  // ── Frappe call wrapper ────────────────────────────────────────────────
+  function api(method, args, cb, errCb) {
+    frappe.call({
+      method: "grace_vendor_portal.portal_api." + method,
+      args:   args || {},
+      callback: function(r) { cb(r && r.message); },
+      error: function(err) {
+        console.error("[GVP] API error:", method, err);
+        if (errCb) errCb(err);
+      }
+    });
+  }
+
+  // ── Map init ──────────────────────────────────────────────────────────
+  function initMap() {
+    map = L.map("gvp-map", { center: CH_CENTER, zoom: CH_ZOOM });
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19
+    }).addTo(map);
+  }
+
+  // ── Login wall ────────────────────────────────────────────────────────
+  function showLoginWall(returnUrl) {
+    var url = returnUrl || window.location.pathname;
+    document.getElementById("gvp-root").innerHTML =
+      '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;' +
+      'background:linear-gradient(135deg,#0f1a2e 0%,#1a2d4a 60%,#0e2237 100%)">' +
+        '<div style="background:#fff;border-radius:16px;padding:48px 40px;max-width:400px;width:90%;' +
+        'box-shadow:0 24px 64px rgba(0,0,0,.45);text-align:center">' +
+          '<div style="width:72px;height:72px;background:#E8891A;border-radius:50%;margin:0 auto 20px;' +
+          'display:flex;align-items:center;justify-content:center">' +
+            '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+              '<rect x="3" y="11" width="18" height="11" rx="2"/>' +
+              '<path d="M7 11V7a5 5 0 0 1 10 0v4"/>' +
+            '</svg>' +
+          '</div>' +
+          '<h2 style="margin:0 0 6px;font-size:22px;font-weight:700;color:#0f1a2e">Vendor Portal</h2>' +
+          '<p style="margin:0 0 8px;font-size:13px;color:#64748b;font-weight:500">Grace Drinks Pvt. Ltd.</p>' +
+          '<p style="margin:0 0 28px;font-size:14px;color:#475569">' +
+            'Please sign in to access your order tracking and management portal.' +
+          '</p>' +
+          '<a href="/login?redirect-to=' + encodeURIComponent(url) + '" ' +
+          'style="display:block;background:#E8891A;color:#fff;text-decoration:none;' +
+          'padding:14px 24px;border-radius:8px;font-size:15px;font-weight:600;' +
+          'transition:background .2s" ' +
+          'onmouseover="this.style.background=\'#d4780f\'" ' +
+          'onmouseout="this.style.background=\'#E8891A\'">' +
+            'Sign In to Continue' +
+          '</a>' +
+          '<p style="margin:20px 0 0;font-size:12px;color:#94a3b8">' +
+            'Contact your account manager if you need access.' +
+          '</p>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function showAccessDenied() {
+    document.getElementById("gvp-root").innerHTML =
+      '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;' +
+      'background:linear-gradient(135deg,#0f1a2e 0%,#1a2d4a 60%,#0e2237 100%)">' +
+        '<div style="background:#fff;border-radius:16px;padding:48px 40px;max-width:400px;width:90%;' +
+        'box-shadow:0 24px 64px rgba(0,0,0,.45);text-align:center">' +
+          '<div style="width:72px;height:72px;background:#ef4444;border-radius:50%;margin:0 auto 20px;' +
+          'display:flex;align-items:center;justify-content:center">' +
+            '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+              '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>' +
+            '</svg>' +
+          '</div>' +
+          '<h2 style="margin:0 0 6px;font-size:22px;font-weight:700;color:#0f1a2e">Access Restricted</h2>' +
+          '<p style="margin:0 0 28px;font-size:14px;color:#475569">' +
+            'Your account is not linked to a vendor profile. ' +
+            'Please contact Grace Drinks to request access.' +
+          '</p>' +
+          '<a href="/login" style="display:inline-block;color:#E8891A;font-size:13px;font-weight:600">← Sign in with a different account</a>' +
+        '</div>' +
+      '</div>';
+  }
+
+  // ── Portal boot ───────────────────────────────────────────────────────
+  function loadPortalContext() {
+    api("get_portal_context", {}, function(ctx) {
+      if (!ctx || ctx.type === "guest") {
+        showLoginWall(window.location.pathname);
+        return;
+      }
+      st.userType = ctx.type;
+
+      if (ctx.type === "admin") {
+        $id("gvp-demo-bar").classList.add("visible");
+        loadAllVendors();
+        renderListEmpty("Select a vendor above to begin");
+      } else if (ctx.type === "vendor") {
+        st.vendorId   = ctx.vendor_id;
+        st.vendorName = ctx.vendor_name || "";
+        $id("orders-vendor-tag").textContent = st.vendorName;
+        loadVendorOrders(st.vendorId);
+      } else {
+        showAccessDenied();
+      }
+    }, function(err) {
+      // HTTP 403 / not-whitelisted → treat as not logged in
+      showLoginWall(window.location.pathname);
+    });
+  }
+
+  // ── Admin: load all vendors ────────────────────────────────────────────
+  function loadAllVendors() {
+    api("get_all_vendors", {}, function(vendors) {
+      var sel = $id("demo-vendor-select");
+      (vendors || []).forEach(function(v) {
+        var opt = document.createElement("option");
+        opt.value       = v.name;
+        opt.textContent = v.vendor_name || v.name;
+        sel.appendChild(opt);
+      });
+    });
+  }
+
+  // ── Admin: vendor selection changed ───────────────────────────────────
+  function onDemoVendorChange(vendorId) {
+    if (!vendorId) return;
+    stopTracking();
+    clearMap();
+    var sel   = $id("demo-vendor-select");
+    var opt   = sel.options[sel.selectedIndex];
+    st.vendorName = opt ? opt.textContent : vendorId;
+    st.vendorId   = vendorId;
+    $id("orders-vendor-tag").textContent = st.vendorName;
+    loadVendorOrders(vendorId);
+  }
+
+  // ── Load orders for a vendor ──────────────────────────────────────────
+  function loadVendorOrders(vendorId) {
+    $id("orders-list").innerHTML =
+      '<div class="list-loading"><div class="spinner sm"></div>Loading orders…</div>';
+    api("get_vendor_orders", { vendor_id: vendorId }, function(data) {
+      var all = Array.isArray(data) ? data : [];
+      var DELIVERED_STATUSES = ["Delivered", "Cancelled"];
+      st.activeOrders    = all.filter(function(o){ return DELIVERED_STATUSES.indexOf(o.order_status) === -1; });
+      st.deliveredOrders = all.filter(function(o){ return DELIVERED_STATUSES.indexOf(o.order_status) !== -1; });
+      st.selOrderName    = null;
+      updateBadge();
+      renderList();
+    }, function() {
+      $id("orders-list").innerHTML =
+        '<div class="list-empty"><div class="list-empty-icon">⚠️</div>' +
+        '<p>Could not load orders. Please try again.</p></div>';
+    });
+  }
+
+  // ── Update count badge ────────────────────────────────────────────────
+  function updateBadge() {
+    $id("orders-badge").textContent =
+      (st.activeOrders.length + st.deliveredOrders.length);
+  }
+
+  // ── Tab switch ────────────────────────────────────────────────────────
+  function switchTab(tab) {
+    st.tab = tab;
+    $id("tab-active")   .classList.toggle("active", tab === "active");
+    $id("tab-delivered").classList.toggle("active", tab === "delivered");
+    renderList();
+  }
+
+  // ── Render order list ─────────────────────────────────────────────────
+  function renderList() {
+    var el  = $id("orders-list");
+    var arr = (st.tab === "active") ? st.activeOrders : st.deliveredOrders;
+
+    if (!arr.length) {
+      var msg = (st.tab === "active")
+        ? "No active orders right now"
+        : "No delivered orders yet";
+      el.innerHTML = '<div class="list-empty"><div class="list-empty-icon">' +
+        (st.tab === "active" ? "✅" : "📋") + '</div><p>' + esc(msg) + '</p></div>';
+      return;
+    }
+
+    el.innerHTML = arr.map(function(o) {
+      return (st.tab === "active") ? renderActiveCard(o) : renderDelivCard(o);
+    }).join("");
+  }
+
+  // Statuses where the driver (not warehouse) handles the order
+  var DRIVER_STATUSES = ["Dispatched", "In Transit"];
+
+  function renderActiveCard(o) {
+    var status = o.order_status || o.status || "Pending";
+    var cls    = STATUS_CLS[status] || "s-pending";
+    var isSel  = (o.name === st.selOrderName);
+
+    var isDriverStage = DRIVER_STATUSES.indexOf(status) !== -1;
+    var callPhone, callLabel, callCls;
+    if (isDriverStage && o.driver_phone) {
+      callPhone = o.driver_phone;
+      callLabel = '📞 ' + esc(o.driver_name || 'Driver');
+      callCls   = 'call-driver';
+    } else if (!isDriverStage && o.warehouse_phone) {
+      callPhone = o.warehouse_phone;
+      callLabel = '📞 ' + esc(o.warehouse_name || 'Warehouse');
+      callCls   = 'call-warehouse';
+    }
+    var callHtml = callPhone
+      ? '<div class="o-card-call"><a class="call-btn ' + callCls +
+          '" href="tel:' + esc(callPhone.replace(/[^\d+]/g,'')) + '">' + callLabel + '</a></div>'
+      : '';
+
+    return '<div class="o-card' + (isSel ? " active" : "") +
+      '" id="card-' + esc(o.name) + '">' +
+      '<div class="o-card-top">' +
+        '<span class="o-id">' + esc(o.name) + '</span>' +
+        '<span class="sbadge ' + cls + '">' + esc(status) + '</span>' +
+      '</div>' +
+      '<div class="o-meta">' +
+        '<div class="o-meta-left">' +
+          '<div class="o-amount">' + fmtAmount(o.total_amount) + '</div>' +
+          '<div class="o-date">' + esc(fmtDate(o.order_date || o.transaction_date)) + '</div>' +
+        '</div>' +
+        (o.has_tracking
+          ? '<button class="track-btn" onclick="gvp.selectOrder(\'' +
+              esc(o.name) + '\',event)">' +
+              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">' +
+              '<circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg>' +
+              'Track</button>'
+          : '<span class="awaiting-label">Awaiting dispatch</span>'
+        ) +
+      '</div>' +
+      callHtml +
+    '</div>';
+  }
+
+  function renderDelivCard(o) {
+    var starsHtml = "";
+    if (o.rating_submitted) {
+      // Show 5 gold stars (we don't have the numeric value cached, show full rating)
+      for (var i = 1; i <= 5; i++) {
+        starsHtml += '<span class="star-on">★</span>';
+      }
+      starsHtml = '<div class="stars-display" title="Rated">' + starsHtml + '</div>';
+    } else {
+      starsHtml = '<button class="rate-btn" onclick="gvp.openRatingModal(\'' +
+        esc(o.name) + '\',event)">Rate ★</button>';
+    }
+    return '<div class="o-card delivered-card">' +
+      '<div class="o-card-top">' +
+        '<span class="o-id">' + esc(o.name) + '</span>' +
+        '<span class="sbadge s-delivered">Delivered</span>' +
+      '</div>' +
+      '<div class="o-meta">' +
+        '<div class="o-meta-left">' +
+          '<div class="o-amount">' + fmtAmount(o.total_amount) + '</div>' +
+          '<div class="o-date">' + esc(fmtDate(o.order_date || o.transaction_date)) + '</div>' +
+        '</div>' +
+        starsHtml +
+      '</div>' +
+    '</div>';
+  }
+
+  // ── Select order & start tracking ─────────────────────────────────────
+  function selectOrder(orderName, evt) {
+    if (evt) evt.stopPropagation();
+
+    // Deselect previous card
+    if (st.selOrderName) {
+      var prev = $id("card-" + st.selOrderName);
+      if (prev) prev.classList.remove("active");
+    }
+
+    stopTracking();
+    clearMap();
+
+    st.selOrderName = orderName;
+
+    var card = $id("card-" + orderName);
+    if (card) card.classList.add("active");
+
+    // Show timeline based on order status
+    var order = st.activeOrders.find(function(o) { return o.name === orderName; });
+    if (order && order.status) {
+      renderStatusTimeline(order.status);
+      $id("status-tl").classList.add("visible");
+    }
+
+    // Hide empty overlay and begin tracking
+    $id("map-empty").classList.add("hidden");
+    startTracking(orderName);
+  }
+
+  // ── Tracking poll ────────────────────────────────────────────────────
+  function startTracking(orderName) {
+    fetchTracking(orderName);
+    st.pollTimer = setInterval(function() {
+      if (st.selOrderName === orderName) {
+        fetchTracking(orderName);
+      } else {
+        stopTracking();
+      }
+    }, POLL_MS);
+  }
+
+  function stopTracking() {
+    if (st.pollTimer) {
+      clearInterval(st.pollTimer);
+      st.pollTimer = null;
+    }
+    hide("live-badge");
+    $id("driver-strip").classList.remove("visible");
+  }
+
+  function fetchTracking(orderName) {
+    api("get_order_live_location", { vendor_order: orderName }, function(data) {
+      if (!data) {
+        showGPSWaiting();
+        return;
+      }
+      updateMap(data);
+    });
+  }
+
+  // ── GPS waiting state ─────────────────────────────────────────────────
+  function showGPSWaiting() {
+    show("live-badge");
+    var strip = $id("driver-strip");
+    strip.classList.add("visible");
+    $id("driver-grid").innerHTML =
+      '<div class="gps-waiting"><div class="spinner sm"></div>' +
+      'Waiting for driver GPS signal…</div>';
+  }
+
+  // ── Update map with tracking data ─────────────────────────────────────
+  function updateMap(data) {
+    show("live-badge");
+
+    // Driver position (nested under data.latest)
+    var driverPos = null;
+    if (data.latest) {
+      var dlat = parseFloat(data.latest.latitude);
+      var dlng = parseFloat(data.latest.longitude);
+      if (!isNaN(dlat) && !isNaN(dlng) && dlat !== 0 && dlng !== 0) {
+        driverPos = [dlat, dlng];
+      }
+    }
+
+    // Customer position
+    var custPos = (data.customer_lat && data.customer_lng)
+      ? [parseFloat(data.customer_lat), parseFloat(data.customer_lng)]
+      : DEF_CUST;
+
+    // Remove previous hub and customer markers (driver marker is animated in place)
+    if (mk.hub)  { map.removeLayer(mk.hub);  mk.hub  = null; }
+    if (mk.cust) { map.removeLayer(mk.cust); mk.cust = null; }
+
+    // Hub marker — green circle
+    mk.hub = L.marker(HUB, {
+      icon: L.divIcon({
+        className: "",
+        html: '<div style="background:#22c55e;width:16px;height:16px;border-radius:50%;' +
+              'border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35)"></div>',
+        iconSize:   [16, 16],
+        iconAnchor: [8,  8]
+      }),
+      title: "Grace Drinks Hub"
+    }).addTo(map).bindTooltip("Grace Drinks Hub", { direction:"top" });
+
+    // Customer marker — red teardrop
+    mk.cust = L.marker(custPos, {
+      icon: L.divIcon({
+        className: "",
+        html: '<div style="width:0;height:0;border-left:11px solid transparent;' +
+              'border-right:11px solid transparent;border-top:24px solid #ef4444;' +
+              'filter:drop-shadow(0 2px 5px rgba(0,0,0,.4))"></div>',
+        iconSize:   [22, 24],
+        iconAnchor: [11, 24]
+      }),
+      title: "Delivery Address"
+    }).addTo(map).bindTooltip("Delivery Address", { direction:"top" });
+
+    // Driver marker — animated blue dot
+    if (driverPos) {
+      if (mk.driver) {
+        mk.driver.setLatLng(driverPos);
+      } else {
+        mk.driver = L.marker(driverPos, {
+          icon: L.divIcon({
+            className: "driver-dot",
+            iconSize:   [14, 14],
+            iconAnchor: [7,  7]
+          }),
+          title: data.driver_name || "Driver"
+        }).addTo(map).bindTooltip(esc(data.driver_name || "Driver"), { direction:"top" });
+      }
+    }
+
+    // Route polyline: hub → driver → customer
+    var pts = [HUB];
+    if (driverPos) pts.push(driverPos);
+    pts.push(custPos);
+
+    if (routeLayer) map.removeLayer(routeLayer);
+    routeLayer = L.polyline(pts, {
+      color:     "#E8891A",
+      weight:    3,
+      opacity:   .85,
+      dashArray: "9 6"
+    }).addTo(map);
+
+    map.fitBounds(routeLayer.getBounds(), { padding: [44, 44] });
+
+    // Update UI panels
+    renderDriverInfo(data, driverPos);
+    var selOrderForTimeline = (st.activeOrders || []).filter(function(o){ return o.name === st.selOrderName; })[0];
+    var timelineStatus = selOrderForTimeline ? (selOrderForTimeline.order_status || selOrderForTimeline.status) : null;
+    if (timelineStatus) {
+      renderStatusTimeline(timelineStatus);
+      $id("status-tl").classList.add("visible");
+    }
+  }
+
+  // ── Clear all map layers ──────────────────────────────────────────────
+  function clearMap() {
+    ["hub","cust","driver"].forEach(function(k) {
+      if (mk[k]) { map.removeLayer(mk[k]); mk[k] = null; }
+    });
+    if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+    $id("map-empty").classList.remove("hidden");
+    $id("driver-strip").classList.remove("visible");
+    $id("status-tl").classList.remove("visible");
+    hide("live-badge");
+    map.setView(CH_CENTER, CH_ZOOM);
+  }
+
+  // ── Driver info strip ─────────────────────────────────────────────────
+  function renderDriverInfo(data, hasGPS) {
+    var strip = $id("driver-strip");
+    strip.classList.add("visible");
+
+    if (!hasGPS) {
+      $id("driver-grid").innerHTML =
+        '<div class="gps-waiting"><div class="spinner sm"></div>' +
+        'Waiting for driver GPS signal…</div>';
+      return;
+    }
+
+    var selOrder = (st.activeOrders || []).filter(function(o){ return o.name === st.selOrderName; })[0];
+    var orderStatus = selOrder ? (selOrder.order_status || selOrder.status || "In Transit") : "In Transit";
+    var cls = STATUS_CLS[orderStatus] || "s-in-transit";
+    var updTime = data.latest ? data.latest.recorded_timestamp : null;
+
+    var driverCellHtml = '<div class="dg-cell"><label>Driver</label>' +
+      '<span>' + esc(data.driver_name || "—") + '</span>';
+    if (selOrder && selOrder.driver_phone) {
+      var cleanPh = selOrder.driver_phone.replace(/[^\d+]/g, '');
+      driverCellHtml += '<a class="call-strip-link" href="tel:' + cleanPh + '">📞 Call</a>';
+    }
+    driverCellHtml += '</div>';
+
+    $id("driver-grid").innerHTML =
+      driverCellHtml +
+      cell("Vehicle", esc(data.vehicle_type  || "—")) +
+      '<div class="dg-cell"><label>Status</label>' +
+        '<span><span class="sbadge ' + cls + '">' + esc(orderStatus) + '</span></span>' +
+      '</div>' +
+      '<div class="dg-cell"><label>ETA</label>' +
+        '<span class="eta-val">Est. 15-30 min</span>' +
+        '<span class="upd-time">Updated ' + esc(fmtTime(updTime)) + '</span>' +
+      '</div>';
+  }
+
+  function cell(lbl, val) {
+    return '<div class="dg-cell"><label>' + lbl + '</label><span>' + val + '</span></div>';
+  }
+
+  // ── Status timeline ───────────────────────────────────────────────────
+  function renderStatusTimeline(currentStatus) {
+    var currIdx = TIMELINE_STEPS.indexOf(currentStatus);
+    var html = "";
+    TIMELINE_STEPS.forEach(function(step, i) {
+      var isDone = i < currIdx;
+      var isCurr = i === currIdx;
+      var cls    = isDone ? "done" : (isCurr ? "curr" : "");
+      var inner  = isDone ? "✓" : String(i+1);
+      html += '<div class="tl-step ' + cls + '">' +
+        '<div class="tl-circle">' + inner + '</div>' +
+        '<div class="tl-step-lbl">' + esc(step) + '</div>' +
+      '</div>';
+      if (i < TIMELINE_STEPS.length - 1) {
+        html += '<div class="tl-conn' + (isDone ? " done" : "") + '"></div>';
+      }
+    });
+    $id("tl-steps").innerHTML = html;
+  }
+
+  // ── Rating modal ──────────────────────────────────────────────────────
+  function openRatingModal(orderName, evt) {
+    if (evt) evt.stopPropagation();
+    st.ratingOrder = orderName;
+    st.ratingVal   = 0;
+    $id("modal-order-label").textContent = "Order " + orderName;
+    $id("modal-comment").value = "";
+    $id("modal-submit").disabled = true;
+    renderStarPicker(0);
+    $id("rating-modal").classList.add("open");
+  }
+
+  function closeRatingModal() {
+    $id("rating-modal").classList.remove("open");
+    st.ratingOrder = null;
+    st.ratingVal   = 0;
+  }
+
+  function ratingModalBackdrop(evt) {
+    if (evt.target === $id("rating-modal")) closeRatingModal();
+  }
+
+  function setRating(val) {
+    st.ratingVal = val;
+    renderStarPicker(val);
+    $id("modal-submit").disabled = (val === 0);
+  }
+
+  function renderStarPicker(val) {
+    document.querySelectorAll(".star-btn").forEach(function(btn) {
+      btn.classList.toggle("lit", parseInt(btn.dataset.v) <= val);
+    });
+  }
+
+  function submitRating() {
+    if (!st.ratingOrder || !st.ratingVal) return;
+    var btn = $id("modal-submit");
+    btn.disabled     = true;
+    btn.textContent  = "Submitting…";
+
+    api("submit_order_rating", {
+      order_name: st.ratingOrder,
+      rating:     st.ratingVal,
+      comment:    $id("modal-comment").value
+    }, function(res) {
+      closeRatingModal();
+      if (st.vendorId) loadVendorOrders(st.vendorId);
+    }, function(err) {
+      btn.disabled    = false;
+      btn.textContent = "Submit Rating";
+      var msg = "Could not submit rating. Please try again.";
+      try {
+        var srv = err && err.responseJSON && err.responseJSON._server_messages;
+        if (srv) {
+          var parsed = JSON.parse(srv);
+          msg = JSON.parse(parsed[0]).message || msg;
+        }
+      } catch(e) {}
+      alert(msg);
+    });
+  }
+
+  // ── Misc list states ──────────────────────────────────────────────────
+  function renderListEmpty(msg) {
+    $id("orders-list").innerHTML =
+      '<div class="list-empty"><div class="list-empty-icon">🏢</div>' +
+      '<p>' + esc(msg) + '</p></div>';
+  }
+
+  function renderListError(msg) {
+    $id("orders-list").innerHTML =
+      '<div class="list-empty"><div class="list-empty-icon">⚠️</div>' +
+      '<p>' + esc(msg) + '</p></div>';
+  }
+
+  // ── Public interface ──────────────────────────────────────────────────
+  window.gvp = {
+    onDemoVendorChange: onDemoVendorChange,
+    switchTab:          switchTab,
+    selectOrder:        selectOrder,
+    openRatingModal:    openRatingModal,
+    closeRatingModal:   closeRatingModal,
+    ratingModalBackdrop: ratingModalBackdrop,
+    setRating:          setRating,
+    submitRating:       submitRating,
+    // Exposed for debugging
+    _state: st
+  };
+
+  // ── Boot ──────────────────────────────────────────────────────────────
+  document.addEventListener("DOMContentLoaded", function() {
+    initMap();
+    loadPortalContext();
+  });
+
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,157 @@
+{
+ "actions": [],
+ "creation": "2026-07-04 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "vendor_order",
+  "driver",
+  "driver_name",
+  "driver_phone",
+  "vehicle_reg",
+  "assigned_datetime",
+  "estimated_delivery",
+  "status",
+  "delivery_otp",
+  "otp_verified",
+  "delivery_photo",
+  "delivery_order",
+  "section_tracking",
+  "tracking_history"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "GD-DA-.YYYY.-.####\n",
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "vendor_order",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Vendor Order",
+   "options": "Vendor Order",
+   "reqd": 1
+  },
+  {
+   "fieldname": "driver",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Driver",
+   "options": "Employee",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "driver.employee_name",
+   "fieldname": "driver_name",
+   "fieldtype": "Data",
+   "label": "Driver Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "driver_phone",
+   "fieldtype": "Data",
+   "label": "Driver Phone"
+  },
+  {
+   "fieldname": "vehicle_reg",
+   "fieldtype": "Data",
+   "label": "Vehicle Registration",
+   "reqd": 1
+  },
+  {
+   "fieldname": "assigned_datetime",
+   "fieldtype": "Datetime",
+   "label": "Assigned Datetime",
+   "reqd": 1
+  },
+  {
+   "fieldname": "estimated_delivery",
+   "fieldtype": "Datetime",
+   "label": "Estimated Delivery"
+  },
+  {
+   "default": "Assigned",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Assigned\nIn Transit\nArrived\nDelivered\nFailed"
+  },
+  {
+   "fieldname": "delivery_otp",
+   "fieldtype": "Data",
+   "label": "Delivery OTP"
+  },
+  {
+   "default": "0",
+   "fieldname": "otp_verified",
+   "fieldtype": "Check",
+   "label": "OTP Verified"
+  },
+  {
+   "fieldname": "delivery_photo",
+   "fieldtype": "Attach",
+   "label": "Delivery Photo"
+  },
+  {
+   "fieldname": "delivery_order",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Delivery Order",
+   "options": "Delivery Order",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_tracking",
+   "fieldtype": "Section Break",
+   "label": "Tracking History"
+  },
+  {
+   "fieldname": "tracking_history",
+   "fieldtype": "Table",
+   "label": "Tracking History",
+   "options": "Delivery Tracking"
+  }
+ ],
+ "links": [],
+ "modified": "2026-07-06 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Grace Vendor Portal",
+ "name": "Delivery Assignment",
+ "naming_rule": "By Naming Series",
+ "naming_series": "GD-DA-.YYYY.-.####",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

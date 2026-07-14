@@ -1,0 +1,551 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-07-07 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "delivery_partner",
+  "scoring_period",
+  "month",
+  "year",
+  "col_break_period",
+  "reporting_manager",
+  "section_volume",
+  "total_deliveries",
+  "on_time_deliveries",
+  "on_time_percentage",
+  "col_break_vol",
+  "late_deliveries",
+  "failed_deliveries",
+  "cancelled_deliveries",
+  "section_quality",
+  "avg_customer_rating",
+  "total_customer_feedbacks",
+  "five_star",
+  "four_star",
+  "col_break_qual",
+  "three_star",
+  "two_star",
+  "one_star",
+  "section_issues",
+  "complaints_received",
+  "complaint_details",
+  "damage_claims",
+  "missing_item_claims",
+  "col_break_iss",
+  "customer_not_home_incidents",
+  "wrong_address_incidents",
+  "section_safety",
+  "safety_incidents",
+  "harsh_driving_detected",
+  "speeding_incidents",
+  "col_break_safety",
+  "vehicle_maintenance_overdue",
+  "compliance_issues_open",
+  "section_behavior",
+  "punctuality_to_hub",
+  "attendance_rate",
+  "attendance_notes",
+  "col_break_beh",
+  "professional_conduct",
+  "conduct_notes",
+  "section_financial",
+  "commission_earned",
+  "bonuses_earned",
+  "deductions",
+  "net_amount",
+  "section_score",
+  "on_time_score",
+  "quality_score",
+  "safety_score",
+  "professionalism_score",
+  "overall_delivery_score",
+  "performance_level",
+  "section_management",
+  "manager_comments",
+  "training_recommended",
+  "training_type",
+  "col_break_mgmt",
+  "promotion_eligible",
+  "promotion_reason",
+  "warning_issued",
+  "warning_type",
+  "suspension_period",
+  "section_hr",
+  "appraisal_reference",
+  "appraisal_weight",
+  "salary_adjustment_recommended",
+  "recommended_increment"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "DPS-.YYYY.-.####\n",
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "delivery_partner",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Delivery Partner",
+   "options": "Delivery Partner",
+   "reqd": 1
+  },
+  {
+   "default": "Month",
+   "fieldname": "scoring_period",
+   "fieldtype": "Select",
+   "label": "Scoring Period",
+   "options": "Month\nQuarter\nYear"
+  },
+  {
+   "fieldname": "month",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Month (1-12)",
+   "reqd": 1
+  },
+  {
+   "fieldname": "year",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Year",
+   "reqd": 1
+  },
+  {
+   "fieldname": "col_break_period",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "reporting_manager",
+   "fieldtype": "Link",
+   "label": "Reporting Manager",
+   "options": "Employee"
+  },
+  {
+   "fieldname": "section_volume",
+   "fieldtype": "Section Break",
+   "label": "Delivery Volume Metrics"
+  },
+  {
+   "default": "0",
+   "fieldname": "total_deliveries",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Total Deliveries"
+  },
+  {
+   "default": "0",
+   "fieldname": "on_time_deliveries",
+   "fieldtype": "Int",
+   "label": "On-Time Deliveries"
+  },
+  {
+   "default": "0",
+   "fieldname": "on_time_percentage",
+   "fieldtype": "Percent",
+   "in_list_view": 1,
+   "label": "On-Time Delivery %",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_break_vol",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "late_deliveries",
+   "fieldtype": "Int",
+   "label": "Late Deliveries"
+  },
+  {
+   "default": "0",
+   "fieldname": "failed_deliveries",
+   "fieldtype": "Int",
+   "label": "Failed Delivery Attempts"
+  },
+  {
+   "default": "0",
+   "fieldname": "cancelled_deliveries",
+   "fieldtype": "Int",
+   "label": "Cancelled Deliveries"
+  },
+  {
+   "fieldname": "section_quality",
+   "fieldtype": "Section Break",
+   "label": "Customer Satisfaction Metrics"
+  },
+  {
+   "default": "0",
+   "fieldname": "avg_customer_rating",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Avg Customer Rating (1-5)"
+  },
+  {
+   "default": "0",
+   "fieldname": "total_customer_feedbacks",
+   "fieldtype": "Int",
+   "label": "Total Customer Feedbacks"
+  },
+  {
+   "default": "0",
+   "fieldname": "five_star",
+   "fieldtype": "Int",
+   "label": "5-Star Ratings"
+  },
+  {
+   "default": "0",
+   "fieldname": "four_star",
+   "fieldtype": "Int",
+   "label": "4-Star Ratings"
+  },
+  {
+   "fieldname": "col_break_qual",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "three_star",
+   "fieldtype": "Int",
+   "label": "3-Star Ratings"
+  },
+  {
+   "default": "0",
+   "fieldname": "two_star",
+   "fieldtype": "Int",
+   "label": "2-Star Ratings"
+  },
+  {
+   "default": "0",
+   "fieldname": "one_star",
+   "fieldtype": "Int",
+   "label": "1-Star Ratings"
+  },
+  {
+   "fieldname": "section_issues",
+   "fieldtype": "Section Break",
+   "label": "Issues & Complaints"
+  },
+  {
+   "default": "0",
+   "fieldname": "complaints_received",
+   "fieldtype": "Int",
+   "label": "Customer Complaints"
+  },
+  {
+   "fieldname": "complaint_details",
+   "fieldtype": "Text",
+   "label": "Complaint Summary"
+  },
+  {
+   "default": "0",
+   "fieldname": "damage_claims",
+   "fieldtype": "Int",
+   "label": "Damage Claims"
+  },
+  {
+   "default": "0",
+   "fieldname": "missing_item_claims",
+   "fieldtype": "Int",
+   "label": "Missing Item Claims"
+  },
+  {
+   "fieldname": "col_break_iss",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "customer_not_home_incidents",
+   "fieldtype": "Int",
+   "label": "Customer Not Home"
+  },
+  {
+   "default": "0",
+   "fieldname": "wrong_address_incidents",
+   "fieldtype": "Int",
+   "label": "Wrong Address Incidents"
+  },
+  {
+   "fieldname": "section_safety",
+   "fieldtype": "Section Break",
+   "label": "Safety & Compliance"
+  },
+  {
+   "default": "0",
+   "fieldname": "safety_incidents",
+   "fieldtype": "Int",
+   "label": "Total Safety Incidents"
+  },
+  {
+   "default": "0",
+   "fieldname": "harsh_driving_detected",
+   "fieldtype": "Int",
+   "label": "Harsh Driving Events (GPS)"
+  },
+  {
+   "default": "0",
+   "fieldname": "speeding_incidents",
+   "fieldtype": "Int",
+   "label": "Speeding Incidents"
+  },
+  {
+   "fieldname": "col_break_safety",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "vehicle_maintenance_overdue",
+   "fieldtype": "Check",
+   "label": "Vehicle Maintenance Overdue?"
+  },
+  {
+   "default": "0",
+   "fieldname": "compliance_issues_open",
+   "fieldtype": "Int",
+   "label": "Open Compliance Issues"
+  },
+  {
+   "fieldname": "section_behavior",
+   "fieldtype": "Section Break",
+   "label": "Behavior & Attendance"
+  },
+  {
+   "default": "1",
+   "fieldname": "punctuality_to_hub",
+   "fieldtype": "Check",
+   "label": "Punctual to Hub (Always on time to start shift)?"
+  },
+  {
+   "default": "100",
+   "fieldname": "attendance_rate",
+   "fieldtype": "Percent",
+   "label": "Attendance Rate % (Present / Working Days)"
+  },
+  {
+   "fieldname": "attendance_notes",
+   "fieldtype": "Small Text",
+   "label": "Attendance Notes"
+  },
+  {
+   "fieldname": "col_break_beh",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "fieldname": "professional_conduct",
+   "fieldtype": "Check",
+   "label": "Professional Conduct (No Customer Behavior Complaints)?"
+  },
+  {
+   "fieldname": "conduct_notes",
+   "fieldtype": "Small Text",
+   "label": "Conduct Notes"
+  },
+  {
+   "fieldname": "section_financial",
+   "fieldtype": "Section Break",
+   "label": "Financial Summary"
+  },
+  {
+   "default": "0",
+   "fieldname": "commission_earned",
+   "fieldtype": "Currency",
+   "label": "Commission Earned"
+  },
+  {
+   "default": "0",
+   "fieldname": "bonuses_earned",
+   "fieldtype": "Currency",
+   "label": "Performance Bonus Earned"
+  },
+  {
+   "default": "0",
+   "fieldname": "deductions",
+   "fieldtype": "Currency",
+   "label": "Deductions (Damage, etc.)"
+  },
+  {
+   "default": "0",
+   "fieldname": "net_amount",
+   "fieldtype": "Currency",
+   "label": "Net Amount Payable",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_score",
+   "fieldtype": "Section Break",
+   "label": "Composite Performance Score"
+  },
+  {
+   "default": "0",
+   "fieldname": "on_time_score",
+   "fieldtype": "Float",
+   "label": "On-Time Score (out of 40)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "quality_score",
+   "fieldtype": "Float",
+   "label": "Quality Score (out of 40)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "safety_score",
+   "fieldtype": "Float",
+   "label": "Safety Score (out of 20)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "professionalism_score",
+   "fieldtype": "Float",
+   "label": "Professionalism Score (out of 20)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "overall_delivery_score",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Overall Delivery Score (out of 100)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "performance_level",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Performance Level",
+   "options": "\nExcellent\nGood\nSatisfactory\nPoor\nCritical",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_management",
+   "fieldtype": "Section Break",
+   "label": "Manager Review & Recommendations"
+  },
+  {
+   "fieldname": "manager_comments",
+   "fieldtype": "Text",
+   "label": "Manager Comments"
+  },
+  {
+   "default": "0",
+   "fieldname": "training_recommended",
+   "fieldtype": "Check",
+   "label": "Training Recommended?"
+  },
+  {
+   "fieldname": "training_type",
+   "fieldtype": "Small Text",
+   "label": "Training Type (e.g. Defensive Driving, Customer Service)"
+  },
+  {
+   "fieldname": "col_break_mgmt",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "promotion_eligible",
+   "fieldtype": "Check",
+   "label": "Promotion Eligible?",
+   "read_only": 1
+  },
+  {
+   "fieldname": "promotion_reason",
+   "fieldtype": "Small Text",
+   "label": "Promotion Rationale"
+  },
+  {
+   "default": "0",
+   "fieldname": "warning_issued",
+   "fieldtype": "Check",
+   "label": "Warning Issued?"
+  },
+  {
+   "fieldname": "warning_type",
+   "fieldtype": "Select",
+   "label": "Warning Type",
+   "options": "\nVerbal\nWritten\nSuspension"
+  },
+  {
+   "fieldname": "suspension_period",
+   "fieldtype": "Int",
+   "label": "Suspension Period (Days)"
+  },
+  {
+   "fieldname": "section_hr",
+   "fieldtype": "Section Break",
+   "label": "HR Integration"
+  },
+  {
+   "fieldname": "appraisal_reference",
+   "fieldtype": "Link",
+   "label": "Linked HR Appraisal",
+   "options": "Appraisal"
+  },
+  {
+   "default": "25",
+   "fieldname": "appraisal_weight",
+   "fieldtype": "Percent",
+   "label": "Delivery Metrics Weight in Appraisal (%)"
+  },
+  {
+   "default": "0",
+   "fieldname": "salary_adjustment_recommended",
+   "fieldtype": "Check",
+   "label": "Salary Adjustment Recommended?",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "recommended_increment",
+   "fieldtype": "Percent",
+   "label": "Recommended Increment %",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-07-07 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Grace Vendor Portal",
+ "name": "Delivery Performance Scorecard",
+ "naming_rule": "By Naming Series",
+ "naming_series": "DPS-.YYYY.-.####",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

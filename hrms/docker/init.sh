@@ -12,6 +12,15 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
 if [ -d "/home/frappe/frappe-bench/apps/frappe" ]; then
     echo "Bench already exists, skipping init"
     cd frappe-bench
+    # Ensure site is always set so Frappe can resolve requests without a matching Host header
+    echo "hrms.localhost" > sites/currentsite.txt
+    # Rewrite Procfile to known-good state; 'bench serve --site' is not a valid flag
+    printf 'web: bench serve  --port 8000\n\nsocketio: bench socketio\n\n\n\n\nschedule: bench schedule\n\nworker:  bench worker 1>> logs/worker.log 2>> logs/worker.error.log\n' > Procfile
+    # Ensure module-subfolder symlinks exist (Frappe needs doctype under <app>/<app>/<module>/doctype/)
+    # The bind-mounted apps have doctype/ at the package level; symlink it into the module folder.
+    BENCH_APPS=/home/frappe/frappe-bench/apps
+    ln -sf "$BENCH_APPS/grace_goals/grace_goals/doctype" "$BENCH_APPS/grace_goals/grace_goals/grace_goals/doctype" 2>/dev/null || true
+    ln -sf "$BENCH_APPS/grace_vendor_portal/grace_vendor_portal/doctype" "$BENCH_APPS/grace_vendor_portal/grace_vendor_portal/grace_vendor_portal/doctype" 2>/dev/null || true
     bench start
     exit 0
 fi
@@ -35,6 +44,13 @@ sed -i '/watch/d' ./Procfile
 bench get-app erpnext
 bench get-app hrms
 
+# Register grace_goals and grace_vendor_portal via .pth files (bench virtualenv has no setuptools,
+# so pip install -e is not available; a .pth file is exactly what editable installs create anyway)
+BENCH_APPS=/home/frappe/frappe-bench/apps
+SITE_PKGS=$(find /home/frappe/frappe-bench/env/lib -maxdepth 2 -name 'site-packages' -type d | head -1)
+echo "$BENCH_APPS/grace_goals" > "$SITE_PKGS/grace_goals.pth"
+echo "$BENCH_APPS/grace_vendor_portal" > "$SITE_PKGS/grace_vendor_portal.pth"
+
 # ── Re-apply Grace Drinks app-switcher branding (hooks.py lives in the container layer) ──
 HOOKS=apps/hrms/hrms/hooks.py
 sed -i 's#app_title = "Frappe HR"#app_title = "Grace Drinks"#' "$HOOKS" || true
@@ -52,10 +68,17 @@ if [ -n "$DBGZ" ]; then
         ${PUB:+--with-public-files "$PUB"} \
         ${PRIV:+--with-private-files "$PRIV"} \
         --mariadb-root-password "$DB_ROOT_PASSWORD"
+    # Register custom apps in apps.txt before installing
+    printf 'frappe\nerpnext\nhrms\ngrace_goals\ngrace_vendor_portal\n' > sites/apps.txt
+    bench --site hrms.localhost install-app grace_goals
+    bench --site hrms.localhost install-app grace_vendor_portal
 else
     echo "No host backup found — creating a fresh site"
     bench new-site hrms.localhost --force --mariadb-root-password "$DB_ROOT_PASSWORD" --admin-password "$ADMIN_PASSWORD" --no-mariadb-socket
+    printf 'frappe\nerpnext\nhrms\ngrace_goals\ngrace_vendor_portal\n' > sites/apps.txt
     bench --site hrms.localhost install-app hrms
+    bench --site hrms.localhost install-app grace_goals
+    bench --site hrms.localhost install-app grace_vendor_portal
 fi
 
 bench --site hrms.localhost set-config developer_mode 1

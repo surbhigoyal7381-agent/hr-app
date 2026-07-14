@@ -1,0 +1,95 @@
+{
+ "actions": [],
+ "creation": "2026-07-04 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "driver",
+  "driver_name",
+  "avg_quality_rating",
+  "avg_timeliness_rating",
+  "avg_professionalism_rating",
+  "total_ratings",
+  "last_updated"
+ ],
+ "fields": [
+  {
+   "fieldname": "driver",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Driver",
+   "options": "Employee",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "driver.employee_name",
+   "fieldname": "driver_name",
+   "fieldtype": "Data",
+   "label": "Driver Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "avg_quality_rating",
+   "fieldtype": "Float",
+   "label": "Avg Quality Rating",
+   "read_only": 1
+  },
+  {
+   "fieldname": "avg_timeliness_rating",
+   "fieldtype": "Float",
+   "label": "Avg Timeliness Rating",
+   "read_only": 1
+  },
+  {
+   "fieldname": "avg_professionalism_rating",
+   "fieldtype": "Float",
+   "label": "Avg Professionalism Rating",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "total_ratings",
+   "fieldtype": "Int",
+   "label": "Total Ratings",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_updated",
+   "fieldtype": "Datetime",
+   "label": "Last Updated",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-07-04 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Grace Vendor Portal",
+ "name": "Driver Rating Summary",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

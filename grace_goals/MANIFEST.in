@@ -1,0 +1,2 @@
+include MANIFEST.in
+recursive-include grace_goals *.json *.js *.css *.html *.txt *.md *.svg *.png *.jpg

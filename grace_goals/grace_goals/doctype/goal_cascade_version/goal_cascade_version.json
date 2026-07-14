@@ -1,0 +1,19 @@
+{
+ "creation": "2026-07-04 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": ["version_no", "changed_by", "change_date", "previous_definition", "reason_for_change"],
+ "fields": [
+  {"fieldname": "version_no", "fieldtype": "Int", "label": "Version No"},
+  {"fieldname": "changed_by", "fieldtype": "Link", "label": "Changed By", "options": "User"},
+  {"fieldname": "change_date", "fieldtype": "Datetime", "label": "Change Date"},
+  {"fieldname": "previous_definition", "fieldtype": "Long Text", "label": "Previous Definition"},
+  {"fieldname": "reason_for_change", "fieldtype": "Small Text", "label": "Reason for Change"}
+ ],
+ "istable": 1,
+ "modified": "2026-07-04 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Grace Goals",
+ "name": "Goal Cascade Version",
+ "owner": "Administrator"
+}

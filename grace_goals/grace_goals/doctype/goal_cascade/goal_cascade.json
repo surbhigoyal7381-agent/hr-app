@@ -1,0 +1,37 @@
+﻿{
+ "autoname": "naming_series:",
+ "creation": "2026-07-04 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": ["naming_series", "cascade_name", "company", "unit", "period_start", "period_end", "company_target", "status", "final_score_formula", "description", "section_versions", "versions"],
+ "fields": [
+  {"fieldname": "naming_series", "fieldtype": "Select", "label": "Series", "options": "GD-GC-.YYYY.-.####\n", "set_only_once": 1},
+  {"fieldname": "cascade_name", "fieldtype": "Data", "in_list_view": 1, "label": "Cascade Name", "reqd": 1},
+  {"fieldname": "company", "fieldtype": "Link", "label": "Company", "options": "Company", "reqd": 1},
+  {"fieldname": "unit", "fieldtype": "Select", "label": "Unit", "options": "Orders\nRevenue\nSkill Score\nUnits Sold", "reqd": 1},
+  {"fieldname": "period_start", "fieldtype": "Date", "label": "Period Start", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "period_end", "fieldtype": "Date", "label": "Period End", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "company_target", "fieldtype": "Float", "label": "Company Target", "reqd": 1},
+  {"fieldname": "status", "fieldtype": "Select", "label": "Status", "options": "Draft\nActive\nCompleted\nArchived", "default": "Draft", "in_list_view": 1},
+  {"fieldname": "final_score_formula", "fieldtype": "Data", "label": "Final Score Formula"},
+  {"fieldname": "description", "fieldtype": "Small Text", "label": "Description"},
+  {"fieldname": "section_versions", "fieldtype": "Section Break", "label": "Version History"},
+  {"fieldname": "versions", "fieldtype": "Table", "label": "Versions", "options": "Goal Cascade Version"}
+ ],
+ "modified": "2026-07-06 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Grace Goals",
+ "name": "Goal Cascade",
+ "naming_series": "GD-GC-.YYYY.-.####",
+ "owner": "Administrator",
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1, "submit": 0},
+  {"role": "HR Manager", "read": 1, "write": 1, "create": 1, "delete": 0},
+  {"role": "HR User", "read": 1, "write": 0, "create": 0},
+  {"role": "Employee", "read": 1, "write": 0, "create": 0}
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 1
+}
+

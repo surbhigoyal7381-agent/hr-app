@@ -1,0 +1,2 @@
+include requirements.txt
+recursive-include grace_vendor_portal *.json *.js *.css *.html *.py

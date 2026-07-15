@@ -43,12 +43,9 @@ fi
 echo "Creating new bench..."
 export PATH="${NVM_DIR}/versions/node/v${NODE_VERSION_DEVELOP}/bin/:${PATH}"
 
-# bench init refuses to run if the target directory already exists.
-# Docker creates /home/frappe/frappe-bench as the named-volume mountpoint
-# even when the volume is empty, so we init to /tmp then merge in.
-bench init --skip-redis-config-generation /tmp/frappe-bench-init
-cp -a /tmp/frappe-bench-init/. /home/frappe/frappe-bench/
-rm -rf /tmp/frappe-bench-init
+# Grace apps are mounted at /home/frappe/grace_*_src (not inside frappe-bench),
+# so bench init sees a clean target directory that does not yet exist.
+bench init --skip-redis-config-generation frappe-bench
 cd frappe-bench
 
 # Use containers instead of localhost

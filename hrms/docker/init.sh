@@ -14,13 +14,10 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
 setup_grace_symlinks() {
     BENCH_APPS=/home/frappe/frappe-bench/apps
     mkdir -p "$BENCH_APPS"
+    # App-level symlinks live in the container's ephemeral FS (not in the Windows bind mount).
+    # No module-subfolder symlinks: grace doctypes come from the backup DB, not from JSON sync.
     ln -sfn /home/frappe/grace_goals_src         "$BENCH_APPS/grace_goals"
     ln -sfn /home/frappe/grace_vendor_portal_src "$BENCH_APPS/grace_vendor_portal"
-    # Module-subfolder symlinks for Frappe doctype path resolution
-    ln -sf "$BENCH_APPS/grace_goals/grace_goals/doctype" \
-           "$BENCH_APPS/grace_goals/grace_goals/grace_goals/doctype" 2>/dev/null || true
-    ln -sf "$BENCH_APPS/grace_vendor_portal/grace_vendor_portal/doctype" \
-           "$BENCH_APPS/grace_vendor_portal/grace_vendor_portal/grace_vendor_portal/doctype" 2>/dev/null || true
     # .pth files so the bench virtualenv can import the grace packages
     SITE_PKGS=$(find /home/frappe/frappe-bench/env/lib -maxdepth 2 -name 'site-packages' -type d | head -1)
     echo "$BENCH_APPS/grace_goals"         > "$SITE_PKGS/grace_goals.pth"
@@ -81,10 +78,17 @@ if [ -n "$DBGZ" ]; then
         ${PUB:+--with-public-files "$PUB"} \
         ${PRIV:+--with-private-files "$PRIV"} \
         --mariadb-root-password "$DB_ROOT_PASSWORD"
-    # Register custom apps in apps.txt before installing
+    # The backup restore already populates doctypes, fixtures, and permissions for grace apps.
+    # We skip bench install-app (which would try to re-sync doctype JSON via symlinks — unreliable
+    # on Docker Desktop for Windows) and instead register the apps directly in the DB and bench.
     printf 'frappe\nerpnext\nhrms\ngrace_goals\ngrace_vendor_portal\n' > sites/apps.txt
-    bench --site hrms.localhost install-app grace_goals
-    bench --site hrms.localhost install-app grace_vendor_portal
+    bench --site hrms.localhost mariadb << 'ENDSQL'
+SET SQL_SAFE_UPDATES=0;
+UPDATE tabDefaultValue
+  SET defvalue='["frappe", "erpnext", "hrms", "grace_goals", "grace_vendor_portal"]'
+  WHERE defkey='installed_apps';
+SET SQL_SAFE_UPDATES=1;
+ENDSQL
 else
     echo "No host backup found — creating a fresh site"
     bench new-site hrms.localhost --force --mariadb-root-password "$DB_ROOT_PASSWORD" --admin-password "$ADMIN_PASSWORD" --no-mariadb-socket

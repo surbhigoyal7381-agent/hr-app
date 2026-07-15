@@ -21,6 +21,7 @@ website_route_rules = [
     {"from_route": "/hrms-home",       "to_route": "hrms-home"},
     {"from_route": "/hrms-employee",   "to_route": "hrms-employee"},
     {"from_route": "/kinexus-login",   "to_route": "kinexus-login"},
+    {"from_route": "/kinexus-admin",   "to_route": "kinexus-admin"},
 ]
 
 # ── Doctype event hooks ────────────────────────────────────────────────────

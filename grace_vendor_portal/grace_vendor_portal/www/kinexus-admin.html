@@ -1,0 +1,1268 @@
+{% extends "templates/web.html" %}
+{% block title %}Tenant Admin – Kinexus HRMS{% endblock %}
+
+{% block head_include %}
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<style>
+/* ── Reset ───────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+.navbar, header, footer, .web-footer { display: none !important; }
+
+/* ── Tokens ──────────────────────────────────────────────────────────── */
+:root {
+  --sidebar-w: 220px;
+  --topbar-h:  56px;
+
+  --ink0:    #0f172a;
+  --ink1:    #334155;
+  --ink2:    #64748b;
+  --ink3:    #94a3b8;
+  --bg:      #f1f5f9;
+  --surface: #ffffff;
+  --border:  #e2e8f0;
+  --border2: #cbd5e1;
+
+  --green:   #1a7f5a;
+  --green-dk:#145f44;
+  --green-lt:#e6f4ef;
+  --amber:   #f59e0b;
+  --amber-lt:#fef3c7;
+  --red:     #ef4444;
+  --red-lt:  #fee2e2;
+  --blue:    #3b82f6;
+  --blue-lt: #dbeafe;
+  --violet:  #7c3aed;
+  --violet-lt:#ede9fe;
+
+  --plan-starter:    #6366f1;
+  --plan-business:   #1a7f5a;
+  --plan-enterprise: #f59e0b;
+
+  --radius:    12px;
+  --radius-sm: 7px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.05);
+  --shadow:    0 4px 12px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.05);
+  --shadow-lg: 0 16px 48px rgba(0,0,0,.14), 0 4px 12px rgba(0,0,0,.08);
+
+  --font: -apple-system,'Segoe UI','Inter',Helvetica,Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark) {
+  :root {
+    --ink0:#e2e8f0; --ink1:#cbd5e1; --ink2:#94a3b8; --ink3:#64748b;
+    --bg:#0f172a; --surface:#1e293b; --border:#334155; --border2:#475569;
+    --green-lt:#0f2a1e; --amber-lt:#2d1f00; --red-lt:#2d0808;
+    --blue-lt:#0f1f3d; --violet-lt:#1e1040;
+  }
+}
+:root[data-theme="light"]{
+  --ink0:#0f172a;--ink1:#334155;--ink2:#64748b;--ink3:#94a3b8;
+  --bg:#f1f5f9;--surface:#ffffff;--border:#e2e8f0;--border2:#cbd5e1;
+}
+:root[data-theme="dark"]{
+  --ink0:#e2e8f0;--ink1:#cbd5e1;--ink2:#94a3b8;--ink3:#64748b;
+  --bg:#0f172a;--surface:#1e293b;--border:#334155;--border2:#475569;
+}
+
+html, body {
+  height: 100%;
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--ink0);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Shell ───────────────────────────────────────────────────────────── */
+#ka-shell { display: flex; height: 100vh; overflow: hidden; }
+
+/* ── Sidebar ─────────────────────────────────────────────────────────── */
+#ka-sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  background: var(--ink0);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.ka-sidebar-brand {
+  padding: 18px 20px 16px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ka-brand-mark {
+  width: 32px; height: 32px;
+  background: var(--green);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.ka-brand-mark svg { width: 18px; height: 18px; }
+.ka-brand-name {
+  font-size: .85rem; font-weight: 700;
+  color: #fff; line-height: 1.2;
+}
+.ka-brand-sub {
+  font-size: .65rem; font-weight: 500;
+  color: rgba(255,255,255,.4);
+  letter-spacing: .06em; text-transform: uppercase;
+}
+
+.ka-nav { flex: 1; padding: 12px 10px; overflow-y: auto; }
+.ka-nav-label {
+  font-size: .65rem; font-weight: 600; letter-spacing: .08em;
+  text-transform: uppercase; color: rgba(255,255,255,.28);
+  padding: 10px 10px 4px;
+}
+.ka-nav-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 10px; border-radius: var(--radius-sm);
+  color: rgba(255,255,255,.6); font-size: .83rem; font-weight: 500;
+  cursor: pointer; text-decoration: none; margin-bottom: 1px;
+  transition: background .12s, color .12s;
+}
+.ka-nav-item:hover  { background: rgba(255,255,255,.07); color: #fff; }
+.ka-nav-item.active { background: var(--green); color: #fff; }
+.ka-nav-icon { font-size: 15px; width: 18px; text-align: center; }
+
+.ka-sidebar-footer {
+  padding: 14px 20px;
+  border-top: 1px solid rgba(255,255,255,.08);
+  font-size: .75rem; color: rgba(255,255,255,.35);
+}
+
+/* ── Main area ───────────────────────────────────────────────────────── */
+#ka-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+/* Topbar */
+#ka-topbar {
+  height: var(--topbar-h);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center;
+  padding: 0 24px; gap: 16px; flex-shrink: 0;
+}
+.ka-topbar-title { font-size: 1rem; font-weight: 700; flex: 1; color: var(--ink0); }
+#ka-search-wrap { position: relative; }
+#ka-search {
+  padding: 7px 12px 7px 32px;
+  border: 1px solid var(--border2); border-radius: var(--radius-sm);
+  background: var(--bg); color: var(--ink0);
+  font-size: .83rem; font-family: var(--font);
+  width: 200px; outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+#ka-search:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(26,127,90,.12); }
+.ka-search-icon {
+  position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
+  color: var(--ink3); pointer-events: none;
+}
+.ka-btn {
+  padding: 8px 16px; border: none; border-radius: var(--radius-sm);
+  font-size: .83rem; font-weight: 600; font-family: var(--font);
+  cursor: pointer; display: flex; align-items: center; gap: 6px;
+  transition: background .15s, transform .08s;
+}
+.ka-btn:active { transform: scale(.97); }
+.ka-btn-primary { background: var(--green); color: #fff; }
+.ka-btn-primary:hover { background: var(--green-dk); }
+.ka-btn-ghost {
+  background: transparent; color: var(--ink1);
+  border: 1px solid var(--border2);
+}
+.ka-btn-ghost:hover { background: var(--bg); }
+.ka-btn-danger { background: var(--red); color: #fff; }
+.ka-btn-danger:hover { background: #dc2626; }
+
+/* Content area */
+#ka-content { flex: 1; overflow-y: auto; padding: 24px; }
+
+/* ── Stat tiles ──────────────────────────────────────────────────────── */
+#ka-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.ka-stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-sm);
+}
+.ka-stat-label { font-size: .72rem; font-weight: 600; color: var(--ink2);
+  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+.ka-stat-value { font-size: 2rem; font-weight: 800; line-height: 1;
+  color: var(--ink0); font-variant-numeric: tabular-nums; }
+.ka-stat-sub { font-size: .75rem; color: var(--ink3); margin-top: 4px; }
+.ka-stat-accent { border-left: 3px solid var(--green); }
+
+/* ── Section header ──────────────────────────────────────────────────── */
+.ka-section-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.ka-section-title { font-size: .88rem; font-weight: 700; color: var(--ink0); }
+.ka-filter-row { display: flex; gap: 6px; }
+.ka-filter-btn {
+  padding: 5px 12px; border-radius: 20px; font-size: .75rem; font-weight: 600;
+  cursor: pointer; border: 1px solid var(--border2);
+  background: transparent; color: var(--ink2);
+  transition: all .12s;
+}
+.ka-filter-btn:hover, .ka-filter-btn.active {
+  background: var(--green); color: #fff; border-color: var(--green);
+}
+
+/* ── Tenant grid ─────────────────────────────────────────────────────── */
+#ka-tenant-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+
+.ka-tenant-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: box-shadow .15s, transform .12s;
+  position: relative;
+}
+.ka-tenant-card:hover { box-shadow: var(--shadow); transform: translateY(-1px); }
+
+.ka-card-accent {
+  height: 3px;
+  width: 100%;
+}
+
+.ka-card-body { padding: 16px 18px 14px; }
+
+.ka-card-top { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+
+.ka-tenant-avatar {
+  width: 40px; height: 40px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.1rem; font-weight: 800; color: #fff;
+  flex-shrink: 0; overflow: hidden;
+}
+.ka-tenant-avatar img { width: 100%; height: 100%; object-fit: contain; }
+
+.ka-card-meta { flex: 1; min-width: 0; }
+.ka-card-name { font-size: .92rem; font-weight: 700; color: var(--ink0);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ka-card-site { font-size: .72rem; color: var(--ink3); margin-top: 1px; }
+
+.ka-card-badges { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+
+.ka-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 20px;
+  font-size: .68rem; font-weight: 700; letter-spacing: .03em;
+  text-transform: uppercase;
+}
+.badge-active     { background: var(--green-lt); color: var(--green); }
+.badge-suspended  { background: var(--amber-lt);  color: #b45309; }
+.badge-provisioning { background: var(--blue-lt);  color: var(--blue); }
+.badge-queued     { background: var(--violet-lt); color: var(--violet); }
+.badge-failed     { background: var(--red-lt);    color: var(--red); }
+
+.badge-starter    { background: #ede9fe; color: #6d28d9; }
+.badge-business   { background: var(--green-lt); color: var(--green); }
+.badge-enterprise { background: var(--amber-lt); color: #b45309; }
+
+/* Provisioning progress bar */
+.ka-progress-wrap { margin: 10px 0 4px; }
+.ka-progress-label { font-size: .7rem; color: var(--blue); margin-bottom: 4px;
+  display: flex; align-items: center; gap: 5px; }
+.ka-progress-bar { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.ka-progress-fill {
+  height: 100%; border-radius: 2px;
+  background: linear-gradient(90deg, var(--blue), #60a5fa);
+  animation: ka-shimmer 1.8s ease-in-out infinite;
+  background-size: 200% 100%;
+}
+@keyframes ka-shimmer {
+  0%   { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
+.ka-card-modules {
+  display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px;
+}
+.ka-module-chip {
+  font-size: .65rem; font-weight: 600; padding: 2px 7px;
+  border-radius: 4px; background: var(--bg); color: var(--ink2);
+  border: 1px solid var(--border);
+}
+
+.ka-card-actions {
+  display: flex; gap: 6px;
+  padding: 10px 18px 14px;
+  border-top: 1px solid var(--border);
+}
+.ka-action-btn {
+  flex: 1; padding: 6px 8px;
+  border: 1px solid var(--border2); border-radius: var(--radius-sm);
+  background: transparent; color: var(--ink1);
+  font-size: .73rem; font-weight: 600; font-family: var(--font);
+  cursor: pointer; text-align: center; text-decoration: none;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  transition: all .12s;
+}
+.ka-action-btn:hover { background: var(--bg); color: var(--ink0); }
+.ka-action-btn.danger:hover { background: var(--red-lt); color: var(--red); border-color: var(--red); }
+.ka-action-btn.primary { background: var(--green); color: #fff; border-color: var(--green); }
+.ka-action-btn.primary:hover { background: var(--green-dk); }
+
+/* ── Empty state ─────────────────────────────────────────────────────── */
+#ka-empty {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--ink2);
+  gap: 12px;
+}
+#ka-empty svg { opacity: .3; }
+#ka-empty h3 { font-size: 1rem; font-weight: 600; color: var(--ink1); }
+#ka-empty p  { font-size: .85rem; max-width: 340px; }
+
+/* ── Jobs log panel ──────────────────────────────────────────────────── */
+#ka-jobs-panel { margin-top: 28px; display: none; }
+.ka-job-row {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 12px 16px;
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 8px; font-size: .8rem;
+}
+.ka-job-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.dot-Done        { background: var(--green); }
+.dot-Provisioning, .dot-Queued { background: var(--blue); animation: ka-pulse 1.2s ease infinite; }
+.dot-Failed      { background: var(--red); }
+@keyframes ka-pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+.ka-job-site { font-weight: 600; flex: 1; }
+.ka-job-plan { color: var(--ink2); }
+.ka-job-time { color: var(--ink3); font-size: .72rem; }
+.ka-job-log-btn { font-size: .72rem; color: var(--blue); cursor: pointer; background: none; border: none; }
+
+/* ── Modal backdrop ──────────────────────────────────────────────────── */
+#ka-modal-backdrop {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.5);
+  backdrop-filter: blur(3px);
+  z-index: 100;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 20px;
+  overflow-y: auto;
+}
+#ka-modal-backdrop.open { display: flex; }
+
+/* ── New Tenant modal ────────────────────────────────────────────────── */
+#ka-new-modal {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  width: 100%; max-width: 560px;
+  animation: ka-modal-in .2s ease;
+  position: relative;
+  overflow: hidden;
+}
+@keyframes ka-modal-in {
+  from { opacity: 0; transform: translateY(-20px) scale(.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.ka-modal-hdr {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 12px;
+}
+.ka-modal-icon {
+  width: 36px; height: 36px; border-radius: 9px;
+  background: var(--green-lt);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px;
+}
+.ka-modal-title { font-size: 1rem; font-weight: 700; }
+.ka-modal-sub   { font-size: .8rem; color: var(--ink2); }
+.ka-modal-close {
+  margin-left: auto; background: none; border: none;
+  color: var(--ink2); cursor: pointer; font-size: 20px;
+  width: 30px; height: 30px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+}
+.ka-modal-close:hover { background: var(--bg); }
+.ka-modal-body { padding: 20px 24px; }
+.ka-modal-footer {
+  padding: 14px 24px 20px;
+  display: flex; gap: 10px; justify-content: flex-end;
+  border-top: 1px solid var(--border);
+}
+
+/* Form elements */
+.ka-field { margin-bottom: 16px; }
+.ka-label {
+  display: block; font-size: .75rem; font-weight: 600;
+  color: var(--ink2); margin-bottom: 5px;
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.ka-input {
+  width: 100%; padding: 9px 12px;
+  border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--ink0);
+  font-size: .88rem; font-family: var(--font); outline: none;
+  transition: border-color .12s, box-shadow .12s;
+}
+.ka-input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(26,127,90,.12); }
+.ka-input.error { border-color: var(--red); }
+
+/* Subdomain preview */
+#ka-domain-preview {
+  margin-top: 5px; font-size: .78rem; color: var(--ink3);
+  display: flex; align-items: center; gap: 5px;
+}
+#ka-domain-preview.ok  { color: var(--green); }
+#ka-domain-preview.bad { color: var(--red); }
+
+/* Plan selector */
+.ka-plans { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+.ka-plan-opt {
+  border: 2px solid var(--border); border-radius: var(--radius-sm);
+  padding: 12px 10px; text-align: center; cursor: pointer;
+  transition: all .12s;
+}
+.ka-plan-opt:hover { border-color: var(--border2); }
+.ka-plan-opt.selected { border-color: var(--green); background: var(--green-lt); }
+.ka-plan-opt input { display: none; }
+.ka-plan-name { font-size: .82rem; font-weight: 700; color: var(--ink0); }
+.ka-plan-price { font-size: .7rem; color: var(--ink2); margin-top: 2px; }
+.ka-plan-modules-list { font-size: .65rem; color: var(--ink3); margin-top: 5px; }
+
+/* Color swatch row */
+.ka-color-row { display: flex; align-items: center; gap: 10px; }
+.ka-color-input { width: 40px; height: 38px; border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border); cursor: pointer; padding: 2px; }
+.ka-color-swatches { display: flex; gap: 6px; flex-wrap: wrap; }
+.ka-swatch {
+  width: 26px; height: 26px; border-radius: 6px; cursor: pointer;
+  transition: transform .1s; border: 2px solid transparent;
+}
+.ka-swatch:hover   { transform: scale(1.15); }
+.ka-swatch.selected { border-color: var(--ink0); }
+
+/* Field hint */
+.ka-hint { font-size: .72rem; color: var(--ink3); margin-top: 3px; }
+
+/* ── Provisioning progress modal ─────────────────────────────────────── */
+#ka-progress-modal {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  width: 100%; max-width: 580px;
+  animation: ka-modal-in .2s ease;
+}
+.ka-log-box {
+  background: #0d1f18;
+  border-radius: var(--radius-sm);
+  font-family: 'Courier New', monospace;
+  font-size: .75rem; color: #7dd3b0;
+  padding: 14px 16px;
+  height: 220px; overflow-y: auto;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* ── Credential reveal ───────────────────────────────────────────────── */
+.ka-cred-box {
+  background: var(--green-lt);
+  border: 1px solid rgba(26,127,90,.25);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin-top: 14px;
+}
+.ka-cred-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.ka-cred-row:last-child { margin-bottom: 0; }
+.ka-cred-label { font-size: .72rem; font-weight: 600; color: var(--green); width: 70px; }
+.ka-cred-val {
+  flex: 1; font-family: monospace; font-size: .82rem;
+  background: rgba(255,255,255,.6); border-radius: 5px;
+  padding: 4px 8px; color: var(--ink0);
+}
+.ka-copy-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--green); font-size: 14px; padding: 3px;
+}
+.ka-copy-btn:hover { color: var(--green-dk); }
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  #ka-sidebar { display: none; }
+  #ka-stats { grid-template-columns: repeat(2,1fr); }
+}
+@media (max-width: 520px) {
+  #ka-stats { grid-template-columns: repeat(2,1fr); }
+  #ka-tenant-grid { grid-template-columns: 1fr; }
+  .ka-plans { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div id="ka-shell">
+
+  <!-- ── Sidebar ──────────────────────────────────────────────────────── -->
+  <nav id="ka-sidebar">
+    <div class="ka-sidebar-brand">
+      <div class="ka-brand-mark">
+        <svg viewBox="0 0 28 28" fill="none">
+          <path d="M4 14 L14 4 L24 14 L14 24 Z" fill="rgba(255,255,255,.15)" stroke="rgba(255,255,255,.5)" stroke-width="1.5"/>
+          <path d="M9 14 L14 9 L19 14 L14 19 Z" fill="rgba(255,255,255,.85)"/>
+        </svg>
+      </div>
+      <div>
+        <div class="ka-brand-name">Kinexus</div>
+        <div class="ka-brand-sub">Admin Console</div>
+      </div>
+    </div>
+
+    <div class="ka-nav">
+      <div class="ka-nav-label">Management</div>
+      <a class="ka-nav-item active" onclick="showView('tenants')">
+        <span class="ka-nav-icon">🏢</span> Tenants
+      </a>
+      <a class="ka-nav-item" onclick="showView('jobs')">
+        <span class="ka-nav-icon">⚙️</span> Provision Jobs
+      </a>
+
+      <div class="ka-nav-label" style="margin-top:12px">Quick Links</div>
+      <a class="ka-nav-item" href="/app" target="_blank">
+        <span class="ka-nav-icon">🖥️</span> Frappe Desk
+      </a>
+      <a class="ka-nav-item" href="/hrms-home">
+        <span class="ka-nav-icon">👤</span> HRMS Portal
+      </a>
+    </div>
+
+    <div class="ka-sidebar-footer">
+      Kinexus HRMS &nbsp;·&nbsp; Super Admin
+    </div>
+  </nav>
+
+  <!-- ── Main ──────────────────────────────────────────────────────────── -->
+  <div id="ka-main">
+
+    <!-- Topbar -->
+    <div id="ka-topbar">
+      <div class="ka-topbar-title" id="ka-view-title">Tenants</div>
+      <div id="ka-search-wrap">
+        <svg class="ka-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input id="ka-search" placeholder="Search tenants…" oninput="filterTenants()">
+      </div>
+      <button class="ka-btn ka-btn-primary" onclick="openNewModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New Tenant
+      </button>
+    </div>
+
+    <!-- Content -->
+    <div id="ka-content">
+
+      <!-- ── Stat tiles ──────────────────────────────── -->
+      <div id="ka-stats">
+        <div class="ka-stat ka-stat-accent">
+          <div class="ka-stat-label">Total Tenants</div>
+          <div class="ka-stat-value" id="stat-total">—</div>
+          <div class="ka-stat-sub">All sites on this bench</div>
+        </div>
+        <div class="ka-stat">
+          <div class="ka-stat-label">Active</div>
+          <div class="ka-stat-value" id="stat-active" style="color:var(--green)">—</div>
+          <div class="ka-stat-sub">Running normally</div>
+        </div>
+        <div class="ka-stat">
+          <div class="ka-stat-label">Provisioning</div>
+          <div class="ka-stat-value" id="stat-prov" style="color:var(--blue)">—</div>
+          <div class="ka-stat-sub">Being set up</div>
+        </div>
+        <div class="ka-stat">
+          <div class="ka-stat-label">Suspended</div>
+          <div class="ka-stat-value" id="stat-sus" style="color:var(--amber)">—</div>
+          <div class="ka-stat-sub">In maintenance mode</div>
+        </div>
+      </div>
+
+      <!-- ── Tenants view ────────────────────────────── -->
+      <div id="view-tenants">
+        <div class="ka-section-hdr">
+          <div class="ka-section-title">All Tenants</div>
+          <div class="ka-filter-row">
+            <button class="ka-filter-btn active" data-filter="all"    onclick="setFilter(this,'all')">All</button>
+            <button class="ka-filter-btn"         data-filter="Active"    onclick="setFilter(this,'Active')">Active</button>
+            <button class="ka-filter-btn"         data-filter="Provisioning" onclick="setFilter(this,'Provisioning')">Provisioning</button>
+            <button class="ka-filter-btn"         data-filter="Suspended" onclick="setFilter(this,'Suspended')">Suspended</button>
+          </div>
+        </div>
+
+        <div id="ka-tenant-grid"></div>
+        <div id="ka-empty">
+          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+            <rect x="3" y="3" width="18" height="18" rx="3"/>
+            <path d="M3 9h18M9 21V9"/>
+          </svg>
+          <h3>No tenants yet</h3>
+          <p>Click <strong>New Tenant</strong> to provision your first workspace.</p>
+        </div>
+      </div>
+
+      <!-- ── Jobs view ───────────────────────────────── -->
+      <div id="view-jobs" style="display:none">
+        <div class="ka-section-hdr">
+          <div class="ka-section-title">Provision Jobs</div>
+          <button class="ka-btn ka-btn-ghost" onclick="loadJobs()">↻ Refresh</button>
+        </div>
+        <div id="ka-jobs-list">
+          <p style="color:var(--ink3); font-size:.83rem;">Loading…</p>
+        </div>
+      </div>
+
+    </div><!-- #ka-content -->
+  </div><!-- #ka-main -->
+</div><!-- #ka-shell -->
+
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     NEW TENANT MODAL
+════════════════════════════════════════════════════════════════════════ -->
+<div id="ka-modal-backdrop">
+  <div id="ka-new-modal">
+    <div class="ka-modal-hdr">
+      <div class="ka-modal-icon">🏢</div>
+      <div>
+        <div class="ka-modal-title">Create New Tenant</div>
+        <div class="ka-modal-sub">A new isolated workspace will be provisioned</div>
+      </div>
+      <button class="ka-modal-close" onclick="closeModal()">×</button>
+    </div>
+
+    <div class="ka-modal-body">
+
+      <!-- Error -->
+      <div id="ka-form-error" style="display:none; background:var(--red-lt); border:1px solid rgba(239,68,68,.25);
+           border-radius:var(--radius-sm); padding:9px 14px; font-size:.82rem; color:var(--red); margin-bottom:14px;">
+      </div>
+
+      <!-- Subdomain -->
+      <div class="ka-field">
+        <label class="ka-label">Subdomain *</label>
+        <input class="ka-input" id="f-subdomain" placeholder="acmecorp"
+               oninput="previewDomain()" maxlength="32">
+        <div id="ka-domain-preview">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Enter a subdomain above
+        </div>
+      </div>
+
+      <!-- Tenant name -->
+      <div class="ka-field">
+        <label class="ka-label">Workspace Name *</label>
+        <input class="ka-input" id="f-name" placeholder="Acme Corporation">
+      </div>
+
+      <!-- Plan -->
+      <div class="ka-field">
+        <label class="ka-label">Plan</label>
+        <div class="ka-plans">
+          <label class="ka-plan-opt" id="plan-starter" onclick="selectPlan('starter')">
+            <input type="radio" name="plan" value="starter" checked>
+            <div class="ka-plan-name">Starter</div>
+            <div class="ka-plan-modules-list">HR Self-Service</div>
+          </label>
+          <label class="ka-plan-opt" id="plan-business" onclick="selectPlan('business')">
+            <input type="radio" name="plan" value="business">
+            <div class="ka-plan-name">Business</div>
+            <div class="ka-plan-modules-list">HR + Vendor + Goals</div>
+          </label>
+          <label class="ka-plan-opt" id="plan-enterprise" onclick="selectPlan('enterprise')">
+            <input type="radio" name="plan" value="enterprise">
+            <div class="ka-plan-name">Enterprise</div>
+            <div class="ka-plan-modules-list">All modules + Analytics</div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Primary color -->
+      <div class="ka-field">
+        <label class="ka-label">Brand Color</label>
+        <div class="ka-color-row">
+          <input type="color" class="ka-color-input" id="f-color" value="#1a7f5a" oninput="syncSwatch(this.value)">
+          <div class="ka-color-swatches">
+            <div class="ka-swatch selected" style="background:#1a7f5a" data-color="#1a7f5a" onclick="pickSwatch(this)"></div>
+            <div class="ka-swatch" style="background:#2563eb" data-color="#2563eb" onclick="pickSwatch(this)"></div>
+            <div class="ka-swatch" style="background:#7c3aed" data-color="#7c3aed" onclick="pickSwatch(this)"></div>
+            <div class="ka-swatch" style="background:#dc2626" data-color="#dc2626" onclick="pickSwatch(this)"></div>
+            <div class="ka-swatch" style="background:#d97706" data-color="#d97706" onclick="pickSwatch(this)"></div>
+            <div class="ka-swatch" style="background:#0891b2" data-color="#0891b2" onclick="pickSwatch(this)"></div>
+            <div class="ka-swatch" style="background:#374151" data-color="#374151" onclick="pickSwatch(this)"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Support email -->
+      <div class="ka-field">
+        <label class="ka-label">Support Email (optional)</label>
+        <input class="ka-input" id="f-email" type="email" placeholder="support@acmecorp.com">
+        <div class="ka-hint">Shown as help contact in the tenant's login page</div>
+      </div>
+
+    </div><!-- modal-body -->
+
+    <div class="ka-modal-footer">
+      <button class="ka-btn ka-btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="ka-btn ka-btn-primary" id="ka-create-btn" onclick="submitNewTenant()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        <span id="ka-create-label">Provision Tenant</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════════════════
+     PROVISIONING PROGRESS MODAL
+════════════════════════════════════════════════════════════════════════ -->
+<div id="ka-prog-backdrop" style="display:none; position:fixed; inset:0;
+     background:rgba(0,0,0,.55); backdrop-filter:blur(4px);
+     z-index:200; align-items:center; justify-content:center; padding:40px 20px;">
+  <div id="ka-progress-modal">
+    <div class="ka-modal-hdr">
+      <div class="ka-modal-icon" id="prog-icon">⏳</div>
+      <div>
+        <div class="ka-modal-title" id="prog-title">Provisioning Tenant…</div>
+        <div class="ka-modal-sub"  id="prog-sub">This takes about 5–8 minutes</div>
+      </div>
+    </div>
+    <div class="ka-modal-body">
+      <div class="ka-progress-bar" style="margin-bottom:14px; height:6px; border-radius:3px;">
+        <div class="ka-progress-fill" id="prog-bar" style="width:100%; border-radius:3px;"></div>
+      </div>
+      <div class="ka-log-box" id="prog-log">Queued…</div>
+
+      <!-- Credentials (shown on success) -->
+      <div id="prog-creds" style="display:none">
+        <div class="ka-cred-box">
+          <div style="font-size:.78rem; font-weight:700; color:var(--green); margin-bottom:8px;">
+            ✅ Tenant Ready — save these credentials
+          </div>
+          <div class="ka-cred-row">
+            <span class="ka-cred-label">URL</span>
+            <span class="ka-cred-val" id="cred-url">—</span>
+            <button class="ka-copy-btn" onclick="copyVal('cred-url')">📋</button>
+          </div>
+          <div class="ka-cred-row">
+            <span class="ka-cred-label">Username</span>
+            <span class="ka-cred-val">Administrator</span>
+            <button class="ka-copy-btn" onclick="copyText('Administrator')">📋</button>
+          </div>
+          <div class="ka-cred-row">
+            <span class="ka-cred-label">Password</span>
+            <span class="ka-cred-val" id="cred-pw">—</span>
+            <button class="ka-copy-btn" onclick="copyVal('cred-pw')">📋</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="ka-modal-footer" id="prog-footer" style="display:none">
+      <a class="ka-btn ka-btn-primary" id="prog-open-link" href="#" target="_blank">Open Tenant Portal</a>
+      <button class="ka-btn ka-btn-ghost" onclick="closeProgressModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+
+<script>
+(function () {
+  'use strict';
+
+  /* ── State ─────────────────────────────────────────────────── */
+  let allTenants   = [];
+  let currentFilter = 'all';
+  let currentJobId  = null;
+  let pollTimer     = null;
+  let selectedPlan  = 'starter';
+
+  /* ── Init ──────────────────────────────────────────────────── */
+  document.addEventListener('DOMContentLoaded', () => {
+    loadTenants();
+    // Select starter plan visually
+    document.getElementById('plan-starter').classList.add('selected');
+  });
+
+  /* ══════════════════════════════════════════════════════════════
+     TENANT LIST
+  ══════════════════════════════════════════════════════════════ */
+
+  async function loadTenants() {
+    try {
+      const data = await api('grace_vendor_portal.tenant_api.list_tenants');
+      allTenants = data || [];
+      updateStats();
+      renderTenants();
+
+      // Auto-refresh if any are provisioning
+      const hasActive = allTenants.some(t => ['Queued','Provisioning'].includes(t.status));
+      if (hasActive) setTimeout(loadTenants, 6000);
+    } catch (e) {
+      showError('Could not load tenants: ' + e.message);
+    }
+  }
+  window.loadTenants = loadTenants;
+
+  function updateStats() {
+    const total = allTenants.length;
+    const active = allTenants.filter(t => t.status === 'Active').length;
+    const prov   = allTenants.filter(t => ['Queued','Provisioning'].includes(t.status)).length;
+    const sus    = allTenants.filter(t => t.status === 'Suspended').length;
+    setText('stat-total', total);
+    setText('stat-active', active);
+    setText('stat-prov', prov);
+    setText('stat-sus', sus);
+  }
+
+  function renderTenants() {
+    const search = document.getElementById('ka-search').value.toLowerCase();
+    const grid   = document.getElementById('ka-tenant-grid');
+    const empty  = document.getElementById('ka-empty');
+
+    let filtered = allTenants.filter(t => {
+      const matchFilter = currentFilter === 'all' || t.status === currentFilter;
+      const matchSearch = !search ||
+        t.tenant_name.toLowerCase().includes(search) ||
+        t.site_name.toLowerCase().includes(search);
+      return matchFilter && matchSearch;
+    });
+
+    if (!filtered.length) {
+      grid.innerHTML = '';
+      empty.style.display = 'flex';
+      return;
+    }
+    empty.style.display = 'none';
+    grid.innerHTML = filtered.map(renderCard).join('');
+  }
+
+  function renderCard(t) {
+    const initials = (t.tenant_name || t.site_name).slice(0,2).toUpperCase();
+    const color    = t.primary_color || '#1a7f5a';
+    const isProvisioning = ['Queued','Provisioning'].includes(t.status);
+    const isSuspended    = t.status === 'Suspended';
+
+    const avatarContent = t.logo_url
+      ? `<img src="${esc(t.logo_url)}" alt="${esc(initials)}">`
+      : initials;
+
+    const statusBadge = {
+      'Active':       '<span class="ka-badge badge-active">● Active</span>',
+      'Suspended':    '<span class="ka-badge badge-suspended">⏸ Suspended</span>',
+      'Provisioning': '<span class="ka-badge badge-provisioning">⟳ Provisioning</span>',
+      'Queued':       '<span class="ka-badge badge-queued">⏳ Queued</span>',
+      'Failed':       '<span class="ka-badge badge-failed">✕ Failed</span>',
+    }[t.status] || '';
+
+    const planClass  = `badge-${(t.plan||'').toLowerCase()}`;
+    const planBadge  = t.plan && t.plan !== '—'
+      ? `<span class="ka-badge ${planClass}">${esc(t.plan)}</span>` : '';
+
+    const modules = (t.modules || [])
+      .map(m => `<span class="ka-module-chip">${esc(m)}</span>`).join('');
+
+    const progressBar = isProvisioning ? `
+      <div class="ka-progress-wrap">
+        <div class="ka-progress-label">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Setting up workspace…
+        </div>
+        <div class="ka-progress-bar"><div class="ka-progress-fill"></div></div>
+      </div>` : '';
+
+    const suspendLabel = isSuspended ? 'Unsuspend' : 'Suspend';
+    const suspendVal   = isSuspended ? 0 : 1;
+
+    const openBtn = !isProvisioning
+      ? `<a class="ka-action-btn primary" href="${esc(t.host_name)}/kinexus-login" target="_blank">↗ Open</a>`
+      : `<button class="ka-action-btn" disabled style="opacity:.4;">↗ Open</button>`;
+
+    return `
+    <div class="ka-tenant-card">
+      <div class="ka-card-accent" style="background:${esc(color)}"></div>
+      <div class="ka-card-body">
+        <div class="ka-card-top">
+          <div class="ka-tenant-avatar" style="background:${esc(color)}">${avatarContent}</div>
+          <div class="ka-card-meta">
+            <div class="ka-card-name">${esc(t.tenant_name)}</div>
+            <div class="ka-card-site">${esc(t.site_name)}</div>
+          </div>
+        </div>
+        <div class="ka-card-badges">${statusBadge} ${planBadge}</div>
+        ${progressBar}
+        ${modules ? `<div class="ka-card-modules">${modules}</div>` : ''}
+      </div>
+      <div class="ka-card-actions">
+        ${openBtn}
+        <a class="ka-action-btn" href="${esc(t.host_name)}/app" target="_blank">🖥 Desk</a>
+        <button class="ka-action-btn" onclick="toggleSuspend('${esc(t.site_name)}', ${suspendVal})">
+          ${isSuspended ? '▶' : '⏸'} ${suspendLabel}
+        </button>
+      </div>
+    </div>`;
+  }
+
+  window.filterTenants = renderTenants;
+
+  window.setFilter = function(btn, filter) {
+    document.querySelectorAll('.ka-filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = filter;
+    renderTenants();
+  };
+
+  window.toggleSuspend = async function(siteName, suspend) {
+    const action = suspend ? 'suspend' : 'unsuspend';
+    if (!confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} tenant "${siteName}"?`)) return;
+    try {
+      await api('grace_vendor_portal.tenant_api.suspend_tenant', {site_name: siteName, suspend});
+      await loadTenants();
+    } catch(e) { alert('Error: ' + e.message); }
+  };
+
+  /* ══════════════════════════════════════════════════════════════
+     NEW TENANT MODAL
+  ══════════════════════════════════════════════════════════════ */
+
+  window.openNewModal = function() {
+    document.getElementById('ka-modal-backdrop').classList.add('open');
+    document.getElementById('f-subdomain').focus();
+  };
+  window.closeModal = function() {
+    document.getElementById('ka-modal-backdrop').classList.remove('open');
+    resetForm();
+  };
+
+  function resetForm() {
+    ['f-subdomain','f-name','f-email'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    document.getElementById('f-color').value = '#1a7f5a';
+    document.getElementById('ka-form-error').style.display = 'none';
+    document.getElementById('ka-domain-preview').className = '';
+    document.getElementById('ka-domain-preview').innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg> Enter a subdomain above';
+    selectPlan('starter');
+    document.querySelectorAll('.ka-swatch').forEach(s => {
+      s.classList.toggle('selected', s.dataset.color === '#1a7f5a');
+    });
+    const btn = document.getElementById('ka-create-btn');
+    btn.disabled = false;
+    document.getElementById('ka-create-label').textContent = 'Provision Tenant';
+  }
+
+  window.previewDomain = function() {
+    const val = document.getElementById('f-subdomain').value.trim().toLowerCase();
+    const preview = document.getElementById('ka-domain-preview');
+    const baseDomain = window.location.hostname || 'localhost';
+    if (!val) {
+      preview.className = '';
+      preview.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg> Enter a subdomain above';
+      return;
+    }
+    const valid = /^[a-z0-9][a-z0-9\-]{1,30}[a-z0-9]$/.test(val);
+    if (valid) {
+      preview.className = 'ok';
+      preview.innerHTML = `✓ <strong>${val}.${baseDomain}</strong>`;
+    } else {
+      preview.className = 'bad';
+      preview.innerHTML = '✕ Lowercase letters, numbers and hyphens only (3–32 chars)';
+    }
+  };
+
+  window.selectPlan = function(plan) {
+    selectedPlan = plan;
+    ['starter','business','enterprise'].forEach(p => {
+      document.getElementById(`plan-${p}`).classList.toggle('selected', p === plan);
+    });
+  };
+
+  window.pickSwatch = function(el) {
+    const color = el.dataset.color;
+    document.getElementById('f-color').value = color;
+    document.querySelectorAll('.ka-swatch').forEach(s => s.classList.remove('selected'));
+    el.classList.add('selected');
+  };
+  window.syncSwatch = function(color) {
+    document.querySelectorAll('.ka-swatch').forEach(s => {
+      s.classList.toggle('selected', s.dataset.color.toLowerCase() === color.toLowerCase());
+    });
+  };
+
+  window.submitNewTenant = async function() {
+    const subdomain    = document.getElementById('f-subdomain').value.trim().toLowerCase();
+    const tenant_name  = document.getElementById('f-name').value.trim();
+    const primary_color = document.getElementById('f-color').value;
+    const support_email = document.getElementById('f-email').value.trim();
+    const errBox       = document.getElementById('ka-form-error');
+
+    errBox.style.display = 'none';
+
+    if (!subdomain) { showFormError('Subdomain is required.'); return; }
+    if (!/^[a-z0-9][a-z0-9\-]{1,30}[a-z0-9]$/.test(subdomain)) {
+      showFormError('Subdomain must be 3–32 chars: lowercase letters, numbers, hyphens only.');
+      return;
+    }
+    if (!tenant_name) { showFormError('Workspace name is required.'); return; }
+
+    const btn = document.getElementById('ka-create-btn');
+    btn.disabled = true;
+    document.getElementById('ka-create-label').textContent = 'Submitting…';
+
+    try {
+      const result = await api('grace_vendor_portal.tenant_api.create_tenant', {
+        subdomain, tenant_name, plan: selectedPlan,
+        primary_color, support_email,
+      });
+
+      // Store credentials for the progress modal
+      currentJobId = result.job_id;
+      const adminPw = result.admin_password;
+      const hostUrl = result.host_name;
+
+      closeModal();
+      openProgressModal(result.job_id, tenant_name, hostUrl, adminPw);
+      loadTenants();
+
+    } catch(e) {
+      showFormError(e.message || 'Provisioning request failed. See console.');
+      btn.disabled = false;
+      document.getElementById('ka-create-label').textContent = 'Provision Tenant';
+    }
+  };
+
+  function showFormError(msg) {
+    const box = document.getElementById('ka-form-error');
+    box.textContent = msg;
+    box.style.display = 'block';
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     PROVISIONING PROGRESS MODAL
+  ══════════════════════════════════════════════════════════════ */
+
+  function openProgressModal(jobId, tenantName, hostUrl, adminPw) {
+    currentJobId = jobId;
+    const backdrop = document.getElementById('ka-prog-backdrop');
+    backdrop.style.display = 'flex';
+
+    document.getElementById('prog-title').textContent = `Provisioning "${tenantName}"…`;
+    document.getElementById('prog-sub').textContent = 'This takes about 5–8 minutes';
+    document.getElementById('prog-icon').textContent = '⏳';
+    document.getElementById('prog-log').textContent = 'Queued…';
+    document.getElementById('prog-creds').style.display = 'none';
+    document.getElementById('prog-footer').style.display = 'none';
+    document.getElementById('prog-bar').style.background = 'linear-gradient(90deg, var(--blue), #60a5fa)';
+
+    // Store for credential reveal
+    backdrop.dataset.hostUrl  = hostUrl;
+    backdrop.dataset.adminPw  = adminPw;
+    backdrop.dataset.jobId    = jobId;
+
+    startPolling(jobId, hostUrl, adminPw);
+  }
+
+  function startPolling(jobId, hostUrl, adminPw) {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(() => pollJob(jobId, hostUrl, adminPw), 4000);
+    pollJob(jobId, hostUrl, adminPw);  // immediate first check
+  }
+
+  async function pollJob(jobId, hostUrl, adminPw) {
+    try {
+      const job = await api('grace_vendor_portal.tenant_api.get_provision_status', {job_id: jobId});
+      const logEl = document.getElementById('prog-log');
+      if (job.log) {
+        logEl.textContent = job.log;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      if (job.status === 'Done') {
+        clearInterval(pollTimer);
+        document.getElementById('prog-icon').textContent = '✅';
+        document.getElementById('prog-title').textContent = 'Tenant Ready!';
+        document.getElementById('prog-sub').textContent  = 'Workspace provisioned successfully';
+        document.getElementById('prog-bar').style.animation = 'none';
+        document.getElementById('prog-bar').style.background = 'var(--green)';
+        document.getElementById('prog-bar').style.width = '100%';
+
+        // Show credentials
+        document.getElementById('cred-url').textContent = hostUrl + '/kinexus-login';
+        document.getElementById('cred-pw').textContent  = job.admin_password || adminPw;
+        document.getElementById('prog-open-link').href  = hostUrl + '/kinexus-login';
+        document.getElementById('prog-creds').style.display = 'block';
+        document.getElementById('prog-footer').style.display = 'flex';
+
+        loadTenants();
+
+      } else if (job.status === 'Failed') {
+        clearInterval(pollTimer);
+        document.getElementById('prog-icon').textContent = '❌';
+        document.getElementById('prog-title').textContent = 'Provisioning Failed';
+        document.getElementById('prog-sub').textContent  = 'Check the log below for details';
+        document.getElementById('prog-bar').style.background = 'var(--red)';
+        document.getElementById('prog-bar').style.animation = 'none';
+        document.getElementById('prog-footer').style.display = 'flex';
+        document.getElementById('prog-open-link').style.display = 'none';
+
+        loadTenants();
+      }
+    } catch(e) {
+      // Polling failure is non-fatal — try again next tick
+    }
+  }
+
+  window.closeProgressModal = function() {
+    if (pollTimer) clearInterval(pollTimer);
+    document.getElementById('ka-prog-backdrop').style.display = 'none';
+    currentJobId = null;
+    loadTenants();
+  };
+
+  /* ══════════════════════════════════════════════════════════════
+     JOBS VIEW
+  ══════════════════════════════════════════════════════════════ */
+
+  window.loadJobs = async function() {
+    const list = document.getElementById('ka-jobs-list');
+    list.innerHTML = '<p style="color:var(--ink3);font-size:.83rem;">Loading…</p>';
+    try {
+      const jobs = await api('grace_vendor_portal.tenant_api.list_provision_jobs');
+      if (!jobs || !jobs.length) {
+        list.innerHTML = '<p style="color:var(--ink3);font-size:.83rem;">No provision jobs yet.</p>';
+        return;
+      }
+      list.innerHTML = jobs.map(j => {
+        const dotClass = `dot-${j.status}`;
+        const time = j.finished_at
+          ? `Finished ${formatTime(j.finished_at)}`
+          : `Started ${formatTime(j.started_at)}`;
+        const logBtn = j.log ? `<button class="ka-job-log-btn" onclick="showJobLog(${JSON.stringify(j.log)})">View log</button>` : '';
+        return `
+        <div class="ka-job-row">
+          <div class="ka-job-status-dot ${dotClass}"></div>
+          <div class="ka-job-site">${esc(j.site_name)}</div>
+          <div class="ka-job-plan">${esc(j.plan || '—')}</div>
+          <span class="ka-badge badge-${(j.status||'').toLowerCase().replace(' ','-')}">${esc(j.status)}</span>
+          <div class="ka-job-time">${time}</div>
+          ${logBtn}
+        </div>`;
+      }).join('');
+    } catch(e) {
+      list.innerHTML = `<p style="color:var(--red)">Failed to load jobs: ${esc(e.message)}</p>`;
+    }
+  };
+
+  window.showJobLog = function(log) {
+    alert(log);  // simple for now; could open a modal
+  };
+
+  /* ══════════════════════════════════════════════════════════════
+     VIEW SWITCHING
+  ══════════════════════════════════════════════════════════════ */
+
+  window.showView = function(view) {
+    ['tenants','jobs'].forEach(v => {
+      document.getElementById(`view-${v}`).style.display = v === view ? '' : 'none';
+    });
+    document.querySelectorAll('.ka-nav-item').forEach(el => {
+      el.classList.toggle('active', el.textContent.trim().toLowerCase().includes(view));
+    });
+    document.getElementById('ka-view-title').textContent =
+      view === 'jobs' ? 'Provision Jobs' : 'Tenants';
+    if (view === 'jobs') loadJobs();
+  };
+
+  /* ══════════════════════════════════════════════════════════════
+     UTILITIES
+  ══════════════════════════════════════════════════════════════ */
+
+  function getCsrf() {
+    return (window.frappe && frappe.csrf_token) ||
+      document.cookie.split(';').map(c=>c.trim())
+        .find(c=>c.startsWith('csrf_token='))?.split('=')[1] || 'fetch';
+  }
+
+  async function api(method, args) {
+    const url = `/api/method/${method}`;
+    const opts = {
+      method:  args ? 'POST' : 'GET',
+      headers: { 'X-Frappe-CSRF-Token': getCsrf(), 'Content-Type': 'application/json' },
+    };
+    if (args) opts.body = JSON.stringify(args);
+
+    const res = await fetch(url, opts);
+    const data = await res.json();
+
+    if (!res.ok || data.exc_type) {
+      const msg = data._server_messages
+        ? JSON.parse(JSON.parse(data._server_messages)[0]).message
+        : (data.message || res.statusText);
+      throw new Error(msg);
+    }
+    return data.message;
+  }
+
+  function setText(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  }
+
+  function esc(s) {
+    return String(s||'')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function copyVal(id) {
+    copyText(document.getElementById(id).textContent);
+  }
+  function copyText(text) {
+    navigator.clipboard.writeText(text).catch(() => {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta);
+      ta.select(); document.execCommand('copy');
+      document.body.removeChild(ta);
+    });
+  }
+  window.copyVal  = copyVal;
+  window.copyText = copyText;
+
+  function formatTime(iso) {
+    if (!iso) return '—';
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    } catch { return iso; }
+  }
+
+  function showError(msg) { console.error('[KA]', msg); }
+
+}());
+</script>
+{% endblock %}

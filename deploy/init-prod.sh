@@ -1,79 +1,118 @@
 #!/bin/bash
-# Grace Drinks HRMS – Production init script
+# Kinexus HRMS – Production init script
 # Runs inside the frappe/bench container on every container start.
 #
-# Fast path  (normal restart / redeploy)  → bench start
-# First run  (empty frappe-bench volume)  → full Frappe + ERPNext + HRMS setup
+# Fast path  (bench volume already present)  → bench start
+# First run  (empty frappe-bench volume)     → full install + first tenant site
 #
-# The hrms/ app is bind-mounted from the host git repo, so Python/JS changes
-# made via `git pull` on the host are live immediately – no rebuild needed.
-# Call `scripts/deploy.sh` (from the host) to migrate + clear-cache after a pull.
+# Custom apps (grace_goals, grace_vendor_portal) are bind-mounted from the
+# host git repo, so `git pull` on the host makes changes live instantly.
 
 set -e
 
 DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-changeme}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
+BASE_DOMAIN="${BASE_DOMAIN:-kinexus.in}"
+FIRST_TENANT="${FIRST_TENANT:-demo}"
+SITE_NAME="${FIRST_TENANT}.${BASE_DOMAIN}"
 
-# ── Fast path ─────────────────────────────────────────────────────────────────
-if [ -d "/home/frappe/frappe-bench/apps/frappe" ]; then
-    echo "[init-prod] Bench already present – starting Grace Drinks HRMS."
-    cd frappe-bench
+BENCH=/home/frappe/frappe-bench
+BENCH_APPS=$BENCH/apps
+
+# ── Fast path: bench already present (restart / redeploy) ─────────────────
+if [ -d "$BENCH_APPS/frappe" ]; then
+    echo "[kinexus] Bench present – starting Kinexus HRMS."
+    cd $BENCH
+
+    # Rewrite Procfile to a known-good state on every start
+    printf 'web: bench serve --port 8000\n\nsocketio: bench socketio\n\n\nschedule: bench schedule\n\nworker: bench worker 1>> logs/worker.log 2>> logs/worker.error.log\n' > Procfile
+
+    # Ensure .pth registrations survive container recreation
+    SITE_PKGS=$(find $BENCH/env/lib -maxdepth 2 -name 'site-packages' -type d | head -1)
+    echo "$BENCH_APPS/grace_goals"          > "$SITE_PKGS/grace_goals.pth"
+    echo "$BENCH_APPS/grace_vendor_portal"  > "$SITE_PKGS/grace_vendor_portal.pth"
+
+    # Ensure module-subfolder symlinks exist (Frappe doctype resolution)
+    ln -sf "$BENCH_APPS/grace_goals/grace_goals/doctype" \
+           "$BENCH_APPS/grace_goals/grace_goals/grace_goals/doctype" 2>/dev/null || true
+    ln -sf "$BENCH_APPS/grace_vendor_portal/grace_vendor_portal/doctype" \
+           "$BENCH_APPS/grace_vendor_portal/grace_vendor_portal/grace_vendor_portal/doctype" 2>/dev/null || true
+
     bench start
     exit 0
 fi
 
-# ── First run ─────────────────────────────────────────────────────────────────
-echo "[init-prod] First-run setup – this takes ~20-30 minutes on initial install."
+# ── First run: full install ────────────────────────────────────────────────
+echo "[kinexus] First-run setup – this takes ~25-35 minutes."
 export PATH="${NVM_DIR}/versions/node/v${NODE_VERSION_DEVELOP}/bin/:${PATH}"
 
 bench init --skip-redis-config-generation frappe-bench
-cd frappe-bench
+cd $BENCH
 
-# Point services at Docker Compose service names (not localhost)
 bench set-mariadb-host mariadb
-bench set-redis-cache-host  redis://redis:6379
-bench set-redis-queue-host  redis://redis:6379
+bench set-redis-cache-host   redis://redis:6379
+bench set-redis-queue-host   redis://redis:6379
 bench set-redis-socketio-host redis://redis:6379
 
-# Remove redis + watch workers (managed by Docker, not bench Procfile)
 sed -i '/redis/d' ./Procfile
-sed -i '/watch/d'  ./Procfile
+sed -i '/watch/d' ./Procfile
 
-# ERPNext (required dependency of HRMS)
+# ── Download ERPNext + HRMS from upstream ─────────────────────────────────
 bench get-app erpnext
+bench get-app hrms
 
-# HRMS is bind-mounted from the host git repo – register it with pip so
-# Python can import it.  We do NOT run `bench get-app hrms` here because
-# the directory already exists via the bind mount.
-pip install -e apps/hrms
+# ── Register grace apps via .pth (bind-mounted; no pip install needed) ────
+SITE_PKGS=$(find $BENCH/env/lib -maxdepth 2 -name 'site-packages' -type d | head -1)
+echo "$BENCH_APPS/grace_goals"          > "$SITE_PKGS/grace_goals.pth"
+echo "$BENCH_APPS/grace_vendor_portal"  > "$SITE_PKGS/grace_vendor_portal.pth"
 
-# ── Restore from backup if available, otherwise create fresh site ─────────────
+# Module-subfolder symlinks (Frappe doctype path resolution)
+ln -sf "$BENCH_APPS/grace_goals/grace_goals/doctype" \
+       "$BENCH_APPS/grace_goals/grace_goals/grace_goals/doctype" 2>/dev/null || true
+ln -sf "$BENCH_APPS/grace_vendor_portal/grace_vendor_portal/doctype" \
+       "$BENCH_APPS/grace_vendor_portal/grace_vendor_portal/grace_vendor_portal/doctype" 2>/dev/null || true
+
+# ── Restore from backup or create first tenant site ───────────────────────
 DBGZ=$(ls -t /workspace/backups/latest/*-database.sql.gz 2>/dev/null | head -1 || true)
 
-bench new-site hrms.localhost \
+bench new-site "$SITE_NAME" \
     --force \
     --mariadb-root-password "$DB_ROOT_PASSWORD" \
     --admin-password "$ADMIN_PASSWORD" \
     --no-mariadb-socket
 
 if [ -n "$DBGZ" ]; then
-    echo "[init-prod] Restoring Grace Drinks data from backup: $DBGZ"
+    echo "[kinexus] Restoring from backup: $DBGZ"
     PUB=$(ls -t /workspace/backups/latest/*-files.tar 2>/dev/null | grep -v private | head -1 || true)
     PRIV=$(ls -t /workspace/backups/latest/*-private-files.tar 2>/dev/null | head -1 || true)
-    bench --site hrms.localhost restore "$DBGZ" \
+    bench --site "$SITE_NAME" restore "$DBGZ" \
         ${PUB:+--with-public-files  "$PUB"}  \
         ${PRIV:+--with-private-files "$PRIV"} \
         --mariadb-root-password "$DB_ROOT_PASSWORD"
+    bench --site "$SITE_NAME" install-app grace_goals
+    bench --site "$SITE_NAME" install-app grace_vendor_portal
 else
-    echo "[init-prod] No backup found – installing fresh Grace Drinks HRMS."
-    bench --site hrms.localhost install-app erpnext
-    bench --site hrms.localhost install-app hrms
+    echo "[kinexus] No backup – installing fresh first tenant: $SITE_NAME"
+    bench --site "$SITE_NAME" install-app erpnext
+    bench --site "$SITE_NAME" install-app hrms
+    bench --site "$SITE_NAME" install-app grace_goals
+    bench --site "$SITE_NAME" install-app grace_vendor_portal
 fi
 
-bench --site hrms.localhost set-config developer_mode 1
-bench --site hrms.localhost enable-scheduler
-bench --site hrms.localhost clear-cache
-bench use hrms.localhost
+# ── Per-tenant branding defaults (first tenant = demo) ────────────────────
+bench --site "$SITE_NAME" set-config tenant_name      "Kinexus HRMS Demo"
+bench --site "$SITE_NAME" set-config primary_color    "#1a7f5a"
+bench --site "$SITE_NAME" set-config subscription_plan "demo"
+bench --site "$SITE_NAME" set-config home_page        "/kinexus-login"
+bench --site "$SITE_NAME" set-config host_name        "https://${SITE_NAME}"
 
-echo "[init-prod] First-run setup complete.  Starting Grace Drinks HRMS."
+bench --site "$SITE_NAME" set-config developer_mode 1
+bench --site "$SITE_NAME" enable-scheduler
+bench --site "$SITE_NAME" clear-cache
+
+echo "[kinexus] First-run complete."
+echo "  Demo tenant: https://${SITE_NAME}"
+echo "  Admin password: ${ADMIN_PASSWORD}"
+echo "  To add a new tenant: docker exec <frappe-container> bash /workspace/provision_tenant.sh <subdomain> \"Tenant Name\""
+
 bench start

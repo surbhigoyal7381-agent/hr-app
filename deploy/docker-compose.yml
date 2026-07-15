@@ -1,18 +1,18 @@
 version: "3.8"
 
-# ── Grace Drinks HRMS – Production Stack (Oracle Arm A1 Free Tier) ──
-# Run from the deploy/ directory:
-#   docker compose up -d
+# ── Kinexus HRMS – Production Stack (Oracle Arm A1 Free Tier) ──────────────
+# Run from the deploy/ directory:  docker compose up -d
 #
-# First startup installs Frappe + ERPNext + HRMS (~20-30 min).
-# The frappe-bench named volume persists across container restarts so init
-# only runs once.  The hrms/ bind-mount means a plain `git pull` on the VM
-# immediately makes updated Python/JS visible inside the container without
-# rebuilding an image.
+# Multi-tenant: each tenant is a separate Frappe site sharing this bench.
+# New tenants: run provision_tenant.sh inside the frappe container.
+#
+# First startup installs Frappe + ERPNext + HRMS + grace apps (~25-35 min).
+# The frappe-bench named volume persists across restarts so init runs once.
+# `git pull` on the host refreshes Python/JS inside the running container.
 
 services:
 
-  # ── MariaDB ─────────────────────────────────────────────────────────
+  # ── MariaDB ──────────────────────────────────────────────────────────────
   mariadb:
     image: mariadb:10.8
     command:
@@ -20,6 +20,8 @@ services:
       - --collation-server=utf8mb4_unicode_ci
       - --skip-character-set-client-handshake
       - --skip-innodb-read-only-compressed
+      # Allow more concurrent connections for multi-tenant load
+      - --max_connections=500
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
     volumes:
@@ -32,12 +34,12 @@ services:
       timeout: 5s
       retries: 15
 
-  # ── Redis ────────────────────────────────────────────────────────────
+  # ── Redis ─────────────────────────────────────────────────────────────────
   redis:
     image: redis:alpine
     restart: unless-stopped
 
-  # ── Frappe bench ─────────────────────────────────────────────────────
+  # ── Frappe bench ─────────────────────────────────────────────────────────
   frappe:
     image: frappe/bench:latest
     command: bash /workspace/init-prod.sh
@@ -45,17 +47,20 @@ services:
       - SHELL=/bin/bash
       - DB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - BASE_DOMAIN=${BASE_DOMAIN:-kinexus.in}
     working_dir: /home/frappe
     volumes:
-      # init script (read-only so git pull on host updates it automatically)
+      # Init script (read-only; git pull on host updates it automatically)
       - ./init-prod.sh:/workspace/init-prod.sh:ro
-      # bench core lives in a named volume – survives container recreation
+      # Tenant provisioning script (read-only)
+      - ./provision_tenant.sh:/workspace/provision_tenant.sh:ro
+      # Bench core lives in a named volume – survives container recreation
       - frappe-bench:/home/frappe/frappe-bench
-      # HRMS app is a bind-mount of the git repo folder on the host.
-      # `git pull` on the host immediately refreshes the Python/JS inside
-      # the running container – no image rebuild needed.
-      - ../hrms:/home/frappe/frappe-bench/apps/hrms
-      # optional: host backup folder for bench restore on re-creation
+      # Custom apps bind-mounted from host git repo.
+      # Changes via `git pull` on host are live immediately – no rebuild.
+      - ../../grace_goals:/home/frappe/frappe-bench/apps/grace_goals
+      - ../../grace_vendor_portal:/home/frappe/frappe-bench/apps/grace_vendor_portal
+      # Optional: host backup folder for bench restore on re-creation
       - ../backups:/workspace/backups
     expose:
       - "8000"
@@ -65,13 +70,16 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # ── Nginx reverse proxy ───────────────────────────────────────────────
+  # ── Nginx reverse proxy ───────────────────────────────────────────────────
   nginx:
     image: nginx:alpine
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # Mount SSL certs here when enabling HTTPS:
+      # - ./ssl:/etc/nginx/ssl:ro
     depends_on:
       - frappe
     restart: unless-stopped

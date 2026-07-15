@@ -12,15 +12,18 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
 if [ -d "/home/frappe/frappe-bench/apps/frappe" ]; then
     echo "Bench already exists, skipping init"
     cd frappe-bench
-    # Ensure site is always set so Frappe can resolve requests without a matching Host header
+    # currentsite.txt: fallback for requests with no matching Host header (direct port 8000 access)
     echo "hrms.localhost" > sites/currentsite.txt
-    # Rewrite Procfile to known-good state; 'bench serve --site' is not a valid flag
+    # Rewrite Procfile to known-good state
     printf 'web: bench serve  --port 8000\n\nsocketio: bench socketio\n\n\n\n\nschedule: bench schedule\n\nworker:  bench worker 1>> logs/worker.log 2>> logs/worker.error.log\n' > Procfile
-    # Ensure module-subfolder symlinks exist (Frappe needs doctype under <app>/<app>/<module>/doctype/)
-    # The bind-mounted apps have doctype/ at the package level; symlink it into the module folder.
+    # Ensure module-subfolder symlinks exist (Frappe doctype path resolution)
     BENCH_APPS=/home/frappe/frappe-bench/apps
     ln -sf "$BENCH_APPS/grace_goals/grace_goals/doctype" "$BENCH_APPS/grace_goals/grace_goals/grace_goals/doctype" 2>/dev/null || true
     ln -sf "$BENCH_APPS/grace_vendor_portal/grace_vendor_portal/doctype" "$BENCH_APPS/grace_vendor_portal/grace_vendor_portal/grace_vendor_portal/doctype" 2>/dev/null || true
+    # Ensure .pth files survive container recreation
+    SITE_PKGS=$(find /home/frappe/frappe-bench/env/lib -maxdepth 2 -name 'site-packages' -type d | head -1)
+    echo "$BENCH_APPS/grace_goals"         > "$SITE_PKGS/grace_goals.pth"
+    echo "$BENCH_APPS/grace_vendor_portal" > "$SITE_PKGS/grace_vendor_portal.pth"
     bench start
     exit 0
 fi

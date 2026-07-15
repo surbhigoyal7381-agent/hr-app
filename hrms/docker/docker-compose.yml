@@ -1,4 +1,15 @@
-version: "3.8" # Updated version
+version: "3.8"
+
+# ── Kinexus HRMS – Local Development Stack ──────────────────────────────
+# Multi-tenant on localhost:
+#   • Port 80  via Nginx  →  *.localhost hostnames  (multi-tenant, recommended)
+#   • Port 8000 direct    →  hrms.localhost          (legacy single-site)
+#
+# Add new local tenants:
+#   docker exec docker-frappe-1 bash /workspace/provision_tenant.sh myco "My Company"
+# Then open http://myco.localhost in Chrome (resolves automatically).
+# Other browsers: add  127.0.0.1 myco.localhost  to your hosts file first.
+
 services:
   mariadb:
     image: mariadb:10.8
@@ -6,7 +17,7 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
       - --skip-character-set-client-handshake
-      - --skip-innodb-read-only-compressed # Temporary fix for MariaDB 10.6
+      - --skip-innodb-read-only-compressed
     environment:
       MYSQL_ROOT_PASSWORD: 123
     volumes:
@@ -20,14 +31,29 @@ services:
     command: bash /workspace/init.sh
     environment:
       - SHELL=/bin/bash
+      - BASE_DOMAIN=localhost
     working_dir: /home/frappe
     volumes:
       - .:/workspace
       - ../../grace_goals:/home/frappe/frappe-bench/apps/grace_goals
       - ../../grace_vendor_portal:/home/frappe/frappe-bench/apps/grace_vendor_portal
+    expose:
+      - "8000"
+      - "9000"
+    # Keep direct port for legacy access and bench CLI tools
     ports:
       - 8000:8000
       - 9000:9000
+
+  # ── Local Nginx: routes *.localhost → Frappe by Host header ─────────
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx-local.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frappe
 
 volumes:
   mariadb-data:

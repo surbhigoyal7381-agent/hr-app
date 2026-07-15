@@ -35,8 +35,12 @@ services:
     working_dir: /home/frappe
     volumes:
       - .:/workspace
-      - ../../grace_goals:/home/frappe/frappe-bench/apps/grace_goals
-      - ../../grace_vendor_portal:/home/frappe/frappe-bench/apps/grace_vendor_portal
+      # Persist the entire bench across container recreation
+      - frappe-bench:/home/frappe/frappe-bench
+      # Grace apps mounted outside bench dir to avoid confusing bench init.
+      # init.sh creates symlinks: frappe-bench/apps/grace_* → /home/frappe/grace_*_src
+      - ../../grace_goals:/home/frappe/grace_goals_src
+      - ../../grace_vendor_portal:/home/frappe/grace_vendor_portal_src
     expose:
       - "8000"
       - "9000"
@@ -57,3 +61,4 @@ services:
 
 volumes:
   mariadb-data:
+  frappe-bench:

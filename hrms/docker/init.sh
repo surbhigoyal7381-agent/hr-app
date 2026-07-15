@@ -8,7 +8,26 @@ set -e
 DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-123}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
 
-# ── Fast path: bench already present (normal restart) → just start, never re-init ──
+# ── Grace app symlink helper ──────────────────────────────────────────────────
+# Grace apps are mounted at /home/frappe/grace_*_src (outside bench) to avoid
+# confusing bench init. This function creates the symlinks bench expects.
+setup_grace_symlinks() {
+    BENCH_APPS=/home/frappe/frappe-bench/apps
+    mkdir -p "$BENCH_APPS"
+    ln -sfn /home/frappe/grace_goals_src         "$BENCH_APPS/grace_goals"
+    ln -sfn /home/frappe/grace_vendor_portal_src "$BENCH_APPS/grace_vendor_portal"
+    # Module-subfolder symlinks for Frappe doctype path resolution
+    ln -sf "$BENCH_APPS/grace_goals/grace_goals/doctype" \
+           "$BENCH_APPS/grace_goals/grace_goals/grace_goals/doctype" 2>/dev/null || true
+    ln -sf "$BENCH_APPS/grace_vendor_portal/grace_vendor_portal/doctype" \
+           "$BENCH_APPS/grace_vendor_portal/grace_vendor_portal/grace_vendor_portal/doctype" 2>/dev/null || true
+    # .pth files so the bench virtualenv can import the grace packages
+    SITE_PKGS=$(find /home/frappe/frappe-bench/env/lib -maxdepth 2 -name 'site-packages' -type d | head -1)
+    echo "$BENCH_APPS/grace_goals"         > "$SITE_PKGS/grace_goals.pth"
+    echo "$BENCH_APPS/grace_vendor_portal" > "$SITE_PKGS/grace_vendor_portal.pth"
+}
+
+# ── Fast path: bench already present (normal restart or named-volume recreation) ──
 if [ -d "/home/frappe/frappe-bench/apps/frappe" ]; then
     echo "Bench already exists, skipping init"
     cd frappe-bench
@@ -16,14 +35,7 @@ if [ -d "/home/frappe/frappe-bench/apps/frappe" ]; then
     echo "hrms.localhost" > sites/currentsite.txt
     # Rewrite Procfile to known-good state
     printf 'web: bench serve  --port 8000\n\nsocketio: bench socketio\n\n\n\n\nschedule: bench schedule\n\nworker:  bench worker 1>> logs/worker.log 2>> logs/worker.error.log\n' > Procfile
-    # Ensure module-subfolder symlinks exist (Frappe doctype path resolution)
-    BENCH_APPS=/home/frappe/frappe-bench/apps
-    ln -sf "$BENCH_APPS/grace_goals/grace_goals/doctype" "$BENCH_APPS/grace_goals/grace_goals/grace_goals/doctype" 2>/dev/null || true
-    ln -sf "$BENCH_APPS/grace_vendor_portal/grace_vendor_portal/doctype" "$BENCH_APPS/grace_vendor_portal/grace_vendor_portal/grace_vendor_portal/doctype" 2>/dev/null || true
-    # Ensure .pth files survive container recreation
-    SITE_PKGS=$(find /home/frappe/frappe-bench/env/lib -maxdepth 2 -name 'site-packages' -type d | head -1)
-    echo "$BENCH_APPS/grace_goals"         > "$SITE_PKGS/grace_goals.pth"
-    echo "$BENCH_APPS/grace_vendor_portal" > "$SITE_PKGS/grace_vendor_portal.pth"
+    setup_grace_symlinks
     bench start
     exit 0
 fi
@@ -31,7 +43,12 @@ fi
 echo "Creating new bench..."
 export PATH="${NVM_DIR}/versions/node/v${NODE_VERSION_DEVELOP}/bin/:${PATH}"
 
-bench init --skip-redis-config-generation frappe-bench
+# bench init refuses to run if the target directory already exists.
+# Docker creates /home/frappe/frappe-bench as the named-volume mountpoint
+# even when the volume is empty, so we init to /tmp then merge in.
+bench init --skip-redis-config-generation /tmp/frappe-bench-init
+cp -a /tmp/frappe-bench-init/. /home/frappe/frappe-bench/
+rm -rf /tmp/frappe-bench-init
 cd frappe-bench
 
 # Use containers instead of localhost
@@ -47,12 +64,8 @@ sed -i '/watch/d' ./Procfile
 bench get-app erpnext
 bench get-app hrms
 
-# Register grace_goals and grace_vendor_portal via .pth files (bench virtualenv has no setuptools,
-# so pip install -e is not available; a .pth file is exactly what editable installs create anyway)
-BENCH_APPS=/home/frappe/frappe-bench/apps
-SITE_PKGS=$(find /home/frappe/frappe-bench/env/lib -maxdepth 2 -name 'site-packages' -type d | head -1)
-echo "$BENCH_APPS/grace_goals" > "$SITE_PKGS/grace_goals.pth"
-echo "$BENCH_APPS/grace_vendor_portal" > "$SITE_PKGS/grace_vendor_portal.pth"
+# Create grace app symlinks and register via .pth files
+setup_grace_symlinks
 
 # ── Re-apply Grace Drinks app-switcher branding (hooks.py lives in the container layer) ──
 HOOKS=apps/hrms/hrms/hooks.py

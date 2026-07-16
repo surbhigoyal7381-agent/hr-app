@@ -9,7 +9,7 @@
   --bg:#eef1f8;--surface:#fff;--surface2:#f4f7fc;
   --border:#dce4f0;--border2:#b8c8de;
   --text:#0c1228;--text2:#56637d;--text3:#8a96b0;
-  --primary:#5b5ef4;--primary-h:#4a4dd6;--primary-d:#3730b8;--primary-lt:#eef0ff;
+  --primary:#16A373;--primary-h:#128F63;--primary-d:#0E7A55;--primary-lt:#EAFAF4;
   --green:#059669;--green-lt:#dcfce7;--green-h:#047857;
   --red:#e11d48;--red-lt:#ffe4e6;
   --amber:#d97706;--amber-lt:#fef3c7;
@@ -20,7 +20,7 @@
   --sh2:0 4px 8px rgba(12,18,40,.06),0 2px 4px rgba(12,18,40,.04);
   --sh3:0 8px 20px rgba(12,18,40,.1),0 2px 6px rgba(12,18,40,.05);
   --r:14px;--r-sm:10px;--r-xs:7px;
-  --sidebar-w:252px;--sidebar-bg:#16123e;--topbar-h:56px;--bottom-h:68px;
+  --sidebar-w:252px;--sidebar-bg:#0F1929;--topbar-h:56px;--bottom-h:68px;
   --t:.18s cubic-bezier(.4,0,.2,1);
   /* legacy aliases */
   --shadow-sm:var(--sh1);--shadow:var(--sh2);--shadow-md:var(--sh3);
@@ -30,7 +30,7 @@
   --bg:#0b0c17;--surface:#13141f;--surface2:#181926;
   --border:#20213a;--border2:#2c2e4a;
   --text:#e2e4f6;--text2:#6472a0;--text3:#40467a;
-  --primary:#7b7df8;--primary-h:#5b5ef4;--primary-d:#9496fa;--primary-lt:#1c1b3e;
+  --primary:#34d399;--primary-h:#16A373;--primary-d:#10b981;--primary-lt:#052e1c;
   --green:#34d399;--green-lt:#052e1c;--green-h:#10b981;
   --red:#fb7185;--red-lt:#3d0519;
   --amber:#fbbf24;--amber-lt:#2d1a00;
@@ -38,34 +38,34 @@
   --sky:#38bdf8;--sky-lt:#082843;
   --sh0:0 1px 2px rgba(0,0,0,.3);--sh1:0 1px 3px rgba(0,0,0,.35);
   --sh2:0 4px 8px rgba(0,0,0,.4);--sh3:0 8px 20px rgba(0,0,0,.5);
-  --sidebar-bg:#0d0b1e;
+  --sidebar-bg:#0A1120;
   --shadow-sm:var(--sh1);--shadow:var(--sh2);--shadow-md:var(--sh3);
 }}
 :root[data-theme="light"]{
   --bg:#eef1f8;--surface:#fff;--surface2:#f4f7fc;
   --border:#dce4f0;--border2:#b8c8de;
   --text:#0c1228;--text2:#56637d;--text3:#8a96b0;
-  --primary:#5b5ef4;--primary-h:#4a4dd6;--primary-d:#3730b8;--primary-lt:#eef0ff;
+  --primary:#16A373;--primary-h:#128F63;--primary-d:#0E7A55;--primary-lt:#EAFAF4;
   --green:#059669;--green-lt:#dcfce7;--green-h:#047857;
   --red:#e11d48;--red-lt:#ffe4e6;--amber:#d97706;--amber-lt:#fef3c7;
   --purple:#7c3aed;--purple-lt:#f3e8ff;--sky:#0284c7;--sky-lt:#e0f2fe;
   --sh0:0 1px 2px rgba(12,18,40,.04);--sh1:0 1px 3px rgba(12,18,40,.06),0 1px 2px rgba(12,18,40,.04);
   --sh2:0 4px 8px rgba(12,18,40,.06),0 2px 4px rgba(12,18,40,.04);
   --sh3:0 8px 20px rgba(12,18,40,.1),0 2px 6px rgba(12,18,40,.05);
-  --sidebar-bg:#16123e;
+  --sidebar-bg:#0F1929;
   --shadow-sm:var(--sh1);--shadow:var(--sh2);--shadow-md:var(--sh3);--danger:var(--red);
 }
 :root[data-theme="dark"]{
   --bg:#0b0c17;--surface:#13141f;--surface2:#181926;
   --border:#20213a;--border2:#2c2e4a;
   --text:#e2e4f6;--text2:#6472a0;--text3:#40467a;
-  --primary:#7b7df8;--primary-h:#5b5ef4;--primary-d:#9496fa;--primary-lt:#1c1b3e;
+  --primary:#34d399;--primary-h:#16A373;--primary-d:#10b981;--primary-lt:#052e1c;
   --green:#34d399;--green-lt:#052e1c;--green-h:#10b981;
   --red:#fb7185;--red-lt:#3d0519;--amber:#fbbf24;--amber-lt:#2d1a00;
   --purple:#c084fc;--purple-lt:#25104a;--sky:#38bdf8;--sky-lt:#082843;
   --sh0:0 1px 2px rgba(0,0,0,.3);--sh1:0 1px 3px rgba(0,0,0,.35);
   --sh2:0 4px 8px rgba(0,0,0,.4);--sh3:0 8px 20px rgba(0,0,0,.5);
-  --sidebar-bg:#0d0b1e;
+  --sidebar-bg:#0A1120;
   --shadow-sm:var(--sh1);--shadow:var(--sh2);--shadow-md:var(--sh3);--danger:var(--red);
 }
 
@@ -110,10 +110,10 @@ nav.navbar{position:fixed !important;top:0;left:0;right:0;z-index:1100;width:100
 }
 .sidebar-brand-logo{
   width:32px;height:32px;border-radius:8px;
-  background:linear-gradient(135deg,var(--primary),#8182f8);
+  background:linear-gradient(135deg,var(--primary),#34d399);
   display:flex;align-items:center;justify-content:center;
   font-size:14px;font-weight:800;color:#fff;flex-shrink:0;
-  box-shadow:0 2px 8px rgba(91,94,244,.4);
+  box-shadow:0 2px 8px rgba(22,163,115,.4);
 }
 .sidebar-brand-text{flex:1;min-width:0}
 .sidebar-brand-name{font-size:15px;font-weight:700;color:#fff;letter-spacing:-.02em}
@@ -134,7 +134,7 @@ nav.navbar{position:fixed !important;top:0;left:0;right:0;z-index:1100;width:100
   margin-bottom:1px;position:relative;user-select:none;
 }
 .nav-item:hover{background:rgba(255,255,255,.07);color:rgba(255,255,255,.88)}
-.nav-item.active{background:rgba(91,94,244,.18);color:#fff}
+.nav-item.active{background:rgba(22,163,115,.18);color:#fff}
 .nav-item.active::before{
   content:'';position:absolute;left:0;top:25%;bottom:25%;
   width:3px;border-radius:0 3px 3px 0;
@@ -160,10 +160,10 @@ nav.navbar{position:fixed !important;top:0;left:0;right:0;z-index:1100;width:100
 .sidebar-user:hover{background:rgba(255,255,255,.05)}
 .sidebar-avatar{
   width:34px;height:34px;border-radius:50%;
-  background:rgba(91,94,244,.6);color:#fff;
+  background:rgba(22,163,115,.6);color:#fff;
   font-size:12px;font-weight:700;
   display:flex;align-items:center;justify-content:center;flex-shrink:0;
-  border:1.5px solid rgba(91,94,244,.4);
+  border:1.5px solid rgba(22,163,115,.4);
 }
 .sidebar-user-name{font-size:12px;font-weight:600;color:rgba(255,255,255,.82);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sidebar-user-role{font-size:10px;color:rgba(255,255,255,.3);margin-top:1px}
@@ -249,10 +249,10 @@ nav.navbar{position:fixed !important;top:0;left:0;right:0;z-index:1100;width:100
 
 /* ── Check-in hero ───────────────────────────────── */
 .checkin-hero{
-  background:linear-gradient(135deg,#1c1566 0%,#2d1e8f 35%,#4a46d8 70%,#5b5ef4 100%);
+  background:linear-gradient(135deg,#062916 0%,#0e5c38 35%,#128F63 70%,#16A373 100%);
   border-radius:var(--r);padding:28px 32px;
   display:flex;align-items:center;gap:32px;flex-wrap:wrap;
-  box-shadow:0 8px 32px rgba(91,94,244,.28),0 2px 8px rgba(91,94,244,.18);
+  box-shadow:0 8px 32px rgba(22,163,115,.28),0 2px 8px rgba(22,163,115,.18);
   margin-bottom:24px;position:relative;overflow:hidden;
 }
 .checkin-hero::before{
@@ -307,7 +307,7 @@ nav.navbar{position:fixed !important;top:0;left:0;right:0;z-index:1100;width:100
   transition:all var(--t);cursor:pointer;border:none;white-space:nowrap;
 }
 .btn-checkin.check-in{
-  background:#fff;color:#3730b8;
+  background:#fff;color:#0E7A55;
   box-shadow:0 4px 16px rgba(0,0,0,.2),inset 0 1px 0 rgba(255,255,255,.8);
 }
 .btn-checkin.check-in:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.25)}
@@ -345,7 +345,7 @@ nav.navbar{position:fixed !important;top:0;left:0;right:0;z-index:1100;width:100
 .qa-btn:hover{
   border-color:var(--primary);color:var(--primary);
   background:var(--primary-lt);
-  box-shadow:0 4px 16px rgba(91,94,244,.14);
+  box-shadow:0 4px 16px rgba(22,163,115,.14);
   transform:translateY(-2px);
 }
 .qa-icon{font-size:26px;line-height:1}
@@ -437,9 +437,9 @@ nav.navbar{position:fixed !important;top:0;left:0;right:0;z-index:1100;width:100
 }
 .btn-primary{
   background:var(--primary);color:#fff;
-  box-shadow:0 2px 8px rgba(91,94,244,.3);
+  box-shadow:0 2px 8px rgba(22,163,115,.3);
 }
-.btn-primary:hover{background:var(--primary-h);box-shadow:0 4px 14px rgba(91,94,244,.38);transform:translateY(-1px)}
+.btn-primary:hover{background:var(--primary-h);box-shadow:0 4px 14px rgba(22,163,115,.38);transform:translateY(-1px)}
 .btn-outline{background:transparent;color:var(--primary);border:1.5px solid var(--primary)}
 .btn-outline:hover{background:var(--primary-lt)}
 .btn-sm{padding:6px 13px;font-size:12px;border-radius:var(--r-xs)}
@@ -584,7 +584,7 @@ nav.navbar{position:fixed !important;top:0;left:0;right:0;z-index:1100;width:100
   font-size:14px;transition:border-color var(--t),box-shadow var(--t);
   -webkit-appearance:none;appearance:none;outline:none;
 }
-.form-control:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(91,94,244,.12)}
+.form-control:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(22,163,115,.12)}
 .form-control[disabled]{background:var(--surface2);color:var(--text3);cursor:default}
 textarea.form-control{resize:vertical;min-height:90px}
 select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:36px}
@@ -660,7 +660,7 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
   cursor:pointer;transition:all var(--t);
 }
 .team-card:hover{
-  box-shadow:0 6px 20px rgba(91,94,244,.14);
+  box-shadow:0 6px 20px rgba(22,163,115,.14);
   transform:translateY(-3px);border-color:var(--primary);
 }
 .team-avatar{
@@ -706,7 +706,7 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
 .emp-drawer.open{transform:translateX(0)}
 .emp-drawer-head{
   display:flex;align-items:center;gap:16px;padding:22px 22px 18px;
-  background:linear-gradient(135deg,#1c1566,#4a46d8);
+  background:linear-gradient(135deg,#062916,#128F63);
   position:sticky;top:0;z-index:1;flex-shrink:0;
 }
 .emp-drawer-av{
@@ -1066,6 +1066,18 @@ document.addEventListener("DOMContentLoaded", function() {
             <div class="stat-chip-val num" id="chip-hours">—</div>
             <div class="stat-chip-lbl">Avg hours/day</div>
           </div>
+        </div>
+
+        <!-- Pending Approvals Banner (managers only, shown when team has pending leaves) -->
+        <div id="home-attention-banner" style="display:none;margin-bottom:24px">
+          <div style="border-radius:var(--r);border:1.5px solid var(--amber);background:var(--amber-lt);padding:16px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px">
+            <div style="width:38px;height:38px;border-radius:var(--r-sm);background:var(--amber);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">⚡</div>
+            <div style="flex:1;min-width:160px">
+              <div style="font-size:14px;font-weight:700;color:var(--text)"><span id="home-pending-count">0</span> leave request(s) awaiting your approval</div>
+              <div style="font-size:12px;color:var(--text2);margin-top:2px">Review and act directly below — no need to navigate away</div>
+            </div>
+          </div>
+          <div id="home-approvals-list" style="display:flex;flex-direction:column;gap:8px"></div>
         </div>
 
         <!-- My Goals (shown when grace_goals installed) -->
@@ -1593,7 +1605,7 @@ document.addEventListener("DOMContentLoaded", function() {
 <!-- Goal detail drawer -->
 <div class="emp-drawer-overlay" id="goal-drawer-overlay" onclick="closeGoalDrawer()"></div>
 <div class="emp-drawer" id="goal-drawer">
-  <div class="emp-drawer-head" id="gd-head" style="background:linear-gradient(135deg,#1c1566,#4a46d8)">
+  <div class="emp-drawer-head" id="gd-head" style="background:linear-gradient(135deg,#062916,#128F63)">
     <div style="flex:1;min-width:0">
       <div style="font-size:17px;font-weight:700;color:#fff">Goal Details</div>
     </div>
@@ -1771,6 +1783,32 @@ function loadHome() {
 
     const pending = (data.pending_approvals || []).length + (data.recent_leaves || []).filter(l => l.status === "Open").length;
     document.getElementById("chip-pending").textContent = pending;
+
+    // Show inline leave approvals on home screen for managers
+    const teamApprovals = data.pending_approvals || [];
+    if (teamApprovals.length > 0) {
+      const banner  = document.getElementById("home-attention-banner");
+      const countEl = document.getElementById("home-pending-count");
+      const listEl  = document.getElementById("home-approvals-list");
+      if (banner && countEl && listEl) {
+        countEl.textContent = teamApprovals.length;
+        banner.style.display = "block";
+        listEl.innerHTML = teamApprovals.map(function(l) {
+          const days = parseFloat(l.total_leave_days || 0);
+          const who  = l.employee_name || l.employee || "Team member";
+          return '<div class="appr-card" id="home-appr-' + l.name + '" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 18px;display:flex;align-items:center;gap:14px;box-shadow:var(--sh0);flex-wrap:wrap">' +
+            '<div style="flex:1;min-width:0">' +
+              '<div style="font-size:13px;font-weight:600;color:var(--text)">' + who + ' &nbsp;·&nbsp; ' + (l.leave_type||"Leave") + '</div>' +
+              '<div style="font-size:11px;color:var(--text3);margin-top:3px">' + fmtDate(l.from_date) + (l.to_date !== l.from_date ? ' – ' + fmtDate(l.to_date) : '') + ' · <strong style="color:var(--text2)">' + days + ' day' + (days!==1?'s':'') + '</strong>' + (l.description ? ' · ' + String(l.description).substring(0,60) : '') + '</div>' +
+            '</div>' +
+            '<div id="home-appr-acts-' + l.name + '" style="display:flex;gap:8px;flex-shrink:0">' +
+              '<button class="btn btn-green btn-sm" onclick="homeActionLeave(\'' + l.name + '\',\'approve\')">✓ Approve</button>' +
+              '<button class="btn btn-danger btn-sm" onclick="homeActionLeave(\'' + l.name + '\',\'reject\')">✕ Reject</button>' +
+            '</div>' +
+          '</div>';
+        }).join("");
+      }
+    }
 
     document.getElementById("chip-hours").textContent = "8.0"; // placeholder
 
@@ -2391,6 +2429,40 @@ function edActionLeave(leaveId, action) {
     // Also refresh the team panel's pending count if it's visible
     const pc = document.getElementById("t-pending-count");
     if (pc) { const v = parseInt(pc.textContent)||0; pc.textContent = Math.max(0,v-1); }
+    const badge = document.getElementById("sb-team-badge");
+    if (badge) {
+      const n = Math.max(0, (parseInt(badge.textContent)||0) - 1);
+      badge.textContent = n; badge.style.display = n ? "flex" : "none";
+    }
+  }, function(e) {
+    if (card) { card.style.opacity = "1"; card.style.pointerEvents = ""; }
+    toast((e.message || "Failed to " + action + " leave"), "err");
+  });
+}
+
+/* ── Home inline approval action ─────────────────── */
+function homeActionLeave(leaveId, action) {
+  const card = document.getElementById("home-appr-" + leaveId);
+  const acts = document.getElementById("home-appr-acts-" + leaveId);
+  if (card) { card.style.opacity = ".5"; card.style.pointerEvents = "none"; }
+  api("action_leave", {leave_id: leaveId, action: action}, function() {
+    toast(action === "approve" ? "Leave approved" : "Leave rejected", action === "approve" ? "ok" : "");
+    if (acts) {
+      acts.innerHTML = '<span class="badge ' + (action==="approve" ? "badge-green" : "badge-red") + '">' +
+        (action==="approve" ? "✓ Approved" : "✕ Rejected") + '</span>';
+    }
+    if (card) { card.style.opacity = "1"; card.style.pointerEvents = ""; }
+    // Decrement the banner count
+    const countEl = document.getElementById("home-pending-count");
+    if (countEl) {
+      const n = Math.max(0, parseInt(countEl.textContent) - 1);
+      countEl.textContent = n;
+      if (n === 0) {
+        const banner = document.getElementById("home-attention-banner");
+        if (banner) banner.querySelector("div").style.display = "none";
+      }
+    }
+    // Sync sidebar team badge
     const badge = document.getElementById("sb-team-badge");
     if (badge) {
       const n = Math.max(0, (parseInt(badge.textContent)||0) - 1);

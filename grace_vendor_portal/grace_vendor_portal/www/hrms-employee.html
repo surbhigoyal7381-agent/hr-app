@@ -1175,6 +1175,37 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
 .tr-no-ap{font-size:12px;color:var(--text3);font-style:italic}
 .tr-await{font-size:12px;color:var(--text3)}
 
+/* ── Distribution / Bell Curve ──────────────────────────────────────── */
+.pd-toolbar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+.pd-stats-strip{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:20px}
+.pd-stat{flex:1;min-width:110px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px 16px}
+.pd-stat-val{font-size:22px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;line-height:1}
+.pd-stat-lbl{font-size:11px;color:var(--text3);margin-top:3px}
+.pd-charts-row{display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+.pd-chart-card{flex:1;min-width:280px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px 14px}
+.pd-chart-title{font-size:14px;font-weight:700;color:var(--text);margin-bottom:3px}
+.pd-chart-sub{font-size:12px;color:var(--text3);margin-bottom:14px}
+.pd-chart-svg{width:100%;display:block;overflow:visible}
+.pd-health-label{font-size:11px;margin-top:10px;padding:3px 10px;border-radius:100px;display:inline-block;font-weight:600}
+.pd-health-normal{background:#dcfce7;color:#166534}
+.pd-health-warn{background:#fef3c7;color:#92400e}
+.pd-health-skewed{background:#fee2e2;color:#991b1b}
+.pd-filter-chip{display:inline-flex;align-items:center;gap:5px;background:var(--primary-light,#e8f5e9);color:var(--primary);border-radius:100px;padding:3px 10px;font-size:12px;font-weight:600;cursor:pointer;border:none;margin-top:8px;transition:opacity .15s}
+.pd-filter-chip:hover{opacity:.75}
+.pd-table-wrap{overflow-x:auto;margin-top:4px}
+.pd-table{width:100%;border-collapse:collapse;font-size:13px}
+.pd-table th{text-align:left;padding:8px 12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);border-bottom:2px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none}
+.pd-table th:hover{color:var(--text)}
+.pd-table td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+.pd-table tbody tr:last-child td{border-bottom:none}
+.pd-table tbody tr:hover td{background:var(--surface2)}
+.pd-rating-badge{display:inline-flex;align-items:center;font-size:12px;font-weight:600;padding:3px 9px;border-radius:100px;white-space:nowrap}
+.pd-avatar{width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0;margin-right:8px}
+.pd-emp-cell{display:flex;align-items:center}
+.pd-emp-name{font-weight:600;color:var(--text);font-size:13px}
+.pd-emp-sub{font-size:11px;color:var(--text3)}
+.pd-sort-ind{margin-left:3px;opacity:.4;font-size:10px}
+
 /* ── Calibration matrix ────────────────────────────────────────────── */
 .cal-toolbar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:20px}
 .cal-filters{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:12px;padding:14px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r)}
@@ -2469,6 +2500,7 @@ window._EMP_USER  = "{{ frappe.session.user }}";
             <button class="gp-tab" id="gtab-team" onclick="gpShowTab('team')" style="display:none">Team</button>
             <button class="gp-tab" id="gtab-hr" onclick="gpShowTab('hr')" style="display:none">HR Setup</button>
             <button class="gp-tab" id="gtab-calibration" onclick="gpShowTab('calibration')" style="display:none">Calibration</button>
+            <button class="gp-tab" id="gtab-distribution" onclick="gpShowTab('distribution')" style="display:none">Distribution</button>
           </div>
         </div>
 
@@ -2846,6 +2878,54 @@ window._EMP_USER  = "{{ frappe.session.user }}";
           <!-- Matrix area -->
           <div id="cal-body">
             <div class="empty-state"><div class="empty-state-text">Select an appraisal cycle to view the calibration matrix.</div></div>
+          </div>
+        </div>
+
+        <!-- TAB: Distribution / Bell Curve (HR only) -->
+        <div id="gp-tab-distribution" style="display:none">
+          <div class="pd-toolbar">
+            <div>
+              <div class="pf-h">Performance Distribution</div>
+              <div class="pf-sub">Rating bell curves &amp; employee breakdown by review cycle</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select class="gp-input" id="pd-cycle-sel" onchange="pdLoad()" style="min-width:200px"></select>
+              <button class="btn btn-outline btn-sm" id="pd-filter-btn" onclick="pdToggleFilters()"
+                      style="display:none;white-space:nowrap" aria-expanded="false">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="margin-right:4px;vertical-align:-1px"><path d="M3 5h18l-7 8v5l-4 2v-7z"/></svg>Filters
+                <span id="pd-filter-badge" hidden style="background:var(--primary);color:#fff;border-radius:10px;padding:0 5px;font-size:10px;margin-left:4px;font-weight:700"></span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Collapsible filters -->
+          <div class="cal-filters" id="pd-filters" style="display:none">
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Department</label>
+              <select class="cal-filter-sel" id="pd-f-dept" multiple onchange="pdApplyFilters()"></select>
+            </div>
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Designation</label>
+              <select class="cal-filter-sel" id="pd-f-desig" multiple onchange="pdApplyFilters()"></select>
+            </div>
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Gender</label>
+              <select class="cal-filter-sel" id="pd-f-gender" multiple onchange="pdApplyFilters()"></select>
+            </div>
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Employment Type</label>
+              <select class="cal-filter-sel" id="pd-f-emptype" multiple onchange="pdApplyFilters()"></select>
+            </div>
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Reporting Manager</label>
+              <select class="cal-filter-sel" id="pd-f-mgr" multiple onchange="pdApplyFilters()"></select>
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="pdClearFilters()" style="align-self:flex-end;white-space:nowrap">Reset all</button>
+          </div>
+
+          <!-- Dynamic body — stats + charts + table rendered here -->
+          <div id="pd-body">
+            <div class="empty-state"><div class="empty-state-text">Select an appraisal cycle to view the distribution.</div></div>
           </div>
         </div>
 
@@ -6271,7 +6351,7 @@ function deleteDrawerNote(noteId, empId) {
     if (window.tvClosePop) { tvClosePop(); tvCloseNew(); }
     // "perf" is deliberately absent: the appraisal lives in its own sidebar
     // panel. "goals" and "kpis" merged into the single "tree" tab.
-    ["overview","tree","reviews","team","hr","calibration"].forEach(function(t) {
+    ["overview","tree","reviews","team","hr","calibration","distribution"].forEach(function(t) {
       var panel = document.getElementById("gp-tab-" + t);
       var btn   = document.getElementById("gtab-" + t);
       if (panel) panel.style.display = (t === tab) ? "" : "none";
@@ -6289,6 +6369,7 @@ function deleteDrawerNote(noteId, empId) {
       if (tab === "team")       gpLoadTeam(false);
       if (tab === "hr")            pfLoadHr(false);
       if (tab === "calibration")   calInit();
+      if (tab === "distribution")  pdInit();
     }
   };
 
@@ -7508,6 +7589,8 @@ function deleteDrawerNote(noteId, empId) {
         if (h) h.style.display = "";
         var calBtn = document.getElementById("gtab-calibration");
         if (calBtn) calBtn.style.display = "";
+        var distBtn = document.getElementById("gtab-distribution");
+        if (distBtn) distBtn.style.display = "";
       }
       // For someone with no reports "Me & my team" is identical to "Just me",
       // and the organisation-wide view is supervisory and not theirs. The
@@ -7524,6 +7607,506 @@ function deleteDrawerNote(noteId, empId) {
       pfSetHtml("tv-body", "<div class=\"callout callout-warn\">Could not load performance context: " + gpEsc(e.message) + "</div>");
     });
   };
+
+/* ── Performance Distribution (Bell Curve) ──────────────────────── */
+(function() {
+  var _pdData         = null;
+  var _pdCycle        = "";
+  var _pdFilteredRows = [];
+  var _pdClickedOverall   = null;
+  var _pdClickedPotential = null;
+  var _pdSortCol = "overall_rating";
+  var _pdSortDir = -1;
+
+  var _pdPalette = ["#1976d2","#388e3c","#7b1fa2","#e65100","#00838f","#5c6bc0","#c62828","#558b2f"];
+  function _pdColor(name) {
+    var h = 0;
+    for (var i = 0; i < (name || "").length; i++) h += name.charCodeAt(i);
+    return _pdPalette[h % _pdPalette.length];
+  }
+  function _pdInitials(name) {
+    var w = (name || "?").trim().split(/\s+/);
+    return (w[0][0] + (w.length > 1 ? w[w.length - 1][0] : "")).toUpperCase();
+  }
+
+  /* ── Cycle selector init ──────────────────────────────────── */
+  window.pdInit = function() {
+    var sel = document.getElementById("pd-cycle-sel");
+    if (!sel) return;
+    function _populate(cycles) {
+      if (!cycles || !cycles.length) {
+        sel.innerHTML = "<option value=''>No appraisal cycles found</option>";
+        return;
+      }
+      var sorted = cycles.slice().sort(function(a, b) {
+        return (b.start_date || "") > (a.start_date || "") ? 1 : -1;
+      });
+      sel.innerHTML = sorted.map(function(c) {
+        return "<option value='" + gpEsc(c.name) + "'>" + gpEsc(c.cycle_name || c.name) + "</option>";
+      }).join("");
+      pdLoad();
+    }
+    if (window._pfCtx && _pfCtx.cycles && _pfCtx.cycles.length) {
+      _populate(_pfCtx.cycles);
+    } else {
+      pf("get_performance_context").then(function(ctx) {
+        if (ctx) window._pfCtx = ctx;
+        _populate((ctx || {}).cycles || []);
+      });
+    }
+  };
+
+  window.pdLoad = function() {
+    var sel = document.getElementById("pd-cycle-sel");
+    var cycle = sel ? sel.value : "";
+    if (!cycle) return;
+    _pdCycle = cycle;
+    _pdClickedOverall = null;
+    _pdClickedPotential = null;
+    pfSetHtml("pd-body", "<div class='empty-state'><div class='empty-state-text'>Loading distribution data…</div></div>");
+    pf("get_calibration_matrix", {cycle: cycle}).then(function(d) {
+      _pdData = d;
+      _pdPopulateFilters(d.filter_options);
+      _pdFilteredRows = d.rows || [];
+      _pdRefresh();
+    }).catch(function(e) {
+      pfSetHtml("pd-body", "<div class='callout callout-warn'>Failed to load: " + gpEsc((e || {}).message || String(e)) + "</div>");
+    });
+  };
+
+  /* ── Filter panel ─────────────────────────────────────────── */
+  function _pdPopulateFilters(opts) {
+    if (!opts) return;
+    function _fillSel(id, items) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.innerHTML = items.map(function(it) {
+        var val = typeof it === "object" ? it.id : it;
+        var lbl = typeof it === "object" ? it.name : it;
+        return "<option value='" + gpEsc(String(val)) + "'>" + gpEsc(lbl) + "</option>";
+      }).join("");
+    }
+    _fillSel("pd-f-dept",    opts.departments    || []);
+    _fillSel("pd-f-desig",   opts.designations   || []);
+    _fillSel("pd-f-gender",  opts.genders        || []);
+    _fillSel("pd-f-emptype", opts.employment_types || []);
+    _fillSel("pd-f-mgr",     opts.managers       || []);
+    var hasOpts = (opts.departments && opts.departments.length) || (opts.managers && opts.managers.length);
+    var fBtn = document.getElementById("pd-filter-btn");
+    if (fBtn) fBtn.style.display = hasOpts ? "" : "none";
+    var fPanel = document.getElementById("pd-filters");
+    if (fPanel) fPanel.style.display = "none";
+  }
+
+  function _pdGetSelected(id) {
+    var el = document.getElementById(id);
+    if (!el) return [];
+    return Array.from(el.selectedOptions).map(function(o) { return o.value; });
+  }
+
+  window.pdToggleFilters = function() {
+    var el = document.getElementById("pd-filters");
+    if (el) el.style.display = el.style.display === "none" ? "" : "none";
+  };
+
+  window.pdApplyFilters = function() {
+    if (!_pdData) return;
+    var fD = _pdGetSelected("pd-f-dept"),   fDes = _pdGetSelected("pd-f-desig");
+    var fG = _pdGetSelected("pd-f-gender"), fE   = _pdGetSelected("pd-f-emptype");
+    var fM = _pdGetSelected("pd-f-mgr");
+    _pdFilteredRows = (_pdData.rows || []).filter(function(r) {
+      if (fD.length   && !fD.includes(r.department))       return false;
+      if (fDes.length && !fDes.includes(r.designation))    return false;
+      if (fG.length   && !fG.includes(r.gender))           return false;
+      if (fE.length   && !fE.includes(r.employment_type))  return false;
+      if (fM.length   && !fM.includes(r.reports_to))       return false;
+      return true;
+    });
+    var activeCount = fD.length + fDes.length + fG.length + fE.length + fM.length;
+    var badge = document.getElementById("pd-filter-badge");
+    if (badge) { badge.hidden = !activeCount; badge.textContent = activeCount; }
+    _pdClickedOverall = null;
+    _pdClickedPotential = null;
+    _pdRefresh();
+  };
+
+  window.pdClearFilters = function() {
+    ["pd-f-dept","pd-f-desig","pd-f-gender","pd-f-emptype","pd-f-mgr"].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) Array.from(el.options).forEach(function(o) { o.selected = false; });
+    });
+    var badge = document.getElementById("pd-filter-badge");
+    if (badge) { badge.hidden = true; badge.textContent = ""; }
+    _pdClickedOverall = null;
+    _pdClickedPotential = null;
+    _pdFilteredRows = (_pdData && _pdData.rows) ? _pdData.rows.slice() : [];
+    _pdRefresh();
+  };
+
+  /* ── Distribution computation ─────────────────────────────── */
+  function _pdBuildDist(rows, scale, field, clickedVal) {
+    if (!scale || !scale.items) return [];
+    var total = rows.length;
+    var countMap = {};
+    rows.forEach(function(r) { var v = String(flt(r[field])); countMap[v] = (countMap[v] || 0) + 1; });
+    return scale.items.map(function(item) {
+      var cnt = countMap[String(flt(item.value))] || 0;
+      return {
+        value:    item.value,
+        label:    item.label,
+        color:    item.color || "var(--primary)",
+        count:    cnt,
+        pct:      total ? Math.round(cnt / total * 100) : 0,
+        selected: clickedVal !== null && String(flt(clickedVal)) === String(flt(item.value)),
+      };
+    });
+  }
+
+  function _pdStats(dist) {
+    var total = dist.reduce(function(s, d) { return s + d.count; }, 0);
+    if (!total) return {total: 0, avg: "—", median: "—", pctHigh: 0};
+    var wSum = dist.reduce(function(s, d) { return s + flt(d.value) * d.count; }, 0);
+    var avg = (wSum / total).toFixed(1);
+    var cumul = 0, median = dist[dist.length - 1].label;
+    for (var i = 0; i < dist.length; i++) {
+      cumul += dist[i].count;
+      if (cumul * 2 >= total) { median = dist[i].label; break; }
+    }
+    var sorted = dist.slice().sort(function(a, b) { return flt(b.value) - flt(a.value); });
+    var topCnt = (sorted[0] ? sorted[0].count : 0) + (sorted[1] ? sorted[1].count : 0);
+    return {total: total, avg: avg, median: median, pctHigh: total ? Math.round(topCnt / total * 100) : 0};
+  }
+
+  function _pdShape(dist) {
+    var counts = dist.map(function(d) { return d.count; });
+    var total  = counts.reduce(function(a, b) { return a + b; }, 0);
+    var n = counts.length;
+    if (!total || n < 3) return {label: "", cls: ""};
+    var mean = total / n;
+    var maxC = Math.max.apply(null, counts);
+    var peaks = [];
+    for (var i = 1; i < n - 1; i++) {
+      if (counts[i] > counts[i-1] && counts[i] > counts[i+1] && counts[i] > mean) peaks.push(i);
+    }
+    if (peaks.length >= 2) return {label: "⚠ Bimodal — review manager consistency", cls: "pd-health-warn"};
+    if (maxC / mean < 1.4) return {label: "⚠ Flat — insufficient differentiation", cls: "pd-health-warn"};
+    var wIdx   = counts.reduce(function(s, c, i) { return s + c * i; }, 0) / total;
+    var center = (n - 1) / 2;
+    var skew   = center > 0 ? (wIdx - center) / center : 0;
+    if (skew > 0.3)  return {label: "⚠ Skewed high — calibration recommended", cls: "pd-health-skewed"};
+    if (skew < -0.3) return {label: "⚠ Skewed low", cls: "pd-health-warn"};
+    return {label: "✓ Normally distributed", cls: "pd-health-normal"};
+  }
+
+  /* ── Smooth Catmull-Rom → cubic bezier ────────────────────── */
+  function _pdSmoothPath(pts, baseY) {
+    if (pts.length < 2) return {line: "", fill: ""};
+    var d = "M " + pts[0].x + " " + pts[0].y;
+    for (var i = 0; i < pts.length - 1; i++) {
+      var p0 = pts[Math.max(0, i - 1)], p1 = pts[i];
+      var p2 = pts[i + 1],              p3 = pts[Math.min(pts.length - 1, i + 2)];
+      var c1x = p1.x + (p2.x - p0.x) / 6, c1y = p1.y + (p2.y - p0.y) / 6;
+      var c2x = p2.x - (p3.x - p1.x) / 6, c2y = p2.y - (p3.y - p1.y) / 6;
+      d += " C " + c1x + "," + c1y + " " + c2x + "," + c2y + " " + p2.x + "," + p2.y;
+    }
+    var last = pts[pts.length - 1], first = pts[0];
+    return {line: d, fill: d + " L " + last.x + "," + baseY + " L " + first.x + "," + baseY + " Z"};
+  }
+
+  /* ── SVG chart renderer ───────────────────────────────────── */
+  function _pdRenderChart(containerId, dist, clickFn) {
+    var el = document.getElementById(containerId);
+    if (!el) return;
+    var n = dist.length;
+    if (!n) { el.innerHTML = "<div class='empty-state'><div class='empty-state-text'>No data for this cycle.</div></div>"; return; }
+
+    var W = 380, H = 195, pL = 34, pR = 14, pT = 24, pB = 54;
+    var cW = W - pL - pR, cH = H - pT - pB;
+    var maxCnt = Math.max.apply(null, dist.map(function(d) { return d.count; })) || 1;
+    var gap    = Math.min(10, Math.floor(cW / n * 0.22));
+    var barW   = Math.max(8, Math.floor((cW - gap * (n - 1)) / n));
+    var selActive = dist.some(function(d) { return d.selected; });
+
+    var bars = dist.map(function(d, i) {
+      var bH = d.count > 0 ? Math.max(4, Math.round(d.count / maxCnt * cH)) : 0;
+      var x  = pL + i * (barW + gap);
+      return {x: x, y: pT + cH - bH, w: barW, h: bH, cx: x + barW / 2, d: d};
+    });
+
+    var curvePts = bars.filter(function(b) { return b.d.count > 0; })
+                       .map(function(b) { return {x: b.cx, y: b.y}; });
+    if (curvePts.length >= 2) {
+      var dx0 = curvePts.length > 1 ? curvePts[1].x - curvePts[0].x : 20;
+      var dxN = curvePts.length > 1 ? curvePts[curvePts.length-1].x - curvePts[curvePts.length-2].x : 20;
+      curvePts.unshift({x: curvePts[0].x - dx0, y: pT + cH});
+      curvePts.push({x: curvePts[curvePts.length-1].x + dxN, y: pT + cH});
+    }
+    var paths = _pdSmoothPath(curvePts, pT + cH);
+    var uid   = containerId.replace(/[^a-z0-9]/gi, "");
+
+    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="pd-chart-svg" preserveAspectRatio="xMidYMid meet">';
+    svg += '<defs><linearGradient id="pdg' + uid + '" x1="0" y1="0" x2="0" y2="1">' +
+           '<stop offset="0%" stop-color="var(--primary)" stop-opacity="0.16"/>' +
+           '<stop offset="100%" stop-color="var(--primary)" stop-opacity="0.01"/></linearGradient></defs>';
+
+    /* grid */
+    [0.25, 0.5, 0.75, 1].forEach(function(f) {
+      var gy = pT + cH - Math.round(f * cH);
+      svg += '<line x1="' + pL + '" y1="' + gy + '" x2="' + (W-pR) + '" y2="' + gy +
+             '" stroke="var(--border)" stroke-width="0.5" opacity="0.7"/>';
+      svg += '<text x="' + (pL-3) + '" y="' + (gy+3) + '" text-anchor="end" font-size="8.5" fill="var(--text3)">' +
+             Math.round(f * maxCnt) + '</text>';
+    });
+    svg += '<line x1="' + pL + '" y1="' + pT + '" x2="' + pL + '" y2="' + (pT+cH) + '" stroke="var(--border)" stroke-width="1"/>';
+    svg += '<line x1="' + pL + '" y1="' + (pT+cH) + '" x2="' + (W-pR) + '" y2="' + (pT+cH) + '" stroke="var(--border)" stroke-width="1"/>';
+
+    /* curve */
+    if (paths.fill) svg += '<path d="' + paths.fill + '" fill="url(#pdg' + uid + ')"/>';
+    if (paths.line) svg += '<path d="' + paths.line + '" fill="none" stroke="var(--primary)" stroke-width="1.8" opacity="0.45" stroke-linecap="round" stroke-linejoin="round"/>';
+
+    /* bars */
+    bars.forEach(function(b) {
+      var dimmed = selActive && !b.d.selected;
+      var barOp  = dimmed ? "0.25" : "1";
+      var txtOp  = dimmed ? "0.3" : "1";
+      var vStr   = typeof b.d.value === "string"
+                    ? '"' + String(b.d.value).replace(/"/g, '\\"') + '"'
+                    : String(b.d.value);
+      svg += '<g onclick="' + clickFn + '(' + vStr + ')" style="cursor:pointer">';
+      if (b.h > 0) {
+        svg += '<rect x="' + b.x + '" y="' + b.y + '" width="' + b.w + '" height="' + b.h +
+               '" fill="' + b.d.color + '" opacity="' + barOp + '" rx="3" ry="3"/>';
+        if (b.d.selected) {
+          svg += '<rect x="' + (b.x-2) + '" y="' + (b.y-2) + '" width="' + (b.w+4) + '" height="' + (b.h+2) +
+                 '" fill="none" stroke="' + b.d.color + '" stroke-width="2" rx="4" opacity="0.9"/>';
+        }
+        svg += '<text x="' + b.cx + '" y="' + (b.y-5) +
+               '" text-anchor="middle" font-size="11" font-weight="700" fill="var(--text)" opacity="' + txtOp + '">' +
+               b.d.count + '</text>';
+      }
+      var shortLbl = (b.d.label || "").split(" ")[0];
+      svg += '<text x="' + b.cx + '" y="' + (pT+cH+13) + '" text-anchor="middle" font-size="9.5" fill="var(--text3)">' +
+             gpEsc(shortLbl) + '</text>';
+      svg += '<text x="' + b.cx + '" y="' + (pT+cH+25) + '" text-anchor="middle" font-size="8.5" fill="var(--text3)" opacity="0.7">' +
+             (b.d.count > 0 ? b.d.pct + "%" : "") + '</text>';
+      svg += '</g>';
+    });
+    svg += '</svg>';
+    el.innerHTML = svg;
+  }
+
+  /* ── Bar click handlers ───────────────────────────────────── */
+  window.pdClickOverall = function(value) {
+    var s = String(flt(value));
+    _pdClickedOverall = (_pdClickedOverall !== null && String(flt(_pdClickedOverall)) === s) ? null : value;
+    _pdRefresh();
+  };
+  window.pdClickPotential = function(value) {
+    var s = String(flt(value));
+    _pdClickedPotential = (_pdClickedPotential !== null && String(flt(_pdClickedPotential)) === s) ? null : value;
+    _pdRefresh();
+  };
+
+  /* ── Label lookup ─────────────────────────────────────────── */
+  function _pdLabel(scale, value) {
+    if (!scale) return String(value);
+    var item = (scale.items || []).find(function(it) { return String(flt(it.value)) === String(flt(value)); });
+    return item ? item.label : String(value);
+  }
+
+  /* ── Core refresh ─────────────────────────────────────────── */
+  function _pdRefresh() {
+    if (!_pdData) return;
+    var base = _pdFilteredRows;
+
+    /* distribution for overall: if potential is clicked, narrow base */
+    var oBase = (_pdClickedPotential !== null)
+      ? base.filter(function(r) { return String(flt(r.potential_rating)) === String(flt(_pdClickedPotential)); })
+      : base;
+    var oScale = _pdData.overall_scale;
+    var oDist  = _pdBuildDist(oBase, oScale, "overall_rating", _pdClickedOverall);
+
+    /* distribution for potential: if overall is clicked, narrow base */
+    var pBase  = (_pdClickedOverall !== null)
+      ? base.filter(function(r) { return String(flt(r.overall_rating)) === String(flt(_pdClickedOverall)); })
+      : base;
+    var pScale = _pdData.potential_scale;
+    var pDist  = pScale ? _pdBuildDist(pBase, pScale, "potential_rating", _pdClickedPotential) : null;
+
+    /* rows shown in table: apply both click filters */
+    var dispRows = base.filter(function(r) {
+      if (_pdClickedOverall !== null && String(flt(r.overall_rating)) !== String(flt(_pdClickedOverall))) return false;
+      if (_pdClickedPotential !== null && String(flt(r.potential_rating)) !== String(flt(_pdClickedPotential))) return false;
+      return true;
+    });
+
+    var oStats = _pdStats(oDist);
+    var pStats = pDist ? _pdStats(pDist) : null;
+    var oShape = _pdShape(oDist);
+    var pShape = pDist ? _pdShape(pDist) : null;
+
+    /* ── Stats strip ───────────────────── */
+    var html = '<div class="pd-stats-strip">';
+    html += _pdStat(String(_pdData.all_participants || 0), "Total Participants");
+    html += _pdStat(String(dispRows.length), "In Selection");
+    html += _pdStat(String(oStats.avg), "Avg Overall");
+    html += _pdStat(oStats.median || "—", "Median Overall");
+    html += _pdStat(oStats.pctHigh + "%", "Above Expectations");
+    if (pStats) html += _pdStat(String(pStats.avg), "Avg Potential");
+    html += '</div>';
+
+    /* ── Charts row ────────────────────── */
+    html += '<div class="pd-charts-row">';
+
+    html += '<div class="pd-chart-card">';
+    html += '<div class="pd-chart-title">Overall Performance</div>';
+    html += '<div class="pd-chart-sub">' + gpEsc((oScale || {}).scale_name || "Rating") + ' · ' + base.length + ' reviewed</div>';
+    html += '<div id="pd-chart-overall"></div>';
+    if (oShape.label) html += '<div class="pd-health-label ' + oShape.cls + '">' + oShape.label + '</div>';
+    if (_pdClickedOverall !== null) {
+      html += '<button class="pd-filter-chip" onclick="pdClickOverall(' + JSON.stringify(_pdClickedOverall) + ')">' +
+              gpEsc(_pdLabel(oScale, _pdClickedOverall)) + ' <span style="opacity:.6">✕</span></button>';
+    }
+    html += '</div>';
+
+    if (pScale) {
+      html += '<div class="pd-chart-card">';
+      html += '<div class="pd-chart-title">Potential for Next Role</div>';
+      html += '<div class="pd-chart-sub">' + gpEsc(pScale.scale_name) + ' · ' + pBase.length + ' in view</div>';
+      html += '<div id="pd-chart-potential"></div>';
+      if (pShape && pShape.label) html += '<div class="pd-health-label ' + pShape.cls + '">' + pShape.label + '</div>';
+      if (_pdClickedPotential !== null) {
+        html += '<button class="pd-filter-chip" onclick="pdClickPotential(' + JSON.stringify(_pdClickedPotential) + ')">' +
+                gpEsc(_pdLabel(pScale, _pdClickedPotential)) + ' <span style="opacity:.6">✕</span></button>';
+      }
+      html += '</div>';
+    }
+    html += '</div>'; /* end charts-row */
+
+    /* ── Selection summary ─────────────── */
+    if (_pdClickedOverall !== null || _pdClickedPotential !== null) {
+      html += '<div style="margin-bottom:10px;font-size:12px;color:var(--text3)">Showing <strong>' +
+              dispRows.length + '</strong> of ' + base.length + ' employees</div>';
+    }
+
+    /* ── Employee table ────────────────── */
+    html += _pdTable(dispRows);
+
+    pfSetHtml("pd-body", html);
+
+    /* charts must be rendered after DOM is ready */
+    _pdRenderChart("pd-chart-overall", oDist, "pdClickOverall");
+    if (pScale) _pdRenderChart("pd-chart-potential", pDist, "pdClickPotential");
+  }
+
+  function _pdStat(val, lbl) {
+    return '<div class="pd-stat"><div class="pd-stat-val">' + gpEsc(val) + '</div><div class="pd-stat-lbl">' + gpEsc(lbl) + '</div></div>';
+  }
+
+  /* ── Employee table ───────────────────────────────────────── */
+  function _pdTable(rows) {
+    var oScale = _pdData.overall_scale;
+    var pScale = _pdData.potential_scale;
+
+    function _badge(scale, value) {
+      if (!scale || value === null || value === undefined || value === 0) return '<span style="color:var(--text3)">—</span>';
+      var item = (scale.items || []).find(function(it) { return String(flt(it.value)) === String(flt(value)); });
+      var lbl  = item ? item.label : String(value);
+      var col  = item ? (item.color || "#888") : "#888";
+      return '<span class="pd-rating-badge" style="background:' + col + '22;color:' + col + '">' + gpEsc(lbl) + '</span>';
+    }
+
+    var sorted = rows.slice().sort(function(a, b) {
+      var av = a[_pdSortCol], bv = b[_pdSortCol];
+      if (typeof av === "number") return _pdSortDir * (bv - av);
+      return _pdSortDir * ((av || "").localeCompare(bv || ""));
+    });
+
+    function _sortIcon(col) {
+      if (_pdSortCol !== col) return '<span class="pd-sort-ind">↕</span>';
+      return '<span class="pd-sort-ind" style="opacity:1;color:var(--primary)">' + (_pdSortDir === -1 ? "↓" : "↑") + '</span>';
+    }
+
+    if (!sorted.length) {
+      return '<div class="empty-state" style="margin-top:16px"><div class="empty-state-text">No employees match the current selection.</div></div>';
+    }
+
+    var h = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
+    h += '<div style="font-size:13px;font-weight:700;color:var(--text)">' + sorted.length + ' employees</div>';
+    h += '<button class="btn btn-outline btn-sm" onclick="pdExportCSV()" style="font-size:12px">Export CSV</button>';
+    h += '</div>';
+    h += '<div class="pd-table-wrap"><table class="pd-table"><thead><tr>';
+
+    var cols = [
+      {k:"employee_name",  l:"Employee"},
+      {k:"department",     l:"Department"},
+      {k:"designation",    l:"Designation"},
+      {k:"overall_rating", l:"Overall Rating"},
+    ];
+    if (pScale) cols.push({k:"potential_rating", l:"Potential"});
+    cols.push({k:"reports_to_name", l:"Manager"});
+
+    cols.forEach(function(c) {
+      h += '<th onclick="pdSortTable(\'' + c.k + '\')" title="Sort">' + gpEsc(c.l) + _sortIcon(c.k) + '</th>';
+    });
+    h += '</tr></thead><tbody>';
+
+    sorted.forEach(function(r) {
+      var initials    = _pdInitials(r.employee_name);
+      var avatarColor = _pdColor(r.employee_name);
+      h += '<tr>';
+      h += '<td><div class="pd-emp-cell">' +
+           '<div class="pd-avatar" style="background:' + avatarColor + '">' + gpEsc(initials) + '</div>' +
+           '<div><div class="pd-emp-name">' + gpEsc(r.employee_name) + '</div>' +
+           '<div class="pd-emp-sub">' + gpEsc(r.employee || "") + '</div></div>' +
+           '</div></td>';
+      h += '<td>' + gpEsc(r.department || "—") + '</td>';
+      h += '<td>' + gpEsc(r.designation || "—") + '</td>';
+      h += '<td>' + _badge(oScale, r.overall_rating) + '</td>';
+      if (pScale) h += '<td>' + _badge(pScale, r.potential_rating) + '</td>';
+      h += '<td>' + gpEsc(r.reports_to_name || "—") + '</td>';
+      h += '</tr>';
+    });
+
+    h += '</tbody></table></div>';
+    return h;
+  }
+
+  window.pdSortTable = function(col) {
+    if (_pdSortCol === col) { _pdSortDir *= -1; } else { _pdSortCol = col; _pdSortDir = (col === "overall_rating" || col === "potential_rating") ? -1 : 1; }
+    _pdRefresh();
+  };
+
+  window.pdExportCSV = function() {
+    var rows = _pdFilteredRows;
+    if (!rows || !rows.length) return;
+    var oScale = (_pdData || {}).overall_scale;
+    var pScale = (_pdData || {}).potential_scale;
+    var cols   = ["employee_name","employee","department","designation","overall_rating","potential_rating","reports_to_name"];
+    var hdrs   = ["Name","Employee ID","Department","Designation","Overall Rating","Overall Label","Potential Rating","Potential Label","Manager"];
+    var lines  = [hdrs.join(",")];
+    rows.forEach(function(r) {
+      var oItem = oScale ? (oScale.items || []).find(function(it) { return String(flt(it.value)) === String(flt(r.overall_rating)); }) : null;
+      var pItem = pScale ? (pScale.items || []).find(function(it) { return String(flt(it.value)) === String(flt(r.potential_rating)); }) : null;
+      var vals = [
+        r.employee_name, r.employee, r.department, r.designation,
+        r.overall_rating, oItem ? oItem.label : "",
+        r.potential_rating, pItem ? pItem.label : "",
+        r.reports_to_name,
+      ].map(function(v) {
+        var s = String(v || "");
+        return (s.includes(",") || s.includes('"')) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      });
+      lines.push(vals.join(","));
+    });
+    var blob = new Blob([lines.join("\n")], {type: "text/csv"});
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement("a");
+    a.href = url; a.download = "distribution_" + (_pdCycle || "export") + ".csv";
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+})(); /* end Distribution module */
 
 /* ── Calibration Matrix ─────────────────────────────── */
 (function() {

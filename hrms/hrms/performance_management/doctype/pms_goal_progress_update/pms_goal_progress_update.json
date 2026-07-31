@@ -1,0 +1,23 @@
+{
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": ["update_date", "updated_by", "col_break_1", "current_value", "progress_pct", "col_break_2", "narrative", "blockers"],
+ "fields": [
+  {"fieldname": "update_date", "fieldtype": "Date", "label": "Update Date", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "updated_by", "fieldtype": "Link", "label": "Updated By", "options": "Employee", "in_list_view": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "current_value", "fieldtype": "Float", "label": "Current Value", "in_list_view": 1},
+  {"fieldname": "progress_pct", "fieldtype": "Percent", "label": "Progress %", "in_list_view": 1},
+  {"fieldname": "col_break_2", "fieldtype": "Column Break"},
+  {"fieldname": "narrative", "fieldtype": "Small Text", "label": "Progress Narrative"},
+  {"fieldname": "blockers", "fieldtype": "Small Text", "label": "Blockers / Risks"}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS Goal Progress Update",
+ "owner": "Administrator",
+ "permissions": []
+}

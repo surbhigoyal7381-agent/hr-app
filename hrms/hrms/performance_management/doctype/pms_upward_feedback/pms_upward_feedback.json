@@ -1,0 +1,43 @@
+{
+ "autoname": "naming_series:",
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series", "manager_being_reviewed", "cycle", "col_break_1",
+  "respondent_hash", "submitted_on",
+  "section_ratings", "lp_ratings",
+  "section_narrative", "overall_feedback", "col_break_2", "improvement_suggestions",
+  "section_flags", "would_recommend_as_manager"
+ ],
+ "fields": [
+  {"fieldname": "naming_series", "fieldtype": "Select", "label": "Series", "options": "PMS-UFB-.YYYY.-.####\n", "set_only_once": 1},
+  {"fieldname": "manager_being_reviewed", "fieldtype": "Link", "label": "Manager Being Reviewed", "options": "Employee", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "cycle", "fieldtype": "Link", "label": "Cycle", "options": "PMS Cycle", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "respondent_hash", "fieldtype": "Data", "label": "Respondent Hash", "read_only": 1,
+   "description": "SHA-256 hash of respondent employee ID — preserves anonymity"},
+  {"fieldname": "submitted_on", "fieldtype": "Datetime", "label": "Submitted On", "read_only": 1},
+  {"fieldname": "section_ratings", "fieldtype": "Section Break", "label": "Leadership Principle Ratings"},
+  {"fieldname": "lp_ratings", "fieldtype": "Table", "label": "Leadership Principle Ratings", "options": "PMS LP Rating"},
+  {"fieldname": "section_narrative", "fieldtype": "Section Break", "label": "Narrative Feedback"},
+  {"fieldname": "overall_feedback", "fieldtype": "Text Editor", "label": "What this manager does well"},
+  {"fieldname": "col_break_2", "fieldtype": "Column Break"},
+  {"fieldname": "improvement_suggestions", "fieldtype": "Text Editor", "label": "What could be improved"},
+  {"fieldname": "section_flags", "fieldtype": "Section Break", "label": "Summary"},
+  {"fieldname": "would_recommend_as_manager", "fieldtype": "Select", "label": "Would recommend as manager",
+   "options": "Strongly Agree\nAgree\nNeutral\nDisagree\nStrongly Disagree"}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS Upward Feedback",
+ "owner": "Administrator",
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "HR Manager", "read": 1},
+  {"role": "Employee", "read": 1, "write": 1, "create": 1}
+ ],
+ "title_field": "manager_being_reviewed",
+ "track_changes": 0
+}

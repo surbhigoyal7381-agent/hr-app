@@ -8,9 +8,18 @@ def validate_individual_goal(doc, method=None):
         frappe.throw(_("Target value must be greater than 0"))
     if doc.start_date and doc.end_date and doc.start_date > doc.end_date:
         frappe.throw(_("Start date must be before end date"))
-    cascade = frappe.get_doc("Goal Cascade", doc.goal_cascade)
-    if cascade.status not in ("Active", "Draft"):
-        frappe.throw(_("Cannot assign goal to a {0} cascade").format(cascade.status))
+
+    # Alignment is optional. An organisational objective — the company owner's,
+    # typically — is where a cascade begins rather than a link within one, so it
+    # has neither a parent nor a cascade to validate against.
+    if doc.goal_cascade:
+        cascade = frappe.get_doc("Goal Cascade", doc.goal_cascade)
+        if cascade.status not in ("Active", "Draft"):
+            frappe.throw(_("Cannot assign goal to a {0} cascade").format(cascade.status))
+
+    if doc.parent_goal and doc.parent_goal == doc.name:
+        frappe.throw(_("A goal cannot roll up into itself"))
+
     if doc.actual_progress > 0 and doc.has_value_changed("target_value"):
         frappe.throw(_("Cannot change target after evidence has been submitted"))
     _update_trajectory(doc)
@@ -69,25 +78,41 @@ def recalculate_progress(goal_name):
     if goal.progress_pct >= 100:
         goal.status = "Completed"
     goal.flags.ignore_validate = True
+    goal.flags.ignore_validate_update_after_submit = True
     goal.save()
     frappe.db.commit()
-    _append_audit_log(goal_name, "Progress Updated", old, total, "System", "Recalculated from approved evidence")
+    _append_audit_log(goal_name, "Progress Updated", old, total, frappe.session.user, "Recalculated from approved evidence")
     _aggregate_cascade(goal.goal_cascade)
 
 
 def _aggregate_cascade(cascade_name):
-    """Roll up progress to the Goal Cascade doc."""
+    """Roll up contributing goals' progress onto the Goal Cascade.
+
+    Two things used to stop this working. It filtered on `docstatus: 1`, but
+    nothing in the portal submits goals, so it always matched zero rows; goals
+    are live from creation here, and only a cancelled one (docstatus 2) should
+    be excluded. And it wrote to `__last_agg_pct`, which is not a field on the
+    doctype — the value went nowhere.
+    """
+    if not cascade_name:
+        # Organisational goals have no cascade; there is nothing to roll up to.
+        return
+
     goals = frappe.get_all(
         "Individual Goal",
-        filters={"goal_cascade": cascade_name, "docstatus": 1},
-        fields=["actual_progress", "target_value"]
+        filters={"goal_cascade": cascade_name, "docstatus": ["!=", 2]},
+        fields=["actual_progress", "target_value"],
+        ignore_permissions=True,
     )
-    if not goals:
-        return
     total_target = sum(g.target_value for g in goals if g.target_value)
     total_actual = sum(g.actual_progress for g in goals if g.actual_progress)
     agg_pct = (total_actual / total_target * 100) if total_target else 0
-    frappe.db.set_value("Goal Cascade", cascade_name, "__last_agg_pct", agg_pct, update_modified=False)
+
+    frappe.db.set_value(
+        "Goal Cascade", cascade_name,
+        {"aggregate_progress_pct": agg_pct, "aggregate_updated_on": now_datetime()},
+        update_modified=False,
+    )
 
 
 def _append_audit_log(goal_id, event_type, old_value, new_value, changed_by, reason=None):

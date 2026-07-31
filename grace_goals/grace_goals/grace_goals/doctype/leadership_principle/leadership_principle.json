@@ -1,0 +1,38 @@
+{
+ "autoname": "field:principle_name",
+ "creation": "2026-07-30 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "principle_name", "is_active", "col_break_1", "description",
+  "section_behaviours", "expected_behaviours"
+ ],
+ "fields": [
+  {"fieldname": "principle_name", "fieldtype": "Data", "label": "Principle Name",
+   "reqd": 1, "unique": 1, "in_list_view": 1, "search_index": 1},
+  {"fieldname": "is_active", "fieldtype": "Check", "label": "Active",
+   "default": "1", "in_list_view": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "description", "fieldtype": "Text", "label": "Description",
+   "description": "Brief description of what this principle means."},
+  {"fieldname": "section_behaviours", "fieldtype": "Section Break",
+   "label": "Expected Behaviours"},
+  {"fieldname": "expected_behaviours", "fieldtype": "Long Text",
+   "label": "Expected Behaviours",
+   "description": "One observable behaviour per line. These appear as prompts on the upward feedback form."}
+ ],
+ "modified": "2026-07-30 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Grace Goals",
+ "name": "Leadership Principle",
+ "owner": "Administrator",
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "HR Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "HR User", "read": 1, "write": 1, "create": 1},
+  {"role": "Employee", "read": 1}
+ ],
+ "sort_field": "principle_name",
+ "sort_order": "ASC",
+ "track_changes": 1
+}

@@ -1,0 +1,367 @@
+{% extends "templates/web.html" %}
+{% block title %}Grace PMS — My Review{% endblock %}
+{% block head_include %}
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+:root{
+  --bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F3F1ED;
+  --border:#E8E5F2;--border2:#D8D5CE;
+  --text:#2D2622;--text2:#5C5854;--text3:#8B8680;
+  --primary:#5B4B8A;--primary-h:#6E5FA0;--primary-d:#3D3461;--primary-lt:#E8E5F2;
+  --green:#3A9899;--green-lt:#D4F1F4;
+  --red:#D44060;--red-lt:#FFEAEE;
+  --amber:#B55080;--amber-lt:#FFF0F7;
+  --sh1:0 2px 6px rgba(0,0,0,.05);--sh2:0 4px 12px rgba(0,0,0,.1);
+  --r:8px;--sidebar-w:252px;--sidebar-bg:#FFFFFF;--t:.18s cubic-bezier(.4,0,.2,1);
+}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#1A1815;--surface:#2D2622;--surface2:#3A3632;
+  --border:#403A52;--border2:#5A5472;
+  --text:#F8F6F3;--text2:#B8B5AE;--text3:#6B6662;
+  --primary:#9B8FC0;--primary-h:#B5ABD4;--primary-d:#6E5FA0;--primary-lt:#3D3461;
+  --green:#6DB5B8;--green-lt:#1A3A3B;--red:#F08090;--red-lt:#3D1520;
+  --amber:#E890B8;--amber-lt:#3D1B28;--sidebar-bg:#211D28;
+}}
+:root[data-theme="dark"]{--bg:#1A1815;--surface:#2D2622;--surface2:#3A3632;--border:#403A52;--border2:#5A5472;--text:#F8F6F3;--text2:#B8B5AE;--text3:#6B6662;--primary:#9B8FC0;--primary-h:#B5ABD4;--primary-d:#6E5FA0;--primary-lt:#3D3461;--green:#6DB5B8;--green-lt:#1A3A3B;--red:#F08090;--red-lt:#3D1520;--amber:#E890B8;--amber-lt:#3D1B28;--sidebar-bg:#211D28;}
+:root[data-theme="light"]{--bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F3F1ED;--border:#E8E5F2;--border2:#D8D5CE;--text:#2D2622;--text2:#5C5854;--text3:#8B8680;--primary:#5B4B8A;--primary-h:#6E5FA0;--primary-d:#3D3461;--primary-lt:#E8E5F2;--green:#3A9899;--green-lt:#D4F1F4;--red:#D44060;--red-lt:#FFEAEE;--amber:#B55080;--amber-lt:#FFF0F7;--sidebar-bg:#FFFFFF;}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,sans-serif;font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:var(--primary);text-decoration:none}
+button{cursor:pointer;border:none;background:none;font:inherit;color:inherit}
+nav.navbar{position:fixed!important;top:0;left:0;right:0;z-index:1100;width:100%}
+.app-shell{display:flex;min-height:calc(100vh - 52px);margin-top:52px}
+.sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--sidebar-bg);display:flex;flex-direction:column;position:fixed;top:52px;left:0;bottom:0;z-index:50;overflow-y:auto;border-right:1px solid var(--border)}
+.sidebar-brand{padding:20px 12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.brand-icon{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--primary),var(--primary-h));display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex-shrink:0}
+.brand-text{display:flex;flex-direction:column;min-width:0}
+.brand-title{font-size:13px;font-weight:700;color:var(--text);letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand-sub{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em}
+.nav-section{padding:12px 0 4px}
+.nav-label{padding:0 16px 6px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;transition:background var(--t),color var(--t);border-left:3px solid transparent}
+.nav-item:hover{background:var(--surface2);color:var(--text)}
+.nav-item.active{background:var(--primary-lt);color:var(--primary);border-left-color:var(--primary);font-weight:600}
+.nav-icon{width:16px;text-align:center;flex-shrink:0;opacity:.7}
+.nav-item.active .nav-icon{opacity:1}
+.main{flex:1;margin-left:var(--sidebar-w);padding:28px 32px;max-width:1100px}
+.page-header{margin-bottom:24px}
+.page-title{font-size:22px;font-weight:700;color:var(--text);letter-spacing:-.02em}
+.page-sub{font-size:13px;color:var(--text2);margin-top:4px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px 24px;margin-bottom:16px;box-shadow:var(--sh1)}
+.card-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.status-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:.03em}
+.badge-not-started{background:#F3F1ED;color:#8B8680}
+.badge-open{background:var(--green-lt);color:var(--green)}
+.badge-submitted{background:#E8E5F2;color:var(--primary)}
+.badge-prep{background:#FFF7E6;color:#92400E}
+.badge-dialogue{background:#E0F2FE;color:#0C4A6E}
+.badge-final{background:#F0FDF4;color:#166534}
+.badge-calibrated{background:var(--amber-lt);color:var(--amber)}
+.badge-closed{background:var(--surface2);color:var(--text3)}
+.step-row{display:flex;align-items:center;gap:0;margin-bottom:24px;overflow-x:auto;padding-bottom:4px}
+.step{display:flex;flex-direction:column;align-items:center;min-width:90px;position:relative}
+.step:not(:last-child)::after{content:'';position:absolute;top:14px;left:50%;right:-50%;height:2px;background:var(--border)}
+.step.done::after,.step.active::after{background:var(--primary-lt)}
+.step-dot{width:28px;height:28px;border-radius:50%;border:2px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;z-index:1;position:relative}
+.step.done .step-dot{background:var(--primary);border-color:var(--primary);color:#fff}
+.step.active .step-dot{background:var(--surface);border-color:var(--primary);color:var(--primary)}
+.step-label{font-size:10px;color:var(--text3);margin-top:6px;text-align:center;line-height:1.3;max-width:80px}
+.step.active .step-label{color:var(--primary);font-weight:600}
+.goals-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.goal-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:box-shadow var(--t)}
+.goal-card:hover{box-shadow:var(--sh2)}
+.goal-title-text{font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px}
+.goal-meta{font-size:11px;color:var(--text3);display:flex;align-items:center;gap:8px}
+.progress-bar-wrap{height:4px;background:var(--border);border-radius:2px;margin-top:10px}
+.progress-bar{height:4px;border-radius:2px;background:var(--primary);transition:width .3s}
+.action-bar{display:flex;gap:10px;margin-top:20px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border-radius:6px;font-size:13px;font-weight:600;transition:background var(--t),opacity var(--t)}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover{background:var(--primary-h)}
+.btn-outline{border:1px solid var(--border2);color:var(--text2)}
+.btn-outline:hover{background:var(--surface2);color:var(--text)}
+.btn:disabled{opacity:.5;pointer-events:none}
+.empty-state{text-align:center;padding:40px 20px;color:var(--text3)}
+.empty-icon{font-size:36px;margin-bottom:12px}
+.loading{text-align:center;padding:40px;color:var(--text3)}
+</style>
+{% endblock %}
+{% block page_content %}
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-icon">G</div>
+      <div class="brand-text">
+        <span class="brand-title">Grace HR</span>
+        <span class="brand-sub">Performance</span>
+      </div>
+    </div>
+    <nav>
+      <div class="nav-section">
+        <div class="nav-label">My Review</div>
+        <div class="nav-item active" onclick="showSection('review')">
+          <span class="nav-icon">📋</span> My Review
+        </div>
+        <div class="nav-item" onclick="showSection('goals')">
+          <span class="nav-icon">🎯</span> My Goals
+        </div>
+        <div class="nav-item" onclick="showSection('development')">
+          <span class="nav-icon">🌱</span> Development
+        </div>
+        <div class="nav-item" onclick="showSection('checkins')">
+          <span class="nav-icon">💬</span> Check-ins
+        </div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">Portal</div>
+        <div class="nav-item" onclick="location.href='/hrms-employee'">
+          <span class="nav-icon">🏠</span> Employee Portal
+        </div>
+      </div>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div id="loading" class="loading">Loading your review data…</div>
+
+    <div id="content" style="display:none">
+      <!-- Review Section -->
+      <section id="sec-review">
+        <div class="page-header">
+          <h1 class="page-title">My Performance Review</h1>
+          <p class="page-sub" id="cycle-label">Loading cycle…</p>
+        </div>
+
+        <div class="card" id="review-status-card" style="display:none">
+          <div class="card-title">Review Progress</div>
+          <div class="step-row" id="step-row"></div>
+          <div id="review-actions" class="action-bar"></div>
+        </div>
+
+        <div class="card" id="no-cycle-card" style="display:none">
+          <div class="empty-state">
+            <div class="empty-icon">🗓️</div>
+            <p>No active review cycle at this time.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Goals Section -->
+      <section id="sec-goals" style="display:none">
+        <div class="page-header">
+          <h1 class="page-title">My Goals</h1>
+          <div class="action-bar">
+            <button class="btn btn-primary" onclick="openNewGoalDialog()">+ Add Goal</button>
+          </div>
+        </div>
+        <div class="goals-grid" id="goals-grid"></div>
+      </section>
+
+      <!-- Development Section -->
+      <section id="sec-development" style="display:none">
+        <div class="page-header">
+          <h1 class="page-title">Development Goals</h1>
+          <div class="action-bar">
+            <button class="btn btn-primary" onclick="openNewDevGoalDialog()">+ Add Development Goal</button>
+          </div>
+        </div>
+        <div id="dev-goals-list"></div>
+      </section>
+
+      <!-- Check-ins Section -->
+      <section id="sec-checkins" style="display:none">
+        <div class="page-header">
+          <h1 class="page-title">Check-ins</h1>
+        </div>
+        <div id="checkins-list"></div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<script>
+const STEPS = [
+  {key:'Not Started',label:'Not Started'},
+  {key:'Self Review Open',label:'Self Review'},
+  {key:'Self Review Submitted',label:'Submitted'},
+  {key:'Manager Preparation',label:'Mgr Prep'},
+  {key:'Dialogue Complete',label:'Dialogue'},
+  {key:'Final Form With Employee',label:'Final Form'},
+  {key:'Submitted by Employee',label:'Acknowledged'},
+  {key:'Calibrated',label:'Calibrated'},
+  {key:'Closed',label:'Closed'},
+];
+
+const STATUS_BADGE = {
+  'Not Started':'badge-not-started',
+  'Self Review Open':'badge-open',
+  'Self Review Submitted':'badge-submitted',
+  'Manager Preparation':'badge-prep',
+  'Additional Manager Review':'badge-prep',
+  'Joint Manager Discussion':'badge-dialogue',
+  'Employee Invited to Dialogue':'badge-dialogue',
+  'Dialogue Complete':'badge-dialogue',
+  'Manager Adjustments':'badge-prep',
+  'Final Form With Employee':'badge-final',
+  'Returned for Amendment':'badge-open',
+  'Submitted by Employee':'badge-submitted',
+  'In Calibration':'badge-calibrated',
+  'Calibrated':'badge-calibrated',
+  'Closed':'badge-closed',
+};
+
+let dashData = null;
+
+async function loadDashboard() {
+  try {
+    const r = await frappe.call({method: 'hrms.pms.api.get_employee_dashboard'});
+    dashData = r.message;
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = '';
+    renderReview();
+    renderGoals();
+    renderDevGoals();
+    renderCheckins();
+  } catch(e) {
+    document.getElementById('loading').textContent = 'Error loading data. Please refresh.';
+  }
+}
+
+function renderReview() {
+  const d = dashData;
+  if (!d.cycle) {
+    document.getElementById('no-cycle-card').style.display = '';
+    return;
+  }
+  document.getElementById('cycle-label').textContent = 'Active Cycle: ' + (d.cycle || '');
+  document.getElementById('review-status-card').style.display = '';
+
+  const rr = d.review_record;
+  const currentStatus = rr ? rr.status : 'Not Started';
+  const stepIdx = STEPS.findIndex(s => s.key === currentStatus);
+
+  const stepRow = document.getElementById('step-row');
+  stepRow.innerHTML = STEPS.map((s, i) => {
+    const cls = i < stepIdx ? 'done' : i === stepIdx ? 'active' : '';
+    return `<div class="step ${cls}">
+      <div class="step-dot">${i < stepIdx ? '✓' : i+1}</div>
+      <div class="step-label">${s.label}</div>
+    </div>`;
+  }).join('');
+
+  const actions = document.getElementById('review-actions');
+  actions.innerHTML = '';
+
+  if (currentStatus === 'Self Review Open') {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-primary';
+    btn.textContent = 'Submit Self Review';
+    btn.onclick = () => submitSelfReview(rr.name);
+    actions.appendChild(btn);
+  }
+  if (currentStatus === 'Final Form With Employee') {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-primary';
+    btn.textContent = 'Acknowledge & Submit';
+    btn.onclick = () => acknowledgeFinalForm(rr.name);
+    actions.appendChild(btn);
+  }
+}
+
+function renderGoals() {
+  const grid = document.getElementById('goals-grid');
+  if (!dashData.goals || !dashData.goals.length) {
+    grid.innerHTML = '<div class="empty-state"><div class="empty-icon">🎯</div><p>No goals set for this cycle yet.</p></div>';
+    return;
+  }
+  grid.innerHTML = dashData.goals.map(g => `
+    <div class="goal-card">
+      <div class="goal-title-text">${g.goal_title}</div>
+      <div class="goal-meta">
+        <span>${g.goal_type}</span>
+        <span>·</span>
+        <span class="status-badge ${STATUS_BADGE[g.status] || ''}">${g.status}</span>
+        <span>·</span>
+        <span>${g.weight || 0}%</span>
+      </div>
+      <div class="progress-bar-wrap"><div class="progress-bar" style="width:${g.weight || 0}%"></div></div>
+    </div>
+  `).join('');
+}
+
+function renderDevGoals() {
+  const list = document.getElementById('dev-goals-list');
+  if (!dashData.dev_goals || !dashData.dev_goals.length) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">🌱</div><p>No development goals yet.</p></div>';
+    return;
+  }
+  list.innerHTML = dashData.dev_goals.map(g => `
+    <div class="card">
+      <div class="card-title">${g.title}</div>
+      <div class="goal-meta">
+        <span>${g.development_type || ''}</span>
+        <span>·</span>
+        <span class="status-badge ${g.status === 'Active' ? 'badge-open' : 'badge-closed'}">${g.status}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderCheckins() {
+  const list = document.getElementById('checkins-list');
+  if (!dashData.checkins || !dashData.checkins.length) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>No check-ins recorded yet.</p></div>';
+    return;
+  }
+  list.innerHTML = dashData.checkins.map(c => `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="card-title" style="margin:0">Check-in on ${frappe.datetime.str_to_user(c.check_in_date)}</div>
+        <span class="status-badge ${c.status === 'Complete' ? 'badge-closed' : 'badge-open'}">${c.status}</span>
+      </div>
+      <div class="goal-meta" style="margin-top:8px">Manager: ${c.manager}</div>
+    </div>
+  `).join('');
+}
+
+async function submitSelfReview(rrName) {
+  if (!confirm('Submit your self-review? This cannot be undone.')) return;
+  try {
+    await frappe.call({method:'hrms.pms.api.submit_self_review', args:{review_record_name:rrName}});
+    frappe.show_alert({message:'Self review submitted!', indicator:'green'});
+    loadDashboard();
+  } catch(e) {
+    frappe.msgprint(e.message || 'Error submitting self review');
+  }
+}
+
+async function acknowledgeFinalForm(rrName) {
+  if (!confirm('Acknowledge and submit your final review? This cannot be undone.')) return;
+  try {
+    await frappe.call({method:'hrms.pms.api.acknowledge_final_form', args:{review_record_name:rrName}});
+    frappe.show_alert({message:'Review acknowledged and submitted!', indicator:'green'});
+    loadDashboard();
+  } catch(e) {
+    frappe.msgprint(e.message || 'Error');
+  }
+}
+
+function openNewGoalDialog() {
+  frappe.new_doc('PMS Business Goal');
+}
+
+function openNewDevGoalDialog() {
+  frappe.new_doc('PMS Development Goal');
+}
+
+function showSection(name) {
+  ['review','goals','development','checkins'].forEach(s => {
+    document.getElementById('sec-' + s).style.display = s === name ? '' : 'none';
+  });
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+}
+
+frappe.ready(() => { loadDashboard(); });
+</script>
+{% endblock %}

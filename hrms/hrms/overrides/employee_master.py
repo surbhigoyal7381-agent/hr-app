@@ -6,10 +6,10 @@ from frappe import _
 from frappe.model.naming import set_name_by_naming_series
 from frappe.utils import add_years, cint, get_link_to_form, getdate
 
-from erpnext.setup.doctype.employee.employee import Employee
+from frappe.model.document import Document
 
 
-class EmployeeMaster(Employee):
+class EmployeeMaster(Document):
 	def autoname(self):
 		naming_method = frappe.db.get_single_value("HR Settings", "emp_created_by")
 		if not naming_method:

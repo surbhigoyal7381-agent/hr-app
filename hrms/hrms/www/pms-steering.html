@@ -1,0 +1,219 @@
+{% extends "templates/web.html" %}
+{% block title %}Grace PMS — HR Steering{% endblock %}
+{% block head_include %}
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+:root{--bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F3F1ED;--border:#E8E5F2;--text:#2D2622;--text2:#5C5854;--text3:#8B8680;--primary:#5B4B8A;--primary-h:#6E5FA0;--primary-lt:#E8E5F2;--green:#3A9899;--green-lt:#D4F1F4;--red:#D44060;--amber:#B55080;--sh1:0 2px 6px rgba(0,0,0,.05);--sh2:0 4px 12px rgba(0,0,0,.1);--r:8px;--sidebar-w:252px;--sidebar-bg:#FFFFFF;--t:.18s cubic-bezier(.4,0,.2,1);}
+@media(prefers-color-scheme:dark){:root{--bg:#1A1815;--surface:#2D2622;--surface2:#3A3632;--border:#403A52;--text:#F8F6F3;--text2:#B8B5AE;--text3:#6B6662;--primary:#9B8FC0;--primary-h:#B5ABD4;--primary-lt:#3D3461;--sidebar-bg:#211D28;}}
+:root[data-theme="dark"]{--bg:#1A1815;--surface:#2D2622;--surface2:#3A3632;--border:#403A52;--text:#F8F6F3;--text2:#B8B5AE;--text3:#6B6662;--primary:#9B8FC0;--primary-h:#B5ABD4;--primary-lt:#3D3461;--sidebar-bg:#211D28;}
+:root[data-theme="light"]{--bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F3F1ED;--border:#E8E5F2;--text:#2D2622;--text2:#5C5854;--text3:#8B8680;--primary:#5B4B8A;--primary-h:#6E5FA0;--primary-lt:#E8E5F2;--sidebar-bg:#FFFFFF;}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,sans-serif;font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
+nav.navbar{position:fixed!important;top:0;left:0;right:0;z-index:1100;width:100%}
+.app-shell{display:flex;min-height:calc(100vh - 52px);margin-top:52px}
+.sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--sidebar-bg);display:flex;flex-direction:column;position:fixed;top:52px;left:0;bottom:0;z-index:50;overflow-y:auto;border-right:1px solid var(--border)}
+.sidebar-brand{padding:20px 12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.brand-icon{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--primary),var(--primary-h));display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex-shrink:0}
+.brand-text{display:flex;flex-direction:column;min-width:0}
+.brand-title{font-size:13px;font-weight:700;color:var(--text);letter-spacing:-.01em}
+.brand-sub{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;transition:background var(--t),color var(--t);border-left:3px solid transparent}
+.nav-item:hover{background:var(--surface2);color:var(--text)}
+.nav-item.active{background:var(--primary-lt);color:var(--primary);border-left-color:var(--primary);font-weight:600}
+.main{flex:1;margin-left:var(--sidebar-w);padding:28px 32px;max-width:1100px}
+.page-title{font-size:22px;font-weight:700;color:var(--text);letter-spacing:-.02em;margin-bottom:24px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px 24px;margin-bottom:16px;box-shadow:var(--sh1)}
+.card-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:16px}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:24px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px;text-align:center;box-shadow:var(--sh1)}
+.stat-num{font-size:32px;font-weight:700;color:var(--primary);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.stat-label{font-size:12px;color:var(--text3);margin-top:6px}
+.progress-row{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.progress-label{width:160px;font-size:12px;color:var(--text2);flex-shrink:0}
+.progress-track{flex:1;height:8px;background:var(--border);border-radius:4px;overflow:hidden}
+.progress-fill{height:8px;border-radius:4px;background:var(--primary);transition:width .4s}
+.progress-count{width:50px;font-size:12px;color:var(--text3);text-align:right;font-variant-numeric:tabular-nums}
+.cycle-select{padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:13px;margin-bottom:24px}
+.dist-bar-wrap{display:flex;align-items:flex-end;gap:8px;height:120px;margin-top:12px}
+.dist-bar-col{display:flex;flex-direction:column;align-items:center;flex:1;gap:4px}
+.dist-bar{background:var(--primary);border-radius:4px 4px 0 0;width:100%;transition:height .3s;min-height:4px}
+.dist-label{font-size:11px;color:var(--text3)}
+.dist-count{font-size:10px;color:var(--text3);font-variant-numeric:tabular-nums}
+.loading{text-align:center;padding:40px;color:var(--text3)}
+table{border-collapse:collapse;width:100%}
+th{font-weight:600;text-align:left;color:var(--text3);font-size:11px;text-transform:uppercase;letter-spacing:.07em;padding:12px 16px;border-bottom:1px solid var(--border)}
+td{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--surface2)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:none;transition:background var(--t)}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover{background:var(--primary-h)}
+</style>
+{% endblock %}
+{% block page_content %}
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-icon">G</div>
+      <div class="brand-text">
+        <span class="brand-title">Grace HR</span>
+        <span class="brand-sub">HR Steering</span>
+      </div>
+    </div>
+    <nav>
+      <div style="padding:12px 0">
+        <div class="nav-item active" onclick="showSection('overview')"><span>📊</span> Overview</div>
+        <div class="nav-item" onclick="showSection('distribution')"><span>📈</span> Rating Distribution</div>
+        <div class="nav-item" onclick="showSection('flags')"><span>🚩</span> Talent Flags</div>
+        <div class="nav-item" onclick="location.href='/pms-calibration'"><span>⚖️</span> Calibration</div>
+      </div>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <h1 class="page-title">HR Steering Dashboard</h1>
+
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
+      <select class="cycle-select" id="cycle-select" onchange="loadCycleData(this.value)">
+        <option value="">Select Cycle…</option>
+      </select>
+      <button class="btn btn-primary" onclick="frappe.set_route('List','PMS Cycle')">Manage Cycles</button>
+    </div>
+
+    <div id="sec-overview">
+      <div class="stat-grid" id="stat-grid">
+        <div class="stat-card"><div class="stat-num">—</div><div class="stat-label">Total Records</div></div>
+        <div class="stat-card"><div class="stat-num">—</div><div class="stat-label">Closed</div></div>
+        <div class="stat-card"><div class="stat-num">—</div><div class="stat-label">Calibrated</div></div>
+        <div class="stat-card"><div class="stat-num">—</div><div class="stat-label">In Progress</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Completion by Stage</div>
+        <div id="stage-progress"></div>
+      </div>
+    </div>
+
+    <div id="sec-distribution" style="display:none">
+      <div class="card">
+        <div class="card-title">Rating Distribution</div>
+        <div class="dist-bar-wrap" id="dist-bars"></div>
+      </div>
+    </div>
+
+    <div id="sec-flags" style="display:none">
+      <div class="card">
+        <div class="card-title">Recent Talent Flags</div>
+        <table>
+          <thead><tr><th>Employee</th><th>Flag Type</th><th>Cycle</th><th>Flagged By</th></tr></thead>
+          <tbody id="flags-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+let currentCycle = null;
+
+async function loadCycles() {
+  const r = await frappe.call({method:'frappe.client.get_list',args:{
+    doctype:'PMS Cycle',fields:['name','cycle_name','status'],limit:20,order_by:'creation desc'
+  }});
+  const sel = document.getElementById('cycle-select');
+  (r.message||[]).forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.name;
+    opt.textContent = c.cycle_name + ' [' + c.status + ']';
+    sel.appendChild(opt);
+    if (c.status === 'Active') { sel.value = c.name; }
+  });
+  if (sel.value) loadCycleData(sel.value);
+}
+
+async function loadCycleData(cycle) {
+  if (!cycle) return;
+  currentCycle = cycle;
+  const r = await frappe.call({method:'hrms.pms.api.get_cycle_completion',args:{cycle}});
+  const data = r.message;
+  const byStatus = {};
+  (data.by_status||[]).forEach(s => { byStatus[s.status] = s.count; });
+  const total = data.total || 0;
+
+  const statGrid = document.getElementById('stat-grid');
+  const closed = byStatus['Closed'] || 0;
+  const calibrated = byStatus['Calibrated'] || 0;
+  const inProg = total - closed - calibrated;
+  statGrid.innerHTML = `
+    <div class="stat-card"><div class="stat-num">${total}</div><div class="stat-label">Total Records</div></div>
+    <div class="stat-card"><div class="stat-num">${closed}</div><div class="stat-label">Closed</div></div>
+    <div class="stat-card"><div class="stat-num">${calibrated}</div><div class="stat-label">Calibrated</div></div>
+    <div class="stat-card"><div class="stat-num">${inProg}</div><div class="stat-label">In Progress</div></div>
+  `;
+
+  const ORDER = ['Not Started','Self Review Open','Self Review Submitted','Manager Preparation',
+    'Additional Manager Review','Joint Manager Discussion','Employee Invited to Dialogue',
+    'Dialogue Complete','Manager Adjustments','Final Form With Employee','Returned for Amendment',
+    'Submitted by Employee','In Calibration','Calibrated','Closed'];
+  const prog = document.getElementById('stage-progress');
+  prog.innerHTML = ORDER.map(s => {
+    const cnt = byStatus[s] || 0;
+    const pct = total ? Math.round(cnt / total * 100) : 0;
+    return `<div class="progress-row">
+      <div class="progress-label">${s}</div>
+      <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
+      <div class="progress-count">${cnt}</div>
+    </div>`;
+  }).join('');
+}
+
+async function loadDistribution() {
+  if (!currentCycle) return;
+  const r = await frappe.call({method:'hrms.pms.api.get_rating_distribution',args:{cycle:currentCycle}});
+  const rows = r.message || [];
+  if (!rows.length) {
+    document.getElementById('dist-bars').innerHTML = '<p style="color:var(--text3);padding:20px">No calibrated/closed records yet.</p>';
+    return;
+  }
+  const max = Math.max(...rows.map(r => r.count));
+  document.getElementById('dist-bars').innerHTML = rows.map(r => `
+    <div class="dist-bar-col">
+      <div class="dist-count">${r.count}</div>
+      <div class="dist-bar" style="height:${Math.max(4, Math.round(r.count/max*100))}px"></div>
+      <div class="dist-label">Rating ${r.overall_rating}</div>
+    </div>
+  `).join('');
+}
+
+async function loadFlags() {
+  const r = await frappe.call({method:'frappe.client.get_list',args:{
+    doctype:'PMS Talent Flag',fields:['name','employee','flag_type','cycle','flagged_by'],limit:50,order_by:'creation desc'
+  }});
+  const tbody = document.getElementById('flags-tbody');
+  if (!r.message || !r.message.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text3)">No talent flags.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = r.message.map(f => `
+    <tr>
+      <td>${f.employee}</td>
+      <td>${f.flag_type}</td>
+      <td>${f.cycle}</td>
+      <td>${f.flagged_by}</td>
+    </tr>
+  `).join('');
+}
+
+function showSection(name) {
+  ['overview','distribution','flags'].forEach(s => {
+    document.getElementById('sec-' + s).style.display = s === name ? '' : 'none';
+  });
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  if (name === 'distribution') loadDistribution();
+  if (name === 'flags') loadFlags();
+}
+
+frappe.ready(() => { loadCycles(); });
+</script>
+{% endblock %}

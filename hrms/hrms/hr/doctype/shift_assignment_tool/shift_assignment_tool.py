@@ -10,8 +10,6 @@ from frappe.query_builder import Case, Criterion, Interval
 from frappe.query_builder.terms import SubQuery
 from frappe.utils import get_link_to_form
 
-from erpnext.accounts.utils import build_qb_match_conditions
-
 from hrms.hr.utils import validate_bulk_tool_fields
 
 
@@ -95,7 +93,7 @@ class ShiftAssignmentTool(Document):
 		elif self.status == "Active":
 			query = query.where(Employee.employee.notin(SubQuery(self.get_query_for_employees_with_shifts())))
 
-		query = query.where(Criterion.all(build_qb_match_conditions("Employee")))
+		query = query.where(Criterion.all([]))
 
 		return query.run(as_dict=True)
 
@@ -128,7 +126,7 @@ class ShiftAssignmentTool(Document):
 		if self.to_date:
 			query = query.where(ShiftRequest.from_date <= self.to_date)
 
-		query = query.where(Criterion.all(build_qb_match_conditions("Employee")))
+		query = query.where(Criterion.all([]))
 
 		data = query.run(as_dict=True)
 		for d in data:

@@ -1,0 +1,191 @@
+{% extends "templates/web.html" %}
+{% block title %}Grace PMS — Calibration{% endblock %}
+{% block head_include %}
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+:root{--bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F3F1ED;--border:#E8E5F2;--text:#2D2622;--text2:#5C5854;--text3:#8B8680;--primary:#5B4B8A;--primary-h:#6E5FA0;--primary-lt:#E8E5F2;--green:#3A9899;--green-lt:#D4F1F4;--red:#D44060;--amber:#B55080;--sh1:0 2px 6px rgba(0,0,0,.05);--r:8px;--sidebar-w:252px;--sidebar-bg:#FFFFFF;--t:.18s cubic-bezier(.4,0,.2,1);}
+@media(prefers-color-scheme:dark){:root{--bg:#1A1815;--surface:#2D2622;--surface2:#3A3632;--border:#403A52;--text:#F8F6F3;--text2:#B8B5AE;--text3:#6B6662;--primary:#9B8FC0;--primary-h:#B5ABD4;--primary-lt:#3D3461;--green:#6DB5B8;--green-lt:#1A3A3B;--red:#F08090;--amber:#E890B8;--sidebar-bg:#211D28;}}
+:root[data-theme="dark"]{--bg:#1A1815;--surface:#2D2622;--surface2:#3A3632;--border:#403A52;--text:#F8F6F3;--text2:#B8B5AE;--text3:#6B6662;--primary:#9B8FC0;--primary-h:#B5ABD4;--primary-lt:#3D3461;--sidebar-bg:#211D28;}
+:root[data-theme="light"]{--bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F3F1ED;--border:#E8E5F2;--text:#2D2622;--text2:#5C5854;--text3:#8B8680;--primary:#5B4B8A;--primary-h:#6E5FA0;--primary-lt:#E8E5F2;--sidebar-bg:#FFFFFF;}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,sans-serif;font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
+nav.navbar{position:fixed!important;top:0;left:0;right:0;z-index:1100;width:100%}
+.app-shell{display:flex;min-height:calc(100vh - 52px);margin-top:52px}
+.sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--sidebar-bg);display:flex;flex-direction:column;position:fixed;top:52px;left:0;bottom:0;z-index:50;overflow-y:auto;border-right:1px solid var(--border)}
+.sidebar-brand{padding:20px 12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.brand-icon{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--primary),var(--primary-h));display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex-shrink:0}
+.brand-text{display:flex;flex-direction:column;min-width:0}
+.brand-title{font-size:13px;font-weight:700;color:var(--text);letter-spacing:-.01em}
+.brand-sub{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;transition:background var(--t),color var(--t);border-left:3px solid transparent}
+.nav-item:hover{background:var(--surface2);color:var(--text)}
+.nav-item.active{background:var(--primary-lt);color:var(--primary);border-left-color:var(--primary);font-weight:600}
+.main{flex:1;margin-left:var(--sidebar-w);padding:28px 32px;max-width:1100px}
+.page-title{font-size:22px;font-weight:700;color:var(--text);letter-spacing:-.02em;margin-bottom:8px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px 24px;margin-bottom:16px;box-shadow:var(--sh1)}
+.card-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:16px}
+table{border-collapse:collapse;width:100%}
+th{font-weight:600;text-align:left;color:var(--text3);font-size:11px;text-transform:uppercase;letter-spacing:.07em;padding:12px 16px;border-bottom:1px solid var(--border)}
+td{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--surface2)}
+input[type=number]{width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--surface2);color:var(--text);font-size:13px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border-radius:6px;font-size:13px;font-weight:600;transition:background var(--t)}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover{background:var(--primary-h)}
+.btn-danger{background:var(--red);color:#fff}
+.session-selector{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:24px}
+select{padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font-size:13px}
+.loading{text-align:center;padding:40px;color:var(--text3)}
+</style>
+{% endblock %}
+{% block page_content %}
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-icon">G</div>
+      <div class="brand-text">
+        <span class="brand-title">Grace HR</span>
+        <span class="brand-sub">Calibration</span>
+      </div>
+    </div>
+    <nav>
+      <div style="padding:12px 0">
+        <div class="nav-item active" onclick="showSection('calibration')"><span>⚖️</span> Calibration</div>
+        <div class="nav-item" onclick="location.href='/pms-steering'"><span>📊</span> Steering</div>
+        <div class="nav-item" onclick="location.href='/pms-manager'"><span>👥</span> Team View</div>
+      </div>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <h1 class="page-title">Calibration Sessions</h1>
+
+    <div class="session-selector">
+      <select id="session-select" onchange="loadSession(this.value)">
+        <option value="">Select a session…</option>
+      </select>
+      <button class="btn btn-primary" onclick="frappe.new_doc('PMS Calibration Session')">+ New Session</button>
+    </div>
+
+    <div id="session-content" style="display:none">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div class="card-title" style="margin:0">Review Records in Scope</div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="saveAdjustments()">Save Adjustments</button>
+            <button class="btn btn-danger" onclick="lockSession()">Lock & Apply</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Manager Rating</th>
+                <th>Calibrated Rating</th>
+                <th>Delta</th>
+                <th>Rationale</th>
+              </tr>
+            </thead>
+            <tbody id="cal-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="loading" class="loading" style="display:none">Loading session data…</div>
+  </main>
+</div>
+
+<script>
+let currentSession = null;
+let calData = [];
+
+async function loadSessions() {
+  const r = await frappe.call({method:'frappe.client.get_list',args:{
+    doctype:'PMS Calibration Session',
+    filters:{status:['in',['Planned','In Progress']]},
+    fields:['name','session_name','status'],
+    limit:30
+  }});
+  const sel = document.getElementById('session-select');
+  (r.message||[]).forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.name;
+    opt.textContent = s.session_name + ' [' + s.status + ']';
+    sel.appendChild(opt);
+  });
+}
+
+async function loadSession(name) {
+  if (!name) { document.getElementById('session-content').style.display='none'; return; }
+  document.getElementById('loading').style.display = '';
+  const r = await frappe.call({method:'hrms.pms.calibration.get_calibration_data',args:{session_name:name}});
+  document.getElementById('loading').style.display = 'none';
+  currentSession = name;
+  calData = r.message.records || [];
+  document.getElementById('session-content').style.display = '';
+  renderCalTable();
+}
+
+function renderCalTable() {
+  const tbody = document.getElementById('cal-tbody');
+  tbody.innerHTML = calData.map((rec, i) => `
+    <tr>
+      <td><strong>${rec.employee_name}</strong><br><small style="color:var(--text3)">${rec.primary_manager||''}</small></td>
+      <td>${rec.overall_rating != null ? rec.overall_rating : '—'}</td>
+      <td><input type="number" min="1" max="10" value="${rec.calibrated_rating || rec.overall_rating || ''}" data-idx="${i}" class="cal-rating"></td>
+      <td class="delta-${i}">—</td>
+      <td><input type="text" placeholder="Rationale…" style="width:200px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--surface2);color:var(--text);font-size:12px" data-rat="${i}"></td>
+    </tr>
+  `).join('');
+
+  document.querySelectorAll('.cal-rating').forEach(inp => {
+    inp.addEventListener('input', function() {
+      const i = this.dataset.idx;
+      const orig = calData[i].overall_rating;
+      const newV = parseInt(this.value) || 0;
+      const delta = newV - (orig || 0);
+      const deltaEl = document.querySelector('.delta-' + i);
+      if (deltaEl) {
+        deltaEl.textContent = delta > 0 ? '+' + delta : delta;
+        deltaEl.style.color = delta > 0 ? 'var(--green)' : delta < 0 ? 'var(--red)' : 'var(--text3)';
+      }
+    });
+  });
+}
+
+async function saveAdjustments() {
+  const adjustments = [];
+  document.querySelectorAll('.cal-rating').forEach(inp => {
+    const i = inp.dataset.idx;
+    const rationale = document.querySelector('[data-rat="'+i+'"]').value;
+    adjustments.push({
+      review_record: calData[i].name,
+      original_rating: calData[i].overall_rating,
+      calibrated_rating: parseInt(inp.value) || calData[i].overall_rating,
+      rationale: rationale || '',
+    });
+  });
+
+  await frappe.call({method:'frappe.client.set_value',args:{
+    doctype:'PMS Calibration Session',
+    name: currentSession,
+    fieldname: 'adjustments',
+    value: adjustments,
+  }});
+  frappe.show_alert({message:'Adjustments saved',indicator:'green'});
+}
+
+async function lockSession() {
+  if (!confirm('Lock this session and apply all calibrated ratings? This cannot be undone.')) return;
+  await saveAdjustments();
+  await frappe.call({method:'hrms.pms.calibration.lock_session',args:{session_name:currentSession}});
+  frappe.show_alert({message:'Session locked and ratings applied',indicator:'green'});
+  loadSessions();
+}
+
+frappe.ready(() => { loadSessions(); });
+</script>
+{% endblock %}

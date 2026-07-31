@@ -1,0 +1,22 @@
+{
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": ["review_record", "employee_name", "col_break_1", "original_rating", "calibrated_rating", "col_break_2", "rationale"],
+ "fields": [
+  {"fieldname": "review_record", "fieldtype": "Link", "label": "Review Record", "options": "PMS Review Record", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "employee_name", "fieldtype": "Data", "label": "Employee", "fetch_from": "review_record.employee_name", "read_only": 1, "in_list_view": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "original_rating", "fieldtype": "Int", "label": "Original Rating", "in_list_view": 1},
+  {"fieldname": "calibrated_rating", "fieldtype": "Int", "label": "Calibrated Rating", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "col_break_2", "fieldtype": "Column Break"},
+  {"fieldname": "rationale", "fieldtype": "Small Text", "label": "Rationale", "reqd": 1}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS Calibration Adjustment",
+ "owner": "Administrator",
+ "permissions": []
+}

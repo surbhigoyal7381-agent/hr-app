@@ -16,7 +16,23 @@ doc_events = {
     "Goal Evidence": {
         "before_insert": "grace_goals.controllers.evidence.validate_evidence",
         "after_insert": "grace_goals.controllers.evidence.after_insert_evidence",
-    }
+    },
+    "KPI": {
+        "validate": "grace_goals.controllers.kpi.validate_kpi",
+    },
+}
+
+# ── Row-level scoping ─────────────────────────────────────────────────────
+# Doctype permissions grant the Employee role read on the whole table; these
+# narrow each query to the caller's own rows (plus their direct reports').
+permission_query_conditions = {
+    "Individual Goal": "grace_goals.permissions.individual_goal_query",
+    "KPI":             "grace_goals.permissions.kpi_query",
+}
+
+has_permission = {
+    "Individual Goal": "grace_goals.permissions.has_employee_permission",
+    "KPI":             "grace_goals.permissions.has_employee_permission",
 }
 
 scheduler_events = {

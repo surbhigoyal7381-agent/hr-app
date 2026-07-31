@@ -1,27 +1,33 @@
 import frappe
 from frappe import _
 
-# Roles that are allowed to reach the Frappe desk (/app)
+# Roles that are allowed to reach the Frappe desk (/app) when the account is not
+# tied to an Employee record — i.e. pure platform operators, not staff.
 _DESK_ROLES = frozenset({
-    "System Manager", "HR Manager", "HR User",
-    "Accounts Manager", "Accounts User", "Administrator",
-    "Stock Manager", "Stock User",
+    "System Manager", "Administrator",
 })
 
 
 def on_login(login_manager=None):
     """Frappe hook — fires after every successful login.
 
-    Portal users (vendors, drivers, employees) are sent to their portal.
-    Desk-role users (admins) are left to reach /app as normal.
+    Anyone with an Employee record lands in the portal, HR and managers
+    included: the portal now covers goal setting, KPI assignment, appraisal
+    generation and manager scoring, so staff have no reason to see the desk.
+    A tenant's HR admin usually also holds System Manager, so seniority alone
+    must not route someone to /app — only the absence of an Employee record does.
     """
     user = frappe.session.user
     if not user or user == "Guest":
         return
 
+    if user != "Administrator" and frappe.db.exists("Employee", {"user_id": user}):
+        frappe.local.response["home_page"] = _portal_home_for(user)
+        return
+
     roles = set(frappe.get_roles(user))
     if _DESK_ROLES.intersection(roles):
-        return  # Admin — let Frappe default home_page logic apply
+        return  # Platform operator — let Frappe's default home_page logic apply
 
     frappe.local.response["home_page"] = _portal_home_for(user)
 
@@ -33,7 +39,7 @@ def _portal_home_for(user):
     if frappe.db.exists("Delivery Partner", {"primary_email": user}):
         return "/driver-portal"
     # Default: HRMS self-service portal (covers all employees)
-    return "/hrms-home"
+    return "/hrms-employee"
 
 
 # ── Tenant branding API ────────────────────────────────────────────────────
@@ -68,9 +74,12 @@ def get_portal_redirect():
     if not user or user == "Guest":
         return {"url": "/kinexus-login"}
 
+    # Same rule as on_login: staff go to the portal regardless of seniority.
+    if user != "Administrator" and frappe.db.exists("Employee", {"user_id": user}):
+        return {"url": _portal_home_for(user)}
+
     roles = set(frappe.get_roles(user))
     if _DESK_ROLES.intersection(roles):
         return {"url": "/app", "role": "admin"}
 
-    url = _portal_home_for(user)
-    return {"url": url}
+    return {"url": _portal_home_for(user)}

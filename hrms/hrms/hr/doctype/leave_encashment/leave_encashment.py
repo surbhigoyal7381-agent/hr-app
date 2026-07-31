@@ -7,9 +7,6 @@ from frappe import _, bold
 from frappe.model.document import Document
 from frappe.utils import flt, format_date, get_link_to_form, getdate
 
-from erpnext.accounts.general_ledger import make_gl_entries
-from erpnext.controllers.accounts_controller import AccountsController
-
 from hrms.hr.doctype.leave_application.leave_application import get_leaves_for_period
 from hrms.hr.doctype.leave_ledger_entry.leave_ledger_entry import create_leave_ledger_entry
 from hrms.hr.utils import set_employee_name, validate_active_employee
@@ -18,7 +15,7 @@ from hrms.payroll.doctype.salary_structure_assignment.salary_structure_assignmen
 )
 
 
-class LeaveEncashment(AccountsController):
+class LeaveEncashment(Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -323,8 +320,7 @@ class LeaveEncashment(AccountsController):
 		self.set_status(update=True)
 
 	def create_gl_entries(self, cancel=False):
-		gl_entries = self.get_gl_entries()
-		make_gl_entries(gl_entries, cancel)
+		pass  # GL posting disabled (no erpnext)
 
 	def get_gl_entries(self):
 		gl_entry = []

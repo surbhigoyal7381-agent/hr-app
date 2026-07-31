@@ -4,7 +4,6 @@ app_publisher = "Frappe Technologies Pvt. Ltd."
 app_description = "Modern HR and Payroll Software"
 app_email = "contact@frappe.io"
 app_license = "GNU General Public License (v3)"
-required_apps = ["frappe/erpnext"]
 source_link = "http://github.com/frappe/hrms"
 app_logo_url = "/assets/hrms/images/frappe-hr-logo.svg"
 app_home = "/desk/people"
@@ -47,14 +46,9 @@ app_include_css = "hrms.bundle.css"
 
 # include js in doctype views
 doctype_js = {
-	"Employee": "public/js/erpnext/employee.js",
-	"Company": "public/js/erpnext/company.js",
-	"Department": "public/js/erpnext/department.js",
-	"Timesheet": "public/js/erpnext/timesheet.js",
-	"Payment Entry": "public/js/erpnext/payment_entry.js",
-	"Journal Entry": "public/js/erpnext/journal_entry.js",
-	"Delivery Trip": "public/js/erpnext/delivery_trip.js",
-	"Bank Transaction": "public/js/erpnext/bank_transaction.js",
+	# ── PMS ──────────────────────────────────────────────────────────────────
+	"PMS Review Record": "public/js/pms_review_record.js",
+	"PMS Calibration Session": "public/js/pms_calibration_session.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -82,6 +76,11 @@ website_generators = ["Job Opening"]
 website_route_rules = [
 	{"from_route": "/hrms/<path:app_path>", "to_route": "hrms"},
 	{"from_route": "/hr/<path:app_path>", "to_route": "roster"},
+	# ── PMS portal ───────────────────────────────────────────────────────────
+	{"from_route": "/pms-employee", "to_route": "pms-employee"},
+	{"from_route": "/pms-manager", "to_route": "pms-manager"},
+	{"from_route": "/pms-calibration", "to_route": "pms-calibration"},
+	{"from_route": "/pms-steering", "to_route": "pms-steering"},
 ]
 # Jinja
 # ----------
@@ -99,8 +98,6 @@ jinja = {
 # before_install = "hrms.install.before_install"
 after_install = "hrms.install.after_install"
 after_migrate = "hrms.setup.update_select_perm_after_install"
-
-setup_wizard_complete = "hrms.subscription_utils.update_erpnext_access"
 
 # Uninstallation
 # ------------
@@ -142,18 +139,33 @@ before_app_uninstall = "hrms.setup.before_app_uninstall"
 # 	"Event": "frappe.desk.doctype.event.event.has_permission",
 # }
 
-has_upload_permission = {"Employee": "erpnext.setup.doctype.employee.employee.has_upload_permission"}
+has_upload_permission = {"Employee": "hrms.hr.doctype.employee.employee.has_upload_permission"}
+
+# ── Grace PMS — Fixtures (auto-imported on bench migrate) ────────────────────
+fixtures = [
+	{"dt": "Workflow", "filters": [["document_type", "like", "PMS%"]]},
+]
+
+# ── Grace PMS — Row-level security ───────────────────────────────────────────
+permission_query_conditions = {
+	"PMS Review Record":       "hrms.pms.permissions.review_record_query",
+	"PMS Business Goal":       "hrms.pms.permissions.business_goal_query",
+	"PMS Check In":            "hrms.pms.permissions.checkin_query",
+	"PMS Upward Feedback":     "hrms.pms.permissions.upward_feedback_query",
+	"PMS Calibration Session": "hrms.pms.permissions.calibration_session_query",
+	"PMS Talent Flag":         "hrms.pms.permissions.talent_flag_query",
+}
+
+has_permission = {
+	"PMS Review Record":   "hrms.pms.permissions.has_review_record_permission",
+	"PMS Check In":        "hrms.pms.permissions.has_checkin_permission",
+	"PMS Upward Feedback": "hrms.pms.permissions.has_upward_feedback_permission",
+	"PMS Talent Flag":     "hrms.pms.permissions.has_talent_flag_permission",
+}
 
 # DocType Class
 # ---------------
 # Override standard doctype classes
-
-override_doctype_class = {
-	"Employee": "hrms.overrides.employee_master.EmployeeMaster",
-	"Timesheet": "hrms.overrides.employee_timesheet.EmployeeTimesheet",
-	"Payment Entry": "hrms.overrides.employee_payment_entry.EmployeePaymentEntry",
-	"Project": "hrms.overrides.employee_project.EmployeeProject",
-}
 
 # Document Events
 # ---------------
@@ -162,7 +174,7 @@ override_doctype_class = {
 doc_events = {
 	"User": {
 		"validate": [
-			"erpnext.setup.doctype.employee.employee.validate_employee_role",
+			"hrms.hr.doctype.employee.employee.validate_employee_role",
 			"hrms.overrides.employee_master.update_approver_user_roles",
 		],
 	},
@@ -178,31 +190,6 @@ doc_events = {
 		"on_update": "hrms.utils.holiday_list.invalidate_cache",
 		"on_trash": "hrms.utils.holiday_list.invalidate_cache",
 	},
-	"Timesheet": {"validate": "hrms.hr.utils.validate_active_employee"},
-	"Payment Entry": {
-		"on_submit": "hrms.hr.doctype.expense_claim.expense_claim.update_payment_for_expense_claim",
-		"on_cancel": "hrms.hr.doctype.expense_claim.expense_claim.update_payment_for_expense_claim",
-		"on_update_after_submit": "hrms.hr.doctype.expense_claim.expense_claim.update_payment_for_expense_claim",
-	},
-	"Unreconcile Payment": {
-		"on_submit": "hrms.hr.doctype.expense_claim.expense_claim.update_payment_for_expense_claim",
-	},
-	"Journal Entry": {
-		"validate": "hrms.hr.doctype.expense_claim.expense_claim.validate_expense_claim_in_jv",
-		"on_submit": [
-			"hrms.hr.doctype.expense_claim.expense_claim.update_payment_for_expense_claim",
-			"hrms.hr.doctype.full_and_final_statement.full_and_final_statement.update_full_and_final_statement_status",
-			"hrms.payroll.doctype.salary_withholding.salary_withholding.update_salary_withholding_payment_status",
-		],
-		"on_update_after_submit": "hrms.hr.doctype.expense_claim.expense_claim.update_payment_for_expense_claim",
-		"on_cancel": [
-			"hrms.hr.doctype.expense_claim.expense_claim.update_payment_for_expense_claim",
-			"hrms.payroll.doctype.salary_slip.salary_slip.unlink_ref_doc_from_salary_slip",
-			"hrms.hr.doctype.full_and_final_statement.full_and_final_statement.update_full_and_final_statement_status",
-			"hrms.payroll.doctype.salary_withholding.salary_withholding.update_salary_withholding_payment_status",
-		],
-	},
-	"Loan": {"validate": "hrms.hr.utils.validate_loan_repay_from_salary"},
 	"Employee": {
 		"validate": "hrms.overrides.employee_master.validate_onboarding_process",
 		"on_update": [
@@ -222,6 +209,25 @@ doc_events = {
 	"Appraisal": {
 		"before_save": "hrms.grace_group.hooks.appraisal_metrics.fetch_metrics",
 	},
+	# ── Grace PMS ─────────────────────────────────────────────────────────────
+	"PMS Review Record": {
+		"validate":    "hrms.pms.pms_review.validate",
+		"before_save": "hrms.pms.pms_review.before_save",
+		"on_update":   "hrms.pms.pms_review.on_update",
+	},
+	"PMS Business Goal": {
+		"validate":      "hrms.pms.pms_goals.validate_goal",
+		"before_submit": "hrms.pms.pms_goals.before_submit_goal",
+	},
+	"PMS Check In": {
+		"after_insert": "hrms.pms.pms_checkin.prefill_agenda",
+	},
+	"PMS Company Value": {
+		"after_save": "hrms.pms.pms_config.clear_company_values_cache",
+	},
+	"PMS Review Template": {
+		"before_save": "hrms.pms.pms_config.before_template_save",
+	},
 }
 
 # Scheduled Tasks
@@ -233,6 +239,7 @@ scheduler_events = {
 	],
 	"hourly": [
 		"hrms.hr.doctype.daily_work_summary_group.daily_work_summary_group.trigger_emails",
+		"hrms.pms.pms_notifications.process_notification_queue",  # PMS
 	],
 	"hourly_long": [
 		"hrms.hr.doctype.shift_type.shift_type.update_last_sync_of_checkin",
@@ -246,6 +253,9 @@ scheduler_events = {
 		"hrms.hr.doctype.interview.interview.send_daily_feedback_reminder",
 		"hrms.hr.doctype.shift_assignment.shift_assignment.mark_expired_shift_assignments_as_inactive",
 		"hrms.hr.doctype.job_opening.job_opening.close_expired_job_openings",
+		# ── PMS ──────────────────────────────────────────────────────────────
+		"hrms.pms.pms_notifications.send_overdue_stage_alerts",
+		"hrms.pms.pms_notifications.send_checkin_nudges",
 	],
 	"daily_long": [
 		"hrms.hr.doctype.leave_ledger_entry.leave_ledger_entry.process_expired_allocation",
@@ -255,22 +265,6 @@ scheduler_events = {
 	"weekly": ["hrms.controllers.employee_reminders.send_reminders_in_advance_weekly"],
 	"monthly": ["hrms.controllers.employee_reminders.send_reminders_in_advance_monthly"],
 }
-
-advance_payment_payable_doctypes = ["Leave Encashment", "Gratuity", "Employee Advance"]
-
-invoice_doctypes = ["Expense Claim"]
-
-period_closing_doctypes = ["Payroll Entry"]
-
-accounting_dimension_doctypes = [
-	"Expense Claim",
-	"Expense Claim Detail",
-	"Expense Taxes and Charges",
-	"Payroll Entry",
-	"Leave Encashment",
-]
-
-bank_reconciliation_doctypes = ["Expense Claim"]
 
 # Testing
 # -------
@@ -318,8 +312,6 @@ override_doctype_dashboards = {
 	"Holiday List": "hrms.overrides.dashboard_overrides.get_dashboard_for_holiday_list",
 	"Task": "hrms.overrides.dashboard_overrides.get_dashboard_for_project",
 	"Project": "hrms.overrides.dashboard_overrides.get_dashboard_for_project",
-	"Timesheet": "hrms.overrides.dashboard_overrides.get_dashboard_for_timesheet",
-	"Bank Account": "hrms.overrides.dashboard_overrides.get_dashboard_for_bank_account",
 }
 
 # exempt linked doctypes from being automatically cancelled
@@ -380,8 +372,7 @@ company_data_to_be_ignored = [
 ]
 
 # List of apps whose translatable strings should be excluded from this app's translations.
-ignore_translatable_strings_from = ["frappe", "erpnext"]
+ignore_translatable_strings_from = ["frappe"]
 employee_holiday_list = ["hrms.utils.holiday_list.get_holiday_list_for_employee"]
 export_python_type_annotations = True
 require_type_annotated_api_methods = True
-repost_allowed_doctypes = ["Expense Claim"]

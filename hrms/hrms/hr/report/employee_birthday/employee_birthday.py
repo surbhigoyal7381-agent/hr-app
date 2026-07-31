@@ -7,7 +7,6 @@ from frappe import _
 from frappe.query_builder import Criterion
 from frappe.query_builder.functions import Extract
 
-from erpnext.accounts.utils import build_qb_match_conditions
 
 
 def execute(filters=None):
@@ -53,7 +52,7 @@ def get_employees(filters):
 		.where(employee.company == filters.get("company"))
 		.where(employee.status == "Active")
 		.where(Extract("month", employee.date_of_birth) == month)
-		.where(Criterion.all(build_qb_match_conditions("Employee")))
+		.where(Criterion.all([]))
 	).run()
 
 	return employees

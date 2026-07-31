@@ -1,0 +1,20 @@
+{
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": ["company", "department", "col_break_1", "designation", "branch"],
+ "fields": [
+  {"fieldname": "company", "fieldtype": "Link", "label": "Company", "options": "Company"},
+  {"fieldname": "department", "fieldtype": "Link", "label": "Department", "options": "Department"},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "designation", "fieldtype": "Link", "label": "Designation", "options": "Designation"},
+  {"fieldname": "branch", "fieldtype": "Link", "label": "Branch", "options": "Branch"}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS Cycle Applicability",
+ "owner": "Administrator",
+ "permissions": []
+}

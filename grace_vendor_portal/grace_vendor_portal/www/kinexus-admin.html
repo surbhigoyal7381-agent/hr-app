@@ -307,16 +307,39 @@ html, body {
 #ka-domain-preview.ok  { color: var(--green); }
 #ka-domain-preview.bad { color: var(--red); }
 
-.ka-plans { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
-.ka-plan-opt {
-  border: 2px solid var(--border); border-radius: var(--radius-sm);
-  padding: 12px 10px; text-align: center; cursor: pointer; transition: all .12s;
+/* ── Module preset buttons ───────────────────────────────────────────── */
+.ka-presets { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.ka-preset-btn {
+  padding: 4px 14px; border-radius: 20px; font-size: .75rem; font-weight: 600;
+  border: 1.5px solid var(--border2); background: var(--surface); color: var(--ink2);
+  cursor: pointer; transition: all .13s; font-family: var(--font);
 }
-.ka-plan-opt:hover { border-color: var(--border2); }
-.ka-plan-opt.selected { border-color: var(--green); background: var(--green-lt); }
-.ka-plan-opt input { display: none; }
-.ka-plan-name  { font-size: .82rem; font-weight: 700; color: var(--ink0); }
-.ka-plan-modules-list { font-size: .65rem; color: var(--ink3); margin-top: 5px; }
+.ka-preset-btn:hover { border-color: var(--green); color: var(--green); }
+.ka-preset-btn.selected { border-color: var(--green); background: var(--green); color: #fff; }
+
+/* ── Module toggle cards ─────────────────────────────────────────────── */
+.ka-modules-grid { display: flex; flex-direction: column; gap: 6px; }
+.ka-module-toggle {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border); background: var(--surface);
+  cursor: pointer; transition: border-color .13s, background .13s; user-select: none;
+}
+.ka-module-toggle:hover:not(.required) { border-color: var(--border2); }
+.ka-module-toggle.on  { border-color: var(--green); background: var(--green-lt); }
+.ka-module-toggle.required { cursor: default; }
+.ka-mt-icon  { font-size: 1.05rem; width: 26px; text-align: center; flex-shrink: 0; }
+.ka-mt-body  { flex: 1; min-width: 0; }
+.ka-mt-label { font-size: .81rem; font-weight: 700; color: var(--ink0); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ka-mt-req   { font-size: .6rem; font-weight: 700; background: var(--ink3); color: var(--surface);
+  padding: 1px 5px; border-radius: 3px; text-transform: uppercase; letter-spacing: .04em; }
+.ka-mt-desc  { font-size: .72rem; color: var(--ink2); margin-top: 1px; }
+.ka-mt-check {
+  width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--border2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: .72rem; color: #fff; flex-shrink: 0; transition: all .12s;
+}
+.ka-module-toggle.on .ka-mt-check { background: var(--green); border-color: var(--green); }
 
 .ka-color-row { display: flex; align-items: center; gap: 10px; }
 .ka-color-input { width: 40px; height: 38px; border-radius: var(--radius-sm);
@@ -356,12 +379,32 @@ html, body {
 .ka-copy-btn   { background: none; border: none; cursor: pointer; color: var(--green); font-size: 14px; padding: 3px; }
 .ka-copy-btn:hover { color: var(--green-dk); }
 
+/* ── Tenant card URL row ─────────────────────────────────────────────── */
+.ka-card-url { padding: 4px 16px 0; }
+.ka-card-url a { font-size: .72rem; color: var(--ink3); text-decoration: none;
+  display: inline-flex; align-items: center; gap: 4px; }
+.ka-card-url a:hover { color: var(--green); text-decoration: underline; }
+
+/* ── Edit modal ──────────────────────────────────────────────────────── */
+#ka-edit-backdrop {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55);
+  backdrop-filter: blur(4px); z-index: 100;
+  align-items: flex-start; justify-content: center; padding: 40px 20px; overflow-y: auto;
+}
+#ka-edit-backdrop.open { display: flex; }
+#ka-edit-modal {
+  background: var(--surface); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg); width: 100%; max-width: 520px;
+  animation: ka-modal-in .2s ease; margin: auto;
+}
+
 /* ── Responsive ──────────────────────────────────────────────────────── */
 @media (max-width: 900px) { #ka-sidebar { display: none; } #ka-stats { grid-template-columns: repeat(2,1fr); } }
-@media (max-width: 520px)  { #ka-stats { grid-template-columns: repeat(2,1fr); } #ka-tenant-grid { grid-template-columns: 1fr; } .ka-plans { grid-template-columns: 1fr; } }
+@media (max-width: 520px)  { #ka-stats { grid-template-columns: repeat(2,1fr); } #ka-tenant-grid { grid-template-columns: 1fr; } .ka-presets { gap: 4px; } }
 </style>
 </head>
 <body>
+<script>window._CSRF = "{{ frappe.session.csrf_token }}";</script>
 <div id="ka-shell">
 
   <!-- Sidebar -->
@@ -388,7 +431,7 @@ html, body {
       </a>
       <div class="ka-nav-label" style="margin-top:12px">Quick Links</div>
       <a class="ka-nav-item" href="/app" target="_blank"><span class="ka-nav-icon">&#x1F5A5;&#xFE0F;</span> Frappe Desk</a>
-      <a class="ka-nav-item" href="/hrms-home"><span class="ka-nav-icon">&#x1F464;</span> HRMS Portal</a>
+      <a class="ka-nav-item" href="/hrms-employee"><span class="ka-nav-icon">&#x1F464;</span> HRMS Portal</a>
     </div>
     <div class="ka-sidebar-footer">Kinexus HRMS &nbsp;&middot;&nbsp; Super Admin</div>
   </nav>
@@ -494,24 +537,14 @@ html, body {
         <input class="ka-input" id="f-name" placeholder="Acme Corporation">
       </div>
       <div class="ka-field">
-        <label class="ka-label">Plan</label>
-        <div class="ka-plans">
-          <label class="ka-plan-opt selected" id="plan-starter" onclick="selectPlan('starter')">
-            <input type="radio" name="plan" value="starter" checked>
-            <div class="ka-plan-name">Starter</div>
-            <div class="ka-plan-modules-list">HR Self-Service</div>
-          </label>
-          <label class="ka-plan-opt" id="plan-business" onclick="selectPlan('business')">
-            <input type="radio" name="plan" value="business">
-            <div class="ka-plan-name">Business</div>
-            <div class="ka-plan-modules-list">HR + Vendor + Goals</div>
-          </label>
-          <label class="ka-plan-opt" id="plan-enterprise" onclick="selectPlan('enterprise')">
-            <input type="radio" name="plan" value="enterprise">
-            <div class="ka-plan-name">Enterprise</div>
-            <div class="ka-plan-modules-list">All + Analytics</div>
-          </label>
+        <label class="ka-label">Modules</label>
+        <div class="ka-presets">
+          <button type="button" class="ka-preset-btn selected" id="preset-starter"    onclick="applyPreset('starter')">Starter</button>
+          <button type="button" class="ka-preset-btn"          id="preset-business"   onclick="applyPreset('business')">Business</button>
+          <button type="button" class="ka-preset-btn"          id="preset-enterprise" onclick="applyPreset('enterprise')">Enterprise</button>
         </div>
+        <div class="ka-modules-grid" id="ka-modules-grid"><!-- rendered by JS --></div>
+        <div class="ka-hint" style="margin-top:6px">Core HR is always included &mdash; enable only what the tenant needs</div>
       </div>
       <div class="ka-field">
         <label class="ka-label">Brand Color</label>
@@ -533,6 +566,25 @@ html, body {
         <input class="ka-input" id="f-email" type="email" placeholder="support@acmecorp.com">
         <div class="ka-hint">Shown as help contact in the tenant's login page</div>
       </div>
+      <div class="ka-field">
+        <label class="ka-label">Company Logo (optional)</label>
+        <div id="ka-logo-drop" onclick="document.getElementById('f-logo').click()" style="border:2px dashed var(--border);border-radius:var(--radius-sm);padding:14px 18px;cursor:pointer;text-align:center;transition:border-color .18s,background .18s;min-height:68px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px">
+          <input type="file" id="f-logo" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif" style="display:none" onchange="handleLogoFile(this)">
+          <div id="ka-logo-placeholder">
+            <div style="font-size:1.3rem;margin-bottom:3px">🖼️</div>
+            <div style="font-size:.8rem;color:var(--muted)">Click to upload &mdash; PNG, JPG, SVG (max 2 MB)</div>
+          </div>
+          <div id="ka-logo-preview" style="display:none;align-items:center;gap:10px;width:100%;flex-direction:row">
+            <img id="ka-logo-img" style="max-height:42px;max-width:100px;object-fit:contain;border-radius:4px;border:1px solid var(--border)">
+            <div style="flex:1;text-align:left">
+              <div id="ka-logo-name" style="font-size:.81rem;font-weight:600;color:var(--text)"></div>
+              <div style="font-size:.74rem;color:var(--muted)">Click area to replace</div>
+            </div>
+            <button type="button" onclick="event.stopPropagation();clearLogo()" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:1.2rem;line-height:1;padding:2px 6px" title="Remove">&times;</button>
+          </div>
+        </div>
+        <div class="ka-hint">Displayed in the tenant's login page header</div>
+      </div>
     </div>
     <div class="ka-modal-footer">
       <button class="ka-btn ka-btn-ghost" onclick="closeModal()">Cancel</button>
@@ -541,6 +593,67 @@ html, body {
           <polyline points="20 6 9 17 4 12"/>
         </svg>
         <span id="ka-create-label">Provision Tenant</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Tenant modal -->
+<div id="ka-edit-backdrop">
+  <div id="ka-edit-modal">
+    <div class="ka-modal-hdr">
+      <div class="ka-modal-icon">&#x270F;&#xFE0F;</div>
+      <div>
+        <div class="ka-modal-title">Edit Tenant</div>
+        <div class="ka-modal-sub" id="ka-edit-site-label">&mdash;</div>
+      </div>
+      <button class="ka-modal-close" onclick="closeEditModal()">&times;</button>
+    </div>
+    <div class="ka-modal-body">
+      <div id="ka-edit-error" style="display:none;background:var(--red-lt);border:1px solid rgba(239,68,68,.25);
+           border-radius:var(--radius-sm);padding:9px 14px;font-size:.82rem;color:var(--red);margin-bottom:14px;"></div>
+      <input type="hidden" id="edit-site-name">
+      <div class="ka-field">
+        <label class="ka-label">Workspace Name *</label>
+        <input class="ka-input" id="edit-name" placeholder="Acme Corporation">
+      </div>
+      <div class="ka-field">
+        <label class="ka-label">Modules</label>
+        <div class="ka-presets">
+          <button type="button" class="ka-preset-btn" id="edit-preset-starter"    onclick="applyEditPreset('starter')">Starter</button>
+          <button type="button" class="ka-preset-btn" id="edit-preset-business"   onclick="applyEditPreset('business')">Business</button>
+          <button type="button" class="ka-preset-btn" id="edit-preset-enterprise" onclick="applyEditPreset('enterprise')">Enterprise</button>
+        </div>
+        <div class="ka-modules-grid" id="ka-edit-modules-grid"><!-- rendered by JS --></div>
+        <div class="ka-hint" style="margin-top:6px">Adding a module that requires a new app triggers a background install</div>
+      </div>
+      <div class="ka-field">
+        <label class="ka-label">Brand Color</label>
+        <div class="ka-color-row">
+          <input type="color" class="ka-color-input" id="edit-color" value="#16A373" oninput="syncEditSwatch(this.value)">
+          <div class="ka-color-swatches">
+            <div class="ka-swatch selected" style="background:#16A373" data-color="#16A373" onclick="pickEditSwatch(this)"></div>
+            <div class="ka-swatch" style="background:#2563eb" data-color="#2563eb" onclick="pickEditSwatch(this)"></div>
+            <div class="ka-swatch" style="background:#7c3aed" data-color="#7c3aed" onclick="pickEditSwatch(this)"></div>
+            <div class="ka-swatch" style="background:#dc2626" data-color="#dc2626" onclick="pickEditSwatch(this)"></div>
+            <div class="ka-swatch" style="background:#d97706" data-color="#d97706" onclick="pickEditSwatch(this)"></div>
+            <div class="ka-swatch" style="background:#0891b2" data-color="#0891b2" onclick="pickEditSwatch(this)"></div>
+            <div class="ka-swatch" style="background:#374151" data-color="#374151" onclick="pickEditSwatch(this)"></div>
+          </div>
+        </div>
+      </div>
+      <div class="ka-field">
+        <label class="ka-label">Support Email (optional)</label>
+        <input class="ka-input" id="edit-email" type="email" placeholder="support@acmecorp.com">
+      </div>
+    </div>
+    <div class="ka-modal-footer">
+      <button class="ka-btn ka-btn-ghost" onclick="closeEditModal()">Cancel</button>
+      <button class="ka-btn ka-btn-primary" id="ka-edit-btn" onclick="submitEditTenant()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        <span id="ka-edit-label">Save Changes</span>
       </button>
     </div>
   </div>
@@ -595,18 +708,104 @@ html, body {
 (function () {
   'use strict';
 
-  var allTenants    = [];
-  var currentFilter = 'all';
-  var pollTimer     = null;
-  var selectedPlan  = 'starter';
+  var allTenants        = [];
+  var tenantMap         = {};
+  var currentFilter     = 'all';
+  var pollTimer         = null;
+  var editSelectedModules = ['hrms'];
+  var MODULES_DEF = [
+    { id:'hrms',        label:'Core HR',          desc:'Leave, attendance, expense, documents', icon:'👥', required:true },
+    { id:'payroll',     label:'Payroll',           desc:'Salary processing, tax, payslips',     icon:'💰' },
+    { id:'recruitment', label:'Recruitment',       desc:'Job openings, interviews, onboarding', icon:'🎯' },
+    { id:'vendor',      label:'Vendor & Delivery', desc:'Vendor portal, driver app, orders',    icon:'🚚' },
+    { id:'goals',       label:'Goals & OKR',       desc:'Performance targets and reviews',      icon:'⭐' },
+    { id:'analytics',   label:'Analytics',         desc:'Advanced dashboards and reports',      icon:'📊' },
+  ];
+  var MODULE_PRESETS = {
+    starter:    ['hrms'],
+    business:   ['hrms','payroll','vendor'],
+    enterprise: ['hrms','payroll','recruitment','vendor','goals','analytics'],
+  };
+  var selectedModules = ['hrms'];
 
-  document.addEventListener('DOMContentLoaded', loadTenants);
+  function renderModules() {
+    var grid = document.getElementById('ka-modules-grid');
+    if (!grid) return;
+    grid.innerHTML = MODULES_DEF.map(function(m) {
+      var on = selectedModules.indexOf(m.id) !== -1;
+      return '<div class="ka-module-toggle' + (on?' on':'') + (m.required?' required':'') + '"' +
+        (!m.required ? ' onclick="toggleModule(\'' + m.id + '\')"' : '') + '>' +
+        '<div class="ka-mt-icon">' + m.icon + '</div>' +
+        '<div class="ka-mt-body">' +
+          '<div class="ka-mt-label">' + m.label + (m.required ? ' <span class="ka-mt-req">required</span>' : '') + '</div>' +
+          '<div class="ka-mt-desc">' + m.desc + '</div>' +
+        '</div>' +
+        '<div class="ka-mt-check">' + (on ? '✓' : '') + '</div>' +
+      '</div>';
+    }).join('');
+  }
+  window.toggleModule = function(id) {
+    var idx = selectedModules.indexOf(id);
+    if (idx === -1) selectedModules.push(id);
+    else selectedModules.splice(idx, 1);
+    renderModules();
+    syncPresetButtons();
+  };
+  window.applyPreset = function(preset) {
+    selectedModules = MODULE_PRESETS[preset].slice();
+    renderModules();
+    ['starter','business','enterprise'].forEach(function(p) {
+      var btn = document.getElementById('preset-' + p);
+      if (btn) btn.classList.toggle('selected', p === preset);
+    });
+  };
+  function syncPresetButtons() {
+    var cur = selectedModules.slice().sort().join(',');
+    var matched = null;
+    Object.keys(MODULE_PRESETS).forEach(function(p) {
+      if (MODULE_PRESETS[p].slice().sort().join(',') === cur) matched = p;
+    });
+    ['starter','business','enterprise'].forEach(function(p) {
+      var btn = document.getElementById('preset-' + p);
+      if (btn) btn.classList.toggle('selected', p === matched);
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', bootAdmin);
+
+  /* This console manages every tenant on the bench, so it only exists on the
+     control-plane site. On a tenant site the API refuses outright — say so
+     plainly instead of rendering an empty console that looks broken. */
+  async function bootAdmin() {
+    var isControlPlane = false;
+    try {
+      isControlPlane = await api('grace_vendor_portal.tenant_api.is_control_plane');
+    } catch (e) {
+      isControlPlane = false;
+    }
+    if (!isControlPlane) {
+      document.body.innerHTML =
+        '<div style="max-width:560px;margin:14vh auto;padding:32px;font-family:system-ui,-apple-system,Segoe UI,sans-serif;' +
+        'border:1px solid #e2e8f0;border-radius:14px;background:#fff;text-align:center;color:#334155">' +
+        '<div style="font-size:40px;margin-bottom:12px">&#128274;</div>' +
+        '<h1 style="font-size:19px;margin:0 0 10px;color:#0f172a">Tenant administration is not available here</h1>' +
+        '<p style="font-size:14px;line-height:1.6;margin:0 0 20px">' +
+        'This console provisions and manages every tenant on the platform, so it runs only on the ' +
+        'control-plane site. You are signed in to a tenant site.</p>' +
+        '<a href="/hrms-employee" style="display:inline-block;padding:10px 20px;background:#1a7f5a;color:#fff;' +
+        'border-radius:8px;text-decoration:none;font-size:14px;font-weight:600">Go to the HR portal</a></div>';
+      return;
+    }
+    loadTenants();
+  }
 
   /* ── Tenant list ─────────────────────────────────────────── */
   async function loadTenants() {
     try {
       var data = await api('grace_vendor_portal.tenant_api.list_tenants');
       allTenants = data || [];
+      tenantMap = {};
+      allTenants.forEach(function(t) { tenantMap[t.site_name] = t; });
       updateStats();
       renderTenants();
       var hasActive = allTenants.some(function(t){ return t.status === 'Queued' || t.status === 'Provisioning'; });
@@ -645,6 +844,7 @@ html, body {
   function renderCard(t) {
     var initials = (t.tenant_name || t.site_name).slice(0,2).toUpperCase();
     var color    = t.primary_color || '#16A373';
+    var hostUrl  = t.host_name || ('http://' + t.site_name);
     var isProvisioning = t.status === 'Queued' || t.status === 'Provisioning';
     var isSuspended    = t.status === 'Suspended';
 
@@ -668,9 +868,16 @@ html, body {
       : '';
     var suspendLabel = isSuspended ? 'Unsuspend' : 'Suspend';
     var suspendVal   = isSuspended ? 0 : 1;
-    var openBtn      = !isProvisioning
-      ? '<a class="ka-action-btn primary" href="' + esc(t.host_name) + '/kinexus-login" target="_blank">Open</a>'
-      : '<button class="ka-action-btn" disabled style="opacity:.4">Open</button>';
+
+    var portalBtn = !isProvisioning
+      ? '<a class="ka-action-btn primary" href="' + esc(hostUrl) + '/hrms-employee" target="_blank">Portal</a>'
+      : '<button class="ka-action-btn" disabled style="opacity:.4">Portal</button>';
+    var adminBtn  = !isProvisioning
+      ? '<a class="ka-action-btn" href="' + esc(hostUrl) + '/app/hr-setup" target="_blank">Admin</a>'
+      : '';
+    var editBtn   = !isProvisioning
+      ? '<button class="ka-action-btn" onclick="openEditModal(\'' + esc(t.site_name) + '\')">Edit</button>'
+      : '';
 
     return '<div class="ka-tenant-card">'
       + '<div class="ka-card-accent" style="background:' + esc(color) + '"></div>'
@@ -685,9 +892,13 @@ html, body {
       + progressBar
       + (modules ? '<div class="ka-card-modules">' + modules + '</div>' : '')
       + '</div>'
+      + '<div class="ka-card-url"><a href="' + esc(hostUrl) + '/hrms-employee" target="_blank">'
+      + '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 1 0 20 14.5 14.5 0 0 1 0-20"/><path d="M2 12h20"/></svg>'
+      + ' ' + esc(hostUrl) + '</a></div>'
       + '<div class="ka-card-actions">'
-      + openBtn
-      + '<a class="ka-action-btn" href="' + esc(t.host_name) + '/app" target="_blank">Desk</a>'
+      + portalBtn
+      + adminBtn
+      + editBtn
       + '<button class="ka-action-btn" onclick="toggleSuspend(\'' + esc(t.site_name) + '\',' + suspendVal + ')">'
       + suspendLabel
       + '</button>'
@@ -711,8 +922,49 @@ html, body {
     } catch(e) { alert('Error: ' + e.message); }
   };
 
+  /* ── Logo upload helpers ─────────────────────────────────── */
+  window.handleLogoFile = function(input) {
+    var file = input.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { showFormError('Logo file must be under 2 MB.'); input.value = ''; return; }
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      document.getElementById('ka-logo-img').src = e.target.result;
+      document.getElementById('ka-logo-name').textContent = file.name;
+      document.getElementById('ka-logo-placeholder').style.display = 'none';
+      document.getElementById('ka-logo-preview').style.display = 'flex';
+    };
+    reader.readAsDataURL(file);
+  };
+  window.clearLogo = function() {
+    document.getElementById('f-logo').value = '';
+    document.getElementById('ka-logo-img').src = '';
+    document.getElementById('ka-logo-name').textContent = '';
+    document.getElementById('ka-logo-preview').style.display = 'none';
+    document.getElementById('ka-logo-placeholder').style.display = 'block';
+  };
+  async function uploadLogoFile(file) {
+    var fd = new FormData();
+    fd.append('file', file, file.name);
+    fd.append('is_private', '0');
+    fd.append('folder', 'Home');
+    var res = await fetch('/api/method/upload_file', {
+      method: 'POST',
+      headers: { 'X-Frappe-CSRF-Token': getCsrf() },
+      body: fd,
+    });
+    var data = await res.json();
+    if (!res.ok || data.exc_type) {
+      var msg = '';
+      try { msg = JSON.parse(JSON.parse(data._server_messages)[0]).message; } catch(e2) {}
+      throw new Error(msg || data.message || 'Upload failed');
+    }
+    return data.message.file_url;
+  }
+
   /* ── New Tenant modal ────────────────────────────────────── */
   window.openNewModal = function() {
+    renderModules();
     document.getElementById('ka-modal-backdrop').classList.add('open');
     document.getElementById('f-subdomain').focus();
   };
@@ -726,10 +978,11 @@ html, body {
     document.getElementById('ka-form-error').style.display = 'none';
     document.getElementById('ka-domain-preview').className = '';
     document.getElementById('ka-domain-preview').textContent = 'Enter a subdomain above';
-    selectPlan('starter');
+    applyPreset('starter');
     document.querySelectorAll('.ka-swatch').forEach(function(s){
       s.classList.toggle('selected', s.dataset.color === '#16A373');
     });
+    clearLogo();
     document.getElementById('ka-create-btn').disabled = false;
     document.getElementById('ka-create-label').textContent = 'Provision Tenant';
   }
@@ -744,12 +997,6 @@ html, body {
     else       { preview.className = 'bad'; preview.textContent = 'Lowercase letters, numbers and hyphens only (3-32 chars)'; }
   };
 
-  window.selectPlan = function(plan) {
-    selectedPlan = plan;
-    ['starter','business','enterprise'].forEach(function(p){
-      document.getElementById('plan-' + p).classList.toggle('selected', p === plan);
-    });
-  };
   window.pickSwatch = function(el) {
     document.getElementById('f-color').value = el.dataset.color;
     document.querySelectorAll('.ka-swatch').forEach(function(s){ s.classList.remove('selected'); });
@@ -774,12 +1021,20 @@ html, body {
 
     var btn = document.getElementById('ka-create-btn');
     btn.disabled = true;
-    document.getElementById('ka-create-label').textContent = 'Submitting...';
 
     try {
+      var logo_url = '';
+      var logoFile = document.getElementById('f-logo').files[0];
+      if (logoFile) {
+        document.getElementById('ka-create-label').textContent = 'Uploading logo…';
+        logo_url = await uploadLogoFile(logoFile);
+      }
+
+      document.getElementById('ka-create-label').textContent = 'Submitting…';
       var result = await api('grace_vendor_portal.tenant_api.create_tenant', {
         subdomain: subdomain, tenant_name: tenant_name, plan: selectedPlan,
-        primary_color: primary_color, support_email: support_email,
+        primary_color: primary_color, support_email: support_email, logo_url: logo_url,
+        modules: selectedModules,
       });
       closeModal();
       openProgressModal(result.job_id, tenant_name, result.host_name, result.admin_password);
@@ -898,9 +1153,11 @@ html, body {
 
   /* ── Utilities ───────────────────────────────────────────── */
   function getCsrf() {
+    if (window._CSRF) return window._CSRF;
+    if (window.frappe && frappe.csrf_token) return frappe.csrf_token;
     var cookie = document.cookie.split(';').map(function(c){ return c.trim(); })
       .find(function(c){ return c.indexOf('csrf_token=') === 0; });
-    return (window.frappe && frappe.csrf_token) || (cookie ? cookie.split('=')[1] : 'fetch');
+    return cookie ? decodeURIComponent(cookie.split('=').slice(1).join('=')) : '';
   }
 
   async function api(method, args) {
@@ -943,6 +1200,139 @@ html, body {
       return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
     } catch(e) { return iso || '-'; }
   }
+
+  /* ── Edit Tenant modal ───────────────────────────────────────── */
+  function siteModulesToIds(siteModules) {
+    var mapping = {
+      'hrms': 'hrms', 'HRMS': 'hrms',
+      'Payroll': 'payroll', 'payroll': 'payroll',
+      'Recruitment': 'recruitment', 'recruitment': 'recruitment',
+      'Vendor Portal': 'vendor', 'vendor_portal': 'vendor', 'vendor': 'vendor',
+      'Goals': 'goals', 'goals': 'goals',
+      'Analytics': 'analytics', 'analytics': 'analytics',
+    };
+    return (siteModules || []).map(function(m) { return mapping[m]; }).filter(Boolean);
+  }
+
+  function renderEditModules() {
+    var grid = document.getElementById('ka-edit-modules-grid');
+    if (!grid) return;
+    grid.innerHTML = MODULES_DEF.map(function(m) {
+      var on = editSelectedModules.indexOf(m.id) !== -1;
+      return '<div class="ka-module-toggle' + (on?' on':'') + (m.required?' required':'') + '"' +
+        (!m.required ? ' onclick="toggleEditModule(\'' + m.id + '\')"' : '') + '>' +
+        '<div class="ka-mt-icon">' + m.icon + '</div>' +
+        '<div class="ka-mt-body">' +
+          '<div class="ka-mt-label">' + m.label + (m.required ? ' <span class="ka-mt-req">required</span>' : '') + '</div>' +
+          '<div class="ka-mt-desc">' + m.desc + '</div>' +
+        '</div>' +
+        '<div class="ka-mt-check">' + (on ? '✓' : '') + '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  window.toggleEditModule = function(id) {
+    var idx = editSelectedModules.indexOf(id);
+    if (idx === -1) editSelectedModules.push(id);
+    else editSelectedModules.splice(idx, 1);
+    renderEditModules();
+    syncEditPresetButtons();
+  };
+
+  window.applyEditPreset = function(preset) {
+    editSelectedModules = MODULE_PRESETS[preset].slice();
+    renderEditModules();
+    ['starter','business','enterprise'].forEach(function(p) {
+      var btn = document.getElementById('edit-preset-' + p);
+      if (btn) btn.classList.toggle('selected', p === preset);
+    });
+  };
+
+  function syncEditPresetButtons() {
+    var cur = editSelectedModules.slice().sort().join(',');
+    var matched = null;
+    Object.keys(MODULE_PRESETS).forEach(function(p) {
+      if (MODULE_PRESETS[p].slice().sort().join(',') === cur) matched = p;
+    });
+    ['starter','business','enterprise'].forEach(function(p) {
+      var btn = document.getElementById('edit-preset-' + p);
+      if (btn) btn.classList.toggle('selected', p === matched);
+    });
+  }
+
+  window.pickEditSwatch = function(el) {
+    var color = el.dataset.color;
+    document.getElementById('edit-color').value = color;
+    document.querySelectorAll('#ka-edit-modal .ka-swatch').forEach(function(s) {
+      s.classList.toggle('selected', s === el);
+    });
+  };
+
+  window.syncEditSwatch = function(color) {
+    document.querySelectorAll('#ka-edit-modal .ka-swatch').forEach(function(s) {
+      s.classList.toggle('selected', s.dataset.color === color);
+    });
+  };
+
+  window.openEditModal = function(siteName) {
+    var t = tenantMap[siteName];
+    if (!t) return;
+    document.getElementById('edit-site-name').value  = siteName;
+    document.getElementById('ka-edit-site-label').textContent = siteName;
+    document.getElementById('edit-name').value  = t.tenant_name || '';
+    document.getElementById('edit-email').value = t.support_email || '';
+    var color = t.primary_color || '#16A373';
+    document.getElementById('edit-color').value = color;
+    syncEditSwatch(color);
+    var ids = siteModulesToIds(t.modules);
+    editSelectedModules = ids.length ? ids : ['hrms'];
+    renderEditModules();
+    syncEditPresetButtons();
+    document.getElementById('ka-edit-error').style.display = 'none';
+    document.getElementById('ka-edit-label').textContent   = 'Save Changes';
+    document.getElementById('ka-edit-btn').disabled = false;
+    document.getElementById('ka-edit-backdrop').classList.add('open');
+  };
+
+  window.closeEditModal = function() {
+    document.getElementById('ka-edit-backdrop').classList.remove('open');
+  };
+
+  window.submitEditTenant = async function() {
+    var siteName     = document.getElementById('edit-site-name').value;
+    var tenantName   = document.getElementById('edit-name').value.trim();
+    var supportEmail = document.getElementById('edit-email').value.trim();
+    var primaryColor = document.getElementById('edit-color').value;
+    var errEl = document.getElementById('ka-edit-error');
+    errEl.style.display = 'none';
+    if (!tenantName) { errEl.textContent = 'Workspace name is required.'; errEl.style.display = 'block'; return; }
+    var btn   = document.getElementById('ka-edit-btn');
+    var label = document.getElementById('ka-edit-label');
+    btn.disabled = true; label.textContent = 'Saving…';
+    try {
+      var result = await api('grace_vendor_portal.tenant_api.update_tenant', {
+        site_name:     siteName,
+        tenant_name:   tenantName,
+        modules:       editSelectedModules,
+        primary_color: primaryColor,
+        support_email: supportEmail,
+      });
+      label.textContent = 'Saved ✓';
+      if (result && result.status === 'installing') {
+        setTimeout(function() {
+          closeEditModal();
+          alert('Configuration saved. New module apps are being installed in the background — check Provision Jobs for progress.');
+          loadTenants();
+        }, 400);
+      } else {
+        setTimeout(function() { closeEditModal(); loadTenants(); }, 500);
+      }
+    } catch(e) {
+      errEl.textContent = e.message || 'Failed to save changes.';
+      errEl.style.display = 'block';
+      btn.disabled = false; label.textContent = 'Save Changes';
+    }
+  };
 }());
 </script>
 </body>

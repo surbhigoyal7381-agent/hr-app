@@ -1,0 +1,24 @@
+{
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": ["kpi_name", "unit", "col_break_1", "target_value", "baseline_value", "col_break_2", "measurement_frequency", "data_source"],
+ "fields": [
+  {"fieldname": "kpi_name", "fieldtype": "Data", "label": "KPI Name", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "unit", "fieldtype": "Data", "label": "Unit (e.g. %, #, AED)", "in_list_view": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "target_value", "fieldtype": "Float", "label": "Target Value", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "baseline_value", "fieldtype": "Float", "label": "Baseline Value"},
+  {"fieldname": "col_break_2", "fieldtype": "Column Break"},
+  {"fieldname": "measurement_frequency", "fieldtype": "Select", "label": "Measurement Frequency",
+   "options": "Monthly\nQuarterly\nHalf-Yearly\nAnnually"},
+  {"fieldname": "data_source", "fieldtype": "Data", "label": "Data Source"}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS KPI",
+ "owner": "Administrator",
+ "permissions": []
+}

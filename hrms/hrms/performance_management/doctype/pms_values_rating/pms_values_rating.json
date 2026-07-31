@@ -1,0 +1,20 @@
+{
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": ["company_value", "col_break_1", "rating", "col_break_2", "behavioural_evidence"],
+ "fields": [
+  {"fieldname": "company_value", "fieldtype": "Link", "label": "Company Value", "options": "PMS Company Value", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "rating", "fieldtype": "Int", "label": "Rating (Value)", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "col_break_2", "fieldtype": "Column Break"},
+  {"fieldname": "behavioural_evidence", "fieldtype": "Small Text", "label": "Behavioural Evidence"}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS Values Rating",
+ "owner": "Administrator",
+ "permissions": []
+}

@@ -1,0 +1,480 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-07-07 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "source_order_type",
+  "source_order_link",
+  "delivery_date",
+  "delivery_time_slot",
+  "col_break_hdr",
+  "customer",
+  "customer_name",
+  "customer_phone",
+  "customer_email",
+  "section_delivery",
+  "delivery_address",
+  "delivery_city",
+  "delivery_state",
+  "delivery_pin",
+  "col_break_del",
+  "delivery_coordinates",
+  "special_instructions",
+  "is_fragile",
+  "requires_signature",
+  "requires_photo",
+  "section_items",
+  "order_items",
+  "section_values",
+  "subtotal",
+  "delivery_charges",
+  "discount",
+  "col_break_vals",
+  "tax",
+  "grand_total",
+  "section_assignment",
+  "assigned_to_partner",
+  "assigned_date",
+  "assignment_status",
+  "section_tracking",
+  "current_status",
+  "status_updated_at",
+  "status_updated_by",
+  "section_proof",
+  "delivery_photo",
+  "delivery_signature",
+  "delivery_timestamp",
+  "col_break_proof",
+  "delivery_actual_time",
+  "on_time_status",
+  "section_feedback",
+  "customer_available",
+  "feedback_provided",
+  "feedback_rating",
+  "feedback_details_link",
+  "section_exceptions",
+  "exception_type",
+  "exception_notes",
+  "col_break_exc",
+  "exception_photo",
+  "exception_resolution",
+  "section_financial",
+  "partner_commission",
+  "bonus_earned",
+  "amount_collected",
+  "col_break_fin2",
+  "amount_to_be_paid",
+  "section_status_history",
+  "status_history"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "DO-.YYYY..MM..DD.-.####\n",
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "source_order_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Source Order Type",
+   "options": "Sales Order\nDirect\nSubscription",
+   "default": "Sales Order"
+  },
+  {
+   "fieldname": "source_order_link",
+   "fieldtype": "Link",
+   "label": "Source Sales Order",
+   "options": "Sales Order"
+  },
+  {
+   "fieldname": "delivery_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Scheduled Delivery Date",
+   "reqd": 1
+  },
+  {
+   "default": "8AM-12PM",
+   "fieldname": "delivery_time_slot",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Delivery Time Slot",
+   "options": "8AM-12PM\n12PM-3PM\n3PM-6PM\n6PM-9PM"
+  },
+  {
+   "fieldname": "col_break_hdr",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Data",
+   "label": "Customer ID / Code"
+  },
+  {
+   "fieldname": "customer_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Customer Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "customer_phone",
+   "fieldtype": "Data",
+   "label": "Customer Phone",
+   "options": "Phone"
+  },
+  {
+   "fieldname": "customer_email",
+   "fieldtype": "Data",
+   "label": "Customer Email",
+   "options": "Email"
+  },
+  {
+   "fieldname": "section_delivery",
+   "fieldtype": "Section Break",
+   "label": "Delivery Details"
+  },
+  {
+   "fieldname": "delivery_address",
+   "fieldtype": "Text",
+   "label": "Delivery Address",
+   "reqd": 1
+  },
+  {
+   "fieldname": "delivery_city",
+   "fieldtype": "Data",
+   "label": "City"
+  },
+  {
+   "fieldname": "delivery_state",
+   "fieldtype": "Data",
+   "label": "State"
+  },
+  {
+   "fieldname": "delivery_pin",
+   "fieldtype": "Data",
+   "label": "PIN Code"
+  },
+  {
+   "fieldname": "col_break_del",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "delivery_coordinates",
+   "fieldtype": "Small Text",
+   "label": "GPS Coordinates (Lat, Long)"
+  },
+  {
+   "fieldname": "special_instructions",
+   "fieldtype": "Text",
+   "label": "Special Instructions"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_fragile",
+   "fieldtype": "Check",
+   "label": "Fragile / Special Handling Required"
+  },
+  {
+   "default": "0",
+   "fieldname": "requires_signature",
+   "fieldtype": "Check",
+   "label": "Requires Customer Signature"
+  },
+  {
+   "default": "0",
+   "fieldname": "requires_photo",
+   "fieldtype": "Check",
+   "label": "Requires Delivery Photo"
+  },
+  {
+   "fieldname": "section_items",
+   "fieldtype": "Section Break",
+   "label": "Order Items"
+  },
+  {
+   "fieldname": "order_items",
+   "fieldtype": "Table",
+   "label": "Order Items",
+   "options": "Delivery Order Item"
+  },
+  {
+   "fieldname": "section_values",
+   "fieldtype": "Section Break",
+   "label": "Order Values"
+  },
+  {
+   "default": "0",
+   "fieldname": "subtotal",
+   "fieldtype": "Currency",
+   "label": "Subtotal",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "delivery_charges",
+   "fieldtype": "Currency",
+   "label": "Delivery Charges"
+  },
+  {
+   "default": "0",
+   "fieldname": "discount",
+   "fieldtype": "Currency",
+   "label": "Discount"
+  },
+  {
+   "fieldname": "col_break_vals",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "tax",
+   "fieldtype": "Currency",
+   "label": "Tax"
+  },
+  {
+   "default": "0",
+   "fieldname": "grand_total",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Grand Total",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_assignment",
+   "fieldtype": "Section Break",
+   "label": "Assignment"
+  },
+  {
+   "fieldname": "assigned_to_partner",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Assigned To (Delivery Partner)",
+   "options": "Delivery Partner"
+  },
+  {
+   "fieldname": "assigned_date",
+   "fieldtype": "Datetime",
+   "label": "Assignment Date & Time"
+  },
+  {
+   "default": "Not-Assigned",
+   "fieldname": "assignment_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Assignment Status",
+   "options": "Not-Assigned\nAssigned\nIn-Transit\nDelivered\nFailed"
+  },
+  {
+   "fieldname": "section_tracking",
+   "fieldtype": "Section Break",
+   "label": "Live Status"
+  },
+  {
+   "default": "Pending",
+   "fieldname": "current_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Current Status",
+   "options": "Pending\nAssigned\nPicked Up\nIn Transit\nNearby\nAt Location\nDelivered\nFailed\nReturned\nCancelled"
+  },
+  {
+   "fieldname": "status_updated_at",
+   "fieldtype": "Datetime",
+   "label": "Status Last Updated",
+   "read_only": 1
+  },
+  {
+   "fieldname": "status_updated_by",
+   "fieldtype": "Link",
+   "label": "Updated By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_proof",
+   "fieldtype": "Section Break",
+   "label": "Proof of Delivery"
+  },
+  {
+   "fieldname": "delivery_photo",
+   "fieldtype": "Attach",
+   "label": "Delivery Photo"
+  },
+  {
+   "fieldname": "delivery_signature",
+   "fieldtype": "Attach",
+   "label": "Customer Signature"
+  },
+  {
+   "fieldname": "delivery_timestamp",
+   "fieldtype": "Datetime",
+   "label": "Delivery Confirmed At"
+  },
+  {
+   "fieldname": "col_break_proof",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "delivery_actual_time",
+   "fieldtype": "Datetime",
+   "label": "Actual Delivery Time"
+  },
+  {
+   "fieldname": "on_time_status",
+   "fieldtype": "Select",
+   "label": "On-Time Status",
+   "options": "\nOn-Time\nLate\nEarly",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_feedback",
+   "fieldtype": "Section Break",
+   "label": "Customer Feedback"
+  },
+  {
+   "default": "0",
+   "fieldname": "customer_available",
+   "fieldtype": "Check",
+   "label": "Customer Was Available at Delivery"
+  },
+  {
+   "default": "0",
+   "fieldname": "feedback_provided",
+   "fieldtype": "Check",
+   "label": "Feedback Provided",
+   "read_only": 1
+  },
+  {
+   "fieldname": "feedback_rating",
+   "fieldtype": "Float",
+   "label": "Feedback Rating (1-5)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "feedback_details_link",
+   "fieldtype": "Link",
+   "label": "Delivery Feedback Record",
+   "options": "Delivery Feedback",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_exceptions",
+   "fieldtype": "Section Break",
+   "label": "Exceptions"
+  },
+  {
+   "default": "None",
+   "fieldname": "exception_type",
+   "fieldtype": "Select",
+   "label": "Exception Type",
+   "options": "None\nCustomer Not Home\nAddress Not Found\nItem Damaged\nQuantity Mismatch\nRefused by Customer\nOther"
+  },
+  {
+   "fieldname": "exception_notes",
+   "fieldtype": "Text",
+   "label": "Exception Notes"
+  },
+  {
+   "fieldname": "col_break_exc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "exception_photo",
+   "fieldtype": "Attach",
+   "label": "Exception Photo"
+  },
+  {
+   "fieldname": "exception_resolution",
+   "fieldtype": "Text",
+   "label": "Exception Resolution"
+  },
+  {
+   "fieldname": "section_financial",
+   "fieldtype": "Section Break",
+   "label": "Financial Impact"
+  },
+  {
+   "default": "0",
+   "fieldname": "partner_commission",
+   "fieldtype": "Currency",
+   "label": "Partner Commission"
+  },
+  {
+   "default": "0",
+   "fieldname": "bonus_earned",
+   "fieldtype": "Currency",
+   "label": "Bonus Earned (On-Time + Good Rating)"
+  },
+  {
+   "default": "0",
+   "fieldname": "amount_collected",
+   "fieldtype": "Currency",
+   "label": "Amount Collected (COD)"
+  },
+  {
+   "fieldname": "col_break_fin2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "amount_to_be_paid",
+   "fieldtype": "Currency",
+   "label": "Amount to be Paid to Partner"
+  },
+  {
+   "fieldname": "section_status_history",
+   "fieldtype": "Section Break",
+   "label": "Status History"
+  },
+  {
+   "fieldname": "status_history",
+   "fieldtype": "Table",
+   "label": "Status History",
+   "options": "Delivery Status History"
+  }
+ ],
+ "links": [],
+ "modified": "2026-07-07 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Grace Vendor Portal",
+ "name": "Delivery Order",
+ "naming_rule": "By Naming Series",
+ "naming_series": "DO-.YYYY..MM..DD.-.####",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

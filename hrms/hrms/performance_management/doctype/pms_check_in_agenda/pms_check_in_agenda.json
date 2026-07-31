@@ -1,0 +1,19 @@
+{
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": ["agenda_item", "status", "col_break_1", "notes"],
+ "fields": [
+  {"fieldname": "agenda_item", "fieldtype": "Data", "label": "Agenda Item", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "status", "fieldtype": "Select", "label": "Status", "options": "Open\nDiscussed\nDeferred", "default": "Open", "in_list_view": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "notes", "fieldtype": "Small Text", "label": "Notes"}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS Check In Agenda",
+ "owner": "Administrator",
+ "permissions": []
+}

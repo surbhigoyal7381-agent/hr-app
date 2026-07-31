@@ -12,14 +12,19 @@ on_login = "grace_vendor_portal.auth.on_login"
 # ── Redirect /login to the branded Kinexus login page ─────────────────────
 website_redirects = [
     {"source": r"^/login$", "target": "/kinexus-login"},
+    # /hrms-home was retired — its role is now covered by /hrms-employee.
+    # Kept as a redirect so existing bookmarks and live sessions don't 404.
+    # NOTE: Frappe strips slashes off `source` and matches it against a path with
+    # no leading slash, so an "^/…$"-anchored source never matches. Keep it plain.
+    {"source": "/hrms-home", "target": "/hrms-employee"},
 ]
 
 # ── Portal route rules ────────────────────────────────────────────────────
 website_route_rules = [
     {"from_route": "/vendor-portal",   "to_route": "vendor-portal"},
     {"from_route": "/driver-portal",   "to_route": "driver-portal"},
-    {"from_route": "/hrms-home",       "to_route": "hrms-home"},
     {"from_route": "/hrms-employee",   "to_route": "hrms-employee"},
+    {"from_route": "/goals-portal",    "to_route": "goals-portal"},
     {"from_route": "/kinexus-login",   "to_route": "kinexus-login"},
     {"from_route": "/kinexus-admin",   "to_route": "kinexus-admin"},
 ]

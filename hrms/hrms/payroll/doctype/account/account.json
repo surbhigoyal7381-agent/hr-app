@@ -1,0 +1,20 @@
+{
+ "creation": "2026-07-30 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": ["account_name", "company", "root_type", "account_currency", "account_number"],
+ "fields": [
+  {"fieldname": "account_name", "fieldtype": "Data", "in_list_view": 1, "label": "Account Name", "reqd": 1},
+  {"fieldname": "company", "fieldtype": "Link", "in_list_view": 1, "label": "Company", "options": "Company"},
+  {"fieldname": "root_type", "fieldtype": "Select", "label": "Root Type", "options": "\nAsset\nLiability\nIncome\nExpense\nEquity"},
+  {"fieldname": "account_currency", "fieldtype": "Link", "label": "Account Currency", "options": "Currency"},
+  {"fieldname": "account_number", "fieldtype": "Data", "label": "Account Number"}
+ ],
+ "autoname": "prompt",
+ "modified": "2026-07-30 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Payroll",
+ "name": "Account",
+ "owner": "Administrator",
+ "track_changes": 1
+}

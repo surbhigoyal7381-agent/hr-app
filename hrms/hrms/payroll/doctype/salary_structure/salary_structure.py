@@ -10,8 +10,6 @@ from frappe.model.document import Document
 from frappe.model.mapper import get_mapped_doc
 from frappe.utils import cint, cstr, flt, get_link_to_form
 
-import erpnext
-
 from hrms.payroll.utils import sanitize_expression
 
 
@@ -322,7 +320,7 @@ def create_salary_structure_assignment(
 	payroll_payable_account_currency = frappe.db.get_value(
 		"Account", payroll_payable_account, "account_currency"
 	)
-	company_curency = erpnext.get_company_currency(company)
+	company_curency = frappe.db.get_value("Company", company, "default_currency") or frappe.db.get_default("currency")
 	if payroll_payable_account_currency != currency and payroll_payable_account_currency != company_curency:
 		frappe.throw(
 			_("Invalid Payroll Payable Account. The account currency must be {0} or {1}").format(

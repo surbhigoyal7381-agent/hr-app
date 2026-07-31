@@ -6,7 +6,6 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
-from erpnext.accounts.report.financial_statements import get_period_list
 
 
 def execute(filters=None):
@@ -133,14 +132,7 @@ def get_service_expense(logname):
 
 
 def get_chart_data(data, filters):
-	period_list = get_period_list(
-		filters.fiscal_year,
-		filters.fiscal_year,
-		filters.from_date,
-		filters.to_date,
-		filters.filter_based_on,
-		"Monthly",
-	)
+	period_list = []
 
 	fuel_data, service_data = [], []
 

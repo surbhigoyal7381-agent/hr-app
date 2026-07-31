@@ -11,6 +11,24 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
 # ── Grace app symlink helper ──────────────────────────────────────────────────
 # Grace apps are mounted at /home/frappe/grace_*_src (outside bench) to avoid
 # confusing bench init. This function creates the symlinks bench expects.
+# ── Multi-tenant dev serving ──────────────────────────────────────────────────
+# `bench use <site>` writes default_site into common_site_config.json, which pins
+# `bench serve` to that one site and makes it ignore the Host header entirely —
+# every tenant hostname would resolve to hrms.localhost. Drop it so the dev server
+# picks the site from the Host header (grace.localhost, hrms.localhost, …).
+# Trade-off: bench CLI commands then need an explicit --site, and a request whose
+# Host has no matching sites/<host> directory (e.g. raw 127.0.0.1) errors out.
+disable_default_site() {
+    python3 - <<'PY'
+import json, pathlib
+p = pathlib.Path("sites/common_site_config.json")
+conf = json.loads(p.read_text())
+if conf.pop("default_site", None) is not None:
+    p.write_text(json.dumps(conf, indent=1))
+    print("Removed default_site — serving sites by Host header")
+PY
+}
+
 setup_grace_symlinks() {
     BENCH_APPS=/home/frappe/frappe-bench/apps
     mkdir -p "$BENCH_APPS"
@@ -33,6 +51,7 @@ if [ -d "/home/frappe/frappe-bench/apps/frappe" ]; then
     # Rewrite Procfile to known-good state
     printf 'web: bench serve  --port 8000\n\nsocketio: bench socketio\n\n\n\n\nschedule: bench schedule\n\nworker:  bench worker 1>> logs/worker.log 2>> logs/worker.error.log\n' > Procfile
     setup_grace_symlinks
+    disable_default_site
     bench start
     exit 0
 fi
@@ -102,5 +121,6 @@ bench --site hrms.localhost set-config developer_mode 1
 bench --site hrms.localhost enable-scheduler
 bench --site hrms.localhost clear-cache
 bench use hrms.localhost
+disable_default_site
 
 bench start

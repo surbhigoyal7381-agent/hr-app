@@ -1,0 +1,20 @@
+{
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": ["action", "responsible", "col_break_1", "due_date", "status"],
+ "fields": [
+  {"fieldname": "action", "fieldtype": "Data", "label": "Action", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "responsible", "fieldtype": "Link", "label": "Responsible", "options": "Employee", "in_list_view": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "due_date", "fieldtype": "Date", "label": "Due Date", "in_list_view": 1},
+  {"fieldname": "status", "fieldtype": "Select", "label": "Status", "options": "Pending\nIn Progress\nDone", "default": "Pending", "in_list_view": 1}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS Support Plan Action",
+ "owner": "Administrator",
+ "permissions": []
+}

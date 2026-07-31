@@ -1,0 +1,23 @@
+{
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": ["development_area", "current_level", "col_break_1", "target_level", "priority", "col_break_2", "recommended_action", "timeline"],
+ "fields": [
+  {"fieldname": "development_area", "fieldtype": "Data", "label": "Development Area", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "current_level", "fieldtype": "Select", "label": "Current Level", "options": "\nBelow Expectation\nMeets Expectation\nExceeds Expectation", "in_list_view": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "target_level", "fieldtype": "Select", "label": "Target Level", "options": "\nMeets Expectation\nExceeds Expectation\nExpert", "in_list_view": 1},
+  {"fieldname": "priority", "fieldtype": "Select", "label": "Priority", "options": "High\nMedium\nLow", "default": "Medium", "in_list_view": 1},
+  {"fieldname": "col_break_2", "fieldtype": "Column Break"},
+  {"fieldname": "recommended_action", "fieldtype": "Small Text", "label": "Recommended Action"},
+  {"fieldname": "timeline", "fieldtype": "Data", "label": "Timeline"}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS Dev Review",
+ "owner": "Administrator",
+ "permissions": []
+}

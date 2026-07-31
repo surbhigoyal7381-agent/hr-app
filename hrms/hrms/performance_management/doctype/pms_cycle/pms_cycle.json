@@ -1,0 +1,50 @@
+{
+ "autoname": "naming_series:",
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series", "cycle_name", "col_break_1", "status", "template",
+  "section_dates", "start_date", "col_break_2", "end_date",
+  "section_snapshot", "template_snapshot",
+  "section_settings", "auto_create_records", "col_break_3", "send_notifications",
+  "section_applicability", "applicability",
+  "section_deadlines", "stage_deadlines"
+ ],
+ "fields": [
+  {"fieldname": "naming_series", "fieldtype": "Select", "label": "Series", "options": "PMS-CYC-.YYYY.-.####\n", "set_only_once": 1},
+  {"fieldname": "cycle_name", "fieldtype": "Data", "label": "Cycle Name", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "status", "fieldtype": "Select", "label": "Status", "options": "Draft\nActive\nClosed", "default": "Draft", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "template", "fieldtype": "Link", "label": "Review Template", "options": "PMS Review Template", "reqd": 1},
+  {"fieldname": "section_dates", "fieldtype": "Section Break", "label": "Dates"},
+  {"fieldname": "start_date", "fieldtype": "Date", "label": "Start Date", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "col_break_2", "fieldtype": "Column Break"},
+  {"fieldname": "end_date", "fieldtype": "Date", "label": "End Date", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "section_snapshot", "fieldtype": "Section Break", "label": "Template Snapshot", "collapsible": 1},
+  {"fieldname": "template_snapshot", "fieldtype": "Long Text", "label": "Template Snapshot (JSON)", "read_only": 1},
+  {"fieldname": "section_settings", "fieldtype": "Section Break", "label": "Settings"},
+  {"fieldname": "auto_create_records", "fieldtype": "Check", "label": "Auto-create Review Records on Activation", "default": "1"},
+  {"fieldname": "col_break_3", "fieldtype": "Column Break"},
+  {"fieldname": "send_notifications", "fieldtype": "Check", "label": "Send Notifications", "default": "1"},
+  {"fieldname": "section_applicability", "fieldtype": "Section Break", "label": "Applicability"},
+  {"fieldname": "applicability", "fieldtype": "Table", "label": "Applicability", "options": "PMS Cycle Applicability"},
+  {"fieldname": "section_deadlines", "fieldtype": "Section Break", "label": "Stage Deadlines"},
+  {"fieldname": "stage_deadlines", "fieldtype": "Table", "label": "Stage Deadlines", "options": "PMS Cycle Stage Deadline"}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS Cycle",
+ "owner": "Administrator",
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "HR Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "HR User", "read": 1},
+  {"role": "Employee", "read": 1}
+ ],
+ "sort_field": "start_date",
+ "sort_order": "DESC",
+ "title_field": "cycle_name",
+ "track_changes": 1
+}

@@ -26,12 +26,9 @@ from frappe.utils import (
 )
 from frappe.utils.background_jobs import enqueue
 
-import erpnext
-from erpnext.accounts.utils import get_fiscal_year
-from erpnext.setup.doctype.employee.employee import get_holiday_list_for_employee
-from erpnext.utilities.transaction_base import TransactionBase
-
+from hrms.hr.doctype.employee.employee import get_holiday_list_for_employee
 from hrms.hr.utils import validate_active_employee
+from hrms.payroll.doctype.fiscal_year.fiscal_year import get_fiscal_year
 from hrms.payroll.doctype.additional_salary.additional_salary import get_additional_salaries
 from hrms.payroll.doctype.employee_benefit_ledger.employee_benefit_ledger import (
 	create_employee_benefit_ledger_entry,
@@ -64,7 +61,7 @@ SALARY_COMPONENT_VALUES = "salary_component_values"
 TAX_COMPONENTS_BY_COMPANY = "tax_components_by_company"
 
 
-class SalarySlip(TransactionBase):
+class SalarySlip(Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -269,7 +266,7 @@ class SalarySlip(TransactionBase):
 
 	def set_net_total_in_words(self):
 		doc_currency = self.currency
-		company_currency = erpnext.get_company_currency(self.company)
+		company_currency = frappe.db.get_value("Company", self.company, "default_currency") or frappe.db.get_default("currency")
 		total = self.net_pay if self.is_rounding_total_disabled() else self.rounded_total
 		base_total = self.base_net_pay if self.is_rounding_total_disabled() else self.base_rounded_total
 		self.total_in_words = money_in_words(total, doc_currency)

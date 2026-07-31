@@ -13,10 +13,14 @@ def get_goal_cascade(cascade_id):
 
 
 @frappe.whitelist()
-def get_employee_goals(employee_id):
+def get_employee_goals(employee_id=None):
     if not frappe.has_permission("Individual Goal", "read"):
         frappe.throw(_("Not permitted"), frappe.PermissionError)
-    user_employee = frappe.get_value("Employee", {"user_id": frappe.session.user}, "name")
+    user_employee = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")
+    if not employee_id:
+        employee_id = user_employee
+    if not employee_id:
+        frappe.throw(_("No employee record found for your account."), frappe.DoesNotExistError)
     if user_employee != employee_id and not frappe.has_permission("Individual Goal", "write"):
         frappe.throw(_("Not permitted to view other employees' goals"), frappe.PermissionError)
     goals = frappe.get_all(
@@ -54,6 +58,7 @@ def submit_goal_evidence(goal_id, evidence_type, extracted_order_count=None,
         "evidence_type": evidence_type,
         "uploaded_by": frappe.session.user,
         "upload_date": now_datetime(),
+        "validation_status": "Approved",
         "extracted_order_count": extracted_order_count,
         "extracted_amount": extracted_amount,
         "extracted_date": extracted_date,
@@ -65,9 +70,14 @@ def submit_goal_evidence(goal_id, evidence_type, extracted_order_count=None,
     goal.flags.ignore_validate_update_after_submit = True
     goal.save()
     frappe.db.commit()
-    saved_evidence = goal.evidence_items[-1]
+
+    # Recalculate progress immediately so the submission is reflected at once
+    from grace_goals.controllers.goal import recalculate_progress
+    recalculate_progress(goal_id)
+
+    goal.reload()
     return {
-        "status": saved_evidence.validation_status,
+        "status": "Approved",
         "evidence_idx": len(goal.evidence_items) - 1,
         "progress": goal.actual_progress,
         "progress_pct": goal.progress_pct,

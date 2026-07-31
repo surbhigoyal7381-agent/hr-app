@@ -1,0 +1,21 @@
+{
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": ["manager", "manager_name", "col_break_1", "invited_on", "comment_submitted_on", "comment"],
+ "fields": [
+  {"fieldname": "manager", "fieldtype": "Link", "label": "Manager", "options": "Employee", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "manager_name", "fieldtype": "Data", "label": "Manager Name", "fetch_from": "manager.employee_name", "read_only": 1, "in_list_view": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "invited_on", "fieldtype": "Datetime", "label": "Invited On", "read_only": 1},
+  {"fieldname": "comment_submitted_on", "fieldtype": "Datetime", "label": "Comment Submitted On", "read_only": 1},
+  {"fieldname": "comment", "fieldtype": "Text Editor", "label": "Overall Comment"}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS Additional Manager",
+ "owner": "Administrator",
+ "permissions": []
+}

@@ -1,0 +1,28 @@
+{
+ "autoname": "field:scale_name",
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": ["scale_name", "col_break_1", "n_points", "section_levels", "levels"],
+ "fields": [
+  {"fieldname": "scale_name", "fieldtype": "Data", "label": "Scale Name", "reqd": 1, "in_list_view": 1, "unique": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "n_points", "fieldtype": "Int", "label": "Number of Points", "reqd": 1, "default": "5", "in_list_view": 1},
+  {"fieldname": "section_levels", "fieldtype": "Section Break", "label": "Rating Levels"},
+  {"fieldname": "levels", "fieldtype": "Table", "label": "Levels", "options": "PMS Rating Level", "reqd": 1}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS Rating Scale",
+ "owner": "Administrator",
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "HR Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "HR User", "read": 1},
+  {"role": "Employee", "read": 1}
+ ],
+ "sort_field": "scale_name",
+ "sort_order": "ASC",
+ "title_field": "scale_name"
+}

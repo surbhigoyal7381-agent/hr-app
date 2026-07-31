@@ -31,12 +31,32 @@ from frappe.utils import (
 	nowdate,
 )
 
-import erpnext
-from erpnext import get_company_currency
-from erpnext.setup.doctype.employee.employee import (
-	InactiveEmployeeStatusError,
-	get_holiday_list_for_employee,
-)
+from hrms.hr.doctype.employee.employee import get_holiday_list_for_employee
+
+
+class InactiveEmployeeStatusError(frappe.ValidationError):
+	pass
+
+
+def get_company_currency(company):
+	return frappe.db.get_value("Company", company, "default_currency") or frappe.db.get_default("currency")
+
+
+def allow_regional(fn):
+	"""Decorator: allows a function to be overridden by a regional implementation via hooks regional_overrides."""
+	def wrapper(*args, **kwargs):
+		country = frappe.get_system_settings("country") if frappe.db else None
+		if country:
+			overrides = frappe.get_hooks("regional_overrides", {}).get(country, {})
+			fn_path = f"hrms.hr.utils.{fn.__name__}"
+			if fn_path in overrides:
+				return frappe.get_attr(overrides[fn_path])(*args, **kwargs)
+		return fn(*args, **kwargs)
+	return wrapper
+
+
+# Make it accessible as frappe.allow_regional for backwards compat
+frappe.allow_regional = allow_regional
 
 from hrms.hr.doctype.leave_policy_assignment.leave_policy_assignment import (
 	calculate_pro_rated_leaves,
@@ -721,21 +741,21 @@ def get_holidays_for_employee(employee, start_date, end_date, raise_exception=Tr
 	return holidays
 
 
-@erpnext.allow_regional
+@frappe.allow_regional
 def calculate_annual_eligible_hra_exemption(doc):
 	# Don't delete this method, used for localization
 	# Indian HRA Exemption Calculation
 	return {}
 
 
-@erpnext.allow_regional
+@frappe.allow_regional
 def calculate_hra_exemption_for_period(doc):
 	# Don't delete this method, used for localization
 	# Indian HRA Exemption Calculation
 	return {}
 
 
-@erpnext.allow_regional
+@frappe.allow_regional
 def calculate_tax_with_marginal_relief(tax_slab, tax_amount, annual_taxable_earning):
 	# Don't delete this method, used for localization
 	# Indian TDS Calculation
@@ -825,7 +845,7 @@ def validate_loan_repay_from_salary(doc, method=None):
 			frappe.throw(_("Please select a Company"))
 
 		employee_currency = get_employee_currency(doc.applicant)
-		company_currency = erpnext.get_company_currency(doc.company)
+		company_currency = get_company_currency(doc.company)
 		if employee_currency != company_currency:
 			frappe.throw(
 				_(

@@ -1,0 +1,228 @@
+{% extends "templates/web.html" %}
+{% block title %}Grace PMS — Manager View{% endblock %}
+{% block head_include %}
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+:root{--bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F3F1ED;--border:#E8E5F2;--text:#2D2622;--text2:#5C5854;--text3:#8B8680;--primary:#5B4B8A;--primary-h:#6E5FA0;--primary-lt:#E8E5F2;--green:#3A9899;--green-lt:#D4F1F4;--red:#D44060;--red-lt:#FFEAEE;--amber:#B55080;--amber-lt:#FFF0F7;--sh1:0 2px 6px rgba(0,0,0,.05);--sh2:0 4px 12px rgba(0,0,0,.1);--r:8px;--sidebar-w:252px;--sidebar-bg:#FFFFFF;--t:.18s cubic-bezier(.4,0,.2,1);}
+@media(prefers-color-scheme:dark){:root{--bg:#1A1815;--surface:#2D2622;--surface2:#3A3632;--border:#403A52;--text:#F8F6F3;--text2:#B8B5AE;--text3:#6B6662;--primary:#9B8FC0;--primary-h:#B5ABD4;--primary-lt:#3D3461;--green:#6DB5B8;--green-lt:#1A3A3B;--red:#F08090;--red-lt:#3D1520;--amber:#E890B8;--amber-lt:#3D1B28;--sidebar-bg:#211D28;}}
+:root[data-theme="dark"]{--bg:#1A1815;--surface:#2D2622;--surface2:#3A3632;--border:#403A52;--text:#F8F6F3;--text2:#B8B5AE;--text3:#6B6662;--primary:#9B8FC0;--primary-h:#B5ABD4;--primary-lt:#3D3461;--green:#6DB5B8;--green-lt:#1A3A3B;--red:#F08090;--red-lt:#3D1520;--amber:#E890B8;--amber-lt:#3D1B28;--sidebar-bg:#211D28;}
+:root[data-theme="light"]{--bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F3F1ED;--border:#E8E5F2;--text:#2D2622;--text2:#5C5854;--text3:#8B8680;--primary:#5B4B8A;--primary-h:#6E5FA0;--primary-lt:#E8E5F2;--green:#3A9899;--green-lt:#D4F1F4;--red:#D44060;--red-lt:#FFEAEE;--amber:#B55080;--amber-lt:#FFF0F7;--sidebar-bg:#FFFFFF;}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,sans-serif;font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:var(--primary);text-decoration:none}
+button{cursor:pointer;border:none;background:none;font:inherit;color:inherit}
+nav.navbar{position:fixed!important;top:0;left:0;right:0;z-index:1100;width:100%}
+.app-shell{display:flex;min-height:calc(100vh - 52px);margin-top:52px}
+.sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--sidebar-bg);display:flex;flex-direction:column;position:fixed;top:52px;left:0;bottom:0;z-index:50;overflow-y:auto;border-right:1px solid var(--border)}
+.sidebar-brand{padding:20px 12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.brand-icon{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--primary),var(--primary-h));display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex-shrink:0}
+.brand-text{display:flex;flex-direction:column;min-width:0}
+.brand-title{font-size:13px;font-weight:700;color:var(--text);letter-spacing:-.01em}
+.brand-sub{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;transition:background var(--t),color var(--t);border-left:3px solid transparent}
+.nav-item:hover{background:var(--surface2);color:var(--text)}
+.nav-item.active{background:var(--primary-lt);color:var(--primary);border-left-color:var(--primary);font-weight:600}
+.main{flex:1;margin-left:var(--sidebar-w);padding:28px 32px;max-width:1100px}
+.page-header{margin-bottom:24px}
+.page-title{font-size:22px;font-weight:700;color:var(--text);letter-spacing:-.02em}
+.page-sub{font-size:13px;color:var(--text2);margin-top:4px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:20px 24px;margin-bottom:16px;box-shadow:var(--sh1)}
+.card-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:16px}
+.status-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:.03em}
+.badge-not-started{background:#F3F1ED;color:#8B8680}
+.badge-open{background:var(--green-lt);color:var(--green)}
+.badge-prep{background:#FFF7E6;color:#92400E}
+.badge-dialogue{background:#E0F2FE;color:#0C4A6E}
+.badge-submitted{background:#E8E5F2;color:var(--primary)}
+.badge-final{background:#F0FDF4;color:#166534}
+.badge-closed{background:var(--surface2);color:var(--text3)}
+table{border-collapse:collapse;width:100%}
+th{font-weight:600;text-align:left;color:var(--text3);font-size:11px;text-transform:uppercase;letter-spacing:.07em;padding:12px 16px;border-bottom:1px solid var(--border)}
+td{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--surface2);transition:background var(--t)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;transition:background var(--t)}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover{background:var(--primary-h)}
+.btn-sm{padding:4px 10px;font-size:11px}
+.stat-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:24px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px;text-align:center;box-shadow:var(--sh1)}
+.stat-num{font-size:28px;font-weight:700;color:var(--primary);letter-spacing:-.02em}
+.stat-label{font-size:11px;color:var(--text3);margin-top:4px}
+.loading{text-align:center;padding:40px;color:var(--text3)}
+</style>
+{% endblock %}
+{% block page_content %}
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-icon">G</div>
+      <div class="brand-text">
+        <span class="brand-title">Grace HR</span>
+        <span class="brand-sub">Manager View</span>
+      </div>
+    </div>
+    <nav>
+      <div style="padding:12px 0 4px">
+        <div class="nav-item active" onclick="showSection('team')">
+          <span>👥</span> My Team
+        </div>
+        <div class="nav-item" onclick="showSection('approvals')">
+          <span>✅</span> Goal Approvals
+        </div>
+        <div class="nav-item" onclick="showSection('checkins')">
+          <span>💬</span> Schedule Check-in
+        </div>
+        <div class="nav-item" onclick="location.href='/pms-employee'">
+          <span>📋</span> My Own Review
+        </div>
+      </div>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div id="loading" class="loading">Loading team data…</div>
+    <div id="content" style="display:none">
+
+      <section id="sec-team">
+        <div class="page-header">
+          <h1 class="page-title">My Team Reviews</h1>
+          <p class="page-sub" id="cycle-label"></p>
+        </div>
+        <div class="stat-row" id="stat-row"></div>
+        <div class="card">
+          <div class="card-title">Team Review Status</div>
+          <table>
+            <thead><tr><th>Employee</th><th>Status</th><th>Self Review</th><th>Dialogue Date</th><th>Actions</th></tr></thead>
+            <tbody id="team-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="sec-approvals" style="display:none">
+        <div class="page-header">
+          <h1 class="page-title">Goal Approvals</h1>
+        </div>
+        <div id="approvals-list"></div>
+      </section>
+
+      <section id="sec-checkins" style="display:none">
+        <div class="page-header">
+          <h1 class="page-title">Schedule Check-in</h1>
+        </div>
+        <div class="card">
+          <button class="btn btn-primary" onclick="frappe.new_doc('PMS Check In')">+ New Check-in</button>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<script>
+const STATUS_BADGE = {
+  'Not Started':'badge-not-started','Self Review Open':'badge-open','Self Review Submitted':'badge-submitted',
+  'Manager Preparation':'badge-prep','Additional Manager Review':'badge-prep','Joint Manager Discussion':'badge-dialogue',
+  'Employee Invited to Dialogue':'badge-dialogue','Dialogue Complete':'badge-dialogue','Manager Adjustments':'badge-prep',
+  'Final Form With Employee':'badge-final','Returned for Amendment':'badge-open','Submitted by Employee':'badge-submitted',
+  'In Calibration':'badge-closed','Calibrated':'badge-closed','Closed':'badge-closed',
+};
+
+let teamData = null;
+
+async function load() {
+  const r = await frappe.call({method:'hrms.pms.api.get_manager_dashboard'});
+  teamData = r.message;
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('content').style.display = '';
+  document.getElementById('cycle-label').textContent = 'Active Cycle: ' + (teamData.cycle || 'None');
+  renderStats();
+  renderTeam();
+}
+
+function renderStats() {
+  const team = teamData.team || [];
+  const counts = {};
+  team.forEach(r => { counts[r.status] = (counts[r.status]||0) + 1; });
+  const statRow = document.getElementById('stat-row');
+  statRow.innerHTML = `
+    <div class="stat-card"><div class="stat-num">${team.length}</div><div class="stat-label">Total</div></div>
+    <div class="stat-card"><div class="stat-num">${counts['Self Review Open']||0}</div><div class="stat-label">Awaiting Self Review</div></div>
+    <div class="stat-card"><div class="stat-num">${counts['Self Review Submitted']||0}</div><div class="stat-label">Ready for Assessment</div></div>
+    <div class="stat-card"><div class="stat-num">${counts['Dialogue Complete']||0}</div><div class="stat-label">Dialogue Done</div></div>
+    <div class="stat-card"><div class="stat-num">${counts['Closed']||0}</div><div class="stat-label">Closed</div></div>
+  `;
+}
+
+function renderTeam() {
+  const tbody = document.getElementById('team-tbody');
+  const team = teamData.team || [];
+  if (!team.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3)">No team members in active cycle</td></tr>';
+    return;
+  }
+  tbody.innerHTML = team.map(r => `
+    <tr>
+      <td><strong>${r.employee_name}</strong></td>
+      <td><span class="status-badge ${STATUS_BADGE[r.status]||''}">${r.status}</span></td>
+      <td>${r.self_review_submitted_on ? frappe.datetime.str_to_user(r.self_review_submitted_on) : '—'}</td>
+      <td>${r.dialogue_date ? frappe.datetime.str_to_user(r.dialogue_date) : '—'}</td>
+      <td>
+        <button class="btn btn-primary btn-sm" onclick="frappe.set_route('Form','PMS Review Record','${r.name}')">
+          Open
+        </button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function loadGoalApprovals() {
+  const r = await frappe.call({
+    method:'frappe.client.get_list',
+    args:{doctype:'PMS Business Goal',filters:{approval_status:'Pending',status:'Pending Approval'},fields:['name','goal_title','employee','weight'],limit:50}
+  });
+  const list = document.getElementById('approvals-list');
+  if (!r.message || !r.message.length) {
+    list.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3)">No pending goal approvals.</div>';
+    return;
+  }
+  list.innerHTML = r.message.map(g => `
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+      <div>
+        <div style="font-weight:600">${g.goal_title}</div>
+        <div style="font-size:12px;color:var(--text3)">${g.employee} · ${g.weight||0}%</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary btn-sm" onclick="approveGoal('${g.name}')">Approve</button>
+        <button class="btn btn-sm" style="border:1px solid var(--red);color:var(--red)" onclick="rejectGoal('${g.name}')">Reject</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function approveGoal(name) {
+  await frappe.call({method:'hrms.pms.api.approve_goal',args:{goal_name:name}});
+  frappe.show_alert({message:'Goal approved',indicator:'green'});
+  loadGoalApprovals();
+}
+
+async function rejectGoal(name) {
+  const reason = prompt('Rejection reason:');
+  if (!reason) return;
+  await frappe.call({method:'hrms.pms.api.reject_goal',args:{goal_name:name,reason}});
+  frappe.show_alert({message:'Goal rejected',indicator:'orange'});
+  loadGoalApprovals();
+}
+
+function showSection(name) {
+  ['team','approvals','checkins'].forEach(s => {
+    document.getElementById('sec-' + s).style.display = s === name ? '' : 'none';
+  });
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  if (name === 'approvals') loadGoalApprovals();
+}
+
+frappe.ready(() => { load(); });
+</script>
+{% endblock %}

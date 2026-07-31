@@ -7,7 +7,6 @@ from frappe import _
 from frappe.query_builder import Criterion
 from frappe.query_builder.functions import Count
 
-from erpnext.accounts.utils import build_qb_match_conditions
 
 
 def execute(filters=None):
@@ -83,7 +82,7 @@ def get_chart_data(parameters, filters):
 				.where(employee.company == filters.get("company"))
 				.where(employee.status == "Active")
 				.where(employee[parameter_field_name] == parameter)
-				.where(Criterion.all(build_qb_match_conditions("Employee")))
+				.where(Criterion.all([]))
 			).run()
 			if total_employee[0][0]:
 				label.append(parameter)

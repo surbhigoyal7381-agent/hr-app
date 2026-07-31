@@ -652,7 +652,7 @@ html, body {
         { headers: { 'X-Frappe-CSRF-Token': getCsrf() } }
       );
       const ctxData = await ctxRes.json();
-      const dest    = (ctxData.message && ctxData.message.url) || '/hrms-home';
+      const dest    = (ctxData.message && ctxData.message.url) || '/hrms-employee';
 
       // Honour ?redirect-to= param if admin
       const params = new URLSearchParams(window.location.search);

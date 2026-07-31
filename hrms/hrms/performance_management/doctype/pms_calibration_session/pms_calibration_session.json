@@ -1,0 +1,45 @@
+{
+ "autoname": "naming_series:",
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series", "session_name", "cycle", "col_break_1",
+  "status", "facilitator",
+  "section_schedule", "session_date", "col_break_2", "duration_hours",
+  "section_scope", "scope",
+  "section_adjustments", "adjustments",
+  "section_notes", "session_notes", "col_break_3", "locked_on"
+ ],
+ "fields": [
+  {"fieldname": "naming_series", "fieldtype": "Select", "label": "Series", "options": "PMS-CAL-.YYYY.-.####\n", "set_only_once": 1},
+  {"fieldname": "session_name", "fieldtype": "Data", "label": "Session Name", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "cycle", "fieldtype": "Link", "label": "Cycle", "options": "PMS Cycle", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "status", "fieldtype": "Select", "label": "Status", "options": "Planned\nIn Progress\nLocked", "default": "Planned", "in_list_view": 1},
+  {"fieldname": "facilitator", "fieldtype": "Link", "label": "Facilitator", "options": "Employee"},
+  {"fieldname": "section_schedule", "fieldtype": "Section Break", "label": "Schedule"},
+  {"fieldname": "session_date", "fieldtype": "Datetime", "label": "Session Date"},
+  {"fieldname": "col_break_2", "fieldtype": "Column Break"},
+  {"fieldname": "duration_hours", "fieldtype": "Float", "label": "Duration (Hours)"},
+  {"fieldname": "section_scope", "fieldtype": "Section Break", "label": "Scope"},
+  {"fieldname": "scope", "fieldtype": "Table", "label": "Scope", "options": "PMS Calibration Scope"},
+  {"fieldname": "section_adjustments", "fieldtype": "Section Break", "label": "Rating Adjustments"},
+  {"fieldname": "adjustments", "fieldtype": "Table", "label": "Adjustments", "options": "PMS Calibration Adjustment"},
+  {"fieldname": "section_notes", "fieldtype": "Section Break", "label": "Notes"},
+  {"fieldname": "session_notes", "fieldtype": "Text Editor", "label": "Session Notes"},
+  {"fieldname": "col_break_3", "fieldtype": "Column Break"},
+  {"fieldname": "locked_on", "fieldtype": "Datetime", "label": "Locked On", "read_only": 1}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS Calibration Session",
+ "owner": "Administrator",
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "HR Manager", "read": 1, "write": 1, "create": 1}
+ ],
+ "title_field": "session_name",
+ "track_changes": 1
+}

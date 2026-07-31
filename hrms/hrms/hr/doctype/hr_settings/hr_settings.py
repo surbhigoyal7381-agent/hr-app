@@ -66,9 +66,9 @@ class HRSettings(Document):
 		PROCEED_WITH_FREQUENCY_CHANGE = False
 
 	def set_naming_series(self):
-		from erpnext.utilities.naming import set_by_naming_series
+		from frappe.model.naming import set_name_by_naming_series
 
-		set_by_naming_series(
+		set_name_by_naming_series(
 			"Employee",
 			"employee_number",
 			self.get("emp_created_by") == "Naming Series",

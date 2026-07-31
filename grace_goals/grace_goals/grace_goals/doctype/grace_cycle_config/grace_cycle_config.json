@@ -1,0 +1,64 @@
+{
+ "autoname": "field:appraisal_cycle",
+ "creation": "2026-07-30 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "appraisal_cycle",
+  "description",
+  "employee_fields",
+  "page_config",
+  "page_settings",
+  "selected_employees"
+ ],
+ "fields": [
+  {
+   "fieldname": "appraisal_cycle",
+   "fieldtype": "Link",
+   "label": "Appraisal Cycle",
+   "options": "Appraisal Cycle",
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "employee_fields",
+   "fieldtype": "Text",
+   "label": "Employee Fields Config (JSON)"
+  },
+  {
+   "fieldname": "page_config",
+   "fieldtype": "Text",
+   "label": "Page Configuration (JSON)"
+  },
+  {
+   "fieldname": "page_settings",
+   "fieldtype": "Text",
+   "label": "Per-Page Settings (JSON)"
+  },
+  {
+   "fieldname": "selected_employees",
+   "fieldtype": "Text",
+   "label": "Selected Employees (JSON)"
+  }
+ ],
+ "modified": "2026-07-30 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Grace Goals",
+ "name": "Grace Cycle Config",
+ "owner": "Administrator",
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "HR Manager",     "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "HR User",        "read": 1, "write": 1, "create": 1}
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 0
+}

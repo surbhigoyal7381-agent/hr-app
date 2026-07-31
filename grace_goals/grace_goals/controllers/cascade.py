@@ -14,10 +14,11 @@ def get_cascade_tree(cascade_name):
     cascade = frappe.get_doc("Goal Cascade", cascade_name)
     goals = frappe.get_all(
         "Individual Goal",
-        filters={"goal_cascade": cascade_name, "docstatus": 1},
+        filters={"goal_cascade": cascade_name, "docstatus": ["!=", 2]},
         fields=["name", "employee", "employee_name", "goal_name", "target_value",
                 "actual_progress", "progress_pct", "status", "trajectory",
-                "parent_goal", "unit", "start_date", "end_date"]
+                "parent_goal", "unit", "start_date", "end_date"],
+        ignore_permissions=True,
     )
     roots = [g for g in goals if not g.parent_goal]
     children_map = {}
@@ -38,10 +39,13 @@ def get_cascade_tree(cascade_name):
 
 def run_alignment_check(cascade_name):
     cascade = frappe.get_doc("Goal Cascade", cascade_name)
+    # Goals are live from creation in the portal — nothing submits them — so
+    # anything not cancelled counts toward alignment.
     goals = frappe.get_all(
         "Individual Goal",
-        filters={"goal_cascade": cascade_name, "docstatus": 1},
-        fields=["target_value"]
+        filters={"goal_cascade": cascade_name, "docstatus": ["!=", 2]},
+        fields=["target_value"],
+        ignore_permissions=True,
     )
     sum_targets = sum(g.target_value for g in goals if g.target_value)
     variance_pct = abs(cascade.company_target - sum_targets) / cascade.company_target * 100 if cascade.company_target else 0

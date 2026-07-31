@@ -64,6 +64,13 @@ def list_tenants():
         else:
             status = "Active"   # non-tenant Frappe site (e.g. hrms.localhost)
 
+        raw_modules = cfg.get("modules_enabled", [])
+        if isinstance(raw_modules, str):
+            try:
+                raw_modules = json.loads(raw_modules)
+            except Exception:
+                raw_modules = []
+
         tenants.append({
             "site_name":     site_name,
             "tenant_name":   cfg.get("tenant_name", site_name),
@@ -72,7 +79,7 @@ def list_tenants():
             "primary_color": cfg.get("primary_color", "#1a7f5a"),
             "logo_url":      cfg.get("tenant_logo_url", ""),
             "host_name":     cfg.get("host_name", f"http://{site_name}"),
-            "modules":       cfg.get("modules_enabled", []),
+            "modules":       raw_modules,
             "support_email": cfg.get("support_email", ""),
         })
 
@@ -84,13 +91,32 @@ def list_tenants():
 
 @frappe.whitelist()
 def create_tenant(subdomain, tenant_name, plan="starter",
-                  primary_color="#1a7f5a", logo_url="", support_email=""):
+                  primary_color="#1a7f5a", logo_url="", support_email="", modules=None):
     """Validate inputs, enqueue provisioning. Returns {job_id, site_name, admin_password}."""
     _require_admin()
 
     subdomain = subdomain.strip().lower()
     base_domain = os.environ.get("BASE_DOMAIN", "localhost")
     site_name = f"{subdomain}.{base_domain}"
+
+    # Normalise modules — accept list or JSON string from JS
+    if modules is None:
+        modules = ["hrms"]
+    elif isinstance(modules, str):
+        try:
+            modules = json.loads(modules)
+        except Exception:
+            modules = [m.strip() for m in modules.split(",") if m.strip()]
+    if "hrms" not in modules:
+        modules = ["hrms"] + [m for m in modules if m != "hrms"]
+    # Derive plan label for display (best-fit preset)
+    _preset_map = {
+        "starter":    {"hrms"},
+        "business":   {"hrms","payroll","vendor"},
+        "enterprise": {"hrms","payroll","recruitment","vendor","goals","analytics"},
+    }
+    mset = set(modules)
+    plan = next((p for p, s in _preset_map.items() if s == mset), "custom")
 
     # ── Validation ────────────────────────────────────────────────────────
     if not re.match(r'^[a-z0-9][a-z0-9\-]{1,30}[a-z0-9]$', subdomain):
@@ -132,13 +158,13 @@ def create_tenant(subdomain, tenant_name, plan="starter",
         "grace_vendor_portal.tenant_api._run_provision",
         queue="long",
         timeout=1200,
-        # deduplicate=False so two jobs can coexist
-        job_id_suffix=job_id,
+        job_name=f"provision_{job_id}",
         # kwargs forwarded to the function:
         pjob_id=job_id,
         site_name=site_name,
         tenant_name=tenant_name,
         plan=plan,
+        modules=",".join(modules),
         primary_color=primary_color,
         logo_url=logo_url,
         support_email=support_email,
@@ -168,10 +194,21 @@ def get_provision_status(job_id):
 
 @frappe.whitelist()
 def list_provision_jobs():
-    """Return all provisioning jobs, newest first."""
+    """Return all provisioning jobs, newest first, with secrets redacted.
+
+    The initial admin password is returned exactly twice: by create_tenant, and
+    by get_provision_status for the job the caller is actively polling. A bulk
+    listing has no reason to hand back every tenant's credentials, so strip it.
+    """
     _require_admin()
     jobs = _read_jobs()
-    return sorted(jobs.values(), key=lambda j: j.get("started_at", ""), reverse=True)
+    redacted = []
+    for job in jobs.values():
+        job = dict(job)
+        job["admin_password"] = ""
+        job["admin_password_redacted"] = True
+        redacted.append(job)
+    return sorted(redacted, key=lambda j: j.get("started_at", ""), reverse=True)
 
 
 @frappe.whitelist()
@@ -189,6 +226,107 @@ def suspend_tenant(site_name, suspend=1):
 
     new_status = "Suspended" if flag == "on" else "Active"
     return {"status": new_status, "site_name": site_name}
+
+
+@frappe.whitelist()
+def update_tenant(site_name, tenant_name="", plan="", modules=None,
+                  primary_color="", support_email=""):
+    """Update an existing tenant's config; queues a background app-install if new modules need it."""
+    _require_admin()
+    _validate_site_name(site_name)
+
+    if not os.path.isdir(f"{SITES_DIR}/{site_name}"):
+        frappe.throw(f"Site '{site_name}' not found.")
+
+    # Normalize modules list
+    if modules is not None:
+        if isinstance(modules, str):
+            try:
+                modules = json.loads(modules)
+            except Exception:
+                modules = [m.strip() for m in modules.split(",") if m.strip()]
+        if "hrms" not in modules:
+            modules = ["hrms"] + [m for m in modules if m != "hrms"]
+
+    # Derive plan label from module set
+    _preset_map = {
+        "starter":    {"hrms"},
+        "business":   {"hrms", "payroll", "vendor"},
+        "enterprise": {"hrms", "payroll", "recruitment", "vendor", "goals", "analytics"},
+    }
+    if modules is not None:
+        mset = set(modules)
+        plan = next((p for p, s in _preset_map.items() if s == mset), "custom")
+
+    # Update scalar site_config values
+    for key, val in [
+        ("tenant_name",      tenant_name),
+        ("subscription_plan", plan),
+        ("primary_color",    primary_color),
+        ("support_email",    support_email),
+    ]:
+        if val:
+            r = _bench_run(f'--site {site_name} set-config {key} "{val}"')
+            if r.returncode != 0:
+                frappe.throw(f"Failed to update {key}: {r.stderr}")
+
+    # Update modules_enabled list
+    if modules is not None:
+        _MOD_MAP = {
+            "hrms":        "hrms",
+            "payroll":     "Payroll",
+            "recruitment": "Recruitment",
+            "vendor":      "Vendor Portal",
+            "goals":       "Goals",
+            "analytics":   "Analytics",
+        }
+        modules_enabled = [_MOD_MAP.get(m, m) for m in modules]
+        r = _bench_run(f"--site {site_name} set-config modules_enabled '{json.dumps(modules_enabled)}'")
+        if r.returncode != 0:
+            frappe.throw(f"Failed to update modules: {r.stderr}")
+
+    _bench_run(f"--site {site_name} clear-cache")
+
+    # Queue background install for any newly-added apps not yet on the site
+    if modules is not None:
+        installed = _get_installed_apps(site_name)
+        needs_vendor = "vendor" in modules and "grace_vendor_portal" not in installed
+        needs_goals  = "goals"  in modules and "grace_goals"          not in installed
+
+        if needs_vendor or needs_goals:
+            job_id = uuid.uuid4().hex[:12]
+            cfg = _read_site_config(site_name)
+            jobs = _read_jobs()
+            jobs[job_id] = {
+                "job_id":         job_id,
+                "site_name":      site_name,
+                "tenant_name":    cfg.get("tenant_name", site_name),
+                "plan":           plan or cfg.get("subscription_plan", "custom"),
+                "status":         "Provisioning",
+                "started_at":     str(now_datetime()),
+                "finished_at":    None,
+                "admin_password": "",
+                "log":            f"[{now_datetime()}] Installing additional module apps…\n",
+                "host_name":      cfg.get("host_name", f"http://{site_name}"),
+            }
+            _write_jobs(jobs)
+            frappe.enqueue(
+                "grace_vendor_portal.tenant_api._run_install_modules",
+                queue="long",
+                timeout=600,
+                job_name=f"install_modules_{job_id}",
+                pjob_id=job_id,
+                site_name=site_name,
+                install_vendor=needs_vendor,
+                install_goals=needs_goals,
+            )
+            return {
+                "status": "installing",
+                "job_id": job_id,
+                "message": "Configuration saved. Installing new module apps in the background.",
+            }
+
+    return {"status": "ok", "message": "Tenant configuration updated."}
 
 
 @frappe.whitelist()
@@ -217,8 +355,9 @@ def get_tenant_stats(site_name):
 # Background job (called by Frappe worker, not directly by API)
 # ══════════════════════════════════════════════════════════════════════════
 
-def _run_provision(pjob_id, site_name, tenant_name, plan, primary_color,
-                   logo_url, support_email, admin_password, base_domain, db_root_password):
+def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
+                   primary_color, logo_url, support_email, admin_password,
+                   base_domain, db_root_password):
     """
     Runs in a Frappe long-queue worker.
     Calls provision_tenant.sh and writes status back to JOBS_FILE.
@@ -249,7 +388,7 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, primary_color,
 
     try:
         result = subprocess.run(
-            ["bash", "/workspace/provision_tenant.sh", subdomain, tenant_name, plan],
+            ["bash", "/workspace/provision_tenant.sh", subdomain, tenant_name, plan, modules],
             capture_output=True,
             text=True,
             cwd=BENCH_PATH,
@@ -282,15 +421,81 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, primary_color,
         _update("Failed", f"\n[{now_datetime()}] ❌ Exception: {exc}\n", finished=True)
 
 
+def _get_installed_apps(site_name):
+    """Return list of Frappe app names installed on a site."""
+    r = _bench_run(f"--site {site_name} list-apps", timeout=15)
+    if r.returncode == 0:
+        return [line.strip() for line in r.stdout.strip().splitlines() if line.strip()]
+    return []
+
+
+def _run_install_modules(pjob_id, site_name, install_vendor=False, install_goals=False):
+    """Background job: install additional Frappe apps on an existing site."""
+    def _update(status, log_append="", finished=False):
+        jobs = _read_jobs()
+        if pjob_id in jobs:
+            jobs[pjob_id]["status"] = status
+            if log_append:
+                jobs[pjob_id]["log"] = (jobs[pjob_id].get("log") or "") + log_append
+            if finished:
+                jobs[pjob_id]["finished_at"] = str(now_datetime())
+        _write_jobs(jobs)
+
+    try:
+        if install_vendor:
+            _update("Provisioning", f"[{now_datetime()}] Installing grace_vendor_portal…\n")
+            r = _bench_run(f"--site {site_name} install-app grace_vendor_portal", timeout=300)
+            if r.returncode != 0:
+                raise RuntimeError(f"grace_vendor_portal install failed:\n{r.stderr}")
+            _update("Provisioning", r.stdout + "\n")
+
+        if install_goals:
+            _update("Provisioning", f"[{now_datetime()}] Installing grace_goals…\n")
+            r = _bench_run(f"--site {site_name} install-app grace_goals", timeout=300)
+            if r.returncode != 0:
+                raise RuntimeError(f"grace_goals install failed:\n{r.stderr}")
+            _update("Provisioning", r.stdout + "\n")
+
+        _bench_run(f"--site {site_name} clear-cache")
+        _update("Done", f"[{now_datetime()}] ✅ Module installation complete.\n", finished=True)
+
+    except Exception as exc:
+        _update("Failed", f"[{now_datetime()}] ❌ {exc}\n", finished=True)
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # Private helpers
 # ══════════════════════════════════════════════════════════════════════════
 
 def _require_admin():
+    """Guard every tenant-management endpoint.
+
+    Two independent checks — BOTH must pass:
+
+    1. The request must be served by the control-plane site. Tenant sites are
+       ordinary Frappe sites whose own admins legitimately hold System Manager,
+       so a role check alone would let any tenant's admin enumerate, suspend,
+       reconfigure or read provisioning secrets for EVERY other tenant on the
+       bench. The control plane is opted in explicitly via site_config.json:
+           "kinexus_control_plane": 1
+       A tenant site never carries that flag, so this API does not exist there.
+    2. The caller must hold System Manager on the control-plane site.
+    """
+    if not frappe.conf.get("kinexus_control_plane"):
+        frappe.throw(
+            "Tenant management is not available on this site.",
+            frappe.PermissionError,
+        )
     if frappe.session.user == "Guest":
         frappe.throw("Not permitted.", frappe.PermissionError)
     if "System Manager" not in frappe.get_roles(frappe.session.user):
         frappe.throw("Tenant management requires System Manager role.", frappe.PermissionError)
+
+
+@frappe.whitelist()
+def is_control_plane():
+    """Side-effect-free probe so the admin UI can hide itself on tenant sites."""
+    return bool(frappe.conf.get("kinexus_control_plane"))
 
 
 def _validate_site_name(site_name):
@@ -345,6 +550,7 @@ def _bench_run(cmd, timeout=30):
     )
 
 
-def _generate_password(length=16):
-    alphabet = string.ascii_letters + string.digits + "!@#$"
+def _generate_password(length=18):
+    # Alphanumeric only — avoids shell/SQL quoting issues when passed via env vars
+    alphabet = string.ascii_letters + string.digits
     return "".join(secrets.choice(alphabet) for _ in range(length))

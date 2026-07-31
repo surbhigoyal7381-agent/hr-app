@@ -1,0 +1,20 @@
+{
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": ["department", "designation", "col_break_1", "company", "branch"],
+ "fields": [
+  {"fieldname": "department", "fieldtype": "Link", "label": "Department", "options": "Department", "in_list_view": 1},
+  {"fieldname": "designation", "fieldtype": "Link", "label": "Designation", "options": "Designation", "in_list_view": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "company", "fieldtype": "Link", "label": "Company", "options": "Company", "in_list_view": 1},
+  {"fieldname": "branch", "fieldtype": "Link", "label": "Branch", "options": "Branch", "in_list_view": 1}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS Calibration Scope",
+ "owner": "Administrator",
+ "permissions": []
+}

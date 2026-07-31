@@ -1,0 +1,22 @@
+{
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": ["section_name", "section_type", "col_break_1", "is_mandatory", "display_order", "is_rated", "rating_scale"],
+ "fields": [
+  {"fieldname": "section_name", "fieldtype": "Data", "label": "Section Name", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "section_type", "fieldtype": "Select", "label": "Type", "options": "Goals\nDevelopment\nValues\nFree Text\nCustom", "default": "Free Text", "in_list_view": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "is_mandatory", "fieldtype": "Check", "label": "Mandatory", "in_list_view": 1},
+  {"fieldname": "display_order", "fieldtype": "Int", "label": "Order"},
+  {"fieldname": "is_rated", "fieldtype": "Check", "label": "Rated"},
+  {"fieldname": "rating_scale", "fieldtype": "Link", "label": "Rating Scale", "options": "PMS Rating Scale", "depends_on": "is_rated"}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS Template Section",
+ "owner": "Administrator",
+ "permissions": []
+}

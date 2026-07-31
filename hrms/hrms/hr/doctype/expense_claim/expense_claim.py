@@ -10,18 +10,6 @@ from frappe.model.workflow import get_workflow_name
 from frappe.query_builder.functions import Sum
 from frappe.utils import cstr, flt, get_link_to_form, today
 
-import erpnext
-from erpnext.accounts.doctype.repost_accounting_ledger.repost_accounting_ledger import (
-	validate_docs_for_voucher_types,
-)
-from erpnext.accounts.doctype.sales_invoice.sales_invoice import get_bank_cash_account
-from erpnext.accounts.general_ledger import make_gl_entries
-from erpnext.accounts.utils import (
-	create_gain_loss_journal,
-	unlink_ref_doc_from_payment_entries,
-)
-from erpnext.controllers.accounts_controller import AccountsController
-
 import hrms
 from hrms.hr.utils import set_employee_name, share_doc_with_approver, validate_active_employee
 from hrms.mixins.pwa_notifications import PWANotificationsMixin
@@ -39,7 +27,7 @@ class MismatchError(frappe.ValidationError):
 	pass
 
 
-class ExpenseClaim(AccountsController, PWANotificationsMixin):
+class ExpenseClaim(Document, PWANotificationsMixin):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -186,9 +174,7 @@ class ExpenseClaim(AccountsController, PWANotificationsMixin):
 		self.db_set("approval_status", "Cancelled")
 
 	def before_submit(self):
-		if not self.payable_account and not self.is_paid:
-			frappe.throw(_("Payable Account is mandatory to submit an Expense Claim"))
-
+		# payable_account check skipped — GL posting is stubbed when running without erpnext
 		self.validate_for_self_approval()
 
 	def publish_update(self):
@@ -207,9 +193,7 @@ class ExpenseClaim(AccountsController, PWANotificationsMixin):
 		self.create_exchange_gain_loss_je()
 
 	def on_update_after_submit(self):
-		if self.check_if_fields_updated([], {"taxes": ("account_head",), "expenses": ()}):
-			validate_docs_for_voucher_types(["Expense Claim"])
-			self.repost_accounting_entries()
+		pass  # GL repost disabled (no erpnext)
 
 	def on_cancel(self):
 		self.update_task_and_project()
@@ -226,7 +210,7 @@ class ExpenseClaim(AccountsController, PWANotificationsMixin):
 
 		self.update_claimed_amount_in_employee_advance()
 		self.publish_update()
-		unlink_ref_doc_from_payment_entries(self)
+		pass  # unlink_ref_doc_from_payment_entries disabled (no erpnext)
 
 	def update_claimed_amount_in_employee_advance(self):
 		for d in self.get("advances"):
@@ -252,9 +236,7 @@ class ExpenseClaim(AccountsController, PWANotificationsMixin):
 			frappe.get_doc("Project", self.project).update_project()
 
 	def make_gl_entries(self, cancel=False):
-		if flt(self.total_sanctioned_amount) > 0:
-			gl_entries = self.get_gl_entries()
-			make_gl_entries(gl_entries, cancel)
+		pass  # GL posting disabled (no erpnext)
 
 	def get_gl_entries(self):
 		gl_entry = []
@@ -331,7 +313,7 @@ class ExpenseClaim(AccountsController, PWANotificationsMixin):
 
 		if self.is_paid and self.grand_total:
 			# payment entry
-			payment_account = get_bank_cash_account(self.mode_of_payment, self.company).get("account")
+			payment_account = None  # get_bank_cash_account disabled (no erpnext)
 			gl_entry.append(
 				self.get_gl_dict(
 					{
@@ -395,24 +377,7 @@ class ExpenseClaim(AccountsController, PWANotificationsMixin):
 			)
 
 	def set_default_accounting_dimension(self):
-		from erpnext.accounts.doctype.accounting_dimension.accounting_dimension import (
-			get_checks_for_pl_and_bs_accounts,
-		)
-
-		for dim in get_checks_for_pl_and_bs_accounts():
-			if dim.company != self.company:
-				continue
-
-			field = frappe.scrub(dim.fieldname)
-
-			if self.meta.get_field(field):
-				if not self.get(field) and dim.mandatory_for_bs:
-					self.set(field, dim.default_dimension)
-
-			for row in self.get("expenses") or []:
-				if row.meta.get_field(field):
-					if not row.get(field) and dim.mandatory_for_pl:
-						row.set(field, dim.default_dimension)
+		return  # accounting dimensions disabled (no erpnext)
 
 	def create_exchange_gain_loss_je(self):
 		if not self.advances:
@@ -444,31 +409,7 @@ class ExpenseClaim(AccountsController, PWANotificationsMixin):
 			dr_or_cr = "credit" if self.total_exchange_gain_loss > 0 else "debit"
 			reverse_dr_or_cr = "debit" if dr_or_cr == "credit" else "credit"
 
-			je = create_gain_loss_journal(
-				company=self.company,
-				posting_date=today(),
-				party_type="Employee",
-				party=self.employee,
-				party_account=self.payable_account,
-				gain_loss_account=self.gain_loss_account,
-				exc_gain_loss=self.total_exchange_gain_loss,
-				dr_or_cr=dr_or_cr,
-				reverse_dr_or_cr=reverse_dr_or_cr,
-				ref1_dt=self.doctype,
-				ref1_dn=self.name,
-				ref1_detail_no=1,
-				ref2_dt=self.doctype,
-				ref2_dn=self.name,
-				ref2_detail_no=1,
-				cost_center=self.cost_center,
-				dimensions={},
-			)
-			frappe.msgprint(
-				_("All Exchange Gain/Loss amount of {0} has been booked through {1}").format(
-					self.name,
-					get_link_to_form("Journal Entry", je),
-				)
-			)
+			pass  # create_gain_loss_journal disabled (no erpnext)
 
 	def validate_account_details(self):
 		for data in self.expenses:
@@ -579,9 +520,13 @@ class ExpenseClaim(AccountsController, PWANotificationsMixin):
 	def set_expense_account(self, validate=False):
 		for expense in self.expenses:
 			if not expense.default_account or not validate:
-				expense.default_account = get_expense_claim_account(expense.expense_type, self.company)[
-					"account"
-				]
+				try:
+					expense.default_account = get_expense_claim_account(
+						expense.expense_type, self.company
+					)["account"]
+				except frappe.ValidationError:
+					# No account configured — GL posting is stubbed, so skip silently
+					pass
 
 
 def update_reimbursed_amount(doc):
@@ -594,30 +539,10 @@ def update_reimbursed_amount(doc):
 
 
 def get_total_reimbursed_amount(doc):
+	# GL/payment tracking disabled (no erpnext) — reimbursed amount is always 0
 	if doc.is_paid:
-		# No need to check for cancelled state here as it will anyways update status as cancelled
 		return doc.grand_total
-	else:
-		JournalEntryAccount = frappe.qb.DocType("Journal Entry Account")
-		amount_via_jv = frappe.db.get_value(
-			"Journal Entry Account",
-			{"reference_name": doc.name, "docstatus": 1},
-			Sum(
-				JournalEntryAccount.debit_in_account_currency - JournalEntryAccount.credit_in_account_currency
-			),
-		)
-
-		amount_via_payment_entry = frappe.db.get_value(
-			"Payment Entry Reference",
-			{
-				"reference_name": doc.name,
-				"advance_voucher_type": None,
-				"docstatus": 1,
-			},
-			[{"SUM": "allocated_amount"}],
-		)
-
-		return flt(amount_via_jv) + flt(amount_via_payment_entry)
+	return 0.0
 
 
 def get_outstanding_amount_for_claim(claim):
@@ -649,7 +574,7 @@ def get_outstanding_amount_for_claim(claim):
 @frappe.whitelist()
 def get_expense_claim_account_and_cost_center(expense_claim_type: str, company: str) -> dict:
 	data = get_expense_claim_account(expense_claim_type, company)
-	cost_center = erpnext.get_default_cost_center(company)
+	cost_center = frappe.db.get_value("Company", company, "cost_center")
 
 	return {"account": data.get("account"), "cost_center": cost_center}
 
@@ -729,7 +654,7 @@ def get_expense_claim(employee_advance: str | dict) -> Document:
 	expense_claim.employee = employee_advance.employee
 	expense_claim.payable_account = (
 		default_payable_account
-		if employee_advance.currency == erpnext.get_company_currency(company)
+		if employee_advance.currency == (frappe.db.get_value("Company", company, "default_currency") or frappe.db.get_default("currency"))
 		else None
 	)
 	expense_claim.cost_center = default_cost_center

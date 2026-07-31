@@ -1,6 +1,7 @@
 import frappe
 import calendar as _calendar
 from frappe.utils import today, get_first_day, get_last_day, getdate, add_days, now
+from grace_goals.permissions import get_effective_manager
 
 LEAVE_COLORS = {
     "Casual Leave":       "#3b82f6",
@@ -30,14 +31,22 @@ def get_portal_context():
     emp = _get_employee(user)
     roles = frappe.get_roles(user)
 
-    is_hr = bool({"HR Manager", "HR User", "Administrator"} & set(roles))
+    is_system_manager = bool({"System Manager", "Administrator"} & set(roles))
+    is_hr = is_system_manager or bool({"HR Manager", "HR User"} & set(roles))
     is_manager = False
     manager_name = None
 
     if emp:
         is_manager = frappe.db.count("Employee", {"reports_to": emp.name, "status": "Active"}) > 0
-        if emp.reports_to:
-            manager_name = frappe.db.get_value("Employee", emp.reports_to, "employee_name")
+        # HR managers are also effective managers of employees with no reports_to
+        if not is_manager and is_hr:
+            is_manager = frappe.db.count(
+                "Employee", {"reports_to": ("is", "not set"), "status": "Active",
+                             "name": ["!=", emp.name]}
+            ) > 0
+        eff_mgr = get_effective_manager(emp.name)
+        if eff_mgr and eff_mgr != emp.name:
+            manager_name = frappe.db.get_value("Employee", eff_mgr, "employee_name")
 
     return {
         "type": "hr" if is_hr else ("manager" if is_manager else "employee"),
@@ -45,6 +54,7 @@ def get_portal_context():
         "employee": emp,
         "is_hr": is_hr,
         "is_manager": is_manager,
+        "is_system_manager": is_system_manager,
         "manager_name": manager_name,
         "roles": roles,
     }
@@ -164,6 +174,17 @@ def get_manager_dashboard():
         fields=["name", "employee_name", "designation", "department", "user_id", "image"],
         ignore_permissions=True,
     )
+    # HR managers also own employees who have no reporting manager set
+    roles = frappe.get_roles()
+    if {"HR Manager", "HR User"} & set(roles):
+        orphans = frappe.get_all(
+            "Employee",
+            filters={"reports_to": ("is", "not set"), "status": "Active", "name": ["!=", emp.name]},
+            fields=["name", "employee_name", "designation", "department", "user_id", "image"],
+            ignore_permissions=True,
+        )
+        existing = {t.name for t in team}
+        team.extend(o for o in orphans if o.name not in existing)
 
     # Indirect reports (L2 only)
     l2 = []
@@ -401,15 +422,374 @@ def action_leave(leave_id, action):
 
     if action == "approve":
         doc.status = "Approved"
+        doc.db_set("status", "Approved", update_modified=False)
         doc.submit()
     elif action == "reject":
         doc.status = "Rejected"
+        doc.db_set("status", "Rejected", update_modified=False)
         doc.submit()
     else:
         frappe.throw(f"Unknown action: {action}")
 
     frappe.db.commit()
     return {"status": doc.status, "name": doc.name}
+
+
+@frappe.whitelist()
+def get_portal_activity(days=7):
+    """Return recent portal activity for the logged-in user, sorted latest-first."""
+    user = frappe.session.user
+    emp  = _get_employee(user)
+    if not emp:
+        return {"activities": []}
+
+    td    = today()
+    since = add_days(td, -int(days))
+    since_dt = since + " 00:00:00"
+
+    activity = []
+
+    # Employee checkins
+    checkins = frappe.get_all(
+        "Employee Checkin",
+        filters={"employee": emp.name, "time": [">=", since_dt]},
+        fields=["log_type", "time"],
+        order_by="time desc",
+        ignore_permissions=True,
+    )
+    for c in checkins:
+        t = str(c.time)
+        activity.append({
+            "type":   "checkin",
+            "icon":   c.log_type,
+            "label":  "Checked " + ("in" if c.log_type == "IN" else "out"),
+            "time":   t,
+            "date":   t[:10],
+            "detail": "",
+        })
+
+    # Leave applications submitted
+    leaves = frappe.get_all(
+        "Leave Application",
+        filters={"employee": emp.name, "creation": [">=", since_dt]},
+        fields=["leave_type", "status", "creation", "from_date", "to_date", "total_leave_days"],
+        order_by="creation desc",
+        ignore_permissions=True,
+    )
+    for l in leaves:
+        t     = str(l.creation)
+        days_ = float(l.total_leave_days or 0)
+        cnt   = int(days_) if days_ == int(days_) else days_
+        dr    = str(l.from_date)
+        if l.to_date and str(l.to_date) != str(l.from_date):
+            dr += " to " + str(l.to_date)
+        activity.append({
+            "type":   "leave",
+            "icon":   "LEAVE",
+            "label":  "Applied for " + (l.leave_type or "Leave"),
+            "time":   t,
+            "date":   t[:10],
+            "detail": dr + " · " + str(cnt) + " day" + ("s" if cnt != 1 else ""),
+            "status": l.status or "",
+        })
+
+    # Leaves actioned by this user as approver
+    actioned = frappe.get_all(
+        "Leave Application",
+        filters={"leave_approver": user, "modified": [">=", since_dt], "docstatus": 1},
+        fields=["employee_name", "leave_type", "status", "modified"],
+        order_by="modified desc",
+        ignore_permissions=True,
+    )
+    for l in actioned:
+        t = str(l.modified)
+        activity.append({
+            "type":   "approval",
+            "icon":   "APPROVED" if l.status == "Approved" else "REJECTED",
+            "label":  (l.status or "") + " leave for " + (l.employee_name or ""),
+            "time":   t,
+            "date":   t[:10],
+            "detail": l.leave_type or "",
+        })
+
+    activity.sort(key=lambda x: x["time"], reverse=True)
+    return {"activities": activity}
+
+
+@frappe.whitelist()
+def get_employee_scorecard(employee_id):
+    """Comprehensive scorecard for one employee — for manager view."""
+    mgr_emp = _get_employee()
+    if not mgr_emp:
+        frappe.throw("No employee record found for current user")
+
+    roles = frappe.get_roles()
+    is_hr = bool({"HR Manager", "HR User", "Administrator"} & set(roles))
+    effective_mgr = get_effective_manager(employee_id)
+    if effective_mgr != mgr_emp.name and not is_hr:
+        frappe.throw("Access denied", frappe.PermissionError)
+
+    emp = frappe.db.get_value(
+        "Employee", employee_id,
+        ["name", "employee_name", "designation", "department", "branch",
+         "date_of_joining", "cell_number", "personal_email", "company_email",
+         "status", "gender", "image"],
+        as_dict=True,
+    )
+    if not emp:
+        frappe.throw("Employee not found")
+
+    td = today()
+
+    # 6-month attendance trend
+    monthly_att = []
+    for i in range(5, -1, -1):
+        m_ref = add_days(td, -(i * 30))
+        mo_s = get_first_day(m_ref)
+        mo_e = get_last_day(m_ref)
+        rows = frappe.get_all(
+            "Attendance",
+            filters={"employee": employee_id, "attendance_date": ["between", [mo_s, mo_e]], "docstatus": 1},
+            fields=["status", "working_hours"],
+            ignore_permissions=True,
+        )
+        counts = {}
+        hrs = []
+        for r in rows:
+            counts[r.status] = counts.get(r.status, 0) + 1
+            if r.working_hours:
+                hrs.append(float(r.working_hours))
+        dt = getdate(mo_s)
+        monthly_att.append({
+            "month_label": dt.strftime("%b"),
+            "present": counts.get("Present", 0) + round(counts.get("Half Day", 0) * 0.5),
+            "absent": counts.get("Absent", 0),
+            "on_leave": counts.get("On Leave", 0),
+            "wfh": counts.get("Work From Home", 0),
+            "avg_hours": round(sum(hrs) / len(hrs), 1) if hrs else 0,
+        })
+
+    # Current month summary
+    mo_start = get_first_day(td)
+    month_att = frappe.get_all(
+        "Attendance",
+        filters={"employee": employee_id, "attendance_date": [">=", mo_start], "docstatus": 1},
+        fields=["status", "working_hours"],
+        ignore_permissions=True,
+    )
+    att_summary = {}
+    hrs = []
+    for a in month_att:
+        att_summary[a.status] = att_summary.get(a.status, 0) + 1
+        if a.working_hours:
+            hrs.append(float(a.working_hours))
+    avg_hours = round(sum(hrs) / len(hrs), 1) if hrs else 0
+
+    # Leave balances
+    alloc_rows = frappe.db.sql("""
+        SELECT leave_type, SUM(total_leaves_allocated) as allocated
+        FROM `tabLeave Allocation`
+        WHERE employee = %s AND docstatus = 1
+          AND from_date <= %s AND to_date >= %s
+        GROUP BY leave_type ORDER BY leave_type
+    """, (employee_id, td, td), as_dict=True)
+    yr_start = frappe.utils.get_year_start(td)
+    taken_rows = frappe.get_all(
+        "Leave Application",
+        filters={"employee": employee_id, "docstatus": 1, "status": "Approved",
+                 "from_date": [">=", yr_start]},
+        fields=["leave_type", "total_leave_days"],
+        ignore_permissions=True,
+    )
+    taken_map = {}
+    for r in taken_rows:
+        taken_map[r.leave_type] = taken_map.get(r.leave_type, 0) + float(r.total_leave_days or 0)
+    leave_balances = []
+    for a in alloc_rows:
+        alloc = float(a.allocated or 0)
+        taken = taken_map.get(a.leave_type, 0)
+        leave_balances.append({
+            "leave_type": a.leave_type,
+            "allocated": alloc,
+            "taken": round(taken, 1),
+            "balance": max(alloc - taken, 0),
+        })
+
+    # Pending leave requests
+    pending_leaves = frappe.get_all(
+        "Leave Application",
+        filters={"employee": employee_id, "status": "Open", "docstatus": 0},
+        fields=["name", "leave_type", "from_date", "to_date", "total_leave_days", "description"],
+        order_by="creation desc", limit=10,
+        ignore_permissions=True,
+    )
+
+    # Goals
+    goals = []
+    goals_available = False
+    if frappe.db.exists("DocType", "Individual Goal"):
+        goals_available = True
+        goals = frappe.get_all(
+            "Individual Goal",
+            filters={"employee": employee_id, "docstatus": ["!=", 2]},
+            fields=["name", "goal_name", "progress_pct", "status", "trajectory"],
+            order_by="creation desc", limit=15,
+            ignore_permissions=True,
+        )
+
+    # Appraisal history
+    appraisal_history = []
+    if frappe.db.exists("DocType", "Grace Appraisal Extension"):
+        rows = frappe.db.sql("""
+            SELECT ae.name, ae.appraisal_cycle, ae.review_status, ae.overall_rating,
+                   COALESCE(ac.cycle_name, ae.appraisal_cycle) AS cycle_label,
+                   ac.start_date,
+                   (SELECT a2.total_score FROM `tabAppraisal` a2 WHERE a2.name = ae.name LIMIT 1) AS score
+            FROM `tabGrace Appraisal Extension` ae
+            LEFT JOIN `tabAppraisal Cycle` ac ON ac.name = ae.appraisal_cycle
+            WHERE ae.employee = %s AND ae.docstatus != 2
+            ORDER BY COALESCE(ac.start_date, ae.creation) ASC
+            LIMIT 8
+        """, employee_id, as_dict=True)
+        for r in rows:
+            appraisal_history.append({
+                "cycle_label": (r.cycle_label or "—"),
+                "review_status": r.review_status or "",
+                "overall_rating": r.overall_rating or "",
+                "score": float(r.score or 0),
+            })
+
+    # Today's check-in status
+    checkins = frappe.get_all(
+        "Employee Checkin",
+        filters={"employee": employee_id, "time": [">=", td + " 00:00:00"]},
+        fields=["log_type", "time"],
+        order_by="time asc",
+        ignore_permissions=True,
+    )
+    last_checkin = checkins[-1] if checkins else None
+    checked_in = bool(last_checkin and last_checkin.log_type == "IN")
+    today_att = frappe.db.get_value(
+        "Attendance",
+        {"employee": employee_id, "attendance_date": td, "docstatus": 1},
+        ["status", "in_time", "out_time", "working_hours"],
+        as_dict=True,
+    )
+
+    return {
+        "employee": emp,
+        "checked_in": checked_in,
+        "today_attendance": today_att,
+        "month_att_summary": att_summary,
+        "avg_hours": avg_hours,
+        "monthly_att": monthly_att,
+        "leave_balances": leave_balances,
+        "pending_leaves": pending_leaves,
+        "goals": goals,
+        "goals_available": goals_available,
+        "appraisal_history": appraisal_history,
+    }
+
+
+@frappe.whitelist()
+def get_team_scorecard():
+    """Compact scorecard for all direct reports — for comparison charts."""
+    mgr_emp = _get_employee()
+    if not mgr_emp:
+        return {"members": []}
+
+    td = today()
+    mo_start = get_first_day(td)
+
+    team = frappe.get_all(
+        "Employee",
+        filters={"reports_to": mgr_emp.name, "status": "Active"},
+        fields=["name", "employee_name", "designation"],
+        ignore_permissions=True,
+    )
+    if not team:
+        return {"members": []}
+
+    emp_ids = [m.name for m in team]
+
+    # Monthly attendance for all team members
+    att_rows = frappe.get_all(
+        "Attendance",
+        filters={"employee": ["in", emp_ids], "attendance_date": [">=", mo_start], "docstatus": 1},
+        fields=["employee", "status", "working_hours"],
+        ignore_permissions=True,
+    )
+    att_by_emp = {}
+    for r in att_rows:
+        e = r.employee
+        if e not in att_by_emp:
+            att_by_emp[e] = {"Present": 0, "Absent": 0, "On Leave": 0, "Work From Home": 0, "hrs": []}
+        att_by_emp[e][r.status] = att_by_emp[e].get(r.status, 0) + 1
+        if r.working_hours:
+            att_by_emp[e]["hrs"].append(float(r.working_hours))
+
+    # Goals per team member
+    goals_by_emp = {}
+    if frappe.db.exists("DocType", "Individual Goal"):
+        goal_rows = frappe.get_all(
+            "Individual Goal",
+            filters={"employee": ["in", emp_ids], "docstatus": ["!=", 2]},
+            fields=["employee", "progress_pct", "status"],
+            ignore_permissions=True,
+        )
+        for g in goal_rows:
+            e = g.employee
+            if e not in goals_by_emp:
+                goals_by_emp[e] = {"total": 0, "pct_sum": 0, "completed": 0}
+            goals_by_emp[e]["total"] += 1
+            goals_by_emp[e]["pct_sum"] += float(g.progress_pct or 0)
+            if g.status == "Completed":
+                goals_by_emp[e]["completed"] += 1
+        for e, gd in goals_by_emp.items():
+            gd["avg"] = round(gd["pct_sum"] / gd["total"]) if gd["total"] else 0
+
+    # Latest appraisal score per team member
+    score_by_emp = {}
+    if frappe.db.exists("DocType", "Grace Appraisal Extension"):
+        placeholders = ",".join(["%s"] * len(emp_ids))
+        rows = frappe.db.sql("""
+            SELECT ae.employee, ae.overall_rating,
+                   (SELECT a2.total_score FROM `tabAppraisal` a2 WHERE a2.name = ae.name LIMIT 1) AS score
+            FROM `tabGrace Appraisal Extension` ae
+            WHERE ae.employee IN ({})
+              AND ae.docstatus != 2
+            ORDER BY ae.creation DESC
+        """.format(placeholders), emp_ids, as_dict=True)
+        for r in rows:
+            if r.employee not in score_by_emp:
+                score_by_emp[r.employee] = {
+                    "score": float(r.score or 0),
+                    "rating": r.overall_rating or "",
+                }
+
+    members = []
+    for m in team:
+        att = att_by_emp.get(m.name, {})
+        hrs_list = att.get("hrs", [])
+        gd = goals_by_emp.get(m.name, {})
+        sc = score_by_emp.get(m.name, {})
+        members.append({
+            "name": m.name,
+            "employee_name": m.employee_name,
+            "designation": m.designation or "",
+            "present": att.get("Present", 0) + round(att.get("Half Day", 0) * 0.5),
+            "absent": att.get("Absent", 0),
+            "on_leave": att.get("On Leave", 0),
+            "wfh": att.get("Work From Home", 0),
+            "avg_hours": round(sum(hrs_list) / len(hrs_list), 1) if hrs_list else 0,
+            "goals_total": gd.get("total", 0),
+            "goals_completed": gd.get("completed", 0),
+            "goals_avg": gd.get("avg", 0),
+            "appraisal_score": sc.get("score", 0),
+            "appraisal_rating": sc.get("rating", ""),
+        })
+
+    return {"members": members}
 
 
 @frappe.whitelist()
@@ -1064,7 +1444,7 @@ def submit_goal_evidence_portal(goal_id, evidence_type="Manual Entry",
     if goal_employee != emp.name:
         frappe.throw("Access denied", frappe.PermissionError)
 
-    from grace_goals.grace_goals.api.goal_api import submit_goal_evidence
+    from grace_goals.api.goal_api import submit_goal_evidence
     return submit_goal_evidence(
         goal_id=goal_id,
         evidence_type=evidence_type,
@@ -1101,7 +1481,8 @@ def get_goal_detail(goal_id):
         filters={"employee": goal_employee, "docstatus": ["!=", 2], "name": goal_id},
         fields=["name", "employee", "employee_name", "goal_name", "goal_cascade",
                 "target_value", "unit", "start_date", "end_date", "status",
-                "actual_progress", "progress_pct", "trajectory", "docstatus"],
+                "actual_progress", "progress_pct", "trajectory", "docstatus",
+                "goal_type", "company_value", "is_extra_initiative"],
         ignore_permissions=True,
     )
     goal = goals[0] if goals else None

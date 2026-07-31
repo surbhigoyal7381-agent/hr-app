@@ -1,0 +1,116 @@
+{
+ "actions": [],
+ "creation": "2026-07-04 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "vendor",
+  "email",
+  "phone",
+  "frappe_user",
+  "two_fa_enabled",
+  "last_login",
+  "account_locked",
+  "failed_attempts"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "GD-VU-.YYYY.-.####\n",
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "vendor",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Vendor",
+   "options": "Vendor",
+   "reqd": 1
+  },
+  {
+   "fieldname": "email",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Email",
+   "options": "Email",
+   "reqd": 1
+  },
+  {
+   "fieldname": "phone",
+   "fieldtype": "Data",
+   "label": "Phone"
+  },
+  {
+   "fieldname": "frappe_user",
+   "fieldtype": "Link",
+   "label": "Frappe User",
+   "options": "User"
+  },
+  {
+   "default": "1",
+   "fieldname": "two_fa_enabled",
+   "fieldtype": "Check",
+   "label": "2FA Enabled"
+  },
+  {
+   "fieldname": "last_login",
+   "fieldtype": "Datetime",
+   "label": "Last Login",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "account_locked",
+   "fieldtype": "Check",
+   "label": "Account Locked"
+  },
+  {
+   "default": "0",
+   "fieldname": "failed_attempts",
+   "fieldtype": "Int",
+   "label": "Failed Attempts",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-07-06 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Grace Vendor Portal",
+ "name": "Vendor User",
+ "naming_rule": "By Naming Series",
+ "naming_series": "GD-VU-.YYYY.-.####",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
+

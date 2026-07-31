@@ -20,8 +20,7 @@ from frappe.utils import (
 	nowdate,
 )
 
-from erpnext.buying.doctype.supplier_scorecard.supplier_scorecard import daterange
-from erpnext.setup.doctype.employee.employee import get_holiday_list_for_employee, is_holiday
+from hrms.hr.doctype.employee.employee import get_holiday_list_for_employee, is_holiday
 
 import hrms
 from hrms.api import get_current_employee_info
@@ -37,6 +36,15 @@ from hrms.hr.utils import (
 from hrms.mixins.pwa_notifications import PWANotificationsMixin
 from hrms.utils import get_employee_email
 from hrms.utils.holiday_list import get_holiday_dates_between_range
+
+
+def daterange(start, end):
+	from datetime import timedelta
+
+	d = start
+	while d <= end:
+		yield d
+		d += timedelta(days=1)
 
 
 class LeaveDayBlockedError(frappe.ValidationError):

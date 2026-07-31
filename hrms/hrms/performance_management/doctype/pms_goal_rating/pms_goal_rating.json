@@ -1,0 +1,21 @@
+{
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": ["business_goal", "goal_title", "col_break_1", "rating", "col_break_2", "comment"],
+ "fields": [
+  {"fieldname": "business_goal", "fieldtype": "Link", "label": "Business Goal", "options": "PMS Business Goal", "in_list_view": 1},
+  {"fieldname": "goal_title", "fieldtype": "Data", "label": "Goal Title", "fetch_from": "business_goal.goal_title", "read_only": 1, "in_list_view": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "rating", "fieldtype": "Int", "label": "Rating (Value)", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "col_break_2", "fieldtype": "Column Break"},
+  {"fieldname": "comment", "fieldtype": "Small Text", "label": "Comment"}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS Goal Rating",
+ "owner": "Administrator",
+ "permissions": []
+}

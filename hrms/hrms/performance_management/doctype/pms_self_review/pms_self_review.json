@@ -1,0 +1,46 @@
+{
+ "autoname": "naming_series:",
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series", "review_record", "employee", "col_break_1",
+  "status", "submitted_on",
+  "section_achievements", "achievements",
+  "section_evidence", "evidence",
+  "section_narrative", "overall_narrative",
+  "section_initiatives", "initiatives_taken",
+  "section_support", "support_needed"
+ ],
+ "fields": [
+  {"fieldname": "naming_series", "fieldtype": "Select", "label": "Series", "options": "PMS-SELF-.YYYY.-.####\n", "set_only_once": 1},
+  {"fieldname": "review_record", "fieldtype": "Link", "label": "Review Record", "options": "PMS Review Record", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "employee", "fieldtype": "Link", "label": "Employee", "options": "Employee", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "status", "fieldtype": "Select", "label": "Status", "options": "Draft\nSubmitted", "default": "Draft", "in_list_view": 1},
+  {"fieldname": "submitted_on", "fieldtype": "Datetime", "label": "Submitted On", "read_only": 1},
+  {"fieldname": "section_achievements", "fieldtype": "Section Break", "label": "Goal Achievements"},
+  {"fieldname": "achievements", "fieldtype": "Table", "label": "Achievements", "options": "PMS Self Review Achievement"},
+  {"fieldname": "section_evidence", "fieldtype": "Section Break", "label": "Supporting Evidence"},
+  {"fieldname": "evidence", "fieldtype": "Table", "label": "Evidence", "options": "PMS Self Evidence"},
+  {"fieldname": "section_narrative", "fieldtype": "Section Break", "label": "Overall Narrative"},
+  {"fieldname": "overall_narrative", "fieldtype": "Text Editor", "label": "Overall Narrative"},
+  {"fieldname": "section_initiatives", "fieldtype": "Section Break", "label": "Extra Initiatives"},
+  {"fieldname": "initiatives_taken", "fieldtype": "Text Editor", "label": "Initiatives & Contributions Beyond Goals"},
+  {"fieldname": "section_support", "fieldtype": "Section Break", "label": "Support Needed"},
+  {"fieldname": "support_needed", "fieldtype": "Text Editor", "label": "Support / Resources Needed"}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS Self Review",
+ "owner": "Administrator",
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "HR Manager", "read": 1, "write": 1, "create": 1},
+  {"role": "HR User", "read": 1},
+  {"role": "Employee", "read": 1, "write": 1, "create": 1}
+ ],
+ "title_field": "employee",
+ "track_changes": 1
+}

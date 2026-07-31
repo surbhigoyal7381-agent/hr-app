@@ -1,0 +1,23 @@
+{
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": ["kpi_name", "target", "col_break_1", "actual", "achievement_pct", "col_break_2", "rating", "comment"],
+ "fields": [
+  {"fieldname": "kpi_name", "fieldtype": "Data", "label": "KPI Name", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "target", "fieldtype": "Float", "label": "Target", "in_list_view": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "actual", "fieldtype": "Float", "label": "Actual", "in_list_view": 1},
+  {"fieldname": "achievement_pct", "fieldtype": "Percent", "label": "Achievement %", "read_only": 1},
+  {"fieldname": "col_break_2", "fieldtype": "Column Break"},
+  {"fieldname": "rating", "fieldtype": "Int", "label": "Rating (Value)", "in_list_view": 1},
+  {"fieldname": "comment", "fieldtype": "Small Text", "label": "Comment"}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS KPI Rating",
+ "owner": "Administrator",
+ "permissions": []
+}

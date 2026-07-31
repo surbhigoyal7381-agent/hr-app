@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="0;url=/hrms-employee">
+  <script>location.replace('/hrms-employee');</script>
+  <title>Goals &amp; Performance</title>
+<style>
+/* ── Design tokens (matches hrms-employee.html) ─────────────────────── */
+:root {
+  --bg:        #f1f5f9;
+  --surface:   #ffffff;
+  --surface2:  #f8fafc;
+  --border:    #e2e8f0;
+  --border2:   #cbd5e1;
+  --text:      #0f172a;
+  --text2:     #475569;
+  --text3:     #94a3b8;
+  --primary:   #16A373;
+  --primary-lt:#EAFAF4;
+  --accent:    #d97706;
+  --accent-lt: #fef3c7;
+  --ok:        #059669;
+  --ok-lt:     #d1fae5;
+  --warn:      #d97706;
+  --warn-lt:   #fef9c3;
+  --danger:    #dc2626;
+  --danger-lt: #fee2e2;
+  --info:      #0ea5e9;
+  --info-lt:   #e0f2fe;
+  --shadow:    0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.06);
+  --shadow-md: 0 4px 6px rgba(0,0,0,.07),0 2px 4px rgba(0,0,0,.06);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,.1),0 4px 6px rgba(0,0,0,.05);
+  --radius:    10px;
+  --radius-sm: 6px;
+  --font:      -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:#0f172a; --surface:#1e293b; --surface2:#162032;
+    --border:#334155; --border2:#475569;
+    --text:#f1f5f9; --text2:#cbd5e1; --text3:#64748b;
+    --primary:#34d399; --primary-lt:#064e3b;
+    --ok:#10b981; --ok-lt:#064e3b;
+    --accent:#fbbf24; --accent-lt:#451a03;
+    --danger:#f87171; --danger-lt:#450a0a;
+    --info:#38bdf8; --info-lt:#0c4a6e;
+    --shadow:0 1px 3px rgba(0,0,0,.4),0 1px 2px rgba(0,0,0,.3);
+    --shadow-md:0 4px 6px rgba(0,0,0,.4),0 2px 4px rgba(0,0,0,.3);
+    --shadow-lg:0 10px 15px rgba(0,0,0,.5),0 4px 6px rgba(0,0,0,.4);
+  }
+}
+[data-theme="dark"]  { color-scheme: dark; }
+[data-theme="light"] { color-scheme: light; }
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
+a { color: var(--primary); text-decoration: none; }
+
+/* ── Loading overlay ─────────────────────────────────────────────────── */
+#gp-loading {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; min-height: 100vh; gap: 14px; color: var(--text3);
+}
+.spinner { width: 36px; height: 36px; border: 3px solid var(--border2);
+  border-top-color: var(--primary); border-radius: 50%;
+  animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Header ──────────────────────────────────────────────────────────── */
+#gp-header {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 0 24px; display: flex; align-items: center; gap: 16px;
+  height: 56px; position: sticky; top: 0; z-index: 50;
+  box-shadow: var(--shadow);
+}
+.gp-brand { display: flex; align-items: center; gap: 10px; font-weight: 700;
+  font-size: .95rem; color: var(--text); flex-shrink: 0; }
+.gp-brand-dot { width: 28px; height: 28px; border-radius: 7px;
+  background: var(--primary); display: flex; align-items: center;
+  justify-content: center; font-size: 15px; }
+#gp-tabs { display: flex; gap: 2px; flex: 1; overflow-x: auto; }
+.gp-tab { padding: 6px 16px; border-radius: 6px; font-size: .83rem;
+  font-weight: 500; color: var(--text2); cursor: pointer; border: none;
+  background: none; font-family: var(--font); white-space: nowrap;
+  transition: background .12s, color .12s; }
+.gp-tab:hover { background: var(--bg); color: var(--text); }
+.gp-tab.active { background: var(--primary-lt); color: var(--primary); font-weight: 600; }
+.gp-user { display: flex; align-items: center; gap: 8px; font-size: .82rem;
+  color: var(--text2); flex-shrink: 0; }
+.gp-avatar { width: 30px; height: 30px; border-radius: 50%;
+  background: var(--primary); color: #fff; font-weight: 700; font-size: .75rem;
+  display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.gp-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+/* ── Main content ────────────────────────────────────────────────────── */
+#gp-content { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
+
+/* ── Cards ───────────────────────────────────────────────────────────── */
+.card { background: var(--surface); border-radius: var(--radius);
+  box-shadow: var(--shadow); overflow: hidden; }
+.card-hdr { padding: 16px 20px 12px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; }
+.card-title { font-size: .9rem; font-weight: 700; }
+.card-body  { padding: 16px 20px; }
+
+/* ── KPI grid ────────────────────────────────────────────────────────── */
+.kpi-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; margin-bottom: 20px; }
+.kpi-card { background: var(--surface); border-radius: var(--radius);
+  padding: 18px 20px; box-shadow: var(--shadow); border-top: 3px solid transparent; }
+.kpi-card.k-primary  { border-top-color: var(--primary); }
+.kpi-card.k-ok       { border-top-color: var(--ok); }
+.kpi-card.k-warn     { border-top-color: var(--warn); }
+.kpi-card.k-danger   { border-top-color: var(--danger); }
+.kpi-val { font-size: 2rem; font-weight: 800; line-height: 1; margin-bottom: 4px; }
+.kpi-lbl { font-size: .73rem; font-weight: 600; color: var(--text3);
+  text-transform: uppercase; letter-spacing: .05em; }
+
+/* ── 2-col layout ────────────────────────────────────────────────────── */
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
+
+/* ── Section title ───────────────────────────────────────────────────── */
+.section-hdr { display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px; }
+.section-title { font-size: 1rem; font-weight: 700; }
+
+/* ── Cycle banner ────────────────────────────────────────────────────── */
+.cycle-banner { background: var(--primary-lt); border: 1px solid rgba(22,163,115,.25);
+  border-radius: var(--radius); padding: 14px 20px; display: flex;
+  align-items: center; gap: 14px; margin-bottom: 20px; }
+.cycle-dot { width: 10px; height: 10px; border-radius: 50%;
+  background: var(--primary); flex-shrink: 0; box-shadow: 0 0 0 3px rgba(22,163,115,.2); }
+.cycle-info { flex: 1; }
+.cycle-name { font-weight: 700; font-size: .9rem; color: var(--primary); }
+.cycle-dates { font-size: .75rem; color: var(--text3); margin-top: 2px; }
+.cycle-status { font-size: .72rem; font-weight: 600; padding: 3px 10px;
+  border-radius: 20px; background: var(--primary); color: #fff; }
+
+/* ── Goal cards ──────────────────────────────────────────────────────── */
+.goal-grid { display: flex; flex-direction: column; gap: 10px; }
+.goal-card { background: var(--surface); border-radius: var(--radius);
+  box-shadow: var(--shadow); display: flex; align-items: center;
+  gap: 16px; padding: 14px 18px; cursor: pointer;
+  border: 1.5px solid var(--border); transition: border-color .15s, box-shadow .15s; }
+.goal-card:hover { border-color: var(--primary); box-shadow: var(--shadow-md); }
+.goal-ring { flex-shrink: 0; }
+.goal-body  { flex: 1; min-width: 0; }
+.goal-name  { font-weight: 700; font-size: .9rem; margin-bottom: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.goal-meta  { font-size: .74rem; color: var(--text3); margin-bottom: 6px; }
+.goal-bar-wrap { display: flex; align-items: center; gap: 8px; }
+.goal-bar { flex: 1; height: 5px; border-radius: 3px; background: var(--border2); }
+.goal-bar-fill { height: 100%; border-radius: 3px; transition: width .4s ease; }
+.goal-bar-pct { font-size: .72rem; font-weight: 700; color: var(--text2); min-width: 32px; }
+.goal-right { display: flex; flex-direction: column; align-items: flex-end;
+  gap: 5px; flex-shrink: 0; }
+.goal-evidence { font-size: .7rem; color: var(--text3); }
+
+/* ── Badges ──────────────────────────────────────────────────────────── */
+.badge { display: inline-flex; align-items: center; padding: 2px 8px;
+  border-radius: 20px; font-size: .68rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em; }
+.b-on-track  { background: var(--ok-lt);      color: var(--ok);     }
+.b-at-risk   { background: var(--warn-lt);    color: var(--warn);   }
+.b-off-track { background: var(--danger-lt);  color: var(--danger); }
+.b-not-started{ background: var(--border);    color: var(--text3);  }
+.b-active    { background: var(--primary-lt); color: var(--primary);}
+.b-completed { background: var(--info-lt);    color: var(--info);   }
+.b-cancelled { background: var(--border);     color: var(--text3);  }
+.b-pending   { background: var(--warn-lt);    color: var(--warn);   }
+.b-approved  { background: var(--ok-lt);      color: var(--ok);     }
+.b-rejected  { background: var(--danger-lt);  color: var(--danger); }
+.b-draft     { background: var(--border);     color: var(--text3);  }
+
+/* ── Filter row ──────────────────────────────────────────────────────── */
+.filter-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+.filter-btn { padding: 5px 14px; border-radius: 20px; font-size: .78rem;
+  font-weight: 600; border: 1.5px solid var(--border2); background: var(--surface);
+  color: var(--text2); cursor: pointer; transition: all .12s; font-family: var(--font); }
+.filter-btn:hover { border-color: var(--primary); color: var(--primary); }
+.filter-btn.active { border-color: var(--primary); background: var(--primary); color: #fff; }
+
+/* ── Action buttons ──────────────────────────────────────────────────── */
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px;
+  border-radius: var(--radius-sm); font-size: .83rem; font-weight: 600;
+  font-family: var(--font); cursor: pointer; border: none; transition: all .12s; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-ghost { background: var(--surface2); color: var(--text2);
+  border: 1.5px solid var(--border2); }
+.btn-ghost:hover { border-color: var(--primary); color: var(--primary); }
+.btn-sm { padding: 5px 12px; font-size: .78rem; }
+.btn:disabled { opacity: .5; cursor: default; }
+
+/* ── Performance scores ──────────────────────────────────────────────── */
+.score-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 20px; }
+.score-card { background: var(--surface2); border-radius: var(--radius-sm);
+  padding: 16px; text-align: center; border: 1px solid var(--border); }
+.score-val { font-size: 2.2rem; font-weight: 800; color: var(--primary); line-height: 1; }
+.score-lbl { font-size: .72rem; font-weight: 600; color: var(--text3);
+  text-transform: uppercase; letter-spacing: .05em; margin-top: 4px; }
+.score-meter { height: 6px; border-radius: 3px; background: var(--border2);
+  margin-top: 8px; overflow: hidden; }
+.score-fill  { height: 100%; border-radius: 3px; background: var(--primary);
+  transition: width .6s ease; }
+
+/* ── KRA table ───────────────────────────────────────────────────────── */
+.kra-table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+.kra-table th { text-align: left; font-size: .7rem; font-weight: 700; color: var(--text3);
+  text-transform: uppercase; letter-spacing: .05em; padding: 8px 12px;
+  border-bottom: 2px solid var(--border); }
+.kra-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text); }
+.kra-table tr:last-child td { border-bottom: none; }
+.kra-table tr:hover td { background: var(--surface2); }
+.kra-mini-bar { height: 4px; border-radius: 2px; background: var(--border2); margin-top: 4px; }
+.kra-mini-fill { height: 100%; border-radius: 2px; background: var(--primary); }
+.kra-empty { color: var(--text3); font-style: italic; font-size: .82rem; padding: 14px 0; }
+
+/* ── Reflections ─────────────────────────────────────────────────────── */
+.gp-textarea { width: 100%; padding: 12px; border: 1.5px solid var(--border2);
+  border-radius: var(--radius-sm); background: var(--surface); color: var(--text);
+  font-size: .88rem; font-family: var(--font); resize: vertical; min-height: 120px;
+  outline: none; transition: border-color .12s; }
+.gp-textarea:focus { border-color: var(--primary); }
+
+/* ── Team cards ──────────────────────────────────────────────────────── */
+.team-grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(260px,1fr)); gap: 14px; }
+.team-card { background: var(--surface); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 16px 18px;
+  border: 1.5px solid var(--border); }
+.team-top { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.team-avatar { width: 38px; height: 38px; border-radius: 50%;
+  background: var(--primary); color: #fff; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .82rem; flex-shrink: 0; overflow: hidden; }
+.team-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.team-name { font-weight: 700; font-size: .88rem; }
+.team-role { font-size: .72rem; color: var(--text3); margin-top: 1px; }
+.team-stats { display: flex; gap: 10px; font-size: .75rem; color: var(--text2); margin-bottom: 8px; }
+.team-stat span { font-weight: 700; color: var(--text); }
+.team-pbar { height: 6px; border-radius: 3px; background: var(--border2); }
+.team-pfill { height: 100%; border-radius: 3px; transition: width .4s; }
+
+/* ── Evidence list ────────────────────────────────────────────────────── */
+.evidence-list { display: flex; flex-direction: column; gap: 8px; }
+.evidence-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border-radius: var(--radius-sm); background: var(--surface2);
+  border: 1px solid var(--border); font-size: .8rem; }
+.evidence-type { font-weight: 600; color: var(--text); min-width: 80px; }
+.evidence-date { color: var(--text3); flex: 1; }
+.evidence-val  { font-weight: 700; color: var(--text2); }
+
+/* ── Modals ──────────────────────────────────────────────────────────── */
+.gp-backdrop {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5);
+  backdrop-filter: blur(4px); z-index: 100;
+  align-items: flex-start; justify-content: center;
+  padding: 40px 20px; overflow-y: auto;
+}
+.gp-backdrop.open { display: flex; }
+.gp-modal {
+  background: var(--surface); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg); width: 100%; max-width: 560px; margin: auto;
+  animation: gp-in .2s ease;
+}
+@keyframes gp-in { from { opacity:0; transform: translateY(-12px); } to { opacity:1; transform:none; } }
+.modal-hdr { padding: 18px 22px 14px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; }
+.modal-title { font-size: 1rem; font-weight: 700; }
+.modal-close { background: none; border: none; color: var(--text3);
+  cursor: pointer; font-size: 22px; width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; }
+.modal-close:hover { background: var(--bg); color: var(--text); }
+.modal-body  { padding: 20px 22px; }
+.modal-footer { padding: 12px 22px 18px; border-top: 1px solid var(--border);
+  display: flex; gap: 10px; justify-content: flex-end; }
+
+/* ── Form fields ─────────────────────────────────────────────────────── */
+.gp-field  { margin-bottom: 14px; }
+.gp-label  { display: block; font-size: .73rem; font-weight: 700; color: var(--text3);
+  text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+.gp-input  { width: 100%; padding: 9px 12px; border: 1.5px solid var(--border2);
+  border-radius: var(--radius-sm); background: var(--surface); color: var(--text);
+  font-size: .88rem; font-family: var(--font); outline: none;
+  transition: border-color .12s; }
+.gp-input:focus { border-color: var(--primary); }
+.gp-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.gp-hint { font-size: .71rem; color: var(--text3); margin-top: 3px; }
+
+/* ── Cascade selector ────────────────────────────────────────────────── */
+.cascade-grid { display: flex; flex-direction: column; gap: 8px; max-height: 220px;
+  overflow-y: auto; margin-bottom: 14px; padding-right: 4px; }
+.cascade-opt { padding: 10px 14px; border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border); cursor: pointer; transition: all .12s; }
+.cascade-opt:hover { border-color: var(--primary); background: var(--primary-lt); }
+.cascade-opt.selected { border-color: var(--primary); background: var(--primary-lt); }
+.cascade-opt-name { font-weight: 700; font-size: .86rem; }
+.cascade-opt-sub  { font-size: .72rem; color: var(--text3); margin-top: 2px; }
+
+/* ── Detail panel ────────────────────────────────────────────────────── */
+#detail-panel {
+  position: fixed; right: 0; top: 0; bottom: 0; width: 420px;
+  background: var(--surface); box-shadow: -4px 0 20px rgba(0,0,0,.15);
+  z-index: 80; transform: translateX(100%); transition: transform .25s ease;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+#detail-panel.open { transform: translateX(0); }
+.panel-hdr { padding: 18px 20px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: flex-start; gap: 12px; }
+.panel-close { background: none; border: none; color: var(--text3);
+  cursor: pointer; font-size: 22px; margin-left: auto; flex-shrink: 0; }
+.panel-body { flex: 1; overflow-y: auto; padding: 20px; }
+.panel-section { margin-bottom: 20px; }
+.panel-section-title { font-size: .72rem; font-weight: 700; color: var(--text3);
+  text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+
+/* ── Progress ring helper ────────────────────────────────────────────── */
+.ring-text { font-size: 10px; font-weight: 800; fill: var(--text); }
+
+/* ── Empty state ─────────────────────────────────────────────────────── */
+.empty { text-align: center; padding: 48px 24px; color: var(--text3); }
+.empty svg { opacity: .4; margin-bottom: 12px; }
+.empty h3 { font-size: 1rem; font-weight: 700; color: var(--text2); margin-bottom: 6px; }
+.empty p  { font-size: .83rem; }
+
+/* ── Error alert ─────────────────────────────────────────────────────── */
+.gp-error { background: var(--danger-lt); border: 1px solid rgba(220,38,38,.25);
+  border-radius: var(--radius-sm); padding: 10px 14px; font-size: .83rem;
+  color: var(--danger); margin-bottom: 12px; display: none; }
+.gp-success { background: var(--ok-lt); border: 1px solid rgba(5,150,105,.25);
+  border-radius: var(--radius-sm); padding: 10px 14px; font-size: .83rem;
+  color: var(--ok); margin-bottom: 12px; display: none; }
+
+/* ── Deadline list ───────────────────────────────────────────────────── */
+.deadline-list { display: flex; flex-direction: column; gap: 8px; }
+.deadline-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+  border-radius: var(--radius-sm); background: var(--surface2);
+  border: 1px solid var(--border); }
+.deadline-pct { font-size: 1.1rem; font-weight: 800; min-width: 44px; }
+.deadline-info { flex: 1; }
+.deadline-name { font-size: .84rem; font-weight: 600; }
+.deadline-date { font-size: .72rem; color: var(--text3); margin-top: 1px; }
+.deadline-bar { width: 70px; }
+
+/* ── Trajectory summary ──────────────────────────────────────────────── */
+.traj-row { display: flex; align-items: center; gap: 10px;
+  padding: 7px 0; border-bottom: 1px solid var(--border); font-size: .83rem; }
+.traj-row:last-child { border-bottom: none; }
+.traj-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.traj-label { flex: 1; }
+.traj-count { font-weight: 700; }
+.traj-bar { width: 100px; height: 5px; border-radius: 3px;
+  background: var(--border2); overflow: hidden; }
+.traj-fill { height: 100%; border-radius: 3px; }
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .kpi-grid { grid-template-columns: repeat(2,1fr); }
+  .grid2, .grid3 { grid-template-columns: 1fr; }
+  .score-grid { grid-template-columns: repeat(3,1fr); }
+  #detail-panel { width: 100%; }
+  #gp-header { padding: 0 16px; }
+  #gp-content { padding: 16px 14px; }
+}
+@media (max-width: 480px) {
+  .kpi-grid { grid-template-columns: repeat(2,1fr); }
+  .score-grid { grid-template-columns: 1fr 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+<script>
+  window._CSRF = "{{ frappe.session.csrf_token }}";
+  window._USER = "{{ frappe.session.user }}";
+  // Apply tenant brand color from site_config (set by Kinexus Admin)
+  (function() {
+    var c = "{{ primary_color }}";
+    if (!c || c.length < 4) return;
+    var h = c.replace('#','');
+    if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    var r=parseInt(h.slice(0,2),16)/255, g=parseInt(h.slice(2,4),16)/255, b=parseInt(h.slice(4,6),16)/255;
+    var mx=Math.max(r,g,b), mn=Math.min(r,g,b), hh=0, ss=0, ll=(mx+mn)/2;
+    if (mx!==mn) {
+      var d=mx-mn;
+      ss = ll>.5 ? d/(2-mx-mn) : d/(mx+mn);
+      switch(mx){ case r: hh=(g-b)/d+(g<b?6:0); break; case g: hh=(b-r)/d+2; break; default: hh=(r-g)/d+4; }
+      hh = Math.round(hh/6*360);
+    }
+    ss=Math.round(ss*100); ll=Math.round(ll*100);
+    var root=document.documentElement;
+    root.style.setProperty('--primary',    'hsl('+hh+','+ss+'%,'+ll+'%)');
+    root.style.setProperty('--primary-lt', 'hsl('+hh+','+Math.round(ss*.3)+'%,96%)');
+  })();
+</script>
+
+<!-- Loading -->
+<div id="gp-loading">
+  <div class="spinner"></div>
+  <div style="font-size:.85rem;color:var(--text3)">Loading Goals &amp; Performance…</div>
+</div>
+
+<!-- Shell -->
+<div id="gp-shell" style="display:none">
+  <header id="gp-header">
+    <div class="gp-brand">
+      <div class="gp-brand-dot">🎯</div>
+      <span>Goals &amp; Performance</span>
+    </div>
+    <nav id="gp-tabs">
+      <button class="gp-tab active" id="tbtn-overview" onclick="showTab('overview')">Overview</button>
+      <button class="gp-tab"        id="tbtn-goals"    onclick="showTab('goals')">My Goals</button>
+      <button class="gp-tab"        id="tbtn-perf"     onclick="showTab('perf')">Performance</button>
+      <button class="gp-tab"        id="tbtn-team"     onclick="showTab('team')" style="display:none">Team</button>
+    </nav>
+    <div class="gp-user">
+      <div class="gp-avatar" id="gp-hdr-avatar"></div>
+      <span id="gp-hdr-name" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    </div>
+  </header>
+
+  <div id="gp-content">
+
+    <!-- ── TAB: Overview ──────────────────────────────────────────────── -->
+    <div id="tab-overview">
+      <div id="ov-cycle-banner"></div>
+      <div class="kpi-grid" id="ov-kpis"></div>
+      <div class="grid2">
+        <div class="card">
+          <div class="card-hdr"><div class="card-title">Goal Progress by Status</div></div>
+          <div class="card-body" id="ov-traj"></div>
+        </div>
+        <div class="card">
+          <div class="card-hdr">
+            <div class="card-title">Upcoming Deadlines</div>
+            <span style="font-size:.72rem;color:var(--text3)">Next 30 days</span>
+          </div>
+          <div class="card-body" id="ov-deadlines"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── TAB: My Goals ─────────────────────────────────────────────── -->
+    <div id="tab-goals" style="display:none">
+      <div class="section-hdr">
+        <div class="filter-row" id="goal-filters">
+          <button class="filter-btn active" onclick="filterGoals('all')">All</button>
+          <button class="filter-btn" onclick="filterGoals('active')">Active</button>
+          <button class="filter-btn" onclick="filterGoals('at-risk')">At Risk</button>
+          <button class="filter-btn" onclick="filterGoals('completed')">Completed</button>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openCreateGoal()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          New Goal
+        </button>
+      </div>
+      <div id="goals-list"></div>
+    </div>
+
+    <!-- ── TAB: Performance ──────────────────────────────────────────── -->
+    <div id="tab-perf" style="display:none">
+      <div id="perf-cycle-banner"></div>
+      <div id="perf-body"></div>
+    </div>
+
+    <!-- ── TAB: Team ─────────────────────────────────────────────────── -->
+    <div id="tab-team" style="display:none">
+      <div class="section-hdr">
+        <div class="section-title">Your Team's Goals</div>
+        <button class="btn btn-ghost btn-sm" onclick="loadTeam()">↺ Refresh</button>
+      </div>
+      <div id="team-body"></div>
+    </div>
+
+  </div><!-- /gp-content -->
+</div><!-- /gp-shell -->
+
+<!-- ── Create Goal Modal ──────────────────────────────────────────────── -->
+<div class="gp-backdrop" id="create-modal">
+  <div class="gp-modal">
+    <div class="modal-hdr">
+      <div class="modal-title">Create New Goal</div>
+      <button class="modal-close" onclick="closeCreateGoal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="gp-error" id="create-error"></div>
+      <div class="gp-field">
+        <div class="gp-label">Select Goal Cascade *</div>
+        <div class="cascade-grid" id="cascade-list"></div>
+        <input type="hidden" id="sel-cascade">
+      </div>
+      <div class="gp-field">
+        <div class="gp-label">Goal Name *</div>
+        <input class="gp-input" id="c-name" placeholder="e.g. Achieve 120 Orders in Q3">
+      </div>
+      <div class="gp-row2">
+        <div class="gp-field">
+          <div class="gp-label">Target Value *</div>
+          <input class="gp-input" id="c-target" type="number" min="1" placeholder="100">
+          <div class="gp-hint" id="c-unit-hint"></div>
+        </div>
+        <div></div>
+      </div>
+      <div class="gp-row2">
+        <div class="gp-field">
+          <div class="gp-label">Start Date *</div>
+          <input class="gp-input" id="c-start" type="date">
+        </div>
+        <div class="gp-field">
+          <div class="gp-label">End Date *</div>
+          <input class="gp-input" id="c-end" type="date">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeCreateGoal()">Cancel</button>
+      <button class="btn btn-primary" id="create-btn" onclick="submitCreateGoal()">
+        <span id="create-label">Create Goal</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Goal Detail Panel ──────────────────────────────────────────────── -->
+<div id="detail-panel">
+  <div class="panel-hdr">
+    <div>
+      <div id="dp-name" style="font-weight:700;font-size:1rem;margin-bottom:3px"></div>
+      <div id="dp-cascade" style="font-size:.74rem;color:var(--text3)"></div>
+    </div>
+    <button class="panel-close" onclick="closeDetail()">&times;</button>
+  </div>
+  <div class="panel-body">
+    <div class="panel-section">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:14px">
+        <div id="dp-ring"></div>
+        <div>
+          <div style="font-size:.72rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Progress</div>
+          <div id="dp-progress-line" style="font-size:1.2rem;font-weight:800;margin-top:2px"></div>
+          <div id="dp-trajectory" style="margin-top:4px"></div>
+        </div>
+        <div style="flex:1"></div>
+        <div id="dp-status"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:.8rem">
+        <div><div style="color:var(--text3);font-size:.7rem;margin-bottom:2px">START</div><div id="dp-start" style="font-weight:600"></div></div>
+        <div><div style="color:var(--text3);font-size:.7rem;margin-bottom:2px">END</div><div id="dp-end" style="font-weight:600"></div></div>
+        <div><div style="color:var(--text3);font-size:.7rem;margin-bottom:2px">TARGET</div><div id="dp-target" style="font-weight:600"></div></div>
+        <div><div style="color:var(--text3);font-size:.7rem;margin-bottom:2px">ACTUAL</div><div id="dp-actual" style="font-weight:600"></div></div>
+      </div>
+    </div>
+    <div class="panel-section">
+      <div class="panel-section-title">Evidence Submitted</div>
+      <div class="evidence-list" id="dp-evidence"></div>
+    </div>
+  </div>
+</div>
+<div id="detail-overlay" onclick="closeDetail()"
+  style="display:none;position:fixed;inset:0;z-index:79;background:rgba(0,0,0,.3)"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ── State ──────────────────────────────────────────────────────────── */
+  let ctx           = null;  // portal context
+  let goals         = [];    // current employee's goals
+  let cascades      = [];    // active cascades (for create modal)
+  let goalFilter    = 'all';
+  let selectedCascade = null;
+  const loadedTabs  = new Set();
+
+  /* ── API helper ─────────────────────────────────────────────────────── */
+  async function api(method, args) {
+    const opts = {
+      method:  args ? 'POST' : 'GET',
+      headers: { 'X-Frappe-CSRF-Token': window._CSRF, 'Content-Type': 'application/json' },
+    };
+    if (args) opts.body = JSON.stringify(args);
+    const res  = await fetch('/api/method/' + method, opts);
+    const data = await res.json();
+    if (!res.ok || data.exc_type) {
+      let msg = '';
+      try { msg = JSON.parse(JSON.parse(data._server_messages)[0]).message; } catch(e) {}
+      throw new Error(msg || data.message || res.statusText);
+    }
+    return data.message;
+  }
+
+  /* ── Boot ───────────────────────────────────────────────────────────── */
+  document.addEventListener('DOMContentLoaded', boot);
+
+  async function boot() {
+    if (window._USER === 'Guest') {
+      location.href = '/login?redirect-to=/goals-portal';
+      return;
+    }
+    try {
+      ctx = await api('grace_vendor_portal.goals_api.get_portal_context');
+      renderHeader();
+      if (ctx.is_manager) document.getElementById('tbtn-team').style.display = '';
+      showTab('overview');
+      document.getElementById('gp-loading').style.display = 'none';
+      document.getElementById('gp-shell').style.display   = '';
+    } catch(e) {
+      document.getElementById('gp-loading').innerHTML =
+        '<div style="color:var(--danger);font-size:.9rem;text-align:center;padding:40px">' +
+        'Failed to load: ' + esc(e.message) + '<br><a href="/login">Login again</a></div>';
+    }
+  }
+
+  function renderHeader() {
+    const a = document.getElementById('gp-hdr-avatar');
+    const initials = (ctx.employee_name || '?').slice(0, 2).toUpperCase();
+    if (ctx.avatar) {
+      a.innerHTML = '<img src="' + esc(ctx.avatar) + '" alt="">';
+    } else {
+      a.textContent = initials;
+    }
+    document.getElementById('gp-hdr-name').textContent = ctx.employee_name;
+  }
+
+  /* ── Tabs ───────────────────────────────────────────────────────────── */
+  window.showTab = function(tab) {
+    ['overview', 'goals', 'perf', 'team'].forEach(function(t) {
+      const panel = document.getElementById('tab-' + t);
+      const btn   = document.getElementById('tbtn-' + t);
+      if (panel) panel.style.display = (t === tab) ? '' : 'none';
+      if (btn)   btn.classList.toggle('active', t === tab);
+    });
+    if (!loadedTabs.has(tab)) {
+      loadedTabs.add(tab);
+      if (tab === 'overview') renderOverview();
+      if (tab === 'goals')    loadGoals();
+      if (tab === 'perf')     loadPerformance();
+      if (tab === 'team')     loadTeam();
+    }
+  };
+
+  /* ══════════════════════════════════════════════════════════════════════
+     OVERVIEW TAB
+  ══════════════════════════════════════════════════════════════════════ */
+  function renderOverview() {
+    const d = ctx.dashboard || {};
+    const c = ctx.cycle;
+
+    // Cycle banner
+    const bannerEl = document.getElementById('ov-cycle-banner');
+    if (c) {
+      bannerEl.innerHTML =
+        '<div class="cycle-banner">' +
+        '<div class="cycle-dot"></div>' +
+        '<div class="cycle-info">' +
+        '<div class="cycle-name">' + esc(c.cycle_name) + '</div>' +
+        '<div class="cycle-dates">' + fmtDate(c.start_date) + ' – ' + fmtDate(c.end_date) + '</div>' +
+        '</div>' +
+        '<span class="cycle-status">' + esc(c.status) + '</span>' +
+        '<button class="btn btn-ghost btn-sm" onclick="showTab(\'perf\')">View Appraisal →</button>' +
+        '</div>';
+    }
+
+    // KPI cards
+    const kpis = [
+      { val: d.active,             lbl: 'Active Goals',    cls: 'k-primary', color: 'var(--primary)' },
+      { val: d.avg_progress + '%', lbl: 'Avg Progress',    cls: 'k-ok',      color: 'var(--ok)' },
+      { val: d.at_risk,            lbl: 'At Risk',         cls: 'k-warn',    color: 'var(--warn)' },
+      { val: d.upcoming_deadlines, lbl: 'Due in 30 Days',  cls: 'k-danger',  color: 'var(--danger)' },
+    ];
+    document.getElementById('ov-kpis').innerHTML = kpis.map(function(k) {
+      return '<div class="kpi-card ' + k.cls + '">' +
+        '<div class="kpi-val" style="color:' + k.color + '">' + esc(String(k.val)) + '</div>' +
+        '<div class="kpi-lbl">' + k.lbl + '</div>' +
+        '</div>';
+    }).join('');
+
+    // Trajectory summary
+    const total = d.total || 1;
+    const traj = [
+      { label: 'On Track',    count: (d.active || 0) - (d.at_risk || 0), color: 'var(--ok)' },
+      { label: 'At Risk',     count: d.at_risk || 0,                       color: 'var(--warn)' },
+      { label: 'Completed',   count: d.completed || 0,                     color: 'var(--info)' },
+    ].filter(function(t) { return t.count > 0; });
+
+    document.getElementById('ov-traj').innerHTML = traj.length
+      ? traj.map(function(t) {
+          const pct = Math.round((t.count / total) * 100);
+          return '<div class="traj-row">' +
+            '<div class="traj-dot" style="background:' + t.color + '"></div>' +
+            '<div class="traj-label">' + t.label + '</div>' +
+            '<div class="traj-count">' + t.count + '</div>' +
+            '<div class="traj-bar"><div class="traj-fill" style="width:' + pct + '%;background:' + t.color + '"></div></div>' +
+            '</div>';
+        }).join('')
+      : '<div class="empty" style="padding:24px 0"><p>No goals yet — set your first goal.</p></div>';
+
+    // Upcoming deadlines — fetched fresh from goal list
+    renderDeadlines();
+  }
+
+  async function renderDeadlines() {
+    const el = document.getElementById('ov-deadlines');
+    try {
+      const all = await api('grace_vendor_portal.goals_api.get_my_goals');
+      const today = new Date();
+      const d30   = new Date(); d30.setDate(d30.getDate() + 30);
+      const upcoming = all
+        .filter(function(g) {
+          if (g.status !== 'Active' || !g.end_date) return false;
+          const d = new Date(g.end_date);
+          return d >= today && d <= d30;
+        })
+        .sort(function(a, b) { return a.end_date.localeCompare(b.end_date); });
+
+      if (!upcoming.length) {
+        el.innerHTML = '<div style="color:var(--text3);font-size:.83rem;padding:8px 0">No goals due in the next 30 days.</div>';
+        return;
+      }
+      el.innerHTML = '<div class="deadline-list">' +
+        upcoming.map(function(g) {
+          const pct  = Math.round(g.progress_pct || 0);
+          const tColor = trajectoryColor(g.trajectory);
+          return '<div class="deadline-row" style="cursor:pointer" onclick="openDetail(\'' + esc(g.name) + '\')">' +
+            '<div class="deadline-pct" style="color:' + tColor + '">' + pct + '%</div>' +
+            '<div class="deadline-info">' +
+            '<div class="deadline-name">' + esc(g.goal_name) + '</div>' +
+            '<div class="deadline-date">Due ' + fmtDate(g.end_date) + '</div>' +
+            '</div>' +
+            '<div class="deadline-bar">' + miniBar(pct, tColor) + '</div>' +
+            '</div>';
+        }).join('') +
+        '</div>';
+    } catch(e) {
+      el.innerHTML = '<div style="color:var(--text3);font-size:.82rem">Could not load deadlines.</div>';
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     MY GOALS TAB
+  ══════════════════════════════════════════════════════════════════════ */
+  async function loadGoals() {
+    const el = document.getElementById('goals-list');
+    el.innerHTML = '<div style="color:var(--text3);font-size:.83rem;padding:16px">Loading goals…</div>';
+    try {
+      goals = await api('grace_vendor_portal.goals_api.get_my_goals');
+      renderGoals();
+    } catch(e) {
+      el.innerHTML = '<div style="color:var(--danger);padding:16px">Failed: ' + esc(e.message) + '</div>';
+    }
+  }
+
+  function renderGoals() {
+    const el = document.getElementById('goals-list');
+    const filtered = goals.filter(function(g) {
+      if (goalFilter === 'all')       return true;
+      if (goalFilter === 'active')    return g.status === 'Active';
+      if (goalFilter === 'at-risk')   return g.trajectory === 'At Risk' || g.trajectory === 'Off Track';
+      if (goalFilter === 'completed') return g.status === 'Completed';
+      return true;
+    });
+
+    // Update filter counts
+    document.querySelectorAll('.filter-btn').forEach(function(btn) {
+      const f = btn.textContent.toLowerCase().replace(' ', '-');
+    });
+
+    if (!filtered.length) {
+      el.innerHTML = '<div class="empty">' +
+        '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>' +
+        '<h3>No goals found</h3>' +
+        '<p>Try a different filter or create a new goal.</p></div>';
+      return;
+    }
+
+    el.innerHTML = '<div class="goal-grid">' + filtered.map(renderGoalCard).join('') + '</div>';
+  }
+
+  function renderGoalCard(g) {
+    const pct    = Math.round(g.progress_pct || 0);
+    const tColor = trajectoryColor(g.trajectory);
+    const ring   = progressRing(pct, tColor, 44);
+    const trajBadge = trajectoryBadge(g.trajectory);
+    const statusBadge = statusBadge_(g.status);
+    const evidLabel = g.evidence_count
+      ? (g.evidence_count + ' evidence' + (g.pending_evidence ? ' (' + g.pending_evidence + ' pending)' : ''))
+      : 'No evidence yet';
+
+    return '<div class="goal-card" onclick="openDetail(\'' + esc(g.name) + '\')">' +
+      '<div class="goal-ring">' + ring + '</div>' +
+      '<div class="goal-body">' +
+        '<div class="goal-name">' + esc(g.goal_name) + '</div>' +
+        '<div class="goal-meta">' + esc(g.cascade_name || g.goal_cascade || '—') + ' &nbsp;·&nbsp; ends ' + fmtDate(g.end_date) + '</div>' +
+        '<div class="goal-bar-wrap">' +
+          '<div class="goal-bar"><div class="goal-bar-fill" style="width:' + pct + '%;background:' + tColor + '"></div></div>' +
+          '<div class="goal-bar-pct">' + pct + '%</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="goal-right">' +
+        trajBadge +
+        '<div class="goal-evidence" style="font-size:.69rem;color:var(--text3)">' + evidLabel + '</div>' +
+      '</div>' +
+      '</div>';
+  }
+
+  window.filterGoals = function(f) {
+    goalFilter = f;
+    document.querySelectorAll('.filter-btn').forEach(function(btn) {
+      const label = btn.textContent.toLowerCase().trim().replace(' ', '-');
+      btn.classList.toggle('active', label === f || btn.textContent.toLowerCase() === f);
+    });
+    renderGoals();
+  };
+
+  /* ══════════════════════════════════════════════════════════════════════
+     CREATE GOAL MODAL
+  ══════════════════════════════════════════════════════════════════════ */
+  window.openCreateGoal = async function() {
+    selectedCascade = null;
+    document.getElementById('sel-cascade').value = '';
+    document.getElementById('c-name').value   = '';
+    document.getElementById('c-target').value = '';
+    document.getElementById('c-start').value  = '';
+    document.getElementById('c-end').value    = '';
+    document.getElementById('c-unit-hint').textContent = '';
+    document.getElementById('create-error').style.display = 'none';
+    document.getElementById('create-label').textContent = 'Create Goal';
+    document.getElementById('create-btn').disabled = false;
+
+    const listEl = document.getElementById('cascade-list');
+    listEl.innerHTML = '<div style="color:var(--text3);font-size:.82rem">Loading cascades…</div>';
+    document.getElementById('create-modal').classList.add('open');
+
+    try {
+      cascades = await api('grace_vendor_portal.goals_api.get_active_cascades');
+      if (!cascades.length) {
+        listEl.innerHTML = '<div style="color:var(--text3);font-size:.82rem;padding:8px">No active goal cascades found. Ask your manager to set one up.</div>';
+        return;
+      }
+      listEl.innerHTML = cascades.map(function(c) {
+        return '<div class="cascade-opt" id="co-' + esc(c.name) + '" onclick="selectCascade(\'' + esc(c.name) + '\')">' +
+          '<div class="cascade-opt-name">' + esc(c.cascade_name) + '</div>' +
+          '<div class="cascade-opt-sub">' + esc(c.unit) + ' · ' + fmtDate(c.period_start) + ' – ' + fmtDate(c.period_end) + (c.description ? ' · ' + esc(c.description) : '') + '</div>' +
+          '</div>';
+      }).join('');
+    } catch(e) {
+      listEl.innerHTML = '<div style="color:var(--danger);font-size:.82rem">' + esc(e.message) + '</div>';
+    }
+  };
+
+  window.selectCascade = function(id) {
+    selectedCascade = id;
+    document.getElementById('sel-cascade').value = id;
+    document.querySelectorAll('.cascade-opt').forEach(function(el) {
+      el.classList.toggle('selected', el.id === 'co-' + id);
+    });
+    const c = cascades.find(function(x) { return x.name === id; });
+    if (c) {
+      document.getElementById('c-unit-hint').textContent = 'Unit: ' + c.unit;
+      if (!document.getElementById('c-start').value) document.getElementById('c-start').value = c.period_start || '';
+      if (!document.getElementById('c-end').value)   document.getElementById('c-end').value   = c.period_end   || '';
+    }
+  };
+
+  window.closeCreateGoal = function() {
+    document.getElementById('create-modal').classList.remove('open');
+  };
+
+  window.submitCreateGoal = async function() {
+    const err   = document.getElementById('create-error');
+    const btn   = document.getElementById('create-btn');
+    const label = document.getElementById('create-label');
+    err.style.display = 'none';
+
+    const cascade = document.getElementById('sel-cascade').value;
+    const name    = document.getElementById('c-name').value.trim();
+    const target  = document.getElementById('c-target').value;
+    const start   = document.getElementById('c-start').value;
+    const end     = document.getElementById('c-end').value;
+
+    if (!cascade) { err.textContent = 'Please select a Goal Cascade.'; err.style.display = 'block'; return; }
+    if (!name)    { err.textContent = 'Goal name is required.';         err.style.display = 'block'; return; }
+    if (!target || parseFloat(target) <= 0) { err.textContent = 'Enter a valid target value.'; err.style.display = 'block'; return; }
+    if (!start || !end) { err.textContent = 'Start and end dates are required.';               err.style.display = 'block'; return; }
+    if (start > end)    { err.textContent = 'End date must be after start date.';              err.style.display = 'block'; return; }
+
+    btn.disabled = true; label.textContent = 'Creating…';
+
+    try {
+      await api('grace_vendor_portal.goals_api.create_goal', {
+        goal_name: name, cascade_id: cascade, target_value: parseFloat(target), start_date: start, end_date: end,
+      });
+      closeCreateGoal();
+      loadedTabs.delete('goals');
+      loadedTabs.delete('overview');
+      showTab('goals');
+    } catch(e) {
+      err.textContent = e.message;
+      err.style.display = 'block';
+      btn.disabled = false; label.textContent = 'Create Goal';
+    }
+  };
+
+  /* ══════════════════════════════════════════════════════════════════════
+     GOAL DETAIL PANEL
+  ══════════════════════════════════════════════════════════════════════ */
+  window.openDetail = async function(goalId) {
+    document.getElementById('detail-panel').classList.add('open');
+    document.getElementById('detail-overlay').style.display = 'block';
+    document.getElementById('dp-name').textContent    = 'Loading…';
+    document.getElementById('dp-cascade').textContent = '';
+    document.getElementById('dp-ring').innerHTML      = progressRing(0, 'var(--border2)', 56);
+    document.getElementById('dp-evidence').innerHTML  = '<div style="color:var(--text3);font-size:.8rem">Loading…</div>';
+
+    try {
+      const g = await api('grace_vendor_portal.goals_api.get_goal_detail', { goal_id: goalId });
+      const pct    = Math.round(g.progress_pct || 0);
+      const tColor = trajectoryColor(g.trajectory);
+
+      document.getElementById('dp-name').textContent    = g.goal_name;
+      document.getElementById('dp-cascade').textContent = g.cascade_name || g.goal_cascade;
+      document.getElementById('dp-ring').innerHTML      = progressRing(pct, tColor, 60);
+      document.getElementById('dp-progress-line').textContent =
+        (g.actual_progress || 0) + ' / ' + g.target_value + ' ' + (g.unit || '');
+      document.getElementById('dp-trajectory').innerHTML = trajectoryBadge(g.trajectory);
+      document.getElementById('dp-status').innerHTML     = statusBadge_(g.status);
+      document.getElementById('dp-start').textContent   = fmtDate(g.start_date);
+      document.getElementById('dp-end').textContent     = fmtDate(g.end_date);
+      document.getElementById('dp-target').textContent  = g.target_value + ' ' + (g.unit || '');
+      document.getElementById('dp-actual').textContent  = (g.actual_progress || 0) + ' ' + (g.unit || '');
+
+      // Evidence
+      const evEl = document.getElementById('dp-evidence');
+      if (!g.evidence || !g.evidence.length) {
+        evEl.innerHTML = '<div style="color:var(--text3);font-size:.8rem">No evidence submitted yet.</div>';
+      } else {
+        evEl.innerHTML = g.evidence.map(function(e) {
+          const vBadge = '<span class="badge b-' + e.validation_status.toLowerCase().replace(' ','-') + '">' + esc(e.validation_status) + '</span>';
+          const val = e.extracted_order_count
+            ? e.extracted_order_count + ' orders'
+            : e.extracted_amount ? '₹' + Number(e.extracted_amount).toLocaleString() : '—';
+          return '<div class="evidence-row">' +
+            '<div class="evidence-type">' + esc(e.evidence_type) + '</div>' +
+            '<div class="evidence-date">' + fmtDate(e.extracted_date || e.upload_date) + '</div>' +
+            '<div class="evidence-val">' + val + '</div>' +
+            vBadge +
+            (e.rejection_reason ? '<div style="font-size:.68rem;color:var(--danger)">' + esc(e.rejection_reason) + '</div>' : '') +
+            '</div>';
+        }).join('');
+      }
+    } catch(e) {
+      document.getElementById('dp-name').textContent = 'Error loading goal';
+      document.getElementById('dp-evidence').innerHTML = '<div style="color:var(--danger);font-size:.8rem">' + esc(e.message) + '</div>';
+    }
+  };
+
+  window.closeDetail = function() {
+    document.getElementById('detail-panel').classList.remove('open');
+    document.getElementById('detail-overlay').style.display = 'none';
+  };
+
+  /* ══════════════════════════════════════════════════════════════════════
+     PERFORMANCE TAB
+  ══════════════════════════════════════════════════════════════════════ */
+  async function loadPerformance() {
+    const body = document.getElementById('perf-body');
+    const banner = document.getElementById('perf-cycle-banner');
+    body.innerHTML = '<div style="color:var(--text3);font-size:.83rem;padding:16px">Loading appraisal…</div>';
+    try {
+      const d = await api('grace_vendor_portal.goals_api.get_appraisal_data');
+      const c = d.cycle;
+      const ap = d.appraisal;
+
+      // Cycle banner
+      if (c) {
+        banner.innerHTML = '<div class="cycle-banner" style="margin-bottom:20px">' +
+          '<div class="cycle-dot"></div>' +
+          '<div class="cycle-info">' +
+          '<div class="cycle-name">' + esc(c.cycle_name) + '</div>' +
+          '<div class="cycle-dates">' + fmtDate(c.start_date) + ' – ' + fmtDate(c.end_date) + ' · ' + (c.kra_evaluation_method || 'KRA Evaluation') + '</div>' +
+          '</div>' +
+          '<span class="cycle-status">' + esc(c.status) + '</span>' +
+          '</div>';
+      } else {
+        banner.innerHTML = '';
+      }
+
+      if (!c) {
+        body.innerHTML = '<div class="empty">' +
+          '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>' +
+          '<h3>No Active Appraisal Cycle</h3>' +
+          '<p>Your HR team hasn\'t started a performance review yet.</p></div>';
+        return;
+      }
+
+      if (!ap) {
+        body.innerHTML = '<div class="empty">' +
+          '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>' +
+          '<h3>Appraisal Not Set Up</h3>' +
+          '<p>Your appraisal record hasn\'t been created yet. Contact your HR Manager.</p></div>';
+        return;
+      }
+
+      // Score cards
+      const scores = [
+        { val: ap.total_score,  lbl: 'Goal Score',  desc: 'Based on KRA goal completion' },
+        { val: ap.self_score,   lbl: 'Self Rating',  desc: 'Your self-assessment score' },
+        { val: ap.final_score,  lbl: 'Final Score',  desc: 'Weighted average of all scores' },
+      ];
+      const scoreHtml = '<div class="score-grid" style="margin-bottom:20px">' +
+        scores.map(function(s) {
+          const pct = Math.round((s.val / 5) * 100);
+          return '<div class="score-card">' +
+            '<div class="score-val">' + (s.val ? s.val.toFixed(1) : '—') + '</div>' +
+            '<div class="score-lbl">' + s.lbl + '</div>' +
+            '<div class="score-meter"><div class="score-fill" style="width:' + pct + '%"></div></div>' +
+            '</div>';
+        }).join('') +
+        '</div>';
+
+      // KRA table
+      let kraHtml = '';
+      if (ap.kras && ap.kras.length) {
+        kraHtml = '<div class="card" style="margin-bottom:16px">' +
+          '<div class="card-hdr"><div class="card-title">KRA Performance</div></div>' +
+          '<div class="card-body" style="padding:0">' +
+          '<table class="kra-table"><thead><tr>' +
+          '<th>Key Result Area</th><th>Weight</th><th>Goal Completion</th><th>Weighted Score</th>' +
+          '</tr></thead><tbody>' +
+          ap.kras.map(function(k) {
+            const cpct = Math.round(k.goal_completion || 0);
+            return '<tr>' +
+              '<td style="font-weight:600">' + esc(k.kra) + '</td>' +
+              '<td>' + (k.per_weightage || 0) + '%</td>' +
+              '<td>' +
+                '<div>' + cpct + '%</div>' +
+                '<div class="kra-mini-bar"><div class="kra-mini-fill" style="width:' + cpct + '%"></div></div>' +
+              '</td>' +
+              '<td style="font-weight:700;color:var(--primary)">' + (k.goal_score || 0).toFixed(2) + '</td>' +
+              '</tr>';
+          }).join('') +
+          '</tbody></table></div></div>';
+      } else {
+        kraHtml = '<div class="card" style="margin-bottom:16px"><div class="card-body">' +
+          '<div class="kra-empty">No KRA data available for this appraisal cycle. Goals must be set up and linked to KRAs.</div>' +
+          '</div></div>';
+      }
+
+      // Self-assessment (reflections)
+      const canEdit = ap.docstatus === 0;
+      const selfHtml = '<div class="card">' +
+        '<div class="card-hdr">' +
+        '<div class="card-title">Self Assessment</div>' +
+        (ap.docstatus === 1 ? '<span class="badge b-completed">Submitted</span>' : '<span class="badge b-draft">Draft</span>') +
+        '</div>' +
+        '<div class="card-body">' +
+        '<div class="gp-error" id="perf-error"></div>' +
+        '<div class="gp-success" id="perf-success"></div>' +
+        '<div style="font-size:.78rem;color:var(--text3);margin-bottom:8px">Reflect on your performance, key achievements, and areas for improvement this cycle.</div>' +
+        '<textarea class="gp-textarea" id="self-reflections" placeholder="Share your reflections on your goals, challenges, and growth this review period…" ' +
+        (canEdit ? '' : 'disabled') + '>' + esc(ap.reflections || '') + '</textarea>' +
+        (canEdit
+          ? '<div style="margin-top:12px;display:flex;justify-content:flex-end">' +
+            '<button class="btn btn-primary" id="save-reflections-btn" onclick="saveReflections(\'' + esc(ap.name) + '\')">Save Self-Assessment</button>' +
+            '</div>'
+          : '<div style="margin-top:8px;font-size:.75rem;color:var(--text3)">Appraisal has been submitted — contact your HR Manager for changes.</div>'
+        ) +
+        '</div></div>';
+
+      body.innerHTML = scoreHtml + kraHtml + selfHtml;
+
+    } catch(e) {
+      body.innerHTML = '<div style="color:var(--danger);padding:16px">Failed to load appraisal: ' + esc(e.message) + '</div>';
+    }
+  }
+
+  window.saveReflections = async function(appraisalId) {
+    const btn = document.getElementById('save-reflections-btn');
+    const errEl = document.getElementById('perf-error');
+    const okEl  = document.getElementById('perf-success');
+    errEl.style.display = 'none'; okEl.style.display = 'none';
+
+    const text = document.getElementById('self-reflections').value.trim();
+    if (!text) { errEl.textContent = 'Please write your reflections before saving.'; errEl.style.display = 'block'; return; }
+
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      await api('grace_vendor_portal.goals_api.save_self_assessment', {
+        appraisal_id: appraisalId, reflections: text,
+      });
+      okEl.textContent = 'Self-assessment saved successfully.'; okEl.style.display = 'block';
+      btn.textContent = 'Saved ✓';
+      setTimeout(function() { btn.disabled = false; btn.textContent = 'Save Self-Assessment'; okEl.style.display = 'none'; }, 3000);
+    } catch(e) {
+      errEl.textContent = e.message; errEl.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Save Self-Assessment';
+    }
+  };
+
+  /* ══════════════════════════════════════════════════════════════════════
+     TEAM TAB
+  ══════════════════════════════════════════════════════════════════════ */
+  window.loadTeam = async function() {
+    const el = document.getElementById('team-body');
+    el.innerHTML = '<div style="color:var(--text3);font-size:.83rem;padding:16px">Loading team…</div>';
+    try {
+      const team = await api('grace_vendor_portal.goals_api.get_team_goals');
+      if (!team.length) {
+        el.innerHTML = '<div class="empty"><h3>No Direct Reports</h3><p>You have no active direct reports.</p></div>';
+        return;
+      }
+      el.innerHTML = '<div class="team-grid">' + team.map(function(m) {
+        const initials = (m.employee_name || '?').slice(0, 2).toUpperCase();
+        const pct = m.avg_progress || 0;
+        const pfill = pct > 70 ? 'var(--ok)' : pct > 40 ? 'var(--accent)' : 'var(--danger)';
+        const atRiskAlert = m.at_risk > 0
+          ? '<span class="badge b-at-risk">' + m.at_risk + ' at risk</span>'
+          : '<span class="badge b-on-track">' + m.on_track + ' on track</span>';
+        return '<div class="team-card">' +
+          '<div class="team-top">' +
+            (m.avatar
+              ? '<div class="team-avatar"><img src="' + esc(m.avatar) + '" alt=""></div>'
+              : '<div class="team-avatar">' + initials + '</div>'
+            ) +
+            '<div>' +
+              '<div class="team-name">' + esc(m.employee_name) + '</div>' +
+              '<div class="team-role">' + esc(m.designation || '—') + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="team-stats">' +
+            '<div><span>' + m.total_goals + '</span> goals</div>' +
+            '<div><span>' + m.on_track + '</span> on track</div>' +
+            (m.at_risk > 0 ? '<div style="color:var(--warn)"><span>' + m.at_risk + '</span> at risk</div>' : '') +
+          '</div>' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
+            '<div style="font-size:.72rem;color:var(--text3)">Avg progress</div>' +
+            '<div style="font-size:.8rem;font-weight:700">' + pct + '%</div>' +
+          '</div>' +
+          '<div class="team-pbar"><div class="team-pfill" style="width:' + pct + '%;background:' + pfill + '"></div></div>' +
+          '<div style="margin-top:10px">' + atRiskAlert + '</div>' +
+          '</div>';
+      }).join('') + '</div>';
+    } catch(e) {
+      el.innerHTML = '<div style="color:var(--danger);padding:16px">Failed: ' + esc(e.message) + '</div>';
+    }
+  };
+
+  /* ══════════════════════════════════════════════════════════════════════
+     VISUAL HELPERS
+  ══════════════════════════════════════════════════════════════════════ */
+  function progressRing(pct, color, size) {
+    size = size || 48;
+    const r   = (size / 2) - 5;
+    const circ = 2 * Math.PI * r;
+    const offset = circ * (1 - Math.min(pct, 100) / 100);
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">' +
+      '<circle cx="' + (size/2) + '" cy="' + (size/2) + '" r="' + r + '" fill="none" stroke="var(--border2)" stroke-width="4"/>' +
+      '<circle cx="' + (size/2) + '" cy="' + (size/2) + '" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="4"' +
+        ' stroke-dasharray="' + circ.toFixed(1) + '"' +
+        ' stroke-dashoffset="' + offset.toFixed(1) + '"' +
+        ' stroke-linecap="round"' +
+        ' transform="rotate(-90 ' + (size/2) + ' ' + (size/2) + ')"/>' +
+      '<text x="' + (size/2) + '" y="' + ((size/2)+4) + '" text-anchor="middle" class="ring-text" font-size="' + Math.round(size*0.21) + '" font-weight="800" fill="' + color + '">' + pct + '</text>' +
+      '</svg>';
+  }
+
+  function miniBar(pct, color) {
+    return '<div style="height:5px;border-radius:3px;background:var(--border2)">' +
+      '<div style="height:100%;border-radius:3px;width:' + Math.min(pct, 100) + '%;background:' + color + '"></div></div>';
+  }
+
+  function trajectoryColor(t) {
+    const map = {
+      'On Track':    'var(--ok)',
+      'At Risk':     'var(--warn)',
+      'Off Track':   'var(--danger)',
+      'Not Started': 'var(--text3)',
+    };
+    return map[t] || 'var(--text3)';
+  }
+
+  function trajectoryBadge(t) {
+    const map = {
+      'On Track':    'b-on-track',
+      'At Risk':     'b-at-risk',
+      'Off Track':   'b-off-track',
+      'Not Started': 'b-not-started',
+    };
+    return '<span class="badge ' + (map[t] || 'b-not-started') + '">' + esc(t || 'Not Started') + '</span>';
+  }
+
+  function statusBadge_(s) {
+    const map = {
+      'Active':    'b-active',
+      'Completed': 'b-completed',
+      'Cancelled': 'b-cancelled',
+    };
+    return '<span class="badge ' + (map[s] || '') + '">' + esc(s || '—') + '</span>';
+  }
+
+  /* ── Utilities ─────────────────────────────────────────────────────── */
+  function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function fmtDate(d) {
+    if (!d) return '—';
+    try {
+      const parts = String(d).split('T')[0].split('-');
+      return new Date(parts[0], parts[1]-1, parts[2]).toLocaleDateString('en-IN', {day:'numeric', month:'short', year:'numeric'});
+    } catch(e) { return String(d); }
+  }
+
+}());
+</script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": ["stage", "deadline", "col_break_1", "grace_days"],
+ "fields": [
+  {"fieldname": "stage", "fieldtype": "Select", "label": "Stage", "reqd": 1, "in_list_view": 1,
+   "options": "Self Review Open\nManager Preparation\nDialogue\nFinal Form With Employee\nCalibration"},
+  {"fieldname": "deadline", "fieldtype": "Date", "label": "Deadline", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "grace_days", "fieldtype": "Int", "label": "Grace Days", "default": "3"}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS Cycle Stage Deadline",
+ "owner": "Administrator",
+ "permissions": []
+}

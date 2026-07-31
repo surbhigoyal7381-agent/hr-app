@@ -1,0 +1,46 @@
+{
+ "autoname": "naming_series:",
+ "creation": "2026-07-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series", "employee", "cycle", "col_break_1",
+  "flag_type", "flagged_by", "col_break_2", "flagged_on",
+  "section_details", "justification", "col_break_3", "support_plan",
+  "section_plan", "support_plan_actions",
+  "section_review", "reviewed_by_hr", "col_break_4", "hr_review_notes"
+ ],
+ "fields": [
+  {"fieldname": "naming_series", "fieldtype": "Select", "label": "Series", "options": "PMS-TLF-.YYYY.-.####\n", "set_only_once": 1},
+  {"fieldname": "employee", "fieldtype": "Link", "label": "Employee", "options": "Employee", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "cycle", "fieldtype": "Link", "label": "Cycle", "options": "PMS Cycle", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "flag_type", "fieldtype": "Select", "label": "Flag Type",
+   "options": "High Potential\nAt Risk\nPIP Candidate\nRetention Priority\nSuccession Candidate",
+   "reqd": 1, "in_list_view": 1},
+  {"fieldname": "flagged_by", "fieldtype": "Link", "label": "Flagged By", "options": "Employee", "reqd": 1},
+  {"fieldname": "col_break_2", "fieldtype": "Column Break"},
+  {"fieldname": "flagged_on", "fieldtype": "Datetime", "label": "Flagged On", "read_only": 1},
+  {"fieldname": "section_details", "fieldtype": "Section Break", "label": "Justification"},
+  {"fieldname": "justification", "fieldtype": "Text Editor", "label": "Justification", "reqd": 1},
+  {"fieldname": "col_break_3", "fieldtype": "Column Break"},
+  {"fieldname": "support_plan", "fieldtype": "Text Editor", "label": "Support Plan"},
+  {"fieldname": "section_plan", "fieldtype": "Section Break", "label": "Action Plan"},
+  {"fieldname": "support_plan_actions", "fieldtype": "Table", "label": "Action Plan Items", "options": "PMS Support Plan Action"},
+  {"fieldname": "section_review", "fieldtype": "Section Break", "label": "HR Review"},
+  {"fieldname": "reviewed_by_hr", "fieldtype": "Check", "label": "Reviewed by HR"},
+  {"fieldname": "col_break_4", "fieldtype": "Column Break"},
+  {"fieldname": "hr_review_notes", "fieldtype": "Small Text", "label": "HR Review Notes"}
+ ],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Performance Management",
+ "name": "PMS Talent Flag",
+ "owner": "Administrator",
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "HR Manager", "read": 1, "write": 1, "create": 1}
+ ],
+ "title_field": "flag_type",
+ "track_changes": 1
+}

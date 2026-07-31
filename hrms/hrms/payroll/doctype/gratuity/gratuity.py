@@ -3,14 +3,12 @@
 
 import frappe
 from frappe import _, bold
+from frappe.model.document import Document
 from frappe.query_builder.functions import Abs, Sum
 from frappe.utils import cstr, flt, get_datetime, get_link_to_form
 
-from erpnext.accounts.general_ledger import make_gl_entries
-from erpnext.controllers.accounts_controller import AccountsController
 
-
-class Gratuity(AccountsController):
+class Gratuity(Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -90,8 +88,7 @@ class Gratuity(AccountsController):
 		self.set_status(update=True)
 
 	def create_gl_entries(self, cancel=False):
-		gl_entries = self.get_gl_entries()
-		make_gl_entries(gl_entries, cancel)
+		pass  # GL posting disabled (no erpnext)
 
 	def get_gl_entries(self):
 		gl_entry = []

@@ -1,0 +1,126 @@
+name: Build Image
+
+# Builds ONE image containing the full Frappe bench: frappe + erpnext + the
+# hrms fork from this repo + grace_goals + grace_vendor_portal, with assets
+# pre-built. The same image runs every process role (web, socketio, scheduler,
+# worker) — see ARCHITECTURE.md §5.
+#
+# Fires on a push to any of the three environment branches. The resulting tag
+# is what the deploy workflow picks up:
+#
+#   dev   →  dev-<sha>
+#   test  →  test-<sha>
+#   main  →  prod-<sha>  (+ the release tag, if the push was a v* tag)
+
+on:
+  push:
+    branches: [dev, test, main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    name: Build and push
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      tag:    ${{ steps.name.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive          # hrms/frappe-ui
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image tag from branch
+        id: name
+        run: |
+          SHORT=$(echo "${GITHUB_SHA}" | cut -c1-7)
+          case "${GITHUB_REF_NAME}" in
+            dev)  PREFIX=dev  ;;
+            test) PREFIX=test ;;
+            main) PREFIX=prod ;;
+            v*)   PREFIX=prod ;;      # release tag on main
+            *)    PREFIX=wip  ;;
+          esac
+          echo "tag=${PREFIX}-${SHORT}" >> $GITHUB_OUTPUT
+          echo "prefix=${PREFIX}"       >> $GITHUB_OUTPUT
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.name.outputs.tag }}
+            type=raw,value=${{ steps.name.outputs.prefix }}-latest
+            type=ref,event=tag
+
+      # amd64 + arm64 so the target cloud can be chosen later without a
+      # pipeline change. Drop one platform to roughly halve build time.
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            FRAPPE_BRANCH=develop
+            ERPNEXT_BRANCH=develop
+
+      - name: Summary
+        run: |
+          {
+            echo "### Image built"
+            echo "- Branch: \`${GITHUB_REF_NAME}\`"
+            echo "- Tag:    \`${{ steps.name.outputs.tag }}\`"
+            echo "- Digest: \`${{ steps.build.outputs.digest }}\`"
+          } >> $GITHUB_STEP_SUMMARY
+
+  scan:
+    name: Vulnerability scan
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    steps:
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
+          format: sarif
+          output: trivy.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+
+      - name: Upload results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy.sarif

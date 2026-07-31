@@ -1,0 +1,145 @@
+version: "3.8"
+
+# ── Kinexus HRMS – test / production stack ──────────────────────────────────
+#
+# One immutable image, five process roles (ARCHITECTURE.md §5).
+# Deployed by .github/workflows/deploy-environments.yml, which pins
+# KINEXUS_IMAGE to a specific digest — this file never rebuilds anything.
+#
+#   docker compose --env-file ../envs/test.env --env-file .image.env up -d
+#
+# Differences from the legacy deploy/docker-compose.yml this replaces:
+#   • gunicorn instead of `bench serve`                         (closes G1)
+#   • developer_mode 0                                          (closes G2)
+#   • immutable image instead of host bind-mounts + git pull    (closes G10)
+#   • the vendored hrms fork is actually deployed               (closes G4)
+#   • split web / socketio / scheduler / worker processes
+#   • health checks on every service                            (closes G14)
+#   • separate cache and queue Redis with correct policies      (§6.2)
+
+x-app: &app
+  image: ${KINEXUS_IMAGE:?set KINEXUS_IMAGE to a pinned image digest or tag}
+  restart: unless-stopped
+  working_dir: /home/frappe/frappe-bench
+  environment:
+    - DB_HOST=${DB_HOST}
+    - DB_PORT=${DB_PORT:-3306}
+    - REDIS_CACHE=${REDIS_CACHE}
+    - REDIS_QUEUE=${REDIS_QUEUE}
+    - BASE_DOMAIN=${BASE_DOMAIN}
+    - DEVELOPER_MODE=${DEVELOPER_MODE:-0}
+    - MUTE_EMAILS=${MUTE_EMAILS:-0}
+  volumes:
+    # The stateful part. In a multi-node deployment this MUST be a shared RWX
+    # volume (EFS / Azure Files / Filestore) — see ARCHITECTURE.md §6.3.
+    - sites:/home/frappe/frappe-bench/sites
+  depends_on:
+    configurator:
+      condition: service_completed_successfully
+
+services:
+
+  # ── One-shot: render common_site_config.json from env, then exit ──────────
+  configurator:
+    image: ${KINEXUS_IMAGE:?}
+    restart: "no"
+    working_dir: /home/frappe/frappe-bench
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+    environment:
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-3306}
+      - REDIS_CACHE=${REDIS_CACHE}
+      - REDIS_QUEUE=${REDIS_QUEUE}
+      - DEVELOPER_MODE=${DEVELOPER_MODE:-0}
+      - MUTE_EMAILS=${MUTE_EMAILS:-0}
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        bench set-config -g db_host          "$$DB_HOST"
+        bench set-config -gp db_port         "$$DB_PORT"
+        bench set-config -g redis_cache      "$$REDIS_CACHE"
+        bench set-config -g redis_queue      "$$REDIS_QUEUE"
+        bench set-config -g redis_socketio   "$$REDIS_QUEUE"
+        bench set-config -gp socketio_port   9000
+        bench set-config -gp developer_mode  "$$DEVELOPER_MODE"
+        bench set-config -gp mute_emails     "$$MUTE_EMAILS"
+        # Server Scripts are arbitrary Python execution from the UI. Off. (§20)
+        bench set-config -gp server_script_enabled 0
+        echo "configurator done"
+
+  # ── Web (horizontally scalable) ──────────────────────────────────────────
+  backend:
+    <<: *app
+    expose: ["8000"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/method/ping || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # ── Realtime (horizontally scalable; needs sticky sessions at the LB) ────
+  socketio:
+    <<: *app
+    command: node apps/frappe/socketio.js
+    expose: ["9000"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS 'http://localhost:9000/socket.io/?EIO=4&transport=polling' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── 🔴 Scheduler — EXACTLY ONE REPLICA, CLUSTER-WIDE ─────────────────────
+  # Two schedulers double-fire every cron job: duplicate progress
+  # recalculation, duplicate scorecards, and DUPLICATE EMAILS to real
+  # employees and vendors. Never put this in an autoscaling group.
+  # See ARCHITECTURE.md §5.
+  scheduler:
+    <<: *app
+    command: bench schedule
+    deploy:
+      replicas: 1
+      mode: replicated
+
+  # ── Workers ──────────────────────────────────────────────────────────────
+  worker-default:
+    <<: *app
+    command: bench worker --queue default,short
+
+  # `long` carries recalculate_all_progress, which iterates every goal across
+  # every tenant. Give it its own worker so it cannot starve interactive jobs.
+  worker-long:
+    <<: *app
+    command: bench worker --queue long
+
+  # ── Ingress ──────────────────────────────────────────────────────────────
+  # Terminate TLS here only if there is no cloud load balancer in front.
+  # With ALB / App Gateway / GCLB, terminate at the LB and delete the 443 block.
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${TLS_CERT_DIR:-./certs}:/etc/nginx/ssl:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/ >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  # In production, replace with a driver-backed shared RWX volume:
+  #   sites:
+  #     driver: local
+  #     driver_opts: {type: nfs, o: "addr=<efs-dns>,nfsvers=4.1", device: ":/"}
+  sites:

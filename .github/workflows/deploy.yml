@@ -1,0 +1,231 @@
+name: Deploy
+
+# Branch-per-environment deployment.
+#
+#   push to dev   →  dev environment          (automatic)
+#   push to test  →  test environment         (automatic)
+#   push to main  →  PRODUCTION               (manual approval required)
+#
+# Approval is enforced by the `production` GitHub Environment protection rule,
+# NOT by anything in this file. Create it before the first push to main:
+#   Settings → Environments → production → Required reviewers.
+#
+# Runs after "Build Image" succeeds for the same commit, so the image the
+# deploy pulls is guaranteed to exist.
+
+on:
+  workflow_run:
+    workflows: ["Build Image"]
+    types: [completed]
+    branches: [dev, test, main]
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options: [dev, test, production]
+      image_tag:
+        description: "Image tag to deploy (e.g. prod-a1b2c3d). Use this to roll back."
+        required: true
+        type: string
+      run_migrations:
+        description: Run `bench --site all migrate`
+        required: true
+        type: boolean
+        default: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+
+  # ── Map branch → environment, image tag, and whether to migrate ───────────
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    outputs:
+      environment: ${{ steps.p.outputs.environment }}
+      image_tag:   ${{ steps.p.outputs.image_tag }}
+      migrate:     ${{ steps.p.outputs.migrate }}
+    steps:
+      - id: p
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "environment=${{ inputs.environment }}"    >> $GITHUB_OUTPUT
+            echo "image_tag=${{ inputs.image_tag }}"        >> $GITHUB_OUTPUT
+            echo "migrate=${{ inputs.run_migrations }}"     >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          SHORT=$(echo "${{ github.event.workflow_run.head_sha }}" | cut -c1-7)
+          case "$BRANCH" in
+            dev)  ENVIRONMENT=dev;        TAG="dev-$SHORT"  ;;
+            test) ENVIRONMENT=test;       TAG="test-$SHORT" ;;
+            main) ENVIRONMENT=production; TAG="prod-$SHORT" ;;
+            *) echo "::error::Unexpected branch $BRANCH"; exit 1 ;;
+          esac
+          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+          echo "image_tag=$TAG"           >> $GITHUB_OUTPUT
+          echo "migrate=true"             >> $GITHUB_OUTPUT
+
+  deploy:
+    name: Deploy to ${{ needs.plan.outputs.environment }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    # This is the approval gate for production.
+    environment:
+      name: ${{ needs.plan.outputs.environment }}
+      url: https://${{ vars.BASE_DOMAIN }}
+
+    concurrency:
+      group: deploy-${{ needs.plan.outputs.environment }}
+      cancel-in-progress: false        # never interrupt a running migration
+
+    env:
+      IMAGE:    ${{ needs.plan.outputs.image_tag }}
+      ENV_NAME: ${{ needs.plan.outputs.environment }}
+      MIGRATE:  ${{ needs.plan.outputs.migrate }}
+
+    steps:
+      - name: Parameters
+        run: |
+          echo "Environment : $ENV_NAME"
+          echo "Image       : ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$IMAGE"
+          echo "Migrations  : $MIGRATE"
+
+      # ── Pre-deploy backup: this is the rollback point ─────────────────────
+      # A database dump alone is NOT restorable — site_config.json holds each
+      # site's encryption_key. Both are captured here. (ARCHITECTURE.md §17)
+      - name: Backup all sites
+        if: needs.plan.outputs.environment != 'dev'
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          ENV_NAME: ${{ needs.plan.outputs.environment }}
+        with:
+          host:     ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key:      ${{ secrets.DEPLOY_SSH_KEY }}
+          timeout:  1800s
+          command_timeout: 30m
+          envs: ENV_NAME
+          script: |
+            set -euo pipefail
+            cd /opt/hr-app/deploy/compose
+            DC="docker compose -f docker-compose.app.yml --env-file ../envs/${ENV_NAME}.env --env-file .image.env"
+            STAMP=$(date +%F-%H%M)
+
+            $DC exec -T backend bench --site all backup --with-files
+            $DC exec -T backend bash -c \
+              "tar czf sites/site-configs-${STAMP}.tgz sites/*/site_config.json sites/common_site_config.json"
+
+            if [ -n "${{ secrets.BACKUP_BUCKET }}" ]; then
+              $DC exec -T backend bash -c \
+                "aws s3 sync sites/ s3://${{ secrets.BACKUP_BUCKET }}/pre-deploy/${STAMP}/ \
+                   --exclude '*' --include '*/private/backups/*' --include 'site-configs-*.tgz'" \
+                || echo "::warning::Offsite backup sync failed — verify before continuing"
+            else
+              echo "::warning::BACKUP_BUCKET not set — backups exist only on the server"
+            fi
+
+      - name: Deploy
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          FULL_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.plan.outputs.image_tag }}
+          ENV_NAME:   ${{ needs.plan.outputs.environment }}
+          MIGRATE:    ${{ needs.plan.outputs.migrate }}
+        with:
+          host:     ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key:      ${{ secrets.DEPLOY_SSH_KEY }}
+          timeout:  3600s
+          command_timeout: 60m
+          envs: FULL_IMAGE,ENV_NAME,MIGRATE
+          script: |
+            set -euo pipefail
+            cd /opt/hr-app
+            git fetch --all --prune
+            git checkout --detach "origin/${ENV_NAME/production/main}" 2>/dev/null \
+              || git checkout --detach origin/main
+            cd deploy/compose
+
+            echo "KINEXUS_IMAGE=$FULL_IMAGE" > .image.env
+            DC="docker compose -f docker-compose.app.yml --env-file ../envs/${ENV_NAME}.env --env-file .image.env"
+
+            $DC pull
+
+            if [ "$MIGRATE" = "true" ]; then
+              # Frappe migrations are per-site and not transactional across the
+              # tenant fleet — maintenance mode covers the whole window. (§14.3)
+              $DC exec -T backend bench --site all set-maintenance-mode on || true
+            fi
+
+            $DC up -d --remove-orphans
+
+            for i in $(seq 1 60); do
+              $DC exec -T backend bench version >/dev/null 2>&1 && break
+              sleep 5
+            done
+
+            if [ "$MIGRATE" = "true" ]; then
+              $DC exec -T backend bench --site all migrate
+              $DC exec -T backend bench --site all clear-cache
+              $DC exec -T backend bench --site all set-maintenance-mode off
+            fi
+
+            docker image prune -f --filter "until=168h" || true
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+                   -H "Host: ${{ vars.SMOKE_SITE }}" \
+                   "https://${{ vars.BASE_DOMAIN }}/api/method/ping" || true)
+            if [ "$code" = "200" ]; then echo "ping OK"; exit 0; fi
+            echo "attempt $i: HTTP $code"; sleep 10
+          done
+          echo "::error::Smoke test failed — /api/method/ping never returned 200"
+          exit 1
+
+      - name: Stack and scheduler health
+        continue-on-error: true
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          ENV_NAME: ${{ needs.plan.outputs.environment }}
+        with:
+          host:     ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key:      ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: ENV_NAME
+          script: |
+            cd /opt/hr-app/deploy/compose
+            DC="docker compose -f docker-compose.app.yml --env-file ../envs/${ENV_NAME}.env --env-file .image.env"
+            $DC ps
+            $DC exec -T backend bench --site ${{ vars.SMOKE_SITE }} doctor || true
+
+      - name: Rollback instructions
+        if: failure()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY <<'EOF'
+          ## Deploy failed — how to roll back
+
+          **Code-only release (no migration ran):** re-run this workflow with the
+          previous image tag and migrations off. Takes ~2 minutes.
+
+          Actions → Deploy → Run workflow →
+          `environment: ${{ needs.plan.outputs.environment }}`,
+          `image_tag: <previous tag>`, `run_migrations: false`
+
+          **A migration ran:** redeploy the previous tag **and** restore the
+          pre-deploy backup for each affected site. Frappe patches are not
+          reversible. See ARCHITECTURE.md §14.4 and §17.
+          EOF
+          exit 1

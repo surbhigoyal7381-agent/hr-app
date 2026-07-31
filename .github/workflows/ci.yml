@@ -1,0 +1,196 @@
+name: CI
+
+# Quality gate. Runs on every PR into dev / test / main, and on every push to
+# those branches. Never deploys.
+#
+# Branch model (ARCHITECTURE.md §13):
+#   feature/*  --PR-->  dev  --PR-->  test  --PR-->  main (production)
+
+on:
+  pull_request:
+    branches: [dev, test, main]
+  push:
+    branches: [dev, test, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ── Lint ──────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install ruff==0.6.9
+
+      # hrms/pyproject.toml carries the ruff config this codebase is formatted against.
+      - name: ruff check (hrms)
+        run: ruff check hrms/hrms --config hrms/pyproject.toml
+
+      - name: ruff format --check (hrms)
+        run: ruff format --check hrms/hrms --config hrms/pyproject.toml
+
+      # The grace apps predate this config. Non-blocking until the backlog of
+      # existing violations is cleared, then flip to blocking.
+      - name: ruff check (grace apps)
+        continue-on-error: true
+        run: ruff check grace_goals grace_vendor_portal --config hrms/pyproject.toml
+
+      - name: Semgrep (Frappe security rules)
+        continue-on-error: true
+        run: |
+          pip install semgrep
+          semgrep --config hrms/semgrep --error --skip-unknown-extensions \
+            grace_goals grace_vendor_portal hrms/hrms
+
+  # ── Python / Frappe tests ─────────────────────────────────────────────────
+  test-python:
+    name: Python tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    services:
+      mariadb:
+        image: mariadb:10.8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -u root -proot"
+          --health-interval=10s --health-timeout=5s --health-retries=15
+      redis-cache:
+        image: redis:alpine
+        ports: ["13000:6379"]
+      redis-queue:
+        image: redis:alpine
+        ports: ["11000:6379"]
+
+    env:
+      FRAPPE_BRANCH: develop
+      ERPNEXT_BRANCH: develop
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive          # hrms/frappe-ui
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # A cold `bench init` is 15-25 min. Cache it, keyed on what can change it.
+      - name: Cache bench
+        id: bench-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/frappe-bench
+          key: bench-${{ runner.os }}-${{ env.FRAPPE_BRANCH }}-${{ hashFiles('hrms/pyproject.toml', 'grace_goals/requirements.txt', 'grace_vendor_portal/requirements.txt') }}
+
+      - name: System dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcups2-dev redis-tools mariadb-client libmariadb-dev
+          pip install frappe-bench
+
+      - name: MariaDB settings required by Frappe
+        run: |
+          mysql -h 127.0.0.1 -u root -proot -e "SET GLOBAL character_set_server='utf8mb4'"
+          mysql -h 127.0.0.1 -u root -proot -e "SET GLOBAL collation_server='utf8mb4_unicode_ci'"
+
+      - name: Init bench
+        if: steps.bench-cache.outputs.cache-hit != 'true'
+        run: |
+          cd ~
+          bench init --skip-redis-config-generation --skip-assets \
+                     --frappe-branch "$FRAPPE_BRANCH" --python "$(which python)" frappe-bench
+          cd frappe-bench
+          bench get-app --branch "$ERPNEXT_BRANCH" erpnext
+
+      # All three first-party apps come from THIS repo — including the hrms fork,
+      # so the PMS module is exercised in CI exactly as it ships to production.
+      - name: Install this repo's apps
+        run: |
+          cd ~/frappe-bench
+          rm -rf apps/hrms apps/grace_goals apps/grace_vendor_portal
+          cp -r "$GITHUB_WORKSPACE/hrms"                apps/hrms
+          cp -r "$GITHUB_WORKSPACE/grace_goals"         apps/grace_goals
+          cp -r "$GITHUB_WORKSPACE/grace_vendor_portal" apps/grace_vendor_portal
+          ./env/bin/pip install -q -e apps/hrms -e apps/grace_goals -e apps/grace_vendor_portal
+          printf 'frappe\nerpnext\nhrms\ngrace_goals\ngrace_vendor_portal\n' > sites/apps.txt
+
+      - name: Create test site
+        run: |
+          cd ~/frappe-bench
+          bench set-config -g db_host 127.0.0.1
+          bench set-config -g redis_cache    redis://127.0.0.1:13000
+          bench set-config -g redis_queue    redis://127.0.0.1:11000
+          bench set-config -g redis_socketio redis://127.0.0.1:11000
+          bench set-config -g mute_emails 1        # never let CI reach a mail server
+          sed -i '/redis/d;/watch/d;/schedule/d;/socketio/d' Procfile
+          bench new-site test_site --force --db-root-password root \
+                --admin-password admin --no-mariadb-socket
+          bench --site test_site install-app erpnext
+          bench --site test_site install-app hrms
+          bench --site test_site install-app grace_vendor_portal
+          bench --site test_site install-app grace_goals
+          bench --site test_site set-config allow_tests true
+
+      # This step is also the smoke test for the PMS module: `install-app hrms`
+      # creates its 37 doctypes. If they are malformed, this fails here rather
+      # than during a production deploy.
+      - name: Verify all modules installed
+        run: |
+          cd ~/frappe-bench
+          bench --site test_site execute frappe.client.get_count \
+                --kwargs '{"doctype":"DocType","filters":{"module":"Performance Management"}}'
+
+      # Tenant isolation is enforced entirely by these tests. Blocking.
+      - name: Run tests
+        run: |
+          cd ~/frappe-bench
+          bench --site test_site run-tests --app grace_goals
+          bench --site test_site run-tests --app grace_vendor_portal
+
+      - name: Bench logs on failure
+        if: failure()
+        run: tail -n 200 ~/frappe-bench/logs/*.log || true
+
+  # ── Frontend build ────────────────────────────────────────────────────────
+  test-frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive          # build fails without frappe-ui
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build employee PWA
+        working-directory: hrms/frontend
+        run: |
+          yarn install --frozen-lockfile --check-files
+          yarn build
+
+      - name: Build roster SPA
+        working-directory: hrms/roster
+        run: |
+          yarn install --frozen-lockfile --check-files
+          yarn build

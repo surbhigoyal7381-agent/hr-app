@@ -174,6 +174,28 @@ frappe.pages["organizational-chart"].on_page_load = function (wrapper) {
 				device_type,
 			);
 			organizational_chart.show();
+
+			// Auto-select the first company when frappe.defaults has no default configured
+			setTimeout(() => {
+				const field = organizational_chart.page.fields_dict.company;
+				if (!field || field.get_value()) return; // already set — nothing to do
+
+				frappe.call({
+					method: "frappe.client.get_list",
+					args: { doctype: "Company", fields: ["name"], order_by: "creation asc", limit: 1 },
+					callback(r) {
+						if (!r.message || !r.message.length) {
+							frappe.msgprint({
+								title: __("No Organisation Defined"),
+								message: __("No organisation has been set up yet. Please create a Company from HR Setup first."),
+								indicator: "orange",
+							});
+							return;
+						}
+						field.set_value(r.message[0].name);
+					},
+				});
+			}, 0);
 		});
 	});
 };

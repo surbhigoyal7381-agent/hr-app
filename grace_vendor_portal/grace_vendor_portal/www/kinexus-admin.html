@@ -11,8 +11,9 @@
 
 /* ── Tokens ──────────────────────────────────────────────────────────── */
 :root {
-  --sidebar-w: 220px;
+  --sidebar-w: 240px;
   --topbar-h:  56px;
+  --t:         .15s ease;
 
   --ink0:    #0f172a;
   --ink1:    #334155;
@@ -44,7 +45,7 @@
   --font: -apple-system,'Segoe UI','Inter',Helvetica,Arial,sans-serif;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --ink0:#e2e8f0; --ink1:#cbd5e1; --ink2:#94a3b8; --ink3:#64748b;
     --bg:#0f172a; --surface:#1e293b; --border:#334155; --border2:#475569;
     --green-lt:#0f2a1e; --amber-lt:#2d1f00; --red-lt:#2d0808;

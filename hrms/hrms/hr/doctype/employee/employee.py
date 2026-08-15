@@ -42,6 +42,10 @@ class Employee(Document):
 		elif self.prefered_contact_email == "User ID":
 			self.prefered_email = self.user_id
 
+	def on_update(self):
+		from frappe.utils.nestedset import update_nsm
+		update_nsm(self)
+
 
 # ── Module-level utility functions imported by the rest of hrms ──────────────
 

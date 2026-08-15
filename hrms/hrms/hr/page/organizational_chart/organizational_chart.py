@@ -32,18 +32,19 @@ def get_children(parent: str | None = None, company: str | None = None, exclude_
 	)
 
 	for employee in employees:
-		employee.connections = get_connections(employee.id, employee.lft, employee.rgt)
+		employee.connections = get_connections(employee.id, employee.lft, employee.rgt, company)
 		employee.expandable = bool(employee.connections)
 
 	return employees
 
 
-def get_connections(employee: str, lft: int, rgt: int) -> int:
+def get_connections(employee: str, lft: int, rgt: int, company: str | None = None) -> int:
 	Employee = frappe.qb.DocType("Employee")
-	query = (
+	q = (
 		frappe.qb.from_(Employee)
 		.select(Count(Employee.name))
 		.where((Employee.lft > lft) & (Employee.rgt < rgt) & (Employee.status == "Active"))
-	).run()
-
-	return query[0][0]
+	)
+	if company and company != "All Companies":
+		q = q.where(Employee.company == company)
+	return q.run()[0][0]

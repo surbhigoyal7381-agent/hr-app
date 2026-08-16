@@ -4106,7 +4106,7 @@ window._EMP_USER  = "{{ frappe.session.user }}";
 
 <script>
 /* ── Helpers ─────────────────────────────────────── */
-const MOD = "grace_vendor_portal.hr_api";
+const MOD = "alvox_portal.hr_api";
 const loadedPanels = new Set(["home"]);
 let calYear, calMonth;
 
@@ -6623,7 +6623,7 @@ function deleteDrawerNote(noteId, empId) {
   // Main boot called by loadGoalsPanel()
   window._gpBoot = function() {
     if (_gpCtx) { gpShowTab("overview"); return; }
-    gpFetch("grace_vendor_portal.goals_api.get_portal_context").then(function(ctx) {
+    gpFetch("alvox_portal.goals_api.get_portal_context").then(function(ctx) {
       _gpCtx = ctx;
       var attn = ((_gpCtx.dashboard || {}).at_risk || 0);
       var gbadge = document.getElementById("sb-goals-badge");
@@ -6695,7 +6695,7 @@ function deleteDrawerNote(noteId, empId) {
 
   function gpRenderDeadlines() {
     var el = document.getElementById("gp-deadlines");
-    gpFetch("grace_vendor_portal.goals_api.get_my_goals").then(function(all) {
+    gpFetch("alvox_portal.goals_api.get_my_goals").then(function(all) {
       var now = new Date();
       var d30 = new Date(); d30.setDate(d30.getDate() + 30);
       var upcoming = (all || []).filter(function(g) {
@@ -6756,7 +6756,7 @@ function deleteDrawerNote(noteId, empId) {
   function gpLoadCompanyValues() {
     var sel = document.getElementById("gp-c-company-value");
     if (!sel || sel.dataset.loaded) return;
-    gpFetch("grace_vendor_portal.performance_api.get_company_values").then(function(vals) {
+    gpFetch("alvox_portal.performance_api.get_company_values").then(function(vals) {
       sel.innerHTML = "<option value=\"\">— None —</option>" +
         (vals || []).map(function(v) {
           return "<option value=\"" + gpEsc(v.name) + "\">" +
@@ -6784,7 +6784,7 @@ function deleteDrawerNote(noteId, empId) {
       var sel = document.getElementById("gp-c-company-value");
       if (!sel) return;
       if (sel.dataset.loaded) { sel.value = g.company_value || ""; return; }
-      gpFetch("grace_vendor_portal.performance_api.get_company_values").then(function(vals) {
+      gpFetch("alvox_portal.performance_api.get_company_values").then(function(vals) {
         sel.innerHTML = "<option value=\"\">— None —</option>" +
           (vals || []).map(function(v) {
             return "<option value=\"" + gpEsc(v.name) + "\">" +
@@ -6808,14 +6808,14 @@ function deleteDrawerNote(noteId, empId) {
 
   window.gpDeleteGoal = function(goalId, label) {
     if (!confirm("Delete goal \"" + label + "\"? This cannot be undone.")) return;
-    gpFetch("grace_vendor_portal.goals_api.delete_goal", {goal_id: goalId})
+    gpFetch("alvox_portal.goals_api.delete_goal", {goal_id: goalId})
       .then(function() { tvLoad(); })
       .catch(function(e) { alert(e.message); });
   };
 
   // Employee picker for the goal modal — self plus subtree, HR gets everyone.
   function gpFillGoalEmployees(selected) {
-    return gpFetch("grace_vendor_portal.goals_api.get_manageable_employees").then(function(rows) {
+    return gpFetch("alvox_portal.goals_api.get_manageable_employees").then(function(rows) {
       var sel = document.getElementById("gp-c-employee");
       var wrap = document.getElementById("gp-employee-field");
       if (!sel) return;
@@ -6873,7 +6873,7 @@ function deleteDrawerNote(noteId, empId) {
     listEl.style.display = "none";
     listEl.innerHTML = "";
 
-    gpFetch("grace_vendor_portal.goals_api.get_alignment_options",
+    gpFetch("alvox_portal.goals_api.get_alignment_options",
             {employee: pfGoalEmployee()}).then(function(data) {
       _gpCascades = (data && data.options) || [];
       var chain = (data && data.chain) || [];
@@ -7019,12 +7019,12 @@ function deleteDrawerNote(noteId, empId) {
     var isStretch = (document.getElementById("gp-c-stretch") || {}).checked ? 1 : 0;
 
     var call = editing
-      ? gpFetch("grace_vendor_portal.goals_api.update_goal", {
+      ? gpFetch("alvox_portal.goals_api.update_goal", {
           goal_id: editing, goal_name: name, target_value: parseFloat(target),
           start_date: start, end_date: end, parent_goal: parent,
           goal_type: goalType, company_value: companyValue, is_extra_initiative: isStretch,
         })
-      : gpFetch("grace_vendor_portal.goals_api.create_goal", {
+      : gpFetch("alvox_portal.goals_api.create_goal", {
           goal_name: name, cascade_id: cascade, target_value: parseFloat(target),
           start_date: start, end_date: end, parent_goal: parent,
           employee: pfGoalEmployee(),
@@ -7058,7 +7058,7 @@ function deleteDrawerNote(noteId, empId) {
     var ring = document.getElementById("gp-dp-ring"); if (ring) ring.innerHTML = gpProgressRing(0, "var(--border2)", 56);
     var ev = document.getElementById("gp-dp-evidence"); if (ev) ev.innerHTML = "<div style=\"color:var(--text3);font-size:12px\">Loading…</div>";
 
-    gpFetch("grace_vendor_portal.goals_api.get_goal_detail", {goal_id: goalId}).then(function(g) {
+    gpFetch("alvox_portal.goals_api.get_goal_detail", {goal_id: goalId}).then(function(g) {
       var pct = Math.round(g.progress_pct || 0);
       var tColor = gpTrajColor(g.trajectory);
 
@@ -7188,7 +7188,7 @@ function deleteDrawerNote(noteId, empId) {
     if (isNaN(val)) { toast("Enter a valid number", "err"); return; }
     var btn = sec.querySelector("button");
     if (btn) { btn.disabled = true; btn.textContent = "Saving..."; }
-    gpFetch("grace_vendor_portal.goals_api.set_goal_progress", {goal_id: gid, actual_progress: val})
+    gpFetch("alvox_portal.goals_api.set_goal_progress", {goal_id: gid, actual_progress: val})
       .then(function() {
         toast("Progress updated", "ok");
         window.gpOpenDetail(gid);
@@ -7475,7 +7475,7 @@ function deleteDrawerNote(noteId, empId) {
     // caller's own for the current cycle.
     var call = appraisalName
       ? pf("get_appraisal", {appraisal: appraisalName})
-      : gpFetch("grace_vendor_portal.goals_api.get_appraisal_data");
+      : gpFetch("alvox_portal.goals_api.get_appraisal_data");
 
     call.then(function(d) {
       var c = d.cycle, ap = d.appraisal;
@@ -7624,7 +7624,7 @@ function deleteDrawerNote(noteId, empId) {
 
     // Store as simple HTML: the field is a Text Editor, so plain text with
     // newlines would collapse into one run wherever it is rendered.
-    gpFetch("grace_vendor_portal.goals_api.save_self_assessment",
+    gpFetch("alvox_portal.goals_api.save_self_assessment",
             {appraisal_id: appraisalId, reflections: gpTextToHtml(text)}).then(function() {
       if (okEl) { okEl.textContent = "Self-assessment saved successfully."; okEl.style.display = "block"; }
       if (btn)  { btn.textContent = "Saved ✓"; }
@@ -7644,7 +7644,7 @@ function deleteDrawerNote(noteId, empId) {
     if (!force && el && el.innerHTML && el.innerHTML.indexOf("Loading") < 0) return;
     if (el) el.innerHTML = "<div class=\"empty-state\"><div class=\"empty-state-text\">Loading team goals…</div></div>";
 
-    gpFetch("grace_vendor_portal.goals_api.get_team_goals").then(function(team) {
+    gpFetch("alvox_portal.goals_api.get_team_goals").then(function(team) {
       if (!Array.isArray(team) || !team.length) {
         if (el) el.innerHTML = "<div class=\"empty-state\"><div class=\"empty-state-icon\">👥</div><div class=\"empty-state-text\">No direct reports found.</div></div>";
         return;
@@ -7683,12 +7683,12 @@ function deleteDrawerNote(noteId, empId) {
 
   /* ══════════════════════════════════════════════════════════════════
      Performance: KPIs, manager reviews, HR administration.
-     All reads and writes go through grace_vendor_portal.performance_api,
+     All reads and writes go through alvox_portal.performance_api,
      which enforces role and reporting-line scoping server-side — nothing
      here is trusted to keep a user inside their own data.
      ══════════════════════════════════════════════════════════════════ */
 
-  var PF = "grace_vendor_portal.performance_api.";
+  var PF = "alvox_portal.performance_api.";
   var _pfCtx = null;
   var _pfSetup = null;
 
@@ -10412,7 +10412,7 @@ function deleteDrawerNote(noteId, empId) {
   // Employee list is server-filtered: HR gets everyone, a manager gets their
   // subtree, an individual contributor gets only themselves.
   function pfFillEmployeeSelect(selectId, selected) {
-    return gpFetch("grace_vendor_portal.goals_api.get_manageable_employees").then(function(rows) {
+    return gpFetch("alvox_portal.goals_api.get_manageable_employees").then(function(rows) {
       var sel = document.getElementById(selectId);
       if (!sel) return rows;
       sel.innerHTML = (rows || []).map(function(e) {
@@ -10503,7 +10503,7 @@ function deleteDrawerNote(noteId, empId) {
 
   window.pfReloadObjectives = function(selected) {
     var emp = pfVal("pf-k-employee");
-    return gpFetch("grace_vendor_portal.goals_api.get_linkable_objectives", {employee: emp})
+    return gpFetch("alvox_portal.goals_api.get_linkable_objectives", {employee: emp})
       .then(function(rows) {
         _pfObjectives = rows || [];
         cbxPick("pf-k-objective", selected || "");
@@ -12342,7 +12342,7 @@ function deleteDrawerNote(noteId, empId) {
     var note = document.getElementById("gp-checkin-note").value.trim();
     var val = document.getElementById("gp-checkin-value").value;
     if (!note) { pfShowErr("gp-checkin-error", "A note is required."); return; }
-    gpFetch("grace_vendor_portal.goals_api.create_checkin", {
+    gpFetch("alvox_portal.goals_api.create_checkin", {
       goal_id: goalId, note: note, progress_value: val || "",
     }).then(function() {
       pfCloseModal("gp-checkin-modal");
@@ -13184,7 +13184,7 @@ function deleteDrawerNote(noteId, empId) {
     if (isNaN(ratingNum) || ratingNum < 0 || ratingNum > 5) {
       pfShowErr("pf-upward-error", "Rating must be between 0 and 5."); return;
     }
-    gpFetch("grace_vendor_portal.goals_api.submit_upward_feedback", {
+    gpFetch("alvox_portal.goals_api.submit_upward_feedback", {
       about_employee: about, cycle: cycle,
       rating: ratingNum, comments: comments,
     }).then(function() {

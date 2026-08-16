@@ -1,7 +1,7 @@
 """
 Grace Drinks Pvt Ltd – Q1 2026 Performance Tracking Fixture
 =============================================================
-Run via:  bench --site <site> execute setup_q1_performance.execute
+Run via:  bench --site dev.alvoraa.co console < demo/setup_performance.py
 
 What this script does (in order):
   1.  Verify / create Company, Departments, Designations

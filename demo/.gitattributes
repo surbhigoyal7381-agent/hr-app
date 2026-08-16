@@ -1,0 +1,4 @@
+# All files in this folder keep the destination branch's version on every merge.
+# This prevents demo/seed scripts from landing in main when dev is merged.
+# The merge driver must be registered locally: git config merge.ours.driver true
+* merge=ours

@@ -157,45 +157,71 @@ frappe.pages["organizational-chart"].on_page_load = function (wrapper) {
 
 	$(wrapper).bind("show", () => {
 		frappe.require("hierarchy-chart.bundle.js", () => {
-			let organizational_chart;
-			let method = "hrms.hr.page.organizational_chart.organizational_chart.get_children";
+			const method =
+				"hrms.hr.page.organizational_chart.organizational_chart.get_children";
 			const device_type = frappe.is_mobile() ? "mobile" : "desktop";
 
-			if (frappe.is_mobile()) {
-				organizational_chart = new hrms.HierarchyChartMobile("Employee", wrapper, method);
+			const _launch = (preloadCompany) => {
+				// Inject the company into session defaults BEFORE the chart is
+				// initialised so that HierarchyChart's Link field picks it up as
+				// its `default:` value and trigger("change") fires with a value,
+				// preventing the spurious "Please select a company first" error.
+				if (preloadCompany && !frappe.defaults.get_default("company")) {
+					frappe.boot.user_info = frappe.boot.user_info || {};
+					frappe.boot.user_info.defaults = frappe.boot.user_info.defaults || {};
+					frappe.boot.user_info.defaults["company"] = preloadCompany;
+				}
+
+				let organizational_chart;
+				if (frappe.is_mobile()) {
+					organizational_chart = new hrms.HierarchyChartMobile(
+						"Employee",
+						wrapper,
+						method,
+					);
+				} else {
+					organizational_chart = new hrms.HierarchyChart("Employee", wrapper, method);
+				}
+
+				frappe.breadcrumbs.add("HR");
+				hrms.organizational_chart.bind_empty_state_handler(
+					organizational_chart,
+					method,
+					device_type,
+				);
+				organizational_chart.show();
+			};
+
+			if (frappe.defaults.get_default("company")) {
+				// Global Default is already set — initialise immediately.
+				_launch(null);
 			} else {
-				organizational_chart = new hrms.HierarchyChart("Employee", wrapper, method);
-			}
-
-			frappe.breadcrumbs.add("HR");
-			hrms.organizational_chart.bind_empty_state_handler(
-				organizational_chart,
-				method,
-				device_type,
-			);
-			organizational_chart.show();
-
-			// Auto-select the first company when frappe.defaults has no default configured
-			setTimeout(() => {
-				const field = organizational_chart.page.fields_dict.company;
-				if (!field || field.get_value()) return; // already set — nothing to do
-
+				// No default: fetch the first company (by creation date) so we
+				// can pre-populate the field before the chart initialises.
 				frappe.call({
 					method: "frappe.client.get_list",
-					args: { doctype: "Company", fields: ["name"], order_by: "creation asc", limit: 1 },
+					args: {
+						doctype: "Company",
+						fields: ["name"],
+						order_by: "creation asc",
+						limit: 1,
+					},
 					callback(r) {
 						if (!r.message || !r.message.length) {
+							_launch(null);
 							frappe.msgprint({
 								title: __("No Organisation Defined"),
-								message: __("No organisation has been set up yet. Please create a Company from HR Setup first."),
+								message: __(
+									"No organisation has been set up yet. Please create a Company from HR Setup first.",
+								),
 								indicator: "orange",
 							});
 							return;
 						}
-						field.set_value(r.message[0].name);
+						_launch(r.message[0].name);
 					},
 				});
-			}, 0);
+			}
 		});
 	});
 };

@@ -166,10 +166,10 @@ frappe.pages["organizational-chart"].on_page_load = function (wrapper) {
 				// initialised so that HierarchyChart's Link field picks it up as
 				// its `default:` value and trigger("change") fires with a value,
 				// preventing the spurious "Please select a company first" error.
+				// frappe.defaults.get_default reads frappe.boot.user.defaults —
+				// use the official setter so we write to the right object.
 				if (preloadCompany && !frappe.defaults.get_default("company")) {
-					frappe.boot.user_info = frappe.boot.user_info || {};
-					frappe.boot.user_info.defaults = frappe.boot.user_info.defaults || {};
-					frappe.boot.user_info.defaults["company"] = preloadCompany;
+					frappe.defaults.set_user_default_local("company", preloadCompany);
 				}
 
 				let organizational_chart;

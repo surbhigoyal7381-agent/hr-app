@@ -1173,6 +1173,68 @@ def get_leave_summary():
     return {"balances": balances, "applications": applications, "employee": emp}
 
 
+@frappe.whitelist()
+def get_expense_types():
+    return frappe.get_all(
+        "Expense Claim Type",
+        fields=["name"],
+        order_by="name asc",
+        ignore_permissions=True,
+    )
+
+
+@frappe.whitelist()
+def apply_expense_claim(expense_type, expense_date, amount, description=None):
+    emp = _get_employee()
+    if not emp:
+        frappe.throw("No employee record is linked to your account.")
+
+    amount = float(amount)
+    if amount <= 0:
+        frappe.throw("Amount must be greater than zero.")
+
+    doc = frappe.get_doc({
+        "doctype": "Expense Claim",
+        "employee": emp.name,
+        "company": emp.company,
+        "posting_date": today(),
+        "expense_claim_details": [{
+            "doctype": "Expense Claim Detail",
+            "expense_date": expense_date,
+            "expense_type": expense_type,
+            "description": description or "",
+            "amount": amount,
+            "sanctioned_amount": amount,
+        }],
+    })
+    doc.insert(ignore_permissions=True)
+    frappe.db.commit()
+    return {"name": doc.name}
+
+
+@frappe.whitelist()
+def apply_leave(leave_type, from_date, to_date, half_day=0, half_day_date=None, reason=None):
+    emp = _get_employee()
+    if not emp:
+        frappe.throw("No employee record is linked to your account.")
+
+    doc = frappe.get_doc({
+        "doctype": "Leave Application",
+        "employee": emp.name,
+        "leave_type": leave_type,
+        "from_date": from_date,
+        "to_date": to_date,
+        "half_day": int(half_day),
+        "half_day_date": half_day_date if int(half_day) else None,
+        "description": reason or "",
+        "status": "Open",
+        "company": emp.company,
+    })
+    doc.insert(ignore_permissions=True)
+    frappe.db.commit()
+    return {"name": doc.name}
+
+
 # ── Self-service form submissions ──────────────────────────────────────────────
 
 @frappe.whitelist()

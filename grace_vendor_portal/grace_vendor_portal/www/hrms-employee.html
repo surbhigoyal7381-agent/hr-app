@@ -683,6 +683,31 @@ body.sb-collapsed .sidebar:hover .sb-scroll-btn{display:flex}
   .g4{grid-template-columns:1fr 1fr}
   .leave-rings{grid-template-columns:repeat(2,1fr)}
 }
+@media(max-width:640px){
+  /* Employee detail drawer: 4-col stats → 2-col */
+  .ed-stat-row{grid-template-columns:repeat(2,1fr)}
+  /* Finance tabs bar: allow horizontal scroll so all tabs stay on one line */
+  .fin-tabs-bar{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-shrink:0}
+  .fin-tabs-bar::-webkit-scrollbar{display:none}
+  /* Performance cycle selector: don't enforce wide min-width */
+  .pf-cycle-select{min-width:0;width:100%}
+  /* Scorecard stat strip: wrap into 2-per-row on small phones */
+  .sc-stat{flex:1 1 calc(50% - 1px);min-width:0}
+  /* Prevent chart cards from overflowing narrow viewports */
+  .pd-chart-card{min-width:0}
+}
+@media(max-width:480px){
+  /* Tighten modal padding on small phones */
+  .gp-modal-body{padding:16px}
+  .gp-modal-hdr{padding:14px 16px 12px}
+  /* Stack modal footer buttons */
+  .gp-modal-footer{flex-wrap:wrap}
+  .gp-modal-footer .btn{flex:1 1 auto;justify-content:center;min-width:100px}
+  /* Tighten scorecard body padding */
+  .sc-body{padding:14px 14px}
+  /* Reduce page title size further */
+  .page-title{font-size:18px}
+}
 
 /* ── Forms ───────────────────────────────────────── */
 .form-group{margin-bottom:18px}
@@ -2087,7 +2112,7 @@ window._EMP_USER  = "{{ frappe.session.user }}";
             <div class="page-title">Attendance &amp; Leave</div>
             <div class="page-sub" id="att-sub">This month's record</div>
           </div>
-          <button class="btn btn-primary" style="margin-left:auto" onclick="openFrappe('/app/leave-application/new-leave-application-1')">+ Apply Leave</button>
+          <button class="btn btn-primary" style="margin-left:auto" onclick="openLeaveModal()">+ Apply Leave</button>
         </div>
 
         <div class="att-summary">
@@ -2108,8 +2133,7 @@ window._EMP_USER  = "{{ frappe.session.user }}";
               </div>
             </div>
             <div class="card-body" style="padding:10px">
-              <div class="cal-grid cal-mini" id="cal-heads"></div>
-              <div class="cal-grid cal-mini" id="cal-cells"></div>
+              <div id="cal-grid-main" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:8px"></div>
               <div class="cal-legend" style="margin-top:6px;gap:6px">
                 <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--green-lt);border:1px solid var(--green)"></div>Present</div>
                 <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--red-lt);border:1px solid var(--red)"></div>Absent</div>
@@ -2153,7 +2177,7 @@ window._EMP_USER  = "{{ frappe.session.user }}";
             <div class="page-title">My Finances</div>
             <div class="page-sub">Salary slips, expenses &amp; leave encashment</div>
           </div>
-          <div style="display:flex;gap:4px;background:var(--surface2);border-radius:var(--r-sm);padding:4px;border:1px solid var(--border)">
+          <div class="fin-tabs-bar" style="display:flex;gap:4px;background:var(--surface2);border-radius:var(--r-sm);padding:4px;border:1px solid var(--border)">
             <button class="gp-tab active" id="fin-tab-salary" onclick="showFinTab('salary')">Salary Slips</button>
             <button class="gp-tab" id="fin-tab-expenses" onclick="showFinTab('expenses')">Expenses</button>
             <button class="gp-tab" id="fin-tab-leave-enc" onclick="showFinTab('leave-enc')" style="display:none">Leave Encashment</button>
@@ -2170,7 +2194,7 @@ window._EMP_USER  = "{{ frappe.session.user }}";
         <!-- ── Expense Claims ── -->
         <div id="fin-body-expenses" style="display:none">
           <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
-            <button class="btn btn-primary" onclick="openFrappe('/app/expense-claim/new-expense-claim-1')">+ New Claim</button>
+            <button class="btn btn-primary" onclick="openExpenseModal()">+ New Claim</button>
           </div>
           <div id="expense-list">
             <div class="empty-state"><div class="empty-state-icon">🧾</div><div class="empty-state-text">Loading...</div></div>
@@ -3882,6 +3906,84 @@ window._EMP_USER  = "{{ frappe.session.user }}";
       </div>
     </div>
 
+    <!-- ── Leave Application Modal ──────────────────────── -->
+    <div class="gp-backdrop" id="la-modal">
+      <div class="gp-modal" style="max-width:500px">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Apply for Leave</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('la-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="la-error" style="display:none;margin-bottom:12px;padding:10px 12px;background:var(--red-lt,#fef2f2);color:var(--red,#ef4444);border-radius:6px;font-size:13px"></div>
+          <div class="gp-field">
+            <div class="gp-label">Leave Type *</div>
+            <select class="gp-input" id="la-leave-type">
+              <option value="">Loading…</option>
+            </select>
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">From Date *</div>
+              <input class="gp-input" id="la-from-date" type="date">
+            </div>
+            <div class="gp-field" id="la-to-date-row">
+              <div class="gp-label">To Date *</div>
+              <input class="gp-input" id="la-to-date" type="date">
+            </div>
+          </div>
+          <div class="gp-field" style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+            <input type="checkbox" id="la-half-day" onchange="laToggleHalfDay()" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer">
+            <label for="la-half-day" style="font-size:13px;font-weight:500;color:var(--text);cursor:pointer;margin:0">Half Day</label>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Reason</div>
+            <textarea class="gp-input" id="la-reason" rows="3" placeholder="Optional – describe the reason for your leave…" style="resize:vertical;min-height:72px"></textarea>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('la-modal')">Cancel</button>
+          <button class="btn btn-primary" id="la-submit-btn" onclick="submitLeaveApp()">Submit Application</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Expense Claim Modal ───────────────────────── -->
+    <div class="gp-backdrop" id="ec-modal">
+      <div class="gp-modal" style="max-width:480px">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">New Expense Claim</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('ec-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="ec-error" style="display:none;margin-bottom:12px;padding:10px 12px;background:var(--red-lt,#fef2f2);color:var(--red,#ef4444);border-radius:6px;font-size:13px"></div>
+          <div class="gp-field">
+            <div class="gp-label">Expense Type *</div>
+            <select class="gp-input" id="ec-expense-type">
+              <option value="">Loading…</option>
+            </select>
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Expense Date *</div>
+              <input class="gp-input" id="ec-expense-date" type="date">
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Amount (₹) *</div>
+              <input class="gp-input" id="ec-amount" type="number" step="0.01" min="0.01" placeholder="0.00">
+            </div>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Purpose / Description</div>
+            <textarea class="gp-input" id="ec-description" rows="3" placeholder="Brief description of the expense…" style="resize:vertical;min-height:72px"></textarea>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('ec-modal')">Cancel</button>
+          <button class="btn btn-primary" id="ec-submit-btn" onclick="submitExpenseClaim()">Submit Claim</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ── Goal Detail Side Panel ─────────────────────── -->
     <div id="gp-detail-panel">
       <div class="gp-panel-hdr">
@@ -4383,10 +4485,10 @@ function fetchCalendar() {
 }
 
 function renderCalendar(data) {
-  const headsEl = document.getElementById("cal-heads");
-  const cellsEl = document.getElementById("cal-cells");
+  const gridEl = document.getElementById("cal-grid-main");
   const dayNames = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-  headsEl.innerHTML = dayNames.map(d => '<div class="cal-day-head">' + d + '</div>').join("");
+  // Headers and cells share one grid so columns always align
+  let html = dayNames.map(d => '<div class="cal-day-head" style="font-size:10px;font-weight:700;text-align:center;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;padding:4px 0">' + d + '</div>').join("");
 
   const attMap = {};
   (data.records || []).forEach(function(r) { attMap[r.attendance_date] = r; });
@@ -4409,8 +4511,7 @@ function renderCalendar(data) {
   let startDow = firstDay.getDay(); // 0=Sun
   startDow = startDow === 0 ? 6 : startDow - 1; // convert to Mon=0
 
-  let html = "";
-  for (let i = 0; i < startDow; i++) html += '<div class="cal-cell empty"></div>';
+  for (let i = 0; i < startDow; i++) html += '<div class="cal-cell empty" style="background:transparent;border:none"></div>';
 
   let present=0, absent=0, leaveCount=0, wfh=0;
 
@@ -4440,10 +4541,13 @@ function renderCalendar(data) {
     else if (isWeekend) { cls += " weekend"; }
     else if (!isFuture) { cls += " absent"; statusShort = "A"; absent++; }
 
-    html += '<div class="' + cls + '"><span class="cn">' + day + '</span>' + (statusShort ? '<span class="cs">' + statusShort + '</span>' : '') + '</div>';
+    html += '<div class="' + cls + '" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:28px;border-radius:4px;font-size:11px;font-weight:500">'
+          + '<span class="cn" style="font-size:11px;font-weight:600;line-height:1">' + day + '</span>'
+          + (statusShort ? '<span class="cs" style="font-size:8px;margin-top:1px;font-weight:500">' + statusShort + '</span>' : '')
+          + '</div>';
   }
 
-  cellsEl.innerHTML = html;
+  gridEl.innerHTML = html;
   document.getElementById("att-present").textContent = present;
   document.getElementById("att-absent").textContent = absent;
   document.getElementById("att-leave").textContent = leaveCount;
@@ -4462,6 +4566,83 @@ function loadLeaves() {
     if (pending > 0) { badge.textContent = pending; badge.style.display = "flex"; }
     else { badge.style.display = "none"; }
   }, function() { toast("Failed to load leave data", "err"); });
+}
+
+function openLeaveModal() {
+  var sel = document.getElementById("la-leave-type");
+  sel.innerHTML = '<option value="">Loading…</option>';
+  document.getElementById("la-from-date").value = "";
+  document.getElementById("la-to-date").value = "";
+  document.getElementById("la-half-day").checked = false;
+  document.getElementById("la-reason").value = "";
+  document.getElementById("la-to-date-row").style.display = "";
+  pfClearErr("la-error");
+  var btn = document.getElementById("la-submit-btn");
+  btn.disabled = false;
+  btn.textContent = "Submit Application";
+
+  api("get_leave_summary", {}, function(data) {
+    var balances = data.balances || [];
+    if (!balances.length) {
+      sel.innerHTML = '<option value="">No leave types allocated for this period</option>';
+      return;
+    }
+    sel.innerHTML = '<option value="">Select leave type…</option>' +
+      balances.map(function(b) {
+        return '<option value="' + gpEsc(b.leave_type) + '">' +
+               gpEsc(b.leave_type) + ' (' + b.balance + ' day' + (b.balance === 1 ? '' : 's') + ' left)</option>';
+      }).join("");
+  }, function() {
+    sel.innerHTML = '<option value="">Could not load leave types</option>';
+  });
+
+  pfOpenModal("la-modal");
+}
+
+function laToggleHalfDay() {
+  var hd = document.getElementById("la-half-day").checked;
+  document.getElementById("la-to-date-row").style.display = hd ? "none" : "";
+  if (hd) {
+    var fd = document.getElementById("la-from-date").value;
+    document.getElementById("la-to-date").value = fd;
+  }
+}
+
+function submitLeaveApp() {
+  pfClearErr("la-error");
+  var lt  = document.getElementById("la-leave-type").value;
+  var fd  = document.getElementById("la-from-date").value;
+  var hd  = document.getElementById("la-half-day").checked;
+  var td  = hd ? fd : document.getElementById("la-to-date").value;
+  var rsn = document.getElementById("la-reason").value.trim();
+
+  if (!lt)           { pfShowErr("la-error", "Please select a leave type."); return; }
+  if (!fd)           { pfShowErr("la-error", "Please enter a from date."); return; }
+  if (!hd && !td)    { pfShowErr("la-error", "Please enter a to date."); return; }
+  if (!hd && td < fd){ pfShowErr("la-error", "To date must be on or after from date."); return; }
+
+  var btn = document.getElementById("la-submit-btn");
+  btn.disabled = true;
+  btn.textContent = "Submitting…";
+
+  api("apply_leave", {
+    leave_type: lt,
+    from_date: fd,
+    to_date: td,
+    half_day: hd ? 1 : 0,
+    half_day_date: hd ? fd : null,
+    reason: rsn || null,
+  }, function() {
+    pfCloseModal("la-modal");
+    toast("Leave application submitted.", "ok");
+    loadLeaves();
+  }, function(r) {
+    var msg = "Failed to submit leave application.";
+    try { msg = JSON.parse(JSON.parse(r._server_messages)[0]).message; } catch(e) {}
+    pfShowErr("la-error", msg);
+    btn.disabled = false;
+    btn.textContent = "Submit Application";
+  });
 }
 
 function renderLeaveRings(balances) {
@@ -4512,6 +4693,72 @@ function loadExpenses() {
       return '<div class="expense-row"><div class="expense-desc"><div class="expense-name">' + (c.remark || c.name) + '</div><div class="expense-date">' + fmtDate(c.posting_date) + '</div></div>' + expenseStatusBadge(c.approval_status || c.status) + '<div class="expense-amount">' + fmtMoney(c.total_claimed_amount) + '</div></div>';
     }).join("") + '</div>';
   }, function() { toast("Failed to load expenses", "err"); });
+}
+
+function openExpenseModal() {
+  var sel = document.getElementById("ec-expense-type");
+  sel.innerHTML = '<option value="">Loading…</option>';
+  document.getElementById("ec-amount").value = "";
+  document.getElementById("ec-description").value = "";
+  pfClearErr("ec-error");
+  var btn = document.getElementById("ec-submit-btn");
+  btn.disabled = false;
+  btn.textContent = "Submit Claim";
+
+  // Default to today
+  var d = new Date();
+  document.getElementById("ec-expense-date").value = d.getFullYear() + "-" +
+    String(d.getMonth() + 1).padStart(2, "0") + "-" +
+    String(d.getDate()).padStart(2, "0");
+
+  api("get_expense_types", {}, function(types) {
+    if (!types || !types.length) {
+      sel.innerHTML = '<option value="">No expense types configured</option>';
+      return;
+    }
+    sel.innerHTML = '<option value="">Select expense type…</option>' +
+      types.map(function(t) {
+        return '<option value="' + gpEsc(t.name) + '">' + gpEsc(t.name) + '</option>';
+      }).join("");
+  }, function() {
+    sel.innerHTML = '<option value="">Could not load expense types</option>';
+  });
+
+  pfOpenModal("ec-modal");
+}
+
+function submitExpenseClaim() {
+  pfClearErr("ec-error");
+  var et   = document.getElementById("ec-expense-type").value;
+  var ed   = document.getElementById("ec-expense-date").value;
+  var amtS = document.getElementById("ec-amount").value;
+  var desc = document.getElementById("ec-description").value.trim();
+  var amt  = parseFloat(amtS);
+
+  if (!et)            { pfShowErr("ec-error", "Please select an expense type."); return; }
+  if (!ed)            { pfShowErr("ec-error", "Please enter the expense date."); return; }
+  if (!amtS || !(amt > 0)) { pfShowErr("ec-error", "Please enter a valid amount greater than zero."); return; }
+
+  var btn = document.getElementById("ec-submit-btn");
+  btn.disabled = true;
+  btn.textContent = "Submitting…";
+
+  api("apply_expense_claim", {
+    expense_type: et,
+    expense_date: ed,
+    amount: amt,
+    description: desc || null,
+  }, function() {
+    pfCloseModal("ec-modal");
+    toast("Expense claim submitted.", "ok");
+    loadExpenses();
+  }, function(r) {
+    var msg = "Failed to submit expense claim.";
+    try { msg = JSON.parse(JSON.parse(r._server_messages)[0]).message; } catch(e) {}
+    pfShowErr("ec-error", msg);
+    btn.disabled = false;
+    btn.textContent = "Submit Claim";
+  });
 }
 
 /* ── SALARY ──────────────────────────────────────── */

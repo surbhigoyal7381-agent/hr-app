@@ -43,11 +43,12 @@ Deploy commands that require explicit approval before running:
 
 ---
 
-## 4. Code approach — no over-engineering
+## 4. Code approach — Frappe-first, no over-engineering
 
-- Exhaust existing Frappe mechanisms before writing new code.
+- **All changes must follow the Frappe framework** — use `frappe.get_doc`, `doc.insert`, `doc.submit`, `frappe.get_all`, `frappe.whitelist`, child-table patterns, `frappe.throw`, etc. Never bypass the ORM with raw SQL when an ORM equivalent exists.
+- **Reuse Frappe HR and ERPNext doctypes** — before creating any custom field or doctype, check whether Frappe HR or ERPNext already provides it. Examples: `Leave Application`, `Expense Claim`, `Expense Claim Detail`, `Leave Allocation`, `Salary Slip`, `Expense Claim Type`, `Leave Type`, `Employee`, `Shift Type`, `Attendance`. Use these; do not invent parallel structures.
 - Organisation-level config belongs in Frappe Global Defaults or HR Settings — not hardcoded logic.
-- Before proposing any change, ask: does Frappe already handle this? What is the cross-module impact?
+- Before proposing any change, ask: does Frappe HR or ERPNext already handle this? What is the cross-module impact?
 - Think from three personas: **CXO** (sees all companies), **HR Manager** (single/multi company), **Employee** (own company only).
 - No backwards-compatibility shims, no feature flags, no abstractions beyond what the task requires.
 

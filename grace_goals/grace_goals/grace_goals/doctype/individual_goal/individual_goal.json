@@ -5,7 +5,7 @@
  "engine": "InnoDB",
  "field_order": [
   "naming_series", "employee", "employee_name", "goal_name", "goal_type",
-  "goal_cascade", "parent_goal", "col_break_1", "target_value", "unit",
+  "goal_cascade", "parent_goal", "col_break_1", "target_value", "unit", "progress_mode",
   "start_date", "end_date", "status", "appraisal_cycle", "weightage",
   "col_break_flags", "is_extra_initiative", "company_value",
   "is_future_plan", "carry_over_from",
@@ -25,6 +25,7 @@
   {"fieldname": "col_break_1", "fieldtype": "Column Break"},
   {"fieldname": "target_value", "fieldtype": "Float", "label": "Target Value", "reqd": 1},
   {"fieldname": "unit", "fieldtype": "Data", "label": "Unit"},
+  {"fieldname": "progress_mode", "fieldtype": "Select", "label": "Progress Mode", "options": "Cumulative\nAbsolute", "default": "Cumulative", "description": "Cumulative: sums all approved entries. Absolute: uses the latest approved reading (e.g. Percent, Score)."},
   {"fieldname": "start_date", "fieldtype": "Date", "label": "Start Date", "reqd": 1},
   {"fieldname": "end_date", "fieldtype": "Date", "label": "End Date", "reqd": 1},
   {"fieldname": "status", "fieldtype": "Select", "label": "Status", "options": "Active\nCompleted\nCancelled", "default": "Active", "in_list_view": 1},

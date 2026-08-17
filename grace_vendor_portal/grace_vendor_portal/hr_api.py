@@ -1610,9 +1610,9 @@ def get_goals_portal_data():
 
 @frappe.whitelist()
 def submit_goal_evidence_portal(goal_id, evidence_type="Manual Entry",
-                                 extracted_order_count=None, extracted_amount=None,
-                                 extracted_date=None, extracted_customer=None,
-                                 evidence_file=None, raw_extracted_data=None):
+                                 value=None, extracted_date=None,
+                                 evidence_file=None, raw_extracted_data=None,
+                                 extracted_amount=None):
     """Submit evidence for an employee goal — portal-facing proxy with ownership check."""
     if not frappe.db.exists("DocType", "Individual Goal"):
         frappe.throw("Goals feature is not available on this instance")
@@ -1629,13 +1629,60 @@ def submit_goal_evidence_portal(goal_id, evidence_type="Manual Entry",
     return submit_goal_evidence(
         goal_id=goal_id,
         evidence_type=evidence_type,
-        extracted_order_count=extracted_order_count,
-        extracted_amount=extracted_amount,
+        value=value or extracted_amount,
         extracted_date=extracted_date,
-        extracted_customer=extracted_customer,
         evidence_file=evidence_file or None,
         raw_extracted_data=raw_extracted_data or None,
     )
+
+
+@frappe.whitelist()
+def get_pending_approvals():
+    from grace_goals.api.goal_api import get_pending_approvals as _gpa
+    return _gpa()
+
+
+@frappe.whitelist()
+def approve_goal_evidence(goal_name, evidence_idx):
+    from grace_goals.controllers.evidence import approve_evidence
+    return approve_evidence(goal_name, evidence_idx)
+
+
+@frappe.whitelist()
+def reject_goal_evidence(goal_name, evidence_idx, reason=""):
+    from grace_goals.controllers.evidence import reject_evidence
+    return reject_evidence(goal_name, evidence_idx, reason)
+
+
+@frappe.whitelist()
+def approve_kpi_progress(kpi_name, log_idx, comment=None):
+    from grace_goals.api.goal_api import approve_kpi_progress as _akp
+    return _akp(kpi_name, log_idx, comment)
+
+
+@frappe.whitelist()
+def reject_kpi_progress(kpi_name, log_idx, comment=None):
+    from grace_goals.api.goal_api import reject_kpi_progress as _rkp
+    return _rkp(kpi_name, log_idx, comment)
+
+
+@frappe.whitelist()
+def get_org_setting(key):
+    _require_hr()
+    return frappe.db.get_default(key)
+
+
+@frappe.whitelist()
+def set_org_setting(key, value):
+    _require_hr()
+    frappe.db.set_default(key, value)
+    frappe.db.commit()
+    return {"ok": True}
+
+
+def _require_hr():
+    if not (frappe.has_role("HR Manager") or frappe.has_role("System Manager")):
+        frappe.throw("Not permitted", frappe.PermissionError)
 
 
 @frappe.whitelist()

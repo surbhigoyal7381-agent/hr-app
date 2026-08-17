@@ -2341,6 +2341,12 @@ window._EMP_USER  = "{{ frappe.session.user }}";
           <div class="empty-state"><div class="empty-state-text">Loading...</div></div>
         </div>
 
+        <!-- Pending progress approvals (goals + KPIs) -->
+        <div class="sec-divider">Pending Progress Approvals</div>
+        <div id="team-progress-approvals">
+          <div class="empty-state"><div class="empty-state-text">Loading…</div></div>
+        </div>
+
         <!-- Month leaves -->
         <div class="sec-divider">Team Leaves This Month</div>
         <div class="tbl-wrap">
@@ -2906,7 +2912,7 @@ window._EMP_USER  = "{{ frappe.session.user }}";
         </div>
 
         <!-- Rating Scales -->
-        <div class="pf-card">
+        <div class="pf-card" style="margin-bottom:24px">
           <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
             <div>
               <div style="font-weight:600;font-size:15px">Rating Scales</div>
@@ -2915,6 +2921,17 @@ window._EMP_USER  = "{{ frappe.session.user }}";
             <button class="btn btn-primary btn-sm" onclick="rsOpenModal(null)">+ Add Scale</button>
           </div>
           <div id="org-scales-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
+        </div>
+
+        <!-- Evidence Approval -->
+        <div class="pf-card">
+          <div style="font-weight:600;font-size:15px;margin-bottom:4px">Evidence Approval</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:16px">Controls whether goal and KPI progress entries need manager approval before being counted.</div>
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+            <input type="checkbox" id="org-auto-approve" style="width:16px;height:16px;accent-color:var(--primary)" onchange="orgSaveAutoApprove(this.checked)">
+            <span style="font-size:13.5px">Auto-approve all evidence submissions (no manager approval required)</span>
+          </label>
+          <div style="font-size:11.5px;color:var(--text3);margin-top:8px">When off, every progress entry is sent to the employee's manager for approval before it counts towards the goal or KPI.</div>
         </div>
       </div>
 
@@ -5711,6 +5728,11 @@ function loadTeamPanel() {
     }
     renderTeamData(d);
   }, function() { toast("Failed to load team data", "err"); });
+  gpFetch("alvox_portal.hr_api.get_pending_approvals", {}).then(function(r) {
+    renderProgressApprovals(r || {});
+  }).catch(function() {
+    pfSetHtml("team-progress-approvals", "<div class=\"empty-state\"><div class=\"empty-state-text\">Could not load progress approvals.</div></div>");
+  });
 }
 
 function renderTeamData(d) {
@@ -5774,6 +5796,69 @@ function renderTeamData(d) {
   }
   tcCont.innerHTML = '<div class="tc-card"><div class="tc-card-hdr">Team Comparison — This Month</div><div class="tc-card-body" style="color:var(--text3);font-size:13px;padding:20px;text-align:center">Loading…</div></div>';
   loadTeamComparison(team);
+}
+
+function renderProgressApprovals(r) {
+  var goals = r.goals || [];
+  var kpis  = r.kpis  || [];
+  var rows  = [];
+  goals.forEach(function(g) {
+    var ev = g.evidence || {};
+    rows.push(
+      '<div class="appr-card" id="pa-goal-' + gpEsc(g.goal_name) + '-' + ev.idx + '">' +
+        '<div class="appr-info"><div class="appr-avatar">' + initials(g.employee_name) + '</div>' +
+        '<div><div class="appr-name">' + gpEsc(g.employee_name) + '</div>' +
+        '<div class="appr-detail">Goal: <strong>' + gpEsc(g.goal_name) + '</strong>' +
+        (ev.value ? ' &nbsp;·&nbsp; Value: ' + Number(ev.value).toLocaleString("en-IN", {maximumFractionDigits: 2}) + (g.unit ? ' ' + g.unit : '') : '') +
+        (ev.extracted_date ? ' &nbsp;·&nbsp; ' + fmtDate(ev.extracted_date) : '') +
+        '</div></div></div>' +
+        '<div class="appr-actions">' +
+          '<button class="btn btn-green btn-sm" onclick="actionProgressApproval(\'goal\',\'' + gpEsc(g.name) + '\',' + ev.idx + ',\'approve\',this)">✓ Approve</button>' +
+          '<button class="btn btn-danger btn-sm" onclick="actionProgressApproval(\'goal\',\'' + gpEsc(g.name) + '\',' + ev.idx + ',\'reject\',this)">✕ Reject</button>' +
+        '</div>' +
+      '</div>'
+    );
+  });
+  kpis.forEach(function(k) {
+    var log = k.log || {};
+    rows.push(
+      '<div class="appr-card">' +
+        '<div class="appr-info"><div class="appr-avatar">' + initials(k.employee_name) + '</div>' +
+        '<div><div class="appr-name">' + gpEsc(k.employee_name) + '</div>' +
+        '<div class="appr-detail">KPI: <strong>' + gpEsc(k.kpi_name) + '</strong>' +
+        (log.value != null ? ' &nbsp;·&nbsp; Value: ' + Number(log.value).toLocaleString("en-IN", {maximumFractionDigits: 2}) + (k.unit ? ' ' + k.unit : '') : '') +
+        (log.log_date ? ' &nbsp;·&nbsp; ' + fmtDate(log.log_date) : '') +
+        (log.note ? '<br><span style="color:var(--text3)">' + gpEsc(log.note) + '</span>' : '') +
+        '</div></div></div>' +
+        '<div class="appr-actions">' +
+          '<button class="btn btn-green btn-sm" onclick="actionProgressApproval(\'kpi\',\'' + gpEsc(k.name) + '\',' + log.idx + ',\'approve\',this)">✓ Approve</button>' +
+          '<button class="btn btn-danger btn-sm" onclick="actionProgressApproval(\'kpi\',\'' + gpEsc(k.name) + '\',' + log.idx + ',\'reject\',this)">✕ Reject</button>' +
+        '</div>' +
+      '</div>'
+    );
+  });
+  pfSetHtml("team-progress-approvals",
+    rows.length
+      ? rows.join("")
+      : '<div class="empty-state"><div class="empty-state-text">No pending progress approvals.</div></div>'
+  );
+}
+
+function actionProgressApproval(type, docName, idx, action, btn) {
+  if (btn) { btn.disabled = true; }
+  var apiName = "alvox_portal.hr_api." + (type === "goal"
+    ? (action === "approve" ? "approve_goal_evidence" : "reject_goal_evidence")
+    : (action === "approve" ? "approve_kpi_progress" : "reject_kpi_progress"));
+  var params = type === "goal"
+    ? {goal_name: docName, evidence_idx: idx}
+    : {kpi_name: docName, log_idx: idx};
+  gpFetch(apiName, params).then(function() {
+    toast(action === "approve" ? "Approved" : "Rejected", action === "approve" ? "ok" : "");
+    gpFetch("alvox_portal.hr_api.get_pending_approvals", {}).then(function(r) { renderProgressApprovals(r || {}); });
+  }).catch(function(e) {
+    if (btn) { btn.disabled = false; }
+    toast(e.message || "Action failed", "err");
+  });
 }
 
 function actionLeave(leaveId, action) {
@@ -6358,7 +6443,7 @@ function submitGoalEvidence(gid) {
     api("submit_goal_evidence_portal", {
       goal_id:            gid,
       evidence_type:      "Manual Entry",
-      extracted_amount:   amount  || null,
+      value:              amount  || null,
       extracted_date:     date,
       evidence_file:      fileUrl || null,
       raw_extracted_data: note    || null,
@@ -7503,7 +7588,7 @@ function deleteDrawerNote(noteId, empId) {
     function doSubmit(fileUrl) {
       api("submit_goal_evidence_portal", {
         goal_id: gid, evidence_type: "Manual Entry",
-        extracted_amount: amount || null,
+        value: amount || null,
         extracted_date: date,
         raw_extracted_data: note || null, evidence_file: fileUrl || null,
       }, function() {
@@ -12902,14 +12987,22 @@ function deleteDrawerNote(noteId, empId) {
       pf("get_company_values", {}),
       pf("get_leadership_principles", {}),
       pf("get_rating_scales", {}),
+      pf("get_org_setting", {key: "auto_approve_evidence"}),
     ]).then(function(res) {
       orgRenderValues(res[0] || []);
       orgRenderPrinciples(res[1] || []);
       rsRenderScales(res[2] || []);
       _apsRatingScales = res[2] || [];
+      var chk = document.getElementById("org-auto-approve");
+      if (chk) chk.checked = (res[3] === "1" || res[3] === 1 || res[3] === true);
     }).catch(function(e) {
       pfSetHtml("org-values-body", "<div class=\"callout callout-warn\">Failed to load: " + gpEsc(e.message) + "</div>");
     });
+  };
+
+  window.orgSaveAutoApprove = function(enabled) {
+    pf("set_org_setting", {key: "auto_approve_evidence", value: enabled ? "1" : "0"})
+      .catch(function(e) { toast("Failed to save setting: " + e.message, "err"); });
   };
 
   window.orgRenderValues = function(values) {

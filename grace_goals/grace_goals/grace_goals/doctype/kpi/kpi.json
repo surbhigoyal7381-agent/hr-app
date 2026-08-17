@@ -17,6 +17,7 @@
   "status",
   "section_target",
   "unit",
+  "progress_mode",
   "direction",
   "baseline_value",
   "target_value",
@@ -119,6 +120,14 @@
    "fieldtype": "Select",
    "label": "Unit",
    "options": "Number\nPercent\nCurrency\nCrore\nLakh\nDays\nHours\nCases\nLitres\nScore\nGrams\nKilograms\nQuintals\nTonnes\nPounds"
+  },
+  {
+   "default": "Cumulative",
+   "description": "Cumulative: sums all approved log entries. Absolute: uses the latest approved reading (e.g. Percent, Score).",
+   "fieldname": "progress_mode",
+   "fieldtype": "Select",
+   "label": "Progress Mode",
+   "options": "Cumulative\nAbsolute"
   },
   {
    "default": "Higher is Better",

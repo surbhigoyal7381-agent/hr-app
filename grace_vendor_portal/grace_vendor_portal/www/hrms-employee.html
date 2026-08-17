@@ -12985,6 +12985,7 @@ function deleteDrawerNote(noteId, empId) {
   var _APS_PAGES = {
     "past-objectives":  {label: "Past Objectives & KPIs",      icon: "🎯"},
     "past-dev":         {label: "Past Development Goals",       icon: "📈"},
+    "leadership":       {label: "Leadership Principles",        icon: "⭐"},
     "future-objectives":{label: "Future Objectives & KPIs",     icon: "🏆"},
     "future-dev":       {label: "Future Development Goals",     icon: "🌱"},
     "manager-feedback": {label: "Manager's Feedback",           icon: "💬"},
@@ -13309,7 +13310,8 @@ function deleteDrawerNote(noteId, empId) {
         '<div class="aps-section-lbl">Ratings</div>' +
         toggle("self_rating", "Employee Self-Rating", "Allow each employee to rate their own performance on each objective", true) +
         toggle("manager_rating", "Manager Rating", "Allow the manager to rate each objective individually", true) +
-        toggle("overall_manager_rating", "Overall Manager Rating", "Collect one summary rating from the manager for the whole section", false);
+        toggle("overall_manager_rating", "Overall Manager Rating", "Collect one summary rating from the manager for the whole section", true) +
+        scaleFieldFor("objectives_rating_scale", "Rating Scale for Objectives & KPIs");
     } else if (key === "past-dev") {
       html += '<div class="aps-section-lbl">Review Period</div>' +
         '<div class="gp-row2">' + dateField("period_from","From",cycleDates.start) + dateField("period_to","To",cycleDates.end) + '</div>' +
@@ -13328,6 +13330,15 @@ function deleteDrawerNote(noteId, empId) {
         '<div class="aps-section-lbl">Options</div>' +
         toggle("employee_goals", "Employee-Defined Goals", "Let employees set their own development goals for the next period", true) +
         toggle("manager_input", "Manager Input", "Allow managers to add recommended development areas", true);
+    } else if (key === "leadership") {
+      html += '<div class="aps-section-lbl">Review Period</div>' +
+        '<div class="gp-row2">' + dateField("period_from","From",cycleDates.start) + dateField("period_to","To",cycleDates.end) + '</div>' +
+        '<div class="aps-section-lbl">Rating Scale</div>' +
+        scaleFieldFor("leadership_rating_scale", "Rating Scale for Leadership Principles") +
+        '<div class="aps-section-lbl">Ratings</div>' +
+        toggle("employee_self_rating", "Employee Self-Rating", "Employee rates themselves on each leadership principle", true) +
+        toggle("manager_rating", "Manager Rating", "Manager rates the employee on each leadership principle", true) +
+        toggle("show_comments", "Comments", "Allow free-text comments alongside each rating", true);
     } else if (key === "manager-feedback") {
       html += '<div class="aps-section-lbl">Sections to Include</div>' +
         toggle("show_strengths", "Strengths", "Manager describes what the employee does well", true) +

@@ -187,15 +187,26 @@ def get_employee_dashboard():
         ignore_permissions=True,
     )
 
-    # ── Upcoming holidays ─────────────────────────────────────────────────
-    holidays = frappe.get_all(
+    # ── Upcoming holidays (full year, no Sundays, deduped across lists) ──
+    _mo_start  = get_first_day(td)
+    _year_end  = "{0}-12-31".format(getdate(td).year)
+    _raw_hols  = frappe.get_all(
         "Holiday",
-        filters={"holiday_date": ["between", [td, add_days(td, 30)]]},
+        filters={
+            "holiday_date": ["between", [_mo_start, _year_end]],
+            "weekly_off":   0,
+        },
         fields=["holiday_date", "description"],
         order_by="holiday_date asc",
-        limit=5,
+        limit=200,
         ignore_permissions=True,
     )
+    _seen = set()
+    holidays = []
+    for _h in _raw_hols:
+        if _h.holiday_date not in _seen:
+            _seen.add(_h.holiday_date)
+            holidays.append(_h)
 
     return {
         "employee":        emp,

@@ -2092,7 +2092,11 @@ window._EMP_USER  = "{{ frappe.session.user }}";
             <div class="card" id="home-holidays-card">
               <div class="card-header">
                 <span>🎉</span>
-                <span class="card-title" style="margin-left:6px">Upcoming Holidays</span>
+                <span class="card-title" style="margin-left:6px" id="hol-month-label">Upcoming Holidays</span>
+                <div id="hol-nav" style="margin-left:auto;display:none;align-items:center;gap:2px">
+                  <button id="hol-prev" onclick="holNavMonth(-1)" style="background:none;border:none;cursor:pointer;padding:4px 6px;font-size:14px;color:var(--text3);line-height:1" title="Previous month">&#8249;</button>
+                  <button id="hol-next" onclick="holNavMonth(1)"  style="background:none;border:none;cursor:pointer;padding:4px 6px;font-size:14px;color:var(--text3);line-height:1" title="Next month">&#8250;</button>
+                </div>
               </div>
               <div class="card-body">
                 <div id="holidays-list"><div class="empty-state"><div class="empty-state-text">Loading&hellip;</div></div></div>
@@ -4454,17 +4458,58 @@ function renderTimeline(checkins) {
   api("get_portal_activity", {days: 7}, function(d) { renderActivityFeed(d.activities || []); });
 }
 
+/* ── Holiday month-navigator state ──────────────────── */
+var _holAll = [];           // full deduped list for the year
+var _holYear = 0;
+var _holMonth = 0;          // 0-indexed month currently displayed
+
 function renderHolidays(holidays) {
-  const el = document.getElementById("holidays-list");
-  if (!holidays.length) {
-    el.innerHTML = '<div class="empty-state"><div class="empty-state-text">No upcoming holidays in the next 30 days.</div></div>';
+  _holAll = holidays;
+  var now = new Date();
+  _holYear  = now.getFullYear();
+  _holMonth = now.getMonth();
+
+  var nav = document.getElementById("hol-nav");
+  if (nav) nav.style.display = holidays.length ? "flex" : "none";
+
+  _renderHolMonth();
+}
+
+function _renderHolMonth() {
+  var el  = document.getElementById("holidays-list");
+  var lbl = document.getElementById("hol-month-label");
+  var prev = document.getElementById("hol-prev");
+  var next = document.getElementById("hol-next");
+  var MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  var MONS   = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+  if (lbl) lbl.textContent = MONTHS[_holMonth] + " " + _holYear + " Holidays";
+
+  // Dim prev if already at first available month, next if at Dec
+  var firstHolDate = _holAll.length ? new Date(_holAll[0].holiday_date + "T00:00:00") : new Date();
+  if (prev) prev.style.opacity = (_holYear === firstHolDate.getFullYear() && _holMonth <= firstHolDate.getMonth()) ? "0.3" : "1";
+  if (next) next.style.opacity = _holMonth >= 11 ? "0.3" : "1";
+
+  var filtered = _holAll.filter(function(h) {
+    var d = new Date(h.holiday_date + "T00:00:00");
+    return d.getFullYear() === _holYear && d.getMonth() === _holMonth;
+  });
+
+  if (!filtered.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-state-text">No public holidays in ' + MONTHS[_holMonth] + '.</div></div>';
     return;
   }
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  el.innerHTML = holidays.slice(0,5).map(function(h) {
-    const d = new Date(h.holiday_date);
-    return '<div class="holiday-item"><div class="holiday-date-box"><div class="hd-day">' + d.getDate() + '</div><div class="hd-month">' + months[d.getMonth()] + '</div></div><div><div class="holiday-name">' + (h.description || "Holiday") + '</div></div></div>';
+  el.innerHTML = filtered.map(function(h) {
+    var d = new Date(h.holiday_date + "T00:00:00");
+    return '<div class="holiday-item"><div class="holiday-date-box"><div class="hd-day">' + d.getDate() + '</div><div class="hd-month">' + MONS[d.getMonth()] + '</div></div><div><div class="holiday-name">' + (h.description || "Holiday") + '</div></div></div>';
   }).join("");
+}
+
+function holNavMonth(delta) {
+  _holMonth += delta;
+  if (_holMonth < 0)  { _holYear--;  _holMonth = 11; }
+  if (_holMonth > 11) { _holYear++;  _holMonth = 0;  }
+  _renderHolMonth();
 }
 
 /* ── ATTENDANCE ──────────────────────────────────── */

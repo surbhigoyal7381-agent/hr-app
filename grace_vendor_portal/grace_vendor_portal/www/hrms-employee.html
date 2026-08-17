@@ -4203,6 +4203,11 @@ function switchPanel(name, triggerEl) {
   // Full-screen panels suppress body scroll; all others scroll to top
   var _fullscreen = ["scorecard", "pms-review", "mr-review"];
   if (_fullscreen.indexOf(name) !== -1) {
+    // Reset scroll BEFORE locking overflow — otherwise a scrolled Team panel
+    // leaves the body offset and the scorecard renders below the visible area
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
     document.body.classList.add("panel-fullscreen");
   } else {
     document.body.classList.remove("panel-fullscreen");
@@ -5143,7 +5148,9 @@ function openEmpScorecard(empId, color) {
   document.getElementById("sc-emp-name").textContent = "Loading…";
   document.getElementById("sc-emp-role").textContent = "";
   document.getElementById("sc-join-badge").textContent = "";
-  document.getElementById("sc-body").innerHTML = '<div style="padding:40px;text-align:center;color:var(--text3)"><div class="spinner" style="margin:0 auto 12px;border-color:var(--border);border-top-color:var(--primary)"></div>Loading scorecard…</div>';
+  var _scBodyEl = document.getElementById("sc-body");
+  _scBodyEl.scrollTop = 0;
+  _scBodyEl.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text3)"><div class="spinner" style="margin:0 auto 12px;border-color:var(--border);border-top-color:var(--primary)"></div>Loading scorecard…</div>';
   api("get_employee_scorecard", {employee_id: empId}, function(d) {
     renderScorecard(d, color);
   }, function(e) {

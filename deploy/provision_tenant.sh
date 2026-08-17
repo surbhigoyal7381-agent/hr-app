@@ -26,7 +26,7 @@ PLAN="${3:-starter}"
 
 # ── Config ─────────────────────────────────────────────────────────────────
 BASE_DOMAIN="${BASE_DOMAIN:-kinexus.in}"
-DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-changeme}"
+DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:?ERROR: DB_ROOT_PASSWORD must be set. Never fall back to a default — set it from the secret store.}"
 SUPPORT_EMAIL="${SUPPORT_EMAIL:-support@kinexus.in}"
 PRIMARY_COLOR="${PRIMARY_COLOR:-#1a7f5a}"
 

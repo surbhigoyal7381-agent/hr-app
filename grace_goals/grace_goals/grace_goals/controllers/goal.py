@@ -68,6 +68,7 @@ def on_submit_goal(doc, method=None):
 
 def recalculate_progress(goal_name):
     goal = frappe.get_doc("Individual Goal", goal_name)
+    # ignore_permissions: internal recalc after a permission-checked write; reads own child rows.
     approved = frappe.get_all(
         "Goal Evidence",
         filters={"parent": goal_name, "validation_status": "Approved"},
@@ -97,6 +98,7 @@ def recalculate_progress(goal_name):
 
 def recalculate_kpi_progress(kpi_name):
     kpi = frappe.get_doc("KPI", kpi_name)
+    # ignore_permissions: internal recalc after a permission-checked write; reads own child rows.
     approved = frappe.get_all(
         "KPI Progress Log",
         filters={"parent": kpi_name, "approval_status": "Approved"},
@@ -127,6 +129,7 @@ def recalculate_kpi_progress(kpi_name):
 def _aggregate_cascade(cascade_name):
     if not cascade_name:
         return
+    # ignore_permissions: aggregate across all goals in a cascade; called post-save by system.
     goals = frappe.get_all(
         "Individual Goal",
         filters={"goal_cascade": cascade_name, "docstatus": ["!=", 2]},

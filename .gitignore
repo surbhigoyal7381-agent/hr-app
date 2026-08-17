@@ -30,6 +30,9 @@ deploy/envs/*.env
 deploy/compose/.image.env
 backups/
 
+# Claude Code agent working directory (worktrees, session data)
+.claude/
+
 # Logs
 *debug.log
 branch_structure.json

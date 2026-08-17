@@ -219,6 +219,7 @@ def get_pending_approvals(employee_id=None):
     if not me_employee:
         return {"goals": [], "kpis": []}
 
+    # ignore_permissions: caller already verified via me_employee lookup; reading org structure data only.
     direct_reports = frappe.get_all(
         "Employee",
         filters={"reports_to": me_employee, "status": "Active"},
@@ -230,6 +231,7 @@ def get_pending_approvals(employee_id=None):
 
     pending_goals = []
     for emp in direct_reports:
+        # ignore_permissions: scope limited to caller's direct reports (verified above).
         goals = frappe.get_all(
             "Individual Goal",
             filters={"employee": emp, "docstatus": ["!=", 2]},
@@ -237,6 +239,7 @@ def get_pending_approvals(employee_id=None):
             ignore_permissions=True,
         )
         for g in goals:
+            # ignore_permissions: child table of a doc already in scope.
             evidence = frappe.get_all(
                 "Goal Evidence",
                 filters={"parent": g["name"], "validation_status": "Pending"},
@@ -248,6 +251,7 @@ def get_pending_approvals(employee_id=None):
 
     pending_kpis = []
     for emp in direct_reports:
+        # ignore_permissions: scope limited to caller's direct reports (verified above).
         kpis = frappe.get_all(
             "KPI",
             filters={"employee": emp, "docstatus": ["!=", 2]},
@@ -255,6 +259,7 @@ def get_pending_approvals(employee_id=None):
             ignore_permissions=True,
         )
         for k in kpis:
+            # ignore_permissions: child table of a doc already in scope.
             logs = frappe.get_all(
                 "KPI Progress Log",
                 filters={"parent": k["name"], "approval_status": "Pending"},

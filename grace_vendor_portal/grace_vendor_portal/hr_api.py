@@ -279,6 +279,7 @@ def get_manager_dashboard():
     # Who is on leave today
     on_leave_today = []
     if team_ids:
+        # .format() only inserts "%s" placeholders — no user data in the format string; safe.
         on_leave_today = frappe.db.sql("""
             SELECT employee, employee_name, leave_type
             FROM `tabLeave Application`
@@ -821,6 +822,7 @@ def get_team_scorecard():
     # Latest appraisal score per team member
     score_by_emp = {}
     if frappe.db.exists("DocType", "Grace Appraisal Extension"):
+        # .format() only inserts "%s" placeholders — no user data in the format string; safe.
         placeholders = ",".join(["%s"] * len(emp_ids))
         rows = frappe.db.sql("""
             SELECT ae.employee, ae.overall_rating,

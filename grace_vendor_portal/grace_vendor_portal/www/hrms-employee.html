@@ -6052,10 +6052,8 @@ function renderGoalDrawer(g, casc, isOwner, canEdit) {
     ? evidence.map(function(ev) {
         const vs    = ev.validation_status || "Pending";
         const parts = [ev.evidence_type];
-        if (ev.extracted_date)        parts.push(fmtDate(ev.extracted_date));
-        if (ev.extracted_order_count) parts.push(ev.extracted_order_count + " orders");
-        if (ev.extracted_amount)      parts.push(fmtMoney(ev.extracted_amount));
-        if (ev.extracted_customer)    parts.push(ev.extracted_customer);
+        if (ev.extracted_date)   parts.push(fmtDate(ev.extracted_date));
+        if (ev.extracted_amount) parts.push(parseFloat(ev.extracted_amount).toLocaleString("en-IN", {maximumFractionDigits: 2}));
         var isImg = ev.evidence_file && /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(ev.evidence_file);
         const fileHtml = ev.evidence_file
           ? (isImg
@@ -6081,10 +6079,8 @@ function renderGoalDrawer(g, casc, isOwner, canEdit) {
     ? '<div style="margin-top:14px">' +
       '<button class="btn btn-outline btn-sm" id="ev-toggle-' + gid + '" onclick="toggleGoalEvidenceForm(\'' + gid + '\')">+ Submit Evidence</button>' +
       '<div id="ev-form-' + gid + '" style="display:none;margin-top:14px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:16px">' +
-      '<div class="form-row"><div class="form-group"><label class="form-label">Amount (₹)</label><input class="form-control" type="number" id="ev-amount-' + gid + '" placeholder="e.g. 50000" min="0"></div>' +
-      '<div class="form-group"><label class="form-label">Order Count</label><input class="form-control" type="number" id="ev-orders-' + gid + '" placeholder="e.g. 10" min="0"></div></div>' +
-      '<div class="form-row"><div class="form-group"><label class="form-label">Date *</label><input class="form-control" type="date" id="ev-date-' + gid + '"></div>' +
-      '<div class="form-group"><label class="form-label">Customer</label><input class="form-control" type="text" id="ev-customer-' + gid + '" placeholder="Optional"></div></div>' +
+      '<div class="form-row"><div class="form-group"><label class="form-label">Value / Progress' + (g.unit ? ' (' + g.unit + ')' : '') + '</label><input class="form-control" type="number" id="ev-amount-' + gid + '" placeholder="e.g. 75" min="0" step="any"></div>' +
+      '<div class="form-group"><label class="form-label">Date *</label><input class="form-control" type="date" id="ev-date-' + gid + '"></div></div>' +
       '<div class="form-group"><label class="form-label">Note / Description</label><input class="form-control" type="text" id="ev-note-' + gid + '" placeholder="Optional details"></div>' +
       '<div class="form-group"><label class="form-label">Attach Image or File</label>' +
       '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;border:1.5px dashed var(--border);border-radius:var(--r-sm);padding:10px 14px;background:var(--surface);transition:border-color .2s" id="ev-file-lbl-' + gid + '" onclick="document.getElementById(\'ev-file-' + gid + '\').click()">' +
@@ -6344,17 +6340,15 @@ function evFileChanged(gid) {
 }
 
 function submitGoalEvidence(gid) {
-  var amount  = (document.getElementById("ev-amount-"   + gid) || {}).value || "";
-  var orders  = (document.getElementById("ev-orders-"   + gid) || {}).value || "";
-  var date    = (document.getElementById("ev-date-"     + gid) || {}).value || "";
-  var cust    = (document.getElementById("ev-customer-" + gid) || {}).value || "";
-  var note    = (document.getElementById("ev-note-"     + gid) || {}).value || "";
+  var amount  = (document.getElementById("ev-amount-" + gid) || {}).value || "";
+  var date    = (document.getElementById("ev-date-"   + gid) || {}).value || "";
+  var note    = (document.getElementById("ev-note-"   + gid) || {}).value || "";
   var fileEl  = document.getElementById("ev-file-" + gid);
   var hasFile = fileEl && fileEl.files && fileEl.files.length > 0;
 
   if (!date) { toast("Please select a date", "err"); return; }
-  if (!amount && !orders && !hasFile && !note) {
-    toast("Enter an amount, order count, note, or attach a file", "err"); return;
+  if (!amount && !hasFile && !note) {
+    toast("Enter a value, note, or attach a file", "err"); return;
   }
 
   var btn = document.getElementById("ev-submit-" + gid);
@@ -6362,14 +6356,12 @@ function submitGoalEvidence(gid) {
 
   function doSubmit(fileUrl) {
     api("submit_goal_evidence_portal", {
-      goal_id:               gid,
-      evidence_type:         "Manual Entry",
-      extracted_amount:      amount  || null,
-      extracted_order_count: orders  || null,
-      extracted_date:        date,
-      extracted_customer:    cust    || null,
-      evidence_file:         fileUrl || null,
-      raw_extracted_data:    note    || null,
+      goal_id:            gid,
+      evidence_type:      "Manual Entry",
+      extracted_amount:   amount  || null,
+      extracted_date:     date,
+      evidence_file:      fileUrl || null,
+      raw_extracted_data: note    || null,
     }, function() {
       toast("Evidence submitted — progress updated", "ok");
       closeGoalDrawer();
@@ -7399,10 +7391,8 @@ function deleteDrawerNote(noteId, empId) {
           evSec.style.display = "";
           var evForm = document.getElementById("gp-dp-ev-form");
           if (evForm) evForm.innerHTML =
-            '<div class="form-row"><div class="form-group"><label class="form-label">Amount (&#8377;)</label><input class="form-control" type="number" id="dp-ev-amount" placeholder="e.g. 50000" min="0"></div>' +
-            '<div class="form-group"><label class="form-label">Order Count</label><input class="form-control" type="number" id="dp-ev-orders" placeholder="e.g. 10" min="0"></div></div>' +
-            '<div class="form-row"><div class="form-group"><label class="form-label">Date *</label><input class="form-control" type="date" id="dp-ev-date"></div>' +
-            '<div class="form-group"><label class="form-label">Customer</label><input class="form-control" type="text" id="dp-ev-cust" placeholder="Optional"></div></div>' +
+            '<div class="form-row"><div class="form-group"><label class="form-label">Value / Progress' + (g.unit ? ' (' + g.unit + ')' : '') + '</label><input class="form-control" type="number" id="dp-ev-amount" placeholder="e.g. 75" min="0" step="any"></div>' +
+            '<div class="form-group"><label class="form-label">Date *</label><input class="form-control" type="date" id="dp-ev-date"></div></div>' +
             '<div class="form-group"><label class="form-label">Note</label><input class="form-control" type="text" id="dp-ev-note" placeholder="Optional"></div>' +
             '<div class="form-group"><label class="form-label">Attach Image or File</label>' +
             '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;border:1.5px dashed var(--border);border-radius:var(--r-sm);padding:9px 12px;background:var(--surface);transition:border-color .2s" onclick="document.getElementById(\'dp-ev-file\').click()">' +
@@ -7450,9 +7440,9 @@ function deleteDrawerNote(noteId, empId) {
           evEl.innerHTML = "<div class=\"gp-evidence-list\">" + g.evidence.map(function(e) {
             var vs = e.validation_status || "Pending";
             var vBadge = "<span class=\"badge b-" + vs.toLowerCase().replace(" ","-") + "\">" + gpEsc(vs) + "</span>";
-            var val = e.extracted_order_count
-              ? e.extracted_order_count + " orders"
-              : (e.extracted_amount ? "₹" + Number(e.extracted_amount).toLocaleString("en-IN") : "—");
+            var val = e.extracted_amount
+              ? Number(e.extracted_amount).toLocaleString("en-IN", {maximumFractionDigits: 2})
+              : "—";
             return "<div class=\"gp-evidence-row\">" +
               "<div class=\"gp-ev-type\">" + gpEsc(e.evidence_type || "Evidence") + "</div>" +
               "<div class=\"gp-ev-date\">" + gpFmtDate(e.extracted_date || e.upload_date) + "</div>" +
@@ -7501,22 +7491,20 @@ function deleteDrawerNote(noteId, empId) {
 
   window.gpSubmitPanelEvidence = function(gid) {
     var amount  = (document.getElementById("dp-ev-amount") || {}).value || "";
-    var orders  = (document.getElementById("dp-ev-orders") || {}).value || "";
     var date    = (document.getElementById("dp-ev-date")   || {}).value || "";
-    var cust    = (document.getElementById("dp-ev-cust")   || {}).value || "";
     var note    = (document.getElementById("dp-ev-note")   || {}).value || "";
     var fileEl  = document.getElementById("dp-ev-file");
     var hasFile = fileEl && fileEl.files && fileEl.files.length > 0;
     if (!date) { toast("Please select a date", "err"); return; }
-    if (!amount && !orders && !note && !hasFile) { toast("Enter an amount, order count, note, or attach a file", "err"); return; }
+    if (!amount && !note && !hasFile) { toast("Enter a value, note, or attach a file", "err"); return; }
     var btn = document.getElementById("dp-ev-btn");
     if (btn) { btn.disabled = true; btn.textContent = "Submitting..."; }
 
     function doSubmit(fileUrl) {
       api("submit_goal_evidence_portal", {
         goal_id: gid, evidence_type: "Manual Entry",
-        extracted_amount: amount || null, extracted_order_count: orders || null,
-        extracted_date: date, extracted_customer: cust || null,
+        extracted_amount: amount || null,
+        extracted_date: date,
         raw_extracted_data: note || null, evidence_file: fileUrl || null,
       }, function() {
         toast("Evidence submitted — progress updated", "ok");

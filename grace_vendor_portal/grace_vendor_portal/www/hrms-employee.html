@@ -1521,6 +1521,47 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
 @keyframes gp-toast-out{from{opacity:1}to{opacity:0;transform:translateX(16px)}}
 .gp-toast.gp-toast-out{animation:gp-toast-out .25s ease forwards}
 
+/* ── Update timeline ─────────────────────────────── */
+.upd-timeline{display:flex;flex-direction:column;gap:10px;margin-top:4px}
+.upd-entry{border:1px solid var(--border);border-radius:var(--r-sm);padding:12px 14px;background:var(--surface);position:relative}
+.upd-entry.pending{border-left:3px solid #f59e0b}
+.upd-entry.approved{border-left:3px solid #22c55e}
+.upd-entry.rejected{border-left:3px solid var(--danger,#e53935);opacity:.8}
+.upd-entry-hdr{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.upd-who{font-size:12px;font-weight:600;color:var(--text)}
+.upd-when{font-size:11px;color:var(--text3)}
+.upd-val{font-size:12px;font-weight:700;color:var(--primary);font-variant-numeric:tabular-nums;margin-left:auto}
+.upd-note{font-size:12.5px;color:var(--text2);margin-bottom:6px}
+.upd-chips{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.upd-chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 7px;border-radius:20px;font-weight:600}
+.upd-chip.pending{background:#fef3c7;color:#92400e}
+.upd-chip.approved{background:#dcfce7;color:#166534}
+.upd-chip.rejected{background:#fee2e2;color:#991b1b}
+.upd-ev-link{font-size:11px;color:var(--primary);text-decoration:none;display:inline-flex;align-items:center;gap:3px}
+.upd-ev-link:hover{text-decoration:underline}
+.upd-ev-missing{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#92400e;background:#fef3c7;padding:2px 7px;border-radius:20px}
+.upd-approve-row{display:flex;align-items:center;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
+.upd-approve-comment{flex:1;font-size:12px;padding:5px 9px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text);outline:none}
+.upd-approve-comment:focus{border-color:var(--primary)}
+.upd-btn-approve{font-size:11px;padding:4px 10px;border-radius:var(--r-sm);background:#22c55e;color:#fff;border:none;cursor:pointer;font-weight:600}
+.upd-btn-reject{font-size:11px;padding:4px 10px;border-radius:var(--r-sm);background:var(--danger,#e53935);color:#fff;border:none;cursor:pointer;font-weight:600}
+.upd-approved-by{font-size:11px;color:var(--text3);margin-top:4px}
+/* Notification panel */
+.notif-badge{position:absolute;top:2px;right:2px;min-width:16px;height:16px;background:#e53935;color:#fff;border-radius:10px;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 3px;pointer-events:none;display:none}
+.mob-notif{position:relative}
+.notif-panel{position:fixed;top:60px;right:12px;width:340px;max-width:calc(100vw - 24px);background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh3);z-index:2000;display:none;max-height:70vh;overflow-y:auto}
+.notif-panel.open{display:block}
+.notif-panel-hdr{padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;font-weight:700;color:var(--text);display:flex;align-items:center;justify-content:space-between}
+.notif-item{padding:11px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s}
+.notif-item:hover{background:var(--surface2)}
+.notif-item:last-child{border-bottom:none}
+.notif-item-title{font-size:12.5px;font-weight:600;color:var(--text);margin-bottom:2px}
+.notif-item-sub{font-size:11px;color:var(--text3)}
+.notif-empty{padding:24px 16px;text-align:center;font-size:12px;color:var(--text3)}
+/* Evidence upload zone */
+.ev-upload-zone{display:flex;align-items:center;gap:10px;cursor:pointer;border:1.5px dashed var(--border);border-radius:var(--r-sm);padding:9px 12px;background:var(--surface);transition:border-color .2s}
+.ev-upload-zone:hover{border-color:var(--primary)}
+
 /* ── Create goal modal ───────────────────────────── */
 .gp-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);z-index:1200;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto}
 .gp-backdrop.open{display:flex}
@@ -1995,8 +2036,17 @@ window._EMP_USER  = "{{ frappe.session.user }}";
         <span></span><span></span><span></span>
       </button>
       <div class="mob-brand">Grace <span>HR</span></div>
-      <div class="mob-notif" title="Notifications">
+      <div class="mob-notif" id="mob-notif-btn" title="Notifications" onclick="toggleNotifPanel(event)">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        <span class="notif-badge" id="notif-badge"></span>
+      </div>
+      <!-- Notification panel -->
+      <div id="notif-panel" class="notif-panel">
+        <div class="notif-panel-hdr">
+          <span>Pending Approvals</span>
+          <button onclick="document.getElementById('notif-panel').classList.remove('open')" style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--text3);line-height:1">&times;</button>
+        </div>
+        <div id="notif-panel-body"><div class="notif-empty">Loading…</div></div>
       </div>
       <div class="mob-avatar" id="mob-avatar" title="Profile">?</div>
     </header>
@@ -3237,13 +3287,25 @@ window._EMP_USER  = "{{ frappe.session.user }}";
             <div class="gp-hint" id="pf-log-hint"></div>
           </div>
           <div class="gp-field">
-            <div class="gp-label">Note</div>
+            <div class="gp-label">Comment <span style="font-weight:400;color:var(--text3)">(required)</span></div>
             <input class="gp-input" id="pf-log-note" placeholder="What changed since the last update?">
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Evidence <span style="font-weight:400;color:var(--text3)">(optional — updates without evidence will be flagged)</span></div>
+            <label class="ev-upload-zone" onclick="document.getElementById('pf-log-file').click()">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span id="pf-log-file-name" style="font-size:12px;color:var(--text3)">Click to attach image or document…</span>
+            </label>
+            <input type="file" id="pf-log-file" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" style="display:none" onchange="pfLogFileChanged()">
+          </div>
+          <div style="margin-top:18px">
+            <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Update History</div>
+            <div id="pf-log-history" class="upd-timeline"></div>
           </div>
         </div>
         <div class="gp-modal-footer">
           <button class="btn btn-outline" onclick="pfCloseModal('pf-log-modal')">Cancel</button>
-          <button class="btn btn-primary" onclick="pfSubmitLog()">Save Progress</button>
+          <button class="btn btn-primary" id="pf-log-submit-btn" onclick="pfSubmitLog()">Save Progress</button>
         </div>
       </div>
     </div>
@@ -6043,6 +6105,13 @@ function renderGoalDrawer(g, casc, isOwner, canEdit) {
     '<div class="ed-section-title">Evidence (' + evidence.length + ')</div>' +
     evHtml + submitHtml +
     '</div>' +
+    // Progress Updates
+    '<div class="ed-section">' +
+    '<div class="ed-section-title" style="display:flex;align-items:center;justify-content:space-between">Progress Updates' +
+    (canSubmit ? '<button class="btn btn-outline btn-sm" onclick="gpOpenGoalLogModal(\'' + gid + '\')">+ Log Update</button>' : '') +
+    '</div>' +
+    '<div id="gd-upd-history-' + gid + '" class="upd-timeline"><div style="color:var(--text3);font-size:12px">Loading…</div></div>' +
+    '</div>' +
     // Comments
     '<div class="ed-section">' +
     '<div class="ed-section-title">Comments</div>' +
@@ -6052,8 +6121,9 @@ function renderGoalDrawer(g, casc, isOwner, canEdit) {
     '<button class="btn btn-primary btn-sm" onclick="addGoalComment(\'' + gid + '\')">Post</button>' +
     '</div></div>';
 
-  // Load comments async
+  // Load comments and update history async
   loadGoalComments(gid);
+  loadGoalUpdateHistory(gid);
 }
 
 function loadGoalComments(goalId) {
@@ -6096,6 +6166,110 @@ function addGoalComment(goalId) {
     toast((e && e.message) || "Failed to post comment", "err");
   });
 }
+
+function loadGoalUpdateHistory(goalId, focusRow) {
+  window.gpFetch("alvox_portal.goals_api.get_goal_update_log", {goal_id: goalId}).then(function(rows) {
+    var el = document.getElementById("gd-upd-history-" + goalId);
+    if (!el) return;
+    if (window.renderUpdateTimeline) window.renderUpdateTimeline(rows, "gd-upd-history-" + goalId, "Individual Goal", goalId);
+    if (focusRow) {
+      var r = document.getElementById("upd-row-" + focusRow);
+      if (r) r.scrollIntoView({behavior:"smooth", block:"center"});
+    }
+  }).catch(function() {
+    var el = document.getElementById("gd-upd-history-" + goalId);
+    if (el) el.innerHTML = "<div style=\"color:var(--text3);font-size:12px\">Could not load history.</div>";
+  });
+}
+
+/* Goal log modal — mirrors the KPI log modal but targets Goals API */
+var _gdLogGoalId = null;
+var _gdLogModalEl = null;
+
+window.gpOpenGoalLogModal = function(goalId) {
+  _gdLogGoalId = goalId;
+  if (!_gdLogModalEl) {
+    _gdLogModalEl = document.createElement("div");
+    _gdLogModalEl.className = "gp-backdrop";
+    _gdLogModalEl.id = "gp-goal-log-modal";
+    _gdLogModalEl.innerHTML =
+      '<div class="gp-modal">' +
+        '<div class="gp-modal-hdr">' +
+          '<div class="gp-modal-title">Log Goal Update</div>' +
+          '<button class="gp-modal-close" onclick="gpCloseGoalLogModal()">&times;</button>' +
+        '</div>' +
+        '<div class="gp-modal-body">' +
+          '<div class="gp-error" id="gp-goal-log-error"></div>' +
+          '<div class="gp-field">' +
+            '<div class="gp-label">New Progress Value *</div>' +
+            '<input class="gp-input" id="gp-goal-log-value" type="number" step="any" placeholder="e.g. 75">' +
+          '</div>' +
+          '<div class="gp-field">' +
+            '<div class="gp-label">Comment <span style="font-weight:400;color:var(--text3)">(required)</span></div>' +
+            '<input class="gp-input" id="gp-goal-log-note" placeholder="What changed since the last update?">' +
+          '</div>' +
+          '<div class="gp-field">' +
+            '<div class="gp-label">Evidence <span style="font-weight:400;color:var(--text3)">(optional)</span></div>' +
+            '<label class="ev-upload-zone" onclick="document.getElementById(\'gp-goal-log-file\').click()">' +
+              '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>' +
+              '<span id="gp-goal-log-file-name" style="font-size:12px;color:var(--text3)">Click to attach image or document…</span>' +
+            '</label>' +
+            '<input type="file" id="gp-goal-log-file" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" style="display:none" onchange="document.getElementById(\'gp-goal-log-file-name\').textContent=this.files[0]?this.files[0].name:\'Click to attach image or document…\'">' +
+          '</div>' +
+        '</div>' +
+        '<div class="gp-modal-footer">' +
+          '<button class="btn btn-outline" onclick="gpCloseGoalLogModal()">Cancel</button>' +
+          '<button class="btn btn-primary" id="gp-goal-log-submit-btn" onclick="gpSubmitGoalLog()">Save Update</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(_gdLogModalEl);
+  }
+  document.getElementById("gp-goal-log-error").textContent = "";
+  document.getElementById("gp-goal-log-value").value = "";
+  document.getElementById("gp-goal-log-note").value = "";
+  document.getElementById("gp-goal-log-file").value = "";
+  document.getElementById("gp-goal-log-file-name").textContent = "Click to attach image or document…";
+  _gdLogModalEl.style.display = "flex";
+};
+
+window.gpCloseGoalLogModal = function() { if (_gdLogModalEl) _gdLogModalEl.style.display = "none"; };
+
+window.gpSubmitGoalLog = async function() {
+  var value = document.getElementById("gp-goal-log-value").value;
+  if (!value) { document.getElementById("gp-goal-log-error").textContent = "Enter a value."; return; }
+  var btn = document.getElementById("gp-goal-log-submit-btn");
+  btn.disabled = true; btn.textContent = "Saving…";
+  try {
+    var evidenceUrl = null;
+    var fi = document.getElementById("gp-goal-log-file");
+    if (fi.files.length > 0) {
+      var fd = new FormData(); fd.append("file", fi.files[0]); fd.append("is_private", "0");
+      var up = await fetch("/api/method/upload_file", {method:"POST", body:fd,
+        headers:{"X-Frappe-CSRF-Token": frappe && frappe.csrf_token ? frappe.csrf_token : ""}});
+      var ud = await up.json();
+      if (ud && ud.message && ud.message.file_url) evidenceUrl = ud.message.file_url;
+      else { document.getElementById("gp-goal-log-error").textContent = "File upload failed."; btn.disabled=false; btn.textContent="Save Update"; return; }
+    }
+    await window.gpFetch("alvox_portal.goals_api.submit_goal_update", {goal_id: _gdLogGoalId, new_value: value,
+      note: document.getElementById("gp-goal-log-note").value, evidence_url: evidenceUrl});
+    gpCloseGoalLogModal();
+    loadGoalUpdateHistory(_gdLogGoalId);
+  } catch(e) {
+    document.getElementById("gp-goal-log-error").textContent = e.message || "Error saving update.";
+  } finally { btn.disabled = false; btn.textContent = "Save Update"; }
+};
+
+/* Navigate to a goal's drawer and focus a specific update row (for manager notification clicks) */
+window.gpOpenGoalDetail = function(goalId, focusRow) {
+  openTeamGoalDrawer(goalId);
+  if (focusRow) {
+    var poll = setInterval(function() {
+      var el = document.getElementById("upd-row-" + focusRow);
+      if (el) { clearInterval(poll); el.scrollIntoView({behavior:"smooth", block:"center"}); }
+    }, 300);
+    setTimeout(function() { clearInterval(poll); }, 5000);
+  }
+};
 
 function updateGoalStatus(goalId) {
   const sel = document.getElementById("gd-status-" + goalId);
@@ -6591,7 +6765,7 @@ function deleteDrawerNote(noteId, empId) {
     return new Promise(function(resolve, reject) {
       var csrf = (window.frappe && frappe.csrf_token) ? frappe.csrf_token : "";
       var opts = {
-        method: args ? "POST" : "GET",
+        method: args !== undefined ? "POST" : "GET",
         headers: {"X-Frappe-CSRF-Token": csrf, "Content-Type": "application/json"},
       };
       if (args) opts.body = JSON.stringify(args);
@@ -6608,6 +6782,7 @@ function deleteDrawerNote(noteId, empId) {
       }).catch(reject);
     });
   }
+  window.gpFetch = gpFetch; // expose for cross-module use
 
   function gpProgressRing(pct, color, size) {
     size = size || 48;
@@ -8802,12 +8977,14 @@ function deleteDrawerNote(noteId, empId) {
   // Anything that used to refresh the KPI list now refreshes the tree.
   window.pfLoadMyKpis = function() { tvLoad(); };
 
-  window.pfOpenLog = function(kpiId) {
+  window.pfOpenLog = function(kpiId, focusRow) {
     var k = pfFindMyKpi(kpiId);
     pfClearErr("pf-log-error");
     document.getElementById("pf-log-kpi").value = kpiId;
     document.getElementById("pf-log-value").value = k ? (k.actual_value || "") : "";
     document.getElementById("pf-log-note").value = "";
+    document.getElementById("pf-log-file").value = "";
+    document.getElementById("pf-log-file-name").textContent = "Click to attach image or document…";
     pfSetHtml("pf-log-context", k
       ? "<strong>" + gpEsc(k.kpi_name) + "</strong><br>Target " + pfNum(k.target_value, 2) +
         " " + gpEsc(k.unit || "") + " · currently at " + pfNum(k.attainment_pct) + "%"
@@ -8816,16 +8993,184 @@ function deleteDrawerNote(noteId, empId) {
     if (hint) hint.textContent = k && k.direction === "Lower is Better"
       ? "Lower is better for this KPI — attainment rises as the value falls."
       : "Enter the cumulative value reached so far.";
+    pfSetHtml("pf-log-history", "<div style=\"color:var(--text3);font-size:12px\">Loading history…</div>");
     pfOpenModal("pf-log-modal");
+    pfLoadKpiUpdateHistory(kpiId, focusRow);
   };
 
-  window.pfSubmitLog = function() {
+  window.pfLogFileChanged = function() {
+    var f = document.getElementById("pf-log-file").files[0];
+    document.getElementById("pf-log-file-name").textContent = f ? f.name : "Click to attach image or document…";
+  };
+
+  window.pfSubmitLog = async function() {
     var kpi = pfVal("pf-log-kpi"), value = pfVal("pf-log-value");
     if (value === "") { pfShowErr("pf-log-error", "Enter a value."); return; }
-    pf("log_kpi_progress", {kpi: kpi, value: value, note: pfVal("pf-log-note")})
-      .then(function() { pfCloseModal("pf-log-modal"); pfLoadMyKpis(); })
-      .catch(function(e) { pfShowErr("pf-log-error", e.message); });
+    var btn = document.getElementById("pf-log-submit-btn");
+    btn.disabled = true; btn.textContent = "Saving…";
+    try {
+      var evidenceUrl = null;
+      var fileInput = document.getElementById("pf-log-file");
+      if (fileInput.files.length > 0) {
+        var fd = new FormData();
+        fd.append("file", fileInput.files[0]);
+        fd.append("is_private", "0");
+        var upResp = await fetch("/api/method/upload_file", {method: "POST", body: fd,
+          headers: {"X-Frappe-CSRF-Token": frappe && frappe.csrf_token ? frappe.csrf_token : ""}});
+        var upData = await upResp.json();
+        if (upData && upData.message && upData.message.file_url) {
+          evidenceUrl = upData.message.file_url;
+        } else {
+          pfShowErr("pf-log-error", "File upload failed — please try again.");
+          btn.disabled = false; btn.textContent = "Save Progress"; return;
+        }
+      }
+      await pf("log_kpi_progress", {kpi: kpi, value: value, note: pfVal("pf-log-note"), evidence_url: evidenceUrl});
+      pfCloseModal("pf-log-modal");
+      fileInput.value = "";
+      document.getElementById("pf-log-file-name").textContent = "Click to attach image or document…";
+      pfLoadMyKpis();
+    } catch(e) {
+      pfShowErr("pf-log-error", e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = "Save Progress";
+    }
   };
+
+  /* ── Update history & approval JS ──────────────────── */
+
+  var _pfIsManager = false; // set on boot from get_pending_approvals
+
+  function pfFmtDate(dt) {
+    if (!dt) return "";
+    return new Date(dt).toLocaleString(undefined, {day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
+  }
+
+  function renderUpdateTimeline(rows, containerId, doctype, docname) {
+    var el = document.getElementById(containerId);
+    if (!el) return;
+    if (!rows || !rows.length) {
+      el.innerHTML = "<div style=\"color:var(--text3);font-size:12px\">No updates yet.</div>";
+      return;
+    }
+    var html = "";
+    rows.forEach(function(r) {
+      var status = (r.approval_status || "Pending").toLowerCase();
+      var evHtml = "";
+      if (r.evidence_file) {
+        evHtml = "<a class=\"upd-ev-link\" href=\"" + gpEsc(r.evidence_file) + "\" target=\"_blank\" rel=\"noopener\">📎 View Evidence</a>";
+      } else {
+        evHtml = "<span class=\"upd-ev-missing\">⚠ No evidence attached</span>";
+      }
+      var approvalHtml = "";
+      if (status === "pending" && _pfIsManager) {
+        approvalHtml = "<div class=\"upd-approve-row\">" +
+          "<input class=\"upd-approve-comment\" placeholder=\"Comment (optional)\" id=\"apc-" + gpEsc(r.name) + "\">" +
+          "<button class=\"upd-btn-approve\" onclick=\"approveUpdate('" + gpEsc(doctype) + "','" + gpEsc(docname) + "','" + gpEsc(r.name) + "','Approved')\">Approve</button>" +
+          "<button class=\"upd-btn-reject\" onclick=\"approveUpdate('" + gpEsc(doctype) + "','" + gpEsc(docname) + "','" + gpEsc(r.name) + "','Rejected')\">Reject</button>" +
+        "</div>";
+      } else if (status !== "pending") {
+        approvalHtml = "<div class=\"upd-approved-by\">" +
+          (status === "approved" ? "✓ Approved" : "✗ Rejected") +
+          (r.approved_by_name ? " by " + gpEsc(r.approved_by_name) : "") +
+          (r.approved_on ? " · " + pfFmtDate(r.approved_on) : "") +
+          (r.approval_comment ? " — " + gpEsc(r.approval_comment) : "") +
+        "</div>";
+      }
+      html += "<div class=\"upd-entry " + gpEsc(status) + "\" id=\"upd-row-" + gpEsc(r.name) + "\">" +
+        "<div class=\"upd-entry-hdr\">" +
+          "<span class=\"upd-who\">" + gpEsc(r.logged_by_name || r.logged_by || "") + "</span>" +
+          "<span class=\"upd-when\">" + pfFmtDate(r.log_date) + "</span>" +
+          "<span class=\"upd-val\">Value: <strong>" + pfNum(r.value, 2) + "</strong></span>" +
+        "</div>" +
+        (r.note ? "<div class=\"upd-note\">" + gpEsc(r.note) + "</div>" : "") +
+        "<div class=\"upd-chips\">" +
+          evHtml +
+          "<span class=\"upd-chip " + gpEsc(status) + "\">" + gpEsc(r.approval_status || "Pending") + "</span>" +
+        "</div>" +
+        approvalHtml +
+      "</div>";
+    });
+    el.innerHTML = html;
+  }
+
+  window.pfLoadKpiUpdateHistory = function(kpiId, focusRow) {
+    pf("get_kpi_update_log", {kpi: kpiId}).then(function(rows) {
+      renderUpdateTimeline(rows, "pf-log-history", "KPI", kpiId);
+      if (focusRow) {
+        var el = document.getElementById("upd-row-" + focusRow);
+        if (el) { el.scrollIntoView({behavior:"smooth", block:"center"}); }
+      }
+    }).catch(function() {
+      pfSetHtml("pf-log-history", "<div style=\"color:var(--text3);font-size:12px\">Could not load history.</div>");
+    });
+  };
+
+  window.approveUpdate = function(doctype, docname, rowName, action) {
+    var commentEl = document.getElementById("apc-" + rowName);
+    var comment = commentEl ? commentEl.value : "";
+    if (doctype === "KPI") {
+      pf("approve_kpi_update", {kpi: docname, row_name: rowName, action: action, comment: comment}).then(function() {
+        pfLoadKpiUpdateHistory(docname);
+        loadNotifPanel();
+      }).catch(function(e) { alert("Error: " + e.message); });
+    } else {
+      gpFetch("alvox_portal.goals_api.approve_goal_update", {goal_id: docname, row_name: rowName, action: action, comment: comment}).then(function() {
+        loadGoalUpdateHistory(docname);
+        loadNotifPanel();
+      }).catch(function(e) { alert("Error: " + e.message); });
+    }
+  };
+
+  // Expose for top-level goal drawer functions
+  window.renderUpdateTimeline = renderUpdateTimeline;
+  window.pfFmtDate = pfFmtDate;
+
+  /* ── Notification panel JS ──────────────────────── */
+
+  window.toggleNotifPanel = function(e) {
+    if (e) e.stopPropagation();
+    var panel = document.getElementById("notif-panel");
+    var wasOpen = panel.classList.contains("open");
+    document.querySelectorAll(".notif-panel.open").forEach(function(p) { p.classList.remove("open"); });
+    if (!wasOpen) { panel.classList.add("open"); loadNotifPanel(); }
+  };
+
+  document.addEventListener("click", function(e) {
+    var panel = document.getElementById("notif-panel");
+    if (panel && panel.classList.contains("open") && !panel.contains(e.target) && !e.target.closest("#mob-notif-btn")) {
+      panel.classList.remove("open");
+    }
+  });
+
+  function loadNotifPanel() {
+    gpFetch("alvox_portal.goals_api.get_pending_approvals", {}).then(function(data) {
+      _pfIsManager = true;
+      var badge = document.getElementById("notif-badge");
+      var total = data.total || 0;
+      if (badge) { badge.textContent = total > 9 ? "9+" : total; badge.style.display = total > 0 ? "flex" : "none"; }
+      var body = document.getElementById("notif-panel-body");
+      if (!body) return;
+      if (total === 0) { body.innerHTML = "<div class=\"notif-empty\">No pending approvals.</div>"; return; }
+      var html = "";
+      (data.kpi_updates || []).forEach(function(u) {
+        html += "<div class=\"notif-item\" onclick=\"pfOpenLog('" + gpEsc(u.kpi) + "','" + gpEsc(u.row_name) + "')\">" +
+          "<div class=\"notif-item-title\">KPI update pending approval</div>" +
+          "<div class=\"notif-item-sub\">" + gpEsc(u.employee_name || "") + " · " + gpEsc(u.kpi_name || u.kpi) + "</div>" +
+        "</div>";
+      });
+      (data.goal_updates || []).forEach(function(u) {
+        html += "<div class=\"notif-item\" onclick=\"gpOpenGoalDetail('" + gpEsc(u.goal) + "','" + gpEsc(u.row_name) + "')\">" +
+          "<div class=\"notif-item-title\">Goal update pending approval</div>" +
+          "<div class=\"notif-item-sub\">" + gpEsc(u.employee_name || "") + " · " + gpEsc(u.goal_name || u.goal) + "</div>" +
+        "</div>";
+      });
+      body.innerHTML = html;
+    }).catch(function() { /* not a manager or API not ready — silently ignore */ });
+  }
+
+  /* Boot: load notification count */
+  setTimeout(function() { loadNotifPanel(); }, 1500);
 
   window.pfOpenSelfRating = function(kpiId) {
     var k = pfFindMyKpi(kpiId);

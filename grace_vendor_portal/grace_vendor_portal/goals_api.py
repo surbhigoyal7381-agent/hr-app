@@ -948,3 +948,224 @@ def get_upward_feedback(cycle, employee=None):
         "avg_rating": avg,
         "comments": [r["comments"] for r in rows if r.get("comments")],
     }
+
+
+# ── Progress update log (Individual Goal) ────────────────────────────────
+
+@frappe.whitelist()
+def submit_goal_update(goal_id, new_value, note="", evidence_url=None):
+    """Log a progress update on an Individual Goal — creates an approval-pending entry."""
+    emp_id = _require_employee()
+    goal   = frappe.get_doc("Individual Goal", goal_id)
+
+    if goal.employee != emp_id and not _is_hr():
+        frappe.throw("You can only update your own goals.", frappe.PermissionError)
+    if goal.docstatus == 2:
+        frappe.throw("Goal is cancelled.")
+
+    ev_missing = 1 if not evidence_url else 0
+    val = flt(new_value)
+
+    row = goal.append("progress_updates", {
+        "log_date":         today(),
+        "value":            val,
+        "note":             note,
+        "logged_by":        frappe.session.user,
+        "evidence_file":    evidence_url or None,
+        "evidence_missing": ev_missing,
+        "approval_status":  "Pending",
+    })
+
+    # Optimistically roll up progress so the dashboard stays live.
+    goal.actual_progress = val
+    if flt(goal.target_value):
+        goal.progress_pct = min(flt(val / flt(goal.target_value) * 100, 2), 100)
+    goal.flags.ignore_validate                  = True
+    goal.flags.ignore_validate_update_after_submit = True
+    goal.save(ignore_permissions=True)
+    frappe.db.commit()
+
+    _notify_manager_of_goal_update(goal.name, goal.goal_name, goal.employee, row.name)
+
+    return {
+        "name":            goal.name,
+        "row_name":        row.name,
+        "actual_progress": goal.actual_progress,
+        "progress_pct":    goal.progress_pct,
+        "evidence_missing": ev_missing,
+        "message":         "Progress update submitted — awaiting manager approval.",
+    }
+
+
+def _notify_manager_of_goal_update(goal_id, goal_name, employee_id, row_name):
+    try:
+        reports_to   = frappe.db.get_value("Employee", employee_id, "reports_to")
+        if not reports_to:
+            return
+        manager_user = frappe.db.get_value("Employee", reports_to, "user_id")
+        if not manager_user:
+            return
+        emp_name = frappe.db.get_value("Employee", employee_id, "employee_name") or employee_id
+        notif = frappe.new_doc("Notification Log")
+        notif.for_user      = manager_user
+        notif.type          = "Alert"
+        notif.document_type = "Individual Goal"
+        notif.document_name = goal_id
+        notif.subject       = f"{emp_name} posted an update on goal \"{goal_name}\""
+        notif.email_content = (
+            f"<p>{emp_name} submitted a progress update requiring your approval.</p>"
+        )
+        notif.insert(ignore_permissions=True)
+        frappe.db.commit()
+    except Exception:
+        pass
+
+
+@frappe.whitelist()
+def approve_goal_update(goal_id, row_name, action, comment=""):
+    """Manager approves or rejects a specific Goal Progress Update row."""
+    _require_employee()
+    if action not in ("Approved", "Rejected"):
+        frappe.throw("action must be 'Approved' or 'Rejected'.")
+
+    goal = frappe.get_doc("Individual Goal", goal_id)
+    goal_mgr = frappe.db.get_value("Employee", goal.employee, "reports_to")
+    my_emp   = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")
+    if not (_is_hr() or my_emp == goal_mgr):
+        frappe.throw("Only this employee's manager or HR can approve updates.",
+                     frappe.PermissionError)
+
+    for row in (goal.progress_updates or []):
+        if row.name == row_name:
+            row.approval_status  = action
+            row.approval_comment = comment
+            row.approved_by      = frappe.session.user
+            row.approved_on      = frappe.utils.now()
+            break
+    else:
+        frappe.throw(f"Progress update row '{row_name}' not found on goal {goal_id}.")
+
+    goal.flags.ignore_validate                  = True
+    goal.flags.ignore_validate_update_after_submit = True
+    goal.save(ignore_permissions=True)
+    frappe.db.commit()
+    return {"message": f"Update {action.lower()}."}
+
+
+@frappe.whitelist()
+def get_goal_update_log(goal_id):
+    """Return the progress_updates for a goal, newest first."""
+    emp_id = _require_employee()
+    goal   = frappe.get_doc("Individual Goal", goal_id)
+
+    goal_mgr = frappe.db.get_value("Employee", goal.employee, "reports_to")
+    if not (_is_hr() or goal.employee == emp_id or emp_id == goal_mgr):
+        frappe.throw("Not permitted.", frappe.PermissionError)
+
+    rows = sorted(
+        goal.progress_updates or [],
+        key=lambda r: (str(r.log_date or ""), str(r.creation or "")),
+        reverse=True,
+    )
+    result = []
+    for r in rows:
+        by_name  = frappe.db.get_value("User", r.logged_by,  "full_name") or r.logged_by or ""
+        apr_name = frappe.db.get_value("User", r.approved_by, "full_name") or r.approved_by or "" if r.approved_by else ""
+        result.append({
+            "name":             r.name,
+            "log_date":         str(r.log_date)   if r.log_date   else "",
+            "value":            flt(r.value),
+            "note":             r.note             or "",
+            "logged_by":        r.logged_by        or "",
+            "logged_by_name":   by_name,
+            "evidence_file":    r.evidence_file    or "",
+            "evidence_missing": int(r.evidence_missing or 0),
+            "approval_status":  r.approval_status  or "Pending",
+            "approval_comment": r.approval_comment or "",
+            "approved_by":      r.approved_by      or "",
+            "approved_by_name": apr_name,
+            "approved_on":      str(r.approved_on) if r.approved_on else "",
+        })
+    return result
+
+
+@frappe.whitelist()
+def get_pending_approvals():
+    """Return all pending-approval updates across the manager's direct reports."""
+    emp_id = _require_employee()
+    is_mgr = _is_manager(emp_id)
+    is_hr  = _is_hr()
+
+    if not is_mgr and not is_hr:
+        return {"kpi_updates": [], "goal_updates": [], "total": 0}
+
+    if is_hr:
+        all_employees = frappe.get_all(
+            "Employee", filters={"status": "Active"}, pluck="name"
+        )
+    else:
+        all_employees = frappe.get_all(
+            "Employee",
+            filters={"reports_to": emp_id, "status": "Active"},
+            pluck="name",
+        )
+
+    kpi_updates  = []
+    goal_updates = []
+
+    for emp in all_employees:
+        emp_name = frappe.db.get_value("Employee", emp, "employee_name") or emp
+
+        # KPI progress-log rows pending approval
+        for kpi in frappe.get_all(
+            "KPI",
+            filters={"employee": emp, "status": ["!=", "Cancelled"]},
+            fields=["name", "kpi_name"],
+        ):
+            doc = frappe.get_doc("KPI", kpi["name"])
+            for row in (doc.progress_log or []):
+                if (row.approval_status or "Pending") == "Pending":
+                    by_name = frappe.db.get_value("User", row.logged_by, "full_name") or row.logged_by or ""
+                    kpi_updates.append({
+                        "kpi":              kpi["name"],
+                        "kpi_name":         kpi["kpi_name"],
+                        "row_name":         row.name,
+                        "employee":         emp,
+                        "employee_name":    emp_name,
+                        "log_date":         str(row.log_date)  if row.log_date else "",
+                        "value":            flt(row.value),
+                        "note":             row.note           or "",
+                        "logged_by_name":   by_name,
+                        "evidence_file":    row.evidence_file  or "",
+                        "evidence_missing": int(row.evidence_missing or 0),
+                    })
+
+        # Goal progress-update rows pending approval
+        for goal in frappe.get_all(
+            "Individual Goal",
+            filters={"employee": emp, "status": ["!=", "Cancelled"], "docstatus": ["!=", 2]},
+            fields=["name", "goal_name"],
+        ):
+            gdoc = frappe.get_doc("Individual Goal", goal["name"])
+            for row in (gdoc.progress_updates or []):
+                if (row.approval_status or "Pending") == "Pending":
+                    by_name = frappe.db.get_value("User", row.logged_by, "full_name") or row.logged_by or ""
+                    goal_updates.append({
+                        "goal":             goal["name"],
+                        "goal_name":        goal["goal_name"],
+                        "row_name":         row.name,
+                        "employee":         emp,
+                        "employee_name":    emp_name,
+                        "log_date":         str(row.log_date)  if row.log_date else "",
+                        "value":            flt(row.value),
+                        "note":             row.note           or "",
+                        "logged_by_name":   by_name,
+                        "evidence_file":    row.evidence_file  or "",
+                        "evidence_missing": int(row.evidence_missing or 0),
+                    })
+
+    return {
+        "kpi_updates":  kpi_updates,
+        "goal_updates": goal_updates,
+        "total":        len(kpi_updates) + len(goal_updates),
+    }

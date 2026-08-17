@@ -269,31 +269,131 @@ def get_my_kpis(cycle=None, include_team=0):
 
 
 @frappe.whitelist()
-def log_kpi_progress(kpi, value, note=""):
-    """Append a dated reading and roll it up into the KPI's actual value."""
+def log_kpi_progress(kpi, value, note="", evidence_url=None):
+    """Append a dated reading, set approval pending, and notify the manager."""
     doc = frappe.get_doc("KPI", kpi)
     _require_owns(doc.employee)
 
     if doc.status in ("Cancelled",):
         frappe.throw("This KPI is cancelled and no longer accepts progress updates.")
 
-    doc.append("progress_log", {
-        "log_date": today(),
-        "value": flt(value),
-        "note": note,
-        "logged_by": frappe.session.user,
+    ev_missing = 1 if not evidence_url else 0
+    row = doc.append("progress_log", {
+        "log_date":        today(),
+        "value":           flt(value),
+        "note":            note,
+        "logged_by":       frappe.session.user,
+        "evidence_file":   evidence_url or None,
+        "evidence_missing": ev_missing,
+        "approval_status": "Pending",
     })
     doc.actual_value = flt(value)
     doc.save(ignore_permissions=True)
     frappe.db.commit()
 
+    _notify_manager_of_kpi_update(doc, row.name)
+
     return {
-        "name": doc.name,
-        "actual_value": flt(doc.actual_value),
-        "attainment_pct": flt(doc.attainment_pct),
-        "status": doc.status,
-        "message": "Progress logged.",
+        "name":            doc.name,
+        "row_name":        row.name,
+        "actual_value":    flt(doc.actual_value),
+        "attainment_pct":  flt(doc.attainment_pct),
+        "status":          doc.status,
+        "evidence_missing": ev_missing,
+        "message":         "Progress logged — awaiting manager approval.",
     }
+
+
+def _notify_manager_of_kpi_update(kpi_doc, row_name):
+    """Create a Notification Log entry for the KPI owner's manager."""
+    try:
+        reports_to = frappe.db.get_value("Employee", kpi_doc.employee, "reports_to")
+        if not reports_to:
+            return
+        manager_user = frappe.db.get_value("Employee", reports_to, "user_id")
+        if not manager_user:
+            return
+        emp_name = kpi_doc.employee_name or kpi_doc.employee
+        notif = frappe.new_doc("Notification Log")
+        notif.for_user    = manager_user
+        notif.type        = "Alert"
+        notif.document_type = "KPI"
+        notif.document_name = kpi_doc.name
+        notif.subject     = f"{emp_name} posted a KPI update on \"{kpi_doc.kpi_name}\""
+        notif.email_content = (
+            f"<p>{emp_name} submitted a progress update requiring your approval.</p>"
+        )
+        notif.insert(ignore_permissions=True)
+        frappe.db.commit()
+    except Exception:
+        pass  # never block the main save
+
+
+@frappe.whitelist()
+def approve_kpi_update(kpi, row_name, action, comment=""):
+    """Manager approves or rejects a specific KPI progress-log row."""
+    _require_employee()
+    if action not in ("Approved", "Rejected"):
+        frappe.throw("action must be 'Approved' or 'Rejected'.")
+
+    doc = frappe.get_doc("KPI", kpi)
+    # Gate: only the employee's direct manager or HR may approve.
+    kpi_emp_mgr = frappe.db.get_value("Employee", doc.employee, "reports_to")
+    my_emp      = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")
+    if not (_is_hr() or my_emp == kpi_emp_mgr):
+        frappe.throw("Only this employee's manager or HR can approve updates.",
+                     frappe.PermissionError)
+
+    for row in (doc.progress_log or []):
+        if row.name == row_name:
+            row.approval_status  = action
+            row.approval_comment = comment
+            row.approved_by      = frappe.session.user
+            row.approved_on      = frappe.utils.now()
+            break
+    else:
+        frappe.throw(f"Progress log row '{row_name}' not found on KPI {kpi}.")
+
+    doc.save(ignore_permissions=True)
+    frappe.db.commit()
+    return {"message": f"Update {action.lower()}."}
+
+
+@frappe.whitelist()
+def get_kpi_update_log(kpi):
+    """Return the full progress_log for a KPI, newest first."""
+    doc = frappe.get_doc("KPI", kpi)
+    my_emp = _require_employee()
+
+    kpi_mgr = frappe.db.get_value("Employee", doc.employee, "reports_to")
+    if not (_is_hr() or doc.employee == my_emp or my_emp == kpi_mgr):
+        frappe.throw("Not permitted.", frappe.PermissionError)
+
+    rows = sorted(
+        doc.progress_log or [],
+        key=lambda r: (str(r.log_date or ""), str(r.creation or "")),
+        reverse=True,
+    )
+    result = []
+    for r in rows:
+        by_name  = frappe.db.get_value("User", r.logged_by,  "full_name") or r.logged_by or ""
+        apr_name = frappe.db.get_value("User", r.approved_by, "full_name") or r.approved_by or "" if r.approved_by else ""
+        result.append({
+            "name":             r.name,
+            "log_date":         str(r.log_date)   if r.log_date   else "",
+            "value":            flt(r.value),
+            "note":             r.note             or "",
+            "logged_by":        r.logged_by        or "",
+            "logged_by_name":   by_name,
+            "evidence_file":    r.evidence_file    or "",
+            "evidence_missing": int(r.evidence_missing or 0),
+            "approval_status":  r.approval_status  or "Pending",
+            "approval_comment": r.approval_comment or "",
+            "approved_by":      r.approved_by      or "",
+            "approved_by_name": apr_name,
+            "approved_on":      str(r.approved_on) if r.approved_on else "",
+        })
+    return result
 
 
 @frappe.whitelist()

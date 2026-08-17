@@ -11,7 +11,8 @@
   "is_future_plan", "carry_over_from",
   "section_dev", "development_area",
   "section_progress", "actual_progress", "progress_pct", "trajectory",
-  "section_evidence", "evidence_items"
+  "section_evidence", "evidence_items",
+  "section_updates", "progress_updates"
  ],
  "fields": [
   {"fieldname": "naming_series", "fieldtype": "Select", "label": "Series", "options": "GD-IG-.YYYY.-.####\n", "set_only_once": 1},
@@ -43,7 +44,9 @@
   {"fieldname": "progress_pct", "fieldtype": "Percent", "label": "Progress %", "read_only": 1},
   {"fieldname": "trajectory", "fieldtype": "Select", "label": "Trajectory", "options": "\nOn Track\nAt Risk\nOff Track\nNot Started", "read_only": 1, "in_list_view": 1},
   {"fieldname": "section_evidence", "fieldtype": "Section Break", "label": "Evidence"},
-  {"fieldname": "evidence_items", "fieldtype": "Table", "label": "Evidence", "options": "Goal Evidence"}
+  {"fieldname": "evidence_items", "fieldtype": "Table", "label": "Evidence", "options": "Goal Evidence"},
+  {"fieldname": "section_updates", "fieldtype": "Section Break", "label": "Progress Updates"},
+  {"fieldname": "progress_updates", "fieldtype": "Table", "label": "Progress Updates", "options": "Goal Progress Update"}
  ],
  "is_submittable": 1,
  "modified": "2026-07-30 12:00:00.000000",

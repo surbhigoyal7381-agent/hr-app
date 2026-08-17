@@ -13,16 +13,39 @@ These instructions are mandatory in every session. They override default behavio
 
 ---
 
-## 2. Mandatory pre-commit / pre-deploy checklist
+## 2. Mandatory change process — in this exact order
 
-Every code change must go through all four steps **in order** before anything reaches the server:
+Every change follows these steps in order. Do not skip or reorder them.
 
-1. **Run tests** — `bench run-tests --app <app>` for any changed Python module; manually trace all affected UI flows for JS/HTML changes.
-2. **Code review as senior technical architect** — correctness, edge cases, regressions, security, consistency across all touched files.
-3. **Impact analysis** — identify every function, hook, API endpoint, and UI path affected by the change, not just the directly edited lines. Grep for all callers of changed functions.
-4. **Present findings and wait for explicit user approval** — summarise test results, review findings, and impact before deploying. Do not proceed until the user says "go ahead" or equivalent.
+**Before writing a single line of code:**
+
+1. **Impact analysis** — cover all four dimensions before opening any file:
+   - *Functional*: cross-modular impact (grace_goals, grace_compensation, hrms, erpnext), persona impact (CXO / HR Manager / Employee), HRMS domain impact (leaves, attendance, payroll, appraisals, org structure). Grep all callers of every function being changed.
+   - *Non-functional*: evaluate the change against each NFR dimension below and state explicitly whether the change improves, degrades, or is neutral for each one:
+     - **Performance** — query count, payload size, render time, N+1 risks, cache hit rate
+     - **Security** — permission checks, injection surface, data exposure, `ignore_permissions` scope
+     - **Reliability** — error handling, edge cases, graceful degradation, hook side-effects
+     - **Scalability** — behaviour under high employee count, multi-company, concurrent requests
+     - **Maintainability** — readability, coupling, duplication, testability
+     - **Data integrity** — stale data risk, cache invalidation correctness, transaction boundaries
+     - **Compliance / privacy** — PII exposure, role-based data scoping
+
+2. **Propose strategy** — present the approach, flag risks and trade-offs, suggest the best engineering path. Apply senior developer judgment: anticipate consequences (e.g. cache invalidation strategy, stale data risk, hook side-effects) without being asked. Do not surface half-solutions that require the user to ask the obvious follow-up question.
+
+3. **Wait for explicit approval** — user reviews the strategy and approves, adjusts, or redirects. "Go ahead with all changes" is approval to implement, not to skip steps 4–7.
+
+**After implementation:**
+
+4. **Run tests** — `bench run-tests --app <app>` for any changed Python module; manually trace all affected UI flows for JS/HTML changes.
+5. **Senior architect review** — correctness, edge cases, regressions, security, consistency across all touched files. Re-check each NFR dimension against the actual code written, not just the proposal.
+6. **Present findings** — summarise test results, review outcome, NFR assessment before vs. after, confirm readiness.
+7. **Wait for deploy approval** — explicit "go ahead" required before any server command.
+
+**The checklist runs BEFORE `git commit`. Committing is part of the deployment pipeline.**
 
 **Fixing a bug and deploying it are two separate steps. "Fix this" is not deploy permission.**
+
+**Senior developer standard:** Anticipate issues before being asked. If a change introduces a caching layer, the invalidation strategy must be defined in the same proposal. If a change touches a shared doctype, cross-module impact must be listed. Do not surface half-solutions that require the user to ask the obvious follow-up question.
 
 Deploy commands that require explicit approval before running:
 - `docker cp` (copying files into a container)

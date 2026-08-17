@@ -4167,6 +4167,9 @@ function expenseStatusBadge(s) {
 
 /* ── Panel switching ─────────────────────────────── */
 function switchPanel(name, triggerEl) {
+  // If the employee drawer is open, close it before switching panels so body overflow is restored
+  var _ed = document.getElementById("emp-drawer");
+  if (_ed && _ed.classList.contains("open")) { closeEmpDrawer(); }
   closeSidebar(); // close mobile drawer on navigation
   // Tree overlays are portaled to <body>; leaving the panel must dismiss them.
   if (window.tvClosePop) { window.tvClosePop(); window.tvCloseNew(); }
@@ -13348,4 +13351,7 @@ document.addEventListener("DOMContentLoaded", function() {
   loadAvailableFeatures();
 });
 </script>
+<footer style="text-align:center;padding:10px 0 14px;font-size:11px;color:var(--text3,#94a3b8)">
+  Powered by <a href="https://allabouthr.co" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;opacity:.7">AllAboutHR.co</a>
+</footer>
 {% endblock %}

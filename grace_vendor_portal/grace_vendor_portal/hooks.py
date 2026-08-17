@@ -31,6 +31,28 @@ website_route_rules = [
 
 # ── Doctype event hooks ────────────────────────────────────────────────────
 doc_events = {
+    # ── Portal context cache invalidation ─────────────────────────────────
+    # Clear per-user portal_ctx_{user} cache when role or employee record changes
+    "Employee": {
+        "on_update": "grace_vendor_portal.hr_api.invalidate_portal_context_cache",
+        "on_trash":  "grace_vendor_portal.hr_api.invalidate_portal_context_cache",
+    },
+    "Has Role": {
+        "after_insert": "grace_vendor_portal.hr_api.invalidate_portal_context_cache",
+        "on_trash":     "grace_vendor_portal.hr_api.invalidate_portal_context_cache",
+    },
+    # ── Global features cache invalidation ───────────────────────────────
+    # Clear portal_features_global when HR configuration changes
+    "Shift Type": {
+        "after_insert": "grace_vendor_portal.hr_api.invalidate_features_cache",
+        "on_update":    "grace_vendor_portal.hr_api.invalidate_features_cache",
+        "on_trash":     "grace_vendor_portal.hr_api.invalidate_features_cache",
+    },
+    "Leave Type": {
+        "after_insert": "grace_vendor_portal.hr_api.invalidate_features_cache",
+        "on_update":    "grace_vendor_portal.hr_api.invalidate_features_cache",
+        "on_trash":     "grace_vendor_portal.hr_api.invalidate_features_cache",
+    },
     # Vendor Order: is_submittable removed; on_update covers all lifecycle events
     "Vendor Order": {
         "validate":  "grace_vendor_portal.controllers.vendor_order.validate",

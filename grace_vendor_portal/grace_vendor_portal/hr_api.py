@@ -3,6 +3,41 @@ import calendar as _calendar
 from frappe.utils import today, get_first_day, get_last_day, getdate, add_days, now
 from grace_goals.permissions import get_effective_manager
 
+# ── Cache invalidation helpers (called by doc_events hooks in hooks.py) ──────
+
+def invalidate_portal_context_cache(doc, method=None):
+    """Clear portal context cache when an Employee or Has Role record changes."""
+    try:
+        if doc.doctype == "Employee":
+            if doc.user_id:
+                frappe.cache().delete_value(f"portal_ctx_{doc.user_id}")
+            # Clear the current manager's cache (their is_manager flag may have changed)
+            if doc.reports_to:
+                mgr_user = frappe.db.get_value("Employee", doc.reports_to, "user_id")
+                if mgr_user:
+                    frappe.cache().delete_value(f"portal_ctx_{mgr_user}")
+            # If reports_to changed, also clear the previous manager's cache
+            prev = getattr(doc, "_doc_before_save", None)
+            if prev:
+                old_mgr = getattr(prev, "reports_to", None)
+                if old_mgr and old_mgr != doc.reports_to:
+                    old_mgr_user = frappe.db.get_value("Employee", old_mgr, "user_id")
+                    if old_mgr_user:
+                        frappe.cache().delete_value(f"portal_ctx_{old_mgr_user}")
+        elif doc.doctype == "Has Role" and getattr(doc, "parenttype", None) == "User":
+            frappe.cache().delete_value(f"portal_ctx_{doc.parent}")
+    except Exception:
+        pass
+
+
+def invalidate_features_cache(doc, method=None):
+    """Clear global features cache when Shift Type or Leave Type configuration changes."""
+    try:
+        frappe.cache().delete_value("portal_features_global")
+    except Exception:
+        pass
+
+
 LEAVE_COLORS = {
     "Casual Leave":       "#3b82f6",
     "Sick Leave":         "#ef4444",
@@ -66,7 +101,8 @@ def get_portal_context():
         "roles": roles,
     }
     try:
-        frappe.cache().set_value(cache_key, result, expires_in_sec=300)
+        # 1-hour safety-net TTL only; doc_events hooks clear this immediately on change
+        frappe.cache().set_value(cache_key, result, expires_in_sec=3600)
     except Exception:
         pass
     return result
@@ -436,13 +472,16 @@ def action_leave(leave_id, action):
 
     if action == "approve":
         doc.status = "Approved"
+        doc.db_set("status", "Approved", update_modified=False)
         doc.submit()
     elif action == "reject":
         doc.status = "Rejected"
+        doc.db_set("status", "Rejected", update_modified=False)
         doc.submit()
     else:
         frappe.throw(f"Unknown action: {action}")
 
+    frappe.db.commit()
     return {"status": doc.status, "name": doc.name}
 
 
@@ -957,29 +996,51 @@ def get_hr_approver():
 
 @frappe.whitelist()
 def get_available_features():
-    """Return which HR self-service features are available on this instance."""
-    user = frappe.session.user
-    cache_key = f"portal_features_{user}"
+    """Return which HR self-service features are available on this instance.
+
+    Static HR config (shift_request, leave_encashment, goals) is cached globally
+    under portal_features_global — one entry for the whole site, invalidated
+    immediately by doc_events hooks on Shift Type / Leave Type.
+
+    Permission-based flags (attendance_request, advance_request) are computed
+    live per call — they are two cheap has_permission checks and must not be
+    cached globally (they vary per user).
+    """
+    # ── Static flags: global cache, invalidated by hooks on Shift Type / Leave Type ──
+    static_cache_key = "portal_features_global"
+    static = None
     try:
-        cached = frappe.cache().get_value(cache_key)
-        if cached:
-            return cached
+        static = frappe.cache().get_value(static_cache_key)
     except Exception:
         pass
 
-    features = {}
+    if not static:
+        static = {}
+        try:
+            static["shift_request"] = frappe.db.count("Shift Type") > 0
+        except Exception:
+            static["shift_request"] = False
 
-    try:
-        features["shift_request"] = frappe.db.count("Shift Type") > 0
-    except Exception:
-        features["shift_request"] = False
+        try:
+            static["leave_encashment"] = bool(
+                frappe.db.get_value("Leave Type", {"allow_encashment": 1}, "name")
+            )
+        except Exception:
+            static["leave_encashment"] = False
 
-    try:
-        features["leave_encashment"] = bool(
-            frappe.db.get_value("Leave Type", {"allow_encashment": 1}, "name")
-        )
-    except Exception:
-        features["leave_encashment"] = False
+        try:
+            static["goals"] = bool(frappe.db.exists("DocType", "Individual Goal"))
+        except Exception:
+            static["goals"] = False
+
+        try:
+            # Safety-net TTL only; hooks clear this immediately when config changes
+            frappe.cache().set_value(static_cache_key, static, expires_in_sec=3600)
+        except Exception:
+            pass
+
+    # ── Permission flags: live per user, never cached ──────────────────────────
+    features = dict(static)
 
     try:
         features["attendance_request"] = bool(
@@ -995,15 +1056,6 @@ def get_available_features():
     except Exception:
         features["advance_request"] = False
 
-    try:
-        features["goals"] = bool(frappe.db.exists("DocType", "Individual Goal"))
-    except Exception:
-        features["goals"] = False
-
-    try:
-        frappe.cache().set_value(cache_key, features, expires_in_sec=600)
-    except Exception:
-        pass
     return features
 
 

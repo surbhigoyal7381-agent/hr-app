@@ -28,6 +28,14 @@ def get_portal_context():
     if user == "Guest":
         return {"type": "guest"}
 
+    cache_key = f"portal_ctx_{user}"
+    try:
+        cached = frappe.cache().get_value(cache_key)
+        if cached:
+            return cached
+    except Exception:
+        pass
+
     emp = _get_employee(user)
     roles = frappe.get_roles(user)
 
@@ -38,7 +46,6 @@ def get_portal_context():
 
     if emp:
         is_manager = frappe.db.count("Employee", {"reports_to": emp.name, "status": "Active"}) > 0
-        # HR managers are also effective managers of employees with no reports_to
         if not is_manager and is_hr:
             is_manager = frappe.db.count(
                 "Employee", {"reports_to": ("is", "not set"), "status": "Active",
@@ -48,7 +55,7 @@ def get_portal_context():
         if eff_mgr and eff_mgr != emp.name:
             manager_name = frappe.db.get_value("Employee", eff_mgr, "employee_name")
 
-    return {
+    result = {
         "type": "hr" if is_hr else ("manager" if is_manager else "employee"),
         "user": user,
         "employee": emp,
@@ -58,6 +65,11 @@ def get_portal_context():
         "manager_name": manager_name,
         "roles": roles,
     }
+    try:
+        frappe.cache().set_value(cache_key, result, expires_in_sec=300)
+    except Exception:
+        pass
+    return result
 
 
 @frappe.whitelist()
@@ -142,7 +154,7 @@ def get_employee_dashboard():
     # ── Upcoming holidays ─────────────────────────────────────────────────
     holidays = frappe.get_all(
         "Holiday",
-        filters={"holiday_date": [">=", td], "holiday_date": ["<=", add_days(td, 30)]},
+        filters={"holiday_date": ["between", [td, add_days(td, 30)]]},
         fields=["holiday_date", "description"],
         order_by="holiday_date asc",
         limit=5,
@@ -186,18 +198,20 @@ def get_manager_dashboard():
         existing = {t.name for t in team}
         team.extend(o for o in orphans if o.name not in existing)
 
-    # Indirect reports (L2 only)
+    # Indirect reports (L2 only) — single query instead of one per manager
     l2 = []
-    for m in team:
-        sub = frappe.get_all(
+    if team:
+        team_names = [t.name for t in team]
+        mgr_name_map = {t.name: t.employee_name for t in team}
+        all_l2 = frappe.get_all(
             "Employee",
-            filters={"reports_to": m.name, "status": "Active"},
-            fields=["name", "employee_name", "designation", "department"],
+            filters={"reports_to": ["in", team_names], "status": "Active"},
+            fields=["name", "employee_name", "designation", "department", "reports_to"],
             ignore_permissions=True,
         )
-        for s in sub:
-            s["reports_to_name"] = m.employee_name
-        l2.extend(sub)
+        for s in all_l2:
+            s["reports_to_name"] = mgr_name_map.get(s.reports_to, s.reports_to)
+        l2 = all_l2
 
     # Team names for queries
     team_ids = [t.name for t in team] + [s.name for s in l2]
@@ -422,16 +436,13 @@ def action_leave(leave_id, action):
 
     if action == "approve":
         doc.status = "Approved"
-        doc.db_set("status", "Approved", update_modified=False)
         doc.submit()
     elif action == "reject":
         doc.status = "Rejected"
-        doc.db_set("status", "Rejected", update_modified=False)
         doc.submit()
     else:
         frappe.throw(f"Unknown action: {action}")
 
-    frappe.db.commit()
     return {"status": doc.status, "name": doc.name}
 
 
@@ -541,25 +552,34 @@ def get_employee_scorecard(employee_id):
 
     td = today()
 
-    # 6-month attendance trend
+    # 6-month attendance trend — single query, grouped in Python
+    six_ago = add_days(td, -180)
+    all_att_rows = frappe.get_all(
+        "Attendance",
+        filters={"employee": employee_id, "attendance_date": ["between", [six_ago, td]], "docstatus": 1},
+        fields=["status", "attendance_date", "working_hours"],
+        ignore_permissions=True,
+    )
+    _month_buckets = {}
+    for r in all_att_rows:
+        key = str(r.attendance_date)[:7]  # "YYYY-MM"
+        if key not in _month_buckets:
+            _month_buckets[key] = {"statuses": [], "hrs": []}
+        _month_buckets[key]["statuses"].append(r.status)
+        if r.working_hours:
+            _month_buckets[key]["hrs"].append(float(r.working_hours))
+
     monthly_att = []
     for i in range(5, -1, -1):
         m_ref = add_days(td, -(i * 30))
         mo_s = get_first_day(m_ref)
-        mo_e = get_last_day(m_ref)
-        rows = frappe.get_all(
-            "Attendance",
-            filters={"employee": employee_id, "attendance_date": ["between", [mo_s, mo_e]], "docstatus": 1},
-            fields=["status", "working_hours"],
-            ignore_permissions=True,
-        )
-        counts = {}
-        hrs = []
-        for r in rows:
-            counts[r.status] = counts.get(r.status, 0) + 1
-            if r.working_hours:
-                hrs.append(float(r.working_hours))
         dt = getdate(mo_s)
+        key = dt.strftime("%Y-%m")
+        bucket = _month_buckets.get(key, {"statuses": [], "hrs": []})
+        counts = {}
+        for s in bucket["statuses"]:
+            counts[s] = counts.get(s, 0) + 1
+        hrs = bucket["hrs"]
         monthly_att.append({
             "month_label": dt.strftime("%b"),
             "present": counts.get("Present", 0) + round(counts.get("Half Day", 0) * 0.5),
@@ -920,15 +940,33 @@ def get_hr_approver():
             fields=["parent"],
             ignore_permissions=True,
         )
-        for r in rows:
-            if frappe.db.get_value("User", r.parent, "enabled"):
-                return r.parent
+        if not rows:
+            continue
+        user_ids = [r.parent for r in rows]
+        enabled = frappe.get_all(
+            "User",
+            filters={"name": ["in", user_ids], "enabled": 1},
+            fields=["name"],
+            limit=1,
+            ignore_permissions=True,
+        )
+        if enabled:
+            return enabled[0].name
     return None
 
 
 @frappe.whitelist()
 def get_available_features():
     """Return which HR self-service features are available on this instance."""
+    user = frappe.session.user
+    cache_key = f"portal_features_{user}"
+    try:
+        cached = frappe.cache().get_value(cache_key)
+        if cached:
+            return cached
+    except Exception:
+        pass
+
     features = {}
 
     try:
@@ -962,6 +1000,10 @@ def get_available_features():
     except Exception:
         features["goals"] = False
 
+    try:
+        frappe.cache().set_value(cache_key, features, expires_in_sec=600)
+    except Exception:
+        pass
     return features
 
 
@@ -1258,12 +1300,20 @@ def get_encashable_leave_types():
         fields=["leave_type", "total_leaves_allocated"],
         ignore_permissions=True,
     )
-    result = []
-    for a in allocations:
-        allow = frappe.db.get_value("Leave Type", a.leave_type, "allow_encashment")
-        if allow:
-            result.append({"leave_type": a.leave_type, "allocated": float(a.total_leaves_allocated)})
-    return result
+    leave_type_names = [a.leave_type for a in allocations]
+    encashable = {
+        r.name for r in frappe.get_all(
+            "Leave Type",
+            filters={"name": ["in", leave_type_names], "allow_encashment": 1},
+            fields=["name"],
+            ignore_permissions=True,
+        )
+    }
+    return [
+        {"leave_type": a.leave_type, "allocated": float(a.total_leaves_allocated)}
+        for a in allocations
+        if a.leave_type in encashable
+    ]
 
 
 @frappe.whitelist()
@@ -1435,23 +1485,29 @@ def get_goals_portal_data():
     except Exception:
         goals = []
 
-    # Attach evidence per goal
-    for g in goals:
+    # Attach evidence per goal — single batch query instead of one per goal
+    if goals:
         try:
-            evs = frappe.get_all(
+            all_evidence = frappe.get_all(
                 "Goal Evidence",
-                filters={"parent": g["name"]},
-                fields=["evidence_type", "validation_status", "extracted_date",
+                filters={"parent": ["in", [g["name"] for g in goals]]},
+                fields=["parent", "evidence_type", "validation_status", "extracted_date",
                         "extracted_order_count", "extracted_amount", "extracted_customer",
                         "evidence_file", "validation_notes"],
                 order_by="creation desc",
                 ignore_permissions=True,
             )
-            g["evidence"] = evs
-            g["pending_evidence_count"] = sum(1 for e in evs if e.get("validation_status") == "Pending")
+            evidence_map = {}
+            for ev in all_evidence:
+                evidence_map.setdefault(ev["parent"], []).append(ev)
+            for g in goals:
+                evs = evidence_map.get(g["name"], [])
+                g["evidence"] = evs
+                g["pending_evidence_count"] = sum(1 for e in evs if e.get("validation_status") == "Pending")
         except Exception:
-            g["evidence"] = []
-            g["pending_evidence_count"] = 0
+            for g in goals:
+                g["evidence"] = []
+                g["pending_evidence_count"] = 0
 
     cascades = {}
     for g in goals:
@@ -1689,11 +1745,17 @@ def get_goal_comments(goal_id):
         limit=30,
         ignore_permissions=True,
     )
-    user_cache = {}
-    for c in comments:
-        if c.owner not in user_cache:
-            user_cache[c.owner] = frappe.db.get_value("User", c.owner, "full_name") or c.owner
-        c["commenter_name"] = user_cache[c.owner]
+    if comments:
+        unique_owners = list({c.owner for c in comments})
+        user_rows = frappe.get_all(
+            "User",
+            filters={"name": ["in", unique_owners]},
+            fields=["name", "full_name"],
+            ignore_permissions=True,
+        )
+        name_map = {u.name: (u.full_name or u.name) for u in user_rows}
+        for c in comments:
+            c["commenter_name"] = name_map.get(c.owner, c.owner)
     return {"comments": comments}
 
 

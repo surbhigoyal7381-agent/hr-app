@@ -4187,7 +4187,7 @@ function switchPanel(name, triggerEl) {
   if (!loadedPanels.has(name)) {
     loadedPanels.add(name);
     if (name === "attendance")  { loadAttendance(); loadLeaves(); }
-    if (name === "finances")    { loadSalary(); loadExpenses(); loadLeaveEncPanel(); }
+    if (name === "finances")    { loadSalary(); }
     if (name === "shift-req")   loadShiftReqPanel();
     if (name === "att-req")     loadAttReqPanel();
     if (name === "adv-req")     loadAdvReqPanel();
@@ -4209,24 +4209,24 @@ function switchPanel(name, triggerEl) {
 
 /* ── Live clock ──────────────────────────────────── */
 function startClock() {
-  const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  var _days   = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  var _months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  var _elClock = document.getElementById("live-clock");
+  var _elDate  = document.getElementById("live-date");
+  var _elTitle = document.getElementById("home-title");
+  var _elSub   = document.getElementById("home-sub");
   function tick() {
-    const now = new Date();
-    const h = String(now.getHours()).padStart(2,"0");
-    const m = String(now.getMinutes()).padStart(2,"0");
-    const s = String(now.getSeconds()).padStart(2,"0");
-    document.getElementById("live-clock").textContent = h + ":" + m + ":" + s;
-    document.getElementById("live-date").textContent =
-      days[now.getDay()] + ", " + now.getDate() + " " + months[now.getMonth()];
-
-    // Greeting
-    const hr = now.getHours();
-    const g = hr < 12 ? "Good morning" : hr < 17 ? "Good afternoon" : "Good evening";
-    const ht = document.getElementById("home-title");
-    if (ht && ht.dataset.name) ht.textContent = g + ", " + ht.dataset.name + "!";
-    document.getElementById("home-sub").textContent =
-      days[now.getDay()] + ", " + now.getDate() + " " + months[now.getMonth()] + " " + now.getFullYear();
+    var now = new Date();
+    var h = String(now.getHours()).padStart(2,"0");
+    var m = String(now.getMinutes()).padStart(2,"0");
+    var s = String(now.getSeconds()).padStart(2,"0");
+    if (_elClock) _elClock.textContent = h + ":" + m + ":" + s;
+    var dayStr = _days[now.getDay()] + ", " + now.getDate() + " " + _months[now.getMonth()];
+    if (_elDate) _elDate.textContent = dayStr;
+    var hr = now.getHours();
+    var g = hr < 12 ? "Good morning" : hr < 17 ? "Good afternoon" : "Good evening";
+    if (_elTitle && _elTitle.dataset.name) _elTitle.textContent = g + ", " + _elTitle.dataset.name + "!";
+    if (_elSub) _elSub.textContent = dayStr + " " + now.getFullYear();
   }
   tick(); setInterval(tick, 1000);
 }
@@ -4474,12 +4474,17 @@ function calNav(dir) {
   fetchCalendar();
 }
 
+var _calCache = {};
 function fetchCalendar() {
   const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   document.getElementById("cal-label").textContent = months[calMonth-1] + " " + calYear;
   document.getElementById("att-sub").textContent = months[calMonth-1] + " " + calYear + " attendance";
 
+  var cacheKey = calYear + "-" + calMonth;
+  if (_calCache[cacheKey]) { renderCalendar(_calCache[cacheKey]); return; }
+
   api("get_attendance_calendar", {year: calYear, month: calMonth}, function(data) {
+    _calCache[cacheKey] = data;
     renderCalendar(data);
   }, function() { toast("Failed to load attendance", "err"); });
 }
@@ -4555,8 +4560,11 @@ function renderCalendar(data) {
 }
 
 /* ── LEAVES ──────────────────────────────────────── */
+var _leaveSummaryCache = null;
 function loadLeaves() {
+  _leaveSummaryCache = null;
   api("get_leave_summary", {}, function(data) {
+    _leaveSummaryCache = data;
     renderLeaveRings(data.balances || []);
     renderLeaveApps(data.applications || []);
 
@@ -4566,6 +4574,19 @@ function loadLeaves() {
     if (pending > 0) { badge.textContent = pending; badge.style.display = "flex"; }
     else { badge.style.display = "none"; }
   }, function() { toast("Failed to load leave data", "err"); });
+}
+
+function _populateLeaveTypeSelect(balances) {
+  var sel = document.getElementById("la-leave-type");
+  if (!balances || !balances.length) {
+    sel.innerHTML = '<option value="">No leave types allocated for this period</option>';
+    return;
+  }
+  sel.innerHTML = '<option value="">Select leave type…</option>' +
+    balances.map(function(b) {
+      return '<option value="' + gpEsc(b.leave_type) + '">' +
+             gpEsc(b.leave_type) + ' (' + b.balance + ' day' + (b.balance === 1 ? '' : 's') + ' left)</option>';
+    }).join("");
 }
 
 function openLeaveModal() {
@@ -4581,20 +4602,16 @@ function openLeaveModal() {
   btn.disabled = false;
   btn.textContent = "Submit Application";
 
-  api("get_leave_summary", {}, function(data) {
-    var balances = data.balances || [];
-    if (!balances.length) {
-      sel.innerHTML = '<option value="">No leave types allocated for this period</option>';
-      return;
-    }
-    sel.innerHTML = '<option value="">Select leave type…</option>' +
-      balances.map(function(b) {
-        return '<option value="' + gpEsc(b.leave_type) + '">' +
-               gpEsc(b.leave_type) + ' (' + b.balance + ' day' + (b.balance === 1 ? '' : 's') + ' left)</option>';
-      }).join("");
-  }, function() {
-    sel.innerHTML = '<option value="">Could not load leave types</option>';
-  });
+  if (_leaveSummaryCache) {
+    _populateLeaveTypeSelect(_leaveSummaryCache.balances || []);
+  } else {
+    api("get_leave_summary", {}, function(data) {
+      _leaveSummaryCache = data;
+      _populateLeaveTypeSelect(data.balances || []);
+    }, function() {
+      sel.innerHTML = '<option value="">Could not load leave types</option>';
+    });
+  }
 
   pfOpenModal("la-modal");
 }
@@ -4671,6 +4688,7 @@ function renderLeaveApps(apps) {
 }
 
 /* ── MY FINANCES sub-tab switcher ───────────────── */
+var _finTabLoaded = {};
 function showFinTab(name) {
   ["salary", "expenses", "leave-enc"].forEach(function(t) {
     var tab  = document.getElementById("fin-tab-" + t);
@@ -4678,6 +4696,8 @@ function showFinTab(name) {
     if (tab)  tab.classList.toggle("active", t === name);
     if (body) body.style.display = (t === name) ? "" : "none";
   });
+  if (name === "expenses"  && !_finTabLoaded.expenses)   { _finTabLoaded.expenses = true;   loadExpenses(); }
+  if (name === "leave-enc" && !_finTabLoaded["leave-enc"]) { _finTabLoaded["leave-enc"] = true; loadLeaveEncPanel(); }
 }
 
 /* ── EXPENSES ────────────────────────────────────── */
@@ -4693,6 +4713,19 @@ function loadExpenses() {
       return '<div class="expense-row"><div class="expense-desc"><div class="expense-name">' + (c.remark || c.name) + '</div><div class="expense-date">' + fmtDate(c.posting_date) + '</div></div>' + expenseStatusBadge(c.approval_status || c.status) + '<div class="expense-amount">' + fmtMoney(c.total_claimed_amount) + '</div></div>';
     }).join("") + '</div>';
   }, function() { toast("Failed to load expenses", "err"); });
+}
+
+var _expenseTypesCache = null;
+function _populateExpenseTypeSelect(types) {
+  var sel = document.getElementById("ec-expense-type");
+  if (!types || !types.length) {
+    sel.innerHTML = '<option value="">No expense types configured</option>';
+    return;
+  }
+  sel.innerHTML = '<option value="">Select expense type…</option>' +
+    types.map(function(t) {
+      return '<option value="' + gpEsc(t.name) + '">' + gpEsc(t.name) + '</option>';
+    }).join("");
 }
 
 function openExpenseModal() {
@@ -4711,18 +4744,16 @@ function openExpenseModal() {
     String(d.getMonth() + 1).padStart(2, "0") + "-" +
     String(d.getDate()).padStart(2, "0");
 
-  api("get_expense_types", {}, function(types) {
-    if (!types || !types.length) {
-      sel.innerHTML = '<option value="">No expense types configured</option>';
-      return;
-    }
-    sel.innerHTML = '<option value="">Select expense type…</option>' +
-      types.map(function(t) {
-        return '<option value="' + gpEsc(t.name) + '">' + gpEsc(t.name) + '</option>';
-      }).join("");
-  }, function() {
-    sel.innerHTML = '<option value="">Could not load expense types</option>';
-  });
+  if (_expenseTypesCache) {
+    _populateExpenseTypeSelect(_expenseTypesCache);
+  } else {
+    api("get_expense_types", {}, function(types) {
+      _expenseTypesCache = types;
+      _populateExpenseTypeSelect(types);
+    }, function() {
+      sel.innerHTML = '<option value="">Could not load expense types</option>';
+    });
+  }
 
   pfOpenModal("ec-modal");
 }

@@ -3251,6 +3251,141 @@ def _goal_kpis(goal_name, employee):
 
 
 @frappe.whitelist()
+def get_available_for_review(appraisal):
+    """Return date-eligible objectives and standalone KPIs for the past-objectives selector dialog."""
+    import json
+    me = _require_employee()
+    ap = frappe.get_doc("Appraisal", appraisal)
+    if ap.employee != me and not _is_hr() and not _is_manager_of(ap.employee):
+        frappe.throw("Not permitted.", frappe.PermissionError)
+
+    cycle_name = ap.appraisal_cycle
+    page_settings = {}
+    if frappe.db.exists("Grace Cycle Config", cycle_name):
+        cfg = frappe.get_doc("Grace Cycle Config", cycle_name)
+        try:
+            page_settings = json.loads(cfg.page_settings or "{}")
+        except Exception:
+            pass
+
+    po = page_settings.get("past-objectives", {})
+    period_from = po.get("period_from") or frappe.db.get_value("Appraisal Cycle", cycle_name, "start_date")
+    period_to   = po.get("period_to")   or frappe.db.get_value("Appraisal Cycle", cycle_name, "end_date")
+
+    goals = frappe.get_all(
+        "Individual Goal",
+        filters={
+            "employee": ap.employee,
+            "docstatus": ["!=", 2],
+            "start_date": ["<=", period_to],
+            "end_date":   [">=", period_from],
+        },
+        fields=["name", "goal_name", "start_date", "end_date", "status",
+                "target_value", "unit", "appraisal_cycle"],
+        ignore_permissions=True,
+        order_by="start_date asc",
+    )
+    for g in goals:
+        g["selected"] = g.get("appraisal_cycle") == cycle_name
+        _serialise_dates(g, "start_date", "end_date")
+
+    # Only standalone KPIs (goal-linked KPIs are included automatically with their parent goal)
+    kpis = frappe.get_all(
+        "KPI",
+        filters={
+            "employee": ap.employee,
+            "individual_goal": ("is", "not set"),
+            "docstatus": ["!=", 2],
+            "period_start": ["<=", period_to],
+            "period_end":   [">=", period_from],
+        },
+        fields=["name", "kpi_name", "period_start", "period_end", "status",
+                "target_value", "unit", "category", "appraisal_cycle"],
+        ignore_permissions=True,
+        order_by="kpi_name asc",
+    )
+    for k in kpis:
+        k["selected"] = k.get("appraisal_cycle") == cycle_name
+        _serialise_dates(k, "period_start", "period_end")
+
+    return {
+        "goals":       goals,
+        "kpis":        kpis,
+        "period_from": str(period_from or ""),
+        "period_to":   str(period_to   or ""),
+    }
+
+
+@frappe.whitelist()
+def set_review_selection(appraisal, selected_goals_json=None, selected_kpis_json=None):
+    """Assign or clear appraisal_cycle on objectives/KPIs to control what appears on the past-objectives page."""
+    import json
+    me = _require_employee()
+    ap = frappe.get_doc("Appraisal", appraisal)
+    if ap.employee != me and not _is_hr() and not _is_manager_of(ap.employee):
+        frappe.throw("Not permitted.", frappe.PermissionError)
+
+    cycle_name = ap.appraisal_cycle
+    page_settings = {}
+    if frappe.db.exists("Grace Cycle Config", cycle_name):
+        cfg = frappe.get_doc("Grace Cycle Config", cycle_name)
+        try:
+            page_settings = json.loads(cfg.page_settings or "{}")
+        except Exception:
+            pass
+
+    po = page_settings.get("past-objectives", {})
+    period_from = po.get("period_from") or frappe.db.get_value("Appraisal Cycle", cycle_name, "start_date")
+    period_to   = po.get("period_to")   or frappe.db.get_value("Appraisal Cycle", cycle_name, "end_date")
+
+    if selected_goals_json is not None:
+        selected_goals = set(json.loads(selected_goals_json) if isinstance(selected_goals_json, str) else selected_goals_json)
+        eligible = frappe.get_all(
+            "Individual Goal",
+            filters={
+                "employee": ap.employee,
+                "docstatus": ["!=", 2],
+                "start_date": ["<=", period_to],
+                "end_date":   [">=", period_from],
+            },
+            fields=["name", "appraisal_cycle"],
+            ignore_permissions=True,
+        )
+        for g in eligible:
+            in_cycle = g.get("appraisal_cycle") == cycle_name
+            want_in  = g["name"] in selected_goals
+            if want_in and not in_cycle:
+                frappe.db.set_value("Individual Goal", g["name"], "appraisal_cycle", cycle_name)
+            elif not want_in and in_cycle:
+                frappe.db.set_value("Individual Goal", g["name"], "appraisal_cycle", "")
+
+    if selected_kpis_json is not None:
+        selected_kpis = set(json.loads(selected_kpis_json) if isinstance(selected_kpis_json, str) else selected_kpis_json)
+        eligible = frappe.get_all(
+            "KPI",
+            filters={
+                "employee": ap.employee,
+                "individual_goal": ("is", "not set"),
+                "docstatus": ["!=", 2],
+                "period_start": ["<=", period_to],
+                "period_end":   [">=", period_from],
+            },
+            fields=["name", "appraisal_cycle"],
+            ignore_permissions=True,
+        )
+        for k in eligible:
+            in_cycle = k.get("appraisal_cycle") == cycle_name
+            want_in  = k["name"] in selected_kpis
+            if want_in and not in_cycle:
+                frappe.db.set_value("KPI", k["name"], "appraisal_cycle", cycle_name)
+            elif not want_in and in_cycle:
+                frappe.db.set_value("KPI", k["name"], "appraisal_cycle", "")
+
+    frappe.db.commit()
+    return {"ok": True}
+
+
+@frappe.whitelist()
 def save_review_page(appraisal, page_key, page_data_json):
     """Persist the employee's self-assessment for a single review page."""
     import json

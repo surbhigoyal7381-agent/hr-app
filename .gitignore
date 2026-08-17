@@ -24,6 +24,7 @@ hrms/docker/backups/
 
 # Production credentials – NEVER commit the real .env
 deploy/.env
+deploy/server.env
 deploy/envs/*.env
 !deploy/envs/*.env.example
 deploy/compose/.image.env

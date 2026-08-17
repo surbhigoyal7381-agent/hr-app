@@ -60,7 +60,7 @@ Deploy commands that require explicit approval before running:
 
 - **Never modify or delete anything inside `/var/www/html/hr-app`** on the server.
 - **Never interrupt, change, or take down the production application** at `https://alvoraa.co/`.
-- Production server: `root@169.58.108.3`
+- Production server: see `deploy/server.env` (git-ignored — never commit this file)
 - Live domains: `alvoraa.co`, `dev.alvoraa.co`, `minda.alvoraa.co`
 - Do not cite `alvox.in` as a live URL — it was renamed; current domain is `alvoraa.co`.
 

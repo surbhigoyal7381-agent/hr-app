@@ -1537,6 +1537,17 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
 .upd-chip.pending{background:#fef3c7;color:#92400e}
 .upd-chip.approved{background:#dcfce7;color:#166534}
 .upd-chip.rejected{background:#fee2e2;color:#991b1b}
+
+/* ── Past-objectives selector dialog ─────────────── */
+.sel-list{display:flex;flex-direction:column}
+.sel-item{display:flex;align-items:flex-start;gap:10px;padding:11px 0;border-bottom:1px solid var(--border1);cursor:pointer;user-select:none}
+.sel-item:last-child{border-bottom:none}
+.sel-chk{flex-shrink:0;margin-top:2px;width:15px;height:15px;cursor:pointer;accent-color:var(--primary)}
+.sel-item-body{flex:1;min-width:0}
+.sel-item-name{font-size:13.5px;font-weight:500;color:var(--text);line-height:1.3}
+.sel-item-meta{font-size:11.5px;color:var(--text3);margin-top:3px}
+.sel-empty{color:var(--text3);font-size:13px;text-align:center;padding:28px 0;line-height:1.7}
+.pr-sel-body{overflow-y:auto;max-height:420px;padding:8px 20px 4px}
 .upd-ev-link{font-size:11px;color:var(--primary);text-decoration:none;display:inline-flex;align-items:center;gap:3px}
 .upd-ev-link:hover{text-decoration:underline}
 .upd-ev-missing{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#92400e;background:#fef3c7;padding:2px 7px;border-radius:20px}
@@ -3306,6 +3317,27 @@ window._EMP_USER  = "{{ frappe.session.user }}";
         <div class="gp-modal-footer">
           <button class="btn btn-outline" onclick="pfCloseModal('pf-log-modal')">Cancel</button>
           <button class="btn btn-primary" id="pf-log-submit-btn" onclick="pfSubmitLog()">Save Progress</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Past-Objectives / KPI Selector Modal ──────── -->
+    <div class="gp-backdrop" id="pr-sel-modal">
+      <div class="gp-modal" style="max-width:500px">
+        <div class="gp-modal-hdr">
+          <div>
+            <div class="gp-modal-title" id="pr-sel-title">Add / Remove Objectives</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px" id="pr-sel-subtitle"></div>
+          </div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pr-sel-modal')">&times;</button>
+        </div>
+        <div class="pr-sel-body">
+          <div class="gp-error" id="pr-sel-error"></div>
+          <div class="sel-list" id="pr-sel-list"></div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pr-sel-modal')">Cancel</button>
+          <button class="btn btn-primary" id="pr-sel-confirm">Confirm</button>
         </div>
       </div>
     </div>
@@ -11282,7 +11314,8 @@ function deleteDrawerNote(noteId, empId) {
         var key = p.key || p;
         if (_EMP_SKIP[key]) return;
         var meta = _PR_PAGE_META[key] || {};
-        pages.push({key: key, label: p.label || meta.label || key});
+        var customLabel = d.page_settings && d.page_settings[key] && d.page_settings[key].page_label;
+        pages.push({key: key, label: customLabel || p.label || meta.label || key});
       });
       if (!pages.some(function(p) { return p.key === "employee-pre-review"; }))
         pages.push({key: "employee-pre-review", label: "Feedback for Reporting Manager"});
@@ -11506,6 +11539,13 @@ function deleteDrawerNote(noteId, empId) {
     } else {
       prRenderGenericPage(key, d, saved, editable);
     }
+    /* Apply custom page label to the content-area title when HR has renamed this page */
+    var customLabel = d.page_settings && d.page_settings[key] && d.page_settings[key].page_label;
+    if (customLabel) {
+      var content = document.getElementById("pr-content");
+      var titleEl = content && content.querySelector(".pr-page-title");
+      if (titleEl) titleEl.textContent = customLabel;
+    }
   }
 
   /* ── Past Objectives & KPIs ──────────────────────── */
@@ -11530,8 +11570,8 @@ function deleteDrawerNote(noteId, empId) {
                 " · " + (goals.reduce(function(s,g){return s+(g.kpis||[]).length;},0) + standalone.length) + " KPIs</span>"
             : "") +
           (editable
-            ? "<button class=\"btn btn-outline btn-sm\" onclick=\"prOpenGoalDialogForReview()\">+ Add Objective</button>" +
-              "<button class=\"btn btn-outline btn-sm\" onclick=\"prOpenKpiDialogForReview()\">+ Add KPI</button>"
+            ? "<button class=\"btn btn-outline btn-sm\" onclick=\"prOpenObjectiveSelector()\">Add/remove Objectives</button>" +
+              "<button class=\"btn btn-outline btn-sm\" onclick=\"prOpenKpiSelector()\">Add/remove KPIs</button>"
             : "") +
         "</div>" +
       "</div>";
@@ -11943,6 +11983,91 @@ function deleteDrawerNote(noteId, empId) {
     pfOpenKpiModal("review");
   };
 
+  /* ── Past-objectives / KPI selector ── */
+
+  window.prOpenObjectiveSelector = function() {
+    pfSetHtml("pr-sel-list", "<div class=\"sel-empty\">Loading…</div>");
+    pfSetHtml("pr-sel-title", "Add / Remove Objectives");
+    pfSetHtml("pr-sel-subtitle", "");
+    pfOpenModal("pr-sel-modal");
+    pf("get_available_for_review", {appraisal: _pr.appraisal}).then(function(data) {
+      _prShowSelectorModal("objectives", data);
+    }).catch(function() {
+      pfSetHtml("pr-sel-list", "<div class=\"sel-empty\">Could not load objectives.</div>");
+    });
+  };
+
+  window.prOpenKpiSelector = function() {
+    pfSetHtml("pr-sel-list", "<div class=\"sel-empty\">Loading…</div>");
+    pfSetHtml("pr-sel-title", "Add / Remove KPIs");
+    pfSetHtml("pr-sel-subtitle", "");
+    pfOpenModal("pr-sel-modal");
+    pf("get_available_for_review", {appraisal: _pr.appraisal}).then(function(data) {
+      _prShowSelectorModal("kpis", data);
+    }).catch(function() {
+      pfSetHtml("pr-sel-list", "<div class=\"sel-empty\">Could not load KPIs.</div>");
+    });
+  };
+
+  function _prShowSelectorModal(type, data) {
+    var isObj = type === "objectives";
+    var items = isObj ? (data.goals || []) : (data.kpis || []);
+    var pFrom = data.period_from || "";
+    var pTo   = data.period_to   || "";
+
+    pfSetHtml("pr-sel-title", isObj ? "Add / Remove Objectives" : "Add / Remove KPIs");
+    pfSetHtml("pr-sel-subtitle",
+      items.length
+        ? items.length + " " + (isObj ? "objective" : "KPI") + (items.length !== 1 ? "s" : "") +
+          " found between " + pFrom + " and " + pTo
+        : "");
+    pfSetHtml("pr-sel-error", "");
+
+    if (!items.length) {
+      pfSetHtml("pr-sel-list",
+        "<div class=\"sel-empty\">No " + (isObj ? "objectives" : "standalone KPIs") + " found" +
+        "<br>between <strong>" + pFrom + "</strong> and <strong>" + pTo + "</strong>." +
+        "<br><span style=\"font-size:11px\">Create them from the Goals section first.</span></div>");
+    } else {
+      var html = items.map(function(item) {
+        var label = isObj ? (item.goal_name || item.name) : (item.kpi_name || item.name);
+        var dFrom = isObj ? (item.start_date  || "") : (item.period_start || "");
+        var dTo   = isObj ? (item.end_date    || "") : (item.period_end   || "");
+        var parts = [];
+        if (dFrom && dTo) parts.push(dFrom + " – " + dTo);
+        if (item.status)  parts.push(item.status);
+        if (item.target_value != null) parts.push("Target: " + item.target_value + (item.unit ? " " + item.unit : ""));
+        if (!isObj && item.category) parts.push(item.category);
+        return "<label class=\"sel-item\">" +
+          "<input type=\"checkbox\" class=\"sel-chk\" value=\"" + item.name + "\"" + (item.selected ? " checked" : "") + ">" +
+          "<div class=\"sel-item-body\">" +
+            "<div class=\"sel-item-name\">" + label + "</div>" +
+            (parts.length ? "<div class=\"sel-item-meta\">" + parts.join(" · ") + "</div>" : "") +
+          "</div>" +
+        "</label>";
+      }).join("");
+      pfSetHtml("pr-sel-list", html);
+    }
+
+    var btn = document.getElementById("pr-sel-confirm");
+    btn.disabled = false;
+    btn.textContent = "Confirm";
+    btn.onclick = function() {
+      var checked = Array.from(document.querySelectorAll("#pr-sel-list .sel-chk:checked")).map(function(el) { return el.value; });
+      btn.disabled = true; btn.textContent = "Saving…";
+      var args = {appraisal: _pr.appraisal};
+      if (isObj) args.selected_goals_json = JSON.stringify(checked);
+      else       args.selected_kpis_json  = JSON.stringify(checked);
+      pf("set_review_selection", args).then(function() {
+        pfCloseModal("pr-sel-modal");
+        prRefreshCurrentPage();
+      }).catch(function(e) {
+        pfShowErr("pr-sel-error", (e && e.message) || "Error saving selection.");
+        btn.disabled = false; btn.textContent = "Confirm";
+      });
+    };
+  }
+
   function prRefreshCurrentPage() {
     if (!_pr.appraisal) return;
     pf("get_my_review", {appraisal: _pr.appraisal}).then(function(d) {
@@ -12040,7 +12165,8 @@ function deleteDrawerNote(noteId, empId) {
         var key = p.key || p;
         if (_MF_SKIP[key]) return;
         var meta = _PR_PAGE_META[key] || {};
-        pages.push({key: key, label: p.label || meta.label || key});
+        var customLabel = d.page_settings && d.page_settings[key] && d.page_settings[key].page_label;
+        pages.push({key: key, label: customLabel || p.label || meta.label || key});
       });
       pages.push({key: "employee-pre-review", label: "Feedback for Reporting Manager"});
       pages.push({key: "manager-feedback-form", label: "Manager Feedback"});
@@ -12985,7 +13111,6 @@ function deleteDrawerNote(noteId, empId) {
   var _APS_PAGES = {
     "past-objectives":  {label: "Past Objectives & KPIs",      icon: "🎯"},
     "past-dev":         {label: "Past Development Goals",       icon: "📈"},
-    "leadership":       {label: "Leadership Principles",        icon: "⭐"},
     "future-objectives":{label: "Future Objectives & KPIs",     icon: "🏆"},
     "future-dev":       {label: "Future Development Goals",     icon: "🌱"},
     "manager-feedback": {label: "Manager's Feedback",           icon: "💬"},
@@ -13302,7 +13427,12 @@ function deleteDrawerNote(noteId, empId) {
 
     var cycleDates = _aps.cycleDetail;
     var html = '<div class="aps-s-title">' + def.icon + ' ' + gpEsc(def.label) + '</div>' +
-      '<div class="aps-s-sub">Configure what is shown and measured in this section of the appraisal form.</div>';
+      '<div class="aps-s-sub">Configure what is shown and measured in this section of the appraisal form.</div>' +
+      '<div class="gp-field" style="margin-top:16px">' +
+        '<div class="gp-label">Page Name</div>' +
+        '<input class="gp-input" type="text" data-aps-key="page_label" placeholder="' + gpEsc(def.label) + '" value="' + gpEsc(ps.page_label || '') + '">' +
+        '<div class="gp-hint">How this section is labelled in the employee\'s appraisal form. Leave blank to use the default name.</div>' +
+      '</div>';
 
     if (key === "past-objectives") {
       html += '<div class="aps-section-lbl">Review Period</div>' +
@@ -13330,15 +13460,6 @@ function deleteDrawerNote(noteId, empId) {
         '<div class="aps-section-lbl">Options</div>' +
         toggle("employee_goals", "Employee-Defined Goals", "Let employees set their own development goals for the next period", true) +
         toggle("manager_input", "Manager Input", "Allow managers to add recommended development areas", true);
-    } else if (key === "leadership") {
-      html += '<div class="aps-section-lbl">Review Period</div>' +
-        '<div class="gp-row2">' + dateField("period_from","From",cycleDates.start) + dateField("period_to","To",cycleDates.end) + '</div>' +
-        '<div class="aps-section-lbl">Rating Scale</div>' +
-        scaleFieldFor("leadership_rating_scale", "Rating Scale for Leadership Principles") +
-        '<div class="aps-section-lbl">Ratings</div>' +
-        toggle("employee_self_rating", "Employee Self-Rating", "Employee rates themselves on each leadership principle", true) +
-        toggle("manager_rating", "Manager Rating", "Manager rates the employee on each leadership principle", true) +
-        toggle("show_comments", "Comments", "Allow free-text comments alongside each rating", true);
     } else if (key === "manager-feedback") {
       html += '<div class="aps-section-lbl">Sections to Include</div>' +
         toggle("show_strengths", "Strengths", "Manager describes what the employee does well", true) +
@@ -13508,10 +13629,11 @@ function deleteDrawerNote(noteId, empId) {
     }
     listEl.innerHTML = _aps.addedPages.map(function(k) {
       var def = _APS_PAGES[k] || {label: k, icon: "📄"};
+      var navLabel = (_aps.pageSettings[k] && _aps.pageSettings[k].page_label) || def.label;
       var isActive = _aps.item === k;
       return '<div class="aps-page-chip' + (isActive ? ' active' : '') + '" id="apsn-' + k + '" onclick="apsShowItem(\'' + k + '\')">' +
         '<span style="font-size:13px">' + def.icon + '</span>' +
-        '<span style="flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + gpEsc(def.label) + '</span>' +
+        '<span style="flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + gpEsc(navLabel) + '</span>' +
         '<button class="aps-page-chip-del" onclick="event.stopPropagation();apsRemovePage(\'' + k + '\')" title="Remove">×</button>' +
       '</div>';
     }).join('');

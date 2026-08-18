@@ -20,8 +20,11 @@ def validate_individual_goal(doc, method=None):
     if doc.parent_goal and doc.parent_goal == doc.name:
         frappe.throw(_("A goal cannot roll up into itself"))
 
-    if doc.actual_progress > 0 and doc.has_value_changed("target_value"):
-        frappe.throw(_("Cannot change target after evidence has been submitted"))
+    # `has_value_changed` returns True unconditionally for a new document - there is no
+    # earlier version to compare against - so without the is_new() guard this rejects any
+    # goal created with progress already on it (imports, seeds, carry-overs).
+    if not doc.is_new() and doc.actual_progress > 0 and doc.has_value_changed("target_value"):
+        frappe.throw(_("Cannot change target after progress has been recorded"))
     _update_trajectory(doc)
 
 

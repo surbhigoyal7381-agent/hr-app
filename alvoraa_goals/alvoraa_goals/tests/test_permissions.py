@@ -5,18 +5,34 @@ from frappe.tests.utils import FrappeTestCase
 
 class TestPermissions(FrappeTestCase):
 
-    def test_employee_cannot_edit_target(self):
-        # Employee role should not have general write permission on Individual Goal
-        # (only if_owner-scoped write is allowed)
-        meta = frappe.get_meta("Individual Goal")
-        permissions = meta.get("permissions", [])
-        employee_perms = [p for p in permissions if p.role == "Employee"]
-        for perm in employee_perms:
-            if not perm.if_owner:
-                self.assertEqual(
-                    perm.get("write"), 0,
-                    "Employee role should not have write permission on Individual Goal without if_owner"
-                )
+    def test_row_level_scoping_is_wired(self):
+        # Write access for Employees is NOT restricted by the doctype's `if_owner` flag.
+        # It is enforced in Python by has_employee_permission, which allows write only
+        # when the current user raised the record. This test guards the wiring: if the
+        # hooks are ever dropped, every Employee silently gains write on every goal.
+        for hook, expected in (
+            ("permission_query_conditions", "alvoraa_goals.permissions.individual_goal_query"),
+            ("has_permission", "alvoraa_goals.permissions.has_employee_permission"),
+        ):
+            handlers = frappe.get_hooks(hook, {}).get("Individual Goal") or []
+            if isinstance(handlers, str):
+                handlers = [handlers]
+            self.assertIn(
+                expected, handlers,
+                f"{hook} for Individual Goal must be handled by {expected}; "
+                "without it doctype-level write=1 is unscoped",
+            )
+
+    def test_permission_hook_denies_unknown_user(self):
+        # Deny by default: a user with no employee record manages nobody, so the hook
+        # must refuse rather than fall through to the doctype's write=1.
+        from alvoraa_goals.permissions import has_employee_permission
+
+        doc = frappe._dict({"employee": "EMP-NONEXISTENT", "owner": "someone.else@example.com"})
+        self.assertFalse(
+            has_employee_permission(doc, "write", "nobody@example.com"),
+            "A user with no manageable employees must not get write access",
+        )
 
     def test_employee_can_read_own_goal(self):
         # Employee role should have read permission on Individual Goal

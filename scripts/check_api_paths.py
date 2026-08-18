@@ -26,7 +26,7 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Directories holding front-end assets that may contain dotted API paths.
-SCAN_DIRS = ["alvoraa_goals", "alvoraa_portal", "alvox_compensation", "hrms"]
+SCAN_DIRS = ["alvoraa_goals", "alvoraa_portal", "hrms"]
 SCAN_EXTS = (".html", ".js", ".vue", ".jsx", ".ts")
 SKIP_DIRS = {".git", "node_modules", "__pycache__", "worktrees", "backups",
              ".pytest_cache", "dist", "build", ".claude"}
@@ -36,7 +36,6 @@ SKIP_DIRS = {".git", "node_modules", "__pycache__", "worktrees", "backups",
 APP_DIRS = {
     "alvoraa_goals": "alvoraa_goals",
     "alvoraa_portal": "alvoraa_portal",
-    "alvox_compensation": "alvox_compensation",
     "hrms": "hrms",
     # Superseded names. Kept deliberately: a head that is not in this dict is SKIPPED by
     # extract_paths(), so removing them would make any regression vanish from the report

@@ -194,10 +194,18 @@ Per-app metadata in `hooks.py`:
 |---|---|---|
 | `app_name` | `grace_goals` | `alvoraa_goals` |
 | `app_title` | `Grace Goals` | `Alvoraa Goals` |
-| `app_publisher` | `Grace Group` | `Alvoraa` |
+| `app_publisher` | `Grace Group` | `AllAboutHR` |
 
-`app_publisher` is currently the **customer's** name on our product. That is a licensing and
-white-labelling problem independent of this rebrand, and worth fixing in the same pass.
+`app_publisher` was the **customer's** name on our product. Corrected to **AllAboutHR**, the
+organisation. Note the two are different levels and both are correct:
+
+| Level | Name |
+|---|---|
+| Organisation / publisher | **AllAboutHR** |
+| Product | **Alvoraa** |
+
+So `app_title = "Alvoraa Goals"` with `app_publisher = "AllAboutHR"`, and the live domain stays
+`alvoraa.co`.
 
 ### 4.2 Modules (category C)
 

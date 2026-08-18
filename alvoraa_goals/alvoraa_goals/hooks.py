@@ -1,6 +1,6 @@
 app_name = "alvoraa_goals"
 app_title = "Alvoraa Goals"
-app_publisher = "Alvoraa"
+app_publisher = "AllAboutHR"
 app_description = "Cascaded goal management with evidence-based progress tracking"
 app_email = "hr@gracedrinks.in"
 app_license = "MIT"

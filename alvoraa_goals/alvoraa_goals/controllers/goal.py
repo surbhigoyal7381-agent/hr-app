@@ -67,13 +67,13 @@ def recalculate_progress(goal_name):
     approved_evidence = frappe.get_all(
         "Goal Evidence",
         filters={"parent": goal_name, "validation_status": "Approved"},
-        fields=["extracted_order_count", "extracted_amount", "evidence_type"]
+        fields=["value", "evidence_type"]
     )
-    unit = (goal.unit or "").lower()
-    if "revenue" in unit or "amount" in unit:
-        total = sum(e.extracted_amount or 0 for e in approved_evidence)
-    else:
-        total = sum(e.extracted_order_count or 0 for e in approved_evidence)
+    # One generic `value` per evidence row, so no unit-based branching. Previously this
+    # inspected goal.unit and summed either extracted_amount or extracted_order_count -
+    # two sales-specific fields that no longer exist. The goal's unit is a label for
+    # display; what evidence contributes is simply its value.
+    total = sum(e.value or 0 for e in approved_evidence)
     old = goal.actual_progress
     goal.actual_progress = total
     goal.progress_pct = min((total / goal.target_value) * 100, 100) if goal.target_value else 0

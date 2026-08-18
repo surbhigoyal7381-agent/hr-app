@@ -52,8 +52,7 @@ class TestEvidence(FrappeTestCase):
         class FakeEvidence:
             name = "test-inv-ev"
             extracted_date = today()
-            extracted_amount = 5000.0
-            extracted_order_count = None
+            value = 5000.0
 
         errors = validate_invoice(FakeEvidence(), goal)
         self.assertEqual(errors, [], f"Expected no errors but got: {errors}")
@@ -72,8 +71,7 @@ class TestEvidence(FrappeTestCase):
             uploaded_by = None
             evidence_type = "Manual Entry"
             extracted_date = None
-            extracted_amount = None
-            extracted_order_count = None
+            value = None
             name = "new"
             validation_status = None
             approved_by = None
@@ -86,13 +84,11 @@ class TestEvidence(FrappeTestCase):
         from alvoraa_goals.validators.duplicate_detector import _similarity_score
 
         class Ev1:
-            extracted_amount = 10000.0
-            extracted_order_count = 5
+            value = 10000.0
             extracted_date = today()
 
         ev2_dict = {
-            "extracted_amount": 10000.0,
-            "extracted_order_count": 5,
+            "value": 10000.0,
             "extracted_date": today(),
         }
         score = _similarity_score(Ev1(), ev2_dict)

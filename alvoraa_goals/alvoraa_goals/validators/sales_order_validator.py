@@ -27,50 +27,36 @@ def validate_sales_order(evidence_doc, goal_doc):
     errors = []
     lines = [f"[Sales Order] Validator: {source_label}"]
 
-    order_count = int(evidence_doc.extracted_order_count or 0)
-    volume = float(evidence_doc.extracted_volume or 0)
-    volume_unit = (evidence_doc.extracted_volume_unit or "").strip()
-    amount = float(evidence_doc.extracted_amount or 0)
+    # `value` is the only measure Goal Evidence carries. extracted_order_count,
+    # extracted_volume, extracted_volume_unit and extracted_amount were all removed with
+    # the move to generic evidence, so the volume and unit rules below have no data to
+    # read and are dropped rather than silently evaluating zero against a minimum.
+    order_count = float(evidence_doc.value or 0)
+    amount = order_count
 
-    min_count = config.get("min_order_count", DEFAULTS["min_order_count"])
+    min_count = config.get("min_value", config.get("min_order_count", DEFAULTS["min_order_count"]))
     if min_count is not None and order_count < min_count:
-        errors.append(f"Order count {order_count} is below minimum required {min_count}.")
-        lines.append(f"  ✗ Order count: {order_count} — below minimum {min_count}")
+        errors.append(f"Value {order_count} is below minimum required {min_count}.")
+        lines.append(f"  ✗ Value: {order_count} — below minimum {min_count}")
     else:
-        lines.append(f"  ✓ Order count: {order_count} ≥ {min_count} (min)")
+        lines.append(f"  ✓ Value: {order_count} ≥ {min_count} (min)")
 
-    max_count = config.get("max_order_count", DEFAULTS["max_order_count"])
+    max_count = config.get("max_value", config.get("max_order_count", DEFAULTS["max_order_count"]))
     if max_count is not None:
         if order_count > max_count:
-            errors.append(f"Order count {order_count} exceeds maximum allowed {max_count}.")
-            lines.append(f"  ✗ Order count: {order_count} — exceeds maximum {max_count}")
+            errors.append(f"Value {order_count} exceeds maximum allowed {max_count}.")
+            lines.append(f"  ✗ Value: {order_count} — exceeds maximum {max_count}")
         else:
-            lines.append(f"  ✓ Order count: {order_count} ≤ {max_count} (max)")
+            lines.append(f"  ✓ Value: {order_count} ≤ {max_count} (max)")
 
-    allowed_units = config.get("allowed_volume_units", DEFAULTS["allowed_volume_units"])
-    if allowed_units:
-        if volume_unit and volume_unit not in allowed_units:
-            errors.append(f"Volume unit '{volume_unit}' not accepted. Allowed: {', '.join(allowed_units)}.")
-            lines.append(f"  ✗ Unit: '{volume_unit}' — not in allowed list {allowed_units}")
-        else:
-            lines.append(f"  ✓ Unit: '{volume_unit}' — accepted")
-    else:
-        lines.append(f"  ✓ Unit: '{volume_unit}' — all units accepted")
-
-    min_vol = config.get("min_volume", DEFAULTS["min_volume"])
-    if min_vol is not None and volume < min_vol:
-        errors.append(f"Volume {volume} {volume_unit} is below minimum required {min_vol}.")
-        lines.append(f"  ✗ Volume: {volume} {volume_unit} — below minimum {min_vol}")
-    else:
-        lines.append(f"  ✓ Volume: {volume} {volume_unit} ≥ {min_vol} (min)")
-
-    max_vol = config.get("max_volume", DEFAULTS["max_volume"])
-    if max_vol is not None:
-        if volume > max_vol:
-            errors.append(f"Volume {volume} {volume_unit} exceeds maximum allowed {max_vol}.")
-            lines.append(f"  ✗ Volume: {volume} {volume_unit} — exceeds maximum {max_vol}")
-        else:
-            lines.append(f"  ✓ Volume: {volume} {volume_unit} ≤ {max_vol} (max)")
+    # The volume and unit rules that stood here are removed with their data. Goal
+    # Evidence no longer carries extracted_volume or extracted_volume_unit, so these
+    # checks could only ever have compared 0 against a minimum and failed every time,
+    # or passed vacuously. Any min_volume / max_volume / allowed_volume_units left in a
+    # saved validator config is now ignored, and says so in the notes.
+    for stale in ("allowed_volume_units", "min_volume", "max_volume"):
+        if config.get(stale) is not None:
+            lines.append(f"  - {stale}: ignored, evidence no longer records volume")
 
     min_amt = config.get("min_amount", DEFAULTS["min_amount"])
     if min_amt is not None and amount < min_amt:

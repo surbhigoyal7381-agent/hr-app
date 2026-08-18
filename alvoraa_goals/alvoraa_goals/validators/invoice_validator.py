@@ -19,15 +19,18 @@ def validate_invoice(evidence_doc, goal_doc):
     else:
         lines.append("  — Date: not provided (skipped)")
 
-    amount = float(evidence_doc.extracted_amount or 0)
-    min_amount = config.get("min_amount", 0)
+    # Evidence carries one generic `value` now, not extracted_amount. Config keys keep
+    # their old names as a fallback so Evidence Validator records already saved in the
+    # database keep working; min_value / max_value are preferred for new ones.
+    amount = float(evidence_doc.value or 0)
+    min_amount = config.get("min_value", config.get("min_amount", 0))
     if amount < min_amount:
         errors.append(f"Amount {amount} is below minimum {min_amount}")
         lines.append(f"  ✗ Amount: {amount} — below minimum {min_amount}")
     else:
         lines.append(f"  ✓ Amount: {amount} ≥ {min_amount} (min)")
 
-    max_amount = config.get("max_amount")
+    max_amount = config.get("max_value", config.get("max_amount"))
     if max_amount is not None:
         if amount > max_amount:
             errors.append(f"Amount {amount} exceeds maximum {max_amount}")

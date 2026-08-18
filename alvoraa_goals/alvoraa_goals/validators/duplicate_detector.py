@@ -3,22 +3,20 @@ from frappe.utils import getdate
 
 
 def check_duplicate(evidence_doc, goal_name):
-    if not evidence_doc.extracted_amount and not evidence_doc.extracted_order_count:
+    if not evidence_doc.value:
         return None
     existing = frappe.db.sql("""
-        SELECT ge.name, ge.extracted_amount, ge.extracted_date, ge.extracted_order_count,
+        SELECT ge.name, ge.value, ge.extracted_date,
                ge.parent as goal_name
         FROM `tabGoal Evidence` ge
         WHERE ge.validation_status != 'Rejected'
           AND ge.name != %(name)s
           AND (
-              (ge.extracted_amount IS NOT NULL AND ge.extracted_amount = %(amount)s)
-              OR (ge.extracted_order_count IS NOT NULL AND ge.extracted_order_count = %(count)s)
+              (ge.value IS NOT NULL AND ge.value = %(value)s)
           )
     """, {
         "name": evidence_doc.name or "new",
-        "amount": evidence_doc.extracted_amount,
-        "count": evidence_doc.extracted_order_count,
+        "value": evidence_doc.value,
     }, as_dict=True)
     for dup in existing:
         score = _similarity_score(evidence_doc, dup)
@@ -30,16 +28,17 @@ def check_duplicate(evidence_doc, goal_name):
 
 def _similarity_score(ev1, ev2):
     score = 0
-    if ev1.extracted_amount and ev2.get("extracted_amount") and ev1.extracted_amount == ev2["extracted_amount"]:
-        score += 40
-    if ev1.extracted_order_count and ev2.get("extracted_order_count") and ev1.extracted_order_count == ev2["extracted_order_count"]:
-        score += 30
+    # Two signals remain, value and date, where there were three - amount, order count
+    # and date. Weights re-balanced so the 80 threshold still means "same number AND
+    # same day", which is what it meant before. Same value alone is not enough.
+    if ev1.value and ev2.get("value") and ev1.value == ev2["value"]:
+        score += 50
     if ev1.extracted_date and ev2.get("extracted_date"):
         delta = abs((getdate(ev1.extracted_date) - getdate(ev2["extracted_date"])).days)
         if delta == 0:
-            score += 30
+            score += 50
         elif delta <= 1:
-            score += 15
+            score += 25
     return min(score, 100)
 
 

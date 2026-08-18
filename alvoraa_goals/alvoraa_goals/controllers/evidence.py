@@ -9,22 +9,21 @@ from alvoraa_goals.controllers.goal import recalculate_progress, _append_audit_l
 
 def validate_evidence(doc, method=None):
     # ── DEBUG ─────────────────────────────────────────────────────────────
+    # Diagnostic logging, trimmed to the fields Goal Evidence actually has. It used to
+    # print order_count, amount, customer, volume and volume_unit - all removed when
+    # evidence became a single generic `value`.
     frappe.log_error(
         f"[DEBUG] validate_evidence CALLED\n"
-        f"  parent goal : {doc.parent}\n"
+        f"  parent goal  : {doc.parent}\n"
         f"  evidence_type: {doc.evidence_type}\n"
-        f"  order_count  : {doc.extracted_order_count}\n"
-        f"  amount       : {doc.extracted_amount}\n"
+        f"  value        : {doc.value}\n"
         f"  date         : {doc.extracted_date}\n"
-        f"  customer     : {doc.extracted_customer}\n"
-        f"  volume       : {doc.extracted_volume} {doc.extracted_volume_unit}\n"
         f"  evidence_file: {doc.evidence_file}",
         "[DEBUG] validate_evidence entry"
     )
     frappe.msgprint(
-        f"[DEBUG] Validation hook fired — type: <b>{doc.evidence_type}</b> | "
-        f"count: {doc.extracted_order_count} | amount: {doc.extracted_amount} | "
-        f"volume: {doc.extracted_volume} {doc.extracted_volume_unit}",
+        f"[DEBUG] Validation hook fired - type: <b>{doc.evidence_type}</b> | "
+        f"value: {doc.value}",
         alert=True, indicator="blue"
     )
     # ── END DEBUG ──────────────────────────────────────────────────────────

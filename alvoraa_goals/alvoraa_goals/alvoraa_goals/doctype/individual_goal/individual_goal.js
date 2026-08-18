@@ -66,14 +66,12 @@ function _render_evidence_gallery(frm) {
         return `<tr>
             <td>${e.evidence_type}</td>
             <td>${frappe.datetime.str_to_user(e.upload_date) || ''}</td>
-            <td>${e.extracted_order_count || '-'}</td>
-            <td>${e.extracted_amount ? frappe.format(e.extracted_amount, {fieldtype:'Currency'}) : '-'}</td>
-            <td>${e.extracted_customer || '-'}</td>
+            <td>${e.value != null ? e.value : '-'}</td>
             <td><span class="indicator-pill green">Approved</span></td>
         </tr>`;
     }).join('');
     var html = `<table class="table table-bordered table-sm" style="margin-top:10px;">
-        <thead><tr><th>Type</th><th>Date</th><th>Orders</th><th>Amount</th><th>Customer</th><th>Status</th></tr></thead>
+        <thead><tr><th>Type</th><th>Date</th><th>Value</th><th>Status</th></tr></thead>
         <tbody>${rows}</tbody>
     </table>`;
     frm.fields_dict['goal_name'].$wrapper.after(
@@ -88,10 +86,10 @@ function _show_evidence_dialog(frm) {
             {fieldname: 'evidence_type', fieldtype: 'Select', label: __('Evidence Type'),
              options: 'Invoice\nSales Order\nManual Entry', reqd: 1},
             {fieldname: 'evidence_file', fieldtype: 'Attach', label: __('Upload File (optional)')},
-            {fieldname: 'extracted_order_count', fieldtype: 'Int', label: __('Number of Orders')},
-            {fieldname: 'extracted_amount', fieldtype: 'Currency', label: __('Amount (₹)')},
-            {fieldname: 'extracted_date', fieldtype: 'Date', label: __('Invoice / Order Date')},
-            {fieldname: 'extracted_customer', fieldtype: 'Data', label: __('Customer Name')},
+            // One generic value, matching Goal Evidence. The separate order-count,
+            // amount and customer inputs went when evidence stopped being sales-specific.
+            {fieldname: 'value', fieldtype: 'Float', label: __('Value / Progress'), reqd: 1},
+            {fieldname: 'extracted_date', fieldtype: 'Date', label: __('Document Date')},
         ],
         primary_action_label: __('Submit'),
         primary_action: function(values) {
@@ -100,10 +98,8 @@ function _show_evidence_dialog(frm) {
                 args: {
                     goal_id: frm.doc.name,
                     evidence_type: values.evidence_type,
-                    extracted_order_count: values.extracted_order_count,
-                    extracted_amount: values.extracted_amount,
+                    value: values.value,
                     extracted_date: values.extracted_date,
-                    extracted_customer: values.extracted_customer,
                     evidence_file: values.evidence_file,
                 },
                 freeze: true,

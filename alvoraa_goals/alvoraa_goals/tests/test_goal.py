@@ -101,9 +101,6 @@ class TestGoal(FrappeTestCase):
         _update_trajectory(goal)
         self.assertEqual(goal.trajectory, "Off Track")
 
-    @unittest.skip(
-        "KNOWN DEFECT, not a stale test - see KNOWN_ISSUES.md. Commit 6351af3 replaced Goal Evidence.extracted_order_count/extracted_amount with a generic `value` field but did not update the 38 places that read them, including controllers.goal.recalculate_progress. Parked rather than fixed because the KPI automation work replaces this evidence-to-progress path entirely. Un-skip when that lands."
-    )
     def test_progress_calculation(self):
         from alvoraa_goals.controllers.goal import recalculate_progress
         goal = self._make_goal(target_value=100)
@@ -113,7 +110,7 @@ class TestGoal(FrappeTestCase):
         ev_name = f"test-ev-{goal.name}"
         frappe.db.sql("""
             INSERT INTO `tabGoal Evidence`
-            (name, parent, parenttype, parentfield, evidence_type, extracted_order_count,
+            (name, parent, parenttype, parentfield, evidence_type, `value`,
              validation_status, idx, docstatus)
             VALUES (%(name)s, %(parent)s, 'Individual Goal', 'evidence_items',
              'Sales Order', %(count)s, 'Approved', 1, 0)

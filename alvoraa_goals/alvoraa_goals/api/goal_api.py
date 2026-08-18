@@ -33,8 +33,7 @@ def get_employee_goals(employee_id=None):
         goal["evidence"] = frappe.get_all(
             "Goal Evidence",
             filters={"parent": goal["name"], "validation_status": "Approved"},
-            fields=["evidence_type", "upload_date", "extracted_order_count",
-                    "extracted_amount", "extracted_date", "extracted_customer"]
+            fields=["evidence_type", "upload_date", "value", "extracted_date"]
         )
         goal["pending_evidence_count"] = frappe.db.count(
             "Goal Evidence", {"parent": goal["name"], "validation_status": "Pending"}
@@ -43,9 +42,20 @@ def get_employee_goals(employee_id=None):
 
 
 @frappe.whitelist()
-def submit_goal_evidence(goal_id, evidence_type, extracted_order_count=None,
-                         extracted_amount=None, extracted_date=None,
-                         extracted_customer=None, evidence_file=None, raw_extracted_data=None):
+def submit_goal_evidence(goal_id, evidence_type, value=None, extracted_date=None,
+                         evidence_file=None, raw_extracted_data=None,
+                         extracted_order_count=None, extracted_amount=None,
+                         extracted_customer=None):
+    """Record evidence against a goal.
+
+    `value` is the single generic measure. The three trailing arguments are the
+    sales-specific fields this replaced; they are accepted so that any caller not yet
+    updated keeps working, and folded into `value`. They are deprecated - do not use
+    them in new code. `extracted_customer` is accepted and ignored: the field no longer
+    exists on Goal Evidence.
+    """
+    if value in (None, ""):
+        value = extracted_amount if extracted_amount not in (None, "") else extracted_order_count
     goal = frappe.get_doc("Individual Goal", goal_id)
     user_employee = frappe.get_value("Employee", {"user_id": frappe.session.user}, "name")
     if goal.employee != user_employee and not frappe.has_permission("Individual Goal", "write", goal_id):
@@ -59,10 +69,8 @@ def submit_goal_evidence(goal_id, evidence_type, extracted_order_count=None,
         "uploaded_by": frappe.session.user,
         "upload_date": now_datetime(),
         "validation_status": "Approved",
-        "extracted_order_count": extracted_order_count,
-        "extracted_amount": extracted_amount,
+        "value": value,
         "extracted_date": extracted_date,
-        "extracted_customer": extracted_customer,
         "evidence_file": evidence_file,
         "raw_extracted_data": raw_extracted_data,
     }

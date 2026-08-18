@@ -4,80 +4,37 @@ Defects that are understood, reproducible, and deliberately not fixed yet. Each 
 
 ---
 
-## KI-1 · Goal progress ignores evidence — half-finished field rename
+## KI-1 · Goal progress ignores evidence — half-finished field rename ✅ FIXED
 
-**Severity:** High. A core feature silently reports zero.
-**Status:** Open. Deliberately deferred.
-**Found:** 2026-08-19, by `test_progress_calculation` failing in CI.
+**Severity was:** High. **Status:** Resolved 2026-08-19. Kept for the record.
 
-### What happened
+Commit `6351af3` replaced `Goal Evidence.extracted_order_count` / `extracted_amount` with a
+generic `value`, updating the doctype but not the code that read it. Progress silently summed a
+column nothing writes to.
 
-Commit `6351af3` — *"Fix evidence form: generic value/progress field instead of sales-specific
-fields"* — replaced two fields on the `Goal Evidence` doctype:
+The rename is now finished across `alvoraa_goals`:
 
-| Removed | Added |
+| Where | Change |
 |---|---|
-| `extracted_order_count` | `value` |
-| `extracted_amount` | |
+| `controllers/goal.py` | `recalculate_progress` sums `value`. The unit-based branch (revenue → amount, else → count) is gone — with one generic measure there is nothing to branch on |
+| `api/goal_api.py` | `submit_goal_evidence(value=...)`. Old argument names still accepted and folded into `value`, so unupdated callers keep working |
+| `validators/invoice_validator.py` | Validates `value`. Config accepts `min_value`/`max_value`, falling back to `min_amount`/`max_amount` so saved Evidence Validator records keep working |
+| `validators/sales_order_validator.py` | Validates `value`. The volume and unit rules are removed — `extracted_volume` and `extracted_volume_unit` no longer exist, so those checks had no data. Stale config keys are reported as ignored rather than silently dropped |
+| `validators/duplicate_detector.py` | Matches on `value`. Weights re-balanced so the 80 threshold still means "same number **and** same day", as it did with three signals |
+| `doctype/individual_goal/individual_goal.js` | One `Value / Progress` input; the evidence table shows Value instead of Orders/Amount/Customer |
 
-The doctype JSON was updated. **The code that reads those fields was not.** 47 references to the
-removed fields remain — 38 in `alvoraa_goals`, 9 in `alvoraa_portal`.
+Two further dead fields turned up beyond those recorded originally: `extracted_volume`,
+`extracted_volume_unit` and `extracted_customer` were also removed by that commit.
 
-The most damaging is the core progress calculation:
+`test_progress_calculation` is un-skipped and passing — 17 tests, OK (skipped=2), the two
+remaining skips being the stale evidence-stub tests.
 
-```python
-# alvoraa_goals/controllers/goal.py
-def recalculate_progress(goal_name):
-    approved_evidence = frappe.get_all(
-        "Goal Evidence",
-        filters={"parent": goal_name, "validation_status": "Approved"},
-        fields=["extracted_order_count", "extracted_amount", "evidence_type"],   # neither exists
-    )
-```
+**A second live break was found and fixed on the way:** `alvoraa_portal/hr_api.py` already called
+`submit_goal_evidence(value=...)`, an argument the goals API did not have. Portal evidence
+submission was raising `TypeError`. It works now.
 
-Also affected: `validators/duplicate_detector.py`, `validators/invoice_validator.py`,
-`validators/sales_order_validator.py`, `api/goal_api.py`, `controllers/evidence.py`, and
-`doctype/individual_goal/individual_goal.js`.
-
-### Why it behaves differently in different places
-
-Frappe removes a field from the doctype but **does not drop the database column**. So:
-
-| Environment | Behaviour |
-|---|---|
-| Fresh install — CI, a new tenant | **Crashes**: `Unknown column 'extracted_order_count'` |
-| Migrated site — after deploying `dev` | **Silently reports zero.** The stale column still exists but nothing writes to it, so every sum is 0 |
-
-The silent case is the dangerous one: approving evidence appears to work, and goal progress
-simply never moves.
-
-This also explains why the suite passed locally and failed in CI. The local bench had a migrated
-table with the lingering column; CI built the table fresh from the current JSON.
-
-### Current servers are not affected
-
-`6351af3` is **not** in the deployed commit (`53a8180`). Production still has the old doctype, so
-its field names still match its code.
-
-> **⚠️ This breaks on the deploy of `dev`.** See `DEPLOYMENT_RUNBOOK.md`.
-
-### Why it is deferred rather than fixed
-
-The KPI automation work (`KPI_AUTOMATION_STRATEGY.md`) replaces this entire evidence-to-progress
-path with `KPI Fact` and `KPI Credit`. Finishing a refactor across 38 call sites in code that is
-about to be deleted is wasted effort.
-
-### What was done instead
-
-`test_progress_calculation` is marked `@unittest.skip` pointing at this entry. It is parked, not
-deleted, and not quietly made to pass — the test is correct and the code is wrong.
-
-### To fix
-
-Either finish the rename across all 38 references in `alvoraa_goals`, or revert `6351af3` and
-redo it as part of the KPI restructure. Note the old code branched on unit (revenue vs count) to
-choose which field to sum; with a single generic `value` that logic needs a decision, not a
-rename. Then un-skip the test.
+`alvoraa_portal` still holds 9 display-only references to the old names; that app is being
+rebuilt, so they are left alone.
 
 ---
 

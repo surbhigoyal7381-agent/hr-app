@@ -52,10 +52,25 @@ RUN ./env/bin/pip install --no-cache-dir \
  && printf 'frappe\nerpnext\nhrms\nalvoraa_goals\nalvoraa_portal\n' > sites/apps.txt
 
 # ── 4. Bake assets: sites/assets + employee PWA + roster SPA ────────────────
-# NODE_OPTIONS raises the heap for esbuild/webpack. Asset bundling is the most
-# memory-hungry step in the image, and when the runner reclaims memory the build is
-# killed with SIGTERM (exit 143) - which reads as a mysterious failure rather than OOM.
-RUN NODE_OPTIONS=--max-old-space-size=4096 bench build --production
+# Built one app at a time, deliberately.
+#
+# `bench build --production` on its own bundles every app in a single process -
+# frappe, erpnext, hrms (which includes two Vue applications, the employee PWA and
+# the roster SPA) and both first-party apps. That is one large memory peak, and when
+# the runner reclaims memory the process dies with SIGTERM, surfacing as exit 143 with
+# no compile error to read.
+#
+# Sequencing lowers the peak to whichever single app is largest, and - just as useful -
+# a failure now names the app that caused it. The previous form reported nothing at all.
+#
+# NODE_OPTIONS is deliberately NOT raised here: esbuild spawns parallel workers, and a
+# larger per-worker heap can make memory pressure worse rather than better. Raising it
+# earlier made the build fail sooner, not later.
+RUN bench build --production --app frappe
+RUN bench build --production --app erpnext
+RUN bench build --production --app hrms
+RUN bench build --production --app alvoraa_goals
+RUN bench build --production --app alvoraa_portal
 
 # ── 5. Tenant provisioning script, available to the provisioner role ────────
 COPY --chown=frappe:frappe deploy/provision_tenant.sh /workspace/provision_tenant.sh

@@ -117,7 +117,9 @@ jobs:
       security-events: write
     steps:
       - name: Trivy scan
-        uses: aquasecurity/trivy-action@0.24.0
+        # v0.36.0, not 0.24.0. The action moved to v-prefixed tags, so the old
+        # unprefixed tag no longer resolves at all - the job fails before it runs.
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
           format: sarif

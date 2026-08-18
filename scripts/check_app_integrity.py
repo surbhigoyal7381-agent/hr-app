@@ -13,7 +13,7 @@ Catches the failure modes a rename introduces, which normal linting does not:
 import ast, glob, io, json, os, sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-APPS = {"grace_goals": "grace_goals", "grace_vendor_portal": "grace_vendor_portal"}
+APPS = {"alvoraa_goals": "alvoraa_goals", "alvoraa_portal": "alvoraa_portal"}
 errors, checks = [], 0
 
 

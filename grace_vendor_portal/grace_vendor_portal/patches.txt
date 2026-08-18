@@ -1,2 +1,0 @@
-# Patches file for grace_vendor_portal
-grace_vendor_portal.patches.v1_0.rename_module_to_alvoraa

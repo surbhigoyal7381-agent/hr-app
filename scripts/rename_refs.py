@@ -11,11 +11,11 @@ Dry-run by default. Nothing is written without --apply.
 
 Modes:
     doctypes-to-alvoraa   Alvox * -> Alvoraa *    (Phase 2, run with the rename_doc patch)
-    portal-to-alvoraa     alvox_portal -> alvoraa_portal   (Phase 4)
-    goals-to-alvoraa      alvox_goals  -> alvoraa_goals    (Phase 4)
+    portal-to-alvoraa     alvoraa_portal -> alvoraa_portal   (Phase 4)
+    goals-to-alvoraa      alvoraa_goals  -> alvoraa_goals    (Phase 4)
 
 The servers already run the Alvox names (verified on dev.alvoraa.co 2026-08-18:
-apps are alvox_goals / alvox_portal, doctypes are "Alvox Cycle Config" etc). The
+apps are alvoraa_goals / alvoraa_portal, doctypes are "Alvox Cycle Config" etc). The
 repo DIRECTORIES still say grace_*, but the deployed identifiers do not. So the
 remaining rename is Alvox -> Alvoraa, NOT Grace -> Alvoraa.
 """
@@ -26,7 +26,7 @@ import os
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCAN_DIRS = ["grace_goals", "grace_vendor_portal"]
+SCAN_DIRS = ["alvoraa_goals", "alvoraa_portal"]
 SCAN_EXTS = (".py", ".js", ".html", ".json", ".md", ".txt")
 SKIP_DIRS = {".git", "node_modules", "__pycache__", "worktrees", "backups",
              ".pytest_cache", "dist", "build", ".claude"}
@@ -45,9 +45,9 @@ def pairs_for(mode):
 			out.append(("%s %s" % (old, d), "%s %s" % (new, d)))         # doctype name
 		return out
 	if mode == "portal-to-alvoraa":
-		return [("alvox_portal.", "alvoraa_portal.")]
+		return [("alvoraa_portal.", "alvoraa_portal.")]
 	if mode == "goals-to-alvoraa":
-		return [("alvox_goals.", "alvoraa_goals.")]
+		return [("alvoraa_goals.", "alvoraa_goals.")]
 	raise SystemExit("unknown mode: %s" % mode)
 
 

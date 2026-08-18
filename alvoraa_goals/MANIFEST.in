@@ -1,0 +1,2 @@
+include MANIFEST.in
+recursive-include alvoraa_goals *.json *.js *.css *.html *.txt *.md *.svg *.png *.jpg

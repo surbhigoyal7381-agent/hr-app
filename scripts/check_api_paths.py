@@ -9,7 +9,7 @@ is the guard rail an app/module rename needs.
 Usage
 -----
     python scripts/check_api_paths.py                  # check against current directory names
-    python scripts/check_api_paths.py --alias alvox_portal=grace_vendor_portal
+    python scripts/check_api_paths.py --alias alvoraa_portal=alvoraa_portal
     python scripts/check_api_paths.py --json           # machine-readable, for CI
 
 Exit codes: 0 = all paths resolve, 1 = at least one unresolved path.
@@ -26,7 +26,7 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Directories holding front-end assets that may contain dotted API paths.
-SCAN_DIRS = ["grace_goals", "grace_vendor_portal", "alvox_compensation", "hrms"]
+SCAN_DIRS = ["alvoraa_goals", "alvoraa_portal", "alvox_compensation", "hrms"]
 SCAN_EXTS = (".html", ".js", ".vue", ".jsx", ".ts")
 SKIP_DIRS = {".git", "node_modules", "__pycache__", "worktrees", "backups",
              ".pytest_cache", "dist", "build", ".claude"}
@@ -34,19 +34,19 @@ SKIP_DIRS = {".git", "node_modules", "__pycache__", "worktrees", "backups",
 # app name -> filesystem directory holding the python package.
 # An app installed as `X` is importable as `X`; its package lives at <dir>/<dir>/.
 APP_DIRS = {
-    "grace_goals": "grace_goals",
-    "grace_vendor_portal": "grace_vendor_portal",
-    "alvox_compensation": "alvox_compensation",
-    "hrms": "hrms",
-    # Rename targets AND superseded names. Both must be listed: a head that is not in
-    # this dict is skipped by extract_paths(), so dropping the old names would make the
-    # broken paths vanish from the report instead of being reported as broken.
-    # These map to directories that do not exist, so they resolve to "no-app".
     "alvoraa_goals": "alvoraa_goals",
     "alvoraa_portal": "alvoraa_portal",
-    "alvox_goals": "alvox_goals",      # superseded by alvoraa_goals
-    "alvox_portal": "alvox_portal",    # superseded; 21 committed front-end calls still use it
-    "frappe": None,      # not vendored here — cannot verify, treated as external
+    "alvox_compensation": "alvox_compensation",
+    "hrms": "hrms",
+    # Superseded names. Kept deliberately: a head that is not in this dict is SKIPPED by
+    # extract_paths(), so removing them would make any regression vanish from the report
+    # rather than be reported. They map to directories that do not exist, so any code
+    # still using them resolves to "no-app" and fails the check.
+    "grace_goals": "grace_goals",
+    "grace_vendor_portal": "grace_vendor_portal",
+    "alvox_goals": "alvox_goals",
+    "alvox_portal": "alvox_portal",
+    "frappe": None,      # not vendored here - cannot verify, treated as external
     "erpnext": None,
 }
 
@@ -144,7 +144,7 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--alias", action="append", default=[], metavar="INSTALLED=DIR",
                     help="treat app INSTALLED as living in directory DIR "
-                         "(e.g. alvox_portal=grace_vendor_portal)")
+                         "(e.g. alvoraa_portal=alvoraa_portal)")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     ap.add_argument("--max", type=int, default=0, metavar="N",
                     help="tolerate up to N unresolved paths (known debt). Exits non-zero only "

@@ -1,7 +1,7 @@
 name: Build Image
 
 # Builds ONE image containing the full Frappe bench: frappe + erpnext + the
-# hrms fork from this repo + grace_goals + grace_vendor_portal, with assets
+# hrms fork from this repo + alvoraa_goals + alvoraa_portal, with assets
 # pre-built. The same image runs every process role (web, socketio, scheduler,
 # worker) — see ARCHITECTURE.md §5.
 #

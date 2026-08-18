@@ -41,15 +41,15 @@ RUN bench get-app --branch "${ERPNEXT_BRANCH}" erpnext
 
 # ── 2. First-party apps, copied from THIS commit ────────────────────────────
 COPY --chown=frappe:frappe hrms                 apps/hrms
-COPY --chown=frappe:frappe grace_goals          apps/grace_goals
-COPY --chown=frappe:frappe grace_vendor_portal  apps/grace_vendor_portal
+COPY --chown=frappe:frappe alvoraa_goals          apps/alvoraa_goals
+COPY --chown=frappe:frappe alvoraa_portal  apps/alvoraa_portal
 
 # ── 3. Real editable installs — not the .pth/symlink hack (closes G9) ───────
 RUN ./env/bin/pip install --no-cache-dir \
         -e apps/hrms \
-        -e apps/grace_goals \
-        -e apps/grace_vendor_portal \
- && printf 'frappe\nerpnext\nhrms\ngrace_goals\ngrace_vendor_portal\n' > sites/apps.txt
+        -e apps/alvoraa_goals \
+        -e apps/alvoraa_portal \
+ && printf 'frappe\nerpnext\nhrms\nalvoraa_goals\nalvoraa_portal\n' > sites/apps.txt
 
 # ── 4. Bake assets: sites/assets + employee PWA + roster SPA ────────────────
 RUN bench build --production

@@ -1,0 +1,693 @@
+{% extends "templates/web.html" %}
+{% block title %}Sign In – Kinexus HRMS{% endblock %}
+
+{% block head_include %}
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<style>
+/* ── Reset ───────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Design tokens ───────────────────────────────────────────────────── */
+:root {
+  --p:        #16A373;   /* Kinexus primary green */
+  --p-dk:     #0E7A55;
+  --p-lt:     #EAFAF4;
+  --p-mid:    #34d399;
+  --acc:      #f59e0b;
+  --bg:       #f4f7f5;
+  --panel-bg: #0F1929;   /* dark left panel – matches employee portal sidebar */
+  --panel-t:  #ffffff;
+  --card:     #ffffff;
+  --border:   #d1ddd8;
+  --text:     #111c17;
+  --text2:    #4a6a5a;
+  --text3:    #8aaa98;
+  --err:      #dc2626;
+  --err-lt:   #fef2f2;
+  --ok:       #059669;
+  --radius:   14px;
+  --radius-sm:8px;
+  --shadow:   0 4px 24px rgba(0,0,0,.10), 0 1px 4px rgba(0,0,0,.06);
+  --font:     -apple-system, 'Segoe UI', 'Inter', Helvetica, Arial, sans-serif;
+}
+
+/* Dark mode overrides */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:     #0d1f18;
+    --card:   #172d22;
+    --border: #2a4538;
+    --text:   #e8f5ef;
+    --text2:  #7ab09a;
+    --text3:  #4a7a62;
+    --err-lt: #2d0a0a;
+  }
+}
+:root[data-theme="light"] {
+  --bg:#f4f7f5; --card:#ffffff; --border:#d1ddd8;
+  --text:#111c17; --text2:#4a6a5a; --text3:#8aaa98; --err-lt:#fef2f2;
+}
+:root[data-theme="dark"] {
+  --bg:#0d1f18; --card:#172d22; --border:#2a4538;
+  --text:#e8f5ef; --text2:#7ab09a; --text3:#4a7a62; --err-lt:#2d0a0a;
+}
+
+/* ── Full-screen layout ──────────────────────────────────────────────── */
+html, body {
+  height: 100%;
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Hide whatever Frappe injects as header/nav */
+.navbar, header, footer, .web-footer { display: none !important; }
+
+#kx-wrap {
+  min-height: 100vh;
+  display: flex;
+}
+
+/* ── Left brand panel ────────────────────────────────────────────────── */
+#kx-brand {
+  width: 42%;
+  min-height: 100vh;
+  background: var(--panel-bg);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 64px 56px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Decorative circles */
+#kx-brand::before,
+#kx-brand::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  opacity: .07;
+  background: var(--p);
+}
+#kx-brand::before {
+  width: 480px; height: 480px;
+  bottom: -140px; right: -120px;
+}
+#kx-brand::after {
+  width: 220px; height: 220px;
+  top: -60px; left: -60px;
+  opacity: .05;
+}
+
+.kx-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 52px;
+}
+.kx-logo-mark {
+  width: 42px; height: 42px;
+  border-radius: 10px;
+  background: var(--p);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.kx-logo-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.kx-logo-svg {
+  width: 26px; height: 26px;
+}
+.kx-logo-name {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -.01em;
+}
+.kx-logo-sub {
+  font-size: .7rem;
+  font-weight: 500;
+  color: var(--p-mid);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.kx-headline {
+  font-size: 2.1rem;
+  font-weight: 700;
+  line-height: 1.22;
+  color: #fff;
+  margin-bottom: 16px;
+  text-wrap: balance;
+}
+.kx-headline em {
+  font-style: normal;
+  color: var(--p-mid);
+}
+
+.kx-sub {
+  font-size: .98rem;
+  line-height: 1.65;
+  color: rgba(255,255,255,.55);
+  margin-bottom: 48px;
+}
+
+.kx-features {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.kx-feat {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.kx-feat-icon {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  background: rgba(26,127,90,.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 14px;
+}
+.kx-feat-text strong {
+  display: block;
+  font-size: .88rem;
+  font-weight: 600;
+  color: rgba(255,255,255,.9);
+}
+.kx-feat-text span {
+  font-size: .8rem;
+  color: rgba(255,255,255,.42);
+  line-height: 1.4;
+}
+
+.kx-brand-footer {
+  margin-top: auto;
+  padding-top: 48px;
+  font-size: .72rem;
+  color: rgba(255,255,255,.22);
+}
+
+/* ── Right login panel ───────────────────────────────────────────────── */
+#kx-form-panel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 32px;
+}
+
+.kx-card {
+  width: 100%;
+  max-width: 420px;
+}
+
+.kx-card-title {
+  font-size: 1.65rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+  letter-spacing: -.02em;
+}
+.kx-card-sub {
+  font-size: .9rem;
+  color: var(--text2);
+  margin-bottom: 32px;
+}
+
+/* Form */
+.kx-field {
+  margin-bottom: 18px;
+}
+.kx-label {
+  display: block;
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--text2);
+  margin-bottom: 6px;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+.kx-input {
+  width: 100%;
+  padding: 11px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--text);
+  font-size: .95rem;
+  font-family: var(--font);
+  transition: border-color .15s, box-shadow .15s;
+  outline: none;
+}
+.kx-input:focus {
+  border-color: var(--p);
+  box-shadow: 0 0 0 3px rgba(26,127,90,.15);
+}
+.kx-input.error {
+  border-color: var(--err);
+  box-shadow: 0 0 0 3px rgba(220,38,38,.10);
+}
+
+.kx-pw-wrap {
+  position: relative;
+}
+.kx-pw-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text3);
+  padding: 4px;
+  display: flex;
+  align-items: center;
+}
+.kx-pw-toggle:hover { color: var(--p); }
+
+/* Error message */
+#kx-error {
+  display: none;
+  background: var(--err-lt);
+  border: 1px solid rgba(220,38,38,.2);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: .86rem;
+  color: var(--err);
+  margin-bottom: 18px;
+  align-items: center;
+  gap: 8px;
+}
+#kx-error.visible { display: flex; }
+
+/* Submit button */
+.kx-btn {
+  width: 100%;
+  padding: 13px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--p);
+  color: #fff;
+  font-size: .95rem;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: background .15s, transform .1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.kx-btn:hover:not(:disabled) { background: var(--p-dk); }
+.kx-btn:active:not(:disabled) { transform: scale(.98); }
+.kx-btn:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+/* Spinner */
+.kx-spinner {
+  width: 18px; height: 18px;
+  border: 2.5px solid rgba(255,255,255,.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: kx-spin .65s linear infinite;
+  display: none;
+}
+.kx-btn.loading .kx-spinner { display: block; }
+.kx-btn.loading .kx-btn-text { display: none; }
+
+@keyframes kx-spin { to { transform: rotate(360deg); } }
+
+/* Forgot password link */
+.kx-forgot {
+  text-align: right;
+  margin-top: -10px;
+  margin-bottom: 18px;
+}
+.kx-forgot a {
+  font-size: .8rem;
+  color: var(--p);
+  text-decoration: none;
+}
+.kx-forgot a:hover { text-decoration: underline; }
+
+/* Divider */
+.kx-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 28px 0;
+}
+
+/* Support */
+.kx-support {
+  text-align: center;
+  font-size: .78rem;
+  color: var(--text3);
+}
+.kx-support a {
+  color: var(--p);
+  text-decoration: none;
+}
+
+/* ── Fade-in animation ───────────────────────────────────────────────── */
+#kx-brand   { animation: kx-fade .45s ease both; }
+.kx-card    { animation: kx-rise .45s ease .1s both; }
+
+@keyframes kx-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes kx-rise {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Mobile ──────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  #kx-wrap     { flex-direction: column; }
+  #kx-brand    { width: 100%; min-height: auto; padding: 40px 28px 36px; }
+  .kx-headline { font-size: 1.55rem; }
+  .kx-features { display: none; }   /* hide feature list on small screens */
+  #kx-form-panel { padding: 36px 20px 48px; }
+}
+@media (max-width: 380px) {
+  .kx-card-title { font-size: 1.35rem; }
+}
+</style>
+{% endblock %}
+
+{% block page_content %}
+<div id="kx-wrap">
+
+  <!-- ── Left: brand panel ──────────────────────────────────── -->
+  <aside id="kx-brand">
+    <div class="kx-logo">
+      <div class="kx-logo-mark" id="kx-logo-mark">
+        <!-- Logo loaded from tenant config; falls back to default SVG -->
+        <svg class="kx-logo-svg" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M4 14 L14 4 L24 14 L14 24 Z" fill="rgba(255,255,255,.15)" stroke="rgba(255,255,255,.6)" stroke-width="1.5"/>
+          <path d="M9 14 L14 9 L19 14 L14 19 Z" fill="rgba(255,255,255,.7)"/>
+        </svg>
+      </div>
+      <div>
+        <div class="kx-logo-name" id="kx-tenant-name">Kinexus HRMS</div>
+        <div class="kx-logo-sub">Workforce Platform</div>
+      </div>
+    </div>
+
+    <h1 class="kx-headline">
+      People. Process.<br><em>Progress.</em>
+    </h1>
+    <p class="kx-sub">
+      One platform for HR, vendor operations, driver logistics,<br>
+      and team goal tracking — built for growing businesses.
+    </p>
+
+    <div class="kx-features">
+      <div class="kx-feat">
+        <div class="kx-feat-icon">👥</div>
+        <div class="kx-feat-text">
+          <strong>HR Self-Service</strong>
+          <span>Attendance, leaves, payslips and more</span>
+        </div>
+      </div>
+      <div class="kx-feat">
+        <div class="kx-feat-icon">🚚</div>
+        <div class="kx-feat-text">
+          <strong>Vendor & Delivery</strong>
+          <span>Live order tracking from warehouse to door</span>
+        </div>
+      </div>
+      <div class="kx-feat">
+        <div class="kx-feat-icon">🎯</div>
+        <div class="kx-feat-text">
+          <strong>Goal Cascade</strong>
+          <span>OKRs aligned from company to individual</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="kx-brand-footer">
+      &copy; <span id="kx-year"></span> Kinexus HRMS. All rights reserved.
+    </div>
+  </aside>
+
+  <!-- ── Right: login form ──────────────────────────────────── -->
+  <main id="kx-form-panel">
+    <div class="kx-card">
+      <h2 class="kx-card-title">Welcome back</h2>
+      <p class="kx-card-sub">Sign in to your workspace</p>
+
+      <!-- Error banner -->
+      <div id="kx-error" role="alert">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M8 5v4M8 11v.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <span id="kx-error-msg">Invalid credentials. Please try again.</span>
+      </div>
+
+      <form id="kx-login-form" novalidate>
+        <div class="kx-field">
+          <label class="kx-label" for="kx-email">Email / Username</label>
+          <input
+            id="kx-email"
+            class="kx-input"
+            type="text"
+            autocomplete="username"
+            placeholder="you@company.com"
+            required
+          >
+        </div>
+
+        <div class="kx-field">
+          <label class="kx-label" for="kx-password">Password</label>
+          <div class="kx-pw-wrap">
+            <input
+              id="kx-password"
+              class="kx-input"
+              type="password"
+              autocomplete="current-password"
+              placeholder="••••••••"
+              required
+            >
+            <button type="button" class="kx-pw-toggle" id="kx-pw-toggle" aria-label="Toggle password visibility">
+              <svg id="kx-eye-show" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+              </svg>
+              <svg id="kx-eye-hide" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                <line x1="1" y1="1" x2="23" y2="23"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="kx-forgot">
+          <a href="/update-password">Forgot password?</a>
+        </div>
+
+        <button type="submit" class="kx-btn" id="kx-submit">
+          <div class="kx-spinner"></div>
+          <span class="kx-btn-text">Sign In</span>
+        </button>
+      </form>
+
+      <hr class="kx-divider">
+      <p class="kx-support">
+        Need help? <a id="kx-support-link" href="mailto:support@kinexus.in">support@kinexus.in</a>
+      </p>
+    </div>
+  </main>
+
+</div><!-- #kx-wrap -->
+
+<script>
+(function () {
+  'use strict';
+
+  const $ = id => document.getElementById(id);
+  const emailEl    = $('kx-email');
+  const passwordEl = $('kx-password');
+  const submitBtn  = $('kx-submit');
+  const errorBox   = $('kx-error');
+  const errorMsg   = $('kx-error-msg');
+  const form       = $('kx-login-form');
+
+  // ── Year ────────────────────────────────────────────────────
+  $('kx-year').textContent = new Date().getFullYear();
+
+  // ── Load tenant branding ────────────────────────────────────
+  async function loadTenantConfig() {
+    try {
+      const r = await fetch(
+        '/api/method/alvoraa_portal.auth.get_tenant_config',
+        { headers: { 'X-Frappe-CSRF-Token': 'fetch' } }
+      );
+      if (!r.ok) return;
+      const data = await r.json();
+      const cfg  = data.message || {};
+
+      // Tenant name in brand panel
+      if (cfg.tenant_name) {
+        $('kx-tenant-name').textContent = cfg.tenant_name;
+        document.title = 'Sign In – ' + cfg.tenant_name;
+      }
+
+      // Logo
+      if (cfg.logo_url) {
+        const mark = $('kx-logo-mark');
+        mark.innerHTML = '<img src="' + cfg.logo_url + '" alt="' + (cfg.tenant_name || 'Logo') + '">';
+      }
+
+      // Primary color (override CSS variable)
+      if (cfg.primary_color) {
+        document.documentElement.style.setProperty('--p', cfg.primary_color);
+        // Derive a slightly darker shade for hover
+        document.documentElement.style.setProperty('--p-dk', shadeHex(cfg.primary_color, -20));
+        document.documentElement.style.setProperty('--p-mid', shadeHex(cfg.primary_color, +30));
+        document.documentElement.style.setProperty('--p-lt',  hexAlpha(cfg.primary_color, .1));
+      }
+
+      // Support email
+      if (cfg.support_email) {
+        const link = $('kx-support-link');
+        link.href        = 'mailto:' + cfg.support_email;
+        link.textContent = cfg.support_email;
+      }
+    } catch (_) { /* silently use defaults */ }
+  }
+
+  function shadeHex(hex, amt) {
+    hex = hex.replace('#', '');
+    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+    const n = parseInt(hex, 16);
+    const r = Math.min(255, Math.max(0, (n >> 16) + amt));
+    const g = Math.min(255, Math.max(0, ((n >> 8) & 0xff) + amt));
+    const b = Math.min(255, Math.max(0, (n & 0xff) + amt));
+    return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+  }
+
+  function hexAlpha(hex, alpha) {
+    hex = hex.replace('#', '');
+    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+  }
+
+  // ── Password toggle ─────────────────────────────────────────
+  $('kx-pw-toggle').addEventListener('click', function () {
+    const isPassword = passwordEl.type === 'password';
+    passwordEl.type  = isPassword ? 'text' : 'password';
+    $('kx-eye-show').style.display = isPassword ? 'none' : '';
+    $('kx-eye-hide').style.display = isPassword ? '' : 'none';
+  });
+
+  // ── Show / hide error ────────────────────────────────────────
+  function showError(msg) {
+    errorMsg.textContent = msg;
+    errorBox.classList.add('visible');
+    emailEl.classList.add('error');
+    passwordEl.classList.add('error');
+  }
+
+  function clearError() {
+    errorBox.classList.remove('visible');
+    emailEl.classList.remove('error');
+    passwordEl.classList.remove('error');
+  }
+
+  // ── Login ───────────────────────────────────────────────────
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    clearError();
+
+    const usr = emailEl.value.trim();
+    const pwd = passwordEl.value;
+
+    if (!usr || !pwd) {
+      showError('Please enter your email and password.');
+      return;
+    }
+
+    // Loading state
+    submitBtn.disabled = true;
+    submitBtn.classList.add('loading');
+
+    try {
+      // Step 1: Frappe login
+      const loginRes = await fetch('/api/method/login', {
+        method:  'POST',
+        headers: {
+          'Content-Type':       'application/json',
+          'X-Frappe-CSRF-Token': getCsrf(),
+        },
+        body: JSON.stringify({ usr, pwd }),
+      });
+
+      const loginData = await loginRes.json();
+
+      if (!loginRes.ok || loginData.exc_type === 'AuthenticationError'
+          || loginData.message === 'Logged Out') {
+        showError('Incorrect email or password. Please try again.');
+        return;
+      }
+
+      // Step 2: Determine portal destination
+      const ctxRes = await fetch(
+        '/api/method/alvoraa_portal.auth.get_portal_redirect',
+        { headers: { 'X-Frappe-CSRF-Token': getCsrf() } }
+      );
+      const ctxData = await ctxRes.json();
+      const dest    = (ctxData.message && ctxData.message.url) || '/hrms-employee';
+
+      // Honour ?redirect-to= param if admin
+      const params = new URLSearchParams(window.location.search);
+      const redir  = params.get('redirect-to');
+      const isAdmin = ctxData.message && ctxData.message.role === 'admin';
+
+      window.location.href = (isAdmin && redir) ? redir : dest;
+
+    } catch (err) {
+      showError('Connection error. Please check your internet and try again.');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.classList.remove('loading');
+    }
+  });
+
+  // ── CSRF helper ─────────────────────────────────────────────
+  function getCsrf() {
+    return (window.frappe && frappe.csrf_token) ||
+           document.cookie.split(';')
+             .map(c => c.trim())
+             .find(c => c.startsWith('csrf_token='))
+             ?.split('=')[1] || 'fetch';
+  }
+
+  // Clear errors when user starts typing
+  [emailEl, passwordEl].forEach(el => {
+    el.addEventListener('input', clearError);
+  });
+
+  // Auto-focus email field
+  emailEl.focus();
+
+  // Init
+  loadTenantConfig();
+}());
+</script>
+{% endblock %}

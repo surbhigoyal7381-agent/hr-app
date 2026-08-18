@@ -40,34 +40,39 @@ jobs:
       - name: ruff format --check (hrms)
         run: ruff format --check hrms/hrms --config hrms/pyproject.toml
 
-      # The grace apps predate this config. Non-blocking until the backlog of
+      # The alvoraa apps predate this config. Non-blocking until the backlog of
       # existing violations is cleared, then flip to blocking.
-      - name: ruff check (grace apps)
+      - name: ruff check (alvoraa apps)
         continue-on-error: true
-        run: ruff check grace_goals grace_vendor_portal --config hrms/pyproject.toml
+        run: ruff check alvoraa_goals alvoraa_portal --config hrms/pyproject.toml
 
       # Frappe resolves front-end `frappe.call({method: "app.module.func"})` paths at
       # runtime. Nothing else in the build catches a path pointing at a function that
       # does not exist - it fails when a user clicks a button. This makes that a
       # build-time check.
       #
-      # The repo DIRECTORIES are grace_goals / grace_vendor_portal, but every server
-      # installs them as alvox_goals / alvox_portal (verified on dev.alvoraa.co,
-      # 2026-08-18). The --alias flags model that, so the check reflects what actually
-      # runs rather than what the folders are called. Without them this reports 23
-      # false failures.
+      # Frappe resolves front-end `frappe.call({method: "app.module.func"})` paths at
+      # runtime, so a path pointing at a function that does not exist fails only when a
+      # user clicks. This makes it a build-time check.
       #
-      # --max 2 is the KNOWN debt: two pre-existing upstream hrms paths. Never raise it.
+      # Since the Phase 4 rename the repo directories and the installed app names finally
+      # agree (alvoraa_goals / alvoraa_portal), so no --alias is needed. --max 2 is the
+      # known debt: two pre-existing upstream hrms paths. Never raise it.
       - name: Front-end API paths resolve
-        run: |
-          python scripts/check_api_paths.py             --alias alvox_portal=grace_vendor_portal             --alias alvox_goals=grace_goals             --max 2
+        run: python scripts/check_api_paths.py --max 2
+
+      # Structural checks that need no bench or database: doctype name/folder/file agree,
+      # controller class matches the doctype name (a mismatch makes bench migrate DELETE
+      # the doctype), hooks.py handlers resolve, patches.txt entries expose execute().
+      - name: App integrity
+        run: python scripts/check_app_integrity.py
 
       - name: Semgrep (Frappe security rules)
         continue-on-error: true
         run: |
           pip install semgrep
           semgrep --config hrms/semgrep --error --skip-unknown-extensions \
-            grace_goals grace_vendor_portal hrms/hrms
+            alvoraa_goals alvoraa_portal hrms/hrms
 
   # ── Python / Frappe tests ─────────────────────────────────────────────────
   test-python:
@@ -114,7 +119,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/frappe-bench
-          key: bench-${{ runner.os }}-${{ env.FRAPPE_BRANCH }}-${{ hashFiles('hrms/pyproject.toml', 'grace_goals/requirements.txt', 'grace_vendor_portal/requirements.txt') }}
+          key: bench-${{ runner.os }}-${{ env.FRAPPE_BRANCH }}-${{ hashFiles('hrms/pyproject.toml', 'alvoraa_goals/requirements.txt', 'alvoraa_portal/requirements.txt') }}
 
       - name: System dependencies
         run: |
@@ -141,12 +146,12 @@ jobs:
       - name: Install this repo's apps
         run: |
           cd ~/frappe-bench
-          rm -rf apps/hrms apps/grace_goals apps/grace_vendor_portal
+          rm -rf apps/hrms apps/alvoraa_goals apps/alvoraa_portal
           cp -r "$GITHUB_WORKSPACE/hrms"                apps/hrms
-          cp -r "$GITHUB_WORKSPACE/grace_goals"         apps/grace_goals
-          cp -r "$GITHUB_WORKSPACE/grace_vendor_portal" apps/grace_vendor_portal
-          ./env/bin/pip install -q -e apps/hrms -e apps/grace_goals -e apps/grace_vendor_portal
-          printf 'frappe\nerpnext\nhrms\ngrace_goals\ngrace_vendor_portal\n' > sites/apps.txt
+          cp -r "$GITHUB_WORKSPACE/alvoraa_goals"         apps/alvoraa_goals
+          cp -r "$GITHUB_WORKSPACE/alvoraa_portal" apps/alvoraa_portal
+          ./env/bin/pip install -q -e apps/hrms -e apps/alvoraa_goals -e apps/alvoraa_portal
+          printf 'frappe\nerpnext\nhrms\nalvoraa_goals\nalvoraa_portal\n' > sites/apps.txt
 
       - name: Create test site
         run: |
@@ -161,8 +166,8 @@ jobs:
                 --admin-password admin --no-mariadb-socket
           bench --site test_site install-app erpnext
           bench --site test_site install-app hrms
-          bench --site test_site install-app grace_vendor_portal
-          bench --site test_site install-app grace_goals
+          bench --site test_site install-app alvoraa_portal
+          bench --site test_site install-app alvoraa_goals
           bench --site test_site set-config allow_tests true
 
       # This step is also the smoke test for the PMS module: `install-app hrms`
@@ -178,8 +183,8 @@ jobs:
       - name: Run tests
         run: |
           cd ~/frappe-bench
-          bench --site test_site run-tests --app grace_goals
-          bench --site test_site run-tests --app grace_vendor_portal
+          bench --site test_site run-tests --app alvoraa_goals
+          bench --site test_site run-tests --app alvoraa_portal
 
       - name: Bench logs on failure
         if: failure()

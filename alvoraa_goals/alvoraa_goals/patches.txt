@@ -1,0 +1,2 @@
+alvoraa_goals.patches.v1_0.rename_module_to_alvoraa
+alvoraa_goals.patches.v1_0.rename_doctypes_to_alvoraa

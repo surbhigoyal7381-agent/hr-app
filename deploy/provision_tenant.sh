@@ -64,11 +64,11 @@ bench new-site "$SITE_NAME" \
     --no-mariadb-socket
 
 # ── 2. Install apps ───────────────────────────────────────────────────────
-echo "[2/6] Installing apps (erpnext → hrms → grace_vendor_portal → grace_goals)"
+echo "[2/6] Installing apps (erpnext → hrms → alvoraa_portal → alvoraa_goals)"
 bench --site "$SITE_NAME" install-app erpnext
 bench --site "$SITE_NAME" install-app hrms
-bench --site "$SITE_NAME" install-app grace_vendor_portal
-bench --site "$SITE_NAME" install-app grace_goals
+bench --site "$SITE_NAME" install-app alvoraa_portal
+bench --site "$SITE_NAME" install-app alvoraa_goals
 
 # ── 3. Apply per-tenant branding config ───────────────────────────────────
 echo "[3/6] Writing tenant config to site_config.json"

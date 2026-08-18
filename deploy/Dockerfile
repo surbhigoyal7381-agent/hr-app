@@ -52,7 +52,10 @@ RUN ./env/bin/pip install --no-cache-dir \
  && printf 'frappe\nerpnext\nhrms\nalvoraa_goals\nalvoraa_portal\n' > sites/apps.txt
 
 # ── 4. Bake assets: sites/assets + employee PWA + roster SPA ────────────────
-RUN bench build --production
+# NODE_OPTIONS raises the heap for esbuild/webpack. Asset bundling is the most
+# memory-hungry step in the image, and when the runner reclaims memory the build is
+# killed with SIGTERM (exit 143) - which reads as a mysterious failure rather than OOM.
+RUN NODE_OPTIONS=--max-old-space-size=4096 bench build --production
 
 # ── 5. Tenant provisioning script, available to the provisioner role ────────
 COPY --chown=frappe:frappe deploy/provision_tenant.sh /workspace/provision_tenant.sh

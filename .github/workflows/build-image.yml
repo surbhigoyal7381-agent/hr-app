@@ -82,7 +82,12 @@ jobs:
         with:
           context: .
           file: deploy/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          # amd64 only. The production server is x86_64 (verified), so arm64 was
+          # speculative - and it is built under QEMU emulation, which is slow and
+          # memory-hungry. `bench build --production` was being killed with SIGTERM
+          # (exit 143) rather than failing on a real error. Re-add arm64 when a target
+          # actually needs it, ideally on a native arm runner rather than emulation.
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

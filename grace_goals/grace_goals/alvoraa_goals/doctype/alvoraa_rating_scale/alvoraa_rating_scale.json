@@ -30,14 +30,14 @@
    "fieldname": "items",
    "fieldtype": "Table",
    "label": "Scale Points",
-   "options": "Grace Rating Scale Item",
+   "options": "Alvoraa Rating Scale Item",
    "reqd": 1
   }
  ],
  "modified": "2026-07-30 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Goals",
- "name": "Grace Rating Scale",
+ "name": "Alvoraa Rating Scale",
  "owner": "Administrator",
  "permissions": [
   {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},

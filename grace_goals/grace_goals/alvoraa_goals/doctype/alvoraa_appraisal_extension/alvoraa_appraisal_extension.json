@@ -58,7 +58,7 @@
  "modified": "2026-07-30 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Goals",
- "name": "Grace Appraisal Extension",
+ "name": "Alvoraa Appraisal Extension",
  "owner": "Administrator",
  "permissions": [
   {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},

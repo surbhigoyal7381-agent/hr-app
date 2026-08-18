@@ -66,9 +66,14 @@ class HRSettings(Document):
 		PROCEED_WITH_FREQUENCY_CHANGE = False
 
 	def set_naming_series(self):
-		from frappe.model.naming import set_name_by_naming_series
+		# erpnext.utilities.naming.set_by_naming_series - NOT
+		# frappe.model.naming.set_name_by_naming_series. The names are similar and the
+		# two are unrelated: frappe's takes a single document and names it, while this
+		# one reconfigures a doctype's naming via property setters and is the only one
+		# that accepts hide_name_field. This matches upstream hrms version-16.
+		from erpnext.utilities.naming import set_by_naming_series
 
-		set_name_by_naming_series(
+		set_by_naming_series(
 			"Employee",
 			"employee_number",
 			self.get("emp_created_by") == "Naming Series",

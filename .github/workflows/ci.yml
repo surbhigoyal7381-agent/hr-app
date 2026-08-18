@@ -135,9 +135,11 @@ jobs:
         with:
           python-version: "3.14"
 
+      # 24 matches frappe/bench:latest, which ships Node v24.13.0. Frappe version-16
+      # declares engines.node ">=24", so 20 aborts `yarn install` during bench init.
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
       # A cold `bench init` is 15-25 min. Cache it, keyed on what can change it.
       - name: Cache bench
@@ -226,9 +228,11 @@ jobs:
         with:
           submodules: recursive          # build fails without frappe-ui
 
+      # 24 matches frappe/bench:latest, which ships Node v24.13.0. Frappe version-16
+      # declares engines.node ">=24", so 20 aborts `yarn install` during bench init.
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Build employee PWA
         working-directory: hrms/frontend

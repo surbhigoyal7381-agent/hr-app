@@ -1,0 +1,533 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-07-07 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "partner_name",
+  "partner_type",
+  "partner_code",
+  "col_break_id",
+  "primary_phone",
+  "primary_email",
+  "status",
+  "is_active",
+  "section_employment",
+  "company",
+  "department",
+  "col_break_emp",
+  "linked_employee",
+  "reporting_manager",
+  "section_vehicle",
+  "vehicle_id",
+  "vehicle_registration",
+  "vehicle_type",
+  "vehicle_capacity",
+  "col_break_veh",
+  "vehicle_age",
+  "vehicle_brand",
+  "vehicle_model",
+  "last_maintenance_date",
+  "next_maintenance_due",
+  "insurance_expiry",
+  "section_operational",
+  "hub_assigned",
+  "service_area",
+  "operational_status",
+  "col_break_ops",
+  "daily_delivery_capacity",
+  "average_orders_per_day",
+  "section_performance",
+  "total_deliveries",
+  "on_time_delivery_percentage",
+  "customer_satisfaction_rating",
+  "col_break_perf",
+  "safety_incidents",
+  "cancellations_this_month",
+  "returns_initiated_this_month",
+  "section_financial",
+  "partner_contract_type",
+  "daily_rate",
+  "per_order_rate",
+  "col_break_fin",
+  "outstanding_payments",
+  "payment_status",
+  "upi_id",
+  "section_compliance",
+  "license_number",
+  "license_expiry",
+  "vehicle_fitness_cert_expiry",
+  "pan",
+  "col_break_comp",
+  "aadhaar",
+  "background_check_done",
+  "background_check_date",
+  "certifications",
+  "section_engagement",
+  "date_started",
+  "date_contract_expiry",
+  "deactivation_reason",
+  "section_portal",
+  "can_access_portal",
+  "portal_username",
+  "col_break_portal",
+  "last_portal_login",
+  "portal_access_level",
+  "section_vehicle_history",
+  "vehicle_history",
+  "section_perf_ratings",
+  "performance_ratings"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "DP-.YYYY.-.####\n",
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "partner_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Partner Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "partner_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Partner Type",
+   "options": "Employee\nContractual\nFranchisee",
+   "reqd": 1
+  },
+  {
+   "fieldname": "partner_code",
+   "fieldtype": "Data",
+   "label": "Partner Code (e.g. DP-CDG-001)"
+  },
+  {
+   "fieldname": "col_break_id",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "primary_phone",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Phone",
+   "options": "Phone"
+  },
+  {
+   "fieldname": "primary_email",
+   "fieldtype": "Data",
+   "label": "Email",
+   "options": "Email"
+  },
+  {
+   "default": "Active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Active\nOn Leave\nSuspended\nTerminated"
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Is Active"
+  },
+  {
+   "fieldname": "section_employment",
+   "fieldtype": "Section Break",
+   "label": "Employment Details"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company"
+  },
+  {
+   "fieldname": "department",
+   "fieldtype": "Link",
+   "label": "Department",
+   "options": "Department"
+  },
+  {
+   "fieldname": "col_break_emp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "linked_employee",
+   "fieldtype": "Link",
+   "label": "Linked Employee",
+   "options": "Employee",
+   "description": "Link if this partner is a Grace Group employee"
+  },
+  {
+   "fieldname": "reporting_manager",
+   "fieldtype": "Link",
+   "label": "Reporting Manager",
+   "options": "Employee"
+  },
+  {
+   "fieldname": "section_vehicle",
+   "fieldtype": "Section Break",
+   "label": "Vehicle Details"
+  },
+  {
+   "fieldname": "vehicle_id",
+   "fieldtype": "Data",
+   "label": "Vehicle ID"
+  },
+  {
+   "fieldname": "vehicle_registration",
+   "fieldtype": "Data",
+   "in_list_view": 0,
+   "label": "Vehicle Registration (Number Plate)"
+  },
+  {
+   "fieldname": "vehicle_type",
+   "fieldtype": "Select",
+   "label": "Vehicle Type",
+   "options": "Truck\nVan\n3-Wheeler\n2-Wheeler"
+  },
+  {
+   "fieldname": "vehicle_capacity",
+   "fieldtype": "Float",
+   "label": "Vehicle Capacity (kg)"
+  },
+  {
+   "fieldname": "col_break_veh",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "vehicle_age",
+   "fieldtype": "Int",
+   "label": "Vehicle Age (years)"
+  },
+  {
+   "fieldname": "vehicle_brand",
+   "fieldtype": "Data",
+   "label": "Vehicle Brand"
+  },
+  {
+   "fieldname": "vehicle_model",
+   "fieldtype": "Data",
+   "label": "Vehicle Model"
+  },
+  {
+   "fieldname": "last_maintenance_date",
+   "fieldtype": "Date",
+   "label": "Last Maintenance Date"
+  },
+  {
+   "fieldname": "next_maintenance_due",
+   "fieldtype": "Date",
+   "label": "Next Maintenance Due"
+  },
+  {
+   "fieldname": "insurance_expiry",
+   "fieldtype": "Date",
+   "label": "Insurance Expiry"
+  },
+  {
+   "fieldname": "section_operational",
+   "fieldtype": "Section Break",
+   "label": "Operational Details"
+  },
+  {
+   "fieldname": "hub_assigned",
+   "fieldtype": "Link",
+   "label": "Hub Assigned",
+   "options": "Delivery Hub"
+  },
+  {
+   "fieldname": "service_area",
+   "fieldtype": "Small Text",
+   "label": "Service Area Description"
+  },
+  {
+   "default": "Active",
+   "fieldname": "operational_status",
+   "fieldtype": "Select",
+   "in_list_view": 0,
+   "label": "Operational Status",
+   "options": "Active\nInactive\nSuspended"
+  },
+  {
+   "fieldname": "col_break_ops",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "daily_delivery_capacity",
+   "fieldtype": "Int",
+   "label": "Daily Delivery Capacity (orders)"
+  },
+  {
+   "fieldname": "average_orders_per_day",
+   "fieldtype": "Int",
+   "label": "Avg Orders per Day"
+  },
+  {
+   "fieldname": "section_performance",
+   "fieldtype": "Section Break",
+   "label": "Performance Metrics (Auto-Updated)"
+  },
+  {
+   "default": "0",
+   "fieldname": "total_deliveries",
+   "fieldtype": "Int",
+   "label": "Total Deliveries (Lifetime)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "on_time_delivery_percentage",
+   "fieldtype": "Percent",
+   "label": "On-Time Delivery % (This Month)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "customer_satisfaction_rating",
+   "fieldtype": "Float",
+   "label": "Customer Satisfaction Rating (1-5)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_break_perf",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "safety_incidents",
+   "fieldtype": "Int",
+   "label": "Safety Incidents (Lifetime)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "cancellations_this_month",
+   "fieldtype": "Int",
+   "label": "Cancellations (This Month)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "returns_initiated_this_month",
+   "fieldtype": "Int",
+   "label": "Returns Initiated (This Month)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_financial",
+   "fieldtype": "Section Break",
+   "label": "Financial"
+  },
+  {
+   "fieldname": "partner_contract_type",
+   "fieldtype": "Select",
+   "label": "Contract Type",
+   "options": "\nFixed\nPer-Order\nHourly"
+  },
+  {
+   "default": "0",
+   "fieldname": "daily_rate",
+   "fieldtype": "Currency",
+   "label": "Daily Rate"
+  },
+  {
+   "default": "0",
+   "fieldname": "per_order_rate",
+   "fieldtype": "Currency",
+   "label": "Per-Order Rate"
+  },
+  {
+   "fieldname": "col_break_fin",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "outstanding_payments",
+   "fieldtype": "Currency",
+   "label": "Outstanding Payments"
+  },
+  {
+   "default": "Current",
+   "fieldname": "payment_status",
+   "fieldtype": "Select",
+   "label": "Payment Status",
+   "options": "Current\nOverdue\nSuspended"
+  },
+  {
+   "fieldname": "upi_id",
+   "fieldtype": "Data",
+   "label": "UPI ID"
+  },
+  {
+   "fieldname": "section_compliance",
+   "fieldtype": "Section Break",
+   "label": "Compliance & Documents"
+  },
+  {
+   "fieldname": "license_number",
+   "fieldtype": "Data",
+   "label": "Driving License Number"
+  },
+  {
+   "fieldname": "license_expiry",
+   "fieldtype": "Date",
+   "label": "License Expiry Date"
+  },
+  {
+   "fieldname": "vehicle_fitness_cert_expiry",
+   "fieldtype": "Date",
+   "label": "Vehicle Fitness Certificate Expiry"
+  },
+  {
+   "fieldname": "pan",
+   "fieldtype": "Data",
+   "label": "PAN Number"
+  },
+  {
+   "fieldname": "col_break_comp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "aadhaar",
+   "fieldtype": "Password",
+   "label": "Aadhaar (Encrypted)"
+  },
+  {
+   "default": "0",
+   "fieldname": "background_check_done",
+   "fieldtype": "Check",
+   "label": "Background Check Done"
+  },
+  {
+   "fieldname": "background_check_date",
+   "fieldtype": "Date",
+   "label": "Background Check Date"
+  },
+  {
+   "fieldname": "certifications",
+   "fieldtype": "Small Text",
+   "label": "Certifications (e.g. Defensive Driving)"
+  },
+  {
+   "fieldname": "section_engagement",
+   "fieldtype": "Section Break",
+   "label": "Engagement"
+  },
+  {
+   "fieldname": "date_started",
+   "fieldtype": "Date",
+   "label": "Date Started"
+  },
+  {
+   "fieldname": "date_contract_expiry",
+   "fieldtype": "Date",
+   "label": "Contract Expiry Date"
+  },
+  {
+   "fieldname": "deactivation_reason",
+   "fieldtype": "Small Text",
+   "label": "Deactivation Reason"
+  },
+  {
+   "fieldname": "section_portal",
+   "fieldtype": "Section Break",
+   "label": "Portal Access"
+  },
+  {
+   "default": "0",
+   "fieldname": "can_access_portal",
+   "fieldtype": "Check",
+   "label": "Can Access Portal"
+  },
+  {
+   "fieldname": "portal_username",
+   "fieldtype": "Data",
+   "label": "Portal Username (Frappe User Email)"
+  },
+  {
+   "fieldname": "col_break_portal",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "last_portal_login",
+   "fieldtype": "Datetime",
+   "label": "Last Portal Login",
+   "read_only": 1
+  },
+  {
+   "fieldname": "portal_access_level",
+   "fieldtype": "Select",
+   "label": "Portal Access Level",
+   "options": "\nView-Only\nFull-Access"
+  },
+  {
+   "fieldname": "section_vehicle_history",
+   "fieldtype": "Section Break",
+   "label": "Vehicle Change History"
+  },
+  {
+   "fieldname": "vehicle_history",
+   "fieldtype": "Table",
+   "label": "Vehicle History",
+   "options": "Partner Vehicle History"
+  },
+  {
+   "fieldname": "section_perf_ratings",
+   "fieldtype": "Section Break",
+   "label": "Monthly Performance Snapshots"
+  },
+  {
+   "fieldname": "performance_ratings",
+   "fieldtype": "Table",
+   "label": "Performance Ratings",
+   "options": "Partner Performance Rating"
+  }
+ ],
+ "links": [],
+ "modified": "2026-07-07 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Delivery Partner",
+ "naming_rule": "By Naming Series",
+ "naming_series": "DP-.YYYY.-.####",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

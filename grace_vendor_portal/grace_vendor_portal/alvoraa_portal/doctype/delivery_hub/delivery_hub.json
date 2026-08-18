@@ -1,0 +1,196 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-07-07 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "hub_name",
+  "hub_code",
+  "col_break_1",
+  "hub_city",
+  "hub_state",
+  "section_location",
+  "hub_location",
+  "hub_area_coverage",
+  "operating_hours",
+  "section_capacity",
+  "max_deliveries_per_day",
+  "average_deliveries_per_day",
+  "utilization_percentage",
+  "vehicles_assigned",
+  "staff_count",
+  "section_performance",
+  "avg_on_time_delivery",
+  "avg_customer_rating",
+  "total_complaints_this_month",
+  "repeat_customers_satisfied",
+  "section_service_areas",
+  "service_areas"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "DH-.YYYY.-.####\n",
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "hub_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Hub Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "hub_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Hub Code (e.g. CDG)",
+   "reqd": 1
+  },
+  {
+   "fieldname": "col_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "hub_city",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "City"
+  },
+  {
+   "fieldname": "hub_state",
+   "fieldtype": "Data",
+   "label": "State"
+  },
+  {
+   "fieldname": "section_location",
+   "fieldtype": "Section Break",
+   "label": "Location & Operations"
+  },
+  {
+   "fieldname": "hub_location",
+   "fieldtype": "Small Text",
+   "label": "Hub GPS Coordinates (Lat, Long)"
+  },
+  {
+   "fieldname": "hub_area_coverage",
+   "fieldtype": "Int",
+   "label": "Coverage Radius (km)"
+  },
+  {
+   "fieldname": "operating_hours",
+   "fieldtype": "Data",
+   "label": "Operating Hours (e.g. 9AM-6PM)"
+  },
+  {
+   "fieldname": "section_capacity",
+   "fieldtype": "Section Break",
+   "label": "Capacity"
+  },
+  {
+   "fieldname": "max_deliveries_per_day",
+   "fieldtype": "Int",
+   "label": "Max Deliveries per Day"
+  },
+  {
+   "fieldname": "average_deliveries_per_day",
+   "fieldtype": "Int",
+   "label": "Avg Deliveries per Day"
+  },
+  {
+   "fieldname": "utilization_percentage",
+   "fieldtype": "Percent",
+   "label": "Utilization %",
+   "read_only": 1,
+   "description": "Auto-calculated: Avg / Max"
+  },
+  {
+   "fieldname": "vehicles_assigned",
+   "fieldtype": "Int",
+   "label": "Vehicles Assigned",
+   "read_only": 1
+  },
+  {
+   "fieldname": "staff_count",
+   "fieldtype": "Int",
+   "label": "Staff Count"
+  },
+  {
+   "fieldname": "section_performance",
+   "fieldtype": "Section Break",
+   "label": "Aggregated Performance"
+  },
+  {
+   "fieldname": "avg_on_time_delivery",
+   "fieldtype": "Percent",
+   "label": "Avg On-Time Delivery %"
+  },
+  {
+   "fieldname": "avg_customer_rating",
+   "fieldtype": "Float",
+   "label": "Avg Customer Rating (1-5)"
+  },
+  {
+   "fieldname": "total_complaints_this_month",
+   "fieldtype": "Int",
+   "label": "Complaints This Month"
+  },
+  {
+   "fieldname": "repeat_customers_satisfied",
+   "fieldtype": "Percent",
+   "label": "Repeat Customer Satisfaction %"
+  },
+  {
+   "fieldname": "section_service_areas",
+   "fieldtype": "Section Break",
+   "label": "Service Areas"
+  },
+  {
+   "fieldname": "service_areas",
+   "fieldtype": "Table",
+   "label": "Service Areas",
+   "options": "Delivery Hub Service Area"
+  }
+ ],
+ "links": [],
+ "modified": "2026-07-07 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Delivery Hub",
+ "naming_rule": "By Naming Series",
+ "naming_series": "DH-.YYYY.-.####",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

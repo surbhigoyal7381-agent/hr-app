@@ -1,0 +1,38 @@
+{
+ "creation": "2026-07-04 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": ["validator_name", "evidence_type", "enabled", "section_logic", "validator_logic", "variables_reference", "section_notes", "description"],
+ "fields": [
+  {"fieldname": "validator_name", "fieldtype": "Data", "label": "Validator Name", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "evidence_type", "fieldtype": "Select", "label": "Evidence Type", "options": "Invoice\nSales Order\nManual Entry", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "enabled", "fieldtype": "Check", "label": "Enabled", "default": "1", "in_list_view": 1},
+  {"fieldname": "section_logic", "fieldtype": "Section Break", "label": "Validation Logic"},
+  {
+   "fieldname": "validator_logic",
+   "fieldtype": "Code",
+   "label": "Validator Logic (JSON)",
+   "options": "JSON",
+   "description": "Enter a JSON object with only the keys you want to enforce. Omitted keys fall back to system defaults. See the Variables Reference below."
+  },
+  {
+   "fieldname": "variables_reference",
+   "fieldtype": "HTML",
+   "label": "Variables Reference",
+   "options": "<div style=\"background:#f4f5f6;border:1px solid #d1d8dd;border-radius:4px;padding:14px 16px;font-size:12.5px;line-height:1.6\"><p style=\"margin:0 0 10px\"><strong>Available variables for validator_logic</strong> &mdash; all keys are optional. Omit any key to skip that check (defaults apply only to keys not present in the JSON).</p><table style=\"width:100%;border-collapse:collapse\"><thead><tr style=\"background:#e8eaed\"><th style=\"padding:6px 8px;text-align:left;border:1px solid #ccc\">Key</th><th style=\"padding:6px 8px;text-align:left;border:1px solid #ccc\">Type</th><th style=\"padding:6px 8px;text-align:left;border:1px solid #ccc\">Applies to</th><th style=\"padding:6px 8px;text-align:left;border:1px solid #ccc\">Description</th><th style=\"padding:6px 8px;text-align:left;border:1px solid #ccc\">Default</th></tr></thead><tbody><tr><td style=\"padding:5px 8px;border:1px solid #ddd\"><code>min_amount</code></td><td style=\"padding:5px 8px;border:1px solid #ddd\">Number</td><td style=\"padding:5px 8px;border:1px solid #ddd\">Invoice, Sales Order</td><td style=\"padding:5px 8px;border:1px solid #ddd\">Minimum document value (INR). Evidence below this is rejected.</td><td style=\"padding:5px 8px;border:1px solid #ddd\">0</td></tr><tr style=\"background:#fafafa\"><td style=\"padding:5px 8px;border:1px solid #ddd\"><code>max_amount</code></td><td style=\"padding:5px 8px;border:1px solid #ddd\">Number</td><td style=\"padding:5px 8px;border:1px solid #ddd\">Invoice, Sales Order</td><td style=\"padding:5px 8px;border:1px solid #ddd\">Maximum document value. Omit for no upper cap.</td><td style=\"padding:5px 8px;border:1px solid #ddd\">No limit</td></tr><tr><td style=\"padding:5px 8px;border:1px solid #ddd\"><code>max_age_days</code></td><td style=\"padding:5px 8px;border:1px solid #ddd\">Integer</td><td style=\"padding:5px 8px;border:1px solid #ddd\">Invoice only</td><td style=\"padding:5px 8px;border:1px solid #ddd\">Maximum days since the document date. Older invoices are rejected.</td><td style=\"padding:5px 8px;border:1px solid #ddd\">90</td></tr><tr style=\"background:#fafafa\"><td style=\"padding:5px 8px;border:1px solid #ddd\"><code>min_order_count</code></td><td style=\"padding:5px 8px;border:1px solid #ddd\">Integer</td><td style=\"padding:5px 8px;border:1px solid #ddd\">Sales Order only</td><td style=\"padding:5px 8px;border:1px solid #ddd\">Minimum number of orders in the submission.</td><td style=\"padding:5px 8px;border:1px solid #ddd\">1</td></tr><tr><td style=\"padding:5px 8px;border:1px solid #ddd\"><code>max_order_count</code></td><td style=\"padding:5px 8px;border:1px solid #ddd\">Integer</td><td style=\"padding:5px 8px;border:1px solid #ddd\">Sales Order only</td><td style=\"padding:5px 8px;border:1px solid #ddd\">Maximum number of orders. Omit for no upper cap.</td><td style=\"padding:5px 8px;border:1px solid #ddd\">No limit</td></tr><tr style=\"background:#fafafa\"><td style=\"padding:5px 8px;border:1px solid #ddd\"><code>min_volume</code></td><td style=\"padding:5px 8px;border:1px solid #ddd\">Number</td><td style=\"padding:5px 8px;border:1px solid #ddd\">Sales Order only</td><td style=\"padding:5px 8px;border:1px solid #ddd\">Minimum physical quantity (in the unit specified on the evidence). E.g. 500 for 500 Liters.</td><td style=\"padding:5px 8px;border:1px solid #ddd\">0</td></tr><tr><td style=\"padding:5px 8px;border:1px solid #ddd\"><code>max_volume</code></td><td style=\"padding:5px 8px;border:1px solid #ddd\">Number</td><td style=\"padding:5px 8px;border:1px solid #ddd\">Sales Order only</td><td style=\"padding:5px 8px;border:1px solid #ddd\">Maximum physical quantity. Omit for no upper cap.</td><td style=\"padding:5px 8px;border:1px solid #ddd\">No limit</td></tr><tr style=\"background:#fafafa\"><td style=\"padding:5px 8px;border:1px solid #ddd\"><code>allowed_volume_units</code></td><td style=\"padding:5px 8px;border:1px solid #ddd\">Array</td><td style=\"padding:5px 8px;border:1px solid #ddd\">Sales Order only</td><td style=\"padding:5px 8px;border:1px solid #ddd\">Accepted unit values. Evidence with any other unit is rejected. Omit to accept all units.</td><td style=\"padding:5px 8px;border:1px solid #ddd\">All units</td></tr></tbody></table><p style=\"margin:12px 0 4px\"><strong>Sales Order example</strong> &mdash; at least 3 orders, minimum 200 Liters or Kg, minimum INR 5,000:</p><pre style=\"background:#fff;border:1px solid #ccc;padding:8px;border-radius:3px;margin:0\">{&quot;min_order_count&quot;: 3, &quot;min_volume&quot;: 200, &quot;allowed_volume_units&quot;: [&quot;Liters&quot;, &quot;Kg&quot;], &quot;min_amount&quot;: 5000}</pre><p style=\"margin:12px 0 4px\"><strong>Invoice example</strong> &mdash; must be within 30 days and at least INR 10,000:</p><pre style=\"background:#fff;border:1px solid #ccc;padding:8px;border-radius:3px;margin:0\">{&quot;max_age_days&quot;: 30, &quot;min_amount&quot;: 10000}</pre></div>"
+  },
+  {"fieldname": "section_notes", "fieldtype": "Section Break", "label": "Notes"},
+  {"fieldname": "description", "fieldtype": "Small Text", "label": "Description", "description": "Internal note — what goal type or scenario this validator is designed for."}
+ ],
+ "modified": "2026-07-07 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Goals",
+ "name": "Evidence Validator",
+ "owner": "Administrator",
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "HR Manager", "read": 1, "write": 1, "create": 1}
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

@@ -1,0 +1,47 @@
+{
+ "autoname": "naming_series:",
+ "creation": "2026-07-30 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series", "from_employee", "from_employee_name",
+  "about_employee", "about_employee_name",
+  "col_break_1", "appraisal_cycle", "submitted_on",
+  "section_rating", "rating", "comments"
+ ],
+ "fields": [
+  {"fieldname": "naming_series", "fieldtype": "Select", "label": "Series",
+   "options": "GD-UF-.YYYY.-.####", "set_only_once": 1},
+  {"fieldname": "from_employee", "fieldtype": "Link", "label": "From Employee",
+   "options": "Employee", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "from_employee_name", "fieldtype": "Data", "label": "From",
+   "fetch_from": "from_employee.employee_name", "read_only": 1, "in_list_view": 1},
+  {"fieldname": "about_employee", "fieldtype": "Link", "label": "About Employee",
+   "options": "Employee", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "about_employee_name", "fieldtype": "Data", "label": "About",
+   "fetch_from": "about_employee.employee_name", "read_only": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "appraisal_cycle", "fieldtype": "Link", "label": "Appraisal Cycle",
+   "options": "Appraisal Cycle", "reqd": 1},
+  {"fieldname": "submitted_on", "fieldtype": "Date", "label": "Submitted On",
+   "in_list_view": 1},
+  {"fieldname": "section_rating", "fieldtype": "Section Break", "label": "Feedback"},
+  {"fieldname": "rating", "fieldtype": "Float", "label": "Rating (0–5)",
+   "precision": "2", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "comments", "fieldtype": "Long Text", "label": "Comments"}
+ ],
+ "modified": "2026-07-30 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Goals",
+ "name": "Upward Feedback",
+ "owner": "Administrator",
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "HR Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "HR User", "read": 1},
+  {"role": "Employee", "read": 1, "create": 1}
+ ],
+ "sort_field": "submitted_on",
+ "sort_order": "DESC",
+ "track_changes": 0
+}

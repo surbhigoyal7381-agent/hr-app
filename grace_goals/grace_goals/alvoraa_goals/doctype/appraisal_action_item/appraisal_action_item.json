@@ -1,0 +1,25 @@
+{
+ "actions": [],
+ "creation": "2026-07-30 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": ["description", "assigned_to", "assigned_to_name", "col_break_1", "due_date", "status"],
+ "fields": [
+  {"fieldname": "description", "fieldtype": "Data", "label": "Action Item", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "assigned_to", "fieldtype": "Link", "label": "Assigned To", "options": "Employee", "in_list_view": 1},
+  {"fieldname": "assigned_to_name", "fieldtype": "Data", "label": "Name", "fetch_from": "assigned_to.employee_name", "read_only": 1},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "due_date", "fieldtype": "Date", "label": "Due Date", "in_list_view": 1},
+  {"fieldname": "status", "fieldtype": "Select", "label": "Status", "options": "Open\nIn Progress\nCompleted", "default": "Open", "in_list_view": 1}
+ ],
+ "links": [],
+ "modified": "2026-07-30 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Goals",
+ "name": "Appraisal Action Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

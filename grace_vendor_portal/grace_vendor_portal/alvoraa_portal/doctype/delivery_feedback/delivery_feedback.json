@@ -1,0 +1,440 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-07-07 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "delivery_order",
+  "delivery_partner",
+  "col_break_hdr",
+  "customer",
+  "customer_name",
+  "feedback_date",
+  "feedback_method",
+  "section_timeliness",
+  "on_time_rating",
+  "was_on_time",
+  "if_late_minutes",
+  "time_feedback",
+  "section_behavior",
+  "behavior_rating",
+  "section_product",
+  "product_condition_rating",
+  "any_damage",
+  "damage_description",
+  "col_break_prod",
+  "damage_photo",
+  "product_temperature_ok",
+  "section_quantity",
+  "quantity_accuracy_rating",
+  "quantity_matched",
+  "items_missing",
+  "col_break_qty",
+  "extra_items",
+  "items_wrong",
+  "section_experience",
+  "overall_experience_rating",
+  "would_recommend",
+  "ease_of_contact",
+  "problem_resolution",
+  "section_overall",
+  "average_rating",
+  "overall_comment",
+  "would_use_again",
+  "section_issues",
+  "issue_reported",
+  "issue_type",
+  "issue_severity",
+  "col_break_iss",
+  "issue_description",
+  "issue_photo",
+  "requested_action",
+  "section_resolution",
+  "issue_resolved",
+  "resolution_date",
+  "resolution_type",
+  "resolution_satisfaction",
+  "section_audit",
+  "auto_calculated_score",
+  "data_quality_check",
+  "flagged_for_review",
+  "col_break_aud",
+  "reviewed_by",
+  "review_comments",
+  "feedback_weight_in_appraisal",
+  "linked_appraisal"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "DF-.YYYY.-.####\n",
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "delivery_order",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Delivery Order",
+   "options": "Delivery Order",
+   "reqd": 1
+  },
+  {
+   "fieldname": "delivery_partner",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Delivery Partner",
+   "options": "Delivery Partner"
+  },
+  {
+   "fieldname": "col_break_hdr",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Data",
+   "label": "Customer ID"
+  },
+  {
+   "fieldname": "customer_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Customer Name"
+  },
+  {
+   "fieldname": "feedback_date",
+   "fieldtype": "Datetime",
+   "label": "Feedback Date & Time"
+  },
+  {
+   "default": "Web Portal",
+   "fieldname": "feedback_method",
+   "fieldtype": "Select",
+   "label": "Feedback Method",
+   "options": "QR Code\nSMS\nWeb Portal\nIn-Person"
+  },
+  {
+   "fieldname": "section_timeliness",
+   "fieldtype": "Section Break",
+   "label": "1. Delivery Timeliness"
+  },
+  {
+   "fieldname": "on_time_rating",
+   "fieldtype": "Int",
+   "in_list_view": 0,
+   "label": "Timeliness Rating (1-5)"
+  },
+  {
+   "default": "1",
+   "fieldname": "was_on_time",
+   "fieldtype": "Check",
+   "label": "Was Delivery On-Time?"
+  },
+  {
+   "fieldname": "if_late_minutes",
+   "fieldtype": "Int",
+   "label": "If Late — Minutes Delayed"
+  },
+  {
+   "fieldname": "time_feedback",
+   "fieldtype": "Small Text",
+   "label": "Timeliness Comment"
+  },
+  {
+   "fieldname": "section_behavior",
+   "fieldtype": "Section Break",
+   "label": "2. Delivery Person Behavior"
+  },
+  {
+   "fieldname": "behavior_rating",
+   "fieldtype": "Int",
+   "label": "Behavior Rating (1-5) — Politeness, Professionalism, Patience"
+  },
+  {
+   "fieldname": "section_product",
+   "fieldtype": "Section Break",
+   "label": "3. Product Condition"
+  },
+  {
+   "fieldname": "product_condition_rating",
+   "fieldtype": "Int",
+   "label": "Product Condition Rating (1-5)"
+  },
+  {
+   "default": "0",
+   "fieldname": "any_damage",
+   "fieldtype": "Check",
+   "label": "Any Product Damage?"
+  },
+  {
+   "fieldname": "damage_description",
+   "fieldtype": "Small Text",
+   "label": "Damage Description"
+  },
+  {
+   "fieldname": "col_break_prod",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "damage_photo",
+   "fieldtype": "Attach",
+   "label": "Damage Photo"
+  },
+  {
+   "default": "1",
+   "fieldname": "product_temperature_ok",
+   "fieldtype": "Check",
+   "label": "Product Temperature OK? (Cold Chain)"
+  },
+  {
+   "fieldname": "section_quantity",
+   "fieldtype": "Section Break",
+   "label": "4. Quantity & Accuracy"
+  },
+  {
+   "fieldname": "quantity_accuracy_rating",
+   "fieldtype": "Int",
+   "label": "Quantity Accuracy Rating (1-5)"
+  },
+  {
+   "default": "1",
+   "fieldname": "quantity_matched",
+   "fieldtype": "Check",
+   "label": "All Items Delivered as Ordered?"
+  },
+  {
+   "default": "0",
+   "fieldname": "items_missing",
+   "fieldtype": "Int",
+   "label": "Items Missing"
+  },
+  {
+   "fieldname": "col_break_qty",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "extra_items",
+   "fieldtype": "Int",
+   "label": "Extra Items Delivered"
+  },
+  {
+   "default": "0",
+   "fieldname": "items_wrong",
+   "fieldtype": "Int",
+   "label": "Wrong Items Delivered"
+  },
+  {
+   "fieldname": "section_experience",
+   "fieldtype": "Section Break",
+   "label": "5. Overall Delivery Experience"
+  },
+  {
+   "fieldname": "overall_experience_rating",
+   "fieldtype": "Int",
+   "label": "Overall Experience Rating (1-5)"
+  },
+  {
+   "default": "1",
+   "fieldname": "would_recommend",
+   "fieldtype": "Check",
+   "label": "Would You Recommend This Delivery Service?"
+  },
+  {
+   "fieldname": "ease_of_contact",
+   "fieldtype": "Int",
+   "label": "Ease of Contact (1-5)"
+  },
+  {
+   "fieldname": "problem_resolution",
+   "fieldtype": "Int",
+   "label": "Problem Resolution Rating (1-5)"
+  },
+  {
+   "fieldname": "section_overall",
+   "fieldtype": "Section Break",
+   "label": "Overall Summary"
+  },
+  {
+   "default": "0",
+   "fieldname": "average_rating",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Average Rating (1-5)",
+   "read_only": 1,
+   "description": "Auto-calculated as average of all 5 rating factors"
+  },
+  {
+   "fieldname": "overall_comment",
+   "fieldtype": "Text",
+   "label": "Overall Comments"
+  },
+  {
+   "default": "1",
+   "fieldname": "would_use_again",
+   "fieldtype": "Check",
+   "label": "Would Use Again?"
+  },
+  {
+   "fieldname": "section_issues",
+   "fieldtype": "Section Break",
+   "label": "Issues Reported"
+  },
+  {
+   "default": "0",
+   "fieldname": "issue_reported",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Issue Reported?"
+  },
+  {
+   "fieldname": "issue_type",
+   "fieldtype": "Select",
+   "label": "Issue Type",
+   "options": "\nDamaged Product\nMissing Items\nWrong Item Delivered\nLate Delivery\nDriver Behavior\nVehicle Condition\nOther"
+  },
+  {
+   "fieldname": "issue_severity",
+   "fieldtype": "Select",
+   "label": "Issue Severity",
+   "options": "\nLow\nMedium\nHigh\nCritical"
+  },
+  {
+   "fieldname": "col_break_iss",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "issue_description",
+   "fieldtype": "Text",
+   "label": "Issue Description"
+  },
+  {
+   "fieldname": "issue_photo",
+   "fieldtype": "Attach",
+   "label": "Issue Photo"
+  },
+  {
+   "fieldname": "requested_action",
+   "fieldtype": "Select",
+   "label": "Requested Action",
+   "options": "\nRefund\nReplacement\nDiscount\nComplaint Only\nNo Action Required"
+  },
+  {
+   "fieldname": "section_resolution",
+   "fieldtype": "Section Break",
+   "label": "Issue Resolution"
+  },
+  {
+   "default": "0",
+   "fieldname": "issue_resolved",
+   "fieldtype": "Check",
+   "label": "Issue Resolved?"
+  },
+  {
+   "fieldname": "resolution_date",
+   "fieldtype": "Date",
+   "label": "Resolution Date"
+  },
+  {
+   "fieldname": "resolution_type",
+   "fieldtype": "Small Text",
+   "label": "Resolution Action Taken"
+  },
+  {
+   "fieldname": "resolution_satisfaction",
+   "fieldtype": "Int",
+   "label": "Post-Resolution Rating (1-5)"
+  },
+  {
+   "fieldname": "section_audit",
+   "fieldtype": "Section Break",
+   "label": "Data Quality & HR Integration"
+  },
+  {
+   "fieldname": "auto_calculated_score",
+   "fieldtype": "Float",
+   "label": "Auto-Calculated Score (Before Customer Edits)",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "data_quality_check",
+   "fieldtype": "Check",
+   "label": "Data Quality OK (Feedback Appears Genuine)"
+  },
+  {
+   "default": "0",
+   "fieldname": "flagged_for_review",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Flagged for Review"
+  },
+  {
+   "fieldname": "col_break_aud",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "reviewed_by",
+   "fieldtype": "Link",
+   "label": "Reviewed By",
+   "options": "User"
+  },
+  {
+   "fieldname": "review_comments",
+   "fieldtype": "Text",
+   "label": "Review Comments"
+  },
+  {
+   "default": "30",
+   "fieldname": "feedback_weight_in_appraisal",
+   "fieldtype": "Percent",
+   "label": "Weight in Driver Appraisal (%)"
+  },
+  {
+   "fieldname": "linked_appraisal",
+   "fieldtype": "Link",
+   "label": "Linked HR Appraisal",
+   "options": "Appraisal"
+  }
+ ],
+ "links": [],
+ "modified": "2026-07-07 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Delivery Feedback",
+ "naming_rule": "By Naming Series",
+ "naming_series": "DF-.YYYY.-.####",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

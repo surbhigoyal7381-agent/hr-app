@@ -1,0 +1,62 @@
+{
+ "actions": [],
+ "creation": "2026-07-04 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "current_lat",
+  "current_long",
+  "updated_timestamp",
+  "eta_minutes",
+  "delivery_status",
+  "remarks"
+ ],
+ "fields": [
+  {
+   "fieldname": "current_lat",
+   "fieldtype": "Float",
+   "label": "Current Latitude"
+  },
+  {
+   "fieldname": "current_long",
+   "fieldtype": "Float",
+   "label": "Current Longitude"
+  },
+  {
+   "fieldname": "updated_timestamp",
+   "fieldtype": "Datetime",
+   "label": "Updated Timestamp",
+   "reqd": 1
+  },
+  {
+   "fieldname": "eta_minutes",
+   "fieldtype": "Int",
+   "label": "ETA (minutes)"
+  },
+  {
+   "fieldname": "delivery_status",
+   "fieldtype": "Select",
+   "label": "Delivery Status",
+   "options": "In Transit\nArrived\nDelivered"
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Data",
+   "label": "Remarks"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-04 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Delivery Tracking",
+ "owner": "Administrator",
+ "parentfield": "tracking_history",
+ "parenttype": "Delivery Assignment",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

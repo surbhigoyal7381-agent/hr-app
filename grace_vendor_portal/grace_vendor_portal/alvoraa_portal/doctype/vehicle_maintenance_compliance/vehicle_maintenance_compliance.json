@@ -1,0 +1,261 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-07-07 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "vehicle_id",
+  "vehicle_registration",
+  "partner",
+  "section_maintenance",
+  "maintenance_type",
+  "maintenance_date",
+  "maintenance_mileage",
+  "maintenance_details",
+  "col_break_maint",
+  "maintenance_cost",
+  "maintenance_vendor",
+  "next_service_due_date",
+  "next_service_due_mileage",
+  "section_compliance",
+  "compliance_type",
+  "compliance_issue",
+  "compliance_expiry_date",
+  "days_until_expiry",
+  "col_break_comp",
+  "is_expired",
+  "renewal_required",
+  "renewal_date",
+  "renewal_document",
+  "renewal_cost",
+  "section_alerts",
+  "alert_status",
+  "alert_notification_sent",
+  "alert_notification_date",
+  "notification_recipient",
+  "section_compliance_history",
+  "compliance_history"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "VMC-.YYYY.-.####\n",
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "vehicle_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Vehicle ID",
+   "reqd": 1
+  },
+  {
+   "fieldname": "vehicle_registration",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Vehicle Registration"
+  },
+  {
+   "fieldname": "partner",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Delivery Partner",
+   "options": "Delivery Partner"
+  },
+  {
+   "fieldname": "section_maintenance",
+   "fieldtype": "Section Break",
+   "label": "Maintenance Record"
+  },
+  {
+   "fieldname": "maintenance_type",
+   "fieldtype": "Select",
+   "label": "Maintenance Type",
+   "options": "\nRegular Service\nOil Change\nTire Rotation\nBrake Check\nBattery\nAC Service\nRepair\nOther"
+  },
+  {
+   "fieldname": "maintenance_date",
+   "fieldtype": "Date",
+   "label": "Maintenance Date"
+  },
+  {
+   "fieldname": "maintenance_mileage",
+   "fieldtype": "Int",
+   "label": "Odometer Reading at Service (km)"
+  },
+  {
+   "fieldname": "maintenance_details",
+   "fieldtype": "Text",
+   "label": "Maintenance Details / Work Done"
+  },
+  {
+   "fieldname": "col_break_maint",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "maintenance_cost",
+   "fieldtype": "Currency",
+   "label": "Maintenance Cost"
+  },
+  {
+   "fieldname": "maintenance_vendor",
+   "fieldtype": "Data",
+   "label": "Service Vendor / Workshop"
+  },
+  {
+   "fieldname": "next_service_due_date",
+   "fieldtype": "Date",
+   "label": "Next Service Due Date"
+  },
+  {
+   "fieldname": "next_service_due_mileage",
+   "fieldtype": "Int",
+   "label": "Next Service Due Mileage (km)"
+  },
+  {
+   "fieldname": "section_compliance",
+   "fieldtype": "Section Break",
+   "label": "Compliance Tracking"
+  },
+  {
+   "fieldname": "compliance_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Compliance Type",
+   "options": "\nInsurance\nVehicle Fitness\nLicense Plate\nSafety Equipment\nPermits\nOther"
+  },
+  {
+   "fieldname": "compliance_issue",
+   "fieldtype": "Small Text",
+   "label": "Compliance Issue / Description"
+  },
+  {
+   "fieldname": "compliance_expiry_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Compliance Expiry Date"
+  },
+  {
+   "fieldname": "days_until_expiry",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Days Until Expiry",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_break_comp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_expired",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Expired?",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "renewal_required",
+   "fieldtype": "Check",
+   "label": "Renewal Required?"
+  },
+  {
+   "fieldname": "renewal_date",
+   "fieldtype": "Date",
+   "label": "Renewed On"
+  },
+  {
+   "fieldname": "renewal_document",
+   "fieldtype": "Attach",
+   "label": "Renewal Document"
+  },
+  {
+   "fieldname": "renewal_cost",
+   "fieldtype": "Currency",
+   "label": "Renewal Cost"
+  },
+  {
+   "fieldname": "section_alerts",
+   "fieldtype": "Section Break",
+   "label": "Alert Status"
+  },
+  {
+   "default": "Clear",
+   "fieldname": "alert_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Alert Status",
+   "options": "Clear\nWarning\nCritical\nOverdue",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "alert_notification_sent",
+   "fieldtype": "Check",
+   "label": "Alert Notification Sent?"
+  },
+  {
+   "fieldname": "alert_notification_date",
+   "fieldtype": "Datetime",
+   "label": "Alert Sent On"
+  },
+  {
+   "fieldname": "notification_recipient",
+   "fieldtype": "Data",
+   "label": "Alert Recipient (Email)"
+  },
+  {
+   "fieldname": "section_compliance_history",
+   "fieldtype": "Section Break",
+   "label": "Compliance Check History"
+  },
+  {
+   "fieldname": "compliance_history",
+   "fieldtype": "Table",
+   "label": "Compliance History",
+   "options": "Vehicle Compliance History"
+  }
+ ],
+ "links": [],
+ "modified": "2026-07-07 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Vehicle Maintenance Compliance",
+ "naming_rule": "By Naming Series",
+ "naming_series": "VMC-.YYYY.-.####",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

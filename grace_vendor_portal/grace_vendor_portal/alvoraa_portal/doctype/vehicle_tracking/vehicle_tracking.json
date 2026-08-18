@@ -1,0 +1,286 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-07-07 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "delivery_partner",
+  "vehicle_id",
+  "delivery_order",
+  "recorded_timestamp",
+  "col_break_loc",
+  "latitude",
+  "longitude",
+  "accuracy",
+  "speed",
+  "heading",
+  "altitude",
+  "section_device",
+  "device_type",
+  "device_id",
+  "app_version",
+  "col_break_dev",
+  "battery_level",
+  "network_type",
+  "section_geofence",
+  "geofence_name",
+  "is_inside_geofence",
+  "geofence_entry_time",
+  "geofence_exit_time",
+  "section_behavior",
+  "harsh_acceleration",
+  "harsh_braking",
+  "sharp_turn",
+  "speeding_alert",
+  "col_break_beh",
+  "speed_limit_for_area",
+  "idle_status",
+  "idle_duration",
+  "section_audit",
+  "data_quality",
+  "signal_strength",
+  "notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "VT-.YYYY.-.########\n",
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "delivery_partner",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Delivery Partner",
+   "options": "Delivery Partner",
+   "reqd": 1
+  },
+  {
+   "fieldname": "vehicle_id",
+   "fieldtype": "Data",
+   "label": "Vehicle ID"
+  },
+  {
+   "fieldname": "delivery_order",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Current Delivery Order",
+   "options": "Delivery Order"
+  },
+  {
+   "fieldname": "recorded_timestamp",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Recorded At",
+   "reqd": 1
+  },
+  {
+   "fieldname": "col_break_loc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "latitude",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Latitude",
+   "precision": "5"
+  },
+  {
+   "fieldname": "longitude",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Longitude",
+   "precision": "5"
+  },
+  {
+   "fieldname": "accuracy",
+   "fieldtype": "Int",
+   "label": "GPS Accuracy (meters)"
+  },
+  {
+   "fieldname": "speed",
+   "fieldtype": "Int",
+   "label": "Speed (km/h)"
+  },
+  {
+   "fieldname": "heading",
+   "fieldtype": "Int",
+   "label": "Heading Direction (0-360°)"
+  },
+  {
+   "fieldname": "altitude",
+   "fieldtype": "Int",
+   "label": "Altitude (meters)"
+  },
+  {
+   "fieldname": "section_device",
+   "fieldtype": "Section Break",
+   "label": "Device Information"
+  },
+  {
+   "fieldname": "device_type",
+   "fieldtype": "Select",
+   "label": "Device Type",
+   "options": "Mobile\nGPS Device\nBoth"
+  },
+  {
+   "fieldname": "device_id",
+   "fieldtype": "Data",
+   "label": "Device IMEI"
+  },
+  {
+   "fieldname": "app_version",
+   "fieldtype": "Data",
+   "label": "App Version"
+  },
+  {
+   "fieldname": "col_break_dev",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "battery_level",
+   "fieldtype": "Percent",
+   "label": "Battery Level (%)"
+  },
+  {
+   "fieldname": "network_type",
+   "fieldtype": "Select",
+   "label": "Network Type",
+   "options": "WiFi\n4G\n3G\n2G\nOffline"
+  },
+  {
+   "fieldname": "section_geofence",
+   "fieldtype": "Section Break",
+   "label": "Geofence Data"
+  },
+  {
+   "fieldname": "geofence_name",
+   "fieldtype": "Data",
+   "label": "Geofence Zone / Hub Name"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_inside_geofence",
+   "fieldtype": "Check",
+   "label": "Inside Geofence?"
+  },
+  {
+   "fieldname": "geofence_entry_time",
+   "fieldtype": "Datetime",
+   "label": "Geofence Entry Time"
+  },
+  {
+   "fieldname": "geofence_exit_time",
+   "fieldtype": "Datetime",
+   "label": "Geofence Exit Time"
+  },
+  {
+   "fieldname": "section_behavior",
+   "fieldtype": "Section Break",
+   "label": "Driver Behavior Alerts"
+  },
+  {
+   "default": "0",
+   "fieldname": "harsh_acceleration",
+   "fieldtype": "Check",
+   "label": "Harsh Acceleration Detected"
+  },
+  {
+   "default": "0",
+   "fieldname": "harsh_braking",
+   "fieldtype": "Check",
+   "label": "Harsh Braking Detected"
+  },
+  {
+   "default": "0",
+   "fieldname": "sharp_turn",
+   "fieldtype": "Check",
+   "label": "Sharp Turn Detected"
+  },
+  {
+   "default": "0",
+   "fieldname": "speeding_alert",
+   "fieldtype": "Check",
+   "label": "Speeding Alert (Over Speed Limit)"
+  },
+  {
+   "fieldname": "col_break_beh",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "speed_limit_for_area",
+   "fieldtype": "Int",
+   "label": "Speed Limit for Area (km/h)"
+  },
+  {
+   "default": "0",
+   "fieldname": "idle_status",
+   "fieldtype": "Check",
+   "label": "Vehicle Idle?"
+  },
+  {
+   "fieldname": "idle_duration",
+   "fieldtype": "Int",
+   "label": "Idle Duration (minutes)"
+  },
+  {
+   "fieldname": "section_audit",
+   "fieldtype": "Section Break",
+   "label": "Data Quality"
+  },
+  {
+   "default": "Good",
+   "fieldname": "data_quality",
+   "fieldtype": "Select",
+   "label": "Data Quality",
+   "options": "Good\nFair\nPoor"
+  },
+  {
+   "fieldname": "signal_strength",
+   "fieldtype": "Percent",
+   "label": "GPS Signal Strength (%)"
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes / Anomaly"
+  }
+ ],
+ "links": [],
+ "modified": "2026-07-07 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Vehicle Tracking",
+ "naming_rule": "By Naming Series",
+ "naming_series": "VT-.YYYY.-.########",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "write": 1
+  }
+ ],
+ "sort_field": "recorded_timestamp",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

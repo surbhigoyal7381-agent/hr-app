@@ -1,0 +1,28 @@
+{
+ "creation": "2026-07-04 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": ["evidence_1", "evidence_2", "goal_1", "goal_2", "col_break_1", "similarity_score", "flagged_by", "action_taken", "notes"],
+ "fields": [
+  {"fieldname": "evidence_1", "fieldtype": "Data", "label": "Evidence 1", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "evidence_2", "fieldtype": "Data", "label": "Evidence 2", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "goal_1", "fieldtype": "Link", "label": "Goal 1", "options": "Individual Goal"},
+  {"fieldname": "goal_2", "fieldtype": "Link", "label": "Goal 2", "options": "Individual Goal"},
+  {"fieldname": "col_break_1", "fieldtype": "Column Break"},
+  {"fieldname": "similarity_score", "fieldtype": "Percent", "label": "Similarity Score", "in_list_view": 1},
+  {"fieldname": "flagged_by", "fieldtype": "Select", "label": "Flagged By", "options": "System\nManual", "in_list_view": 1},
+  {"fieldname": "action_taken", "fieldtype": "Select", "label": "Action Taken", "options": "Pending Review\nMerged\nRejected\nApproved as Separate", "default": "Pending Review", "in_list_view": 1},
+  {"fieldname": "notes", "fieldtype": "Small Text", "label": "Notes"}
+ ],
+ "modified": "2026-07-04 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Goals",
+ "name": "Evidence Duplicate Check",
+ "owner": "Administrator",
+ "permissions": [
+  {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
+  {"role": "HR Manager", "read": 1, "write": 1, "create": 1}
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC"
+}

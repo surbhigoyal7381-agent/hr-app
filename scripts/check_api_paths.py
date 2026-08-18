@@ -38,10 +38,14 @@ APP_DIRS = {
     "grace_vendor_portal": "grace_vendor_portal",
     "alvox_compensation": "alvox_compensation",
     "hrms": "hrms",
-    # Rename targets. Listed so paths using them are *checked*, not silently skipped —
-    # this is what catches a half-finished rename.
-    "alvox_goals": "alvox_goals",
-    "alvox_portal": "alvox_portal",
+    # Rename targets AND superseded names. Both must be listed: a head that is not in
+    # this dict is skipped by extract_paths(), so dropping the old names would make the
+    # broken paths vanish from the report instead of being reported as broken.
+    # These map to directories that do not exist, so they resolve to "no-app".
+    "alvoraa_goals": "alvoraa_goals",
+    "alvoraa_portal": "alvoraa_portal",
+    "alvox_goals": "alvox_goals",      # superseded by alvoraa_goals
+    "alvox_portal": "alvox_portal",    # superseded; 21 committed front-end calls still use it
     "frappe": None,      # not vendored here — cannot verify, treated as external
     "erpnext": None,
 }

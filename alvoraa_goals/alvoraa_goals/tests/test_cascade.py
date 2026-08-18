@@ -1,6 +1,6 @@
 import frappe
 
-from alvoraa_goals.tests.utils import ensure_employee_prerequisites
+from alvoraa_goals.tests.utils import ensure_employee, ensure_employee_prerequisites
 import unittest
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, today
@@ -20,22 +20,7 @@ def _setup_cascade_with_goals(suffix, company_target, goal_targets):
     })
     cascade.insert(ignore_permissions=True)
 
-    emp_name = f"Cascade {suffix} Employee"
-    existing_emp = frappe.get_value("Employee", {"employee_name": emp_name}, "name")
-    if existing_emp:
-        employee = existing_emp
-    else:
-        emp = frappe.get_doc({
-            "doctype": "Employee",
-            "first_name": f"Cascade {suffix}",
-            "last_name": "Employee",
-            "company": company,
-            "date_of_joining": today(),
-            "gender": "Male",
-            "status": "Active",
-        })
-        emp.insert(ignore_permissions=True)
-        employee = emp.name
+    employee = ensure_employee(f"Cascade {suffix}")
 
     goals = []
     for i, tv in enumerate(goal_targets):
@@ -92,22 +77,7 @@ class TestCascade(FrappeTestCase):
         })
         cascade.insert(ignore_permissions=True)
 
-        tree_emp_name = "Tree Test Employee"
-        existing_emp = frappe.get_value("Employee", {"employee_name": tree_emp_name}, "name")
-        if existing_emp:
-            employee = existing_emp
-        else:
-            emp = frappe.get_doc({
-                "doctype": "Employee",
-                "first_name": "Tree Test",
-                "last_name": "Employee",
-                "company": company,
-                "date_of_joining": today(),
-                "gender": "Male",
-                "status": "Active",
-            })
-            emp.insert(ignore_permissions=True)
-            employee = emp.name
+        employee = ensure_employee("Tree Test")
 
         parent_goal = frappe.get_doc({
             "doctype": "Individual Goal",

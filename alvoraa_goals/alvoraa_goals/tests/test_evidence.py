@@ -1,6 +1,6 @@
 import frappe
 
-from alvoraa_goals.tests.utils import ensure_employee_prerequisites
+from alvoraa_goals.tests.utils import ensure_employee, ensure_employee_prerequisites
 import unittest
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, today, now_datetime
@@ -20,22 +20,7 @@ def _make_cascade_and_goal(suffix="EvidTest"):
     })
     cascade.insert(ignore_permissions=True)
 
-    emp_name = f"Evid {suffix} Employee"
-    existing_emp = frappe.get_value("Employee", {"employee_name": emp_name}, "name")
-    if existing_emp:
-        employee = existing_emp
-    else:
-        emp = frappe.get_doc({
-            "doctype": "Employee",
-            "first_name": f"Evid {suffix}",
-            "last_name": "Employee",
-            "company": company,
-            "date_of_joining": today(),
-            "gender": "Female",
-            "status": "Active",
-        })
-        emp.insert(ignore_permissions=True)
-        employee = emp.name
+    employee = ensure_employee(f"Evid {suffix}")
 
     goal = frappe.get_doc({
         "doctype": "Individual Goal",

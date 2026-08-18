@@ -65,12 +65,21 @@ every database-touching step: the module patch, the doctype renames, the app ren
 riskiest step in the programme), and the production maintenance window. The Grace/Alvox split is
 resolved by choosing the **final** name once, not by choosing the middle one.
 
-### 2.4 Live constraint at time of decision
+### 2.4 Uncommitted work present at time of decision
 
-A parallel session is writing `from alvox_goals ...` imports into `goals_api.py`, `hr_api.py` and
-`performance_api.py` (~16 lines, uncommitted). Those must be converted to `alvoraa_goals` and the
-work coordinated, not overwritten. That work also introduces **cross-app imports (portal → goals)**,
-which changes the Phase 4 ordering — see §6.
+A separate session by the same author (not another person - confirmed 2026-08-18) had left
+uncommitted changes in `goals_api.py`, `hr_api.py`, `performance_api.py` and
+`www/hrms-employee.html`. They were a mix of an ad-hoc `alvox_goals` rename and genuine feature
+work (a rewritten `create_checkin` taking `completion_pct`/`trajectory`, and the 9-box matrix
+including the `HR Review` stage).
+
+The rename half was reverted - it would have broken the portal, since no `alvox_goals` package
+existed. The feature half was kept and went in with the Phase 4 commit, `61ba676`. It was not
+split into its own commit: the directory rename made the files read as new to git, so separating
+them afterwards was not worth the churn.
+
+That work also introduced **cross-app imports (portal → goals)**, which fixes the Phase 4 ordering:
+goals must be renamed before portal.
 
 ---
 

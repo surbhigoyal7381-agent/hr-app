@@ -3,9 +3,9 @@ Seed SMART cascading goals + KPIs for dev.alvoraa.co demo.
 
 Run via:
   # 1. Copy to app (first time only):
-  #    docker cp demo/seed_goals.py compose-backend-1:/home/frappe/frappe-bench/apps/alvox_portal/alvox_portal/seed_goals_runner.py
+  #    docker cp demo/seed_goals.py compose-backend-1:/home/frappe/frappe-bench/apps/alvoraa_portal/alvoraa_portal/seed_goals_runner.py
   # 2. Execute:
-  #    docker exec compose-backend-1 bash -c 'cd /home/frappe/frappe-bench && bench --site dev.alvoraa.co execute alvox_portal.seed_goals_runner.seed'
+  #    docker exec compose-backend-1 bash -c 'cd /home/frappe/frappe-bench && bench --site dev.alvoraa.co execute alvoraa_portal.seed_goals_runner.seed'
 
 Hierarchy covered:
   Rajesh Krishnamurthy (MD)              HR-EMP-2026-00001
@@ -87,7 +87,7 @@ def make_kpi(employee_id, kpi_name, category, unit, direction,
 
 
 def seed():
-    """Entry point: bench --site <site> execute alvox_portal.seed_goals_runner.seed"""
+    """Entry point: bench --site <site> execute alvoraa_portal.seed_goals_runner.seed"""
     # ── Clean up previous demo run ─────────────────────────────────────────────
     for dt in ["KPI", "Individual Goal", "Goal Cascade"]:
         for r in frappe.get_all(dt, pluck="name"):

@@ -46,6 +46,18 @@ jobs:
         continue-on-error: true
         run: ruff check grace_goals grace_vendor_portal --config hrms/pyproject.toml
 
+      # Frappe resolves front-end `frappe.call({method: "app.module.func"})` paths at
+      # runtime. Nothing else in the build catches a path pointing at a function that
+      # does not exist - it fails when a user clicks a button. This makes that a
+      # build-time check.
+      #
+      # --max is the KNOWN debt, not a target: 21 calls in www/hrms-employee.html use the
+      # `alvox_portal` prefix while the app is still installed as `grace_vendor_portal`
+      # (half-finished rename), plus 2 pre-existing upstream hrms paths.
+      # Lower this to 2 the moment the app rename lands, and to 0 once upstream is fixed.
+      - name: Front-end API paths resolve
+        run: python scripts/check_api_paths.py --max 23
+
       - name: Semgrep (Frappe security rules)
         continue-on-error: true
         run: |

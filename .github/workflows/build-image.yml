@@ -127,7 +127,31 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
 
+      # Print the findings into the job log as well. Uploading SARIF is the nicer
+      # presentation, but it needs a feature this repository does not have (see below)
+      # - and a vulnerability report nobody can read is not a report.
+      - name: Show findings in the log
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          # Report only. Flip to 1 to make HIGH/CRITICAL findings block a release once
+          # someone owns triaging them; today it would just wedge the pipeline on
+          # upstream CVEs in the Frappe base image.
+          exit-code: "0"
+
+      # Publishing to the Security tab needs GitHub Advanced Security, which on a
+      # PRIVATE repository requires Enterprise. Without it this step fails with
+      #   Resource not accessible by integration
+      # even though the scan itself succeeded. That is NOT a reason to make the
+      # repository public: this is proprietary HR software with customer data in its
+      # history, and trading that for a dashboard would be a bad bargain. So the upload
+      # is best-effort and never fails the build - the findings are in the log above
+      # either way.
       - name: Upload results
         uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
         with:
           sarif_file: trivy.sarif

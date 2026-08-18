@@ -174,7 +174,7 @@ jobs:
         timeout-minutes: 45
         run: |
           cd ~
-          bench init --skip-redis-config-generation --skip-assets \n                     --frappe-branch "$FRAPPE_BRANCH" --python "$(which python)" frappe-bench < /dev/null
+          bench init --skip-redis-config-generation --skip-assets --frappe-branch "$FRAPPE_BRANCH" --python "$(which python)" frappe-bench < /dev/null
           cd frappe-bench
           bench get-app --branch "$ERPNEXT_BRANCH" erpnext < /dev/null
 

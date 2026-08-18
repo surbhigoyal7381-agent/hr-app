@@ -99,7 +99,11 @@ jobs:
   test-python:
     name: Python tests
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 90, not 60: a COLD build clones frappe and erpnext and runs yarn install for both,
+    # which alone reaches 30-50 minutes on a standard runner. The cache key includes
+    # FRAPPE_BRANCH, so any version bump forces exactly that cold path. Warm runs are
+    # minutes. The per-step timeout bounds the slow part on its own.
+    timeout-minutes: 90
 
     services:
       mariadb:
@@ -160,14 +164,19 @@ jobs:
           mysql -h 127.0.0.1 -u root -proot -e "SET GLOBAL character_set_server='utf8mb4'"
           mysql -h 127.0.0.1 -u root -proot -e "SET GLOBAL collation_server='utf8mb4_unicode_ci'"
 
+      # stdin from /dev/null: on failure `bench init` asks
+      #   "Do you want to rollback these changes? [y/N]:"
+      # With a live stdin that waits forever and burns the whole job timeout for no
+      # information. With /dev/null it hits EOF and fails immediately, showing the real
+      # error. No CI step should be able to sit on a prompt.
       - name: Init bench
         if: steps.bench-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 45
         run: |
           cd ~
-          bench init --skip-redis-config-generation --skip-assets \
-                     --frappe-branch "$FRAPPE_BRANCH" --python "$(which python)" frappe-bench
+          bench init --skip-redis-config-generation --skip-assets \n                     --frappe-branch "$FRAPPE_BRANCH" --python "$(which python)" frappe-bench < /dev/null
           cd frappe-bench
-          bench get-app --branch "$ERPNEXT_BRANCH" erpnext
+          bench get-app --branch "$ERPNEXT_BRANCH" erpnext < /dev/null
 
       # All three first-party apps come from THIS repo — including the hrms fork,
       # so the PMS module is exercised in CI exactly as it ships to production.

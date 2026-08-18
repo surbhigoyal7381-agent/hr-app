@@ -62,8 +62,10 @@ That is what `alvoraa_goals.deploy_utils.premigrate_rename` exists for.
    ```bash
    docker inspect compose-backend-1 --format '{{.Config.Image}}'
    ```
-3. **Rehearse on a scratch site.** Restore a production dump into a throwaway site and run
-   sections 5 and 6 against it end to end. This is the step that turns an unknown into a known.
+3. **Rehearse on a scratch stack.** Full procedure in **`REHEARSAL.md`** — a separate compose
+   project with its own sites volume, restored from a live dump, running the new image. It
+   exercises the whole premigrate + migrate sequence on real data and cannot reach production.
+   This is the step that turns an unknown into a known.
 4. **Confirm the DB root password is to hand.** `bench restore` prompts for it interactively, and
    a rollback at 2am is the wrong time to go looking.
 5. **Announce the window.** All four sites, including production, will be down for the duration.

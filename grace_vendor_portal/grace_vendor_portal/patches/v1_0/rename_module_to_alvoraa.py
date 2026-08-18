@@ -29,7 +29,7 @@ def execute():
 	Deliberately does not touch the app name - that is a separate, later phase.
 	"""
 	if frappe.db.exists("Module Def", OLD) and not frappe.db.exists("Module Def", NEW):
-		frappe.rename_doc("Module Def", OLD, NEW, force=True, ignore_permissions=True)
+		frappe.rename_doc("Module Def", OLD, NEW, force=True)
 
 	if frappe.db.exists("Module Def", NEW):
 		frappe.db.set_value("Module Def", NEW, "module_name", NEW, update_modified=False)
@@ -47,7 +47,7 @@ def execute():
 	# Workspace record rename. Done after the module repoint so the record is valid
 	# at every step.
 	if frappe.db.exists("Workspace", OLD_WORKSPACE) and not frappe.db.exists("Workspace", NEW_WORKSPACE):
-		frappe.rename_doc("Workspace", OLD_WORKSPACE, NEW_WORKSPACE, force=True, ignore_permissions=True)
+		frappe.rename_doc("Workspace", OLD_WORKSPACE, NEW_WORKSPACE, force=True)
 
 	if frappe.db.exists("Workspace", NEW_WORKSPACE):
 		ws = frappe.get_doc("Workspace", NEW_WORKSPACE)

@@ -34,6 +34,6 @@ def execute():
 				message="Both %r and %r exist; skipped. Resolve manually." % (old, new),
 			)
 			continue
-		frappe.rename_doc("DocType", old, new, force=True, ignore_permissions=True)
+		frappe.rename_doc("DocType", old, new, force=True)
 
 	frappe.clear_cache()

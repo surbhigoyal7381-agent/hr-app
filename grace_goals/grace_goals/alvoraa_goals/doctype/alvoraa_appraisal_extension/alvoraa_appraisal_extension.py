@@ -2,7 +2,7 @@ import frappe
 from frappe.model.document import Document
 
 
-class GraceAppraisalExtension(Document):
+class AlvoraaAppraisalExtension(Document):
     def validate(self):
         if self.avg_potential_rating and self.avg_potential_rating > 0:
             v = self.avg_potential_rating

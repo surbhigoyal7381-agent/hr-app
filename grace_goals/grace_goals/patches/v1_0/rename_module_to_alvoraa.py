@@ -27,7 +27,7 @@ def execute():
 	Deliberately does not touch the app name - that is a separate, later phase.
 	"""
 	if frappe.db.exists("Module Def", OLD) and not frappe.db.exists("Module Def", NEW):
-		frappe.rename_doc("Module Def", OLD, NEW, force=True, ignore_permissions=True)
+		frappe.rename_doc("Module Def", OLD, NEW, force=True)
 
 	if frappe.db.exists("Module Def", NEW):
 		# `module_name` is the label and is not updated by the rename itself.

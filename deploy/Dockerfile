@@ -51,6 +51,16 @@ RUN ./env/bin/pip install --no-cache-dir \
         -e apps/alvoraa_portal \
  && printf 'frappe\nerpnext\nhrms\nalvoraa_goals\nalvoraa_portal\n' > sites/apps.txt
 
+# ── 3b. Node dependencies for the copied apps ───────────────────────────────
+# `bench get-app` runs yarn install for the app it fetches. COPY does not, so the
+# first-party apps arrive without their node_modules and esbuild then fails with
+#   Could not resolve "html2canvas"
+# html2canvas is declared in hrms/package.json and imported by
+# hrms/public/js/hierarchy_chart/hierarchy_chart_desktop.js - it was simply never
+# installed. `bench setup requirements --node` covers every app in apps.txt, so this
+# stays correct if a first-party app gains JS dependencies later.
+RUN bench setup requirements --node
+
 # ── 4. Bake assets: sites/assets + employee PWA + roster SPA ────────────────
 # Built one app at a time, deliberately.
 #
@@ -63,9 +73,11 @@ RUN ./env/bin/pip install --no-cache-dir \
 # Sequencing lowers the peak to whichever single app is largest, and - just as useful -
 # a failure now names the app that caused it. The previous form reported nothing at all.
 #
-# NODE_OPTIONS is deliberately NOT raised here: esbuild spawns parallel workers, and a
-# larger per-worker heap can make memory pressure worse rather than better. Raising it
-# earlier made the build fail sooner, not later.
+# The per-app split was originally added chasing a suspected memory problem. It was not
+# memory - the real cause was the missing node_modules handled in step 3b, and exit 143
+# was the shell reporting a terminated esbuild rather than an OOM kill. The split is kept
+# anyway: it names the failing app, which is what turned that guesswork into a one-line
+# fix. NODE_OPTIONS is not raised, since there is no evidence it was ever needed.
 RUN bench build --production --app frappe
 RUN bench build --production --app erpnext
 RUN bench build --production --app hrms

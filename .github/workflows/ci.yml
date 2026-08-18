@@ -51,12 +51,16 @@ jobs:
       # does not exist - it fails when a user clicks a button. This makes that a
       # build-time check.
       #
-      # --max is the KNOWN debt, not a target: 21 calls in www/hrms-employee.html use the
-      # `alvox_portal` prefix while the app is still installed as `grace_vendor_portal`
-      # (half-finished rename), plus 2 pre-existing upstream hrms paths.
-      # Lower this to 2 the moment the app rename lands, and to 0 once upstream is fixed.
+      # The repo DIRECTORIES are grace_goals / grace_vendor_portal, but every server
+      # installs them as alvox_goals / alvox_portal (verified on dev.alvoraa.co,
+      # 2026-08-18). The --alias flags model that, so the check reflects what actually
+      # runs rather than what the folders are called. Without them this reports 23
+      # false failures.
+      #
+      # --max 2 is the KNOWN debt: two pre-existing upstream hrms paths. Never raise it.
       - name: Front-end API paths resolve
-        run: python scripts/check_api_paths.py --max 23
+        run: |
+          python scripts/check_api_paths.py             --alias alvox_portal=grace_vendor_portal             --alias alvox_goals=grace_goals             --max 2
 
       - name: Semgrep (Frappe security rules)
         continue-on-error: true

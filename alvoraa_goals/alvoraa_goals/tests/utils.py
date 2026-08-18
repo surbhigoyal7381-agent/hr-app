@@ -1,6 +1,7 @@
 import frappe
 
 TEST_COMPANY = "Alvoraa Test Company"
+TEST_GENDER = "Male"
 
 
 def ensure_company():
@@ -35,3 +36,29 @@ def ensure_company():
 	company.insert(ignore_permissions=True)
 	frappe.db.commit()
 	return company.name
+
+
+def ensure_gender(gender=TEST_GENDER):
+	"""Return a Gender that exists, creating it if the site has none.
+
+	Employee requires `gender` as a Link, and a bare frappe + erpnext + hrms site has
+	no Gender records at all. Only `company` and `gender` are required Links on
+	Employee - department, designation, employment_type and holiday_list are optional
+	and the tests do not set them - so between this and ensure_company() an Employee
+	insert has everything it needs.
+	"""
+	if frappe.db.exists("Gender", gender):
+		return gender
+
+	doc = frappe.get_doc({"doctype": "Gender", "gender": gender})
+	doc.flags.ignore_permissions = True
+	doc.insert(ignore_permissions=True)
+	frappe.db.commit()
+	return doc.name
+
+
+def ensure_employee_prerequisites():
+	"""Everything an Employee insert needs. Returns the company name."""
+	company = ensure_company()
+	ensure_gender()
+	return company

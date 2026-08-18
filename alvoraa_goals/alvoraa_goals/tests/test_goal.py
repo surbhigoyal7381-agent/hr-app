@@ -1,13 +1,13 @@
 import frappe
 
-from alvoraa_goals.tests.utils import ensure_company
+from alvoraa_goals.tests.utils import ensure_employee_prerequisites
 import unittest
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, today
 
 
 def _make_cascade(suffix="Test"):
-    company = ensure_company()
+    company = ensure_employee_prerequisites()
     cascade = frappe.get_doc({
         "doctype": "Goal Cascade",
         "cascade_name": f"Test Cascade {suffix}",
@@ -27,7 +27,7 @@ def _make_employee(name_suffix="GoalTest"):
     existing = frappe.get_value("Employee", {"employee_name": employee_name}, "name")
     if existing:
         return existing
-    company = ensure_company()
+    company = ensure_employee_prerequisites()
     emp = frappe.get_doc({
         "doctype": "Employee",
         "first_name": f"Test {name_suffix}",

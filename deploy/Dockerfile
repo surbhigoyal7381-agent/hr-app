@@ -22,8 +22,8 @@
 
 FROM frappe/bench:latest
 
-ARG FRAPPE_BRANCH=develop
-ARG ERPNEXT_BRANCH=develop
+ARG FRAPPE_BRANCH=version-16
+ARG ERPNEXT_BRANCH=version-16
 
 USER frappe
 WORKDIR /home/frappe

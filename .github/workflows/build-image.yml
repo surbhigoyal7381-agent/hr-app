@@ -89,8 +89,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            FRAPPE_BRANCH=develop
-            ERPNEXT_BRANCH=develop
+            FRAPPE_BRANCH=version-16
+            ERPNEXT_BRANCH=version-16
 
       - name: Summary
         run: |

@@ -113,8 +113,8 @@ jobs:
         ports: ["11000:6379"]
 
     env:
-      FRAPPE_BRANCH: develop
-      ERPNEXT_BRANCH: develop
+      FRAPPE_BRANCH: version-16
+      ERPNEXT_BRANCH: version-16
 
     steps:
       - uses: actions/checkout@v4

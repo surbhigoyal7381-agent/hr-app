@@ -214,7 +214,11 @@ are not rollback triggers — fix forward.
 - **No staging that mirrors production.** The scratch-site rehearsal in §4.3 is the substitute.
   A separate bench for `dev.alvoraa.co` would remove this whole class of risk and is worth doing
   before the next large change.
-- **`Mode of Payment` disappears on migrate** in at least one environment. It is pre-existing,
-  unrelated to the rename, and recreated-then-deleted on each migrate. Worth chasing separately.
+- **`Mode of Payment` disappearing on migrate is explained.** It is a regression in Frappe
+  `develop`: `remove_orphan_doctypes` treats *all* doctypes, core ones included, as orphaned when
+  `sync_all()` produces an empty module map. Diagnosed on the deployed branch in commit `53a8180`,
+  which pinned Frappe and ERPNext to `version-16` to avoid it. That pin has now been applied to
+  `dev` as well, so it should not recur. Note this is separate from the controller-class bug in
+  `a590375`, which was ours and is fixed.
 - **Nine tests fail in `alvoraa_portal`** and are not addressed here; that app is due to be
   rebuilt.

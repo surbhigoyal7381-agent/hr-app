@@ -1,11 +1,13 @@
 import frappe
+
+from alvoraa_goals.tests.utils import ensure_company
 import unittest
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, today
 
 
 def _setup_cascade_with_goals(suffix, company_target, goal_targets):
-    company = frappe.get_value("Company", {}, "name") or "Grace Drinks"
+    company = ensure_company()
     cascade = frappe.get_doc({
         "doctype": "Goal Cascade",
         "cascade_name": f"Alignment Test {suffix}",
@@ -77,7 +79,7 @@ class TestCascade(FrappeTestCase):
 
     def test_cascade_tree_structure(self):
         from alvoraa_goals.controllers.cascade import get_cascade_tree
-        company = frappe.get_value("Company", {}, "name") or "Grace Drinks"
+        company = ensure_company()
         cascade = frappe.get_doc({
             "doctype": "Goal Cascade",
             "cascade_name": "Tree Test Cascade",

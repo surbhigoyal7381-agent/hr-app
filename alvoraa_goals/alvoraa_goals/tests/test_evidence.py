@@ -1,11 +1,13 @@
 import frappe
+
+from alvoraa_goals.tests.utils import ensure_company
 import unittest
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, today, now_datetime
 
 
 def _make_cascade_and_goal(suffix="EvidTest"):
-    company = frappe.get_value("Company", {}, "name") or "Grace Drinks"
+    company = ensure_company()
     cascade = frappe.get_doc({
         "doctype": "Goal Cascade",
         "cascade_name": f"Evid Test Cascade {suffix}",

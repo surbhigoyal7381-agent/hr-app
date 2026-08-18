@@ -27,9 +27,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 3.14 matches frappe/bench:latest, the base image production is built from
+      # (verified: the running container reports Python 3.14.2). Frappe declares
+      # requires-python ">=3.10,<3.15", but its source uses PEP 695 `type X = ...`,
+      # which needs 3.12 - so the declaration is optimistic and 3.11 fails at build.
+      # Matching production also means CI finally tests the interpreter the servers use.
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.14"
 
       - run: pip install ruff==0.6.9
 
@@ -121,9 +126,14 @@ jobs:
         with:
           submodules: recursive          # hrms/frappe-ui
 
+      # 3.14 matches frappe/bench:latest, the base image production is built from
+      # (verified: the running container reports Python 3.14.2). Frappe declares
+      # requires-python ">=3.10,<3.15", but its source uses PEP 695 `type X = ...`,
+      # which needs 3.12 - so the declaration is optimistic and 3.11 fails at build.
+      # Matching production also means CI finally tests the interpreter the servers use.
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.14"
 
       - uses: actions/setup-node@v4
         with:

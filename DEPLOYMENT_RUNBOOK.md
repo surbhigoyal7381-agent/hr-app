@@ -20,6 +20,33 @@
 
 ---
 
+## 1B. ⚠️ There is an AUTOMATIC deploy workflow
+
+`.github/workflows/deploy.yml` triggers on **every successful Build Image run** for `dev`,
+`test` and `main`. It is not manual-only. It swaps the image and runs
+`bench --site all migrate` across the whole bench - which is all four sites, production
+included.
+
+**The only reason it has not fired is that `secrets.DEPLOY_HOST` is unset.** The job dies
+with `Error: missing server host` before reaching the server.
+
+> **Do not set `DEPLOY_HOST` casually.** Setting it makes the next push to `dev` deploy to
+> production automatically, unattended.
+
+The workflow did **not** run `premigrate_rename` before migrating. On this release - which
+renames the apps - that sequence deletes doctypes, exactly as described in §3. That step
+has now been added to the workflow, immediately before migrate.
+
+Two things it does do well, and they are worth keeping: it takes
+`bench --site all backup --with-files` before touching anything, and it holds maintenance
+mode across the migration.
+
+**Before enabling automatic deploys, decide whether an unattended production migration is
+what you want at all.** For this release specifically, prefer the manual procedure below,
+where the pre-migrate step and the verification can be watched.
+
+---
+
 ## 1A. ⚠️ Known regression this deploy introduces
 
 **Deploying `dev` will stop goal progress updating from evidence.** It is not a risk to weigh -

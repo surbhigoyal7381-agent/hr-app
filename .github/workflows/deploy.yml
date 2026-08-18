@@ -175,6 +175,23 @@ jobs:
             done
 
             if [ "$MIGRATE" = "true" ]; then
+              # MUST run before migrate, never after.
+              #
+              # The image has just been swapped. If the app was renamed in this release,
+              # the site database still names the OLD app - and that package no longer
+              # exists on disk. Every doctype in its module then fails get_controller()
+              # with ImportError, and migrate's remove_orphan_doctypes DELETES them as
+              # abandoned. Not hypothetical: it happened in testing and took four
+              # doctypes with it (commit a590375).
+              #
+              # A patch cannot do this job - patches are discovered per installed app and
+              # are invisible while the site still believes the old name. Hence a plain
+              # execute, here, first.
+              #
+              # Idempotent: prints "nothing to do" on an already-renamed site, so it is
+              # harmless on every ordinary release.
+              $DC exec -T backend bench --site all execute alvoraa_goals.deploy_utils.premigrate_rename
+
               $DC exec -T backend bench --site all migrate
               $DC exec -T backend bench --site all clear-cache
               $DC exec -T backend bench --site all set-maintenance-mode off

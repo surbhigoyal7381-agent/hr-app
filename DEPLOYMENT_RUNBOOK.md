@@ -20,6 +20,28 @@
 
 ---
 
+## 1A. ⚠️ Known regression this deploy introduces
+
+**Deploying `dev` will stop goal progress updating from evidence.** It is not a risk to weigh -
+it is a certainty, and it is understood.
+
+Commit `6351af3` replaced `Goal Evidence.extracted_order_count` / `extracted_amount` with a
+generic `value` field, but 38 references to the old names remain, including
+`controllers.goal.recalculate_progress`. That commit is not in the deployed image, so the servers
+are correct today and become wrong the moment this ships.
+
+On an existing site the failure is **silent**: Frappe leaves the old database column in place, so
+the query still runs and simply sums a column nothing writes to. Approving evidence will appear to
+work while progress stays at zero. On any newly provisioned tenant it fails loudly instead.
+
+Full detail in `KNOWN_ISSUES.md` (KI-1).
+
+**Decide before the window:** accept it, because the KPI automation work replaces this path
+entirely and users are not yet relying on it - or fix it first, and delay the rename. Do not
+discover it afterwards.
+
+---
+
 ## 2. Three facts that shape everything
 
 **One bench, four sites.** App code lives at `/home/frappe/frappe-bench/apps` and is shared.

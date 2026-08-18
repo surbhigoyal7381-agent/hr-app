@@ -64,7 +64,7 @@ Grace Group requires a **mobile-responsive vendor portal** enabling external ven
 ```
 1. Vendor navigates to https://grace-portal.example.com
 2. Redirects to Frappe login page (white-labeled for Grace)
-3. Vendor enters email + password (Frappe User created by Grace HR)
+3. Vendor enters email + password (Frappe User created by Alvoraa HR)
 4. 2FA challenge (SMS code) for security
 5. Login successful → Redirect to Dashboard
 6. Session maintained via JWT token (expires 30 days, refresh token rotates)
@@ -260,28 +260,28 @@ def submit_rating(self, order_id, quality_rating, timeliness_rating,
 # hooks.py
 doc_events = {
     "Vendor Order": {
-        "validate": "grace_vendor_portal.controllers.vendor_order.validate",
-        "before_submit": "grace_vendor_portal.controllers.vendor_order.before_submit",
-        "on_update_after_submit": "grace_vendor_portal.controllers.vendor_order.on_update_after_submit"
+        "validate": "alvoraa_portal.controllers.vendor_order.validate",
+        "before_submit": "alvoraa_portal.controllers.vendor_order.before_submit",
+        "on_update_after_submit": "alvoraa_portal.controllers.vendor_order.on_update_after_submit"
     },
     "Order Rating": {
-        "validate": "grace_vendor_portal.controllers.rating.validate",
-        "after_insert": "grace_vendor_portal.controllers.rating.after_insert"
+        "validate": "alvoraa_portal.controllers.rating.validate",
+        "after_insert": "alvoraa_portal.controllers.rating.after_insert"
     }
 }
 
 scheduled_jobs = [
-    ("grace_vendor_portal.scheduled_jobs.update_delivery_tracking", "every 2 minutes"),
-    ("grace_vendor_portal.scheduled_jobs.send_arrival_notifications", "every 5 minutes"),
-    ("grace_vendor_portal.scheduled_jobs.calculate_driver_ratings", "hourly")
+    ("alvoraa_portal.scheduled_jobs.update_delivery_tracking", "every 2 minutes"),
+    ("alvoraa_portal.scheduled_jobs.send_arrival_notifications", "every 5 minutes"),
+    ("alvoraa_portal.scheduled_jobs.calculate_driver_ratings", "hourly")
 ]
 
 fixtures = ["Role", "DocPerm", "Custom Field"]
 
 # Websocket support for real-time updates
 websocket_routes = [
-    "grace_vendor_portal.websocket.vendor_order_updates",
-    "grace_vendor_portal.websocket.delivery_tracking_updates"
+    "alvoraa_portal.websocket.vendor_order_updates",
+    "alvoraa_portal.websocket.delivery_tracking_updates"
 ]
 ```
 
@@ -295,7 +295,7 @@ websocket_routes = [
 @frappe.whitelist()
 def get_vendor_orders(status=None, limit=20, offset=0):
     """
-    GET /api/method/grace_vendor_portal.api.get_vendor_orders
+    GET /api/method/alvoraa_portal.api.get_vendor_orders
     Returns all orders for logged-in vendor with optional status filter
     Response: [{order_id, order_date, total, status, delivery_date, ...}]
     """
@@ -317,7 +317,7 @@ def get_vendor_orders(status=None, limit=20, offset=0):
 @frappe.whitelist()
 def get_order_detail(order_id):
     """
-    GET /api/method/grace_vendor_portal.api.get_order_detail?order_id=xxx
+    GET /api/method/alvoraa_portal.api.get_order_detail?order_id=xxx
     Returns full order detail + timeline + delivery tracking
     """
     order = frappe.get_doc('Vendor Order', order_id)
@@ -347,7 +347,7 @@ def get_order_detail(order_id):
 @frappe.whitelist()
 def get_order_timeline(order_id):
     """
-    GET /api/method/grace_vendor_portal.api.get_order_timeline?order_id=xxx
+    GET /api/method/alvoraa_portal.api.get_order_timeline?order_id=xxx
     Returns status updates timeline (Draft → Delivered with timestamps)
     """
     order = frappe.get_doc('Vendor Order', order_id)
@@ -365,7 +365,7 @@ def get_order_timeline(order_id):
 @frappe.whitelist()
 def get_delivery_tracking(delivery_id):
     """
-    GET /api/method/grace_vendor_portal.api.get_delivery_tracking?delivery_id=xxx
+    GET /api/method/alvoraa_portal.api.get_delivery_tracking?delivery_id=xxx
     Returns real-time GPS location, ETA, status (called every 10s from mobile)
     """
     delivery = frappe.get_doc('Delivery Assignment', delivery_id)
@@ -383,7 +383,7 @@ def get_delivery_tracking(delivery_id):
 @frappe.whitelist()
 def create_vendor_order(items, delivery_address, delivery_slot, special_instructions=None):
     """
-    POST /api/method/grace_vendor_portal.api.create_vendor_order
+    POST /api/method/alvoraa_portal.api.create_vendor_order
     Creates new vendor order
     Payload: {items: [{sku, qty}, ...], delivery_address, delivery_slot, instructions}
     """
@@ -429,7 +429,7 @@ def create_vendor_order(items, delivery_address, delivery_slot, special_instruct
 def submit_order_rating(order_id, quality_rating, timeliness_rating, 
                        professionalism_rating, comments=None, issue_category=None):
     """
-    POST /api/method/grace_vendor_portal.api.submit_order_rating
+    POST /api/method/alvoraa_portal.api.submit_order_rating
     Submits rating for order + delivery person
     """
     vendor_id = get_vendor_id()
@@ -457,7 +457,7 @@ def submit_order_rating(order_id, quality_rating, timeliness_rating,
     delivery = frappe.db.get_value('Delivery Assignment', 
                                    filters={'vendor_order': order_id},
                                    fieldname='driver')
-    frappe.call('grace_vendor_portal.controllers.rating.recalculate_driver_rating',
+    frappe.call('alvoraa_portal.controllers.rating.recalculate_driver_rating',
                driver_id=delivery)
     
     return {'status': 'Rating submitted', 'rating_id': rating.name}
@@ -465,7 +465,7 @@ def submit_order_rating(order_id, quality_rating, timeliness_rating,
 @frappe.whitelist()
 def get_vendor_dashboard():
     """
-    GET /api/method/grace_vendor_portal.api.get_vendor_dashboard
+    GET /api/method/alvoraa_portal.api.get_vendor_dashboard
     Returns dashboard summary: pending orders, in-transit, recent ratings
     """
     vendor_id = get_vendor_id()
@@ -607,7 +607,7 @@ Vendor (1)
 ### **Step-by-Step Checklist**
 
 **Phase 1: Backend Foundation (Week 1–2)**
-- [ ] 1. Create app: `bench new-app grace_vendor_portal`
+- [ ] 1. Create app: `bench new-app alvoraa_portal`
 - [ ] 2. Define all 8 DocTypes (Vendor, Vendor User, Vendor Order, etc.)
 - [ ] 3. Create custom fields on Employee (driver phone, vehicle reg)
 - [ ] 4. Create Vendor User role + assign permissions (can read own orders only)
@@ -662,10 +662,10 @@ Vendor (1)
 
 | Item | Convention | Example |
 |------|-----------|---------|
-| App name | `snake_case` | `grace_vendor_portal` |
+| App name | `snake_case` | `alvoraa_portal` |
 | DocType | `Title Case` (UI), `snake_case` (DB) | "Vendor Order" → vendor_order |
 | Controller file | `snake_case` | `vendor_order.py`, `rating.py` |
-| API endpoint | `/api/method/app/module.function` | `/api/method/grace_vendor_portal.api.get_vendor_orders` |
+| API endpoint | `/api/method/app/module.function` | `/api/method/alvoraa_portal.api.get_vendor_orders` |
 | Frontend page | `/vendor/[page-name]` | `/vendor/orders`, `/vendor/dashboard` |
 | React component | `PascalCase` | `OrderList.jsx`, `DeliveryMap.jsx` |
 | Field | `snake_case` | `vendor_order_id`, `driver_phone` |
@@ -731,8 +731,8 @@ Vendor (1)
 
 - [ ] **App directory structure:**
   ```
-  grace_vendor_portal/
-  ├── grace_vendor_portal/
+  alvoraa_portal/
+  ├── alvoraa_portal/
   │   ├── __init__.py
   │   ├── hooks.py (doc_events, scheduled_jobs, websocket routes)
   │   ├── api/
@@ -753,7 +753,7 @@ Vendor (1)
   │       ├── test_rating.py
   │       ├── test_permissions.py
   │       └── test_integration.py
-  ├── grace_vendor_portal/frontend/ (React app)
+  ├── alvoraa_portal/frontend/ (React app)
   │   ├── src/
   │   │   ├── pages/
   │   │   │   ├── Dashboard.jsx

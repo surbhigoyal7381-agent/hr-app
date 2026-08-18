@@ -10,7 +10,7 @@ Every field in every form is explained below — what it means, what to type or 
 
 ## Table of Contents
 
-**Part 1 — Grace Goals**
+**Part 1 — Alvoraa Goals**
 
 1. [Goal Cascade](#1-goal-cascade)
 2. [Goal Cascade Version (child table)](#2-goal-cascade-version-child-table-inside-goal-cascade)
@@ -21,7 +21,7 @@ Every field in every form is explained below — what it means, what to type or 
 7. [Evidence Validator](#7-evidence-validator-admin-config)
 8. [Evidence Duplicate Check](#8-evidence-duplicate-check)
 
-**Part 2 — Grace Vendor Portal**
+**Part 2 — Alvoraa Portal**
 
 9. [Vendor](#9-vendor)
 10. [Vendor Address (child table)](#10-vendor-address-child-table-inside-vendor)
@@ -35,7 +35,7 @@ Every field in every form is explained below — what it means, what to type or 
 
 ---
 
-## Part 1 — Grace Goals
+## Part 1 — Alvoraa Goals
 
 ---
 
@@ -963,7 +963,7 @@ If status is `Misaligned`, review which employees are under-targeted and adjust 
 
 ---
 
-## Part 2 — Grace Vendor Portal
+## Part 2 — Alvoraa Portal
 
 ---
 

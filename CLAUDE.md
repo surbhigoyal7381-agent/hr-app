@@ -20,7 +20,7 @@ Every change follows these steps in order. Do not skip or reorder them.
 **Before writing a single line of code:**
 
 1. **Impact analysis** — cover all four dimensions before opening any file:
-   - *Functional*: cross-modular impact (grace_goals, grace_compensation, hrms, erpnext), persona impact (CXO / HR Manager / Employee), HRMS domain impact (leaves, attendance, payroll, appraisals, org structure). Grep all callers of every function being changed.
+   - *Functional*: cross-modular impact (alvoraa_goals, grace_compensation, hrms, erpnext), persona impact (CXO / HR Manager / Employee), HRMS domain impact (leaves, attendance, payroll, appraisals, org structure). Grep all callers of every function being changed.
    - *Non-functional*: evaluate the change against each NFR dimension below and state explicitly whether the change improves, degrades, or is neutral for each one:
      - **Performance** — query count, payload size, render time, N+1 risks, cache hit rate
      - **Security** — permission checks, injection surface, data exposure, `ignore_permissions` scope
@@ -62,7 +62,7 @@ Deploy commands that require explicit approval before running:
 - **Never interrupt, change, or take down the production application** at `https://alvoraa.co/`.
 - Production server: see `deploy/server.env` (git-ignored — never commit this file)
 - Live domains: `alvoraa.co`, `dev.alvoraa.co`, `minda.alvoraa.co`
-- Do not cite `alvox.in` as a live URL — it was renamed; current domain is `alvoraa.co`.
+- Do not cite `alvoraa.co` as a live URL — it was renamed; current domain is `alvoraa.co`.
 
 ---
 

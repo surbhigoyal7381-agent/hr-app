@@ -1,0 +1,604 @@
+"Summary","Description","Type","Priority","State","Subsystem","Epic","Phase","Estimation","Tag","ExternalId"
+"Define a reusable metric in the metric library","**As a** HR Manager
+**I want to** define a metric once (name, calculation type, source, filters, attribution) and reuse it across many KPIs
+**So that** adding a new automated KPI is configuration, not a code change
+
+### Acceptance criteria
+- Given I am an HR Manager, when I create a KPI Metric Definition, then I must select a calculation type of Event Sum, Snapshot, Ratio or Duration
+- Given calculation type is Ratio, when I save, then numerator and denominator expressions are both required
+- Given calculation type is Duration, when I save, then duration-from and duration-to fields are both required
+- Given calculation type is Event Sum or Snapshot, when I save, then a single value field is required and ratio/duration fields are hidden
+- Given I am not an HR Manager or System Manager, when I open the metric library, then I have read-only access
+
+### Notes
+Implements D4. This doctype is the extensibility point for the whole feature.
+
+---
+Epic: Metric Library & Data Sources · Phase 0
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Critical","Open","Metric Library & Data Sources","KPIA-E1 Metric Library & Data Sources","Phase 0","8","kpi-automation","KPIA-1"
+"Preview a metric against live data before saving it","**As a** HR Manager
+**I want to** see a sample of the rows a metric definition would produce, before I attach it to anyone's KPI
+**So that** I catch a wrong filter or owner field before it silently feeds an appraisal
+
+### Acceptance criteria
+- Given a draft metric definition, when I click Preview, then I see up to 20 sample source rows with the resolved value, date and owner for each
+- Given a metric whose owner field cannot be mapped to an employee, when I preview, then the unmapped rows are clearly flagged with the raw owner key
+- Given a preview runs, when it completes, then no KPI Fact rows are written to the database
+- Given a metric returns zero rows, when I preview, then I see an explicit 'no matching records' message rather than an empty success
+
+### Notes
+Highest-leverage story in Phase 0 for preventing bad data reaching appraisals. Do not descope.
+
+---
+Epic: Metric Library & Data Sources · Phase 0
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","High","Open","Metric Library & Data Sources","KPIA-E1 Metric Library & Data Sources","Phase 0","5","kpi-automation","KPIA-2"
+"Bind a metric to a KPI with scope filters","**As a** HR Manager
+**I want to** attach a metric definition to a specific KPI and narrow it (this warehouse, this territory, this campaign)
+**So that** two employees can use the same metric with different scopes
+
+### Acceptance criteria
+- Given a KPI, when I add a KPI Data Source, then I select a metric definition and optionally add scope filters
+- Given a KPI Data Source exists with sync enabled, when the sync job runs, then that KPI is included
+- Given the metric unit differs from the KPI unit, when I save, then I am blocked with a clear message
+- Given a KPI has no data source, when the sync job runs, then that KPI is untouched and continues to work manually
+
+---
+Epic: Metric Library & Data Sources · Phase 0
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Critical","Open","Metric Library & Data Sources","KPIA-E1 Metric Library & Data Sources","Phase 0","5","kpi-automation","KPIA-3"
+"Ship a starter metric library covering all domains","**As a** HR Manager
+**I want to** a pre-built set of common metrics across sales, production, inventory, procurement, HR, finance and service
+**So that** I can automate standard KPIs on day one without authoring definitions from scratch
+
+### Acceptance criteria
+- Given a fresh install, when setup runs, then at least 15 metric definitions exist spanning at least 6 business domains
+- Given a seeded metric, when I inspect it, then its calculation type, source doctype and attribution strategy are populated and valid
+- Given a seeded metric, when I edit it, then my changes persist and are not overwritten by a later migrate
+- Given the library is seeded, when I preview any seeded metric, then it executes without error against demo data
+
+### Notes
+Proves the multi-domain claim concretely. Sales-only seeding would undercut the whole positioning.
+
+---
+Epic: Metric Library & Data Sources · Phase 0
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Medium","Open","Metric Library & Data Sources","KPIA-E1 Metric Library & Data Sources","Phase 0","5","kpi-automation","KPIA-4"
+"Turn automation off for a KPI and revert to manual entry","**As a** HR Manager
+**I want to** disable sync on a KPI at any time
+**So that** a bad source or a disputed metric never blocks an appraisal cycle
+
+### Acceptance criteria
+- Given a synced KPI, when I disable sync, then the current actual value is retained and no further facts are applied
+- Given sync is disabled, when the employee opens the KPI, then manual progress entry is available again
+- Given sync is re-enabled, when the next run executes, then previously ingested facts are not double-counted
+- Given sync is toggled, when I check the audit log, then who changed it and when is recorded
+
+---
+Epic: Metric Library & Data Sources · Phase 0
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","High","Open","Metric Library & Data Sources","KPIA-E1 Metric Library & Data Sources","Phase 0","2","kpi-automation","KPIA-5"
+"Nightly job ingests source transactions as KPI Facts","**As a** System
+**I want to** pull qualifying source records on a schedule and write one immutable fact per record
+**So that** KPI actuals reflect the source of record without anyone typing a number
+
+### Acceptance criteria
+- Given enabled data sources, when the nightly job runs, then a KPI Fact is created for every qualifying source record in the window
+- Given a fact is created, when I inspect it, then it carries source system, external reference, source doctype and docname, date, value and owner
+- Given a fact exists, when any user attempts to edit its value, then the edit is rejected
+- Given the job completes, when I check the sync log, then counts of pulled, matched, unattributed and errored records are recorded
+
+---
+Epic: Fact Ingestion, Idempotency & Exceptions · Phase 0
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Critical","Open","Fact Ingestion, Idempotency & Exceptions","KPIA-E2 Fact Ingestion, Idempotency & Exceptions","Phase 0","8","kpi-automation","KPIA-6"
+"Re-running a sync never double-counts","**As a** System Administrator
+**I want to** re-run or overlap a sync window safely
+**So that** a retry after a failure does not inflate someone's appraisal
+
+### Acceptance criteria
+- Given a sync has run, when the identical window is re-run, then the KPI actual value is unchanged
+- Given the external reference already exists, when ingestion encounters it, then the row is upserted rather than inserted
+- Given overlapping hourly windows, when both run, then each source record contributes exactly once
+- Given a unique constraint exists on external reference, when a duplicate insert is attempted, then it fails safely and is logged, not swallowed
+
+### Notes
+Test explicitly by running the same window three times and asserting identical actuals.
+
+---
+Epic: Fact Ingestion, Idempotency & Exceptions · Phase 0
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Critical","Open","Fact Ingestion, Idempotency & Exceptions","KPIA-E2 Fact Ingestion, Idempotency & Exceptions","Phase 0","5","kpi-automation","KPIA-7"
+"Cancelled or amended source documents post a reversal, not an edit","**As a** Sales Manager
+**I want to** a returned or cancelled transaction to reduce the number, with the original still visible
+**So that** I can see why a KPI moved instead of finding history silently rewritten
+
+### Acceptance criteria
+- Given a source document is cancelled, when the next sync runs, then a reversal fact is created linked to the original
+- Given a reversal exists, when the KPI recalculates, then the actual value nets the original and the reversal
+- Given a reversal exists, when the employee views progress, then both entries appear in the log with dates and reasons
+- Given a source document is amended, when the next sync runs, then a reversal plus a new fact are posted, and the original fact is unmodified
+
+---
+Epic: Fact Ingestion, Idempotency & Exceptions · Phase 0
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Critical","Open","Fact Ingestion, Idempotency & Exceptions","KPIA-E2 Fact Ingestion, Idempotency & Exceptions","Phase 0","8","kpi-automation","KPIA-8"
+"Unmappable owners land in a visible exception queue","**As a** HR Manager
+**I want to** see every source record whose owner could not be mapped to an employee
+**So that** no revenue or output silently vanishes from someone's scorecard
+
+### Acceptance criteria
+- Given a source record whose owner key maps to no employee, when ingestion runs, then an attribution exception is created holding the raw owner key
+- Given exceptions exist, when I open the queue, then I can filter by source, date range and status
+- Given an unmapped record, when ingestion completes, then it is never silently discarded and the sync log unattributed count reflects it
+- Given zero exceptions, when I open the queue, then I see an explicit empty state confirming full attribution
+
+---
+Epic: Fact Ingestion, Idempotency & Exceptions · Phase 0
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","High","Open","Fact Ingestion, Idempotency & Exceptions","KPIA-E2 Fact Ingestion, Idempotency & Exceptions","Phase 0","5","kpi-automation","KPIA-9"
+"Resolve an exception by mapping the owner key","**As a** HR Manager
+**I want to** map an unrecognised owner key to the right employee and have the facts re-attributed
+**So that** fixing the mapping once repairs both history and future runs
+
+### Acceptance criteria
+- Given an exception, when I map the owner key to an employee, then the affected facts are credited and the relevant KPIs recalculate
+- Given a mapping is saved, when the next sync runs, then matching records attribute automatically without a new exception
+- Given I resolve an exception, when I view it later, then who resolved it, when, and the note are retained
+- Given a mapping would credit a closed appraisal cycle, when I attempt it, then I am warned before proceeding
+
+---
+Epic: Fact Ingestion, Idempotency & Exceptions · Phase 0
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","High","Open","Fact Ingestion, Idempotency & Exceptions","KPIA-E2 Fact Ingestion, Idempotency & Exceptions","Phase 0","5","kpi-automation","KPIA-10"
+"Observe every sync run","**As a** System Administrator
+**I want to** a per-run record of what was pulled, matched, skipped and failed
+**So that** when a manager asks why a number is wrong, I can answer from data
+
+### Acceptance criteria
+- Given any sync run, when it finishes, then a sync log row exists whether it succeeded or failed
+- Given a failed run, when I open the log, then the error detail and the source that failed are recorded
+- Given a run is slow, when I inspect the log, then duration is recorded so degradation is visible over time
+- Given a run applied a cap or limit, when I inspect the log, then what was dropped is stated explicitly
+
+---
+Epic: Fact Ingestion, Idempotency & Exceptions · Phase 0
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","High","Open","Fact Ingestion, Idempotency & Exceptions","KPIA-E2 Fact Ingestion, Idempotency & Exceptions","Phase 0","3","kpi-automation","KPIA-11"
+"Source unavailable degrades gracefully","**As a** Employee
+**I want to** my KPI to hold its last known value when a source system is unreachable
+**So that** an outage never makes my performance look like zero
+
+### Acceptance criteria
+- Given a source is unreachable, when the sync runs, then affected KPIs retain their previous actual value
+- Given a source fails mid-run, when the job aborts, then no partial set of facts is committed for that source
+- Given one source fails, when others succeed, then the successful sources still update
+- Given repeated failures, when the threshold is exceeded, then the source is circuit-broken and HR is notified
+
+---
+Epic: Fact Ingestion, Idempotency & Exceptions · Phase 0
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Critical","Open","Fact Ingestion, Idempotency & Exceptions","KPIA-E2 Fact Ingestion, Idempotency & Exceptions","Phase 0","5","kpi-automation","KPIA-12"
+"Event-sum KPIs total correctly","**As a** Sales Executive
+**I want to** my cases-sold KPI to equal the sum of my invoiced cases in the period
+**So that** my attainment matches the ERP without my doing anything
+
+### Acceptance criteria
+- Given event-sum facts in the period, when the KPI recalculates, then the actual equals the sum of fact values
+- Given facts outside the KPI period, when it recalculates, then those facts are excluded
+- Given reversals exist, when it recalculates, then reversals are netted off
+- Given the KPI has a target, when the actual updates, then attainment percent recalculates using the configured direction
+
+---
+Epic: Aggregation Engine & Employee Experience · Phase 0
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Critical","Open","Aggregation Engine & Employee Experience","KPIA-E3 Aggregation Engine & Employee Experience","Phase 0","5","kpi-automation","KPIA-13"
+"Ratio KPIs aggregate components, never averaged percentages","**As a** HR Manager
+**I want to** a ratio KPI computed as total numerator over total denominator
+**So that** team percentages are mathematically correct rather than plausibly wrong
+
+### Acceptance criteria
+- Given ratio facts, when the KPI recalculates, then the result is sum of numerators divided by sum of denominators
+- Given unequal group sizes (for example 1 of 2 and 0 of 30), when it recalculates, then the result is 3.1 percent and not the 25 percent an average of percentages would give
+- Given the denominator sums to zero, when it recalculates, then the KPI shows 'not measurable' rather than an error or zero
+- Given a regression test suite, when it runs, then averaging-of-percentages is asserted against for every ratio metric
+
+### Notes
+Failure mode 2 in the strategy. Silent and high severity — the acceptance test must use unequal group sizes.
+
+---
+Epic: Aggregation Engine & Employee Experience · Phase 0
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Critical","Open","Aggregation Engine & Employee Experience","KPIA-E3 Aggregation Engine & Employee Experience","Phase 0","8","kpi-automation","KPIA-14"
+"Duration KPIs use total time over total count","**As a** Recruiter
+**I want to** my time-to-hire computed from total days over total hires
+**So that** one long-running requisition does not distort the figure through averaged averages
+
+### Acceptance criteria
+- Given duration facts, when the KPI recalculates, then the result is total duration divided by total event count
+- Given a mix of one long and several short events, when it recalculates, then the result matches a hand-computed weighted figure
+- Given the KPI direction is Lower is Better, when attainment computes, then a shorter duration yields higher attainment
+- Given zero events in the period, when it recalculates, then the KPI shows 'not measurable'
+
+---
+Epic: Aggregation Engine & Employee Experience · Phase 0
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","High","Open","Aggregation Engine & Employee Experience","KPIA-E3 Aggregation Engine & Employee Experience","Phase 0","5","kpi-automation","KPIA-15"
+"Snapshot KPIs sample point-in-time state","**As a** Warehouse Manager
+**I want to** my stock-value KPI to reflect the balance as at the measurement date
+**So that** a stock level is read as a position, not accumulated like a transaction
+
+### Acceptance criteria
+- Given snapshot facts, when the KPI recalculates, then the latest snapshot in the period is used, not the sum
+- Given an additive snapshot across several warehouses, when it recalculates, then values sum across scope but not across time
+- Given no snapshot in the period, when it recalculates, then the most recent prior snapshot is used and flagged as stale
+- Given nightly snapshots run, when I view history, then the trend over the period is visible
+
+---
+Epic: Aggregation Engine & Employee Experience · Phase 0
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","High","Open","Aggregation Engine & Employee Experience","KPIA-E3 Aggregation Engine & Employee Experience","Phase 0","5","kpi-automation","KPIA-16"
+"See which source documents produced my number","**As a** Employee
+**I want to** drill from my KPI actual into the individual transactions behind it
+**So that** I can verify the number and spot anything missing
+
+### Acceptance criteria
+- Given a synced KPI, when I open it, then I see the contributing facts with date, reference and value
+- Given a fact came from an ERPNext document, when I click it, then I navigate to that document if I have permission to see it
+- Given I lack permission on the source document, when I view the fact, then I see the reference and value but not restricted detail
+- Given both synced and manual entries exist, when I view the log, then each is clearly labelled by origin
+
+---
+Epic: Aggregation Engine & Employee Experience · Phase 0
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","High","Open","Aggregation Engine & Employee Experience","KPIA-E3 Aggregation Engine & Employee Experience","Phase 0","5","kpi-automation","KPIA-17"
+"Synced evidence auto-approves; manual keeps manager review","**As a** Reporting Manager
+**I want to** system-sourced progress to post without my approval, while manual entries still come to me
+**So that** I spend review time on judgement, not on rubber-stamping ERP data
+
+### Acceptance criteria
+- Given a fact-derived progress entry, when it is created, then its status is Approved and approved-by is System
+- Given a manual entry, when it is created, then it remains Pending until a manager acts, exactly as today
+- Given a synced entry, when I view it as a manager, then I can see it but cannot silently edit its value
+- Given existing manual KPIs, when this ships, then their behaviour is unchanged
+
+---
+Epic: Aggregation Engine & Employee Experience · Phase 0
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","High","Open","Aggregation Engine & Employee Experience","KPIA-E3 Aggregation Engine & Employee Experience","Phase 0","3","kpi-automation","KPIA-18"
+"Measure a manager's KPI on their team's activity","**As a** Regional Sales Manager
+**I want to** my target to fill from my whole team's transactions even though I book nothing personally
+**So that** I am measured on the outcome I am actually accountable for
+
+### Acceptance criteria
+- Given my KPI has measurement scope Team, when sync runs, then my actual equals the total of my reports' qualifying facts
+- Given I personally transact nothing, when my KPI recalculates, then my actual is still populated
+- Given a report's transaction is reversed, when recalculation runs, then my actual reduces accordingly
+- Given my KPI scope is Self, when sync runs, then only my own facts count — existing behaviour is preserved
+
+### Notes
+Scenario A from the strategy.
+
+---
+Epic: Team Roll-Up & Crediting · Phase 1
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Critical","Open","Team Roll-Up & Crediting","KPIA-E4 Team Roll-Up & Crediting","Phase 1","8","kpi-automation","KPIA-19"
+"Roll up from reports who have no KPIs of their own","**As a** Regional Sales Manager
+**I want to** my number to build from my team's ERP activity even when none of them has a KPI record
+**So that** delegation does not require creating scorecards for everyone
+
+### Acceptance criteria
+- Given reports with no KPI records, when sync runs, then facts and credits are still created for them
+- Given those credits exist, when my team-scoped KPI recalculates, then their activity is included
+- Given a report later receives their own KPI, when sync runs, then my total is unchanged and no double-count occurs
+- Given a report has a KPI with different filters from mine, when both recalculate, then each is computed independently from facts
+
+### Notes
+Scenario B. This is the case competing OKR tools cannot express — protect it in tests.
+
+---
+Epic: Team Roll-Up & Crediting · Phase 1
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Critical","Open","Team Roll-Up & Crediting","KPIA-E4 Team Roll-Up & Crediting","Phase 1","5","kpi-automation","KPIA-20"
+"Roll up through every level of the hierarchy","**As a** Zonal Head
+**I want to** my KPI to include activity from my managers' teams, not just my direct reports
+**So that** senior leaders are measured on their full organisation
+
+### Acceptance criteria
+- Given scope depth All Descendants, when my KPI recalculates, then facts from every level beneath me are included
+- Given scope depth Direct Reports, when it recalculates, then only my immediate reports' facts count
+- Given a three-level org, when totals are compared, then my figure equals the sum of underlying facts exactly once
+- Given hierarchy traversal runs, when profiled, then it uses an indexed nested-set range scan rather than per-level recursion
+
+---
+Epic: Team Roll-Up & Crediting · Phase 1
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Critical","Open","Team Roll-Up & Crediting","KPIA-E4 Team Roll-Up & Crediting","Phase 1","8","kpi-automation","KPIA-21"
+"Honour split credit on shared deals","**As a** Sales Executive
+**I want to** a jointly-owned deal to credit each contributor at their declared share
+**So that** co-selling is neither double-counted nor lost
+
+### Acceptance criteria
+- Given a source document declaring allocated percentages, when credits are issued, then each named party receives their weighted share
+- Given allocations sum to 100 percent, when credits are totalled, then they equal the fact value exactly
+- Given allocations do not sum to 100 percent, when ingestion runs, then an exception is raised rather than credit being invented or lost
+- Given split credits roll up, when the shared manager's KPI recalculates, then the deal counts once in total
+
+---
+Epic: Team Roll-Up & Crediting · Phase 1
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Medium","Open","Team Roll-Up & Crediting","KPIA-E4 Team Roll-Up & Crediting","Phase 1","5","kpi-automation","KPIA-22"
+"Drill from a team number into per-person contribution","**As a** Regional Sales Manager
+**I want to** break my team total down by report and then by transaction
+**So that** I can coach individuals and answer challenges to the number
+
+### Acceptance criteria
+- Given a team-scoped KPI, when I open the drill-down, then I see each contributing employee and their subtotal
+- Given a contributor row, when I expand it, then I see the underlying facts with references and dates
+- Given contributions are summed, when compared to the KPI actual, then they reconcile exactly
+- Given I am an employee rather than the manager, when I attempt the drill-down, then I can see only my own contribution
+
+---
+Epic: Team Roll-Up & Crediting · Phase 1
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","High","Open","Team Roll-Up & Crediting","KPIA-E4 Team Roll-Up & Crediting","Phase 1","5","kpi-automation","KPIA-23"
+"Roll sales up the Sales Person tree, not the HR reporting line","**As a** HR Manager
+**I want to** sales KPIs to follow the commercial hierarchy where it differs from the HR org chart
+**So that** multi-tier distribution structures report correctly
+
+### Acceptance criteria
+- Given scope axis Sales Person, when roll-up runs, then ancestors are resolved through the Sales Person tree
+- Given scope axis Reporting, when roll-up runs, then ancestors are resolved through the employee reporting tree
+- Given a new sales KPI is created, when I set it up, then the Sales Person axis is offered as the default
+- Given an employee has no Sales Person record, when roll-up runs on that axis, then an exception is raised rather than a silent miss
+
+### Notes
+Implements D5.
+
+---
+Epic: Team Roll-Up & Crediting · Phase 1
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","High","Open","Team Roll-Up & Crediting","KPIA-E4 Team Roll-Up & Crediting","Phase 1","5","kpi-automation","KPIA-24"
+"Company reports read facts so totals never double-count","**As a** CXO
+**I want to** company and business-unit totals computed from source facts
+**So that** revenue is not reported at three times its real value because of hierarchy roll-up
+
+### Acceptance criteria
+- Given a three-level org with roll-up KPIs, when the company report runs, then the total equals actual revenue, not a multiple of it
+- Given the report is built, when reviewed, then it reads from facts and never sums KPI actual values
+- Given a developer writes a new roll-up report, when they do, then documentation and a guard view make the correct source obvious
+- Given a regression test exists, when it runs on a three-level fixture, then it asserts the total is exactly 1x
+
+### Notes
+Failure mode 1. Highest-severity reporting hazard in the design.
+
+---
+Epic: Team Roll-Up & Crediting · Phase 1
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Critical","Open","Team Roll-Up & Crediting","KPIA-E4 Team Roll-Up & Crediting","Phase 1","5","kpi-automation","KPIA-25"
+"Show quota coverage when targets are cascaded","**As a** HR Manager
+**I want to** see allocated child targets against the manager's own target during cascade
+**So that** I can spot an exposed manager or a sandbagged team before the cycle starts
+
+### Acceptance criteria
+- Given a manager with child targets, when I view the cascade, then coverage percent is displayed
+- Given coverage is below 100 percent, when I view it, then it is visually flagged as under-allocated
+- Given coverage exceeds 100 percent, when I view it, then it is shown as normal over-assignment and not blocked
+- Given targets are edited, when I save, then coverage recalculates immediately
+
+---
+Epic: Team Roll-Up & Crediting · Phase 1
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Medium","Open","Team Roll-Up & Crediting","KPIA-E4 Team Roll-Up & Crediting","Phase 1","3","kpi-automation","KPIA-26"
+"Recompute affected KPIs once per run, bottom-up","**As a** System Administrator
+**I want to** roll-up recalculation batched rather than cascading per transaction
+**So that** month-end volume does not overwhelm the queue
+
+### Acceptance criteria
+- Given a sync run affecting many facts, when recalculation executes, then each affected KPI is recomputed exactly once
+- Given a deep hierarchy, when recalculation runs, then ancestors resolve in a single indexed pass rather than per-fact traversal
+- Given a month-end volume test, when it runs, then completion is within the agreed window and query count does not scale with fact count
+- Given recalculation fails partway, when it retries, then results are identical to a clean run
+
+---
+Epic: Team Roll-Up & Crediting · Phase 1
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","High","Open","Team Roll-Up & Crediting","KPIA-E4 Team Roll-Up & Crediting","Phase 1","8","kpi-automation","KPIA-27"
+"Maintain positions and dated assignments","**As a** HR Manager
+**I want to** define role slots and record who occupies each one between which dates
+**So that** the org structure has a history, not just a current state
+
+### Acceptance criteria
+- Given the position tree, when I create a position, then I can set its parent, company and department
+- Given a position, when I assign an employee, then I set valid-from, optional valid-to and assignment type of Primary, Acting or Dotted
+- Given overlapping Primary assignments for one position, when I save, then I am blocked with a clear conflict message
+- Given a position with no current occupant, when I view it, then it is clearly shown as vacant
+
+### Notes
+Implements D2.
+
+---
+Epic: Positions & Effective Dating · Phase 2
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","High","Open","Positions & Effective Dating","KPIA-E5 Positions & Effective Dating","Phase 2","8","kpi-automation","KPIA-28"
+"Backfill positions from the existing reporting structure","**As a** HR Manager
+**I want to** generate an initial position tree from current employee reporting lines
+**So that** adopting positions does not require manual re-entry of the whole org
+
+### Acceptance criteria
+- Given existing employees with reporting lines, when backfill runs, then a position exists for each and the tree mirrors the current structure
+- Given backfill runs, when it completes, then each employee has an assignment dated from an agreed effective date
+- Given backfill is run twice, when the second run executes, then no duplicate positions are created
+- Given backfill completes, when I review the report, then any employee that could not be placed is listed
+
+---
+Epic: Positions & Effective Dating · Phase 2
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","High","Open","Positions & Effective Dating","KPIA-E5 Positions & Effective Dating","Phase 2","5","kpi-automation","KPIA-29"
+"A mid-cycle reorganisation leaves historical credit intact","**As a** Regional Sales Manager
+**I want to** keep credit for what my team delivered while they reported to me
+**So that** a transfer does not silently move my results to another manager
+
+### Acceptance criteria
+- Given a report moves to another manager mid-cycle, when KPIs recalculate, then earlier facts remain credited to the original manager
+- Given the same reorganisation, when the receiving manager's KPI recalculates, then only facts dated after the transfer are included
+- Given credit resolution runs, when it executes, then it uses the org structure as at the fact date, not as at today
+- Given a simulated reorganisation test, when it runs, then pre-reorganisation totals are byte-identical to before the change
+
+### Notes
+Failure mode 3. This story is the entire justification for the position layer.
+
+---
+Epic: Positions & Effective Dating · Phase 2
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Critical","Open","Positions & Effective Dating","KPIA-E5 Positions & Effective Dating","Phase 2","8","kpi-automation","KPIA-30"
+"Handle vacant and acting positions","**As a** HR Manager
+**I want to** credit to accrue correctly when a role is empty or covered by an acting manager
+**So that** turnover does not create attribution gaps
+
+### Acceptance criteria
+- Given a vacant position, when facts arrive, then credit accrues to the position and is visible as unassigned
+- Given the position is later filled, when recalculation runs, then accrued credit resolves to the new occupant from their start date
+- Given an Acting assignment, when roll-up runs, then the acting occupant receives credit for the covered period
+- Given a Dotted assignment, when roll-up runs, then it does not create duplicate credit alongside the Primary line
+
+---
+Epic: Positions & Effective Dating · Phase 2
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Medium","Open","Positions & Effective Dating","KPIA-E5 Positions & Effective Dating","Phase 2","5","kpi-automation","KPIA-31"
+"Confirm the Logic ERP integration surface","**As a** Technical Architect
+**I want to** establish which transport Logic ERP can actually offer at this customer
+**So that** we build against a confirmed interface rather than an assumed one
+
+### Acceptance criteria
+- Given contact with the Logic ERP team, when discovery completes, then API availability in the licensed edition is confirmed in writing
+- Given discovery completes, when documented, then deployment topology, owner key scheme, and return or credit-note representation are recorded
+- Given discovery completes, when documented, then sandbox availability and rate limits are stated
+- Given findings are known, when the recommendation is made, then one transport is selected with the reasoning recorded
+
+### Notes
+Spike. Blocks the remaining stories in this epic — sequence it first and timebox it.
+
+---
+Epic: Logic ERP Integration · Phase 3
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Critical","Open","Logic ERP Integration","KPIA-E6 Logic ERP Integration","Phase 3","3","kpi-automation","KPIA-32"
+"Ingest Logic ERP data through the confirmed transport","**As a** System Administrator
+**I want to** Logic ERP transactions to land as facts through the same pipeline as native data
+**So that** external and internal sources behave identically downstream
+
+### Acceptance criteria
+- Given the confirmed transport, when sync runs, then Logic ERP records become facts with a stable external reference
+- Given the adapter is implemented, when the core is inspected, then no Logic ERP specifics exist outside the adapter module
+- Given the connection is configured, when it runs, then all traffic is outbound from our side only
+- Given transport-level failure, when it occurs, then it is logged and circuit-broken without affecting other sources
+
+### Notes
+Estimate assumes one transport. Re-point after the KPIA-32 spike resolves.
+
+---
+Epic: Logic ERP Integration · Phase 3
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Critical","Open","Logic ERP Integration","KPIA-E6 Logic ERP Integration","Phase 3","13","kpi-automation","KPIA-33"
+"Store external credentials securely","**As a** Security Reviewer
+**I want to** integration credentials held encrypted and never exposed in the UI or logs
+**So that** adding an ERP connection does not widen the attack surface
+
+### Acceptance criteria
+- Given credentials are configured, when stored, then they use an encrypted field or site configuration and never plaintext in a doctype
+- Given a sync error is logged, when I read it, then no credential appears in the message
+- Given a non-administrator opens the connection record, when they view it, then credential values are masked
+- Given credentials are rotated, when saved, then the next sync uses them without a restart
+
+---
+Epic: Logic ERP Integration · Phase 3
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Critical","Open","Logic ERP Integration","KPIA-E6 Logic ERP Integration","Phase 3","3","kpi-automation","KPIA-34"
+"Reconcile ERP totals against KPI totals","**As a** HR Manager
+**I want to** a report comparing source totals with what landed in KPIs
+**So that** I can prove the integration is complete rather than assume it
+
+### Acceptance criteria
+- Given a period, when I run reconciliation, then source total, ingested total and variance are shown side by side
+- Given a variance exists, when I drill in, then the missing or extra records are listed individually
+- Given variance is within tolerance, when the report runs, then it is marked reconciled
+- Given unattributed records exist, when the report runs, then they are shown separately from genuine variance
+
+---
+Epic: Logic ERP Integration · Phase 3
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","High","Open","Logic ERP Integration","KPIA-E6 Logic ERP Integration","Phase 3","5","kpi-automation","KPIA-35"
+"Dispute a synced entry without editing it","**As a** Employee
+**I want to** flag a system-generated entry I believe is wrong
+**So that** I have recourse when automation misattributes my work
+
+### Acceptance criteria
+- Given a synced entry, when I raise a dispute with a reason, then it is routed to HR and the entry is marked disputed
+- Given I raise a dispute, when I attempt to change the value, then editing remains blocked
+- Given HR resolves a dispute, when they do, then the outcome and reasoning are recorded against the entry
+- Given my transactions credit a manager's KPI and I have no KPI, when I look, then I can still see and dispute what was attributed to me
+
+### Notes
+Required for Scenario B, where reports have no KPI yet drive a manager's score.
+
+---
+Epic: Governance, Trust & Compliance · Phase 4
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","High","Open","Governance, Trust & Compliance","KPIA-E7 Governance, Trust & Compliance","Phase 4","5","kpi-automation","KPIA-36"
+"Freeze KPI values when an appraisal cycle closes","**As a** HR Manager
+**I want to** syncing to stop and values to snapshot once a cycle is closed
+**So that** a later correction in the ERP cannot reopen a settled appraisal
+
+### Acceptance criteria
+- Given a cycle is closed, when sync runs, then KPIs in that cycle are not modified
+- Given a cycle closes, when it does, then the final actual value is snapshotted with a timestamp
+- Given a late fact arrives for a closed period, when it is ingested, then it is recorded and flagged but not applied
+- Given a cycle is deliberately reopened by HR, when that happens, then the action is audit-logged and requires explicit confirmation
+
+---
+Epic: Governance, Trust & Compliance · Phase 4
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Critical","Open","Governance, Trust & Compliance","KPIA-E7 Governance, Trust & Compliance","Phase 4","5","kpi-automation","KPIA-37"
+"Flag metrics where the scored person produces the data","**As a** HR Manager
+**I want to** see at design time when someone is effectively scoring themselves
+**So that** we spot gameable metrics before appraisals depend on them
+
+### Acceptance criteria
+- Given a metric definition, when I set who produces the source data, then a self-scoring conflict is detected and shown
+- Given a conflict is flagged, when I attach the metric to a KPI, then I see a warning but am not blocked
+- Given flagged metrics exist, when I run the governance report, then all self-scored KPIs are listed
+- Given a conflict is accepted, when I record the justification, then it is retained for audit
+
+---
+Epic: Governance, Trust & Compliance · Phase 4
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Medium","Open","Governance, Trust & Compliance","KPIA-E7 Governance, Trust & Compliance","Phase 4","3","kpi-automation","KPIA-38"
+"Scope fact visibility by role and hierarchy","**As a** Security Reviewer
+**I want to** employees to see only their own facts and managers only their own subtree
+**So that** commercial and personal data are not exposed across the organisation
+
+### Acceptance criteria
+- Given I am an employee, when I query facts, then I see only facts crediting me
+- Given I am a manager, when I query facts, then I see my subtree and no peer data
+- Given I am HR or a System Manager, when I query facts, then I see facts within my permitted companies only
+- Given a permission test suite exists, when it runs, then cross-company and peer access attempts are asserted to fail
+
+---
+Epic: Governance, Trust & Compliance · Phase 4
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","Critical","Open","Governance, Trust & Compliance","KPIA-E7 Governance, Trust & Compliance","Phase 4","8","kpi-automation","KPIA-39"
+"Limit personal and commercial data held in HR","**As a** Compliance Officer
+**I want to** only the minimum source detail necessary retained on facts
+**So that** connecting the ERP does not widen the HR system's data footprint unnecessarily
+
+### Acceptance criteria
+- Given a fact is created, when stored, then it holds reference and measure fields rather than full customer or applicant detail
+- Given a raw payload is retained, when configured, then its retention period is enforced and it is purged on schedule
+- Given a data subject request, when it is processed, then facts relating to that person can be located and exported
+- Given the feature ships, when reviewed, then the data footprint change is documented for compliance sign-off
+
+---
+Epic: Governance, Trust & Compliance · Phase 4
+Feature: KPI Automation — ERP-Sourced Evidence & Credit Roll-Up
+Source: KPI_AUTOMATION_STRATEGY.md","User Story","High","Open","Governance, Trust & Compliance","KPIA-E7 Governance, Trust & Compliance","Phase 4","5","kpi-automation","KPIA-40"

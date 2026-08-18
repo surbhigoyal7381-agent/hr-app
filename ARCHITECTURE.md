@@ -25,10 +25,10 @@ Kinexus HRMS is a **multi-tenant HR, performance-management and vendor/logistics
 |---|---|---|
 | Core HR — employee, leave, attendance, onboarding, payroll | `hrms` | Frappe HR fork with Grace Group customisations |
 | Performance management — appraisals, calibration, check-ins, upward feedback, talent flags | `hrms/hrms/pms` + `hrms/hrms/performance_management` | 37 doctypes. **Never run before** — see §11 |
-| Cascaded goals & KPIs with evidence-based progress | `grace_goals` | 21 doctypes, row-level scoping, hourly recalculation |
-| Vendor portal, order tracking, delivery/driver management | `grace_vendor_portal` | 22 doctypes, scheduled scorecards |
-| Appraisal/KPI APIs and branded tenant portals | `grace_vendor_portal` | `performance_api.py` (157 KB), server-rendered pages under `www/` |
-| Tenant provisioning control plane | `grace_vendor_portal/tenant_api.py` | Creates Frappe sites via background jobs; System Manager only |
+| Cascaded goals & KPIs with evidence-based progress | `alvoraa_goals` | 21 doctypes, row-level scoping, hourly recalculation |
+| Vendor portal, order tracking, delivery/driver management | `alvoraa_portal` | 22 doctypes, scheduled scorecards |
+| Appraisal/KPI APIs and branded tenant portals | `alvoraa_portal` | `performance_api.py` (157 KB), server-rendered pages under `www/` |
+| Tenant provisioning control plane | `alvoraa_portal/tenant_api.py` | Creates Frappe sites via background jobs; System Manager only |
 | Employee PWA + Roster SPA | `hrms/frontend`, `hrms/roster` | Vue 3 + frappe-ui, built at image-build time |
 
 ---
@@ -65,8 +65,8 @@ hr-app/
 │   ├── roster/                 #   Vue 3 roster SPA
 │   ├── frappe-ui/              #   ⚠️ GIT SUBMODULE → github.com/frappe/frappe-ui
 │   └── docker/                 #   local dev stack (keep — this is what developers use)
-├── grace_goals/                # custom app — goals, KPIs, appraisal extensions
-├── grace_vendor_portal/        # custom app — vendor, delivery, portals, tenant API
+├── alvoraa_goals/                # custom app — goals, KPIs, appraisal extensions
+├── alvoraa_portal/        # custom app — vendor, delivery, portals, tenant API
 ├── deploy/                     # ← everything needed to deploy
 │   ├── Dockerfile              #   the application image
 │   ├── compose/                #   test/prod stack
@@ -207,7 +207,7 @@ Browser → https://acme.kinexus.in
 3. **Wildcard TLS** `*.kinexus.in` + apex. Requires **DNS-01** validation — HTTP-01 cannot issue wildcards.
 4. **`X-Forwarded-Proto: https`** set and trusted, or every generated URL comes out as `http://`.
 
-**Tenant lifecycle:** `deploy/provision_tenant.sh <subdomain> "Name" <plan>` creates the site and installs `erpnext → hrms → grace_vendor_portal → grace_goals` (order matters — `grace_goals` requires `hrms`, `grace_vendor_portal` requires `erpnext`).
+**Tenant lifecycle:** `deploy/provision_tenant.sh <subdomain> "Name" <plan>` creates the site and installs `erpnext → hrms → alvoraa_portal → alvoraa_goals` (order matters — `alvoraa_goals` requires `hrms`, `alvoraa_portal` requires `erpnext`).
 
 Plans map to a `modules_enabled` list: `starter` = HR only; `business` adds vendor portal + goals; **`enterprise` enables everything**.
 
@@ -311,10 +311,10 @@ RUN bench get-app --branch ${ERPNEXT_BRANCH} erpnext
 
 # All three first-party apps copied from THIS commit — never re-downloaded
 COPY --chown=frappe:frappe hrms                 apps/hrms
-COPY --chown=frappe:frappe grace_goals          apps/grace_goals
-COPY --chown=frappe:frappe grace_vendor_portal  apps/grace_vendor_portal
+COPY --chown=frappe:frappe alvoraa_goals          apps/alvoraa_goals
+COPY --chown=frappe:frappe alvoraa_portal  apps/alvoraa_portal
 
-RUN ./env/bin/pip install -e apps/hrms -e apps/grace_goals -e apps/grace_vendor_portal \
+RUN ./env/bin/pip install -e apps/hrms -e apps/alvoraa_goals -e apps/alvoraa_portal \
  && bench build --production          # bakes sites/assets + PWA + roster
 ```
 
@@ -341,7 +341,7 @@ That includes `hrms/hrms/pms` + `hrms/hrms/performance_management`: **37 doctype
 - The first `bench install-app hrms` **creates 37 new tables** and activates untested permission handlers, document hooks and web routes (`/pms-employee`, `/pms-manager`, `/pms-calibration`, `/pms-steering`).
 - CI covers this: [`ci.yml`](.github/workflows/ci.yml) installs `hrms` on a fresh site and asserts the Performance Management doctypes are created. **If that job fails, the module has a defect — do not deploy past it.**
 - Deploy to `dev`, then `test`, and exercise the PMS screens **before** the first `main` deploy. This is exactly what the three environments are for.
-- Note there are effectively **two performance systems**: the live one built on `Appraisal` + `KPI` + `Individual Goal` (in `grace_vendor_portal/performance_api.py`), and this PMS module. They are independent. Enabling both is the stated intent — just be aware users will see two routes to similar functionality.
+- Note there are effectively **two performance systems**: the live one built on `Appraisal` + `KPI` + `Individual Goal` (in `alvoraa_portal/performance_api.py`), and this PMS module. They are independent. Enabling both is the stated intent — just be aware users will see two routes to similar functionality.
 
 ---
 

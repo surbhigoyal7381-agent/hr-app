@@ -6,6 +6,12 @@
 
 ---
 
+> **Historical record.** The names in this document are deliberately NOT updated to Alvoraa.
+> It describes what past commits and past environments actually contained - `alvox_portal`,
+> `Grace Cycle Config`, and so on. Rewriting them would make the record false. The final
+> naming is Alvoraa everywhere; see `KPI_AUTOMATION_STRATEGY.md`.
+
+
 ## 1. Headline finding: this has already been done once
 
 A complete four-phase rebrand exists on the branch **`backup/dev-rebrand-aug-2026`** (also

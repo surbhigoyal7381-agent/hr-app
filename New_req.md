@@ -185,20 +185,20 @@ def submit_evidence(self, evidence_file_path, evidence_type, extracted_data=None
 # hooks.py
 doc_events = {
     "Individual Goal": {
-        "validate": "grace_goals.controllers.goal.validate_individual_goal",
-        "after_insert": "grace_goals.controllers.goal.after_insert_goal",
-        "before_submit": "grace_goals.controllers.goal.before_submit_goal"
+        "validate": "alvoraa_goals.controllers.goal.validate_individual_goal",
+        "after_insert": "alvoraa_goals.controllers.goal.after_insert_goal",
+        "before_submit": "alvoraa_goals.controllers.goal.before_submit_goal"
     },
     "Goal Evidence": {
-        "before_insert": "grace_goals.controllers.evidence.validate_evidence",
-        "after_insert": "grace_goals.controllers.evidence.after_insert_evidence"
+        "before_insert": "alvoraa_goals.controllers.evidence.validate_evidence",
+        "after_insert": "alvoraa_goals.controllers.evidence.after_insert_evidence"
     }
 }
 
 scheduled_jobs = [
-    ("grace_goals.scheduled_jobs.recalculate_all_progress", "hourly"),
-    ("grace_goals.scheduled_jobs.check_cascade_alignment", "daily"),
-    ("grace_goals.scheduled_jobs.send_progress_reminders", "daily")
+    ("alvoraa_goals.scheduled_jobs.recalculate_all_progress", "hourly"),
+    ("alvoraa_goals.scheduled_jobs.check_cascade_alignment", "daily"),
+    ("alvoraa_goals.scheduled_jobs.send_progress_reminders", "daily")
 ]
 
 fixtures = ["Role", "DocPerm", "Custom Field"]
@@ -214,7 +214,7 @@ fixtures = ["Role", "DocPerm", "Custom Field"]
 @frappe.whitelist()
 def get_goal_cascade(cascade_id):
     """
-    GET /api/method/grace_goals.api.goal_api.get_goal_cascade
+    GET /api/method/alvoraa_goals.api.goal_api.get_goal_cascade
     Returns full cascade with all levels expanded + current progress
     Response: {company: {...}, divisions: [...], teams: [...], individuals: [...]}
     """
@@ -224,7 +224,7 @@ def get_goal_cascade(cascade_id):
 @frappe.whitelist()
 def get_employee_goals(employee_id):
     """
-    GET /api/method/grace_goals.api.goal_api.get_employee_goals
+    GET /api/method/alvoraa_goals.api.goal_api.get_employee_goals
     Returns all active goals for employee + progress + evidence
     """
     goals = frappe.get_list(
@@ -244,7 +244,7 @@ def get_employee_goals(employee_id):
 @frappe.whitelist()
 def submit_goal_evidence(goal_id, evidence_file, evidence_type, extracted_data=None):
     """
-    POST /api/method/grace_goals.api.goal_api.submit_goal_evidence
+    POST /api/method/alvoraa_goals.api.goal_api.submit_goal_evidence
     Payload: {goal_id, evidence_file (base64), evidence_type, extracted_data}
     Runs validators, updates progress, returns new progress value
     """
@@ -255,7 +255,7 @@ def submit_goal_evidence(goal_id, evidence_file, evidence_type, extracted_data=N
 @frappe.whitelist()
 def get_cascade_alignment(cascade_id):
     """
-    GET /api/method/grace_goals.api.goal_api.get_cascade_alignment
+    GET /api/method/alvoraa_goals.api.goal_api.get_cascade_alignment
     Returns alignment report (target vs. actual across all levels)
     """
     report = frappe.get_doc('Cascade Alignment Report', cascade_id)
@@ -264,7 +264,7 @@ def get_cascade_alignment(cascade_id):
 @frappe.whitelist()
 def get_progress_audit_log(goal_id, start_date=None, end_date=None):
     """
-    GET /api/method/grace_goals.api.goal_api.get_progress_audit_log
+    GET /api/method/alvoraa_goals.api.goal_api.get_progress_audit_log
     Returns immutable audit trail for a goal
     """
     filters = {'goal_id': goal_id}
@@ -330,7 +330,7 @@ function submit_evidence_dialog(frm) {
         primary_action(values) {
             // Call API to submit evidence
             frappe.call({
-                method: 'grace_goals.api.goal_api.submit_goal_evidence',
+                method: 'alvoraa_goals.api.goal_api.submit_goal_evidence',
                 args: {
                     goal_id: frm.doc.name,
                     evidence_file: values.file_upload,
@@ -436,7 +436,7 @@ Employee
 ### **Step-by-Step Checklist**
 
 **Phase 1: Foundation (Week 1–2)**
-- [ ] 1. Create app: `bench new-app grace_goals`
+- [ ] 1. Create app: `bench new-app alvoraa_goals`
 - [ ] 2. Define all 8 DocTypes (Goal Cascade, Individual Goal, Goal Evidence, etc.) in JSON
 - [ ] 3. Create custom fields on Employee (link to goals, current role level)
 - [ ] 4. Create custom fields on Sales Order (link to goal evidence, if applicable)
@@ -461,7 +461,7 @@ Employee
 - [ ] 17. Write integration tests: cascade creation → employee assignment → evidence submission → auto-aggregation
 - [ ] 18. Write permission tests: employee cannot edit target, cannot see other team member's goals
 - [ ] 19. Load test: 150–200 employees, 500 goals, 2,000+ evidence submissions (simulated)
-- [ ] 20. UAT with Grace HR team (2–3 day iteration)
+- [ ] 20. UAT with Alvoraa HR team (2–3 day iteration)
 - [ ] 21. Migrate existing goals (if any) into new structure
 - [ ] 22. Deploy to production
 
@@ -471,11 +471,11 @@ Employee
 
 | Item | Convention | Example |
 |------|-----------|---------|
-| App name | `snake_case` | `grace_goals` |
+| App name | `snake_case` | `alvoraa_goals` |
 | DocType | `Title Case` (UI), `snake_case` (DB) | "Goal Cascade" → goal_cascade |
 | Controller file | `snake_case` | `goal.py`, `evidence.py` |
 | Method | `snake_case` | `recalculate_progress()`, `submit_evidence()` |
-| API endpoint | `/api/method/app/module.method_name` | `/api/method/grace_goals.api.goal_api.submit_evidence` |
+| API endpoint | `/api/method/app/module.method_name` | `/api/method/alvoraa_goals.api.goal_api.submit_evidence` |
 | Field | `snake_case` | `target_value`, `actual_progress` |
 | Role | `Title Case` | "Goal Manager", "Evidence Validator" |
 
@@ -531,8 +531,8 @@ Employee
 
 - [ ] **App directory structure:**
   ```
-  grace_goals/
-  ├── grace_goals/
+  alvoraa_goals/
+  ├── alvoraa_goals/
   │   ├── __init__.py
   │   ├── hooks.py (doc_events, scheduled_jobs, fixtures)
   │   ├── api/
@@ -553,7 +553,7 @@ Employee
   │       ├── test_evidence.py (evidence validation)
   │       ├── test_cascade.py (hierarchy aggregation)
   │       └── test_permissions.py (RBAC)
-  ├── grace_goals/doctype/
+  ├── alvoraa_goals/doctype/
   │   ├── goal_cascade/
   │   │   ├── goal_cascade.json (DocType definition)
   │   │   ├── goal_cascade.py (DocType class)
@@ -561,7 +561,7 @@ Employee
   │   ├── individual_goal/ (similar structure)
   │   ├── goal_evidence/ (similar structure)
   │   └── [6 more DocTypes...]
-  ├── grace_goals/public/
+  ├── alvoraa_goals/public/
   │   └── form_scripts/ (individual_goal.js for custom logic)
   ├── pyproject.toml (dependencies, metadata)
   └── README.md (setup, usage, admin guide)
@@ -619,8 +619,8 @@ Employee
 
 1. **HR & Chaitanya sign-off** on the blueprint (especially risk assessment, change management).
 2. **Assign tech lead** to begin Phase 1 (app creation, DocType definitions).
-3. **Prepare change management** (workshop with Grace HR, early-access testing).
-4. **Schedule UAT** with Grace HR & Sales teams (end of Week 4).
+3. **Prepare change management** (workshop with Alvoraa HR, early-access testing).
+4. **Schedule UAT** with Alvoraa HR & Sales teams (end of Week 4).
 5. **Go-live** to production (end of Week 5), monitor closely first 2 weeks.
 
 ---

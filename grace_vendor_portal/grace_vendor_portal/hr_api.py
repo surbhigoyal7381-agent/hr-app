@@ -1219,8 +1219,28 @@ def get_expense_claims():
 
 
 @frappe.whitelist()
-def get_leave_summary():
-    emp = _get_employee()
+def get_all_active_employees():
+    roles = frappe.get_roles()
+    if not ({"HR Manager", "HR User", "System Manager"} & set(roles)):
+        frappe.throw("Not permitted.", frappe.PermissionError)
+    employees = frappe.get_all(
+        "Employee",
+        filters={"status": "Active"},
+        fields=["name", "employee_name", "department", "designation"],
+        order_by="employee_name asc",
+        ignore_permissions=True,
+    )
+    return {"employees": employees}
+
+
+@frappe.whitelist()
+def get_leave_summary(employee_id=None):
+    roles = frappe.get_roles()
+    is_hr = bool({"HR Manager", "HR User", "System Manager"} & set(roles))
+    if employee_id and is_hr:
+        emp = frappe.get_doc("Employee", employee_id)
+    else:
+        emp = _get_employee()
     if not emp:
         return {"no_employee": True}
     td = today()
@@ -1320,8 +1340,14 @@ def apply_expense_claim(expense_type, expense_date, amount, description=None):
 
 
 @frappe.whitelist()
-def apply_leave(leave_type, from_date, to_date, half_day=0, half_day_date=None, reason=None):
-    emp = _get_employee()
+def apply_leave(leave_type, from_date, to_date, half_day=0, half_day_date=None, reason=None, on_behalf_of=None):
+    roles = frappe.get_roles()
+    is_hr = bool({"HR Manager", "HR User", "System Manager"} & set(roles))
+
+    if on_behalf_of and is_hr:
+        emp = frappe.get_doc("Employee", on_behalf_of)
+    else:
+        emp = _get_employee()
     if not emp:
         frappe.throw("No employee record is linked to your account.")
 

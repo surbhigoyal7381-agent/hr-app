@@ -45,6 +45,22 @@ def _is_hr(user=None):
     return bool(HR_ROLES.intersection(frappe.get_roles(user or frappe.session.user)))
 
 
+def _assert_hr_can_view(appraisal_name):
+    """Block HR from opening appraisals that have not yet reached HR Review stage."""
+    if not _is_hr():
+        return
+    if frappe.has_role("System Manager"):
+        return
+    status = frappe.db.get_value(
+        "Alvox Appraisal Extension", {"appraisal": appraisal_name}, "review_status"
+    )
+    if status and status not in ("HR Review", "Completed"):
+        frappe.throw(
+            "This appraisal is not yet in HR Review stage.",
+            frappe.PermissionError,
+        )
+
+
 def _require_hr():
     if not _is_hr():
         frappe.throw("This action requires an HR role.", frappe.PermissionError)
@@ -552,6 +568,7 @@ def get_appraisal(appraisal):
         frappe.throw(
             "That appraisal belongs to someone outside your team.", frappe.PermissionError
         )
+    _assert_hr_can_view(appraisal)
 
     payload = _appraisal_payload(ap.employee, ap.appraisal_cycle)
     detail = payload.get("appraisal") or {}
@@ -666,7 +683,7 @@ def get_team_reviews(cycle=None):
     appraisal_names = [a["name"] for a in appraisals]
     ext_map = {}
     for ext in frappe.get_all(
-        "Grace Appraisal Extension",
+        "Alvox Appraisal Extension",
         filters={"appraisal": ["in", appraisal_names]},
         fields=["appraisal", "review_status", "overall_rating", "potential_rating"],
     ):
@@ -1264,15 +1281,15 @@ def save_cycle_wizard(cycle_name, start_date, end_date,
         cycle.status = "Not Started"
         cycle.insert(ignore_permissions=True)
 
-    # Save or update the Grace Cycle Config
+    # Save or update the Alvox Cycle Config
     emp_fields_json   = json.dumps(employee_fields) if isinstance(employee_fields, (dict, list)) else (employee_fields or "{}")
     page_config_json  = json.dumps(page_config)     if isinstance(page_config,     (dict, list)) else (page_config     or "{}")
     page_settings_json = json.dumps(page_settings)  if isinstance(page_settings,   (dict, list)) else (page_settings   or "{}")
 
-    if frappe.db.exists("Grace Cycle Config", cycle.name):
-        cfg = frappe.get_doc("Grace Cycle Config", cycle.name)
+    if frappe.db.exists("Alvox Cycle Config", cycle.name):
+        cfg = frappe.get_doc("Alvox Cycle Config", cycle.name)
     else:
-        cfg = frappe.new_doc("Grace Cycle Config")
+        cfg = frappe.new_doc("Alvox Cycle Config")
         cfg.appraisal_cycle = cycle.name
 
     cfg.description      = description
@@ -1294,7 +1311,7 @@ def save_cycle_wizard(cycle_name, start_date, end_date,
     else:
         cfg.save(ignore_permissions=True)
 
-    # Create Appraisal + Grace Appraisal Extension for each selected employee
+    # Create Appraisal + Alvox Appraisal Extension for each selected employee
     created = 0
     skipped = 0
 
@@ -1314,7 +1331,7 @@ def save_cycle_wizard(cycle_name, start_date, end_date,
             appr.end_date = cycle.end_date
             appr.status = "Draft"
             appr.insert(ignore_permissions=True)
-            ext = frappe.new_doc("Grace Appraisal Extension")
+            ext = frappe.new_doc("Alvox Appraisal Extension")
             ext.appraisal = appr.name
             ext.employee = emp_id
             ext.appraisal_cycle = cycle.name
@@ -1337,9 +1354,9 @@ def get_cycle_config(cycle):
     """Return the wizard configuration for a cycle."""
     import json
     _require_hr()
-    if not frappe.db.exists("Grace Cycle Config", cycle):
+    if not frappe.db.exists("Alvox Cycle Config", cycle):
         return {"employee_fields": {}, "page_config": {}, "page_settings": {}, "description": ""}
-    cfg = frappe.get_doc("Grace Cycle Config", cycle)
+    cfg = frappe.get_doc("Alvox Cycle Config", cycle)
     def _parse(val):
         try:
             return json.loads(val or "{}")
@@ -1390,13 +1407,13 @@ def get_rating_scales():
     if frappe.session.user == "Guest":
         frappe.throw("Please log in.", frappe.PermissionError)
     scales = frappe.get_all(
-        "Grace Rating Scale",
+        "Alvox Rating Scale",
         fields=["name", "scale_name", "description", "is_default"],
         order_by="scale_name",
     )
     for s in scales:
         s["items"] = frappe.get_all(
-            "Grace Rating Scale Item",
+            "Alvox Rating Scale Item",
             filters={"parent": s["name"]},
             fields=["label", "value", "color"],
             order_by="value desc",
@@ -1419,13 +1436,13 @@ def save_rating_scale(scale_name, items, existing_name=None):
         if it.get("value") is None:
             frappe.throw("Every scale point must have a numeric value.")
 
-    if existing_name and frappe.db.exists("Grace Rating Scale", existing_name):
-        doc = frappe.get_doc("Grace Rating Scale", existing_name)
+    if existing_name and frappe.db.exists("Alvox Rating Scale", existing_name):
+        doc = frappe.get_doc("Alvox Rating Scale", existing_name)
         doc.scale_name = scale_name
     else:
-        if frappe.db.exists("Grace Rating Scale", scale_name):
+        if frappe.db.exists("Alvox Rating Scale", scale_name):
             frappe.throw(f"A scale called '{scale_name}' already exists.")
-        doc = frappe.new_doc("Grace Rating Scale")
+        doc = frappe.new_doc("Alvox Rating Scale")
         doc.scale_name = scale_name
 
     doc.set("items", [])
@@ -1447,16 +1464,16 @@ def save_rating_scale(scale_name, items, existing_name=None):
 @frappe.whitelist()
 def delete_rating_scale(name):
     _require_hr()
-    if not frappe.db.exists("Grace Rating Scale", name):
+    if not frappe.db.exists("Alvox Rating Scale", name):
         frappe.throw("Rating scale not found.")
-    frappe.delete_doc("Grace Rating Scale", name, ignore_permissions=True)
+    frappe.delete_doc("Alvox Rating Scale", name, ignore_permissions=True)
     frappe.db.commit()
     return {"message": "Deleted."}
 
 
 @frappe.whitelist()
 def hr_list_appraisals(cycle, show_archived=0):
-    """Return all appraisals in a cycle with employee info and review_status from Grace Appraisal Extension."""
+    """Return all appraisals in a cycle with employee info and review_status from Alvox Appraisal Extension."""
     _require_hr()
     appraisals = frappe.get_all(
         "Appraisal",
@@ -1469,7 +1486,7 @@ def hr_list_appraisals(cycle, show_archived=0):
     # Bulk-fetch extensions to avoid N+1 queries
     ext_map = {}
     for ext in frappe.get_all(
-        "Grace Appraisal Extension",
+        "Alvox Appraisal Extension",
         filters={"appraisal_cycle": cycle},
         fields=["appraisal", "review_status", "overall_rating", "archived"],
     ):
@@ -2152,7 +2169,7 @@ def hr_cycle_summary(cycle):
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# Grace Appraisal Extension — review workflow, narrative, action items
+# Alvox Appraisal Extension — review workflow, narrative, action items
 # ══════════════════════════════════════════════════════════════════════════
 
 _REVIEW_STATUS_FLOW = {
@@ -2166,9 +2183,9 @@ _REVIEW_STATUS_FLOW = {
 
 def _get_or_create_extension(appraisal):
     """Return the GraceAppraisalExtension for this appraisal, creating it if absent."""
-    if frappe.db.exists("Grace Appraisal Extension", appraisal):
-        return frappe.get_doc("Grace Appraisal Extension", appraisal)
-    ext = frappe.new_doc("Grace Appraisal Extension")
+    if frappe.db.exists("Alvox Appraisal Extension", appraisal):
+        return frappe.get_doc("Alvox Appraisal Extension", appraisal)
+    ext = frappe.new_doc("Alvox Appraisal Extension")
     ext.appraisal = appraisal
     ext.review_status = "Not Started"
     ext.insert(ignore_permissions=True)
@@ -2178,11 +2195,12 @@ def _get_or_create_extension(appraisal):
 
 @frappe.whitelist()
 def get_appraisal_extension(appraisal):
-    """Return the full Grace Appraisal Extension for the given appraisal."""
+    """Return the full Alvox Appraisal Extension for the given appraisal."""
     me = _require_employee()
     ap = frappe.get_doc("Appraisal", appraisal)
     if not _is_hr() and ap.employee != me and ap.employee not in _subordinates(me):
         frappe.throw("Not permitted.", frappe.PermissionError)
+    _assert_hr_can_view(appraisal)
 
     ext = _get_or_create_extension(appraisal)
     action_items = [
@@ -2768,8 +2786,8 @@ def get_calibration_overview(cycle):
 
     extensions = {}
     for ap in appraisals.values():
-        if frappe.db.exists("Grace Appraisal Extension", ap["name"]):
-            ext = frappe.get_doc("Grace Appraisal Extension", ap["name"])
+        if frappe.db.exists("Alvox Appraisal Extension", ap["name"]):
+            ext = frappe.get_doc("Alvox Appraisal Extension", ap["name"])
             extensions[ap["employee"]] = {
                 "review_status": ext.review_status or "Not Started",
                 "avg_potential_rating": flt(ext.avg_potential_rating),
@@ -2818,10 +2836,10 @@ def save_calibration_note(appraisal, calibration_notes, calibrated_rating=None):
         frappe.throw("Appraisal is required.")
     ext = _get_or_create_extension(appraisal)
     if not hasattr(ext, "calibration_notes"):
-        frappe.db.set_value("Grace Appraisal Extension", ext.name,
+        frappe.db.set_value("Alvox Appraisal Extension", ext.name,
                             "calibration_notes", calibration_notes)
         if calibrated_rating is not None:
-            frappe.db.set_value("Grace Appraisal Extension", ext.name,
+            frappe.db.set_value("Alvox Appraisal Extension", ext.name,
                                 "overall_rating", flt(calibrated_rating))
     else:
         ext.calibration_notes = calibration_notes
@@ -2842,8 +2860,8 @@ def get_calibration_matrix(cycle):
     overall_scale_name = ""
     potential_scale_name = ""
     show_potential = False
-    if frappe.db.exists("Grace Cycle Config", cycle):
-        cfg_ps = frappe.db.get_value("Grace Cycle Config", cycle, "page_settings") or "{}"
+    if frappe.db.exists("Alvox Cycle Config", cycle):
+        cfg_ps = frappe.db.get_value("Alvox Cycle Config", cycle, "page_settings") or "{}"
         try:
             ps = _json.loads(cfg_ps)
             mgf = ps.get("manager-feedback", {})
@@ -2854,13 +2872,13 @@ def get_calibration_matrix(cycle):
             pass
 
     def _fetch_scale(name, ascending=True):
-        if not name or not frappe.db.exists("Grace Rating Scale", name):
+        if not name or not frappe.db.exists("Alvox Rating Scale", name):
             return None
         info = frappe.db.get_value(
-            "Grace Rating Scale", name, ["scale_name", "description"], as_dict=True
+            "Alvox Rating Scale", name, ["scale_name", "description"], as_dict=True
         ) or {}
         items = frappe.get_all(
-            "Grace Rating Scale Item",
+            "Alvox Rating Scale Item",
             filters={"parent": name},
             fields=["label", "value", "color"],
             order_by="value asc" if ascending else "value desc",
@@ -2900,9 +2918,9 @@ def get_calibration_matrix(cycle):
 
         # Fetch extension (one call covers both exists-check and field values)
         ext = {}
-        if frappe.db.exists("Grace Appraisal Extension", ap_name):
+        if frappe.db.exists("Alvox Appraisal Extension", ap_name):
             ext = frappe.db.get_value(
-                "Grace Appraisal Extension", ap_name,
+                "Alvox Appraisal Extension", ap_name,
                 ["review_status", "overall_rating", "potential_rating"],
                 as_dict=True,
             ) or {}
@@ -3032,7 +3050,7 @@ def get_my_appraisals():
     if appraisals:
         ap_names = [a["name"] for a in appraisals]
         for ext in frappe.get_all(
-            "Grace Appraisal Extension",
+            "Alvox Appraisal Extension",
             filters={"appraisal": ["in", ap_names]},
             fields=["appraisal", "review_status", "overall_rating", "return_reason"],
             ignore_permissions=True,
@@ -3068,7 +3086,7 @@ def get_my_appraisals():
     # ── Reviews where I am an invited reviewer ────────────────────────────
     # Use a LIKE search on the JSON blob to cheaply narrow rows, then filter precisely in Python
     candidate_exts = frappe.get_all(
-        "Grace Appraisal Extension",
+        "Alvox Appraisal Extension",
         filters={"invited_reviewers": ["like", "%" + me + "%"]},
         fields=["appraisal", "invited_reviewers", "review_status", "employee"],
         ignore_permissions=True,
@@ -3128,11 +3146,12 @@ def get_my_review(appraisal):
     ap = frappe.get_doc("Appraisal", appraisal)
     if ap.employee != me and not _is_hr():
         frappe.throw("Not permitted.", frappe.PermissionError)
+    _assert_hr_can_view(appraisal)
 
     cycle_name = ap.appraisal_cycle
     page_config, page_settings = [], {}
-    if frappe.db.exists("Grace Cycle Config", cycle_name):
-        cfg = frappe.get_doc("Grace Cycle Config", cycle_name)
+    if frappe.db.exists("Alvox Cycle Config", cycle_name):
+        cfg = frappe.get_doc("Alvox Cycle Config", cycle_name)
         try: page_config = json.loads(cfg.page_config or "[]")
         except: pass
         try: page_settings = json.loads(cfg.page_settings or "{}")
@@ -3261,8 +3280,8 @@ def get_available_for_review(appraisal):
 
     cycle_name = ap.appraisal_cycle
     page_settings = {}
-    if frappe.db.exists("Grace Cycle Config", cycle_name):
-        cfg = frappe.get_doc("Grace Cycle Config", cycle_name)
+    if frappe.db.exists("Alvox Cycle Config", cycle_name):
+        cfg = frappe.get_doc("Alvox Cycle Config", cycle_name)
         try:
             page_settings = json.loads(cfg.page_settings or "{}")
         except Exception:
@@ -3327,8 +3346,8 @@ def set_review_selection(appraisal, selected_goals_json=None, selected_kpis_json
 
     cycle_name = ap.appraisal_cycle
     page_settings = {}
-    if frappe.db.exists("Grace Cycle Config", cycle_name):
-        cfg = frappe.get_doc("Grace Cycle Config", cycle_name)
+    if frappe.db.exists("Alvox Cycle Config", cycle_name):
+        cfg = frappe.get_doc("Alvox Cycle Config", cycle_name)
         try:
             page_settings = json.loads(cfg.page_settings or "{}")
         except Exception:
@@ -3536,8 +3555,8 @@ def get_manager_review(appraisal):
     except: invited = []
 
     page_config, page_settings = {}, {}
-    if frappe.db.exists("Grace Cycle Config", cycle_name):
-        cfg = frappe.get_doc("Grace Cycle Config", cycle_name)
+    if frappe.db.exists("Alvox Cycle Config", cycle_name):
+        cfg = frappe.get_doc("Alvox Cycle Config", cycle_name)
         try: page_config = json.loads(cfg.page_config or "{}")
         except: pass
         try: page_settings = json.loads(cfg.page_settings or "{}")
@@ -3551,9 +3570,9 @@ def get_manager_review(appraisal):
     ] if s]
     rating_scales = {}
     for sname in _scale_names:
-        if frappe.db.exists("Grace Rating Scale", sname):
-            sinfo = frappe.db.get_value("Grace Rating Scale", sname, ["scale_name", "description"], as_dict=True) or {}
-            sitems = frappe.get_all("Grace Rating Scale Item",
+        if frappe.db.exists("Alvox Rating Scale", sname):
+            sinfo = frappe.db.get_value("Alvox Rating Scale", sname, ["scale_name", "description"], as_dict=True) or {}
+            sitems = frappe.get_all("Alvox Rating Scale Item",
                 filters={"parent": sname},
                 fields=["label", "value", "color"],
                 order_by="value desc")
@@ -3778,7 +3797,7 @@ def get_reviewer_view(appraisal):
     # Resolve page labels from cycle config
     page_label_map = {}
     if ap.appraisal_cycle:
-        cc_val = frappe.db.get_value("Grace Cycle Config", {"appraisal_cycle": ap.appraisal_cycle}, "page_config")
+        cc_val = frappe.db.get_value("Alvox Cycle Config", {"appraisal_cycle": ap.appraisal_cycle}, "page_config")
         if cc_val:
             try:
                 for p in json.loads(cc_val):
@@ -3855,10 +3874,10 @@ def submit_manager_review(appraisal, manager_feedback="", manager_internal_notes
         frappe.throw("Manager feedback is required before submitting.")
     # Only require overall_rating when the cycle was configured with a rating scale
     _overall_required = False
-    if frappe.db.exists("Grace Cycle Config", ap.appraisal_cycle):
+    if frappe.db.exists("Alvox Cycle Config", ap.appraisal_cycle):
         try:
             import json as _json
-            _cfg = frappe.get_doc("Grace Cycle Config", ap.appraisal_cycle)
+            _cfg = frappe.get_doc("Alvox Cycle Config", ap.appraisal_cycle)
             _ps = _json.loads(_cfg.page_settings or "{}")
             _overall_required = bool((_ps.get("manager-feedback") or {}).get("overall_rating_scale"))
         except Exception:
@@ -3926,8 +3945,8 @@ def get_employee_final_review(appraisal):
     # Load page settings for this cycle so the UI knows which scales were configured
     page_settings = {}
     cycle_name = ap.appraisal_cycle
-    if cycle_name and frappe.db.exists("Grace Cycle Config", cycle_name):
-        cfg = frappe.get_doc("Grace Cycle Config", cycle_name)
+    if cycle_name and frappe.db.exists("Alvox Cycle Config", cycle_name):
+        cfg = frappe.get_doc("Alvox Cycle Config", cycle_name)
         try: page_settings = json.loads(cfg.page_settings or "{}")
         except: pass
 
@@ -3938,9 +3957,9 @@ def get_employee_final_review(appraisal):
     ] if s]
     rating_scales = {}
     for sname in _scale_names:
-        if frappe.db.exists("Grace Rating Scale", sname):
-            sinfo = frappe.db.get_value("Grace Rating Scale", sname, ["scale_name", "description"], as_dict=True) or {}
-            sitems = frappe.get_all("Grace Rating Scale Item",
+        if frappe.db.exists("Alvox Rating Scale", sname):
+            sinfo = frappe.db.get_value("Alvox Rating Scale", sname, ["scale_name", "description"], as_dict=True) or {}
+            sitems = frappe.get_all("Alvox Rating Scale Item",
                 filters={"parent": sname},
                 fields=["label", "value", "color"],
                 order_by="value desc")

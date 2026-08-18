@@ -2067,9 +2067,12 @@ window._EMP_USER  = "{{ frappe.session.user }}";
 
       <!-- ══ HOME ══════════════════════════════════════ -->
       <div id="panel-home" class="panel active">
-        <div class="page-header">
-          <div class="page-title" id="home-title">Good morning!</div>
-          <div class="page-sub" id="home-sub">Today's overview</div>
+        <div class="page-header" style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+          <div>
+            <div class="page-title" id="home-title">Good morning!</div>
+            <div class="page-sub" id="home-sub">Today's overview</div>
+          </div>
+          <button class="btn btn-outline" style="margin-left:auto;font-size:13px" onclick="openLeaveModal()">+ Apply Leave</button>
         </div>
 
         <!-- Check-in hero -->
@@ -2154,9 +2157,12 @@ window._EMP_USER  = "{{ frappe.session.user }}";
               <div class="card-header">
                 <span>🎉</span>
                 <span class="card-title" style="margin-left:6px" id="hol-month-label">Upcoming Holidays</span>
-                <div id="hol-nav" style="margin-left:auto;display:none;align-items:center;gap:2px">
-                  <button id="hol-prev" onclick="holNavMonth(-1)" style="background:none;border:none;cursor:pointer;padding:4px 6px;font-size:14px;color:var(--text3);line-height:1" title="Previous month">&#8249;</button>
-                  <button id="hol-next" onclick="holNavMonth(1)"  style="background:none;border:none;cursor:pointer;padding:4px 6px;font-size:14px;color:var(--text3);line-height:1" title="Next month">&#8250;</button>
+                <div style="margin-left:auto;display:flex;align-items:center;gap:4px">
+                  <button id="hol-view-all-btn" onclick="holToggleViewAll()" style="background:none;border:1px solid var(--border);border-radius:4px;cursor:pointer;padding:3px 8px;font-size:11px;color:var(--text2);line-height:1.4" title="View all holidays this year">All year</button>
+                  <div id="hol-nav" style="display:none;align-items:center;gap:2px">
+                    <button id="hol-prev" onclick="holNavMonth(-1)" style="background:none;border:none;cursor:pointer;padding:4px 6px;font-size:14px;color:var(--text3);line-height:1" title="Previous month">&#8249;</button>
+                    <button id="hol-next" onclick="holNavMonth(1)"  style="background:none;border:none;cursor:pointer;padding:4px 6px;font-size:14px;color:var(--text3);line-height:1" title="Next month">&#8250;</button>
+                  </div>
                 </div>
               </div>
               <div class="card-body">
@@ -4030,6 +4036,16 @@ window._EMP_USER  = "{{ frappe.session.user }}";
         </div>
         <div class="gp-modal-body">
           <div class="gp-error" id="la-error" style="display:none;margin-bottom:12px;padding:10px 12px;background:var(--red-lt,#fef2f2);color:var(--red,#ef4444);border-radius:6px;font-size:13px"></div>
+          <!-- HR on-behalf selector (hidden for regular employees) -->
+          <div class="gp-field" id="la-behalf-row" style="display:none">
+            <div class="gp-label">Apply on behalf of</div>
+            <div style="position:relative">
+              <input class="gp-input" id="la-behalf-search" type="text" placeholder="Search employee name…" autocomplete="off" oninput="laSearchEmployee(this.value)" style="padding-right:32px">
+              <div id="la-behalf-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.12);max-height:200px;overflow-y:auto;z-index:1000"></div>
+            </div>
+            <input type="hidden" id="la-behalf-employee">
+            <div id="la-behalf-selected" style="display:none;margin-top:6px;font-size:12px;color:var(--text3)"></div>
+          </div>
           <div class="gp-field">
             <div class="gp-label">Leave Type *</div>
             <select class="gp-input" id="la-leave-type">
@@ -4578,17 +4594,65 @@ function renderTimeline(checkins) {
 var _holAll = [];           // full deduped list for the year
 var _holYear = 0;
 var _holMonth = 0;          // 0-indexed month currently displayed
+var _holViewAll = false;    // true = show all year
 
 function renderHolidays(holidays) {
   _holAll = holidays;
   var now = new Date();
   _holYear  = now.getFullYear();
   _holMonth = now.getMonth();
+  _holViewAll = false;
 
   var nav = document.getElementById("hol-nav");
   if (nav) nav.style.display = holidays.length ? "flex" : "none";
+  var btn = document.getElementById("hol-view-all-btn");
+  if (btn) btn.style.display = holidays.length ? "" : "none";
 
   _renderHolMonth();
+}
+
+function holToggleViewAll() {
+  _holViewAll = !_holViewAll;
+  var btn = document.getElementById("hol-view-all-btn");
+  var nav = document.getElementById("hol-nav");
+  if (btn) { btn.textContent = _holViewAll ? "By month" : "All year"; btn.style.fontWeight = _holViewAll ? "600" : ""; }
+  if (nav) nav.style.display = _holViewAll ? "none" : (_holAll.length ? "flex" : "none");
+  if (_holViewAll) { _renderHolYear(); } else { _renderHolMonth(); }
+}
+
+function _renderHolYear() {
+  var el  = document.getElementById("holidays-list");
+  var lbl = document.getElementById("hol-month-label");
+  var MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  var MONS   = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+  if (lbl) lbl.textContent = _holYear + " Holidays";
+
+  var yearHols = _holAll.filter(function(h) {
+    return new Date(h.holiday_date + "T00:00:00").getFullYear() === _holYear;
+  });
+  if (!yearHols.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-state-text">No holidays this year.</div></div>';
+    return;
+  }
+
+  // Group by month
+  var byMonth = {};
+  yearHols.forEach(function(h) {
+    var d = new Date(h.holiday_date + "T00:00:00");
+    var m = d.getMonth();
+    if (!byMonth[m]) byMonth[m] = [];
+    byMonth[m].push({h: h, d: d});
+  });
+
+  var html = "";
+  Object.keys(byMonth).sort(function(a,b){return a-b;}).forEach(function(m) {
+    html += '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin:10px 0 4px">' + MONTHS[m] + '</div>';
+    html += byMonth[m].map(function(row) {
+      return '<div class="holiday-item"><div class="holiday-date-box"><div class="hd-day">' + row.d.getDate() + '</div><div class="hd-month">' + MONS[row.d.getMonth()] + '</div></div><div><div class="holiday-name">' + esc(row.h.description || "Holiday") + '</div></div></div>';
+    }).join("");
+  });
+  el.innerHTML = html;
 }
 
 function _renderHolMonth() {
@@ -4758,6 +4822,7 @@ function _populateLeaveTypeSelect(balances) {
     }).join("");
 }
 
+var _laEmployeeCache = null;
 function openLeaveModal() {
   var sel = document.getElementById("la-leave-type");
   sel.innerHTML = '<option value="">Loading…</option>';
@@ -4771,6 +4836,14 @@ function openLeaveModal() {
   btn.disabled = false;
   btn.textContent = "Submit Application";
 
+  // Show HR on-behalf picker
+  var behalfRow = document.getElementById("la-behalf-row");
+  if (behalfRow) behalfRow.style.display = window._roles && window._roles.is_hr ? "" : "none";
+  document.getElementById("la-behalf-search").value = "";
+  document.getElementById("la-behalf-employee").value = "";
+  document.getElementById("la-behalf-selected").style.display = "none";
+  document.getElementById("la-behalf-dropdown").style.display = "none";
+
   if (_leaveSummaryCache) {
     _populateLeaveTypeSelect(_leaveSummaryCache.balances || []);
   } else {
@@ -4783,6 +4856,57 @@ function openLeaveModal() {
   }
 
   pfOpenModal("la-modal");
+}
+
+var _laEmpSearchTimer = null;
+function laSearchEmployee(q) {
+  document.getElementById("la-behalf-employee").value = "";
+  document.getElementById("la-behalf-selected").style.display = "none";
+  var dd = document.getElementById("la-behalf-dropdown");
+  clearTimeout(_laEmpSearchTimer);
+  if (!q || q.length < 2) { dd.style.display = "none"; return; }
+  _laEmpSearchTimer = setTimeout(function() {
+    if (!_laEmployeeCache) {
+      api("get_all_active_employees", {}, function(data) {
+        _laEmployeeCache = data.employees || [];
+        _laFilterEmployees(q);
+      });
+    } else {
+      _laFilterEmployees(q);
+    }
+  }, 250);
+}
+
+function _laFilterEmployees(q) {
+  var dd = document.getElementById("la-behalf-dropdown");
+  var lq = q.toLowerCase();
+  var matches = (_laEmployeeCache || []).filter(function(e) {
+    return e.employee_name.toLowerCase().indexOf(lq) >= 0 ||
+           (e.department || "").toLowerCase().indexOf(lq) >= 0;
+  }).slice(0, 10);
+  if (!matches.length) { dd.innerHTML = '<div style="padding:10px 14px;font-size:13px;color:var(--text3)">No employees found</div>'; dd.style.display = ""; return; }
+  dd.innerHTML = matches.map(function(e) {
+    return '<div style="padding:9px 14px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--border)" onmousedown="laSelectEmployee(\'' + esc(e.name) + '\',\'' + esc(e.employee_name) + '\',\'' + esc(e.department||'') + '\')">' +
+      '<strong>' + esc(e.employee_name) + '</strong><span style="margin-left:8px;color:var(--text3);font-size:11px">' + esc(e.department||'') + '</span></div>';
+  }).join("");
+  dd.style.display = "";
+}
+
+function laSelectEmployee(id, name, dept) {
+  document.getElementById("la-behalf-employee").value = id;
+  document.getElementById("la-behalf-search").value = name;
+  document.getElementById("la-behalf-dropdown").style.display = "none";
+  var sel = document.getElementById("la-behalf-selected");
+  sel.textContent = "Leave will be submitted for: " + name + (dept ? " · " + dept : "");
+  sel.style.display = "";
+  // Reload leave types for this employee
+  var leaveTypeSel = document.getElementById("la-leave-type");
+  leaveTypeSel.innerHTML = '<option value="">Loading…</option>';
+  api("get_leave_summary", {employee_id: id}, function(data) {
+    _populateLeaveTypeSelect(data.balances || []);
+  }, function() {
+    leaveTypeSel.innerHTML = '<option value="">Could not load leave types</option>';
+  });
 }
 
 function laToggleHalfDay() {
@@ -4811,6 +4935,7 @@ function submitLeaveApp() {
   btn.disabled = true;
   btn.textContent = "Submitting…";
 
+  var onBehalf = (document.getElementById("la-behalf-employee") || {}).value || null;
   api("apply_leave", {
     leave_type: lt,
     from_date: fd,
@@ -4818,6 +4943,7 @@ function submitLeaveApp() {
     half_day: hd ? 1 : 0,
     half_day_date: hd ? fd : null,
     reason: rsn || null,
+    on_behalf_of: onBehalf || undefined,
   }, function() {
     pfCloseModal("la-modal");
     toast("Leave application submitted.", "ok");
@@ -8124,10 +8250,10 @@ function deleteDrawerNote(noteId, empId) {
     if (chev) chev.style.transform = open ? "rotate(-90deg)" : "";
   };
 
-  function pfOpenModal(id) {
+  window.pfOpenModal = function pfOpenModal(id) {
     var el = document.getElementById(id);
     if (el) el.classList.add("open");
-  }
+  };
 
   // .gp-error is display:none with no .show rule — the rest of this page
   // reveals it by setting display inline, so do the same.
@@ -9792,7 +9918,6 @@ function deleteDrawerNote(noteId, empId) {
         "<div class=\"tv-acts\">" +
         (mine ? "<button class=\"tv-icon\" title=\"Log a check-in\" aria-label=\"Log check-in\"" +
           " onclick=\"event.stopPropagation();gpOpenCheckin('" + gpEsc(g.name) + "','" + gpEsc(g.goal_name) + "')\">" + TV_ICON.checkin + "</button>" : "") +
-        "<button class=\"tv-icon\" title=\"" + (g.in_cycle ? "Remove from the review cycle" : "Consider in the review cycle") + "\" aria-label=\"Toggle review cycle\"" + " onclick=\"event.stopPropagation();tvToggleCycle('goal','" + gpEsc(g.name) + "','" + gpEsc(g.in_cycle || "") + "')\">" + TV_ICON.cycle + "</button>" +
         (g.can_edit
           ? "<button class=\"tv-icon\" title=\"Edit objective\" aria-label=\"Edit objective\"" +
               " onclick='event.stopPropagation();gpOpenEditGoal(" + JSON.stringify(JSON.stringify(g)) + ")'>" + TV_ICON.edit + "</button>" +
@@ -9834,7 +9959,6 @@ function deleteDrawerNote(noteId, empId) {
         "<div class=\"tv-bar\"><div class=\"tv-bar-fill\" style=\"width:" + pct + "%;background:" + colour + "\"></div></div>" +
         "<div class=\"tv-pct\" style=\"color:" + colour + "\">" + pfNum(k.attainment_pct) + "%</div>" +
         "<div class=\"tv-acts\">" +
-          "<button class=\"tv-icon\" title=\"" + (k.in_cycle ? "Remove from the review cycle" : "Consider in the review cycle") + "\" aria-label=\"Toggle review cycle\"" + " onclick=\"event.stopPropagation();tvToggleCycle('kpi','" + gpEsc(k.name) + "','" + gpEsc(k.in_cycle || "") + "')\">" + TV_ICON.cycle + "</button>" +
           (mine ? "<button class=\"tv-icon\" title=\"Log progress\" aria-label=\"Log progress\"" +
                   " onclick=\"event.stopPropagation();pfOpenLog('" + gpEsc(k.name) + "')\">" + TV_ICON.log + "</button>" : "") +
           (k.can_edit

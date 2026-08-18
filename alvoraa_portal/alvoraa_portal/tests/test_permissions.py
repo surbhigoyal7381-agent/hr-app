@@ -2,6 +2,14 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from unittest.mock import patch
 
+from alvoraa_portal.tests.utils import ensure_items
+
+
+def setUpModule():
+	# SKUs are required Links to Item; a fresh site has none of these.
+	ensure_items("SKU-A")
+
+
 
 class TestVendorCannotSeeOtherVendorOrder(FrappeTestCase):
     def test_vendor_cannot_see_other_vendor_order(self):

@@ -1,6 +1,14 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from alvoraa_portal.tests.utils import ensure_items
+
+
+def setUpModule():
+	# SKUs are required Links to Item; a fresh site has none of these.
+	ensure_items("SKU", "TEST-SKU")
+
+
 
 def make_delivered_order_and_vendor():
     """Helper: create a vendor and a delivered order."""

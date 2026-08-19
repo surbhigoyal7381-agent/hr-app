@@ -1,3 +1,5 @@
+from alvoraa_portal.tenant_context import get_branding
+
 import frappe
 
 
@@ -6,4 +8,4 @@ def get_context(context):
         frappe.flags.redirect_location = "/login?redirect-to=/vendor-portal"
         raise frappe.Redirect
     context.no_cache  = 1
-    context.no_footer = 1
+    context.update(get_branding())

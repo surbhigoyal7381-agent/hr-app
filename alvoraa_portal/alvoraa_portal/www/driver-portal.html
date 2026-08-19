@@ -1,5 +1,10 @@
 {% extends "templates/web.html" %}
 {% block title %}{{ tenant_name }} Driver Portal{% endblock %}
+{# Frappe base.html renders a "Standard Footer" web block of its own, which prints
+   "Powered by ERPNext" from Website Settings. This override is the ONLY thing that
+   suppresses it - context.no_footer is a dead flag, absent from Frappe v16.
+   Remove this and the page shows two footers. #}
+{% block footer %}{% endblock %}
 
 {% block head_include %}
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -1373,6 +1378,7 @@ section.page-content,
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
+window.TENANT_NAME = {{ tenant_name | tojson }};
 (function () {
   'use strict';
 
@@ -2474,7 +2480,7 @@ section.page-content,
             '</svg>' +
           '</div>' +
           '<h2 style="margin:0 0 6px;font-size:22px;font-weight:700;color:#0f1a2e">Driver Portal</h2>' +
-          '<p style="margin:0 0 8px;font-size:13px;color:#64748b;font-weight:500">Grace Drinks Pvt. Ltd.</p>' +
+          '<p style="margin:0 0 8px;font-size:13px;color:#64748b;font-weight:500">' + window.TENANT_NAME + '</p>' +
           '<p style="margin:0 0 28px;font-size:14px;color:#475569">' +
             'Sign in with your driver account to view deliveries and update your location.' +
           '</p>' +

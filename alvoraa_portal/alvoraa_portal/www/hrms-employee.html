@@ -1,5 +1,10 @@
 ﻿{% extends "templates/web.html" %}
 {% block title %}{{ tenant_name }} — Employee Portal{% endblock %}
+{# Frappe base.html renders a "Standard Footer" web block of its own, which prints
+   "Powered by ERPNext" from Website Settings. This override is the ONLY thing that
+   suppresses it - context.no_footer is a dead flag, absent from Frappe v16.
+   Remove this and the page shows two footers. #}
+{% block footer %}{% endblock %}
 
 {% block head_include %}
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2893,60 +2898,6 @@ window._EMP_USER  = "{{ frappe.session.user }}";
           <div id="pf-hr-msg"></div>
           <div id="pf-hr-body"><div class="empty-state"><div class="empty-state-text">Loading setup...</div></div></div>
         </div>
-      </div>
-
-
-      <!-- ── Org Settings Panel ──────────────────────── -->
-      <div id="panel-org-settings" class="panel">
-        <div class="pf-toolbar" style="margin-bottom:24px">
-          <div>
-            <div class="pf-h">Organisation Settings</div>
-            <div class="pf-sub">Company values and leadership principles that apply across the organisation.</div>
-          </div>
-        </div>
-
-        <!-- Company Values -->
-        <div class="pf-card" style="margin-bottom:24px">
-          <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-            <div style="font-weight:600;font-size:15px">Company Values</div>
-            <button class="btn btn-primary btn-sm" onclick="orgOpenValueModal(null)">+ Add Value</button>
-          </div>
-          <div id="org-values-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
-        </div>
-
-        <!-- Leadership Principles -->
-        <div class="pf-card" style="margin-bottom:24px">
-          <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-            <div style="font-weight:600;font-size:15px">Leadership Principles</div>
-            <button class="btn btn-primary btn-sm" onclick="pfOpenPrincipleModal(null)">+ Add Principle</button>
-          </div>
-          <div id="org-principles-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
-        </div>
-
-        <!-- Rating Scales -->
-        <div class="pf-card" style="margin-bottom:24px">
-          <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-            <div>
-              <div style="font-weight:600;font-size:15px">Rating Scales</div>
-              <div style="font-size:12px;color:var(--text3);margin-top:2px">Define numerical scales used for appraisal ratings across cycles.</div>
-            </div>
-            <button class="btn btn-primary btn-sm" onclick="rsOpenModal(null)">+ Add Scale</button>
-          </div>
-          <div id="org-scales-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
-        </div>
-
-        <!-- Evidence Approval -->
-        <div class="pf-card">
-          <div style="font-weight:600;font-size:15px;margin-bottom:4px">Evidence Approval</div>
-          <div style="font-size:12px;color:var(--text3);margin-bottom:16px">Controls whether goal and KPI progress entries need manager approval before being counted.</div>
-          <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
-            <input type="checkbox" id="org-auto-approve" style="width:16px;height:16px;accent-color:var(--primary)" onchange="orgSaveAutoApprove(this.checked)">
-            <span style="font-size:13.5px">Auto-approve all evidence submissions (no manager approval required)</span>
-          </label>
-          <div style="font-size:11.5px;color:var(--text3);margin-top:8px">When off, every progress entry is sent to the employee's manager for approval before it counts towards the goal or KPI.</div>
-        </div>
-      </div>
-
         <!-- TAB: Calibration (HR only) -->
         <div id="gp-tab-calibration" style="display:none">
           <div class="cal-toolbar">
@@ -3046,6 +2997,60 @@ window._EMP_USER  = "{{ frappe.session.user }}";
             <div class="empty-state"><div class="empty-state-text">Select an appraisal cycle to view the distribution.</div></div>
           </div>
         </div>
+      </div>
+
+
+      <!-- ── Org Settings Panel ──────────────────────── -->
+      <div id="panel-org-settings" class="panel">
+        <div class="pf-toolbar" style="margin-bottom:24px">
+          <div>
+            <div class="pf-h">Organisation Settings</div>
+            <div class="pf-sub">Company values and leadership principles that apply across the organisation.</div>
+          </div>
+        </div>
+
+        <!-- Company Values -->
+        <div class="pf-card" style="margin-bottom:24px">
+          <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div style="font-weight:600;font-size:15px">Company Values</div>
+            <button class="btn btn-primary btn-sm" onclick="orgOpenValueModal(null)">+ Add Value</button>
+          </div>
+          <div id="org-values-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
+        </div>
+
+        <!-- Leadership Principles -->
+        <div class="pf-card" style="margin-bottom:24px">
+          <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div style="font-weight:600;font-size:15px">Leadership Principles</div>
+            <button class="btn btn-primary btn-sm" onclick="pfOpenPrincipleModal(null)">+ Add Principle</button>
+          </div>
+          <div id="org-principles-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
+        </div>
+
+        <!-- Rating Scales -->
+        <div class="pf-card" style="margin-bottom:24px">
+          <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div>
+              <div style="font-weight:600;font-size:15px">Rating Scales</div>
+              <div style="font-size:12px;color:var(--text3);margin-top:2px">Define numerical scales used for appraisal ratings across cycles.</div>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="rsOpenModal(null)">+ Add Scale</button>
+          </div>
+          <div id="org-scales-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
+        </div>
+
+        <!-- Evidence Approval -->
+        <div class="pf-card">
+          <div style="font-weight:600;font-size:15px;margin-bottom:4px">Evidence Approval</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:16px">Controls whether goal and KPI progress entries need manager approval before being counted.</div>
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+            <input type="checkbox" id="org-auto-approve" style="width:16px;height:16px;accent-color:var(--primary)" onchange="orgSaveAutoApprove(this.checked)">
+            <span style="font-size:13.5px">Auto-approve all evidence submissions (no manager approval required)</span>
+          </label>
+          <div style="font-size:11.5px;color:var(--text3);margin-top:8px">When off, every progress entry is sent to the employee's manager for approval before it counts towards the goal or KPI.</div>
+        </div>
+      </div>
+
 
       <!-- ── Appraisal Setup Full Page ──────────────── -->
     <!-- ── New Cycle choice modal ─────────────────────── -->
@@ -7006,7 +7011,7 @@ function deleteDrawerNote(noteId, empId) {
   var _gpLoadedTabs = {};
   var _gpOnGoalCreated = null; // callback set when dialog opened from within a review
 
-  function gpEsc(s) { return esc(s); }
+  window.gpEsc = function gpEsc(s) { return esc(s); };
 
   function gpFmtDate(d) {
     if (!d) return "—";
@@ -7922,6 +7927,12 @@ function deleteDrawerNote(noteId, empId) {
 
   function flt0(v) { return parseFloat(v || 0); }
 
+  // flt() is a Frappe global on DESK pages. This is a website page, where it is not
+  // guaranteed, and the distribution code below calls it ~10 times - an undefined flt
+  // makes those handlers throw ReferenceError and silently do nothing. Prefer Frappe's
+  // when present, otherwise fall back. Every call site here passes a single argument.
+  var flt = window.flt || function (v) { return parseFloat(v || 0); };
+
   window.apSync = function(name) {
     pfSetHtml("ap-d-msg", pfAlert("warn", "Pulling ratings…"));
     pf("sync_appraisal_from_kpis", {appraisal: name}).then(function(r) {
@@ -8224,10 +8235,10 @@ function deleteDrawerNote(noteId, empId) {
     return "<div class=\"empty-state\"><div class=\"empty-state-text\">" + gpEsc(msg) + "</div></div>";
   }
 
-  function pfSetHtml(id, html) {
+  window.pfSetHtml = function pfSetHtml(id, html) {
     var el = document.getElementById(id);
     if (el) el.innerHTML = html;
-  }
+  };
 
   // These modals reuse the .gp-backdrop shell, which is revealed by `.open`
   // (`.gp-backdrop.open{display:flex}`) — not `.show`.
@@ -8275,17 +8286,17 @@ function deleteDrawerNote(noteId, empId) {
 
   // .gp-error is display:none with no .show rule — the rest of this page
   // reveals it by setting display inline, so do the same.
-  function pfShowErr(id, msg) {
+  window.pfShowErr = function pfShowErr(id, msg) {
     var el = document.getElementById(id);
     if (!el) return;
     el.textContent = msg;
     el.style.display = "block";
-  }
+  };
 
-  function pfClearErr(id) {
+  window.pfClearErr = function pfClearErr(id) {
     var el = document.getElementById(id);
     if (el) el.style.display = "none";
-  }
+  };
 
   function pfVal(id) {
     var el = document.getElementById(id);
@@ -13452,7 +13463,7 @@ function deleteDrawerNote(noteId, empId) {
     pfOpenModal("pf-new-cycle-modal");
   };
 
-  function pfShowNewCycleChoices() {
+  window.pfShowNewCycleChoices = function pfShowNewCycleChoices() {
     pfSetHtml("pf-new-cycle-modal-body",
       '<p style="font-size:13px;color:var(--text2);margin:0 0 20px">How would you like to set up this cycle?</p>' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">' +
@@ -13472,7 +13483,7 @@ function deleteDrawerNote(noteId, empId) {
         '</button>' +
       '</div>'
     );
-  }
+  };
 
   window.pfShowNewCycleTemplates = function() {
     pfSetHtml("pf-new-cycle-modal-title", "Choose a Template");

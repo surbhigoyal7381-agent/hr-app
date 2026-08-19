@@ -88,6 +88,22 @@ jobs:
       - name: App integrity
         run: python scripts/check_app_integrity.py
 
+      # Node, for the portal handler check below.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      # Clicking a portal button runs an inline on*= handler, which resolves ONLY
+      # against global scope. hrms-employee.html wraps most of its code in an IIFE,
+      # so a helper declared inside it is invisible to the button: the click throws
+      # ReferenceError and NOTHING happens - no banner, no visible error. Static
+      # linting cannot see this. This loads the page's scripts in a VM and actually
+      # calls every handler.
+      #
+      # It caught 8 real dead handlers, including "+ Apply Leave" and "+ New Claim".
+      - name: Portal buttons are wired up
+        run: node scripts/check_portal_handlers.js
+
       - name: Semgrep (Frappe security rules)
         continue-on-error: true
         run: |

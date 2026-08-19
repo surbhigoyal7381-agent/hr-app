@@ -10,7 +10,7 @@ Catches the failure modes a rename introduces, which normal linting does not:
     (a missed permission hook fails OPEN - it silently widens visibility)
   - a patches.txt entry pointing at a module with no execute()
 """
-import ast, glob, io, json, os, sys
+import ast, glob, io, json, os, re, sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APPS = {"alvoraa_goals": "alvoraa_goals", "alvoraa_portal": "alvoraa_portal"}
@@ -133,6 +133,119 @@ for app_dir, app_pkg in APPS.items():
 			names = defined_names(f)
 			if names is None or "execute" not in names:
 				err("patches.txt -> %s : no execute()" % line)
+
+
+# ── Portal page templates ────────────────────────────────────────────────────
+# Both checks below are regressions that already happened once and are invisible
+# until someone clicks. Neither shows up in linting or in a bench migrate.
+PORTAL_WWW = os.path.join(REPO, "alvoraa_portal", "alvoraa_portal", "www")
+
+for page in sorted(glob.glob(os.path.join(PORTAL_WWW, "*.html"))):
+	name = os.path.basename(page)
+	html = io.open(page, encoding="utf-8-sig", errors="ignore").read()
+
+	if "{% extends" not in html:
+		continue
+
+	# 1. Double footer. A page carrying its own <footer> must suppress Frappe's.
+	if "<footer" in html:
+		checks += 1
+		if "{% block footer %}" not in html:
+			err("%s : renders its own <footer> but does not override "
+			    "`{%% block footer %%}` - Frappe's Standard Footer renders too "
+			    "(two footers). context.no_footer does NOT do this." % name)
+
+	# 2. Tab panes escaping their panel. Compare each gp-tab-* pane's ancestors.
+	panes = re.findall(r'<div\b[^>]*id="(gp-tab-[^"]+)"', html)
+	if panes:
+		stack, outside = [], []
+		for m in re.finditer(r'<div\b[^>]*>|</div>', html):
+			tag = m.group(0)
+			if tag == "</div>":
+				if stack:
+					stack.pop()
+				continue
+			idm = re.search(r'id="([^"]+)"', tag)
+			pane = idm.group(1) if idm else None
+			if pane and pane.startswith("gp-tab-") and "panel-goals" not in stack:
+				outside.append(pane)
+			stack.append(pane)
+		checks += 1
+		if outside:
+			err("%s : %s outside #panel-goals - switchPanel() only hides .panel "
+			    "elements, so these stay visible on every page once opened"
+			    % (name, ", ".join(sorted(set(outside)))))
+
+
+# 3. `context.no_footer` is a DEAD flag - it appears nowhere in Frappe v16. Code that
+#    sets it reads as "this page has no footer" while Frappe renders one anyway. The
+#    working mechanism is a `{% block footer %}{% endblock %}` override in the template.
+for ctrl in sorted(glob.glob(os.path.join(PORTAL_WWW, "*.py"))):
+	checks += 1
+	if "context.no_footer" in io.open(ctrl, encoding="utf-8", errors="ignore").read():
+		err("%s : sets context.no_footer, which does nothing in Frappe v16. "
+		    "Override `{%% block footer %%}` in the template instead."
+		    % os.path.basename(ctrl))
+
+
+# 4. Inline on*= handlers resolve only against GLOBAL scope. This page wraps most of
+#    its code in an IIFE, so a helper declared inside it is invisible to a button -
+#    the click throws ReferenceError and NOTHING happens, silently. That is exactly
+#    how Apply Leave / New Claim died. A handler must be a column-0 `function NAME(`
+#    or be attached with `window.NAME =`.
+EVENTS = ("onclick=", "onchange=", "oninput=", "onsubmit=",
+          "onkeyup=", "onkeydown=", "onfocus=", "onblur=")
+NOT_FUNCS = {"if", "for", "while", "return", "function", "typeof", "new", "var",
+             "JSON", "Math", "Number", "String", "Array", "Object", "Boolean",
+             "parseInt", "parseFloat", "isNaN", "encodeURIComponent",
+             "decodeURIComponent", "alert", "confirm", "prompt", "setTimeout",
+             "setInterval", "rgba", "rgb", "url", "translate", "rotate", "scale"}
+CONCAT = re.compile(chr(39) + r"[^']*?[+][^+]*?[+][^']*?" + chr(39), re.S)
+BSQ = chr(92) + chr(34)      # backslash-quote, as it appears in JS-built HTML
+IDENT = re.compile(r"(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(")
+
+for page in sorted(glob.glob(os.path.join(PORTAL_WWW, "*.html"))):
+	name = os.path.basename(page)
+	html = io.open(page, encoding="utf-8-sig", errors="ignore").read()
+
+	handlers = set()
+	for ev in EVENTS:
+		i = 0
+		while True:
+			i = html.find(ev, i)
+			if i < 0:
+				break
+			# Stop at the attribute's own closing quote. Handlers also appear inside
+			# JS-generated HTML, where the quotes are backslash-escaped.
+			rest = html[i + len(ev):]
+			if rest.startswith(BSQ):
+				end = rest.find(BSQ, len(BSQ))
+				seg = rest[len(BSQ):end] if end > 0 else ""
+			elif rest[:1] in ('"', "'"):
+				q = rest[0]
+				end = rest.find(q, 1)
+				seg = rest[1:end] if end > 0 else ""
+			else:
+				seg = ""
+			# Handlers built by JS contain concatenated expressions such as
+			#   onclick=\"f('  +  esc(x)  +  ')\"
+			# The concatenated part runs at BUILD time in the enclosing scope, not on
+			# click, so drop it before looking for handler names.
+			seg = CONCAT.sub("", seg)
+			handlers.update(n for n in IDENT.findall(seg) if n not in NOT_FUNCS)
+			i += len(ev)
+	if not handlers:
+		continue
+
+	reachable = set(re.findall(r"^function ([A-Za-z_$][\w$]*)", html, re.M))
+	reachable |= set(re.findall(r"window\.([A-Za-z_$][\w$]*)\s*=", html))
+	checks += 1
+	dead = sorted(h for h in handlers if h not in reachable)
+	if dead:
+		err("%s : inline handler(s) not reachable from global scope: %s - the click "
+		    "throws ReferenceError and nothing happens. Declare at top level or "
+		    "attach with `window.NAME =`." % (name, ", ".join(dead)))
+
 
 print("app integrity: %d checks" % checks)
 if errors:

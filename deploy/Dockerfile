@@ -84,6 +84,19 @@ RUN bench build --production --app hrms
 RUN bench build --production --app alvoraa_goals
 RUN bench build --production --app alvoraa_portal
 
+# ── 4b. Turn the asset symlinks into real files ─────────────────────────────
+# `bench build` links sites/assets/<app> -> apps/<app>/<app>/public. The backend
+# container has /apps so the links resolve there, but nginx mounts ONLY the sites
+# volume and has no /apps - it follows a dangling link and 404s every CSS and JS file.
+# The portal then renders with no styling and every panel stuck on "Loading...", which
+# reads as an application fault and is not one.
+#
+# Dereferencing here means the image ships real files. Note this does NOT help when
+# `bench build` is run inside a live container, because that writes into the sites
+# volume and re-creates the symlinks - run scripts/materialise_assets.sh afterwards.
+COPY --chown=frappe:frappe scripts/materialise_assets.sh /workspace/materialise_assets.sh
+RUN bash /workspace/materialise_assets.sh
+
 # ── 5. Tenant provisioning script, available to the provisioner role ────────
 COPY --chown=frappe:frappe deploy/provision_tenant.sh /workspace/provision_tenant.sh
 

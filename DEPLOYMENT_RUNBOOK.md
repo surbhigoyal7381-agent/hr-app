@@ -224,6 +224,66 @@ docker compose -f deploy/compose/docker-compose.app.yml up -d
 
 ---
 
+## 5.7 Assets: two traps that look like application faults
+
+Both were hit for real on 2026-08-19 and cost more time than the migration itself.
+
+### Stale assets served from the volume
+
+`sites/` is a Docker volume, so `sites/assets` **survives an image swap**. Browsers then get
+JavaScript built against the *old* Frappe while the backend runs the new one. The symptom was:
+
+```
+Failed to get method for command frappe.core.doctype.background_task...
+No module named 'frappe.core.doctype.background_task'
+```
+
+`Background Task` exists in Frappe `develop` but not `version-16`, so the doctype was correctly
+removed while the old bundle kept calling it. Rebuild assets into the volume after the swap:
+
+```bash
+docker exec compose-backend-1 bench build --production
+```
+
+### Symlinked assets that nginx cannot follow
+
+`bench build` links `sites/assets/<app>` → `apps/<app>/<app>/public`. The backend has `/apps`;
+**nginx mounts only the sites volume and does not**. It follows a dangling link and returns 404
+for every CSS and JS file.
+
+The portal then renders with no styling and every panel stuck on "Loading…" — the profile menu
+drops out of the corner into the middle of the page. It looks like a broken application. It is a
+404 on a stylesheet.
+
+**After any `bench build` that writes into the volume:**
+
+```bash
+docker cp scripts/materialise_assets.sh compose-backend-1:/tmp/
+docker exec compose-backend-1 bash /tmp/materialise_assets.sh
+docker exec compose-nginx-1 nginx -s reload
+```
+
+Confirm before declaring success — a 404 here is invisible from the server side:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}
+' https://<site>/assets/frappe/dist/css/website.bundle.*.css
+```
+
+The image now dereferences these at build time (`Dockerfile` §4b), so a plain image swap is safe.
+This step is only needed when `bench build` is run **inside a live container**.
+
+### Always restart nginx after replacing the backend
+
+nginx resolves the backend's IP at startup. Replace or restart `compose-backend-1` and nginx keeps
+the old address, serving **502** while the backend is perfectly healthy:
+
+```bash
+docker restart compose-nginx-1
+```
+
+---
+
 ## 6. Verify — per site, not just once
 
 ```bash

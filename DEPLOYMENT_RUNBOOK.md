@@ -220,6 +220,12 @@ rename did not fully apply — stop and roll back rather than continuing.
 docker exec compose-backend-1 bash -lc \
   "cd /home/frappe/frappe-bench && bench --site all clear-cache && bench --site all clear-website-cache"
 docker compose -f deploy/compose/docker-compose.app.yml up -d
+
+# MANDATORY. `up -d` gives the backend a NEW IP; nginx resolved the old one at
+# startup and keeps using it, so EVERY site returns 502 - production included.
+# See 5.7. Do not treat this as optional: it took production down on 2026-08-19
+# because a deploy was run from a command list that omitted this line.
+docker restart compose-nginx-1
 ```
 
 ---
@@ -459,6 +465,10 @@ $DC exec -T backend bench --site all execute alvoraa_goals.deploy_utils.premigra
 $DC exec -T backend bench --site all migrate
 $DC exec -T backend bench --site all clear-cache
 $DC exec -T backend bench --site all set-maintenance-mode off
+
+# MANDATORY - see the note in 5.6/5.7. `up -d` re-IPs the backend and nginx
+# still points at the old address, so every site 502s until this runs.
+docker restart compose-nginx-1
 ```
 
 Then verify per §6, including the non-privileged employee check.

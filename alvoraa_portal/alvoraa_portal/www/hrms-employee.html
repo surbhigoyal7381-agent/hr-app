@@ -1,12 +1,12 @@
 ﻿{% extends "templates/web.html" %}
-{% block title %}Grace HR — Employee Portal{% endblock %}
+{% block title %}{{ tenant_name }} — Employee Portal{% endblock %}
 
 {% block head_include %}
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 /* ── Tokens ──────────────────────────────────────── */
 :root{
-  /* Grace Design Theme Guide — Primary Purple palette */
+  /* Alvoraa Design Theme Guide - Primary Purple palette */
   --bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F3F1ED;
   --border:#E8E5F2;--border2:#D8D5CE;
   --text:#2D2622;--text2:#5C5854;--text3:#8B8680;
@@ -1971,9 +1971,9 @@ window._EMP_USER  = "{{ frappe.session.user }}";
   <!-- Sidebar (desktop) -->
   <aside class="sidebar">
     <div class="sidebar-brand">
-      <div class="sidebar-brand-logo">G</div>
+      <div class="sidebar-brand-logo">{{ tenant_name[0] | upper }}</div>
       <div class="sidebar-brand-text">
-        <div class="sidebar-brand-name">Grace HR</div>
+        <div class="sidebar-brand-name">{{ tenant_name }}</div>
         <div class="sidebar-brand-sub">Employee Portal</div>
       </div>
       <button class="sb-pin-btn" id="sb-pin-btn" onclick="toggleSbPin()" title="Pin sidebar open">
@@ -2052,7 +2052,7 @@ window._EMP_USER  = "{{ frappe.session.user }}";
       <button class="mob-hamburger" onclick="openSidebar()" aria-label="Open navigation">
         <span></span><span></span><span></span>
       </button>
-      <div class="mob-brand">Grace <span>HR</span></div>
+      <div class="mob-brand">{{ tenant_name }}</div>
       <div class="mob-notif" id="mob-notif-btn" title="Notifications" onclick="toggleNotifPanel(event)">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
         <span class="notif-badge" id="notif-badge"></span>
@@ -3536,7 +3536,7 @@ window._EMP_USER  = "{{ frappe.session.user }}";
           <div class="gp-field">
             <div class="gp-label">Description</div>
             <textarea class="gp-input" id="pf-val-desc" rows="2"
-              placeholder="What this value means at Grace Drinks"></textarea>
+              placeholder="What this value means at {{ tenant_name }}"></textarea>
           </div>
         </div>
         <div class="gp-modal-footer">

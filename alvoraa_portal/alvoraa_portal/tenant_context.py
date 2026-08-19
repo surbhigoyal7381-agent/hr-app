@@ -17,7 +17,7 @@ import frappe
 DEFAULTS = {
     "primary_color": "#1a7f5a",
     "accent_color": "#f59e0b",
-    "tenant_name": "Kinexus HRMS",
+    "tenant_name": "Alvoraa",
     "tenant_logo_url": "",
     "support_email": "",
 }

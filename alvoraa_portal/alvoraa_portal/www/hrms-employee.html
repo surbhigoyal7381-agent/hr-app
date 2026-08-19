@@ -1941,6 +1941,8 @@ body.panel-fullscreen{overflow:hidden}
 {% block page_content %}
 <script>
 window._EMP_USER  = "{{ frappe.session.user }}";
+// HR contact shown when a leave request exceeds the balance
+window._SUPPORT_EMAIL = {{ support_email | tojson }};
 // Apply tenant brand color from site_config (set by Kinexus Admin)
 (function() {
   var c = "{{ primary_color }}";
@@ -4063,7 +4065,7 @@ window._EMP_USER  = "{{ frappe.session.user }}";
           <div class="gp-field" id="la-behalf-row" style="display:none">
             <div class="gp-label">Apply on behalf of</div>
             <div style="position:relative">
-              <input class="gp-input" id="la-behalf-search" type="text" placeholder="Search employee name…" autocomplete="off" oninput="laSearchEmployee(this.value)" style="padding-right:32px">
+              <input class="gp-input" id="la-behalf-search" type="text" placeholder="Search by name or employee ID…" autocomplete="off" oninput="laSearchEmployee(this.value)" style="padding-right:32px">
               <div id="la-behalf-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.12);max-height:200px;overflow-y:auto;z-index:1000"></div>
             </div>
             <input type="hidden" id="la-behalf-employee">
@@ -4071,22 +4073,25 @@ window._EMP_USER  = "{{ frappe.session.user }}";
           </div>
           <div class="gp-field">
             <div class="gp-label">Leave Type *</div>
-            <select class="gp-input" id="la-leave-type">
+            <select class="gp-input" id="la-leave-type" onchange="laPreview()">
               <option value="">Loading…</option>
             </select>
           </div>
           <div class="gp-row2">
             <div class="gp-field">
               <div class="gp-label">From Date *</div>
-              <input class="gp-input" id="la-from-date" type="date">
+              <input class="gp-input" id="la-from-date" type="date" onchange="laPreview()">
             </div>
             <div class="gp-field" id="la-to-date-row">
               <div class="gp-label">To Date *</div>
-              <input class="gp-input" id="la-to-date" type="date">
+              <input class="gp-input" id="la-to-date" type="date" onchange="laPreview()">
             </div>
           </div>
+          <!-- Balance preview. Filled by laPreview() from preview_leave_request, which
+               reuses Frappe HR's own day-count and balance functions. -->
+          <div id="la-preview" style="display:none;margin:2px 0 10px;padding:9px 12px;border-radius:6px;font-size:12.5px;line-height:1.5"></div>
           <div class="gp-field" style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
-            <input type="checkbox" id="la-half-day" onchange="laToggleHalfDay()" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer">
+            <input type="checkbox" id="la-half-day" onchange="laToggleHalfDay(); laPreview()" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer">
             <label for="la-half-day" style="font-size:13px;font-weight:500;color:var(--text);cursor:pointer;margin:0">Half Day</label>
           </div>
           <div class="gp-field">
@@ -4866,6 +4871,15 @@ function openLeaveModal() {
   document.getElementById("la-behalf-employee").value = "";
   document.getElementById("la-behalf-selected").style.display = "none";
   document.getElementById("la-behalf-dropdown").style.display = "none";
+  document.getElementById("la-preview").style.display = "none";
+
+  // Default to the logged-in user. Only when the HR row is actually shown - for
+  // everyone else the row is hidden and an empty box already means "myself", which
+  // is what apply_leave falls back to. Guarded: a user may have no Employee record.
+  if (behalfRow && window._roles && window._roles.is_hr && window._me && window._me.name) {
+    laSelectEmployee(window._me.name, window._me.employee_name || window._me.name,
+                     window._me.department || "");
+  }
 
   if (_leaveSummaryCache) {
     _populateLeaveTypeSelect(_leaveSummaryCache.balances || []);
@@ -4903,14 +4917,21 @@ function laSearchEmployee(q) {
 function _laFilterEmployees(q) {
   var dd = document.getElementById("la-behalf-dropdown");
   var lq = q.toLowerCase();
+  // name or employee ID only - department is shown, not matched
   var matches = (_laEmployeeCache || []).filter(function(e) {
-    return e.employee_name.toLowerCase().indexOf(lq) >= 0 ||
-           (e.department || "").toLowerCase().indexOf(lq) >= 0;
+    return (e.employee_name || "").toLowerCase().indexOf(lq) >= 0 ||
+           (e.name || "").toLowerCase().indexOf(lq) >= 0;
   }).slice(0, 10);
   if (!matches.length) { dd.innerHTML = '<div style="padding:10px 14px;font-size:13px;color:var(--text3)">No employees found</div>'; dd.style.display = ""; return; }
   dd.innerHTML = matches.map(function(e) {
-    return '<div style="padding:9px 14px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--border)" onmousedown="laSelectEmployee(\'' + esc(e.name) + '\',\'' + esc(e.employee_name) + '\',\'' + esc(e.department||'') + '\')">' +
-      '<strong>' + esc(e.employee_name) + '</strong><span style="margin-left:8px;color:var(--text3);font-size:11px">' + esc(e.department||'') + '</span></div>';
+    var sub = [e.department, e.designation].filter(Boolean).map(esc).join(" &middot; ");
+    return '<div style="padding:8px 14px;cursor:pointer;border-bottom:1px solid var(--border)" onmousedown="laSelectEmployee(\'' + esc(e.name) + '\',\'' + esc(e.employee_name) + '\',\'' + esc(e.department||'') + '\')">' +
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">' +
+        '<strong style="font-size:13px">' + esc(e.employee_name) + '</strong>' +
+        '<span style="font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--text3);white-space:nowrap">' + esc(e.name) + '</span>' +
+      '</div>' +
+      (sub ? '<div style="font-size:11.5px;color:var(--text3);margin-top:1px">' + sub + '</div>' : '') +
+    '</div>';
   }).join("");
   dd.style.display = "";
 }
@@ -4927,6 +4948,7 @@ function laSelectEmployee(id, name, dept) {
   leaveTypeSel.innerHTML = '<option value="">Loading…</option>';
   api("get_leave_summary", {employee_id: id}, function(data) {
     _populateLeaveTypeSelect(data.balances || []);
+    laPreview();          // balance differs per employee
   }, function() {
     leaveTypeSel.innerHTML = '<option value="">Could not load leave types</option>';
   });
@@ -4941,6 +4963,91 @@ function laToggleHalfDay() {
   }
 }
 
+// ── Balance preview ───────────────────────────────────────────────────────────
+// Days are NOT counted here. Weekends, the employee's holiday list, half days and
+// the Leave Type's include_holiday flag all change the answer, so the count comes
+// from preview_leave_request, which calls Frappe HR's own get_number_of_leave_days
+// and get_leave_balance_on. The server remains the authority; this only tells the
+// user first.
+var _laPreviewTimer = null;
+var _laBlocked = false;
+
+function laPreview() {
+  var box = document.getElementById("la-preview");
+  var btn = document.getElementById("la-submit-btn");
+  var lt  = document.getElementById("la-leave-type").value;
+  var fd  = document.getElementById("la-from-date").value;
+  var hd  = document.getElementById("la-half-day").checked;
+  var td  = hd ? fd : document.getElementById("la-to-date").value;
+
+  _laBlocked = false;
+  btn.disabled = false;
+  if (!lt || !fd || !td) { box.style.display = "none"; return; }
+
+  clearTimeout(_laPreviewTimer);
+  _laPreviewTimer = setTimeout(function() {
+    var onBehalf = (document.getElementById("la-behalf-employee") || {}).value || undefined;
+    api("preview_leave_request", {
+      leave_type: lt, from_date: fd, to_date: td,
+      half_day: hd ? 1 : 0, half_day_date: hd ? fd : null,
+      on_behalf_of: onBehalf,
+    }, function(r) {
+      if (!r) { box.style.display = "none"; return; }
+      var days = r.days;
+      var dayTxt = days + " day" + (days === 1 ? "" : "s");
+
+      if (days <= 0) {
+        _laSetPreview("warn", "Those dates are all holidays or weekly offs - no leave is needed.");
+        _laBlock(true); return;
+      }
+      if (r.unlimited) {
+        _laSetPreview("ok", "Requesting <strong>" + dayTxt + "</strong>. This type is not drawn from an allocation.");
+        _laBlock(false); return;
+      }
+
+      var short = r.balance - days;
+      if (short < 0 && !r.allow_negative) {
+        _laSetPreview("bad",
+          "Requesting <strong>" + dayTxt + "</strong> but only <strong>" + r.balance +
+          "</strong> available - short by <strong>" + Math.abs(short) + "</strong>." +
+          '<div style="margin-top:5px">This cannot be submitted. Please contact HR' +
+          (window._SUPPORT_EMAIL
+            ? ' at <a href="mailto:' + esc(window._SUPPORT_EMAIL) + '" style="color:inherit;text-decoration:underline">' + esc(window._SUPPORT_EMAIL) + "</a>"
+            : " by email") + " to request additional leave.</div>");
+        _laBlock(true); return;
+      }
+      _laSetPreview(short < 0 ? "warn" : "ok",
+        "Requesting <strong>" + dayTxt + "</strong> of <strong>" + r.balance + "</strong> available." +
+        (short < 0 ? " This will take the balance negative." : ""));
+      _laBlock(false);
+    }, function() {
+      // preview is advisory - never block on a failed preview, the server still validates
+      box.style.display = "none";
+      _laBlock(false);
+    });
+  }, 300);
+}
+
+function _laSetPreview(kind, html) {
+  var box = document.getElementById("la-preview");
+  var c = kind === "bad"  ? ["var(--red-lt,#fef2f2)",   "var(--red,#ef4444)"]
+        : kind === "warn" ? ["var(--amber-lt,#fff8e1)", "var(--amber,#b45309)"]
+        :                   ["var(--green-lt,#ecfdf5)", "var(--green,#047857)"];
+  box.style.background = c[0];
+  box.style.color = c[1];
+  box.innerHTML = html;
+  box.style.display = "";
+}
+
+function _laBlock(on) {
+  _laBlocked = on;
+  var btn = document.getElementById("la-submit-btn");
+  btn.disabled = on;
+  btn.style.opacity = on ? ".5" : "";
+  btn.style.cursor = on ? "not-allowed" : "";
+}
+
+
 function submitLeaveApp() {
   pfClearErr("la-error");
   var lt  = document.getElementById("la-leave-type").value;
@@ -4953,6 +5060,11 @@ function submitLeaveApp() {
   if (!fd)           { pfShowErr("la-error", "Please enter a from date."); return; }
   if (!hd && !td)    { pfShowErr("la-error", "Please enter a to date."); return; }
   if (!hd && td < fd){ pfShowErr("la-error", "To date must be on or after from date."); return; }
+
+  if (_laBlocked) {
+    pfShowErr("la-error", "This request exceeds the available leave balance. Please contact HR by email.");
+    return;
+  }
 
   var btn = document.getElementById("la-submit-btn");
   btn.disabled = true;
@@ -5175,6 +5287,8 @@ window._roles = { is_manager: false, is_hr: false };
 function loadPortalContext() {
   api("get_portal_context", {}, function(ctx) {
     window._roles.is_manager = !!ctx.is_manager;
+    // kept for the leave modal "apply on behalf of" default
+    window._me = ctx.employee || null;
     window._roles.is_hr      = !!ctx.is_hr;
 
     const showMgmt = ctx.is_manager || ctx.is_hr;

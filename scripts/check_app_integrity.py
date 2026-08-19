@@ -247,6 +247,41 @@ for page in sorted(glob.glob(os.path.join(PORTAL_WWW, "*.html"))):
 		    "attach with `window.NAME =`." % (name, ", ".join(dead)))
 
 
+# 5. Cross-app imports into the vendored hrms tree. A wrong module path raises
+#    ImportError only when that code path first runs - and if the caller swallows
+#    the failure (a front-end error handler that just hides a panel), it is silent.
+#    hrms lives in this repo, so the symbol can be resolved at build time.
+HRMS_ROOT = os.path.join(REPO, "hrms")
+
+for app_dir in APPS:
+	for py in glob.glob(os.path.join(REPO, app_dir, "**", "*.py"), recursive=True):
+		try:
+			tree = ast.parse(io.open(py, encoding="utf-8-sig", errors="ignore").read())
+		except SyntaxError:
+			continue
+		for node in ast.walk(tree):
+			if not isinstance(node, ast.ImportFrom) or not node.module:
+				continue
+			if not node.module.startswith("hrms."):
+				continue
+			checks += 1
+			rel = node.module.replace(".", os.sep)
+			cand = [os.path.join(HRMS_ROOT, rel + ".py"),
+			        os.path.join(HRMS_ROOT, rel, "__init__.py")]
+			src = next((c for c in cand if os.path.exists(c)), None)
+			where = "%s -> %s" % (os.path.relpath(py, REPO).replace(os.sep, "/"), node.module)
+			if src is None:
+				err("%s : module does not exist in the hrms tree" % where)
+				continue
+			names = defined_names(src)
+			if names is None:
+				continue
+			missing = [a.name for a in node.names
+			           if a.name != "*" and a.name not in names]
+			if missing:
+				err("%s : %s not defined there" % (where, ", ".join(missing)))
+
+
 print("app integrity: %d checks" % checks)
 if errors:
 	print("FAIL - %d problem(s):" % len(errors))

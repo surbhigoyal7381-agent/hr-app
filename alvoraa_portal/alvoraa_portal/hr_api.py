@@ -1368,6 +1368,66 @@ def apply_leave(leave_type, from_date, to_date, half_day=0, half_day_date=None, 
     return {"name": doc.name}
 
 
+@frappe.whitelist()
+def preview_leave_request(leave_type, from_date, to_date, half_day=0, half_day_date=None,
+                          on_behalf_of=None):
+    """How many days a leave request costs, and whether the balance covers it.
+
+    Read-only. Exists so the portal can tell the user BEFORE they submit, instead of
+    letting them find out from a raw server error afterwards.
+
+    It deliberately reuses Frappe HR's own functions and mirrors the rule in
+    LeaveApplication.validate_balance_leaves(). Counting days in JavaScript would be
+    wrong - weekends, the employee's holiday list, half days and the Leave Type's
+    include_holiday flag all change the answer. If this ever disagrees with the server,
+    the server wins: this is a preview, not the gate.
+    """
+    from hrms.hr.doctype.leave_application.leave_application import (
+        get_leave_balance_on,
+        get_number_of_leave_days,
+        is_lwp,
+    )
+
+    roles = frappe.get_roles()
+    is_hr = bool({"HR Manager", "HR User", "System Manager"} & set(roles))
+
+    # same rule as apply_leave: only HR may act for someone else
+    if on_behalf_of and is_hr:
+        emp = frappe.get_doc("Employee", on_behalf_of)
+    else:
+        emp = _get_employee()
+    if not emp:
+        frappe.throw("No employee record is linked to your account.")
+
+    days = get_number_of_leave_days(
+        emp.name, leave_type, from_date, to_date,
+        int(half_day or 0), half_day_date if int(half_day or 0) else None,
+    )
+
+    # Leave Without Pay is not drawn from an allocation, so it has no balance to check
+    if is_lwp(leave_type):
+        return {"days": days, "balance": None, "unlimited": True,
+                "allow_negative": True, "employee_name": emp.employee_name}
+
+    precision = frappe.utils.cint(
+        frappe.db.get_single_value("System Settings", "float_precision")) or 2
+    balance = get_leave_balance_on(
+        emp.name, leave_type, from_date, to_date,
+        consider_all_leaves_in_the_allocation_period=True,
+        for_consumption=True,
+    )
+    available = frappe.utils.flt(balance.get("leave_balance_for_consumption"), precision)
+
+    return {
+        "days": days,
+        "balance": available,
+        "unlimited": False,
+        # when the Leave Type allows a negative balance Frappe only warns, so neither do we
+        "allow_negative": bool(frappe.db.get_value("Leave Type", leave_type, "allow_negative")),
+        "employee_name": emp.employee_name,
+    }
+
+
 # ── Self-service form submissions ──────────────────────────────────────────────
 
 @frappe.whitelist()

@@ -308,3 +308,108 @@ are not rollback triggers — fix forward.
   `a590375`, which was ours and is fixed.
 - **Nine tests fail in `alvoraa_portal`** and are not addressed here; that app is due to be
   rebuilt.
+
+
+---
+
+## Appendix A · Deploying without GitHub Actions
+
+Actions is not required. The server has room to build for itself: 6 cores, ~8 GB free and
+124 GB of disk, verified 2026-08-19.
+
+### A.1 What is actually on the server
+
+Worth knowing before anything else, because none of it matches what the workflow assumes.
+
+| | |
+|---|---|
+| Stack runs from | `/var/www/html/hr-app/deploy/compose` |
+| `deploy.yml` expects | `/opt/hr-app` — **exists but is empty**, so the automated deploy would have failed here regardless of the missing secret |
+| Server checkout | branch `main`, commit `72c89e1` "Add Performance Distribution (Bell Curve) tab" |
+| Running image | `ghcr.io/…/hr-app:dev-53a8180`, built from the rebrand branch |
+| Env file in use | `deploy/envs/production.env` |
+
+Note the checkout and the image come from **different lineages**: the working copy is from
+the AllAboutHR line, the image from the rebrand line. The `docker-compose.app.yml` on the
+server also differs from `dev`'s (different md5). Compare them before reusing either.
+
+> `/var/www/html/hr-app` is the directory `CLAUDE.md` says never to modify. The procedure
+> below therefore **builds somewhere else entirely** and changes only which image the stack
+> runs. Nothing in that directory is edited except the one-line image pin.
+
+### A.2 Build in a separate directory
+
+Building does not disturb the running containers, so this part needs no maintenance window
+and no downtime.
+
+```bash
+# a clean checkout, away from the live tree
+sudo mkdir -p /opt/build && sudo chown "$USER" /opt/build
+cd /opt/build
+git clone https://github.com/surbhigoyal7381-agent/hr-app.git . 2>/dev/null || git fetch --all
+git checkout --detach origin/dev
+git log --oneline -1          # confirm the commit you intend to ship
+
+docker build -f deploy/Dockerfile -t hr-app:dev-$(git rev-parse --short HEAD) .
+```
+
+Expect 15–30 minutes cold. It clones frappe and erpnext and bundles assets for five apps.
+No registry is involved — the image stays on this machine, which is where it is needed.
+
+### A.3 Compare the compose file before swapping
+
+The server's `docker-compose.app.yml` is not the same as `dev`'s. Decide deliberately
+whether to adopt the new one:
+
+```bash
+diff /var/www/html/hr-app/deploy/compose/docker-compose.app.yml      /opt/build/deploy/compose/docker-compose.app.yml
+```
+
+If it differs in ways the new image depends on, copy it across as part of the window — and
+keep the old one so it can be put back.
+
+### A.4 Deploy — the same sequence as §5
+
+Only the image source changes. Everything else, including the ordering that matters, is
+identical to the main procedure:
+
+```bash
+cd /var/www/html/hr-app/deploy/compose
+DC="docker compose -f docker-compose.app.yml --env-file ../envs/production.env"
+
+# 1. back up every site FIRST
+for S in alvoraa.co dev.alvoraa.co minda.alvoraa.co kinexus.alvoraa.co; do
+  $DC exec -T backend bench --site $S backup --with-files
+done
+
+# 2. record the current image so rollback is a known value
+docker inspect compose-backend-1 --format '{{.Config.Image}}'
+
+# 3. point the stack at the locally built image
+echo "KINEXUS_IMAGE=hr-app:dev-<sha>" > .image.env
+DC="$DC --env-file .image.env"
+
+$DC exec -T backend bench --site all set-maintenance-mode on
+$DC up -d --remove-orphans
+
+# 4. rename in the database BEFORE migrate - see §3
+$DC exec -T backend bench --site all execute alvoraa_goals.deploy_utils.premigrate_rename
+
+# 5. only now
+$DC exec -T backend bench --site all migrate
+$DC exec -T backend bench --site all clear-cache
+$DC exec -T backend bench --site all set-maintenance-mode off
+```
+
+Then verify per §6, including the non-privileged employee check.
+
+### A.5 Rollback
+
+Put the old tag back in `.image.env`, `$DC up -d`, and restore from the §A.4 step-1 dumps if
+migrate has already run. Identical to §7.
+
+### A.6 Why this is arguably better for this release
+
+The build happens with the site still serving, so the only downtime is the swap and migrate.
+And it removes GitHub Actions, the registry and the deploy secrets from the critical path —
+three things that have each broken separately this week.

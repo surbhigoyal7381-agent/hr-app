@@ -109,7 +109,9 @@ def create_tenant(subdomain, tenant_name, plan="starter",
             modules = [m.strip() for m in modules.split(",") if m.strip()]
     if "hrms" not in modules:
         modules = ["hrms"] + [m for m in modules if m != "hrms"]
-    # Derive plan label for display (best-fit preset)
+    # Derive the plan label from the modules. This intentionally OVERWRITES the
+    # `plan` argument: modules are the source of truth, so a caller cannot send a
+    # label that contradicts what was actually provisioned.
     _preset_map = {
         "starter":    {"hrms"},
         "business":   {"hrms","payroll","vendor"},

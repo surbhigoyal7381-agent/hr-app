@@ -1033,7 +1033,10 @@ html, body {
 
       document.getElementById('ka-create-label').textContent = 'Submitting…';
       var result = await api('alvoraa_portal.tenant_api.create_tenant', {
-        subdomain: subdomain, tenant_name: tenant_name, plan: selectedPlan,
+        // No `plan` sent: create_tenant derives it from `modules` and overwrites
+        // anything passed here. Sending one meant referencing a variable that was
+        // never declared, so every attempt died on "not defined".
+        subdomain: subdomain, tenant_name: tenant_name,
         primary_color: primary_color, support_email: support_email, logo_url: logo_url,
         modules: selectedModules,
       });

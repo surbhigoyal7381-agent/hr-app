@@ -347,6 +347,32 @@ That includes `hrms/hrms/pms` + `hrms/hrms/performance_management`: **37 doctype
 
 ## 12. Environments and branches
 
+> ### 🔴 What follows is the TARGET, not what runs today
+>
+> Verified on the server, 2026-08-20:
+>
+> **There is one environment, not three.** A single Docker Compose project
+> (`compose`) runs one backend, one `compose_sites` volume, one MariaDB and one
+> Redis. All four sites - `alvoraa.co`, `dev.alvoraa.co`, `minda.alvoraa.co`,
+> `kinexus.alvoraa.co` - are databases inside that one bench, served by one
+> container running **one image**.
+>
+> Consequences, and they are not small:
+>
+> - **Deploying to dev IS deploying to production.** They share the image. On
+>   2026-08-20 production `alvoraa.co` was running the tag `dev-aa54c2c`.
+> - **There is no safe place to try a change.** `REHEARSAL.md` exists precisely
+>   because of this, and builds a throwaway stack instead.
+> - **Restarting the backend interrupts every site.** It also re-IPs the backend,
+>   so nginx must be restarted or all four sites return 502 (runbook 5.7).
+> - The live `deploy/nginx.conf` on the server is **not** the copy in git - it
+>   carries TLS blocks that were never committed. Do not regenerate it from the
+>   repo.
+> - The domains below say `kinexus.in`. The real domain is `alvoraa.co`.
+>
+> Separating `dev.alvoraa.co` onto its own stack is the work that makes the rest
+> of this section true. Until then, treat the branch model as a plan.
+
 Three long-lived branches, one per environment. **Deployment is driven by the branch**, so promoting code means merging it forward.
 
 ```
@@ -380,6 +406,17 @@ feature/*  ──PR──▶  dev  ──PR──▶  test  ──PR──▶  m
 
 1. **`MUTE_EMAILS=1` in dev and test.** This app sends progress reminders, arrival notifications and compliance alerts on a daily scheduler tick. A non-prod environment holding a copy of real data **will email real employees and vendors within hours**. Set this before the first data load, not after.
 2. **`test` mirrors production *topology*, not scale.** Same process split, same managed services, smaller instances. A staging environment running a different process model does not de-risk anything.
+
+### Promotion gates
+
+What must be true before code moves forward. These apply once the environments
+above actually exist; today only the first row is real.
+
+| Step | Gate |
+|---|---|
+| local → `dev` | `bench run-tests` green locally, CI green |
+| `dev` → `test` | clicked through on `dev.alvoraa.co`; migration rehearsed against a **restored copy of production data** (`REHEARSAL.md`) |
+| `test` → `main` | UAT signed off; backups verified; deployed in a declared window |
 
 ### Branch protection
 

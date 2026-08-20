@@ -1320,12 +1320,22 @@ def apply_expense_claim(expense_type, expense_date, amount, description=None):
     if amount <= 0:
         frappe.throw("Amount must be greater than zero.")
 
+    # The child table is `expenses`. It was `expense_claim_details` in older
+    # ERPNext; under v16 that key is ignored, so the claim was built with no rows
+    # and every submission died on
+    #   MandatoryError: exchange_rate, expenses
+    # `currency` and `exchange_rate` are required too. Same-currency claims are
+    # rate 1; a claim in another currency is not something this portal offers.
+    currency = frappe.db.get_value("Company", emp.company, "default_currency")
+
     doc = frappe.get_doc({
         "doctype": "Expense Claim",
         "employee": emp.name,
         "company": emp.company,
         "posting_date": today(),
-        "expense_claim_details": [{
+        "currency": currency,
+        "exchange_rate": 1,
+        "expenses": [{
             "doctype": "Expense Claim Detail",
             "expense_date": expense_date,
             "expense_type": expense_type,

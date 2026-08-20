@@ -6719,7 +6719,7 @@ function submitGoalEvidence(gid) {
       toast("Evidence submitted — progress updated", "ok");
       closeGoalDrawer();
       _goalData = null;
-      _gpCtx = null;
+      gpResetContext();   // not `_gpCtx = null` - that assigns a different scope
       loadedPanels.delete("goals");
       loadHomeGoals();
       loadGoalsPanel();
@@ -7121,6 +7121,12 @@ function deleteDrawerNote(noteId, empId) {
   "use strict";
 
   var _gpCtx = null;
+
+  // _gpCtx is private to this IIFE. Code outside it that wrote `_gpCtx = null`
+  // was creating a DIFFERENT global, so this cache was never cleared and
+  // gpLoadGoalsPanel() returned early on its `if (_gpCtx)` guard - the goals
+  // panel kept showing stale progress after evidence was submitted.
+  window.gpResetContext = function () { _gpCtx = null; };
   var _gpCascades = [];
   var _gpLoadedTabs = {};
   var _gpOnGoalCreated = null; // callback set when dialog opened from within a review

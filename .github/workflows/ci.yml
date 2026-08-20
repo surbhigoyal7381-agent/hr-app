@@ -104,6 +104,16 @@ jobs:
       - name: Portal buttons are wired up
         run: node scripts/check_portal_handlers.js
 
+      # Finds identifiers a page reads but nothing ever creates. The handler check
+      # above calls buttons, but it cannot reach code behind form validation, and a
+      # page that catches its own errors turns the failure into a banner. That is how
+      # "selectedPlan is not defined" shipped and blocked every tenant creation.
+      #
+      # ESLint no-undef, with each page's `window.NAME =` exports fed in as declared
+      # globals - without that it flags every published function and is unusable here.
+      - name: No undefined identifiers in portal pages
+        run: node scripts/check_undefined_js.js
+
       - name: Semgrep (Frappe security rules)
         continue-on-error: true
         run: |

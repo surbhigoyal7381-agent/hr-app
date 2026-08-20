@@ -1,0 +1,44 @@
+# ── nginx: serve more than one environment ───────────────────────────────────
+#
+# Overlay for the PRODUCTION project (COMPOSE_PROJECT_NAME=compose). One nginx
+# fronts every environment and routes by hostname, so it needs read access to
+# each environment's assets.
+#
+#   cd /var/www/html/hr-app/deploy/compose
+#   docker compose -f docker-compose.app.yml -f docker-compose.nginx-multienv.yml \
+#       --env-file ../envs/production.env --env-file .image.env up -d nginx
+#
+# nginx serves /assets/ straight off disk rather than proxying it. Production's
+# assets come from compose_sites, already mounted by the base file. Dev's come
+# from devstack_sites, mounted here read-only.
+#
+# Serving dev from production's volume would work only while both run the same
+# image. The moment dev runs newer code, dev pages would load production's CSS
+# and JS - a fault that is invisible in the config and looks like a broken page.
+#
+# nginx is attached to the dev network HERE, not by hand. `docker network
+# connect` applies to a running container, and `up -d nginx` REPLACES it - so a
+# hand-attached network is lost on the next recreate, nginx cannot resolve
+# devstack-backend-1, and it refuses to start at all. Every site then returns
+# connection refused. That happened on 2026-08-20; this block is the fix.
+#
+# Both networks publish the alias `backend`, which is why nginx.conf addresses
+# both stacks by container name instead.
+
+services:
+  nginx:
+    volumes:
+      - devstack-sites:/devstack-sites:ro
+    networks:
+      - default          # the production project's own network
+      - devstack
+
+volumes:
+  devstack-sites:
+    external: true
+    name: devstack_sites
+
+networks:
+  devstack:
+    external: true
+    name: devstack_default

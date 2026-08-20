@@ -483,3 +483,40 @@ migrate has already run. Identical to §7.
 The build happens with the site still serving, so the only downtime is the swap and migrate.
 And it removes GitHub Actions, the registry and the deploy secrets from the critical path —
 three things that have each broken separately this week.
+
+---
+
+## 5.8 Recreating nginx drops hand-attached networks
+
+`docker network connect` applies to a **running container**. `docker compose up -d nginx`
+does not restart that container - it **replaces** it. Everything attached by hand is gone,
+and the replacement starts without it.
+
+nginx now serves two environments and must resolve `devstack-backend-1`. Without that
+network it does not fall back or degrade - it refuses to start:
+
+```
+nginx: [emerg] host not found in upstream "devstack-backend-1:8000"
+```
+
+nginx never binds, so **every site returns connection refused**, not 502. This happened on
+2026-08-20 and took production down for about two minutes.
+
+The fix is in `deploy/compose/docker-compose.nginx-multienv.yml`, which declares the network
+so every recreate gets it. Recreate nginx with **both** files, or it loses the dev network
+and the assets mount again:
+
+```bash
+cd /var/www/html/hr-app/deploy/compose
+docker compose -f docker-compose.app.yml -f docker-compose.nginx-multienv.yml   --env-file ../envs/production.env --env-file .image.env up -d nginx
+```
+
+If nginx is stuck restarting, check the cause before anything else:
+
+```bash
+docker logs --tail 20 compose-nginx-1
+```
+
+An `[emerg] host not found in upstream` line means a network is missing, not a bad config.
+`nginx -t` passes in that state, because it does not resolve upstream names.
+

@@ -1,0 +1,57 @@
+# ── Dev stack: the database and cache the dev environment owns ───────────────
+#
+# Overlay for docker-compose.app.yml. Used ONLY by the dev stack, which runs as a
+# separate Compose project so it gets its own network and its own sites volume.
+#
+#   cd /var/www/html/hr-app/deploy/compose
+#   COMPOSE_PROJECT_NAME=devstack docker compose \
+#       -f docker-compose.app.yml -f docker-compose.devstack.yml \
+#       --env-file ../envs/dev.env up -d \
+#       mariadb redis configurator backend socketio scheduler worker-default
+#
+# Note the service list: `nginx` is deliberately absent. One nginx on the box
+# serves every environment and routes by hostname.
+#
+# Why dev owns its database rather than sharing production's:
+#
+#   1. A separate Compose project means a separate network. If both stacks sat on
+#      one network they would BOTH publish the alias `backend`, and nginx would
+#      round-robin between production and dev - occasionally serving dev code to
+#      alvoraa.co. Sharing production's database would have required putting them
+#      on one network.
+#   2. A runaway migration or a wiped table in dev then cannot reach production.
+#      Dev is meant to be disposable; that is only true if it owns its data.
+#
+# It costs about 400 MB of RAM. The box has ~8.8 GB free.
+
+services:
+  mariadb:
+    image: mariadb:10.8
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      # Frappe requires this; without it `bench new-site` fails on long indexes.
+      - --innodb-large-prefix=1
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD in the env file}
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  redis:
+    image: redis:alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  mariadb-data:

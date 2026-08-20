@@ -70,10 +70,10 @@ finds 83), so fixing with whatever is on a laptop can leave CI red.
 
 ---
 
-## KI-4 · Half-day leave is broken in the hrms fork — wrong `is_holiday` signature
+## KI-4 · Half-day leave is broken in the hrms fork — wrong `is_holiday` signature ✅ FIXED
 
-**Severity:** High — the feature does not work at all. **Status:** Found 2026-08-20 by the
-new leave tests. Awaiting a decision, because the fix edits vendored HR code.
+**Severity was:** High — the feature did not work at all. **Status:** Fixed 2026-08-20, with
+sign-off, since the fix edits vendored HR code. Kept for the record.
 
 `leave_application.py` line 23 imports:
 
@@ -116,9 +116,21 @@ hl = holiday_list or get_holiday_list_for_employee(
 `get_number_of_leave_days` already accepts a `holiday_list` argument, so it should be
 preferred when supplied rather than re-resolved.
 
-**Not applied.** It changes shared HR behaviour for every leave path, so it needs sign-off
-and its own test run. `test_preview_half_day_counts_half` is skipped and points here; unskip
-it with the fix.
+**Applied**, but not as first proposed. Rather than re-resolving the holiday list, both call
+sites now use `get_holiday_dates_between_range(employee, date, date, skip_weekly_offs=True)` —
+the helper `get_holidays()` already uses. That way the half-day check and the day count read
+holidays through the same path and cannot disagree. `skip_weekly_offs=True` preserves the old
+meaning: a weekly off is not "a holiday" for this purpose. `is_holiday` is no longer imported
+here; `get_holiday_list_for_employee` still is, and is used elsewhere in the file.
+
+Covered by three tests: the preview arithmetic, an actual half-day application (0.5 days), and
+a half-day on a holiday still being rejected — two distinct call sites, so a passing preview
+alone would not have proved it.
+
+**What could not be verified:** hrms's own `test_leave_application` module does not run on a
+fresh site — discovery fails with `Mode of Payment`, and it fails identically with the original
+file, so it is pre-existing and unrelated. Also untested: the weekly-off branch, because the
+fixture holiday list deliberately contains no weekly offs.
 
 **Also worth knowing:** setting `Employee.holiday_list` alone does nothing in this version.
 Holidays resolve through a **submitted** `Holiday List Assignment`. The test fixtures create

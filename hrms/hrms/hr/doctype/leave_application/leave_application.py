@@ -20,7 +20,7 @@ from frappe.utils import (
 	nowdate,
 )
 
-from hrms.hr.doctype.employee.employee import get_holiday_list_for_employee, is_holiday
+from hrms.hr.doctype.employee.employee import get_holiday_list_for_employee
 
 import hrms
 from hrms.api import get_current_employee_info
@@ -913,7 +913,14 @@ class LeaveApplication(Document, PWANotificationsMixin):
 		if not self.half_day:
 			return
 
-		if is_holiday(employee=self.employee, date=self.half_day_date):
+		# This used to call is_holiday with an `employee` keyword, but the imported
+		# is_holiday takes a holiday_list first, so every half-day application
+		# raised TypeError. get_holiday_dates_between_range is what get_holidays()
+		# already uses, so the half-day check and the day count cannot disagree.
+		# skip_weekly_offs preserves the old meaning: a weekly off is not a holiday.
+		if get_holiday_dates_between_range(
+			self.employee, self.half_day_date, self.half_day_date, skip_weekly_offs=True
+		):
 			frappe.throw(_("Half Day Date cannot be a holiday"))
 
 		if not (getdate(self.from_date) <= getdate(self.half_day_date) <= getdate(self.to_date)):
@@ -982,7 +989,9 @@ def get_number_of_leave_days(
 		is_valid_half_day = (
 			half_day_date
 			and getdate(from_date) <= getdate(half_day_date) <= getdate(to_date)
-			and not is_holiday(employee=employee, date=half_day_date)
+			and not get_holiday_dates_between_range(
+				employee, half_day_date, half_day_date, skip_weekly_offs=True
+			)
 		)
 		if is_valid_half_day:
 			number_of_days -= 0.5

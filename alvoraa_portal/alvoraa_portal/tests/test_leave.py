@@ -55,7 +55,6 @@ class TestLeaveBalanceRules(FrappeTestCase):
 		self.assertEqual(r["days"], 4, "the Wednesday holiday should not be charged")
 		self.assertEqual(r["balance"], 10)
 
-	@unittest.skip("KI-4: half-day leave is broken in the hrms fork - see KNOWN_ISSUES.md")
 	def test_preview_half_day_counts_half(self):
 		r = hr_api.preview_leave_request(
 			leave_type=self.lt, from_date=WEEK_MON, to_date=WEEK_MON,
@@ -133,3 +132,26 @@ class TestLeaveBalanceRules(FrappeTestCase):
 		)
 		self.assertTrue(r["unlimited"])
 		self.assertIsNone(r["balance"])
+
+	def test_apply_half_day_leave_costs_half_a_day(self):
+		"""Covers validate_half_day_date - a different call site from the preview.
+
+		Both used to raise TypeError (KI-4), so a passing preview alone would not
+		prove half-day leave works end to end.
+		"""
+		emp = ensure_employee_with_leave("Halfday", self.lt, days=5, last_name="Balance")
+		res = hr_api.apply_leave(
+			leave_type=self.lt, from_date=WEEK_MON, to_date=WEEK_MON,
+			half_day=1, half_day_date=WEEK_MON, on_behalf_of=emp,
+		)
+		doc = frappe.get_doc("Leave Application", res["name"])
+		self.assertEqual(doc.total_leave_days, 0.5)
+
+	def test_half_day_on_a_holiday_is_rejected(self):
+		"""The guard inside validate_half_day_date must still fire."""
+		emp = ensure_employee_with_leave("HalfHol", self.lt, days=5, last_name="Balance")
+		with self.assertRaises(frappe.ValidationError):
+			hr_api.apply_leave(
+				leave_type=self.lt, from_date=HOLIDAY, to_date=HOLIDAY,
+				half_day=1, half_day_date=HOLIDAY, on_behalf_of=emp,
+			)

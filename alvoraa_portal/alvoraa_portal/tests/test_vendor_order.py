@@ -1,7 +1,8 @@
-import frappe
 import unittest
-from frappe.tests.utils import FrappeTestCase
+
+import frappe
 from frappe.exceptions import ValidationError
+from frappe.tests.utils import FrappeTestCase
 
 from alvoraa_portal.tests.utils import ensure_items
 
@@ -70,7 +71,7 @@ class TestVendorOrderStatusTransition(FrappeTestCase):
     )
     def test_invalid_status_transition(self):
         """Draft → Delivered should raise ValidationError via VALID_TRANSITIONS check."""
-        from alvoraa_portal.controllers.vendor_order import change_order_status, VALID_TRANSITIONS
+        from alvoraa_portal.controllers.vendor_order import VALID_TRANSITIONS, change_order_status
 
         vendor = make_test_vendor()
         order = make_test_order(vendor.name)

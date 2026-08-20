@@ -1,5 +1,6 @@
-import frappe
 import unittest
+
+import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from alvoraa_portal.tests.utils import ensure_items

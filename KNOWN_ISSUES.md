@@ -67,3 +67,60 @@ The vendor portal is due to be rebuilt after the competitive analysis, so this i
 
 Fix with the **pinned** ruff 0.6.9 that CI installs — a newer ruff reports a different set (0.15.4
 finds 83), so fixing with whatever is on a laptop can leave CI red.
+
+---
+
+## KI-4 · Half-day leave is broken in the hrms fork — wrong `is_holiday` signature
+
+**Severity:** High — the feature does not work at all. **Status:** Found 2026-08-20 by the
+new leave tests. Awaiting a decision, because the fix edits vendored HR code.
+
+`leave_application.py` line 23 imports:
+
+```python
+from hrms.hr.doctype.employee.employee import get_holiday_list_for_employee, is_holiday
+```
+
+That `is_holiday` is declared as:
+
+```python
+def is_holiday(holiday_list, date=None, daily_wages_applicable_for_holiday=False, raise_exception=True)
+```
+
+but it is called with an `employee` keyword in **two** places:
+
+| Line | Function | Effect |
+|---|---|---|
+| 916 | `validate_half_day_date` | validating a half-day application raises |
+| 985 | `get_number_of_leave_days` | counting days for a half-day raises |
+
+Both raise `TypeError: is_holiday() got an unexpected keyword argument 'employee'`, so any
+half-day leave fails — through the portal, the desk, or the API.
+
+This is a half-finished refactor. The fork carries **two** holiday systems: the old
+`Employee.holiday_list` field, and a newer submitted `Holiday List Assignment` doctype
+resolved by `hrms/utils/holiday_list.py`. The call sites were updated to the employee-based
+signature; the import was not.
+
+**Proposed fix** — resolve the list, then call with it:
+
+```python
+from hrms.utils.holiday_list import get_holiday_list_for_employee   # the as_on-aware one
+
+hl = holiday_list or get_holiday_list_for_employee(
+    employee, raise_exception=False, as_on=half_day_date
+)
+... and not is_holiday(hl, date=half_day_date)
+```
+
+`get_number_of_leave_days` already accepts a `holiday_list` argument, so it should be
+preferred when supplied rather than re-resolved.
+
+**Not applied.** It changes shared HR behaviour for every leave path, so it needs sign-off
+and its own test run. `test_preview_half_day_counts_half` is skipped and points here; unskip
+it with the fix.
+
+**Also worth knowing:** setting `Employee.holiday_list` alone does nothing in this version.
+Holidays resolve through a **submitted** `Holiday List Assignment`. The test fixtures create
+one — see `alvoraa_portal/tests/leave_fixtures.py`.
+

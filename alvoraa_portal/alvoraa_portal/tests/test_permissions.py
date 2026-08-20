@@ -1,6 +1,7 @@
+from unittest.mock import patch
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
-from unittest.mock import patch
 
 from alvoraa_portal.tests.utils import ensure_items
 

@@ -2,6 +2,8 @@
 
 These instructions are mandatory in every session. They override default behavior.
 
+**Write in simple, plain English — see §6. This applies to every message, not just summaries.**
+
 ---
 
 ## 1. Branch discipline
@@ -82,3 +84,35 @@ Deploy commands that require explicit approval before running:
 - All demo/seed scripts live in the `demo/` folder, which has a `merge=ours` `.gitattributes` driver.
 - The `demo/` folder must never land in `main` during a merge. If a new demo script is added on `dev`, add a matching empty stub to `main` in the same session.
 - Register the merge driver locally before merging: `git config merge.ours.driver true`.
+
+---
+
+## 6. Write in simple language
+
+Use plain, everyday English. Short sentences. This applies to every reply, every
+explanation, and every commit message.
+
+**Do:**
+
+- Say what happened, then what it means, then what to do next.
+- Use short sentences. One idea per sentence.
+- Explain a technical word the first time it appears, in a few plain words.
+  Example: "a ReferenceError — the code asked for something that does not exist".
+- Lead with the answer. Put the detail after it.
+- Use a small table or a short list when comparing things.
+- Say "I do not know" or "I could not check that" when it is true.
+
+**Do not:**
+
+- Do not use jargon when a normal word works. Say "stopped working", not
+  "regressed". Say "runs by itself", not "idempotent".
+- Do not use long words to sound careful. Say "use", not "utilise".
+- Do not write a wall of text. Break it up.
+- Do not hide bad news in the middle of a paragraph. Put it first, in bold.
+- Do not explain how clever the fix was. Explain what it does.
+
+**A good test before sending:** could a smart person who does not work on this
+codebase follow it? If not, rewrite it.
+
+If something really is complex, say so in one plain sentence, then break it into
+steps. Complexity is not a reason for complicated language.

@@ -479,11 +479,11 @@ def _require_admin():
        so a role check alone would let any tenant's admin enumerate, suspend,
        reconfigure or read provisioning secrets for EVERY other tenant on the
        bench. The control plane is opted in explicitly via site_config.json:
-           "kinexus_control_plane": 1
+           "alvoraa_control_plane": 1
        A tenant site never carries that flag, so this API does not exist there.
     2. The caller must hold System Manager on the control-plane site.
     """
-    if not frappe.conf.get("kinexus_control_plane"):
+    if not frappe.conf.get("alvoraa_control_plane"):
         frappe.throw(
             "Tenant management is not available on this site.",
             frappe.PermissionError,
@@ -497,7 +497,7 @@ def _require_admin():
 @frappe.whitelist()
 def is_control_plane():
     """Side-effect-free probe so the admin UI can hide itself on tenant sites."""
-    return bool(frappe.conf.get("kinexus_control_plane"))
+    return bool(frappe.conf.get("alvoraa_control_plane"))
 
 
 def _validate_site_name(site_name):

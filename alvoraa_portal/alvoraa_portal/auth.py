@@ -72,7 +72,7 @@ def get_portal_redirect():
     """
     user = frappe.session.user
     if not user or user == "Guest":
-        return {"url": "/kinexus-login"}
+        return {"url": "/alvoraa-login"}
 
     # Same rule as on_login: staff go to the portal regardless of seniority.
     if user != "Administrator" and frappe.db.exists("Employee", {"user_id": user}):

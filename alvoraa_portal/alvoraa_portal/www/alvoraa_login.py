@@ -19,4 +19,6 @@ def get_context(context):
     context.no_cache   = 1
     context.no_header  = 1
     context.no_sidebar = 1
-    context.title      = "Sign In – Kinexus HRMS"
+    # Set by JavaScript from the tenant config; a hardcoded brand here
+    # flashed the wrong name before that ran.
+    context.title      = "Sign In"

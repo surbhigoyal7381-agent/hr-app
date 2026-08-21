@@ -2,7 +2,7 @@
 {# Frappe base.html renders its own "Standard Footer". context.no_footer does not
    suppress it - that flag does not exist in Frappe v16. This override does. #}
 {% block footer %}{% endblock %}
-{% block title %}Sign In – Kinexus HRMS{% endblock %}
+{% block title %}Sign In{% endblock %}
 
 {% block head_include %}
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,7 +13,7 @@
 
 /* ── Design tokens ───────────────────────────────────────────────────── */
 :root {
-  --p:        #16A373;   /* Kinexus primary green */
+  --p:        #16A373;   /* default primary green */
   --p-dk:     #0E7A55;
   --p-lt:     #EAFAF4;
   --p-mid:    #34d399;
@@ -404,7 +404,7 @@ html, body {
         </svg>
       </div>
       <div>
-        <div class="kx-logo-name" id="kx-tenant-name">Kinexus HRMS</div>
+        <div class="kx-logo-name" id="kx-tenant-name">Alvoraa</div>
         <div class="kx-logo-sub">Workforce Platform</div>
       </div>
     </div>
@@ -442,7 +442,7 @@ html, body {
     </div>
 
     <div class="kx-brand-footer">
-      &copy; <span id="kx-year"></span> Kinexus HRMS. All rights reserved.
+      &copy; <span id="kx-year"></span> <span id="kx-footer-name">Alvoraa</span>. All rights reserved.
     </div>
   </aside>
 
@@ -545,6 +545,9 @@ html, body {
       // Tenant name in brand panel
       if (cfg.tenant_name) {
         $('kx-tenant-name').textContent = cfg.tenant_name;
+        // The footer was hardcoded, so every tenant read "Kinexus HRMS".
+        var _f = $('kx-footer-name');
+        if (_f) _f.textContent = cfg.tenant_name;
         document.title = 'Sign In – ' + cfg.tenant_name;
       }
 

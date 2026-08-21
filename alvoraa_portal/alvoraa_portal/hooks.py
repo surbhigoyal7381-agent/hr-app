@@ -9,9 +9,18 @@ required_apps = ["frappe/erpnext"]
 # ── Post-login redirect: portal users → their portal; admins → /app ───────
 on_login = "alvoraa_portal.auth.on_login"
 
-# ── Redirect /login to the branded Kinexus login page ─────────────────────
+# ── Redirect /login to the branded login page ─────────────────────────────
 website_redirects = [
-    {"source": r"^/login$", "target": "/kinexus-login"},
+    # Was r"^/login$", which NEVER matched: Frappe strips slashes off `source`
+    # and compares against a path with no leading slash, so an anchored regex
+    # cannot match (see the note on /hrms-home below). The effect was that
+    # /login quietly served Frappe's own unbranded login page instead of ours.
+    {"source": "/login", "target": "/alvoraa-login"},
+
+    # The control plane was renamed from kinexus-* to alvoraa-*. These keep
+    # existing bookmarks and any live session working.
+    {"source": "/kinexus-login", "target": "/alvoraa-login"},
+    {"source": "/kinexus-admin", "target": "/alvoraa-admin"},
     # /hrms-home was retired — its role is now covered by /hrms-employee.
     # Kept as a redirect so existing bookmarks and live sessions don't 404.
     # NOTE: Frappe strips slashes off `source` and matches it against a path with
@@ -25,8 +34,8 @@ website_route_rules = [
     {"from_route": "/driver-portal",   "to_route": "driver-portal"},
     {"from_route": "/hrms-employee",   "to_route": "hrms-employee"},
     {"from_route": "/goals-portal",    "to_route": "goals-portal"},
-    {"from_route": "/kinexus-login",   "to_route": "kinexus-login"},
-    {"from_route": "/kinexus-admin",   "to_route": "kinexus-admin"},
+    {"from_route": "/alvoraa-login",   "to_route": "alvoraa-login"},
+    {"from_route": "/alvoraa-admin",   "to_route": "alvoraa-admin"},
 ]
 
 # ── Doctype event hooks ────────────────────────────────────────────────────

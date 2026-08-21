@@ -29,6 +29,9 @@ x-app: &app
     - BASE_DOMAIN=${BASE_DOMAIN}
     - DEVELOPER_MODE=${DEVELOPER_MODE:-0}
     - MUTE_EMAILS=${MUTE_EMAILS:-0}
+    # The web role's WSGI app (frappe.app) resolves sites against this dir;
+    # without it, requests 404 with "alvox.in does not exist". (fix B6)
+    - SITES_PATH=/home/frappe/frappe-bench/sites
   volumes:
     # The stateful part. In a multi-node deployment this MUST be a shared RWX
     # volume (EFS / Azure Files / Filestore) — see ARCHITECTURE.md §6.3.
@@ -36,8 +39,51 @@ x-app: &app
   depends_on:
     configurator:
       condition: service_completed_successfully
+    mariadb:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
 
 services:
+
+  # ── Database + cache/queue on this host (fix B5) ─────────────────────────
+  # Same images/args as the local dev stack (hrms/docker/docker-compose.yml).
+  # For a multi-node deployment, replace with managed MariaDB + 2× Redis and
+  # point DB_HOST / REDIS_CACHE / REDIS_QUEUE at them (see envs/*.env.example).
+  mariadb:
+    image: mariadb:10.8
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compressed
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD is required}
+      MYSQL_ROOT_HOST: '%'
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: redis:alpine
+    restart: unless-stopped
+    # Single instance backs both the cache (DB 0) and the queue (DB 1). A
+    # larger deployment should split these with different maxmemory policies
+    # (cache: allkeys-lru no persistence; queue: noeviction + AOF).
+    command: ["redis-server", "--maxmemory-policy", "noeviction", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ── One-shot: render common_site_config.json from env, then exit ──────────
   configurator:
@@ -73,9 +119,20 @@ services:
   # ── Web (horizontally scalable) ──────────────────────────────────────────
   backend:
     <<: *app
+    # frappe's logger + site resolution use CWD-relative paths; the web role
+    # must run from the sites dir (bench's own prod templates do the same).
+    working_dir: /home/frappe/frappe-bench/sites
+    command: ["/home/frappe/frappe-bench/env/bin/gunicorn", "--bind", "0.0.0.0:8000",
+              "--workers", "4", "--threads", "2", "--worker-class", "gthread",
+              "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-",
+              "frappe.app:application"]
     expose: ["8000"]
+    # Frappe picks the site from the Host header, so this probe must name a site
+    # that EXISTS in this stack. It was hardcoded to alvoraa.co, which the dev
+    # stack does not have - the probe got a correct 404 and Docker reported the
+    # container unhealthy while the app was serving perfectly.
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/method/ping || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS -H \"Host: ${HEALTH_HOST:-alvoraa.co}\" http://localhost:8000/api/method/ping || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -128,11 +185,15 @@ services:
     volumes:
       - ../nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ${TLS_CERT_DIR:-./certs}:/etc/nginx/ssl:ro
+      - /opt/hr-app/acme:/var/www/acme
+      # Serve /assets directly from the Frappe sites volume (production
+      # standard — the WSGI app never mounts its static middleware here).
+      - sites:/home/frappe/frappe-bench/sites:ro
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost/ >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -143,3 +204,5 @@ volumes:
   #     driver: local
   #     driver_opts: {type: nfs, o: "addr=<efs-dns>,nfsvers=4.1", device: ":/"}
   sites:
+  mariadb-data:
+  redis-data:

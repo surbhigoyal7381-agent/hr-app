@@ -520,3 +520,49 @@ docker logs --tail 20 compose-nginx-1
 An `[emerg] host not found in upstream` line means a network is missing, not a bad config.
 `nginx -t` passes in that state, because it does not resolve upstream names.
 
+---
+
+## 5.9 `bench restore` does not restore site_config.json
+
+Restoring a site copies the DATABASE. It does **not** copy `site_config.json`. The new
+site keeps the config `bench new-site` gave it - database credentials and nothing else.
+
+Building the dev stack this way silently dropped 14 settings, including:
+
+| Key | Effect of losing it |
+|---|---|
+| `tenant_name` | the portal shows the wrong brand |
+| `kinexus_control_plane` | **the tenant admin disappears** |
+| `mute_emails` | mail could escape, if the stack-wide value did not also cover it |
+| `primary_color`, `modules_enabled`, `host_name`, `subscription_plan` | wrong theme, wrong modules |
+
+Row counts do not catch this. The Phase 1 checks compared User, Employee, Goal and KPI
+counts, all matched exactly, and the config was still missing.
+
+After any restore, merge the settings back from the `*-site_config_backup.json` in the
+same backup set - **settings only**:
+
+```python
+KEEP = ("tenant_name", "primary_color", "support_email", "subscription_plan",
+        "modules_enabled", "home_page", "host_name", "mute_emails",
+        "kinexus_control_plane")
+```
+
+Never copy `db_name`, `db_user`, `db_password` or `db_root_password`. The restored site has
+its own database; copying the old credentials points it at the source stack's database - on
+a dev stack, that means dev writing into production.
+
+---
+
+## 5.10 Health checks that name a site
+
+The backend health check asks Frappe for `/api/method/ping` with an explicit `Host` header,
+because Frappe selects the site from that header. It was hardcoded to `alvoraa.co`.
+
+On the dev stack there is no such site, so Frappe answered 404 - correctly - and Docker
+reported the container **unhealthy while the application was serving normally**. Compose then
+refused to start dependants with "dependency failed to start".
+
+It is now `${HEALTH_HOST:-alvoraa.co}`, set per environment in `deploy/envs/*.env`. Any new
+stack must set `HEALTH_HOST` to a site that exists in it.
+

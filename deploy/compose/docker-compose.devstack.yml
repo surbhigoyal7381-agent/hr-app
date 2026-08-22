@@ -53,5 +53,16 @@ services:
       timeout: 5s
       retries: 10
 
+  # The dev project must NEVER start its own nginx. One nginx on the box serves
+  # every environment and owns ports 80/443, so a second one fails with
+  #   Bind for 0.0.0.0:80 failed: port is already allocated
+  # and leaves a dead container behind.
+  #
+  # Naming services explicitly on `up` avoids it, but a bare `up -d` does not -
+  # and a bare `up -d` is what anyone types by reflex. This profile keeps nginx
+  # out unless asked for by name, so the DEFAULT is the safe one.
+  nginx:
+    profiles: ["never-in-dev"]
+
 volumes:
   mariadb-data:

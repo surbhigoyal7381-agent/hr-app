@@ -1175,6 +1175,16 @@ html, body {
     if (!res.ok || data.exc_type) {
       var msg = '';
       try { msg = JSON.parse(JSON.parse(data._server_messages)[0]).message; } catch(e2) {}
+
+      // Frappe answers a STALE CSRF TOKEN with 400 and the message
+      // "Invalid Request" (CSRFTokenError.http_status_code = 400). The token is
+      // baked into the page when it renders, so anything that regenerates the
+      // session - a clear-cache, a re-login in another tab - leaves this page
+      // holding a token the server no longer knows. "Invalid Request" tells the
+      // user nothing and reads as though the save itself failed.
+      if (res.status === 400 && (msg || data.message || '').indexOf('Invalid Request') !== -1) {
+        throw new Error('Your session has expired. Reload the page (Ctrl+Shift+R) and try again - nothing was saved.');
+      }
       throw new Error(msg || data.message || res.statusText);
     }
     return data.message;

@@ -283,7 +283,12 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
             "analytics":   "Analytics",
         }
         modules_enabled = [_MOD_MAP.get(m, m) for m in modules]
-        r = _bench_run(f"--site {site_name} set-config modules_enabled '{json.dumps(modules_enabled)}'")
+        # -p makes bench evaluate the value as a Python object. Without it the
+        # JSON is stored as a STRING, so site_config holds
+        #   "modules_enabled": "[\"hrms\", \"Payroll\", ...]"
+        # instead of a list. Anything doing len() or iterating over it then reads
+        # characters, not module names.
+        r = _bench_run(f"--site {site_name} set-config -p modules_enabled '{json.dumps(modules_enabled)}'")
         if r.returncode != 0:
             frappe.throw(f"Failed to update modules: {r.stderr}")
 
@@ -426,9 +431,19 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
 def _get_installed_apps(site_name):
     """Return list of Frappe app names installed on a site."""
     r = _bench_run(f"--site {site_name} list-apps", timeout=15)
-    if r.returncode == 0:
-        return [line.strip() for line in r.stdout.strip().splitlines() if line.strip()]
-    return []
+    if r.returncode != 0:
+        return []
+    # `bench list-apps` prints "name version branch", e.g.
+    #     alvoraa_portal 0.0.1      UNVERSIONED
+    # Keeping the whole line meant `"alvoraa_portal" not in installed` was always
+    # True, so every tenant update queued a background install for apps that were
+    # already there. Take the first column only.
+    apps = []
+    for line in r.stdout.strip().splitlines():
+        line = line.strip()
+        if line:
+            apps.append(line.split()[0])
+    return apps
 
 
 def _run_install_modules(pjob_id, site_name, install_vendor=False, install_goals=False):

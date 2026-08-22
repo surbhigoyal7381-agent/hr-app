@@ -4837,10 +4837,16 @@ function loadLeaves() {
   }, function() { toast("Failed to load leave data", "err"); });
 }
 
-function _populateLeaveTypeSelect(balances) {
+function _populateLeaveTypeSelect(balances, everAllocated) {
   var sel = document.getElementById("la-leave-type");
   if (!balances || !balances.length) {
-    sel.innerHTML = '<option value="">No leave types allocated for this period</option>';
+    // Two different problems needing two different fixes. Saying "for this
+    // period" to someone with NO allocation at all points them at dates, which
+    // is the wrong place to look - it cost a tester a trip through the fiscal
+    // year settings.
+    sel.innerHTML = everAllocated
+      ? '<option value="">No leave allocation covers today - it may have expired</option>'
+      : '<option value="">No leave has been allocated to you - contact HR</option>';
     return;
   }
   sel.innerHTML = '<option value="">Select leave type…</option>' +
@@ -4882,11 +4888,11 @@ function openLeaveModal() {
   }
 
   if (_leaveSummaryCache) {
-    _populateLeaveTypeSelect(_leaveSummaryCache.balances || []);
+    _populateLeaveTypeSelect(_leaveSummaryCache.balances || [], _leaveSummaryCache.ever_allocated);
   } else {
     api("get_leave_summary", {}, function(data) {
       _leaveSummaryCache = data;
-      _populateLeaveTypeSelect(data.balances || []);
+      _populateLeaveTypeSelect(data.balances || [], data.ever_allocated);
     }, function() {
       sel.innerHTML = '<option value="">Could not load leave types</option>';
     });
@@ -4947,7 +4953,7 @@ function laSelectEmployee(id, name, dept) {
   var leaveTypeSel = document.getElementById("la-leave-type");
   leaveTypeSel.innerHTML = '<option value="">Loading…</option>';
   api("get_leave_summary", {employee_id: id}, function(data) {
-    _populateLeaveTypeSelect(data.balances || []);
+    _populateLeaveTypeSelect(data.balances || [], data.ever_allocated);
     laPreview();          // balance differs per employee
   }, function() {
     leaveTypeSel.innerHTML = '<option value="">Could not load leave types</option>';

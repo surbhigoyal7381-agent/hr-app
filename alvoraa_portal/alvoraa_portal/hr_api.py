@@ -46,6 +46,34 @@ LEAVE_COLORS = {
     "Leave Without Pay":  "#6b7280",
 }
 
+def _leave_year_start(date_=None, company=None):
+    """Start of the year that leave is counted against.
+
+    Leave entitlement follows the company's FINANCIAL year, not the calendar
+    year. Every caller here used frappe.utils.get_year_start(), which returns
+    1 January - so on a company running April-March, "leave taken this year"
+    silently counted from the wrong date and was out by three months.
+
+    ERPNext already owns this: Fiscal Year, resolved per company and date.
+
+    Falls back to the calendar year when no Fiscal Year is defined. That is not
+    theoretical - dev.alvoraa.co and demo.alvoraa.co have none, and without the
+    fallback get_fiscal_year() raises and every leave screen breaks.
+    """
+    date_ = date_ or today()
+    try:
+        from erpnext.accounts.utils import get_fiscal_year
+
+        company = company or frappe.defaults.get_user_default("Company")
+        fy = get_fiscal_year(date_, company=company, as_dict=True)
+        if fy and fy.get("year_start_date"):
+            return fy["year_start_date"]
+    except Exception:
+        # No Fiscal Year for this date/company, or erpnext unavailable.
+        pass
+    return frappe.utils.get_year_start(date_)
+
+
 def _get_employee(user=None):
     user = user or frappe.session.user
     return frappe.db.get_value(
@@ -116,7 +144,7 @@ def get_employee_dashboard():
         return {"no_employee": True}
 
     td       = today()
-    yr_start = frappe.utils.get_year_start(td)
+    yr_start = _leave_year_start(td, emp.company)
     mo_start = get_first_day(td)
 
     # ── Leave balances ────────────────────────────────────────────────────
@@ -335,7 +363,7 @@ def get_hr_analytics():
     td       = today()
     mo_start = get_first_day(td)
     mo_end   = get_last_day(td)
-    yr_start = frappe.utils.get_year_start(td)
+    yr_start = _leave_year_start(td)
 
     # ── Headcount ─────────────────────────────────────────────────────────
     total_active = frappe.db.count("Employee", {"status": "Active"})
@@ -664,7 +692,7 @@ def get_employee_scorecard(employee_id):
           AND from_date <= %s AND to_date >= %s
         GROUP BY leave_type ORDER BY leave_type
     """, (employee_id, td, td), as_dict=True)
-    yr_start = frappe.utils.get_year_start(td)
+    yr_start = _leave_year_start(td)
     taken_rows = frappe.get_all(
         "Leave Application",
         filters={"employee": employee_id, "docstatus": 1, "status": "Approved",
@@ -929,7 +957,7 @@ def get_employee_detail_for_manager(employee_id):
           AND from_date <= %s AND to_date >= %s
         GROUP BY leave_type ORDER BY leave_type
     """, (employee_id, td, td), as_dict=True)
-    yr_start = frappe.utils.get_year_start(td)
+    yr_start = _leave_year_start(td)
     taken_rows = frappe.get_all(
         "Leave Application",
         filters={"employee": employee_id, "docstatus": 1, "status": "Approved",
@@ -1244,7 +1272,7 @@ def get_leave_summary(employee_id=None):
     if not emp:
         return {"no_employee": True}
     td = today()
-    yr_start = frappe.utils.get_year_start(td)
+    yr_start = _leave_year_start(td, emp.company)
 
     allocations = frappe.get_all(
         "Leave Allocation",
@@ -1297,7 +1325,16 @@ def get_leave_summary(employee_id=None):
         ignore_permissions=True,
     )
 
-    return {"balances": balances, "applications": applications, "employee": emp}
+    # Tell the caller WHY the list is empty. "No leave types allocated for this
+    # period" reads as a date problem, and sent a tester hunting through fiscal
+    # year settings when the real answer was that the employee had never been
+    # given a leave policy at all. Those are different problems with different
+    # fixes, so the UI needs to be able to tell them apart.
+    ever_allocated = bool(frappe.db.exists("Leave Allocation",
+                                           {"employee": emp.name, "docstatus": 1}))
+
+    return {"balances": balances, "applications": applications, "employee": emp,
+            "ever_allocated": ever_allocated}
 
 
 @frappe.whitelist()

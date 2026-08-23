@@ -92,6 +92,8 @@ def list_tenants():
 @frappe.whitelist()
 def create_tenant(subdomain, tenant_name, plan="starter",
                   hr_email="", admin_email="",
+                  company_name="", company_abbr="", country="India",
+                  currency="INR", timezone="Asia/Kolkata", fy_start_date="",
                   primary_color="#1a7f5a", logo_url="", support_email="", modules=None):
     """Validate inputs, enqueue provisioning. Returns {job_id, site_name, admin_password}."""
     _require_admin()
@@ -186,6 +188,12 @@ def create_tenant(subdomain, tenant_name, plan="starter",
         admin_email=admin_email,
         hr_password=hr_password,
         user_admin_password=user_admin_password,
+        company_name=company_name or tenant_name,
+        company_abbr=company_abbr,
+        country=country,
+        currency=currency,
+        timezone=timezone,
+        fy_start_date=fy_start_date,
         # No fallback. A default here does not make provisioning work - it makes
         # it fail with "Access denied for user 'root'" several steps later, after
         # the job has been queued and the operator has been told it started.
@@ -196,6 +204,11 @@ def create_tenant(subdomain, tenant_name, plan="starter",
     return {
         "job_id":         job_id,
         "site_name":      site_name,
+        # Provisioning takes minutes and runs in a background worker. The console
+        # shows this so the operator can close the dialog and come back, rather
+        # than watching a spinner.
+        "started_at":     str(now_datetime()),
+        "estimated_minutes": 8,
         "host_name":      f"http://{site_name}",
         "admin_password": admin_password,
         # Shown once on the provisioning screen. Not stored anywhere afterwards.
@@ -407,7 +420,9 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
                    primary_color, logo_url, support_email, admin_password,
                    base_domain, db_root_password,
                    hr_email=None, admin_email=None,
-                   hr_password=None, user_admin_password=None):
+                   hr_password=None, user_admin_password=None,
+                   company_name=None, company_abbr=None, country="India",
+                   currency="INR", timezone="Asia/Kolkata", fy_start_date=None):
     """
     Runs in a Frappe long-queue worker.
     Calls provision_tenant.sh and writes status back to JOBS_FILE.
@@ -452,6 +467,24 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
 
         if result.returncode == 0:
             # Write extra config that provision_tenant.sh doesn't cover
+            # Finish ERPNext's setup wizard here, or the tenant's first
+            # Administrator login is met with "Setup your organization". We
+            # already know the company name; the rest has sane defaults.
+            import json as _sj
+            _setup = {
+                "company_name": company_name or tenant_name,
+                "company_abbr": company_abbr or "",
+                "country": country, "currency": currency, "timezone": timezone,
+                "fy_start_date": fy_start_date or "",
+                "email": admin_email,
+            }
+            rs = _bench_run(
+                f"--site {site_name} execute alvoraa_portal.tenant_setup.complete_company_setup "
+                f"--kwargs '{_sj.dumps(_setup)}'",
+                timeout=600,
+            )
+            if rs.returncode != 0:
+                log += "\n[WARN] company setup did not complete: " + (rs.stderr or "")
             # Every tenant starts with two real logins. A fresh Frappe site has
             # only `Administrator`, which is shared and unattributable - not
             # something to hand a customer.

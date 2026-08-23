@@ -105,3 +105,61 @@ def create_default_users(hr_email=None, admin_email=None,
 
     print("created: " + ", ".join(f"{k}={v}" for k, v in created.items()))
     return created
+
+
+def complete_company_setup(company_name=None, company_abbr=None, country="India",
+                           currency="INR", timezone="Asia/Kolkata", language="en",
+                           fy_start_date=None, chart_of_accounts=None,
+                           email=None, full_name="Administrator"):
+    """Finish ERPNext's setup wizard during provisioning.
+
+    A freshly provisioned tenant used to greet its first Administrator login with
+    "Setup your organization" - company name, abbreviation, chart of accounts,
+    financial year. That is our setup to do, not the customer's: we already ask
+    for the workspace name, and everything else has a sensible default.
+
+    Frappe shows the wizard whenever System Settings.setup_complete is 0, so the
+    only durable fix is to actually COMPLETE it. Calling the same
+    `setup_complete()` the wizard calls runs every stage - company, fiscal year,
+    chart of accounts, defaults - and sets the flag as a consequence rather than
+    faking it. Setting the flag alone would leave a tenant with no Company, and
+    Frappe HR needs one for almost everything.
+
+    Safe to run twice: frappe.is_setup_complete() short-circuits.
+    """
+    if frappe.is_setup_complete():
+        print("setup already complete")
+        return {"status": "already-complete"}
+
+    fy_start_date = fy_start_date or f"{frappe.utils.nowdate()[:4]}-04-01"
+    fy_end = frappe.utils.add_days(frappe.utils.add_months(fy_start_date, 12), -1)
+
+    # Abbreviation: ERPNext appends it to every account name, so it must be short
+    # and stable. Initials of the company name unless one was given.
+    if not company_abbr:
+        words = [w for w in (company_name or "Company").split() if w]
+        company_abbr = ("".join(w[0] for w in words)[:5] or "CO").upper()
+
+    args = {
+        "language": language,
+        "country": country,
+        "timezone": timezone,
+        "currency": currency,
+        "company_name": company_name,
+        "company_abbr": company_abbr,
+        "chart_of_accounts": chart_of_accounts or "Standard",
+        "fy_start_date": fy_start_date,
+        "fy_end_date": str(fy_end),
+        "email": email or frappe.session.user,
+        "full_name": full_name,
+    }
+
+    from frappe.desk.page.setup_wizard.setup_wizard import setup_complete
+
+    setup_complete(args)
+    frappe.db.commit()
+
+    done = frappe.is_setup_complete()
+    print(f"setup_complete={done} company={company_name} abbr={company_abbr} fy={fy_start_date}")
+    return {"status": "ok", "setup_complete": bool(done),
+            "company": company_name, "fy_start_date": fy_start_date}

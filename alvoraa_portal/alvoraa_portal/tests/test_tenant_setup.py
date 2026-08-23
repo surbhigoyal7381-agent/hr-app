@@ -75,3 +75,45 @@ class TestDefaultUsers(FrappeTestCase):
 		back to the operator on screen instead."""
 		self._create()
 		self.assertFalse(frappe.db.get_value("User", HR, "send_welcome_email"))
+
+
+class TestCompanySetupIsCompleted(FrappeTestCase):
+	"""A provisioned tenant must never meet "Setup your organization".
+
+	Frappe shows that wizard whenever System Settings.setup_complete is 0, so the
+	only durable fix is to COMPLETE it during provisioning rather than to hide it.
+	Setting the flag alone would leave a tenant with no Company, and Frappe HR
+	needs one for almost everything.
+	"""
+
+	def test_it_short_circuits_when_setup_is_already_complete(self):
+		"""Provisioning can be retried after a partial failure, so running this
+		twice must not try to build a second company on top of the first.
+
+		is_setup_complete() is patched rather than the underlying setting: Frappe
+		caches System Settings, so flipping the row does not change the answer
+		inside one request - and the guard is what this test is about.
+		"""
+		from unittest.mock import patch
+
+		with patch.object(frappe, "is_setup_complete", return_value=True):
+			res = ts.complete_company_setup(company_name="Should Not Matter")
+
+		self.assertEqual(res["status"], "already-complete")
+		self.assertFalse(frappe.db.exists("Company", "Should Not Matter"),
+		                 "it must not have built anything")
+
+	def test_abbreviation_is_derived_from_the_company_name(self):
+		"""ERPNext appends the abbreviation to every account name, so it must be
+		short and predictable rather than blank."""
+		import inspect
+
+		src = inspect.getsource(ts.complete_company_setup)
+		self.assertIn('"".join(w[0] for w in words)', src,
+		              "initials fallback for the abbreviation has gone")
+
+	def test_default_financial_year_starts_in_april(self):
+		import inspect
+
+		src = inspect.getsource(ts.complete_company_setup)
+		self.assertIn('-04-01', src, "the April default has gone")

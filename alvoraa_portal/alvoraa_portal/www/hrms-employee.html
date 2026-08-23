@@ -2424,12 +2424,12 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
 
         <!-- KPI grid -->
         <div class="kpi-grid">
-          <div class="kpi-card"><div class="kpi-icon">🧑‍💼</div><div class="kpi-val" id="kpi-active" style="color:var(--text)">—</div><div class="kpi-lbl">Active Employees</div></div>
-          <div class="kpi-card"><div class="kpi-icon">🆕</div><div class="kpi-val" id="kpi-joiners" style="color:var(--green)">—</div><div class="kpi-lbl">New Joiners (Month)</div></div>
-          <div class="kpi-card"><div class="kpi-icon">📅</div><div class="kpi-val" id="kpi-att-rate" style="color:var(--primary)">—%</div><div class="kpi-lbl">Attendance Rate</div></div>
-          <div class="kpi-card"><div class="kpi-icon">📋</div><div class="kpi-val" id="kpi-pend-leaves" style="color:var(--amber)">—</div><div class="kpi-lbl">Pending Approvals</div></div>
-          <div class="kpi-card"><div class="kpi-icon">🎓</div><div class="kpi-val" id="kpi-confirmations" style="color:var(--purple)">—</div><div class="kpi-lbl">Confirmations Due</div></div>
-          <div class="kpi-card"><div class="kpi-icon">🌴</div><div class="kpi-val" id="kpi-leave-util" style="color:var(--red)">—%</div><div class="kpi-lbl">Leave Utilisation</div></div>
+          <div class="kpi-card" onclick="window.open('/app/employee?status=Active','_blank')" style="cursor:pointer" title="View active employees in Frappe HR"><div class="kpi-icon">🧑‍💼</div><div class="kpi-val" id="kpi-active" style="color:var(--text)">—</div><div class="kpi-lbl">Active Employees</div></div>
+          <div class="kpi-card" onclick="window.open('/app/employee','_blank')" style="cursor:pointer" title="View employees in Frappe HR"><div class="kpi-icon">🆕</div><div class="kpi-val" id="kpi-joiners" style="color:var(--green)">—</div><div class="kpi-lbl">New Joiners (Month)</div></div>
+          <div class="kpi-card" onclick="window.open('/app/attendance','_blank')" style="cursor:pointer" title="View attendance records in Frappe HR"><div class="kpi-icon">📅</div><div class="kpi-val" id="kpi-att-rate" style="color:var(--primary)">—%</div><div class="kpi-lbl">Attendance Rate</div></div>
+          <div class="kpi-card" onclick="window.open('/app/leave-application?status=Open','_blank')" style="cursor:pointer" title="View pending leave applications in Frappe HR"><div class="kpi-icon">📋</div><div class="kpi-val" id="kpi-pend-leaves" style="color:var(--amber)">—</div><div class="kpi-lbl">Pending Approvals</div></div>
+          <div class="kpi-card" onclick="window.open('/app/employee','_blank')" style="cursor:pointer" title="View employees pending confirmation in Frappe HR"><div class="kpi-icon">🎓</div><div class="kpi-val" id="kpi-confirmations" style="color:var(--purple)">—</div><div class="kpi-lbl">Confirmations Due</div></div>
+          <div class="kpi-card" onclick="window.open('/app/leave-allocation','_blank')" style="cursor:pointer" title="View leave allocations in Frappe HR"><div class="kpi-icon">🌴</div><div class="kpi-val" id="kpi-leave-util" style="color:var(--red)">—%</div><div class="kpi-lbl">Leave Utilisation</div></div>
         </div>
 
         <!-- Dept + Gender -->
@@ -2914,11 +2914,26 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="margin-right:4px;vertical-align:-1px"><path d="M3 5h18l-7 8v5l-4 2v-7z"/></svg>Filters
                 <span id="cal-filter-badge" hidden style="background:var(--primary);color:#fff;border-radius:10px;padding:0 5px;font-size:10px;margin-left:4px;font-weight:700"></span>
               </button>
+              <button class="btn btn-outline btn-sm" id="cal-export-btn" onclick="calExportCsv()" style="display:none;white-space:nowrap">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="margin-right:4px;vertical-align:-1px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV
+              </button>
+              <button class="btn btn-sm" id="cal-signoff-btn" onclick="calOpenSignoff()" style="display:none;white-space:nowrap;background:var(--green);color:#fff;border:1px solid var(--green)">
+                ✓ Sign Off
+              </button>
             </div>
           </div>
 
           <!-- Cycle duration + stage tiles (populated by calLoad) -->
           <div class="cal-cycle-info" id="cal-cycle-info" style="display:none"></div>
+          <!-- Sign-off banner (shown after sign-off) -->
+          <div id="cal-signoff-banner" style="display:none;background:rgba(76,175,80,.1);border:1px solid var(--green);border-radius:8px;padding:12px 16px;margin-bottom:12px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="color:var(--green);font-size:16px">✓</span>
+              <strong style="font-size:13px">Calibration Signed Off</strong>
+              <span id="cal-signoff-meta" style="color:var(--text3);font-size:12px;margin-left:4px"></span>
+            </div>
+            <div id="cal-signoff-summary" style="margin-top:6px;font-size:13px;color:var(--text2)"></div>
+          </div>
 
           <!-- Filters -->
           <div class="cal-filters" id="cal-filters" style="display:none">
@@ -2950,6 +2965,19 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
           <div id="cal-body">
             <div class="empty-state"><div class="empty-state-text">Select an appraisal cycle to view the calibration matrix.</div></div>
           </div>
+          <!-- Sign-off modal -->
+          <div id="cal-signoff-modal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.45);align-items:center;justify-content:center">
+            <div style="background:var(--card);border-radius:12px;padding:28px;max-width:480px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+              <div style="font-size:16px;font-weight:700;margin-bottom:4px">Sign Off Calibration</div>
+              <div id="cal-signoff-cycle-lbl" style="font-size:12px;color:var(--text3);margin-bottom:16px"></div>
+              <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Summary / Notes</label>
+              <textarea id="cal-signoff-text" rows="5" class="gp-input" style="width:100%;resize:vertical" placeholder="Summarise calibration outcomes, key decisions, and any notes for the record…"></textarea>
+              <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+                <button class="btn btn-outline btn-sm" onclick="calCloseSignoff()">Cancel</button>
+                <button class="btn btn-sm" onclick="calSubmitSignoff()" style="background:var(--green);color:#fff;border:1px solid var(--green)">Confirm Sign Off</button>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- TAB: Distribution / Bell Curve (HR only) -->
@@ -2965,6 +2993,9 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
                       style="display:none;white-space:nowrap" aria-expanded="false">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="margin-right:4px;vertical-align:-1px"><path d="M3 5h18l-7 8v5l-4 2v-7z"/></svg>Filters
                 <span id="pd-filter-badge" hidden style="background:var(--primary);color:#fff;border-radius:10px;padding:0 5px;font-size:10px;margin-left:4px;font-weight:700"></span>
+              </button>
+              <button class="btn btn-outline btn-sm" id="pd-export-btn" onclick="pdExportCSV()" style="display:none;white-space:nowrap">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="margin-right:4px;vertical-align:-1px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV
               </button>
             </div>
           </div>
@@ -8591,6 +8622,8 @@ function deleteDrawerNote(noteId, empId) {
     var hasOpts = (opts.departments && opts.departments.length) || (opts.managers && opts.managers.length);
     var fBtn = document.getElementById("pd-filter-btn");
     if (fBtn) fBtn.style.display = hasOpts ? "" : "none";
+    var pdExpBtn = document.getElementById("pd-export-btn");
+    if (pdExpBtn) pdExpBtn.style.display = "";
     var fPanel = document.getElementById("pd-filters");
     if (fPanel) fPanel.style.display = "none";
   }
@@ -9007,8 +9040,9 @@ function deleteDrawerNote(noteId, empId) {
 
 /* ── Calibration Matrix ─────────────────────────────── */
 (function() {
-  var _calData   = null;  /* raw API response */
-  var _calCycle  = "";
+  var _calData          = null;  /* raw API response */
+  var _calCycle         = "";
+  var _calFilteredRows  = null;  /* last rendered row set — used by CSV export */
 
   /* avatar colour palette */
   var _calPalette = ["#1976d2","#388e3c","#7b1fa2","#e65100","#00838f","#5c6bc0","#c62828","#558b2f"];
@@ -9140,6 +9174,10 @@ function deleteDrawerNote(noteId, empId) {
     var hasOpts = (opts.departments && opts.departments.length) || (opts.managers && opts.managers.length);
     var fBtn = document.getElementById("cal-filter-btn");
     if (fBtn) { fBtn.style.display = hasOpts ? "" : "none"; fBtn.setAttribute("aria-expanded", "false"); }
+    var expBtn = document.getElementById("cal-export-btn");
+    if (expBtn) expBtn.style.display = "";
+    var sofBtn = document.getElementById("cal-signoff-btn");
+    if (sofBtn) sofBtn.style.display = "";
   }
 
   function _calGetSelectedValues(id) {
@@ -9176,6 +9214,7 @@ function deleteDrawerNote(noteId, empId) {
     var fBadge = document.getElementById("cal-filter-badge");
     if (fBadge) { fBadge.hidden = !activeCount; fBadge.textContent = activeCount; }
 
+    _calFilteredRows = rows;
     _calRender(rows);
   };
 
@@ -9240,10 +9279,15 @@ function deleteDrawerNote(noteId, empId) {
       var rId  = "cal-more-rest-" + cellId;
       var togFn = "var m=document.getElementById('" + mId + "'),r=document.getElementById('" + rId + "');" +
         "if(r){r.style.display='';m.style.display='none';}";
+      var collFn = "var m=document.getElementById('" + mId + "'),r=document.getElementById('" + rId + "');" +
+        "m.style.display='';r.style.display='none';";
       html += "<div id=\"" + mId + "\" class=\"cal-more-toggle\" style=\"color:" + dimClr + "\" onclick=\"" +
         togFn + "\">&hellip;&thinsp;" + rest.length + " more</div>" +
         "<div id=\"" + rId + "\" style=\"display:none\">" +
           rest.map(function(r) { return _calEmpRow(r, dark); }).join("") +
+          "<div style=\"text-align:center;margin-top:4px\">" +
+            "<span style=\"cursor:pointer;font-size:11px;color:" + dimClr + ";opacity:.7\" onclick=\"" + collFn + "\">↑ show less</span>" +
+          "</div>" +
         "</div>";
     }
     return html;
@@ -9373,6 +9417,92 @@ function deleteDrawerNote(noteId, empId) {
         "</div>" +
       "</div>");
   }
+
+  /* ── Calibration CSV export ─────────────────────────────────────── */
+  window.calExportCsv = function() {
+    var rows = _calFilteredRows || (_calData && _calData.rows) || [];
+    if (!rows.length) { frappe.msgprint("No data to export."); return; }
+    var oScale = (_calData || {}).overall_scale;
+    var pScale = (_calData || {}).potential_scale;
+    var hdrs = ["Name", "Employee ID", "Department", "Designation", "Overall Rating", "Overall Label", "Potential Rating", "Potential Label", "Manager"];
+    var lines = [hdrs.join(",")];
+    rows.forEach(function(r) {
+      var oItem = oScale ? (oScale.items || []).find(function(it) { return String(it.value) === String(r.overall_rating); }) : null;
+      var pItem = pScale ? (pScale.items || []).find(function(it) { return String(it.value) === String(r.potential_rating); }) : null;
+      var vals = [
+        r.employee_name, r.employee, r.department, r.designation,
+        r.overall_rating, oItem ? oItem.label : "",
+        r.potential_rating || "", pItem ? pItem.label : "",
+        r.reports_to_name || ""
+      ].map(function(v) {
+        var s = String(v == null ? "" : v);
+        return (s.indexOf(",") !== -1 || s.indexOf('"') !== -1) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      });
+      lines.push(vals.join(","));
+    });
+    var blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = "calibration_" + (_calCycle || "export") + ".csv";
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+  /* ── Sign-off modal ─────────────────────────────────────────────── */
+  window.calOpenSignoff = function() {
+    var modal = document.getElementById("cal-signoff-modal");
+    var lbl   = document.getElementById("cal-signoff-cycle-lbl");
+    var txt   = document.getElementById("cal-signoff-text");
+    if (!modal) return;
+    if (lbl && _calData && _calData.cycle_info) lbl.textContent = _calData.cycle_info.cycle_name || _calCycle;
+    if (txt) txt.value = "";
+    modal.style.display = "flex";
+  };
+
+  window.calCloseSignoff = function() {
+    var modal = document.getElementById("cal-signoff-modal");
+    if (modal) modal.style.display = "none";
+  };
+
+  window.calSubmitSignoff = function() {
+    var txt = document.getElementById("cal-signoff-text");
+    var summary = txt ? txt.value.trim() : "";
+    if (!summary) { frappe.msgprint("Please add a summary before signing off."); return; }
+    if (!_calCycle) { frappe.msgprint("No cycle selected."); return; }
+    pf("save_calibration_signoff", { cycle: _calCycle, summary: summary }).then(function(d) {
+      calCloseSignoff();
+      _calShowSignoffBanner(d);
+    }).catch(function(e) {
+      frappe.msgprint("Failed to save sign-off: " + (e.message || e));
+    });
+  };
+
+  function _calShowSignoffBanner(d) {
+    if (!d) return;
+    var banner  = document.getElementById("cal-signoff-banner");
+    var meta    = document.getElementById("cal-signoff-meta");
+    var summary = document.getElementById("cal-signoff-summary");
+    if (!banner) return;
+    if (meta) meta.textContent = "by " + (d.signed_by || "") + " on " + (d.signed_at ? d.signed_at.slice(0, 10) : "");
+    if (summary) summary.textContent = d.summary || "";
+    banner.style.display = "";
+  }
+
+  /* Load existing sign-off when a cycle is selected */
+  var _calOrigLoad = window.calLoad;
+  window.calLoad = function() {
+    if (_calOrigLoad) _calOrigLoad();
+    var cycle = (document.getElementById("cal-cycle-sel") || {}).value;
+    if (!cycle) return;
+    pf("get_calibration_signoff", { cycle: cycle }).then(function(d) {
+      if (d && d.summary) {
+        _calShowSignoffBanner(d);
+      } else {
+        var banner = document.getElementById("cal-signoff-banner");
+        if (banner) banner.style.display = "none";
+      }
+    }).catch(function() {});
+  };
+
 })();
 
 /* ── KPI helpers shared with the tree view ────────── */

@@ -112,13 +112,13 @@ def create_tenant(subdomain, tenant_name, plan="starter",
     # Derive the plan label from the modules. This intentionally OVERWRITES the
     # `plan` argument: modules are the source of truth, so a caller cannot send a
     # label that contradicts what was actually provisioned.
-    _preset_map = {
-        "starter":    {"hrms"},
-        "business":   {"hrms","payroll","vendor"},
-        "enterprise": {"hrms","payroll","recruitment","vendor","goals","analytics"},
-    }
+    # Plan is derived from the feature set, using the ONE definition in
+    # subscription.py. It used to be redefined here and again in update_tenant,
+    # with a third copy in the admin page's JavaScript.
+    from alvoraa_portal.subscription import PLANS
+
     mset = set(modules)
-    plan = next((p for p, s in _preset_map.items() if s == mset), "custom")
+    plan = next((p for p, feats in PLANS.items() if set(feats) == mset), "custom")
 
     # ── Validation ────────────────────────────────────────────────────────
     if not re.match(r'^[a-z0-9][a-z0-9\-]{1,30}[a-z0-9]$', subdomain):
@@ -251,14 +251,11 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
             modules = ["hrms"] + [m for m in modules if m != "hrms"]
 
     # Derive plan label from module set
-    _preset_map = {
-        "starter":    {"hrms"},
-        "business":   {"hrms", "payroll", "vendor"},
-        "enterprise": {"hrms", "payroll", "recruitment", "vendor", "goals", "analytics"},
-    }
+    from alvoraa_portal.subscription import PLANS
+
     if modules is not None:
         mset = set(modules)
-        plan = next((p for p, s in _preset_map.items() if s == mset), "custom")
+        plan = next((p for p, feats in PLANS.items() if set(feats) == mset), "custom")
 
     # Update scalar site_config values
     for key, val in [

@@ -1,6 +1,6 @@
 # Alvoraa subscription plans and module access — strategy
 
-**Status:** proposal, awaiting approval. Nothing built yet.
+**Status:** approved 2026-08-23. Wave 1 built — see `alvoraa_portal/subscription.py`.
 **Scope:** the whole tenant — Frappe desk, Frappe HR, ERPNext, and the Alvoraa portal.
 
 ---
@@ -164,21 +164,18 @@ Wave 2 alone makes the product look like an HR product instead of an ERP.
 
 ---
 
-## 7. Decisions needed
+## 7. Decisions — settled 2026-08-23
 
-1. **Does the plan ladder above match how you intend to price?** Especially: is Recruitment
-   a Business feature or an Enterprise one? I have put it in Business, since hiring is core
-   HR work rather than a premium add-on.
-2. **Custom plan** — should ERPNext modules be pickable individually, or offered as
-   bundles (Finance, Supply Chain, Manufacturing)?
-3. **Downgrade** — hide and keep the data (recommended), or purge? Never uninstall
-   automatically; `bench uninstall-app` drops tables.
-4. **Existing tenants** — all three live sites are Enterprise, so nothing changes. Confirm
-   that is intended before shipping.
-5. **PMS module** — our 37-doctype Performance Management is separate from Frappe HR's own
-   Performance workspace. Should they be one sellable feature or two?
+| Question | Decision |
+|---|---|
+| Plan ladder in §4 | **Approved as written.** Recruitment stays in Business |
+| Custom plan | ERPNext modules **pickable individually**, not bundled |
+| Downgrade | **Hide and keep the data.** Never uninstall — `bench uninstall-app` drops tables |
+| PMS vs Frappe HR Performance | **One sellable feature.** Both ship under "Performance & Appraisals" |
+| Live sites staying Enterprise | **Intended.** They are demos, or empty core sites used to provision tenants |
 
----
+Recorded in code as `PLANS` and `FEATURES` in `alvoraa_portal/subscription.py`, with tests
+that assert the ladder rather than trusting it.
 
 ## 8. Housekeeping found on the way
 

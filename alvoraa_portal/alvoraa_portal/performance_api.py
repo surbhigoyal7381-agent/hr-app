@@ -4027,3 +4027,43 @@ def delete_cycle_template(template_name):
     templates.pop(template_name, None)
     frappe.db.set_global(_TEMPLATES_KEY, _json.dumps(templates))
     return {"message": "Deleted"}
+
+
+@frappe.whitelist()
+def save_calibration_signoff(cycle, summary):
+    """Store a calibration sign-off summary against the cycle config (HR only)."""
+    import json as _json
+    _require_hr()
+    if not cycle or not summary:
+        frappe.throw("cycle and summary are required")
+    if not frappe.db.exists("Alvoraa Cycle Config", cycle):
+        frappe.throw("Cycle config not found for: " + cycle)
+    raw = frappe.db.get_value("Alvoraa Cycle Config", cycle, "page_settings") or "{}"
+    try:
+        settings = _json.loads(raw)
+    except Exception:
+        settings = {}
+    settings["calibration_signoff"] = {
+        "summary": summary,
+        "signed_by": frappe.session.user,
+        "signed_at": frappe.utils.now(),
+    }
+    frappe.db.set_value("Alvoraa Cycle Config", cycle, "page_settings", _json.dumps(settings))
+    frappe.db.commit()
+    return settings["calibration_signoff"]
+
+
+@frappe.whitelist()
+def get_calibration_signoff(cycle):
+    """Retrieve the calibration sign-off for a cycle, or None if not signed off."""
+    import json as _json
+    if not cycle:
+        return None
+    if not frappe.db.exists("Alvoraa Cycle Config", cycle):
+        return None
+    raw = frappe.db.get_value("Alvoraa Cycle Config", cycle, "page_settings") or "{}"
+    try:
+        settings = _json.loads(raw)
+    except Exception:
+        return None
+    return settings.get("calibration_signoff")

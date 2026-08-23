@@ -21,7 +21,23 @@ import string
 from frappe.utils import now_datetime
 
 # ── Paths ──────────────────────────────────────────────────────────────────
-BENCH_PATH  = "/home/frappe/frappe-bench"
+def _bench_path():
+    """Where this bench actually lives.
+
+    This used to be hardcoded to "/home/frappe/frappe-bench", which is true in
+    our container and false everywhere else - CI runs at /home/runner. The jobs
+    file was then written to a path that did not exist, and because _write_jobs
+    swallowed the error, provisioning appeared to work while recording nothing.
+    """
+    try:
+        from frappe.utils import get_bench_path
+
+        return get_bench_path()
+    except Exception:
+        return "/home/frappe/frappe-bench"
+
+
+BENCH_PATH  = _bench_path()
 SITES_DIR   = f"{BENCH_PATH}/sites"
 JOBS_FILE   = f"{SITES_DIR}/kinexus_provision_jobs.json"
 
@@ -914,11 +930,19 @@ def _read_jobs():
 
 
 def _write_jobs(jobs):
+    """Persist the job records, or fail loudly.
+
+    This used to log and carry on. A write that fails silently is the same bug
+    as a job that dies without reporting: provisioning looks fine and records
+    nothing, so the console shows a status that was never updated. If this file
+    cannot be written, that is worth stopping for.
+    """
     try:
         with open(JOBS_FILE, "w") as f:
             json.dump(jobs, f, indent=2, default=str)
     except Exception as e:
-        frappe.log_error(str(e), "Kinexus: could not write jobs file")
+        frappe.log_error(str(e), "Alvoraa: could not write jobs file")
+        raise
 
 
 def _bench_run(cmd, timeout=30, env=None):

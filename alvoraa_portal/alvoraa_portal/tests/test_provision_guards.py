@@ -345,3 +345,36 @@ class TestLegacyPasswordScrub(FrappeTestCase):
 			patch.execute()          # must not raise
 		finally:
 			api._write_jobs(before)
+
+
+class TestBenchPathIsNotHardcoded(FrappeTestCase):
+	"""The jobs file used to be written to a hardcoded /home/frappe/frappe-bench.
+
+	True in our container, false everywhere else. CI runs at /home/runner, so
+	every write failed - and because _write_jobs swallowed the error, the whole
+	thing looked like it worked while recording nothing.
+	"""
+
+	def test_the_jobs_file_is_inside_this_bench(self):
+		import os
+
+		from frappe.utils import get_bench_path
+
+		self.assertTrue(
+			os.path.realpath(api.JOBS_FILE).startswith(os.path.realpath(get_bench_path())),
+			f"{api.JOBS_FILE} is not inside {get_bench_path()}")
+
+	def test_the_sites_directory_exists(self):
+		import os
+
+		self.assertTrue(os.path.isdir(api.SITES_DIR), f"{api.SITES_DIR} does not exist")
+
+	def test_a_failed_write_is_not_swallowed(self):
+		"""A silent write failure is the same bug as a job that dies without
+		reporting: the console shows a status that was never updated."""
+		from unittest.mock import mock_open, patch
+
+		with patch("builtins.open", mock_open()) as m:
+			m.side_effect = OSError("read-only file system")
+			with self.assertRaises(OSError):
+				api._write_jobs({"x": {}})

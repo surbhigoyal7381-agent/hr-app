@@ -221,3 +221,68 @@ class TestTenantAdminExemption(FrappeTestCase):
 		blocked = set(sub.blocked_module_defs(sub.plan_features("starter")))
 		for m in ("Website", "Integrations", "Automation"):
 			self.assertIn(m, blocked)
+
+
+class TestHrKeepsTheDesk(FrappeTestCase):
+	"""An HR Manager sent to /app/hr must land on a working screen.
+
+	Employees lose the desk shell; HR staff keep it. Both still lose everything
+	the plan does not include - that distinction is the whole point.
+	"""
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		ma.sync_site(sub.plan_features("starter"))
+		self.hr = "hr.desk.test@example.com"
+		if not frappe.db.exists("User", self.hr):
+			u = frappe.get_doc({
+				"doctype": "User", "email": self.hr, "first_name": "HR Desk",
+				"send_welcome_email": 0, "enabled": 1,
+			})
+			u.flags.ignore_permissions = True
+			u.insert(ignore_permissions=True)
+		else:
+			# apply_to_users() COMMITS, so a role added by a sibling test survives
+			# tearDown's rollback. Reset the user rather than depend on ordering -
+			# the same trap the leave tests hit with hr_api.apply_leave.
+			u = frappe.get_doc("User", self.hr)
+			u.set("roles", [])
+			u.module_profile = None
+			u.set("block_modules", [])
+			u.flags.ignore_permissions = True
+			u.save(ignore_permissions=True)
+			frappe.db.commit()
+
+	def tearDown(self):
+		frappe.db.rollback()
+
+	def test_hr_profile_keeps_core_and_desk(self):
+		hidden = ma.get_hidden_modules()["profiles"][ma.HR_PROFILE_NAME]
+		self.assertNotIn("Core", hidden, "an HR Manager needs a working desk")
+		self.assertNotIn("Desk", hidden)
+
+	def test_employee_profile_still_hides_them(self):
+		hidden = ma.get_hidden_modules()["profiles"][ma.PROFILE_NAME]
+		self.assertIn("Core", hidden)
+		self.assertIn("Desk", hidden)
+
+	def test_hr_still_loses_what_the_plan_excludes(self):
+		"""Keeping the desk is not a way round the subscription."""
+		hidden = ma.get_hidden_modules()["profiles"][ma.HR_PROFILE_NAME]
+		self.assertIn("Payroll", hidden, "starter has no payroll, HR or not")
+		self.assertIn("Accounts", hidden)
+
+	def test_an_hr_user_gets_the_hr_profile(self):
+		u = frappe.get_doc("User", self.hr)
+		u.append("roles", {"role": "HR Manager"})
+		u.flags.ignore_permissions = True
+		u.save(ignore_permissions=True)
+
+		ma.apply_to_users([self.hr])
+		self.assertEqual(frappe.db.get_value("User", self.hr, "module_profile"),
+		                 ma.HR_PROFILE_NAME)
+
+	def test_an_ordinary_user_gets_the_employee_profile(self):
+		ma.apply_to_users([self.hr])
+		self.assertEqual(frappe.db.get_value("User", self.hr, "module_profile"),
+		                 ma.PROFILE_NAME)

@@ -206,6 +206,11 @@ FRAPPE_HIDDEN = [
 # visible any more: what an ordinary user sees is decided entirely by the plan.
 FRAPPE_ALWAYS_VISIBLE = []
 
+# The desk's own shell. Hidden from employees, but anyone who is expected to WORK
+# in the desk needs it - an HR Manager sent to /app/hr with these blocked lands on
+# a crippled screen. Kept for the HR variant of the profile.
+DESK_SHELL = ["Core", "Desk"]
+
 # Plumbing Frappe HR needs. Always installed, always hidden, never sold.
 ERPNEXT_INFRASTRUCTURE = [
     "Bulk Transaction", "Communication", "EDI", "ERPNext Integrations",
@@ -250,6 +255,16 @@ def has_feature(name, conf=None):
     if FEATURES.get(name, {}).get("required"):
         return True
     return name in enabled_features(conf)
+
+
+def blocked_module_defs_for_hr(features):
+    """Block list for someone who works IN the desk - an HR Manager.
+
+    Same as everyone else, minus the desk shell. They still lose Payroll,
+    Accounts, Integrations and anything else the plan does not include; they just
+    keep the screen those things would appear on.
+    """
+    return [m for m in blocked_module_defs(features) if m not in DESK_SHELL]
 
 
 def blocked_module_defs(features):

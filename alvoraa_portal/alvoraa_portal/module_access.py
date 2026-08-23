@@ -20,9 +20,18 @@ Shipping this alone would make the product look correctly gated while it is not.
 
 import frappe
 
-from alvoraa_portal.subscription import blocked_module_defs, enabled_features
+from alvoraa_portal.subscription import (
+    blocked_module_defs,
+    blocked_module_defs_for_hr,
+    enabled_features,
+)
 
-PROFILE_NAME = "Alvoraa Plan"
+PROFILE_NAME = "Alvoraa Plan"          # employees: the product, nothing else
+HR_PROFILE_NAME = "Alvoraa Plan (HR)"  # HR staff: the same, plus the desk shell
+
+# Anyone expected to WORK in the desk. They keep Core and Desk so /app/hr is
+# usable, but still lose everything the plan does not include.
+HR_ROLES = {"HR Manager", "HR User"}
 
 # The tenant's own Administrator is left alone. If a profile is ever built wrong,
 # support still needs a way in — locking every account out of the desk at once is
@@ -43,23 +52,35 @@ def _is_tenant_admin(user):
     return bool(ADMIN_ROLES & set(frappe.get_roles(user)))
 
 
-def sync_module_profile(features=None):
-    """Create or update this site's Module Profile. Returns its name."""
+def _is_hr(user):
+    return bool(HR_ROLES & set(frappe.get_roles(user)))
+
+
+def _profile_for(user):
+    """Which profile a user should carry, or None if they are exempt."""
+    if user in NEVER_TOUCH or _is_tenant_admin(user):
+        return None
+    return HR_PROFILE_NAME if _is_hr(user) else PROFILE_NAME
+
+
+def sync_module_profile(features=None, name=PROFILE_NAME, blocked=None):
+    """Create or update one Module Profile. Returns its name."""
     features = features if features is not None else enabled_features()
-    blocked = blocked_module_defs(features)
+    if blocked is None:
+        blocked = blocked_module_defs(features)
 
     # Only block modules that actually exist here. A site without alvoraa_goals
     # installed has no such Module Def, and Frappe rejects the link.
     existing = {m.name for m in frappe.get_all("Module Def", fields=["name"])}
     blocked = [m for m in blocked if m in existing]
 
-    if frappe.db.exists("Module Profile", PROFILE_NAME):
-        doc = frappe.get_doc("Module Profile", PROFILE_NAME)
+    if frappe.db.exists("Module Profile", name):
+        doc = frappe.get_doc("Module Profile", name)
         doc.set("block_modules", [])
     else:
         doc = frappe.get_doc({
             "doctype": "Module Profile",
-            "module_profile_name": PROFILE_NAME,
+            "module_profile_name": name,
         })
 
     for m in blocked:
@@ -89,9 +110,10 @@ def apply_to_users(users=None):
     for name in users:
         if name in NEVER_TOUCH:
             continue
-        if _is_tenant_admin(name):
-            # Keep their full module list, and clear any profile applied before
-            # they became an admin - otherwise an old block list lingers.
+        want = _profile_for(name)
+        if want is None:
+            # Tenant admin: keep the full module list, and clear any profile
+            # applied before they became one, or an old block list lingers.
             if frappe.db.get_value("User", name, "module_profile"):
                 u = frappe.get_doc("User", name)
                 u.module_profile = None
@@ -102,10 +124,9 @@ def apply_to_users(users=None):
             continue
         try:
             user = frappe.get_doc("User", name)
-            if user.module_profile == PROFILE_NAME:
-                # Re-save anyway: the profile's contents may have changed.
-                pass
-            user.module_profile = PROFILE_NAME
+            # Always save, even if the profile name is unchanged: its CONTENTS
+            # may have changed, and Frappe only copies them on save.
+            user.module_profile = want
             user.flags.ignore_permissions = True
             user.save(ignore_permissions=True)
             changed += 1
@@ -131,22 +152,35 @@ def sync_site(features=None):
         print(msg)
         return {"skipped": True, "reason": msg}
 
-    profile = sync_module_profile(features)
+    feats = features if features is not None else enabled_features()
+
+    # Two profiles: employees lose the desk shell, HR staff keep it so /app/hr
+    # is usable. Both lose everything the plan does not include.
+    sync_module_profile(feats, PROFILE_NAME)
+    sync_module_profile(feats, HR_PROFILE_NAME, blocked_module_defs_for_hr(feats))
+
     res = apply_to_users()
-    blocked = frappe.db.count("Block Module", {"parent": profile, "parenttype": "Module Profile"})
-    msg = (f"{profile}: {blocked} modules hidden, applied to {res['applied']} users, "
-           f"{res['admins_exempt']} admins exempt")
+    counts = {
+        n: frappe.db.count("Block Module", {"parent": n, "parenttype": "Module Profile"})
+        for n in (PROFILE_NAME, HR_PROFILE_NAME)
+    }
+    msg = (f"employees: {counts[PROFILE_NAME]} hidden | HR: {counts[HR_PROFILE_NAME]} hidden "
+           f"| applied to {res['applied']} users, {res['admins_exempt']} admins exempt")
     print(msg)          # bench execute prints this back to the operator
-    return {"profile": profile, "blocked": blocked, **res}
+    return {"blocked": counts, **res}
 
 
 @frappe.whitelist()
 def get_hidden_modules():
     """What this site currently hides. For the admin console and for support."""
-    if not frappe.db.exists("Module Profile", PROFILE_NAME):
-        return {"profile": None, "blocked": []}
-    doc = frappe.get_doc("Module Profile", PROFILE_NAME)
-    return {"profile": PROFILE_NAME, "blocked": sorted(d.module for d in doc.block_modules)}
+    out = {}
+    for name in (PROFILE_NAME, HR_PROFILE_NAME):
+        if frappe.db.exists("Module Profile", name):
+            doc = frappe.get_doc("Module Profile", name)
+            out[name] = sorted(d.module for d in doc.block_modules)
+        else:
+            out[name] = None
+    return {"profiles": out, "blocked": out.get(PROFILE_NAME) or []}
 
 
 def apply_on_user_insert(doc, method=None):
@@ -159,16 +193,17 @@ def apply_on_user_insert(doc, method=None):
 
     Tenant admins are left alone, as everywhere else.
     """
-    if doc.name in NEVER_TOUCH or not frappe.db.exists("Module Profile", PROFILE_NAME):
+    if doc.name in NEVER_TOUCH:
         return
-    if _is_tenant_admin(doc.name):
+    want = _profile_for(doc.name)
+    if not want or not frappe.db.exists("Module Profile", want):
         return
     # Set it directly: this runs inside the user's own insert, so saving the
     # document again here would recurse.
-    frappe.db.set_value("User", doc.name, "module_profile", PROFILE_NAME,
+    frappe.db.set_value("User", doc.name, "module_profile", want,
                         update_modified=False)
     for m in frappe.get_all("Block Module",
-                            filters={"parent": PROFILE_NAME, "parenttype": "Module Profile"},
+                            filters={"parent": want, "parenttype": "Module Profile"},
                             fields=["module"]):
         frappe.get_doc({
             "doctype": "Block Module", "parent": doc.name, "parenttype": "User",
@@ -189,6 +224,8 @@ def apply_on_role_change(doc, method=None):
     if not frappe.db.exists("Module Profile", PROFILE_NAME):
         return
     try:
+        # Roles decide which profile applies, so a change here can move someone
+        # between employee, HR and exempt.
         apply_to_users([user])
     except Exception:
         frappe.log_error(title="module_access: role change re-apply failed",

@@ -119,7 +119,18 @@ def apply_to_users(users=None):
 
 
 def sync_site(features=None):
-    """Build the profile from this site's config and apply it to every user."""
+    """Build the profile from this site's config and apply it to every user.
+
+    Refuses to run on the control plane. That site is not a tenant - it is where
+    tenants are provisioned from, and its administrators need the full module
+    list to do that. Applying a tenant plan there would hide the tooling they
+    work with.
+    """
+    if frappe.conf.get("alvoraa_control_plane"):
+        msg = "Refusing to run on the control plane - it is not a tenant."
+        print(msg)
+        return {"skipped": True, "reason": msg}
+
     profile = sync_module_profile(features)
     res = apply_to_users()
     blocked = frappe.db.count("Block Module", {"parent": profile, "parenttype": "Module Profile"})

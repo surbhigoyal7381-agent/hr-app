@@ -205,26 +205,37 @@ plan definitions — which is small, testable, and the thing every later wave re
 
 ---
 
-## 10. Open: Frappe's own 11 modules
+## 10. Frappe's own 11 modules — settled 2026-08-23
 
-Wave 2 hides ERPNext's 21 and any unsold Alvoraa HR module. Measured on a Starter
-site afterwards: **24 hidden, 13 still visible** — and 11 of those 13 are Frappe
-*framework* modules, which this strategy never considered:
+Wave 2 hid ERPNext's 21 and the unsold Alvoraa HR modules. Running it on a real
+Starter site showed **24 hidden, 13 still visible** — and 11 of those were Frappe
+*framework* modules the design had never considered. Found by counting what was
+left, not by re-reading the plan.
 
-```
-Automation  Contacts  Core  Custom  Desk  Email
-Geo  Integrations  Printing  Website  Workflow
-```
+**Decision: hide all 11 from ordinary users, including `Core` and `Desk`.**
 
-So a Starter tenant's desk still offers Website, Integrations and Automation.
+An employee's interface is the portal. The desk's own machinery — user
+management, settings, the module list itself — is not theirs. Two exemptions
+carry the risk:
 
-They split into two kinds:
-
-| | Modules | View |
+| Who | What they keep | How |
 |---|---|---|
-| **Noise for an HR tenant** | Website, Integrations, Automation, Geo, Printing, Contacts, Email, Workflow, Custom | hide by default |
-| **The desk itself** | Core, Desk | must stay — hiding these risks breaking navigation |
+| Tenant administrators | everything, so they can set up integrations, email, print formats | exempted in `module_access.apply_to_users` |
+| The control plane | everything | `sync_site` refuses to run there at all |
 
-This is a product decision, not a technical one, so it is recorded here rather
-than assumed. My recommendation is to hide the first row for every tenant and
-keep them available on the control plane, where they are genuinely used.
+What an ordinary user is left with, measured:
+
+| Plan | Modules visible |
+|---|---|
+| Starter | Alvoraa Portal, HR |
+| Business | + Payroll |
+| Enterprise | + Alvoraa Goals, Performance Management |
+| Enterprise + Accounts ticked | + Accounts |
+
+That is the product, and nothing else.
+
+**The residual risk, stated plainly:** hiding `Core` and `Desk` is the aggressive
+part. `block_modules` only hides UI, so nothing should break — but a non-admin
+*System User* who opens `/app` will find a nearly empty desk. That is intended,
+and it becomes moot once employees are Website Users (wave 3), who have no desk
+at all. Worth one real login on dev before it reaches a customer.

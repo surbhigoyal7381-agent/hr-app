@@ -198,11 +198,24 @@ class TestTenantAdminExemption(FrappeTestCase):
 		self.assertFalse(frappe.db.get_value("User", self.admin, "module_profile"),
 		                 "a tenant admin must keep Integrations, Email and the rest")
 
-	def test_core_and_desk_are_never_blocked_for_anyone(self):
-		"""Hiding these would break navigation for every user on the site."""
+	def test_core_and_desk_are_hidden_from_ordinary_users(self):
+		"""Decision 2026-08-23: the desk's own machinery is not for employees.
+
+		They keep it only where it is needed - tenant admins are exempted, and
+		sync_site refuses to run on the control plane at all.
+		"""
 		blocked = set(sub.blocked_module_defs(sub.plan_features("starter")))
-		for m in sub.FRAPPE_ALWAYS_VISIBLE:
-			self.assertNotIn(m, blocked)
+		self.assertIn("Core", blocked)
+		self.assertIn("Desk", blocked)
+
+	def test_the_control_plane_is_never_gated(self):
+		"""It is not a tenant. Its admins provision tenants and need everything."""
+		frappe.conf["alvoraa_control_plane"] = 1
+		try:
+			res = ma.sync_site()
+			self.assertTrue(res.get("skipped"))
+		finally:
+			frappe.conf.pop("alvoraa_control_plane", None)
 
 	def test_frappe_clutter_is_hidden_from_ordinary_users(self):
 		blocked = set(sub.blocked_module_defs(sub.plan_features("starter")))

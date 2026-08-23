@@ -192,11 +192,19 @@ ERPNEXT_FEATURES = {
 FRAPPE_HIDDEN = [
     "Automation", "Contacts", "Custom", "Email", "Geo",
     "Integrations", "Printing", "Website", "Workflow",
+    # Core and Desk are the desk's own machinery - user management, settings,
+    # the module list itself. An ordinary employee has no business there; their
+    # interface is the portal. Hidden from them too, by decision 2026-08-23.
+    #
+    # They are NOT hidden from the people who need them:
+    #   * the tenant's own administrators - exempted in module_access.py
+    #   * the control plane - sync_site refuses to run there at all
+    "Core", "Desk",
 ]
 
-# Never blocked for anyone: these ARE the desk. Hiding them risks breaking
-# navigation for every user on the site.
-FRAPPE_ALWAYS_VISIBLE = ["Core", "Desk"]
+# Kept as an explicit, empty statement of intent. Nothing is unconditionally
+# visible any more: what an ordinary user sees is decided entirely by the plan.
+FRAPPE_ALWAYS_VISIBLE = []
 
 # Plumbing Frappe HR needs. Always installed, always hidden, never sold.
 ERPNEXT_INFRASTRUCTURE = [

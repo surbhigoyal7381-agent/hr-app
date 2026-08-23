@@ -172,7 +172,11 @@ def create_tenant(subdomain, tenant_name, plan="starter",
         support_email=support_email,
         admin_password=admin_password,
         base_domain=base_domain,
-        db_root_password=os.environ.get("DB_ROOT_PASSWORD", "123"),
+        # No fallback. A default here does not make provisioning work - it makes
+        # it fail with "Access denied for user 'root'" several steps later, after
+        # the job has been queued and the operator has been told it started.
+        # Better to refuse immediately and say why.
+        db_root_password=_require_db_root_password(),
     )
 
     return {
@@ -531,6 +535,27 @@ def _require_admin():
 def is_control_plane():
     """Side-effect-free probe so the admin UI can hide itself on tenant sites."""
     return bool(frappe.conf.get("alvoraa_control_plane"))
+
+
+def _require_db_root_password():
+    """The MariaDB root password, or a clear error.
+
+    Provisioning creates a new site, which means creating a database and a
+    database user, which needs root. The value comes from the environment - set
+    in deploy/envs/*.env and passed through by docker-compose.app.yml.
+
+    It was previously `os.environ.get("DB_ROOT_PASSWORD", "123")`. The container
+    did not have the variable, so every provisioning attempt tried to log in as
+    root with the password "123" and failed deep inside `bench new-site`, with a
+    MySQL traceback that said nothing about configuration.
+    """
+    pw = os.environ.get("DB_ROOT_PASSWORD")
+    if not pw:
+        frappe.throw(
+            "DB_ROOT_PASSWORD is not set in this container, so a new site cannot "
+            "be created. Add it to deploy/envs/&lt;env&gt;.env and recreate the backend."
+        )
+    return pw
 
 
 def _validate_site_name(site_name):

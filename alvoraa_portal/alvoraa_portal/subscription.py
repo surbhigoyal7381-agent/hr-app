@@ -34,50 +34,70 @@ import frappe
 
 FEATURES = {
     "portal": {
+        "desc": "Self-service app for every employee",
+        "icon": "📱",
         "label": "Employee Portal",
         "required": True,
         "app": "alvoraa_portal",
     },
     "leaves": {
+        "desc": "Applications, allocations, policies, encashment",
+        "icon": "🌴",
         "label": "Leaves",
         "required": True,
         "workspaces": ["Leaves"],
     },
     "attendance": {
+        "desc": "Shifts, check-ins, regularisation",
+        "icon": "🕑",
         "label": "Shift & Attendance",
         "required": True,
         "workspaces": ["Shift & Attendance"],
     },
     "expenses": {
+        "desc": "Expense claims, advances, travel",
+        "icon": "🧾",
         "label": "Expenses",
         "required": True,
         "workspaces": ["Expenses"],
     },
     "hr_setup": {
+        "desc": "Holiday lists, HR policy, settings",
+        "icon": "⚙️",
         "label": "HR Setup",
         "required": True,
         "workspaces": ["HR Setup"],
     },
     "tenure": {
+        "desc": "Onboarding, transfers, promotions, exit",
+        "icon": "📈",
         "label": "Onboarding & Exit",
         "workspaces": ["Tenure"],
     },
     "recruitment": {
+        "desc": "Job openings, applicants, interviews, offers",
+        "icon": "🎯",
         # No Module Def of its own - roles are the only lever here.
         "label": "Recruitment",
         "workspaces": ["Recruitment"],
         "roles": ["Interviewer"],
     },
     "payroll": {
+        "desc": "Salary structures, slips, payment entries",
+        "icon": "💰",
         "label": "Payroll",
         "module_defs": ["Payroll"],
         "workspaces": ["Payroll"],
     },
     "tax_benefits": {
+        "desc": "Tax slabs, exemptions, benefit claims",
+        "icon": "📋",
         "label": "Tax & Benefits",
         "workspaces": ["Tax & Benefits"],
     },
     "performance": {
+        "desc": "Appraisal cycles, calibration, scorecards",
+        "icon": "⭐",
         # One sellable feature: Frappe HR's Performance workspace AND our
         # 37-doctype Performance Management module are sold together.
         "label": "Performance & Appraisals",
@@ -85,14 +105,20 @@ FEATURES = {
         "workspaces": ["Performance"],
     },
     "goals": {
+        "desc": "Objectives, KPIs, cascade, evidence",
+        "icon": "🏁",
         "label": "Goals & KPIs",
         "app": "alvoraa_goals",
         "module_defs": ["Alvoraa Goals"],
     },
     "analytics": {
+        "desc": "Dashboards and workforce reports",
+        "icon": "📊",
         "label": "Analytics",
     },
     "vendor": {
+        "desc": "Vendor portal, driver app, orders",
+        "icon": "🚚",
         "label": "Vendor & Driver Portal",
         "app": "alvoraa_portal",
     },
@@ -210,9 +236,19 @@ def get_plan_catalogue():
 
     Exists so the admin page stops carrying its own copy of the plan definition.
     """
+    # An ordered LIST, not a dict: the admin page renders these as a checklist and
+    # the order is part of the product - required features first, then the ladder.
     return {
-        "features": {k: {"label": v["label"], "required": bool(v.get("required"))}
-                     for k, v in FEATURES.items()},
+        "features": [
+            {
+                "id": k,
+                "label": v["label"],
+                "desc": v.get("desc", ""),
+                "icon": v.get("icon", ""),
+                "required": bool(v.get("required")),
+            }
+            for k, v in FEATURES.items()
+        ],
         "plans": {k: list(v) for k, v in PLANS.items()},
         "erpnext_sellable": list(ERPNEXT_SELLABLE),
     }

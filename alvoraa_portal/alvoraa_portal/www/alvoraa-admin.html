@@ -713,21 +713,24 @@ html, body {
   var tenantMap         = {};
   var currentFilter     = 'all';
   var pollTimer         = null;
-  var editSelectedModules = ['hrms'];
-  var MODULES_DEF = [
-    { id:'hrms',        label:'Core HR',          desc:'Leave, attendance, expense, documents', icon:'👥', required:true },
-    { id:'payroll',     label:'Payroll',           desc:'Salary processing, tax, payslips',     icon:'💰' },
-    { id:'recruitment', label:'Recruitment',       desc:'Job openings, interviews, onboarding', icon:'🎯' },
-    { id:'vendor',      label:'Vendor & Delivery', desc:'Vendor portal, driver app, orders',    icon:'🚚' },
-    { id:'goals',       label:'Goals & OKR',       desc:'Performance targets and reviews',      icon:'⭐' },
-    { id:'analytics',   label:'Analytics',         desc:'Advanced dashboards and reports',      icon:'📊' },
-  ];
-  var MODULE_PRESETS = {
-    starter:    ['hrms'],
-    business:   ['hrms','payroll','vendor'],
-    enterprise: ['hrms','payroll','recruitment','vendor','goals','analytics'],
-  };
-  var selectedModules = ['hrms'];
+  var editSelectedModules = [];   // filled by loadPlanCatalogue()
+  // The catalogue and the plan ladder come from alvoraa_portal/subscription.py.
+  // They used to be hardcoded here as MODULES_DEF and MODULE_PRESETS, a third copy
+  // of a pricing decision that also lived twice in tenant_api.py. Loaded once at
+  // boot by loadPlanCatalogue().
+  var MODULES_DEF = [];
+  var MODULE_PRESETS = {};
+
+  async function loadPlanCatalogue() {
+    var cat = await api('alvoraa_portal.subscription.get_plan_catalogue');
+    MODULES_DEF = cat.features;      // ordered: required first, then the ladder
+    MODULE_PRESETS = cat.plans;
+    var req = cat.features.filter(function(f) { return f.required; })
+                          .map(function(f) { return f.id; });
+    selectedModules = req.slice();
+    editSelectedModules = req.slice();
+  }
+  var selectedModules = [];       // filled by loadPlanCatalogue()
 
   function renderModules() {
     var grid = document.getElementById('ka-modules-grid');
@@ -778,6 +781,14 @@ html, body {
      control-plane site. On a tenant site the API refuses outright — say so
      plainly instead of rendering an empty console that looks broken. */
   async function bootAdmin() {
+    // First: renderModules() and the preset buttons read MODULES_DEF and
+    // MODULE_PRESETS, which stay empty until this returns.
+    try {
+      await loadPlanCatalogue();
+    } catch (e) {
+      console.error('Could not load the plan catalogue', e);
+    }
+
     var isControlPlane = false;
     try {
       isControlPlane = await api('alvoraa_portal.tenant_api.is_control_plane');
@@ -1299,7 +1310,7 @@ html, body {
     document.getElementById('edit-color').value = color;
     syncEditSwatch(color);
     var ids = siteModulesToIds(t.modules);
-    editSelectedModules = ids.length ? ids : ['hrms'];
+      editSelectedModules = ids.length ? ids : MODULES_DEF.filter(function(f){return f.required;}).map(function(f){return f.id;});
     renderEditModules();
     syncEditPresetButtons();
     document.getElementById('ka-edit-error').style.display = 'none';

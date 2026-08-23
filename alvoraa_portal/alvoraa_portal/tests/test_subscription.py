@@ -97,3 +97,50 @@ class TestGating(FrappeTestCase):
 	def test_erpnext_lists_do_not_overlap(self):
 		"""A module is either sellable or plumbing - never counted twice."""
 		self.assertEqual(set(sub.ERPNEXT_SELLABLE) & set(sub.ERPNEXT_INFRASTRUCTURE), set())
+
+
+class TestPerTenantSelection(FrappeTestCase):
+	"""The control-plane admin ticks modules per tenant, across both groups.
+
+	Plans are presets, not cages: whatever ends up ticked is what the tenant gets,
+	and the plan NAME is derived from the selection.
+	"""
+
+	def test_erpnext_modules_are_selectable_alongside_hr_features(self):
+		cat = sub.get_plan_catalogue()
+		groups = {g["key"]: g for g in cat["groups"]}
+		self.assertEqual(len(groups["alvoraa_hr"]["features"]), len(sub.FEATURES))
+		self.assertEqual(len(groups["erpnext"]["features"]), len(sub.ERPNEXT_SELLABLE))
+		# one flat catalogue too, so the admin can render a single grid
+		self.assertEqual(len(cat["features"]), len(sub.FEATURES) + len(sub.ERPNEXT_SELLABLE))
+
+	def test_unticked_erpnext_modules_are_hidden(self):
+		blocked = sub.blocked_module_defs(sub.plan_features("enterprise"))
+		for m in sub.ERPNEXT_SELLABLE:
+			self.assertIn(m, blocked, "%s should be hidden when not selected" % m)
+
+	def test_ticked_erpnext_modules_are_visible(self):
+		selection = sub.plan_features("enterprise") + ["erp_accounts", "erp_projects"]
+		blocked = sub.blocked_module_defs(selection)
+		self.assertNotIn("Accounts", blocked)
+		self.assertNotIn("Projects", blocked)
+		self.assertIn("Stock", blocked, "modules not ticked stay hidden")
+
+	def test_erp_ids_are_stable_and_readable(self):
+		self.assertEqual(sub.erp_feature_id("Quality Management"), "erp_quality_management")
+		self.assertEqual(sub.erp_feature_id("Stock"), "erp_stock")
+
+	def test_infrastructure_is_hidden_whatever_is_ticked(self):
+		"""Setup, Regional and friends are plumbing Frappe HR needs - never sold,
+		never shown, even to a tenant that bought every sellable module."""
+		everything = sub.plan_features("enterprise") + list(sub.ERPNEXT_FEATURES)
+		blocked = sub.blocked_module_defs(everything)
+		for m in sub.ERPNEXT_INFRASTRUCTURE:
+			self.assertIn(m, blocked, "%s is plumbing and must stay hidden" % m)
+
+	def test_a_starter_tenant_can_still_be_given_one_erp_module(self):
+		"""The admin is not forced up a plan tier to add a single module."""
+		selection = sub.plan_features("starter") + ["erp_accounts"]
+		blocked = sub.blocked_module_defs(selection)
+		self.assertNotIn("Accounts", blocked)
+		self.assertIn("Payroll", blocked, "starter still does not include payroll")

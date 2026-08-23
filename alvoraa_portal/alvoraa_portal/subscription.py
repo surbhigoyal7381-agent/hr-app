@@ -144,11 +144,46 @@ PLANS = {
 }
 
 # ── ERPNext ──────────────────────────────────────────────────────────────────
-# Sellable on the Custom plan, picked individually.
+# Selectable per tenant, alongside the Alvoraa HR features above. The control
+# plane admin ticks whatever a tenant should have; the plan NAME is then derived
+# from the selection (tenant_api), so choosing any ERPNext module makes the
+# tenant "custom" automatically. There is no separate ERPNext-only flow.
 ERPNEXT_SELLABLE = [
     "Accounts", "Assets", "Buying", "CRM", "Maintenance", "Manufacturing",
     "Projects", "Quality Management", "Selling", "Stock", "Support",
 ]
+
+_ERP_DESC = {
+    "Accounts": "Ledgers, invoices, payments, financial reports",
+    "Assets": "Asset register, depreciation, maintenance",
+    "Buying": "Suppliers, purchase orders, receipts",
+    "CRM": "Leads, opportunities, customer pipeline",
+    "Maintenance": "Schedules, visits, service contracts",
+    "Manufacturing": "BOMs, work orders, production planning",
+    "Projects": "Projects, tasks, timesheets, costing",
+    "Quality Management": "Inspections, non-conformance, procedures",
+    "Selling": "Customers, quotations, sales orders",
+    "Stock": "Inventory, warehouses, stock movements",
+    "Support": "Issues, tickets, service levels",
+}
+
+
+def erp_feature_id(module_def):
+    """Selection id for an ERPNext module. `Quality Management` -> `erp_quality_management`."""
+    return "erp_" + module_def.lower().replace(" ", "_")
+
+
+# The same shape as FEATURES, so the admin renders one catalogue rather than two.
+ERPNEXT_FEATURES = {
+    erp_feature_id(m): {
+        "label": m,
+        "desc": _ERP_DESC.get(m, ""),
+        "icon": "🧰",
+        "module_defs": [m],
+        "erpnext": True,
+    }
+    for m in ERPNEXT_SELLABLE
+}
 
 # Plumbing Frappe HR needs. Always installed, always hidden, never sold.
 ERPNEXT_INFRASTRUCTURE = [
@@ -202,11 +237,20 @@ def blocked_module_defs(features):
     ERPNext is always blocked here - Custom re-enables its chosen modules
     separately, because those are picked per tenant rather than by plan.
     """
+    features = set(features)
     blocked = []
+
+    # Alvoraa HR features that were not selected
     for key, spec in FEATURES.items():
         if key not in features:
             blocked.extend(spec.get("module_defs", []))
-    blocked.extend(ERPNEXT_SELLABLE)
+
+    # ERPNext modules the admin did not tick for this tenant
+    for key, spec in ERPNEXT_FEATURES.items():
+        if key not in features:
+            blocked.extend(spec["module_defs"])
+
+    # Plumbing Frappe HR needs. Always installed, always hidden, never sold.
     blocked.extend(ERPNEXT_INFRASTRUCTURE)
     return sorted(set(blocked))
 
@@ -238,17 +282,29 @@ def get_plan_catalogue():
     """
     # An ordered LIST, not a dict: the admin page renders these as a checklist and
     # the order is part of the product - required features first, then the ladder.
+    def _row(k, v):
+        return {
+            "id": k,
+            "label": v["label"],
+            "desc": v.get("desc", ""),
+            "icon": v.get("icon", ""),
+            "required": bool(v.get("required")),
+            "erpnext": bool(v.get("erpnext")),
+        }
+
+    # Two groups, one catalogue. The admin ticks freely across both; the plan
+    # NAME is derived from what ends up ticked, so any ERPNext choice makes the
+    # tenant custom without the admin having to pick a plan first.
     return {
-        "features": [
-            {
-                "id": k,
-                "label": v["label"],
-                "desc": v.get("desc", ""),
-                "icon": v.get("icon", ""),
-                "required": bool(v.get("required")),
-            }
-            for k, v in FEATURES.items()
+        "groups": [
+            {"key": "alvoraa_hr", "label": "Alvoraa HR",
+             "features": [_row(k, v) for k, v in FEATURES.items()]},
+            {"key": "erpnext", "label": "ERPNext",
+             "features": [_row(k, v) for k, v in ERPNEXT_FEATURES.items()]},
         ],
+        # Flat list too - the admin page renders one grid and the plan presets
+        # are matched against ids from both groups.
+        "features": [_row(k, v) for k, v in FEATURES.items()]
+                    + [_row(k, v) for k, v in ERPNEXT_FEATURES.items()],
         "plans": {k: list(v) for k, v in PLANS.items()},
-        "erpnext_sellable": list(ERPNEXT_SELLABLE),
     }

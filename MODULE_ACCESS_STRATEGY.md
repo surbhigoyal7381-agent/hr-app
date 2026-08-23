@@ -100,7 +100,9 @@ Built from the feature areas above, not from the current arbitrary module list.
 | Goals & KPIs | — | — | ✅ | ✅ |
 | Analytics | — | — | ✅ | ✅ |
 | Vendor & Driver Portal | — | — | ✅ | ✅ |
-| **ERPNext business modules** | — | — | — | ✅ *(selected)* |
+| **ERPNext modules** (11, individually) | ➕ | ➕ | ➕ | ➕ |
+
+➕ = tickable per tenant on any plan; ticking any makes the plan name *Custom*.
 
 **The shape of the ladder:**
 
@@ -110,11 +112,15 @@ Built from the feature areas above, not from the current arbitrary module list.
   payroll.
 - **Enterprise** — managing performance. Adds appraisals, goals, analytics, and the
   vendor/driver portals.
-- **Custom** — Enterprise plus whichever ERPNext modules the customer actually wants,
-  chosen individually.
+- **Custom** — anything else.
 
-Custom is deliberately not a tier above Enterprise in HR terms — it is Enterprise **plus
-ERP**. A customer wanting only Accounts on top of Business should be quoted Custom.
+**Plans are presets, not cages.** The control-plane admin sees ONE catalogue — the 13
+Alvoraa HR features and the 11 ERPNext modules — and ticks whatever a tenant should have.
+Picking a plan ticks a standard set; the admin is then free to add or remove anything.
+
+The plan *name* is derived from what ends up ticked: matches a preset, and it is that plan;
+anything else is **Custom**. So a Starter tenant that also needs Accounts is simply
+Starter + Accounts, recorded as Custom. Nobody is pushed up a tier to buy one module.
 
 ---
 

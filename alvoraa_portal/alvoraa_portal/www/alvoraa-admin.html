@@ -567,6 +567,16 @@ html, body {
         <input class="ka-input" id="f-email" type="email" placeholder="support@acmecorp.com">
         <div class="ka-hint">Shown as help contact in the tenant's login page</div>
       </div>
+        <div class="ka-field">
+          <label class="ka-label">HR Login (optional)</label>
+          <input class="ka-input" id="f-hr-email" type="email" placeholder="hr@acmecorp.com">
+          <div class="ka-hint">Gets HR Manager rights. Left blank, one is created from the subdomain.</div>
+        </div>
+        <div class="ka-field">
+          <label class="ka-label">Admin Login (optional)</label>
+          <input class="ka-input" id="f-admin-email" type="email" placeholder="admin@acmecorp.com">
+          <div class="ka-hint">Gets System Manager rights. A password for each is shown once, after provisioning.</div>
+        </div>
       <div class="ka-field">
         <label class="ka-label">Company Logo (optional)</label>
         <div id="ka-logo-drop" onclick="document.getElementById('f-logo').click()" style="border:2px dashed var(--border);border-radius:var(--radius-sm);padding:14px 18px;cursor:pointer;text-align:center;transition:border-color .18s,background .18s;min-height:68px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px">
@@ -1025,6 +1035,8 @@ html, body {
     var tenant_name  = document.getElementById('f-name').value.trim();
     var primary_color = document.getElementById('f-color').value;
     var support_email = document.getElementById('f-email').value.trim();
+      var hr_email    = document.getElementById('f-hr-email').value.trim();
+      var admin_email = document.getElementById('f-admin-email').value.trim();
 
     document.getElementById('ka-form-error').style.display = 'none';
     if (!subdomain)                                              { showFormError('Subdomain is required.'); return; }
@@ -1049,6 +1061,7 @@ html, body {
         // never declared, so every attempt died on "not defined".
         subdomain: subdomain, tenant_name: tenant_name,
         primary_color: primary_color, support_email: support_email, logo_url: logo_url,
+        hr_email: hr_email, admin_email: admin_email,
         modules: selectedModules,
       });
       closeModal();

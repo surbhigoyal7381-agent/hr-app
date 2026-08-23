@@ -91,6 +91,7 @@ def list_tenants():
 
 @frappe.whitelist()
 def create_tenant(subdomain, tenant_name, plan="starter",
+                  hr_email="", admin_email="",
                   primary_color="#1a7f5a", logo_url="", support_email="", modules=None):
     """Validate inputs, enqueue provisioning. Returns {job_id, site_name, admin_password}."""
     _require_admin()
@@ -139,6 +140,13 @@ def create_tenant(subdomain, tenant_name, plan="starter",
 
     # ── Create job record ──────────────────────────────────────────────────
     admin_password = _generate_password()
+
+    # Two real logins per tenant. Left blank, they are derived from the
+    # subdomain so provisioning never depends on the operator remembering.
+    hr_email = (hr_email or f"hr@{subdomain}.{base_domain}").strip().lower()
+    admin_email = (admin_email or f"admin@{subdomain}.{base_domain}").strip().lower()
+    hr_password = _generate_password()
+    user_admin_password = _generate_password()
     job_id = uuid.uuid4().hex[:12]
 
     jobs[job_id] = {
@@ -172,6 +180,10 @@ def create_tenant(subdomain, tenant_name, plan="starter",
         support_email=support_email,
         admin_password=admin_password,
         base_domain=base_domain,
+        hr_email=hr_email,
+        admin_email=admin_email,
+        hr_password=hr_password,
+        user_admin_password=user_admin_password,
         # No fallback. A default here does not make provisioning work - it makes
         # it fail with "Access denied for user 'root'" several steps later, after
         # the job has been queued and the operator has been told it started.
@@ -184,6 +196,11 @@ def create_tenant(subdomain, tenant_name, plan="starter",
         "site_name":      site_name,
         "host_name":      f"http://{site_name}",
         "admin_password": admin_password,
+        # Shown once on the provisioning screen. Not stored anywhere afterwards.
+        "users": [
+            {"role": "HR Manager",     "email": hr_email,    "password": hr_password},
+            {"role": "System Manager", "email": admin_email, "password": user_admin_password},
+        ],
     }
 
 
@@ -386,7 +403,9 @@ def get_tenant_stats(site_name):
 
 def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
                    primary_color, logo_url, support_email, admin_password,
-                   base_domain, db_root_password):
+                   base_domain, db_root_password,
+                   hr_email=None, admin_email=None,
+                   hr_password=None, user_admin_password=None):
     """
     Runs in a Frappe long-queue worker.
     Calls provision_tenant.sh and writes status back to JOBS_FILE.
@@ -431,6 +450,22 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
 
         if result.returncode == 0:
             # Write extra config that provision_tenant.sh doesn't cover
+            # Every tenant starts with two real logins. A fresh Frappe site has
+            # only `Administrator`, which is shared and unattributable - not
+            # something to hand a customer.
+            import json as _json
+            _users = {
+                "hr_email": hr_email, "admin_email": admin_email,
+                "hr_password": hr_password, "admin_password": user_admin_password,
+                "tenant_name": tenant_name,
+            }
+            ru = _bench_run(
+                f"--site {site_name} execute alvoraa_portal.tenant_setup.create_default_users "
+                f"--kwargs '{_json.dumps(_users)}'"
+            )
+            if ru.returncode != 0:
+                log += "\n[WARN] default users not created: " + (ru.stderr or "")
+
             if logo_url:
                 _bench_run(f"--site {site_name} set-config tenant_logo_url \"{logo_url}\"")
 

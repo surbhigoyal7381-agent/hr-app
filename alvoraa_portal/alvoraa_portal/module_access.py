@@ -29,6 +29,19 @@ PROFILE_NAME = "Alvoraa Plan"
 # not a failure mode worth risking for a cosmetic gate.
 NEVER_TOUCH = {"Administrator", "Guest"}
 
+# Tenant administrators keep the full module list. They are the people who set up
+# integrations, email accounts and print formats, and those live in the very
+# framework modules this profile hides from everyone else.
+#
+# Note what this means: a tenant admin still sees Payroll in the desk even on a
+# plan without it. Hiding was never the boundary - roles are (wave 4) - so the
+# trade is deliberate: usability for admins, and the real gate elsewhere.
+ADMIN_ROLES = {"System Manager"}
+
+
+def _is_tenant_admin(user):
+    return bool(ADMIN_ROLES & set(frappe.get_roles(user)))
+
 
 def sync_module_profile(features=None):
     """Create or update this site's Module Profile. Returns its name."""
@@ -72,9 +85,20 @@ def apply_to_users(users=None):
             if u.name not in NEVER_TOUCH
         ]
 
-    changed = 0
+    changed = skipped = 0
     for name in users:
         if name in NEVER_TOUCH:
+            continue
+        if _is_tenant_admin(name):
+            # Keep their full module list, and clear any profile applied before
+            # they became an admin - otherwise an old block list lingers.
+            if frappe.db.get_value("User", name, "module_profile"):
+                u = frappe.get_doc("User", name)
+                u.module_profile = None
+                u.set("block_modules", [])
+                u.flags.ignore_permissions = True
+                u.save(ignore_permissions=True)
+            skipped += 1
             continue
         try:
             user = frappe.get_doc("User", name)
@@ -91,17 +115,18 @@ def apply_to_users(users=None):
                 message=frappe.get_traceback(),
             )
     frappe.db.commit()
-    return changed
+    return {"applied": changed, "admins_exempt": skipped}
 
 
 def sync_site(features=None):
     """Build the profile from this site's config and apply it to every user."""
     profile = sync_module_profile(features)
-    count = apply_to_users()
+    res = apply_to_users()
     blocked = frappe.db.count("Block Module", {"parent": profile, "parenttype": "Module Profile"})
-    msg = f"{profile}: {blocked} modules hidden, applied to {count} users"
+    msg = (f"{profile}: {blocked} modules hidden, applied to {res['applied']} users, "
+           f"{res['admins_exempt']} admins exempt")
     print(msg)          # bench execute prints this back to the operator
-    return {"profile": profile, "blocked": blocked, "users": count}
+    return {"profile": profile, "blocked": blocked, **res}
 
 
 @frappe.whitelist()
@@ -111,3 +136,49 @@ def get_hidden_modules():
         return {"profile": None, "blocked": []}
     doc = frappe.get_doc("Module Profile", PROFILE_NAME)
     return {"profile": PROFILE_NAME, "blocked": sorted(d.module for d in doc.block_modules)}
+
+
+def apply_on_user_insert(doc, method=None):
+    """Give a NEW user the site's Module Profile.
+
+    Without this, module hiding would apply only to whoever existed when the
+    plan was last synced. Every employee added afterwards - which is most of
+    them, over a tenant's life - would see the full module list. The gate would
+    quietly decay from the day it was switched on.
+
+    Tenant admins are left alone, as everywhere else.
+    """
+    if doc.name in NEVER_TOUCH or not frappe.db.exists("Module Profile", PROFILE_NAME):
+        return
+    if _is_tenant_admin(doc.name):
+        return
+    # Set it directly: this runs inside the user's own insert, so saving the
+    # document again here would recurse.
+    frappe.db.set_value("User", doc.name, "module_profile", PROFILE_NAME,
+                        update_modified=False)
+    for m in frappe.get_all("Block Module",
+                            filters={"parent": PROFILE_NAME, "parenttype": "Module Profile"},
+                            fields=["module"]):
+        frappe.get_doc({
+            "doctype": "Block Module", "parent": doc.name, "parenttype": "User",
+            "parentfield": "block_modules", "module": m.module,
+        }).db_insert()
+
+
+def apply_on_role_change(doc, method=None):
+    """Re-evaluate a user when their roles change.
+
+    Promoting someone to System Manager should give them the full module list;
+    demoting them should take it away again. Without this, the exemption is
+    decided once and never revisited.
+    """
+    user = getattr(doc, "parent", None)
+    if not user or user in NEVER_TOUCH:
+        return
+    if not frappe.db.exists("Module Profile", PROFILE_NAME):
+        return
+    try:
+        apply_to_users([user])
+    except Exception:
+        frappe.log_error(title="module_access: role change re-apply failed",
+                         message=frappe.get_traceback())

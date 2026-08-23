@@ -47,8 +47,16 @@ doc_events = {
         "on_trash":  "alvoraa_portal.hr_api.invalidate_portal_context_cache",
     },
     "Has Role": {
-        "after_insert": "alvoraa_portal.hr_api.invalidate_portal_context_cache",
-        "on_trash":     "alvoraa_portal.hr_api.invalidate_portal_context_cache",
+        "after_insert": ["alvoraa_portal.hr_api.invalidate_portal_context_cache",
+                         "alvoraa_portal.module_access.apply_on_role_change"],
+        "on_trash":     ["alvoraa_portal.hr_api.invalidate_portal_context_cache",
+                         "alvoraa_portal.module_access.apply_on_role_change"],
+    },
+    # ── Module access follows the plan, for the whole life of the tenant ──
+    # A plan is chosen once; users arrive and change roles for years afterwards.
+    # Without these the gate would apply only to whoever existed on sync day.
+    "User": {
+        "after_insert": "alvoraa_portal.module_access.apply_on_user_insert",
     },
     # ── Global features cache invalidation ───────────────────────────────
     # Clear portal_features_global when HR configuration changes

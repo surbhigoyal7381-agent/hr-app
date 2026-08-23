@@ -185,6 +185,19 @@ ERPNEXT_FEATURES = {
     for m in ERPNEXT_SELLABLE
 }
 
+# ── Frappe's own framework modules ───────────────────────────────────────────
+# Clutter for an HR tenant: Website, Integrations, Automation and the rest are
+# not part of the product. Hidden from ordinary users, but NOT from the tenant's
+# own administrators, who legitimately need Integrations to connect other systems.
+FRAPPE_HIDDEN = [
+    "Automation", "Contacts", "Custom", "Email", "Geo",
+    "Integrations", "Printing", "Website", "Workflow",
+]
+
+# Never blocked for anyone: these ARE the desk. Hiding them risks breaking
+# navigation for every user on the site.
+FRAPPE_ALWAYS_VISIBLE = ["Core", "Desk"]
+
 # Plumbing Frappe HR needs. Always installed, always hidden, never sold.
 ERPNEXT_INFRASTRUCTURE = [
     "Bulk Transaction", "Communication", "EDI", "ERPNext Integrations",
@@ -252,7 +265,12 @@ def blocked_module_defs(features):
 
     # Plumbing Frappe HR needs. Always installed, always hidden, never sold.
     blocked.extend(ERPNEXT_INFRASTRUCTURE)
-    return sorted(set(blocked))
+
+    # Frappe's own framework modules - clutter for a tenant.
+    blocked.extend(FRAPPE_HIDDEN)
+
+    # Core and Desk are the desk itself; blocking them breaks navigation.
+    return sorted(set(blocked) - set(FRAPPE_ALWAYS_VISIBLE))
 
 
 def withheld_roles(features):

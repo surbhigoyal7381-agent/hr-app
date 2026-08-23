@@ -106,3 +106,105 @@ class TestThisIsNotABoundary(FrappeTestCase):
 			frappe.has_permission("Salary Slip", "read"),
 			"hiding a module does not deny doctype access - that is wave 4",
 		)
+
+
+class TestPlanChangesAfterProvisioning(FrappeTestCase):
+	"""A plan is chosen once; the tenant then runs for years.
+
+	Users arrive, roles change, and the plan itself gets upgraded or downgraded.
+	If module access is decided only at provisioning it decays from day one.
+	"""
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		self.user = "plan.change.test@example.com"
+		if not frappe.db.exists("User", self.user):
+			u = frappe.get_doc({
+				"doctype": "User", "email": self.user, "first_name": "Plan Change",
+				"send_welcome_email": 0, "enabled": 1,
+			})
+			u.flags.ignore_permissions = True
+			u.insert(ignore_permissions=True)
+
+	def tearDown(self):
+		frappe.db.rollback()
+
+	def _blocked_for(self, user):
+		return {d.module for d in frappe.get_doc("User", user).block_modules}
+
+	def test_upgrade_gives_the_user_more(self):
+		ma.sync_module_profile(sub.plan_features("starter"))
+		ma.apply_to_users([self.user])
+		self.assertIn("Payroll", self._blocked_for(self.user))
+
+		ma.sync_module_profile(sub.plan_features("business"))
+		ma.apply_to_users([self.user])
+		self.assertNotIn("Payroll", self._blocked_for(self.user),
+		                 "an upgrade must reach users who already existed")
+
+	def test_downgrade_takes_it_away_again(self):
+		ma.sync_module_profile(sub.plan_features("business"))
+		ma.apply_to_users([self.user])
+		self.assertNotIn("Payroll", self._blocked_for(self.user))
+
+		ma.sync_module_profile(sub.plan_features("starter"))
+		ma.apply_to_users([self.user])
+		self.assertIn("Payroll", self._blocked_for(self.user),
+		              "a downgrade must reach users who already existed")
+
+	def test_a_user_created_later_still_gets_the_profile(self):
+		"""Most of a tenant's users are created long after provisioning."""
+		ma.sync_module_profile(sub.plan_features("starter"))
+		later = "joined.later@example.com"
+		if frappe.db.exists("User", later):
+			frappe.delete_doc("User", later, force=True, ignore_permissions=True)
+		u = frappe.get_doc({
+			"doctype": "User", "email": later, "first_name": "Joined Later",
+			"send_welcome_email": 0, "enabled": 1,
+		})
+		u.flags.ignore_permissions = True
+		u.insert(ignore_permissions=True)          # after_insert hook fires here
+		self.assertEqual(frappe.db.get_value("User", later, "module_profile"),
+		                 ma.PROFILE_NAME,
+		                 "a user added after provisioning must inherit the plan")
+
+
+class TestTenantAdminExemption(FrappeTestCase):
+	"""Tenant admins keep the full module list so they can set up integrations."""
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		ma.sync_module_profile(sub.plan_features("starter"))
+		self.admin = "tenant.admin.test@example.com"
+		if not frappe.db.exists("User", self.admin):
+			u = frappe.get_doc({
+				"doctype": "User", "email": self.admin, "first_name": "Tenant Admin",
+				"send_welcome_email": 0, "enabled": 1,
+			})
+			u.flags.ignore_permissions = True
+			u.insert(ignore_permissions=True)
+
+	def tearDown(self):
+		frappe.db.rollback()
+
+	def test_a_system_manager_is_not_blocked(self):
+		u = frappe.get_doc("User", self.admin)
+		u.append("roles", {"role": "System Manager"})
+		u.flags.ignore_permissions = True
+		u.save(ignore_permissions=True)
+
+		res = ma.apply_to_users([self.admin])
+		self.assertEqual(res["admins_exempt"], 1)
+		self.assertFalse(frappe.db.get_value("User", self.admin, "module_profile"),
+		                 "a tenant admin must keep Integrations, Email and the rest")
+
+	def test_core_and_desk_are_never_blocked_for_anyone(self):
+		"""Hiding these would break navigation for every user on the site."""
+		blocked = set(sub.blocked_module_defs(sub.plan_features("starter")))
+		for m in sub.FRAPPE_ALWAYS_VISIBLE:
+			self.assertNotIn(m, blocked)
+
+	def test_frappe_clutter_is_hidden_from_ordinary_users(self):
+		blocked = set(sub.blocked_module_defs(sub.plan_features("starter")))
+		for m in ("Website", "Integrations", "Automation"):
+			self.assertIn(m, blocked)

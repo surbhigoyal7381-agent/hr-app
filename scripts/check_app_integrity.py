@@ -282,6 +282,52 @@ for app_dir in APPS:
 				err("%s : %s not defined there" % (where, ", ".join(missing)))
 
 
+# ── Doctype controllers must define the class Frappe will look for ─────────
+#
+# Frappe builds the controller class name by ONLY stripping spaces and hyphens
+# from the doctype name. It does NOT capitalise. So "Mode of Payment" resolves
+# to `ModeofPayment` - lowercase o - and a file defining `ModeOfPayment` fails
+# with ImportError.
+#
+# That is not a crash you get to see. `remove_orphan_doctypes()` treats an
+# ImportError as "this doctype no longer exists in code" and DELETES the DocType
+# record on every migrate. It happened for real to Mode of Payment: our hrms
+# fork carried a hand-written stub with the wrong capitalisation, so every
+# migrate destroyed ERPNext's doctype and left 18 fields pointing at nothing.
+#
+# The whole failure is one letter, and nothing reports it.
+CONTROLLER_ROOTS = ["alvoraa_goals", "alvoraa_portal", "hrms"]
+
+for app_dir in CONTROLLER_ROOTS:
+	root = os.path.join(REPO, app_dir)
+	for jf in glob.glob(os.path.join(root, "**", "*.json"), recursive=True):
+		folder = os.path.basename(os.path.dirname(jf))
+		if os.path.basename(jf) != folder + ".json":
+			continue                      # not a doctype definition
+		try:
+			d = json.load(io.open(jf, encoding="utf-8-sig"))
+		except Exception:
+			continue
+		if not isinstance(d, dict) or d.get("doctype") != "DocType" or d.get("custom"):
+			continue
+		py = jf[:-5] + ".py"
+		if not os.path.exists(py):
+			continue                      # some doctypes ship no controller
+		checks += 1
+		want = (d.get("name") or "").replace(" ", "").replace("-", "")
+		names = defined_names(py)
+		if names is None:
+			continue
+		if want not in names:
+			err("%s : doctype '%s' needs class '%s', but the controller defines %s. "
+			    "Frappe strips spaces without capitalising, so this doctype would be "
+			    "deleted as an orphan on every migrate."
+			    % (os.path.relpath(py, REPO).replace(os.sep, "/"),
+			       d.get("name"), want, sorted(names & {want.lower(), want.upper()} or
+			                                   {n for n in names if n.lower() == want.lower()})
+			       or "no matching class"))
+
+
 print("app integrity: %d checks" % checks)
 if errors:
 	print("FAIL - %d problem(s):" % len(errors))

@@ -280,6 +280,15 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
             "analytics":   "Analytics",
         }
         modules_enabled = [_MOD_MAP.get(m, m) for m in modules]
+
+        # `features` is the authoritative value: the raw selection ids the
+        # registry understands (portal, payroll, erp_accounts...).
+        # `modules_enabled` keeps human labels for display and older callers.
+        # Writing only labels meant subscription.enabled_features() could not
+        # read the selection back.
+        r = _bench_run(f"--site {site_name} set-config -p features '{json.dumps(list(modules))}'")
+        if r.returncode != 0:
+            frappe.throw(f"Failed to update features: {r.stderr}")
         # -p makes bench evaluate the value as a Python object. Without it the
         # JSON is stored as a STRING, so site_config holds
         #   "modules_enabled": "[\"hrms\", \"Payroll\", ...]"
@@ -290,6 +299,18 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
             frappe.throw(f"Failed to update modules: {r.stderr}")
 
     _bench_run(f"--site {site_name} clear-cache")
+
+    # Rebuild the Module Profile so the desk shows only what was bought, and
+    # re-save its users: Frappe copies block_modules on SAVE, so a profile that
+    # changed afterwards does nothing until the users are saved again.
+    if modules is not None:
+        r = _bench_run(f"--site {site_name} execute alvoraa_portal.module_access.sync_site")
+        if r.returncode != 0:
+            # Not fatal: the plan is recorded, the desk just still shows too much.
+            frappe.log_error(
+                title=f"module_access sync failed for {site_name}",
+                message=r.stderr,
+            )
 
     # Queue background install for any newly-added apps not yet on the site
     if modules is not None:

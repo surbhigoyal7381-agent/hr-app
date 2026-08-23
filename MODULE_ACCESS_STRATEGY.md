@@ -202,3 +202,29 @@ deleting before this work, not during.
 
 Approval of the plan ladder in §4 and answers to §7. Then wave 1 — the feature registry and
 plan definitions — which is small, testable, and the thing every later wave reads from.
+
+---
+
+## 10. Open: Frappe's own 11 modules
+
+Wave 2 hides ERPNext's 21 and any unsold Alvoraa HR module. Measured on a Starter
+site afterwards: **24 hidden, 13 still visible** — and 11 of those 13 are Frappe
+*framework* modules, which this strategy never considered:
+
+```
+Automation  Contacts  Core  Custom  Desk  Email
+Geo  Integrations  Printing  Website  Workflow
+```
+
+So a Starter tenant's desk still offers Website, Integrations and Automation.
+
+They split into two kinds:
+
+| | Modules | View |
+|---|---|---|
+| **Noise for an HR tenant** | Website, Integrations, Automation, Geo, Printing, Contacts, Email, Workflow, Custom | hide by default |
+| **The desk itself** | Core, Desk | must stay — hiding these risks breaking navigation |
+
+This is a product decision, not a technical one, so it is recorded here rather
+than assumed. My recommendation is to hide the first row for every tenant and
+keep them available on the control plane, where they are genuinely used.

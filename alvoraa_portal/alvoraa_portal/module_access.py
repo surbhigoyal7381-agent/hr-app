@@ -159,6 +159,13 @@ def sync_site(features=None):
     sync_module_profile(feats, PROFILE_NAME)
     sync_module_profile(feats, HR_PROFILE_NAME, blocked_module_defs_for_hr(feats))
 
+    # The desk's own menu gets a way back to the portal.
+    try:
+        sync_navbar_item()
+    except Exception:
+        frappe.log_error(title="module_access: navbar item failed",
+                         message=frappe.get_traceback())
+
     res = apply_to_users()
     counts = {
         n: frappe.db.count("Block Module", {"parent": n, "parenttype": "Module Profile"})
@@ -230,3 +237,55 @@ def apply_on_role_change(doc, method=None):
     except Exception:
         frappe.log_error(title="module_access: role change re-apply failed",
                          message=frappe.get_traceback())
+
+
+# ── Moving between the portal and the desk ───────────────────────────────────
+
+NAVBAR_LABEL = "Switch to Employee Portal"
+
+
+def sync_navbar_item():
+    """Add "Switch to Employee Portal" to the desk's top-right menu.
+
+    Frappe owns that menu, and it is a real doctype - Navbar Settings, with a
+    `settings_dropdown` table. Adding a row is supported; injecting markup into
+    someone else's navbar with JavaScript is not, and would break the next time
+    they change it.
+
+    Idempotent: called on every sync.
+    """
+    settings = frappe.get_doc("Navbar Settings")
+    for row in settings.settings_dropdown:
+        if row.item_label == NAVBAR_LABEL:
+            return NAVBAR_LABEL          # already there
+
+    settings.append("settings_dropdown", {
+        "item_label": NAVBAR_LABEL,
+        "item_type": "Route",
+        "route": "/hrms-employee",
+        "is_standard": 0,
+    })
+    settings.flags.ignore_permissions = True
+    settings.save(ignore_permissions=True)
+    frappe.db.commit()
+    return NAVBAR_LABEL
+
+
+@frappe.whitelist()
+def get_switch_target():
+    """Where the portal's switch control should send THIS user, and what to call it.
+
+    Returns None when the user has no business in the desk, so the portal can
+    hide the control entirely rather than offering a door that leads nowhere.
+    """
+    user = frappe.session.user
+    if user in NEVER_TOUCH:
+        return None
+    roles = set(frappe.get_roles(user))
+
+    if ADMIN_ROLES & roles:
+        return {"label": "Switch to Admin", "url": "/app"}
+    if HR_ROLES & roles:
+        # /app/hr is Frappe HR's own workspace - leaves, payroll, recruitment.
+        return {"label": "Switch to HR Core", "url": "/app/hr"}
+    return None

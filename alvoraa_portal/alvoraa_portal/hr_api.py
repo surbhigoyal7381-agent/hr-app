@@ -1036,6 +1036,19 @@ def get_hr_approver():
 
 
 @frappe.whitelist()
+def get_switch_target():
+    """Where this user may switch to, and what to call the link.
+
+    The portal's api() helper prefixes every call with this module, so the
+    endpoint lives here while the logic - and the role sets it depends on - stay
+    in module_access.
+    """
+    from alvoraa_portal.module_access import get_switch_target as _target
+
+    return _target()
+
+
+@frappe.whitelist()
 def get_available_features():
     """Return which HR self-service features are available on this instance.
 

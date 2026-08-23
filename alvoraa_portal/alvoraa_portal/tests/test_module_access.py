@@ -286,3 +286,73 @@ class TestHrKeepsTheDesk(FrappeTestCase):
 		ma.apply_to_users([self.hr])
 		self.assertEqual(frappe.db.get_value("User", self.hr, "module_profile"),
 		                 ma.PROFILE_NAME)
+
+
+class TestSwitchTarget(FrappeTestCase):
+	"""Where the portal's switch control sends each kind of user."""
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		self.u = "switch.target.test@example.com"
+		if not frappe.db.exists("User", self.u):
+			d = frappe.get_doc({
+				"doctype": "User", "email": self.u, "first_name": "Switch Target",
+				"send_welcome_email": 0, "enabled": 1,
+			})
+			d.flags.ignore_permissions = True
+			d.insert(ignore_permissions=True)
+		else:
+			d = frappe.get_doc("User", self.u)
+			d.set("roles", [])
+			d.flags.ignore_permissions = True
+			d.save(ignore_permissions=True)
+		frappe.db.commit()
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		frappe.db.rollback()
+
+	def _as(self, *roles):
+		d = frappe.get_doc("User", self.u)
+		d.set("roles", [])
+		for r in roles:
+			if frappe.db.exists("Role", r):
+				d.append("roles", {"role": r})
+		d.flags.ignore_permissions = True
+		d.save(ignore_permissions=True)
+		frappe.db.commit()
+		frappe.set_user(self.u)
+
+	def test_an_employee_gets_no_switch_control(self):
+		"""They have no business in the desk, so no door is offered."""
+		self._as("Employee")
+		self.assertIsNone(ma.get_switch_target())
+
+	def test_hr_is_sent_to_frappe_hr(self):
+		self._as("HR Manager")
+		t = ma.get_switch_target()
+		self.assertEqual(t["label"], "Switch to HR Core")
+		self.assertEqual(t["url"], "/app/hr")
+
+	def test_an_admin_is_sent_to_the_desk(self):
+		self._as("System Manager")
+		t = ma.get_switch_target()
+		self.assertEqual(t["label"], "Switch to Admin")
+		self.assertEqual(t["url"], "/app")
+
+	def test_admin_wins_when_someone_holds_both(self):
+		"""A System Manager who is also HR Manager should land on the desk."""
+		self._as("System Manager", "HR Manager")
+		self.assertEqual(ma.get_switch_target()["url"], "/app")
+
+	def test_the_navbar_gets_a_way_back(self):
+		"""Frappe's own top-right menu should offer a route to the portal."""
+		ma.sync_navbar_item()
+		labels = [r.item_label for r in frappe.get_doc("Navbar Settings").settings_dropdown]
+		self.assertIn(ma.NAVBAR_LABEL, labels)
+
+	def test_adding_the_navbar_item_twice_does_not_duplicate(self):
+		ma.sync_navbar_item()
+		ma.sync_navbar_item()
+		labels = [r.item_label for r in frappe.get_doc("Navbar Settings").settings_dropdown]
+		self.assertEqual(labels.count(ma.NAVBAR_LABEL), 1)

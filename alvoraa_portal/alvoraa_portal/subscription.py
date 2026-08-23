@@ -131,8 +131,8 @@ FEATURES = {
 # Custom   - Enterprise plus individually chosen ERPNext modules
 
 _STARTER = ["portal", "leaves", "attendance", "expenses", "hr_setup"]
-_BUSINESS = _STARTER + ["tenure", "recruitment", "payroll", "tax_benefits"]
-_ENTERPRISE = _BUSINESS + ["performance", "goals", "analytics", "vendor"]
+_BUSINESS = [*_STARTER, "tenure", "recruitment", "payroll", "tax_benefits"]
+_ENTERPRISE = [*_BUSINESS, "performance", "goals", "analytics", "vendor"]
 
 PLANS = {
     "starter": _STARTER,

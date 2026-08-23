@@ -211,6 +211,7 @@ html, body {
 .badge-provisioning { background: var(--blue-lt);  color: var(--blue); }
 .badge-queued       { background: var(--violet-lt); color: var(--violet); }
 .badge-failed       { background: var(--red-lt);   color: var(--red); }
+.badge-stalled      { background: var(--red-lt);   color: var(--red); }
 .badge-starter      { background: #ede9fe; color: #6d28d9; }
 .badge-business     { background: var(--green-lt); color: var(--green); }
 .badge-enterprise   { background: var(--amber-lt); color: #b45309; }
@@ -731,6 +732,9 @@ html, body {
             <span class="ka-cred-val" id="cred-pw">&mdash;</span>
             <button class="ka-copy-btn" onclick="copyVal('cred-pw')">&#x1F4CB;</button>
           </div>
+          <!-- The HR and Admin logins every tenant is born with. The form
+               promises these are shown once; until now they never were. -->
+          <div id="cred-users"></div>
         </div>
       </div>
     </div>
@@ -898,6 +902,8 @@ html, body {
     var initials = (t.tenant_name || t.site_name).slice(0,2).toUpperCase();
     var color    = t.primary_color || '#16A373';
     var hostUrl  = t.host_name || ('http://' + t.site_name);
+    // 'Stalled' is deliberately excluded: it must not keep animating a
+    // progress bar for work that stopped.
     var isProvisioning = t.status === 'Queued' || t.status === 'Provisioning';
     var isSuspended    = t.status === 'Suspended';
 
@@ -911,6 +917,9 @@ html, body {
       'Provisioning': '<span class="ka-badge badge-provisioning">Provisioning</span>',
       'Queued':       '<span class="ka-badge badge-queued">Queued</span>',
       'Failed':       '<span class="ka-badge badge-failed">Failed</span>',
+      // A job that died before it could report on itself. Shown instead of
+      // "Queued" so a dead job cannot look like a slow one for ever.
+      'Stalled':      '<span class="ka-badge badge-stalled">Stalled</span>',
     };
     var statusBadge = statusMap[t.status] || '';
     var planClass   = 'badge-' + (t.plan || '').toLowerCase();
@@ -1103,7 +1112,9 @@ html, body {
         modules: selectedModules,
       });
       closeModal();
-      openProgressModal(result.job_id, tenant_name, result.host_name, result.admin_password,
+      // No password is passed: create_tenant returns none, because the worker
+      // has not generated one yet. It arrives with the finished job.
+      openProgressModal(result.job_id, tenant_name, result.host_name, '',
                         result.started_at, result.estimated_minutes);
       loadTenants();
     } catch(e) {
@@ -1175,15 +1186,25 @@ html, body {
         bar.style.background = 'var(--green)';
         bar.style.width      = '100%';
         document.getElementById('cred-url').textContent = hostUrl + '/kinexus-login';
-        document.getElementById('cred-pw').textContent  = job.admin_password || adminPw;
+        document.getElementById('cred-pw').textContent  = job.admin_password || adminPw || '—';
+        document.getElementById('cred-users').innerHTML = (job.users || [])
+          .filter(function(u){ return u.email && u.password; })
+          .map(function(u){
+            return '<div class="ka-cred-row" style="margin-top:6px">'
+                 +   '<span class="ka-cred-label">' + esc(u.role) + '</span>'
+                 +   '<span class="ka-cred-val">' + esc(u.email) + ' / ' + esc(u.password) + '</span>'
+                 +   '<button class="ka-copy-btn" onclick="copyText(\'' + esc(u.password) + '\')">&#x1F4CB;</button>'
+                 + '</div>';
+          }).join('');
         document.getElementById('prog-open-link').href  = hostUrl + '/kinexus-login';
         document.getElementById('prog-creds').style.display  = 'block';
         document.getElementById('prog-footer').style.display = 'flex';
         loadTenants();
-      } else if (job.status === 'Failed') {
+      } else if (job.status === 'Failed' || job.status === 'Stalled') {
         clearInterval(pollTimer);
         document.getElementById('prog-icon').textContent  = '❌';
-        document.getElementById('prog-title').textContent = 'Provisioning Failed';
+        document.getElementById('prog-title').textContent =
+          job.status === 'Stalled' ? 'Provisioning Stalled' : 'Provisioning Failed';
         document.getElementById('prog-sub').textContent   = 'Check the log below for details';
         var bar = document.getElementById('prog-bar');
         bar.style.animation  = 'none';
@@ -1258,14 +1279,15 @@ html, body {
       try {
         var job = await api('alvoraa_portal.tenant_api.get_provision_status', {job_id: jobId});
         document.getElementById('prog-icon').textContent =
-          job.status === 'Done' ? '✅' : (job.status === 'Failed' ? '❌' : '⏳');
+          job.status === 'Done' ? '✅'
+            : ((job.status === 'Failed' || job.status === 'Stalled') ? '❌' : '⏳');
         document.getElementById('prog-sub').textContent =
           job.site_name + ' - ' + job.status +
           (job.started_at ? ' - started ' + fmtTime(job.started_at) : '');
         var el = document.getElementById('prog-log');
         el.textContent = job.log || 'Queued...';
         el.scrollTop = el.scrollHeight;
-        if (job.status === 'Done' || job.status === 'Failed') {
+        if (job.status === 'Done' || job.status === 'Failed' || job.status === 'Stalled') {
           clearInterval(jobLogTimer);
           jobLogTimer = null;
           loadJobs();

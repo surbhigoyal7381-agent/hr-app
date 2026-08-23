@@ -28,6 +28,136 @@ JOBS_FILE   = f"{SITES_DIR}/kinexus_provision_jobs.json"
 # Directories inside sites/ that are NOT Frappe sites
 _NOT_SITES = {"apps", "assets", "common_site_config.json", "currentsite.txt"}
 
+# ── Guards against a half-deployed bench ───────────────────────────────────
+#
+# On 2026-08-23 a deploy replaced the web container but left the long-queue
+# worker on the previous image. create_tenant sent an argument the old
+# _run_provision did not accept, so the job died with a TypeError before it ran
+# a single line - and because only the job itself ever writes status, the
+# console showed "Queued" with an empty log for an hour.
+#
+# The guards below need nothing set per environment. They ship in the image and
+# behave identically on dev, test and production.
+
+# Bump ONLY when _run_provision's arguments change. The number travels with the
+# job, so a worker on an older image can say exactly what is wrong instead of
+# raising TypeError. This is deliberately NOT the app version: an unrelated
+# release must not invalidate jobs that are already queued.
+PROVISION_CONTRACT = 2
+
+# A job that has not moved in this long is not queued, it is abandoned. Without
+# this, one dead job blocks its subdomain for ever and the only cure is editing
+# JSON on the server by hand.
+#
+# 30 minutes is chosen to sit ABOVE the RQ timeout on the job itself (1200s =
+# 20 minutes), so a run that is genuinely still working can never be declared
+# stale. Raise the job timeout and this must move with it.
+STALE_AFTER_MINUTES = 30
+
+# Anything matching these is stripped before a traceback reaches the jobs file.
+# Provisioning passes generated passwords as job arguments, and RQ puts the
+# arguments into the traceback.
+_SECRET_HINT = ("password", "passwd", "secret", "token", "api_key", "api_secret")
+
+
+def _redact(text):
+    """Blank out anything password-shaped in a traceback before storing it."""
+    if not text:
+        return ""
+    out = []
+    for line in str(text).splitlines():
+        low = line.lower()
+        out.append("    <redacted - contained a secret>"
+                   if any(h in low for h in _SECRET_HINT) else line)
+    return "\n".join(out)
+
+
+def _long_worker_alive():
+    """Is anything actually listening on the long queue right now?
+
+    Asks Redis what is running rather than trusting configuration, so it is
+    correct in every environment without being told about any of them.
+    """
+    try:
+        from frappe.utils.background_jobs import get_queue, get_workers
+
+        return bool(get_workers(get_queue("long")))
+    except Exception:
+        # Never block provisioning because the check itself broke.
+        frappe.log_error(title="tenant_api: long-worker check failed",
+                         message=frappe.get_traceback())
+        return True
+
+
+def _is_stale(job):
+    """True when a job claims to be running but has not moved for a long time."""
+    if job.get("status") not in ("Queued", "Provisioning"):
+        return False
+    started = job.get("started_at")
+    if not started:
+        return False
+    try:
+        from frappe.utils import time_diff_in_seconds
+
+        return time_diff_in_seconds(now_datetime(), started) > STALE_AFTER_MINUTES * 60
+    except Exception:
+        return False
+
+
+def _effective_status(job):
+    """The status to SHOW: a stalled job must not keep claiming to be queued."""
+    return "Stalled" if _is_stale(job) else job.get("status")
+
+
+def _update_job(pjob_id, **fields):
+    """Merge fields into one job record.
+
+    Re-reads immediately before writing. Both the web process and the worker
+    write this file, so building the new contents from a copy read earlier would
+    drop whatever the other one wrote in between.
+    """
+    jobs = _read_jobs()
+    if pjob_id not in jobs:
+        return
+    jobs[pjob_id].update(fields)
+    _write_jobs(jobs)
+
+
+def _provision_failed(job, connection, type, value, traceback):
+    """RQ failure callback - the only thing that reports a job that never ran.
+
+    Registered with frappe.enqueue(on_failure=...). It fires even when the
+    ARGUMENTS are rejected, which is the case an in-function try/except can
+    never catch: _run_provision had not started, so it could not report on
+    itself. Without this the console shows "Queued" for ever.
+    """
+    try:
+        outer = job.kwargs or {}
+        pjob_id = (outer.get("kwargs") or {}).get("pjob_id") or outer.get("pjob_id")
+        if not pjob_id:
+            return
+        prev = (_read_jobs().get(pjob_id) or {}).get("log") or ""
+        _forget_credentials(pjob_id)   # never keep a secret for a failed job
+        _update_job(
+            pjob_id,
+            status="Failed",
+            finished_at=str(now_datetime()),
+            log=prev + "\n[" + str(now_datetime()) + "] The job failed before it "
+                "could report on itself:\n" + _redact(value) + "\n",
+        )
+    except Exception:
+        frappe.log_error(title="tenant_api: failure callback broke",
+                         message=frappe.get_traceback())
+    finally:
+        # frappe.enqueue defaults on_failure to truncate_failed_registry, and
+        # passing our own REPLACES it. Call it so the registry keeps being trimmed.
+        try:
+            from frappe.utils.background_jobs import truncate_failed_registry
+
+            truncate_failed_registry(job, connection, type, value, traceback)
+        except Exception:
+            pass
+
 # Plans → enabled module list
 # PLAN_MODULES used to live here - a FOURTH copy of the plan definition, with a
 # module list matching neither the admin page nor subscription.py. The single
@@ -48,7 +178,9 @@ def list_tenants():
     provisioning_sites = {}
     for job in jobs.values():
         sn = job.get("site_name", "")
-        if job.get("status") in ("Queued", "Provisioning"):
+        # _effective_status, not the stored one: a job that died on arrival is
+        # still recorded as "Queued" and would otherwise claim the row for ever.
+        if _effective_status(job) in ("Queued", "Provisioning"):
             provisioning_sites[sn] = job
 
     tenants = []
@@ -95,7 +227,12 @@ def create_tenant(subdomain, tenant_name, plan="starter",
                   company_name="", company_abbr="", country="India",
                   currency="INR", timezone="Asia/Kolkata", fy_start_date="",
                   primary_color="#1a7f5a", logo_url="", support_email="", modules=None):
-    """Validate inputs, enqueue provisioning. Returns {job_id, site_name, admin_password}."""
+    """Validate inputs, enqueue provisioning.
+
+    Returns {job_id, site_name, started_at, ...} and NO credentials: they do not
+    exist yet. The worker generates them, and get_provision_status returns them
+    once the job reports Done.
+    """
     _require_admin()
 
     subdomain = subdomain.strip().lower()
@@ -132,8 +269,29 @@ def create_tenant(subdomain, tenant_name, plan="starter",
     # Check not already being provisioned
     jobs = _read_jobs()
     for job in jobs.values():
-        if job.get("site_name") == site_name and job.get("status") in ("Queued","Provisioning"):
+        if job.get("site_name") != site_name:
+            continue
+        # A job that died on arrival used to block its subdomain for ever: the
+        # status is only ever written by the job itself, so one that never ran
+        # stayed "Queued" and the only cure was editing JSON on the server.
+        if job.get("status") in ("Queued", "Provisioning") and not _is_stale(job):
             frappe.throw(f"'{site_name}' is already being provisioned (job {job['job_id']}).")
+
+    # ── Pre-flight: can this possibly work? ───────────────────────────────
+    # Checked here so the operator is told immediately, rather than several
+    # minutes later inside `bench new-site`. The VALUE is deliberately not sent
+    # to the worker: it reads the same variable from its own environment, which
+    # keeps the database root password out of Redis.
+    _require_db_root_password()
+
+
+    # Queueing into a queue nobody reads looks exactly like success. The job sits
+    # in Redis, the console says "Queued", and no error appears anywhere.
+    if not _long_worker_alive():
+        frappe.throw(
+            "No background worker is running for the 'long' queue, so provisioning "
+            "cannot start. Start the long worker on this bench and try again."
+        )
 
     # `plan` is DERIVED from the ticked modules a few lines above, so it can only
     # be one of the registry's names. The old check rejected "custom" outright,
@@ -143,14 +301,17 @@ def create_tenant(subdomain, tenant_name, plan="starter",
         frappe.throw(f"Invalid plan '{plan}'. Known plans: {', '.join(PLANS)}.")
 
     # ── Create job record ──────────────────────────────────────────────────
-    admin_password = _generate_password()
-
+    #
+    # No password is generated here, and none is passed to the worker. RQ stores
+    # a job's arguments in Redis, so anything secret handed to enqueue() is
+    # readable by anyone who can reach Redis - for every tenant, indefinitely.
+    # The worker generates its own and puts them straight into Frappe's
+    # encrypted store; see _store_credentials.
+    #
     # Two real logins per tenant. Left blank, they are derived from the
     # subdomain so provisioning never depends on the operator remembering.
     hr_email = (hr_email or f"hr@{subdomain}.{base_domain}").strip().lower()
     admin_email = (admin_email or f"admin@{subdomain}.{base_domain}").strip().lower()
-    hr_password = _generate_password()
-    user_admin_password = _generate_password()
     job_id = uuid.uuid4().hex[:12]
 
     jobs[job_id] = {
@@ -161,45 +322,63 @@ def create_tenant(subdomain, tenant_name, plan="starter",
         "status":          "Queued",
         "started_at":      str(now_datetime()),
         "finished_at":     None,
-        "admin_password":  admin_password,
+        # Not secret, and needed to label the credentials when the job finishes.
+        "hr_email":        hr_email,
+        "admin_email":     admin_email,
         "log":             "",
         "host_name":       f"http://{site_name}",
     }
     _write_jobs(jobs)
 
     # ── Enqueue background job ─────────────────────────────────────────────
-    frappe.enqueue(
-        "alvoraa_portal.tenant_api._run_provision",
-        queue="long",
-        timeout=1200,
-        job_name=f"provision_{job_id}",
-        # kwargs forwarded to the function:
-        pjob_id=job_id,
-        site_name=site_name,
-        tenant_name=tenant_name,
-        plan=plan,
-        modules=",".join(modules),
-        primary_color=primary_color,
-        logo_url=logo_url,
-        support_email=support_email,
-        admin_password=admin_password,
-        base_domain=base_domain,
-        hr_email=hr_email,
-        admin_email=admin_email,
-        hr_password=hr_password,
-        user_admin_password=user_admin_password,
-        company_name=company_name or tenant_name,
-        company_abbr=company_abbr,
-        country=country,
-        currency=currency,
-        timezone=timezone,
-        fy_start_date=fy_start_date,
-        # No fallback. A default here does not make provisioning work - it makes
-        # it fail with "Access denied for user 'root'" several steps later, after
-        # the job has been queued and the operator has been told it started.
-        # Better to refuse immediately and say why.
-        db_root_password=_require_db_root_password(),
-    )
+    #
+    # The job record above exists ONLY so the worker has somewhere to report.
+    # It is not a tenant: a tenant is a real site directory with a config, and
+    # list_tenants reads those, so nothing appears as a tenant until the site is
+    # genuinely built.
+    #
+    # If the enqueue is refused, that record would otherwise sit at "Queued"
+    # for ever, blocking its own subdomain. So a refusal marks it Failed
+    # immediately and re-raises: nothing is left claiming to be in progress.
+    try:
+        frappe.enqueue(
+            "alvoraa_portal.tenant_api._run_provision",
+            queue="long",
+            timeout=1200,
+            job_name=f"provision_{job_id}",
+            # Fires even when the ARGUMENTS are rejected - the one failure an
+            # in-function try/except cannot catch, because the function never ran.
+            on_failure=_provision_failed,
+            # Travels with the job so a worker on an older image can say so.
+            contract=PROVISION_CONTRACT,
+            # kwargs forwarded to the function:
+            pjob_id=job_id,
+            site_name=site_name,
+            tenant_name=tenant_name,
+            plan=plan,
+            modules=",".join(modules),
+            primary_color=primary_color,
+            logo_url=logo_url,
+            support_email=support_email,
+            base_domain=base_domain,
+            hr_email=hr_email,
+            admin_email=admin_email,
+            company_name=company_name or tenant_name,
+            company_abbr=company_abbr,
+            country=country,
+            currency=currency,
+            timezone=timezone,
+            fy_start_date=fy_start_date,
+        )
+    except Exception:
+        _update_job(
+            job_id,
+            status="Failed",
+            finished_at=str(now_datetime()),
+            log="Could not queue the provisioning job:\n"
+                + _redact(frappe.get_traceback()),
+        )
+        raise
 
     return {
         "job_id":         job_id,
@@ -210,12 +389,10 @@ def create_tenant(subdomain, tenant_name, plan="starter",
         "started_at":     str(now_datetime()),
         "estimated_minutes": 8,
         "host_name":      f"http://{site_name}",
-        "admin_password": admin_password,
-        # Shown once on the provisioning screen. Not stored anywhere afterwards.
-        "users": [
-            {"role": "HR Manager",     "email": hr_email,    "password": hr_password},
-            {"role": "System Manager", "email": admin_email, "password": user_admin_password},
-        ],
+        # No credentials here: they do not exist yet. The worker generates them
+        # and get_provision_status hands them back once the job reports Done.
+        "hr_email":       hr_email,
+        "admin_email":    admin_email,
     }
 
 
@@ -227,6 +404,30 @@ def get_provision_status(job_id):
     job = jobs.get(job_id)
     if not job:
         frappe.throw(f"Job '{job_id}' not found.")
+    job = dict(job)
+
+    # Credentials live in Frappe's encrypted store, not in the jobs file. They
+    # are handed back only for a job that actually produced a tenant.
+    if job.get("status") == "Done":
+        creds = _read_credentials(job_id)
+        job["admin_password"] = creds.get("admin_password", "")
+        job["users"] = [
+            {"role": "HR Manager", "email": job.get("hr_email", ""),
+             "password": creds.get("hr_password", "")},
+            {"role": "System Manager", "email": job.get("admin_email", ""),
+             "password": creds.get("user_admin_password", "")},
+        ]
+    else:
+        job["admin_password"] = ""
+        job["users"] = []
+
+    if _is_stale(job):
+        job["status"] = "Stalled"
+        job["log"] = (job.get("log") or "") + (
+            f"[{now_datetime()}] No progress for over {STALE_AFTER_MINUTES} minutes. "
+            f"The worker that should run this is probably not running. "
+            f"This subdomain is free to try again.\n"
+        )
     return job
 
 
@@ -243,6 +444,7 @@ def list_provision_jobs():
     redacted = []
     for job in jobs.values():
         job = dict(job)
+        job["status"] = _effective_status(job)
         job["admin_password"] = ""
         job["admin_password_redacted"] = True
         redacted.append(job)
@@ -417,15 +619,21 @@ def get_tenant_stats(site_name):
 # ══════════════════════════════════════════════════════════════════════════
 
 def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
-                   primary_color, logo_url, support_email, admin_password,
-                   base_domain, db_root_password,
+                   primary_color, logo_url, support_email,
+                   base_domain,
                    hr_email=None, admin_email=None,
-                   hr_password=None, user_admin_password=None,
                    company_name=None, company_abbr=None, country="India",
-                   currency="INR", timezone="Asia/Kolkata", fy_start_date=None):
+                   currency="INR", timezone="Asia/Kolkata", fy_start_date=None,
+                   contract=None, **extra):
     """
     Runs in a Frappe long-queue worker.
     Calls provision_tenant.sh and writes status back to JOBS_FILE.
+
+    `**extra` is deliberate. A deploy can leave this worker on an older image
+    than the web process that queued the job, and an unknown keyword used to
+    raise TypeError before the first line ran - which no handler here could
+    report. Unknown arguments are now absorbed, and the mismatch is reported
+    below in words instead.
     """
     def _update(status, log_append="", finished=False):
         jobs = _read_jobs()
@@ -436,10 +644,47 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
             if finished:
                 jobs[pjob_id]["finished_at"] = str(now_datetime())
                 if status != "Done":
-                    jobs[pjob_id]["admin_password"] = ""  # wipe on failure
+                    # A failed run leaves no usable tenant, so its passwords are
+                    # of value to nobody except an attacker.
+                    _forget_credentials(pjob_id)
         _write_jobs(jobs)
 
+    # The web process stamps the contract it was built against. A lower number
+    # here means this worker is running older code than the site that queued the
+    # job, and provisioning would silently skip whatever the new arguments carry.
+    if contract is not None and int(contract) > PROVISION_CONTRACT:
+        _update(
+            "Failed",
+            f"[{now_datetime()}] This job was created by a newer build "
+            f"(contract {contract}) than the worker running it "
+            f"(contract {PROVISION_CONTRACT}).\n"
+            f"The worker is on an older image than the web process. Redeploy the "
+            f"whole stack - including the long-queue worker - and create the "
+            f"tenant again. No site was created.\n",
+            finished=True,
+        )
+        return
+
+    if extra:
+        _update("Queued", f"[{now_datetime()}] Ignoring unknown arguments from a "
+                          f"newer build: {', '.join(sorted(extra))}\n")
+
     _update("Provisioning", f"[{now_datetime()}] Starting provisioning for {site_name}…\n")
+
+    # Secrets are generated HERE, in the worker, and never travel through the
+    # queue. They go straight into Frappe's encrypted store, and reach the
+    # operator through get_provision_status once the job is Done.
+    admin_password      = _generate_password()
+    hr_password         = _generate_password()
+    user_admin_password = _generate_password()
+    _store_credentials(pjob_id,
+                       admin_password=admin_password,
+                       hr_password=hr_password,
+                       user_admin_password=user_admin_password)
+
+    # Read from this worker's own environment rather than accepting it as a job
+    # argument, which would put the database root password into Redis.
+    db_root_password = _require_db_root_password()
 
     subdomain = site_name.split(".")[0]
     env = {
@@ -489,14 +734,21 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
             # only `Administrator`, which is shared and unattributable - not
             # something to hand a customer.
             import json as _json
+            # Emails and the tenant name are not secret, so they can go on the
+            # command line. The two passwords MUST NOT: `ps` shows a process's
+            # arguments to every user on the box, and shells record them in
+            # history. They travel in the environment instead, which the kernel
+            # exposes only to the process owner.
             _users = {
                 "hr_email": hr_email, "admin_email": admin_email,
-                "hr_password": hr_password, "admin_password": user_admin_password,
                 "tenant_name": tenant_name,
             }
             ru = _bench_run(
                 f"--site {site_name} execute alvoraa_portal.tenant_setup.create_default_users "
-                f"--kwargs '{_json.dumps(_users)}'"
+                f"--kwargs '{_json.dumps(_users)}'",
+                env={**env,
+                     "TENANT_HR_PASSWORD": hr_password,
+                     "TENANT_ADMIN_PASSWORD": user_admin_password},
             )
             if ru.returncode != 0:
                 log += "\n[WARN] default users not created: " + (ru.stderr or "")
@@ -669,7 +921,13 @@ def _write_jobs(jobs):
         frappe.log_error(str(e), "Kinexus: could not write jobs file")
 
 
-def _bench_run(cmd, timeout=30):
+def _bench_run(cmd, timeout=30, env=None):
+    """Run a bench command.
+
+    `env` exists so secrets can be handed to a subprocess WITHOUT putting them
+    on the command line. Arguments are world-readable through `ps` and land in
+    shell history; an environment block is readable only by the process owner.
+    """
     return subprocess.run(
         f"bench {cmd}",
         shell=True,
@@ -677,7 +935,74 @@ def _bench_run(cmd, timeout=30):
         text=True,
         cwd=BENCH_PATH,
         timeout=timeout,
+        env=env,
     )
+
+
+# ── Credential storage ─────────────────────────────────────────────────────
+#
+# Provisioning produces three logins the operator must be given once. Where
+# those live matters, because until 2026-08-23 they lived in three bad places
+# at the same time:
+#
+#   1. As background-job arguments, which RQ stores in Redis. Anyone who could
+#      reach Redis could read every tenant's initial passwords.
+#   2. In plain text in the jobs JSON file on disk.
+#   3. On a command line - `bench ... --kwargs '{"hr_password": ...}'` - which
+#      `ps` shows to every user on the box.
+#
+# They now live in Frappe's own encrypted store (the `__Auth` table, encrypted
+# with the site's encryption_key), keyed on the job. That is the mechanism the
+# framework already uses for every other secret it holds, so it inherits the
+# same key management and the same backup and restore behaviour.
+CRED_DOCTYPE = "Alvoraa Provision Job"
+
+# The three logins a tenant is born with.
+CRED_FIELDS = ("admin_password", "hr_password", "user_admin_password")
+
+
+def _store_credentials(pjob_id, **passwords):
+    """Encrypt and store the credentials for one provisioning job."""
+    from frappe.utils.password import set_encrypted_password
+
+    for field, pwd in passwords.items():
+        if pwd:
+            set_encrypted_password(CRED_DOCTYPE, pjob_id, pwd, field)
+    frappe.db.commit()
+
+
+def _read_credentials(pjob_id):
+    """Decrypt the credentials for one job. Missing ones come back empty.
+
+    Never raises: a job provisioned before this change, or one whose secrets
+    have been cleared, must still be viewable.
+    """
+    from frappe.utils.password import get_decrypted_password
+
+    out = {}
+    for field in CRED_FIELDS:
+        try:
+            out[field] = get_decrypted_password(
+                CRED_DOCTYPE, pjob_id, field, raise_exception=False) or ""
+        except Exception:
+            out[field] = ""
+    return out
+
+
+def _forget_credentials(pjob_id):
+    """Drop every stored secret for a job. Used when provisioning fails.
+
+    A failed run leaves no usable tenant, so its passwords are of no value to
+    anyone except an attacker.
+    """
+    try:
+        from frappe.utils.password import delete_all_passwords_for
+
+        delete_all_passwords_for(CRED_DOCTYPE, pjob_id)
+        frappe.db.commit()
+    except Exception:
+        frappe.log_error(title="tenant_api: could not clear job credentials",
+                         message=frappe.get_traceback())
 
 
 def _generate_password(length=18):

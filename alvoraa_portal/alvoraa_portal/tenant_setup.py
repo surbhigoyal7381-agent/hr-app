@@ -20,6 +20,8 @@ desk role to /app. They reach the portal, if they want it, through "Switch to
 Employee Portal" in the desk's top-right menu.
 """
 
+import os
+
 import frappe
 
 
@@ -67,7 +69,16 @@ def create_default_users(hr_email=None, admin_email=None,
 
     Safe to run twice: existing users are updated rather than duplicated, which
     matters because provisioning can be retried after a partial failure.
+
+    Passwords are read from the ENVIRONMENT, not from the arguments. This runs
+    as `bench ... execute ... --kwargs '{...}'`, and a command line is visible to
+    every user on the machine through `ps` and is recorded in shell history. An
+    environment block is readable only by the process owner. The arguments are
+    kept for direct calls and for tests; the environment wins when both are set.
     """
+    hr_password = os.environ.get("TENANT_HR_PASSWORD") or hr_password
+    admin_password = os.environ.get("TENANT_ADMIN_PASSWORD") or admin_password
+
     created = {}
 
     if hr_email:

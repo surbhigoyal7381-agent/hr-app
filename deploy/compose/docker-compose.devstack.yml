@@ -6,11 +6,22 @@
 #   cd /var/www/html/hr-app/deploy/compose
 #   COMPOSE_PROJECT_NAME=devstack docker compose \
 #       -f docker-compose.app.yml -f docker-compose.devstack.yml \
-#       --env-file ../envs/dev.env up -d \
-#       mariadb redis configurator backend socketio scheduler worker-default
+#       --env-file ../envs/dev.env --env-file .image.dev.env up -d
 #
-# Note the service list: `nginx` is deliberately absent. One nginx on the box
-# serves every environment and routes by hostname.
+# NO SERVICE LIST. That is the point, and it is the same command production
+# uses. `nginx` is excluded here by its `never-in-dev` profile below, not by
+# anyone remembering to leave it out - so the default is already the safe one,
+# in both stacks.
+#
+# Naming services by hand broke provisioning for real on 2026-08-23: the list
+# omitted `worker-long`, so the web container was replaced with a new image
+# while the long-queue worker kept running the old one. Tenant creation then
+# sent an argument the old worker did not accept, the job died before it ran a
+# line, and the console showed "Queued" with an empty log for an hour.
+#
+# The application now refuses to queue a job when no long worker is alive, and
+# stamps a contract number so a stale worker says so in words. But the simplest
+# guard is this: do not type a list that can be wrong.
 #
 # Why dev owns its database rather than sharing production's:
 #

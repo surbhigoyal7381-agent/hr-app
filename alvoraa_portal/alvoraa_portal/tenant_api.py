@@ -8,6 +8,8 @@ returns immediately with a job_id; the client polls get_provision_status().
 """
 
 import frappe
+
+from alvoraa_portal.subscription import PLANS
 import os
 import json
 import re
@@ -27,11 +29,9 @@ JOBS_FILE   = f"{SITES_DIR}/kinexus_provision_jobs.json"
 _NOT_SITES = {"apps", "assets", "common_site_config.json", "currentsite.txt"}
 
 # Plans → enabled module list
-PLAN_MODULES = {
-    "starter":    ["hrms"],
-    "business":   ["hrms", "vendor_portal", "goals"],
-    "enterprise": ["hrms", "vendor_portal", "goals", "analytics"],
-}
+# PLAN_MODULES used to live here - a FOURTH copy of the plan definition, with a
+# module list matching neither the admin page nor subscription.py. The single
+# definition is alvoraa_portal/subscription.py.
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -116,8 +116,6 @@ def create_tenant(subdomain, tenant_name, plan="starter",
     # Plan is derived from the feature set, using the ONE definition in
     # subscription.py. It used to be redefined here and again in update_tenant,
     # with a third copy in the admin page's JavaScript.
-    from alvoraa_portal.subscription import PLANS
-
     mset = set(modules)
     plan = next((p for p, feats in PLANS.items() if set(feats) == mset), "custom")
 
@@ -135,8 +133,12 @@ def create_tenant(subdomain, tenant_name, plan="starter",
         if job.get("site_name") == site_name and job.get("status") in ("Queued","Provisioning"):
             frappe.throw(f"'{site_name}' is already being provisioned (job {job['job_id']}).")
 
-    if plan not in PLAN_MODULES:
-        frappe.throw(f"Invalid plan '{plan}'. Choose: starter, business, enterprise.")
+    # `plan` is DERIVED from the ticked modules a few lines above, so it can only
+    # be one of the registry's names. The old check rejected "custom" outright,
+    # which made any selection that did not exactly match a preset impossible -
+    # exactly what the Custom plan is for.
+    if plan not in PLANS:
+        frappe.throw(f"Invalid plan '{plan}'. Known plans: {', '.join(PLANS)}.")
 
     # ── Create job record ──────────────────────────────────────────────────
     admin_password = _generate_password()

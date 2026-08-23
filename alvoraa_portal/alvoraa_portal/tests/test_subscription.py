@@ -144,3 +144,28 @@ class TestPerTenantSelection(FrappeTestCase):
 		blocked = sub.blocked_module_defs(selection)
 		self.assertNotIn("Accounts", blocked)
 		self.assertIn("Payroll", blocked, "starter still does not include payroll")
+
+
+class TestPlanValidation(FrappeTestCase):
+	"""A custom selection must be accepted, not rejected.
+
+	tenant_api validated the DERIVED plan against its own stale constant, which
+	listed only starter/business/enterprise. Any tick set that did not exactly
+	match a preset produced "custom" and was refused - which is precisely the
+	case the Custom plan exists for.
+	"""
+
+	def test_custom_is_a_known_plan(self):
+		self.assertIn("custom", sub.PLANS)
+
+	def test_every_derivable_plan_name_is_valid(self):
+		"""Whatever the derivation can produce, validation must accept."""
+		for name in ("starter", "business", "enterprise", "custom"):
+			self.assertIn(name, sub.PLANS, "%s can be derived but would be rejected" % name)
+
+	def test_tenant_api_validates_against_the_registry(self):
+		"""Not against a copy of it."""
+		from alvoraa_portal import tenant_api
+		self.assertIs(tenant_api.PLANS, sub.PLANS)
+		self.assertFalse(hasattr(tenant_api, "PLAN_MODULES"),
+		                 "the stale fourth copy of the plan definition is back")

@@ -5344,7 +5344,12 @@ function loadPortalContext() {
     const navAna  = document.getElementById("nav-analytics");
     if (mgmtHdr) mgmtHdr.style.display = showMgmt ? "block" : "none";
     if (navTeam) navTeam.style.display  = ctx.is_manager ? "flex" : "none";
-    if (navAna)  navAna.style.display   = ctx.is_hr      ? "flex" : "none";
+    // Role AND plan. Being HR says you may see Analytics; the plan says
+    // whether this tenant bought it. Until wave 6 only the first was
+    // checked, so every tenant got the panel.
+    var _f = window._features || {};
+    var anaSold = _f.plan_analytics !== false;   // absent = unknown, show
+    if (navAna)  navAna.style.display   = (ctx.is_hr && anaSold) ? "flex" : "none";
     const navOrgSettings = document.getElementById("nav-org-settings");
     if (navOrgSettings) navOrgSettings.style.display = ctx.is_hr ? "flex" : "none";
     sbUpdateScrollBtns();
@@ -5411,6 +5416,9 @@ function loadAvailableFeatures() {
     // Performance (PMS) — visible to all employees when alvoraa_goals is installed
     const navGoals = document.getElementById("nav-goals");
     const qaGoals  = document.getElementById("qa-goals");
+    // f.goals now means "the app is installed AND the plan includes it" -
+    // the server ANDs them, so a site that kept the app after a
+    // downgrade stops showing the panel.
     if (navGoals) navGoals.style.display = f.goals ? "flex" : "none";
     // Load home goals sections once feature flag is known
     if (f.goals) loadHomeGoals();

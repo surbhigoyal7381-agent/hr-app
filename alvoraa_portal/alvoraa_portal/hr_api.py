@@ -1120,6 +1120,32 @@ def get_available_features():
     except Exception:
         features["advance_request"] = False
 
+    # ── Plan entitlement: what this tenant actually bought ─────────────────────
+    #
+    # Wave 6. subscription.has_feature() has existed since wave 1 and NOTHING
+    # called it, so the portal offered Goals, Analytics and the Vendor panel to
+    # every tenant regardless of plan. Hiding modules in the desk while the
+    # portal - the interface most staff actually use - ignored the plan entirely.
+    #
+    # Read straight from the registry, so a new sellable feature is gated the day
+    # it is added rather than needing a matching change here.
+    try:
+        from alvoraa_portal.subscription import FEATURES, has_feature
+
+        for key in FEATURES:
+            features[f"plan_{key}"] = bool(has_feature(key))
+    except Exception:
+        # Never black out the portal because entitlement could not be read. The
+        # desk gates are the boundary; this only decides what to draw.
+        frappe.log_error(title="hr_api: could not read plan entitlement",
+                         message=frappe.get_traceback())
+
+    # `goals` already meant "is the app installed", which wave 5 makes plan-aware
+    # anyway. AND them so a site that still has the app from an earlier plan does
+    # not keep showing the panel after a downgrade.
+    if "plan_goals" in features:
+        features["goals"] = bool(features.get("goals")) and features["plan_goals"]
+
     return features
 
 

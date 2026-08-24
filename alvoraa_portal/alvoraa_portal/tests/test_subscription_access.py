@@ -460,3 +460,109 @@ class TestWhatIsNotEnforced(FrappeTestCase):
 		Payroll on a plan without it."""
 		self.assertEqual(ma.ADMIN_ROLES, {"System Manager"})
 		self.assertIsNone(ma._profile_for("Administrator"))
+
+
+class TestGatingReadsTheSiteConfig(FrappeTestCase):
+	"""The step every other test skipped.
+
+	Every test in this file and in test_module_access passes `features` in by
+	hand. None of them exercised sync_site() reading it from the site's OWN
+	config - so when provisioning failed to WRITE that config, 217 tests stayed
+	green while a live tenant was entitled to the entire product.
+
+	The chain has three links and the tests only covered the last one:
+
+	    provisioning writes  ->  config holds  ->  gating reads  ->  desk hides
+	                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+	                                              all the coverage was here
+	"""
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		self._saved = {k: frappe.conf.get(k)
+		               for k in ("features", "subscription_plan", "alvoraa_control_plane")}
+		frappe.conf.pop("alvoraa_control_plane", None)
+		self._ws = {w: frappe.db.get_value("Workspace", w, "is_hidden")
+		            for w in ("Payroll", "Recruitment", "Performance", "Leaves")
+		            if frappe.db.exists("Workspace", w)}
+
+	def tearDown(self):
+		for k, v in self._saved.items():
+			if v is None:
+				frappe.conf.pop(k, None)
+			else:
+				frappe.conf[k] = v
+		for w, v in self._ws.items():
+			frappe.db.set_value("Workspace", w, "is_hidden", v, update_modified=False)
+		frappe.db.commit()
+
+	def _configure(self, **conf):
+		for k in ("features", "subscription_plan"):
+			frappe.conf.pop(k, None)
+		frappe.conf.update(conf)
+
+	def test_a_starter_config_hides_payroll(self):
+		"""No argument passed - sync_workspaces must read the config itself."""
+		self._configure(features=sub.plan_features("starter"))
+		ma.sync_workspaces()
+		if "Payroll" in self._ws:
+			self.assertEqual(frappe.db.get_value("Workspace", "Payroll", "is_hidden"), 1)
+
+	def test_the_exact_config_a_broken_provision_left_behind(self):
+		"""features missing + plan `custom`. This is what a real tenant had, and
+		it entitles the site to everything - so NOTHING gets hidden. If this ever
+		starts hiding things, the fallback changed and the comment above it is
+		wrong."""
+		self._configure(subscription_plan="custom")
+		self.assertEqual(sorted(sub.enabled_features()), sorted(sub.FEATURES))
+		ma.sync_workspaces()
+		if "Payroll" in self._ws:
+			self.assertEqual(frappe.db.get_value("Workspace", "Payroll", "is_hidden"), 0,
+			                 "no feature list means no gating - by design, and why "
+			                 "provisioning must write one")
+
+	def test_writing_the_feature_list_is_what_makes_the_difference(self):
+		"""Same plan name, one extra config key, opposite outcome. That single
+		key was the whole bug."""
+		self._configure(subscription_plan="custom")
+		ma.sync_workspaces()
+		before = frappe.db.get_value("Workspace", "Payroll", "is_hidden") \
+			if "Payroll" in self._ws else None
+
+		self._configure(subscription_plan="custom",
+		                features=sub.plan_features("starter"))
+		ma.sync_workspaces()
+		after = frappe.db.get_value("Workspace", "Payroll", "is_hidden") \
+			if "Payroll" in self._ws else None
+
+		if "Payroll" in self._ws:
+			self.assertEqual((before, after), (0, 1))
+
+	def test_an_empty_feature_list_in_config_still_gates(self):
+		"""[] is a real downgrade state and must not be read as "unset"."""
+		self._configure(features=[])
+		self.assertEqual(sorted(sub.enabled_features()), sorted(sub.REQUIRED))
+		ma.sync_workspaces()
+		for w in ("Payroll", "Recruitment", "Performance"):
+			if w in self._ws:
+				self.assertEqual(frappe.db.get_value("Workspace", w, "is_hidden"), 1, w)
+		if "Leaves" in self._ws:
+			self.assertEqual(frappe.db.get_value("Workspace", "Leaves", "is_hidden"), 0)
+
+	def test_the_profile_is_built_from_the_config_too(self):
+		"""sync_module_profile has the same default-argument shape, so it has the
+		same exposure."""
+		self._configure(features=sub.plan_features("starter"))
+		ma.sync_module_profile()
+		doc = frappe.get_doc("Module Profile", ma.PROFILE_NAME)
+		blocked = {d.module for d in doc.block_modules}
+		self.assertIn("Payroll", blocked)
+
+	def test_config_and_explicit_arguments_agree(self):
+		"""If these ever diverge, one of the two callers is silently wrong."""
+		feats = sub.plan_features("business")
+		self._configure(features=feats)
+		from_config = sub.enabled_features()
+		self.assertEqual(sorted(from_config), sorted(feats))
+		self.assertEqual(sub.sold_and_unsold_workspaces(from_config),
+		                 sub.sold_and_unsold_workspaces(feats))

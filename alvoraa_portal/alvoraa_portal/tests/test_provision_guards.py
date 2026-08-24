@@ -523,22 +523,68 @@ class TestProvisioningRecordsWhatWasBought(FrappeTestCase):
 		                "features must be recorded before the plan is applied")
 
 	def test_the_value_is_shell_quoted(self):
-		"""A JSON list on a shell command line needs quoting, and a tenant name
-		is operator input."""
+		"""A JSON list on a shell command line needs quoting."""
 		import inspect
 
 		src = inspect.getsource(api._run_provision)
 		block = src[src.index("set-config -p features"):]
 		self.assertIn("quote(", block[:200])
 
-	def test_a_failure_to_record_is_loud(self):
-		"""Silently falling back to the plan name grants too much - the exact
-		failure this class exists for."""
-		import inspect
+	# Keys that provision_tenant.sh writes rather than _run_provision. The split
+	# is real and is the hazard: a tenant's configuration is assembled by THREE
+	# things - the shell script, _run_provision, and update_tenant - and the test
+	# below exists because they drifted.
+	SCRIPT_OWNED = {"modules_enabled", "subscription_plan", "tenant_name",
+	                "host_name", "home_page", "primary_color", "support_email"}
 
-		src = inspect.getsource(api._run_provision)
-		block = src[src.index("set-config -p features"):]
-		self.assertIn("[WARN] feature list not recorded", block[:600])
+	def test_provisioning_writes_every_key_update_tenant_writes(self):
+		"""The generalisation, and the actual bug class.
+
+		THREE places configure a tenant: provision_tenant.sh, _run_provision, and
+		update_tenant. They drifted - `features` was added to update_tenant and
+		never to the provisioning path - so EDITING a tenant fixed its gating and
+		CREATING one did not. Anyone who happened to edit saw a working product,
+		which is why it survived so long.
+
+		A key that decides entitlement must be written when a tenant is created,
+		not only when one is edited.
+		"""
+		import inspect
+		import re
+
+		def keys(fn):
+			return set(re.findall(r"set-config -p ([a-z_]+)", inspect.getsource(fn)))
+
+		missing = keys(api.update_tenant) - keys(api._run_provision) - self.SCRIPT_OWNED
+		self.assertEqual(missing, set(),
+		                 f"provisioning never writes {sorted(missing)}, so a NEW "
+		                 f"tenant is configured differently from an EDITED one. "
+		                 f"Add it to _run_provision, or to SCRIPT_OWNED if "
+		                 f"provision_tenant.sh writes it.")
+
+	def test_the_script_really_does_own_the_keys_we_excused(self):
+		"""SCRIPT_OWNED is an assertion about another file, so it can rot. If the
+		script stops writing one of these, the exemption above would hide exactly
+		the bug it was written to catch."""
+		import os
+		import re
+
+		import alvoraa_portal
+
+		here = os.path.dirname(os.path.dirname(os.path.dirname(
+			os.path.abspath(alvoraa_portal.__file__))))
+		candidates = [os.path.join(here, "deploy", "provision_tenant.sh"),
+		              "/workspace/provision_tenant.sh"]
+		script = next((c for c in candidates if os.path.exists(c)), None)
+		if not script:
+			self.skipTest("provision_tenant.sh is not on this bench")
+
+		with open(script, encoding="utf-8") as f:
+			written = set(re.findall(r"set-config (?:-p )?([a-z_]+)", f.read()))
+		missing = self.SCRIPT_OWNED - written
+		self.assertEqual(missing, set(),
+		                 f"SCRIPT_OWNED excuses {sorted(missing)}, but the script "
+		                 f"does not write them - nothing writes them at all")
 
 	def test_the_fallback_it_protects_against_really_does_grant_everything(self):
 		"""Not a hypothetical: with no `features` key and a custom plan, every

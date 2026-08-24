@@ -5374,7 +5374,12 @@ function loadPortalContext() {
         lab.textContent = t.label;
         box.style.display = "block";
       });
-    if (navAdminLink && ctx.is_system_manager) navAdminLink.style.display = "block";
+    // Control plane only. A tenant's own System Manager is not an Alvoraa
+    // operator: /alvoraa-admin refuses them, so showing the link only offers
+    // a door that does not open. Absent flag means "not the control plane".
+    if (navAdminLink && ctx.is_system_manager && ctx.is_control_plane) {
+      navAdminLink.style.display = "block";
+    }
   });
 }
 

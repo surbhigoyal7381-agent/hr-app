@@ -125,6 +125,16 @@ def get_portal_context():
         "is_hr": is_hr,
         "is_manager": is_manager,
         "is_system_manager": is_system_manager,
+        # Is THIS site the control plane, or a tenant provisioned from one?
+        #
+        # The portal's "Tenant Admin" link used to appear for any System Manager,
+        # which on a tenant means its own administrator. They were shown a link
+        # to /alvoraa-admin, a page that then refused them - a door advertised to
+        # people who may not open it, pointing at tooling that is not theirs.
+        #
+        # Read from site config, so it costs nothing and cannot drift from the
+        # check /alvoraa-admin itself performs.
+        "is_control_plane": bool(frappe.conf.get("alvoraa_control_plane")),
         "manager_name": manager_name,
         "roles": roles,
     }

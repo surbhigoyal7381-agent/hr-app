@@ -82,8 +82,16 @@ class TestGating(FrappeTestCase):
 
 	def test_recruitment_is_gated_by_role_not_module(self):
 		"""Job Opening, Job Applicant and Interview live in the HR module, so
-		blocking a module would take Core HR with it."""
-		self.assertEqual(sub.FEATURES["recruitment"].get("module_defs"), None)
+		blocking a module would take Core HR with it.
+
+		Recruitment now DECLARES the HR module - the allow-list needs every
+		feature to name where it lives - but HR is shared with Leaves, Expenses
+		and HR Setup, which are on every plan. So HR is never blocked, and
+		Recruitment can only be gated by roles and permissions.
+		"""
+		self.assertEqual(sub.FEATURES["recruitment"]["module_defs"], ["HR"])
+		self.assertNotIn("HR", sub.blocked_module_defs(sub.plan_features("starter")),
+		                 "blocking HR would take Leaves and Expenses with it")
 		self.assertIn("Interviewer", sub.withheld_roles(sub.plan_features("starter")))
 		self.assertNotIn("Interviewer", sub.withheld_roles(sub.plan_features("business")))
 

@@ -441,11 +441,22 @@ class TestWhatIsNotEnforced(FrappeTestCase):
 			self.assertNotIn("withheld_roles", inspect.getsource(mod),
 			                 f"{mod.__name__} now applies roles - wave 4 has landed")
 
-	def test_only_three_features_are_backed_by_a_module_of_their_own(self):
-		"""Everything else is workspace-gated only. Worth knowing before anyone
-		assumes module blocking covers the product."""
-		backed = {k for k, v in sub.FEATURES.items() if v.get("module_defs")}
-		self.assertEqual(backed, {"payroll", "performance", "goals"})
+	def test_features_sharing_a_module_cannot_be_gated_by_module_alone(self):
+		"""Every feature now names the module it lives in - the allow-list needs
+		that - but seven of them name the SAME one.
+
+		Leaves, Shift & Attendance, Expenses, HR Setup, Tenure, Recruitment and
+		Performance all live in `HR`. Four of those are on every plan, so HR is
+		never blocked, so module blocking can never separate the other three.
+		That is why workspace hiding and permission denial both exist.
+		"""
+		in_hr = {k for k, v in sub.FEATURES.items()
+		         if "HR" in (v.get("module_defs") or [])}
+		self.assertGreaterEqual(len(in_hr), 7, "several features share the HR module")
+		required_in_hr = in_hr & set(sub.REQUIRED)
+		self.assertTrue(required_in_hr,
+		                "HR holds required features, so it can never be blocked")
+		self.assertNotIn("HR", sub.blocked_module_defs(sub.plan_features("starter")))
 
 	def test_uninstalling_an_app_is_the_only_real_denial_we_have(self):
 		"""Goals doctypes cease to exist when alvoraa_goals is absent - that IS

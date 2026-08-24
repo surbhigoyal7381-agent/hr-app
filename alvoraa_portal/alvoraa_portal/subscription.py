@@ -39,6 +39,7 @@ FEATURES = {
         "label": "Employee Portal",
         "required": True,
         "app": "alvoraa_portal",
+        "module_defs": ["Alvoraa Portal"],
     },
     "leaves": {
         "desc": "Applications, allocations, policies, encashment",
@@ -46,6 +47,7 @@ FEATURES = {
         "label": "Leaves",
         "required": True,
         "workspaces": ["Leaves"],
+        "module_defs": ["HR"],
     },
     "attendance": {
         "desc": "Shifts, check-ins, regularisation",
@@ -53,6 +55,7 @@ FEATURES = {
         "label": "Shift & Attendance",
         "required": True,
         "workspaces": ["Shift & Attendance"],
+        "module_defs": ["HR"],
     },
     "expenses": {
         "desc": "Expense claims, advances, travel",
@@ -60,6 +63,7 @@ FEATURES = {
         "label": "Expenses",
         "required": True,
         "workspaces": ["Expenses"],
+        "module_defs": ["HR"],
     },
     "hr_setup": {
         "desc": "Holiday lists, HR policy, settings",
@@ -67,12 +71,14 @@ FEATURES = {
         "label": "HR Setup",
         "required": True,
         "workspaces": ["HR Setup"],
+        "module_defs": ["HR"],
     },
     "tenure": {
         "desc": "Onboarding, transfers, promotions, exit",
         "icon": "📈",
         "label": "Onboarding & Exit",
         "workspaces": ["Tenure"],
+        "module_defs": ["HR"],
     },
     "recruitment": {
         "desc": "Job openings, applicants, interviews, offers",
@@ -81,6 +87,7 @@ FEATURES = {
         "label": "Recruitment",
         "workspaces": ["Recruitment"],
         "roles": ["Interviewer"],
+        "module_defs": ["HR"],
     },
     "payroll": {
         "desc": "Salary structures, slips, payment entries",
@@ -94,6 +101,7 @@ FEATURES = {
         "icon": "📋",
         "label": "Tax & Benefits",
         "workspaces": ["Tax & Benefits"],
+        "module_defs": ["Payroll"],
     },
     "performance": {
         "desc": "Appraisal cycles, calibration, scorecards",
@@ -101,7 +109,7 @@ FEATURES = {
         # One sellable feature: Frappe HR's Performance workspace AND our
         # 37-doctype Performance Management module are sold together.
         "label": "Performance & Appraisals",
-        "module_defs": ["Performance Management"],
+        "module_defs": ["Performance Management", "HR"],
         "workspaces": ["Performance"],
     },
     "goals": {
@@ -115,12 +123,14 @@ FEATURES = {
         "desc": "Dashboards and workforce reports",
         "icon": "📊",
         "label": "Analytics",
+        "module_defs": ["Alvoraa Portal"],
     },
     "vendor": {
         "desc": "Vendor portal, driver app, orders",
         "icon": "🚚",
         "label": "Vendor & Driver Portal",
         "app": "alvoraa_portal",
+        "module_defs": ["Alvoraa Portal"],
     },
 }
 
@@ -295,47 +305,76 @@ def blocked_module_defs_for_hr(features):
     return [m for m in blocked_module_defs(features) if m not in DESK_SHELL]
 
 
-def blocked_module_defs(features):
-    """Module Defs to block in the desk for a site with these features.
+def allowed_module_defs(features):
+    """Modules a site with these features may see. The allow-list.
 
-    ERPNext is always blocked here - Custom re-enables its chosen modules
-    separately, because those are picked per tenant rather than by plan.
+    Everything else is blocked, which is the point: a module that appears in a
+    future ERPNext release, or arrives with a third-party app, is not something
+    the tenant bought, so it is denied until somebody sells it.
+
+    Derived entirely from the registry: each feature names the module it lives in.
+
+    DESK_SHELL is deliberately NOT here. Core and Desk stay hidden from ordinary
+    users - that was a decision, not an oversight - and are given back only to
+    people who work IN the desk, by blocked_module_defs_for_hr(). Adding them
+    here would quietly reverse it for every employee.
     """
     features = set(features)
-    blocked = []
+    allowed = set()
 
-    # Alvoraa HR features that were not selected
     for key, spec in FEATURES.items():
-        if key not in features:
-            blocked.extend(spec.get("module_defs", []))
+        if key in features:
+            allowed.update(spec.get("module_defs") or [])
 
-    # ERPNext modules the admin did not tick for this tenant
     for key, spec in ERPNEXT_FEATURES.items():
-        if key not in features:
-            blocked.extend(spec["module_defs"])
+        if key in features:
+            allowed.update(spec["module_defs"])
 
-    # Plumbing Frappe HR needs. Always installed, always hidden, never sold.
-    blocked.extend(ERPNEXT_INFRASTRUCTURE)
+    return sorted(allowed)
 
-    # Frappe's own framework modules - clutter for a tenant.
-    blocked.extend(FRAPPE_HIDDEN)
 
-    # Core and Desk are the desk itself; blocking them breaks navigation.
-    return sorted(set(blocked) - set(FRAPPE_ALWAYS_VISIBLE))
+def blocked_module_defs(features, existing=None):
+    """Modules to block for a site with these features.
+
+    DENY BY DEFAULT. This used to build an explicit blocked list - unsold
+    features, unticked ERPNext modules, ERPNext plumbing, Frappe clutter - which
+    meant anything nobody had thought of was allowed. A module from a future
+    ERPNext release, or from a third-party app somebody installs, was visible to
+    every tenant the day it appeared, because it was on nobody's list.
+
+    Now the ALLOW-list is the definition and everything else is blocked. New
+    modules are denied by default and stay denied until a feature claims them.
+
+    `existing` is injected so this stays testable without a database, and so a
+    caller that has already read the module list does not read it twice.
+    """
+    allowed = set(allowed_module_defs(features))
+
+    if existing is None:
+        existing = [m.name for m in frappe.get_all("Module Def", fields=["name"])]
+
+    blocked = set(existing) - allowed
+
+    # Belt and braces for a site whose Module Def table is unreadable or empty:
+    # the plumbing and clutter that must never be visible, whatever else happens.
+    blocked.update(m for m in ERPNEXT_INFRASTRUCTURE if m not in allowed)
+    blocked.update(m for m in FRAPPE_HIDDEN if m not in allowed)
+
+    return sorted(blocked - set(FRAPPE_ALWAYS_VISIBLE))
 
 
 def blocked_doctypes(features, existing=None):
     """Doctypes a site with these features must not expose.
 
-    DERIVED, never listed. The modules come from blocked_module_defs(), and the
-    doctypes come from whatever actually lives in those modules on this site. So
-    a doctype added by a future ERPNext release is covered the day it appears,
-    and nothing here needs editing when the plan ladder changes.
+    DERIVED, never listed. The modules come from blocked_module_defs(), which is
+    deny-by-default, and the doctypes come from whatever actually lives in those
+    modules on this site. So a doctype from a future ERPNext release, or from a
+    third-party app, is denied the day it appears - it belongs to a module nobody
+    sold.
 
     `existing` is injected by the caller so this stays a pure function and can be
     tested without a database.
     """
-    blocked = set(blocked_module_defs(features))
     if existing is None:
         existing = [
             (d.name, d.module)
@@ -345,6 +384,8 @@ def blocked_doctypes(features, existing=None):
                 fields=["name", "module"],
             )
         ]
+    modules = sorted({m for _n, m in existing if m})
+    blocked = set(blocked_module_defs(features, existing=modules))
     return sorted({name for name, module in existing if module in blocked})
 
 

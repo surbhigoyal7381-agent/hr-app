@@ -85,21 +85,16 @@ class TestTheDoctypeListIsDerived(FrappeTestCase):
 		got = sub.blocked_doctypes(sub.plan_features("starter"), existing=self.FAKE)
 		self.assertNotIn("Leave Application", got, "HR is on every plan")
 
-	def test_an_unknown_module_is_ALLOWED_by_default(self):
-		"""Documented, not endorsed.
+	def test_an_unknown_module_is_DENIED_by_default(self):
+		"""The allow-list is the definition; everything else is blocked.
 
-		blocked_module_defs() builds an explicit list: unsold features, unticked
-		ERPNext modules, ERPNext plumbing, Frappe clutter. A module in none of
-		those - a new one from a future ERPNext release, or a third-party app -
-		is not blocked, so its doctypes stay reachable.
-
-		Deny-by-default would be safer for a subscription product, but it would
-		also block Frappe core modules the desk needs, so it is not a change to
-		make casually. This test exists so the gap is a known decision rather
-		than a surprise, and it will fail the day someone changes the default.
+		This used to assert the opposite, because blocked_module_defs() built an
+		explicit blocked list - so a module from a future ERPNext release, or from
+		a third-party app somebody installs, was visible to every tenant the day
+		it appeared, on nobody's list and nobody's radar.
 		"""
 		got = sub.blocked_doctypes(sub.plan_features("starter"), existing=self.FAKE)
-		self.assertNotIn("Custom Thing", got)
+		self.assertIn("Custom Thing", got)
 
 	def test_business_releases_payroll_doctypes(self):
 		got = sub.blocked_doctypes(sub.plan_features("business"), existing=self.FAKE)

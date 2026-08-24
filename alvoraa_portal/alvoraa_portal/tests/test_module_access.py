@@ -415,3 +415,83 @@ class TestWorkspaceSync(FrappeTestCase):
 	def test_it_survives_a_missing_workspace(self):
 		"""Not every feature ships a workspace on every site."""
 		ma.sync_workspaces(sub.plan_features("enterprise"))   # must not raise
+
+
+class TestModuleSidebarSuppression(FrappeTestCase):
+	"""The third surface, found only by reading the boot payload a user receives.
+
+	A tenant with 31 modules blocked and 4 workspaces hidden was STILL handed
+	desk sidebars for Accounts, CRM, Quality and Maintenance. Neither lever
+	reaches them: frappe.boot builds the sidebar from
+	auto_generate_sidebar_from_module(), which walks every Module Def on the site
+	with no reference to the user's blocked modules.
+	"""
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		self._plane = frappe.conf.get("alvoraa_control_plane")
+		frappe.conf.pop("alvoraa_control_plane", None)
+		self._before = {r.name for r in frappe.get_all(
+			"Workspace Sidebar", filters={"standard": 0})} \
+			if frappe.db.exists("DocType", "Workspace Sidebar") else set()
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		if frappe.db.exists("DocType", "Workspace Sidebar"):
+			for r in frappe.get_all("Workspace Sidebar", filters={"standard": 0}):
+				if r.name not in self._before:
+					frappe.delete_doc("Workspace Sidebar", r.name,
+					                  force=True, ignore_permissions=True)
+		if self._plane is not None:
+			frappe.conf["alvoraa_control_plane"] = self._plane
+		frappe.db.commit()
+
+	def _skip_if_absent(self):
+		if not frappe.db.exists("DocType", "Workspace Sidebar"):
+			self.skipTest("this Frappe has no Workspace Sidebar doctype")
+
+	def test_a_blocked_module_gets_a_placeholder(self):
+		"""An EMPTY stored sidebar stops Frappe auto-generating one, and boot
+		drops a sidebar in which no item survived."""
+		self._skip_if_absent()
+		ma.sync_module_sidebars(sub.plan_features("starter"))
+		self.assertTrue(frappe.db.exists("Workspace Sidebar",
+		                                 {"name": "Accounts", "for_user": None}),
+		                "Accounts is blocked on Starter and must be silenced")
+
+	def test_a_sold_module_is_not_silenced(self):
+		self._skip_if_absent()
+		ma.sync_module_sidebars(sub.plan_features("starter"))
+		doc = frappe.db.get_value("Workspace Sidebar",
+		                          {"name": "HR", "for_user": None},
+		                          ["standard"], as_dict=True)
+		if doc:
+			self.assertEqual(doc.standard, 1, "HR must keep the sidebar its app ships")
+
+	def test_an_upgrade_removes_the_placeholder(self):
+		"""Silencing without restoring would make a plan change one-way."""
+		self._skip_if_absent()
+		ma.sync_module_sidebars(sub.plan_features("starter"))
+		self.assertTrue(frappe.db.exists("Workspace Sidebar", {"name": "Payroll"}))
+		ma.sync_module_sidebars(sub.plan_features("business"))
+		left = frappe.db.get_value("Workspace Sidebar", {"name": "Payroll"}, "standard")
+		self.assertNotEqual(left, 0, "our placeholder should be gone after the upgrade")
+
+	def test_it_never_removes_a_sidebar_it_did_not_create(self):
+		"""Frappe's own, and anything a customer built, are not ours to delete."""
+		self._skip_if_absent()
+		before = frappe.db.count("Workspace Sidebar", {"standard": 1})
+		ma.sync_module_sidebars(sub.plan_features("starter"))
+		self.assertEqual(frappe.db.count("Workspace Sidebar", {"standard": 1}), before)
+
+	def test_running_twice_creates_nothing_new(self):
+		self._skip_if_absent()
+		ma.sync_module_sidebars(sub.plan_features("starter"))
+		n = frappe.db.count("Workspace Sidebar", {"standard": 0})
+		ma.sync_module_sidebars(sub.plan_features("starter"))
+		self.assertEqual(frappe.db.count("Workspace Sidebar", {"standard": 0}), n)
+
+	def test_sync_site_wires_it_in(self):
+		import inspect
+
+		self.assertIn("sync_module_sidebars", inspect.getsource(ma.sync_site))

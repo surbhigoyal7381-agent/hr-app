@@ -170,6 +170,13 @@ def sync_site(features=None):
         frappe.log_error(title="module_access: workspace sync failed",
                          message=frappe.get_traceback())
 
+    # And the desk sidebar, which neither of the above reaches.
+    try:
+        sync_module_sidebars(feats)
+    except Exception:
+        frappe.log_error(title="module_access: module sidebar sync failed",
+                         message=frappe.get_traceback())
+
     # The desk's own menu gets a way back to the portal.
     try:
         sync_navbar_item()
@@ -188,6 +195,78 @@ def sync_site(features=None):
            f"| applied to {res['applied']} users, {res['admins_exempt']} admins exempt")
     print(msg)          # bench execute prints this back to the operator
     return {"blocked": counts, "workspaces": get_hidden_workspaces(), **res}
+
+
+# Frappe stamps the sidebars it ships with `standard = 1`. Ours are placeholders,
+# so they carry 0 - which is also how sync_module_sidebars knows what it may
+# remove again when a plan is upgraded.
+SIDEBAR_PLACEHOLDER_ICON = "lock"
+
+
+def sync_module_sidebars(features=None):
+    """Silence the desk sidebars for modules this site did not buy.
+
+    Blocking a module hides it from the module LIST, and Frappe honours that. It
+    does not reach the sidebar, because frappe.boot builds that from
+    `auto_generate_sidebar_from_module()`, which does this:
+
+        for module in frappe.get_all("Module Def", pluck="name"):
+
+    Every module on the site, with no reference to the user's blocked modules.
+    That is why a tenant with 31 modules blocked was still handed sidebars for
+    Accounts, CRM, Quality and Maintenance.
+
+    The generator has one guard we can use - it only auto-generates when no
+    stored sidebar exists for that module:
+
+        if not frappe.db.exists("Workspace Sidebar", {"name": module, "for_user": None}):
+
+    So an EMPTY stored sidebar suppresses it. Frappe then drops the whole thing,
+    because boot only shows a sidebar in which at least one real item survived.
+
+    Reversible by design: an upgrade deletes the placeholder and Frappe generates
+    the real sidebar again on the next boot.
+    """
+    if not frappe.db.exists("DocType", "Workspace Sidebar"):
+        return {"skipped": "no Workspace Sidebar doctype on this Frappe"}
+
+    feats = features if features is not None else enabled_features()
+    blocked = set(blocked_module_defs(feats))
+    existing_modules = {m.name for m in frappe.get_all("Module Def", fields=["name"])}
+    blocked &= existing_modules
+
+    silenced, restored = [], []
+
+    for module in sorted(blocked):
+        if frappe.db.exists("Workspace Sidebar", {"name": module, "for_user": None}):
+            continue
+        doc = frappe.get_doc({
+            "doctype": "Workspace Sidebar",
+            "title": module,
+            "module": module,
+            "standard": 0,
+            "header_icon": SIDEBAR_PLACEHOLDER_ICON,
+            "items": [],
+        })
+        doc.flags.ignore_permissions = True
+        doc.insert(ignore_permissions=True)
+        silenced.append(module)
+
+    # An upgrade must undo it, or a plan change is one-way. Only OUR placeholders
+    # are removed: a sidebar Frappe ships, or one a customer built, is not ours.
+    for row in frappe.get_all("Workspace Sidebar",
+                              filters={"standard": 0, "for_user": ["is", "not set"]},
+                              fields=["name", "module"]):
+        if row.module and row.module not in blocked:
+            doc = frappe.get_doc("Workspace Sidebar", row.name)
+            if doc.header_icon == SIDEBAR_PLACEHOLDER_ICON and not doc.items:
+                frappe.delete_doc("Workspace Sidebar", row.name,
+                                  force=True, ignore_permissions=True)
+                restored.append(row.module)
+
+    frappe.db.commit()
+    frappe.clear_cache()
+    return {"silenced": silenced, "restored": restored}
 
 
 def sync_workspaces(features=None):

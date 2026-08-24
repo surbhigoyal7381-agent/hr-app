@@ -793,6 +793,30 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
                         "\n--- stderr ---\n" + (ru.stderr or "(empty)") +
                         "\n--- stdout ---\n" + (ru.stdout or "(empty)") + "\n")
 
+            import shlex as _shlex
+            import json as _json2
+
+            # Record WHICH features were bought, before applying them.
+            #
+            # Provisioning wrote `modules_enabled` (legacy labels for the tenant list)
+            # and `subscription_plan`, but never `features`. enabled_features() reads
+            # `features` first and falls back to the PLAN NAME - and the plan name is
+            # derived from the selection, so any tenant that ticked one non-preset
+            # feature became `custom`, which grants everything. The result: a tenant
+            # that bought Goals and the Vendor Portal was gated as if it had bought the
+            # entire product. Its Module Profile was built correctly - from the wrong
+            # feature list.
+            #
+            # `set-config -p` parses the value as JSON, so the list stays a list.
+            feature_ids = [m.strip() for m in (modules or '').split(',') if m.strip()]
+            rf = _bench_run(
+                f"--site {site_name} set-config -p features "
+                + _shlex.quote(_json2.dumps(feature_ids)))
+            if rf.returncode != 0:
+                log += ("\n[WARN] feature list not recorded; the plan name decides "
+                        "entitlement, which grants too much.\n"
+                        + (rf.stderr or "(empty)") + "\n")
+
             # Apply the plan to the desk. This lived ONLY in update_tenant, so a
             # brand-new tenant was gated by nothing at all: measured on a live
             # tenant, its Module Profile blocked 0 modules and the desk showed

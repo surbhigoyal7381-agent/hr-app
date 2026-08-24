@@ -485,3 +485,66 @@ class TestRequiredFeaturesAreStored(FrappeTestCase):
 		self.assertEqual(
 			sorted(sub.REQUIRED),
 			sorted(["portal", "leaves", "attendance", "expenses", "hr_setup"]))
+
+
+class TestProvisioningRecordsWhatWasBought(FrappeTestCase):
+	"""Provisioning must write the FEATURE LIST, not just the plan name.
+
+	enabled_features() reads `features` first and falls back to the plan name.
+	The plan name is DERIVED from the selection, so any tenant that ticks one
+	non-preset feature becomes `custom` - and custom grants everything.
+
+	Measured on a real tenant that bought only Goals and the Vendor Portal:
+
+	    features        = None          <- never written
+	    modules_enabled = [...]         <- legacy labels, for the tenant list
+	    subscription_plan = custom      <- therefore: everything
+
+	Its Module Profile was built perfectly, from the wrong feature list. 32
+	modules blocked, 0 workspaces hidden, the whole product visible. Every unit
+	test passed throughout, because none of them asked what provisioning WRITES.
+	"""
+
+	def test_provisioning_records_the_feature_list(self):
+		import inspect
+
+		src = inspect.getsource(api._run_provision)
+		self.assertIn("set-config -p features", src,
+		              "provisioning must record WHICH features were bought")
+
+	def test_it_records_them_before_applying_them(self):
+		"""sync_site reads the config it was just given. The other order would
+		gate the tenant from whatever the previous value was."""
+		import inspect
+
+		src = inspect.getsource(api._run_provision)
+		self.assertLess(src.index("set-config -p features"),
+		                src.index("module_access.sync_site"),
+		                "features must be recorded before the plan is applied")
+
+	def test_the_value_is_shell_quoted(self):
+		"""A JSON list on a shell command line needs quoting, and a tenant name
+		is operator input."""
+		import inspect
+
+		src = inspect.getsource(api._run_provision)
+		block = src[src.index("set-config -p features"):]
+		self.assertIn("quote(", block[:200])
+
+	def test_a_failure_to_record_is_loud(self):
+		"""Silently falling back to the plan name grants too much - the exact
+		failure this class exists for."""
+		import inspect
+
+		src = inspect.getsource(api._run_provision)
+		block = src[src.index("set-config -p features"):]
+		self.assertIn("[WARN] feature list not recorded", block[:600])
+
+	def test_the_fallback_it_protects_against_really_does_grant_everything(self):
+		"""Not a hypothetical: with no `features` key and a custom plan, every
+		feature is enabled."""
+		from alvoraa_portal import subscription as sub
+
+		got = sub.enabled_features({"subscription_plan": "custom"})
+		self.assertEqual(sorted(got), sorted(sub.FEATURES),
+		                 "custom with no feature list grants the whole product")

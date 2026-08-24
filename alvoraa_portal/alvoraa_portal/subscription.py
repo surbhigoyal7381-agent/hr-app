@@ -363,7 +363,39 @@ def blocked_module_defs(features, existing=None):
     return sorted(blocked - set(FRAPPE_ALWAYS_VISIBLE))
 
 
-def blocked_doctypes(features, existing=None):
+def linked_dependencies(features, links=None):
+    """Doctypes outside the sold modules that the sold ones LINK to.
+
+    Denying by module alone broke Frappe HR, and CI caught it before a customer
+    did. ERPNext keeps the most fundamental HR entities in its `Setup` module:
+
+        Employee, Company, Department, Designation, Branch, Holiday List
+
+    Blocking Setup therefore denied `Employee` itself, and an HR Manager could
+    not read a leave balance.
+
+    The dependency list is DERIVED, not written down: whatever the sold modules
+    link to, they need. 34 doctypes on a real site - Employee and Company among
+    them, but also Bank Account, Journal Entry and Cost Center, because payroll
+    posts to the ledger. A doctype a future Frappe HR release starts linking to
+    is covered the day it appears.
+
+    The trade, stated plainly: this grants READ on a handful of Accounts
+    doctypes to every tenant. Payroll cannot work otherwise, and a broken
+    product is worse than a slightly permeable one.
+    """
+    allowed = allowed_module_defs(features)
+    if links is None:
+        links = frappe.db.sql(
+            """select distinct df.options
+               from `tabDocField` df join `tabDocType` dt on dt.name = df.parent
+               where df.fieldtype in ('Link', 'Table MultiSelect')
+                 and df.options is not null and dt.module in %(m)s""",
+            {"m": list(allowed) or [""]}, pluck=True)
+    return sorted({d for d in (links or []) if d})
+
+
+def blocked_doctypes(features, existing=None, links=None):
     """Doctypes a site with these features must not expose.
 
     DERIVED, never listed. The modules come from blocked_module_defs(), which is
@@ -386,7 +418,29 @@ def blocked_doctypes(features, existing=None):
         ]
     modules = sorted({m for _n, m in existing if m})
     blocked = set(blocked_module_defs(features, existing=modules))
-    return sorted({name for name, module in existing if module in blocked})
+
+    # Whatever the sold modules link to, they need - whichever module holds it.
+    needed = set(linked_dependencies(features, links=links))
+
+    # ...with one exception, or the exemption swallows the product. Something in
+    # the HR module links to Salary Slip, so a plain dependency rule made Payroll
+    # readable on a Starter plan - the exact thing the plan exists to withhold.
+    #
+    # A module claimed by an UNSOLD Alvoraa feature is never exempted. ERPNext
+    # modules still are: Frappe HR posts payroll to Journal Entry and reads Bank
+    # Account, and the strategy has always been that ERPNext keeps working
+    # underneath while staying out of sight.
+    sold = set(allowed_module_defs(features))
+    never_exempt = {
+        m
+        for key, spec in FEATURES.items() if key not in set(features)
+        for m in (spec.get("module_defs") or [])
+    } - sold
+    if never_exempt:
+        needed -= {name for name, module in existing if module in never_exempt}
+
+    return sorted({name for name, module in existing
+                   if module in blocked and name not in needed})
 
 
 def withheld_roles(features):

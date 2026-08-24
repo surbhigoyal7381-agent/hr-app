@@ -339,8 +339,10 @@ def _keep_exempt_row(doctype, exempt):
         doc = frappe.get_doc({"doctype": "Custom DocPerm", "parent": doctype,
                               "parenttype": "DocType", "parentfield": "permissions",
                               **row})
-        doc.flags.ignore_permissions = True
-        doc.insert(ignore_permissions=True)
+        # db_insert, for the same reason as _restore_snapshot: doc.insert()
+        # queues a background job per row, and 450 doctypes overload the queue.
+        doc.name = frappe.generate_hash(length=10)
+        doc.db_insert()
 
 
 def _restore_snapshot(doctype, rows):
@@ -427,8 +429,6 @@ def sync_permissions(features=None, limit=None, only=None):
     registry blocks, which are derived from the features the site bought. A
     doctype added by a future ERPNext release is covered the day it appears.
     """
-    from frappe.permissions import setup_custom_perms
-
     feats = features if features is not None else enabled_features()
     should_block = set(blocked_doctypes(feats))
     # `only` narrows the run to named doctypes. Useful for repairing one doctype
@@ -461,11 +461,15 @@ def sync_permissions(features=None, limit=None, only=None):
             #
             # So we take them too, having first recorded what was there. The
             # snapshot is what makes the reversal a promise rather than a hope.
-            if not setup_custom_perms(dt):
+            if frappe.db.exists("Custom DocPerm", {"parent": dt}):
                 if dt not in snapshot:
                     snapshot[dt] = _snapshot_existing(dt)
 
-            frappe.db.delete("Custom DocPerm", {"parent": dt, "role": ["not in", list(exempt)]})
+            # Deliberately NOT frappe.permissions.setup_custom_perms: it copies
+            # the standard rows through the document layer, queueing a job per
+            # row. We only ever KEEP the exempt roles, so copying everything and
+            # deleting most of it was wasted work as well as a queue flood.
+            frappe.db.delete("Custom DocPerm", {"parent": dt})
             # Without this the doctype can end up with no custom rows at all,
             # which puts its STANDARD permissions back and undoes the denial.
             _keep_exempt_row(dt, exempt)

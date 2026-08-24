@@ -212,3 +212,47 @@ class TestItScales(Wave4Mixin, FrappeTestCase):
 		for plan in ("starter", "business", "enterprise"):
 			r = ma.sync_permissions(sub.plan_features(plan))
 			self.assertEqual(r["failed"], 0, f"{plan} had failures")
+
+
+class TestHrStillWorksAfterDenial(Wave4Mixin, FrappeTestCase):
+	"""The failure that would matter most: denying something the tenant needs.
+
+	Denying by module alone broke Frappe HR, and CI caught it, not a person.
+	ERPNext keeps the most fundamental HR entities in its `Setup` module -
+	Employee, Company, Department, Designation, Branch, Holiday List - so
+	blocking Setup denied `Employee` itself and an HR Manager could not read a
+	leave balance.
+
+	The dependency list is derived from Frappe HR's own link fields, so a doctype
+	a future release starts linking to is covered the day it appears.
+	"""
+
+	CORE = ["Employee", "Company", "Holiday List", "Department", "Designation"]
+
+	def test_hr_can_still_read_what_frappe_hr_depends_on(self):
+		ma.sync_permissions(sub.plan_features("starter"))
+		for dt in self.CORE:
+			if frappe.db.exists("DocType", dt):
+				self.assertTrue(self._can_read(dt),
+				                f"{dt} is an HR dependency and must stay readable")
+
+	def test_those_doctypes_are_never_in_the_blocked_list(self):
+		blocked = set(sub.blocked_doctypes(sub.plan_features("starter")))
+		for dt in self.CORE:
+			if frappe.db.exists("DocType", dt):
+				self.assertNotIn(dt, blocked, dt)
+
+	def test_the_exemption_does_not_swallow_an_unsold_feature(self):
+		"""Something in the HR module links to Salary Slip, so a plain dependency
+		rule made Payroll readable on Starter - exactly what the plan withholds.
+		A module claimed by an unsold feature is never exempted."""
+		blocked = set(sub.blocked_doctypes(sub.plan_features("starter")))
+		self.assertIn("Salary Slip", blocked,
+		              "Payroll is not on Starter, linked or not")
+
+	def test_erpnext_plumbing_stays_reachable(self):
+		"""Frappe HR posts payroll to Journal Entry and reads Bank Account. The
+		strategy has always been that ERPNext keeps working underneath while
+		staying out of sight."""
+		needed = set(sub.linked_dependencies(sub.plan_features("enterprise")))
+		self.assertTrue(needed, "the dependency scan found nothing at all")

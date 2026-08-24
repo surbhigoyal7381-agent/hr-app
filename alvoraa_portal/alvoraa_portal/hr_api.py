@@ -1,4 +1,6 @@
 import frappe
+
+from alvoraa_portal.subscription import requires_feature
 import calendar as _calendar
 from frappe.utils import today, get_first_day, get_last_day, getdate, add_days, now
 from alvoraa_goals.permissions import get_effective_manager
@@ -365,7 +367,11 @@ def get_manager_dashboard():
 
 
 @frappe.whitelist()
+@requires_feature("analytics")
 def get_hr_analytics():
+    # Role AND plan. The role says this person may see analytics; the feature
+    # says this tenant bought them. Hiding the nav item stopped neither a URL
+    # nor a fetch() from reaching here.
     roles = frappe.get_roles()
     if not ({"HR Manager", "HR User", "Administrator"} & set(roles)):
         frappe.throw("Access denied", frappe.PermissionError)
@@ -1709,6 +1715,7 @@ def get_requests_history():
 # ── Goals & Performance ───────────────────────────────────────────────────────
 
 @frappe.whitelist()
+@requires_feature("goals")
 def get_goals_portal_data():
     """Return all goals for the employee (draft + submitted). Returns {available: False} if alvoraa_goals not installed."""
     if not frappe.db.exists("DocType", "Individual Goal"):
@@ -1793,6 +1800,7 @@ def get_goals_portal_data():
 
 
 @frappe.whitelist()
+@requires_feature("goals")
 def submit_goal_evidence_portal(goal_id, evidence_type="Manual Entry",
                                  value=None, extracted_date=None,
                                  evidence_file=None, raw_extracted_data=None,
@@ -1827,12 +1835,14 @@ def get_pending_approvals():
 
 
 @frappe.whitelist()
+@requires_feature("goals")
 def approve_goal_evidence(goal_name, evidence_idx):
     from alvoraa_goals.controllers.evidence import approve_evidence
     return approve_evidence(goal_name, evidence_idx)
 
 
 @frappe.whitelist()
+@requires_feature("goals")
 def reject_goal_evidence(goal_name, evidence_idx, reason=""):
     from alvoraa_goals.controllers.evidence import reject_evidence
     return reject_evidence(goal_name, evidence_idx, reason)
@@ -1870,6 +1880,7 @@ def _require_hr():
 
 
 @frappe.whitelist()
+@requires_feature("goals")
 def get_goal_detail(goal_id):
     """Full goal detail for drawer — accessible to employee (own) or manager (direct report) or HR."""
     if not frappe.db.exists("DocType", "Individual Goal"):
@@ -1926,6 +1937,7 @@ def get_goal_detail(goal_id):
 
 
 @frappe.whitelist()
+@requires_feature("goals")
 def get_team_goals():
     """Goals grouped by direct report — manager-facing."""
     if not frappe.db.exists("DocType", "Individual Goal"):
@@ -1965,6 +1977,7 @@ def get_team_goals():
 
 
 @frappe.whitelist()
+@requires_feature("goals")
 def update_goal_status(goal_id, new_status):
     """Update goal status. Employee (own) or manager (direct reports) or HR."""
     if new_status not in ("Active", "Completed", "Cancelled"):
@@ -1987,6 +2000,7 @@ def update_goal_status(goal_id, new_status):
 
 
 @frappe.whitelist()
+@requires_feature("goals")
 def add_goal_comment(goal_id, content):
     """Add a comment to a goal visible to employee, manager, and HR."""
     if not content or not content.strip():
@@ -2017,6 +2031,7 @@ def add_goal_comment(goal_id, content):
 
 
 @frappe.whitelist()
+@requires_feature("goals")
 def get_goal_comments(goal_id):
     """Get comments for a goal."""
     emp = _get_employee()
@@ -2150,6 +2165,7 @@ def delete_manager_note(note_id):
 
 
 @frappe.whitelist()
+@requires_feature("goals")
 def get_employee_goals_for_manager(employee_id):
     """Get all goals for a specific direct report or any employee accessible to HR."""
     if not frappe.db.exists("DocType", "Individual Goal"):

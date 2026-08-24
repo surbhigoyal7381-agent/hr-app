@@ -1,7 +1,13 @@
 import frappe
 from frappe import _
+
+from alvoraa_portal.subscription import requires_feature
 from frappe.utils import now_datetime, today
 import json
+
+# Every endpoint in this module belongs to ONE sellable feature, so every one is
+# gated. Hiding the portal's Vendor panel left these eight answering anyone who
+# called them - the door still opened, the menu just stopped mentioning it.
 
 
 def _get_vendor_id():
@@ -21,6 +27,7 @@ def _assert_vendor_owns_order(order_name, vendor_id):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_vendor_orders(status=None, limit=20, offset=0):
     vendor_id = _get_vendor_id()
     filters = {"vendor": vendor_id}
@@ -47,6 +54,7 @@ def get_vendor_orders(status=None, limit=20, offset=0):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_order_detail(order_id):
     vendor_id = _get_vendor_id()
     _assert_vendor_owns_order(order_id, vendor_id)
@@ -84,6 +92,7 @@ def get_order_detail(order_id):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def create_vendor_order(items, delivery_address, delivery_slot, special_instructions=None):
     vendor_id = _get_vendor_id()
     vendor = frappe.get_doc("Vendor", vendor_id)
@@ -123,6 +132,7 @@ def create_vendor_order(items, delivery_address, delivery_slot, special_instruct
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def submit_order_rating(
     order_id,
     quality_rating,
@@ -165,6 +175,7 @@ def submit_order_rating(
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_delivery_tracking(order_id):
     vendor_id = _get_vendor_id()
     _assert_vendor_owns_order(order_id, vendor_id)
@@ -188,6 +199,7 @@ def get_delivery_tracking(order_id):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_vendor_dashboard():
     vendor_id = _get_vendor_id()
 
@@ -239,6 +251,7 @@ def get_vendor_dashboard():
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_vendor_notifications():
     vendor_id = _get_vendor_id()
     user = frappe.get_value("Vendor User", {"vendor": vendor_id}, "frappe_user")

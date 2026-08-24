@@ -27,7 +27,10 @@ Two facts from the running site constrain this:
     uninstalled on any plan, so it is hidden, never removed.
 """
 
+import functools
+
 import frappe
+from frappe import _
 
 # ── Alvoraa HR features ──────────────────────────────────────────────────────
 # `required` features cannot be switched off on any plan.
@@ -361,6 +364,40 @@ def blocked_module_defs(features, existing=None):
     blocked.update(m for m in FRAPPE_HIDDEN if m not in allowed)
 
     return sorted(blocked - set(FRAPPE_ALWAYS_VISIBLE))
+
+
+def requires_feature(name):
+    """Refuse an endpoint the tenant's plan does not include.
+
+    Wave 6 hid the portal's Goals, Analytics and Vendor panels, and hiding was
+    all it did - get_hr_analytics() and the eight vendor endpoints stayed
+    whitelisted and answered anyone who called them. That is the same mistake
+    the desk gates were criticised for: a menu that stops drawing something
+    while the door behind it still opens.
+
+    A decorator rather than an `if` in each function, so a new endpoint has to
+    opt in deliberately instead of being forgotten. Applied ABOVE
+    @frappe.whitelist() so the check runs before the body, not after.
+
+    Required features never refuse: has_feature() short-circuits on them, so a
+    misconfigured `features` list cannot lock a tenant out of its own leave
+    screen.
+    """
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            if not has_feature(name):
+                label = FEATURES.get(name, {}).get("label", name)
+                frappe.throw(
+                    _("{0} is not included in your plan.").format(label),
+                    frappe.PermissionError,
+                )
+            return fn(*args, **kwargs)
+
+        wrapper.__alvoraa_feature__ = name      # so tests can see the gate
+        return wrapper
+
+    return decorator
 
 
 def linked_dependencies(features, links=None):

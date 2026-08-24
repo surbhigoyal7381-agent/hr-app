@@ -24,6 +24,8 @@ def ensure_company():
 	if existing:
 		return existing
 
+	_ensure_erpnext_company_prerequisites()
+
 	company = frappe.get_doc(
 		{
 			"doctype": "Company",
@@ -37,6 +39,33 @@ def ensure_company():
 	company.insert(ignore_permissions=True)
 	frappe.db.commit()
 	return company.name
+
+
+def _ensure_erpnext_company_prerequisites():
+	"""Create the records ERPNext's Company insert links to.
+
+	Inserting a Company is not a small act. ERPNext's Company runs
+	`create_default_warehouses()` on insert, and one of those warehouses links to
+	`Warehouse Type: Transit`. That record normally arrives with ERPNext's setup
+	fixtures, which a bare `bench new-site` + `install-app` never runs - so the
+	insert fails with:
+
+	    LinkValidationError: Could not find Warehouse Type: Transit
+
+	This surfaced the moment our hrms fork stopped shadowing ERPNext's Company
+	with a 10-field stub. The stub did none of this work, so the tests never
+	needed the fixtures. They do now, and that is correct: the tests are finally
+	exercising the same Company a real tenant gets.
+
+	Same principle as ensure_company itself - build the world the test needs
+	rather than assume someone else did.
+	"""
+	for warehouse_type in ("Transit",):
+		if not frappe.db.exists("Warehouse Type", warehouse_type):
+			doc = frappe.get_doc({"doctype": "Warehouse Type", "name": warehouse_type})
+			doc.flags.ignore_permissions = True
+			doc.insert(ignore_permissions=True, ignore_if_duplicate=True)
+	frappe.db.commit()
 
 
 def ensure_gender(gender=TEST_GENDER):

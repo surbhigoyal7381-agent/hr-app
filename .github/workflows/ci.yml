@@ -242,6 +242,19 @@ jobs:
           bench --site test_site execute frappe.client.get_count \
                 --kwargs '{"doctype":"DocType","filters":{"module":"Performance Management"}}'
 
+      # The same integrity script as the no-bench job, but here a bench EXISTS -
+      # so the doctype-shadowing check actually runs instead of skipping.
+      #
+      # That check is the one that would have caught 14 stub copies of ERPNext
+      # doctypes sitting in the hrms fork: a 10-field Company against ERPNext's
+      # 131, a 5-field Account against 21. hrms syncs last, so ours won and
+      # ERPNext's real definitions were thrown away - which broke the setup
+      # wizard on every new tenant, silently, for weeks.
+      - name: App integrity (with a bench - doctype shadowing)
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          BENCH_APPS_PATH=~/frappe-bench/apps python scripts/check_app_integrity.py
+
       # Tenant isolation is enforced entirely by these tests. Blocking.
       - name: Run tests
         run: |

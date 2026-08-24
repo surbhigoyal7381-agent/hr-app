@@ -31,7 +31,7 @@ from frappe.utils import (
 	nowdate,
 )
 
-from hrms.hr.doctype.employee.employee import get_holiday_list_for_employee
+from erpnext.setup.doctype.employee.employee import get_holiday_list_for_employee
 
 
 class InactiveEmployeeStatusError(frappe.ValidationError):

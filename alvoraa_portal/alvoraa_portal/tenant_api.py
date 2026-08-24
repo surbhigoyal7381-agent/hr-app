@@ -656,7 +656,12 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
         if pjob_id in jobs:
             jobs[pjob_id]["status"] = status
             if log_append:
-                jobs[pjob_id]["log"] = (jobs[pjob_id].get("log") or "") + log_append
+                # provision_tenant.sh prints the new tenant's password in its
+                # summary box, and everything it prints is captured here and
+                # stored in the jobs file - which the console serves back over
+                # HTTP. Moving secrets out of Redis and out of the job record
+                # counts for nothing if they walk back in through the log.
+                jobs[pjob_id]["log"] = (jobs[pjob_id].get("log") or "") + _redact(log_append)
             if finished:
                 jobs[pjob_id]["finished_at"] = str(now_datetime())
                 if status != "Done":
@@ -745,7 +750,12 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
                 timeout=600,
             )
             if rs.returncode != 0:
-                log += "\n[WARN] company setup did not complete: " + (rs.stderr or "")
+                # BOTH streams. `bench execute` wraps a failing call in its own
+                # fallback and reports that instead, on stdout - so stderr came
+                # back empty and the real error was thrown away. That cost hours.
+                log += ("\n[WARN] company setup did not complete."
+                        "\n--- stderr ---\n" + (rs.stderr or "(empty)") +
+                        "\n--- stdout ---\n" + (rs.stdout or "(empty)") + "\n")
             # Every tenant starts with two real logins. A fresh Frappe site has
             # only `Administrator`, which is shared and unattributable - not
             # something to hand a customer.
@@ -767,7 +777,9 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
                      "TENANT_ADMIN_PASSWORD": user_admin_password},
             )
             if ru.returncode != 0:
-                log += "\n[WARN] default users not created: " + (ru.stderr or "")
+                log += ("\n[WARN] default users not created."
+                        "\n--- stderr ---\n" + (ru.stderr or "(empty)") +
+                        "\n--- stdout ---\n" + (ru.stdout or "(empty)") + "\n")
 
             if logo_url:
                 _bench_run(f"--site {site_name} set-config tenant_logo_url \"{logo_url}\"")
@@ -813,7 +825,12 @@ def _run_install_modules(pjob_id, site_name, install_vendor=False, install_goals
         if pjob_id in jobs:
             jobs[pjob_id]["status"] = status
             if log_append:
-                jobs[pjob_id]["log"] = (jobs[pjob_id].get("log") or "") + log_append
+                # provision_tenant.sh prints the new tenant's password in its
+                # summary box, and everything it prints is captured here and
+                # stored in the jobs file - which the console serves back over
+                # HTTP. Moving secrets out of Redis and out of the job record
+                # counts for nothing if they walk back in through the log.
+                jobs[pjob_id]["log"] = (jobs[pjob_id].get("log") or "") + _redact(log_append)
             if finished:
                 jobs[pjob_id]["finished_at"] = str(now_datetime())
         _write_jobs(jobs)

@@ -378,3 +378,51 @@ class TestBenchPathIsNotHardcoded(FrappeTestCase):
 			m.side_effect = OSError("read-only file system")
 			with self.assertRaises(OSError):
 				api._write_jobs({"x": {}})
+
+
+class TestTheLogKeepsNoSecret(FrappeTestCase):
+	"""Moving secrets out of Redis and out of the job record counts for nothing
+	if they walk back in through the log.
+
+	provision_tenant.sh prints the new tenant's password in its summary box.
+	Everything it prints is captured and stored in the jobs file, which the
+	control plane serves back over HTTP.
+	"""
+
+	def test_the_summary_box_password_is_redacted(self):
+		box = (
+			"║  URL:      https://acme.alvoraa.co      ║\n"
+			"║  Login:    Administrator                ║\n"
+			"║  Password: oS9B7M2JCro3oBZHfh           ║\n"
+		)
+		out = api._redact(box)
+		self.assertNotIn("oS9B7M2JCro3oBZHfh", out)
+		self.assertIn("acme.alvoraa.co", out, "the useful lines must survive")
+
+	def test_the_worker_redacts_before_storing(self):
+		import inspect
+
+		src = inspect.getsource(api._run_provision)
+		self.assertIn("_redact(log_append)",
+		              src.split("def _update")[1].split("_write_jobs")[0])
+
+
+class TestFailuresCaptureBothStreams(FrappeTestCase):
+	"""`bench execute` wraps a failing call in its own fallback and reports that
+	instead, on stdout. Logging stderr alone returned an empty string and threw
+	the real error away - which is how a broken company setup looked like nothing
+	at all for hours."""
+
+	def test_company_setup_logs_stdout_too(self):
+		import inspect
+
+		src = inspect.getsource(api._run_provision)
+		block = src[src.index("company setup did not complete"):]
+		self.assertIn("rs.stdout", block[:400])
+
+	def test_default_users_logs_stdout_too(self):
+		import inspect
+
+		src = inspect.getsource(api._run_provision)
+		block = src[src.index("default users not created"):]
+		self.assertIn("ru.stdout", block[:400])

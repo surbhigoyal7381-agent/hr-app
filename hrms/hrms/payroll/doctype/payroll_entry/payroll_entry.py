@@ -23,7 +23,7 @@ from frappe.utils import (
 	getdate,
 )
 
-from hrms.payroll.doctype.fiscal_year.fiscal_year import get_fiscal_year
+from erpnext.accounts.utils import get_fiscal_year
 from hrms.payroll.doctype.salary_slip.salary_slip_loan_utils import if_lending_app_installed
 from hrms.payroll.doctype.salary_withholding.salary_withholding import link_bank_entry_in_salary_withholdings
 

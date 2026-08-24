@@ -26,9 +26,9 @@ from frappe.utils import (
 )
 from frappe.utils.background_jobs import enqueue
 
-from hrms.hr.doctype.employee.employee import get_holiday_list_for_employee
+from erpnext.setup.doctype.employee.employee import get_holiday_list_for_employee
 from hrms.hr.utils import validate_active_employee
-from hrms.payroll.doctype.fiscal_year.fiscal_year import get_fiscal_year
+from erpnext.accounts.utils import get_fiscal_year
 from hrms.payroll.doctype.additional_salary.additional_salary import get_additional_salaries
 from hrms.payroll.doctype.employee_benefit_ledger.employee_benefit_ledger import (
 	create_employee_benefit_ledger_entry,

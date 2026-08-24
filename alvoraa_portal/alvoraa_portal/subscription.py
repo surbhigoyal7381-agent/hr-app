@@ -324,6 +324,30 @@ def blocked_module_defs(features):
     return sorted(set(blocked) - set(FRAPPE_ALWAYS_VISIBLE))
 
 
+def blocked_doctypes(features, existing=None):
+    """Doctypes a site with these features must not expose.
+
+    DERIVED, never listed. The modules come from blocked_module_defs(), and the
+    doctypes come from whatever actually lives in those modules on this site. So
+    a doctype added by a future ERPNext release is covered the day it appears,
+    and nothing here needs editing when the plan ladder changes.
+
+    `existing` is injected by the caller so this stays a pure function and can be
+    tested without a database.
+    """
+    blocked = set(blocked_module_defs(features))
+    if existing is None:
+        existing = [
+            (d.name, d.module)
+            for d in frappe.get_all(
+                "DocType",
+                filters={"istable": 0, "custom": 0, "issingle": 0},
+                fields=["name", "module"],
+            )
+        ]
+    return sorted({name for name, module in existing if module in blocked})
+
+
 def withheld_roles(features):
     """Roles a site must NOT grant, given its features. This is the real gate."""
     roles = []

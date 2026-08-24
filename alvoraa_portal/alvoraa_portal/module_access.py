@@ -21,6 +21,7 @@ Shipping this alone would make the product look correctly gated while it is not.
 import frappe
 
 from alvoraa_portal.subscription import (
+    blocked_doctypes,
     blocked_module_defs,
     blocked_module_defs_for_hr,
     enabled_features,
@@ -177,6 +178,15 @@ def sync_site(features=None):
         frappe.log_error(title="module_access: module sidebar sync failed",
                          message=frappe.get_traceback())
 
+    # Wave 4. The only one of these that actually DENIES anything; everything
+    # above it just stops drawing menus.
+    try:
+        perms = sync_permissions(feats)
+    except Exception:
+        perms = {"error": True}
+        frappe.log_error(title="module_access: permission sync failed",
+                         message=frappe.get_traceback())
+
     # The desk's own menu gets a way back to the portal.
     try:
         sync_navbar_item()
@@ -190,7 +200,8 @@ def sync_site(features=None):
         for n in (PROFILE_NAME, HR_PROFILE_NAME)
     }
     ws = get_hidden_workspaces()
-    msg = (f"employees: {counts[PROFILE_NAME]} hidden | HR: {counts[HR_PROFILE_NAME]} hidden "
+    msg = (f"denied: {perms.get('total_recorded', '?')} doctypes | "
+           f"employees: {counts[PROFILE_NAME]} hidden | HR: {counts[HR_PROFILE_NAME]} hidden "
            f"| workspaces hidden: {len(ws['hidden'])} visible: {len(ws['visible'])} "
            f"| applied to {res['applied']} users, {res['admins_exempt']} admins exempt")
     print(msg)          # bench execute prints this back to the operator
@@ -201,6 +212,285 @@ def sync_site(features=None):
 # so they carry 0 - which is also how sync_module_sidebars knows what it may
 # remove again when a plan is upgraded.
 SIDEBAR_PLACEHOLDER_ICON = "lock"
+
+
+# ── Wave 4: denial, not hiding ───────────────────────────────────────────────
+#
+# Three levers were built before this one - block_modules, Workspace.is_hidden,
+# and empty Workspace Sidebars - and a tenant still showed Payroll, Recruitment
+# and CRM. Every sidebar item type except `workspace` is decided by PERMISSIONS
+# (frappe/desk/desk_views.py), so hiding can never finish the job, and each new
+# menu Frappe adds is another hole.
+#
+# Withholding roles does not work either: the unwanted access rides on roles the
+# tenant must keep. HR Manager has read on Payroll and CRM by ERPNext default,
+# and every user alive holds `All`.
+#
+# So we override the PERMISSIONS. From frappe/permissions.py:
+#
+#     doctypes_with_custom_perms = get_doctypes_with_custom_docperms()
+#     for p in perms:
+#         if p.parent not in doctypes_with_custom_perms:
+#             custom_perms.append(p)
+#
+# Once ANY Custom DocPerm row exists for a doctype, its standard permissions are
+# ignored entirely. That is the lever and the danger in one sentence.
+
+# Roles that keep access to everything. Read from ADMIN_ROLES so there is one
+# definition of "exempt" in this module, not two that can drift.
+# Administrator is not listed because Frappe bypasses permission checks for it
+# outright - adding it here would imply a guarantee we do not control.
+def _exempt_roles():
+    return set(ADMIN_ROLES)
+
+
+# Where the record of our own work lives.
+#
+# A Single doctype, not site config: this is DATA - up to a few hundred
+# permission rows - and it must survive in a database backup, because it is the
+# only record of how to put a tenant's permissions back.
+STATE_DOCTYPE = "Alvoraa Access State"
+
+
+def _state():
+    return frappe.get_single(STATE_DOCTYPE)
+
+
+def _load(field):
+    import json as _json
+
+    raw = (_state().get(field) or "").strip()
+    try:
+        return _json.loads(raw) if raw else ({} if field == "permission_snapshot" else [])
+    except Exception:
+        frappe.log_error(title=f"module_access: unreadable {field}", message=raw[:2000])
+        return {} if field == "permission_snapshot" else []
+
+
+def _save(restricted=None, snapshot=None):
+    import json as _json
+
+    doc = _state()
+    if restricted is not None:
+        doc.restricted_doctypes = _json.dumps(sorted(restricted))
+    if snapshot is not None:
+        doc.permission_snapshot = _json.dumps(snapshot)
+    doc.last_synced = frappe.utils.now()
+    doc.flags.ignore_permissions = True
+    doc.save(ignore_permissions=True)
+
+
+def _recorded_restrictions():
+    return set(_load("restricted_doctypes"))
+
+
+# Permission rows that already existed before we touched a doctype.
+#
+# Frappe's reset_perms() restores the STANDARD permissions, which is exactly
+# right for a doctype nobody had customised. But 40 of the 450 doctypes a Starter
+# tenant blocks already carry Custom DocPerm rows - hrms/setup.py writes them at
+# install - and for those, reset_perms would restore something DIFFERENT from
+# what was there. So we keep the originals and put them back verbatim.
+#
+# 172 rows on a real site. Small enough to store exactly, which is the only
+# honest way to promise a reversal.
+_SNAPSHOT_FIELDS = ("role", "permlevel", "read", "write", "create", "delete",
+                    "submit", "cancel", "amend", "report", "export", "import",
+                    "share", "print", "email", "select", "if_owner")
+
+
+def _snapshot_existing(doctype):
+    rows = frappe.get_all("Custom DocPerm", filters={"parent": doctype},
+                          fields=list(_SNAPSHOT_FIELDS))
+    return [dict(r) for r in rows]
+
+
+def _keep_exempt_row(doctype, exempt):
+    """Leave at least one Custom DocPerm row on a restricted doctype.
+
+    THIS IS LOAD-BEARING. Frappe decides whether to use custom permissions like
+    this:
+
+        doctypes_with_custom_perms = get_doctypes_with_custom_docperms()   # rows exist?
+        for p in perms:
+            if p.parent not in doctypes_with_custom_perms:
+                custom_perms.append(p)                                    # else STANDARD
+
+    So a doctype with ZERO custom rows silently falls back to its standard
+    permissions - and "delete every role we do not exempt" produces exactly that
+    whenever none of the exempt roles was in the original list. Measured: after
+    restricting Salary Slip that way, an HR Manager could still read it.
+
+    Keeping one row for an exempt role holds the doctype in custom-permission
+    mode, which is what denies everybody else.
+    """
+    if frappe.db.exists("Custom DocPerm", {"parent": doctype}):
+        return
+
+    for role in sorted(exempt):
+        std = frappe.get_all("DocPerm", filters={"parent": doctype, "role": role},
+                             fields=list(_SNAPSHOT_FIELDS), limit=1)
+        row = dict(std[0]) if std else {
+            "role": role, "permlevel": 0,
+            "read": 1, "write": 1, "create": 1, "delete": 1,
+            "report": 1, "export": 1, "share": 1, "print": 1, "email": 1,
+        }
+        row["role"] = role
+        doc = frappe.get_doc({"doctype": "Custom DocPerm", "parent": doctype,
+                              "parenttype": "DocType", "parentfield": "permissions",
+                              **row})
+        doc.flags.ignore_permissions = True
+        doc.insert(ignore_permissions=True)
+
+
+def _restore_snapshot(doctype, rows):
+    """Put back exactly what was there, without going through the document layer.
+
+    doc.insert() on a permission row fires validation and hooks, and Frappe
+    queues a background job for each one. Across a few hundred doctypes that
+    reaches the queue limit and the whole release dies half-done:
+
+        QueueOverloaded: Too many queued background jobs (550)
+
+    Measured, on the first attempt at this. These rows are a restore of values we
+    read from this same table minutes earlier, so there is nothing to validate.
+    """
+    for row in rows:
+        doc = frappe.get_doc({"doctype": "Custom DocPerm", "parent": doctype,
+                              "parenttype": "DocType", "parentfield": "permissions",
+                              **row})
+        doc.name = frappe.generate_hash(length=10)
+        doc.db_insert()
+
+
+def release_permissions(doctypes=None):
+    """Give back access to doctypes we previously restricted.
+
+    Built and tested BEFORE the restriction it undoes. A change that can stop a
+    customer working should not ship until putting it back is proven.
+
+    Deleting every Custom DocPerm row for a doctype puts Frappe back on the
+    standard ones, so a doctype nobody had customised is restored exactly by
+    doing nothing more. The 40 that WERE customised get their original rows
+    written back from the snapshot.
+
+    Only doctypes WE recorded are released. A Custom DocPerm somebody else made
+    is not ours to delete.
+    """
+    ours = _recorded_restrictions()
+    snapshot = _load("permission_snapshot")
+    targets = ours if doctypes is None else (set(doctypes) & ours)
+
+    released = []
+    for dt in sorted(targets):
+        if not frappe.db.exists("DocType", dt):
+            continue
+        try:
+            # NOT frappe.permissions.reset_perms: it deletes each row as a
+            # document, which queues a background job apiece and overloads the
+            # queue long before 450 doctypes are done. A direct delete of the
+            # same rows has the same effect on permissions - Frappe reads this
+            # table, not a cache - without the per-row machinery.
+            frappe.db.delete("Custom DocPerm", {"parent": dt})
+            if dt in snapshot:
+                # It had custom permissions before us. Standard rows are NOT what
+                # was there, so put back exactly what we found.
+                _restore_snapshot(dt, snapshot.pop(dt))
+            released.append(dt)
+        except Exception:
+            frappe.log_error(title=f"module_access: could not release {dt}",
+                             message=frappe.get_traceback())
+
+    if released:
+        _save(restricted=ours - set(released), snapshot=snapshot)
+        frappe.db.commit()
+        # Once, at the end. Clearing per doctype would be hundreds of round trips
+        # for the same result.
+        frappe.clear_cache()
+    return {"released": released, "still_restricted": sorted(ours - set(released))}
+
+
+def sync_permissions(features=None, limit=None, only=None):
+    """Deny access to the doctypes this site did not buy. Wave 4.
+
+    For every doctype in a blocked module, copy its standard permissions into
+    Custom DocPerm and keep only the exempt roles. Frappe then ignores the
+    standard rows entirely, so the doctype disappears from the API, the list
+    view, the sidebar and the search bar at the same time - which is the point.
+    Hiding only ever reached one of those at a time.
+
+    Runs BOTH ways on every call. A doctype that is no longer blocked - because
+    the plan was upgraded - is released before anything new is restricted, so a
+    plan change is never one-way.
+
+    Nothing here is hardcoded. The doctype list is derived from the modules the
+    registry blocks, which are derived from the features the site bought. A
+    doctype added by a future ERPNext release is covered the day it appears.
+    """
+    from frappe.permissions import setup_custom_perms
+
+    feats = features if features is not None else enabled_features()
+    should_block = set(blocked_doctypes(feats))
+    # `only` narrows the run to named doctypes. Useful for repairing one doctype
+    # on a live tenant without re-walking 450, and it keeps the test suite from
+    # taking eight minutes to prove things about six of them.
+    if only is not None:
+        should_block &= set(only)
+    exempt = _exempt_roles()
+    already = _recorded_restrictions()
+
+    # Upgrades first: release before restricting, so a doctype that moved from
+    # blocked to sold is never left denied by the same run that should free it.
+    released = release_permissions(already - should_block)["released"]
+
+    to_restrict = sorted(should_block - _recorded_restrictions())
+    if limit:
+        to_restrict = to_restrict[:limit]
+
+    snapshot = _load("permission_snapshot")
+    restricted, failed = [], []
+
+    for dt in to_restrict:
+        try:
+            # setup_custom_perms returns True when it copied the standard rows,
+            # and False when custom rows were already there. The False case is
+            # the one that matters: 40 of the 450 doctypes a Starter tenant
+            # blocks already carry customisations from hrms/setup.py - Salary
+            # Slip among them - and skipping those would leave exactly the
+            # doctypes the plan is meant to deny wide open.
+            #
+            # So we take them too, having first recorded what was there. The
+            # snapshot is what makes the reversal a promise rather than a hope.
+            if not setup_custom_perms(dt):
+                if dt not in snapshot:
+                    snapshot[dt] = _snapshot_existing(dt)
+
+            frappe.db.delete("Custom DocPerm", {"parent": dt, "role": ["not in", list(exempt)]})
+            # Without this the doctype can end up with no custom rows at all,
+            # which puts its STANDARD permissions back and undoes the denial.
+            _keep_exempt_row(dt, exempt)
+            restricted.append(dt)
+        except Exception:
+            frappe.log_error(title=f"module_access: could not restrict {dt}",
+                             message=frappe.get_traceback())
+            failed.append(dt)
+
+    if restricted:
+        _save(restricted=_recorded_restrictions() | set(restricted), snapshot=snapshot)
+
+    frappe.db.commit()
+    frappe.clear_cache()
+    return {"restricted": len(restricted), "released": len(released),
+            "failed": len(failed), "snapshotted": len(snapshot),
+            "total_recorded": len(_recorded_restrictions())}
+
+
+@frappe.whitelist()
+def get_restricted_doctypes():
+    """What this site currently denies. For the console and for support."""
+    return {"count": len(_recorded_restrictions()),
+            "doctypes": sorted(_recorded_restrictions()),
+            "snapshotted": sorted(_load("permission_snapshot"))}
 
 
 def sync_module_sidebars(features=None):

@@ -426,3 +426,62 @@ class TestFailuresCaptureBothStreams(FrappeTestCase):
 		src = inspect.getsource(api._run_provision)
 		block = src[src.index("default users not created"):]
 		self.assertIn("ru.stdout", block[:400])
+
+
+class TestProvisioningAppliesThePlan(FrappeTestCase):
+	"""A new tenant must be gated by what was ticked.
+
+	`module_access.sync_site` was called from update_tenant ONLY, so provisioning
+	applied nothing at all. Measured on a live tenant: its Module Profile blocked
+	0 modules and the desk showed Payroll, Recruitment and every ERPNext module.
+	EDITING the tenant afterwards was the only thing that ever applied the plan -
+	so the gate appeared to work for anyone who happened to edit, and never for
+	anyone who did not.
+	"""
+
+	def test_provisioning_syncs_module_access(self):
+		import inspect
+
+		self.assertIn("module_access.sync_site", inspect.getsource(api._run_provision))
+
+	def test_a_failed_sync_does_not_fail_the_tenant(self):
+		"""The tenant works; the desk just shows too much. Refusing to finish
+		provisioning over a cosmetic gate would be the worse trade."""
+		import inspect
+
+		src = inspect.getsource(api._run_provision)
+		block = src[src.index("module_access.sync_site"):]
+		self.assertIn("[WARN] module access not applied", block[:800])
+		self.assertNotIn("frappe.throw", block[:800])
+
+	def test_the_failure_is_logged_with_both_streams(self):
+		import inspect
+
+		src = inspect.getsource(api._run_provision)
+		block = src[src.index("module access not applied"):]
+		self.assertIn("rs.stdout", block[:400])
+
+
+class TestRequiredFeaturesAreStored(FrappeTestCase):
+	"""Required features are not the UI's to omit.
+
+	The admin console dropped them when editing an existing tenant, and the
+	tenant was then STORED without Leaves, Attendance, Expenses, HR Setup or the
+	portal. enabled_features() re-adds them on read, so the site kept working -
+	which is precisely what made it invisible.
+	"""
+
+	def test_both_entry_points_force_them_in(self):
+		import inspect
+
+		for fn in (api.create_tenant, api.update_tenant):
+			src = inspect.getsource(fn)
+			self.assertIn("REQUIRED", src,
+			              f"{fn.__name__} must not store a tenant missing required features")
+
+	def test_the_registry_marks_the_expected_five(self):
+		from alvoraa_portal import subscription as sub
+
+		self.assertEqual(
+			sorted(sub.REQUIRED),
+			sorted(["portal", "leaves", "attendance", "expenses", "hr_setup"]))

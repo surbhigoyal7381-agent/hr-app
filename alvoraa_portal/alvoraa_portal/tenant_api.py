@@ -9,7 +9,7 @@ returns immediately with a job_id; the client polls get_provision_status().
 
 import frappe
 
-from alvoraa_portal.subscription import PLANS
+from alvoraa_portal.subscription import PLANS, REQUIRED
 import os
 import json
 import re
@@ -265,6 +265,12 @@ def create_tenant(subdomain, tenant_name, plan="starter",
             modules = [m.strip() for m in modules.split(",") if m.strip()]
     if "hrms" not in modules:
         modules = ["hrms"] + [m for m in modules if m != "hrms"]
+    # Required features are not optional, so they are not the UI's to omit. The
+    # admin console dropped them when editing an existing tenant, and the tenant
+    # was then STORED without Leaves, Attendance, Expenses, HR Setup or the
+    # portal. enabled_features() re-adds them on read, so the site still worked -
+    # which is exactly what made it hard to see. Store what is true.
+    modules = list(modules) + [f for f in REQUIRED if f not in modules]
     # Derive the plan label from the modules. This intentionally OVERWRITES the
     # `plan` argument: modules are the source of truth, so a caller cannot send a
     # label that contradicts what was actually provisioned.
@@ -503,9 +509,15 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
                 modules = [m.strip() for m in modules.split(",") if m.strip()]
         if "hrms" not in modules:
             modules = ["hrms"] + [m for m in modules if m != "hrms"]
+        # Required features are not optional, so they are not the UI's to omit. The
+        # admin console dropped them when editing an existing tenant, and the tenant
+        # was then STORED without Leaves, Attendance, Expenses, HR Setup or the
+        # portal. enabled_features() re-adds them on read, so the site still worked -
+        # which is exactly what made it hard to see. Store what is true.
+        modules = list(modules) + [f for f in REQUIRED if f not in modules]
 
     # Derive plan label from module set
-    from alvoraa_portal.subscription import PLANS
+    from alvoraa_portal.subscription import PLANS, REQUIRED
 
     if modules is not None:
         mset = set(modules)
@@ -780,6 +792,23 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
                 log += ("\n[WARN] default users not created."
                         "\n--- stderr ---\n" + (ru.stderr or "(empty)") +
                         "\n--- stdout ---\n" + (ru.stdout or "(empty)") + "\n")
+
+            # Apply the plan to the desk. This lived ONLY in update_tenant, so a
+            # brand-new tenant was gated by nothing at all: measured on a live
+            # tenant, its Module Profile blocked 0 modules and the desk showed
+            # Payroll, Recruitment and every ERPNext module regardless of what was
+            # ticked. Editing the tenant afterwards was the only thing that ever
+            # applied it.
+            rs = _bench_run(
+                f"--site {site_name} execute alvoraa_portal.module_access.sync_site",
+                timeout=300)
+            if rs.returncode != 0:
+                # Not fatal: the tenant works, the desk just shows too much.
+                log += ("\n[WARN] module access not applied."
+                        "\n--- stderr ---\n" + (rs.stderr or "(empty)") +
+                        "\n--- stdout ---\n" + (rs.stdout or "(empty)") + "\n")
+            else:
+                log += "\n" + (rs.stdout or "").strip() + "\n"
 
             if logo_url:
                 _bench_run(f"--site {site_name} set-config tenant_logo_url \"{logo_url}\"")

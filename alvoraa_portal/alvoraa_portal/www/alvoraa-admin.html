@@ -775,6 +775,25 @@ html, body {
     selectedModules = req.slice();
     editSelectedModules = req.slice();
   }
+  // Required features are part of every plan, so no list may be missing them.
+  // withRequired() is applied wherever a selection is BUILT - presets, editing
+  // an existing tenant, toggling - because a list assembled anywhere else is a
+  // list that can silently drop them. That is exactly what happened when
+  // editing a tenant: the required rows rendered unticked, and saving wrote
+  // them away.
+  function requiredIds() {
+    return MODULES_DEF.filter(function(f) { return f.required; })
+                      .map(function(f) { return f.id; });
+  }
+  function withRequired(ids) {
+    var out = (ids || []).slice();
+    requiredIds().forEach(function(r) {
+      if (out.indexOf(r) === -1) out.push(r);
+    });
+    return out;
+  }
+  function isRequired(id) { return requiredIds().indexOf(id) !== -1; }
+
   var selectedModules = [];       // filled by loadPlanCatalogue()
 
   function renderModules() {
@@ -794,6 +813,7 @@ html, body {
     }).join('');
   }
   window.toggleModule = function(id) {
+    if (isRequired(id)) return;          // cannot be turned off
     var idx = selectedModules.indexOf(id);
     if (idx === -1) selectedModules.push(id);
     else selectedModules.splice(idx, 1);
@@ -801,7 +821,7 @@ html, body {
     syncPresetButtons();
   };
   window.applyPreset = function(preset) {
-    selectedModules = MODULE_PRESETS[preset].slice();
+    selectedModules = withRequired(MODULE_PRESETS[preset]);
     renderModules();
     ['starter','business','enterprise'].forEach(function(p) {
       var btn = document.getElementById('preset-' + p);
@@ -1404,6 +1424,7 @@ html, body {
   }
 
   window.toggleEditModule = function(id) {
+    if (isRequired(id)) return;          // cannot be turned off
     var idx = editSelectedModules.indexOf(id);
     if (idx === -1) editSelectedModules.push(id);
     else editSelectedModules.splice(idx, 1);
@@ -1412,7 +1433,7 @@ html, body {
   };
 
   window.applyEditPreset = function(preset) {
-    editSelectedModules = MODULE_PRESETS[preset].slice();
+    editSelectedModules = withRequired(MODULE_PRESETS[preset]);
     renderEditModules();
     ['starter','business','enterprise'].forEach(function(p) {
       var btn = document.getElementById('edit-preset-' + p);
@@ -1457,7 +1478,10 @@ html, body {
     document.getElementById('edit-color').value = color;
     syncEditSwatch(color);
     var ids = siteModulesToIds(t.modules);
-      editSelectedModules = ids.length ? ids : MODULES_DEF.filter(function(f){return f.required;}).map(function(f){return f.id;});
+      // Was `ids.length ? ids : required`, so the required features were added
+      // only for a tenant that had NONE - never for one that had some. Every
+      // existing tenant opened with them unticked, and saving wrote them away.
+      editSelectedModules = withRequired(ids);
     renderEditModules();
     syncEditPresetButtons();
     document.getElementById('ka-edit-error').style.display = 'none';

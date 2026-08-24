@@ -257,6 +257,34 @@ def has_feature(name, conf=None):
     return name in enabled_features(conf)
 
 
+def sold_and_unsold_workspaces(features):
+    """(show, hide) — desk workspaces for a site with these features.
+
+    Module blocking cannot do this job. Frappe HR puts Leaves, Expenses, HR
+    Setup, Recruitment, Tenure, Performance and Shift & Attendance ALL inside
+    one module called `HR`, so blocking that module hides the features a tenant
+    bought alongside the ones it did not. Payroll and Tax & Benefits share
+    `Payroll` the same way.
+
+    Frappe hides a public workspace from everyone but a Workspace Manager when
+    `is_hidden` is set, and that flag is per WORKSPACE - which is exactly the
+    granularity the feature list needs.
+
+    Both lists are returned, not just the hidden one: an upgrade has to put
+    workspaces back, and a sync that only ever hides would make every plan
+    change one-way.
+    """
+    features = set(features)
+    show, hide = [], []
+    for key, spec in FEATURES.items():
+        for ws in spec.get("workspaces") or []:
+            (show if (key in features or spec.get("required")) else hide).append(ws)
+    # A workspace sold under ANY enabled feature stays visible, whatever else
+    # claims it. Nothing shares one today; relying on that would be fragile.
+    hide = [w for w in hide if w not in show]
+    return sorted(set(show)), sorted(set(hide))
+
+
 def blocked_module_defs_for_hr(features):
     """Block list for someone who works IN the desk - an HR Manager.
 

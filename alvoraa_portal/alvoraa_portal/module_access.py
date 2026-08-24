@@ -24,6 +24,7 @@ from alvoraa_portal.subscription import (
     blocked_module_defs,
     blocked_module_defs_for_hr,
     enabled_features,
+    sold_and_unsold_workspaces,
 )
 
 PROFILE_NAME = "Alvoraa Plan"          # employees: the product, nothing else
@@ -159,6 +160,16 @@ def sync_site(features=None):
     sync_module_profile(feats, PROFILE_NAME)
     sync_module_profile(feats, HR_PROFILE_NAME, blocked_module_defs_for_hr(feats))
 
+    # Workspaces, which module blocking cannot reach. Frappe HR keeps Leaves,
+    # Expenses, Recruitment, Tenure and the rest inside one `HR` module, so a
+    # tenant on Starter was still shown Recruitment and Payroll in the desk
+    # sidebar even with module blocking applied.
+    try:
+        sync_workspaces(feats)
+    except Exception:
+        frappe.log_error(title="module_access: workspace sync failed",
+                         message=frappe.get_traceback())
+
     # The desk's own menu gets a way back to the portal.
     try:
         sync_navbar_item()
@@ -171,10 +182,57 @@ def sync_site(features=None):
         n: frappe.db.count("Block Module", {"parent": n, "parenttype": "Module Profile"})
         for n in (PROFILE_NAME, HR_PROFILE_NAME)
     }
+    ws = get_hidden_workspaces()
     msg = (f"employees: {counts[PROFILE_NAME]} hidden | HR: {counts[HR_PROFILE_NAME]} hidden "
+           f"| workspaces hidden: {len(ws['hidden'])} visible: {len(ws['visible'])} "
            f"| applied to {res['applied']} users, {res['admins_exempt']} admins exempt")
     print(msg)          # bench execute prints this back to the operator
-    return {"blocked": counts, **res}
+    return {"blocked": counts, "workspaces": get_hidden_workspaces(), **res}
+
+
+def sync_workspaces(features=None):
+    """Hide the desk workspaces this site did not buy, and reveal the ones it did.
+
+    `is_hidden` is Frappe's own flag: a public workspace with it set disappears
+    for everyone except a Workspace Manager. That keeps the tenant's own
+    administrator able to see everything, which matches how module blocking
+    already exempts them.
+
+    Both directions matter. Hiding alone would make every plan change one-way,
+    so an upgrade could never restore what a downgrade took away.
+
+    Only touches workspaces the registry names. Anything else on the site -
+    ERPNext's, or one the customer built - is left exactly as it is.
+    """
+    feats = features if features is not None else enabled_features()
+    show, hide = sold_and_unsold_workspaces(feats)
+
+    changed = {"hidden": [], "shown": []}
+    for names, hidden in ((hide, 1), (show, 0)):
+        for name in names:
+            if not frappe.db.exists("Workspace", name):
+                continue        # not every feature ships a workspace on every site
+            if frappe.db.get_value("Workspace", name, "is_hidden") == hidden:
+                continue
+            # db_set, not save: Workspace.on_update rebuilds sidebar caches and
+            # can reject a doc whose content predates a Frappe upgrade. The flag
+            # is a single column and nothing else about the workspace changes.
+            frappe.db.set_value("Workspace", name, "is_hidden", hidden,
+                                update_modified=False)
+            changed["hidden" if hidden else "shown"].append(name)
+
+    frappe.db.commit()
+    frappe.clear_cache()        # the sidebar is cached per user
+    return changed
+
+
+@frappe.whitelist()
+def get_hidden_workspaces():
+    """What this site currently hides in the desk sidebar. For support."""
+    rows = frappe.get_all("Workspace", filters={"public": 1},
+                          fields=["name", "module", "is_hidden"], order_by="name")
+    return {"hidden": [r.name for r in rows if r.is_hidden],
+            "visible": [r.name for r in rows if not r.is_hidden]}
 
 
 @frappe.whitelist()

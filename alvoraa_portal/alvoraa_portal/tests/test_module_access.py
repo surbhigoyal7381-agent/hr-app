@@ -356,3 +356,62 @@ class TestSwitchTarget(FrappeTestCase):
 		ma.sync_navbar_item()
 		labels = [r.item_label for r in frappe.get_doc("Navbar Settings").settings_dropdown]
 		self.assertEqual(labels.count(ma.NAVBAR_LABEL), 1)
+
+
+class TestWorkspaceSync(FrappeTestCase):
+	"""Hiding the desk workspaces a tenant did not buy.
+
+	A live tenant on a custom plan was measured showing Payroll, Recruitment and
+	Tenure in its desk sidebar. Its Module Profile blocked 0 modules - and even
+	a correct one could not have helped, because those workspaces sit inside the
+	shared `HR` and `Payroll` modules.
+	"""
+
+	WS = "Recruitment"
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		self._existed = frappe.db.exists("Workspace", self.WS)
+		if self._existed:
+			self._saved = frappe.db.get_value("Workspace", self.WS, "is_hidden")
+
+	def tearDown(self):
+		if self._existed:
+			frappe.db.set_value("Workspace", self.WS, "is_hidden", self._saved,
+			                    update_modified=False)
+			frappe.db.commit()
+		frappe.set_user("Administrator")
+
+	def test_it_hides_a_workspace_the_plan_excludes(self):
+		if not self._existed:
+			self.skipTest("this site has no Recruitment workspace")
+		ma.sync_workspaces(sub.plan_features("starter"))
+		self.assertEqual(frappe.db.get_value("Workspace", self.WS, "is_hidden"), 1)
+
+	def test_an_upgrade_puts_it_back(self):
+		"""Hiding without revealing would make every plan change one-way."""
+		if not self._existed:
+			self.skipTest("this site has no Recruitment workspace")
+		ma.sync_workspaces(sub.plan_features("starter"))
+		self.assertEqual(frappe.db.get_value("Workspace", self.WS, "is_hidden"), 1)
+		ma.sync_workspaces(sub.plan_features("business"))
+		self.assertEqual(frappe.db.get_value("Workspace", self.WS, "is_hidden"), 0)
+
+	def test_required_workspaces_are_never_hidden(self):
+		ma.sync_workspaces([])
+		for ws in ("Leaves", "Expenses", "HR Setup"):
+			if frappe.db.exists("Workspace", ws):
+				self.assertEqual(frappe.db.get_value("Workspace", ws, "is_hidden"), 0, ws)
+
+	def test_it_ignores_workspaces_the_registry_does_not_name(self):
+		"""ERPNext's own workspaces, and anything a customer built, are not ours
+		to touch."""
+		if not frappe.db.exists("Workspace", "Build"):
+			self.skipTest("no Build workspace here")
+		before = frappe.db.get_value("Workspace", "Build", "is_hidden")
+		ma.sync_workspaces(sub.plan_features("starter"))
+		self.assertEqual(frappe.db.get_value("Workspace", "Build", "is_hidden"), before)
+
+	def test_it_survives_a_missing_workspace(self):
+		"""Not every feature ships a workspace on every site."""
+		ma.sync_workspaces(sub.plan_features("enterprise"))   # must not raise

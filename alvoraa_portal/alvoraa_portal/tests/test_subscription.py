@@ -169,3 +169,55 @@ class TestPlanValidation(FrappeTestCase):
 		self.assertIs(tenant_api.PLANS, sub.PLANS)
 		self.assertFalse(hasattr(tenant_api, "PLAN_MODULES"),
 		                 "the stale fourth copy of the plan definition is back")
+
+
+class TestWorkspaceGating(FrappeTestCase):
+	"""Module blocking cannot gate Frappe HR's workspaces.
+
+	Leaves, Expenses, HR Setup, Recruitment, Tenure, Performance and
+	Shift & Attendance ALL live in one module called `HR`; Payroll and
+	Tax & Benefits share `Payroll`. So blocking a module hides the features a
+	tenant bought alongside the ones it did not.
+	"""
+
+	def test_a_starter_site_hides_what_it_did_not_buy(self):
+		show, hide = sub.sold_and_unsold_workspaces(sub.plan_features("starter"))
+		self.assertIn("Recruitment", hide, "Starter does not include Recruitment")
+		self.assertIn("Payroll", hide, "Starter does not include Payroll")
+		self.assertIn("Tenure", hide)
+		self.assertIn("Leaves", show, "Leaves is required on every plan")
+		self.assertIn("Expenses", show)
+		self.assertIn("HR Setup", show)
+
+	def test_business_reveals_payroll_and_recruitment(self):
+		show, hide = sub.sold_and_unsold_workspaces(sub.plan_features("business"))
+		self.assertIn("Payroll", show)
+		self.assertIn("Recruitment", show)
+		self.assertIn("Tax & Benefits", show)
+
+	def test_enterprise_hides_nothing_of_ours(self):
+		show, hide = sub.sold_and_unsold_workspaces(sub.plan_features("enterprise"))
+		self.assertEqual(hide, [], "Enterprise includes every Alvoraa HR feature")
+
+	def test_the_two_lists_never_overlap(self):
+		"""A workspace in both lists would flip on every sync, depending on
+		which loop ran last."""
+		for plan in sub.PLANS:
+			show, hide = sub.sold_and_unsold_workspaces(sub.plan_features(plan))
+			self.assertFalse(set(show) & set(hide), plan)
+
+	def test_required_features_are_always_shown(self):
+		"""Even given an empty feature list - which a downgrade can produce."""
+		show, hide = sub.sold_and_unsold_workspaces([])
+		for ws in ("Leaves", "Shift & Attendance", "Expenses", "HR Setup"):
+			self.assertIn(ws, show, ws)
+			self.assertNotIn(ws, hide, ws)
+
+	def test_every_declared_workspace_is_accounted_for(self):
+		"""The `workspaces` field sat in the registry unused for weeks while the
+		desk showed Recruitment and Payroll to tenants that had not bought them.
+		If a feature declares one, some plan must place it."""
+		declared = {w for spec in sub.FEATURES.values()
+		            for w in (spec.get("workspaces") or [])}
+		show, hide = sub.sold_and_unsold_workspaces(sub.plan_features("starter"))
+		self.assertEqual(declared, set(show) | set(hide))

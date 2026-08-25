@@ -1,3 +1,4 @@
 # Patches file for alvoraa_portal
 alvoraa_portal.patches.v1_0.rename_module_to_alvoraa
 alvoraa_portal.patches.v1_0.scrub_plaintext_job_passwords
+alvoraa_portal.patches.v1_0.remove_alvox_module_defs

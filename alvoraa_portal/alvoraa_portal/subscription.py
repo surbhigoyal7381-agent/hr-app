@@ -432,7 +432,45 @@ def linked_dependencies(features, links=None):
     return sorted({d for d in (links or []) if d})
 
 
-def blocked_doctypes(features, existing=None, links=None):
+def workspace_scoped_doctypes(features, workspace_links=None):
+    """Doctypes belonging to an unsold feature that shares a module with a sold one.
+
+    Module-level denial cannot separate Recruitment from Leaves: Job Opening,
+    Job Applicant and Interview all live in `HR`, and HR holds features every
+    plan includes. So a tenant that never bought Recruitment could still open
+    Job Opening by URL, and the desk still drew a Recruitment sidebar - because
+    a sidebar is shown when at least one of its items is readable.
+
+    The mapping we need is already in Frappe's own data: each Workspace lists
+    the doctypes it contains. A feature names its workspace; the workspace names
+    its doctypes. Nothing to write down, and a doctype added to the Recruitment
+    workspace by a future Frappe HR release is covered the day it appears.
+
+    Anything a SOLD workspace also lists is kept - Payroll lists Account,
+    Currency and Journal Entry, which Leaves and Expenses need too. Overlap
+    means shared, and shared means keep.
+    """
+    show, hide = sold_and_unsold_workspaces(features)
+
+    if workspace_links is None:
+        rows = frappe.get_all(
+            "Workspace Link",
+            filters={"link_type": "DocType", "parenttype": "Workspace"},
+            fields=["parent", "link_to"])
+        workspace_links = [(r.parent, r.link_to) for r in rows if r.link_to]
+
+    sold, unsold = set(), set()
+    for ws, dt in workspace_links:
+        if ws in show:
+            sold.add(dt)
+        elif ws in hide:
+            unsold.add(dt)
+
+    return sorted(unsold - sold)
+
+
+def blocked_doctypes(features, existing=None, links=None, module_apps=None,
+                     workspace_links=None):
     """Doctypes a site with these features must not expose.
 
     DERIVED, never listed. The modules come from blocked_module_defs(), which is
@@ -456,6 +494,27 @@ def blocked_doctypes(features, existing=None, links=None):
     modules = sorted({m for _n, m in existing if m})
     blocked = set(blocked_module_defs(features, existing=modules))
 
+    # Never deny a doctype owned by FRAPPE itself.
+    #
+    # Frappe's own doctypes are framework machinery, not product: Notification
+    # Log, File, Comment, ToDo, the whole desk. Deny-by-default swept 140 of
+    # them up, and the first thing a real user saw was
+    #
+    #     Insufficient Permission for Notification Log
+    #
+    # every time the desk polled its notification bell. Withholding them sells
+    # nothing and breaks everything.
+    #
+    # They are still HIDDEN from the module list by blocked_module_defs - which
+    # is the right lever for framework clutter, and always was. Hiding tidies
+    # the desk; denying breaks it.
+    if module_apps is None:
+        module_apps = {
+            m.name: m.app_name
+            for m in frappe.get_all("Module Def", fields=["name", "app_name"])
+        }
+    blocked -= {m for m, app in module_apps.items() if app == "frappe"}
+
     # Whatever the sold modules link to, they need - whichever module holds it.
     needed = set(linked_dependencies(features, links=links))
 
@@ -476,8 +535,29 @@ def blocked_doctypes(features, existing=None, links=None):
     if never_exempt:
         needed -= {name for name, module in existing if module in never_exempt}
 
-    return sorted({name for name, module in existing
-                   if module in blocked and name not in needed})
+    # Features sharing a module with a sold one cannot be separated above, so
+    # take them from the workspace contents instead.
+    by_workspace = set(workspace_scoped_doctypes(features, workspace_links))
+
+    # Only OUR product's doctypes, never ERPNext plumbing. The Payroll workspace
+    # lists Account, Currency, Cost Center and Journal Entry - things Leaves and
+    # Expenses need too. Denying those to withhold Payroll would break the plan
+    # the tenant did buy.
+    known = {name: module for name, module in existing}
+    owning_app = module_apps or {}
+    by_workspace = {d for d in by_workspace
+                    if owning_app.get(known.get(d)) == "hrms"}
+
+    # An unsold doctype is not rescued by being LINKED from a sold module.
+    # Job Applicant lives in `HR` and links to Job Opening, so the dependency
+    # exemption was quietly handing Recruitment back to a tenant that never
+    # bought it. Belonging to an unsold feature wins.
+    needed = needed - by_workspace
+
+    by_module = {name for name, module in existing
+                 if module in blocked and name not in needed}
+
+    return sorted(by_module | by_workspace)
 
 
 def withheld_roles(features):

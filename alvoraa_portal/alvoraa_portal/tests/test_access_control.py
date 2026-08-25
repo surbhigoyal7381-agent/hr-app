@@ -256,3 +256,93 @@ class TestHrStillWorksAfterDenial(Wave4Mixin, FrappeTestCase):
 		staying out of sight."""
 		needed = set(sub.linked_dependencies(sub.plan_features("enterprise")))
 		self.assertTrue(needed, "the dependency scan found nothing at all")
+
+
+class TestFrameworkDoctypesAreNeverDenied(Wave4Mixin, FrappeTestCase):
+	"""Deny-by-default swept up 140 of Frappe's own doctypes.
+
+	The first thing a real user saw was
+
+	    Insufficient Permission for Notification Log
+
+	every time the desk polled its notification bell. Frappe's doctypes are
+	framework machinery, not product: withholding them sells nothing and breaks
+	everything. They are still HIDDEN from the module list, which is the right
+	lever for framework clutter and always was.
+	"""
+
+	# Doctypes an ordinary desk user reads constantly. `Comment` is deliberately
+	# absent: Frappe restricts it to System Manager by default, so an HR Manager
+	# cannot read it either way and asserting otherwise tests Frappe, not us.
+	FRAMEWORK = ["Notification Log", "ToDo", "File"]
+
+	def test_framework_doctypes_are_not_in_the_blocked_list(self):
+		blocked = set(sub.blocked_doctypes(sub.plan_features("starter")))
+		for dt in self.FRAMEWORK + ["Comment"]:
+			if frappe.db.exists("DocType", dt):
+				self.assertNotIn(dt, blocked, f"{dt} belongs to frappe, not to a plan")
+
+	def test_the_desk_still_works_after_denial(self):
+		ma.sync_permissions(sub.plan_features("starter"))
+		for dt in self.FRAMEWORK:
+			if frappe.db.exists("DocType", dt):
+				self.assertTrue(self._can_read(dt), f"{dt} must stay readable")
+
+	def test_frappe_modules_are_still_hidden_from_the_module_list(self):
+		"""Hiding tidies the desk; denying breaks it. We keep the first."""
+		blocked_modules = set(sub.blocked_module_defs(sub.plan_features("starter")))
+		self.assertIn("Desk", blocked_modules)
+
+
+class TestFeaturesSharingTheHrModule(Wave4Mixin, FrappeTestCase):
+	"""Recruitment and Tenure live in `HR`, which every plan includes.
+
+	Module-level denial cannot separate them, so a tenant that never bought
+	Recruitment could still open Job Opening by URL, and the desk still drew a
+	Recruitment sidebar - a sidebar shows when ANY of its items is readable.
+
+	The mapping is taken from Frappe's own data: a feature names its workspace,
+	the workspace names its doctypes. A doctype added to the Recruitment
+	workspace by a future release is covered the day it appears.
+	"""
+
+	UNSOLD = ["Job Opening", "Job Applicant", "Interview"]
+	SOLD = ["Leave Application", "Attendance", "Expense Claim"]
+
+	def test_unsold_doctypes_in_a_shared_module_are_denied(self):
+		ma.sync_permissions(sub.plan_features("starter"))
+		for dt in self.UNSOLD:
+			if frappe.db.exists("DocType", dt):
+				self.assertFalse(self._can_read(dt),
+				                 f"{dt} belongs to Recruitment, not on Starter")
+
+	def test_sold_doctypes_in_the_same_module_still_work(self):
+		"""The failure that would matter most: they share a module, so a clumsy
+		rule takes both."""
+		ma.sync_permissions(sub.plan_features("starter"))
+		for dt in self.SOLD:
+			if frappe.db.exists("DocType", dt):
+				self.assertTrue(self._can_read(dt), f"{dt} is on every plan")
+
+	def test_business_grants_recruitment_back(self):
+		ma.sync_permissions(sub.plan_features("business"))
+		for dt in self.UNSOLD:
+			if frappe.db.exists("DocType", dt):
+				self.assertTrue(self._can_read(dt), f"{dt} is included in Business")
+
+	def test_being_linked_does_not_rescue_an_unsold_doctype(self):
+		"""Job Applicant lives in HR and links to Job Opening, so the dependency
+		exemption was quietly handing Recruitment back. Belonging to an unsold
+		feature wins over being linked."""
+		blocked = set(sub.blocked_doctypes(sub.plan_features("starter")))
+		if frappe.db.exists("DocType", "Job Opening"):
+			self.assertIn("Job Opening", blocked)
+
+	def test_erpnext_plumbing_in_an_unsold_workspace_is_not_denied(self):
+		"""The Payroll workspace lists Account, Currency and Journal Entry -
+		things Leaves and Expenses need too. Denying those to withhold Payroll
+		would break the plan the tenant did buy."""
+		blocked = set(sub.blocked_doctypes(sub.plan_features("starter")))
+		for dt in ("Currency", "Account", "Cost Center"):
+			if frappe.db.exists("DocType", dt):
+				self.assertNotIn(dt, blocked, f"{dt} is ERPNext plumbing, not Payroll")

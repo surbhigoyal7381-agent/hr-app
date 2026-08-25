@@ -453,11 +453,29 @@ def workspace_scoped_doctypes(features, workspace_links=None):
     show, hide = sold_and_unsold_workspaces(features)
 
     if workspace_links is None:
-        rows = frappe.get_all(
-            "Workspace Link",
-            filters={"link_type": "DocType", "parenttype": "Workspace"},
-            fields=["parent", "link_to"])
-        workspace_links = [(r.parent, r.link_to) for r in rows if r.link_to]
+        # TWO sources, because Frappe HR uses both and reading one is not enough.
+        #
+        # `Employee Separation` has no Workspace Link at all - it is referenced
+        # only from the Tenure SIDEBAR. Reading links alone left it readable
+        # while the rest of Tenure was denied, which is exactly how it was
+        # spotted: with the feature switched off, Employee Separation was the
+        # one thing still showing.
+        #
+        # A Workspace Sidebar carries the same name as its workspace, so both
+        # sources key the same way.
+        workspace_links = []
+        for doctype, parent_type in (("Workspace Link", "Workspace"),
+                                     ("Workspace Sidebar Item", "Workspace Sidebar")):
+            if not frappe.db.table_exists(doctype):
+                continue
+            try:
+                rows = frappe.get_all(
+                    doctype,
+                    filters={"link_type": "DocType", "parenttype": parent_type},
+                    fields=["parent", "link_to"])
+            except Exception:
+                continue
+            workspace_links += [(r.parent, r.link_to) for r in rows if r.link_to]
 
     sold, unsold = set(), set()
     for ws, dt in workspace_links:

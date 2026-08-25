@@ -346,3 +346,57 @@ class TestFeaturesSharingTheHrModule(Wave4Mixin, FrappeTestCase):
 		for dt in ("Currency", "Account", "Cost Center"):
 			if frappe.db.exists("DocType", dt):
 				self.assertNotIn(dt, blocked, f"{dt} is ERPNext plumbing, not Payroll")
+
+
+class TestTheMappingReadsBothSources(Wave4Mixin, FrappeTestCase):
+	"""A workspace names its doctypes in TWO places, and reading one is not enough.
+
+	`Employee Separation` has no Workspace Link at all - Frappe HR references it
+	only from the Tenure SIDEBAR. Reading links alone left it readable while the
+	rest of Tenure was denied, and that is exactly how it was spotted: with the
+	feature switched off, Employee Separation was the one thing still showing.
+	"""
+
+	TENURE = ["Employee Onboarding", "Employee Separation",
+	          "Training Event", "Employee Grievance"]
+
+	def _without_tenure(self):
+		return [f for f in sub.plan_features("business") if f != "tenure"]
+
+	def test_the_whole_feature_moves_together(self):
+		"""Every Tenure doctype denied without it, every one allowed with it. A
+		feature that is half-denied is worse than one that is not denied at all -
+		it looks gated while a door stands open."""
+		off = set(sub.blocked_doctypes(self._without_tenure()))
+		on = set(sub.blocked_doctypes(sub.plan_features("business")))
+		for dt in self.TENURE:
+			if not frappe.db.exists("DocType", dt):
+				continue
+			self.assertIn(dt, off, f"{dt} should be denied without Tenure")
+			self.assertNotIn(dt, on, f"{dt} should be allowed with Tenure")
+
+	def test_a_doctype_reachable_only_from_the_sidebar_is_covered(self):
+		"""The specific miss. Employee Separation has no Workspace Link."""
+		if not frappe.db.exists("DocType", "Employee Separation"):
+			self.skipTest("no Employee Separation on this bench")
+		links = frappe.get_all("Workspace Link",
+		                       filters={"link_to": "Employee Separation"}, limit=1)
+		self.assertEqual(links, [], "if this gains a Workspace Link the test is moot")
+		self.assertIn("Employee Separation",
+		              set(sub.blocked_doctypes(self._without_tenure())))
+
+	def test_both_sources_are_read(self):
+		import inspect
+
+		src = inspect.getsource(sub.workspace_scoped_doctypes)
+		self.assertIn("Workspace Link", src)
+		self.assertIn("Workspace Sidebar Item", src)
+
+	def test_sold_features_are_untouched_by_the_wider_net(self):
+		"""Reading a second source widens what gets denied, so the risk is
+		catching something sold."""
+		off = set(sub.blocked_doctypes(self._without_tenure()))
+		for dt in ("Leave Application", "Attendance", "Expense Claim",
+		           "Employee", "Holiday List"):
+			if frappe.db.exists("DocType", dt):
+				self.assertNotIn(dt, off, dt)

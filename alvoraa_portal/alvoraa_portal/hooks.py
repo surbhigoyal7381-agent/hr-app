@@ -39,6 +39,15 @@ website_route_rules = [
 ]
 
 # ── Doctype event hooks ────────────────────────────────────────────────────
+# Desk-side JavaScript.
+#
+# One job: make the "Switch to Employee Portal" item in the sidebar menu work.
+# Frappe v16 renders Navbar Settings items but never gives them a url or an
+# onClick, so the click throws and nothing happens. See the file for the detail.
+app_include_js = [
+    "/assets/alvoraa_portal/js/portal_switch.js",
+]
+
 doc_events = {
     # ── Objectives must sit under a Key Result Area, when HR requires it ───
     # Enforced on the document, not only in the portal form: the rule is about

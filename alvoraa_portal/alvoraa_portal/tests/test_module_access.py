@@ -495,3 +495,75 @@ class TestModuleSidebarSuppression(FrappeTestCase):
 		import inspect
 
 		self.assertIn("sync_module_sidebars", inspect.getsource(ma.sync_site))
+
+
+class TestSwitchToPortalActuallyWorks(FrappeTestCase):
+	"""The desk needs a way back to the portal, and it was silently broken.
+
+	Frappe v16 builds the sidebar dropdown then handles a click with
+	`current_item.onClick(item)`. For the HELP dropdown it first translates the
+	item type - Route becomes a url, Action becomes an onClick. For the SETTINGS
+	dropdown, add_navbar_items() does neither: it copies the label across and
+	pushes the row.
+
+	So the item has no url and no onClick, the click throws, and nothing happens.
+	Every Navbar Settings item is inert in this version; ours was not special.
+	"""
+
+	def test_the_navbar_item_is_still_registered(self):
+		"""We keep using Navbar Settings for the label, icon and position - only
+		the behaviour is supplied by us."""
+		ma.sync_navbar_item()
+		settings = frappe.get_doc("Navbar Settings")
+		rows = [r for r in settings.settings_dropdown if r.item_label == ma.NAVBAR_LABEL]
+		self.assertEqual(len(rows), 1, "exactly one row, and it must not duplicate")
+		self.assertEqual(rows[0].route, "/hrms-employee")
+
+	def test_the_desk_script_is_registered(self):
+		"""A fix in a file nothing loads is not a fix."""
+		includes = frappe.get_hooks("app_include_js") or []
+		self.assertTrue(
+			any("portal_switch" in str(i) for i in includes),
+			"portal_switch.js must be in app_include_js")
+
+	def test_the_script_exists_and_targets_our_row(self):
+		import os
+
+		import alvoraa_portal
+
+		path = os.path.join(os.path.dirname(os.path.abspath(alvoraa_portal.__file__)),
+		                    "public", "js", "portal_switch.js")
+		if not os.path.exists(path):
+			self.skipTest("script not present on this bench")
+		with open(path, encoding="utf-8") as f:
+			src = f.read()
+		# data-app-route is what the renderer writes from the item's route, so it
+		# is what identifies OUR row rather than everything in that menu.
+		self.assertIn("data-app-route", src)
+		self.assertIn("/hrms-employee", src)
+		self.assertIn("stopImmediatePropagation", src,
+		              "Frappe's own handler would still throw at the user")
+
+	def test_frappe_still_does_not_wire_settings_dropdown_items(self):
+		"""Pins the gap this works around.
+
+		If a Frappe upgrade starts translating settings_dropdown items the way it
+		already translates help_dropdown ones, this test fails - and the
+		workaround should then be deleted rather than left to rot.
+		"""
+		import os
+
+		import frappe as _f
+
+		path = os.path.join(os.path.dirname(os.path.abspath(_f.__file__)),
+		                    "public", "js", "frappe", "ui", "sidebar", "sidebar_header.js")
+		if not os.path.exists(path):
+			self.skipTest("sidebar_header.js not found on this bench")
+		with open(path, encoding="utf-8") as f:
+			src = f.read()
+
+		start = src.find("add_navbar_items()")
+		self.assertGreater(start, -1, "add_navbar_items has been renamed - re-check this")
+		block = src[start:start + 400]
+		self.assertNotIn("onClick", block,
+		                 "Frappe now wires these itself - delete portal_switch.js")

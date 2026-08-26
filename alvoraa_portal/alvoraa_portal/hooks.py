@@ -40,6 +40,14 @@ website_route_rules = [
 
 # ── Doctype event hooks ────────────────────────────────────────────────────
 doc_events = {
+    # ── Objectives must sit under a Key Result Area, when HR requires it ───
+    # Enforced on the document, not only in the portal form: the rule is about
+    # what the organisation accepts, so it has to hold for the desk, the API and
+    # any import as well.
+    "Individual Goal": {
+        "validate": "alvoraa_portal.kra_api.validate_goal_kra",
+    },
+
     # ── Portal context cache invalidation ─────────────────────────────────
     # Clear per-user portal_ctx_{user} cache when role or employee record changes
     "Employee": {

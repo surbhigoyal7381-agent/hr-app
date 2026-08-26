@@ -3090,6 +3090,17 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
           </label>
           <div style="font-size:11.5px;color:var(--text3);margin-top:8px">When off, every progress entry is sent to the employee's manager for approval before it counts towards the goal or KPI.</div>
         </div>
+
+        <!-- Key Result Areas -->
+        <div class="pf-card">
+          <div style="font-weight:600;font-size:15px;margin-bottom:4px">Key Result Areas</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:16px">KRAs are the areas of responsibility that belong to a role. They come from the employee's appraisal template, so every objective can be traced back to what the job is for.</div>
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+            <input type="checkbox" id="org-kra-mandatory" style="width:16px;height:16px;accent-color:var(--primary)" onchange="orgSaveKraMandatory(this.checked)">
+            <span style="font-size:13.5px">Every objective must be linked to a Key Result Area</span>
+          </label>
+          <div style="font-size:11.5px;color:var(--text3);margin-top:8px">When on, an objective cannot be activated without a KRA. Drafts are still allowed, so nobody is blocked while HR assigns an appraisal template.</div>
+        </div>
       </div>
 
 
@@ -3327,6 +3338,13 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
           </div>
           <div class="gp-row2">
             <div class="gp-field">
+              <div class="gp-label">Key Result Area <span id="gp-kra-req" style="color:var(--red);display:none">*</span></div>
+              <select class="gp-input" id="gp-c-kra">
+                <option value="">— None —</option>
+              </select>
+              <div id="gp-kra-hint" style="font-size:11.5px;color:var(--text3);margin-top:6px;display:none"></div>
+            </div>
+            <div class="gp-field">
               <div class="gp-label">Goal Type</div>
               <select class="gp-input" id="gp-c-goal-type">
                 <option value="Business">Business</option>
@@ -3520,6 +3538,38 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
     </div>
 
     <!-- ── Check-In Modal ────────────────────────────── -->
+    <!-- No KRAs assigned: a blocked employee must never be left without a way out -->
+    <div class="gp-backdrop" id="gp-nokra-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">You need a Key Result Area first</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('gp-nokra-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div style="font-size:13.5px;line-height:1.6;color:var(--text2)">
+            Your organisation requires every objective to sit under a
+            <strong>Key Result Area</strong> &mdash; the part of your role it contributes to.
+            <br><br>
+            No Key Result Areas have been assigned to you yet. These come from your
+            appraisal template, which HR sets up for your role, so this is not
+            something you can fix yourself.
+            <br><br>
+            You can still save your objective as a <strong>draft</strong> and attach a
+            Key Result Area once HR has set them up.
+          </div>
+          <div class="gp-field" style="margin-top:16px">
+            <div class="gp-label">Anything to add for HR? (optional)</div>
+            <textarea class="gp-input" id="gp-nokra-note" rows="2"
+              placeholder="e.g. I have just moved to a new role"></textarea>
+          </div>
+        </div>
+        <div class="gp-modal-ftr">
+          <button class="btn btn-outline" onclick="pfCloseModal('gp-nokra-modal')">Continue as draft</button>
+          <button class="btn btn-primary" id="gp-nokra-report" onclick="gpReportMissingKra()">Report to HR</button>
+        </div>
+      </div>
+    </div>
+
     <div class="gp-backdrop" id="gp-checkin-modal">
       <div class="gp-modal">
         <div class="gp-modal-hdr">
@@ -7440,6 +7490,70 @@ function deleteDrawerNote(noteId, empId) {
   // Objectives & KPIs tree (tvLoad/tvRender). gpOpenDetail below is still
   // used from there, and the create/edit modal is shared.
 
+  // -- Key Result Areas ------------------------------
+  //
+  // KRAs belong to the ROLE, not the person: they come from the employee's
+  // appraisal template. So "no KRAs" does not mean the employee did anything
+  // wrong - it means HR has not assigned them a template yet, and the only
+  // useful thing to do is say so and offer to tell HR.
+  window._gpKraState = { mandatory: false, available: true };
+
+  window.gpLoadKras = function() {
+    var sel  = document.getElementById("gp-c-kra");
+    var req  = document.getElementById("gp-kra-req");
+    var hint = document.getElementById("gp-kra-hint");
+    if (!sel) return;
+    pf("kra_api.get_my_kras", {}).then(function(r) {
+      window._gpKraState = { mandatory: !!r.mandatory, available: !!r.available };
+      sel.innerHTML = '<option value="">- None -</option>';
+      (r.kras || []).forEach(function(k) {
+        var o = document.createElement("option");
+        o.value = k.kra;
+        o.textContent = k.title + (k.weightage ? "  (" + k.weightage + "%)" : "");
+        sel.appendChild(o);
+      });
+      if (req) req.style.display = r.mandatory ? "inline" : "none";
+      if (hint) {
+        if (!r.available) {
+          hint.textContent = "No Key Result Areas have been assigned to you yet.";
+          hint.style.display = "block";
+        } else if (r.total_weightage && r.total_weightage !== 100) {
+          // Weightages are meant to sum to 100. Saying so is more useful than
+          // silently accepting a template nobody has finished.
+          hint.textContent = "Weightages total " + r.total_weightage + "%, not 100%. HR may still be setting these up.";
+          hint.style.display = "block";
+        } else { hint.style.display = "none"; }
+      }
+      // Only interrupt when it actually blocks them.
+      if (r.mandatory && !r.available) gpShowNoKraDialog();
+    }).catch(function() {
+      // Never block goal creation because this lookup failed.
+      if (req)  req.style.display  = "none";
+      if (hint) hint.style.display = "none";
+    });
+  };
+
+  window.gpShowNoKraDialog = function() {
+    pfOpenModal("gp-nokra-modal");
+  };
+  window.gpCloseNoKraDialog = function() {
+    pfCloseModal("gp-nokra-modal");
+  };
+
+  window.gpReportMissingKra = function() {
+    var btn = document.getElementById("gp-nokra-report");
+    var msg = (document.getElementById("gp-nokra-note") || {}).value || "";
+    if (btn) { btn.disabled = true; btn.textContent = "Sending..."; }
+    pf("kra_api.report_missing_kra", { message: msg }).then(function(r) {
+      pfCloseModal("gp-nokra-modal");
+      toast("HR has been notified (" + (r.notified || 0) + " recipient" + ((r.notified === 1) ? "" : "s") + ").", "ok");
+    }).catch(function(e) {
+      toast(e.message || "Could not notify HR.", "err");
+    }).finally(function() {
+      if (btn) { btn.disabled = false; btn.textContent = "Report to HR"; }
+    });
+  };
+
   // ── Create Goal Modal ──────────────────────────────
   window.gpOpenCreateGoal = function() {
     var sel = document.getElementById("gp-sel-cascade");
@@ -7451,6 +7565,7 @@ function deleteDrawerNote(noteId, empId) {
     if (srch) { srch.value = ""; srch._lastSelected = ""; }
     var cycleEl = document.getElementById("gp-c-cycle"); if (cycleEl) cycleEl.value = "";
     var gtSel = document.getElementById("gp-c-goal-type"); if (gtSel) gtSel.value = "Business";
+    gpLoadKras();
     var cvSel = document.getElementById("gp-c-company-value"); if (cvSel) cvSel.value = "";
     var stretch = document.getElementById("gp-c-stretch"); if (stretch) stretch.checked = false;
     var hint = document.getElementById("gp-c-unit-hint"); if (hint) hint.textContent = "";
@@ -7742,6 +7857,7 @@ function deleteDrawerNote(noteId, empId) {
           start_date: start, end_date: end, parent_goal: parent,
           employee: pfGoalEmployee(),
           goal_type: goalType, company_value: companyValue, is_extra_initiative: isStretch,
+          kra: ((document.getElementById("gp-c-kra") || {}).value || "") || undefined,
           appraisal_cycle: ((document.getElementById("gp-c-cycle") || {}).value || "") || undefined,
         });
 
@@ -13508,6 +13624,7 @@ function deleteDrawerNote(noteId, empId) {
       pf("get_leadership_principles", {}),
       pf("get_rating_scales", {}),
       pf("get_org_setting", {key: "auto_approve_evidence"}),
+      pf("get_org_setting", {key: "kra_link_mandatory"}),
     ]).then(function(res) {
       orgRenderValues(res[0] || []);
       orgRenderPrinciples(res[1] || []);
@@ -13515,9 +13632,17 @@ function deleteDrawerNote(noteId, empId) {
       _apsRatingScales = res[2] || [];
       var chk = document.getElementById("org-auto-approve");
       if (chk) chk.checked = (res[3] === "1" || res[3] === 1 || res[3] === true);
+      var kchk = document.getElementById("org-kra-mandatory");
+      if (kchk) kchk.checked = (res[4] === "1" || res[4] === 1 || res[4] === true);
     }).catch(function(e) {
       pfSetHtml("org-values-body", "<div class=\"callout callout-warn\">Failed to load: " + gpEsc(e.message) + "</div>");
     });
+  };
+
+  window.orgSaveKraMandatory = function(enabled) {
+    pf("set_org_setting", {key: "kra_link_mandatory", value: enabled ? "1" : "0"})
+      .then(function() { toast(enabled ? "KRA linking is now required" : "KRA linking is now optional", "ok"); })
+      .catch(function(e) { toast("Failed to save setting: " + e.message, "err"); });
   };
 
   window.orgSaveAutoApprove = function(enabled) {

@@ -366,7 +366,7 @@ def get_alignment_options():
 def create_goal(goal_name, target_value, start_date, end_date, cascade_id=None,
                 parent_goal=None, employee=None, unit=None,
                 goal_type="Business", company_value=None, is_extra_initiative=0,
-                appraisal_cycle=None):
+                appraisal_cycle=None, kra=None):
     """Create an Individual Goal for yourself or for one of your subordinates.
 
     Alignment is optional. Not every goal is derived from one above it — the
@@ -415,6 +415,11 @@ def create_goal(goal_name, target_value, start_date, end_date, cascade_id=None,
     goal.end_date    = end_date
     goal.status      = "Active"
     goal.goal_type   = goal_type or "Business"
+    # Validated on the document, not here: the rule has to hold for the desk and
+    # the API too, so kra_api.validate_goal_kra owns it. Passing None is fine -
+    # a draft without a KRA is a legitimate state.
+    if kra:
+        goal.kra = kra
     goal.company_value = company_value or None
     goal.is_extra_initiative = int(is_extra_initiative or 0)
     if appraisal_cycle and frappe.db.exists("Appraisal Cycle", appraisal_cycle):

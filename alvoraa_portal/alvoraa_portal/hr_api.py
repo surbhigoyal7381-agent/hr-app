@@ -515,6 +515,33 @@ def get_hr_analytics():
     }
 
 
+def _can_action_leave(name):
+    """Can the CURRENT user actually approve or reject this application?
+
+    Asked of the document, not of the user's roles, because that is what Frappe
+    will check when we submit. Roles alone say too little: Frappe HR creates a
+    User Permission tying each user to their own Employee record, applied to all
+    doctypes, so an HR Manager who is also an employee can be blocked from every
+    document but their own - which is exactly what happened, while the portal
+    cheerfully drew Approve and Reject buttons.
+
+    A button that cannot work is worse than no button: it turns a configuration
+    problem into what looks like a broken product.
+    """
+    try:
+        doc = frappe.get_doc("Leave Application", name)
+        return bool(frappe.has_permission("Leave Application", "submit", doc=doc))
+    except Exception:
+        return False
+
+
+def _mark_actionable(rows):
+    """Annotate each pending row with whether this user can action it."""
+    for r in rows:
+        r["can_action"] = _can_action_leave(r.get("name"))
+    return rows
+
+
 @frappe.whitelist()
 def action_leave(leave_id, action):
     """Approve or reject a leave application."""
@@ -525,6 +552,21 @@ def action_leave(leave_id, action):
         roles = frappe.get_roles(user)
         if not ({"HR Manager", "HR User", "Administrator"} & set(roles)):
             frappe.throw("Not authorised to action this leave application.")
+
+    # Having the role is not the same as being allowed to submit THIS document,
+    # and finding that out from a bare PermissionError helps nobody. Say what is
+    # wrong and who can fix it.
+    if not frappe.has_permission("Leave Application", "submit", doc=doc):
+        approver = doc.leave_approver or "nobody"
+        frappe.throw(
+            _("You cannot approve this request. Frappe HR restricts you to your "
+              "own employee records, and this one belongs to {0}. The assigned "
+              "approver is {1}. HR can fix this by naming an approver on the "
+              "employee, or by turning off 'Apply User Permissions' for the HR "
+              "Manager role on Leave Application.").format(
+                  doc.employee_name or doc.employee, approver),
+            frappe.PermissionError,
+        )
 
     if action == "approve":
         doc.status = "Approved"
@@ -738,6 +780,7 @@ def get_employee_scorecard(employee_id):
         order_by="creation desc", limit=10,
         ignore_permissions=True,
     )
+    _mark_actionable(pending_leaves)
 
     # Goals
     goals = []
@@ -1000,6 +1043,7 @@ def get_employee_detail_for_manager(employee_id):
         order_by="creation desc", limit=10,
         ignore_permissions=True,
     )
+    _mark_actionable(pending_leaves)
 
     # Recent approved/rejected leaves
     recent_leaves = frappe.get_all(

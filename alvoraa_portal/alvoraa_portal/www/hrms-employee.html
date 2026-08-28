@@ -5994,7 +5994,7 @@ function renderEmpDrawer(d, color) {
     ? '<div class="empty-state"><div class="empty-state-text">No pending requests.</div></div>'
     : d.pending_leaves.map(function(l) {
         const days = parseFloat(l.total_leave_days || 0);
-        return '<div class="appr-card" id="ed-appr-' + l.name + '"><div class="appr-info"><div><div class="appr-name">' + esc(l.leave_type) + '</div><div class="appr-detail">' + fmtDate(l.from_date) + ' – ' + fmtDate(l.to_date) + ' · <strong>' + days + ' day' + (days !== 1 ? 's' : '') + '</strong>' + (l.description ? '<br>' + esc(l.description) : '') + '</div></div></div><div class="appr-actions"><button class="btn btn-green btn-sm" onclick="edActionLeave(\'' + l.name + '\',\'approve\')">✓ Approve</button><button class="btn btn-danger btn-sm" onclick="edActionLeave(\'' + l.name + '\',\'reject\')">✕ Reject</button></div></div>';
+        return '<div class="appr-card" id="ed-appr-' + l.name + '"><div class="appr-info"><div><div class="appr-name">' + esc(l.leave_type) + '</div><div class="appr-detail">' + fmtDate(l.from_date) + ' – ' + fmtDate(l.to_date) + ' · <strong>' + days + ' day' + (days !== 1 ? 's' : '') + '</strong>' + (l.description ? '<br>' + esc(l.description) : '') + '</div></div></div>' + (l.can_action ? '<div class="appr-actions"><button class="btn btn-green btn-sm" onclick="edActionLeave(\'' + l.name + '\',\'approve\')">✓ Approve</button><button class="btn btn-danger btn-sm" onclick="edActionLeave(\'' + l.name + '\',\'reject\')">✕ Reject</button></div>' : '<div class="appr-actions"><span style="font-size:11.5px;color:var(--text3)">Awaiting approver</span></div>') + '</div>';
       }).join("");
 
   // Recent leave history

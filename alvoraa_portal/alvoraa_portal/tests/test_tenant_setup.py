@@ -22,6 +22,13 @@ class TestDefaultUsers(FrappeTestCase):
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
+		# sync_site() now DENIES doctypes outside the plan, and those writes are
+		# committed - a rollback cannot undo them. Without this the site is left
+		# with ~264 doctypes restricted, including Individual Goal, and the next
+		# app's suite fails on permissions this file never meant to touch.
+		#
+		# It passed on CI only because alvoraa_goals happens to run first there.
+		ma.release_permissions()
 		frappe.db.rollback()
 
 	def _create(self):

@@ -9762,7 +9762,11 @@ function deleteDrawerNote(noteId, empId) {
         evHtml = "<span class=\"upd-ev-missing\">⚠ No evidence attached</span>";
       }
       var approvalHtml = "";
-      if (status === "pending" && _pfIsManager) {
+      // r.can_action, not _pfIsManager: being A manager is not being THIS
+      // person's manager. The server knows who the goal owner reports to; the
+      // browser does not, and drawing the buttons for every manager offered an
+      // action the backend then refused.
+      if (status === "pending" && r.can_action) {
         approvalHtml = "<div class=\"upd-approve-row\">" +
           "<input class=\"upd-approve-comment\" placeholder=\"Comment (optional)\" id=\"apc-" + gpEsc(r.name) + "\">" +
           "<button class=\"upd-btn-approve\" onclick=\"approveUpdate('" + gpEsc(doctype) + "','" + gpEsc(docname) + "','" + gpEsc(r.name) + "','Approved')\">Approve</button>" +

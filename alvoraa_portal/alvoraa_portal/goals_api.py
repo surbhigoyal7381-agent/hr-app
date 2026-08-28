@@ -1083,6 +1083,15 @@ def get_goal_update_log(goal_id):
     if not (_is_hr() or goal.employee == emp_id or emp_id == goal_mgr):
         frappe.throw("Not permitted.", frappe.PermissionError)
 
+    # Whether THIS user may action these updates - the same rule
+    # approve_goal_update enforces. Sent per response rather than worked out in
+    # the browser, which has no idea who the goal owner reports to.
+    #
+    # Seeing the log and being able to action it are different things: the
+    # employee sees their own updates and cannot approve them. Drawing the
+    # buttons for everyone who can READ was the bug.
+    can_action = bool(_is_hr() or (goal_mgr and emp_id == goal_mgr))
+
     rows = sorted(
         goal.progress_updates or [],
         key=lambda r: (str(r.log_date or ""), str(r.creation or "")),
@@ -1106,6 +1115,7 @@ def get_goal_update_log(goal_id):
             "approved_by":      r.approved_by      or "",
             "approved_by_name": apr_name,
             "approved_on":      str(r.approved_on) if r.approved_on else "",
+            "can_action":       can_action,
         })
     return result
 

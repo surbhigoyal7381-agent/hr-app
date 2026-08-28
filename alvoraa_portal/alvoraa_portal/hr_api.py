@@ -515,24 +515,46 @@ def get_hr_analytics():
     }
 
 
-def _can_action_leave(name):
-    """Can the CURRENT user actually approve or reject this application?
+def _leave_approver_for(doc):
+    """Who Frappe HR says may approve this - the employee's approver, or their
+    department's. Exactly the rule get_leave_approver() applies when it fills the
+    field in the first place, so the portal cannot disagree with the desk."""
+    if doc.leave_approver:
+        return doc.leave_approver
+    try:
+        from hrms.hr.doctype.leave_application.leave_application import get_leave_approver
 
-    Asked of the document, not of the user's roles, because that is what Frappe
-    will check when we submit. Roles alone say too little: Frappe HR creates a
-    User Permission tying each user to their own Employee record, applied to all
-    doctypes, so an HR Manager who is also an employee can be blocked from every
-    document but their own - which is exactly what happened, while the portal
-    cheerfully drew Approve and Reject buttons.
+        return get_leave_approver(doc.employee)
+    except Exception:
+        return None
 
-    A button that cannot work is worse than no button: it turns a configuration
-    problem into what looks like a broken product.
+
+def _can_action_leave(name, doc=None):
+    """May the CURRENT user approve or reject this application?
+
+    ONE rule, used by the button and by the action, because a button that offers
+    something the action then refuses is worse than no button - it turns a
+    configuration problem into what looks like a broken product.
+
+    The rule is Frappe HR's own: approving is the NAMED APPROVER's job. The
+    approver is a property of the employee or their department, not something a
+    role confers. This portal used to let any HR Manager approve anybody's leave;
+    that was ours, it is not how Frappe HR works, and it made the audit trail
+    meaningless - "approved by whoever held HR Manager" is not "approved by the
+    person responsible".
+
+    Frappe's own permission check still has to pass on top: being named approver
+    does not help if the document is out of reach for another reason.
     """
     try:
-        doc = frappe.get_doc("Leave Application", name)
-        return bool(frappe.has_permission("Leave Application", "submit", doc=doc))
+        doc = doc or frappe.get_doc("Leave Application", name)
     except Exception:
         return False
+
+    if frappe.session.user != _leave_approver_for(doc):
+        return False
+
+    return bool(frappe.has_permission("Leave Application", "submit", doc=doc))
 
 
 def _mark_actionable(rows):
@@ -548,25 +570,22 @@ def action_leave(leave_id, action):
     user = frappe.session.user
     doc  = frappe.get_doc("Leave Application", leave_id)
 
-    if doc.leave_approver != user:
-        roles = frappe.get_roles(user)
-        if not ({"HR Manager", "HR User", "Administrator"} & set(roles)):
-            frappe.throw("Not authorised to action this leave application.")
-
-    # Having the role is not the same as being allowed to submit THIS document,
-    # and finding that out from a bare PermissionError helps nobody. Say what is
-    # wrong and who can fix it.
-    if not frappe.has_permission("Leave Application", "submit", doc=doc):
-        approver = doc.leave_approver or "nobody"
+    # The same rule the button uses. No role bypass: holding HR Manager does not
+    # make somebody the approver, and Frappe HR does not treat it as though it
+    # does.
+    if not _can_action_leave(None, doc=doc):
+        approver = _leave_approver_for(doc)
+        if not approver:
+            frappe.throw(
+                _("No leave approver is set for {0}. HR should name one on the "
+                  "employee record, or add a Leave Approver to their department, "
+                  "before this request can be actioned.").format(
+                      doc.employee_name or doc.employee),
+                frappe.PermissionError)
         frappe.throw(
-            _("You cannot approve this request. Frappe HR restricts you to your "
-              "own employee records, and this one belongs to {0}. The assigned "
-              "approver is {1}. HR can fix this by naming an approver on the "
-              "employee, or by turning off 'Apply User Permissions' for the HR "
-              "Manager role on Leave Application.").format(
-                  doc.employee_name or doc.employee, approver),
-            frappe.PermissionError,
-        )
+            _("Only {0} can action this request - they are the approver for {1}.").format(
+                approver, doc.employee_name or doc.employee),
+            frappe.PermissionError)
 
     if action == "approve":
         doc.status = "Approved"

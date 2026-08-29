@@ -567,3 +567,136 @@ class TestSwitchToPortalActuallyWorks(FrappeTestCase):
 		block = src[start:start + 400]
 		self.assertNotIn("onClick", block,
 		                 "Frappe now wires these itself - delete portal_switch.js")
+
+
+class TestRoleChangesReapplyTheProfile(FrappeTestCase):
+	"""The gate has to survive a role change, not just the day the user is made.
+
+	A user created as a System Manager is exempt, correctly. When they are later
+	demoted the exemption must go with the role - otherwise the account keeps the
+	full ERPNext module list for the rest of its life, and nothing in the UI
+	explains why.
+	"""
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		feats = sub.plan_features("starter")
+		ma.sync_module_profile(feats, name=ma.PROFILE_NAME)
+		ma.sync_module_profile(feats, name=ma.HR_PROFILE_NAME)
+
+	def tearDown(self):
+		frappe.db.rollback()
+
+	def _user(self, email, roles):
+		doc = frappe.get_doc({
+			"doctype": "User", "email": email, "first_name": email.split("@")[0],
+			"send_welcome_email": 0, "user_type": "System User",
+			"roles": [{"role": r} for r in roles],
+		})
+		doc.flags.ignore_permissions = True
+		doc.insert(ignore_permissions=True)
+		return doc
+
+	def _state(self, name):
+		return (
+			frappe.db.get_value("User", name, "module_profile"),
+			frappe.db.count("Block Module", {"parent": name, "parenttype": "User"}),
+		)
+
+	def test_demoting_an_admin_applies_the_profile(self):
+		"""The exact bug: created as System Manager, later an ordinary employee."""
+		u = self._user("demoted@example.com", ["System Manager"])
+		profile, rows = self._state(u.name)
+		self.assertIsNone(profile, "an admin is exempt while they are an admin")
+
+		u.set("roles", [{"role": "Employee"}])
+		u.save(ignore_permissions=True)
+
+		profile, rows = self._state(u.name)
+		self.assertEqual(profile, ma.PROFILE_NAME)
+		self.assertGreater(rows, 0, "a profile with no blocked rows blocks nothing")
+
+	def test_promoting_to_admin_clears_the_profile(self):
+		"""And clears the ROWS. Frappe reads the rows, not the profile name, so
+		leaving them behind would keep the new admin locked out."""
+		u = self._user("promoted@example.com", ["Employee"])
+		self.assertEqual(self._state(u.name)[0], ma.PROFILE_NAME)
+
+		u.set("roles", [{"role": "System Manager"}])
+		u.save(ignore_permissions=True)
+
+		profile, rows = self._state(u.name)
+		self.assertIsNone(profile)
+		self.assertEqual(rows, 0, "stale rows would survive the promotion")
+
+	def test_becoming_hr_moves_them_to_the_hr_profile(self):
+		u = self._user("becomes.hr@example.com", ["Employee"])
+		self.assertEqual(self._state(u.name)[0], ma.PROFILE_NAME)
+
+		u.set("roles", [{"role": "Employee"}, {"role": "HR Manager"}])
+		u.save(ignore_permissions=True)
+
+		self.assertEqual(self._state(u.name)[0], ma.HR_PROFILE_NAME)
+
+	def test_a_save_that_does_not_touch_roles_is_left_alone(self):
+		"""This hook runs on every user save on the site. It must be cheap and it
+		must not rewrite rows nobody asked it to touch."""
+		u = self._user("quiet@example.com", ["Employee"])
+		before = self._state(u.name)
+
+		u.phone = "+91 99999 99999"
+		u.save(ignore_permissions=True)
+
+		self.assertEqual(self._state(u.name), before)
+
+	def test_the_administrator_is_never_touched(self):
+		doc = frappe.get_doc("User", "Administrator")
+		ma.apply_on_user_update(doc)
+		self.assertIsNone(frappe.db.get_value("User", "Administrator", "module_profile"))
+
+	def test_it_survives_a_site_with_no_profiles(self):
+		"""A tenant that was never synced must still be able to save a user.
+
+		The profiles go FIRST, before the account exists. Deleting them out from
+		under a user who already links to one is a different situation - Frappe
+		rejects the dangling link itself, long before our hook is consulted.
+		"""
+		for name in (ma.PROFILE_NAME, ma.HR_PROFILE_NAME):
+			if frappe.db.exists("Module Profile", name):
+				frappe.delete_doc("Module Profile", name, force=True,
+				                  ignore_permissions=True)
+
+		u = self._user("nosync@example.com", ["Employee"])
+		self.assertIsNone(self._state(u.name)[0], "nothing to apply, nothing applied")
+
+		u.set("roles", [{"role": "HR Manager"}])
+		u.save(ignore_permissions=True)          # must not raise
+
+		self.assertIsNone(self._state(u.name)[0])
+
+
+class TestTheHookIsWhereItCanActuallyFire(FrappeTestCase):
+	"""Guard tests. The previous version of this feature was wired to Has Role and
+	never ran once, and nothing failed - the hooks simply sat there looking right.
+	"""
+
+	def test_it_is_registered_on_user_on_update(self):
+		wired = str((frappe.get_hooks("doc_events") or {}).get("User", {}))
+		self.assertIn("apply_on_user_update", wired)
+
+	def test_nothing_of_ours_hangs_off_has_role(self):
+		wired = str((frappe.get_hooks("doc_events") or {}).get("Has Role", {}))
+		self.assertNotIn("alvoraa_portal", wired,
+			"Has Role hooks never fire when roles are edited in the user form")
+
+	def test_frappe_still_deletes_child_rows_without_loading_them(self):
+		"""The reason the hook cannot live on Has Role. If Frappe ever starts
+		loading those rows, this fails and the comment above needs revisiting."""
+		import inspect
+
+		from frappe.model.document import Document
+
+		src = inspect.getsource(Document.update_child_table)
+		self.assertIn(".delete()", src)
+		self.assertIn("db_update()", src)
+		self.assertNotIn("delete_doc", src)

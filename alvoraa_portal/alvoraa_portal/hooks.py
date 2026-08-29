@@ -63,17 +63,18 @@ doc_events = {
         "on_update": "alvoraa_portal.hr_api.invalidate_portal_context_cache",
         "on_trash":  "alvoraa_portal.hr_api.invalidate_portal_context_cache",
     },
-    "Has Role": {
-        "after_insert": ["alvoraa_portal.hr_api.invalidate_portal_context_cache",
-                         "alvoraa_portal.module_access.apply_on_role_change"],
-        "on_trash":     ["alvoraa_portal.hr_api.invalidate_portal_context_cache",
-                         "alvoraa_portal.module_access.apply_on_role_change"],
-    },
     # ── Module access follows the plan, for the whole life of the tenant ──
     # A plan is chosen once; users arrive and change roles for years afterwards.
     # Without these the gate would apply only to whoever existed on sync day.
+    #
+    # Both hang off USER, never off Has Role. Editing roles in the user form does
+    # not create or delete a Has Role document - Frappe deletes the removed rows
+    # with one SQL statement and writes the rest with db_update() - so hooks on
+    # that child doctype look correct and never fire.
     "User": {
         "after_insert": "alvoraa_portal.module_access.apply_on_user_insert",
+        "on_update":    ["alvoraa_portal.hr_api.invalidate_portal_context_cache",
+                         "alvoraa_portal.module_access.apply_on_user_update"],
     },
     # ── Global features cache invalidation ───────────────────────────────
     # Clear portal_features_global when HR configuration changes

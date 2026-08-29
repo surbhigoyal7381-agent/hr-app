@@ -50,19 +50,32 @@ NEVER_TOUCH = {"Administrator", "Guest"}
 ADMIN_ROLES = {"System Manager"}
 
 
-def _is_tenant_admin(user):
-    return bool(ADMIN_ROLES & set(frappe.get_roles(user)))
+def _roles_of(user, roles=None):
+    """The user's roles, taken from the caller when it already knows them.
+
+    frappe.get_roles() is cached. Inside a save that just changed the role table
+    the cache can still hold the OLD set, which would decide the profile from
+    roles the user no longer has. Callers that hold the document pass its rows in
+    and skip the cache entirely.
+    """
+    if roles is not None:
+        return set(roles)
+    return set(frappe.get_roles(user))
 
 
-def _is_hr(user):
-    return bool(HR_ROLES & set(frappe.get_roles(user)))
+def _is_tenant_admin(user, roles=None):
+    return bool(ADMIN_ROLES & _roles_of(user, roles))
 
 
-def _profile_for(user):
+def _is_hr(user, roles=None):
+    return bool(HR_ROLES & _roles_of(user, roles))
+
+
+def _profile_for(user, roles=None):
     """Which profile a user should carry, or None if they are exempt."""
-    if user in NEVER_TOUCH or _is_tenant_admin(user):
+    if user in NEVER_TOUCH or _is_tenant_admin(user, roles):
         return None
-    return HR_PROFILE_NAME if _is_hr(user) else PROFILE_NAME
+    return HR_PROFILE_NAME if _is_hr(user, roles) else PROFILE_NAME
 
 
 def sync_module_profile(features=None, name=PROFILE_NAME, blocked=None):
@@ -621,6 +634,46 @@ def get_hidden_modules():
     return {"profiles": out, "blocked": out.get(PROFILE_NAME) or []}
 
 
+def _write_profile(user, want, doc=None):
+    """Put `want` on the user, or clear the profile when `want` is None.
+
+    Written straight to the database on purpose. Both callers run INSIDE the
+    user's own save, so calling user.save() here would re-enter the same hook
+    and recurse. Frappe copies `block_modules` out of the profile during
+    validate, which we are past, so this writes those rows itself.
+
+    The two writes belong together: a `module_profile` with no matching rows
+    blocks nothing, and rows with no profile survive the next promotion. Any
+    caller that changes one must change the other.
+
+    `doc.db_set` rather than `frappe.db.set_value` when we hold the document:
+    set_value updates the row and leaves the object in memory still holding the
+    OLD value, so whoever saves that same object next writes the stale value
+    straight back and silently undoes this.
+    """
+    if doc is not None:
+        doc.db_set("module_profile", want, update_modified=False)
+    else:
+        frappe.db.set_value("User", user, "module_profile", want, update_modified=False)
+
+    # Always clear first. On a change of profile the old rows are wrong, and on a
+    # promotion to admin every row is wrong.
+    frappe.db.delete("Block Module", {"parent": user, "parenttype": "User"})
+
+    if want:
+        for m in frappe.get_all("Block Module",
+                                filters={"parent": want, "parenttype": "Module Profile"},
+                                fields=["module"]):
+            frappe.get_doc({
+                "doctype": "Block Module", "parent": user, "parenttype": "User",
+                "parentfield": "block_modules", "module": m.module,
+            }).db_insert()
+
+    # The desk reads blocked modules from the cached user, so without this the
+    # change shows up only after the next cache expiry.
+    frappe.clear_cache(user=user)
+
+
 def apply_on_user_insert(doc, method=None):
     """Give a NEW user the site's Module Profile.
 
@@ -633,39 +686,45 @@ def apply_on_user_insert(doc, method=None):
     """
     if doc.name in NEVER_TOUCH:
         return
-    want = _profile_for(doc.name)
+    want = _profile_for(doc.name, [r.role for r in (doc.get("roles") or [])])
     if not want or not frappe.db.exists("Module Profile", want):
         return
-    # Set it directly: this runs inside the user's own insert, so saving the
-    # document again here would recurse.
-    frappe.db.set_value("User", doc.name, "module_profile", want,
-                        update_modified=False)
-    for m in frappe.get_all("Block Module",
-                            filters={"parent": want, "parenttype": "Module Profile"},
-                            fields=["module"]):
-        frappe.get_doc({
-            "doctype": "Block Module", "parent": doc.name, "parenttype": "User",
-            "parentfield": "block_modules", "module": m.module,
-        }).db_insert()
+    _write_profile(doc.name, want, doc=doc)
 
 
-def apply_on_role_change(doc, method=None):
-    """Re-evaluate a user when their roles change.
+def apply_on_user_update(doc, method=None):
+    """Re-evaluate a user whose roles changed.
 
-    Promoting someone to System Manager should give them the full module list;
-    demoting them should take it away again. Without this, the exemption is
-    decided once and never revisited.
+    This lives on USER, not on Has Role, and that is the whole point. Editing
+    roles in the user form never creates or deletes a Has Role document: Frappe
+    deletes the removed rows with one SQL statement and writes the new ones with
+    db_update(). No document is loaded, so nothing on the child doctype fires.
+    Hooks on Has Role look right and never run.
+
+    Promoting someone to System Manager gives them the full module list back;
+    demoting them takes it away again. Without this the exemption is decided once,
+    when the account is created, and never revisited - which is exactly how a user
+    created as an admin keeps every ERPNext module after being demoted to Employee.
     """
-    user = getattr(doc, "parent", None)
-    if not user or user in NEVER_TOUCH:
+    if doc.name in NEVER_TOUCH:
         return
-    if not frappe.db.exists("Module Profile", PROFILE_NAME):
+
+    before = doc.get_doc_before_save()
+    if not before:
         return
+
+    now_roles = {r.role for r in (doc.get("roles") or [])}
+    was_roles = {r.role for r in (before.get("roles") or [])}
+    if now_roles == was_roles:
+        return          # the common save: a phone number, a theme, a password
+
     try:
-        # Roles decide which profile applies, so a change here can move someone
-        # between employee, HR and exempt.
-        apply_to_users([user])
+        want = _profile_for(doc.name, now_roles)
+        if want and not frappe.db.exists("Module Profile", want):
+            return      # nothing to apply on a site that was never synced
+        _write_profile(doc.name, want, doc=doc)
     except Exception:
+        # A failure here must not stop an administrator saving a user.
         frappe.log_error(title="module_access: role change re-apply failed",
                          message=frappe.get_traceback())
 

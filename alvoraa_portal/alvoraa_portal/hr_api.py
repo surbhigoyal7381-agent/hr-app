@@ -26,8 +26,12 @@ def invalidate_portal_context_cache(doc, method=None):
                     old_mgr_user = frappe.db.get_value("Employee", old_mgr, "user_id")
                     if old_mgr_user:
                         frappe.cache().delete_value(f"portal_ctx_{old_mgr_user}")
-        elif doc.doctype == "Has Role" and getattr(doc, "parenttype", None) == "User":
-            frappe.cache().delete_value(f"portal_ctx_{doc.parent}")
+        elif doc.doctype == "User":
+            # Roles are edited through the USER form, and Frappe writes those child
+            # rows with raw SQL - no Has Role document is ever loaded, so a hook on
+            # that child doctype never fires. The user save is the only reliable
+            # place to notice a role change.
+            frappe.cache().delete_value(f"portal_ctx_{doc.name}")
     except Exception:
         pass
 

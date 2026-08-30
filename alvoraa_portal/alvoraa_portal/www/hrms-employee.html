@@ -12784,7 +12784,7 @@ function deleteDrawerNote(noteId, empId) {
 
   window.prRemoveGoalFromReview = function(goalId) {
     if (!confirm("Delete this objective? This cannot be undone.")) return;
-    pf("delete_goal", {goal_id: goalId})
+    window.gpFetch("alvoraa_portal.goals_api.delete_goal", {goal_id: goalId})
       .then(function() { prRefreshCurrentPage(); })
       .catch(function(e) { alert(e.message || "Could not delete objective."); });
   };
@@ -13627,8 +13627,8 @@ function deleteDrawerNote(noteId, empId) {
       pf("get_company_values", {}),
       pf("get_leadership_principles", {}),
       pf("get_rating_scales", {}),
-      pf("get_org_setting", {key: "auto_approve_evidence"}),
-      pf("get_org_setting", {key: "kra_link_mandatory"}),
+      window.gpFetch("alvoraa_portal.hr_api.get_org_setting", {key: "auto_approve_evidence"}),
+      window.gpFetch("alvoraa_portal.hr_api.get_org_setting", {key: "kra_link_mandatory"}),
     ]).then(function(res) {
       orgRenderValues(res[0] || []);
       orgRenderPrinciples(res[1] || []);
@@ -13644,13 +13644,13 @@ function deleteDrawerNote(noteId, empId) {
   };
 
   window.orgSaveKraMandatory = function(enabled) {
-    pf("set_org_setting", {key: "kra_link_mandatory", value: enabled ? "1" : "0"})
+    window.gpFetch("alvoraa_portal.hr_api.set_org_setting", {key: "kra_link_mandatory", value: enabled ? "1" : "0"})
       .then(function() { toast(enabled ? "KRA linking is now required" : "KRA linking is now optional", "ok"); })
       .catch(function(e) { toast("Failed to save setting: " + e.message, "err"); });
   };
 
   window.orgSaveAutoApprove = function(enabled) {
-    pf("set_org_setting", {key: "auto_approve_evidence", value: enabled ? "1" : "0"})
+    window.gpFetch("alvoraa_portal.hr_api.set_org_setting", {key: "auto_approve_evidence", value: enabled ? "1" : "0"})
       .catch(function(e) { toast("Failed to save setting: " + e.message, "err"); });
   };
 

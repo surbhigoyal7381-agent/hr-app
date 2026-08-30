@@ -30,8 +30,12 @@ deploy/envs/*.env
 deploy/compose/.image.env
 backups/
 
-# Claude Code agent working directory (worktrees, session data)
-.claude/
+# Claude Code agent working directory (worktrees, session data).
+# Everything under .claude/ is ignored EXCEPT the shared, reviewed team assets
+# (agent and skill definitions), which are committed so the whole team gets them.
+.claude/*
+!.claude/agents/
+!.claude/skills/
 
 # Logs
 *debug.log

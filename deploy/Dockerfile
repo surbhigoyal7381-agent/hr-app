@@ -24,6 +24,11 @@ FROM frappe/bench:latest
 
 ARG FRAPPE_BRANCH=version-16
 ARG ERPNEXT_BRANCH=version-16
+# Indian statutory compliance: GST returns, e-invoicing, e-way bills, TDS on
+# vendor payments, and the Companies Act audit trail. Sold as a module - see
+# subscription.py - so it is present in the image but installed on a site only
+# when the plan includes it.
+ARG INDIA_COMPLIANCE_BRANCH=version-16
 
 USER frappe
 WORKDIR /home/frappe
@@ -39,6 +44,9 @@ WORKDIR /home/frappe/frappe-bench
 
 RUN bench get-app --branch "${ERPNEXT_BRANCH}" erpnext
 
+# Declares required_apps = ["frappe/erpnext"], so it must follow erpnext.
+RUN bench get-app --branch "${INDIA_COMPLIANCE_BRANCH}" https://github.com/resilient-tech/india-compliance
+
 # ── 2. First-party apps, copied from THIS commit ────────────────────────────
 COPY --chown=frappe:frappe hrms                 apps/hrms
 COPY --chown=frappe:frappe alvoraa_goals          apps/alvoraa_goals
@@ -49,7 +57,7 @@ RUN ./env/bin/pip install --no-cache-dir \
         -e apps/hrms \
         -e apps/alvoraa_goals \
         -e apps/alvoraa_portal \
- && printf 'frappe\nerpnext\nhrms\nalvoraa_goals\nalvoraa_portal\n' > sites/apps.txt
+ && printf 'frappe\nerpnext\nindia_compliance\nhrms\nalvoraa_goals\nalvoraa_portal\n' > sites/apps.txt
 
 # ── 3b. Node dependencies for the copied apps ───────────────────────────────
 # `bench get-app` runs yarn install for the app it fetches. COPY does not, so the
@@ -80,6 +88,7 @@ RUN bench setup requirements --node
 # fix. NODE_OPTIONS is not raised, since there is no evidence it was ever needed.
 RUN bench build --production --app frappe
 RUN bench build --production --app erpnext
+RUN bench build --production --app india_compliance
 RUN bench build --production --app hrms
 RUN bench build --production --app alvoraa_goals
 RUN bench build --production --app alvoraa_portal

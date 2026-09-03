@@ -51,14 +51,36 @@ jobs:
       environment: ${{ steps.p.outputs.environment }}
       image_tag:   ${{ steps.p.outputs.image_tag }}
       migrate:     ${{ steps.p.outputs.migrate }}
+      # Each environment is a SEPARATE docker compose project on one host. Getting
+      # this wrong does not fail - it silently drives the other environment.
+      project:     ${{ steps.p.outputs.project }}
+      overlay:     ${{ steps.p.outputs.overlay }}
+      pin_file:    ${{ steps.p.outputs.pin_file }}
     steps:
       - id: p
         run: |
           set -euo pipefail
+          # Maps an environment to the compose project, overlay and image-pin file
+          # it OWNS. Read off the running containers' own compose labels, which are
+          # the only authoritative source:
+          #   devstack-backend-1 -> project=devstack, app.yml + devstack.yml
+          #   compose-backend-1  -> project=compose,  app.yml + nginx-multienv.yml
+          emit_stack() {
+            case "$1" in
+              dev) echo "project=devstack"                   >> $GITHUB_OUTPUT
+                   echo "overlay=docker-compose.devstack.yml" >> $GITHUB_OUTPUT
+                   echo "pin_file=.image.dev.env"             >> $GITHUB_OUTPUT ;;
+              *)   echo "project=compose"                     >> $GITHUB_OUTPUT
+                   echo "overlay=docker-compose.nginx-multienv.yml" >> $GITHUB_OUTPUT
+                   echo "pin_file=.image.env"                 >> $GITHUB_OUTPUT ;;
+            esac
+          }
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "environment=${{ inputs.environment }}"    >> $GITHUB_OUTPUT
             echo "image_tag=${{ inputs.image_tag }}"        >> $GITHUB_OUTPUT
             echo "migrate=${{ inputs.run_migrations }}"     >> $GITHUB_OUTPUT
+            emit_stack "${{ inputs.environment }}"
             exit 0
           fi
 
@@ -73,6 +95,7 @@ jobs:
           echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
           echo "image_tag=$TAG"           >> $GITHUB_OUTPUT
           echo "migrate=true"             >> $GITHUB_OUTPUT
+          emit_stack "$ENVIRONMENT"
 
   deploy:
     name: Deploy to ${{ needs.plan.outputs.environment }}
@@ -92,6 +115,9 @@ jobs:
     env:
       IMAGE:    ${{ needs.plan.outputs.image_tag }}
       ENV_NAME: ${{ needs.plan.outputs.environment }}
+      PROJECT:  ${{ needs.plan.outputs.project }}
+      OVERLAY:  ${{ needs.plan.outputs.overlay }}
+      PIN_FILE: ${{ needs.plan.outputs.pin_file }}
       MIGRATE:  ${{ needs.plan.outputs.migrate }}
 
     steps:
@@ -109,17 +135,21 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         env:
           ENV_NAME: ${{ needs.plan.outputs.environment }}
+          PROJECT:  ${{ needs.plan.outputs.project }}
+          OVERLAY:  ${{ needs.plan.outputs.overlay }}
+          PIN_FILE: ${{ needs.plan.outputs.pin_file }}
         with:
           host:     ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key:      ${{ secrets.DEPLOY_SSH_KEY }}
           timeout:  1800s
           command_timeout: 30m
-          envs: ENV_NAME
+          envs: ENV_NAME,PROJECT,OVERLAY,PIN_FILE
           script: |
             set -euo pipefail
-            cd /opt/hr-app/deploy/compose
-            DC="docker compose -f docker-compose.app.yml --env-file ../envs/${ENV_NAME}.env --env-file .image.env"
+            cd /var/www/html/hr-app/deploy/compose
+            export COMPOSE_PROJECT_NAME="$PROJECT"
+            DC="docker compose -f docker-compose.app.yml -f $OVERLAY --env-file ../envs/${ENV_NAME}.env --env-file $PIN_FILE"
             STAMP=$(date +%F-%H%M)
 
             $DC exec -T backend bench --site all backup --with-files
@@ -140,6 +170,9 @@ jobs:
         env:
           FULL_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.plan.outputs.image_tag }}
           ENV_NAME:   ${{ needs.plan.outputs.environment }}
+          PROJECT:  ${{ needs.plan.outputs.project }}
+          OVERLAY:  ${{ needs.plan.outputs.overlay }}
+          PIN_FILE: ${{ needs.plan.outputs.pin_file }}
           MIGRATE:    ${{ needs.plan.outputs.migrate }}
         with:
           host:     ${{ secrets.DEPLOY_HOST }}
@@ -147,17 +180,18 @@ jobs:
           key:      ${{ secrets.DEPLOY_SSH_KEY }}
           timeout:  3600s
           command_timeout: 60m
-          envs: FULL_IMAGE,ENV_NAME,MIGRATE
+          envs: FULL_IMAGE,ENV_NAME,MIGRATE,PROJECT,OVERLAY,PIN_FILE
           script: |
             set -euo pipefail
-            cd /opt/hr-app
+            cd /var/www/html/hr-app
             git fetch --all --prune
             git checkout --detach "origin/${ENV_NAME/production/main}" 2>/dev/null \
               || git checkout --detach origin/main
             cd deploy/compose
 
-            echo "KINEXUS_IMAGE=$FULL_IMAGE" > .image.env
-            DC="docker compose -f docker-compose.app.yml --env-file ../envs/${ENV_NAME}.env --env-file .image.env"
+            echo "KINEXUS_IMAGE=$FULL_IMAGE" > "$PIN_FILE"
+            export COMPOSE_PROJECT_NAME="$PROJECT"
+            DC="docker compose -f docker-compose.app.yml -f $OVERLAY --env-file ../envs/${ENV_NAME}.env --env-file $PIN_FILE"
 
             $DC pull
 
@@ -217,14 +251,18 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         env:
           ENV_NAME: ${{ needs.plan.outputs.environment }}
+          PROJECT:  ${{ needs.plan.outputs.project }}
+          OVERLAY:  ${{ needs.plan.outputs.overlay }}
+          PIN_FILE: ${{ needs.plan.outputs.pin_file }}
         with:
           host:     ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key:      ${{ secrets.DEPLOY_SSH_KEY }}
-          envs: ENV_NAME
+          envs: ENV_NAME,PROJECT,OVERLAY,PIN_FILE
           script: |
-            cd /opt/hr-app/deploy/compose
-            DC="docker compose -f docker-compose.app.yml --env-file ../envs/${ENV_NAME}.env --env-file .image.env"
+            cd /var/www/html/hr-app/deploy/compose
+            export COMPOSE_PROJECT_NAME="$PROJECT"
+            DC="docker compose -f docker-compose.app.yml -f $OVERLAY --env-file ../envs/${ENV_NAME}.env --env-file $PIN_FILE"
             $DC ps
             $DC exec -T backend bench --site ${{ vars.SMOKE_SITE }} doctor || true
 

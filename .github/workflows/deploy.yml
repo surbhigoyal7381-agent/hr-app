@@ -100,7 +100,7 @@ jobs:
   deploy:
     name: Deploy to ${{ needs.plan.outputs.environment }}
     needs: plan
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, contabo]
     timeout-minutes: 90
 
     # This is the approval gate for production.
@@ -132,20 +132,7 @@ jobs:
       # site's encryption_key. Both are captured here. (ARCHITECTURE.md §17)
       - name: Backup all sites
         if: needs.plan.outputs.environment != 'dev'
-        uses: appleboy/ssh-action@v1.0.3
-        env:
-          ENV_NAME: ${{ needs.plan.outputs.environment }}
-          PROJECT:  ${{ needs.plan.outputs.project }}
-          OVERLAY:  ${{ needs.plan.outputs.overlay }}
-          PIN_FILE: ${{ needs.plan.outputs.pin_file }}
-        with:
-          host:     ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key:      ${{ secrets.DEPLOY_SSH_KEY }}
-          timeout:  1800s
-          command_timeout: 30m
-          envs: ENV_NAME,PROJECT,OVERLAY,PIN_FILE
-          script: |
+        run: |
             set -euo pipefail
             cd /var/www/html/hr-app/deploy/compose
             export COMPOSE_PROJECT_NAME="$PROJECT"
@@ -166,22 +153,7 @@ jobs:
             fi
 
       - name: Deploy
-        uses: appleboy/ssh-action@v1.0.3
-        env:
-          FULL_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.plan.outputs.image_tag }}
-          ENV_NAME:   ${{ needs.plan.outputs.environment }}
-          PROJECT:  ${{ needs.plan.outputs.project }}
-          OVERLAY:  ${{ needs.plan.outputs.overlay }}
-          PIN_FILE: ${{ needs.plan.outputs.pin_file }}
-          MIGRATE:    ${{ needs.plan.outputs.migrate }}
-        with:
-          host:     ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key:      ${{ secrets.DEPLOY_SSH_KEY }}
-          timeout:  3600s
-          command_timeout: 60m
-          envs: FULL_IMAGE,ENV_NAME,MIGRATE,PROJECT,OVERLAY,PIN_FILE
-          script: |
+        run: |
             set -euo pipefail
             cd /var/www/html/hr-app
             git fetch --all --prune
@@ -248,18 +220,7 @@ jobs:
 
       - name: Stack and scheduler health
         continue-on-error: true
-        uses: appleboy/ssh-action@v1.0.3
-        env:
-          ENV_NAME: ${{ needs.plan.outputs.environment }}
-          PROJECT:  ${{ needs.plan.outputs.project }}
-          OVERLAY:  ${{ needs.plan.outputs.overlay }}
-          PIN_FILE: ${{ needs.plan.outputs.pin_file }}
-        with:
-          host:     ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key:      ${{ secrets.DEPLOY_SSH_KEY }}
-          envs: ENV_NAME,PROJECT,OVERLAY,PIN_FILE
-          script: |
+        run: |
             cd /var/www/html/hr-app/deploy/compose
             export COMPOSE_PROJECT_NAME="$PROJECT"
             DC="docker compose -f docker-compose.app.yml -f $OVERLAY --env-file ../envs/${ENV_NAME}.env --env-file $PIN_FILE"

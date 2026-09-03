@@ -56,6 +56,11 @@ jobs:
       project:     ${{ steps.p.outputs.project }}
       overlay:     ${{ steps.p.outputs.overlay }}
       pin_file:    ${{ steps.p.outputs.pin_file }}
+      # vars.SMOKE_SITE and vars.BASE_DOMAIN were never configured on this repo,
+      # so the smoke test requested https:///api/method/ping and returned HTTP 000
+      # thirty times. Derived here instead - one less piece of out-of-band config
+      # that fails silently when absent.
+      smoke_site:  ${{ steps.p.outputs.smoke_site }}
     steps:
       - id: p
         run: |
@@ -69,10 +74,12 @@ jobs:
             case "$1" in
               dev) echo "project=devstack"                   >> $GITHUB_OUTPUT
                    echo "overlay=docker-compose.devstack.yml" >> $GITHUB_OUTPUT
-                   echo "pin_file=.image.dev.env"             >> $GITHUB_OUTPUT ;;
+                   echo "pin_file=.image.dev.env"             >> $GITHUB_OUTPUT
+                   echo "smoke_site=dev.alvoraa.co"           >> $GITHUB_OUTPUT ;;
               *)   echo "project=compose"                     >> $GITHUB_OUTPUT
                    echo "overlay=docker-compose.nginx-multienv.yml" >> $GITHUB_OUTPUT
-                   echo "pin_file=.image.env"                 >> $GITHUB_OUTPUT ;;
+                   echo "pin_file=.image.env"                 >> $GITHUB_OUTPUT
+                   echo "smoke_site=alvoraa.co"               >> $GITHUB_OUTPUT ;;
             esac
           }
 
@@ -106,7 +113,7 @@ jobs:
     # This is the approval gate for production.
     environment:
       name: ${{ needs.plan.outputs.environment }}
-      url: https://${{ vars.BASE_DOMAIN }}
+      url: https://${{ needs.plan.outputs.smoke_site }}
 
     concurrency:
       group: deploy-${{ needs.plan.outputs.environment }}
@@ -210,9 +217,9 @@ jobs:
         run: |
           set -euo pipefail
           for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' \
-                   -H "Host: ${{ vars.SMOKE_SITE }}" \
-                   "https://${{ vars.BASE_DOMAIN }}/api/method/ping" || true)
+            code=$(curl -sk -o /dev/null -w '%{http_code}' \
+                   -H "Host: ${{ needs.plan.outputs.smoke_site }}" \
+                   "https://${{ needs.plan.outputs.smoke_site }}/api/method/ping" || true)
             if [ "$code" = "200" ]; then echo "ping OK"; exit 0; fi
             echo "attempt $i: HTTP $code"; sleep 10
           done
@@ -226,7 +233,7 @@ jobs:
             export COMPOSE_PROJECT_NAME="$PROJECT"
             DC="docker compose -f docker-compose.app.yml -f $OVERLAY --env-file ../envs/${ENV_NAME}.env --env-file $PIN_FILE"
             $DC ps
-            $DC exec -T backend bench --site ${{ vars.SMOKE_SITE }} doctor || true
+            $DC exec -T backend bench --site ${{ needs.plan.outputs.smoke_site }} doctor || true
 
       - name: Rollback instructions
         if: failure()

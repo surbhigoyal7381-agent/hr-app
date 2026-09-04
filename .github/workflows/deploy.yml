@@ -211,6 +211,20 @@ jobs:
               $DC exec -T backend bench --site all set-maintenance-mode off
             fi
 
+            # nginx resolves the backend ONCE, at start, and caches the address.
+            # `up -d` gives the recreated containers new addresses, so every site
+            # 502s until nginx is restarted - which is what just happened on the
+            # first real auto-deploy: the swap and the migrations both succeeded
+            # and the smoke test still failed, because nginx was talking to
+            # containers that no longer existed.
+            #
+            # One nginx serves every environment on this host, so this is the one
+            # step of a dev deploy that production notices. It is a restart of a
+            # proxy holding no state - about two seconds - and the alternative is
+            # leaving dev broken after every deploy.
+            docker restart compose-nginx-1 >/dev/null 2>&1 || true
+            sleep 5
+
             docker image prune -f --filter "until=168h" || true
 
       - name: Smoke test

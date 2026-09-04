@@ -3,11 +3,38 @@
  "creation": "2026-08-24 18:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
- "field_order": ["restricted_doctypes", "permission_snapshot", "last_synced"],
+ "field_order": [
+  "restricted_doctypes",
+  "permission_snapshot",
+  "last_synced",
+  "baseline_applied"
+ ],
  "fields": [
-  {"fieldname": "restricted_doctypes", "fieldtype": "Long Text", "label": "Restricted Doctypes", "read_only": 1},
-  {"fieldname": "permission_snapshot", "fieldtype": "Long Text", "label": "Permission Snapshot", "read_only": 1},
-  {"fieldname": "last_synced", "fieldtype": "Datetime", "label": "Last Synced", "read_only": 1}
+  {
+   "fieldname": "restricted_doctypes",
+   "fieldtype": "Long Text",
+   "label": "Restricted Doctypes",
+   "read_only": 1
+  },
+  {
+   "fieldname": "permission_snapshot",
+   "fieldtype": "Long Text",
+   "label": "Permission Snapshot",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_synced",
+   "fieldtype": "Datetime",
+   "label": "Last Synced",
+   "read_only": 1
+  },
+  {
+   "fieldname": "baseline_applied",
+   "fieldtype": "Data",
+   "label": "Baseline Applied",
+   "read_only": 1,
+   "description": "Which baseline release seeded this site. Set once, at provisioning. Its presence is what stops the baseline running again and overwriting whatever the tenant has changed since."
+  }
  ],
  "issingle": 1,
  "links": [],
@@ -17,7 +44,16 @@
  "name": "Alvoraa Access State",
  "owner": "Administrator",
  "permissions": [
-  {"create": 1, "delete": 1, "email": 1, "print": 1, "read": 1, "role": "System Manager", "share": 1, "write": 1}
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
  ],
  "sort_field": "modified",
  "sort_order": "DESC",

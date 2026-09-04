@@ -287,7 +287,12 @@ class TestAdminCatalogue(FrappeTestCase):
 	def test_erpnext_modules_are_marked_as_such(self):
 		erp = [f for f in self.cat["features"] if f.get("erpnext")]
 		self.assertEqual({f["id"] for f in erp}, set(sub.ERPNEXT_FEATURES))
-		self.assertEqual(len(erp), len(sub.ERPNEXT_SELLABLE))
+		# Every core ERPNext module is offered. Not a COUNT: the group also
+		# carries add-ons sold alongside them - india_compliance is the first -
+		# and `len(erp) == len(ERPNEXT_SELLABLE)` failed the day one arrived,
+		# reporting 12 != 11 for a catalogue that was entirely correct.
+		for m in sub.ERPNEXT_SELLABLE:
+			self.assertIn(sub.erp_feature_id(m), {f["id"] for f in erp}, m)
 
 	def test_no_erpnext_module_is_ever_required(self):
 		for f in self.cat["features"]:

@@ -118,9 +118,17 @@ class TestPerTenantSelection(FrappeTestCase):
 		cat = sub.get_plan_catalogue()
 		groups = {g["key"]: g for g in cat["groups"]}
 		self.assertEqual(len(groups["alvoraa_hr"]["features"]), len(sub.FEATURES))
-		self.assertEqual(len(groups["erpnext"]["features"]), len(sub.ERPNEXT_SELLABLE))
+		# Every ERPNext module is offered, and the group may hold MORE than the
+		# core modules: india_compliance is sold here too, because it is
+		# meaningless without them. Counting ERPNEXT_SELLABLE alone said 11 and
+		# broke the moment a first add-on arrived - assert membership instead.
+		erp_ids = {f["id"] for f in groups["erpnext"]["features"]}
+		for m in sub.ERPNEXT_SELLABLE:
+			self.assertIn(sub.erp_feature_id(m), erp_ids, m)
+		self.assertEqual(erp_ids, set(sub.ERPNEXT_FEATURES))
 		# one flat catalogue too, so the admin can render a single grid
-		self.assertEqual(len(cat["features"]), len(sub.FEATURES) + len(sub.ERPNEXT_SELLABLE))
+		self.assertEqual(len(cat["features"]),
+			 len(sub.FEATURES) + len(sub.ERPNEXT_FEATURES))
 
 	def test_unticked_erpnext_modules_are_hidden(self):
 		blocked = sub.blocked_module_defs(sub.plan_features("enterprise"))

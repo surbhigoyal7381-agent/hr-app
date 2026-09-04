@@ -198,6 +198,25 @@ ERPNEXT_FEATURES = {
     for m in ERPNEXT_SELLABLE
 }
 
+# Not an ERPNext core module, but it lives in this catalogue rather than
+# FEATURES for two reasons: `enterprise` is defined as every Alvoraa HR feature
+# and this is not one, and it is useless without the ERPNext modules above.
+# Putting it in FEATURES made six tests fail on exactly that invariant.
+ERPNEXT_FEATURES["india_compliance"] = {
+    "desc": "GST returns, e-invoicing, e-way bills, TDS, audit trail",
+    "icon": "🇮🇳",
+    "label": "Indian Compliance",
+    "app": "india_compliance",
+    "module_defs": ["GST India", "Income Tax India", "VAT India", "Audit Trail"],
+    "workspaces": ["GST India", "Income Tax India"],
+    "erpnext": True,
+    # Refused without these rather than granted silently - see
+    # unmet_requirements(). Every one of its doctypes hangs off Sales Invoice,
+    # Purchase Invoice or the Accounts module, so without them the app installs
+    # and then every screen is denied by our own access control.
+    "requires": ["erp_accounts", "erp_selling", "erp_buying"],
+}
+
 # ── Frappe's own framework modules ───────────────────────────────────────────
 # Clutter for an HR tenant: Website, Integrations, Automation and the rest are
 # not part of the product. Hidden from ordinary users, but NOT from the tenant's
@@ -231,6 +250,59 @@ ERPNEXT_INFRASTRUCTURE = [
 ]
 
 REQUIRED = [k for k, v in FEATURES.items() if v.get("required")]
+
+
+def feature_spec(key):
+    """A feature's definition, from whichever catalogue holds it.
+
+    FEATURES is the Alvoraa HR product; ERPNEXT_FEATURES is what a tenant can
+    add alongside it. Callers asking "what app does this need" or "what does it
+    require" should not have to know which side a key lives on - and when
+    india_compliance moved between them, every lookup that only checked FEATURES
+    silently started returning nothing.
+    """
+    return FEATURES.get(key) or ERPNEXT_FEATURES.get(key) or {}
+
+
+def unmet_requirements(selection):
+    """Features in `selection` whose prerequisites are missing, as {key: [needed]}.
+
+    Some features cannot stand on their own. india_compliance is the first: all
+    25 of its doctypes hang off Sales Invoice, Purchase Invoice or the Accounts
+    module, so ticking it without the ERPNext modules that provide them installs
+    an app whose every screen is then denied by our own access control. The
+    tenant sees a product they paid for and cannot open, and nothing in the UI
+    explains why.
+
+    Refused rather than auto-corrected. Quietly switching on Accounts, Selling
+    and Buying because a fourth box was ticked would hand a tenant three modules
+    they did not buy - a subscription bypass performed by the subscription
+    system. The caller is expected to show these names and let a human decide.
+    """
+    chosen = set(selection or [])
+    out = {}
+    for key in chosen:
+        needs = feature_spec(key).get("requires") or []
+        missing = [n for n in needs if n not in chosen]
+        if missing:
+            out[key] = missing
+    return out
+
+
+def requirement_error(selection):
+    """One sentence naming what is missing, or None when the selection is whole."""
+    unmet = unmet_requirements(selection)
+    if not unmet:
+        return None
+    parts = []
+    for key, missing in sorted(unmet.items()):
+        label = feature_spec(key).get("label", key)
+        names = ", ".join(
+            feature_spec(m).get("label", m)
+            for m in missing
+        )
+        parts.append(f"{label} also needs {names}")
+    return "; ".join(parts) + "."
 
 
 def plan_features(plan):
@@ -591,7 +663,7 @@ def required_apps(features):
     """Our apps that must be installed for these features."""
     apps = {"alvoraa_portal"}          # the portal is on every plan
     for key in features:
-        app = FEATURES.get(key, {}).get("app")
+        app = feature_spec(key).get("app")
         if app:
             apps.add(app)
     return sorted(apps)

@@ -9,7 +9,7 @@ returns immediately with a job_id; the client polls get_provision_status().
 
 import frappe
 
-from alvoraa_portal.subscription import PLANS, REQUIRED
+from alvoraa_portal.subscription import PLANS, REQUIRED, requirement_error
 import os
 import json
 import re
@@ -271,6 +271,16 @@ def create_tenant(subdomain, tenant_name, plan="starter",
     # portal. enabled_features() re-adds them on read, so the site still worked -
     # which is exactly what made it hard to see. Store what is true.
     modules = list(modules) + [f for f in REQUIRED if f not in modules]
+
+    # Some features cannot stand on their own. Refused here rather than silently
+    # adding what is missing: auto-enabling three unsold ERPNext modules because
+    # a fourth box was ticked would be the subscription system performing a
+    # subscription bypass. Checked BEFORE the site is created, so a bad selection
+    # costs a message rather than a half-provisioned tenant.
+    _unmet = requirement_error(modules)
+    if _unmet:
+        frappe.throw(_unmet)
+
     # Derive the plan label from the modules. This intentionally OVERWRITES the
     # `plan` argument: modules are the source of truth, so a caller cannot send a
     # label that contradicts what was actually provisioned.
@@ -516,6 +526,14 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
         # which is exactly what made it hard to see. Store what is true.
         modules = list(modules) + [f for f in REQUIRED if f not in modules]
 
+        # Same gate as create_tenant. An existing tenant can be edited into an
+        # impossible selection just as easily as a new one, and here it is worse:
+        # the app would install onto a live site and every screen would then be
+        # refused by our own access control.
+        _unmet = requirement_error(modules)
+        if _unmet:
+            frappe.throw(_unmet)
+
     # Derive plan label from module set
     from alvoraa_portal.subscription import PLANS, REQUIRED
 
@@ -583,8 +601,10 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
         installed = _get_installed_apps(site_name)
         needs_vendor = "vendor" in modules and "alvoraa_portal" not in installed
         needs_goals  = "goals"  in modules and "alvoraa_goals"          not in installed
+        needs_india  = ("india_compliance" in modules
+                        and "india_compliance" not in installed)
 
-        if needs_vendor or needs_goals:
+        if needs_vendor or needs_goals or needs_india:
             job_id = uuid.uuid4().hex[:12]
             cfg = _read_site_config(site_name)
             jobs = _read_jobs()
@@ -604,12 +624,16 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
             frappe.enqueue(
                 "alvoraa_portal.tenant_api._run_install_modules",
                 queue="long",
-                timeout=600,
+                # india_compliance adds 25 doctypes and custom fields to
+                # ERPNext's invoices on a site that already holds data; 600s
+                # was sized for alvoraa_goals alone.
+                timeout=1800,
                 job_name=f"install_modules_{job_id}",
                 pjob_id=job_id,
                 site_name=site_name,
                 install_vendor=needs_vendor,
                 install_goals=needs_goals,
+                install_india_compliance=needs_india,
             )
             return {
                 "status": "installing",
@@ -834,6 +858,25 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
             else:
                 log += "\n" + (rs.stdout or "").strip() + "\n"
 
+            # Seed the settings a new tenant starts with. PROVISIONING ONLY -
+            # deliberately not in update_tenant, because every tenant that
+            # already exists has never been seeded, and seeding them on their
+            # next plan change would retro-fit configuration onto a live
+            # customer. Existing tenants keep what they have.
+            #
+            # baseline.apply() is guarded by a marker on the site, so even here
+            # it can only ever run once.
+            rb = _bench_run(
+                f"--site {site_name} execute alvoraa_portal.baseline.apply",
+                timeout=300)
+            if rb.returncode != 0:
+                # Not fatal. A tenant missing a default is a worse day than a
+                # tenant that does not exist.
+                log += ("\n[WARN] baseline defaults not applied."
+                        "\n--- stderr ---\n" + (rb.stderr or "(empty)") + "\n")
+            else:
+                log += "\n" + (rb.stdout or "").strip() + "\n"
+
             if logo_url:
                 _bench_run(f"--site {site_name} set-config tenant_logo_url \"{logo_url}\"")
 
@@ -871,7 +914,8 @@ def _get_installed_apps(site_name):
     return apps
 
 
-def _run_install_modules(pjob_id, site_name, install_vendor=False, install_goals=False):
+def _run_install_modules(pjob_id, site_name, install_vendor=False, install_goals=False,
+                         install_india_compliance=False):
     """Background job: install additional Frappe apps on an existing site."""
     def _update(status, log_append="", finished=False):
         jobs = _read_jobs()
@@ -902,6 +946,29 @@ def _run_install_modules(pjob_id, site_name, install_vendor=False, install_goals
             if r.returncode != 0:
                 raise RuntimeError(f"alvoraa_goals install failed:\n{r.stderr}")
             _update("Provisioning", r.stdout + "\n")
+
+        if install_india_compliance:
+            # Longer than the others on purpose: 25 doctypes plus custom fields
+            # on ERPNext's invoice doctypes, on a site that already has data.
+            _update("Provisioning", f"[{now_datetime()}] Installing india_compliance…\n")
+            r = _bench_run(f"--site {site_name} install-app india_compliance", timeout=900)
+            if r.returncode != 0:
+                raise RuntimeError(f"india_compliance install failed:\n{r.stderr}")
+            _update("Provisioning", r.stdout + "\n")
+
+            # Audit Trail ships with the app and is switched on rather than sold.
+            # It protects accounting documents, so anyone who has those documents
+            # should have them protected - charging separately would price a
+            # legal obligation. Not fatal if it fails: the tenant has the app.
+            ra = _bench_run(
+                f"--site {site_name} execute "
+                "frappe.client.set_value --args "
+                "\"['Accounts Settings','Accounts Settings','enable_audit_trail',1]\"",
+                timeout=120)
+            _update("Provisioning",
+                    f"[{now_datetime()}] Audit trail "
+                    + ("enabled.\n" if ra.returncode == 0
+                       else "could NOT be enabled - switch it on in Accounts Settings.\n"))
 
         _bench_run(f"--site {site_name} clear-cache")
         _update("Done", f"[{now_datetime()}] ✅ Module installation complete.\n", finished=True)

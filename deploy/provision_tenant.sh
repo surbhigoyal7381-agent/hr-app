@@ -92,6 +92,18 @@ else
     echo "      - alvoraa_goals skipped: not part of this plan"
 fi
 
+# Indian statutory compliance. Installed only when sold: its doctypes all hang
+# off Sales Invoice, Purchase Invoice or the Accounts module, so on an HR-only
+# tenant there is nothing for it to act on. create_tenant refuses the selection
+# unless Accounts, Selling and Buying were bought too, so by the time we get
+# here the modules it needs are present.
+if has_feature india_compliance; then
+    echo "      + india_compliance (sold)"
+    bench --site "$SITE_NAME" install-app india_compliance
+else
+    echo "      - india_compliance skipped: not part of this plan"
+fi
+
 # ── 3. Apply per-tenant branding config ───────────────────────────────────
 echo "[3/6] Writing tenant config to site_config.json"
 bench --site "$SITE_NAME" set-config tenant_name       "$TENANT_NAME"

@@ -148,12 +148,18 @@ jobs:
             STAMP=$(date +%F-%H%M)
 
             $DC exec -T backend bench --site all backup --with-files
+            # cd first. The container's WORKDIR is frappe-bench/SITES, not
+            # frappe-bench, so a relative "sites/..." resolves to sites/sites and
+            # tar exits 2 - which failed the backup and correctly skipped the whole
+            # deploy. bench is unaffected because it locates the bench root itself,
+            # which is why every other command in this job worked.
             $DC exec -T backend bash -c \
-              "tar czf sites/site-configs-${STAMP}.tgz sites/*/site_config.json sites/common_site_config.json"
+              "cd /home/frappe/frappe-bench && tar czf sites/site-configs-${STAMP}.tgz \
+                 sites/*/site_config.json sites/common_site_config.json"
 
             if [ -n "${{ secrets.BACKUP_BUCKET }}" ]; then
               $DC exec -T backend bash -c \
-                "aws s3 sync sites/ s3://${{ secrets.BACKUP_BUCKET }}/pre-deploy/${STAMP}/ \
+                "cd /home/frappe/frappe-bench && aws s3 sync sites/ s3://${{ secrets.BACKUP_BUCKET }}/pre-deploy/${STAMP}/ \
                    --exclude '*' --include '*/private/backups/*' --include 'site-configs-*.tgz'" \
                 || echo "::warning::Offsite backup sync failed — verify before continuing"
             else

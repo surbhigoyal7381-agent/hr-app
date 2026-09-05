@@ -192,16 +192,26 @@ jobs:
             maint() {   # maint on|off - every site, by name
               for site in $(list_sites); do
                 $DC exec -T backend bench --site "$site" set-maintenance-mode "$1" || true
-                # Belt and braces on the way OUT. set-maintenance-mode is
-                # swallowed by `|| true`, and it failed transiently on one
-                # tenant right after clear-cache - the deploy reported
-                # success and left that site serving 503. set-config writes
-                # the same flag directly, so a second failure would have to
-                # be two different failures.
-                if [ "$1" = "off" ]; then
-                  $DC exec -T backend bench --site "$site" set-config -p maintenance_mode 0 || true
-                fi
               done
+
+              # A SECOND sweep on the way out, after a pause.
+              #
+              # Twice now a dev deploy finished with one tenant still at 503,
+              # and it was the same tenant both times - the one that sorts
+              # FIRST. The first bench call straight after clear-cache fails,
+              # `|| true` hides it, and the rest of the loop then succeeds.
+              # Running the identical loop by hand works every time, which is
+              # what took so long to see.
+              #
+              # So: wait, then write the flag again by a different route.
+              # A site left in maintenance is a site that is down, and that
+              # is worth five seconds.
+              if [ "$1" = "off" ]; then
+                sleep 5
+                for site in $(list_sites); do
+                  $DC exec -T backend bench --site "$site" set-config -p maintenance_mode 0 || true
+                done
+              fi
             }
 
             list_sites() {

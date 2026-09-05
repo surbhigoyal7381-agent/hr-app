@@ -366,7 +366,7 @@ def get_alignment_options():
 def create_goal(goal_name, target_value, start_date, end_date, cascade_id=None,
                 parent_goal=None, employee=None, unit=None,
                 goal_type="Business", company_value=None, is_extra_initiative=0,
-                appraisal_cycle=None):
+                appraisal_cycle=None, kra=None):
     """Create an Individual Goal for yourself or for one of your subordinates.
 
     Alignment is optional. Not every goal is derived from one above it — the
@@ -415,6 +415,11 @@ def create_goal(goal_name, target_value, start_date, end_date, cascade_id=None,
     goal.end_date    = end_date
     goal.status      = "Active"
     goal.goal_type   = goal_type or "Business"
+    # Validated on the document, not here: the rule has to hold for the desk and
+    # the API too, so kra_api.validate_goal_kra owns it. Passing None is fine -
+    # a draft without a KRA is a legitimate state.
+    if kra:
+        goal.kra = kra
     goal.company_value = company_value or None
     goal.is_extra_initiative = int(is_extra_initiative or 0)
     if appraisal_cycle and frappe.db.exists("Appraisal Cycle", appraisal_cycle):
@@ -1078,6 +1083,15 @@ def get_goal_update_log(goal_id):
     if not (_is_hr() or goal.employee == emp_id or emp_id == goal_mgr):
         frappe.throw("Not permitted.", frappe.PermissionError)
 
+    # Whether THIS user may action these updates - the same rule
+    # approve_goal_update enforces. Sent per response rather than worked out in
+    # the browser, which has no idea who the goal owner reports to.
+    #
+    # Seeing the log and being able to action it are different things: the
+    # employee sees their own updates and cannot approve them. Drawing the
+    # buttons for everyone who can READ was the bug.
+    can_action = bool(_is_hr() or (goal_mgr and emp_id == goal_mgr))
+
     rows = sorted(
         goal.progress_updates or [],
         key=lambda r: (str(r.log_date or ""), str(r.creation or "")),
@@ -1101,6 +1115,7 @@ def get_goal_update_log(goal_id):
             "approved_by":      r.approved_by      or "",
             "approved_by_name": apr_name,
             "approved_on":      str(r.approved_on) if r.approved_on else "",
+            "can_action":       can_action,
         })
     return result
 

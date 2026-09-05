@@ -23,6 +23,14 @@ set -e
 SUBDOMAIN="${1:?ERROR: subdomain required. Usage: provision_tenant.sh <subdomain> [\"Tenant Name\"] [plan]}"
 TENANT_NAME="${2:-$SUBDOMAIN}"
 PLAN="${3:-starter}"
+# Comma-separated feature ids, passed by tenant_api._run_provision. Left empty by
+# a manual run, which then behaves as it always did and installs everything.
+FEATURES="${4:-}"
+
+has_feature() {
+    [ -z "$FEATURES" ] && return 0          # not told: assume sold
+    case ",$FEATURES," in *",$1,"*) return 0 ;; *) return 1 ;; esac
+}
 
 # ── Config ─────────────────────────────────────────────────────────────────
 BASE_DOMAIN="${BASE_DOMAIN:-kinexus.in}"
@@ -64,11 +72,37 @@ bench new-site "$SITE_NAME" \
     --no-mariadb-socket
 
 # ── 2. Install apps ───────────────────────────────────────────────────────
-echo "[2/6] Installing apps (erpnext → hrms → alvoraa_portal → alvoraa_goals)"
+# erpnext and hrms are not optional: Frappe HR depends on ERPNext for Bank
+# Account, Journal Entry, Supplier and more, so removing it breaks payroll and
+# expenses on every plan. alvoraa_portal is the product itself.
+#
+# alvoraa_goals IS optional, and it is the only REAL denial we have: doctypes
+# that were never installed cannot be reached by any URL, role or API call.
+# Which is also why a downgrade must never uninstall it - dropping the app drops
+# the customer's data.
+echo "[2/6] Installing apps (erpnext → hrms → alvoraa_portal)"
 bench --site "$SITE_NAME" install-app erpnext
 bench --site "$SITE_NAME" install-app hrms
 bench --site "$SITE_NAME" install-app alvoraa_portal
-bench --site "$SITE_NAME" install-app alvoraa_goals
+
+if has_feature goals; then
+    echo "      + alvoraa_goals (sold)"
+    bench --site "$SITE_NAME" install-app alvoraa_goals
+else
+    echo "      - alvoraa_goals skipped: not part of this plan"
+fi
+
+# Indian statutory compliance. Installed only when sold: its doctypes all hang
+# off Sales Invoice, Purchase Invoice or the Accounts module, so on an HR-only
+# tenant there is nothing for it to act on. create_tenant refuses the selection
+# unless Accounts, Selling and Buying were bought too, so by the time we get
+# here the modules it needs are present.
+if has_feature india_compliance; then
+    echo "      + india_compliance (sold)"
+    bench --site "$SITE_NAME" install-app india_compliance
+else
+    echo "      - india_compliance skipped: not part of this plan"
+fi
 
 # ── 3. Apply per-tenant branding config ───────────────────────────────────
 echo "[3/6] Writing tenant config to site_config.json"
@@ -79,21 +113,18 @@ bench --site "$SITE_NAME" set-config support_email     "$SUPPORT_EMAIL"
 bench --site "$SITE_NAME" set-config home_page         "/kinexus-login"
 bench --site "$SITE_NAME" set-config host_name         "https://${SITE_NAME}"
 
-# Plan → module flags
-case "$PLAN" in
-    starter)
-        MODULES='["hrms"]'
-        ;;
-    business)
-        MODULES='["hrms","vendor_portal","goals"]'
-        ;;
-    enterprise)
-        MODULES='["hrms","vendor_portal","goals","analytics"]'
-        ;;
-    *)
-        MODULES='["hrms","vendor_portal","goals"]'
-        ;;
-esac
+# `modules_enabled` is the legacy label list the tenant console displays. It used
+# to be a hardcoded plan->modules case statement here: a FIFTH copy of the plan
+# definition, agreeing with none of the other four. Derived from what was
+# actually sold now, so it cannot drift.
+#
+# Entitlement itself does NOT come from this key - tenant_api writes `features`,
+# which subscription.enabled_features() reads first.
+if [ -n "$FEATURES" ]; then
+    MODULES=$(printf '%s' "$FEATURES" | awk -F, '{printf "["; for(i=1;i<=NF;i++){printf "%s\"%s\"", (i>1?",":""), $i}; printf "]"}')
+else
+    MODULES='["hrms"]'
+fi
 bench --site "$SITE_NAME" set-config modules_enabled "$MODULES"
 
 # ── 4. Scheduler + cache ──────────────────────────────────────────────────

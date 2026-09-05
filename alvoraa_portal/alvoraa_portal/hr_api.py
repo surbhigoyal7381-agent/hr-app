@@ -1,4 +1,6 @@
 import frappe
+
+from alvoraa_portal.subscription import requires_feature
 import calendar as _calendar
 from frappe.utils import today, get_first_day, get_last_day, getdate, add_days, now
 from alvoraa_goals.permissions import get_effective_manager
@@ -24,8 +26,12 @@ def invalidate_portal_context_cache(doc, method=None):
                     old_mgr_user = frappe.db.get_value("Employee", old_mgr, "user_id")
                     if old_mgr_user:
                         frappe.cache().delete_value(f"portal_ctx_{old_mgr_user}")
-        elif doc.doctype == "Has Role" and getattr(doc, "parenttype", None) == "User":
-            frappe.cache().delete_value(f"portal_ctx_{doc.parent}")
+        elif doc.doctype == "User":
+            # Roles are edited through the USER form, and Frappe writes those child
+            # rows with raw SQL - no Has Role document is ever loaded, so a hook on
+            # that child doctype never fires. The user save is the only reliable
+            # place to notice a role change.
+            frappe.cache().delete_value(f"portal_ctx_{doc.name}")
     except Exception:
         pass
 
@@ -45,6 +51,34 @@ LEAVE_COLORS = {
     "Compensatory Off":   "#f59e0b",
     "Leave Without Pay":  "#6b7280",
 }
+
+def _leave_year_start(date_=None, company=None):
+    """Start of the year that leave is counted against.
+
+    Leave entitlement follows the company's FINANCIAL year, not the calendar
+    year. Every caller here used frappe.utils.get_year_start(), which returns
+    1 January - so on a company running April-March, "leave taken this year"
+    silently counted from the wrong date and was out by three months.
+
+    ERPNext already owns this: Fiscal Year, resolved per company and date.
+
+    Falls back to the calendar year when no Fiscal Year is defined. That is not
+    theoretical - dev.alvoraa.co and demo.alvoraa.co have none, and without the
+    fallback get_fiscal_year() raises and every leave screen breaks.
+    """
+    date_ = date_ or today()
+    try:
+        from erpnext.accounts.utils import get_fiscal_year
+
+        company = company or frappe.defaults.get_user_default("Company")
+        fy = get_fiscal_year(date_, company=company, as_dict=True)
+        if fy and fy.get("year_start_date"):
+            return fy["year_start_date"]
+    except Exception:
+        # No Fiscal Year for this date/company, or erpnext unavailable.
+        pass
+    return frappe.utils.get_year_start(date_)
+
 
 def _get_employee(user=None):
     user = user or frappe.session.user
@@ -97,6 +131,16 @@ def get_portal_context():
         "is_hr": is_hr,
         "is_manager": is_manager,
         "is_system_manager": is_system_manager,
+        # Is THIS site the control plane, or a tenant provisioned from one?
+        #
+        # The portal's "Tenant Admin" link used to appear for any System Manager,
+        # which on a tenant means its own administrator. They were shown a link
+        # to /alvoraa-admin, a page that then refused them - a door advertised to
+        # people who may not open it, pointing at tooling that is not theirs.
+        #
+        # Read from site config, so it costs nothing and cannot drift from the
+        # check /alvoraa-admin itself performs.
+        "is_control_plane": bool(frappe.conf.get("alvoraa_control_plane")),
         "manager_name": manager_name,
         "roles": roles,
     }
@@ -116,7 +160,7 @@ def get_employee_dashboard():
         return {"no_employee": True}
 
     td       = today()
-    yr_start = frappe.utils.get_year_start(td)
+    yr_start = _leave_year_start(td, emp.company)
     mo_start = get_first_day(td)
 
     # ── Leave balances ────────────────────────────────────────────────────
@@ -327,7 +371,11 @@ def get_manager_dashboard():
 
 
 @frappe.whitelist()
+@requires_feature("analytics")
 def get_hr_analytics():
+    # Role AND plan. The role says this person may see analytics; the feature
+    # says this tenant bought them. Hiding the nav item stopped neither a URL
+    # nor a fetch() from reaching here.
     roles = frappe.get_roles()
     if not ({"HR Manager", "HR User", "Administrator"} & set(roles)):
         frappe.throw("Access denied", frappe.PermissionError)
@@ -335,7 +383,7 @@ def get_hr_analytics():
     td       = today()
     mo_start = get_first_day(td)
     mo_end   = get_last_day(td)
-    yr_start = frappe.utils.get_year_start(td)
+    yr_start = _leave_year_start(td)
 
     # ── Headcount ─────────────────────────────────────────────────────────
     total_active = frappe.db.count("Employee", {"status": "Active"})
@@ -471,16 +519,77 @@ def get_hr_analytics():
     }
 
 
+def _leave_approver_for(doc):
+    """Who Frappe HR says may approve this - the employee's approver, or their
+    department's. Exactly the rule get_leave_approver() applies when it fills the
+    field in the first place, so the portal cannot disagree with the desk."""
+    if doc.leave_approver:
+        return doc.leave_approver
+    try:
+        from hrms.hr.doctype.leave_application.leave_application import get_leave_approver
+
+        return get_leave_approver(doc.employee)
+    except Exception:
+        return None
+
+
+def _can_action_leave(name, doc=None):
+    """May the CURRENT user approve or reject this application?
+
+    ONE rule, used by the button and by the action, because a button that offers
+    something the action then refuses is worse than no button - it turns a
+    configuration problem into what looks like a broken product.
+
+    The rule is Frappe HR's own: approving is the NAMED APPROVER's job. The
+    approver is a property of the employee or their department, not something a
+    role confers. This portal used to let any HR Manager approve anybody's leave;
+    that was ours, it is not how Frappe HR works, and it made the audit trail
+    meaningless - "approved by whoever held HR Manager" is not "approved by the
+    person responsible".
+
+    Frappe's own permission check still has to pass on top: being named approver
+    does not help if the document is out of reach for another reason.
+    """
+    try:
+        doc = doc or frappe.get_doc("Leave Application", name)
+    except Exception:
+        return False
+
+    if frappe.session.user != _leave_approver_for(doc):
+        return False
+
+    return bool(frappe.has_permission("Leave Application", "submit", doc=doc))
+
+
+def _mark_actionable(rows):
+    """Annotate each pending row with whether this user can action it."""
+    for r in rows:
+        r["can_action"] = _can_action_leave(r.get("name"))
+    return rows
+
+
 @frappe.whitelist()
 def action_leave(leave_id, action):
     """Approve or reject a leave application."""
     user = frappe.session.user
     doc  = frappe.get_doc("Leave Application", leave_id)
 
-    if doc.leave_approver != user:
-        roles = frappe.get_roles(user)
-        if not ({"HR Manager", "HR User", "Administrator"} & set(roles)):
-            frappe.throw("Not authorised to action this leave application.")
+    # The same rule the button uses. No role bypass: holding HR Manager does not
+    # make somebody the approver, and Frappe HR does not treat it as though it
+    # does.
+    if not _can_action_leave(None, doc=doc):
+        approver = _leave_approver_for(doc)
+        if not approver:
+            frappe.throw(
+                _("No leave approver is set for {0}. HR should name one on the "
+                  "employee record, or add a Leave Approver to their department, "
+                  "before this request can be actioned.").format(
+                      doc.employee_name or doc.employee),
+                frappe.PermissionError)
+        frappe.throw(
+            _("Only {0} can action this request - they are the approver for {1}.").format(
+                approver, doc.employee_name or doc.employee),
+            frappe.PermissionError)
 
     if action == "approve":
         doc.status = "Approved"
@@ -664,7 +773,7 @@ def get_employee_scorecard(employee_id):
           AND from_date <= %s AND to_date >= %s
         GROUP BY leave_type ORDER BY leave_type
     """, (employee_id, td, td), as_dict=True)
-    yr_start = frappe.utils.get_year_start(td)
+    yr_start = _leave_year_start(td)
     taken_rows = frappe.get_all(
         "Leave Application",
         filters={"employee": employee_id, "docstatus": 1, "status": "Approved",
@@ -694,6 +803,7 @@ def get_employee_scorecard(employee_id):
         order_by="creation desc", limit=10,
         ignore_permissions=True,
     )
+    _mark_actionable(pending_leaves)
 
     # Goals
     goals = []
@@ -929,7 +1039,7 @@ def get_employee_detail_for_manager(employee_id):
           AND from_date <= %s AND to_date >= %s
         GROUP BY leave_type ORDER BY leave_type
     """, (employee_id, td, td), as_dict=True)
-    yr_start = frappe.utils.get_year_start(td)
+    yr_start = _leave_year_start(td)
     taken_rows = frappe.get_all(
         "Leave Application",
         filters={"employee": employee_id, "docstatus": 1, "status": "Approved",
@@ -956,6 +1066,7 @@ def get_employee_detail_for_manager(employee_id):
         order_by="creation desc", limit=10,
         ignore_permissions=True,
     )
+    _mark_actionable(pending_leaves)
 
     # Recent approved/rejected leaves
     recent_leaves = frappe.get_all(
@@ -1005,6 +1116,19 @@ def get_hr_approver():
         if enabled:
             return enabled[0].name
     return None
+
+
+@frappe.whitelist()
+def get_switch_target():
+    """Where this user may switch to, and what to call the link.
+
+    The portal's api() helper prefixes every call with this module, so the
+    endpoint lives here while the logic - and the role sets it depends on - stay
+    in module_access.
+    """
+    from alvoraa_portal.module_access import get_switch_target as _target
+
+    return _target()
 
 
 @frappe.whitelist()
@@ -1068,6 +1192,32 @@ def get_available_features():
         )
     except Exception:
         features["advance_request"] = False
+
+    # ── Plan entitlement: what this tenant actually bought ─────────────────────
+    #
+    # Wave 6. subscription.has_feature() has existed since wave 1 and NOTHING
+    # called it, so the portal offered Goals, Analytics and the Vendor panel to
+    # every tenant regardless of plan. Hiding modules in the desk while the
+    # portal - the interface most staff actually use - ignored the plan entirely.
+    #
+    # Read straight from the registry, so a new sellable feature is gated the day
+    # it is added rather than needing a matching change here.
+    try:
+        from alvoraa_portal.subscription import FEATURES, has_feature
+
+        for key in FEATURES:
+            features[f"plan_{key}"] = bool(has_feature(key))
+    except Exception:
+        # Never black out the portal because entitlement could not be read. The
+        # desk gates are the boundary; this only decides what to draw.
+        frappe.log_error(title="hr_api: could not read plan entitlement",
+                         message=frappe.get_traceback())
+
+    # `goals` already meant "is the app installed", which wave 5 makes plan-aware
+    # anyway. AND them so a site that still has the app from an earlier plan does
+    # not keep showing the panel after a downgrade.
+    if "plan_goals" in features:
+        features["goals"] = bool(features.get("goals")) and features["plan_goals"]
 
     return features
 
@@ -1244,7 +1394,7 @@ def get_leave_summary(employee_id=None):
     if not emp:
         return {"no_employee": True}
     td = today()
-    yr_start = frappe.utils.get_year_start(td)
+    yr_start = _leave_year_start(td, emp.company)
 
     allocations = frappe.get_all(
         "Leave Allocation",
@@ -1297,7 +1447,16 @@ def get_leave_summary(employee_id=None):
         ignore_permissions=True,
     )
 
-    return {"balances": balances, "applications": applications, "employee": emp}
+    # Tell the caller WHY the list is empty. "No leave types allocated for this
+    # period" reads as a date problem, and sent a tester hunting through fiscal
+    # year settings when the real answer was that the employee had never been
+    # given a leave policy at all. Those are different problems with different
+    # fixes, so the UI needs to be able to tell them apart.
+    ever_allocated = bool(frappe.db.exists("Leave Allocation",
+                                           {"employee": emp.name, "docstatus": 1}))
+
+    return {"balances": balances, "applications": applications, "employee": emp,
+            "ever_allocated": ever_allocated}
 
 
 @frappe.whitelist()
@@ -1623,6 +1782,7 @@ def get_requests_history():
 # ── Goals & Performance ───────────────────────────────────────────────────────
 
 @frappe.whitelist()
+@requires_feature("goals")
 def get_goals_portal_data():
     """Return all goals for the employee (draft + submitted). Returns {available: False} if alvoraa_goals not installed."""
     if not frappe.db.exists("DocType", "Individual Goal"):
@@ -1707,6 +1867,7 @@ def get_goals_portal_data():
 
 
 @frappe.whitelist()
+@requires_feature("goals")
 def submit_goal_evidence_portal(goal_id, evidence_type="Manual Entry",
                                  value=None, extracted_date=None,
                                  evidence_file=None, raw_extracted_data=None,
@@ -1741,12 +1902,14 @@ def get_pending_approvals():
 
 
 @frappe.whitelist()
+@requires_feature("goals")
 def approve_goal_evidence(goal_name, evidence_idx):
     from alvoraa_goals.controllers.evidence import approve_evidence
     return approve_evidence(goal_name, evidence_idx)
 
 
 @frappe.whitelist()
+@requires_feature("goals")
 def reject_goal_evidence(goal_name, evidence_idx, reason=""):
     from alvoraa_goals.controllers.evidence import reject_evidence
     return reject_evidence(goal_name, evidence_idx, reason)
@@ -1784,6 +1947,7 @@ def _require_hr():
 
 
 @frappe.whitelist()
+@requires_feature("goals")
 def get_goal_detail(goal_id):
     """Full goal detail for drawer — accessible to employee (own) or manager (direct report) or HR."""
     if not frappe.db.exists("DocType", "Individual Goal"):
@@ -1840,6 +2004,7 @@ def get_goal_detail(goal_id):
 
 
 @frappe.whitelist()
+@requires_feature("goals")
 def get_team_goals():
     """Goals grouped by direct report — manager-facing."""
     if not frappe.db.exists("DocType", "Individual Goal"):
@@ -1879,6 +2044,7 @@ def get_team_goals():
 
 
 @frappe.whitelist()
+@requires_feature("goals")
 def update_goal_status(goal_id, new_status):
     """Update goal status. Employee (own) or manager (direct reports) or HR."""
     if new_status not in ("Active", "Completed", "Cancelled"):
@@ -1901,6 +2067,7 @@ def update_goal_status(goal_id, new_status):
 
 
 @frappe.whitelist()
+@requires_feature("goals")
 def add_goal_comment(goal_id, content):
     """Add a comment to a goal visible to employee, manager, and HR."""
     if not content or not content.strip():
@@ -1931,6 +2098,7 @@ def add_goal_comment(goal_id, content):
 
 
 @frappe.whitelist()
+@requires_feature("goals")
 def get_goal_comments(goal_id):
     """Get comments for a goal."""
     emp = _get_employee()
@@ -2064,6 +2232,7 @@ def delete_manager_note(note_id):
 
 
 @frappe.whitelist()
+@requires_feature("goals")
 def get_employee_goals_for_manager(employee_id):
     """Get all goals for a specific direct report or any employee accessible to HR."""
     if not frappe.db.exists("DocType", "Individual Goal"):

@@ -24,6 +24,11 @@ x-app: &app
   environment:
     - DB_HOST=${DB_HOST}
     - DB_PORT=${DB_PORT:-3306}
+    # Needed to PROVISION a tenant: creating a site means creating a database
+    # and a database user, which needs root. Without it tenant_api had nothing
+    # to pass to `bench new-site` and provisioning failed with "Access denied
+    # for user 'root'" from deep inside MySQL.
+    - DB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
     - REDIS_CACHE=${REDIS_CACHE}
     - REDIS_QUEUE=${REDIS_QUEUE}
     - BASE_DOMAIN=${BASE_DOMAIN}

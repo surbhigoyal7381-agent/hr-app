@@ -96,11 +96,55 @@ def after_insert_evidence(doc, method=None):
         recalculate_progress(doc.parent)
 
 
+def can_validate_evidence(goal_name, goal=None):
+    """May the current user approve or reject evidence on this goal?
+
+    Validating somebody's evidence is the MANAGER's job - the person the goal's
+    owner reports to - or HR's. It used to be anyone who could write the goal,
+    which is far looser: a colleague with write access could sign off work they
+    had no part in supervising, and the audit trail would carry their name as
+    though they had.
+
+    Same shape as the leave approver rule: a named responsibility, resolved from
+    the employee record, not something a permission happens to imply.
+    """
+    try:
+        goal = goal or frappe.get_doc("Individual Goal", goal_name)
+    except Exception:
+        return False
+
+    if not frappe.has_permission("Individual Goal", "write", goal.name):
+        return False
+
+    roles = set(frappe.get_roles(frappe.session.user))
+    if {"HR Manager", "HR User", "Administrator"} & roles:
+        return True
+
+    manager = frappe.db.get_value("Employee", goal.employee, "reports_to")
+    mine = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")
+    return bool(manager and mine and manager == mine)
+
+
+def _assert_can_validate(goal_name, goal=None):
+    if can_validate_evidence(goal_name, goal=goal):
+        return
+    owner = frappe.db.get_value("Individual Goal", goal_name, "employee")
+    manager = frappe.db.get_value("Employee", owner, "reports_to") if owner else None
+    if manager:
+        who = frappe.db.get_value("Employee", manager, "employee_name") or manager
+        frappe.throw(
+            _("Only {0} or HR can validate evidence on this goal.").format(who),
+            frappe.PermissionError)
+    frappe.throw(
+        _("No manager is set for this goal's owner, so only HR can validate its "
+          "evidence. HR can set 'Reports To' on the employee record."),
+        frappe.PermissionError)
+
+
 @frappe.whitelist()
 def approve_evidence(goal_name, evidence_idx):
     goal = frappe.get_doc("Individual Goal", goal_name)
-    if not frappe.has_permission("Individual Goal", "write", goal_name):
-        frappe.throw(_("Not permitted"), frappe.PermissionError)
+    _assert_can_validate(goal_name, goal=goal)
     evidence = goal.evidence_items[int(evidence_idx)]
     evidence.validation_status = "Approved"
     evidence.approved_by = frappe.session.user
@@ -117,8 +161,7 @@ def approve_evidence(goal_name, evidence_idx):
 @frappe.whitelist()
 def reject_evidence(goal_name, evidence_idx, reason):
     goal = frappe.get_doc("Individual Goal", goal_name)
-    if not frappe.has_permission("Individual Goal", "write", goal_name):
-        frappe.throw(_("Not permitted"), frappe.PermissionError)
+    _assert_can_validate(goal_name, goal=goal)
     evidence = goal.evidence_items[int(evidence_idx)]
     evidence.validation_status = "Rejected"
     evidence.rejection_reason = reason

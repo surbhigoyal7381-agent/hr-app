@@ -2037,6 +2037,14 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
       <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
     </button>
     <div class="sidebar-footer">
+        <!-- Switch to the desk. Label and target depend on the role, and it stays
+             hidden for employees, who have no business there. -->
+        <div id="nav-switch-link" style="display:none;margin-bottom:8px">
+          <a href="#" id="nav-switch-a" class="nav-item" style="text-decoration:none;color:inherit">
+            <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg></span>
+            <span id="nav-switch-label">Switch</span>
+          </a>
+        </div>
       <div id="nav-admin-link" style="display:none;margin-bottom:8px">
         <a href="/alvoraa-admin" class="nav-item" style="text-decoration:none;color:inherit">
           <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span> Tenant Admin
@@ -2424,12 +2432,12 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
 
         <!-- KPI grid -->
         <div class="kpi-grid">
-          <div class="kpi-card"><div class="kpi-icon">🧑‍💼</div><div class="kpi-val" id="kpi-active" style="color:var(--text)">—</div><div class="kpi-lbl">Active Employees</div></div>
-          <div class="kpi-card"><div class="kpi-icon">🆕</div><div class="kpi-val" id="kpi-joiners" style="color:var(--green)">—</div><div class="kpi-lbl">New Joiners (Month)</div></div>
-          <div class="kpi-card"><div class="kpi-icon">📅</div><div class="kpi-val" id="kpi-att-rate" style="color:var(--primary)">—%</div><div class="kpi-lbl">Attendance Rate</div></div>
-          <div class="kpi-card"><div class="kpi-icon">📋</div><div class="kpi-val" id="kpi-pend-leaves" style="color:var(--amber)">—</div><div class="kpi-lbl">Pending Approvals</div></div>
-          <div class="kpi-card"><div class="kpi-icon">🎓</div><div class="kpi-val" id="kpi-confirmations" style="color:var(--purple)">—</div><div class="kpi-lbl">Confirmations Due</div></div>
-          <div class="kpi-card"><div class="kpi-icon">🌴</div><div class="kpi-val" id="kpi-leave-util" style="color:var(--red)">—%</div><div class="kpi-lbl">Leave Utilisation</div></div>
+          <div class="kpi-card" onclick="window.open('/app/employee?status=Active','_blank')" style="cursor:pointer" title="View active employees in Frappe HR"><div class="kpi-icon">🧑‍💼</div><div class="kpi-val" id="kpi-active" style="color:var(--text)">—</div><div class="kpi-lbl">Active Employees</div></div>
+          <div class="kpi-card" onclick="window.open('/app/employee','_blank')" style="cursor:pointer" title="View employees in Frappe HR"><div class="kpi-icon">🆕</div><div class="kpi-val" id="kpi-joiners" style="color:var(--green)">—</div><div class="kpi-lbl">New Joiners (Month)</div></div>
+          <div class="kpi-card" onclick="window.open('/app/attendance','_blank')" style="cursor:pointer" title="View attendance records in Frappe HR"><div class="kpi-icon">📅</div><div class="kpi-val" id="kpi-att-rate" style="color:var(--primary)">—%</div><div class="kpi-lbl">Attendance Rate</div></div>
+          <div class="kpi-card" onclick="window.open('/app/leave-application?status=Open','_blank')" style="cursor:pointer" title="View pending leave applications in Frappe HR"><div class="kpi-icon">📋</div><div class="kpi-val" id="kpi-pend-leaves" style="color:var(--amber)">—</div><div class="kpi-lbl">Pending Approvals</div></div>
+          <div class="kpi-card" onclick="window.open('/app/employee','_blank')" style="cursor:pointer" title="View employees pending confirmation in Frappe HR"><div class="kpi-icon">🎓</div><div class="kpi-val" id="kpi-confirmations" style="color:var(--purple)">—</div><div class="kpi-lbl">Confirmations Due</div></div>
+          <div class="kpi-card" onclick="window.open('/app/leave-allocation','_blank')" style="cursor:pointer" title="View leave allocations in Frappe HR"><div class="kpi-icon">🌴</div><div class="kpi-val" id="kpi-leave-util" style="color:var(--red)">—%</div><div class="kpi-lbl">Leave Utilisation</div></div>
         </div>
 
         <!-- Dept + Gender -->
@@ -2914,11 +2922,26 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="margin-right:4px;vertical-align:-1px"><path d="M3 5h18l-7 8v5l-4 2v-7z"/></svg>Filters
                 <span id="cal-filter-badge" hidden style="background:var(--primary);color:#fff;border-radius:10px;padding:0 5px;font-size:10px;margin-left:4px;font-weight:700"></span>
               </button>
+              <button class="btn btn-outline btn-sm" id="cal-export-btn" onclick="calExportCsv()" style="display:none;white-space:nowrap">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="margin-right:4px;vertical-align:-1px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV
+              </button>
+              <button class="btn btn-sm" id="cal-signoff-btn" onclick="calOpenSignoff()" style="display:none;white-space:nowrap;background:var(--green);color:#fff;border:1px solid var(--green)">
+                ✓ Sign Off
+              </button>
             </div>
           </div>
 
           <!-- Cycle duration + stage tiles (populated by calLoad) -->
           <div class="cal-cycle-info" id="cal-cycle-info" style="display:none"></div>
+          <!-- Sign-off banner (shown after sign-off) -->
+          <div id="cal-signoff-banner" style="display:none;background:rgba(76,175,80,.1);border:1px solid var(--green);border-radius:8px;padding:12px 16px;margin-bottom:12px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="color:var(--green);font-size:16px">✓</span>
+              <strong style="font-size:13px">Calibration Signed Off</strong>
+              <span id="cal-signoff-meta" style="color:var(--text3);font-size:12px;margin-left:4px"></span>
+            </div>
+            <div id="cal-signoff-summary" style="margin-top:6px;font-size:13px;color:var(--text2)"></div>
+          </div>
 
           <!-- Filters -->
           <div class="cal-filters" id="cal-filters" style="display:none">
@@ -2950,6 +2973,19 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
           <div id="cal-body">
             <div class="empty-state"><div class="empty-state-text">Select an appraisal cycle to view the calibration matrix.</div></div>
           </div>
+          <!-- Sign-off modal -->
+          <div id="cal-signoff-modal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.45);align-items:center;justify-content:center">
+            <div style="background:var(--card);border-radius:12px;padding:28px;max-width:480px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+              <div style="font-size:16px;font-weight:700;margin-bottom:4px">Sign Off Calibration</div>
+              <div id="cal-signoff-cycle-lbl" style="font-size:12px;color:var(--text3);margin-bottom:16px"></div>
+              <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Summary / Notes</label>
+              <textarea id="cal-signoff-text" rows="5" class="gp-input" style="width:100%;resize:vertical" placeholder="Summarise calibration outcomes, key decisions, and any notes for the record…"></textarea>
+              <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+                <button class="btn btn-outline btn-sm" onclick="calCloseSignoff()">Cancel</button>
+                <button class="btn btn-sm" onclick="calSubmitSignoff()" style="background:var(--green);color:#fff;border:1px solid var(--green)">Confirm Sign Off</button>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- TAB: Distribution / Bell Curve (HR only) -->
@@ -2965,6 +3001,9 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
                       style="display:none;white-space:nowrap" aria-expanded="false">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="margin-right:4px;vertical-align:-1px"><path d="M3 5h18l-7 8v5l-4 2v-7z"/></svg>Filters
                 <span id="pd-filter-badge" hidden style="background:var(--primary);color:#fff;border-radius:10px;padding:0 5px;font-size:10px;margin-left:4px;font-weight:700"></span>
+              </button>
+              <button class="btn btn-outline btn-sm" id="pd-export-btn" onclick="pdExportCSV()" style="display:none;white-space:nowrap">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="margin-right:4px;vertical-align:-1px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV
               </button>
             </div>
           </div>
@@ -3050,6 +3089,17 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
             <span style="font-size:13.5px">Auto-approve all evidence submissions (no manager approval required)</span>
           </label>
           <div style="font-size:11.5px;color:var(--text3);margin-top:8px">When off, every progress entry is sent to the employee's manager for approval before it counts towards the goal or KPI.</div>
+        </div>
+
+        <!-- Key Result Areas -->
+        <div class="pf-card">
+          <div style="font-weight:600;font-size:15px;margin-bottom:4px">Key Result Areas</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:16px">KRAs are the areas of responsibility that belong to a role. They come from the employee's appraisal template, so every objective can be traced back to what the job is for.</div>
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+            <input type="checkbox" id="org-kra-mandatory" style="width:16px;height:16px;accent-color:var(--primary)" onchange="orgSaveKraMandatory(this.checked)">
+            <span style="font-size:13.5px">Every objective must be linked to a Key Result Area</span>
+          </label>
+          <div style="font-size:11.5px;color:var(--text3);margin-top:8px">When on, an objective cannot be activated without a KRA. Drafts are still allowed, so nobody is blocked while HR assigns an appraisal template.</div>
         </div>
       </div>
 
@@ -3288,6 +3338,13 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
           </div>
           <div class="gp-row2">
             <div class="gp-field">
+              <div class="gp-label">Key Result Area <span id="gp-kra-req" style="color:var(--red);display:none">*</span></div>
+              <select class="gp-input" id="gp-c-kra">
+                <option value="">— None —</option>
+              </select>
+              <div id="gp-kra-hint" style="font-size:11.5px;color:var(--text3);margin-top:6px;display:none"></div>
+            </div>
+            <div class="gp-field">
               <div class="gp-label">Goal Type</div>
               <select class="gp-input" id="gp-c-goal-type">
                 <option value="Business">Business</option>
@@ -3481,6 +3538,38 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
     </div>
 
     <!-- ── Check-In Modal ────────────────────────────── -->
+    <!-- No KRAs assigned: a blocked employee must never be left without a way out -->
+    <div class="gp-backdrop" id="gp-nokra-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">You need a Key Result Area first</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('gp-nokra-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div style="font-size:13.5px;line-height:1.6;color:var(--text2)">
+            Your organisation requires every objective to sit under a
+            <strong>Key Result Area</strong> &mdash; the part of your role it contributes to.
+            <br><br>
+            No Key Result Areas have been assigned to you yet. These come from your
+            appraisal template, which HR sets up for your role, so this is not
+            something you can fix yourself.
+            <br><br>
+            You can still save your objective as a <strong>draft</strong> and attach a
+            Key Result Area once HR has set them up.
+          </div>
+          <div class="gp-field" style="margin-top:16px">
+            <div class="gp-label">Anything to add for HR? (optional)</div>
+            <textarea class="gp-input" id="gp-nokra-note" rows="2"
+              placeholder="e.g. I have just moved to a new role"></textarea>
+          </div>
+        </div>
+        <div class="gp-modal-ftr">
+          <button class="btn btn-outline" onclick="pfCloseModal('gp-nokra-modal')">Continue as draft</button>
+          <button class="btn btn-primary" id="gp-nokra-report" onclick="gpReportMissingKra()">Report to HR</button>
+        </div>
+      </div>
+    </div>
+
     <div class="gp-backdrop" id="gp-checkin-modal">
       <div class="gp-modal">
         <div class="gp-modal-hdr">
@@ -4837,10 +4926,16 @@ function loadLeaves() {
   }, function() { toast("Failed to load leave data", "err"); });
 }
 
-function _populateLeaveTypeSelect(balances) {
+function _populateLeaveTypeSelect(balances, everAllocated) {
   var sel = document.getElementById("la-leave-type");
   if (!balances || !balances.length) {
-    sel.innerHTML = '<option value="">No leave types allocated for this period</option>';
+    // Two different problems needing two different fixes. Saying "for this
+    // period" to someone with NO allocation at all points them at dates, which
+    // is the wrong place to look - it cost a tester a trip through the fiscal
+    // year settings.
+    sel.innerHTML = everAllocated
+      ? '<option value="">No leave allocation covers today - it may have expired</option>'
+      : '<option value="">No leave has been allocated to you - contact HR</option>';
     return;
   }
   sel.innerHTML = '<option value="">Select leave type…</option>' +
@@ -4882,11 +4977,11 @@ function openLeaveModal() {
   }
 
   if (_leaveSummaryCache) {
-    _populateLeaveTypeSelect(_leaveSummaryCache.balances || []);
+    _populateLeaveTypeSelect(_leaveSummaryCache.balances || [], _leaveSummaryCache.ever_allocated);
   } else {
     api("get_leave_summary", {}, function(data) {
       _leaveSummaryCache = data;
-      _populateLeaveTypeSelect(data.balances || []);
+      _populateLeaveTypeSelect(data.balances || [], data.ever_allocated);
     }, function() {
       sel.innerHTML = '<option value="">Could not load leave types</option>';
     });
@@ -4947,7 +5042,7 @@ function laSelectEmployee(id, name, dept) {
   var leaveTypeSel = document.getElementById("la-leave-type");
   leaveTypeSel.innerHTML = '<option value="">Loading…</option>';
   api("get_leave_summary", {employee_id: id}, function(data) {
-    _populateLeaveTypeSelect(data.balances || []);
+    _populateLeaveTypeSelect(data.balances || [], data.ever_allocated);
     laPreview();          // balance differs per employee
   }, function() {
     leaveTypeSel.innerHTML = '<option value="">Could not load leave types</option>';
@@ -5299,7 +5394,12 @@ function loadPortalContext() {
     const navAna  = document.getElementById("nav-analytics");
     if (mgmtHdr) mgmtHdr.style.display = showMgmt ? "block" : "none";
     if (navTeam) navTeam.style.display  = ctx.is_manager ? "flex" : "none";
-    if (navAna)  navAna.style.display   = ctx.is_hr      ? "flex" : "none";
+    // Role AND plan. Being HR says you may see Analytics; the plan says
+    // whether this tenant bought it. Until wave 6 only the first was
+    // checked, so every tenant got the panel.
+    var _f = window._features || {};
+    var anaSold = _f.plan_analytics !== false;   // absent = unknown, show
+    if (navAna)  navAna.style.display   = (ctx.is_hr && anaSold) ? "flex" : "none";
     const navOrgSettings = document.getElementById("nav-org-settings");
     if (navOrgSettings) navOrgSettings.style.display = ctx.is_hr ? "flex" : "none";
     sbUpdateScrollBtns();
@@ -5316,7 +5416,25 @@ function loadPortalContext() {
 
     // Tenant Admin (System Manager) — show shortcut to /alvoraa-admin
     const navAdminLink = document.getElementById("nav-admin-link");
-    if (navAdminLink && ctx.is_system_manager) navAdminLink.style.display = "block";
+
+      // Where may this user switch to? The server decides from their roles;
+      // employees get null and the control stays hidden.
+      api("get_switch_target", {}, function(t) {
+        if (!t || !t.url) return;
+        var box = document.getElementById("nav-switch-link");
+        var a = document.getElementById("nav-switch-a");
+        var lab = document.getElementById("nav-switch-label");
+        if (!box || !a || !lab) return;
+        a.href = t.url;
+        lab.textContent = t.label;
+        box.style.display = "block";
+      });
+    // Control plane only. A tenant's own System Manager is not an Alvoraa
+    // operator: /alvoraa-admin refuses them, so showing the link only offers
+    // a door that does not open. Absent flag means "not the control plane".
+    if (navAdminLink && ctx.is_system_manager && ctx.is_control_plane) {
+      navAdminLink.style.display = "block";
+    }
   });
 }
 
@@ -5348,6 +5466,9 @@ function loadAvailableFeatures() {
     // Performance (PMS) — visible to all employees when alvoraa_goals is installed
     const navGoals = document.getElementById("nav-goals");
     const qaGoals  = document.getElementById("qa-goals");
+    // f.goals now means "the app is installed AND the plan includes it" -
+    // the server ANDs them, so a site that kept the app after a
+    // downgrade stops showing the panel.
     if (navGoals) navGoals.style.display = f.goals ? "flex" : "none";
     // Load home goals sections once feature flag is known
     if (f.goals) loadHomeGoals();
@@ -5873,7 +5994,7 @@ function renderEmpDrawer(d, color) {
     ? '<div class="empty-state"><div class="empty-state-text">No pending requests.</div></div>'
     : d.pending_leaves.map(function(l) {
         const days = parseFloat(l.total_leave_days || 0);
-        return '<div class="appr-card" id="ed-appr-' + l.name + '"><div class="appr-info"><div><div class="appr-name">' + esc(l.leave_type) + '</div><div class="appr-detail">' + fmtDate(l.from_date) + ' – ' + fmtDate(l.to_date) + ' · <strong>' + days + ' day' + (days !== 1 ? 's' : '') + '</strong>' + (l.description ? '<br>' + esc(l.description) : '') + '</div></div></div><div class="appr-actions"><button class="btn btn-green btn-sm" onclick="edActionLeave(\'' + l.name + '\',\'approve\')">✓ Approve</button><button class="btn btn-danger btn-sm" onclick="edActionLeave(\'' + l.name + '\',\'reject\')">✕ Reject</button></div></div>';
+        return '<div class="appr-card" id="ed-appr-' + l.name + '"><div class="appr-info"><div><div class="appr-name">' + esc(l.leave_type) + '</div><div class="appr-detail">' + fmtDate(l.from_date) + ' – ' + fmtDate(l.to_date) + ' · <strong>' + days + ' day' + (days !== 1 ? 's' : '') + '</strong>' + (l.description ? '<br>' + esc(l.description) : '') + '</div></div></div>' + (l.can_action ? '<div class="appr-actions"><button class="btn btn-green btn-sm" onclick="edActionLeave(\'' + l.name + '\',\'approve\')">✓ Approve</button><button class="btn btn-danger btn-sm" onclick="edActionLeave(\'' + l.name + '\',\'reject\')">✕ Reject</button></div>' : '<div class="appr-actions"><span style="font-size:11.5px;color:var(--text3)">Awaiting approver</span></div>') + '</div>';
       }).join("");
 
   // Recent leave history
@@ -7369,6 +7490,70 @@ function deleteDrawerNote(noteId, empId) {
   // Objectives & KPIs tree (tvLoad/tvRender). gpOpenDetail below is still
   // used from there, and the create/edit modal is shared.
 
+  // -- Key Result Areas ------------------------------
+  //
+  // KRAs belong to the ROLE, not the person: they come from the employee's
+  // appraisal template. So "no KRAs" does not mean the employee did anything
+  // wrong - it means HR has not assigned them a template yet, and the only
+  // useful thing to do is say so and offer to tell HR.
+  window._gpKraState = { mandatory: false, available: true };
+
+  window.gpLoadKras = function() {
+    var sel  = document.getElementById("gp-c-kra");
+    var req  = document.getElementById("gp-kra-req");
+    var hint = document.getElementById("gp-kra-hint");
+    if (!sel) return;
+    pf("kra_api.get_my_kras", {}).then(function(r) {
+      window._gpKraState = { mandatory: !!r.mandatory, available: !!r.available };
+      sel.innerHTML = '<option value="">- None -</option>';
+      (r.kras || []).forEach(function(k) {
+        var o = document.createElement("option");
+        o.value = k.kra;
+        o.textContent = k.title + (k.weightage ? "  (" + k.weightage + "%)" : "");
+        sel.appendChild(o);
+      });
+      if (req) req.style.display = r.mandatory ? "inline" : "none";
+      if (hint) {
+        if (!r.available) {
+          hint.textContent = "No Key Result Areas have been assigned to you yet.";
+          hint.style.display = "block";
+        } else if (r.total_weightage && r.total_weightage !== 100) {
+          // Weightages are meant to sum to 100. Saying so is more useful than
+          // silently accepting a template nobody has finished.
+          hint.textContent = "Weightages total " + r.total_weightage + "%, not 100%. HR may still be setting these up.";
+          hint.style.display = "block";
+        } else { hint.style.display = "none"; }
+      }
+      // Only interrupt when it actually blocks them.
+      if (r.mandatory && !r.available) gpShowNoKraDialog();
+    }).catch(function() {
+      // Never block goal creation because this lookup failed.
+      if (req)  req.style.display  = "none";
+      if (hint) hint.style.display = "none";
+    });
+  };
+
+  window.gpShowNoKraDialog = function() {
+    pfOpenModal("gp-nokra-modal");
+  };
+  window.gpCloseNoKraDialog = function() {
+    pfCloseModal("gp-nokra-modal");
+  };
+
+  window.gpReportMissingKra = function() {
+    var btn = document.getElementById("gp-nokra-report");
+    var msg = (document.getElementById("gp-nokra-note") || {}).value || "";
+    if (btn) { btn.disabled = true; btn.textContent = "Sending..."; }
+    pf("kra_api.report_missing_kra", { message: msg }).then(function(r) {
+      pfCloseModal("gp-nokra-modal");
+      toast("HR has been notified (" + (r.notified || 0) + " recipient" + ((r.notified === 1) ? "" : "s") + ").", "ok");
+    }).catch(function(e) {
+      toast(e.message || "Could not notify HR.", "err");
+    }).finally(function() {
+      if (btn) { btn.disabled = false; btn.textContent = "Report to HR"; }
+    });
+  };
+
   // ── Create Goal Modal ──────────────────────────────
   window.gpOpenCreateGoal = function() {
     var sel = document.getElementById("gp-sel-cascade");
@@ -7380,6 +7565,7 @@ function deleteDrawerNote(noteId, empId) {
     if (srch) { srch.value = ""; srch._lastSelected = ""; }
     var cycleEl = document.getElementById("gp-c-cycle"); if (cycleEl) cycleEl.value = "";
     var gtSel = document.getElementById("gp-c-goal-type"); if (gtSel) gtSel.value = "Business";
+    gpLoadKras();
     var cvSel = document.getElementById("gp-c-company-value"); if (cvSel) cvSel.value = "";
     var stretch = document.getElementById("gp-c-stretch"); if (stretch) stretch.checked = false;
     var hint = document.getElementById("gp-c-unit-hint"); if (hint) hint.textContent = "";
@@ -7671,6 +7857,7 @@ function deleteDrawerNote(noteId, empId) {
           start_date: start, end_date: end, parent_goal: parent,
           employee: pfGoalEmployee(),
           goal_type: goalType, company_value: companyValue, is_extra_initiative: isStretch,
+          kra: ((document.getElementById("gp-c-kra") || {}).value || "") || undefined,
           appraisal_cycle: ((document.getElementById("gp-c-cycle") || {}).value || "") || undefined,
         });
 
@@ -8585,6 +8772,8 @@ function deleteDrawerNote(noteId, empId) {
     var hasOpts = (opts.departments && opts.departments.length) || (opts.managers && opts.managers.length);
     var fBtn = document.getElementById("pd-filter-btn");
     if (fBtn) fBtn.style.display = hasOpts ? "" : "none";
+    var pdExpBtn = document.getElementById("pd-export-btn");
+    if (pdExpBtn) pdExpBtn.style.display = "";
     var fPanel = document.getElementById("pd-filters");
     if (fPanel) fPanel.style.display = "none";
   }
@@ -9001,8 +9190,9 @@ function deleteDrawerNote(noteId, empId) {
 
 /* ── Calibration Matrix ─────────────────────────────── */
 (function() {
-  var _calData   = null;  /* raw API response */
-  var _calCycle  = "";
+  var _calData          = null;  /* raw API response */
+  var _calCycle         = "";
+  var _calFilteredRows  = null;  /* last rendered row set — used by CSV export */
 
   /* avatar colour palette */
   var _calPalette = ["#1976d2","#388e3c","#7b1fa2","#e65100","#00838f","#5c6bc0","#c62828","#558b2f"];
@@ -9134,6 +9324,10 @@ function deleteDrawerNote(noteId, empId) {
     var hasOpts = (opts.departments && opts.departments.length) || (opts.managers && opts.managers.length);
     var fBtn = document.getElementById("cal-filter-btn");
     if (fBtn) { fBtn.style.display = hasOpts ? "" : "none"; fBtn.setAttribute("aria-expanded", "false"); }
+    var expBtn = document.getElementById("cal-export-btn");
+    if (expBtn) expBtn.style.display = "";
+    var sofBtn = document.getElementById("cal-signoff-btn");
+    if (sofBtn) sofBtn.style.display = "";
   }
 
   function _calGetSelectedValues(id) {
@@ -9170,6 +9364,7 @@ function deleteDrawerNote(noteId, empId) {
     var fBadge = document.getElementById("cal-filter-badge");
     if (fBadge) { fBadge.hidden = !activeCount; fBadge.textContent = activeCount; }
 
+    _calFilteredRows = rows;
     _calRender(rows);
   };
 
@@ -9234,10 +9429,15 @@ function deleteDrawerNote(noteId, empId) {
       var rId  = "cal-more-rest-" + cellId;
       var togFn = "var m=document.getElementById('" + mId + "'),r=document.getElementById('" + rId + "');" +
         "if(r){r.style.display='';m.style.display='none';}";
+      var collFn = "var m=document.getElementById('" + mId + "'),r=document.getElementById('" + rId + "');" +
+        "m.style.display='';r.style.display='none';";
       html += "<div id=\"" + mId + "\" class=\"cal-more-toggle\" style=\"color:" + dimClr + "\" onclick=\"" +
         togFn + "\">&hellip;&thinsp;" + rest.length + " more</div>" +
         "<div id=\"" + rId + "\" style=\"display:none\">" +
           rest.map(function(r) { return _calEmpRow(r, dark); }).join("") +
+          "<div style=\"text-align:center;margin-top:4px\">" +
+            "<span style=\"cursor:pointer;font-size:11px;color:" + dimClr + ";opacity:.7\" onclick=\"" + collFn + "\">↑ show less</span>" +
+          "</div>" +
         "</div>";
     }
     return html;
@@ -9367,6 +9567,92 @@ function deleteDrawerNote(noteId, empId) {
         "</div>" +
       "</div>");
   }
+
+  /* ── Calibration CSV export ─────────────────────────────────────── */
+  window.calExportCsv = function() {
+    var rows = _calFilteredRows || (_calData && _calData.rows) || [];
+    if (!rows.length) { frappe.msgprint("No data to export."); return; }
+    var oScale = (_calData || {}).overall_scale;
+    var pScale = (_calData || {}).potential_scale;
+    var hdrs = ["Name", "Employee ID", "Department", "Designation", "Overall Rating", "Overall Label", "Potential Rating", "Potential Label", "Manager"];
+    var lines = [hdrs.join(",")];
+    rows.forEach(function(r) {
+      var oItem = oScale ? (oScale.items || []).find(function(it) { return String(it.value) === String(r.overall_rating); }) : null;
+      var pItem = pScale ? (pScale.items || []).find(function(it) { return String(it.value) === String(r.potential_rating); }) : null;
+      var vals = [
+        r.employee_name, r.employee, r.department, r.designation,
+        r.overall_rating, oItem ? oItem.label : "",
+        r.potential_rating || "", pItem ? pItem.label : "",
+        r.reports_to_name || ""
+      ].map(function(v) {
+        var s = String(v == null ? "" : v);
+        return (s.indexOf(",") !== -1 || s.indexOf('"') !== -1) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      });
+      lines.push(vals.join(","));
+    });
+    var blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = "calibration_" + (_calCycle || "export") + ".csv";
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+  /* ── Sign-off modal ─────────────────────────────────────────────── */
+  window.calOpenSignoff = function() {
+    var modal = document.getElementById("cal-signoff-modal");
+    var lbl   = document.getElementById("cal-signoff-cycle-lbl");
+    var txt   = document.getElementById("cal-signoff-text");
+    if (!modal) return;
+    if (lbl && _calData && _calData.cycle_info) lbl.textContent = _calData.cycle_info.cycle_name || _calCycle;
+    if (txt) txt.value = "";
+    modal.style.display = "flex";
+  };
+
+  window.calCloseSignoff = function() {
+    var modal = document.getElementById("cal-signoff-modal");
+    if (modal) modal.style.display = "none";
+  };
+
+  window.calSubmitSignoff = function() {
+    var txt = document.getElementById("cal-signoff-text");
+    var summary = txt ? txt.value.trim() : "";
+    if (!summary) { frappe.msgprint("Please add a summary before signing off."); return; }
+    if (!_calCycle) { frappe.msgprint("No cycle selected."); return; }
+    pf("save_calibration_signoff", { cycle: _calCycle, summary: summary }).then(function(d) {
+      calCloseSignoff();
+      _calShowSignoffBanner(d);
+    }).catch(function(e) {
+      frappe.msgprint("Failed to save sign-off: " + (e.message || e));
+    });
+  };
+
+  function _calShowSignoffBanner(d) {
+    if (!d) return;
+    var banner  = document.getElementById("cal-signoff-banner");
+    var meta    = document.getElementById("cal-signoff-meta");
+    var summary = document.getElementById("cal-signoff-summary");
+    if (!banner) return;
+    if (meta) meta.textContent = "by " + (d.signed_by || "") + " on " + (d.signed_at ? d.signed_at.slice(0, 10) : "");
+    if (summary) summary.textContent = d.summary || "";
+    banner.style.display = "";
+  }
+
+  /* Load existing sign-off when a cycle is selected */
+  var _calOrigLoad = window.calLoad;
+  window.calLoad = function() {
+    if (_calOrigLoad) _calOrigLoad();
+    var cycle = (document.getElementById("cal-cycle-sel") || {}).value;
+    if (!cycle) return;
+    pf("get_calibration_signoff", { cycle: cycle }).then(function(d) {
+      if (d && d.summary) {
+        _calShowSignoffBanner(d);
+      } else {
+        var banner = document.getElementById("cal-signoff-banner");
+        if (banner) banner.style.display = "none";
+      }
+    }).catch(function() {});
+  };
+
 })();
 
 /* ── KPI helpers shared with the tree view ────────── */
@@ -9476,7 +9762,11 @@ function deleteDrawerNote(noteId, empId) {
         evHtml = "<span class=\"upd-ev-missing\">⚠ No evidence attached</span>";
       }
       var approvalHtml = "";
-      if (status === "pending" && _pfIsManager) {
+      // r.can_action, not _pfIsManager: being A manager is not being THIS
+      // person's manager. The server knows who the goal owner reports to; the
+      // browser does not, and drawing the buttons for every manager offered an
+      // action the backend then refused.
+      if (status === "pending" && r.can_action) {
         approvalHtml = "<div class=\"upd-approve-row\">" +
           "<input class=\"upd-approve-comment\" placeholder=\"Comment (optional)\" id=\"apc-" + gpEsc(r.name) + "\">" +
           "<button class=\"upd-btn-approve\" onclick=\"approveUpdate('" + gpEsc(doctype) + "','" + gpEsc(docname) + "','" + gpEsc(r.name) + "','Approved')\">Approve</button>" +
@@ -12494,7 +12784,7 @@ function deleteDrawerNote(noteId, empId) {
 
   window.prRemoveGoalFromReview = function(goalId) {
     if (!confirm("Delete this objective? This cannot be undone.")) return;
-    pf("delete_goal", {goal_id: goalId})
+    window.gpFetch("alvoraa_portal.goals_api.delete_goal", {goal_id: goalId})
       .then(function() { prRefreshCurrentPage(); })
       .catch(function(e) { alert(e.message || "Could not delete objective."); });
   };
@@ -13337,7 +13627,8 @@ function deleteDrawerNote(noteId, empId) {
       pf("get_company_values", {}),
       pf("get_leadership_principles", {}),
       pf("get_rating_scales", {}),
-      pf("get_org_setting", {key: "auto_approve_evidence"}),
+      window.gpFetch("alvoraa_portal.hr_api.get_org_setting", {key: "auto_approve_evidence"}),
+      window.gpFetch("alvoraa_portal.hr_api.get_org_setting", {key: "kra_link_mandatory"}),
     ]).then(function(res) {
       orgRenderValues(res[0] || []);
       orgRenderPrinciples(res[1] || []);
@@ -13345,13 +13636,21 @@ function deleteDrawerNote(noteId, empId) {
       _apsRatingScales = res[2] || [];
       var chk = document.getElementById("org-auto-approve");
       if (chk) chk.checked = (res[3] === "1" || res[3] === 1 || res[3] === true);
+      var kchk = document.getElementById("org-kra-mandatory");
+      if (kchk) kchk.checked = (res[4] === "1" || res[4] === 1 || res[4] === true);
     }).catch(function(e) {
       pfSetHtml("org-values-body", "<div class=\"callout callout-warn\">Failed to load: " + gpEsc(e.message) + "</div>");
     });
   };
 
+  window.orgSaveKraMandatory = function(enabled) {
+    window.gpFetch("alvoraa_portal.hr_api.set_org_setting", {key: "kra_link_mandatory", value: enabled ? "1" : "0"})
+      .then(function() { toast(enabled ? "KRA linking is now required" : "KRA linking is now optional", "ok"); })
+      .catch(function(e) { toast("Failed to save setting: " + e.message, "err"); });
+  };
+
   window.orgSaveAutoApprove = function(enabled) {
-    pf("set_org_setting", {key: "auto_approve_evidence", value: enabled ? "1" : "0"})
+    window.gpFetch("alvoraa_portal.hr_api.set_org_setting", {key: "auto_approve_evidence", value: enabled ? "1" : "0"})
       .catch(function(e) { toast("Failed to save setting: " + e.message, "err"); });
   };
 

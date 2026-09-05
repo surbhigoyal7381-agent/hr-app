@@ -95,3 +95,72 @@ class TestLeaveOnBehalfPermissions(FrappeTestCase):
 		)
 		other_name = frappe.db.get_value("Employee", self.other_emp, "employee_name")
 		self.assertEqual(r["employee_name"], other_name)
+
+
+class TestOnlyTheApproverMayApprove(FrappeTestCase):
+	"""Approving is the NAMED APPROVER's job, not a role's.
+
+	The portal used to let any HR Manager approve anybody's leave. That was ours,
+	it is not how Frappe HR works, and it made the audit trail meaningless -
+	"approved by whoever held HR Manager" is not "approved by the person
+	responsible".
+
+	Frappe HR resolves the approver from the employee, falling back to their
+	department. get_leave_approver() is the same function that fills the field in
+	the first place, so the portal cannot disagree with the desk.
+	"""
+
+	def test_the_button_and_the_action_share_one_rule(self):
+		"""A button that offers what the action refuses is worse than no button:
+		it turns a configuration problem into what looks like a broken product."""
+		import inspect
+
+		from alvoraa_portal import hr_api
+
+		self.assertIn("_can_action_leave", inspect.getsource(hr_api.action_leave))
+
+	def test_holding_hr_manager_is_not_enough(self):
+		"""The role bypass is gone. If this string comes back, so has the bug."""
+		import inspect
+
+		from alvoraa_portal import hr_api
+
+		src = inspect.getsource(hr_api.action_leave)
+		self.assertNotIn('"HR Manager", "HR User", "Administrator"', src)
+
+	def test_the_approver_comes_from_frappe_hrs_own_lookup(self):
+		import inspect
+
+		from alvoraa_portal import hr_api
+
+		self.assertIn("get_leave_approver",
+		              inspect.getsource(hr_api._leave_approver_for))
+
+	def test_it_falls_back_to_the_department_approver(self):
+		"""An employee with no personal approver still has their department's."""
+		import inspect
+
+		from alvoraa_portal import hr_api
+
+		src = inspect.getsource(hr_api._leave_approver_for)
+		self.assertIn("doc.leave_approver", src)
+		self.assertIn("get_leave_approver", src)
+
+	def test_a_missing_approver_says_so_plainly(self):
+		"""The most likely real-world case, and a bare PermissionError would send
+		HR looking in the wrong place."""
+		import inspect
+
+		from alvoraa_portal import hr_api
+
+		src = inspect.getsource(hr_api.action_leave)
+		self.assertIn("No leave approver is set", src)
+
+	def test_pending_rows_carry_the_flag(self):
+		"""The UI cannot decide this for itself - it has no idea who the approver
+		is - so the server has to tell it per row."""
+		import inspect
+
+		from alvoraa_portal import hr_api
+
+		self.assertIn("can_action", inspect.getsource(hr_api._mark_actionable))

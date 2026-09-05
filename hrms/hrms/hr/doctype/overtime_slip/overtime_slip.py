@@ -372,7 +372,7 @@ class OvertimeSlip(Document):
 		return amount
 
 	def get_holiday_map(self):
-		from hrms.hr.doctype.employee.employee import get_holiday_list_for_employee
+		from erpnext.setup.doctype.employee.employee import get_holiday_list_for_employee
 
 		from hrms.utils.holiday_list import get_holiday_dates_between
 

@@ -211,6 +211,7 @@ html, body {
 .badge-provisioning { background: var(--blue-lt);  color: var(--blue); }
 .badge-queued       { background: var(--violet-lt); color: var(--violet); }
 .badge-failed       { background: var(--red-lt);   color: var(--red); }
+.badge-stalled      { background: var(--red-lt);   color: var(--red); }
 .badge-starter      { background: #ede9fe; color: #6d28d9; }
 .badge-business     { background: var(--green-lt); color: var(--green); }
 .badge-enterprise   { background: var(--amber-lt); color: #b45309; }
@@ -567,6 +568,42 @@ html, body {
         <input class="ka-input" id="f-email" type="email" placeholder="support@acmecorp.com">
         <div class="ka-hint">Shown as help contact in the tenant's login page</div>
       </div>
+        <div class="ka-field">
+          <label class="ka-label">HR Login (optional)</label>
+          <input class="ka-input" id="f-hr-email" type="email" placeholder="hr@acmecorp.com">
+          <div class="ka-hint">Gets HR Manager rights. Left blank, one is created from the subdomain.</div>
+        </div>
+        <div class="ka-field">
+          <label class="ka-label">Admin Login (optional)</label>
+          <input class="ka-input" id="f-admin-email" type="email" placeholder="admin@acmecorp.com">
+          <div class="ka-hint">Gets System Manager rights. A password for each is shown once, after provisioning.</div>
+        </div>
+        <div class="ka-field">
+          <label class="ka-label">Company Name</label>
+          <input class="ka-input" id="f-company" type="text" placeholder="Defaults to the workspace name">
+          <div class="ka-hint">Used to finish setup during provisioning, so the tenant never sees the "Setup your organization" wizard.</div>
+        </div>
+        <div class="ka-row2">
+          <div class="ka-field">
+            <label class="ka-label">Abbreviation</label>
+            <input class="ka-input" id="f-abbr" type="text" maxlength="5" placeholder="Auto from initials">
+          </div>
+          <div class="ka-field">
+            <label class="ka-label">Financial Year Begins</label>
+            <input class="ka-input" id="f-fy" type="date">
+            <div class="ka-hint">Defaults to 1 April.</div>
+          </div>
+        </div>
+        <div class="ka-row2">
+          <div class="ka-field">
+            <label class="ka-label">Country</label>
+            <input class="ka-input" id="f-country" type="text" value="India">
+          </div>
+          <div class="ka-field">
+            <label class="ka-label">Currency</label>
+            <input class="ka-input" id="f-currency" type="text" value="INR">
+          </div>
+        </div>
       <div class="ka-field">
         <label class="ka-label">Company Logo (optional)</label>
         <div id="ka-logo-drop" onclick="document.getElementById('f-logo').click()" style="border:2px dashed var(--border);border-radius:var(--radius-sm);padding:14px 18px;cursor:pointer;text-align:center;transition:border-color .18s,background .18s;min-height:68px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px">
@@ -695,9 +732,17 @@ html, body {
             <span class="ka-cred-val" id="cred-pw">&mdash;</span>
             <button class="ka-copy-btn" onclick="copyVal('cred-pw')">&#x1F4CB;</button>
           </div>
+          <!-- The HR and Admin logins every tenant is born with. The form
+               promises these are shown once; until now they never were. -->
+          <div id="cred-users"></div>
         </div>
       </div>
     </div>
+      <div class="ka-modal-footer" id="prog-early-footer">
+        <button class="ka-btn ka-btn-ghost" id="prog-close-early" style="display:none">
+          Close &amp; track in Provision Jobs
+        </button>
+      </div>
     <div class="ka-modal-footer" id="prog-footer" style="display:none">
       <a class="ka-btn ka-btn-primary" id="prog-open-link" href="#" target="_blank">Open Tenant Portal</a>
       <button class="ka-btn ka-btn-ghost" onclick="closeProgressModal()">Close</button>
@@ -713,21 +758,43 @@ html, body {
   var tenantMap         = {};
   var currentFilter     = 'all';
   var pollTimer         = null;
-  var editSelectedModules = ['hrms'];
-  var MODULES_DEF = [
-    { id:'hrms',        label:'Core HR',          desc:'Leave, attendance, expense, documents', icon:'👥', required:true },
-    { id:'payroll',     label:'Payroll',           desc:'Salary processing, tax, payslips',     icon:'💰' },
-    { id:'recruitment', label:'Recruitment',       desc:'Job openings, interviews, onboarding', icon:'🎯' },
-    { id:'vendor',      label:'Vendor & Delivery', desc:'Vendor portal, driver app, orders',    icon:'🚚' },
-    { id:'goals',       label:'Goals & OKR',       desc:'Performance targets and reviews',      icon:'⭐' },
-    { id:'analytics',   label:'Analytics',         desc:'Advanced dashboards and reports',      icon:'📊' },
-  ];
-  var MODULE_PRESETS = {
-    starter:    ['hrms'],
-    business:   ['hrms','payroll','vendor'],
-    enterprise: ['hrms','payroll','recruitment','vendor','goals','analytics'],
-  };
-  var selectedModules = ['hrms'];
+  var editSelectedModules = [];   // filled by loadPlanCatalogue()
+  // The catalogue and the plan ladder come from alvoraa_portal/subscription.py.
+  // They used to be hardcoded here as MODULES_DEF and MODULE_PRESETS, a third copy
+  // of a pricing decision that also lived twice in tenant_api.py. Loaded once at
+  // boot by loadPlanCatalogue().
+  var MODULES_DEF = [];
+  var MODULE_PRESETS = {};
+
+  async function loadPlanCatalogue() {
+    var cat = await api('alvoraa_portal.subscription.get_plan_catalogue');
+    MODULES_DEF = cat.features;      // ordered: required first, then the ladder
+    MODULE_PRESETS = cat.plans;
+    var req = cat.features.filter(function(f) { return f.required; })
+                          .map(function(f) { return f.id; });
+    selectedModules = req.slice();
+    editSelectedModules = req.slice();
+  }
+  // Required features are part of every plan, so no list may be missing them.
+  // withRequired() is applied wherever a selection is BUILT - presets, editing
+  // an existing tenant, toggling - because a list assembled anywhere else is a
+  // list that can silently drop them. That is exactly what happened when
+  // editing a tenant: the required rows rendered unticked, and saving wrote
+  // them away.
+  function requiredIds() {
+    return MODULES_DEF.filter(function(f) { return f.required; })
+                      .map(function(f) { return f.id; });
+  }
+  function withRequired(ids) {
+    var out = (ids || []).slice();
+    requiredIds().forEach(function(r) {
+      if (out.indexOf(r) === -1) out.push(r);
+    });
+    return out;
+  }
+  function isRequired(id) { return requiredIds().indexOf(id) !== -1; }
+
+  var selectedModules = [];       // filled by loadPlanCatalogue()
 
   function renderModules() {
     var grid = document.getElementById('ka-modules-grid');
@@ -746,6 +813,7 @@ html, body {
     }).join('');
   }
   window.toggleModule = function(id) {
+    if (isRequired(id)) return;          // cannot be turned off
     var idx = selectedModules.indexOf(id);
     if (idx === -1) selectedModules.push(id);
     else selectedModules.splice(idx, 1);
@@ -753,7 +821,7 @@ html, body {
     syncPresetButtons();
   };
   window.applyPreset = function(preset) {
-    selectedModules = MODULE_PRESETS[preset].slice();
+    selectedModules = withRequired(MODULE_PRESETS[preset]);
     renderModules();
     ['starter','business','enterprise'].forEach(function(p) {
       var btn = document.getElementById('preset-' + p);
@@ -778,6 +846,14 @@ html, body {
      control-plane site. On a tenant site the API refuses outright — say so
      plainly instead of rendering an empty console that looks broken. */
   async function bootAdmin() {
+    // First: renderModules() and the preset buttons read MODULES_DEF and
+    // MODULE_PRESETS, which stay empty until this returns.
+    try {
+      await loadPlanCatalogue();
+    } catch (e) {
+      console.error('Could not load the plan catalogue', e);
+    }
+
     var isControlPlane = false;
     try {
       isControlPlane = await api('alvoraa_portal.tenant_api.is_control_plane');
@@ -846,6 +922,8 @@ html, body {
     var initials = (t.tenant_name || t.site_name).slice(0,2).toUpperCase();
     var color    = t.primary_color || '#16A373';
     var hostUrl  = t.host_name || ('http://' + t.site_name);
+    // 'Stalled' is deliberately excluded: it must not keep animating a
+    // progress bar for work that stopped.
     var isProvisioning = t.status === 'Queued' || t.status === 'Provisioning';
     var isSuspended    = t.status === 'Suspended';
 
@@ -859,6 +937,9 @@ html, body {
       'Provisioning': '<span class="ka-badge badge-provisioning">Provisioning</span>',
       'Queued':       '<span class="ka-badge badge-queued">Queued</span>',
       'Failed':       '<span class="ka-badge badge-failed">Failed</span>',
+      // A job that died before it could report on itself. Shown instead of
+      // "Queued" so a dead job cannot look like a slow one for ever.
+      'Stalled':      '<span class="ka-badge badge-stalled">Stalled</span>',
     };
     var statusBadge = statusMap[t.status] || '';
     var planClass   = 'badge-' + (t.plan || '').toLowerCase();
@@ -1014,6 +1095,13 @@ html, body {
     var tenant_name  = document.getElementById('f-name').value.trim();
     var primary_color = document.getElementById('f-color').value;
     var support_email = document.getElementById('f-email').value.trim();
+      var hr_email    = document.getElementById('f-hr-email').value.trim();
+      var admin_email = document.getElementById('f-admin-email').value.trim();
+      var company_name  = document.getElementById('f-company').value.trim();
+      var company_abbr  = document.getElementById('f-abbr').value.trim();
+      var fy_start_date = document.getElementById('f-fy').value;
+      var country       = document.getElementById('f-country').value.trim() || 'India';
+      var currency      = document.getElementById('f-currency').value.trim() || 'INR';
 
     document.getElementById('ka-form-error').style.display = 'none';
     if (!subdomain)                                              { showFormError('Subdomain is required.'); return; }
@@ -1038,10 +1126,16 @@ html, body {
         // never declared, so every attempt died on "not defined".
         subdomain: subdomain, tenant_name: tenant_name,
         primary_color: primary_color, support_email: support_email, logo_url: logo_url,
+        hr_email: hr_email, admin_email: admin_email,
+        company_name: company_name, company_abbr: company_abbr,
+        fy_start_date: fy_start_date, country: country, currency: currency,
         modules: selectedModules,
       });
       closeModal();
-      openProgressModal(result.job_id, tenant_name, result.host_name, result.admin_password);
+      // No password is passed: create_tenant returns none, because the worker
+      // has not generated one yet. It arrives with the finished job.
+      openProgressModal(result.job_id, tenant_name, result.host_name, '',
+                        result.started_at, result.estimated_minutes);
       loadTenants();
     } catch(e) {
       showFormError(e.message || 'Provisioning request failed.');
@@ -1057,10 +1151,15 @@ html, body {
   }
 
   /* ── Progress modal ──────────────────────────────────────── */
-  function openProgressModal(jobId, tenantName, hostUrl, adminPw) {
+  function openProgressModal(jobId, tenantName, hostUrl, adminPw, startedAt, etaMin) {
     document.getElementById('ka-prog-backdrop').classList.add('open');
     document.getElementById('prog-title').textContent = 'Provisioning "' + tenantName + '"...';
-    document.getElementById('prog-sub').textContent   = 'This takes about 5-8 minutes';
+    var _t = startedAt ? new Date(startedAt.replace(' ', 'T')) : new Date();
+    var _hhmm = _t.toTimeString().slice(0, 5);
+    var _eta = new Date(_t.getTime() + (etaMin || 8) * 60000).toTimeString().slice(0, 5);
+    document.getElementById('prog-sub').textContent =
+      'Started ' + _hhmm + ' - usually ready by about ' + _eta +
+      '. This runs in the background: you can close this and check Provision Jobs.';
     document.getElementById('prog-icon').textContent  = '⏳';
     document.getElementById('prog-log').textContent   = 'Queued...';
     document.getElementById('prog-creds').style.display  = 'none';
@@ -1068,6 +1167,20 @@ html, body {
     var bar = document.getElementById('prog-bar');
     bar.style.background = 'linear-gradient(90deg, var(--blue), #60a5fa)';
     bar.style.animation  = '';
+    // Provisioning takes minutes in a background worker. Nothing here needs
+    // watching, so offer a way out rather than holding the operator's screen.
+    var closeBtn = document.getElementById('prog-close-early');
+    if (closeBtn) {
+      closeBtn.style.display = '';
+      // viewJobLog() borrows this button and renames it, so put our label back.
+      closeBtn.textContent = 'Close & track in Provision Jobs';
+      closeBtn.onclick = function () {
+        if (pollTimer) clearInterval(pollTimer);
+        document.getElementById('ka-prog-backdrop').classList.remove('open');
+        loadJobs();
+        showView('jobs');
+      };
+    }
     startPolling(jobId, hostUrl, adminPw);
   }
 
@@ -1093,15 +1206,25 @@ html, body {
         bar.style.background = 'var(--green)';
         bar.style.width      = '100%';
         document.getElementById('cred-url').textContent = hostUrl + '/kinexus-login';
-        document.getElementById('cred-pw').textContent  = job.admin_password || adminPw;
+        document.getElementById('cred-pw').textContent  = job.admin_password || adminPw || '—';
+        document.getElementById('cred-users').innerHTML = (job.users || [])
+          .filter(function(u){ return u.email && u.password; })
+          .map(function(u){
+            return '<div class="ka-cred-row" style="margin-top:6px">'
+                 +   '<span class="ka-cred-label">' + esc(u.role) + '</span>'
+                 +   '<span class="ka-cred-val">' + esc(u.email) + ' / ' + esc(u.password) + '</span>'
+                 +   '<button class="ka-copy-btn" onclick="copyText(\'' + esc(u.password) + '\')">&#x1F4CB;</button>'
+                 + '</div>';
+          }).join('');
         document.getElementById('prog-open-link').href  = hostUrl + '/kinexus-login';
         document.getElementById('prog-creds').style.display  = 'block';
         document.getElementById('prog-footer').style.display = 'flex';
         loadTenants();
-      } else if (job.status === 'Failed') {
+      } else if (job.status === 'Failed' || job.status === 'Stalled') {
         clearInterval(pollTimer);
         document.getElementById('prog-icon').textContent  = '❌';
-        document.getElementById('prog-title').textContent = 'Provisioning Failed';
+        document.getElementById('prog-title').textContent =
+          job.status === 'Stalled' ? 'Provisioning Stalled' : 'Provisioning Failed';
         document.getElementById('prog-sub').textContent   = 'Check the log below for details';
         var bar = document.getElementById('prog-bar');
         bar.style.animation  = 'none';
@@ -1137,12 +1260,67 @@ html, body {
           + '<div class="ka-job-site">' + esc(j.site_name) + '</div>'
           + '<div class="ka-job-plan">' + esc(j.plan || '-') + '</div>'
           + '<span class="ka-badge badge-' + (j.status || '').toLowerCase() + '">' + esc(j.status) + '</span>'
-          + '<div class="ka-job-time">' + time + '</div>'
+            + '<div class="ka-job-time">' + time + '</div>'
+            + '<button class="ka-btn ka-btn-ghost" style="padding:4px 10px;font-size:.75rem" '
+            +   'onclick="viewJobLog(\'' + esc(j.job_id) + '\')">View log</button>'
           + '</div>';
       }).join('');
     } catch(e) {
       list.innerHTML = '<p style="color:var(--red)">Failed to load jobs: ' + esc(e.message) + '</p>';
     }
+  };
+
+  /* ── Job log viewer ────────────────────────────────────────────────────
+     Provisioning runs in a background worker for several minutes. The
+     operator should be able to walk away and come back to the log, rather
+     than being held on the creation dialog. Keeps polling while the job is
+     running and stops as soon as it finishes or fails. */
+  var jobLogTimer = null;
+
+  window.viewJobLog = async function(jobId) {
+    // The provisioning poll writes to these same elements. Leaving it running
+    // would make the two jobs fight over the log pane.
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    document.getElementById('ka-prog-backdrop').classList.add('open');
+    document.getElementById('prog-title').textContent = 'Provisioning log';
+    document.getElementById('prog-creds').style.display = 'none';
+    document.getElementById('prog-footer').style.display = 'none';
+    var early = document.getElementById('prog-close-early');
+    if (early) {
+      early.style.display = '';
+      early.textContent = 'Close';
+      early.onclick = function () {
+        if (jobLogTimer) clearInterval(jobLogTimer);
+        document.getElementById('ka-prog-backdrop').classList.remove('open');
+      };
+    }
+
+    async function tick() {
+      try {
+        var job = await api('alvoraa_portal.tenant_api.get_provision_status', {job_id: jobId});
+        document.getElementById('prog-icon').textContent =
+          job.status === 'Done' ? '✅'
+            : ((job.status === 'Failed' || job.status === 'Stalled') ? '❌' : '⏳');
+        document.getElementById('prog-sub').textContent =
+          job.site_name + ' - ' + job.status +
+          (job.started_at ? ' - started ' + fmtTime(job.started_at) : '');
+        var el = document.getElementById('prog-log');
+        el.textContent = job.log || 'Queued...';
+        el.scrollTop = el.scrollHeight;
+        if (job.status === 'Done' || job.status === 'Failed' || job.status === 'Stalled') {
+          clearInterval(jobLogTimer);
+          jobLogTimer = null;
+          loadJobs();
+        }
+      } catch (e) {
+        document.getElementById('prog-log').textContent = 'Could not load the log: ' + e.message;
+        clearInterval(jobLogTimer);
+      }
+    }
+
+    if (jobLogTimer) clearInterval(jobLogTimer);
+    jobLogTimer = setInterval(tick, 4000);
+    tick();
   };
 
   /* ── View switching ──────────────────────────────────────── */
@@ -1246,6 +1424,7 @@ html, body {
   }
 
   window.toggleEditModule = function(id) {
+    if (isRequired(id)) return;          // cannot be turned off
     var idx = editSelectedModules.indexOf(id);
     if (idx === -1) editSelectedModules.push(id);
     else editSelectedModules.splice(idx, 1);
@@ -1254,7 +1433,7 @@ html, body {
   };
 
   window.applyEditPreset = function(preset) {
-    editSelectedModules = MODULE_PRESETS[preset].slice();
+    editSelectedModules = withRequired(MODULE_PRESETS[preset]);
     renderEditModules();
     ['starter','business','enterprise'].forEach(function(p) {
       var btn = document.getElementById('edit-preset-' + p);
@@ -1299,7 +1478,10 @@ html, body {
     document.getElementById('edit-color').value = color;
     syncEditSwatch(color);
     var ids = siteModulesToIds(t.modules);
-    editSelectedModules = ids.length ? ids : ['hrms'];
+      // Was `ids.length ? ids : required`, so the required features were added
+      // only for a tenant that had NONE - never for one that had some. Every
+      // existing tenant opened with them unticked, and saving wrote them away.
+      editSelectedModules = withRequired(ids);
     renderEditModules();
     syncEditPresetButtons();
     document.getElementById('ka-edit-error').style.display = 'none';

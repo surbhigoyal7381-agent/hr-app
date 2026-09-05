@@ -39,16 +39,42 @@ website_route_rules = [
 ]
 
 # ── Doctype event hooks ────────────────────────────────────────────────────
+# Desk-side JavaScript.
+#
+# One job: make the "Switch to Employee Portal" item in the sidebar menu work.
+# Frappe v16 renders Navbar Settings items but never gives them a url or an
+# onClick, so the click throws and nothing happens. See the file for the detail.
+app_include_js = [
+    "/assets/alvoraa_portal/js/portal_switch.js",
+]
+
 doc_events = {
+    # ── Objectives must sit under a Key Result Area, when HR requires it ───
+    # Enforced on the document, not only in the portal form: the rule is about
+    # what the organisation accepts, so it has to hold for the desk, the API and
+    # any import as well.
+    "Individual Goal": {
+        "validate": "alvoraa_portal.kra_api.validate_goal_kra",
+    },
+
     # ── Portal context cache invalidation ─────────────────────────────────
     # Clear per-user portal_ctx_{user} cache when role or employee record changes
     "Employee": {
         "on_update": "alvoraa_portal.hr_api.invalidate_portal_context_cache",
         "on_trash":  "alvoraa_portal.hr_api.invalidate_portal_context_cache",
     },
-    "Has Role": {
-        "after_insert": "alvoraa_portal.hr_api.invalidate_portal_context_cache",
-        "on_trash":     "alvoraa_portal.hr_api.invalidate_portal_context_cache",
+    # ── Module access follows the plan, for the whole life of the tenant ──
+    # A plan is chosen once; users arrive and change roles for years afterwards.
+    # Without these the gate would apply only to whoever existed on sync day.
+    #
+    # Both hang off USER, never off Has Role. Editing roles in the user form does
+    # not create or delete a Has Role document - Frappe deletes the removed rows
+    # with one SQL statement and writes the rest with db_update() - so hooks on
+    # that child doctype look correct and never fire.
+    "User": {
+        "after_insert": "alvoraa_portal.module_access.apply_on_user_insert",
+        "on_update":    ["alvoraa_portal.hr_api.invalidate_portal_context_cache",
+                         "alvoraa_portal.module_access.apply_on_user_update"],
     },
     # ── Global features cache invalidation ───────────────────────────────
     # Clear portal_features_global when HR configuration changes

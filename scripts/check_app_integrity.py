@@ -282,6 +282,145 @@ for app_dir in APPS:
 				err("%s : %s not defined there" % (where, ", ".join(missing)))
 
 
+# ── Doctype controllers must define the class Frappe will look for ─────────
+#
+# Frappe builds the controller class name by ONLY stripping spaces and hyphens
+# from the doctype name. It does NOT capitalise. So "Mode of Payment" resolves
+# to `ModeofPayment` - lowercase o - and a file defining `ModeOfPayment` fails
+# with ImportError.
+#
+# That is not a crash you get to see. `remove_orphan_doctypes()` treats an
+# ImportError as "this doctype no longer exists in code" and DELETES the DocType
+# record on every migrate. It happened for real to Mode of Payment: our hrms
+# fork carried a hand-written stub with the wrong capitalisation, so every
+# migrate destroyed ERPNext's doctype and left 18 fields pointing at nothing.
+#
+# The whole failure is one letter, and nothing reports it.
+CONTROLLER_ROOTS = ["alvoraa_goals", "alvoraa_portal", "hrms"]
+
+for app_dir in CONTROLLER_ROOTS:
+	root = os.path.join(REPO, app_dir)
+	for jf in glob.glob(os.path.join(root, "**", "*.json"), recursive=True):
+		folder = os.path.basename(os.path.dirname(jf))
+		if os.path.basename(jf) != folder + ".json":
+			continue                      # not a doctype definition
+		try:
+			d = json.load(io.open(jf, encoding="utf-8-sig"))
+		except Exception:
+			continue
+		if not isinstance(d, dict) or d.get("doctype") != "DocType" or d.get("custom"):
+			continue
+		py = jf[:-5] + ".py"
+		if not os.path.exists(py):
+			continue                      # some doctypes ship no controller
+		checks += 1
+		want = (d.get("name") or "").replace(" ", "").replace("-", "")
+		names = defined_names(py)
+		if names is None:
+			continue
+		if want not in names:
+			err("%s : doctype '%s' needs class '%s', but the controller defines %s. "
+			    "Frappe strips spaces without capitalising, so this doctype would be "
+			    "deleted as an orphan on every migrate."
+			    % (os.path.relpath(py, REPO).replace(os.sep, "/"),
+			       d.get("name"), want, sorted(names & {want.lower(), want.upper()} or
+			                                   {n for n in names if n.lower() == want.lower()})
+			       or "no matching class"))
+
+
+# ── Our apps must not redefine a doctype Frappe or ERPNext already owns ────
+#
+# Apps sync in install order, and hrms syncs AFTER erpnext. So a doctype defined
+# in both places is not a merge - ours simply WINS, and ERPNext's real definition
+# is thrown away.
+#
+# This happened, and it was expensive. One commit swept 14 stub copies of ERPNext
+# doctypes into the hrms fork: a 10-field `Company` against ERPNext's 131, a
+# 5-field `Account` against 21, a `Fiscal Year` missing `auto_created`. Every site
+# then ran on the stubs. The chart of accounts could not be built, so ERPNext's
+# setup wizard died halfway - which is why every new tenant kept meeting
+# "Setup your organization" no matter how many times we "fixed" it.
+#
+# Nothing reported any of it. The class-name check above did not catch it either,
+# because the stubs had the right class names; they were just smaller.
+#
+# The upstream list is read from the installed bench when available. Without a
+# bench (a bare CI checkout) the check is skipped rather than guessed at - a
+# hardcoded list of 811 doctype names would rot within one upgrade.
+UPSTREAM_APPS = ("frappe", "erpnext")
+
+
+def _find_bench_apps():
+	"""Locate an installed bench's apps/ directory, or None.
+
+	Probed rather than hardcoded: the container puts it at /home/frappe, CI at
+	/home/runner, and a developer may have it anywhere. A single hardcoded path
+	makes the check SKIP silently in every environment but one - which is the
+	same shape of failure it exists to catch.
+	"""
+	env = os.environ.get("BENCH_APPS_PATH")
+	if env:
+		return env if os.path.isdir(os.path.join(env, "frappe")) else None
+
+	candidates = [
+		"/home/frappe/frappe-bench/apps",
+		os.path.expanduser("~/frappe-bench/apps"),
+		os.path.join(os.path.dirname(REPO), "frappe-bench", "apps"),
+	]
+	for c in candidates:
+		if os.path.isdir(os.path.join(c, "frappe")):
+			return c
+	return None
+
+
+BENCH_APPS = _find_bench_apps()
+
+def _upstream_doctypes():
+	if not BENCH_APPS:
+		return None
+	found = {}
+	for app in UPSTREAM_APPS:
+		root = os.path.join(BENCH_APPS, app)
+		if not os.path.isdir(root):
+			return None                      # no bench here - skip, do not guess
+		for dirpath, _dirs, files in os.walk(root):
+			fname = os.path.basename(dirpath) + ".json"
+			if fname not in files:
+				continue
+			try:
+				d = json.load(io.open(os.path.join(dirpath, fname), encoding="utf-8-sig"))
+			except Exception:
+				continue
+			if isinstance(d, dict) and d.get("doctype") == "DocType" and not d.get("custom"):
+				found[d.get("name")] = app
+	return found
+
+
+_upstream = _upstream_doctypes()
+if _upstream is None:
+	print("note: no bench found - skipping the doctype-shadowing check "
+	      "(set BENCH_APPS_PATH to run it)")
+else:
+	for app_dir in CONTROLLER_ROOTS:
+		for jf in glob.glob(os.path.join(REPO, app_dir, "**", "*.json"), recursive=True):
+			folder = os.path.basename(os.path.dirname(jf))
+			if os.path.basename(jf) != folder + ".json":
+				continue
+			try:
+				d = json.load(io.open(jf, encoding="utf-8-sig"))
+			except Exception:
+				continue
+			if not isinstance(d, dict) or d.get("doctype") != "DocType" or d.get("custom"):
+				continue
+			checks += 1
+			owner = _upstream.get(d.get("name"))
+			if owner:
+				err("%s : doctype '%s' is already owned by %s. Ours syncs later and "
+				    "REPLACES it, silently losing every field the upstream version has. "
+				    "Extend it with custom fields instead (see hrms/setup.py)."
+				    % (os.path.relpath(jf, REPO).replace(os.sep, "/"), d.get("name"), owner))
+
+
 print("app integrity: %d checks" % checks)
 if errors:
 	print("FAIL - %d problem(s):" % len(errors))

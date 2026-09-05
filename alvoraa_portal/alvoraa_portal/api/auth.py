@@ -1,9 +1,12 @@
 import frappe
+
+from alvoraa_portal.subscription import requires_feature
 from frappe import _
 from frappe.utils import now_datetime
 
 
 @frappe.whitelist(allow_guest=True)
+@requires_feature("vendor")
 def vendor_login(email, password, otp=None):
     """
     Step 1: email+password -> returns {status: 'otp_required'} if 2FA enabled
@@ -60,6 +63,7 @@ def vendor_login(email, password, otp=None):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def vendor_logout():
     frappe.local.login_manager.logout()
     return {"status": "logged_out"}

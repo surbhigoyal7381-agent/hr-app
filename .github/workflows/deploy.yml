@@ -192,6 +192,15 @@ jobs:
             maint() {   # maint on|off - every site, by name
               for site in $(list_sites); do
                 $DC exec -T backend bench --site "$site" set-maintenance-mode "$1" || true
+                # Belt and braces on the way OUT. set-maintenance-mode is
+                # swallowed by `|| true`, and it failed transiently on one
+                # tenant right after clear-cache - the deploy reported
+                # success and left that site serving 503. set-config writes
+                # the same flag directly, so a second failure would have to
+                # be two different failures.
+                if [ "$1" = "off" ]; then
+                  $DC exec -T backend bench --site "$site" set-config -p maintenance_mode 0 || true
+                fi
               done
             }
 

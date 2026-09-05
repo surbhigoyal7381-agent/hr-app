@@ -178,6 +178,28 @@ jobs:
             echo "KINEXUS_IMAGE=$FULL_IMAGE" > "$PIN_FILE"
             export COMPOSE_PROJECT_NAME="$PROJECT"
             DC="docker compose -f docker-compose.app.yml -f $OVERLAY --env-file ../envs/${ENV_NAME}.env --env-file $PIN_FILE"
+            # `bench --site all set-maintenance-mode` DOES NOT COVER ALL SITES.
+            #
+            # Unlike migrate and backup, that command takes --site as a plain
+            # option and calls get_site(), which returns ONE site. It accepts
+            # "all" without complaint and acts on a single site
+            # (frappe/commands/scheduler.py). So every migration this pipeline has
+            # run left all but one tenant serving live traffic against a database
+            # mid-migration - the protection claimed below was never there.
+            #
+            # It breaks turning maintenance OFF too, which is how it surfaced: a
+            # dev deploy reported success and left one tenant stuck at 503.
+            maint() {   # maint on|off - every site, by name
+              for site in $(list_sites); do
+                $DC exec -T backend bench --site "$site" set-maintenance-mode "$1" || true
+              done
+            }
+
+            list_sites() {
+              $DC exec -T backend bash -c 'ls -1 /home/frappe/frappe-bench/sites' \
+                | tr -d '\r' \
+                | grep -vE '^(assets|apps[.]txt|apps[.]json|.*[.]json|currentsite[.]txt)$'
+            }
 
             # Whatever happens below, the site must not be left in maintenance and
             # the proxy must not be left down. Both were true after the failed
@@ -186,7 +208,7 @@ jobs:
               rc=$?
               if [ $rc -ne 0 ]; then
                 echo "::warning::deploy failed (rc=$rc) - restoring service"
-                $DC exec -T backend bench --site all set-maintenance-mode off || true
+                maint off
                 $DC up -d --no-deps nginx || docker start "${PROJECT}-nginx-1" || true
                 docker restart "${PROJECT}-nginx-1" >/dev/null 2>&1 || true
               fi
@@ -235,7 +257,7 @@ jobs:
             if [ "$MIGRATE" = "true" ]; then
               # Frappe migrations are per-site and not transactional across the
               # tenant fleet — maintenance mode covers the whole window. (§14.3)
-              $DC exec -T backend bench --site all set-maintenance-mode on || true
+              maint on
             fi
 
             if [ "$MIGRATE" = "true" ]; then
@@ -258,7 +280,7 @@ jobs:
 
               $DC exec -T backend bench --site all migrate
               $DC exec -T backend bench --site all clear-cache
-              $DC exec -T backend bench --site all set-maintenance-mode off
+              maint off
             fi
 
             # nginx resolves the backend ONCE, at start, and caches the address.

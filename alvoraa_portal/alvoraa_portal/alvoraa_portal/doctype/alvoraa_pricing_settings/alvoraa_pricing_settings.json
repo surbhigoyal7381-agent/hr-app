@@ -6,6 +6,10 @@
  "field_order": [
   "pack_cap_per_user",
   "currency",
+  "inv_sec",
+  "sac_code",
+  "payment_terms_days",
+  "invoice_company",
   "seeded"
  ],
  "fields": [
@@ -21,6 +25,32 @@
    "fieldtype": "Link",
    "label": "Currency",
    "options": "Currency"
+  },
+  {
+   "fieldname": "inv_sec",
+   "fieldtype": "Section Break",
+   "label": "Invoicing"
+  },
+  {
+   "default": "997331",
+   "description": "The service code that goes on every subscription line. 997331 is licensing services for the right to use software, which is what a SaaS subscription is. Confirm it with your accountant - it decides the GST rate, and it is one field to change if they disagree.",
+   "fieldname": "sac_code",
+   "fieldtype": "Data",
+   "label": "SAC Code"
+  },
+  {
+   "default": "15",
+   "description": "How long after the invoice date payment is due.",
+   "fieldname": "payment_terms_days",
+   "fieldtype": "Int",
+   "label": "Payment Terms (days)"
+  },
+  {
+   "description": "The company that raises the invoice. Left blank, the site default is used.",
+   "fieldname": "invoice_company",
+   "fieldtype": "Link",
+   "label": "Invoice From",
+   "options": "Company"
   },
   {
    "description": "Which seed release filled the price list. Its presence is what stops the seed running again over prices someone has since edited.",

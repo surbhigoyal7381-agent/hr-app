@@ -21,6 +21,7 @@
   "ok",
   "cb2",
   "error",
+  "sales_invoice",
   "notes"
  ],
  "fields": [
@@ -121,6 +122,14 @@
    "fieldname": "error",
    "fieldtype": "Small Text",
    "label": "What Went Wrong",
+   "read_only": 1
+  },
+  {
+   "description": "The invoice raised from this count. One per site per month - its presence is what stops a second run billing the same month twice.",
+   "fieldname": "sales_invoice",
+   "fieldtype": "Link",
+   "label": "Sales Invoice",
+   "options": "Sales Invoice",
    "read_only": 1
   },
   {

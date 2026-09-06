@@ -272,6 +272,30 @@ ERPNEXT_INFRASTRUCTURE = [
     "Portal", "Regional", "Setup", "Subcontracting", "Telephony", "Utilities",
 ]
 
+# Doctypes that exist only to run the business, never to run a tenant. They
+# install everywhere because they ship with the app and stay empty off the
+# control plane.
+#
+# Named here for one reason, and it is a security one. linked_dependencies()
+# derives what a tenant may read from what the SOLD modules link to - and these
+# live in the Alvoraa Portal module, which every tenant buys. So the day
+# Alvoraa Usage Record gained a Link to Sales Invoice, Sales Invoice stopped
+# being blocked for every tenant on the platform. Nobody wrote that rule; it
+# fell out of a field being added to a billing record.
+#
+# A test caught it. Without this list the next Link on a billing doctype does
+# the same thing again, quietly, to whatever it points at.
+CONTROL_PLANE_DOCTYPES = [
+    "Alvoraa Access State",
+    "Alvoraa Tenant Access Log",
+    "Alvoraa Plan", "Alvoraa Plan Feature",
+    "Alvoraa Module Price",
+    "Alvoraa Operations Pack", "Alvoraa Pack Feature",
+    "Alvoraa Pricing Settings",
+    "Alvoraa Subscription", "Alvoraa Subscription Addon", "Alvoraa Subscription Pack",
+    "Alvoraa Usage Record", "Alvoraa Usage Pack",
+]
+
 REQUIRED = [k for k, v in FEATURES.items() if v.get("required")]
 
 
@@ -515,6 +539,14 @@ def linked_dependencies(features, links=None):
     The trade, stated plainly: this grants READ on a handful of Accounts
     doctypes to every tenant. Payroll cannot work otherwise, and a broken
     product is worse than a slightly permeable one.
+
+    Our own control-plane doctypes are excluded, and that exclusion is
+    load-bearing. They sit in the Alvoraa Portal module, which every tenant
+    buys, so without it a Link field added to a billing record grants every
+    tenant read on whatever it points at. That is precisely what happened when
+    Alvoraa Usage Record gained a Link to Sales Invoice: no rule changed, no
+    plan changed, and Sales Invoice quietly stopped being blocked everywhere.
+    See CONTROL_PLANE_DOCTYPES.
     """
     allowed = allowed_module_defs(features)
     if links is None:
@@ -522,8 +554,9 @@ def linked_dependencies(features, links=None):
             """select distinct df.options
                from `tabDocField` df join `tabDocType` dt on dt.name = df.parent
                where df.fieldtype in ('Link', 'Table MultiSelect')
-                 and df.options is not null and dt.module in %(m)s""",
-            {"m": list(allowed) or [""]}, pluck=True)
+                 and df.options is not null and dt.module in %(m)s
+                 and dt.name not in %(skip)s""",
+            {"m": list(allowed) or [""], "skip": CONTROL_PLANE_DOCTYPES}, pluck=True)
     return sorted({d for d in (links or []) if d})
 
 

@@ -178,21 +178,106 @@ jobs:
             echo "KINEXUS_IMAGE=$FULL_IMAGE" > "$PIN_FILE"
             export COMPOSE_PROJECT_NAME="$PROJECT"
             DC="docker compose -f docker-compose.app.yml -f $OVERLAY --env-file ../envs/${ENV_NAME}.env --env-file $PIN_FILE"
+            # `bench --site all set-maintenance-mode` DOES NOT COVER ALL SITES.
+            #
+            # Unlike migrate and backup, that command takes --site as a plain
+            # option and calls get_site(), which returns ONE site. It accepts
+            # "all" without complaint and acts on a single site
+            # (frappe/commands/scheduler.py). So every migration this pipeline has
+            # run left all but one tenant serving live traffic against a database
+            # mid-migration - the protection claimed below was never there.
+            #
+            # It breaks turning maintenance OFF too, which is how it surfaced: a
+            # dev deploy reported success and left one tenant stuck at 503.
+            maint() {   # maint on|off - every site, by name
+              for site in $(list_sites); do
+                $DC exec -T backend bench --site "$site" set-maintenance-mode "$1" || true
+              done
 
-            $DC pull
+              # A SECOND sweep on the way out, after a pause.
+              #
+              # Twice now a dev deploy finished with one tenant still at 503,
+              # and it was the same tenant both times - the one that sorts
+              # FIRST. The first bench call straight after clear-cache fails,
+              # `|| true` hides it, and the rest of the loop then succeeds.
+              # Running the identical loop by hand works every time, which is
+              # what took so long to see.
+              #
+              # So: wait, then write the flag again by a different route.
+              # A site left in maintenance is a site that is down, and that
+              # is worth five seconds.
+              if [ "$1" = "off" ]; then
+                sleep 5
+                for site in $(list_sites); do
+                  $DC exec -T backend bench --site "$site" set-config -p maintenance_mode 0 || true
+                done
+              fi
+            }
 
-            if [ "$MIGRATE" = "true" ]; then
-              # Frappe migrations are per-site and not transactional across the
-              # tenant fleet — maintenance mode covers the whole window. (§14.3)
-              $DC exec -T backend bench --site all set-maintenance-mode on || true
+            list_sites() {
+              $DC exec -T backend bash -c 'ls -1 /home/frappe/frappe-bench/sites' \
+                | tr -d '\r' \
+                | grep -vE '^(assets|apps[.]txt|apps[.]json|.*[.]json|currentsite[.]txt)$'
+            }
+
+            # Whatever happens below, the site must not be left in maintenance and
+            # the proxy must not be left down. Both were true after the failed
+            # deploy on 2026-09-05 and both needed a human to notice.
+            cleanup() {
+              rc=$?
+              if [ $rc -ne 0 ]; then
+                echo "::warning::deploy failed (rc=$rc) - restoring service"
+                maint off
+                $DC up -d --no-deps nginx || docker start "${PROJECT}-nginx-1" || true
+                docker restart "${PROJECT}-nginx-1" >/dev/null 2>&1 || true
+              fi
+              exit $rc
+            }
+            trap cleanup EXIT
+
+            # Retried. The pull failed three times in one day with
+            #   failed to copy: read tcp ...->[2606:50c0:...]:443: connection reset
+            # partway through a multi-GB layer, over IPv6. Docker keeps the layers
+            # it already has, so a retry resumes rather than restarts.
+            pulled=0
+            for attempt in 1 2 3; do
+              if $DC pull; then pulled=1; break; fi
+              echo "::warning::pull attempt $attempt failed, retrying in 20s"
+              sleep 20
+            done
+            [ "$pulled" = "1" ] || { echo "::error::image pull failed three times"; exit 1; }
+
+            # Containers first, maintenance mode second. The other order deadlocks:
+            # the backend's healthcheck curls /api/method/ping on HEALTH_HOST, and
+            # maintenance mode makes that return 503, so `curl -fsS` fails, so the
+            # backend is never healthy, so nginx - which depends on it - never
+            # starts, so `up -d` exits non-zero and the deploy aborts having already
+            # swapped the containers. That is not a theory: it took production down
+            # for fifteen minutes on 2026-09-05, with nginx left in Created and the
+            # site stuck in maintenance.
+            #
+            # The cost of this order is a short window where the new image serves
+            # against the old schema. Seconds, and the alternative is a deploy that
+            # cannot succeed at all.
+            if ! $DC up -d --remove-orphans; then
+              echo "::error::up -d failed"
+              # Never leave the proxy down. nginx depends on backend being healthy,
+              # so a backend that came up unhealthy takes every site offline - and
+              # nothing else in this job would notice.
+              $DC up -d --no-deps nginx || docker start "${PROJECT}-nginx-1" || true
+              exit 1
             fi
-
-            $DC up -d --remove-orphans
 
             for i in $(seq 1 60); do
               $DC exec -T backend bench version >/dev/null 2>&1 && break
               sleep 5
             done
+
+            if [ "$MIGRATE" = "true" ]; then
+              # Frappe migrations are per-site and not transactional across the
+              # tenant fleet — maintenance mode covers the whole window. (§14.3)
+              maint on
+            fi
 
             if [ "$MIGRATE" = "true" ]; then
               # MUST run before migrate, never after.
@@ -214,7 +299,7 @@ jobs:
 
               $DC exec -T backend bench --site all migrate
               $DC exec -T backend bench --site all clear-cache
-              $DC exec -T backend bench --site all set-maintenance-mode off
+              maint off
             fi
 
             # nginx resolves the backend ONCE, at start, and caches the address.
@@ -232,6 +317,36 @@ jobs:
             sleep 5
 
             docker image prune -f --filter "until=168h" || true
+
+      # Runs whatever happened above, including a failed deploy.
+      #
+      # Three dev deploys in a row finished 'success' with one tenant still
+      # serving 503 and the sites 502 - always the same tenant, the one that
+      # sorts first. Every attempt to reproduce it by hand succeeded: plain
+      # docker exec, compose exec -T, before and after clear-cache, errors
+      # unsuppressed, exit 0 every time. The cause was not found.
+      #
+      # So this stops depending on finding it. Clearing a flag that is already
+      # clear costs nothing; leaving a tenant in maintenance takes them offline
+      # until a human notices. This step is the guarantee; the loop in Deploy
+      # is now only the fast path.
+      - name: Restore service
+        if: always()
+        run: |
+          set -uo pipefail
+          cd /var/www/html/hr-app/deploy/compose
+          export COMPOSE_PROJECT_NAME="$PROJECT"
+          DC="docker compose -f docker-compose.app.yml -f $OVERLAY --env-file ../envs/${ENV_NAME}.env --env-file $PIN_FILE"
+          for site in $($DC exec -T backend bash -c 'ls -1 /home/frappe/frappe-bench/sites' \
+                        | tr -d '\r' \
+                        | grep -vE '^(assets|apps[.]txt|apps[.]json|.*[.]json|currentsite[.]txt)$'); do
+            $DC exec -T backend bench --site "$site" set-config -p maintenance_mode 0 || true
+          done
+          # One nginx serves every environment and caches the backend address,
+          # so a container swap leaves every site 502 until it is restarted.
+          docker restart compose-nginx-1 >/dev/null 2>&1 || true
+          sleep 6
+          echo 'service restored'
 
       - name: Smoke test
         run: |

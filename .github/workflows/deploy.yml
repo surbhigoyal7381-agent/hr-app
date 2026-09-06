@@ -318,6 +318,36 @@ jobs:
 
             docker image prune -f --filter "until=168h" || true
 
+      # Runs whatever happened above, including a failed deploy.
+      #
+      # Three dev deploys in a row finished 'success' with one tenant still
+      # serving 503 and the sites 502 - always the same tenant, the one that
+      # sorts first. Every attempt to reproduce it by hand succeeded: plain
+      # docker exec, compose exec -T, before and after clear-cache, errors
+      # unsuppressed, exit 0 every time. The cause was not found.
+      #
+      # So this stops depending on finding it. Clearing a flag that is already
+      # clear costs nothing; leaving a tenant in maintenance takes them offline
+      # until a human notices. This step is the guarantee; the loop in Deploy
+      # is now only the fast path.
+      - name: Restore service
+        if: always()
+        run: |
+          set -uo pipefail
+          cd /var/www/html/hr-app/deploy/compose
+          export COMPOSE_PROJECT_NAME="$PROJECT"
+          DC="docker compose -f docker-compose.app.yml -f $OVERLAY --env-file ../envs/${ENV_NAME}.env --env-file $PIN_FILE"
+          for site in $($DC exec -T backend bash -c 'ls -1 /home/frappe/frappe-bench/sites' \
+                        | tr -d '\r' \
+                        | grep -vE '^(assets|apps[.]txt|apps[.]json|.*[.]json|currentsite[.]txt)$'); do
+            $DC exec -T backend bench --site "$site" set-config -p maintenance_mode 0 || true
+          done
+          # One nginx serves every environment and caches the backend address,
+          # so a container swap leaves every site 502 until it is restarted.
+          docker restart compose-nginx-1 >/dev/null 2>&1 || true
+          sleep 6
+          echo 'service restored'
+
       - name: Smoke test
         run: |
           set -euo pipefail

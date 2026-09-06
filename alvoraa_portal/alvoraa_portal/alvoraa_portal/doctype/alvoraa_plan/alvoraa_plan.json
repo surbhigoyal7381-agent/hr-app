@@ -1,0 +1,176 @@
+{
+ "actions": [],
+ "autoname": "field:plan_name",
+ "creation": "2026-09-06 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "plan_name",
+  "is_active",
+  "sequence",
+  "band_sec",
+  "band_from",
+  "band_to",
+  "cb1",
+  "included_employees",
+  "price_sec",
+  "platform_fee",
+  "additional_pepm",
+  "cb2",
+  "annual_fee",
+  "is_quote_only",
+  "feat_sec",
+  "features",
+  "priv_sec",
+  "is_private",
+  "built_for",
+  "notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "plan_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Plan Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "1",
+   "description": "Retire a tier without deleting it. History has to keep pointing somewhere.",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Active"
+  },
+  {
+   "default": "0",
+   "description": "Display order on the pricing screens. The bands are not always in price order once private plans exist.",
+   "fieldname": "sequence",
+   "fieldtype": "Int",
+   "label": "Sequence"
+  },
+  {
+   "fieldname": "band_sec",
+   "fieldtype": "Section Break",
+   "label": "Headcount band"
+  },
+  {
+   "fieldname": "band_from",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "From",
+   "reqd": 1
+  },
+  {
+   "description": "Leave at 0 for open-ended - the top tier has no ceiling.",
+   "fieldname": "band_to",
+   "fieldtype": "Int",
+   "label": "To"
+  },
+  {
+   "fieldname": "cb1",
+   "fieldtype": "Column Break",
+   "label": null
+  },
+  {
+   "description": "The fee covers this many. Extra PEPM applies only above it.",
+   "fieldname": "included_employees",
+   "fieldtype": "Int",
+   "label": "Included Employees"
+  },
+  {
+   "fieldname": "price_sec",
+   "fieldtype": "Section Break",
+   "label": "Price"
+  },
+  {
+   "description": "Exclusive of GST.",
+   "fieldname": "platform_fee",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Platform Fee (monthly)"
+  },
+  {
+   "description": "Per employee per month, charged only beyond the included count.",
+   "fieldname": "additional_pepm",
+   "fieldtype": "Currency",
+   "label": "Additional PEPM"
+  },
+  {
+   "fieldname": "cb2",
+   "fieldtype": "Column Break",
+   "label": null
+  },
+  {
+   "description": "Ten months' price for twelve. Blank means the monthly fee times twelve.",
+   "fieldname": "annual_fee",
+   "fieldtype": "Currency",
+   "label": "Annual Fee"
+  },
+  {
+   "description": "No published price - Enterprise Custom is negotiated. Blocks an automatic invoice rather than inventing a number.",
+   "fieldname": "is_quote_only",
+   "fieldtype": "Check",
+   "label": "Quote Only"
+  },
+  {
+   "fieldname": "feat_sec",
+   "fieldtype": "Section Break",
+   "label": "What the fee includes"
+  },
+  {
+   "fieldname": "features",
+   "fieldtype": "Table",
+   "label": "Features",
+   "options": "Alvoraa Plan Feature"
+  },
+  {
+   "fieldname": "priv_sec",
+   "fieldtype": "Section Break",
+   "label": "Private plan"
+  },
+  {
+   "description": "A plan built for one client. Hidden when setting up any other tenant.",
+   "fieldname": "is_private",
+   "fieldtype": "Check",
+   "label": "Private"
+  },
+  {
+   "depends_on": "is_private",
+   "description": "Required on a private plan, so a one-off deal can always be traced to who agreed it.",
+   "fieldname": "built_for",
+   "fieldtype": "Link",
+   "label": "Built For",
+   "options": "Customer"
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes"
+  }
+ ],
+ "links": [],
+ "modified": "2026-09-06 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa Plan",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "title_field": "plan_name",
+ "track_changes": 1
+}

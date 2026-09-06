@@ -1,0 +1,123 @@
+{
+ "actions": [],
+ "autoname": "field:feature_key",
+ "creation": "2026-09-06 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "feature_key",
+  "module_label",
+  "status",
+  "price_sec",
+  "basis",
+  "rate",
+  "cb1",
+  "pack",
+  "is_sellable",
+  "in_registry",
+  "notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "feature_key",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Feature Key",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "description": "What a customer sees. Taken from the registry when the key is known there.",
+   "fieldname": "module_label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Module"
+  },
+  {
+   "default": "Built",
+   "description": "Coming Soon and Service may be listed without existing in the registry - neither can be switched on for a tenant, so neither can be sold.",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Built\nComing Soon\nService",
+   "reqd": 1
+  },
+  {
+   "fieldname": "price_sec",
+   "fieldtype": "Section Break",
+   "label": "Price"
+  },
+  {
+   "default": "PEPM",
+   "fieldname": "basis",
+   "fieldtype": "Select",
+   "label": "Basis",
+   "options": "PEPM\nPer named user\nPer organisation\nPer device\nOne-time\nUsage",
+   "reqd": 1
+  },
+  {
+   "description": "Blank until someone prices it. A module with no rate cannot be sold.",
+   "fieldname": "rate",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Rate"
+  },
+  {
+   "fieldname": "cb1",
+   "fieldtype": "Column Break",
+   "label": null
+  },
+  {
+   "description": "Set by the pack that claims this module, never typed. One list of pack contents, not two that can disagree.",
+   "fieldname": "pack",
+   "fieldtype": "Link",
+   "label": "Operations Pack",
+   "options": "Alvoraa Operations Pack",
+   "read_only": 1
+  },
+  {
+   "description": "Computed. True only when the registry knows the key, the status is Built, and a rate is set.",
+   "fieldname": "is_sellable",
+   "fieldtype": "Check",
+   "label": "Sellable",
+   "read_only": 1
+  },
+  {
+   "description": "Whether the product actually has this feature today.",
+   "fieldname": "in_registry",
+   "fieldtype": "Check",
+   "label": "In Registry",
+   "read_only": 1
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes"
+  }
+ ],
+ "links": [],
+ "modified": "2026-09-06 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa Module Price",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "title_field": "module_label",
+ "track_changes": 1
+}

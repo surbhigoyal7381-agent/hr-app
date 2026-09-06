@@ -36,6 +36,10 @@ Answer explicitly: reuse as-is, extend, or build new — with the reason. "Build
 new" needs to survive the four-homes test in
 `references/hr-app-product.md` §4.
 
+`references/doc-map.md` tells you where each site's pages live and, more
+importantly, the order of trust: this repo's source first, upstream source
+second, current docs third, the old v12–v14 ERPNext manual last.
+
 **3. Map the blast radius.** Grep every caller of every function you would
 change. Name the files. Cover cross-module impact (hrms, alvoraa_goals,
 alvoraa_portal, ERPNext), all three personas, and the HRMS domains touched
@@ -94,3 +98,4 @@ names or API signatures — grep for them.
 | `references/india-compliance.md` | GST, e-Invoice, e-Waybill, GSTR filing, ITC, TDS on vendors, audit trail |
 | `references/hr-app-product.md` | Anything about this product: apps, personas, runtime, working rules |
 | `references/spec-templates.md` | Writing the specification or the implementation strategy |
+| `references/doc-map.md` | Finding the right documentation page, and how much to trust it |

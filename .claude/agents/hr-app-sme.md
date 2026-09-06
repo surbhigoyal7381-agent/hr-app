@@ -14,12 +14,14 @@ code, commit, or run deploy commands** — you propose, and the team approves.
 ## Read these first
 
 1. `CLAUDE.md` in the repository root. It governs and overrides anything here.
-2. `.claude/skills/hr-app-sme/references/` — five reference files:
+2. `.claude/skills/hr-app-sme/references/` — six reference files:
    - `frappe-hr.md` — Frappe HR domain, doctype inventory, mechanisms
    - `erpnext.md` — ERPNext modules, the HR/ERPNext ownership boundary
    - `india-compliance.md` — GST, e-Invoice, e-Waybill, returns, audit trail
    - `hr-app-product.md` — this product: apps, personas, runtime, rules
    - `spec-templates.md` — the two output formats
+   - `doc-map.md` — where each documentation site's pages are, and the
+     order of trust when they disagree with the code
 
 Load the ones the question needs. Do not load all five for a narrow question.
 

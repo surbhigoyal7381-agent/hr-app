@@ -75,8 +75,12 @@ transporter/vehicle updates are unavailable, public APIs unsupported. The old
 - **HSN codes** — 12,000+ ship pre-installed as `GST HSN Code`.
 - **Tax accounts and templates** — default GST accounts, Sales/Purchase tax
   templates and Item Tax Templates are auto-created per company.
-- **GST Accounts** are the backbone. Exactly **three rows per company**: Input,
-  Output, Reverse Charge. Multiple GST accounts per rate or per state are
+- **GST Accounts** are the backbone. The documentation says three rows per
+  company (Input, Output, Reverse Charge); the current `GST Account` doctype
+  actually offers **five account types** — `Input`, `Output`,
+  `Purchase Reverse Charge`, `Sales Reverse Charge`, `Output Refund` — each
+  holding CGST / SGST / IGST / Cess / Cess Non-Advol accounts. Verified in
+  source; trust the source. Multiple GST accounts per rate or per state are
   explicitly discouraged — one account per type, with breakup derived from
   transactions. Validations, taxable-value calculation and ITC availability all
   key off these settings.
@@ -301,3 +305,108 @@ Update taxes for Items.
 from `e-Invoice Log` by `doc.irn` and render with `get_qr_code(...)`; for
 standard print formats wrap it in a Web Template component and call
 `web_block(...)`.
+
+---
+
+## 10. Concepts and accounting patterns
+
+From the India Compliance blog (`docs.indiacompliance.app/blog`), which carries
+material the docs section does not.
+
+### 10.1 The five GST treatments
+
+`GST Treatment` lives on the **Item Tax Template** and flows into transactions.
+
+| Treatment | Rate | ITC on inputs used for it | Set where |
+|---|---|---|---|
+| **Nil-Rated** | 0% by notification | Not available | Item Tax Template |
+| **Exempt** | Not taxed, in public interest | Not available | Item Tax Template |
+| **Non-GST** | Outside GST altogether | Not available | Item Tax Template |
+| **Zero-Rated** | Export or SEZ | **Available** | Derived, not settable |
+| **Taxable** | Normal | Available | Item Tax Template |
+
+Rules the app applies:
+
+- Zero-Rated cannot be chosen on an Item Tax Template. It is **derived** — set
+  for all items when the transaction is an export or a supply to SEZ.
+- Default when no tax is charged, or tax is charged at zero percent →
+  Nil-Rated. Otherwise → Taxable.
+- **e-Invoice:** fully non-taxable invoice (all items Nil-Rated / Exempt /
+  Non-GST) → e-Invoice not applicable, no generate option. Partially
+  non-taxable → applicable for B2B, with non-taxable items reported as *other
+  charges* so GSTR-1 is right. Zero-Rated → applicable.
+- **GSTR-1:** fully non-taxable → whole invoice in the Nil-Exempt section.
+  Partially non-taxable → split, taxable part into B2B/B2C, the rest into
+  Nil-Exempt. Zero-Rated → B2B if SEZ, otherwise the Export section.
+
+### 10.2 Accounting after GSTR-3B is filed
+
+Filing is half the job; the books have to match. Mirror the government's
+ledgers in your chart of accounts:
+
+| Account | Group | Mirrors |
+|---|---|---|
+| Input CGST / SGST / IGST (+ Cess) | Current Assets | ITC paid on purchases |
+| Output CGST / SGST / IGST | Current Liabilities → Duties and Taxes | Liability collected on sales |
+| RCM Payable | Current Liabilities → Duties and Taxes | Reverse-charge liability |
+| GST Credit Ledger | Current Assets | Electronic Credit Ledger on the portal |
+| GST Cash Ledger | Current Assets | Electronic Cash Ledger on the portal |
+
+The monthly cycle, in order:
+
+1. Purchase invoice → Dr Input GST, Cr Creditor. *(automatic)*
+2. Sales invoice → Dr Debtor, Cr Output GST. *(automatic)*
+3. Challan paid → Dr GST Cash Ledger, Cr Bank. *(Journal Entry)*
+4. ITC claimed per GSTR-3B → Dr GST Credit Ledger, Cr Input GST. Claim only
+   what GSTR-2B supports; the unclaimed balance stays in Input GST for a later
+   period.
+5. Set off liability per GSTR-3B → Dr Output GST, Cr GST Credit Ledger and
+   Cr GST Cash Ledger.
+
+After step 5, Output GST is zero and **your GST Cash and Credit Ledger balances
+should equal the portal's**. If they do not, something is missing — that
+reconciliation is the whole point of mirroring the ledgers.
+
+The portal also keeps an Electronic Liability Register matching GSTR-3B Table
+3.1. Maintaining a matching Liability account in books is optional; setting off
+Output and RCM directly against Credit and Cash is simpler and normal.
+
+### 10.3 Refund accounting
+
+Configure **GST Settings → Output Refund Accounts** (account type
+`Output Refund`) with the CGST / SGST / IGST refund receivable accounts. Once
+set, they are validated on sales transactions that need refund treatment.
+
+**Case 1 — refund against a specific invoice** (typically export with payment
+of IGST). Route the tax through the receivable so the customer's total stays
+net of tax: Dr Debtor 10,000, Dr IGST Refund Receivable 1,800, Cr Sales 10,000,
+Cr Output IGST 1,800. Output IGST still settles through the normal GSTR-3B
+cycle. On receipt: Dr Bank, Cr IGST Refund Receivable (Bank Entry).
+
+**Case 2 — refund of accumulated ITC** (export under LUT, or inverted duty
+structure). Two stages, because the portal debits the Credit Ledger **on
+filing**, not on receipt:
+
+- On filing: Dr Refund Receivable, Cr GST Credit Ledger — posted on the portal
+  filing date, so books stay level with the portal.
+- On receipt: Dr Bank, Cr Refund Receivable.
+- If the refund is rejected or partly sanctioned, the portal re-credits the
+  Credit Ledger. Reverse it: Dr GST Credit Ledger, Cr Refund Receivable.
+
+Keep a register of refund applications (date, ARN, amount, status). The Refund
+Receivable balance should equal the sum of pending ARNs.
+
+### 10.4 Bulk tax rate changes ("GST 2.0")
+
+Rates were revised across many items on **22 November 2025**. Do not edit items
+one by one. Open the **GST HSN Code**, add a row with the new rate and a
+`Valid From` date, save, then click **Update Taxes for Items** — every item
+linked to that HSN code is updated. This is also the recommended fix after the
+Item Tax Template migration described in §9.
+
+### 10.5 Other blog material
+
+- *e-commerce transactions in GSTR-1* — how supplies through an e-commerce
+  operator are reported.
+- *Subcontracting workflow in ERPNext for Indian compliance* — the full job-work
+  cycle, and what the GST Job Work Stock Movement report expects.

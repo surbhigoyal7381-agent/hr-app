@@ -1,0 +1,163 @@
+{
+ "actions": [],
+ "autoname": "field:site_name",
+ "creation": "2026-09-07 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "site_name",
+  "status",
+  "cb0",
+  "customer",
+  "billing_frequency",
+  "plan_sec",
+  "plan",
+  "cb1",
+  "implementation_fee",
+  "addon_sec",
+  "addons",
+  "pack_sec",
+  "packs",
+  "admin_sec",
+  "started_on",
+  "cb2",
+  "ended_on",
+  "notes"
+ ],
+ "fields": [
+  {
+   "description": "The tenant directory on disk. The only link to the tenant that exists.",
+   "fieldname": "site_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Site",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "Trial",
+   "description": "Internal means ours - priced exactly like a customer, never invoiced.",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Trial\nActive\nSuspended\nCancelled\nInternal",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cb0",
+   "fieldtype": "Column Break",
+   "label": null
+  },
+  {
+   "description": "Who the invoice goes to. Carries GSTIN and place of supply. Not needed on an internal tenant.",
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Customer",
+   "options": "Customer"
+  },
+  {
+   "default": "Monthly",
+   "fieldname": "billing_frequency",
+   "fieldtype": "Select",
+   "label": "Billing Frequency",
+   "options": "Monthly\nAnnual"
+  },
+  {
+   "fieldname": "plan_sec",
+   "fieldtype": "Section Break",
+   "label": "Plan"
+  },
+  {
+   "fieldname": "plan",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Plan",
+   "options": "Alvoraa Plan"
+  },
+  {
+   "fieldname": "cb1",
+   "fieldtype": "Column Break",
+   "label": null
+  },
+  {
+   "description": "One time, invoiced once, on the first bill.",
+   "fieldname": "implementation_fee",
+   "fieldtype": "Currency",
+   "label": "Implementation Fee"
+  },
+  {
+   "fieldname": "addon_sec",
+   "fieldtype": "Section Break",
+   "label": "Add-on modules"
+  },
+  {
+   "fieldname": "addons",
+   "fieldtype": "Table",
+   "label": "Add-ons",
+   "options": "Alvoraa Subscription Addon"
+  },
+  {
+   "fieldname": "pack_sec",
+   "fieldtype": "Section Break",
+   "label": "Operations packs"
+  },
+  {
+   "fieldname": "packs",
+   "fieldtype": "Table",
+   "label": "Packs",
+   "options": "Alvoraa Subscription Pack"
+  },
+  {
+   "fieldname": "admin_sec",
+   "fieldtype": "Section Break",
+   "label": "Record"
+  },
+  {
+   "fieldname": "started_on",
+   "fieldtype": "Date",
+   "label": "Started On"
+  },
+  {
+   "fieldname": "cb2",
+   "fieldtype": "Column Break",
+   "label": null
+  },
+  {
+   "depends_on": "eval:doc.status=='Cancelled'",
+   "fieldname": "ended_on",
+   "fieldtype": "Date",
+   "label": "Ended On"
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes"
+  }
+ ],
+ "links": [],
+ "modified": "2026-09-07 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa Subscription",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "title_field": "site_name",
+ "track_changes": 1
+}

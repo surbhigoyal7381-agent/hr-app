@@ -1082,22 +1082,86 @@ def _write_jobs(jobs):
         raise
 
 
+_SITE_ARG = re.compile(r"--site\s+(\S+)")
+
+
+def _log_tenant_access(cmd, site, ok, ms, detail=""):
+    """Record that the control plane reached into a tenant.
+
+    Under the DPDP Act the customer is the Data Fiduciary for their employees'
+    data and we are the Processor. A processor has to be able to say who touched
+    that data and when - and until this existed, nothing could. An operator
+    could read any tenant's payroll and leave no trace.
+
+    Written straight to the table. The doctype grants no create, write or delete
+    to anyone, so a row cannot be edited or removed through the desk afterwards;
+    a log the operator can quietly change answers nothing.
+
+    Never raises. An audit gap is bad; a failed provision because the audit
+    write failed is worse, and the failure is reported to the error log where
+    somebody can see it.
+    """
+    try:
+        if frappe.conf.get("alvoraa_control_plane") is None:
+            return                     # only the control plane reaches into tenants
+        doc = frappe.get_doc({
+            "doctype": "Alvoraa Tenant Access Log",
+            "accessed_at": now_datetime(),
+            # The queuing user, not the worker: a background job runs as
+            # Administrator, which would make every row say the same thing.
+            "user": frappe.session.user if getattr(frappe, "session", None) else "system",
+            "site": site or "(bench)",
+            "action": _redact(cmd)[:140],
+            "ok": 1 if ok else 0,
+            "duration_ms": int(ms),
+            "detail": _redact(detail)[:500] if detail else "",
+        })
+        doc.db_insert()
+        frappe.db.commit()
+    except Exception:
+        try:
+            frappe.log_error(title="tenant access log write failed",
+                             message=frappe.get_traceback())
+        except Exception:
+            pass
+
+
 def _bench_run(cmd, timeout=30, env=None):
     """Run a bench command.
 
     `env` exists so secrets can be handed to a subprocess WITHOUT putting them
     on the command line. Arguments are world-readable through `ps` and land in
     shell history; an environment block is readable only by the process owner.
+
+    Every call is logged. This is the ONE door between the control plane and a
+    tenant's data - all twenty call sites come through here - so logging it here
+    means no future caller can reach a tenant without leaving a record.
     """
-    return subprocess.run(
-        f"bench {cmd}",
-        shell=True,
-        capture_output=True,
-        text=True,
-        cwd=BENCH_PATH,
-        timeout=timeout,
-        env=env,
-    )
+    import time
+
+    started = time.time()
+    result = None
+    try:
+        result = subprocess.run(
+            f"bench {cmd}",
+            shell=True,
+            capture_output=True,
+            text=True,
+            cwd=BENCH_PATH,
+            timeout=timeout,
+            env=env,
+        )
+        return result
+    finally:
+        m = _SITE_ARG.search(cmd or "")
+        _log_tenant_access(
+            cmd,
+            m.group(1) if m else None,
+            ok=bool(result is not None and result.returncode == 0),
+            ms=(time.time() - started) * 1000,
+            # A timeout leaves result as None - still logged, still says it failed.
+            detail=(result.stderr or "").splitlines()[0] if result and result.returncode != 0 and result.stderr else "",
+        )
 
 
 # ── Credential storage ─────────────────────────────────────────────────────

@@ -210,11 +210,34 @@ ERPNEXT_FEATURES["india_compliance"] = {
     "module_defs": ["GST India", "Income Tax India", "VAT India", "Audit Trail"],
     "workspaces": ["GST India", "Income Tax India"],
     "erpnext": True,
-    # Refused without these rather than granted silently - see
-    # unmet_requirements(). Every one of its doctypes hangs off Sales Invoice,
-    # Purchase Invoice or the Accounts module, so without them the app installs
-    # and then every screen is denied by our own access control.
-    "requires": ["erp_accounts", "erp_selling", "erp_buying"],
+    # Refused without this rather than granted silently - see
+    # unmet_requirements(). Without Accounts the app installs and then every
+    # screen is denied by our own access control.
+    #
+    # Narrowed from [erp_accounts, erp_selling, erp_buying] on 2026-09-07, after
+    # measuring rather than reasoning. Of the 26 doctypes this app ships, the
+    # only ERPNext transaction any of them links to is Sales Invoice - and Sales
+    # Invoice and Purchase Invoice are BOTH in the Accounts module. Sales Order
+    # and Purchase Order are what live in Selling and Buying, and filing a GST
+    # return needs neither. The rest of what it links to is Company, Account,
+    # Cost Center, Territory and UOM: Accounts or Setup, and Setup is
+    # infrastructure nobody is denied.
+    #
+    # Customer is the one that looks like a counter-example - its module IS
+    # Selling. It arrives anyway, because linked_dependencies() grants whatever
+    # the sold modules link to and Sales Invoice links to Customer.
+    #
+    # What the old list cost: Indian Compliance lives in the Finance pack, so
+    # requiring Selling and Buying meant Finance could never be sold on its own.
+    # A services company wanting bookkeeping and GST filing was told to buy a
+    # wholesale pack as well - 550 a user instead of 300, for modules they would
+    # never open. That is bundling dressed up as a dependency.
+    #
+    # One thing is genuinely reduced: an e-way bill can be raised from a
+    # Delivery Note as well as from a Sales Invoice, and Delivery Note is in
+    # Stock. A tenant with Accounts alone raises e-way bills from the invoice,
+    # which is the common case. A narrower feature is not a broken one.
+    "requires": ["erp_accounts"],
 }
 
 # ── Frappe's own framework modules ───────────────────────────────────────────

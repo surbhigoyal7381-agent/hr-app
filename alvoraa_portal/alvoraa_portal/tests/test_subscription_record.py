@@ -146,10 +146,7 @@ class TestPacks(SubscriptionCase):
 			self.sub(packs=[{"pack": "Finance", "named_users": 0}])
 
 	def test_the_pack_rate_is_taken_from_the_pack(self):
-		# Finance and Trade together, because Finance alone is currently
-		# unsellable - see TestTheSelectionHoldsTogether below.
-		doc = self.sub(packs=[{"pack": "Finance", "named_users": 3},
-		                      {"pack": "Trade", "named_users": 1}])
+		doc = self.sub(packs=[{"pack": "Finance", "named_users": 3}])
 		self.assertEqual(doc.packs[0].agreed_rate, 300)
 
 	def test_a_pack_cannot_be_listed_twice(self):
@@ -167,28 +164,23 @@ class TestTheSelectionHoldsTogether(SubscriptionCase):
 		with self.assertRaises(frappe.ValidationError):
 			self.sub(addons=[{"feature_key": "india_compliance", "agreed_rate": 100}])
 
-	def test_the_finance_pack_cannot_currently_be_sold_on_its_own(self):
-		"""A finding, not a rule we chose - and it needs a decision.
+	def test_the_finance_pack_can_be_sold_on_its_own(self):
+		"""Bookkeeping and GST filing, without a wholesale pack nobody asked for.
 
-		Finance carries india_compliance, which declares it requires
-		erp_accounts, erp_selling AND erp_buying. Selling and Buying live in the
-		Trade pack, so buying Finance alone is refused: a customer who wants
-		bookkeeping and GST filing is told to buy a wholesale pack as well, and
-		the real price of invoicing is Rs 550 a user rather than Rs 300.
+		This test used to assert the opposite, and the opposite was a bug. Indian
+		Compliance sits in the Finance pack and used to declare it needed
+		Accounts, Selling AND Buying - so Finance alone was refused, and a
+		services company wanting to invoice and file returns was told to buy
+		Trade as well: 550 a user instead of 300, for modules they would never
+		open.
 
-		The requirement looks stricter than the facts. Its own comment says
-		every india_compliance doctype hangs off Sales Invoice, Purchase Invoice
-		or the Accounts module - and BOTH invoices live in the Accounts module,
-		verified on the running bench. Sales Order and Purchase Order are what
-		live in Selling and Buying, and nothing about filing a return needs them.
-
-		Two ways out, and it is a commercial decision rather than a technical
-		one: narrow the requirement to erp_accounts, or move india_compliance
-		into the Trade pack and let Finance be plain bookkeeping. This test
-		pins the CURRENT behaviour so the change is deliberate when it comes.
+		The requirement was narrowed to Accounts on 2026-09-07 after measuring
+		what the app actually links to. Finance now stands alone, which is what
+		most Indian buyers want from it.
 		"""
-		with self.assertRaises(frappe.ValidationError):
-			self.sub(packs=[{"pack": "Finance", "named_users": 1}])
+		doc = self.sub(packs=[{"pack": "Finance", "named_users": 2}])
+		self.assertIn("india_compliance", doc.selected_features())
+		self.assertIn("erp_accounts", doc.selected_features())
 
 	def test_finance_and_trade_together_satisfy_it(self):
 		doc = self.sub(packs=[{"pack": "Finance", "named_users": 1},

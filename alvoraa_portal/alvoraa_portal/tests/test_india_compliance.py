@@ -59,24 +59,37 @@ class TestItRefusesToStandAlone(FrappeTestCase):
     def test_ticking_it_alone_is_refused(self):
         unmet = sub.unmet_requirements(self.BASE + ["india_compliance"])
         self.assertIn("india_compliance", unmet)
-        self.assertEqual(set(unmet["india_compliance"]),
-                         {"erp_accounts", "erp_selling", "erp_buying"})
+        self.assertEqual(set(unmet["india_compliance"]), {"erp_accounts"})
 
     def test_the_message_names_what_is_missing(self):
         """An operator reading a refusal should not have to guess which boxes to
         tick. The names are the ones shown in the admin catalogue."""
         msg = sub.requirement_error(self.BASE + ["india_compliance"])
         self.assertIn("Indian Compliance", msg)
-        for name in ("Accounts", "Selling", "Buying"):
-            self.assertIn(name, msg)
+        self.assertIn("Accounts", msg)
 
-    def test_a_partial_selection_is_still_refused(self):
-        """Two of three is not enough, and the message says which one is left."""
-        msg = sub.requirement_error(
-            self.BASE + ["india_compliance", "erp_accounts", "erp_selling"])
-        self.assertIsNotNone(msg)
-        self.assertIn("Buying", msg)
-        self.assertNotIn("Selling", msg)
+    def test_accounts_alone_is_enough(self):
+        """Narrowed 2026-09-07, and this is the test that says why it matters.
+
+        The requirement used to be Accounts, Selling AND Buying. Indian
+        Compliance sits in the Finance pack, so that meant Finance could never
+        be sold on its own: a services company wanting bookkeeping and GST
+        filing had to buy a wholesale pack too - 550 a user instead of 300, for
+        modules they would never open.
+
+        Measured rather than argued. The only ERPNext transaction any of its 26
+        doctypes links to is Sales Invoice, and both invoice types live in the
+        Accounts module. Selling and Buying hold Sales Order and Purchase Order,
+        which filing a return does not touch.
+        """
+        self.assertIsNone(sub.requirement_error(
+            self.BASE + ["india_compliance", "erp_accounts"]))
+
+    def test_selling_and_buying_are_no_longer_demanded(self):
+        """A wholesale pack is not a prerequisite for a tax return."""
+        for extra in (["erp_selling"], ["erp_buying"], ["erp_selling", "erp_buying"]):
+            self.assertIsNone(sub.requirement_error(
+                self.BASE + ["india_compliance", "erp_accounts"] + extra))
 
     def test_a_complete_selection_passes(self):
         msg = sub.requirement_error(

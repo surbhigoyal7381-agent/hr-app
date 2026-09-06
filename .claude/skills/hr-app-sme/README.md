@@ -46,17 +46,21 @@ say go.
                           accounting integration points
     india-compliance.md   Every page of docs.indiacompliance.app, distilled:
                           GST setup, e-Invoice, e-Waybill, GSTR-1/3B, IMS,
-                          purchase reconciliation, TDS, audit trail
+                          purchase reconciliation, TDS, audit trail, the five
+                          GST treatments, and post-GSTR-3B / refund accounting
     hr-app-product.md     This product: apps, personas, runtime, working rules
     spec-templates.md     The two output formats
+    doc-map.md            Page index for all three sites, plus the order
+                          of trust when docs and code disagree
 ```
 
 ## Keeping it current
 
 The references are grounded in sources, not memory:
 
-- **India Compliance** — distilled from all 27 pages of
-  `resilient-tech/india-compliance-docs`, plus the app's doctype list.
+- **India Compliance** — distilled from all 27 documentation pages *and* the
+  blog posts of `resilient-tech/india-compliance-docs`, plus the app's doctype
+  list. Re-clone that repo to refresh.
 - **Frappe HR** — generated from the `hrms/` source vendored in this repo, and
   diffed against upstream `frappe/hrms`.
 - **ERPNext** — generated from the ERPNext source at the pinned version.

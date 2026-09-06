@@ -134,5 +134,9 @@ scheduler_events = {
     ],
     "monthly": [
         "alvoraa_portal.scheduled_jobs.generate_monthly_scorecards",
+        # Counts every tenant's employees and pack users for the month just
+        # ended. Returns silently on a tenant site - only the control plane has
+        # anything to count. See usage.py.
+        "alvoraa_portal.usage.collect_scheduled",
     ],
 }

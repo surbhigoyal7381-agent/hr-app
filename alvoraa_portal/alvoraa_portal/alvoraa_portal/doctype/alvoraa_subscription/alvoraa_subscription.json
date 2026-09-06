@@ -22,6 +22,7 @@
   "started_on",
   "cb2",
   "ended_on",
+  "excluded_employment_types",
   "notes"
  ],
  "fields": [
@@ -129,6 +130,12 @@
    "fieldname": "ended_on",
    "fieldtype": "Date",
    "label": "Ended On"
+  },
+  {
+   "description": "One per line, matching this tenant's Employment Type names - Intern, Contract. Empty means every Active employee counts. Kept on the subscription because it is part of what was agreed, not a setting somebody can change on the tenant to lower their own bill.",
+   "fieldname": "excluded_employment_types",
+   "fieldtype": "Small Text",
+   "label": "Employment Types Not Billed"
   },
   {
    "fieldname": "notes",

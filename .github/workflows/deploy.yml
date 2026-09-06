@@ -228,24 +228,33 @@ jobs:
               if [ $rc -ne 0 ]; then
                 echo "::warning::deploy failed (rc=$rc) - restoring service"
                 maint off
-                $DC up -d --no-deps nginx || docker start "${PROJECT}-nginx-1" || true
-                docker restart "${PROJECT}-nginx-1" >/dev/null 2>&1 || true
+                # ONE nginx serves every environment and it belongs to the
+                # `compose` project. devstack excludes it by profile, so
+                # `up -d nginx` there CREATES a second one, which then fights
+                # the real one for ports 80 and 443 and restarts for ever.
+                # That is not hypothetical - this trap did it on 2026-09-06.
+                docker restart compose-nginx-1 >/dev/null 2>&1 || true
               fi
               exit $rc
             }
             trap cleanup EXIT
 
-            # Retried. The pull failed three times in one day with
+            # Retried, with a growing wait. On 2026-09-06 all THREE original
+            # attempts failed inside two minutes, so the deploy aborted on a
+            # network problem that cleared by itself soon after. Six attempts
+            # spread over five minutes rides that out.
+            #
+            # The failure is always the same shape:
             #   failed to copy: read tcp ...->[2606:50c0:...]:443: connection reset
             # partway through a multi-GB layer, over IPv6. Docker keeps the layers
             # it already has, so a retry resumes rather than restarts.
             pulled=0
-            for attempt in 1 2 3; do
+            for attempt in 1 2 3 4 5 6; do
               if $DC pull; then pulled=1; break; fi
-              echo "::warning::pull attempt $attempt failed, retrying in 20s"
-              sleep 20
+              echo "::warning::pull attempt $attempt failed, retrying in $((attempt * 20))s"
+              sleep $((attempt * 20))
             done
-            [ "$pulled" = "1" ] || { echo "::error::image pull failed three times"; exit 1; }
+            [ "$pulled" = "1" ] || { echo "::error::image pull failed six times over five minutes"; exit 1; }
 
             # Containers first, maintenance mode second. The other order deadlocks:
             # the backend's healthcheck curls /api/method/ping on HEALTH_HOST, and
@@ -261,10 +270,11 @@ jobs:
             # cannot succeed at all.
             if ! $DC up -d --remove-orphans; then
               echo "::error::up -d failed"
-              # Never leave the proxy down. nginx depends on backend being healthy,
-              # so a backend that came up unhealthy takes every site offline - and
-              # nothing else in this job would notice.
-              $DC up -d --no-deps nginx || docker start "${PROJECT}-nginx-1" || true
+              # Never leave the proxy down. The shared nginx depends on backend
+              # being healthy, so an unhealthy backend takes every site offline.
+              # Restart it by name: it lives in the `compose` project whichever
+              # environment is being deployed.
+              docker restart compose-nginx-1 >/dev/null 2>&1 || true
               exit 1
             fi
 

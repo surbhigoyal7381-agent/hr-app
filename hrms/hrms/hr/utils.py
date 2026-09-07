@@ -50,7 +50,13 @@ def allow_regional(fn):
 			overrides = frappe.get_hooks("regional_overrides", {}).get(country, {})
 			fn_path = f"hrms.hr.utils.{fn.__name__}"
 			if fn_path in overrides:
-				return frappe.get_attr(overrides[fn_path])(*args, **kwargs)
+				target = overrides[fn_path]
+				# frappe.get_hooks merges every app's hook values into lists, so a
+				# regional override arrives as ["dotted.path"], not "dotted.path".
+				# The last installed app wins, the same rule ERPNext applies.
+				if isinstance(target, (list, tuple)):
+					target = target[-1]
+				return frappe.get_attr(target)(*args, **kwargs)
 		return fn(*args, **kwargs)
 	return wrapper
 

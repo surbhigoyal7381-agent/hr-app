@@ -9,7 +9,10 @@ sys.path.insert(0, os.environ.get("PPJ_SCRIPT_DIR", "/tmp/ppj"))
 from ppj_common import *  # noqa: F401,F403
 
 connect()
-for dt in ["Alvoraa Appraisal Extension", "Appraisal Action Item", "Employee Feedback Rating", "Employee Performance Feedback",
+# Employee Feedback Rating is shared with Appraisal Template: only the rows under appraisals and feedback go.
+if frappe.db.exists("DocType", "Employee Feedback Rating"):
+    frappe.db.delete("Employee Feedback Rating", {"parenttype": ["in", ["Appraisal", "Employee Performance Feedback"]]})
+for dt in ["Alvoraa Appraisal Extension", "Appraisal Action Item", "Employee Performance Feedback",
            "Appraisal Goal", "Appraisal KRA", "Appraisal", "Appraisee", "Upward Feedback", "KPI Progress Log",
            "KPI Additional Reviewer", "KPI", "Goal Evidence", "Goal Progress Update", "Goal Progress Audit Log",
            "Goal Check In", "Cascade Alignment Report", "Individual Goal", "Goal Cascade Version", "Goal Cascade",

@@ -74,6 +74,13 @@ if not frappe.db.exists("Appraisal Template", TEMPLATE):
                     "goals": [{"key_result_area": "Targets achieved (KPIs)", "per_weightage": 100}],
                     "rating_criteria": [{"criteria": c, "per_weightage": w} for c, w in CRITERIA]}).insert(ignore_permissions=True)
     log(f"  [created] Appraisal Template {TEMPLATE}")
+else:
+    tpl = frappe.get_doc("Appraisal Template", TEMPLATE)
+    if not tpl.rating_criteria:
+        for c, w in CRITERIA:
+            tpl.append("rating_criteria", {"criteria": c, "per_weightage": w})
+        tpl.save(ignore_permissions=True)
+        log(f"  [repaired] Appraisal Template {TEMPLATE}: criteria rows restored")
 commit()
 
 # ── Cycles and configs ──────────────────────────────────────────────────────
@@ -363,6 +370,8 @@ for e in emps:
         row.rating = stars((perf + random.uniform(-0.6, 0.6)) / 5)
     ap.reflections = "Focused on converting walk-ins during the wedding season and on keeping the counter ready every morning."
     _apply_kpis_to_appraisal(ap)
+    for g in ap.goals:           # Q1 is a finished quarter; the live "overdue" marker is noise there
+        g.kra = g.kra.replace(" ⚠ overdue", "")
     ap.flags.ignore_permissions = True
     ap.insert()
     mgr = manager_of(e.name)

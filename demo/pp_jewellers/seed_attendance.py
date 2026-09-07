@@ -93,6 +93,12 @@ for name in (STORE_SHIFT, HO_SHIFT):
 if frappe.db.exists("DocType", "Attendance Deduction Rule"):
     log("Attendance Deduction Rule (build B1)")
     RULE = "PPJ Late Coming Rule"
+    if not frappe.db.exists("Salary Component", "Late Coming Deduction"):
+        # the rule's loss-of-pay line; block 4 sets the rest of the payroll structure around it
+        frappe.get_doc({"doctype": "Salary Component", "salary_component": "Late Coming Deduction",
+                        "salary_component_abbr": "LCD", "type": "Deduction", "remove_if_zero_valued": 1,
+                        "description": "Loss of pay under the quarter-day late-coming rule"}).insert(ignore_permissions=True)
+        commit()
     if not frappe.db.exists("Attendance Deduction Rule", RULE):
         frappe.get_doc({
             "doctype": "Attendance Deduction Rule", "rule_name": RULE, "company": COMPANY, "enabled": 1,
@@ -101,7 +107,7 @@ if frappe.db.exists("DocType", "Attendance Deduction Rule"):
             "free_violations_per_week": 1, "deduction_per_violation_days": 0.25,
             "round_up_from_days": 0.75, "round_up_to_days": 1.0, "deduct_from_leave_first": 1,
             "leave_types": [{"leave_type": "Casual Leave", "priority": 1}],   # Earned Leave is kept for encashment
-            "lwp_salary_component": "Late Coming Deduction" if frappe.db.exists("Salary Component", "Late Coming Deduction") else None,
+            "lwp_salary_component": "Late Coming Deduction",
             "daily_wage_basis": "Base from Salary Structure Assignment",
             "exempt_grades": [{"employee_grade": g} for g in ("G5 Head", "G6 Leadership") if frappe.db.exists("Employee Grade", g)],
             "notify_employee": 1, "notify_manager": 1,

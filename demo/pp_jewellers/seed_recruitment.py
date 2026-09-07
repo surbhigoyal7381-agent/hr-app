@@ -75,7 +75,8 @@ if not frappe.db.exists("Staffing Plan", sp_name):
     current = frappe.db.count("Employee", {"designation": DESIG, "company": COMPANY, "status": "Active"})
     sp = frappe.get_doc({"doctype": "Staffing Plan", "__newname": sp_name, "name": sp_name, "company": COMPANY,
                          "from_date": FY_START, "to_date": FY_END,
-                         "staffing_details": [{"designation": DESIG, "number_of_positions": current + 1,
+                         # `vacancies` is the input; Frappe HR derives number_of_positions = vacancies + current_count
+                         "staffing_details": [{"designation": DESIG, "vacancies": 1,
                                                "estimated_cost_per_position": 42000 * 12}]})
     sp.flags.ignore_permissions = True
     sp.insert()
@@ -235,7 +236,8 @@ for applicant, rname, date, result, ratings, text in PLAN:
         # second interviewer rates half a point lower on one skill for a little spread
         fb = frappe.get_doc({"doctype": "Interview Feedback", "interview": iv.name, "interviewer": u,
                              "job_applicant": ja, "interview_type": rname, "feedback": text,
-                             "result": result if result in ("Cleared", "Rejected") else "",
+                             # Interview Feedback needs a verdict; a split decision leaves the interview Under Review
+                             "result": result if result in ("Cleared", "Rejected") else ("Cleared" if i == 0 else "Rejected"),
                              "skill_assessment": [{"skill": s, "rating": max(0.2, (v - (0.5 if (i and j == 0) else 0)) / 5.0)}
                                                   for j, (s, v) in enumerate(ratings.items())]})
         fb.flags.ignore_permissions = True

@@ -74,6 +74,9 @@ def ensure(doctype, filters, values=None, submit=False, quiet=False):
     doc = frappe.new_doc(doctype)
     fields = dict(filters) if isinstance(filters, dict) else {}
     fields.update(values or {})
+    if isinstance(filters, str):
+        doc.name = filters          # honoured by Prompt-named doctypes; field-named ones set it from the field
+        doc.set("__newname", filters)
     for k, v in fields.items():
         if isinstance(v, list):
             for row in v:
@@ -110,7 +113,7 @@ def employees(**filters):
     filters.setdefault("company", COMPANY)
     return frappe.get_all("Employee", filters=filters,
                           fields=["name", "employee_name", "designation", "department", "branch",
-                                  "reports_to", "employee_grade", "user_id", "holiday_list",
+                                  "reports_to", "grade as employee_grade", "user_id", "holiday_list",
                                   "default_shift", "date_of_joining", "gender"],
                           order_by="name asc")
 
@@ -149,7 +152,11 @@ def make_user(email, first_name, last_name, roles):
                                "send_welcome_email": 0, "user_type": "System User", "new_password": DEMO_PASSWORD,
                                "roles": [{"role": r} for r in roles]})
         user.flags.no_welcome_mail = True
-        user.insert(ignore_permissions=True)
+        frappe.flags.in_import = True       # bypass the 60-per-hour user creation throttle
+        try:
+            user.insert(ignore_permissions=True)
+        finally:
+            frappe.flags.in_import = False
     return email
 
 
@@ -169,3 +176,16 @@ def first_employee(designation, branch=None):
     rows = frappe.get_all("Employee", filters=filters, fields=["name", "user_id", "employee_name", "branch"],
                           order_by="name asc", limit=1)
     return rows[0] if rows else None
+
+
+def assign_holiday_list(assigned_to, holiday_list, from_date, applicable_for="Employee"):
+    """This Frappe HR version resolves holidays through Holiday List Assignment, not Employee.holiday_list."""
+    if not frappe.db.exists("DocType", "Holiday List Assignment"):
+        return
+    if frappe.db.exists("Holiday List Assignment", {"assigned_to": assigned_to, "from_date": from_date, "docstatus": 1}):
+        return
+    hla = frappe.get_doc({"doctype": "Holiday List Assignment", "applicable_for": applicable_for,
+                          "assigned_to": assigned_to, "holiday_list": holiday_list, "from_date": from_date})
+    hla.flags.ignore_permissions = True
+    hla.insert()
+    hla.submit()

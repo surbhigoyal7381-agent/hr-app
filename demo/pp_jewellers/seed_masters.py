@@ -127,7 +127,11 @@ LEAVE_TYPES = {
     "Loss of Pay": {"is_lwp": 1},
 }
 for lt, vals in LEAVE_TYPES.items():
-    ensure("Leave Type", lt, {"leave_type_name": lt, **vals})
+    if frappe.db.exists("Leave Type", lt):
+        # Frappe HR ships Casual, Sick and Compensatory Off; apply the PPJ rules to them too
+        frappe.db.set_value("Leave Type", lt, vals, update_modified=False)
+    else:
+        ensure("Leave Type", lt, {"leave_type_name": lt, **vals})
 commit()
 
 log("Leave Policy and Leave Period")

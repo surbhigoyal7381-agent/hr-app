@@ -37,7 +37,7 @@ for r in rows:
         "gender": r["gender"], "date_of_birth": r["date_of_birth"],
         "date_of_joining": r["date_of_joining"], "company": COMPANY,
         "branch": r["branch"], "department": dept(r["department"]),
-        "designation": r["designation"], "employee_grade": r["employee_grade"],
+        "designation": r["designation"], "grade": r["employee_grade"],
         "employment_type": r["employment_type"], "status": "Active",
         "holiday_list": r["holiday_list"], "default_shift": r["default_shift"],
         "attendance_device_id": r["attendance_device_id"],
@@ -45,10 +45,17 @@ for r in rows:
         "ctc": flt(r["monthly_ctc"]) * 12, "salary_currency": "INR",
     })
     emp.flags.ignore_mandatory = True
-    emp.insert(ignore_permissions=True)
+    # ERPNext's Employee autoname always uses the naming series (the HR Settings
+    # "Employee Number" option is not wired to it in this fork). Import mode keeps a
+    # preset name, which is exactly what Data Import relies on.
+    emp.name = r["employee_id"]
+    frappe.flags.in_import = True
+    try:
+        emp.insert(ignore_permissions=True)
+    finally:
+        frappe.flags.in_import = False
     if emp.name != r["employee_id"]:
-        # HR Settings must say "Employee Number"; fall back to renaming so IDs stay stable.
-        frappe.rename_doc("Employee", emp.name, r["employee_id"], force=True, ignore_permissions=True)
+        frappe.rename_doc("Employee", emp.name, r["employee_id"], force=True)
     created += 1
     if created % 50 == 0:
         commit()
@@ -92,6 +99,7 @@ for role in {r for rs in ROLES_BY_DESIG.values() for r in rs} | set(HEAD_PREFIX_
 
 emps = emp_map()
 made_users = 0
+frappe.flags.in_import = True      # User creation is throttled to 60 per hour outside import mode
 for r in rows:
     email = r["user_id"].strip().lower()
     desig = r["designation"]
@@ -127,6 +135,7 @@ for r in rows:
     if made_users and made_users % 50 == 0:
         commit()
 commit()
+frappe.flags.in_import = False
 log(f"  users: {made_users} created, all {len(rows)} linked")
 
 # Employee user permission (own record) for plain employees; Branch permission for store managers
@@ -157,6 +166,18 @@ for r in rows:
             frappe.db.set_value("Employee", r["employee_id"],
                                 {"leave_approver": approver, "expense_approver": approver}, update_modified=False)
 commit()
+
+# ── Holiday List Assignments (company fallback + one per employee) ─────────
+log("Holiday List Assignments")
+assign_holiday_list(COMPANY, "Head Office Holiday List", FY_START, applicable_for="Company")
+n = 0
+for r in rows:
+    assign_holiday_list(r["employee_id"], r["holiday_list"], FY_START)
+    n += 1
+    if n % 100 == 0:
+        commit()
+commit()
+log(f"  assignments: {frappe.db.count('Holiday List Assignment', {'docstatus': 1})}")
 
 # ── Leave policy assignment (creates allocations) ───────────────────────────
 log("Leave Policy Assignments")

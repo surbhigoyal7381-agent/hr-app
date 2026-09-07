@@ -136,7 +136,9 @@ That gives 21 holiday lists, all for 1 Apr 2026 to 31 Mar 2027:
 | `Delhi Store Holiday List - Off Monday` … `- Off Friday` (both Delhi stores) | 5 | same | same |
 | `Head Office Holiday List` | 1 | the 5 above plus Diwali, Dussehra, Raksha Bandhan, Guru Nanak Jayanti, Christmas, Baisakhi | Sunday |
 
-Use the Holiday List "Add Weekly Holidays" button for the weekly off. Verify the 2026 and 2027 festival dates against a calendar before entering; I have not verified them.
+Use the Holiday List "Add Weekly Holidays" button for the weekly off.
+
+This Frappe HR version resolves an employee's holidays through a submitted **Holiday List Assignment** (per employee, or per company as the fallback), not through the `holiday_list` field on Employee. The seed creates one assignment per employee from 1 April 2026 plus one company-level assignment to the Head Office list. Leave, attendance and payroll all read the assignment. Verify the 2026 and 2027 festival dates against a calendar before entering; I have not verified them.
 
 ## 9. Leave setup
 

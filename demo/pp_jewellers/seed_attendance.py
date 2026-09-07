@@ -47,6 +47,12 @@ log(f"  {made} shift assignments created")
 # ── Punches ─────────────────────────────────────────────────────────────────
 log("Employee Checkins from punches.csv")
 rows = read_csv("punches.csv")
+# Shift assignments carry a geofenced Shift Location, so a check-in must carry coordinates.
+# A real ESSL bridge sends the store's coordinates with every punch; the loader does the same.
+coords = {}
+for e in employees():
+    loc = frappe.db.get_value("Shift Location", {"location_name": e.branch}, ["latitude", "longitude"], as_dict=True)
+    coords[e.name.split("-")[-1]] = (loc.latitude, loc.longitude) if loc else (None, None)
 have = frappe.db.count("Employee Checkin")
 if have >= len(rows):
     log(f"  {have} checkins already present, skipping load")
@@ -54,9 +60,10 @@ else:
     created = skipped = unknown = 0
     for i, row in enumerate(rows, 1):
         try:
+            lat, lon = coords.get(row["attendance_device_id"], (None, None))
             add_log_based_on_employee_field(
                 employee_field_value=row["attendance_device_id"], timestamp=row["timestamp"],
-                device_id=row["device_id"], log_type=row["log_type"],
+                device_id=row["device_id"], log_type=row["log_type"], latitude=lat, longitude=lon,
             )
             created += 1
         except frappe.ValidationError as e:

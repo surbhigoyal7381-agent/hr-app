@@ -19,6 +19,7 @@ from ppj_common import *  # noqa: F401,F403
 from frappe.utils import add_days
 
 connect()
+frappe.flags.mute_emails = True
 
 NOIDA = "PPJ Noida Sector 18"
 KAROL_BAGH = "PPJ Delhi Karol Bagh"
@@ -94,8 +95,13 @@ if not (ritika_app and ritika_offer):
     raise SystemExit("Run seed_recruitment.py first")
 onb_name = frappe.db.get_value("Employee Onboarding", {"job_applicant": ritika_app, "docstatus": ["!=", 2]}, "name")
 if not onb_name:
+    # Frappe HR quirk: on submit the onboarding creates a Project whose expected start date is
+    # date_of_joining, and ERPNext refuses a Task that starts before its Project. Pre-joining
+    # tasks therefore need the joining date to equal the boarding start while submitting; the
+    # real joining date is written back right after. (One-line product fix: use
+    # boarding_begins_on for the Project in employee_boarding_controller.on_submit.)
     onb = frappe.get_doc({"doctype": "Employee Onboarding", "job_applicant": ritika_app, "job_offer": ritika_offer,
-                          "employee_name": "Ritika Malhotra", "date_of_joining": JOIN,
+                          "employee_name": "Ritika Malhotra", "date_of_joining": "2026-08-21",
                           "boarding_begins_on": "2026-08-21", "company": COMPANY, "department": dept("Sales"),
                           "designation": "Senior Sales Executive", "employee_grade": "G3 Senior Executive",
                           "holiday_list": "Noida Store Holiday List - Off Wednesday", "notify_users_by_email": 0,
@@ -106,6 +112,8 @@ if not onb_name:
     onb.flags.ignore_permissions = True
     onb.insert()
     onb.submit()          # creates the Project, one Task per activity, and a ToDo per assignee
+    onb.db_set("date_of_joining", JOIN)
+    frappe.db.set_value("Project", onb.project, "expected_end_date", "2026-10-05")
     onb_name = onb.name
     log(f"  [created] Employee Onboarding {onb_name} with {len(onb.activities)} tasks")
 commit()
@@ -138,7 +146,7 @@ if not frappe.db.exists("Employee", "PPJ-0401"):
     emp.update({
         "employee_number": "PPJ-0401", "first_name": "Ritika", "last_name": "Malhotra", "gender": "Female",
         "date_of_birth": "1995-03-14", "date_of_joining": JOIN, "branch": NOIDA, "department": dept("Sales"),
-        "designation": "Senior Sales Executive", "employee_grade": "G3 Senior Executive",
+        "designation": "Senior Sales Executive", "grade": "G3 Senior Executive",
         "reports_to": noida_fm_diamond.name, "employment_type": "Full-time", "status": "Active",
         "holiday_list": "Noida Store Holiday List - Off Wednesday", "default_shift": STORE_SHIFT,
         "attendance_device_id": "0401", "company_email": "ritika.malhotra@ppjewellers.demo",
@@ -147,9 +155,14 @@ if not frappe.db.exists("Employee", "PPJ-0401"):
     })
     emp.flags.ignore_permissions = True
     emp.flags.ignore_mandatory = True
-    emp.insert()
+    emp.name = "PPJ-0401"
+    frappe.flags.in_import = True
+    try:
+        emp.insert()
+    finally:
+        frappe.flags.in_import = False
     if emp.name != "PPJ-0401":
-        frappe.rename_doc("Employee", emp.name, "PPJ-0401", force=True, ignore_permissions=True)
+        frappe.rename_doc("Employee", emp.name, "PPJ-0401", force=True)
     log("  [created] Employee PPJ-0401 Ritika Malhotra")
 commit()
 
@@ -167,14 +180,19 @@ for eid, fn, ln, gender, dob, branch, department, desig, grade, rep, hol, dev, c
     e = frappe.get_doc({"doctype": "Employee", "employee_number": eid, "first_name": fn, "last_name": ln,
                         "gender": gender, "date_of_birth": dob, "date_of_joining": JOIN, "company": COMPANY,
                         "branch": branch, "department": dept(department), "designation": desig,
-                        "employee_grade": grade, "reports_to": rep, "employment_type": "Full-time",
+                        "grade": grade, "reports_to": rep, "employment_type": "Full-time",
                         "status": "Active", "holiday_list": hol, "default_shift": STORE_SHIFT,
                         "attendance_device_id": dev, "company_email": f"{fn.lower()}.{ln.lower()}@ppjewellers.demo",
                         "prefered_contact_email": "Company Email", "ctc": ctc * 12, "salary_currency": "INR"})
     e.flags.ignore_mandatory = True
-    e.insert(ignore_permissions=True)
+    e.name = eid
+    frappe.flags.in_import = True
+    try:
+        e.insert(ignore_permissions=True)
+    finally:
+        frappe.flags.in_import = False
     if e.name != eid:
-        frappe.rename_doc("Employee", e.name, eid, force=True, ignore_permissions=True)
+        frappe.rename_doc("Employee", e.name, eid, force=True)
     log(f"  [created] Employee {eid} {fn} {ln}")
 commit()
 
@@ -186,6 +204,7 @@ slab = frappe.db.get_value("Income Tax Slab", {"company": COMPANY, "docstatus": 
 STRUCT = {"G2 Executive": "PPJ-G2", "G3 Senior Executive": "PPJ-G3"}
 for eid, base in [("PPJ-0401", 42000), ("PPJ-0402", 22000), ("PPJ-0403", 20000)]:
     e = frappe.get_doc("Employee", eid)
+    assign_holiday_list(eid, e.holiday_list, JOIN)
     email = e.company_email
     make_user(email, e.first_name, e.last_name, [])
     if e.user_id != email:
@@ -195,10 +214,10 @@ for eid, base in [("PPJ-0401", 42000), ("PPJ-0402", 22000), ("PPJ-0403", 20000)]
                         "apply_to_all_doctypes": 1}).insert(ignore_permissions=True)
     approver = frappe.db.get_value("Employee", e.reports_to, "user_id")
     frappe.db.set_value("Employee", eid, {"leave_approver": approver, "expense_approver": approver}, update_modified=False)
-    if frappe.db.exists("Salary Structure", STRUCT[e.employee_grade]) and \
+    if frappe.db.exists("Salary Structure", STRUCT[e.grade]) and \
             not frappe.db.exists("Salary Structure Assignment", {"employee": eid, "docstatus": 1}):
         ssa = frappe.get_doc({"doctype": "Salary Structure Assignment", "employee": eid,
-                              "salary_structure": STRUCT[e.employee_grade], "company": COMPANY, "currency": "INR",
+                              "salary_structure": STRUCT[e.grade], "company": COMPANY, "currency": "INR",
                               "from_date": JOIN, "base": base, "income_tax_slab": slab})
         ssa.flags.ignore_permissions = True
         ssa.insert()

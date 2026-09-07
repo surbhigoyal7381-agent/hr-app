@@ -36,6 +36,8 @@ Create the roles `Store Admin`, `Store Manager`, `Payroll User`, `Trainer` if th
 
 The template is the stock Frappe HR mechanism: on submit, each activity becomes a Task in a Project "Employee Onboarding : ritika.malhotra@…", assigned as a ToDo to the user or everyone with the role, and the boarding status moves Pending → In Process → Completed as tasks close. Creating the Employee is refused until activities 1 to 4 are complete ("required for employee creation").
 
+**Quirk found while testing:** on submit, Frappe HR creates the onboarding Project with the joining date as its expected start, and ERPNext refuses a Task that starts before its Project. So pre-joining tasks (boarding begins 21 Aug, joining 1 Sep) fail unless the joining date on the onboarding equals the boarding start at submit time. The seed submits with 21 Aug and writes 1 Sep back afterwards. The product fix is one line in `employee_boarding_controller.on_submit`: use `boarding_begins_on` for the Project's expected start date. Add it to build B4.
+
 **Demo moment:** with tasks 1 and 4 done and 2 and 3 still open, click "Create Employee". The system refuses and names the open tasks. Close them, click again, the Employee is created.
 
 ## 3. Feature: Employee Documents (build B4)

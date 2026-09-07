@@ -65,9 +65,13 @@ CRITERIA = [(v, 12) for v, _e, _d in VALUES] + [("Customer handling", 25), ("Tea
 for c, _w in CRITERIA:
     ensure("Employee Feedback Criteria", c, {"criteria": c}, quiet=True)
 TEMPLATE = "PPJ Standard"
+ensure("KRA", "Targets achieved (KPIs)", {"title": "Targets achieved (KPIs)",
+                                          "description": "Placeholder KRA; the appraisal's goal table is rebuilt from the employee's weighted KPIs."}, quiet=True)
 if not frappe.db.exists("Appraisal Template", TEMPLATE):
+    # Appraisal Template needs at least one KRA row; the KPI bridge replaces the goal table anyway.
     frappe.get_doc({"doctype": "Appraisal Template", "template_title": TEMPLATE,
                     "description": "Manager feedback on the five values, customer handling and teamwork.",
+                    "goals": [{"key_result_area": "Targets achieved (KPIs)", "per_weightage": 100}],
                     "rating_criteria": [{"criteria": c, "per_weightage": w} for c, w in CRITERIA]}).insert(ignore_permissions=True)
     log(f"  [created] Appraisal Template {TEMPLATE}")
 commit()
@@ -135,7 +139,8 @@ def ensure_goal(employee, goal_name, cascade, parent, target, cycle, start, end)
                         "appraisal_cycle": cycle, "weightage": 0, "company_value": "Customer Delight"})
     g.flags.ignore_permissions = True
     g.insert()
-    g.submit()
+    # Goals stay in draft: that is how the portal creates them, and submitting one sends an
+    # email whose template needs built assets. The KPI bridge and the roll-ups read drafts.
     return g.name
 
 
@@ -169,7 +174,7 @@ for q, (cycle, start, end) in CYCLE_OF.items():
                 t = round(floor_target * SHARE[e.designation] / shares, 2)
                 goal_of[q][e.name] = ensure_goal(e.name, f"Own sales {q}", cascade, floor_goal, t, cycle, start, end)
     commit()
-    log(f"  {q}: {frappe.db.count('Individual Goal', {'goal_cascade': cascade, 'docstatus': 1})} goals on the cascade")
+    log(f"  {q}: {frappe.db.count('Individual Goal', {'goal_cascade': cascade, 'docstatus': ['!=', 2]})} goals on the cascade")
 
 # ── Evidence: monthly sales per salesperson ────────────────────────────────
 log("Goal evidence and progress")
@@ -206,7 +211,7 @@ for e in emps:
 commit()
 # Roll individual evidence up: goal progress, then parent goals get the sum of their children as their own evidence
 for q in ("Q1", "Q2"):
-    goals = frappe.get_all("Individual Goal", filters={"appraisal_cycle": CYCLE_OF[q][0], "docstatus": 1},
+    goals = frappe.get_all("Individual Goal", filters={"appraisal_cycle": CYCLE_OF[q][0], "docstatus": ["!=", 2]},
                            fields=["name", "parent_goal", "employee", "end_date"])
     children = {}
     for g in goals:

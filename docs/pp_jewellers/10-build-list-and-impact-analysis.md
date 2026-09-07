@@ -82,6 +82,8 @@ Spec: file 07 §3.
 
 **Risk**: existing employees have no rows. Provide a one-off "Create checklists for all employees" action on Employee Document Type.
 
+**Also in scope (found while testing)**: `employee_boarding_controller.on_submit` sets the onboarding Project's expected start date to the joining date, so any pre-joining task is refused by ERPNext's Task date check. Use `boarding_begins_on` instead. One line, covered by a test that submits an onboarding with tasks before joining.
+
 ---
 
 ## B5 — Policy Library

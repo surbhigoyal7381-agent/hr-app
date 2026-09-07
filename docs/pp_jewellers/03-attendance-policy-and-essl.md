@@ -74,6 +74,8 @@ Product-side pieces:
 
 Duplicates are safe: Employee Checkin already rejects a second log for the same employee, time and log type. Unknown employee codes are counted in the sync log and skipped, not raised.
 
+One rule found while testing: when a Shift Assignment carries a geofenced Shift Location, every check-in must carry coordinates, or Frappe HR refuses it. So the bridge sends the store's own coordinates with each punch (the `Biometric Location Map` row holds them). The demo loader does the same.
+
 Use `requests` with a hand-built SOAP envelope and `xml.etree` to read the reply. No new Python dependency.
 
 ### 2.4 For the demo: simulated punches

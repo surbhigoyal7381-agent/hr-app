@@ -103,18 +103,32 @@ Every step below runs on the **ppj tenant**, never on `dev.alvoraa.co`.
 - [ ] Take screenshots of every demo moment as a fallback.
 - [ ] Re-run `bench --site ppj.dev.alvoraa.co backup` and keep this backup as the "demo-ready" restore point.
 
-## Scripts still to write (console, in `demo/pp_jewellers/`)
+## Scripts (written, in `demo/pp_jewellers/`)
 
-These are small and mechanical; they are listed so nothing is forgotten. The `demo/` folder is git-isolated; add empty stubs on `main` per `demo/README.md`.
+One script per block, all idempotent, all reading the CSVs in `docs/pp_jewellers/data/`. `run_all.sh` runs them in checklist order on one site; `verify_ppj.py` prints the check numbers listed above.
 
-| Script | Reads | Creates |
+| Script | Block | Creates |
 |---|---|---|
-| `seed_masters.py` | designations.csv, file 02 tables | Company, Branches, Shift Locations, Departments, Designations, Grades, Holiday Lists, Leave Types, Shift Types |
-| `seed_employees.py` | employees.csv | Employees (two passes), Users, roles, User Permissions, Leave Policy Assignments |
-| `seed_payroll.py` | employees.csv, sales_actuals_july.csv | Components, Structures, Assignments, Employee Incentives, Payroll Entries |
-| `seed_recruitment.py` | applicants.csv, file 06 | Sources, Skills, Requisition, Opening, Applicants, Interview Types, Interviews, Feedback, Offer, Appointment Letter |
-| `seed_onboarding.py` | file 07 | Template, Onboarding, Training Program and Events |
-| `seed_policies.py` | policies.csv | Policy Documents (needs B5) |
-| `seed_performance.py` | sales_targets.csv, kpi_library.csv, sales_actuals_july.csv | Values, scales, criteria, cascades, goals, KPIs, evidence, feedback, appraisals, calibration |
+| `provision_ppj.sh` | 0 | Runs on the server: create_tenant on the control plane, waits for the job, adds the TLS name, records the Alvoraa Subscription. Not tested from the development container; read it before running. |
+| `seed_masters.py` | 1 | Company (if missing), fiscal years, branches, shift locations, departments, designations, grades, 21 holiday lists, leave types, leave policy and period, shift types, HR Settings |
+| `seed_employees.py` | 2 | 400 employees in two passes, tree rebuild, users with the demo password, roles by designation, user permissions, approvers, leave policy assignments, PPJ-0058's May leave |
+| `seed_attendance.py` | 3 | Shift assignments, 45,232 check-ins through the punch API, auto attendance for both shifts |
+| `seed_payroll.py` | 4 | Payroll settings, period, tax slab, accounts, 17 components (ESI included as formula components), 5 structures, 400 assignments, incentives from July sales, July and August payroll with slips submitted |
+| `seed_recruitment.py` | 5 | Sources, skills, offer terms, letter template, staffing plan, requisition, opening with the JD, 8 applicants, referral, 3 interview types, 11 interviews with 22 feedback records, offer, appointment letter |
+| `seed_onboarding.py` | 6 | Roles, onboarding template, Ritika's onboarding with tasks closed, Employee PPJ-0401 created through it, two more joiners, users and salary for the three, training program, 3 events, result, feedback, skill map |
+| `seed_performance.py` | 8 | Values, scale, principles, criteria, template, two cycles with configs, two cascades with the store/floor/individual tree, evidence and progress, ~4,000 KPIs, Q1 feedback and submitted appraisals with extensions, calibration, Q2 draft appraisals, upward feedback |
+| `run_all.sh` | 1-8 | `run_all.sh --site ppj.dev.alvoraa.co --bench /home/frappe/frappe-bench [--from n | --only n]` |
+| `verify_ppj.py` | all | prints the verification numbers |
 
-`demo/setup_performance.py` (Grace Drinks) is the pattern to copy for `seed_performance.py`: parameterised at the top, idempotent `_ensure` helpers.
+On the server, after Block 0:
+
+```
+docker cp demo/pp_jewellers compose-backend-1:/tmp/ppj
+docker cp docs/pp_jewellers/data compose-backend-1:/tmp/ppj/data
+docker exec compose-backend-1 bash /tmp/ppj/run_all.sh --site ppj.dev.alvoraa.co
+docker exec compose-backend-1 bash -lc 'cd /home/frappe/frappe-bench/sites && PPJ_SCRIPT_DIR=/tmp/ppj ../env/bin/python /tmp/ppj/verify_ppj.py --site ppj.dev.alvoraa.co'
+```
+
+Demo password for every seeded user: `Ppj@2026` (override with `PPJ_DEMO_PASSWORD`). Change it on the tenant after the demo.
+
+The `demo/` folder is git-isolated; add empty stubs on `main` per `demo/README.md` before the next merge.

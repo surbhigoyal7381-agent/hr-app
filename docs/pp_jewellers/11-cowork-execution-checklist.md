@@ -121,6 +121,10 @@ Two product bugs surfaced and are written up in file 10: the regional override w
 
 Run time on a 4-core box: Block 3 about 30 minutes (auto attendance), Block 4 about 8 minutes, Block 8 about 5 minutes, the rest under a minute each. The site needs a running background worker; without one, Frappe refuses new jobs after a few hundred queue up.
 
+**Running it on a fresh local site.** Two things the provisioner does on a tenant have to be done by hand locally, before block 1: complete ERPNext's setup wizard the provisioner's way (`bench --site <site> execute alvoraa_portal.tenant_setup.complete_company_setup --kwargs '{"company_name": "PP Jewellers Pvt Ltd", "company_abbr": "PPJ", "country": "India", "currency": "INR", "timezone": "Asia/Kolkata", "fy_start_date": "2026-04-01"}'`; without it the Company cannot be created because the warehouse types do not exist), and declare the features in the site config (`bench --site <site> set-config -p features '[...]'` with the Enterprise list plus the five opt-in keys), which is what the console tick writes on a tenant. The six builds' hooks ask that list before acting on a stock doctype.
+
+**Known local-bench limitation.** Test modules that render an email template (`test_employee_onboarding`, ERPNext's `test_employee.test_create_user_automatically`, two salary slip tests) error with `bundled_asset ... 'NoneType' object has no attribute 'get'` because the bench has no built assets (`bench build` needs Node 24, which the container lacks). They fail the same way with and without the builds; the production image builds assets.
+
 ## Scripts (written, in `demo/pp_jewellers/`)
 
 One script per block, all idempotent, all reading the CSVs in `docs/pp_jewellers/data/`. `run_all.sh` runs them in checklist order on one site; `verify_ppj.py` prints the check numbers listed above.

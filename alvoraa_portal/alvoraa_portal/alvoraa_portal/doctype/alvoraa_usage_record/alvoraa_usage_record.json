@@ -1,0 +1,162 @@
+{
+ "actions": [],
+ "autoname": "format:{site_name} {period}",
+ "creation": "2026-09-07 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "site_name",
+  "period",
+  "cb0",
+  "counted_on",
+  "source",
+  "emp_sec",
+  "billable_employees",
+  "total_employees",
+  "cb1",
+  "breakdown",
+  "pack_sec",
+  "packs",
+  "res_sec",
+  "ok",
+  "cb2",
+  "error",
+  "sales_invoice",
+  "notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "site_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Site",
+   "reqd": 1
+  },
+  {
+   "description": "The month it counts, as YYYY-MM.",
+   "fieldname": "period",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Period",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cb0",
+   "fieldtype": "Column Break",
+   "label": null
+  },
+  {
+   "fieldname": "counted_on",
+   "fieldtype": "Datetime",
+   "label": "Counted On",
+   "read_only": 1
+  },
+  {
+   "default": "Measured",
+   "description": "A hand-entered count is a decision somebody made. It is kept apart from a measured one so an invoice can always say which it was.",
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "Measured\nEntered by hand"
+  },
+  {
+   "fieldname": "emp_sec",
+   "fieldtype": "Section Break",
+   "label": "Employees"
+  },
+  {
+   "description": "What the bill multiplies by. Active employees, less any employment types this tenant excludes.",
+   "fieldname": "billable_employees",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Billable Employees"
+  },
+  {
+   "description": "Every Employee record on the site, whatever their status. Here so the two numbers can be compared when a customer queries the bill.",
+   "fieldname": "total_employees",
+   "fieldtype": "Int",
+   "label": "Employee Records",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb1",
+   "fieldtype": "Column Break",
+   "label": null
+  },
+  {
+   "description": "Counts by status and employment type, as measured. The working behind the billable number.",
+   "fieldname": "breakdown",
+   "fieldtype": "Long Text",
+   "label": "Breakdown",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pack_sec",
+   "fieldtype": "Section Break",
+   "label": "Operations packs"
+  },
+  {
+   "fieldname": "packs",
+   "fieldtype": "Table",
+   "label": "Packs",
+   "options": "Alvoraa Usage Pack"
+  },
+  {
+   "fieldname": "res_sec",
+   "fieldtype": "Section Break",
+   "label": "Result"
+  },
+  {
+   "default": "0",
+   "fieldname": "ok",
+   "fieldtype": "Check",
+   "label": "Measured Cleanly",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb2",
+   "fieldtype": "Column Break",
+   "label": null
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Small Text",
+   "label": "What Went Wrong",
+   "read_only": 1
+  },
+  {
+   "description": "The invoice raised from this count. One per site per month - its presence is what stops a second run billing the same month twice.",
+   "fieldname": "sales_invoice",
+   "fieldtype": "Link",
+   "label": "Sales Invoice",
+   "options": "Sales Invoice",
+   "read_only": 1
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes"
+  }
+ ],
+ "links": [],
+ "modified": "2026-09-07 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa Usage Record",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "title_field": "site_name",
+ "track_changes": 0
+}

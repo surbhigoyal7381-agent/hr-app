@@ -1,0 +1,80 @@
+{
+ "actions": [],
+ "autoname": "field:pack_name",
+ "creation": "2026-09-06 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "pack_name",
+  "is_active",
+  "rate_per_user",
+  "requires_pack",
+  "feat_sec",
+  "features"
+ ],
+ "fields": [
+  {
+   "fieldname": "pack_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Pack Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Active"
+  },
+  {
+   "fieldname": "rate_per_user",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Rate per named user (monthly)",
+   "reqd": 1
+  },
+  {
+   "description": "Trade needs Finance. Enforced when a subscription is saved, not merely displayed.",
+   "fieldname": "requires_pack",
+   "fieldtype": "Link",
+   "label": "Requires Pack",
+   "options": "Alvoraa Operations Pack"
+  },
+  {
+   "fieldname": "feat_sec",
+   "fieldtype": "Section Break",
+   "label": "ERPNext modules in this pack"
+  },
+  {
+   "fieldname": "features",
+   "fieldtype": "Table",
+   "label": "Features",
+   "options": "Alvoraa Pack Feature"
+  }
+ ],
+ "links": [],
+ "modified": "2026-09-06 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa Operations Pack",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "title_field": "pack_name",
+ "track_changes": 1
+}

@@ -1,0 +1,57 @@
+{
+ "actions": [],
+ "creation": "2026-09-07 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "pack",
+  "agreed_users",
+  "measured_users",
+  "over_by"
+ ],
+ "fields": [
+  {
+   "columns": 3,
+   "fieldname": "pack",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Pack",
+   "options": "Alvoraa Operations Pack"
+  },
+  {
+   "columns": 2,
+   "description": "What the subscription says. This is what is billed.",
+   "fieldname": "agreed_users",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Agreed"
+  },
+  {
+   "columns": 2,
+   "description": "How many people could actually open it on the day of the count.",
+   "fieldname": "measured_users",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Measured"
+  },
+  {
+   "columns": 2,
+   "description": "Measured minus agreed, when measured is higher. A flag for a conversation, never an automatic charge.",
+   "fieldname": "over_by",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Over By"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-07 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa Usage Pack",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 0
+}

@@ -185,9 +185,11 @@ made = 0
 for e in employees():
     if frappe.db.exists("Salary Structure Assignment", {"employee": e.name, "docstatus": 1}):
         continue
+    base = ctc.get(e.name) or flt(frappe.db.get_value("Employee", e.name, "ctc")) / 12   # joiners outside the CSV
+    from_date = FY_START if e.name in ctc else str(e.date_of_joining)
     ssa = frappe.get_doc({"doctype": "Salary Structure Assignment", "employee": e.name,
                           "salary_structure": GRADE_TO_STRUCTURE[e.employee_grade], "company": COMPANY,
-                          "currency": "INR", "from_date": FY_START, "base": ctc[e.name],
+                          "currency": "INR", "from_date": from_date, "base": base,
                           "income_tax_slab": SLAB_NAME, "payroll_payable_account": PAYABLE_ACC})
     ssa.flags.ignore_permissions = True
     ssa.insert()
@@ -225,6 +227,8 @@ for r in read_csv("sales_actuals_july.csv"):
         incentives.append((r["employee_id"], r["incentive_component"], flt(r["incentive_inr"])))
 FLOOR_SHARE = {"Floor Manager - Gold": 0.60, "Floor Manager - Diamond": 0.32, "Floor Manager - Silver & Fashion": 0.08}
 for e in employees():
+    if str(e.date_of_joining) > PAY_DATE:     # September joiners earn nothing for July
+        continue
     att = JULY_ATT.get(e.branch, 0)
     store_month = Q2_STORE.get(e.branch, 0) / 3 * att
     if e.designation in FLOOR_SHARE:

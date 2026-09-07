@@ -220,3 +220,38 @@ commit()
 
 log("Block 2 done")
 counts("Employee", "User", "User Permission", "Leave Policy Assignment", "Leave Allocation", "Leave Application")
+
+
+# ── Employee documents (build B4) ───────────────────────────────────────────
+# Every new Employee gets a Pending checklist from the hook. Existing staff
+# joined years ago, so their papers are on record: mark them Verified as of the
+# joining date. PPJ-0200 keeps an expired police verification certificate for the
+# Document Compliance view.
+if frappe.db.exists("DocType", "Employee Document"):
+    log("Employee documents: existing staff verified (build B4)")
+    from hrms.alvoraa_employee_documents.employee_documents import backfill_checklists, refresh_summary
+    filled = backfill_checklists()        # employees created before the feature was switched on
+    log(f"  checklists backfilled for {filled} employees")
+    ED = frappe.qb.DocType("Employee Document")
+    pending = frappe.get_all("Employee Document", filters={"parenttype": "Employee", "status": "Pending"},
+                             fields=["name", "parent"])
+    joined = {e.name: e.date_of_joining for e in frappe.get_all("Employee", filters={"company": COMPANY},
+                                                                 fields=["name", "date_of_joining"])}
+    by_parent = {}
+    for r in pending:
+        by_parent.setdefault(r.parent, []).append(r.name)
+    for parent, names in by_parent.items():
+        on = joined.get(parent) or "2026-01-01"
+        (frappe.qb.update(ED).set(ED.status, "Verified").set(ED.received_on, on).set(ED.verified_on, on)
+         .set(ED.received_by, "Administrator").set(ED.verified_by, "Administrator")
+         .where(ED.name.isin(names))).run()
+    cert = frappe.db.get_value("Employee Document", {"parent": "PPJ-0200", "parenttype": "Employee",
+                                                     "document_type": "Police verification certificate"}, "name")
+    if cert:
+        frappe.db.set_value("Employee Document", cert, {"status": "Expired", "issue_date": "2020-04-01",
+                                                        "expiry_date": "2023-03-31",
+                                                        "remarks": "Renewal not yet applied for"})
+    for parent in by_parent:
+        refresh_summary(parent)
+    commit()
+    log(f"  {len(pending)} rows verified for {len(by_parent)} employees; PPJ-0200 police certificate expired")

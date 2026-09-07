@@ -83,6 +83,16 @@ Spec: file 06 §4 and §5.
 
 **Non-functional**: Performance neutral. Security: web form is public and unauthenticated by design (like the stock job-application form); add rate limiting via the existing Frappe web form throttling and keep the fields to the questions only, no free-text beyond availability and cover letter. Reliability neutral. Scalability neutral. Maintainability: custom fields carry a `module` so they export with the app. Data integrity neutral. Compliance: applicant PII already exists on Job Applicant; no new categories.
 
+**Status: approved and implemented 2026-09-07**, in the generic form rather than the `ppj_*` one. Module `hrms/hrms/alvoraa_screening` ("Alvoraa Screening", its own Module Def):
+
+- Custom fields (`setup.py`, patch `add_screening_fields`): a "Screening" section on Job Applicant with nine generic answer fields plus read-only `screening_result` (in the list view and filters) and `screening_notes`; a "Screening Rules" section on Job Opening (retail experience required, minimum years, product knowledge required, roster and festival availability required, maximum expected monthly CTC).
+- `screening.py`: `evaluate` and a Job Applicant validate hook `screen` that applies the opening's rules when the applicant answered anything; a failed rule sets Screened Out, the reasons, and status Rejected on a new applicant. No rules on the opening means no verdict. Behind the `screening_forms` feature gate.
+- Web Form `screening-application` ships with the app (neutral wording, `job_title` filled from the link's `?job_title=`); a client's own wording is a copy with different labels, which is what the seed does for PP Jewellers.
+- Tests: `hrms/hrms/alvoraa_screening/tests/test_screening.py` (5 tests: rules read from the opening, evaluation, screened on insert, no rules or no answers, the shipped form).
+- Seeds: rules on the PPJ opening, answers on the eight applicants (three screened out as the story says), the client-worded web form.
+
+Not done: rate limiting beyond what Frappe applies to web forms; a per-opening question editor (the questions are fixed fields, the wording is per form).
+
 ---
 
 ## B4 — Employee Documents
@@ -107,6 +117,18 @@ Spec: file 07 §3.
 
 **Also in scope (found while testing)**: `employee_boarding_controller.on_submit` sets the onboarding Project's expected start date to the joining date, so any pre-joining task is refused by ERPNext's Task date check. Use `boarding_begins_on` instead. One line, covered by a test that submits an onboarding with tasks before joining.
 
+**Status: approved and implemented 2026-09-07.** Module `hrms/hrms/alvoraa_employee_documents` ("Alvoraa Employee Documents", its own Module Def so the console tick gates it cleanly):
+
+- Doctypes: `Employee Document Type` (category, collected by, mandatory, expiry with reminder days, applies-to grades **and designations**, verifier roles, HR Manager writes, HR User and Employee read) with three small child tables, and the child `Employee Document` (type, status Pending / Received / Verified / Rejected / Expired, attachment, document number, dates, received and verified by, remarks).
+- Custom fields (`setup.py`, patch `add_employee_document_fields`, fresh installs): a "Documents" tab on Employee with the table and a one-line summary; a read-only "Document Checklist" summary on Employee Onboarding.
+- `employee_documents.py`: `fill_checklist` (Employee after_insert: one Pending row per type that applies to the grade or designation), `validate_documents` (attachment moves Pending to Received with who and when; Verified needs one of the type's verifier roles and stamps who and when; a passed expiry date sets Expired; the summary is rebuilt), `sync_onboarding_summary` (Employee on_update), `expire_documents` (daily 03:00: expiry and reminders by email to the employee and HR Managers), `attach_document` and `employees_missing_mandatory` for the portal. All of it is behind the feature gate `feature_enabled("employee_documents")` (`alvoraa_hr_core/features.py`, which reads the subscription registry and says yes on a bench without the portal app). The same gate now sits in front of the B6 hooks.
+- Onboarding fix: `employee_boarding_controller.on_submit` starts the Project on `boarding_begins_on`, so pre-joining tasks no longer fail.
+- Portal: `get_my_documents`, `attach_my_document` (private upload through Frappe's `upload_file`, then the row is set to Received; only rows collected from the employee) and `hr_document_compliance` (HR: active employees with a mandatory document not yet Verified, by branch). Page: a "My Documents" card on the home panel with Upload buttons, and a "Document Compliance" card with a branch filter on the Organisation Settings panel. Both hide unless the plan flag `plan_employee_documents` is on.
+- Tests: `hrms/hrms/alvoraa_employee_documents/tests/test_employee_documents.py` (7 tests: scope by grade and designation, checklist on creation, attachment marks Received, verifier role enforced, expiry on save and by the job, portal attach and compliance, summary text).
+- Seeds: 18 document types (block 1); every existing employee's rows are marked Verified as of joining, with PPJ-0200's police certificate Expired (block 2); Ritika's rows per file 07 §3.5 (block 6).
+
+Not done: the "Employee Onboarding view" shows the counts, not the table itself (open the Employee record for the rows). The reminder goes by email only; a portal notification can follow if the client wants it.
+
 ---
 
 ## B5 — Policy Library
@@ -128,6 +150,19 @@ Spec: file 08.
 | Compliance / privacy | Improves. Acknowledgement records give an audit trail (POSH, code of conduct). |
 
 **Risk**: "Reporting Managers" is computed from `reports_to`; when a manager's last report leaves, they lose access. Acceptable and correct.
+
+**Status: approved and implemented 2026-09-07.** Module `hrms/hrms/alvoraa_policy_library` ("Alvoraa Policy Library", its own Module Def):
+
+- Doctypes: `Policy Document` (title, owner department, category, status Draft / Published / Archived, current version, dates, pinned, acknowledge flags, summary, attachment, content, read and write rule tables, version history; `POL-#####`), child `Policy Access Rule` (All Employees / Reporting Managers / HR Only / Department Only / Top Leadership / Role / User / Designation / Branch), child `Policy Document Version` (snapshot of summary, attachment and content with who, when and what changed), `Policy Acknowledgement` (policy, version, employee; one per version per employee; employees create their own, HR reads all).
+- Custom field `department_head` on Department (`setup.py`, patch `add_policy_library_fields`): department heads are the "top leadership" of the rules and can write their own department's policies.
+- `access.py`: one access profile per user per request (roles, employee, department, designation, branch, is-manager, department headships), the rules in Python (`can_read`, `can_write`, `has_permission`) and the same rules as SQL for the list (`permission_query_conditions`), so the list and the form never disagree. No `ignore_permissions` in the read path; the portal reads through `frappe.get_list`.
+- Controller: `publish(change_note)` bumps the version and snapshots; validate flags unpublished changes on a published policy; readers get `published_view()`, the last snapshot. Publishing from the desk without a snapshot creates version 1.
+- Onboarding link: an acknowledgement closes the onboarding task whose activity name contains "policy" once every joining policy is acknowledged.
+- Portal (`hr_api.py`): `get_my_policies`, `list_policies` (search across title, summary and content; department and category filters), `get_policy`, `acknowledge_policy`, `save_policy` (with the "who can read" presets), `publish_policy`, `get_policy_compliance` (HR: pending by branch and by policy, review dates due). Page: a Policies widget on the home panel (pinned first, six cards, "Acknowledge" where pending), a Policies panel with search, filters, the reading view with version history, a Manage tab for writers (edit the working copy, choose who can read, publish with a change note, acknowledgement counts) and an HR compliance card.
+- Tests: `hrms/hrms/alvoraa_policy_library/tests/test_policy_library.py` (7 tests: profiles, who sees what in the list, department-only follows the owner department, the form agrees with the list, who may write, publish snapshots while readers keep the old text, acknowledgement once per version).
+- Seeds: block 7 `seed_policies.py`: department heads, 16 policies published with real text for the five demo ones, acknowledgements for everyone who joined before August, the Old Gold policy with unpublished changes.
+
+Not done: rate limiting of the search (Frappe's own request limits apply); a notification when a new version is published (the badge on the portal is the signal; email can follow).
 
 ---
 

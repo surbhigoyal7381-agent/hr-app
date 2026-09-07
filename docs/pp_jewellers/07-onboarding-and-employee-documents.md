@@ -36,7 +36,7 @@ Create the roles `Store Admin`, `Store Manager`, `Payroll User`, `Trainer` if th
 
 The template is the stock Frappe HR mechanism: on submit, each activity becomes a Task in a Project "Employee Onboarding : ritika.malhotra@…", assigned as a ToDo to the user or everyone with the role, and the boarding status moves Pending → In Process → Completed as tasks close. Creating the Employee is refused until activities 1 to 4 are complete ("required for employee creation").
 
-**Quirk found while testing:** on submit, Frappe HR creates the onboarding Project with the joining date as its expected start, and ERPNext refuses a Task that starts before its Project. So pre-joining tasks (boarding begins 21 Aug, joining 1 Sep) fail unless the joining date on the onboarding equals the boarding start at submit time. The seed submits with 21 Aug and writes 1 Sep back afterwards. The product fix is one line in `employee_boarding_controller.on_submit`: use `boarding_begins_on` for the Project's expected start date. Add it to build B4.
+**Quirk found while testing:** on submit, Frappe HR creates the onboarding Project with the joining date as its expected start, and ERPNext refuses a Task that starts before its Project. So pre-joining tasks (boarding begins 21 Aug, joining 1 Sep) fail unless the joining date on the onboarding equals the boarding start at submit time. The seed submits with 21 Aug and writes 1 Sep back afterwards. The product fix is one line in `employee_boarding_controller.on_submit`: use `boarding_begins_on` for the Project's expected start date. **Done with build B4 (2026-09-07)**; the seed no longer writes the joining date back.
 
 **Demo moment:** with tasks 1 and 4 done and 2 and 3 still open, click "Create Employee". The system refuses and names the open tasks. Close them, click again, the Employee is created.
 
@@ -45,6 +45,8 @@ The template is the stock Frappe HR mechanism: on submit, each activity becomes 
 ### 3.1 What the client asked for
 
 "Document collection should be a field associated with each employee. The responsible person should attach all the documents to the employee's profile field itself."
+
+**Status: built and tested 2026-09-07 (file 10, B4).** Module **Alvoraa Employee Documents** (`hrms/hrms/alvoraa_employee_documents`), opt-in feature key `employee_documents`. One addition to the design below: a document type can be limited by **designation** as well as by grade (the vault authorisation goes to the vault roles, the agency licence to security guards; grades alone could not say that). The onboarding Project now starts on `boarding_begins_on`, so the quirk in §2 is gone and the seed submits the onboarding with the real joining date.
 
 ### 3.2 Design
 
@@ -71,6 +73,7 @@ A child table **`Employee Document`** on the **Employee** doctype, added as a Cu
 | category | Select: Identity / Address / Education / Employment / Statutory / Verification / Company Issued |
 | mandatory_for_joining | Check |
 | applies_to_grades | Table MultiSelect Employee Grade (blank = all) |
+| applies_to_designations | Table MultiSelect Designation (blank = all; with grades set too, either match is enough) |
 | verifier_roles | Table MultiSelect Role |
 | has_expiry | Check |
 | reminder_days_before_expiry | Int (30) |
@@ -96,23 +99,23 @@ A child table **`Employee Document`** on the **Employee** doctype, added as a Cu
 | Reference check note | Verification | yes | Store Manager | HR Manager |
 | Signed offer and appointment letter | Employment | yes | HR User | HR Manager |
 | Signed policy acknowledgement | Company Issued | yes | HR User | HR User |
-| Vault access authorisation (vault roles only) | Company Issued | for Vault & Inventory Custodian | Store Manager | HR Manager |
-| Security agency licence (guards only) | Statutory | for Security Guard | Store Admin | HR Manager |
+| Vault access authorisation (vault roles only) | Company Issued | for Vault & Inventory Custodian, Central Vault & Inventory Manager, Inventory Executive (by designation) | Store Manager | HR Manager |
+| Security agency licence (guards only) | Statutory | for Security Guard (by designation), expires | Store Admin | HR Manager |
 
 ### 3.4 How it behaves
 
 - **Onboarding hook:** when an Employee is created from an Employee Onboarding, the checklist is filled with every document type that is mandatory or applies to the grade, status Pending. Files already attached to the Job Applicant (resume) are not copied; the joiner's documents are collected fresh.
 - **Employee Onboarding view:** a read-only "Documents" section shows the same table with counts (Pending / Received / Verified). Activity 1 in the template says "collect the documents in the checklist".
 - **Verification:** only users with a verifier role for that type can set Verified. Others can set Received and attach.
-- **Expiry:** a daily job moves rows past `expiry_date` to Expired and notifies HR and the employee 30 days before.
+- **Expiry:** a daily job (03:00) moves rows past `expiry_date` to Expired and emails the employee and the HR Managers; it also emails when a document is `reminder_days_before_expiry` days from expiring. Saving the Employee record also expires a row whose date has passed.
 - **Portal (employee):** Profile tab gets a "My Documents" card: the checklist with status, and an upload button for rows where `collect_from = Employee`. Upload sets status Received.
-- **Portal (HR):** HR Setup tab gets "Document Compliance": employees with any mandatory document not Verified, by store.
+- **Portal (HR):** Organisation Settings gets "Document Compliance": employees with any mandatory document not Verified, or any document Expired, by store.
 - **Privacy:** attachments are private files. Read access follows Employee read access (self, manager chain, HR). Number fields like Aadhaar hold only the last four digits.
 
 ### 3.5 Verification for the demo
 
 - Ritika's Employee record shows 16 rows: 14 Verified, "Police verification certificate" Received with remark "certificate pending", "Last 3 months' salary slips" Pending, "Vault access authorisation" not present (not her grade).
-- Document Compliance for Noida shows 1 employee with a pending mandatory document (an existing employee seeded with an expired police certificate, PPJ-0200).
+- Document Compliance for Noida shows 1 employee, PPJ-0200, whose police verification certificate has Expired (his summary reads "15 verified · 1 expired"). Verified on the local demo site 2026-09-07: Ritika's record shows 16 rows, "1 pending · 1 received · 14 verified", mirrored on her Employee Onboarding; the onboarding Project starts on 21 Aug; 18 document types; 406 employees backfilled.
 
 ## 4. Induction: Training Program "PPJ Store Induction"
 

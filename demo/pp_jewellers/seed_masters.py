@@ -175,5 +175,44 @@ hr.allow_geolocation_tracking = 1
 hr.save(ignore_permissions=True)
 commit()
 
+# ── Employee Document Types (build B4) ─────────────────────────────────────
+if frappe.db.exists("DocType", "Employee Document Type"):
+    log("Employee Document Types (build B4)")
+    # name, category, mandatory, collected by, verifier role, designations (blank = all), has expiry
+    DOC_TYPES = [
+        ("Aadhaar card", "Identity", 1, "Employee", "HR User", [], 0),
+        ("PAN card", "Identity", 1, "Employee", "HR User", [], 0),
+        ("Passport-size photographs", "Identity", 1, "Employee", "HR User", [], 0),
+        ("Address proof (current)", "Address", 1, "Employee", "HR User", [], 0),
+        ("Highest education certificate", "Education", 1, "Employee", "HR User", [], 0),
+        ("Previous employer relieving letter", "Employment", 1, "Employee", "HR Manager", [], 0),
+        ("Last 3 months' salary slips", "Employment", 0, "Employee", "HR User", [], 0),
+        ("Bank account proof", "Statutory", 1, "Employee", "Payroll User", [], 0),
+        ("UAN / PF details", "Statutory", 0, "Employee", "Payroll User", [], 0),
+        ("ESI number (if applicable)", "Statutory", 0, "Employee", "Payroll User", [], 0),
+        ("Background verification report", "Verification", 1, "HR", "HR Manager", [], 0),
+        ("Police verification acknowledgement", "Verification", 1, "Store Admin", "HR Manager", [], 0),
+        ("Police verification certificate", "Verification", 0, "Store Admin", "HR Manager", [], 1),
+        ("Reference check note", "Verification", 1, "Manager", "HR Manager", [], 0),
+        ("Signed offer and appointment letter", "Employment", 1, "HR", "HR Manager", [], 0),
+        ("Signed policy acknowledgement", "Company Issued", 1, "HR", "HR User", [], 0),
+        ("Vault access authorisation", "Company Issued", 1, "Manager", "HR Manager",
+         ["Vault & Inventory Custodian", "Central Vault & Inventory Manager", "Inventory Executive"], 0),
+        ("Security agency licence", "Statutory", 1, "Store Admin", "HR Manager", ["Security Guard"], 1),
+    ]
+    made = 0
+    for name, cat, mand, collect, verifier, desigs, expiry in DOC_TYPES:
+        if frappe.db.exists("Employee Document Type", name):
+            continue
+        frappe.get_doc({"doctype": "Employee Document Type", "document_type_name": name, "category": cat,
+                        "mandatory_for_joining": mand, "collect_from": collect, "has_expiry": expiry,
+                        "reminder_days_before_expiry": 30,
+                        "verifier_roles": [{"role": verifier}],
+                        "applies_to_designations": [{"designation": d} for d in desigs if frappe.db.exists("Designation", d)],
+                        }).insert(ignore_permissions=True)
+        made += 1
+    commit()
+    log(f"  {made} created, {frappe.db.count('Employee Document Type')} in total")
+
 log("Block 1 done")
 counts("Branch", "Department", "Designation", "Employee Grade", "Holiday List", "Leave Type", "Shift Type")

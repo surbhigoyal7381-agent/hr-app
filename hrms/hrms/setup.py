@@ -27,9 +27,15 @@ def after_install():
 
 
 def create_attendance_score_fields():
+	from hrms.alvoraa_employee_documents.setup import make_custom_fields as make_document_fields
 	from hrms.alvoraa_hr_core.setup import make_custom_fields
+	from hrms.alvoraa_policy_library.setup import make_custom_fields as make_policy_fields
+	from hrms.alvoraa_screening.setup import make_custom_fields as make_screening_fields
 
 	make_custom_fields()
+	make_document_fields()
+	make_screening_fields()
+	make_policy_fields()
 
 
 def before_uninstall():

@@ -22,6 +22,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, date_diff, flt, getdate
 
+from hrms.alvoraa_hr_core.features import feature_enabled
 from hrms.hr.utils import get_holidays_for_employee
 from hrms.utils.holiday_list import get_holiday_list_for_employee
 
@@ -34,6 +35,8 @@ def apply_cycle_settings(doc, method=None):
 	"""Appraisal Cycle validate: check the weights and write the formula."""
 	if not cint(doc.get("include_attendance_score")):
 		return
+	if not feature_enabled("attendance_scoring"):
+		frappe.throw(_("Attendance in the appraisal score is not switched on for this site."))
 	total = flt(doc.get("goal_weight")) + flt(doc.get("feedback_weight")) + flt(doc.get("attendance_weight"))
 	if abs(total - 100) > 0.01:
 		frappe.throw(
@@ -226,7 +229,7 @@ def compute(doc, method=None):
 	if not doc.appraisal_cycle:
 		return
 	cycle = frappe.get_cached_doc("Appraisal Cycle", doc.appraisal_cycle)
-	if not cint(cycle.get("include_attendance_score")):
+	if not cint(cycle.get("include_attendance_score")) or not feature_enabled("attendance_scoring"):
 		return
 
 	reason = exempt_reason(cycle, doc.employee)

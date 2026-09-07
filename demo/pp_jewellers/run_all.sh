@@ -31,9 +31,9 @@ export PPJ_SITE="$SITE"
 PY="$BENCH/env/bin/python"
 LOG="${PPJ_LOG:-/tmp/ppj_run_$(date +%Y%m%d_%H%M%S).log}"
 
-BLOCKS=(seed_masters seed_employees seed_attendance seed_payroll seed_recruitment seed_onboarding seed_performance)
-# block numbers follow the checklist: 1 masters, 2 employees, 3 attendance, 4 payroll, 5 recruitment, 6 onboarding, 8 performance (7 is the policy library, build B5)
-NUMS=(1 2 3 4 5 6 8)
+BLOCKS=(seed_masters seed_employees seed_attendance seed_payroll seed_recruitment seed_onboarding seed_policies seed_performance)
+# block numbers follow the checklist: 1 masters, 2 employees, 3 attendance, 4 payroll, 5 recruitment, 6 onboarding, 7 policies, 8 performance
+NUMS=(1 2 3 4 5 6 7 8)
 
 echo "site=$SITE bench=$BENCH data=$PPJ_DATA_DIR log=$LOG"
 cd "$BENCH/sites"

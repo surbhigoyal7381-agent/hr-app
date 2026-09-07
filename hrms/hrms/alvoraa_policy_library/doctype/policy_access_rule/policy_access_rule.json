@@ -1,0 +1,84 @@
+{
+ "actions": [],
+ "creation": "2026-09-07 17:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "access_type",
+  "role",
+  "user",
+  "designation",
+  "branch",
+  "department"
+ ],
+ "fields": [
+  {
+   "fieldname": "access_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Who",
+   "options": "All Employees\nReporting Managers\nHR Only\nDepartment Only\nTop Leadership\nRole\nUser\nDesignation\nBranch",
+   "reqd": 1,
+   "columns": 3
+  },
+  {
+   "fieldname": "role",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Role",
+   "options": "Role",
+   "depends_on": "eval:doc.access_type=='Role'",
+   "mandatory_depends_on": "eval:doc.access_type=='Role'",
+   "columns": 2
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "User",
+   "options": "User",
+   "depends_on": "eval:doc.access_type=='User'",
+   "mandatory_depends_on": "eval:doc.access_type=='User'",
+   "columns": 2
+  },
+  {
+   "fieldname": "designation",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Designation",
+   "options": "Designation",
+   "depends_on": "eval:doc.access_type=='Designation'",
+   "mandatory_depends_on": "eval:doc.access_type=='Designation'",
+   "columns": 2
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "label": "Branch",
+   "options": "Branch",
+   "depends_on": "eval:doc.access_type=='Branch'",
+   "mandatory_depends_on": "eval:doc.access_type=='Branch'"
+  },
+  {
+   "fieldname": "department",
+   "fieldtype": "Link",
+   "label": "Department",
+   "options": "Department",
+   "depends_on": "eval:doc.access_type=='Department Only'",
+   "description": "Blank means the policy's own department."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-07 17:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Policy Library",
+ "name": "Policy Access Rule",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "istable": 1
+}

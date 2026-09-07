@@ -2003,6 +2003,11 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
         <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span> Performance
         <span class="nav-badge" id="sb-goals-badge" style="display:none">0</span>
       </div>
+      <div class="nav-item" data-panel="policies" id="nav-policies" onclick="switchPanel('policies',this)" style="display:none">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg></span>
+        <span class="nav-label">Policies</span>
+        <span class="nav-badge" id="sb-policies-badge" style="display:none">0</span>
+      </div>
       <div id="mgmt-section-hdr" class="sidebar-section" style="margin-top:8px;display:none">Management</div>
       <div class="nav-item" data-panel="team" id="nav-team" onclick="switchPanel('team',this)" style="display:none">
         <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></span> Team View
@@ -2191,6 +2196,30 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
               </div>
             </div>
 
+            <!-- My Documents (build B4: employee document checklist) -->
+            <div class="card" id="my-docs-card" style="display:none;margin-top:20px">
+              <div class="card-header">
+                <span>🗂️</span>
+                <span class="card-title" style="margin-left:6px">My Documents</span>
+                <span id="my-docs-summary" style="margin-left:auto;font-size:12px;color:var(--text3)"></span>
+              </div>
+              <div class="card-body" style="padding:12px 20px">
+                <div id="my-docs-list"></div>
+              </div>
+            </div>
+
+            <!-- Policies widget (build B5: policy library) -->
+            <div class="card" id="home-policies-card" style="display:none;margin-top:20px">
+              <div class="card-header">
+                <span>📚</span>
+                <span class="card-title" style="margin-left:6px">Policies</span>
+                <a href="#" onclick="switchPanel('policies');return false" style="margin-left:auto;font-size:12px">All policies →</a>
+              </div>
+              <div class="card-body" style="padding:12px 20px">
+                <div id="home-policies-list"></div>
+              </div>
+            </div>
+
           </div>
         </div>
 
@@ -2273,6 +2302,32 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
             </table>
           </div>
         </div>
+      </div>
+
+      <!-- ══ POLICIES (build B5) ════════════════════════════ -->
+      <div id="panel-policies" class="panel">
+        <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:20px">
+          <div>
+            <div class="page-title">Policies</div>
+            <div class="page-sub">The policies that apply to you, with the version you have acknowledged</div>
+          </div>
+          <div style="display:flex;gap:4px;background:var(--surface2);border-radius:var(--r-sm);padding:4px;border:1px solid var(--border)">
+            <button class="gp-tab active" id="pol-tab-read" onclick="polShowTab('read')">Read</button>
+            <button class="gp-tab" id="pol-tab-manage" onclick="polShowTab('manage')" style="display:none">Manage</button>
+            <button class="gp-tab" id="pol-tab-compliance" onclick="polShowTab('compliance')" style="display:none">Compliance</button>
+          </div>
+        </div>
+        <div id="pol-read">
+          <div class="card" style="margin-bottom:16px"><div class="card-body" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px">
+            <input class="gp-input" id="pol-search" placeholder="Search title or text…" style="flex:1;min-width:180px;height:34px;padding:6px 10px" oninput="polDebounceLoad()">
+            <select class="gp-input" id="pol-dept" style="height:34px;padding:4px 8px;width:auto" onchange="polLoad()"><option value="">All departments</option></select>
+            <select class="gp-input" id="pol-cat" style="height:34px;padding:4px 8px;width:auto" onchange="polLoad()"><option value="">All categories</option></select>
+          </div></div>
+          <div id="pol-list"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
+          <div id="pol-detail" style="display:none"></div>
+        </div>
+        <div id="pol-manage" style="display:none"></div>
+        <div id="pol-compliance" style="display:none"></div>
       </div>
 
       <!-- ══ MY FINANCES ═══════════════════════════════════ -->
@@ -3074,6 +3129,18 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
             <div class="pf-h">Organisation Settings</div>
             <div class="pf-sub">Company values and leadership principles that apply across the organisation.</div>
           </div>
+        </div>
+
+        <!-- Document Compliance (build B4) -->
+        <div class="pf-card" style="margin-bottom:24px;display:none" id="org-docs-card">
+          <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div>
+              <div style="font-weight:600;font-size:15px">Document Compliance</div>
+              <div class="pf-card-meta" id="org-docs-meta">Employees with a mandatory document not yet verified, or a document that has expired</div>
+            </div>
+            <select class="gp-input" id="org-docs-branch" style="height:32px;padding:4px 8px;width:auto" onchange="orgLoadDocuments()"><option value="">All branches</option></select>
+          </div>
+          <div id="org-docs-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
         </div>
 
         <!-- Company Values -->
@@ -4480,7 +4547,8 @@ function switchPanel(name, triggerEl) {
     if (name === "team")        loadTeamPanel();
     if (name === "analytics")   loadAnalyticsPanel();
     if (name === "goals")       loadGoalsPanel();
-    if (name === "org-settings") orgLoad();
+    if (name === "org-settings") { orgLoad(); orgLoadDocuments(); }
+    if (name === "policies")    polLoad();
   }
 
   // Full-screen panels suppress body scroll; all others scroll to top
@@ -4523,6 +4591,301 @@ function startClock() {
 }
 
 /* ── HOME: check-in status ───────────────────────── */
+/* ── Policy library (build B5) ───────────────────── */
+var _pol = {canManage: false, isHr: false, timer: null};
+
+function polSold() { var f = window._features || {}; return !!f.plan_policy_library; }
+
+function polAckBadge(r) {
+  if (r.ack === "pending") return "<span class=\"badge b-pending\">To acknowledge</span>";
+  if (r.ack === "acknowledged") return "<span class=\"badge b-completed\">Acknowledged</span>";
+  return "";
+}
+
+function polCard(r, compact) {
+  var meta = [r.department, "v" + r.version, r.effective_from ? "from " + r.effective_from : ""].filter(Boolean).join(" · ");
+  return "<div class=\"card\" style=\"margin-bottom:10px;cursor:pointer\" onclick=\"polOpen('" + esc(r.name) + "')\">" +
+    "<div class=\"card-body\" style=\"padding:12px 16px\">" +
+    "<div style=\"display:flex;align-items:center;gap:8px\">" +
+      (r.pinned ? "<span title=\"Pinned\">📌</span>" : "") +
+      "<div style=\"font-weight:600;flex:1\">" + esc(r.title) + "</div>" + polAckBadge(r) +
+      (r.status !== "Published" ? "<span class=\"badge b-draft\">" + esc(r.status) + "</span>" : "") +
+      (r.unpublished_changes ? "<span class=\"badge b-draft\">Draft changes</span>" : "") +
+    "</div>" +
+    "<div style=\"font-size:11px;color:var(--text3);margin-top:2px\">" + esc(meta) + "</div>" +
+    (compact ? "" : "<div style=\"font-size:12px;color:var(--text2);margin-top:6px\">" + esc(r.summary) + "</div>") +
+    "</div></div>";
+}
+
+function loadHomePolicies() {
+  var card = document.getElementById("home-policies-card");
+  if (!card || !polSold()) return;
+  api("get_my_policies", {limit: 6}, function(d) {
+    _pol.canManage = !!d.can_manage;
+    var badge = document.getElementById("sb-policies-badge");
+    if (badge) { badge.textContent = d.pending; badge.style.display = d.pending ? "" : "none"; }
+    if (!d.rows.length) { card.style.display = "none"; return; }
+    card.style.display = "";
+    document.getElementById("home-policies-list").innerHTML = d.rows.map(function(r) { return polCard(r, true); }).join("");
+  }, function() { card.style.display = "none"; });
+}
+
+window.polShowTab = function(tab) {
+  ["read", "manage", "compliance"].forEach(function(t) {
+    var el = document.getElementById("pol-" + t), btn = document.getElementById("pol-tab-" + t);
+    if (el) el.style.display = t === tab ? "" : "none";
+    if (btn) btn.classList.toggle("active", t === tab);
+  });
+  if (tab === "manage") polLoadManage();
+  if (tab === "compliance") polLoadCompliance();
+};
+
+window.polDebounceLoad = function() { clearTimeout(_pol.timer); _pol.timer = setTimeout(polLoad, 300); };
+
+window.polLoad = function() {
+  var list = document.getElementById("pol-list"); if (!list) return;
+  document.getElementById("pol-detail").style.display = "none"; list.style.display = "";
+  _pol.isHr = !!(window._roles && window._roles.is_hr);
+  var q = {search: (document.getElementById("pol-search") || {}).value || "",
+           department: (document.getElementById("pol-dept") || {}).value || "",
+           category: (document.getElementById("pol-cat") || {}).value || ""};
+  api("list_policies", q, function(d) {
+    var dept = document.getElementById("pol-dept"), cat = document.getElementById("pol-cat");
+    function fill(sel, values) {
+      if (!sel || sel.options.length > 1) return;
+      values.forEach(function(v) { var o = document.createElement("option"); o.value = v; o.textContent = v; sel.appendChild(o); });
+    }
+    fill(dept, d.departments); fill(cat, d.categories);
+    var canManage = d.rows.some(function(r) { return r.can_write; }) || _pol.canManage;
+    document.getElementById("pol-tab-manage").style.display = canManage ? "" : "none";
+    document.getElementById("pol-tab-compliance").style.display = _pol.isHr ? "" : "none";
+    list.innerHTML = d.rows.length ? d.rows.map(function(r) { return polCard(r, false); }).join("")
+      : "<div class=\"empty-state\"><div class=\"empty-state-text\">No policies match.</div></div>";
+  }, function(e) { list.innerHTML = "<div class=\"callout callout-warn\">" + esc((e && e.message) || "Could not load") + "</div>"; });
+};
+
+window.polOpen = function(name) {
+  switchPanel("policies");
+  polShowTab("read");
+  var list = document.getElementById("pol-list"), det = document.getElementById("pol-detail");
+  api("get_policy", {name: name}, function(p) {
+    list.style.display = "none"; det.style.display = "";
+    var versions = p.versions.map(function(v) {
+      return "<tr><td>v" + v.version + "</td><td>" + esc(v.published_on) + "</td><td>" + esc(v.published_by) + "</td><td>" + esc(v.change_note) + "</td></tr>";
+    }).join("");
+    det.innerHTML = "<button class=\"btn btn-outline btn-sm\" onclick=\"polLoad()\" style=\"margin-bottom:12px\">← All policies</button>" +
+      "<div class=\"card\"><div class=\"card-body\">" +
+      "<div style=\"display:flex;align-items:center;gap:8px;flex-wrap:wrap\"><div class=\"page-title\" style=\"flex:1\">" + esc(p.title) + "</div>" + polAckBadge(p) + "</div>" +
+      "<div style=\"font-size:12px;color:var(--text3);margin:4px 0 12px\">" + esc([p.department, p.category, "version " + p.version, p.published_on ? "published " + p.published_on : "", p.effective_from ? "effective " + p.effective_from : ""].filter(Boolean).join(" · ")) + "</div>" +
+      (p.summary ? "<div style=\"font-size:13px;color:var(--text2);margin-bottom:12px\"><em>" + esc(p.summary) + "</em></div>" : "") +
+      (p.attachment ? "<div style=\"margin-bottom:12px\"><a class=\"btn btn-outline btn-sm\" href=\"" + esc(p.attachment) + "\" target=\"_blank\">Open PDF</a></div>" : "") +
+      "<div class=\"pol-content\" style=\"font-size:14px;line-height:1.6\">" + (p.content || "") + "</div>" +
+      (p.ack === "pending" ? "<div style=\"margin-top:16px\"><button class=\"btn btn-primary\" onclick=\"polAck('" + esc(p.name) + "')\">I have read and understood version " + p.version + "</button></div>" : "") +
+      (p.can_write ? "<div style=\"margin-top:16px\"><button class=\"btn btn-outline btn-sm\" onclick=\"polEdit('" + esc(p.name) + "')\">Edit / publish a new version</button></div>" : "") +
+      "</div></div>" +
+      (versions ? "<div class=\"card\" style=\"margin-top:12px\"><div class=\"card-header\"><span class=\"card-title\">Version history</span></div><div class=\"tbl-wrap\"><table><thead><tr><th>Version</th><th>Published</th><th>By</th><th>What changed</th></tr></thead><tbody>" + versions + "</tbody></table></div></div>" : "");
+    window.scrollTo(0, 0);
+  }, function(e) { det.style.display = ""; det.innerHTML = "<div class=\"callout callout-warn\">" + esc((e && e.message) || "Could not open") + "</div>"; });
+};
+
+window.polAck = function(name) {
+  api("acknowledge_policy", {name: name, source: "Manual"}, function(r) {
+    if (window.frappe && frappe.show_alert) frappe.show_alert({message: r.message, indicator: "green"}, 5);
+    polOpen(name); loadHomePolicies();
+  }, function(e) { alert((e && e.message) || "Could not acknowledge."); });
+};
+
+/* ── Manage (department heads and HR) ── */
+window.polLoadManage = function() {
+  var box = document.getElementById("pol-manage"); if (!box) return;
+  api("list_policies", {status: "all"}, function(d) {
+    var mine = d.rows.filter(function(r) { return r.can_write; });
+    box.innerHTML = "<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:12px\">" +
+      "<div class=\"page-sub\">Policies you can edit. Readers see the last published version until you publish again.</div>" +
+      "<button class=\"btn btn-primary btn-sm\" onclick=\"polEdit('')\">+ New policy</button></div>" +
+      "<div id=\"pol-editor\"></div>" +
+      (mine.length ? mine.map(function(r) {
+        return "<div class=\"card\" style=\"margin-bottom:10px\"><div class=\"card-body\" style=\"padding:12px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap\">" +
+          "<div style=\"flex:1\"><div style=\"font-weight:600\">" + esc(r.title) + "</div><div style=\"font-size:11px;color:var(--text3)\">" + esc(r.department + " · v" + r.version) + "</div></div>" +
+          "<span class=\"badge " + (r.status === "Published" ? "b-completed" : "b-draft") + "\">" + esc(r.status) + "</span>" +
+          (r.unpublished_changes ? "<span class=\"badge b-pending\">Draft changes</span>" : "") +
+          "<button class=\"btn btn-outline btn-sm\" onclick=\"polEdit('" + esc(r.name) + "')\">Edit</button>" +
+          "</div></div>";
+      }).join("") : "<div class=\"empty-state\"><div class=\"empty-state-text\">No policies to manage yet.</div></div>");
+  });
+};
+
+window.polEdit = function(name) {
+  switchPanel("policies"); polShowTab("manage");
+  var render = function(p) {
+    var w = (p && p.working) || {};
+    var who = "everyone";
+    if (w.read_access && w.read_access.length === 1) {
+      var t = w.read_access[0].access_type;
+      who = {"All Employees": "everyone", "Reporting Managers": "managers", "HR Only": "hr", "Department Only": "department", "Top Leadership": "leadership"}[t] || "custom";
+    } else if (w.read_access && w.read_access.length > 1) { who = "custom"; }
+    var opts = [["everyone", "All employees"], ["managers", "Reporting managers"], ["hr", "HR only"], ["department", "My department only"], ["leadership", "Top leadership"]]
+      .map(function(o) { return "<option value=\"" + o[0] + "\"" + (who === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") +
+      (who === "custom" ? "<option value=\"custom\" selected>Custom rules (kept as they are)</option>" : "");
+    var ed = document.getElementById("pol-editor");
+    ed.innerHTML = "<div class=\"card\" style=\"margin-bottom:16px\"><div class=\"card-body\">" +
+      "<div style=\"font-weight:700;margin-bottom:8px\">" + (name ? "Edit: " + esc(p.title) + " (v" + p.version + (p.unpublished_changes ? ", draft changes" : "") + ")" : "New policy") + "</div>" +
+      "<input type=\"hidden\" id=\"pol-e-name\" value=\"" + esc(name || "") + "\">" +
+      "<div class=\"gp-row2\"><div class=\"gp-field\"><div class=\"gp-label\">Title *</div><input class=\"gp-input\" id=\"pol-e-title\" value=\"" + esc(w.title || "") + "\"></div>" +
+      "<div class=\"gp-field\"><div class=\"gp-label\">Category</div><select class=\"gp-input\" id=\"pol-e-cat\">" +
+        ["HR", "Compliance", "Finance", "Operations", "IT", "Marketing", "Safety", "Other"].map(function(c) { return "<option" + ((p && p.category) === c ? " selected" : "") + ">" + c + "</option>"; }).join("") + "</select></div></div>" +
+      (name ? "" : "<div class=\"gp-field\"><div class=\"gp-label\">Owner department *</div><input class=\"gp-input\" id=\"pol-e-dept\" placeholder=\"Department name as in the system\"></div>") +
+      "<div class=\"gp-field\"><div class=\"gp-label\">Summary (one or two lines)</div><textarea class=\"gp-input\" id=\"pol-e-summary\" rows=\"2\">" + esc(w.summary || "") + "</textarea></div>" +
+      "<div class=\"gp-field\"><div class=\"gp-label\">Policy text</div><textarea class=\"gp-input\" id=\"pol-e-content\" rows=\"12\" style=\"font-family:inherit\">" + esc(w.content || "") + "</textarea><div class=\"gp-hint\">Simple HTML is fine (headings and paragraphs).</div></div>" +
+      "<div class=\"gp-row2\"><div class=\"gp-field\"><div class=\"gp-label\">Who can read</div><select class=\"gp-input\" id=\"pol-e-who\">" + opts + "</select></div>" +
+      "<div class=\"gp-field\"><div class=\"gp-label\">Effective from</div><input class=\"gp-input\" type=\"date\" id=\"pol-e-from\" value=\"" + esc(w.effective_from || "") + "\"></div></div>" +
+      "<div style=\"display:flex;gap:16px;flex-wrap:wrap;margin:8px 0\">" +
+        "<label style=\"font-size:13px\"><input type=\"checkbox\" id=\"pol-e-join\"" + (w.acknowledge_on_joining ? " checked" : "") + "> Acknowledge on joining</label>" +
+        "<label style=\"font-size:13px\"><input type=\"checkbox\" id=\"pol-e-newver\"" + (w.acknowledge_on_new_version ? " checked" : "") + "> Acknowledge each new version</label>" +
+        "<label style=\"font-size:13px\"><input type=\"checkbox\" id=\"pol-e-pin\"" + (w.pinned ? " checked" : "") + "> Pinned</label></div>" +
+      (name && w.acknowledged_count != null ? "<div style=\"font-size:12px;color:var(--text3);margin-bottom:8px\">" + w.acknowledged_count + " acknowledgement(s) for version " + p.version + "</div>" : "") +
+      "<div style=\"display:flex;gap:8px;align-items:center;flex-wrap:wrap\">" +
+        "<button class=\"btn btn-outline\" onclick=\"polSave(false)\">Save draft</button>" +
+        "<input class=\"gp-input\" id=\"pol-e-note\" placeholder=\"What changed in this version?\" style=\"flex:1;min-width:200px;height:34px;padding:6px 10px\">" +
+        "<button class=\"btn btn-primary\" onclick=\"polSave(true)\">Save and publish</button>" +
+        "<button class=\"btn btn-outline\" onclick=\"document.getElementById('pol-editor').innerHTML=''\">Cancel</button></div>" +
+      "<div id=\"pol-e-msg\" style=\"margin-top:8px\"></div>" +
+      "</div></div>";
+    ed.scrollIntoView({behavior: "smooth"});
+  };
+  if (name) api("get_policy", {name: name}, render, function(e) { alert((e && e.message) || "Could not open."); });
+  else render(null);
+};
+
+window.polSave = function(publish) {
+  var g = function(id) { var el = document.getElementById(id); return el ? el.value : ""; };
+  var c = function(id) { var el = document.getElementById(id); return el && el.checked ? 1 : 0; };
+  var name = g("pol-e-name");
+  var args = {name: name || null, title: g("pol-e-title"), category: g("pol-e-cat"), summary: g("pol-e-summary"),
+              content: g("pol-e-content"), effective_from: g("pol-e-from"), pinned: c("pol-e-pin"),
+              acknowledge_on_joining: c("pol-e-join"), acknowledge_on_new_version: c("pol-e-newver")};
+  if (!name) args.owner_department = g("pol-e-dept");
+  if (g("pol-e-who") !== "custom") args.who = g("pol-e-who");
+  var msg = document.getElementById("pol-e-msg");
+  msg.innerHTML = "<div class=\"callout callout-warn\">Saving…</div>";
+  api("save_policy", args, function(r) {
+    if (!publish) { msg.innerHTML = "<div class=\"callout callout-ok\">" + esc(r.message) + "</div>"; polLoadManage(); loadHomePolicies(); return; }
+    api("publish_policy", {name: r.name, change_note: g("pol-e-note")}, function(pr) {
+      if (window.frappe && frappe.show_alert) frappe.show_alert({message: pr.message, indicator: "green"}, 5);
+      polLoadManage(); loadHomePolicies();
+    }, function(e) { msg.innerHTML = "<div class=\"callout callout-warn\">" + esc((e && e.message) || "Could not publish") + "</div>"; });
+  }, function(e) { msg.innerHTML = "<div class=\"callout callout-warn\">" + esc((e && e.message) || "Could not save") + "</div>"; });
+};
+
+/* ── Compliance (HR) ── */
+window.polLoadCompliance = function() {
+  var box = document.getElementById("pol-compliance"); if (!box) return;
+  api("get_policy_compliance", {}, function(d) {
+    box.innerHTML = "<div class=\"card\" style=\"margin-bottom:16px\"><div class=\"card-header\"><span class=\"card-title\">Acknowledgements by branch</span>" +
+      "<span style=\"margin-left:auto;font-size:12px;color:var(--text3)\">" + d.pending_total + " of " + d.active + " active employees still have a policy to acknowledge</span></div>" +
+      "<div class=\"tbl-wrap\"><table><thead><tr><th>Branch</th><th>Employees</th><th>Pending</th></tr></thead><tbody>" +
+      d.by_branch.map(function(b) { return "<tr><td>" + esc(b.branch) + "</td><td>" + b.employees + "</td><td>" + b.pending + "</td></tr>"; }).join("") + "</tbody></table></div></div>" +
+      "<div class=\"card\" style=\"margin-bottom:16px\"><div class=\"card-header\"><span class=\"card-title\">By policy</span></div>" +
+      "<div class=\"tbl-wrap\"><table><thead><tr><th>Policy</th><th>Version</th><th>Acknowledged</th><th>Pending</th></tr></thead><tbody>" +
+      d.by_policy.map(function(b) { return "<tr><td>" + esc(b.policy) + "</td><td>v" + b.version + "</td><td>" + b.acknowledged + "</td><td>" + b.pending + "</td></tr>"; }).join("") + "</tbody></table></div></div>" +
+      (d.review_due.length ? "<div class=\"card\" style=\"margin-bottom:16px\"><div class=\"card-header\"><span class=\"card-title\">Due for review in the next 60 days</span></div><div class=\"card-body\">" +
+        d.review_due.map(function(r) { return "<div style=\"font-size:13px\">" + esc(r.title) + " <span style=\"color:var(--text3)\">· " + esc(r.department) + " · " + esc(r.review_due) + "</span></div>"; }).join("") + "</div></div>" : "") +
+      (d.employees.length ? "<div class=\"card\"><div class=\"card-header\"><span class=\"card-title\">Who still has to acknowledge</span></div><div class=\"tbl-wrap\"><table><thead><tr><th>Employee</th><th>Branch</th><th>Policies</th></tr></thead><tbody>" +
+        d.employees.map(function(e) { return "<tr><td>" + esc(e.employee_name) + "</td><td>" + esc(e.branch) + "</td><td style=\"font-size:12px\">" + esc(e.missing.join(", ")) + "</td></tr>"; }).join("") + "</tbody></table></div></div>" : "");
+  }, function(e) { box.innerHTML = "<div class=\"callout callout-warn\">" + esc((e && e.message) || "Could not load") + "</div>"; });
+};
+
+/* ── Employee documents (build B4) ───────────────── */
+function docStatusBadge(st) {
+  var cls = st === "Verified" ? "b-completed" : (st === "Received" ? "b-pending" : (st === "Expired" || st === "Rejected" ? "b-rejected" : "b-draft"));
+  return "<span class=\"badge " + cls + "\">" + esc(st) + "</span>";
+}
+
+function loadMyDocuments() {
+  var card = document.getElementById("my-docs-card");
+  if (!card) return;
+  var f = window._features || {};
+  if (f.plan_employee_documents === false) { card.style.display = "none"; return; }
+  api("get_my_documents", {}, function(d) {
+    var rows = (d && d.rows) || [];
+    if (!rows.length) { card.style.display = "none"; return; }
+    card.style.display = "";
+    document.getElementById("my-docs-summary").textContent = d.summary || "";
+    document.getElementById("my-docs-list").innerHTML = rows.map(function(r) {
+      var meta = [r.category, r.mandatory ? "mandatory" : "", r.expiry_date ? "expires " + r.expiry_date : "", r.remarks].filter(Boolean).join(" · ");
+      var action = "";
+      if (r.attachment) action += "<a href=\"" + esc(r.attachment) + "\" target=\"_blank\" style=\"font-size:12px;margin-right:8px\">View</a>";
+      if (r.can_upload) {
+        action += "<label class=\"btn btn-outline btn-sm\" style=\"font-size:11px;padding:2px 8px;cursor:pointer\">" +
+          (r.attachment ? "Replace" : "Upload") +
+          "<input type=\"file\" style=\"display:none\" onchange=\"uploadMyDocument(this, '" + esc(r.name) + "')\"></label>";
+      } else if (!r.attachment && r.status !== "Verified") {
+        action += "<span style=\"font-size:11px;color:var(--text3)\">collected by " + esc(r.collect_from || "HR") + "</span>";
+      }
+      return "<div style=\"display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)\">" +
+        "<div style=\"flex:1;min-width:0\"><div style=\"font-size:13px;font-weight:600\">" + esc(r.document_type) + "</div>" +
+        (meta ? "<div style=\"font-size:11px;color:var(--text3)\">" + esc(meta) + "</div>" : "") + "</div>" +
+        docStatusBadge(r.status) +
+        "<div style=\"display:flex;align-items:center;gap:6px\">" + action + "</div></div>";
+    }).join("");
+  }, function() { card.style.display = "none"; });
+}
+
+window.uploadMyDocument = async function(input, row) {
+  if (!input.files || !input.files[0]) return;
+  var fd = new FormData();
+  fd.append("file", input.files[0]);
+  fd.append("is_private", "1");
+  fd.append("doctype", "Employee");
+  fd.append("docname", window._empId || "");
+  fd.append("folder", "Home/Attachments");
+  try {
+    var up = await fetch("/api/method/upload_file", {method: "POST", body: fd,
+      headers: {"X-Frappe-CSRF-Token": (window.frappe && frappe.csrf_token) || ""}});
+    var j = await up.json();
+    if (!up.ok || !j.message || !j.message.file_url) throw new Error((j._server_messages && JSON.parse(j._server_messages)[0]) || "Upload failed");
+    api("attach_my_document", {row: row, file_url: j.message.file_url}, function(r) {
+      if (window.frappe && frappe.show_alert) frappe.show_alert({message: r.message || "Uploaded.", indicator: "green"}, 5);
+      loadMyDocuments();
+    }, function(e) { alert((e && e.message) || "Could not save the upload."); });
+  } catch (e) {
+    alert(e.message || "Upload failed.");
+  }
+};
+
+window.orgLoadDocuments = function() {
+  var card = document.getElementById("org-docs-card");
+  if (!card) return;
+  var f = window._features || {};
+  if (!f.plan_employee_documents) { card.style.display = "none"; return; }
+  var sel = document.getElementById("org-docs-branch");
+  var branch = sel ? sel.value : "";
+  api("hr_document_compliance", {branch: branch}, function(d) {
+    card.style.display = "";
+    var meta = document.getElementById("org-docs-meta");
+    if (meta) meta.textContent = d.affected + " of " + d.active + " active employees need a document verified or renewed";
+    if (sel && sel.options.length <= 1 && d.by_branch) {
+      d.by_branch.forEach(function(b) {
+        var o = document.createElement("option"); o.value = b.branch; o.textContent = b.branch + " (" + b.count + ")"; sel.appendChild(o);
+      });
+    }
+    var body = document.getElementById("org-docs-body");
+    if (!d.employees.length) {
+      body.innerHTML = "<div class=\"empty-state\"><div class=\"empty-state-text\">Every mandatory document is verified.</div></div>";
+      return;
+    }
+    body.innerHTML = "<div class=\"pf-scroll\"><table class=\"pf-table\"><thead><tr><th>Employee</th><th>Branch</th><th>Missing or unverified</th></tr></thead><tbody>" +
+      d.employees.map(function(e) {
+        return "<tr><td style=\"font-weight:600\">" + esc(e.employee_name) + "<div style=\"font-size:11px;color:var(--text3)\">" + esc(e.designation) + "</div></td>" +
+          "<td>" + esc(e.branch) + "</td><td>" + e.missing.map(function(m) {
+            return "<div style=\"display:flex;gap:6px;align-items:center;margin:2px 0\">" + docStatusBadge(m.status) + "<span style=\"font-size:12px\">" + esc(m.document_type) + "</span></div>";
+          }).join("") + "</td></tr>";
+      }).join("") + "</tbody></table></div>";
+  }, function(e) {
+    document.getElementById("org-docs-body").innerHTML = "<div class=\"callout callout-warn\">" + esc((e && e.message) || "Could not load") + "</div>";
+  });
+};
+
 function loadHome() {
   const ciBtn = document.getElementById("ci-btn");
 
@@ -4554,6 +4917,8 @@ function loadHome() {
     ht.dataset.name = (emp.employee_name || "").split(" ")[0];
 
     updateCheckinUI(data.checked_in, data.last_action);
+    loadMyDocuments();
+    loadHomePolicies();
   }, function() {
     document.getElementById("ci-status-txt").textContent = "Could not load status";
     ciBtn.textContent = "Check In";
@@ -5475,6 +5840,8 @@ function loadPortalContext() {
     if (navAna)  navAna.style.display   = (ctx.is_hr && anaSold) ? "flex" : "none";
     const navOrgSettings = document.getElementById("nav-org-settings");
     if (navOrgSettings) navOrgSettings.style.display = ctx.is_hr ? "flex" : "none";
+    const navPolicies = document.getElementById("nav-policies");
+    if (navPolicies) navPolicies.style.display = _f.plan_policy_library ? "flex" : "none";
     sbUpdateScrollBtns();
 
     // Team goals section (home page)

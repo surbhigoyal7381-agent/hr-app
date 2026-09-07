@@ -14,7 +14,7 @@ import os
 import sys
 
 import frappe
-from frappe.utils import flt, getdate
+from frappe.utils import cint, flt, getdate
 
 COMPANY = "PP Jewellers Pvt Ltd"
 ABBR = "PPJ"

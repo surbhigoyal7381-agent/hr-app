@@ -3,3 +3,6 @@ Payroll
 Performance Management
 Alvoraa Late Rules
 Alvoraa HR Core
+Alvoraa Employee Documents
+Alvoraa Screening
+Alvoraa Policy Library

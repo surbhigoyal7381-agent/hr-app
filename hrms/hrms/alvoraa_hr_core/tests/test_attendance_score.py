@@ -44,6 +44,8 @@ class TestAttendanceScore(IntegrationTestCase):
 		super().setUpClass()
 		make_custom_fields()
 		frappe.clear_cache()
+		# the hooks ask the subscription registry; this process says yes
+		frappe.conf.features = list(frappe.conf.get("features") or []) + ["attendance_scoring"]
 		cls.company = _company()
 		existing = frappe.db.get_value("Employee", {"first_name": "Score", "last_name": "Tester"}, "name")
 		cls.employee = frappe.get_doc("Employee", existing) if existing else _ensure(

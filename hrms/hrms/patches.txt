@@ -50,3 +50,6 @@ hrms.patches.v16_0.set_reference_fields_in_expense_claim_advance
 hrms.patches.v16_0.update_partially_paid_employee_advance_status
 hrms.patches.v16_0.add_esi_fields_for_india
 hrms.patches.v16_0.add_attendance_score_fields
+hrms.patches.v16_0.add_employee_document_fields
+hrms.patches.v16_0.add_screening_fields
+hrms.patches.v16_0.add_policy_library_fields

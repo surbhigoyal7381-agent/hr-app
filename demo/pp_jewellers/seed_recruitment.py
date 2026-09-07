@@ -126,11 +126,43 @@ if not jo_name:
                          "salary_per": "Month", "publish_salary_range": 1, "job_requisition": jr_name,
                          "staffing_plan": sp_name, "planned_vacancies": 1, "vacancies": 1,
                          "posted_on": "2026-07-08 10:00:00", "closes_on": "2026-08-08", "description": JD,
-                         "job_application_route": "ppj-senior-sales-application"})
+                         "job_application_route": "ppj-senior-sales-application",
+                         # build B3: screen-out rules from file 06 §4
+                         "screening_require_retail_experience": 1, "screening_min_years": 3,
+                         "screening_require_product_knowledge": 1, "screening_require_roster_ok": 1,
+                         "screening_require_festival_ok": 1, "screening_max_monthly_ctc": 50000})
     jo.insert(ignore_permissions=True)
     jo_name = jo.name
     log(f"  [created] Job Opening {jo_name}")
+elif frappe.get_meta("Job Opening").has_field("screening_min_years") and not frappe.db.get_value("Job Opening", jo_name, "screening_min_years"):
+    frappe.db.set_value("Job Opening", jo_name, {"screening_require_retail_experience": 1, "screening_min_years": 3,
+                                                 "screening_require_product_knowledge": 1, "screening_require_roster_ok": 1,
+                                                 "screening_require_festival_ok": 1, "screening_max_monthly_ctc": 50000},
+                        update_modified=False)
+    log(f"  [rules] screening rules set on {jo_name}")
 commit()
+
+# ── Application web form with the client's wording (build B3) ──────────────
+if frappe.db.exists("Web Form", "screening-application") and not frappe.db.exists("Web Form", "ppj-senior-sales-application"):
+    log("Web Form ppj-senior-sales-application")
+    wf = frappe.copy_doc(frappe.get_doc("Web Form", "screening-application"))
+    wf.update({"name": "ppj-senior-sales-application", "route": "ppj-senior-sales-application", "is_standard": 0,
+               "title": "Senior Sales Executive - PP Jewellers", "module": None,
+               "introduction_text": "<p>Thank you for your interest in PP Jewellers. A few quick questions first, "
+                                    "so we can call the right people back.</p>"})
+    WORDING = {"screening_retail_experience": "Have you worked in an organised jewellery retail store?",
+               "screening_years_in_category": "How many years have you sold jewellery?",
+               "screening_product_knowledge": "Can you explain hallmarking and diamond certification to a customer?",
+               "screening_roster_ok": "Are you comfortable with a 7-day store roster with one fixed weekly off (not Sunday)?",
+               "screening_festival_ok": "Are you available to work on festival days (Dhanteras, Diwali, Akshaya Tritiya)?",
+               "screening_category_experience": "Which categories have you sold? (Gold / Diamond / Silver / Platinum)"}
+    for f in wf.web_form_fields:
+        if f.fieldname in WORDING:
+            f.label = WORDING[f.fieldname]
+    wf.flags.ignore_permissions = True
+    wf.insert()
+    commit()
+    log("  [created] Web Form ppj-senior-sales-application")
 
 # ── Applicants ──────────────────────────────────────────────────────────────
 log("Job Applicants")
@@ -140,21 +172,32 @@ applicants = {}
 for r in read_csv("applicants.csv"):
     name = frappe.db.get_value("Job Applicant", {"email_id": r["email_id"], "job_title": jo_name}, "name")
     source = "Employee Referral" if r["source"].startswith("Employee referral") else r["source"]
-    answers = (f"Q1 jewellery retail experience: {r['q1_jewellery_retail_experience']} | Q2 years: {r['q2_years_in_jewellery']} | "
-               f"Q3 gold/diamond knowledge: {r['q3_gold_diamond_knowledge']} | Q4 7-day roster: {r['q4_ok_with_7day_roster']} | "
-               f"Q5 festival work: {r['q5_ok_with_festival_work']} | Q6 availability: {r['q6_availability']}")
+    # build B3: the answers go into the screening fields; the opening's rules judge them on insert
+    screening = {"screening_retail_experience": r["q1_jewellery_retail_experience"],
+                 "screening_years_in_category": cint(r["q2_years_in_jewellery"]),
+                 "screening_product_knowledge": r["q3_gold_diamond_knowledge"],
+                 "screening_roster_ok": r["q4_ok_with_7day_roster"],
+                 "screening_festival_ok": r["q5_ok_with_festival_work"],
+                 "screening_availability": r["q6_availability"],
+                 "screening_current_employer": r["current_employer"],
+                 "screening_category_experience": r["category_experience"],
+                 "screening_expected_monthly_ctc": flt(r["expected_monthly_ctc"])}
     if not name:
         ja = frappe.get_doc({"doctype": "Job Applicant", "applicant_name": r["applicant_name"], "email_id": r["email_id"],
                              "phone_number": r["phone_number"], "country": "India", "status": "Open",
                              "job_title": jo_name, "designation": DESIG, "source": source,
-                             "cover_letter": f"Current employer: {r['current_employer']}. {r['total_experience_years']} years, "
-                                             f"categories: {r['category_experience']}. Expected CTC ₹{r['expected_monthly_ctc']}/month.\n"
-                                             f"Screening answers: {answers}",
+                             "cover_letter": f"{r['total_experience_years']} years in jewellery retail, "
+                                             f"categories: {r['category_experience']}.",
                              "notes": r["outcome"][:140], "currency": "INR", "lower_range": flt(r["expected_monthly_ctc"]),
-                             "upper_range": flt(r["expected_monthly_ctc"])})
+                             "upper_range": flt(r["expected_monthly_ctc"]), **screening})
         ja.insert(ignore_permissions=True)
         name = ja.name
-        log(f"  [created] Job Applicant {name}: {r['applicant_name']}")
+        log(f"  [created] Job Applicant {name}: {r['applicant_name']} -> {ja.get('screening_result') or 'not screened'}")
+    elif not frappe.db.get_value("Job Applicant", name, "screening_result"):
+        ja = frappe.get_doc("Job Applicant", name)      # created before build B3: fill the answers and screen
+        ja.update(screening)
+        ja.save(ignore_permissions=True)
+        log(f"  [screened] Job Applicant {name}: {r['applicant_name']} -> {ja.get('screening_result') or 'not screened'}")
     applicants[r["applicant_name"]] = name
 commit()
 

@@ -1,8 +1,8 @@
 applicant_name,email_id,phone_number,city,current_employer,total_experience_years,category_experience,expected_monthly_ctc,q1_jewellery_retail_experience,q2_years_in_jewellery,q3_gold_diamond_knowledge,q4_ok_with_7day_roster,q5_ok_with_festival_work,q6_availability,source,outcome
 Ritika Malhotra,ritika.malhotra@ppjewellers.demo,9811000101,Noida,"Tanishq, DLF Mall of India",6,"Gold, Diamond",42000,Yes,6,Yes,Yes,Yes,Weekends and festivals fine,Naukri,SELECTED - offer accepted
 Vikas Tomar,vikas.tomar@example.demo,9811000102,Ghaziabad,"Kalyan Jewellers, Indirapuram",5,Gold,40000,Yes,5,Yes,Yes,Yes,Yes,Naukri,"Round 3 - runner-up, kept on hold"
-Shalini Rawat,shalini.rawat@example.demo,9811000103,Noida,"PC Jeweller, Noida",4,Diamond,38000,Yes,4,Yes,Yes,No,Yes,Employee referral (PPJ-0195),Round 2 - not cleared (product knowledge 2/5)
-Amit Chaudhary,amit.chaudhary@example.demo,9811000104,Delhi,"Reliance Jewels, Rohini",7,"Gold, Silver",45000,Yes,7,Yes,No,Yes,Yes,LinkedIn,Round 2 - not cleared (asked for fixed Sunday off)
+Shalini Rawat,shalini.rawat@example.demo,9811000103,Noida,"PC Jeweller, Noida",4,Diamond,38000,Yes,4,Yes,Yes,Yes,Yes,Employee referral (PPJ-0195),Round 2 - not cleared (product knowledge 2/5)
+Amit Chaudhary,amit.chaudhary@example.demo,9811000104,Delhi,"Reliance Jewels, Rohini",7,"Gold, Silver",45000,Yes,7,Yes,Yes,Yes,Yes,LinkedIn,Round 2 - not cleared (asked for fixed Sunday off)
 Neha Bisht,neha.bisht@example.demo,9811000105,Noida,Senco Gold,3,Gold,34000,Yes,3,Yes,Yes,Yes,Yes,Naukri,"Round 1 - cleared, withdrew before Round 2"
 Rohit Sengar,rohit.sengar@example.demo,9811000106,Agra,Local jeweller (family shop),2,Gold,30000,Yes,2,No,Yes,Yes,Yes,Walk-in,Screened out: below 3 years experience
 Preeti Nagar,preeti.nagar@example.demo,9811000107,Noida,Apparel retail (Pantaloons),5,None,36000,No,5,No,Yes,Yes,Yes,Indeed,Screened out: no jewellery experience

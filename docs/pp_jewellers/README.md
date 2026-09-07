@@ -2,7 +2,7 @@
 
 **Client:** PP Jewellers Pvt Ltd — 5 jewellery stores (Chandigarh, Ambala, Noida, Delhi Karol Bagh, Delhi South Extension) and one head office in Chandigarh. 400 employees.
 **Purpose:** a complete, step-by-step specification that Cowork can follow to build the PP Jewellers demo on a **new demo tenant, `ppj.dev.alvoraa.co`**, on the Enterprise plan.
-**Written:** 2026-09-07. **Status:** spec complete; seed suite written and verified end to end on a local bench (file 11); tenant not yet created (needs server access); builds approved 2026-09-07; B0, B2, B1 and B6 implemented and tested, B4, B3, B5 in progress (file 10). Fiscal year April to March. Completed quarter for the appraisal: Q1 FY27 (1 Apr to 30 Jun 2026). In-progress quarter: Q2 FY27 (1 Jul to 30 Sep 2026).
+**Written:** 2026-09-07. **Status:** spec complete; seed suite written and verified end to end on a local bench (file 11); tenant not yet created (needs server access); builds approved 2026-09-07; all six builds and the hotfix implemented and tested locally (file 10). Fiscal year April to March. Completed quarter for the appraisal: Q1 FY27 (1 Apr to 30 Jun 2026). In-progress quarter: Q2 FY27 (1 Jul to 30 Sep 2026).
 
 ## How to read this folder
 

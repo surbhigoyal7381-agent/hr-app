@@ -2,7 +2,7 @@ import frappe
 
 from alvoraa_portal.subscription import requires_feature
 import calendar as _calendar
-from frappe.utils import today, get_first_day, get_last_day, getdate, add_days, now
+from frappe.utils import cint, today, get_first_day, get_last_day, getdate, add_days, now
 from alvoraa_goals.permissions import get_effective_manager
 
 # ── Cache invalidation helpers (called by doc_events hooks in hooks.py) ──────
@@ -2355,3 +2355,297 @@ def get_team_late_list(weeks=4):
                               "week_start": [">=", since]}, limit=50)
     return {"enabled": True, "week_start": out and current_week_projection(rule, team[0].name)["week_start"],
             "team": out, "recent": recent}
+
+
+# ── Employee documents (build B4) ──────────────────────────────────────────
+@frappe.whitelist()
+def get_my_documents():
+    """The signed-in employee's document checklist, with what they can upload."""
+    emp = _get_employee()
+    if not emp or not frappe.db.exists("DocType", "Employee Document"):
+        return {"rows": [], "summary": ""}
+    types = {
+        t.name: t
+        for t in frappe.get_all(
+            "Employee Document Type",
+            fields=["name", "category", "collect_from", "mandatory_for_joining", "has_expiry"],
+        )
+    }
+    rows = frappe.get_all(
+        "Employee Document",
+        filters={"parent": emp.name, "parenttype": "Employee"},
+        fields=["name", "document_type", "status", "attachment", "document_number", "expiry_date",
+                "received_on", "verified_on", "remarks"],
+        order_by="idx",
+    )
+    out = []
+    for r in rows:
+        t = types.get(r.document_type) or frappe._dict()
+        out.append({
+            "name": r.name,
+            "document_type": r.document_type,
+            "category": t.get("category") or "",
+            "status": r.status,
+            "attachment": r.attachment or "",
+            "document_number": r.document_number or "",
+            "expiry_date": str(r.expiry_date) if r.expiry_date else "",
+            "received_on": str(r.received_on) if r.received_on else "",
+            "verified_on": str(r.verified_on) if r.verified_on else "",
+            "remarks": r.remarks or "",
+            "mandatory": int(t.get("mandatory_for_joining") or 0),
+            "collect_from": t.get("collect_from") or "",
+            "can_upload": int((t.get("collect_from") == "Employee") and r.status != "Verified"),
+        })
+    return {"employee": emp.name, "rows": out,
+            "summary": frappe.db.get_value("Employee", emp.name, "documents_summary") or ""}
+
+
+@frappe.whitelist()
+def attach_my_document(row, file_url, document_number=None):
+    """Put an uploaded file on one of the caller's own checklist rows."""
+    from hrms.alvoraa_employee_documents.employee_documents import attach_document
+
+    emp = _get_employee()
+    if not emp:
+        frappe.throw("No employee record is linked to your login.", frappe.PermissionError)
+    doc = attach_document(row, file_url, emp.name)
+    if document_number is not None:
+        frappe.db.set_value("Employee Document", doc.name, "document_number", document_number)
+    frappe.db.commit()
+    return {"name": doc.name, "status": doc.status, "message": "Uploaded. HR will verify it."}
+
+
+@frappe.whitelist()
+def hr_document_compliance(branch=None):
+    """HR: employees with a mandatory document not yet verified or any document
+    expired, grouped by branch."""
+    from hrms.alvoraa_employee_documents.employee_documents import employees_missing_mandatory
+
+    _require_hr()
+    rows = employees_missing_mandatory(branch or None)
+    by_branch = {}
+    for r in rows:
+        by_branch.setdefault(r["branch"] or "No branch", []).append(r)
+    total_active = frappe.db.count("Employee", {"status": "Active"})
+    return {
+        "employees": rows,
+        "by_branch": [{"branch": b, "count": len(v)} for b, v in sorted(by_branch.items())],
+        "affected": len(rows),
+        "active": total_active,
+    }
+
+
+# ── Policy library (build B5) ──────────────────────────────────────────────
+POLICY_FIELDS = ["name", "title", "owner_department", "category", "status", "current_version", "effective_from",
+                 "review_due", "summary", "attachment", "pinned", "acknowledge_on_joining",
+                 "acknowledge_on_new_version", "has_unpublished_changes", "modified"]
+
+
+def _policy_row(p, emp, can_write_flag):
+    from hrms.alvoraa_policy_library.doctype.policy_document.policy_document import acknowledgement_status
+
+    needed, done = acknowledgement_status(p, emp)
+    ack = "acknowledged" if (needed and done) else ("pending" if needed else "")
+    return {
+        "name": p.name, "title": p.title, "department": p.owner_department, "category": p.category,
+        "status": p.status, "version": cint(p.current_version),
+        "effective_from": str(p.effective_from) if p.effective_from else "",
+        "review_due": str(p.review_due) if p.review_due else "",
+        "summary": p.summary or "", "has_attachment": bool(p.attachment), "pinned": cint(p.pinned),
+        "ack": ack, "can_write": int(can_write_flag), "unpublished_changes": cint(p.has_unpublished_changes),
+        "modified": str(p.modified)[:10],
+    }
+
+
+@frappe.whitelist()
+def get_my_policies(limit=6):
+    """Home widget: pinned first, then newest published, only what the caller may read."""
+    if not frappe.db.exists("DocType", "Policy Document"):
+        return {"rows": [], "pending": 0}
+    from hrms.alvoraa_policy_library.access import can_write, profile
+
+    emp = (_get_employee() or {}).get("name")
+    rows = frappe.get_list("Policy Document", filters={"status": "Published"}, fields=POLICY_FIELDS,
+                           order_by="pinned desc, modified desc", limit=cint(limit) or 6)
+    out = [_policy_row(p, emp, can_write(p)) for p in rows]
+    pending = sum(1 for r in _all_readable(emp) if r["ack"] == "pending")
+    return {"rows": out, "pending": pending, "can_manage": int(bool(profile().heads) or profile().is_hr_manager or profile().is_admin)}
+
+
+def _all_readable(emp, search="", department="", category="", status="Published"):
+    from hrms.alvoraa_policy_library.access import can_write
+
+    filters = {}
+    if status:
+        filters["status"] = status
+    if department:
+        filters["owner_department"] = department
+    if category:
+        filters["category"] = category
+    or_filters = None
+    if search:
+        like = "%" + search.strip() + "%"
+        or_filters = {"title": ["like", like], "summary": ["like", like], "content": ["like", like]}
+    rows = frappe.get_list("Policy Document", filters=filters, or_filters=or_filters, fields=POLICY_FIELDS,
+                           order_by="pinned desc, title asc", limit=0)
+    return [_policy_row(p, emp, can_write(p)) for p in rows]
+
+
+@frappe.whitelist()
+def list_policies(search="", department="", category="", status="Published"):
+    """The Policies page. Writers may ask for Draft or Archived too."""
+    emp = (_get_employee() or {}).get("name")
+    rows = _all_readable(emp, search, department, category, status if status != "all" else "")
+    departments = sorted({r["department"] for r in rows})
+    categories = sorted({r["category"] for r in rows})
+    return {"rows": rows, "departments": departments, "categories": categories}
+
+
+@frappe.whitelist()
+def get_policy(name):
+    """One policy: readers get the last published snapshot, writers also get the working copy."""
+    from hrms.alvoraa_policy_library.access import can_write
+
+    doc = frappe.get_doc("Policy Document", name)
+    doc.check_permission("read")
+    emp = (_get_employee() or {}).get("name")
+    writer = can_write(doc)
+    view = doc.published_view()
+    row = _policy_row(doc, emp, writer)
+    row.update({
+        "content": view.content or "", "attachment": view.attachment or "",
+        "published_on": str(view.get("published_on") or "")[:16], "published_by": view.get("published_by") or "",
+        "versions": [{"version": v.version, "published_on": str(v.published_on)[:16], "published_by": v.published_by,
+                      "change_note": v.change_note or ""} for v in reversed(doc.versions or [])],
+    })
+    if writer:
+        row["working"] = {
+            "title": doc.title, "summary": doc.summary or "", "content": doc.content or "",
+            "attachment": doc.attachment or "", "effective_from": str(doc.effective_from or ""),
+            "review_due": str(doc.review_due or ""), "pinned": cint(doc.pinned),
+            "acknowledge_on_joining": cint(doc.acknowledge_on_joining),
+            "acknowledge_on_new_version": cint(doc.acknowledge_on_new_version),
+            "read_access": [{"access_type": r.access_type, "role": r.role, "user": r.user, "designation": r.designation,
+                             "branch": r.branch, "department": r.department} for r in doc.read_access],
+            "acknowledged_count": frappe.db.count("Policy Acknowledgement",
+                                                  {"policy_document": doc.name, "version": cint(doc.current_version)}),
+        }
+    return row
+
+
+@frappe.whitelist()
+def acknowledge_policy(name, source="Manual"):
+    """The signed-in employee confirms they have read the current version."""
+    emp = _get_employee()
+    if not emp:
+        frappe.throw("No employee record is linked to your login.", frappe.PermissionError)
+    doc = frappe.get_doc("Policy Document", name)
+    doc.check_permission("read")
+    if doc.status != "Published":
+        frappe.throw("Only a published policy can be acknowledged.")
+    if frappe.db.exists("Policy Acknowledgement", {"policy_document": name, "version": cint(doc.current_version),
+                                                   "employee": emp.name}):
+        return {"message": "Already acknowledged."}
+    ack = frappe.get_doc({"doctype": "Policy Acknowledgement", "policy_document": name,
+                          "version": cint(doc.current_version), "employee": emp.name, "user": frappe.session.user,
+                          "source": source if source in ("Onboarding", "New Version", "Manual") else "Manual"})
+    ack.insert(ignore_permissions=True)
+    frappe.db.commit()
+    return {"message": f"Thank you. Version {doc.current_version} of \"{doc.title}\" is acknowledged."}
+
+
+WHO_PRESETS = {
+    "everyone": [{"access_type": "All Employees"}],
+    "managers": [{"access_type": "Reporting Managers"}],
+    "hr": [{"access_type": "HR Only"}],
+    "department": [{"access_type": "Department Only"}],
+    "leadership": [{"access_type": "Top Leadership"}],
+}
+
+
+@frappe.whitelist()
+def save_policy(name=None, title=None, owner_department=None, category=None, summary=None, content=None,
+                effective_from=None, review_due=None, pinned=0, acknowledge_on_joining=0,
+                acknowledge_on_new_version=0, who=None, read_access=None):
+    """Create or update the working copy. Publishing is a separate step."""
+    import json
+    from hrms.alvoraa_policy_library.access import can_write
+
+    if name:
+        doc = frappe.get_doc("Policy Document", name)
+    else:
+        doc = frappe.new_doc("Policy Document")
+        doc.status = "Draft"
+    for field, value in (("title", title), ("owner_department", owner_department), ("category", category),
+                         ("summary", summary), ("content", content), ("effective_from", effective_from or None),
+                         ("review_due", review_due or None)):
+        if value is not None:
+            doc.set(field, value)
+    doc.pinned = cint(pinned)
+    doc.acknowledge_on_joining = cint(acknowledge_on_joining)
+    doc.acknowledge_on_new_version = cint(acknowledge_on_new_version)
+    if not can_write(doc):
+        frappe.throw("You cannot edit this policy. Department heads edit their own department's policies; HR Managers edit any.",
+                     frappe.PermissionError)
+    rules = None
+    if who in WHO_PRESETS:
+        rules = WHO_PRESETS[who]
+    elif read_access:
+        rules = json.loads(read_access) if isinstance(read_access, str) else read_access
+    if rules is not None:
+        doc.set("read_access", [])
+        for r in rules:
+            doc.append("read_access", r)
+    doc.flags.ignore_permissions = True     # can_write is the check that matters here
+    doc.save()
+    frappe.db.commit()
+    return {"name": doc.name, "status": doc.status, "message": "Saved." + (" Publish it when it is ready." if doc.status == "Draft" else "")}
+
+
+@frappe.whitelist()
+def publish_policy(name, change_note=""):
+    doc = frappe.get_doc("Policy Document", name)
+    result = doc.publish(change_note)
+    frappe.db.commit()
+    return {"message": f"Published as version {result['version']}.", **result}
+
+
+@frappe.whitelist()
+def get_policy_compliance(branch=None):
+    """HR: who still has to acknowledge which policy, by branch."""
+    _require_hr()
+    policies = frappe.get_all("Policy Document",
+                              filters={"status": "Published", "acknowledge_on_joining": 1},
+                              fields=["name", "title", "current_version"])
+    policies += frappe.get_all("Policy Document",
+                               filters={"status": "Published", "acknowledge_on_joining": 0, "acknowledge_on_new_version": 1},
+                               fields=["name", "title", "current_version"])
+    filters = {"status": "Active"}
+    if branch:
+        filters["branch"] = branch
+    employees = frappe.get_all("Employee", filters=filters, fields=["name", "employee_name", "branch"])
+    acks = set()
+    for a in frappe.get_all("Policy Acknowledgement", filters={"policy_document": ["in", [p.name for p in policies]]},
+                            fields=["policy_document", "version", "employee"]):
+        acks.add((a.policy_document, cint(a.version), a.employee))
+    by_branch, by_policy, rows = {}, {}, []
+    for e in employees:
+        missing = [p.title for p in policies if (p.name, cint(p.current_version), e.name) not in acks]
+        b = by_branch.setdefault(e.branch or "No branch", {"branch": e.branch or "No branch", "employees": 0, "pending": 0})
+        b["employees"] += 1
+        if missing:
+            b["pending"] += 1
+            rows.append({"employee": e.name, "employee_name": e.employee_name, "branch": e.branch or "", "missing": missing})
+        for p in policies:
+            bp = by_policy.setdefault(p.name, {"policy": p.title, "version": cint(p.current_version), "acknowledged": 0, "pending": 0})
+            if (p.name, cint(p.current_version), e.name) in acks:
+                bp["acknowledged"] += 1
+            else:
+                bp["pending"] += 1
+    review = frappe.get_all("Policy Document", filters={"status": "Published", "review_due": ["<=", frappe.utils.add_days(today(), 60)]},
+                            fields=["name", "title", "review_due", "owner_department"], order_by="review_due")
+    return {"by_branch": sorted(by_branch.values(), key=lambda r: r["branch"]),
+            "by_policy": sorted(by_policy.values(), key=lambda r: -r["pending"]),
+            "employees": sorted(rows, key=lambda r: (r["branch"], r["employee_name"]))[:200],
+            "pending_total": len(rows), "active": len(employees),
+            "review_due": [{"name": r.name, "title": r.title, "review_due": str(r.review_due), "department": r.owner_department} for r in review]}

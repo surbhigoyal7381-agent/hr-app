@@ -59,7 +59,7 @@ Every step below runs on the **ppj tenant**, never on `dev.alvoraa.co`.
 
 - [ ] Job Applicant Sources (5), Skills (9), Offer Terms (6), Job Offer Term Template, Appointment Letter Template, Staffing Plan.
 - [ ] Job Requisition (Noida), approve as Owner. Job Opening with the JD, published.
-- [ ] **(build B3)** tick `screening_forms` for the ppj tenant in the console; custom fields and web form; set `job_application_route`. Without B3, put the screening answers in the applicant `notes` field and say so.
+- [ ] **(build B3)** tick `screening_forms` for the ppj tenant in the console. Block 5 of the seed sets the screen-out rules on the opening, creates the client-worded web form `ppj-senior-sales-application` and screens the eight applicants (Rohit, Preeti and Sunil come out Screened Out).
 - [ ] 8 Job Applicants from `data/applicants.csv` with statuses; Employee Referral for Shalini.
 - [ ] 3 Interview Types with expected skills, pass marks and interviewers. Interviews and Interview Feedback per file 06 §7 (11 interviews, 11 feedback records with skill assessments). Submit the feedback.
 - [ ] Job Offer for Ritika Malhotra, Accepted 2026-08-20. Appointment Letter. Job Requisition → Filled.
@@ -69,10 +69,10 @@ Every step below runs on the **ppj tenant**, never on `dev.alvoraa.co`.
 
 - [ ] Roles Store Admin, Store Manager, Payroll User, Trainer; assign to the right users (Noida Store HR & Admin, Noida Store In-charge, Payroll & Compliance Executive, Training & Development Executive).
 - [ ] Employee Onboarding Template "PPJ Store Staff Onboarding" with 12 activities.
-- [ ] **(build B4)** tick `employee_documents` for the ppj tenant in the console; 18 Employee Document Types.
+- [ ] **(build B4)** tick `employee_documents` for the ppj tenant in the console; block 1 of the seed creates the 18 Employee Document Types and block 2 marks existing staff's rows Verified (PPJ-0200's police certificate Expired).
 - [ ] Employee Onboarding for Ritika from her Job Offer, boarding begins 2026-08-21, joining 2026-09-01. Submit. Close tasks 1 and 4; leave 2 and 3 open for the demo moment, or close all and screenshot the block message beforehand.
 - [ ] Create Employee PPJ-0401 from the onboarding (after closing 2 and 3). Set device id 0401, shift, holiday list Noida - Off Wednesday, grade G3, salary structure assignment.
-- [ ] **(build B4)** fill her Employee Documents rows per file 07 §3.5; seed PPJ-0200 with an expired police certificate.
+- [ ] **(build B4)** block 6 fills her Employee Documents rows per file 07 §3.5 (14 Verified, police certificate Received, salary slips Pending).
 - [ ] Training Program "PPJ Store Induction", 3 Training Events (1 to 3 Sep) with Ritika and two other joiners, Training Result, Training Feedback.
 - [ ] Check: onboarding Completed; Employee exists; 3 training events.
 
@@ -80,10 +80,10 @@ Every step below runs on the **ppj tenant**, never on `dev.alvoraa.co`.
 
 - [ ] Tick `policy_library` for the ppj tenant in the console.
 
-- [ ] Create the 16 policies from `data/policies.csv`, with content for the five that will be opened. Publish all. Set Department Heads on departments first.
-- [ ] Log in as PPJ-0054: widget shows 9 policies. Store In-charge: 12. Owner: 16.
-- [ ] Ritika acknowledges the 9 "acknowledge on joining" policies; onboarding activity 8 auto-completes.
-- Without B5: create a File Manager folder "Policies" with the 16 PDFs and show it; say plainly that the widget and access rules are the product feature in the spec.
+- [ ] Run block 7 of the seed (`seed_policies.py`): Department Heads on the departments, the 16 policies from `data/policies.csv` published (real text for the five that are opened), acknowledgements for everyone who joined before August, the Old Gold policy with unpublished changes.
+- [ ] Log in as PPJ-0054: widget shows 9 policies. Store In-charge: 12. Owner: 16 (department heads and HR Managers read everything).
+- [ ] Ritika acknowledges the 8 "acknowledge on joining" policies from the portal (Grievance Redressal is read-only); the onboarding task whose name contains "policy" completes by itself.
+- [ ] Head - Purchase & Sourcing opens Policies → Manage, edits "Old Gold Exchange and Valuation Policy" (it already carries draft changes), publishes with a change note; Gold Valuers see "To acknowledge".
 
 ## Block 8 — Performance (file 09)
 
@@ -105,7 +105,7 @@ Every step below runs on the **ppj tenant**, never on `dev.alvoraa.co`.
 
 ## Verified on a local bench, 2026-09-07
 
-The whole suite was run end to end on a bench built like the production image (Frappe 16.33 on Python 3.14, ERPNext 16.34, this repository's `hrms`, `alvoraa_goals` and `alvoraa_portal`), on a site whose company setup was completed the way the provisioner does it. Blocks 1 to 6 and 8 ran clean (Block 7, the policy library, is build B5). Numbers from `verify_ppj.py`:
+The whole suite was run end to end on a bench built like the production image (Frappe 16.33 on Python 3.14, ERPNext 16.34, this repository's `hrms`, `alvoraa_goals` and `alvoraa_portal`), on a site whose company setup was completed the way the provisioner does it. Blocks 1 to 6 and 8 ran clean on that first run; block 7 (the policy library) was added with build B5 and the whole suite is re-run in the final verification below. Numbers from `verify_ppj.py`:
 
 | Check | Result |
 |---|---|

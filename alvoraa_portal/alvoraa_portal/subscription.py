@@ -172,6 +172,30 @@ FEATURES = {
         "opt_in": True,
         "requires": ["performance", "attendance"],
     },
+    "employee_documents": {
+        "desc": "Document checklist on every employee: collected, verified, expiring",
+        "icon": "🗂️",
+        "label": "Employee Documents",
+        "module_defs": ["Alvoraa Employee Documents"],
+        "opt_in": True,
+        "requires": ["tenure"],
+    },
+    "screening_forms": {
+        "desc": "Screening questions on the application form, with screen-out rules per opening",
+        "icon": "📝",
+        "label": "Application Screening",
+        "module_defs": ["Alvoraa Screening"],
+        "opt_in": True,
+        "requires": ["recruitment"],
+    },
+    "policy_library": {
+        "desc": "Central policy library: department-owned, versioned, acknowledged, on the portal home page",
+        "icon": "📚",
+        "label": "Policy Library",
+        "module_defs": ["Alvoraa Policy Library"],
+        "opt_in": True,
+        "requires": ["portal"],
+    },
 }
 
 # ── Plans ────────────────────────────────────────────────────────────────────

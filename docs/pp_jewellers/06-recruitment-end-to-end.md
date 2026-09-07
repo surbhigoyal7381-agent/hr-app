@@ -74,6 +74,8 @@ Also create a **Staffing Plan** "FY27 Store Staffing" for the company with one r
 
 ## 4. Screening questions (on the application form)
 
+**Status: built and tested 2026-09-07 (file 10, B3).** Module **Alvoraa Screening** (`hrms/hrms/alvoraa_screening`), opt-in feature key `screening_forms`. The fields are generic product fields, not `ppj_*`: the client's wording lives on the Web Form as field labels, and the screen-out rules live on the Job Opening. Mapping: Q1 `screening_retail_experience`, Q2 `screening_years_in_category`, Q3 `screening_product_knowledge`, Q4 `screening_roster_ok`, Q5 `screening_festival_ok`, Q6 `screening_availability`; the three extras are `screening_current_employer`, `screening_category_experience`, `screening_expected_monthly_ctc`. The rules on the PPJ opening: retail experience required, minimum 3 years, product knowledge required, roster and festival availability required, expected monthly CTC at most 50,000. An applicant who fails a rule is saved with `screening_result` = Screened Out, the reasons in `screening_notes`, and status Rejected; the rest are Passed. HR filters the applicant list on Screening Result.
+
 These are the questions the client says they ask before anyone is called. They become custom fields on Job Applicant (build B3) and appear on the web form. HR sees the answers on the applicant record and filters the list on them.
 
 | # | Field on Job Applicant | Question on the form | Type | Screen-out rule |
@@ -88,7 +90,7 @@ These are the questions the client says they ask before anyone is called. They b
 
 ## 5. The application web form
 
-Web Form `ppj-senior-sales-application`, doctype Job Applicant, login not required, success URL `/jobs`. Fields: applicant_name, email_id, phone_number, country, the nine `ppj_*` fields above, resume_attachment, cover_letter. Set this route on the Job Opening's `job_application_route`. The standard `job-application` form stays for other openings.
+The product ships Web Form `screening-application` (route `/screening-application`, doctype Job Applicant, login not required, success URL `/jobs`) with neutral wording. The seed copies it to `ppj-senior-sales-application` with the client's questions as labels (hallmarking and diamond certification, Dhanteras, Diwali, Akshaya Tritiya) and sets that route on the Job Opening's `job_application_route`. Fields: job_title (filled from the careers page link), applicant_name, email_id, phone_number, country, the nine screening fields above, resume_attachment, cover_letter. The standard `job-application` form stays for other openings.
 
 ## 6. Applicants
 

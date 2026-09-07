@@ -4,6 +4,8 @@ Decision from the review: this is a **core product feature**, not a demo hack. H
 
 Today nothing like this exists in the product (no policy doctype, no portal tab, only raw File attachments).
 
+**Status: built and tested 2026-09-07 (file 10, B5).** Module **Alvoraa Policy Library** (`hrms/hrms/alvoraa_policy_library`), opt-in feature key `policy_library`. Differences from the text below: the policy code is `POL-00001` style (no department abbreviation); "Top Leadership" is the set of **Department Heads**, a new custom field on Department, plus anyone with the `Alvoraa CXO` role if a site has one; HR Managers, department heads and System Managers can always read, and HR Managers, the owning department's head and System Managers can always write; the read-only "current version" a reader sees is the last snapshot in the versions table, and the working copy carries a "Has Unpublished Changes" flag; attachments are private files whose download goes through Frappe's own permission check on the policy, so no separate streaming endpoint was needed; acknowledgement requests are not stored as records, a pending acknowledgement is simply "no Policy Acknowledgement for the current version".
+
 ## 1. Requirements in plain words
 
 1. Any department head can create a policy for their department. HR and System Manager can create for any department.
@@ -104,7 +106,7 @@ Onboarding activity 8 in file 07 ("Portal login and policy acknowledgement") aut
 
 Demo moments:
 
-- Employee (Suresh Sethi) sees 9 policies: the 8 "All Employees" ones and none of the manager, HR or leadership ones.
+- Employee (Suresh Sethi) sees 9 policies: the 9 "All Employees" ones and none of the manager, HR or leadership ones. (Verified on the local demo site 2026-09-07: Suresh 9, Store In-charge 12, Owner 16, Ritika 9 with 8 acknowledgements pending; 3,200 acknowledgements seeded for existing staff.)
 - Store In-charge sees 12: the 9 above plus the 3 "Reporting Managers" ones. Not the Purchase or Marketing department policies, not Payroll, not Compensation.
 - Owner sees all 16.
 - Head - Purchase & Sourcing opens "Old Gold Exchange and Valuation Policy" in Draft v1.1, changes the deduction norm, publishes with a change note, and the Gold Valuers in every store get a "new version to acknowledge" badge.

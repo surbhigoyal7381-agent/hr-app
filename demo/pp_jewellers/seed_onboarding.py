@@ -95,13 +95,10 @@ if not (ritika_app and ritika_offer):
     raise SystemExit("Run seed_recruitment.py first")
 onb_name = frappe.db.get_value("Employee Onboarding", {"job_applicant": ritika_app, "docstatus": ["!=", 2]}, "name")
 if not onb_name:
-    # Frappe HR quirk: on submit the onboarding creates a Project whose expected start date is
-    # date_of_joining, and ERPNext refuses a Task that starts before its Project. Pre-joining
-    # tasks therefore need the joining date to equal the boarding start while submitting; the
-    # real joining date is written back right after. (One-line product fix: use
-    # boarding_begins_on for the Project in employee_boarding_controller.on_submit.)
+    # The onboarding Project starts on boarding_begins_on (build B4 fix in
+    # employee_boarding_controller), so pre-joining tasks are fine with the real joining date.
     onb = frappe.get_doc({"doctype": "Employee Onboarding", "job_applicant": ritika_app, "job_offer": ritika_offer,
-                          "employee_name": "Ritika Malhotra", "date_of_joining": "2026-08-21",
+                          "employee_name": "Ritika Malhotra", "date_of_joining": JOIN,
                           "boarding_begins_on": "2026-08-21", "company": COMPANY, "department": dept("Sales"),
                           "designation": "Senior Sales Executive", "employee_grade": "G3 Senior Executive",
                           "holiday_list": "Noida Store Holiday List - Off Wednesday", "notify_users_by_email": 0,
@@ -112,7 +109,6 @@ if not onb_name:
     onb.flags.ignore_permissions = True
     onb.insert()
     onb.submit()          # creates the Project, one Task per activity, and a ToDo per assignee
-    onb.db_set("date_of_joining", JOIN)
     frappe.db.set_value("Project", onb.project, "expected_end_date", "2026-10-05")
     onb_name = onb.name
     log(f"  [created] Employee Onboarding {onb_name} with {len(onb.activities)} tasks")
@@ -165,6 +161,27 @@ if not frappe.db.exists("Employee", "PPJ-0401"):
         frappe.rename_doc("Employee", emp.name, "PPJ-0401", force=True)
     log("  [created] Employee PPJ-0401 Ritika Malhotra")
 commit()
+
+# Her document checklist (build B4): the hook created one Pending row per type
+# that applies to her grade and designation; the joining paperwork is in.
+if frappe.db.exists("DocType", "Employee Document") and frappe.db.exists("Employee", "PPJ-0401"):
+    from hrms.alvoraa_employee_documents.employee_documents import backfill_checklists, refresh_summary
+    backfill_checklists(["PPJ-0401"])     # no-op when the hook already filled it
+    rows = frappe.get_all("Employee Document", filters={"parent": "PPJ-0401", "parenttype": "Employee"},
+                          fields=["name", "document_type", "status"])
+    hr_user = frappe.db.get_value("Employee", hr_exec.name, "user_id") or "Administrator"
+    for r in rows:
+        if r.document_type == "Police verification certificate":
+            values = {"status": "Received", "received_on": "2026-08-28", "received_by": hr_user or "Administrator",
+                      "remarks": "Police acknowledgement received; certificate pending"}
+        elif r.document_type == "Last 3 months' salary slips":
+            values = {"status": "Pending"}
+        else:
+            values = {"status": "Verified", "received_on": "2026-08-26", "received_by": hr_user or "Administrator",
+                      "verified_on": "2026-08-29", "verified_by": hr_user or "Administrator"}
+        frappe.db.set_value("Employee Document", r.name, values)
+    log(f"  documents: {refresh_summary('PPJ-0401')}")
+    commit()
 
 # Two more September joiners so the induction has a batch
 log("Other September joiners")

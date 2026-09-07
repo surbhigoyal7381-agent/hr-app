@@ -2257,3 +2257,101 @@ def get_employee_goals_for_manager(employee_id):
     except Exception:
         goals = []
     return {"available": True, "goals": goals}
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Late-coming rule (build B1) - portal views of Attendance Deduction
+# ══════════════════════════════════════════════════════════════════════════
+
+def _late_rule_for(employee):
+    """The enabled rule that covers this employee, or None."""
+    if not frappe.db.exists("DocType", "Attendance Deduction Rule"):
+        return None
+    company, shift = frappe.db.get_value("Employee", employee, ["company", "default_shift"])
+    for filters in ({"company": company, "shift_type": shift, "enabled": 1},
+                    {"company": company, "shift_type": ["in", ["", None]], "enabled": 1}):
+        name = frappe.db.get_value("Attendance Deduction Rule", filters, "name")
+        if name:
+            return frappe.get_cached_doc("Attendance Deduction Rule", name)
+    return None
+
+
+def _deduction_rows(filters, limit=20):
+    rows = frappe.get_all(
+        "Attendance Deduction",
+        filters=filters,
+        fields=["name", "employee", "employee_name", "week_start", "week_end", "total_violations",
+                "counted_violations", "deduction_days", "lwp_days", "lwp_amount", "explanation"],
+        order_by="week_start desc", limit=limit, ignore_permissions=True,
+    )
+    for r in rows:
+        r["leave_days"] = round(frappe.utils.flt(r.deduction_days) - frappe.utils.flt(r.lwp_days), 2)
+        r["violations"] = frappe.get_all(
+            "Attendance Deduction Violation", filters={"parent": r.name},
+            fields=["attendance_date", "violation_type", "expected_time", "actual_time", "minutes", "counted"],
+            order_by="attendance_date asc", ignore_permissions=True,
+        )
+        for v in r["violations"]:
+            v["attendance_date"] = str(v.attendance_date)
+            v["expected_time"] = str(v.expected_time)[:5] if v.expected_time else ""
+            v["actual_time"] = str(v.actual_time)[:5] if v.actual_time else ""
+        r["week_start"] = str(r.week_start)
+        r["week_end"] = str(r.week_end)
+    return rows
+
+
+@frappe.whitelist()
+def get_my_attendance_deductions(months=3):
+    """The employee's own late-coming deductions plus this week so far."""
+    emp = _get_employee()
+    if not emp:
+        return {"no_employee": True}
+    rule = _late_rule_for(emp.name)
+    if not rule:
+        return {"enabled": False, "rows": [], "this_week": None}
+    from hrms.alvoraa_late_rules.late_rules import current_week_projection
+    since = frappe.utils.add_months(frappe.utils.nowdate(), -int(months))
+    rows = _deduction_rows({"employee": emp.name, "docstatus": 1, "week_start": [">=", since]})
+    projection = current_week_projection(rule, emp.name)
+    for v in projection["violations"]:
+        v["attendance_date"] = str(v["attendance_date"])
+        v["expected_time"] = str(v["expected_time"])[:5]
+        v["actual_time"] = str(v["actual_time"])[:5]
+    return {
+        "enabled": True,
+        "rule": {"name": rule.name, "late_threshold_minutes": rule.late_threshold_minutes,
+                 "early_exit_threshold_minutes": rule.early_exit_threshold_minutes if rule.count_early_exit else 0,
+                 "free_violations_per_week": rule.free_violations_per_week,
+                 "deduction_per_violation_days": rule.deduction_per_violation_days,
+                 "round_up_from_days": rule.round_up_from_days, "round_up_to_days": rule.round_up_to_days},
+        "rows": rows,
+        "this_week": projection,
+    }
+
+
+@frappe.whitelist()
+def get_team_late_list(weeks=4):
+    """Manager: this week so far for every direct report, and the last few weeks' deductions."""
+    emp = _get_employee()
+    if not emp:
+        return {"no_employee": True}
+    team = frappe.get_all("Employee", filters={"reports_to": emp.name, "status": "Active"},
+                          fields=["name", "employee_name", "designation"], order_by="employee_name asc")
+    if not team:
+        return {"enabled": False, "team": [], "recent": []}
+    rule = _late_rule_for(team[0].name)
+    if not rule:
+        return {"enabled": False, "team": [], "recent": []}
+    from hrms.alvoraa_late_rules.late_rules import current_week_projection
+    out = []
+    for m in team:
+        p = current_week_projection(rule, m.name)
+        out.append({"employee": m.name, "employee_name": m.employee_name, "designation": m.designation,
+                    "violations": len(p["violations"]), "counted": p["counted"], "projected_days": p["projected_days"],
+                    "detail": [f"{str(v['attendance_date'])[5:]} {v['violation_type']} {str(v['actual_time'])[:5]}"
+                               for v in p["violations"]]})
+    since = frappe.utils.add_days(frappe.utils.nowdate(), -7 * int(weeks))
+    recent = _deduction_rows({"employee": ["in", [m.name for m in team]], "docstatus": 1,
+                              "week_start": [">=", since]}, limit=50)
+    return {"enabled": True, "week_start": out and current_week_projection(rule, team[0].name)["week_start"],
+            "team": out, "recent": recent}

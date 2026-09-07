@@ -1,0 +1,75 @@
+{
+ "doctype": "DocType",
+ "name": "Attendance Deduction Violation",
+ "module": "Alvoraa Late Rules",
+ "creation": "2026-09-07 12:00:00.000000",
+ "modified": "2026-09-07 12:00:00.000000",
+ "modified_by": "Administrator",
+ "owner": "Administrator",
+ "docstatus": 0,
+ "idx": 0,
+ "engine": "InnoDB",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "editable_grid": 1,
+ "field_order": [
+  "attendance_date",
+  "violation_type",
+  "expected_time",
+  "actual_time",
+  "minutes",
+  "counted",
+  "attendance"
+ ],
+ "fields": [
+  {
+   "fieldname": "attendance_date",
+   "fieldtype": "Date",
+   "label": "Date",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "violation_type",
+   "fieldtype": "Select",
+   "label": "Type",
+   "options": "Late Arrival\nEarly Exit",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "expected_time",
+   "fieldtype": "Time",
+   "label": "Expected",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "actual_time",
+   "fieldtype": "Time",
+   "label": "Actual",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "minutes",
+   "fieldtype": "Int",
+   "label": "Minutes",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "counted",
+   "fieldtype": "Check",
+   "label": "Counted",
+   "in_list_view": 1,
+   "description": "The first violation(s) of the week are free"
+  },
+  {
+   "fieldname": "attendance",
+   "fieldtype": "Link",
+   "label": "Attendance",
+   "options": "Attendance"
+  }
+ ],
+ "permissions": [],
+ "links": [],
+ "istable": 1
+}

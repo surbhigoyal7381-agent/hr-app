@@ -41,10 +41,10 @@ Every step below runs on the **ppj tenant**, never on `dev.alvoraa.co`.
 ## Block 3 — Shifts, punches, attendance (file 03)
 
 - [ ] Two Shift Types with the values in file 03 §1. Shift Assignments from 2026-07-01.
-- [ ] Copy `data/punches.csv` to `/tmp/punches.csv` in the container; console: `demo/pp_jewellers/seed_attendance.py`. Takes a few minutes for 45,232 rows.
-- [ ] Check: Employee Checkin ≈ 45,232; Attendance ≈ 22,616 submitted; Monthly Attendance Sheet for August, Chandigarh, shows L flags; PPJ-0054 has late entries on 18 and 20 Aug and early exit on 22 Aug.
+- [ ] Copy `data/punches.csv` to `/tmp/punches.csv` in the container; console: `demo/pp_jewellers/seed_attendance.py`. Takes a few minutes for 45,140 rows.
+- [ ] Check: Employee Checkin ≈ 45,140; Attendance ≈ 22,570 submitted; Monthly Attendance Sheet for August, Chandigarh, shows L flags; PPJ-0054 has late entries on 18 and 20 Aug and early exit on 22 Aug.
 - [ ] **(build B1)** Console → ppj tenant → Edit modules → tick `late_rules`. Then create Attendance Deduction Rule "PPJ Late Coming Rule" with the defaults; click "Run for range" 2026-07-01 to 2026-09-06.
-- [ ] Check: Attendance Deduction list matches `data/expected_deductions.csv` (231 rows). PPJ-0054 week 17 Aug = 0.5 from Casual Leave. PPJ-0058 week 3 Aug = 0.5 leave + 0.5 LWP with an Additional Salary dated 2026-08-09.
+- [ ] Check: Attendance Deduction list matches `data/expected_deductions.csv` (212 rows). PPJ-0054 week 17 Aug = 0.5 from Casual Leave. PPJ-0058 week 3 Aug = 0.5 leave + 0.5 LWP with an Additional Salary dated 2026-08-09.
 
 ## Block 4 — Payroll (file 04)
 
@@ -111,7 +111,7 @@ The whole suite was run end to end on a bench built like the production image (F
 |---|---|
 | Employees | 403 active (400 seeded + Ritika and two September joiners); 72 / 72 / 74 / 73 / 72 per store, 40 head office; one employee without a manager (the Owner) |
 | Users, leave | 403 users linked; 1,209 leave allocations; 401 holiday list assignments |
-| Attendance | 45,232 check-ins → 23,275 attendance records (22,577 Present, 693 Absent); PPJ-0054 flagged late on 18 and 20 Aug and early-exit on 22 Aug, exactly as scripted |
+| Attendance | 45,232 check-ins → 23,275 attendance records (22,577 Present, 693 Absent); PPJ-0054 flagged late on 18 and 20 Aug and early-exit on 22 Aug, exactly as scripted. The punch file was regenerated later the same day (45,140 rows, head office closed on Raksha Bandhan); the final verification run refreshes these numbers |
 | Payroll | 403 salary structure assignments, 198 incentives, 800 submitted slips, 2 accrual journal entries. August: PF on 400 employees, ESI on 146 (the CSV's ESI-eligible count), income tax on 31. PPJ-0054 August gross 44,200 with Gold Incentive 9,200 |
 | Recruitment | 1 requisition, 1 opening, 8 applicants, 11 interviews, 22 feedback records, 1 offer, 1 appointment letter; Ritika's rounds average 4.25 / 4.25 / 4.6 |
 | Onboarding | Onboarding In Process (11 of 12 tasks closed, the 30-day check-in open), Employee PPJ-0401 created through it, 3 training events, 1 result, 3 feedback records |
@@ -130,12 +130,12 @@ One script per block, all idempotent, all reading the CSVs in `docs/pp_jewellers
 | `provision_ppj.sh` | 0 | Runs on the server: create_tenant on the control plane, waits for the job, adds the TLS name, records the Alvoraa Subscription. Not tested from the development container; read it before running. |
 | `seed_masters.py` | 1 | Company (if missing), fiscal years, branches, shift locations, departments, designations, grades, 21 holiday lists, leave types, leave policy and period, shift types, HR Settings |
 | `seed_employees.py` | 2 | 400 employees in two passes, tree rebuild, users with the demo password, roles by designation, user permissions, approvers, leave policy assignments, PPJ-0058's May leave |
-| `seed_attendance.py` | 3 | Shift assignments, 45,232 check-ins through the punch API, auto attendance for both shifts |
+| `seed_attendance.py` | 3 | Shift assignments, 45,140 check-ins through the punch API, auto attendance for both shifts, the late-coming rule and its run over July to September |
 | `seed_payroll.py` | 4 | Payroll settings, period, tax slab, accounts, 17 components (ESI included as formula components), 5 structures, 400 assignments, incentives from July sales, July and August payroll with slips submitted |
 | `seed_recruitment.py` | 5 | Sources, skills, offer terms, letter template, staffing plan, requisition, opening with the JD, 8 applicants, referral, 3 interview types, 11 interviews with 22 feedback records, offer, appointment letter |
 | `seed_onboarding.py` | 6 | Roles, onboarding template, Ritika's onboarding with tasks closed, Employee PPJ-0401 created through it, two more joiners, users and salary for the three, training program, 3 events, result, feedback, skill map |
 | `seed_performance.py` | 8 | Values, scale, principles, criteria, template, two cycles with configs, two cascades with the store/floor/individual tree, evidence and progress, ~4,000 KPIs, Q1 feedback and submitted appraisals with extensions, calibration, Q2 draft appraisals, upward feedback |
-| `reset_payroll.py`, `reset_performance.py` | 4, 8 | Dev-only wipes so a block can be re-seeded from clean. Never on a tenant with real data. |
+| `reset_deductions.py`, `reset_payroll.py`, `reset_performance.py` | 3, 4, 8 | Dev-only wipes so a block can be re-seeded from clean. Never on a tenant with real data. |
 | `run_all.sh` | 1-8 | `run_all.sh --site ppj.dev.alvoraa.co --bench /home/frappe/frappe-bench [--from n | --only n]` |
 | `verify_ppj.py` | all | prints the verification numbers |
 

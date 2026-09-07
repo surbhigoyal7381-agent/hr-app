@@ -1300,6 +1300,11 @@ def get_leaves_for_period(
 		):
 			leave_days += leave_entry.leaves
 
+		elif inclusive_period and leave_entry.transaction_type == "Attendance Deduction":
+			# leave taken by the late-coming rule (Alvoraa Late Rules): already a
+			# plain day count, nothing to work out from holidays
+			leave_days += leave_entry.leaves
+
 		elif leave_entry.transaction_type == "Leave Application":
 			if leave_entry.from_date < getdate(from_date):
 				leave_entry.from_date = from_date

@@ -18,7 +18,7 @@ random.seed(20260907)
 DATA = Path(__file__).resolve().parents[2] / "docs" / "pp_jewellers" / "data"
 START, END = date(2026, 7, 1), date(2026, 9, 6)
 HO_BRANCH = "PPJ Head Office Chandigarh"
-HO_HOLIDAYS = {date(2026, 8, 15)}          # stores stay open on 15 Aug
+HO_HOLIDAYS = {date(2026, 8, 15), date(2026, 8, 28)}   # Independence Day, Raksha Bandhan; stores stay open (seed_masters HO_EXTRA)
 SHIFT_START, SHIFT_END = time(9, 30), time(18, 30)
 LATE_THRESHOLD_MIN, EARLY_THRESHOLD_MIN = 60, 60      # quarter-day rule thresholds
 FREE_PER_WEEK, PER_VIOLATION, ROUND_UP_FROM, ROUND_UP_TO = 1, 0.25, 0.75, 1.0
@@ -145,6 +145,8 @@ def main():
             weekly[(emp, week)].append((d, "Early Exit", t_out.strftime("%H:%M")))
     rows = []
     for (emp, week), v in sorted(weekly.items()):
+        if week < START:          # the rule's process_from is START: a part-week before it is never processed
+            continue
         v.sort()
         counted = max(0, len(v) - FREE_PER_WEEK)
         computed = counted * PER_VIOLATION

@@ -89,6 +89,35 @@ for name in (STORE_SHIFT, HO_SHIFT):
     commit()
     log(f"  processed {name}")
 
+# ── Quarter-day late rule (build B1) ────────────────────────────────────────
+if frappe.db.exists("DocType", "Attendance Deduction Rule"):
+    log("Attendance Deduction Rule (build B1)")
+    RULE = "PPJ Late Coming Rule"
+    if not frappe.db.exists("Attendance Deduction Rule", RULE):
+        frappe.get_doc({
+            "doctype": "Attendance Deduction Rule", "rule_name": RULE, "company": COMPANY, "enabled": 1,
+            "week_start_day": "Monday", "process_from": "2026-07-01",
+            "late_threshold_minutes": 60, "count_early_exit": 1, "early_exit_threshold_minutes": 60,
+            "free_violations_per_week": 1, "deduction_per_violation_days": 0.25,
+            "round_up_from_days": 0.75, "round_up_to_days": 1.0, "deduct_from_leave_first": 1,
+            "leave_types": [{"leave_type": "Casual Leave", "priority": 1}],   # Earned Leave is kept for encashment
+            "lwp_salary_component": "Late Coming Deduction" if frappe.db.exists("Salary Component", "Late Coming Deduction") else None,
+            "daily_wage_basis": "Base from Salary Structure Assignment",
+            "exempt_grades": [{"employee_grade": g} for g in ("G5 Head", "G6 Leadership") if frappe.db.exists("Employee Grade", g)],
+            "notify_employee": 1, "notify_manager": 1,
+        }).insert(ignore_permissions=True)
+        commit()
+        log(f"  [created] {RULE}")
+    if frappe.db.exists("Salary Structure Assignment", {"docstatus": 1}):
+        from hrms.alvoraa_late_rules.late_rules import run_for_range
+        frappe.set_user("Administrator")
+        result = run_for_range(RULE, "2026-07-01", "2026-09-06")
+        commit()
+        log(f"  rule run: {result}")
+        log(f"  Attendance Deductions: {frappe.db.count('Attendance Deduction', {'docstatus': 1})} (expected 231 from data/expected_deductions.csv)")
+    else:
+        log("  rule created; run it after Block 4 (loss of pay needs salary assignments): Attendance Deduction Rule > Run for Range")
+
 log("Block 3 done")
 counts("Shift Assignment", "Employee Checkin", "Attendance")
 for status in ("Present", "Absent", "Half Day"):

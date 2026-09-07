@@ -38,6 +38,15 @@ Spec: file 03 §3.
 - Leave Application does not support 0.25 days, which is why the balance is consumed by ledger entry, not by a Leave Application. Leave reports that read Leave Ledger Entry will show it; reports that only read Leave Application will not. Acceptable; call it out to the client.
 - Daily wage basis: `base / days in month` is simple and explainable. Gross-based is available as an option.
 
+**Status: approved and implemented 2026-09-07.** Module `hrms/hrms/alvoraa_late_rules` ("Alvoraa Late Rules"): doctypes Attendance Deduction Rule (with child tables for leave types and exempt grades) and Attendance Deduction (submittable, with violation and leave rows); `late_rules.py` runs one week for one rule (Monday 02:00 scheduler for the previous week, plus an HR catch-up `run_for_range`), guarded by a file lock per rule and week; report **Late Coming Deductions**; permission query so an employee sees only their own deductions and a manager their team's; portal APIs `get_my_attendance_deductions` and `get_team_late_list` with a card on the attendance panel and one on the team panel; opt-in feature key `late_rules` in the subscription registry. Tests: `hrms/hrms/alvoraa_late_rules/tests/test_late_rules.py` (5 tests: week start, three violations from leave, four violations rounding up and spilling into pay with cancel reversing both, portal projection, exempt grade).
+
+Two things changed against the proposal above:
+
+1. **One core change in Frappe HR** (`hrms/hr/doctype/leave_application/leave_application.py`, `get_leaves_for_period`). The balance helper only counted Leave Application ledger entries, so a deduction posted by this rule did not lower the balance: PPJ-0058 was given a full day from Casual Leave when only half a day was left, and could still have applied for the leave. The helper now also counts ledger entries of type Attendance Deduction. It is one extra branch; Leave Application, the leave balance report and leave encashment all read balances through this helper, so they now agree. The existing leave application tests give the same result before and after the change (5 errors either way, all "No Holiday List was found" in the test fixtures, nothing to do with balances).
+2. **The demo rule takes Casual Leave only**, not Casual then Earned. Earned Leave is the encashable one and the story for PPJ-0058 (half a day of leave, half a day of pay) needs it left alone. The rule still accepts more than one leave type in priority order.
+
+Verified on the local demo site: 215 deductions for the punch data loaded there; PPJ-0054 week 17 Aug = 0.5 from Casual Leave; PPJ-0058 week 3 Aug = 0.5 from Casual Leave + 0.5 loss of pay, Additional Salary 548.39 (34,000 / 31 × 0.5) dated 2026-08-09. The punch generator was corrected at the same time (head office closed on Raksha Bandhan; the part-week before 1 July is not processed), so `expected_deductions.csv` now has 212 rows and the demo site is reloaded at the final verification (file 11).
+
 ---
 
 ## B0 — Hotfix found while testing: regional override wrapper breaks income-tax payslips
@@ -48,7 +57,9 @@ Spec: file 03 §3.
 
 **Fix (three lines):** in the wrapper, if `overrides[fn_path]` is a list or tuple, use its last element before `frappe.get_attr`. Add a unit test that registers a regional override and calls a decorated function with the India country set.
 
-**Impact:** payroll only; no data change; restores behaviour that ERPNext has. Performance, security, scalability neutral. Reliability: fixes a hard failure. This needs your approval before it goes into the repo. The seed suite was verified with the fix applied on the local bench.
+**Impact:** payroll only; no data change; restores behaviour that ERPNext has. Performance, security, scalability neutral. Reliability: fixes a hard failure.
+
+**Status: approved and implemented 2026-09-07.** Fix in `hrms/hrms/hr/utils.py`; regression test `hrms/hrms/tests/test_regional_override.py` (4 tests, list, last-wins, string, fallback).
 
 ## B2 — ESI components and fields
 
@@ -59,6 +70,8 @@ Spec: file 04 §3.
 **Non-functional**: Performance neutral (one more component per slip). Security neutral (report permission = Provident Fund Deductions report). Reliability: the `esi_applicable` switch avoids someone dropping out of ESI mid-period because of an incentive month, which is the classic bug in formula-only ESI. Scalability neutral. Maintainability: rates are in the component formula, editable by HR without code. Data integrity neutral. Compliance: ESI number is PII, shown only on the slip and the report, both already restricted.
 
 **Risk**: statutory rates and ceilings must be verified before the demo; I have not confirmed them.
+
+**Status: approved and implemented 2026-09-07.** The India regional setup (`hrms/regional/india/setup.py`) now adds `esi_number` on Employee, a Statutory Deductions section with `pf_applicable` and `esi_applicable` on Salary Structure Assignment (both editable after submit), and the `ESI` / `Employer ESI` options on `component_type`. A before-insert hook (`hrms/regional/india/utils.py`, `set_esi_applicable`) switches ESI on for a new assignment whose base is at or below the ceiling constant `ESI_WAGE_CEILING` (21,000, marked verify) and never clears a tick HR has set. New report **ESI Deductions** under Payroll. Patch `hrms.patches.v16_0.add_esi_fields_for_india` re-runs the regional setup on sites with Indian companies. Tests in `hrms/hrms/tests/test_esi.py`. The seeds now set the switches and the ESI numbers.
 
 ---
 

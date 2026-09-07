@@ -155,6 +155,15 @@ FEATURES = {
         "app": "alvoraa_portal",
         "module_defs": ["Alvoraa Portal"],
     },
+    # ── Opt-in features (off everywhere until the console ticks them for a tenant) ──
+    "late_rules": {
+        "desc": "Late-coming and early-exit rule: quarter-day deductions from leave, then pay",
+        "icon": "⏰",
+        "label": "Late Coming Rules",
+        "module_defs": ["Alvoraa Late Rules"],
+        "opt_in": True,
+        "requires": ["attendance", "leaves", "payroll"],
+    },
 }
 
 # ── Plans ────────────────────────────────────────────────────────────────────

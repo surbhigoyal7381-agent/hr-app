@@ -112,13 +112,13 @@ COMPONENTS = [
     ("Platinum & Gemstone Incentive", "INC_P", "Earning", {"amount": 0, "is_tax_applicable": 1, "remove_if_zero_valued": 1}),
     ("Store Performance Incentive", "INC_ST", "Earning", {"amount": 0, "is_tax_applicable": 1, "remove_if_zero_valued": 1}),
     ("Festival Working Allowance", "FWA", "Earning", {"amount": 0, "is_tax_applicable": 1, "remove_if_zero_valued": 1}),
-    ("Provident Fund", "PF", "Deduction", {"formula": "min(B, 15000) * 0.12", "exempted_from_income_tax": 1}),
-    ("Employee State Insurance", "ESI", "Deduction", {"condition": "base <= 21000", "formula": "gross_pay * 0.0075", "remove_if_zero_valued": 1}),
+    ("Provident Fund", "PF", "Deduction", {"condition": "pf_applicable", "formula": "min(B, 15000) * 0.12", "exempted_from_income_tax": 1}),
+    ("Employee State Insurance", "ESI", "Deduction", {"condition": "esi_applicable", "formula": "gross_pay * 0.0075", "remove_if_zero_valued": 1}),
     ("Professional Tax", "PT", "Deduction", {"amount": 0, "exempted_from_income_tax": 1}),
     ("Late Coming Deduction", "LCD", "Deduction", {"amount": 0, "remove_if_zero_valued": 1}),
     ("Income Tax", "IT", "Deduction", {"variable_based_on_taxable_salary": 1, "is_income_tax_component": 1, "remove_if_zero_valued": 1}),
-    ("Employer PF Contribution", "EPF_ER", "Employer Contribution", {"formula": "min(B, 15000) * 0.12"}),
-    ("Employer ESI Contribution", "ESI_ER", "Employer Contribution", {"condition": "base <= 21000", "formula": "gross_pay * 0.0325", "remove_if_zero_valued": 1}),
+    ("Employer PF Contribution", "EPF_ER", "Employer Contribution", {"condition": "pf_applicable", "formula": "min(B, 15000) * 0.12"}),
+    ("Employer ESI Contribution", "ESI_ER", "Employer Contribution", {"condition": "esi_applicable", "formula": "gross_pay * 0.0325", "remove_if_zero_valued": 1}),
 ]
 # Statutory rates (PF 12% on basic capped at 15,000; ESI 0.75% / 3.25% up to 21,000 gross) - VERIFY.
 ACCOUNT_FOR = {"PF": PF_ACC, "ESI": ESI_ACC, "PT": PT_ACC, "IT": IT_ACC, "EPF_ER": PF_ACC, "ESI_ER": ESI_ACC}
@@ -146,6 +146,8 @@ for name, abbr, ctype, vals in COMPONENTS:
         sc.component_type = "Provident Fund"
     if abbr == "PT" and frappe.get_meta("Salary Component").has_field("component_type"):
         sc.component_type = "Professional Tax"
+    if abbr in ("ESI", "ESI_ER") and frappe.get_meta("Salary Component").has_field("component_type"):
+        sc.component_type = "ESI" if abbr == "ESI" else "Employer ESI"     # build B2
     sc.flags.ignore_permissions = True
     if changed:
         sc.save()
@@ -211,6 +213,9 @@ for e in employees():
                           "salary_structure": GRADE_TO_STRUCTURE[e.employee_grade], "company": COMPANY,
                           "currency": "INR", "from_date": from_date, "base": base,
                           "income_tax_slab": SLAB_NAME, "payroll_payable_account": PAYABLE_ACC})
+    if ssa.meta.has_field("esi_applicable"):      # build B2 switches (the India hook defaults them the same way)
+        ssa.esi_applicable = 1 if base <= 21000 else 0
+        ssa.pf_applicable = 1
     ssa.flags.ignore_permissions = True
     ssa.insert()
     ssa.submit()

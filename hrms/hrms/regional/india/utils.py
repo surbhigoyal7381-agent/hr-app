@@ -8,6 +8,30 @@ from hrms.hr.utils import get_salary_assignments
 from hrms.payroll.doctype.salary_structure.salary_structure import make_salary_slip
 
 
+# Monthly gross wage ceiling for ESI coverage. Statutory value; verify against the
+# current ESIC notification before relying on it for a real payroll.
+ESI_WAGE_CEILING = 21000
+
+
+def set_esi_applicable(doc, method=None):
+	"""Default the ESI switch on a new Salary Structure Assignment from its base pay.
+
+	Runs for Indian companies only. HR can override the tick afterwards; the switch,
+	not the base, is what the ESI salary components read, because ESIC keeps a person
+	covered to the end of the contribution period even after a raise.
+	"""
+	if frappe.db.get_value("Company", doc.company, "country") != "India":
+		return
+	if not doc.meta.has_field("esi_applicable"):
+		return
+	# A Check field is 0 on a new document whether or not anyone touched it, so the
+	# rule is opt-in: base at or below the ceiling switches ESI on; a tick already set
+	# (an employee kept covered after a raise) is never cleared. HR unticks afterwards
+	# for the rare opt-out below the ceiling; both switches allow edits after submit.
+	if not doc.get("esi_applicable") and flt(doc.base) and flt(doc.base) <= ESI_WAGE_CEILING:
+		doc.esi_applicable = 1
+
+
 def calculate_annual_eligible_hra_exemption(doc):
 	basic_component, hra_component = frappe.db.get_value(
 		"Company", doc.company, ["basic_component", "hra_component"]

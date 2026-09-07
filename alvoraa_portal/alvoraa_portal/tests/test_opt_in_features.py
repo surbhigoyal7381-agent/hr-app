@@ -109,16 +109,21 @@ class TestNothingExistingChanged(FrappeTestCase):
 	of something they had yesterday is a worse failure than the one being fixed.
 	"""
 
-	def test_nothing_shipped_so_far_is_opt_in(self):
+	# Every feature that ships opt-in is named here on purpose. Adding one means
+	# adding it to this list; removing the flag from an existing feature would
+	# hand it to every tenant on the fallback path, which is the leak this guards.
+	SHIPPED_OPT_IN = ["late_rules"]
+
+	def test_only_the_named_features_are_opt_in(self):
 		"""If this ever fails, some existing feature just silently switched off
-		for every tenant on the fallback path."""
-		self.assertEqual(sub.OPT_IN, [])
+		for every tenant on the fallback path, or a new one leaked on."""
+		self.assertEqual(sorted(sub.OPT_IN), sorted(self.SHIPPED_OPT_IN))
 
 	def test_the_fallback_still_grants_the_whole_product(self):
-		self.assertEqual(set(sub.enabled_features({})), set(sub.FEATURES))
+		self.assertEqual(set(sub.enabled_features({})), set(sub.FEATURES) - set(self.SHIPPED_OPT_IN))
 
 	def test_enterprise_is_still_the_whole_product(self):
-		self.assertEqual(set(sub.plan_features("enterprise")), set(sub.FEATURES))
+		self.assertEqual(set(sub.plan_features("enterprise")), set(sub.FEATURES) - set(self.SHIPPED_OPT_IN))
 
 	def test_required_features_are_never_withheld(self):
 		for key in sub.REQUIRED:
@@ -168,9 +173,11 @@ class TestAdoption(FrappeTestCase):
 		finally:
 			sub.FEATURES["vendor"] = saved
 
-	def test_nothing_is_waiting_today(self):
-		self.assertEqual([r["key"] for r in sub.feature_adoption(self.TENANTS)
-		                  if r["waiting"]], [])
+	def test_only_the_shipped_opt_in_features_are_waiting(self):
+		"""None of the sample tenants has ticked them, so they show as waiting.
+		Anything else waiting means a feature lost its place in a plan bundle."""
+		self.assertEqual(sorted(r["key"] for r in sub.feature_adoption(self.TENANTS) if r["waiting"]),
+		                 sorted(TestNothingExistingChanged.SHIPPED_OPT_IN))
 
 	def test_no_tenants_is_not_a_crash(self):
 		self.assertTrue(sub.feature_adoption([]))

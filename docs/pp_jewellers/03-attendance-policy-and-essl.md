@@ -80,7 +80,7 @@ Use `requests` with a hand-built SOAP envelope and `xml.etree` to read the reply
 
 ### 2.4 For the demo: simulated punches
 
-`demo/pp_jewellers/generate_punches.py` writes `docs/pp_jewellers/data/punches.csv` (45,232 rows) and `data/expected_deductions.csv` (231 employee-weeks the rule must produce, with the violations listed, for verifying the build): `attendance_device_id, timestamp, log_type, device_id`. `demo/pp_jewellers/seed_attendance.py` reads it inside `bench console` and calls `add_log_based_on_employee_field` for each row, then sets `last_sync_of_checkin` on both Shift Types and runs `process_auto_attendance_for_all_shifts`. See file 11 for the run order.
+`demo/pp_jewellers/generate_punches.py` writes `docs/pp_jewellers/data/punches.csv` (45,140 rows) and `data/expected_deductions.csv` (212 employee-weeks the rule must produce, with the violations listed, for verifying the build): `attendance_device_id, timestamp, log_type, device_id`. `demo/pp_jewellers/seed_attendance.py` reads it inside `bench console` and calls `add_log_based_on_employee_field` for each row, then sets `last_sync_of_checkin` on both Shift Types and runs `process_auto_attendance_for_all_shifts`. See file 11 for the run order.
 
 The data has deliberate patterns so the demo has a story:
 
@@ -98,6 +98,8 @@ Dates covered: 1 July to 6 September 2026. Weekly-off days and 15 August (head o
 
 ## 3. Feature: quarter-day late rule (build)
 
+**Status: built and verified 2026-09-07 (build B1, file 10).** Doctypes, weekly job, HR catch-up button, report, portal cards and tests are in the repo. One core change came with it: the leave balance helper in Frappe HR only counted Leave Applications, so it ignored the days this rule takes; it now counts Attendance Deduction ledger entries too (file 10, B1 status).
+
 ### 3.1 The policy in plain words (confirmed with the client)
 
 - The week runs Monday to Sunday.
@@ -106,7 +108,7 @@ Dates covered: 1 July to 6 September 2026. Weekly-off days and 15 August (head o
 - Each further violation costs **a quarter day (0.25)**.
 - Once **three quarters** are reached in a week, the deduction becomes **one full day**.
 - So: 1 violation = 0, 2 = 0.25, 3 = 0.5, 4 or more = 1.0.
-- The deduction comes **first from leave balance** (Casual Leave, then Earned Leave), then as **loss of pay**.
+- The deduction comes **first from Casual Leave balance**, then as **loss of pay**. Earned Leave is left alone: it is the encashable leave, and the policy should not drain it.
 - Days that are already Absent, On Leave or Half Day by the normal shift rules are not counted again.
 
 Worked example, one week:
@@ -124,7 +126,7 @@ Result for the week: 0.5 day. Casual Leave balance 3 → 2.5. Nothing on the pay
 
 ### 3.2 Where it lives
 
-New module `alvoraa_attendance` inside the `hrms` fork (same pattern as `performance_management`). Not in `grace_group`, which is client-specific. Not in `alvoraa_goals`, which has no attendance code.
+New module **Alvoraa Late Rules** (`hrms/hrms/alvoraa_late_rules`) inside the `hrms` fork (same pattern as `performance_management`). Switched on per tenant by the opt-in feature key `late_rules` (file 00). Not in `grace_group`, which is client-specific. Not in `alvoraa_goals`, which has no attendance code.
 
 ### 3.3 Doctypes
 
@@ -145,7 +147,7 @@ New module `alvoraa_attendance` inside the `hrms` fork (same pattern as `perform
 | round_up_to_days | Float | 1.0 |
 | week_start_day | Select Mon..Sun | Monday |
 | deduct_from_leave_first | Check | 1 |
-| leave_types | Table `Attendance Deduction Leave Type` (leave_type, priority) | Casual Leave 1, Earned Leave 2 |
+| leave_types | Table `Attendance Deduction Leave Type` (leave_type, priority) | Casual Leave 1 (a second type such as Earned Leave can be added if the client wants it) |
 | lwp_salary_component | Link Salary Component | Late Coming Deduction |
 | daily_wage_basis | Select: Base from Salary Structure Assignment / Gross Pay | Base |
 | exempt_grades | Table MultiSelect Employee Grade | G5 Head, G6 Leadership |
@@ -223,5 +225,5 @@ See file 10, build B1. Summary: no change to Attendance, Salary Slip or Leave Ap
 - Employee Checkin count ≈ 45,000. Attendance count ≈ 22,500 (one per employee per working day), all submitted.
 - PPJ-0054 has an Attendance Deduction for week 2026-08-17 with 3 violations, 2 counted, 0.5 day, Casual Leave ledger −0.5, no Additional Salary.
 - PPJ-0058 has Attendance Deductions for weeks 2026-07-06 (1.0), 2026-07-13 (1.0), 2026-07-20 (0.5) all from Casual Leave, and 2026-08-03 with deduction_days 1.0, 0.5 from Casual Leave, 0.5 LWP, and one Additional Salary "Late Coming Deduction" dated 2026-08-09.
-- The Attendance Deduction list matches `data/expected_deductions.csv` row for row (231 rows). Any difference is a bug in the build, not in the data.
+- The Attendance Deduction list matches `data/expected_deductions.csv` row for row (212 rows). Any difference is a bug in the build, not in the data. The head office is closed on 15 Aug and 28 Aug (Raksha Bandhan), and the part-week before 1 July is never processed because the rule's `process_from` is 1 July; the CSV allows for both.
 - Casual Leave balance for PPJ-0054 = allocation − 0.5 (minus any leave applications).

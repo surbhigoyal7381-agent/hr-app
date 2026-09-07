@@ -44,6 +44,10 @@ for r in rows:
         "company_email": r["user_id"], "prefered_contact_email": "Company Email",
         "ctc": flt(r["monthly_ctc"]) * 12, "salary_currency": "INR",
     })
+    if emp.meta.has_field("provident_fund_account"):
+        emp.provident_fund_account = r["pf_uan"]
+    if emp.meta.has_field("esi_number") and r["esi_number"]:     # build B2
+        emp.esi_number = r["esi_number"]
     emp.flags.ignore_mandatory = True
     # ERPNext's Employee autoname always uses the naming series (the HR Settings
     # "Employee Number" option is not wired to it in this fork). Import mode keeps a

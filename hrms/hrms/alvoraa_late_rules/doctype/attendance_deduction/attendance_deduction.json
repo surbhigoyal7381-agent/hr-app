@@ -1,0 +1,287 @@
+{
+ "doctype": "DocType",
+ "name": "Attendance Deduction",
+ "module": "Alvoraa Late Rules",
+ "creation": "2026-09-07 12:00:00.000000",
+ "modified": "2026-09-07 13:00:00.000000",
+ "modified_by": "Administrator",
+ "owner": "Administrator",
+ "docstatus": 0,
+ "idx": 0,
+ "engine": "InnoDB",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "editable_grid": 1,
+ "field_order": [
+  "naming_series",
+  "employee",
+  "employee_name",
+  "company",
+  "cb_1",
+  "branch",
+  "department",
+  "designation",
+  "sec_week",
+  "rule",
+  "week_start",
+  "week_end",
+  "cb_2",
+  "total_violations",
+  "counted_violations",
+  "computed_days",
+  "deduction_days",
+  "sec_violations",
+  "violations",
+  "sec_effect",
+  "leave_deductions",
+  "cb_3",
+  "lwp_days",
+  "lwp_amount",
+  "additional_salary",
+  "sec_text",
+  "explanation",
+  "hr_remarks",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "HR-ADD-.YYYY.-",
+   "default": "HR-ADD-.YYYY.-",
+   "hidden": 1
+  },
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "label": "Employee",
+   "options": "Employee",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
+   "label": "Employee Name",
+   "fetch_from": "employee.employee_name",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "fetch_from": "employee.company",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "label": "Branch",
+   "options": "Branch",
+   "fetch_from": "employee.branch",
+   "read_only": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "department",
+   "fieldtype": "Link",
+   "label": "Department",
+   "options": "Department",
+   "fetch_from": "employee.department",
+   "read_only": 1
+  },
+  {
+   "fieldname": "designation",
+   "fieldtype": "Link",
+   "label": "Designation",
+   "options": "Designation",
+   "fetch_from": "employee.designation",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sec_week",
+   "fieldtype": "Section Break",
+   "label": "Week"
+  },
+  {
+   "fieldname": "rule",
+   "fieldtype": "Link",
+   "label": "Rule",
+   "options": "Attendance Deduction Rule",
+   "reqd": 1
+  },
+  {
+   "fieldname": "week_start",
+   "fieldtype": "Date",
+   "label": "Week Start",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "week_end",
+   "fieldtype": "Date",
+   "label": "Week End",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cb_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_violations",
+   "fieldtype": "Int",
+   "label": "Violations",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "counted_violations",
+   "fieldtype": "Int",
+   "label": "Counted",
+   "read_only": 1
+  },
+  {
+   "fieldname": "computed_days",
+   "fieldtype": "Float",
+   "label": "Computed Days",
+   "read_only": 1
+  },
+  {
+   "fieldname": "deduction_days",
+   "fieldtype": "Float",
+   "label": "Deduction (days)",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "sec_violations",
+   "fieldtype": "Section Break",
+   "label": "Violations"
+  },
+  {
+   "fieldname": "violations",
+   "fieldtype": "Table",
+   "label": "Violations",
+   "options": "Attendance Deduction Violation"
+  },
+  {
+   "fieldname": "sec_effect",
+   "fieldtype": "Section Break",
+   "label": "Deducted From"
+  },
+  {
+   "fieldname": "leave_deductions",
+   "fieldtype": "Table",
+   "label": "Leave Deductions",
+   "options": "Attendance Deduction Leave",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "lwp_days",
+   "fieldtype": "Float",
+   "label": "Loss of Pay (days)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "lwp_amount",
+   "fieldtype": "Currency",
+   "label": "Loss of Pay Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "additional_salary",
+   "fieldtype": "Link",
+   "label": "Additional Salary",
+   "options": "Additional Salary",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sec_text",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "explanation",
+   "fieldtype": "Small Text",
+   "label": "Explanation",
+   "read_only": 1
+  },
+  {
+   "fieldname": "hr_remarks",
+   "fieldtype": "Small Text",
+   "label": "HR Remarks"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "options": "Attendance Deduction",
+   "read_only": 1,
+   "no_copy": 1,
+   "print_hide": 1
+  }
+ ],
+ "permissions": [
+  {
+   "role": "HR Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "submit": 1,
+   "cancel": 1,
+   "amend": 1,
+   "delete": 1,
+   "print": 1,
+   "email": 1,
+   "export": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "HR User",
+   "read": 1,
+   "print": 1,
+   "email": 1,
+   "export": 1,
+   "report": 1
+  },
+  {
+   "role": "Employee",
+   "read": 1,
+   "print": 1
+  },
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "submit": 1,
+   "cancel": 1,
+   "amend": 1,
+   "delete": 1,
+   "print": 1,
+   "email": 1,
+   "export": 1,
+   "report": 1,
+   "share": 1
+  }
+ ],
+ "links": [],
+ "autoname": "naming_series:",
+ "is_submittable": 1,
+ "track_changes": 1,
+ "title_field": "employee_name",
+ "search_fields": "employee_name,week_start"
+}

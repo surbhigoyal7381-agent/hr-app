@@ -1,0 +1,40 @@
+{
+ "doctype": "DocType",
+ "name": "Attendance Deduction Leave Type",
+ "module": "Alvoraa Late Rules",
+ "creation": "2026-09-07 12:00:00.000000",
+ "modified": "2026-09-07 12:00:00.000000",
+ "modified_by": "Administrator",
+ "owner": "Administrator",
+ "docstatus": 0,
+ "idx": 0,
+ "engine": "InnoDB",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "editable_grid": 1,
+ "field_order": [
+  "leave_type",
+  "priority"
+ ],
+ "fields": [
+  {
+   "fieldname": "leave_type",
+   "fieldtype": "Link",
+   "label": "Leave Type",
+   "options": "Leave Type",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "priority",
+   "fieldtype": "Int",
+   "label": "Priority",
+   "default": "1",
+   "in_list_view": 1,
+   "description": "1 is used first"
+  }
+ ],
+ "permissions": [],
+ "links": [],
+ "istable": 1
+}

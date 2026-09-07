@@ -1,0 +1,255 @@
+{
+ "doctype": "DocType",
+ "name": "Attendance Deduction Rule",
+ "module": "Alvoraa Late Rules",
+ "creation": "2026-09-07 12:00:00.000000",
+ "modified": "2026-09-07 12:00:00.000000",
+ "modified_by": "Administrator",
+ "owner": "Administrator",
+ "docstatus": 0,
+ "idx": 0,
+ "engine": "InnoDB",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "editable_grid": 1,
+ "field_order": [
+  "rule_name",
+  "company",
+  "shift_type",
+  "enabled",
+  "cb_1",
+  "week_start_day",
+  "process_from",
+  "last_processed_week",
+  "sec_violations",
+  "late_threshold_minutes",
+  "count_early_exit",
+  "early_exit_threshold_minutes",
+  "cb_2",
+  "free_violations_per_week",
+  "deduction_per_violation_days",
+  "round_up_from_days",
+  "round_up_to_days",
+  "sec_effect",
+  "deduct_from_leave_first",
+  "leave_types",
+  "cb_3",
+  "lwp_salary_component",
+  "daily_wage_basis",
+  "sec_scope",
+  "exempt_grades",
+  "cb_4",
+  "notify_employee",
+  "notify_manager"
+ ],
+ "fields": [
+  {
+   "fieldname": "rule_name",
+   "fieldtype": "Data",
+   "label": "Rule Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "fieldname": "shift_type",
+   "fieldtype": "Link",
+   "label": "Shift Type",
+   "options": "Shift Type",
+   "description": "Blank means every shift of the company"
+  },
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled",
+   "default": "1"
+  },
+  {
+   "fieldname": "cb_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "week_start_day",
+   "fieldtype": "Select",
+   "label": "Week Starts On",
+   "options": "Monday\nTuesday\nWednesday\nThursday\nFriday\nSaturday\nSunday",
+   "default": "Monday",
+   "reqd": 1
+  },
+  {
+   "fieldname": "process_from",
+   "fieldtype": "Date",
+   "label": "Process Weeks From",
+   "description": "Weeks before this date are ignored"
+  },
+  {
+   "fieldname": "last_processed_week",
+   "fieldtype": "Date",
+   "label": "Last Processed Week",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sec_violations",
+   "fieldtype": "Section Break",
+   "label": "What counts as a violation"
+  },
+  {
+   "fieldname": "late_threshold_minutes",
+   "fieldtype": "Int",
+   "label": "Late Arrival Threshold (minutes)",
+   "default": "60",
+   "reqd": 1,
+   "description": "Arriving later than shift start plus this many minutes is a violation"
+  },
+  {
+   "fieldname": "count_early_exit",
+   "fieldtype": "Check",
+   "label": "Count Early Exit",
+   "default": "1"
+  },
+  {
+   "fieldname": "early_exit_threshold_minutes",
+   "fieldtype": "Int",
+   "label": "Early Exit Threshold (minutes)",
+   "default": "60",
+   "depends_on": "count_early_exit"
+  },
+  {
+   "fieldname": "cb_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "free_violations_per_week",
+   "fieldtype": "Int",
+   "label": "Free Violations per Week",
+   "default": "1"
+  },
+  {
+   "fieldname": "deduction_per_violation_days",
+   "fieldtype": "Float",
+   "label": "Deduction per Counted Violation (days)",
+   "default": "0.25",
+   "reqd": 1
+  },
+  {
+   "fieldname": "round_up_from_days",
+   "fieldtype": "Float",
+   "label": "Round Up From (days)",
+   "default": "0.75",
+   "description": "Once the week's deduction reaches this, it becomes the value below"
+  },
+  {
+   "fieldname": "round_up_to_days",
+   "fieldtype": "Float",
+   "label": "Round Up To (days)",
+   "default": "1.0"
+  },
+  {
+   "fieldname": "sec_effect",
+   "fieldtype": "Section Break",
+   "label": "Where the deduction is taken from"
+  },
+  {
+   "fieldname": "deduct_from_leave_first",
+   "fieldtype": "Check",
+   "label": "Deduct from Leave Balance First",
+   "default": "1"
+  },
+  {
+   "fieldname": "leave_types",
+   "fieldtype": "Table",
+   "label": "Leave Types in Order",
+   "options": "Attendance Deduction Leave Type",
+   "depends_on": "deduct_from_leave_first"
+  },
+  {
+   "fieldname": "cb_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "lwp_salary_component",
+   "fieldtype": "Link",
+   "label": "Loss of Pay Salary Component",
+   "options": "Salary Component",
+   "reqd": 1,
+   "description": "A Deduction component; one Additional Salary is created per week with loss of pay"
+  },
+  {
+   "fieldname": "daily_wage_basis",
+   "fieldtype": "Select",
+   "label": "Daily Wage Basis",
+   "options": "Base from Salary Structure Assignment\nGross Pay of Last Salary Slip",
+   "default": "Base from Salary Structure Assignment"
+  },
+  {
+   "fieldname": "sec_scope",
+   "fieldtype": "Section Break",
+   "label": "Scope and notifications"
+  },
+  {
+   "fieldname": "exempt_grades",
+   "fieldtype": "Table MultiSelect",
+   "label": "Exempt Grades",
+   "options": "Attendance Deduction Exempt Grade"
+  },
+  {
+   "fieldname": "cb_4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "notify_employee",
+   "fieldtype": "Check",
+   "label": "Notify Employee",
+   "default": "1"
+  },
+  {
+   "fieldname": "notify_manager",
+   "fieldtype": "Check",
+   "label": "Notify Manager",
+   "default": "1"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "HR Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "print": 1,
+   "email": 1,
+   "export": 1,
+   "report": 1,
+   "share": 1
+  },
+  {
+   "role": "HR User",
+   "read": 1,
+   "print": 1,
+   "email": 1,
+   "export": 1,
+   "report": 1
+  },
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "print": 1,
+   "email": 1,
+   "export": 1,
+   "report": 1,
+   "share": 1
+  }
+ ],
+ "links": [],
+ "autoname": "field:rule_name",
+ "track_changes": 1
+}

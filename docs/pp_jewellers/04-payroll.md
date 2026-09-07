@@ -32,8 +32,8 @@ Type E = Earning, D = Deduction, EC = Employer Contribution. Abbreviations are w
 | Platinum & Gemstone Incentive | INC_P | E | Additional Salary only | no | no |
 | Store Performance Incentive | INC_ST | E | Additional Salary only (non-selling front staff) | no | no |
 | Festival Working Allowance | FWA | E | Additional Salary, entered by HR for holiday work | no | no |
-| Provident Fund | PF | D | `min(B, 15000) * 0.12` — condition `pf_applicable` (see §3) | no | no. `component_type` = Provident Fund |
-| Employee State Insurance | ESI | D | `gross_pay * 0.0075` — condition `esi_applicable` | no | no. **New**, `component_type` = ESI (new option) |
+| Provident Fund | PF | D | `min(B, 15000) * 0.12` — condition `pf_applicable` | no | no. `component_type` = Provident Fund |
+| Employee State Insurance | ESI | D | `gross_pay * 0.0075` — condition `esi_applicable` | no | no. `component_type` = ESI |
 | Professional Tax | PT | D | `0` for Delhi, Haryana, UP and Chandigarh; not levied in these states (verify). Keep the component so the slip shows the line as 0. | no | no. `component_type` = Professional Tax |
 | Late Coming Deduction | LCD | D | Additional Salary created by the Attendance Deduction (file 03) | no | no |
 | Income Tax | IT | D | `variable_based_on_taxable_salary` = 1, uses the Income Tax Slab | no | no |
@@ -42,15 +42,15 @@ Type E = Earning, D = Deduction, EC = Employer Contribution. Abbreviations are w
 
 Rates to verify: PF 12% + 12% on basic capped at 15,000; ESI 0.75% employee, 3.25% employer, wage ceiling 21,000 gross per month.
 
-## 3. The two custom fields (build B2 in file 10)
+## 3. The ESI fields (build B2, implemented)
 
 | Field | On | Type | Purpose |
 |---|---|---|---|
 | `esi_number` | Employee (custom field, India regional group) | Data | ESI insurance number, shown on the slip |
-| `esi_applicable` | Salary Structure Assignment | Check, default from base ≤ 21,000 at assignment | Condition for the two ESI components. ESIC rules keep a person covered until the contribution period ends even if wages rise, so it must be a switch, not a live formula. |
+| `esi_applicable` | Salary Structure Assignment | Check, switched on by a hook when a new assignment's base is at or below 21,000; editable after submit | Condition for the two ESI components. ESIC rules keep a person covered until the contribution period ends even if wages rise, so it is a switch, not a live formula. |
 | `pf_applicable` | Salary Structure Assignment | Check, default 1 | Lets HR exclude an employee (e.g. above ceiling and opted out) |
 
-Also add option `ESI` to the existing `component_type` Select on Salary Component so a future ESI report can key off it, and add report **ESI Deductions** (copy of Provident Fund Deductions filtered on `component_type = ESI`, columns: employee, ESI number, gross, employee ESI, employer ESI).
+Options `ESI` and `Employer ESI` on the `component_type` Select on Salary Component, and the report **ESI Deductions** (Payroll module; columns: employee, ESI number, gross, employee ESI, employer ESI, total; same filters as the PF report).
 
 ## 4. Salary Structures (one per grade)
 
@@ -104,11 +104,7 @@ PPJ-0058 August: same structure, plus `Late Coming Deduction` = base / 31 × 0.5
 
 Salary Register (August, by branch), Provident Fund Deductions, ESI Deductions (new), Employee CTC Break Up, Bank Remittance. Number cards: Total Payroll Cost this month, Employees on ESI.
 
-## 9. Known blocker
-
-Payslips with income tax fail on the current `dev` code because of the regional override wrapper bug described in file 10, B0. Apply that hotfix before running Block 4 on the tenant.
-
-## 10. Verification after this block
+## 9. Verification after this block
 
 - 400 Salary Structure Assignments, 400 slips for July and August, all submitted, no "Leave Without Pay does not match" errors.
 - PPJ-0058 August slip: `leave_without_pay` = 0 (the LCD is a deduction line, not LWP days), `Late Coming Deduction` > 0.

@@ -164,7 +164,7 @@ commit()
 # ── HR Settings ─────────────────────────────────────────────────────────────
 log("HR Settings")
 hr = frappe.get_single("HR Settings")
-hr.emp_created_by = "Employee Number"
+# Employee naming stays "Naming Series"; the seed presets the PPJ-#### name in import mode (see seed_employees.py)
 hr.leave_approver_mandatory_in_leave_application = 0   # seeds set approvers; keep the demo forgiving
 hr.restrict_backdated_leave_application = 0
 hr.send_interview_reminder = 1

@@ -2260,6 +2260,19 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
             </table>
           </div>
         </div>
+
+        <!-- Late-coming rule (build B1): the employee's own violations and deductions -->
+        <div class="card" id="late-card" style="margin-top:20px;display:none">
+          <div class="card-header"><span>⏰</span><span class="card-title">Late &amp; Deductions</span>
+            <span class="card-sub" id="late-rule-text" style="margin-left:auto;font-size:11px;color:var(--text3)"></span></div>
+          <div class="card-body" id="late-this-week" style="padding:10px 16px;border-bottom:1px solid var(--border)"></div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Week</th><th>Violations</th><th>Counted</th><th>Deducted</th><th>From leave</th><th>Loss of pay</th><th>Explanation</th></tr></thead>
+              <tbody id="late-tbody"><tr><td colspan="7" style="text-align:center;color:var(--text3)">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <!-- ══ MY FINANCES ═══════════════════════════════════ -->
@@ -2360,6 +2373,19 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
           <div class="card-body" id="on-leave-body">
             <div class="empty-state"><div class="empty-state-text">Loading...</div></div>
           </div>
+        </div>
+
+        <!-- Late list (build B1): this week so far, per direct report -->
+        <div class="card" style="margin-bottom:20px;display:none" id="team-late-card">
+          <div class="card-header"><span>⏰</span><span class="card-title">Late List</span>
+            <span id="team-late-week" style="margin-left:auto;font-size:11px;color:var(--text3)"></span></div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Employee</th><th>This week</th><th>Counted</th><th>Projected</th><th>Detail</th></tr></thead>
+              <tbody id="team-late-tbody"><tr><td colspan="5" style="text-align:center;color:var(--text3)">Loading...</td></tr></tbody>
+            </table>
+          </div>
+          <div class="card-body" id="team-late-recent" style="padding:10px 16px;border-top:1px solid var(--border);font-size:12px"></div>
         </div>
 
         <!-- Pending leave approvals -->
@@ -4815,6 +4841,49 @@ function loadAttendance() {
   calYear = now.getFullYear();
   calMonth = now.getMonth() + 1;
   fetchCalendar();
+  loadMyLateDeductions();
+}
+
+/* ── Late-coming rule (build B1) ─────────────────────────────────── */
+function _lateViolationText(v) {
+  return v.attendance_date.slice(5) + " " + v.violation_type + " " + v.actual_time + (v.counted === 0 ? " (free)" : "");
+}
+function loadMyLateDeductions() {
+  api("get_my_attendance_deductions", {months: 3}, function(d) {
+    const card = document.getElementById("late-card");
+    if (!d || !d.enabled) { card.style.display = "none"; return; }
+    card.style.display = "";
+    const r = d.rule;
+    document.getElementById("late-rule-text").textContent =
+      "Late after " + r.late_threshold_minutes + " min" + (r.early_exit_threshold_minutes ? ", early exit before " + r.early_exit_threshold_minutes + " min" : "") +
+      " · first " + r.free_violations_per_week + " free · " + r.deduction_per_violation_days + " day each · " + r.round_up_from_days + " day becomes " + r.round_up_to_days;
+    const tw = d.this_week || {violations: []};
+    document.getElementById("late-this-week").innerHTML = tw.violations.length
+      ? "<b>This week (from " + tw.week_start + "):</b> " + tw.violations.map(_lateViolationText).join(", ") +
+        " → " + tw.counted + " counted, " + tw.projected_days + " day projected"
+      : "<b>This week:</b> no violations so far";
+    const tb = document.getElementById("late-tbody");
+    tb.innerHTML = d.rows.length ? d.rows.map(function(x) {
+      return "<tr><td>" + x.week_start + "</td><td>" + x.total_violations + "</td><td>" + x.counted_violations + "</td><td><b>" + x.deduction_days + "</b></td><td>" +
+        x.leave_days + "</td><td>" + (x.lwp_days ? x.lwp_days + " (₹" + Math.round(x.lwp_amount) + ")" : "0") + "</td><td style=\"font-size:11px;color:var(--text3)\">" + frappe.utils.escape_html(x.explanation || "") + "</td></tr>";
+    }).join("") : "<tr><td colspan=\"7\" style=\"text-align:center;color:var(--text3)\">No deductions in the last 3 months</td></tr>";
+  }, function() {});
+}
+function loadTeamLateList() {
+  api("get_team_late_list", {weeks: 4}, function(d) {
+    const card = document.getElementById("team-late-card");
+    if (!d || !d.enabled) { card.style.display = "none"; return; }
+    card.style.display = "";
+    document.getElementById("team-late-week").textContent = "week of " + d.week_start;
+    document.getElementById("team-late-tbody").innerHTML = d.team.map(function(m) {
+      const warn = m.projected_days > 0 ? " style=\"color:var(--red);font-weight:700\"" : "";
+      return "<tr><td>" + frappe.utils.escape_html(m.employee_name) + "<div style=\"font-size:11px;color:var(--text3)\">" + frappe.utils.escape_html(m.designation || "") + "</div></td><td>" + m.violations + "</td><td>" + m.counted + "</td><td" + warn + ">" + m.projected_days + "</td><td style=\"font-size:11px;color:var(--text3)\">" + m.detail.join(", ") + "</td></tr>";
+    }).join("");
+    const rec = d.recent || [];
+    document.getElementById("team-late-recent").innerHTML = rec.length
+      ? "<b>Last 4 weeks:</b> " + rec.map(function(x) { return frappe.utils.escape_html(x.employee_name) + " " + x.week_start + " → " + x.deduction_days + " day" + (x.lwp_days ? " (" + x.lwp_days + " loss of pay)" : ""); }).join(" · ")
+      : "<b>Last 4 weeks:</b> no deductions in your team";
+  }, function() {});
 }
 
 function calNav(dir) {
@@ -6110,6 +6179,7 @@ function homeActionLeave(leaveId, action) {
 const TEAM_COLORS = ["#3b82f6","#8b5cf6","#10b981","#f59e0b","#ef4444","#06b6d4","#f97316","#6366f1"];
 
 function loadTeamPanel() {
+  loadTeamLateList();
   api("get_manager_dashboard", {}, function(d) {
     if (d.no_employee) {
       document.getElementById("team-grid").innerHTML = '<div class="empty-state"><div class="empty-state-text">No employee record found.</div></div>';

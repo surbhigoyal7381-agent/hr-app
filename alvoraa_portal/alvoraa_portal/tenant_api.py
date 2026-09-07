@@ -1082,22 +1082,86 @@ def _write_jobs(jobs):
         raise
 
 
+_SITE_ARG = re.compile(r"--site\s+(\S+)")
+
+
+def _log_tenant_access(cmd, site, ok, ms, detail=""):
+    """Record that the control plane reached into a tenant.
+
+    Under the DPDP Act the customer is the Data Fiduciary for their employees'
+    data and we are the Processor. A processor has to be able to say who touched
+    that data and when - and until this existed, nothing could. An operator
+    could read any tenant's payroll and leave no trace.
+
+    Written straight to the table. The doctype grants no create, write or delete
+    to anyone, so a row cannot be edited or removed through the desk afterwards;
+    a log the operator can quietly change answers nothing.
+
+    Never raises. An audit gap is bad; a failed provision because the audit
+    write failed is worse, and the failure is reported to the error log where
+    somebody can see it.
+    """
+    try:
+        if frappe.conf.get("alvoraa_control_plane") is None:
+            return                     # only the control plane reaches into tenants
+        doc = frappe.get_doc({
+            "doctype": "Alvoraa Tenant Access Log",
+            "accessed_at": now_datetime(),
+            # The queuing user, not the worker: a background job runs as
+            # Administrator, which would make every row say the same thing.
+            "user": frappe.session.user if getattr(frappe, "session", None) else "system",
+            "site": site or "(bench)",
+            "action": _redact(cmd)[:140],
+            "ok": 1 if ok else 0,
+            "duration_ms": int(ms),
+            "detail": _redact(detail)[:500] if detail else "",
+        })
+        doc.db_insert()
+        frappe.db.commit()
+    except Exception:
+        try:
+            frappe.log_error(title="tenant access log write failed",
+                             message=frappe.get_traceback())
+        except Exception:
+            pass
+
+
 def _bench_run(cmd, timeout=30, env=None):
     """Run a bench command.
 
     `env` exists so secrets can be handed to a subprocess WITHOUT putting them
     on the command line. Arguments are world-readable through `ps` and land in
     shell history; an environment block is readable only by the process owner.
+
+    Every call is logged. This is the ONE door between the control plane and a
+    tenant's data - all twenty call sites come through here - so logging it here
+    means no future caller can reach a tenant without leaving a record.
     """
-    return subprocess.run(
-        f"bench {cmd}",
-        shell=True,
-        capture_output=True,
-        text=True,
-        cwd=BENCH_PATH,
-        timeout=timeout,
-        env=env,
-    )
+    import time
+
+    started = time.time()
+    result = None
+    try:
+        result = subprocess.run(
+            f"bench {cmd}",
+            shell=True,
+            capture_output=True,
+            text=True,
+            cwd=BENCH_PATH,
+            timeout=timeout,
+            env=env,
+        )
+        return result
+    finally:
+        m = _SITE_ARG.search(cmd or "")
+        _log_tenant_access(
+            cmd,
+            m.group(1) if m else None,
+            ok=bool(result is not None and result.returncode == 0),
+            ms=(time.time() - started) * 1000,
+            # A timeout leaves result as None - still logged, still says it failed.
+            detail=(result.stderr or "").splitlines()[0] if result and result.returncode != 0 and result.stderr else "",
+        )
 
 
 # ── Credential storage ─────────────────────────────────────────────────────
@@ -1170,3 +1234,129 @@ def _generate_password(length=18):
     # Alphanumeric only — avoids shell/SQL quoting issues when passed via env vars
     alphabet = string.ascii_letters + string.digits
     return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+@frappe.whitelist()
+def feature_adoption():
+    """Which features exist, and which tenants actually have each one.
+
+    The answer to "we shipped something, now what". A new feature is off
+    everywhere by design - see subscription.OPT_IN - so something has to say it
+    is there and waiting, or it stays off for ever because nobody remembered.
+    """
+    _require_admin()
+    from alvoraa_portal.subscription import feature_adoption as _adoption
+
+    rows = _adoption(list_tenants())
+    return {
+        "features": rows,
+        "waiting": [r for r in rows if r["waiting"]],
+        "tenant_count": len(list_tenants()),
+    }
+
+
+@frappe.whitelist()
+def get_tenant_detail(site_name):
+    """Everything about one tenant, in one call.
+
+    Health, usage, what they are on, what it costs, what has been invoiced, and
+    which features are switched on - gathered here because it currently lives in
+    six places and nobody holds all six in their head during a support call.
+
+    Every part is optional and failures are reported rather than raised. A
+    control plane that has not been through billing setup yet, or a tenant with
+    no subscription, must still open: a page that refuses to load because one
+    section is missing tells you nothing about the other five.
+    """
+    _require_admin()
+    _validate_site_name(site_name)
+
+    from alvoraa_portal.subscription import feature_spec, get_plan_catalogue
+
+    tenant = next((t for t in list_tenants() if t["site_name"] == site_name), None)
+    if not tenant:
+        frappe.throw(f"Site '{site_name}' not found.")
+
+    out = {"tenant": tenant, "problems": []}
+
+    def section(name, fn):
+        try:
+            out[name] = fn()
+        except Exception as exc:
+            out[name] = None
+            out["problems"].append(f"{name}: {exc}")
+
+    from alvoraa_portal import estimate as est
+    from alvoraa_portal import health, invoicing, subscriptions, usage
+
+    section("health", lambda: _latest_health(site_name))
+    section("subscription", lambda: subscriptions.get_subscription(site_name))
+    section("usage", lambda: usage.get_usage(site_name, _last_period()))
+    section("estimate", lambda: est.estimate(site_name, _last_period()))
+    section("invoices", lambda: _tenant_invoices(site_name))
+
+    # What they hold, against everything sellable - so a support call can answer
+    # "can they have X" without opening another screen.
+    recorded = tenant.get("modules")
+    catalogue = get_plan_catalogue()["features"]
+    out["features"] = [{
+        "id": row["id"],
+        "label": row["label"],
+        "erpnext": row["erpnext"],
+        "required": row["required"],
+        "opt_in": row.get("opt_in", False),
+        # A tenant with no recorded list falls back to the default set, which
+        # never includes an opt-in feature.
+        "on": (row["id"] in recorded) if recorded is not None
+              else (row["required"] or not row.get("opt_in", False)),
+        "explicit": recorded is not None,
+    } for row in catalogue]
+    return out
+
+
+def _last_period():
+    from frappe.utils import add_months, nowdate
+
+    return add_months(nowdate(), -1)[:7]
+
+
+def _latest_health(site_name):
+    row = frappe.get_all(
+        "Alvoraa Tenant Health", filters={"site_name": site_name},
+        fields=["name", "on_date", "ok", "error", "errors_24h", "errors_7d",
+                "distinct_kinds", "scheduler_enabled", "hours_since_job", "checked_at"],
+        order_by="on_date desc", limit=1)
+    if not row:
+        return None
+    row = row[0]
+    row["top_errors"] = frappe.get_all(
+        "Alvoraa Tenant Error", filters={"parent": row["name"]},
+        fields=["title", "count", "last_seen"], order_by="count desc")
+    return row
+
+
+def _tenant_invoices(site_name):
+    """Invoices raised for this tenant, newest first.
+
+    Found through the usage records rather than by matching on customer: one
+    ERPNext Customer can hold several sites, and showing another site's invoice
+    on this page is the kind of mistake that gets repeated to a customer.
+    """
+    names = [n for n in frappe.get_all(
+        "Alvoraa Usage Record", filters={"site_name": site_name},
+        fields=["sales_invoice", "period"], order_by="period desc") if n.sales_invoice]
+    out = []
+    for row in names[:12]:
+        inv = frappe.db.get_value(
+            "Sales Invoice", row.sales_invoice,
+            ["grand_total", "docstatus", "posting_date", "outstanding_amount"],
+            as_dict=True)
+        if not inv:
+            continue
+        out.append({
+            "invoice": row.sales_invoice, "period": row.period,
+            "amount": inv.grand_total, "posting_date": str(inv.posting_date),
+            "outstanding": inv.outstanding_amount,
+            "state": {0: "draft", 1: "sent", 2: "cancelled"}.get(inv.docstatus),
+        })
+    return out

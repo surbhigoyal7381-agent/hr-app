@@ -281,9 +281,29 @@ def _load(field):
 
 
 def _save(restricted=None, snapshot=None):
+    """Write the state record, re-reading it immediately first.
+
+    `frappe.get_single` hands back a CACHED document. Anything that saved this
+    record since - an earlier sync in the same request, a previous test, a hook
+    firing on the way past - leaves the copy in hand with an older `modified`
+    than the row, and Frappe refuses the write:
+
+        TimestampMismatchError: ... has been modified after you have opened it
+
+    That guard is worth keeping. `restricted_doctypes` is the only record of
+    which doctypes we took permissions from, and losing an update to it means
+    forgetting we restricted something and never being able to give it back. So
+    the fix is not to switch the check off; it is to make sure the copy we save
+    is the current one, which leaves the guard watching for a genuine concurrent
+    write instead of firing on our own stale cache.
+
+    One extra read of one small row, on an operation an administrator performs
+    by hand.
+    """
     import json as _json
 
     doc = _state()
+    doc.reload()
     if restricted is not None:
         doc.restricted_doctypes = _json.dumps(sorted(restricted))
     if snapshot is not None:

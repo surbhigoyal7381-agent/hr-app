@@ -131,8 +131,17 @@ scheduler_events = {
     "daily": [
         "alvoraa_portal.scheduled_jobs.send_arrival_notifications",
         "alvoraa_portal.scheduled_jobs.check_compliance_alerts",
+        # Pulls each tenant's error counts and scheduler state up to the control
+        # plane, so a broken customer is visible before they telephone. Silent on
+        # a tenant site. Titles and counts only, never tracebacks - health.py
+        # explains why that line matters.
+        "alvoraa_portal.health.collect_scheduled",
     ],
     "monthly": [
         "alvoraa_portal.scheduled_jobs.generate_monthly_scorecards",
+        # Counts every tenant's employees and pack users for the month just
+        # ended. Returns silently on a tenant site - only the control plane has
+        # anything to count. See usage.py.
+        "alvoraa_portal.usage.collect_scheduled",
     ],
 }

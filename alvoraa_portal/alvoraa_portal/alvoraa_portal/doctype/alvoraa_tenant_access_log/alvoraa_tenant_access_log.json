@@ -1,0 +1,38 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-09-06 00:00:00",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": ["accessed_at", "user", "site", "action", "ok", "duration_ms", "detail"],
+ "fields": [
+  {"fieldname": "accessed_at", "fieldtype": "Datetime", "label": "Accessed At", "read_only": 1, "in_list_view": 1},
+  {"fieldname": "user", "fieldtype": "Data", "label": "User", "read_only": 1, "in_list_view": 1,
+   "description": "Who caused this. A background job records the user who queued it, not the worker."},
+  {"fieldname": "site", "fieldtype": "Data", "label": "Tenant Site", "read_only": 1, "in_list_view": 1,
+   "description": "The tenant whose data was reached."},
+  {"fieldname": "action", "fieldtype": "Data", "label": "Action", "read_only": 1, "in_list_view": 1,
+   "description": "The bench command, with anything password-shaped removed."},
+  {"fieldname": "ok", "fieldtype": "Check", "label": "Succeeded", "read_only": 1, "in_list_view": 1},
+  {"fieldname": "duration_ms", "fieldtype": "Int", "label": "Duration (ms)", "read_only": 1},
+  {"fieldname": "detail", "fieldtype": "Small Text", "label": "Detail", "read_only": 1,
+   "description": "First line of stderr when the command failed. Redacted."}
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-09-06 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa Tenant Access Log",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {"read": 1, "report": 1, "export": 1, "role": "System Manager"}
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

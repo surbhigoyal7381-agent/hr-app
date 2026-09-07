@@ -59,7 +59,7 @@ for n in frappe.get_all("Interview", filters={"job_applicant": frappe.db.get_val
 
 if frappe.get_meta("Job Applicant").has_field("screening_result"):
     log(f"  Screening (build B3): passed {c('Job Applicant', {'screening_result': 'Passed'})}, screened out {c('Job Applicant', {'screening_result': 'Screened Out'})}; "
-        f"web form ppj-senior-sales-application: {bool(frappe.db.exists('Web Form', 'ppj-senior-sales-application'))}")
+        f"web form at /ppj-senior-sales-application: {bool(frappe.db.exists('Web Form', {'route': 'ppj-senior-sales-application'}))}")
 
 log("Block 6 onboarding")
 onb = frappe.db.get_value("Employee Onboarding", {"employee_name": "Ritika Malhotra"}, ["name", "boarding_status", "employee"], as_dict=True)

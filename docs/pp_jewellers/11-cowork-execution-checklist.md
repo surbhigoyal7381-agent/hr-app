@@ -105,17 +105,21 @@ Every step below runs on the **ppj tenant**, never on `dev.alvoraa.co`.
 
 ## Verified on a local bench, 2026-09-07
 
-The whole suite was run end to end on a bench built like the production image (Frappe 16.33 on Python 3.14, ERPNext 16.34, this repository's `hrms`, `alvoraa_goals` and `alvoraa_portal`), on a site whose company setup was completed the way the provisioner does it. Blocks 1 to 6 and 8 ran clean on that first run; block 7 (the policy library) was added with build B5 and the whole suite is re-run in the final verification below. Numbers from `verify_ppj.py`:
+The whole suite was run end to end on a bench built like the production image (Frappe 16.33 on Python 3.14, ERPNext 16.34, this repository's `hrms`, `alvoraa_goals` and `alvoraa_portal`). The final run was on a site dropped and recreated from nothing (apps installed, the setup wizard completed the provisioner's way, the Enterprise features plus the five opt-in keys declared in the site config), with all six builds in place. Blocks 1 to 8 ran clean; three fresh-site problems found on the way are fixed in the seeds (a verifier role that did not exist yet, the late rule's salary component, and the Employee role that the User controller drops at insert under the import flag). Numbers from `verify_ppj.py`:
 
 | Check | Result |
 |---|---|
 | Employees | 403 active (400 seeded + Ritika and two September joiners); 72 / 72 / 74 / 73 / 72 per store, 40 head office; one employee without a manager (the Owner) |
-| Users, leave | 403 users linked; 1,209 leave allocations; 401 holiday list assignments |
-| Attendance | 45,232 check-ins → 23,275 attendance records (22,577 Present, 693 Absent); PPJ-0054 flagged late on 18 and 20 Aug and early-exit on 22 Aug, exactly as scripted. The punch file was regenerated later the same day (45,140 rows, head office closed on Raksha Bandhan); the final verification run refreshes these numbers |
-| Payroll | 403 salary structure assignments, 198 incentives, 800 submitted slips, 2 accrual journal entries. August: PF on 400 employees, ESI on 146 (the CSV's ESI-eligible count), income tax on 31. PPJ-0054 August gross 44,200 with Gold Incentive 9,200 |
-| Recruitment | 1 requisition, 1 opening, 8 applicants, 11 interviews, 22 feedback records, 1 offer, 1 appointment letter; Ritika's rounds average 4.25 / 4.25 / 4.6 |
-| Onboarding | Onboarding In Process (11 of 12 tasks closed, the 30-day check-in open), Employee PPJ-0401 created through it, 3 training events, 1 result, 3 feedback records |
-| Performance | Q1 Completed with 403 submitted appraisals and 1,755 rated KPIs; Q2 In Progress with 403 drafts and 596 of 1,755 KPIs rated; 424 goals; cascade progress Q1 105%, Q2 71% to date; PPJ-0054 Q1 final score 4.56 (goal 4.6, feedback 4.36, self 4.76), High Potential; 62 upward feedback records |
+| Users, leave | 403 users linked, all with the Employee role; 1,209 leave allocations; 404 holiday list assignments |
+| Attendance | 45,140 check-ins → 23,258 attendance records (22,570 Present, 683 Absent); PPJ-0054 flagged late on 18 Aug and early-exit on 22 Aug, PPJ-0058 late on 3 Aug, exactly as scripted |
+| Late rule (B1) | 212 Attendance Deductions, matching `data/expected_deductions.csv` row for row; PPJ-0054 week 17 Aug = 0.5 day from Casual Leave; PPJ-0058 week 3 Aug = 1.0 day, 0.5 from leave and 0.5 loss of pay, Additional Salary 548.39 dated 9 Aug |
+| Payroll (with B2) | 403 salary structure assignments, 198 incentives, 800 submitted slips. PPJ-0054 August gross 44,200 with Gold Incentive 9,200 and PF 1,800; PPJ-0058 August gross 46,400 with Late Coming Deduction 548.39, net 44,051.61 |
+| Recruitment (with B3) | 1 requisition, 1 opening with screen-out rules, 8 applicants (5 Passed, 3 Screened Out: Rohit, Preeti, Sunil), 11 interviews, 22 feedback records, 1 offer, 1 appointment letter; Ritika's rounds average 4.25 / 4.25 / 4.6; web form at `/ppj-senior-sales-application` |
+| Onboarding (with B4) | Onboarding In Process (11 of 12 tasks closed), submitted with the real joining date; Employee PPJ-0401 created through it; 18 document types, 6,501 checklist rows, PPJ-0200 "15 verified · 1 expired", Ritika "1 pending · 1 received · 14 verified"; 3 training events, 1 result, 3 feedback records |
+| Policies (B5) | 16 published, 1 with unpublished changes (Old Gold), 10 department heads, 3,200 acknowledgements; Suresh sees 9, Store In-charge 12, Owner 16, Ritika 9 with 8 to acknowledge |
+| Performance (with B6) | Q1 Completed with 403 submitted appraisals and 1,755 rated KPIs, formula `goal_score * 0.5 + average_feedback_score * 0.3 + attendance_score * 0.2`; Q2 In Progress with 403 drafts and 639 of 1,755 KPIs rated; cascade progress Q1 105%, Q2 71% to date, both cascades Aligned; PPJ-0054 Q2 attendance score 4.81 (reliability 100%, punctuality 96.55%, 0.5 day deducted), PPJ-0058 3.75 (3.5 days deducted), Owner 5.0 exempt; PPJ-0054 Q1 final score 3.89 (goal 4.6, feedback 2.82); potential 41 exceptional / 87 high / 216 moderate / 59 low; 59 upward feedback records |
+
+Run time on the final run: block 2 four minutes, block 3 about 25 minutes (auto attendance), block 4 three minutes, block 7 thirty seconds, block 8 ninety seconds, the rest a few seconds each.
 
 Two product bugs surfaced and are written up in file 10: the regional override wrapper (B0, blocks payroll for taxpayers; the local run used the three-line fix) and the cascade alignment report (read Misaligned on any multi-level cascade; fixed with build B6). Three quirks are handled inside the seeds and noted in files 02, 03 and 07.
 

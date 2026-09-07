@@ -157,6 +157,14 @@ def make_user(email, first_name, last_name, roles):
             user.insert(ignore_permissions=True)
         finally:
             frappe.flags.in_import = False
+        # under the import flag the User controller drops the Employee role at insert; add it back
+        user = frappe.get_doc("User", email)
+        have = {r.role for r in user.roles}
+        if any(r not in have for r in roles):
+            for r in roles:
+                if r not in have:
+                    user.append("roles", {"role": r})
+            user.save(ignore_permissions=True)
     return email
 
 

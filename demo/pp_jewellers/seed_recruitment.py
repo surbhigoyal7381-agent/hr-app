@@ -143,11 +143,12 @@ elif frappe.get_meta("Job Opening").has_field("screening_min_years") and not fra
 commit()
 
 # ── Application web form with the client's wording (build B3) ──────────────
-if frappe.db.exists("Web Form", "screening-application") and not frappe.db.exists("Web Form", "ppj-senior-sales-application"):
+if frappe.db.exists("Web Form", "screening-application") and not frappe.db.exists("Web Form", {"route": "ppj-senior-sales-application"}):
     log("Web Form ppj-senior-sales-application")
     wf = frappe.copy_doc(frappe.get_doc("Web Form", "screening-application"))
-    wf.update({"name": "ppj-senior-sales-application", "route": "ppj-senior-sales-application", "is_standard": 0,
-               "title": "Senior Sales Executive - PP Jewellers", "module": None,
+    # a Web Form is named from its title, so the title spells the route
+    wf.update({"route": "ppj-senior-sales-application", "is_standard": 0,
+               "title": "PPJ Senior Sales Application", "module": None,
                "introduction_text": "<p>Thank you for your interest in PP Jewellers. A few quick questions first, "
                                     "so we can call the right people back.</p>"})
     WORDING = {"screening_retail_experience": "Have you worked in an organised jewellery retail store?",
@@ -162,7 +163,7 @@ if frappe.db.exists("Web Form", "screening-application") and not frappe.db.exist
     wf.flags.ignore_permissions = True
     wf.insert()
     commit()
-    log("  [created] Web Form ppj-senior-sales-application")
+    log(f"  [created] Web Form {wf.name} at /{wf.route}")
 
 # ── Applicants ──────────────────────────────────────────────────────────────
 log("Job Applicants")

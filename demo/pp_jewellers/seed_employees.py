@@ -120,14 +120,17 @@ for r in rows:
         user.flags.no_welcome_mail = True
         user.insert(ignore_permissions=True)
         made_users += 1
+        user = frappe.get_doc("User", email)
     else:
         user = frappe.get_doc("User", email)
-        have = {x.role for x in user.roles}
-        missing = [x for x in roles if x not in have]
-        if missing:
-            for x in missing:
-                user.append("roles", {"role": x})
-            user.save(ignore_permissions=True)
+    # Roles are checked after the insert as well: on a fresh site the User
+    # controller dropped them at insert time under the import flag.
+    have = {x.role for x in user.roles}
+    missing = [x for x in roles if x not in have]
+    if missing:
+        for x in missing:
+            user.append("roles", {"role": x})
+        user.save(ignore_permissions=True)
     e = emps[r["employee_id"]]
     if e.user_id != email:
         # create_user_permission=1 restricts the user to their own Employee record; managers

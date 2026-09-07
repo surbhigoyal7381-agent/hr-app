@@ -1,0 +1,169 @@
+# 02 — Organisation and master data
+
+Everything in this file is standard Frappe / ERPNext / Frappe HR configuration. No custom code.
+
+## 1. Company
+
+| Field | Value |
+|---|---|
+| Company Name | PP Jewellers Pvt Ltd |
+| Abbr | PPJ |
+| Default Currency | INR |
+| Country | India |
+| Domain | Retail |
+| Fiscal Year | 2026-2027 (1 Apr 2026 to 31 Mar 2027). Also create 2025-2026 so old joining dates and Q1 data are valid. |
+| Default Holiday List | Head Office Holiday List |
+
+## 2. Branches (one per store, one for head office)
+
+Frappe HR uses **Branch** on Employee, Appraisal Cycle, Payroll Entry filters, and PMS scoping. Use Branch for stores. Do not use Department for stores.
+
+| Branch | City | Address line (demo) |
+|---|---|---|
+| PPJ Chandigarh Sector 17 | Chandigarh | SCO 12, Sector 17-E, Chandigarh 160017 |
+| PPJ Ambala City | Ambala | Jain Street, Ambala City, Haryana 134003 |
+| PPJ Noida Sector 18 | Noida | Shop 4, Sector 18 Market, Noida 201301 |
+| PPJ Delhi Karol Bagh | Delhi | 22 Ajmal Khan Road, Karol Bagh, New Delhi 110005 |
+| PPJ Delhi South Extension | Delhi | D-8 South Extension Part II, New Delhi 110049 |
+| PPJ Head Office Chandigarh | Chandigarh | Plot 45, Industrial Area Phase 1, Chandigarh 160002 |
+
+Create a **Shift Location** for each branch with the same name, latitude and longitude of the city centre, and `checkin_radius` = 150 metres. This powers the portal's mobile check-in fence and looks good in the demo even though punches come from ESSL.
+
+## 3. Departments
+
+Departments are company-wide (not per store). Store staff share the same department names across all five stores; the Branch tells them apart.
+
+Store-side: Store Management, Sales, Customer Service, Cashiering & Accounts, Valuation & Karigari, Vault & Inventory, Security & Housekeeping.
+
+Head-office: Management, Finance & Accounts, Human Resources, Purchase & Sourcing, Central Vault & Inventory, Marketing, Information Technology, Administration, Design & Quality, Legal & Compliance.
+
+Set a Department Head (Employee) on each head-office department; that person owns the department's policies in file 08. For store-side departments, leave Department Head empty; policy ownership there is HR.
+
+## 4. Designations and grades
+
+Full list with grade, department, headcount, reports-to rule, and whether the sales incentive applies: `data/designations.csv`.
+
+Employee Grades and monthly CTC bands (the generator picks a value inside the band):
+
+| Grade | Who | Monthly CTC band (INR) | Default Salary Structure (file 04) |
+|---|---|---|---|
+| G1 Support | Security Guard, Housekeeping, Office Assistant, Driver | 14,000 to 18,000 | PPJ-G1 |
+| G2 Executive | Sales Executive, Trainee SE, Cashier, CRE, Karigar, executives at HO | 18,000 to 28,000 | PPJ-G2 |
+| G3 Senior Executive | Senior Sales Executive, Gold Valuer, Store Accountant, Vault Custodian, HO senior roles | 28,000 to 45,000 | PPJ-G3 |
+| G4 Manager | Floor Managers, Assistant Store Manager, HO managers | 45,000 to 80,000 | PPJ-G4 |
+| G5 Head | Store In-charges, HO department heads | 80,000 to 1,50,000 | PPJ-G5 |
+| G6 Leadership | Owner & Managing Director | 4,00,000 | PPJ-G5 (no incentives) |
+
+## 5. Store structure (72 per store)
+
+```
+Store In-charge (reports to Owner)
+├── Assistant Store Manager
+│   ├── Floor Manager - Gold
+│   │   ├── 4 Senior Sales Executives, 8 Sales Executives, 1 Trainee
+│   │   ├── 2 Gold Valuers
+│   │   └── 3 Karigars (in-store repair, polish, resizing)
+│   ├── Floor Manager - Diamond
+│   │   └── 4 Senior Sales Executives, 8 Sales Executives, 1 Trainee
+│   ├── Floor Manager - Silver & Fashion
+│   │   └── 4 Senior Sales Executives, 8 Sales Executives
+│   ├── 3 Customer Relationship Executives
+│   └── 1 Visual Merchandiser
+├── Store Accountant
+│   └── 4 Cashiers
+├── 2 Vault & Inventory Custodians
+└── Store HR & Admin Executive
+    ├── 8 Security Guards
+    └── 4 Housekeeping Staff
+```
+
+The generator distributes Senior Sales Executives, Sales Executives and Trainees across the three Floor Managers in round-robin, so counts are 4 / 8 per floor with the Silver floor getting no trainee.
+
+## 6. Head office structure (40)
+
+```
+Owner & Managing Director
+├── Executive Assistant to MD
+├── Head - Finance & Accounts → 3 Accountants, 2 Accounts Executives, 1 Internal Auditor
+├── Head - Human Resources → 2 HR Executives, 1 Recruitment Executive, 1 Payroll & Compliance Executive, 1 Training & Development Executive
+├── Head - Purchase & Sourcing → 2 Purchase Executives, 1 Bullion Officer
+├── Central Vault & Inventory Manager → 2 Inventory Executives
+├── Head - Marketing → 2 Marketing Executives, 1 Graphic Designer
+├── IT Manager → 1 IT Support Executive
+├── Admin Manager → 1 Admin Executive, 1 Receptionist, 2 Office Assistants, 2 Drivers
+├── Head - Design & Quality → 2 Jewellery Designers, 1 Hallmarking & QC Officer
+└── Legal & Compliance Officer
+```
+
+## 7. Employees
+
+`data/employees.csv` has all 400 rows. Generated by `demo/pp_jewellers/generate_employees.py` (seeded, so it is reproducible). Columns map to Employee fields as follows.
+
+| CSV column | Employee field | Note |
+|---|---|---|
+| employee_id | `employee` (name) | Naming: set Employee naming to "Employee Number" in HR Settings and use the CSV value as `employee_number`. Format PPJ-0001 to PPJ-0400. |
+| first_name, last_name, employee_name, gender, date_of_birth, date_of_joining | same | |
+| company, branch, department, designation, employee_grade | same | Create masters first (sections 1 to 4). |
+| reports_to | `reports_to` | Import in two passes: all employees first without reports_to, then update reports_to. Then rebuild the tree with `demo/rebuild_nsm.py`. |
+| employment_type | `employment_type` | "Full-time" |
+| holiday_list | `holiday_list` | Section 8. One of 21 lists. |
+| weekly_off_day | not imported | Explains which list the employee got. |
+| default_shift | `default_shift` | File 03 |
+| attendance_device_id | `attendance_device_id` | 4-digit code, same as the number in the employee ID. This is the ESSL employee code. |
+| user_id | `user_id` | Create Users for the five persona employees at minimum. For all 400, run `demo/link_employee_users.py` after import. |
+| monthly_ctc | Salary Structure Assignment `base` | File 04. Not an Employee field. |
+| pf_uan | `provident_fund_account` (India custom field) | Verify the exact fieldname on dev; the HRMS India setup adds `provident_fund_account`. |
+| esi_number | custom field `esi_number` | Does not exist. Added by the payroll build in file 04. Empty when CTC is above the ESI ceiling. |
+| persona_note | not imported | Tells you who the demo logins are. |
+
+Persona employees: PPJ-0001 Owner, PPJ-0010 Head - HR, PPJ-0041 Store In-charge Chandigarh, PPJ-0054 Senior Sales Executive Chandigarh. Store In-charges of the other stores: PPJ-0113 (Ambala), PPJ-0185 (Noida), PPJ-0257 (Karol Bagh), PPJ-0329 (South Extension).
+
+Women are about a third of staff. ESI applies to 146 employees (CTC at or below 21,000).
+
+## 8. Holiday lists and weekly offs
+
+Stores are open 7 days a week and on festival days (Dhanteras, Diwali, Akshaya Tritiya are peak selling days). Staff who work a national holiday get a compensatory off through Compensatory Leave Request.
+
+Frappe HR takes the weekly off from the employee's Holiday List. So a rotating off is modelled as **one fixed weekly-off day per employee, staggered across the team** (Monday to Friday only, so weekends are fully staffed). The generator assigns the day by employee number, and the CSV column `weekly_off_day` shows it.
+
+That gives 21 holiday lists, all for 1 Apr 2026 to 31 Mar 2027:
+
+| Holiday List | Count | Fixed holidays | Weekly off |
+|---|---|---|---|
+| `Chandigarh Store Holiday List - Off Monday` … `- Off Friday` (5 lists) | 5 | Republic Day (26 Jan), Independence Day (15 Aug), Gandhi Jayanti (2 Oct), Holi (2027), Diwali next day | the day in the name |
+| `Ambala Store Holiday List - Off Monday` … `- Off Friday` | 5 | same | same |
+| `Noida Store Holiday List - Off Monday` … `- Off Friday` | 5 | same | same |
+| `Delhi Store Holiday List - Off Monday` … `- Off Friday` (both Delhi stores) | 5 | same | same |
+| `Head Office Holiday List` | 1 | the 5 above plus Diwali, Dussehra, Raksha Bandhan, Guru Nanak Jayanti, Christmas, Baisakhi | Sunday |
+
+Use the Holiday List "Add Weekly Holidays" button for the weekly off. Verify the 2026 and 2027 festival dates against a calendar before entering; I have not verified them.
+
+## 9. Leave setup
+
+| Leave Type | Annual allocation | Rules |
+|---|---|---|
+| Casual Leave | 8 | Not carried forward. Max 2 continuous days. This is the first pool the late rule deducts from. |
+| Earned Leave | 15 | Earned monthly (1.25/month), carry forward up to 30, encashable. Second pool for the late rule. |
+| Sick Leave | 7 | Medical certificate above 2 days. |
+| Compensatory Off | as earned | Via Compensatory Leave Request for festival-day work. Expires in 60 days. |
+| Loss of Pay | unlimited | `is_lwp` = 1. Used when the late rule finds no balance. |
+
+Leave Policy "PPJ Standard Leave Policy" with the above; Leave Policy Assignment to all 400 for the leave period 1 Apr 2026 to 31 Mar 2027. Leave Approver: the employee's `reports_to`. HR Settings: "Leave Approver Mandatory" on, "Restrict Backdated Leave Application" on with HR Manager exemption.
+
+## 10. Users, roles and access scope
+
+| Persona | Roles | Scope mechanism |
+|---|---|---|
+| Owner | Alvoraa CXO role as configured on the site (all companies), plus HR Manager read for reports | Company-wide by role |
+| Head - HR | HR Manager, HR User, Interviewer, Leave Approver | Company-wide by role |
+| Store In-charge | Employee, Leave Approver, Expense Approver, Interviewer | Sees own reports through `reports_to` in the portal's team views; desk User Permission on Branch = own store for Attendance and Employee lists |
+| Employee | Employee | Own records only |
+
+Add a **User Permission** on Branch for every Store In-charge, Assistant Store Manager and Floor Manager so desk list views show only their store. The portal already scopes team views by `reports_to`.
+
+## 11. Verification after this block
+
+- Employee count = 400, Active. `Employee` tree view opens under the Owner with 5 Store In-charges and 9 head office heads as direct reports.
+- No employee has an empty `reports_to` except PPJ-0001.
+- Filter Employee by Branch: 72, 72, 72, 72, 72, 40.
+- Log in as each persona. The portal home loads and shows the right name and store.

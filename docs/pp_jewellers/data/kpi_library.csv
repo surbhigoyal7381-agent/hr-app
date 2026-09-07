@@ -1,0 +1,94 @@
+designation,kpi_name,category,unit,direction,weightage,target_basis,data_source,applies_to
+Senior Sales Executive,Own sales value vs target,Financial,Lakh,Higher is Better,50,Floor target × 1.5 share / 14.5 shares (Gold & Diamond floors) or / 14 (Silver floor),"POS sales report, entered monthly by Store Accountant",Sales
+Senior Sales Executive,Average bill value,Customer,Number,Higher is Better,15,"Category norm: Gold 85,000; Diamond 1,20,000; Silver 12,000",POS,Sales
+Senior Sales Executive,Old-gold exchange conversions,Customer,Number,Higher is Better,10,12 per month,Valuer register,Gold floor only
+Senior Sales Executive,Customer feedback score,Customer,Score,Higher is Better,10,4.5 / 5,CRE follow-up calls,Sales
+Senior Sales Executive,Junior coaching sessions held,People,Number,Higher is Better,5,2 per month,Manager attestation,Sales
+Senior Sales Executive,Living our values,People,Score,Higher is Better,10,manager rated 0-5,Manager,All
+Sales Executive,Own sales value vs target,Financial,Lakh,Higher is Better,55,Floor target × 1.0 share,POS,Sales
+Sales Executive,Average bill value,Customer,Number,Higher is Better,15,category norm,POS,Sales
+Sales Executive,Customer feedback score,Customer,Score,Higher is Better,10,4.5 / 5,CRE,Sales
+Sales Executive,Product knowledge assessment,Learning & Growth,Percent,Higher is Better,10,80%,Quarterly quiz (Training Result),Sales
+Sales Executive,Living our values,People,Score,Higher is Better,10,manager rated,Manager,All
+Trainee Sales Executive,Own sales value vs target,Financial,Lakh,Higher is Better,40,Floor target × 0.5 share,POS,Sales
+Trainee Sales Executive,Product knowledge assessment,Learning & Growth,Percent,Higher is Better,30,80%,Quiz,Sales
+Trainee Sales Executive,Customer feedback score,Customer,Score,Higher is Better,20,4.3 / 5,CRE,Sales
+Trainee Sales Executive,Living our values,People,Score,Higher is Better,10,manager rated,Manager,All
+Floor Manager - Gold,Floor sales value vs target,Financial,Crore,Higher is Better,50,Store target × 60%,POS,Sales
+Floor Manager - Gold,Gross margin on floor,Financial,Percent,Higher is Better,15,Store norm,Accounts,Sales
+Floor Manager - Gold,Team members at or above target,People,Percent,Higher is Better,15,70%,KPI roll-up,Sales
+Floor Manager - Gold,Stock shrinkage incidents,Process,Number,Lower is Better,10,0,Vault register,Sales
+Floor Manager - Gold,Living our values,People,Score,Higher is Better,10,manager rated,Manager,All
+Floor Manager - Diamond,Floor sales value vs target,Financial,Crore,Higher is Better,50,Store target × 25%,POS,Sales
+Floor Manager - Diamond,Certified-stone sales share,Financial,Percent,Higher is Better,15,90%,POS,Sales
+Floor Manager - Diamond,Team members at or above target,People,Percent,Higher is Better,15,70%,KPI roll-up,Sales
+Floor Manager - Diamond,Stock shrinkage incidents,Process,Number,Lower is Better,10,0,Vault register,Sales
+Floor Manager - Diamond,Living our values,People,Score,Higher is Better,10,manager rated,Manager,All
+Floor Manager - Silver & Fashion,Floor sales value vs target,Financial,Crore,Higher is Better,50,Store target × 8%,POS,Sales
+Floor Manager - Silver & Fashion,Units sold,Financial,Number,Higher is Better,15,quarterly units,POS,Sales
+Floor Manager - Silver & Fashion,Team members at or above target,People,Percent,Higher is Better,15,70%,KPI roll-up,Sales
+Floor Manager - Silver & Fashion,Slow-moving stock cleared,Process,Percent,Higher is Better,10,25% of ageing stock,Inventory,Sales
+Floor Manager - Silver & Fashion,Living our values,People,Score,Higher is Better,10,manager rated,Manager,All
+Assistant Store Manager,Store sales value vs target,Financial,Crore,Higher is Better,40,Store target,POS,Store
+Assistant Store Manager,Customer complaints closed within 48 h,Customer,Percent,Higher is Better,20,95%,CRE log,Store
+Assistant Store Manager,Visual merchandising audit score,Process,Score,Higher is Better,15,4.5 / 5,Marketing audit,Store
+Assistant Store Manager,Team attendance regularity,People,Percent,Higher is Better,15,97%,Attendance,Store
+Assistant Store Manager,Living our values,People,Score,Higher is Better,10,manager rated,Manager,All
+Store In-charge,Store sales value vs target,Financial,Crore,Higher is Better,45,Store target for the quarter,POS,Store
+Store In-charge,Store gross margin,Financial,Percent,Higher is Better,15,Store norm,Accounts,Store
+Store In-charge,Stock audit variance,Process,Percent,Lower is Better,15,0.1%,Central vault audit,Store
+Store In-charge,Staff attrition,People,Number,Lower is Better,10,≤ 3 per quarter,HR,Store
+Store In-charge,Team attendance regularity,People,Percent,Higher is Better,5,97%,Attendance,Store
+Store In-charge,Living our values,People,Score,Higher is Better,10,owner rated,Owner,All
+Customer Relationship Executive,Follow-up calls completed,Customer,Number,Higher is Better,35,300 per month,CRM log,Store
+Customer Relationship Executive,Repeat-customer visits generated,Customer,Number,Higher is Better,30,40 per month,POS,Store
+Customer Relationship Executive,Customer feedback score collected,Customer,Number,Higher is Better,25,150 per month,CRM,Store
+Customer Relationship Executive,Living our values,People,Score,Higher is Better,10,manager rated,Manager,All
+Cashier,Billing accuracy,Process,Percent,Higher is Better,40,99.8%,Accounts audit,Store
+Cashier,Cash and card reconciliation on time,Process,Percent,Higher is Better,30,100%,Accounts,Store
+Cashier,Average billing time,Customer,Number,Lower is Better,20,6 minutes,POS,Store
+Cashier,Living our values,People,Score,Higher is Better,10,manager rated,Manager,All
+Gold Valuer,Valuation accuracy vs hallmark test,Process,Percent,Higher is Better,50,99.5%,QC re-test,Store
+Gold Valuer,Exchange transactions handled,Customer,Number,Higher is Better,30,60 per month,Register,Store
+Gold Valuer,Customer disputes on valuation,Customer,Number,Lower is Better,10,0,CRE log,Store
+Gold Valuer,Living our values,People,Score,Higher is Better,10,manager rated,Manager,All
+Karigar,Repair jobs completed on time,Process,Percent,Higher is Better,50,95%,Job card register,Store
+Karigar,Rework rate,Process,Percent,Lower is Better,30,2%,Job cards,Store
+Karigar,Gold loss in repair,Process,Grams,Lower is Better,10,≤ 2 g per month,Vault,Store
+Karigar,Living our values,People,Score,Higher is Better,10,manager rated,Manager,All
+Vault & Inventory Custodian,Daily stock tally without variance,Process,Percent,Higher is Better,60,100%,Tally sheet,Store
+Vault & Inventory Custodian,Stock issue / return turnaround,Process,Number,Lower is Better,30,10 minutes,Register,Store
+Vault & Inventory Custodian,Living our values,People,Score,Higher is Better,10,manager rated,Manager,All
+Security Guard,Incident-free days,Process,Percent,Higher is Better,60,100%,Incident register,Store
+Security Guard,Checklist compliance (opening/closing),Process,Percent,Higher is Better,30,100%,Checklist,Store
+Security Guard,Living our values,People,Score,Higher is Better,10,manager rated,Manager,All
+Housekeeping Staff,Store hygiene audit score,Process,Score,Higher is Better,90,4.5 / 5,ASM weekly audit,Store
+Housekeeping Staff,Living our values,People,Score,Higher is Better,10,manager rated,Manager,All
+Store Accountant,Daily sales reconciliation on time,Process,Percent,Higher is Better,40,100%,Finance,Store
+Store Accountant,Month-end closing within 3 days,Process,Percent,Higher is Better,30,100%,Finance,Store
+Store Accountant,Audit observations,Process,Number,Lower is Better,20,0,Internal Auditor,Store
+Store Accountant,Living our values,People,Score,Higher is Better,10,manager rated,Manager,All
+Store HR & Admin Executive,Attendance processed by the 2nd of the month,Process,Percent,Higher is Better,30,100%,HR,Store
+Store HR & Admin Executive,Open positions filled within 30 days,People,Percent,Higher is Better,30,80%,Recruitment,Store
+Store HR & Admin Executive,"Compliance checklist (licences, POSH, fire)",Process,Percent,Higher is Better,30,100%,Admin,Store
+Store HR & Admin Executive,Living our values,People,Score,Higher is Better,10,manager rated,Manager,All
+Visual Merchandiser,Display refresh schedule met,Process,Percent,Higher is Better,50,100%,Marketing,Store
+Visual Merchandiser,Festival campaign readiness score,Customer,Score,Higher is Better,40,4.5 / 5,Marketing audit,Store
+Visual Merchandiser,Living our values,People,Score,Higher is Better,10,manager rated,Manager,All
+Head - Human Resources,Time to fill open positions,People,Days,Lower is Better,30,30 days,Recruitment Analytics,HO
+Head - Human Resources,Payroll on time with zero reruns,Process,Percent,Higher is Better,25,100%,Payroll,HO
+Head - Human Resources,Company attendance regularity,People,Percent,Higher is Better,20,97%,Attendance,HO
+Head - Human Resources,Appraisal cycle completion on time,Process,Percent,Higher is Better,15,100%,Performance,HO
+Head - Human Resources,Living our values,People,Score,Higher is Better,10,owner rated,Owner,All
+Head - Finance & Accounts,Month close within 5 working days,Process,Percent,Higher is Better,35,100%,Finance,HO
+Head - Finance & Accounts,"Statutory filings on time (GST, TDS, PF, ESI)",Process,Percent,Higher is Better,30,100%,Compliance calendar,HO
+Head - Finance & Accounts,Store audit variance,Process,Percent,Lower is Better,25,0.1%,Audit,HO
+Head - Finance & Accounts,Living our values,People,Score,Higher is Better,10,owner rated,Owner,All
+Head - Purchase & Sourcing,Gold sourcing cost vs benchmark,Financial,Percent,Lower is Better,40,≤ benchmark + 0.5%,Bullion desk,HO
+Head - Purchase & Sourcing,Stock availability of fast movers,Process,Percent,Higher is Better,30,95%,Inventory,HO
+Head - Purchase & Sourcing,Supplier on-time delivery,Process,Percent,Higher is Better,20,90%,Purchase,HO
+Head - Purchase & Sourcing,Living our values,People,Score,Higher is Better,10,owner rated,Owner,All
+Head - Marketing,Footfall growth vs last year,Customer,Percent,Higher is Better,40,+12%,Store counters,HO
+Head - Marketing,Festival campaign delivered on time,Process,Percent,Higher is Better,30,100%,Marketing,HO
+Head - Marketing,Cost per walk-in,Financial,Number,Lower is Better,20,₹180,Marketing,HO
+Head - Marketing,Living our values,People,Score,Higher is Better,10,owner rated,Owner,All

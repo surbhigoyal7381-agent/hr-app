@@ -35,8 +35,11 @@ commit()
 
 # ── Payroll Period and Income Tax Slab ──────────────────────────────────────
 log("Payroll Period and Income Tax Slab")
-ensure("Payroll Period", {"company": COMPANY, "start_date": FY_START, "end_date": FY_END},
-       {"payroll_period_name": "FY 2026-27"})
+if not frappe.db.exists("Payroll Period", {"company": COMPANY, "start_date": FY_START}):
+    pp = frappe.get_doc({"doctype": "Payroll Period", "name": "FY 2026-27", "__newname": "FY 2026-27",
+                         "company": COMPANY, "start_date": FY_START, "end_date": FY_END})
+    pp.insert(ignore_permissions=True)
+    log(f"  [created] Payroll Period {pp.name}")
 SLAB_NAME = "India New Regime FY 2026-27"
 if not frappe.db.exists("Income Tax Slab", SLAB_NAME):
     # New-regime slabs as announced in Budget 2025 - VERIFY before the demo.

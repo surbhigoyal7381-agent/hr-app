@@ -403,6 +403,48 @@ html, body {
 /* ── Responsive ──────────────────────────────────────────────────────── */
 @media (max-width: 900px) { #ka-sidebar { display: none; } #ka-stats { grid-template-columns: repeat(2,1fr); } }
 @media (max-width: 520px)  { #ka-stats { grid-template-columns: repeat(2,1fr); } #ka-tenant-grid { grid-template-columns: 1fr; } .ka-presets { gap: 4px; } }
+
+  /* ── Billing ──────────────────────────────────────────────── */
+  #ka-bill-bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
+  #ka-bill-bar input[type=month] {
+    font: inherit; font-size:.84rem; padding:7px 10px; border:1px solid var(--border2);
+    border-radius:var(--radius-sm); background:var(--surface); color:var(--ink0);
+  }
+  .ka-bill-note { font-size:.79rem; color:var(--ink3); }
+
+  .ka-bill-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+                   gap:12px; margin-bottom:18px; }
+  .ka-bill-card { background:var(--surface); border:1px solid var(--border);
+                  border-radius:var(--radius); padding:14px 16px; box-shadow:var(--shadow-sm); }
+  .ka-bill-card .n { font-size:1.55rem; font-weight:650; letter-spacing:-.02em;
+                     color:var(--ink0); font-variant-numeric:tabular-nums; }
+  .ka-bill-card .l { font-size:.76rem; color:var(--ink2); margin-top:2px; }
+  .ka-bill-card.warn .n { color:var(--amber); }
+  .ka-bill-card.bad  .n { color:var(--red); }
+
+  .ka-bill-table { width:100%; border-collapse:collapse; font-size:.85rem;
+                   background:var(--surface); border:1px solid var(--border);
+                   border-radius:var(--radius); overflow:hidden; }
+  .ka-bill-table th { text-align:left; font-size:.71rem; letter-spacing:.05em;
+                      text-transform:uppercase; color:var(--ink3); font-weight:600;
+                      padding:10px 12px; background:var(--bg);
+                      border-bottom:1px solid var(--border); white-space:nowrap; }
+  .ka-bill-table td { padding:10px 12px; border-bottom:1px solid var(--border);
+                      color:var(--ink1); vertical-align:top; }
+  .ka-bill-table tr:last-child td { border-bottom:0; }
+  .ka-bill-table td.num, .ka-bill-table th.num { text-align:right;
+                      font-variant-numeric:tabular-nums; }
+  .ka-scroll { overflow-x:auto; }
+
+  .ka-pill { display:inline-block; font-size:.7rem; font-weight:600; padding:2px 8px;
+             border-radius:20px; white-space:nowrap; }
+  .ka-pill.ok    { background:var(--green-lt); color:var(--green-dk); }
+  .ka-pill.wait  { background:var(--amber-lt); color:#92400e; }
+  .ka-pill.ours  { background:var(--blue-lt);  color:#1d4ed8; }
+  .ka-pill.stop  { background:var(--red-lt);   color:#b91c1c; }
+
+  .ka-why { font-size:.78rem; color:var(--ink2); }
+  .ka-bill-empty { padding:28px; text-align:center; color:var(--ink3); font-size:.85rem; }
 </style>
 </head>
 <body>
@@ -430,6 +472,9 @@ html, body {
       </a>
       <a class="ka-nav-item" id="nav-jobs" onclick="showView('jobs')">
         <span class="ka-nav-icon">&#x2699;&#xFE0F;</span> Provision Jobs
+      </a>
+      <a class="ka-nav-item" id="nav-billing" onclick="showView('billing')">
+        <span class="ka-nav-icon">&#x1F9FE;</span> Billing
       </a>
       <div class="ka-nav-label" style="margin-top:12px">Quick Links</div>
       <a class="ka-nav-item" href="/app" target="_blank"><span class="ka-nav-icon">&#x1F5A5;&#xFE0F;</span> Frappe Desk</a>
@@ -509,6 +554,26 @@ html, body {
           <button class="ka-btn ka-btn-ghost" onclick="loadJobs()">&#x21BB; Refresh</button>
         </div>
         <div id="ka-jobs-list"><p style="color:var(--ink3);font-size:.83rem">Loading&hellip;</p></div>
+      </div>
+
+      <!-- Billing view -->
+      <div id="view-billing" style="display:none">
+        <div class="ka-section-hdr">
+          <div class="ka-section-title">Billing</div>
+          <button class="ka-btn ka-btn-ghost" onclick="loadBilling()">&#x21BB; Refresh</button>
+        </div>
+
+        <div id="ka-bill-bar">
+          <label class="ka-bill-note" for="ka-bill-period">Month</label>
+          <input type="month" id="ka-bill-period" onchange="loadBilling()">
+          <button class="ka-btn ka-btn-ghost" onclick="previewInvoices()">Preview invoices</button>
+          <button class="ka-btn" onclick="createInvoices()">Create drafts</button>
+          <span class="ka-bill-note">Drafts only &mdash; nothing is sent until you submit it in the desk.</span>
+        </div>
+
+        <div class="ka-bill-cards" id="ka-bill-cards"></div>
+        <div class="ka-scroll"><table class="ka-bill-table" id="ka-bill-table"></table></div>
+        <div id="ka-bill-msg" style="margin-top:14px"></div>
       </div>
     </div>
   </div>
@@ -1324,13 +1389,166 @@ html, body {
   };
 
   /* ── View switching ──────────────────────────────────────── */
+  var KA_VIEWS = { tenants: 'Tenants', jobs: 'Provision Jobs', billing: 'Billing' };
+
   window.showView = function(view) {
-    document.getElementById('view-tenants').style.display = view === 'tenants' ? '' : 'none';
-    document.getElementById('view-jobs').style.display    = view === 'jobs'    ? '' : 'none';
-    document.getElementById('nav-tenants').classList.toggle('active', view === 'tenants');
-    document.getElementById('nav-jobs').classList.toggle('active', view === 'jobs');
-    document.getElementById('ka-view-title').textContent = view === 'jobs' ? 'Provision Jobs' : 'Tenants';
-    if (view === 'jobs') loadJobs();
+    Object.keys(KA_VIEWS).forEach(function(v) {
+      document.getElementById('view-' + v).style.display = (v === view) ? '' : 'none';
+      document.getElementById('nav-' + v).classList.toggle('active', v === view);
+    });
+    document.getElementById('ka-view-title').textContent = KA_VIEWS[view] || 'Tenants';
+    if (view === 'jobs')    loadJobs();
+    if (view === 'billing') loadBilling();
+  };
+
+  /* ── Billing ──────────────────────────────────────────────────
+     Reads two calls and shows them as one table: what each tenant
+     would be charged this month, and what is stopping the ones that
+     cannot be. A blocked tenant is the point of the screen - an
+     invoice that silently never went out is the failure nobody sees.
+  */
+  function billPeriod() {
+    var el = document.getElementById('ka-bill-period');
+    if (!el.value) {
+      // Default to LAST month. Billing runs in arrears, and a count taken on
+      // the 1st is a count of nothing.
+      var d = new Date();
+      d.setDate(1);
+      d.setMonth(d.getMonth() - 1);
+      el.value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    }
+    return el.value;
+  }
+
+  function rupees(n) {
+    return '\u20B9' + (Number(n) || 0).toLocaleString('en-IN',
+      { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  }
+
+  window.loadBilling = async function() {
+    var period = billPeriod();
+    var cards  = document.getElementById('ka-bill-cards');
+    var table  = document.getElementById('ka-bill-table');
+    cards.innerHTML = '';
+    table.innerHTML = '<tr><td class="ka-bill-empty">Loading\u2026</td></tr>';
+
+    var money, invoices;
+    try {
+      money    = await api('alvoraa_portal.estimate.estimate_all?period=' + period);
+      invoices = await api('alvoraa_portal.invoicing.invoice_run_summary?period=' + period);
+    } catch (e) {
+      table.innerHTML = '<tr><td class="ka-bill-empty">Could not load billing: '
+                      + esc(e.message || e) + '</td></tr>';
+      return;
+    }
+
+    var raisedBySite = {};
+    (invoices.raised || []).forEach(function(r) { raisedBySite[r.site] = r; });
+
+    cards.innerHTML = [
+      card(rupees(money.invoiceable_total), 'To invoice this month', ''),
+      card(money.ready, 'Tenants ready', ''),
+      card((money.blocked || []).length, 'Blocked', (money.blocked || []).length ? 'warn' : ''),
+      card(rupees(invoices.drafted_value), 'Drafted, awaiting your review', ''),
+    ].join('');
+
+    var rows = (money.tenants || []).map(function(t) {
+      var inv = raisedBySite[t.site];
+      var state, why;
+      if (inv) {
+        state = '<span class="ka-pill ' + (inv.state === 'sent' ? 'ok' : 'wait') + '">'
+              + esc(inv.state) + '</span>';
+        why = '<a href="/app/sales-invoice/' + encodeURIComponent(inv.invoice)
+            + '" target="_blank">' + esc(inv.invoice) + '</a>';
+      } else if (!t.will_be_invoiced) {
+        state = '<span class="ka-pill ours">ours</span>';
+        why = '<span class="ka-why">priced, never invoiced</span>';
+      } else if (!t.complete) {
+        var blocked = (money.blocked || []).filter(function(b) { return b.site === t.site; })[0];
+        state = '<span class="ka-pill stop">blocked</span>';
+        why = '<span class="ka-why">' + esc((blocked && blocked.why || []).join('; ')) + '</span>';
+      } else {
+        state = '<span class="ka-pill ok">ready</span>';
+        why = '<span class="ka-why">&mdash;</span>';
+      }
+      return '<tr>'
+        + '<td>' + esc(t.site) + '</td>'
+        + '<td>' + esc(t.plan || '\u2014') + '</td>'
+        + '<td class="num">' + (t.billable_employees == null ? '\u2014' : t.billable_employees) + '</td>'
+        + '<td class="num">' + (t.complete ? rupees(t.due) : '\u2014') + '</td>'
+        + '<td>' + state + '</td>'
+        + '<td>' + why + '</td>'
+        + '</tr>';
+    });
+
+    table.innerHTML =
+      '<thead><tr><th>Tenant</th><th>Plan</th><th class="num">Employees</th>'
+      + '<th class="num">Due</th><th>Status</th><th>Invoice / why not</th></tr></thead>'
+      + '<tbody>' + (rows.length ? rows.join('')
+          : '<tr><td colspan="6" class="ka-bill-empty">No subscriptions yet.</td></tr>')
+      + '</tbody>';
+  };
+
+  function card(n, label, tone) {
+    return '<div class="ka-bill-card ' + (tone || '') + '">'
+         + '<div class="n">' + n + '</div><div class="l">' + label + '</div></div>';
+  }
+
+  window.previewInvoices = async function() {
+    var period = billPeriod();
+    var msg = document.getElementById('ka-bill-msg');
+    msg.innerHTML = '<p class="ka-bill-note">Checking\u2026</p>';
+    try {
+      var out = await api('alvoraa_portal.invoicing.raise_invoices',
+                          { period: period, dry_run: 1 });
+      var lines = (out.drafted || []).map(function(d) {
+        return '\u2022 ' + esc(d.site) + ' \u2014 ' + rupees(d.amount)
+             + ' (' + d.lines + ' line' + (d.lines === 1 ? '' : 's') + ')';
+      });
+      var skipped = (out.skipped || []).map(function(s) {
+        return '\u2022 ' + esc(s.site) + ' \u2014 ' + esc(s.why);
+      });
+      msg.innerHTML =
+        '<p><strong>Would draft ' + (out.drafted || []).length + ' invoice(s), '
+        + rupees(out.total) + ' in total. Nothing has been created.</strong></p>'
+        + (lines.length ? '<p class="ka-why">' + lines.join('<br>') + '</p>' : '')
+        + (skipped.length ? '<p class="ka-why"><strong>Skipped</strong><br>'
+                            + skipped.join('<br>') + '</p>' : '');
+    } catch (e) {
+      msg.innerHTML = '<p class="ka-why">Could not preview: ' + esc(e.message || e) + '</p>';
+    }
+  };
+
+  window.createInvoices = async function() {
+    var period = billPeriod();
+    // Asked plainly, and only once. Creating drafts is reversible - a draft can
+    // be deleted - which is exactly why they are drafts.
+    if (!confirm('Create draft invoices for ' + period + '?\n\n'
+               + 'They are drafts. Nothing goes to a customer until you submit '
+               + 'each one in the desk.')) return;
+    var msg = document.getElementById('ka-bill-msg');
+    msg.innerHTML = '<p class="ka-bill-note">Creating\u2026</p>';
+    try {
+      var out = await api('alvoraa_portal.invoicing.raise_invoices',
+                          { period: period, dry_run: 0 });
+      var made = (out.drafted || []).map(function(d) {
+        return '\u2022 ' + esc(d.site) + ' \u2014 ' + rupees(d.amount)
+             + ' \u2014 <a href="/app/sales-invoice/' + encodeURIComponent(d.draft)
+             + '" target="_blank">' + esc(d.draft) + '</a>';
+      });
+      var failed = (out.failed || []).map(function(f) {
+        return '\u2022 ' + esc(f.site) + ' \u2014 ' + esc(f.error);
+      });
+      msg.innerHTML =
+        '<p><strong>Drafted ' + made.length + ' invoice(s).</strong> '
+        + 'Open each one and submit it when you are happy with it.</p>'
+        + (made.length ? '<p class="ka-why">' + made.join('<br>') + '</p>' : '')
+        + (failed.length ? '<p class="ka-why"><strong>Failed</strong><br>'
+                           + failed.join('<br>') + '</p>' : '');
+      loadBilling();
+    } catch (e) {
+      msg.innerHTML = '<p class="ka-why">Could not create: ' + esc(e.message || e) + '</p>';
+    }
   };
 
   /* ── Utilities ───────────────────────────────────────────── */

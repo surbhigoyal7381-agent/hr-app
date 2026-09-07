@@ -275,6 +275,21 @@ def _notify(rows, subject, lead):
 		recipients = [u for u in [emp.user_id, *hr_users] if u]
 		if not recipients:
 			continue
+		for user in dict.fromkeys(recipients):   # the bell on the portal and the desk
+			try:
+				frappe.get_doc(
+					{
+						"doctype": "Notification Log",
+						"for_user": user,
+						"type": "Alert",
+						"document_type": "Employee",
+						"document_name": employee,
+						"subject": f"{subject}: {emp.employee_name or employee}",
+						"email_content": f"<p>{lead}</p><ul>{lines}</ul>",
+					}
+				).insert(ignore_permissions=True)
+			except Exception:
+				frappe.log_error(frappe.get_traceback(), "Employee document notification failed")
 		try:
 			frappe.sendmail(
 				recipients=list(dict.fromkeys(recipients)),

@@ -127,7 +127,7 @@ Spec: file 07 §3.
 - Tests: `hrms/hrms/alvoraa_employee_documents/tests/test_employee_documents.py` (7 tests: scope by grade and designation, checklist on creation, attachment marks Received, verifier role enforced, expiry on save and by the job, portal attach and compliance, summary text).
 - Seeds: 18 document types (block 1); every existing employee's rows are marked Verified as of joining, with PPJ-0200's police certificate Expired (block 2); Ritika's rows per file 07 §3.5 (block 6).
 
-Not done: the "Employee Onboarding view" shows the counts, not the table itself (open the Employee record for the rows). The reminder goes by email only; a portal notification can follow if the client wants it.
+Not done: the "Employee Onboarding view" shows the counts, not the table itself (open the Employee record for the rows). Added 2026-09-07 (follow-up): expiry and reminder also raise a bell notification (Notification Log) for the employee and the HR Managers, next to the email.
 
 ---
 
@@ -162,7 +162,7 @@ Spec: file 08.
 - Tests: `hrms/hrms/alvoraa_policy_library/tests/test_policy_library.py` (7 tests: profiles, who sees what in the list, department-only follows the owner department, the form agrees with the list, who may write, publish snapshots while readers keep the old text, acknowledgement once per version).
 - Seeds: block 7 `seed_policies.py`: department heads, 16 policies published with real text for the five demo ones, acknowledgements for everyone who joined before August, the Old Gold policy with unpublished changes.
 
-Not done: rate limiting of the search (Frappe's own request limits apply); a notification when a new version is published (the badge on the portal is the signal; email can follow).
+Not done: rate limiting of the search (Frappe's own request limits apply). Added 2026-09-07 (follow-up): publishing a new version of a policy that must be acknowledged again sends every reader a bell notification and an email from a background job (`notify_new_version`, readers worked out with the same rules as the list).
 
 ---
 
@@ -203,7 +203,7 @@ Spec: file 09 §8.
 - Portal (`performance_api.py`): `hr_create_cycle` and `save_cycle_wizard` no longer hard-code `goal_score`; they call the builder. `save_cycle_wizard` takes a `scoring` argument, applied only when the tenant has `attendance_scoring`. `get_cycle_config` and the appraisal payload return the scoring settings and the attendance fields; `hr_cycle_summary` adds the attendance score per row and an average per branch; `get_wizard_filter_options` returns the grades. Page: a "How the Score Is Built" step in the Appraisal Setup panel (shown when the plan flag is on) with three sliders, a live total and formula preview, and an advanced fold; a "Score breakdown" card on the appraisal page for employees and managers; an Attendance column and a by-branch card on the HR cycle board.
 - Tests: `hrms/hrms/alvoraa_hr_core/tests/test_attendance_score.py` (10 tests: formula from weights, weights must total 100, formula without attendance, the numbers, paid leave switch, score and penalty, snapshot on the appraisal and the final score using it, exempt grade, no-data rule, precompute cache). Stock `test_appraisal` and `test_appraisal_cycle` still pass with the hooks in place.
 
-Not done from the proposal: validating a hand-edited formula on cycle save. Frappe HR evaluates it with `safe_eval` at appraisal time and reports a clear error then; a parse check on the cycle is a small follow-up if HR asks for it.
+Added 2026-09-07 (follow-up): a hand-edited formula is tried once with sample numbers when the cycle is saved, so a typo is caught there and not on the first appraisal (`check_formula`, test `test_a_broken_hand_edited_formula_is_caught_on_save`).
 
 ---
 

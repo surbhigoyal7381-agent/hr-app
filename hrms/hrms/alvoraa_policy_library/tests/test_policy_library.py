@@ -162,6 +162,28 @@ class TestPolicyLibrary(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			doc.publish("Nothing changed")
 
+	def test_new_version_reaches_its_readers_and_nobody_else(self):
+		from hrms.alvoraa_policy_library.doctype.policy_document.policy_document import notify_new_version, readers_of
+		doc = self.policies["managers"]
+		readers = {u.user_id for u in readers_of(doc)}
+		self.assertIn(self.manager_user, readers)
+		self.assertNotIn(self.staff_user, readers)
+		# this bench has no built assets, so the email behind a bell notification
+		# cannot be rendered here; the bell itself is what the test checks
+		for user in readers:
+			if frappe.db.exists("Notification Settings", user):
+				frappe.db.set_value("Notification Settings", user, "enable_email_notifications", 0)
+			else:
+				ns = frappe.get_doc({"doctype": "Notification Settings", "user": user, "enable_email_notifications": 0})
+				ns.name = user
+				ns.insert(ignore_permissions=True)
+		before = frappe.db.count("Notification Log", {"document_name": doc.name})
+		sent = notify_new_version(doc.name)
+		self.assertEqual(sent, len(readers))
+		self.assertEqual(frappe.db.count("Notification Log", {"document_name": doc.name}), before + sent)
+		self.assertTrue(frappe.db.exists("Notification Log", {"document_name": doc.name, "for_user": self.manager_user}))
+		self.assertFalse(frappe.db.exists("Notification Log", {"document_name": doc.name, "for_user": self.staff_user}))
+
 	def test_acknowledgement(self):
 		doc = self.policies["everyone"]
 		needed, done = acknowledgement_status(doc, self.staff)

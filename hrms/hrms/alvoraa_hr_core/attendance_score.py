@@ -34,6 +34,7 @@ MAX_SCORE = 5.0
 def apply_cycle_settings(doc, method=None):
 	"""Appraisal Cycle validate: check the weights and write the formula."""
 	if not cint(doc.get("include_attendance_score")):
+		check_formula(doc)
 		return
 	if not feature_enabled("attendance_scoring"):
 		frappe.throw(_("Attendance in the appraisal score is not switched on for this site."))
@@ -50,6 +51,30 @@ def apply_cycle_settings(doc, method=None):
 		frappe.throw(_("The penalty per deducted day cannot be negative."))
 	doc.calculate_final_score_based_on_formula = 1
 	doc.final_score_formula = build_formula(doc)
+
+
+FORMULA_NAMES = ("goal_score", "average_feedback_score", "self_appraisal_score", "attendance_score")
+
+
+def check_formula(doc):
+	"""A hand-edited formula is tried once with sample numbers when the cycle is
+	saved, so a typo shows up now and not on the first appraisal."""
+	formula = (doc.get("final_score_formula") or "").strip()
+	if not cint(doc.get("calculate_final_score_based_on_formula")) or not formula:
+		return
+	from hrms.payroll.utils import sanitize_expression
+
+	data = {name: 1.0 for name in FORMULA_NAMES}
+	data.update({k: v for k, v in doc.as_dict().items() if isinstance(v, (int, float, str)) and k not in data})
+	try:
+		result = frappe.safe_eval(sanitize_expression(formula), data)
+		float(result)
+	except Exception as e:
+		frappe.throw(
+			_("The final score formula cannot be evaluated: {0}. It may use {1}, the cycle's fields and the appraisal's fields.").format(
+				frappe.utils.escape_html(str(e)), ", ".join(FORMULA_NAMES)
+			)
+		)
 
 
 def build_formula(cycle):

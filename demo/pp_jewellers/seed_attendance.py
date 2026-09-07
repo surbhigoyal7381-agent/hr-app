@@ -120,9 +120,9 @@ if frappe.db.exists("DocType", "Attendance Deduction Rule"):
         result = run_for_range(RULE, "2026-07-01", "2026-09-06")
         commit()
         log(f"  rule run: {result}")
-        log(f"  Attendance Deductions: {frappe.db.count('Attendance Deduction', {'docstatus': 1})} (expected 231 from data/expected_deductions.csv)")
+        log(f"  Attendance Deductions: {frappe.db.count('Attendance Deduction', {'docstatus': 1})} (expected 212 from data/expected_deductions.csv)")
     else:
-        log("  rule created; run it after Block 4 (loss of pay needs salary assignments): Attendance Deduction Rule > Run for Range")
+        log("  rule created; block 4 runs it once the salary assignments exist (loss of pay needs a base pay)")
 
 log("Block 3 done")
 counts("Shift Assignment", "Employee Checkin", "Attendance")

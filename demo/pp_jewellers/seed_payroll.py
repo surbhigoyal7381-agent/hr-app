@@ -226,6 +226,18 @@ for e in employees():
 commit()
 log(f"  {made} assignments created")
 
+# ── Late-coming rule (build B1): the loss-of-pay lines must exist before the slips
+RULE = "PPJ Late Coming Rule"
+if frappe.db.exists("Attendance Deduction Rule", RULE) and not frappe.db.exists("Attendance Deduction", {"rule": RULE, "docstatus": 1}):
+    log("Attendance Deduction Rule run (build B1)")
+    from hrms.alvoraa_late_rules.late_rules import run_for_range
+    frappe.set_user("Administrator")
+    result = run_for_range(RULE, "2026-07-01", "2026-09-06")
+    commit()
+    log(f"  rule run: {result}; Attendance Deductions: {frappe.db.count('Attendance Deduction', {'docstatus': 1})} "
+        f"(expected 212 from data/expected_deductions.csv), with loss of pay "
+        f"{frappe.db.count('Attendance Deduction', {'docstatus': 1, 'lwp_days': ['>', 0]})}")
+
 # ── Employee Incentives for July sales (paid with August salary) ───────────
 log("Employee Incentives (July sales)")
 PAY_DATE = "2026-08-31"

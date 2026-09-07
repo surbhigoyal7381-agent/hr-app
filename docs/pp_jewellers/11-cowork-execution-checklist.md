@@ -103,6 +103,24 @@ Every step below runs on the **ppj tenant**, never on `dev.alvoraa.co`.
 - [ ] Take screenshots of every demo moment as a fallback.
 - [ ] Re-run `bench --site ppj.dev.alvoraa.co backup` and keep this backup as the "demo-ready" restore point.
 
+## Verified on a local bench, 2026-09-07
+
+The whole suite was run end to end on a bench built like the production image (Frappe 16.33 on Python 3.14, ERPNext 16.34, this repository's `hrms`, `alvoraa_goals` and `alvoraa_portal`), on a site whose company setup was completed the way the provisioner does it. Blocks 1 to 6 and 8 ran clean (Block 7, the policy library, is build B5). Numbers from `verify_ppj.py`:
+
+| Check | Result |
+|---|---|
+| Employees | 403 active (400 seeded + Ritika and two September joiners); 72 / 72 / 74 / 73 / 72 per store, 40 head office; one employee without a manager (the Owner) |
+| Users, leave | 403 users linked; 1,209 leave allocations; 401 holiday list assignments |
+| Attendance | 45,232 check-ins → 23,275 attendance records (22,577 Present, 693 Absent); PPJ-0054 flagged late on 18 and 20 Aug and early-exit on 22 Aug, exactly as scripted |
+| Payroll | 403 salary structure assignments, 198 incentives, 800 submitted slips, 2 accrual journal entries. August: PF on 400 employees, ESI on 146 (the CSV's ESI-eligible count), income tax on 31. PPJ-0054 August gross 44,200 with Gold Incentive 9,200 |
+| Recruitment | 1 requisition, 1 opening, 8 applicants, 11 interviews, 22 feedback records, 1 offer, 1 appointment letter; Ritika's rounds average 4.25 / 4.25 / 4.6 |
+| Onboarding | Onboarding In Process (11 of 12 tasks closed, the 30-day check-in open), Employee PPJ-0401 created through it, 3 training events, 1 result, 3 feedback records |
+| Performance | Q1 Completed with 403 submitted appraisals and 1,755 rated KPIs; Q2 In Progress with 403 drafts and 596 of 1,755 KPIs rated; 424 goals; cascade progress Q1 105%, Q2 71% to date; PPJ-0054 Q1 final score 4.56 (goal 4.6, feedback 4.36, self 4.76), High Potential; 62 upward feedback records |
+
+Two product bugs surfaced and are written up in file 10: the regional override wrapper (B0, blocks payroll for taxpayers; the local run used the three-line fix) and the cascade alignment report (reads Misaligned on any multi-level cascade). Three quirks are handled inside the seeds and noted in files 02, 03 and 07.
+
+Run time on a 4-core box: Block 3 about 30 minutes (auto attendance), Block 4 about 8 minutes, Block 8 about 5 minutes, the rest under a minute each. The site needs a running background worker; without one, Frappe refuses new jobs after a few hundred queue up.
+
 ## Scripts (written, in `demo/pp_jewellers/`)
 
 One script per block, all idempotent, all reading the CSVs in `docs/pp_jewellers/data/`. `run_all.sh` runs them in checklist order on one site; `verify_ppj.py` prints the check numbers listed above.
@@ -117,6 +135,7 @@ One script per block, all idempotent, all reading the CSVs in `docs/pp_jewellers
 | `seed_recruitment.py` | 5 | Sources, skills, offer terms, letter template, staffing plan, requisition, opening with the JD, 8 applicants, referral, 3 interview types, 11 interviews with 22 feedback records, offer, appointment letter |
 | `seed_onboarding.py` | 6 | Roles, onboarding template, Ritika's onboarding with tasks closed, Employee PPJ-0401 created through it, two more joiners, users and salary for the three, training program, 3 events, result, feedback, skill map |
 | `seed_performance.py` | 8 | Values, scale, principles, criteria, template, two cycles with configs, two cascades with the store/floor/individual tree, evidence and progress, ~4,000 KPIs, Q1 feedback and submitted appraisals with extensions, calibration, Q2 draft appraisals, upward feedback |
+| `reset_payroll.py`, `reset_performance.py` | 4, 8 | Dev-only wipes so a block can be re-seeded from clean. Never on a tenant with real data. |
 | `run_all.sh` | 1-8 | `run_all.sh --site ppj.dev.alvoraa.co --bench /home/frappe/frappe-bench [--from n | --only n]` |
 | `verify_ppj.py` | all | prints the verification numbers |
 

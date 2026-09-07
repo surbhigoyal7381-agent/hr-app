@@ -13,6 +13,7 @@ from hrms.overrides.company import delete_company_fixtures
 
 def after_install():
 	create_custom_fields(get_custom_fields(), ignore_validate=True)
+	create_attendance_score_fields()
 	create_salary_slip_loan_fields()
 	make_fixtures()
 	setup_notifications()
@@ -23,6 +24,12 @@ def after_install():
 	create_default_role_profiles()
 	run_post_install_patches()
 	add_default_hr_permissions()
+
+
+def create_attendance_score_fields():
+	from hrms.alvoraa_hr_core.setup import make_custom_fields
+
+	make_custom_fields()
 
 
 def before_uninstall():

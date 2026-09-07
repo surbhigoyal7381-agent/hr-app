@@ -212,7 +212,14 @@ doc_events = {
 		"before_insert": "hrms.regional.india.utils.set_esi_applicable",
 	},
 	"Appraisal": {
-		"before_save": "hrms.grace_group.hooks.appraisal_metrics.fetch_metrics",
+		"before_save": [
+			"hrms.grace_group.hooks.appraisal_metrics.fetch_metrics",
+			"hrms.alvoraa_hr_core.attendance_score.compute",
+		],
+		"before_submit": "hrms.alvoraa_hr_core.attendance_score.compute",
+	},
+	"Appraisal Cycle": {
+		"validate": "hrms.alvoraa_hr_core.attendance_score.apply_cycle_settings",
 	},
 	# ── Grace PMS ─────────────────────────────────────────────────────────────
 	"PMS Review Record": {

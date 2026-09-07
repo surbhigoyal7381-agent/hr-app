@@ -10,8 +10,10 @@ potential ratings, self ratings, Employee Performance Feedback, submitted
 Appraisals, extensions with overall ratings, six calibration adjustments and
 a sign-off; Q2 draft appraisals with partial manager ratings; upward feedback.
 
-Until build B6 lands, the final-score formula uses the self-appraisal score in
-the attendance slot: goal 50 / feedback 30 / self 20.
+Both cycles include attendance in the score (build B6): targets 50 / manager
+feedback 30 / attendance 20. The Q1 window has no attendance records in the
+demo data, so Q1 appraisals use the average of the other two parts; the Q2
+drafts show real attendance numbers.
 
 Idempotent per section. Emails are muted.
 """
@@ -35,7 +37,13 @@ from alvoraa_portal.performance_api import _apply_kpis_to_appraisal, _sync_poten
 
 Q1 = "Q1 FY27 Performance Cycle"
 Q2 = "Q2 FY27 Performance Cycle"
-FORMULA = "goal_score * 0.5 + average_feedback_score * 0.3 + self_appraisal_score * 0.2"
+# Build B6: the cycle writes its own formula from these weights
+# (goal_score * 0.5 + average_feedback_score * 0.3 + attendance_score * 0.2).
+SCORING = {"include_attendance_score": 1, "goal_weight": 50, "feedback_weight": 30, "attendance_weight": 20,
+           "attendance_reliability_weight": 60, "attendance_punctuality_weight": 40,
+           "attendance_deduction_penalty": 0.25, "count_paid_leave_as_absent": 0,
+           "attendance_when_no_data": "Use the average of the other parts",
+           "attendance_exempt_grades": [{"employee_grade": g} for g in ("G5 Head", "G6 Leadership")]}
 SCALE = "PPJ 5-Point"
 HR_HEAD = first_employee("Head - Human Resources")
 OWNER = first_employee("Owner & Managing Director")
@@ -94,11 +102,10 @@ def ensure_cycle(name, start, end, status):
     if not frappe.db.exists("Appraisal Cycle", name):
         c = frappe.get_doc({"doctype": "Appraisal Cycle", "cycle_name": name, "company": COMPANY,
                             "start_date": start, "end_date": end, "kra_evaluation_method": "Manual Rating",
-                            "calculate_final_score_based_on_formula": 1, "final_score_formula": FORMULA,
-                            "status": "Not Started",
-                            "description": "Attendance 20 / manager feedback 30 / targets 50 (self score stands in for attendance until build B6)."})
-        c.insert(ignore_permissions=True)
-        log(f"  [created] Appraisal Cycle {name}")
+                            "calculate_final_score_based_on_formula": 1, "status": "Not Started",
+                            "description": "Targets 50 / manager feedback 30 / attendance 20.", **SCORING})
+        c.insert(ignore_permissions=True)     # the validate hook writes final_score_formula
+        log(f"  [created] Appraisal Cycle {name}: {c.final_score_formula}")
     if not frappe.db.exists("Alvoraa Cycle Config", name):
         frappe.get_doc({"doctype": "Alvoraa Cycle Config", "appraisal_cycle": name,
                         "description": "Created by the PPJ seed (mirrors the cycle wizard).",

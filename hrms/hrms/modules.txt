@@ -2,3 +2,4 @@ HR
 Payroll
 Performance Management
 Alvoraa Late Rules
+Alvoraa HR Core

@@ -164,6 +164,14 @@ FEATURES = {
         "opt_in": True,
         "requires": ["attendance", "leaves", "payroll"],
     },
+    "attendance_scoring": {
+        "desc": "Attendance as a weighted part of the appraisal score, set up from the cycle wizard",
+        "icon": "📅",
+        "label": "Attendance in Appraisals",
+        "module_defs": ["Alvoraa HR Core"],
+        "opt_in": True,
+        "requires": ["performance", "attendance"],
+    },
 }
 
 # ── Plans ────────────────────────────────────────────────────────────────────

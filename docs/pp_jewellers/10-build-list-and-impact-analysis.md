@@ -156,9 +156,19 @@ Spec: file 09 §8.
 | Data integrity | Watch. The score is snapshotted on the Appraisal at save/submit; attendance corrections after submit do not change a submitted appraisal (correct; that is what submit means). Before submit, re-saving recomputes. |
 | Compliance / privacy | Neutral. |
 
-**Also in scope (found while testing)**: `alvoraa_goals/controllers/cascade.py` `run_alignment_check` sums every goal on the cascade, so a multi-level cascade always reads Misaligned. Filter to goals with no `parent_goal`. Two lines plus a test with a two-level tree.
+**Also in scope (found while testing)**: `alvoraa_goals/controllers/cascade.py` `run_alignment_check` sums every goal on the cascade, so a multi-level cascade always reads Misaligned. Filter to goals with no `parent_goal`. Two lines plus a test with a two-level tree. **Done 2026-09-07** (`test_cascade_alignment_counts_only_top_level_goals`).
 
 **Risk**: the formula is a `Code` field evaluated by `frappe.safe_eval`. The builder writes it; HR can still edit it by hand in desk. Validate on cycle save that the formula parses and references only known names.
+
+**Status: approved and implemented 2026-09-07.** Module `hrms/hrms/alvoraa_hr_core` ("Alvoraa HR Core"):
+
+- `setup.py` adds the custom fields: on Appraisal Cycle a section "Attendance in the Score" (include switch, the three weights, reliability and punctuality shares, penalty per deducted day, count paid leave as absent, what to do when there is no data, exempt grades as a Table MultiSelect of the new child `Appraisal Cycle Exempt Grade`); on Appraisal a collapsible "Attendance" section with the read-only score, reliability, punctuality, days deducted and a plain-words summary. Installed by patch `add_attendance_score_fields` and on fresh installs.
+- `attendance_score.py`: `apply_cycle_settings` (Appraisal Cycle validate: the three weights must total 100; writes `final_score_formula` from them), `build_formula`, `numbers_for_many` (one query each on Employee, Attendance, Attendance Deduction and Leave Type for any number of employees, holidays cached per holiday list), `score_for`, `compute` (Appraisal before_save and before_submit: snapshot the numbers, then redo `calculate_final_score` so the formula sees them), `precompute` (fills a per-request cache so generating 400 appraisals costs four queries, not 1,200) and `cycle_scoring` for the portal.
+- The Grace Group hook keeps its route-log logic and now gets its attendance figures from `attendance_numbers`. Its registration is unchanged; the new hook runs after it.
+- Portal (`performance_api.py`): `hr_create_cycle` and `save_cycle_wizard` no longer hard-code `goal_score`; they call the builder. `save_cycle_wizard` takes a `scoring` argument, applied only when the tenant has `attendance_scoring`. `get_cycle_config` and the appraisal payload return the scoring settings and the attendance fields; `hr_cycle_summary` adds the attendance score per row and an average per branch; `get_wizard_filter_options` returns the grades. Page: a "How the Score Is Built" step in the Appraisal Setup panel (shown when the plan flag is on) with three sliders, a live total and formula preview, and an advanced fold; a "Score breakdown" card on the appraisal page for employees and managers; an Attendance column and a by-branch card on the HR cycle board.
+- Tests: `hrms/hrms/alvoraa_hr_core/tests/test_attendance_score.py` (10 tests: formula from weights, weights must total 100, formula without attendance, the numbers, paid leave switch, score and penalty, snapshot on the appraisal and the final score using it, exempt grade, no-data rule, precompute cache). Stock `test_appraisal` and `test_appraisal_cycle` still pass with the hooks in place.
+
+Not done from the proposal: validating a hand-edited formula on cycle save. Frappe HR evaluates it with `safe_eval` at appraisal time and reports a clear error then; a parse check on the cycle is a small follow-up if HR asks for it.
 
 ---
 

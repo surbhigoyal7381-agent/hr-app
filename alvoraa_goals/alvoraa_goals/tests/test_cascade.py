@@ -62,6 +62,28 @@ class TestCascade(FrappeTestCase):
         self.assertEqual(report.status, "Misaligned")
         self.assertGreaterEqual(report.variance_pct, 5)
 
+    def test_cascade_alignment_counts_only_top_level_goals(self):
+        """A store goal split into two floor goals is one target, not three."""
+        from alvoraa_goals.controllers.cascade import run_alignment_check
+        cascade, goals = _setup_cascade_with_goals("TwoLevel", 1000, [1000])
+        for i, share in enumerate((600, 400)):
+            child = frappe.get_doc({
+                "doctype": "Individual Goal",
+                "employee": goals[0].employee,
+                "goal_name": f"Cascade Child Goal {i}",
+                "goal_cascade": cascade.name,
+                "parent_goal": goals[0].name,
+                "target_value": share,
+                "start_date": goals[0].start_date,
+                "end_date": goals[0].end_date,
+                "status": "Active",
+            })
+            child.insert(ignore_permissions=True)
+            child.submit()
+        report = run_alignment_check(cascade.name)
+        self.assertEqual(report.sum_division_targets, 1000)
+        self.assertEqual(report.status, "Aligned")
+
     def test_cascade_tree_structure(self):
         from alvoraa_goals.controllers.cascade import get_cascade_tree
         company = ensure_employee_prerequisites()

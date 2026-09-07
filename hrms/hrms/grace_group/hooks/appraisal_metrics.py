@@ -56,21 +56,15 @@ def fetch_metrics(doc, method=None):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _get_attendance_metrics(employee, start_date, end_date):
-    rows = frappe.db.get_all(
-        "Attendance",
-        filters={
-            "employee": employee,
-            "attendance_date": ["between", [start_date, end_date]],
-            "docstatus": 1,
-        },
-        fields=["status"],
-    )
-    total = len(rows)
-    present = sum(1 for r in rows if r.status in ("Present", "Work From Home", "Half Day"))
+    # The attendance arithmetic lives in the product now (Alvoraa HR Core);
+    # this keeps the Grace Group remarks block reading the same numbers.
+    from hrms.alvoraa_hr_core.attendance_score import attendance_numbers
+
+    n = attendance_numbers(employee, start_date, end_date)
     return {
-        "total_days": total,
-        "present_days": present,
-        "reliability_pct": round((present / total * 100), 2) if total else 0,
+        "total_days": n.scheduled_days,
+        "present_days": n.present_days,
+        "reliability_pct": n.reliability_pct or 0,
     }
 
 

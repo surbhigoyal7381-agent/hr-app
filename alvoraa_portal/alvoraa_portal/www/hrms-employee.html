@@ -3167,6 +3167,10 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
               Employee Fields
             </div>
+            <div class="aps-nav-item" id="apsn-scoring" onclick="apsShowItem('scoring')" style="display:none">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 15l4-5 4 3 5-7"/></svg>
+              How the Score Is Built
+            </div>
             <div class="aps-nav-item" id="apsn-select-emps" onclick="apsShowItem('select-emps')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
               Select Employees
@@ -8367,6 +8371,34 @@ function deleteDrawerNote(noteId, empId) {
     });
   };
 
+  /* "Score breakdown": the three weighted parts and the attendance figures
+     behind the final score, when the cycle includes attendance. */
+  function gpScoreBreakdown(ap, c) {
+    var sc = (c && c.scoring) || {};
+    if (!sc.include_attendance) return "";
+    function bar(lbl, weight, val) {
+      var v = parseFloat(val || 0);
+      var pct = Math.max(0, Math.min(100, Math.round(v / 5 * 100)));
+      return "<div style=\"display:grid;grid-template-columns:150px 1fr 60px;gap:10px;align-items:center;margin:6px 0\">" +
+        "<div style=\"font-size:13px\">" + lbl + " <span style=\"color:var(--text3)\">" + weight + "%</span></div>" +
+        "<div class=\"gp-score-meter\"><div class=\"gp-score-fill\" style=\"width:" + pct + "%\"></div></div>" +
+        "<div style=\"text-align:right;font-weight:700\">" + v.toFixed(2) + "</div></div>";
+    }
+    var att = [];
+    if (ap.attendance_reliability_pct != null) att.push("Reliability " + parseFloat(ap.attendance_reliability_pct).toFixed(1) + "%");
+    if (ap.attendance_punctuality_pct != null) att.push("Punctuality " + parseFloat(ap.attendance_punctuality_pct).toFixed(1) + "%");
+    if (parseFloat(ap.attendance_deduction_days || 0) > 0) att.push(parseFloat(ap.attendance_deduction_days) + " day(s) deducted by the late-coming rule");
+    return "<div class=\"card\" style=\"margin-bottom:16px\"><div class=\"card-body\">" +
+      "<div style=\"font-weight:700;margin-bottom:6px\">Score breakdown</div>" +
+      bar("Targets", sc.goal_weight, ap.total_score) +
+      bar("Manager feedback", sc.feedback_weight, ap.avg_feedback_score) +
+      bar("Attendance", sc.attendance_weight, ap.attendance_score) +
+      (att.length ? "<div style=\"font-size:12px;color:var(--text2);margin-top:8px\">" + gpEsc(att.join(" · ")) + "</div>" : "") +
+      (ap.attendance_summary ? "<div style=\"font-size:12px;color:var(--text3);margin-top:4px\">" + gpEsc(ap.attendance_summary) + "</div>"
+                             : "<div style=\"font-size:12px;color:var(--text3);margin-top:4px\">The attendance score is worked out when the appraisal is saved.</div>") +
+      "</div></div>";
+  }
+
   function gpLoadPerformance(appraisalName) {
     var body   = document.getElementById("gp-perf-body");
     var banner = document.getElementById("gp-perf-cycle-banner");
@@ -8503,7 +8535,7 @@ function deleteDrawerNote(noteId, empId) {
           "</div></div></div>";
       }
 
-      body.innerHTML = scoreHtml + kraHtml + selfHtml + reviewHtml;
+      body.innerHTML = scoreHtml + gpScoreBreakdown(ap, c) + kraHtml + selfHtml + reviewHtml;
     }).catch(function(e) {
       if (body) body.innerHTML = "<div class=\"callout callout-warn\">Failed to load appraisal: " + gpEsc(e.message) + "</div>";
     });
@@ -11221,6 +11253,7 @@ function deleteDrawerNote(noteId, empId) {
     if (!s.rows.length) {
       return "<div class=\"pf-card\">" + pfEmpty('No KPIs assigned in this cycle yet. Use "Assign KPI" to start.') + "</div>";
     }
+    var withAtt = !!(s.scoring && s.scoring.include_attendance);
     var rows = s.rows.map(function(r) {
       return "<tr>" +
         "<td style=\"font-weight:600\">" + gpEsc(r.employee_name) + "</td>" +
@@ -11230,6 +11263,7 @@ function deleteDrawerNote(noteId, empId) {
         "<td class=\"pf-num\">" + r.rated + " / " + r.kpi_count + "</td>" +
         "<td class=\"pf-num\">" + pfNum(r.avg_attainment) + "%</td>" +
         "<td>" + (r.appraisal ? gpEsc(r.appraisal) : "<span style=\"color:var(--text3)\">not generated</span>") + "</td>" +
+        (withAtt ? "<td class=\"pf-num\">" + (r.attendance_score != null ? pfNum(r.attendance_score, 2) : "—") + "</td>" : "") +
         "<td class=\"pf-num\">" + (r.submitted ? pfNum(r.final_score, 2) : "—") + "</td>" +
         "<td>" + (r.submitted
           ? "<span class=\"badge b-completed\">Submitted</span>"
@@ -11237,14 +11271,27 @@ function deleteDrawerNote(noteId, empId) {
       "</tr>";
     }).join("");
 
-    return "<div class=\"pf-card\">" +
+    var byBranch = "";
+    if (withAtt && s.attendance_by_branch && s.attendance_by_branch.length) {
+      byBranch = "<div class=\"pf-card\" style=\"margin-bottom:20px\">" +
+        "<div class=\"pf-card-hdr\"><div><div class=\"pf-card-name\">Attendance in the score, by branch</div>" +
+        "<div class=\"pf-card-meta\">Weights: targets " + s.scoring.goal_weight + "% · manager feedback " + s.scoring.feedback_weight + "% · attendance " + s.scoring.attendance_weight + "%</div></div></div>" +
+        "<div class=\"pf-scroll\"><table class=\"pf-table\"><thead><tr><th>Branch</th><th class=\"pf-num\">Appraisals</th>" +
+        "<th class=\"pf-num\">Avg attendance score</th><th class=\"pf-num\">Avg final score</th></tr></thead><tbody>" +
+        s.attendance_by_branch.map(function(b) {
+          return "<tr><td>" + gpEsc(b.branch) + "</td><td class=\"pf-num\">" + b.count + "</td>" +
+            "<td class=\"pf-num\">" + pfNum(b.avg_attendance, 2) + "</td><td class=\"pf-num\">" + pfNum(b.avg_final, 2) + "</td></tr>";
+        }).join("") + "</tbody></table></div></div>";
+    }
+
+    return byBranch + "<div class=\"pf-card\">" +
       "<div class=\"pf-card-hdr\"><div><div class=\"pf-card-name\">Cycle Progress</div>" +
       "<div class=\"pf-card-meta\">" + s.assigned + " employees with KPIs · " +
         s.with_appraisal + " appraisals generated · " + s.submitted + " submitted</div></div></div>" +
       "<div class=\"pf-scroll\"><table class=\"pf-table\"><thead><tr>" +
         "<th>Employee</th><th class=\"pf-num\">KPIs</th><th class=\"pf-num\">Weightage</th>" +
         "<th class=\"pf-num\">Rated</th><th class=\"pf-num\">Avg attain</th>" +
-        "<th>Appraisal</th><th class=\"pf-num\">Final</th><th>Status</th>" +
+        "<th>Appraisal</th>" + (withAtt ? "<th class=\"pf-num\">Attendance</th>" : "") + "<th class=\"pf-num\">Final</th><th>Status</th>" +
       "</tr></thead><tbody>" + rows + "</tbody></table></div></div>";
   }
 
@@ -13916,6 +13963,24 @@ function deleteDrawerNote(noteId, empId) {
     "manager-feedback": {label: "Manager's Feedback",           icon: "💬"},
   };
 
+  /* "How the score is built": the weights the cycle's final score formula is
+     built from. Attendance only counts when the tenant has that feature and
+     HR switches it on for the cycle. */
+  function apsDefaultScoring() {
+    return {include_attendance: 0, goal_weight: 50, feedback_weight: 30, attendance_weight: 20,
+            reliability_weight: 60, punctuality_weight: 40, deduction_penalty: 0.25,
+            count_paid_leave_as_absent: 0, when_no_data: "Use the average of the other parts",
+            exempt_grades: []};
+  }
+  function apsScoringSold() {
+    var f = window._features || {};
+    return !!f.plan_attendance_scoring;
+  }
+  function apsShowScoringNav() {
+    var el = document.getElementById("apsn-scoring");
+    if (el) el.style.display = apsScoringSold() ? "" : "none";
+  }
+
   var _aps = {
     item: "cycle-details",
     addedPages: [],
@@ -13924,6 +13989,7 @@ function deleteDrawerNote(noteId, empId) {
     empAll: [], empFilterOpts: null,
     cycleDetail: {name:"",desc:"",start:"",end:""},
     existingCycle: null,
+    scoring: apsDefaultScoring(),
   };
 
   window.apsOpenSetup = function(cycleId) {
@@ -13934,13 +14000,25 @@ function deleteDrawerNote(noteId, empId) {
       empAll:[], empFilterOpts:null,
       cycleDetail:{name:"",desc:"",start:"",end:""},
       existingCycle: cycleId || null,
+      scoring: apsDefaultScoring(),
     };
     /* Load rating scales so they're available in page settings */
     if (!_apsRatingScales.length) {
       pf("get_rating_scales", {}).then(function(s) { _apsRatingScales = s || []; });
     }
+    /* An existing cycle brings its own scoring settings */
+    if (cycleId) {
+      pf("get_cycle_config", {cycle: cycleId}).then(function(cfg) {
+        var sc = (cfg && cfg.scoring) || {};
+        if (sc.goal_weight || sc.feedback_weight || sc.attendance_weight) {
+          _aps.scoring = Object.assign(apsDefaultScoring(), sc);
+          if (_aps.item === "scoring") apsShowItem("scoring");
+        }
+      }).catch(function() {});
+    }
     switchPanel("appraisal-setup");
     apsRenderLeftNav();
+    apsShowScoringNav();
     apsShowItem("cycle-details");
   };
 
@@ -14038,12 +14116,14 @@ function deleteDrawerNote(noteId, empId) {
       empAll: [], empFilterOpts: null,
       cycleDetail: {name:"",desc:"",start:"",end:""},
       existingCycle: null,
+      scoring: Object.assign(apsDefaultScoring(), t.scoring || {}),
     };
     if (!_apsRatingScales.length) {
       pf("get_rating_scales", {}).then(function(s) { _apsRatingScales = s || []; });
     }
     switchPanel("appraisal-setup");
     apsRenderLeftNav();
+    apsShowScoringNav();
     apsShowItem("cycle-details");
   };
 
@@ -14088,6 +14168,8 @@ function deleteDrawerNote(noteId, empId) {
           if (el) fields[f] = el.checked;
         });
       _aps.empFields = fields;
+    } else if (cur === "scoring") {
+      _aps.scoring = apsCollectScoring();
     } else if (_APS_PAGES[cur]) {
       var ps = {};
       document.querySelectorAll("[data-aps-key]").forEach(function(el) {
@@ -14114,6 +14196,7 @@ function deleteDrawerNote(noteId, empId) {
     if (!panel) return;
     if (key === "cycle-details")   panel.innerHTML = apsHtmlCycleDetails();
     else if (key === "emp-fields") panel.innerHTML = apsHtmlEmpFields();
+    else if (key === "scoring")    { panel.innerHTML = apsHtmlScoring(); apsScoringRefresh(); }
     else if (key === "select-emps"){ panel.innerHTML = apsHtmlSelectEmps(); apsInitEmpFilter(); }
     else if (_APS_PAGES[key])      panel.innerHTML = apsHtmlPageSettings(key);
     /* Update cycle subtitle */
@@ -14139,6 +14222,145 @@ function deleteDrawerNote(noteId, empId) {
         '<div class="gp-field"><div class="gp-label">Start Date *</div><input class="gp-input" id="aps-cy-start" type="date" value="' + gpEsc(d.start) + '"></div>' +
         '<div class="gp-field"><div class="gp-label">End Date *</div><input class="gp-input" id="aps-cy-end" type="date" value="' + gpEsc(d.end) + '"></div>' +
       '</div>';
+  }
+
+  function apsHtmlScoring() {
+    var sc = _aps.scoring || apsDefaultScoring();
+    function slider(k, lbl, hint) {
+      return '<div class="aps-toggle-row" style="align-items:flex-start">' +
+        '<div class="aps-toggle-text" style="flex:1"><div class="aps-toggle-lbl">' + lbl + '</div>' +
+        '<div class="aps-toggle-hint">' + hint + '</div>' +
+        '<input type="range" min="0" max="100" step="5" id="aps-sc-' + k + '" value="' + gpEsc(String(sc[k] || 0)) + '" oninput="apsScoringRefresh()" style="width:100%;margin-top:6px"></div>' +
+        '<div style="width:56px;text-align:right;font-weight:700;font-size:16px" id="aps-sc-' + k + '-val">' + gpEsc(String(sc[k] || 0)) + '%</div>' +
+      '</div>';
+    }
+    function num(k, lbl, hint, step) {
+      return '<div class="gp-field"><div class="gp-label">' + lbl + '</div>' +
+        '<input class="gp-input" type="number" step="' + step + '" min="0" id="aps-sc-' + k + '" value="' + gpEsc(String(sc[k] == null ? "" : sc[k])) + '" oninput="apsScoringRefresh()" style="height:34px;padding:6px 10px">' +
+        (hint ? '<div class="gp-hint">' + hint + '</div>' : '') + '</div>';
+    }
+    var grades = (_aps.empFilterOpts && _aps.empFilterOpts.grades) || [];
+    var gradeHtml = grades.length
+      ? grades.map(function(g) {
+          var on = (sc.exempt_grades || []).indexOf(g) !== -1;
+          return '<label style="display:inline-flex;align-items:center;gap:6px;margin:0 14px 6px 0;font-size:13px">' +
+            '<input type="checkbox" class="aps-sc-grade" value="' + gpEsc(g) + '"' + (on ? ' checked' : '') + '> ' + gpEsc(g) + '</label>';
+        }).join('')
+      : '<div style="font-size:12px;color:var(--text3)" id="aps-sc-grades-empty">Loading grades…</div>';
+    return '<div class="aps-s-title">How the Score Is Built</div>' +
+      '<div class="aps-s-sub">Each appraisal\'s final score is a weighted mix of three parts. Move the sliders so they add up to 100.</div>' +
+      '<div class="aps-toggle-row">' +
+        '<div class="aps-toggle-text"><div class="aps-toggle-lbl">Include attendance</div>' +
+        '<div class="aps-toggle-hint">Score regularity and punctuality from the attendance records in the cycle window. Off means the score is targets and manager feedback only.</div></div>' +
+        '<label class="aps-sw"><input type="checkbox" id="aps-sc-include"' + (sc.include_attendance ? ' checked' : '') + ' onchange="apsScoringRefresh()"><span class="aps-sw-slider"></span></label>' +
+      '</div>' +
+      '<div class="aps-section-lbl">Weights</div>' +
+      slider("goal_weight", "Targets", "KPI and goal ratings given by the manager") +
+      slider("feedback_weight", "Manager feedback", "Ratings against the feedback criteria (core values, customer handling, teamwork)") +
+      '<div id="aps-sc-att-block">' + slider("attendance_weight", "Attendance", "Regularity and punctuality, with the late-coming rule\'s deductions") + '</div>' +
+      '<div id="aps-sc-total" style="font-size:13px;font-weight:600;margin:6px 0 4px"></div>' +
+      '<div id="aps-sc-formula" style="font-size:12px;color:var(--text3);font-family:monospace;margin-bottom:12px"></div>' +
+      '<details id="aps-sc-advanced" style="margin-top:8px"><summary style="cursor:pointer;font-size:13px;font-weight:600">Advanced: how the attendance score is worked out</summary>' +
+        '<div style="padding:10px 0 0">' +
+        '<div class="gp-row2">' +
+          num("reliability_weight", "Reliability share (%)", "Days present against days scheduled. Approved paid leave does not count against the employee.", "5") +
+          num("punctuality_weight", "Punctuality share (%)", "Days on time against days present. The two shares add up to 100.", "5") +
+        '</div>' +
+        '<div class="gp-row2">' +
+          num("deduction_penalty", "Penalty per deducted day", "Score points taken off for each day the late-coming rule deducted (0.25 = a quarter point).", "0.05") +
+          '<div class="gp-field"><div class="gp-label">When there is no attendance data</div>' +
+            '<select class="gp-input" id="aps-sc-when_no_data" style="height:34px;padding:6px 8px">' +
+              ["Use the average of the other parts", "Give full marks"].map(function(o) {
+                return '<option value="' + o + '"' + (sc.when_no_data === o ? ' selected' : '') + '>' + o + '</option>';
+              }).join('') +
+            '</select></div>' +
+        '</div>' +
+        '<div class="aps-toggle-row">' +
+          '<div class="aps-toggle-text"><div class="aps-toggle-lbl">Count paid leave as absent</div>' +
+          '<div class="aps-toggle-hint">Normally approved leave does not lower the score.</div></div>' +
+          '<label class="aps-sw"><input type="checkbox" id="aps-sc-count_paid_leave_as_absent"' + (sc.count_paid_leave_as_absent ? ' checked' : '') + '><span class="aps-sw-slider"></span></label>' +
+        '</div>' +
+        '<div class="gp-label" style="margin-top:8px">Exempt grades (full marks for attendance)</div>' +
+        '<div id="aps-sc-grades">' + gradeHtml + '</div>' +
+        '</div></details>';
+  }
+
+  window.apsScoringRefresh = function() {
+    var inc = document.getElementById("aps-sc-include");
+    if (!inc) return;
+    var on = inc.checked;
+    var attBlock = document.getElementById("aps-sc-att-block");
+    var adv = document.getElementById("aps-sc-advanced");
+    if (attBlock) attBlock.style.display = on ? "" : "none";
+    if (adv) adv.style.display = on ? "" : "none";
+    var keys = on ? ["goal_weight","feedback_weight","attendance_weight"] : ["goal_weight","feedback_weight"];
+    var total = 0, w = {};
+    keys.forEach(function(k) {
+      var el = document.getElementById("aps-sc-" + k);
+      var v = el ? parseFloat(el.value || 0) : 0;
+      w[k] = v; total += v;
+      var lbl = document.getElementById("aps-sc-" + k + "-val");
+      if (lbl) lbl.textContent = v + "%";
+    });
+    var totEl = document.getElementById("aps-sc-total");
+    if (totEl) {
+      var ok = Math.abs(total - 100) < 0.01;
+      totEl.style.color = ok ? "var(--green)" : "var(--amber)";
+      totEl.textContent = "Total " + total + "%" + (ok ? "" : " — must be 100");
+    }
+    var fEl = document.getElementById("aps-sc-formula");
+    if (fEl) {
+      fEl.textContent = on
+        ? "final = targets × " + (w.goal_weight / 100) + " + manager feedback × " + (w.feedback_weight / 100) + " + attendance × " + (w.attendance_weight / 100)
+        : (w.feedback_weight > 0 && Math.abs(w.goal_weight + w.feedback_weight - 100) < 0.01
+            ? "final = targets × " + (w.goal_weight / 100) + " + manager feedback × " + (w.feedback_weight / 100)
+            : "final = targets score");
+    }
+    /* grades arrive with the employee-filter options */
+    if (document.getElementById("aps-sc-grades-empty") && !_aps.empFilterOpts) {
+      pf("get_wizard_filter_options").then(function(opts) {
+        _aps.empFilterOpts = opts;
+        if (_aps.item === "scoring") { _aps.scoring = apsCollectScoring(); apsShowItem("scoring"); }
+      });
+    }
+  };
+
+  function apsCollectScoring() {
+    var sc = Object.assign({}, _aps.scoring || apsDefaultScoring());
+    function val(k, dflt) {
+      var el = document.getElementById("aps-sc-" + k);
+      if (!el) return dflt;
+      var v = parseFloat(el.value);
+      return isNaN(v) ? dflt : v;
+    }
+    var inc = document.getElementById("aps-sc-include");
+    if (!inc) return sc;
+    sc.include_attendance = inc.checked ? 1 : 0;
+    sc.goal_weight = val("goal_weight", sc.goal_weight);
+    sc.feedback_weight = val("feedback_weight", sc.feedback_weight);
+    sc.attendance_weight = val("attendance_weight", sc.attendance_weight);
+    sc.reliability_weight = val("reliability_weight", sc.reliability_weight);
+    sc.punctuality_weight = val("punctuality_weight", sc.punctuality_weight);
+    sc.deduction_penalty = val("deduction_penalty", sc.deduction_penalty);
+    var paid = document.getElementById("aps-sc-count_paid_leave_as_absent");
+    sc.count_paid_leave_as_absent = paid && paid.checked ? 1 : 0;
+    var when = document.getElementById("aps-sc-when_no_data");
+    if (when) sc.when_no_data = when.value;
+    var grades = [];
+    document.querySelectorAll(".aps-sc-grade:checked").forEach(function(el) { grades.push(el.value); });
+    if (document.querySelector(".aps-sc-grade")) sc.exempt_grades = grades;
+    return sc;
+  }
+
+  function apsScoringProblem() {
+    var sc = _aps.scoring || apsDefaultScoring();
+    if (!apsScoringSold()) return "";
+    if (sc.include_attendance) {
+      var total = (sc.goal_weight || 0) + (sc.feedback_weight || 0) + (sc.attendance_weight || 0);
+      if (Math.abs(total - 100) > 0.01) return "The targets, manager feedback and attendance weights add up to " + total + "%. They must add up to 100.";
+      if ((sc.reliability_weight || 0) + (sc.punctuality_weight || 0) <= 0) return "Give reliability or punctuality a share above zero.";
+    }
+    return "";
   }
 
   function apsHtmlEmpFields() {
@@ -14464,6 +14686,12 @@ function deleteDrawerNote(noteId, empId) {
       pfShowErr("aps-header-error", "Add at least one appraisal page before launching.");
       return;
     }
+    var scoringProblem = apsScoringProblem();
+    if (scoringProblem) {
+      apsShowItem("scoring");
+      pfShowErr("aps-header-error", scoringProblem);
+      return;
+    }
     var selected = _aps.empAll.filter(function(e) { return e._checked; }).map(function(e) { return e.name; });
     if (launch && !selected.length) {
       apsShowItem("select-emps");
@@ -14488,6 +14716,7 @@ function deleteDrawerNote(noteId, empId) {
       page_settings:      JSON.stringify(_aps.pageSettings),
       selected_employees: JSON.stringify(selected),
       existing_cycle:     _aps.existingCycle || null,
+      scoring:            apsScoringSold() ? JSON.stringify(_aps.scoring) : null,
     }).then(function(r) {
       _aps.existingCycle = r.name;
       if (btn) { btn.disabled = false; btn.textContent = "Launch Cycle"; }

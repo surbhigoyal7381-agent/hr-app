@@ -70,7 +70,7 @@ Goal Cascade: Q2 FY27 Company Sales — 5,800 lakh
 
 Every goal has `parent_goal` set, `goal_type` Business, `weightage` 0 (the KPI carries the weight, the goal carries the cascade), `company_value` = Customer Delight, and `goal_cascade` set on every level, which is what the portal itself does when a child goal is created under a parent.
 
-**Bug found while testing:** the **Cascade Alignment Report** sums the targets of *every* goal on the cascade, so a three-level tree reports a variance of about 200% and "Misaligned", even though the five store targets add up exactly to the company target. The check should sum only top-level goals (those with no `parent_goal`). It is a two-line fix in `alvoraa_goals/controllers/cascade.py` and is listed in file 10. Until it lands, do not open the alignment report in the demo; the cascade's own progress figure is correct.
+**Bug found while testing:** the **Cascade Alignment Report** sums the targets of *every* goal on the cascade, so a three-level tree reports a variance of about 200% and "Misaligned", even though the five store targets add up exactly to the company target. The check should sum only top-level goals (those with no `parent_goal`). **Fixed 2026-09-07** in `alvoraa_goals/controllers/cascade.py` (only goals with no `parent_goal` are summed) with a two-level test in `alvoraa_goals/tests/test_cascade.py`; the alignment report can be shown in the demo.
 
 Goal progress comes from **Goal Evidence** rows (Manual Entry, value = monthly sales in lakh, approved by the Floor Manager). Seed July and August evidence for every salesperson from `sales_actuals_july.csv` (August = July × a small random factor). Store and floor goals roll up by the hourly job; run `recalculate_progress` once after seeding.
 
@@ -113,6 +113,8 @@ Worked example, PPJ-0054, Q2 to 6 September: scheduled 58, absent 0, LWP 0 → r
 
 ## 8. Build B6: generalise the attendance hook and make it configurable
 
+**Status: built and tested 2026-09-07 (file 10, B6).** Module **Alvoraa HR Core** (`hrms/hrms/alvoraa_hr_core`), opt-in feature key `attendance_scoring`. Two things differ from the text below: the numbers come from the submitted Attendance rows only (On Leave rows whose leave type is loss-of-pay count as loss of pay; the Leave Ledger is not read), and "weight redistributed" is done by giving the attendance part the average of the other two parts, which is the same thing without changing the formula per employee. The demo's Q1 window (April to June) has no attendance records, so Q1 appraisals use that rule; the Q2 drafts carry real numbers.
+
 ### 8.1 What exists
 
 `hrms/hrms/grace_group/hooks/appraisal_metrics.py` runs on `Appraisal.before_save`. It returns early unless the employee's designation is "Delivery Executive", computes a reliability percentage, reads a client-specific `Daily Route Log`, writes a text block into `Appraisal.remarks`, and pushes numbers into `Appraisal KRA.goal_completion` by matching KRA titles. It is a client hack, not a feature.
@@ -154,6 +156,8 @@ Move the Grace Group hook to call the new function for its attendance part and k
 - Q1 cycle: every submitted Appraisal has `attendance_score` between 0 and 5 and `final_score = 0.5 × total_score + 0.3 × avg_feedback_score + 0.2 × attendance_score` to two decimals.
 - Changing the weights on the Q2 cycle and re-saving one Draft appraisal changes its final score accordingly.
 - An exempt-grade employee (Owner) shows attendance score 5.0 with the "exempt" note.
+
+Verified on the local demo site 2026-09-07 after reseeding block 8: all 403 submitted Q1 appraisals satisfy the formula to two decimals (Q1 has no attendance records, so each attendance score is the average of the other two parts, 3.46 to 5.0). Q2 drafts: 392 with real numbers, 11 exempt (grades G5 and G6). PPJ-0054: 58 present days, late twice, 0.5 day deducted → 4.81. PPJ-0058: late 11 times, 3.5 days deducted → 3.75. Owner: "Exempt from attendance scoring (grade G6 Leadership): full marks." Average attendance score per branch 4.62 to 4.71. The "scheduled" figure counts the whole cycle window, so a draft looked at mid-cycle shows fewer present days than scheduled; days that have not happened yet are not absences.
 
 ## 9. Manager feedback, potential and overall rating
 

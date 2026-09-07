@@ -15,7 +15,7 @@ see alvoraa_goals.permissions for the row-level rules applied to KPI queries.
 """
 
 import frappe
-from frappe.utils import flt, today, getdate
+from frappe.utils import cint, flt, today, getdate
 from alvoraa_goals.permissions import get_effective_manager
 
 from alvoraa_goals.controllers.kpi import MAX_RATING, TOTAL_WEIGHTAGE, rating_from_attainment
@@ -455,6 +455,7 @@ def _appraisal_payload(emp_id, cycle):
     )
     if cycle_doc:
         _serialise_dates(cycle_doc, "start_date", "end_date")
+        cycle_doc["scoring"] = _cycle_scoring(cycle)
 
     if not names:
         return {"cycle": cycle_doc, "appraisal": None}
@@ -471,6 +472,11 @@ def _appraisal_payload(emp_id, cycle):
             "self_score":   flt(ap.self_score),
             "avg_feedback_score": flt(ap.avg_feedback_score),
             "final_score":  flt(ap.final_score),
+            "attendance_score": flt(ap.get("attendance_score")),
+            "attendance_reliability_pct": ap.get("attendance_reliability_pct"),
+            "attendance_punctuality_pct": ap.get("attendance_punctuality_pct"),
+            "attendance_deduction_days": flt(ap.get("attendance_deduction_days")),
+            "attendance_summary": ap.get("attendance_summary") or "",
             "reflections":  ap.reflections or "",
             "remarks":      ap.remarks or "",
             "goals": [
@@ -1166,6 +1172,54 @@ def hr_get_setup():
     }
 
 
+def _build_formula(cycle):
+    """The cycle's own weights decide the formula. Until attendance is switched
+    on for a cycle this is "goal_score", which is what the portal always wrote."""
+    from hrms.alvoraa_hr_core.attendance_score import build_formula
+    return build_formula(cycle)
+
+
+def _apply_scoring(cycle, scoring):
+    """Copy the wizard's "How the score is built" step onto the Appraisal Cycle.
+    Ignored unless the tenant has the attendance-scoring feature."""
+    import json
+    if not scoring:
+        return
+    from alvoraa_portal.subscription import has_feature
+    if not has_feature("attendance_scoring"):
+        return
+    if isinstance(scoring, str):
+        scoring = json.loads(scoring or "{}")
+    cycle.include_attendance_score = cint(scoring.get("include_attendance"))
+    for src, dst in (
+        ("goal_weight", "goal_weight"),
+        ("feedback_weight", "feedback_weight"),
+        ("attendance_weight", "attendance_weight"),
+        ("reliability_weight", "attendance_reliability_weight"),
+        ("punctuality_weight", "attendance_punctuality_weight"),
+        ("deduction_penalty", "attendance_deduction_penalty"),
+    ):
+        if scoring.get(src) not in (None, ""):
+            cycle.set(dst, flt(scoring.get(src)))
+    cycle.count_paid_leave_as_absent = cint(scoring.get("count_paid_leave_as_absent"))
+    if scoring.get("when_no_data"):
+        cycle.attendance_when_no_data = scoring.get("when_no_data")
+    cycle.set("attendance_exempt_grades",
+              [{"employee_grade": g} for g in (scoring.get("exempt_grades") or []) if g])
+
+
+def _precompute_attendance(cycle, employees):
+    """One pass over attendance for every employee about to get an appraisal,
+    so the save hook does not query per employee."""
+    from hrms.alvoraa_hr_core.attendance_score import precompute
+    precompute(cycle, list(employees))
+
+
+def _cycle_scoring(cycle):
+    from hrms.alvoraa_hr_core.attendance_score import cycle_scoring
+    return cycle_scoring(cycle)
+
+
 @frappe.whitelist()
 def hr_create_cycle(cycle_name, start_date, end_date, description=""):
     """Create a review cycle set up for KPI-based manual scoring."""
@@ -1192,7 +1246,7 @@ def hr_create_cycle(cycle_name, start_date, end_date, description=""):
     # behind the other two terms, so averaging in two structural zeros would cut
     # every final score to a third of what was actually awarded.
     cycle.calculate_final_score_based_on_formula = 1
-    cycle.final_score_formula = "goal_score"
+    cycle.final_score_formula = _build_formula(cycle)
     cycle.status = "Not Started"
     cycle.insert(ignore_permissions=True)
     frappe.db.commit()
@@ -1214,7 +1268,9 @@ def get_wizard_filter_options():
         "AND e.status='Active' ORDER BY e.employee_name",
         as_dict=True,
     )
-    return {"departments": departments, "designations": designations, "managers": managers}
+    grades = frappe.get_all("Employee Grade", pluck="name", order_by="name")
+    return {"departments": departments, "designations": designations, "managers": managers,
+            "grades": grades}
 
 
 @frappe.whitelist()
@@ -1250,7 +1306,8 @@ def get_filterable_employees(department=None, manager=None, designation=None,
 @frappe.whitelist()
 def save_cycle_wizard(cycle_name, start_date, end_date,
                       description="", employee_fields=None, page_config=None,
-                      page_settings=None, selected_employees=None, existing_cycle=None):
+                      page_settings=None, selected_employees=None, existing_cycle=None,
+                      scoring=None):
     """Create a new Appraisal Cycle via the setup wizard and persist its configuration."""
     import json
     _require_hr()
@@ -1265,6 +1322,7 @@ def save_cycle_wizard(cycle_name, start_date, end_date,
         cycle.start_date = start_date
         cycle.end_date = end_date
         cycle.description = description
+        _apply_scoring(cycle, scoring)
         cycle.save(ignore_permissions=True)
     else:
         if frappe.db.exists("Appraisal Cycle", cycle_name):
@@ -1277,7 +1335,8 @@ def save_cycle_wizard(cycle_name, start_date, end_date,
         cycle.description = description
         cycle.kra_evaluation_method = "Manual Rating"
         cycle.calculate_final_score_based_on_formula = 1
-        cycle.final_score_formula = "goal_score"
+        _apply_scoring(cycle, scoring)
+        cycle.final_score_formula = _build_formula(cycle)
         cycle.status = "Not Started"
         cycle.insert(ignore_permissions=True)
 
@@ -1314,6 +1373,7 @@ def save_cycle_wizard(cycle_name, start_date, end_date,
     # Create Appraisal + Alvoraa Appraisal Extension for each selected employee
     created = 0
     skipped = 0
+    _precompute_attendance(cycle, emp_list)
 
     for emp_id in emp_list:
         existing = frappe.db.get_value(
@@ -1354,8 +1414,10 @@ def get_cycle_config(cycle):
     """Return the wizard configuration for a cycle."""
     import json
     _require_hr()
+    scoring = _cycle_scoring(cycle) if frappe.db.exists("Appraisal Cycle", cycle) else {}
     if not frappe.db.exists("Alvoraa Cycle Config", cycle):
-        return {"employee_fields": {}, "page_config": {}, "page_settings": {}, "description": ""}
+        return {"employee_fields": {}, "page_config": {}, "page_settings": {}, "description": "",
+                "scoring": scoring}
     cfg = frappe.get_doc("Alvoraa Cycle Config", cycle)
     def _parse(val):
         try:
@@ -1367,6 +1429,7 @@ def get_cycle_config(cycle):
         "employee_fields": _parse(cfg.employee_fields),
         "page_config":    _parse(cfg.page_config),
         "page_settings":  _parse(cfg.page_settings),
+        "scoring":        scoring,
     }
 
 
@@ -2055,6 +2118,7 @@ def hr_generate_appraisals(cycle, attach_ongoing=1):
 
     created, skipped, existing = [], [], []
     company = _default_company()
+    _precompute_attendance(cycle_doc, employees)
 
     for idx, emp_id in enumerate(sorted(employees)):
         emp_name = frappe.db.get_value("Employee", emp_id, "employee_name") or emp_id
@@ -2129,7 +2193,8 @@ def hr_cycle_summary(cycle):
         for a in frappe.get_all(
             "Appraisal",
             filters={"appraisal_cycle": cycle, "docstatus": ["!=", 2]},
-            fields=["name", "employee", "docstatus", "total_score", "final_score"],
+            fields=["name", "employee", "docstatus", "total_score", "final_score",
+                    "attendance_score", "attendance_summary"],
         )
     }
 
@@ -2156,16 +2221,41 @@ def hr_cycle_summary(cycle):
         e["appraisal"] = ap["name"] if ap else ""
         e["submitted"] = bool(ap and ap["docstatus"] == 1)
         e["final_score"] = flt(ap["final_score"]) if ap else 0
+        e["attendance_score"] = flt(ap["attendance_score"]) if ap and ap.get("attendance_summary") else None
         rows.append(e)
 
     rows.sort(key=lambda r: r["employee_name"] or "")
+    scoring = _cycle_scoring(cycle)
     return {
         "cycle": cycle,
         "rows": rows,
+        "scoring": scoring,
+        "attendance_by_branch": _attendance_by_branch(appraisals) if scoring.get("include_attendance") else [],
         "assigned": len(rows),
         "with_appraisal": sum(1 for r in rows if r["appraisal"]),
         "submitted": sum(1 for r in rows if r["submitted"]),
     }
+
+
+def _attendance_by_branch(appraisals):
+    """Average attendance and final score per branch, for the HR cycle board."""
+    scored = {emp: ap for emp, ap in appraisals.items() if ap.get("attendance_summary")}
+    if not scored:
+        return []
+    branch_of = dict(frappe.get_all("Employee", filters={"name": ["in", list(scored)]},
+                                    fields=["name", "branch"], as_list=True))
+    groups = {}
+    for emp, ap in scored.items():
+        g = groups.setdefault(branch_of.get(emp) or "No branch", {"count": 0, "attendance": 0.0, "final": 0.0})
+        g["count"] += 1
+        g["attendance"] += flt(ap["attendance_score"])
+        g["final"] += flt(ap["final_score"])
+    return sorted(
+        [{"branch": b, "count": g["count"],
+          "avg_attendance": flt(g["attendance"] / g["count"], 2),
+          "avg_final": flt(g["final"] / g["count"], 2)} for b, g in groups.items()],
+        key=lambda r: r["branch"],
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════

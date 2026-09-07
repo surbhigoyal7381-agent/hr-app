@@ -88,10 +88,10 @@ Every step below runs on the **ppj tenant**, never on `dev.alvoraa.co`.
 ## Block 8 — Performance (file 09)
 
 - [ ] 5 Company Values, Alvoraa Rating Scale "PPJ 5-Point" (default), 3 Leadership Principles, 7 Employee Feedback Criteria, Appraisal Template "PPJ Standard".
-- [ ] HR portal → cycle wizard: create "Q1 FY27 Performance Cycle" (Apr–Jun) and "Q2 FY27 Performance Cycle" (Jul–Sep), all 400 employees. **(build B6)** tick `attendance_scoring` for the ppj tenant in the console, then set weights 50 / 30 / 20 in the wizard; without B6, set `final_score_formula` on the cycle by hand to `goal_score * 0.5 + average_feedback_score * 0.3 + self_appraisal_score * 0.2` and say attendance is coming.
+- [ ] HR portal → cycle wizard: create "Q1 FY27 Performance Cycle" (Apr–Jun) and "Q2 FY27 Performance Cycle" (Jul–Sep), all 400 employees. **(build B6)** tick `attendance_scoring` for the ppj tenant in the console, then in the wizard step "How the Score Is Built" switch attendance on and set 50 / 30 / 20 (the seed does the same through the cycle fields; the cycle writes the formula itself).
 - [ ] Goal Cascades for Q1 and Q2 with the store → floor → individual tree from `data/sales_targets.csv` (console script; 5 + 15 + 190 goals per quarter).
 - [ ] KPIs for all 400 for both quarters from `data/kpi_library.csv` (console script; generic 3-KPI set for roles not in the library). Q1: actuals and manager ratings filled; Q2: July and August progress logs from `data/sales_actuals_july.csv`.
-- [ ] Goal Evidence for July and August on every "Own sales" goal; run `recalculate_progress`. (The alignment check reads Misaligned on a multi-level cascade until the fix in file 10 lands; skip it in the demo.)
+- [ ] Goal Evidence for July and August on every "Own sales" goal; run `recalculate_progress`. Run the alignment check on both cascades: Aligned (fixed in file 10).
 - [ ] Q1: Employee Performance Feedback per employee (submitted), potential ratings on KPIs, overall ratings on the extensions, generate and submit all 400 appraisals, calibration adjustments for 6 employees, calibration sign-off, cycle status Completed.
 - [ ] Q2: generate 400 Draft appraisals; manager ratings on ~150 KPIs; leave PPJ-0054 unrated for the live demo.
 - [ ] Upward Feedback from ~60 store staff for Q1.
@@ -117,7 +117,7 @@ The whole suite was run end to end on a bench built like the production image (F
 | Onboarding | Onboarding In Process (11 of 12 tasks closed, the 30-day check-in open), Employee PPJ-0401 created through it, 3 training events, 1 result, 3 feedback records |
 | Performance | Q1 Completed with 403 submitted appraisals and 1,755 rated KPIs; Q2 In Progress with 403 drafts and 596 of 1,755 KPIs rated; 424 goals; cascade progress Q1 105%, Q2 71% to date; PPJ-0054 Q1 final score 4.56 (goal 4.6, feedback 4.36, self 4.76), High Potential; 62 upward feedback records |
 
-Two product bugs surfaced and are written up in file 10: the regional override wrapper (B0, blocks payroll for taxpayers; the local run used the three-line fix) and the cascade alignment report (reads Misaligned on any multi-level cascade). Three quirks are handled inside the seeds and noted in files 02, 03 and 07.
+Two product bugs surfaced and are written up in file 10: the regional override wrapper (B0, blocks payroll for taxpayers; the local run used the three-line fix) and the cascade alignment report (read Misaligned on any multi-level cascade; fixed with build B6). Three quirks are handled inside the seeds and noted in files 02, 03 and 07.
 
 Run time on a 4-core box: Block 3 about 30 minutes (auto attendance), Block 4 about 8 minutes, Block 8 about 5 minutes, the rest under a minute each. The site needs a running background worker; without one, Frappe refuses new jobs after a few hundred queue up.
 

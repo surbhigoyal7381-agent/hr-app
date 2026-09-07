@@ -89,3 +89,28 @@ class TestEveryAdminCallResolves(FrappeTestCase):
 		             "alvoraa_portal.invoicing.invoice_run_summary",
 		             "alvoraa_portal.invoicing.raise_invoices"):
 			self.assertIn(path, called)
+
+
+class TestTheTenantPageIsWired(FrappeTestCase):
+	"""One page per tenant, gathering what lives in six places.
+
+	The call is built as a string with a query parameter on it, so the regex
+	that finds admin calls has to cope with that shape - and if it ever stops
+	matching, the check above silently stops covering this page.
+	"""
+
+	def test_it_calls_the_detail_api(self):
+		self.assertIn("alvoraa_portal.tenant_api.get_tenant_detail", _called_paths())
+
+	def test_the_page_can_open_a_tenant(self):
+		page = _page()
+		self.assertIn("window.openTenant", page)
+		self.assertIn('id="view-tenant"', page)
+
+	def test_every_section_it_renders_has_a_renderer(self):
+		"""A missing one is a blank panel with no error, which reads as 'this
+		tenant has nothing' rather than 'this page is broken'."""
+		page = _page()
+		for fn in ("tdHeader", "tdHealth", "tdPlan", "tdUsage", "tdInvoices",
+		           "tdFeatures"):
+			self.assertEqual(page.count("function " + fn), 1, fn)

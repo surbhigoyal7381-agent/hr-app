@@ -444,6 +444,36 @@ html, body {
   .ka-pill.stop  { background:var(--red-lt);   color:#b91c1c; }
 
   .ka-why { font-size:.78rem; color:var(--ink2); }
+  /* ── Tenant detail ─────────────────────────────────────────── */
+  #ka-td-back { background:none; border:0; color:var(--ink2); font:inherit;
+                font-size:.83rem; cursor:pointer; padding:0; margin-bottom:10px; }
+  #ka-td-back:hover { color:var(--ink0); }
+  .ka-td-hdr { display:flex; align-items:center; gap:12px; margin-bottom:18px; flex-wrap:wrap; }
+  .ka-td-hdr h2 { margin:0; font-size:1.2rem; font-weight:650; color:var(--ink0); }
+  .ka-td-hdr .site { font-size:.82rem; color:var(--ink2); }
+
+  .ka-td-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+                gap:14px; margin-bottom:16px; align-items:start; }
+  .ka-panel { background:var(--surface); border:1px solid var(--border);
+              border-radius:var(--radius); padding:14px 16px; box-shadow:var(--shadow-sm); }
+  .ka-panel h3 { margin:0 0 10px; font-size:.78rem; letter-spacing:.05em;
+                 text-transform:uppercase; color:var(--ink3); font-weight:600; }
+  .ka-kv { display:flex; justify-content:space-between; gap:12px; padding:5px 0;
+           font-size:.86rem; border-bottom:1px solid var(--border); }
+  .ka-kv:last-child { border-bottom:0; }
+  .ka-kv .k { color:var(--ink2); }
+  .ka-kv .v { color:var(--ink0); font-weight:550; text-align:right;
+              font-variant-numeric:tabular-nums; }
+  .ka-panel .none { font-size:.83rem; color:var(--ink3); }
+
+  .ka-feat { display:flex; align-items:center; gap:8px; padding:5px 0; font-size:.85rem;
+             border-bottom:1px solid var(--border); }
+  .ka-feat:last-child { border-bottom:0; }
+  .ka-feat .nm { flex:1; color:var(--ink1); }
+  .ka-dot { width:8px; height:8px; border-radius:50%; flex:none; }
+  .ka-dot.on  { background:var(--green); }
+  .ka-dot.off { background:var(--border2); }
+
   .ka-bill-empty { padding:28px; text-align:center; color:var(--ink3); font-size:.85rem; }
 </style>
 </head>
@@ -554,6 +584,12 @@ html, body {
           <button class="ka-btn ka-btn-ghost" onclick="loadJobs()">&#x21BB; Refresh</button>
         </div>
         <div id="ka-jobs-list"><p style="color:var(--ink3);font-size:.83rem">Loading&hellip;</p></div>
+      </div>
+
+      <!-- One tenant -->
+      <div id="view-tenant" style="display:none">
+        <button id="ka-td-back" onclick="showView('tenants')">&larr; All tenants</button>
+        <div id="ka-td-body"></div>
       </div>
 
       <!-- Billing view -->
@@ -1043,6 +1079,9 @@ html, body {
       + '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 1 0 20 14.5 14.5 0 0 1 0-20"/><path d="M2 12h20"/></svg>'
       + ' ' + esc(hostUrl) + '</a></div>'
       + '<div class="ka-card-actions">'
+      + (!isProvisioning
+          ? '<button class="ka-action-btn" onclick="openTenant(\'' + esc(t.site_name) + '\')">Open</button>'
+          : '')
       + portalBtn
       + adminBtn
       + editBtn
@@ -1392,14 +1431,169 @@ html, body {
   var KA_VIEWS = { tenants: 'Tenants', jobs: 'Provision Jobs', billing: 'Billing' };
 
   window.showView = function(view) {
+    // The nav has three entries; 'tenant' is a fourth view reached by opening a
+    // card. It highlights Tenants, because that is where Back goes.
+    var navFor = (view === 'tenant') ? 'tenants' : view;
     Object.keys(KA_VIEWS).forEach(function(v) {
       document.getElementById('view-' + v).style.display = (v === view) ? '' : 'none';
-      document.getElementById('nav-' + v).classList.toggle('active', v === view);
+      document.getElementById('nav-' + v).classList.toggle('active', v === navFor);
     });
-    document.getElementById('ka-view-title').textContent = KA_VIEWS[view] || 'Tenants';
+    document.getElementById('view-tenant').style.display = (view === 'tenant') ? '' : 'none';
+    document.getElementById('ka-view-title').textContent =
+      (view === 'tenant') ? 'Tenant' : (KA_VIEWS[view] || 'Tenants');
     if (view === 'jobs')    loadJobs();
     if (view === 'billing') loadBilling();
   };
+
+  /* ── One tenant, everything in one place ──────────────────────
+     Health, usage, plan, cost, invoices and which features are on.
+     It lives in six places today and nobody holds all six in their
+     head during a support call.
+
+     Every section renders on its own. A control plane that has not
+     been through billing setup, or a tenant with no subscription,
+     must still open - a page that refuses to load because one part
+     is missing tells you nothing about the other five.
+  */
+  window.openTenant = async function(site) {
+    showView('tenant');
+    var body = document.getElementById('ka-td-body');
+    body.innerHTML = '<p class="ka-bill-note">Loading&hellip;</p>';
+    var d;
+    try {
+      d = await api('alvoraa_portal.tenant_api.get_tenant_detail?site_name='
+                    + encodeURIComponent(site));
+    } catch (e) {
+      body.innerHTML = '<p class="ka-why">Could not open ' + esc(site) + ': '
+                     + esc(e.message || e) + '</p>';
+      return;
+    }
+    body.innerHTML =
+      tdHeader(d) + '<div class="ka-td-grid">'
+      + tdHealth(d.health) + tdPlan(d) + tdUsage(d.usage, d.estimate)
+      + tdInvoices(d.invoices) + tdFeatures(d.features) + '</div>'
+      + (d.problems && d.problems.length
+          ? '<p class="ka-why">Some parts could not be read: '
+            + esc(d.problems.join('; ')) + '</p>' : '');
+  };
+
+  function kv(k, v) {
+    return '<div class="ka-kv"><span class="k">' + k + '</span>'
+         + '<span class="v">' + v + '</span></div>';
+  }
+
+  function tdHeader(d) {
+    var t = d.tenant || {};
+    return '<div class="ka-td-hdr">'
+      + '<h2>' + esc(t.tenant_name || t.site_name) + '</h2>'
+      + '<span class="site">' + esc(t.site_name) + '</span>'
+      + '<a class="ka-action-btn" href="' + esc(t.host_name || '')
+      + '/app" target="_blank">Open desk</a>'
+      + '<button class="ka-action-btn" onclick="openEditModal(\''
+      + esc(t.site_name) + '\')">Edit modules</button>'
+      + '</div>';
+  }
+
+  function tdHealth(h) {
+    var body;
+    if (!h) {
+      body = '<p class="none">Never checked. The daily job has not run for this '
+           + 'tenant yet &mdash; a tenant missing from a health report looks '
+           + 'exactly like a healthy one.</p>';
+    } else if (!h.ok) {
+      body = '<p class="ka-why"><strong>Did not answer.</strong> '
+           + esc(h.error || '') + '</p>' + kv('Checked', esc(h.on_date));
+    } else {
+      var stalled = h.scheduler_enabled && h.hours_since_job > 6;
+      body = kv('Errors, last 24h', h.errors_24h)
+           + kv('Errors, last 7 days', h.errors_7d)
+           + kv('Different kinds', h.distinct_kinds)
+           + kv('Background work', h.scheduler_enabled
+                ? (stalled ? '<span class="ka-pill wait">stalled ' + h.hours_since_job + 'h</span>'
+                           : '<span class="ka-pill ok">running</span>')
+                : '<span class="ka-pill stop">off</span>')
+           + kv('Checked', esc(h.on_date));
+      if (h.top_errors && h.top_errors.length) {
+        body += '<h3 style="margin-top:12px">What is going wrong</h3>'
+             + h.top_errors.slice(0, 5).map(function(e) {
+                 return kv(esc(e.title), e.count);
+               }).join('');
+      }
+    }
+    return '<div class="ka-panel"><h3>Health</h3>' + body + '</div>';
+  }
+
+  function tdPlan(d) {
+    var s = d.subscription;
+    if (!s) return '<div class="ka-panel"><h3>Subscription</h3>'
+                 + '<p class="none">No subscription. This tenant cannot be '
+                 + 'invoiced until one exists.</p></div>';
+    return '<div class="ka-panel"><h3>Subscription</h3>'
+      + kv('Status', '<span class="ka-pill ' + (s.status === 'Internal' ? 'ours' : 'ok')
+                     + '">' + esc(s.status) + '</span>')
+      + kv('Plan', esc(s.plan || '\u2014'))
+      + kv('Customer', esc(s.customer || '\u2014'))
+      + kv('Billing', esc(s.billing_frequency || '\u2014'))
+      + kv('Add-ons', (s.addons || []).length)
+      + kv('Packs', (s.packs || []).length)
+      + '</div>';
+  }
+
+  function tdUsage(u, e) {
+    var body = '';
+    if (u) {
+      body += kv('Billable employees', u.billable_employees)
+            + kv('Employee records', u.total_employees)
+            + kv('Counted for', esc(u.period));
+    } else {
+      body += '<p class="none">Not counted yet for last month.</p>';
+    }
+    if (e) {
+      body += kv('Due', e.complete ? rupees(e.totals.due_this_period)
+                                   : '<span class="ka-why">blocked</span>');
+      if (!e.complete) {
+        body += '<p class="ka-why">' + esc((e.why_not || []).join('; ')) + '</p>';
+      } else if (!e.will_be_invoiced) {
+        body += '<p class="ka-why">Ours &mdash; priced, never invoiced.</p>';
+      }
+    }
+    return '<div class="ka-panel"><h3>Usage &amp; cost</h3>' + body + '</div>';
+  }
+
+  function tdInvoices(list) {
+    if (!list || !list.length) {
+      return '<div class="ka-panel"><h3>Invoices</h3>'
+           + '<p class="none">None raised yet.</p></div>';
+    }
+    return '<div class="ka-panel"><h3>Invoices</h3>'
+      + list.map(function(i) {
+          return kv(esc(i.period) + ' <span class="ka-pill '
+                    + (i.state === 'sent' ? 'ok' : i.state === 'cancelled' ? 'stop' : 'wait')
+                    + '">' + esc(i.state) + '</span>',
+                    '<a href="/app/sales-invoice/' + encodeURIComponent(i.invoice)
+                    + '" target="_blank">' + rupees(i.amount) + '</a>');
+        }).join('')
+      + '</div>';
+  }
+
+  function tdFeatures(list) {
+    if (!list || !list.length) return '';
+    var on  = list.filter(function(f) { return f.on; });
+    var off = list.filter(function(f) { return !f.on; });
+    function row(f) {
+      return '<div class="ka-feat"><span class="ka-dot ' + (f.on ? 'on' : 'off') + '"></span>'
+           + '<span class="nm">' + esc(f.label) + '</span>'
+           + (f.required ? '<span class="ka-pill ours">always on</span>' : '')
+           + (f.opt_in ? '<span class="ka-pill wait">opt in</span>' : '')
+           + '</div>';
+    }
+    return '<div class="ka-panel" style="grid-column:1/-1"><h3>Features &mdash; '
+      + on.length + ' on, ' + off.length + ' off</h3>'
+      + on.map(row).join('') + off.map(row).join('')
+      + '<p class="ka-why" style="margin-top:10px">Use <strong>Edit modules</strong> '
+      + 'above to change these. A feature marked <em>opt in</em> is off everywhere '
+      + 'until somebody switches it on for a named tenant.</p></div>';
+  }
 
   /* ── Billing ──────────────────────────────────────────────────
      Reads two calls and shows them as one table: what each tenant

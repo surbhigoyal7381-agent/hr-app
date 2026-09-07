@@ -336,7 +336,9 @@ log("Q1 appraisals")
 
 def manager_of(emp):
     rep = by_id[emp].reports_to if emp in by_id else None
-    return rep or OWNER.name
+    if not rep or rep == emp:
+        return HR_HEAD.name          # the Owner has no manager; HR reviews the Owner's appraisal
+    return rep
 
 
 def stars(x):

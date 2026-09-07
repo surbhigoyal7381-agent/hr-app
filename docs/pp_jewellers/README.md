@@ -1,7 +1,7 @@
 # PP Jewellers — Demo Specification (index)
 
 **Client:** PP Jewellers Pvt Ltd — 5 jewellery stores (Chandigarh, Ambala, Noida, Delhi Karol Bagh, Delhi South Extension) and one head office in Chandigarh. 400 employees.
-**Purpose:** a complete, step-by-step specification that Cowork can follow to build the PP Jewellers demo on `dev.alvoraa.co`.
+**Purpose:** a complete, step-by-step specification that Cowork can follow to build the PP Jewellers demo on a **new demo tenant, `ppj.dev.alvoraa.co`**, on the Enterprise plan.
 **Written:** 2026-09-07. Fiscal year April to March. Completed quarter for the appraisal: Q1 FY27 (1 Apr to 30 Jun 2026). In-progress quarter: Q2 FY27 (1 Jul to 30 Sep 2026).
 
 ## How to read this folder
@@ -10,6 +10,7 @@ Read the files in order. Each file says what to configure, the exact doctype and
 
 | # | File | What it covers |
 |---|---|---|
+| 00 | `00-demo-instance-and-plan.md` | Creating the `ppj.dev.alvoraa.co` tenant from the control plane, the Enterprise feature set, why no ERPNext or Indian Compliance, and the opt-in rule for the new builds |
 | 01 | `01-client-context-and-storyline.md` | Who PP Jewellers is, their pain points, the three personas, the 25-minute demo script |
 | 02 | `02-organisation-and-master-data.md` | Company, branches, departments, designations, grades, holiday lists, 400 employees, reporting tree |
 | 03 | `03-attendance-policy-and-essl.md` | Shift, ESSL punch feed (simulated now, real later), the quarter-day late rule as a product feature, simulated punch data |
@@ -29,8 +30,8 @@ Generator scripts live in `demo/pp_jewellers/` (the `demo/` folder is git-isolat
 
 | Topic | Decision |
 |---|---|
-| Custom builds | Yes. The spec includes five product features, each with its own impact analysis and approval gate (file 10). Nothing is coded until each build is approved. |
-| Target site | `dev.alvoraa.co` |
+| Custom builds | Yes. The spec includes six product builds, each with its own impact analysis and approval gate (file 10). Each is registered as an opt-in feature and switched on for the ppj tenant from the console (file 00 §3). Nothing is coded until each build is approved. |
+| Target site | A **new tenant `ppj.dev.alvoraa.co`**, created from the control-plane console, plan Enterprise (all 13 Alvoraa HR features), subscription status Internal. No ERPNext modules, no Indian Compliance. See file 00. Changed on 2026-09-07 from `dev.alvoraa.co`. |
 | Quarter-day rule | Week starts Monday. Late arrival (more than 60 minutes) and early exit (more than 60 minutes) both count. First violation in a week is free. Deduction is taken from leave balance first, then loss of pay. |
 | Store timings | 9:30 to 18:30 at all five stores and head office. Stores open 7 days a week, including festival days, with a rotating weekly off. Head office closed on Sunday. |
 | ESSL | Simulate all punches for the demo. The real integration design is in file 03, based on the eSSL eBioServerNew Web API manual (v1.3, 27 March 2025). |

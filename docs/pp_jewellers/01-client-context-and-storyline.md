@@ -27,6 +27,8 @@ PP Jewellers Pvt Ltd is a family-owned jewellery retailer in North India. The Ow
 
 ## 3. Personas and the users to log in as
 
+All logins are on `https://ppj.dev.alvoraa.co` (portal at `/hrms-employee`, desk at `/app`).
+
 | Persona | Employee | User (demo login) | What they must see |
 |---|---|---|---|
 | Owner / CXO | PPJ-0001 Sahil Bhatia, Owner & Managing Director | sahil.bhatia1@ppjewellers.demo | All stores. Store-level attendance, payroll cost, hiring pipeline, Q1 results, Q2 target progress, 9-box. |

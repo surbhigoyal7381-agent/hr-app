@@ -2,7 +2,7 @@
 PP Jewellers demo - push simulated punches into Employee Checkin and run auto attendance.
 
 Run inside the backend container, piped into bench console:
-  docker exec -i compose-backend-1 bash -c 'cd /home/frappe/frappe-bench && bench --site dev.alvoraa.co console' < /tmp/load_punches.py
+  docker exec -i compose-backend-1 bash -c 'cd /home/frappe/frappe-bench && bench --site ppj.dev.alvoraa.co console' < /tmp/load_punches.py
 Copy docs/pp_jewellers/data/punches.csv to /tmp/punches.csv in the container first.
 
 Idempotent: a punch that already exists (same employee, time, log type) is skipped.

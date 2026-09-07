@@ -4,6 +4,8 @@ Six product builds make this demo possible. Each one follows the mandatory proce
 
 Order of building: B2 (small, unblocks payroll) → B1 (attendance rule, the client's headline pain) → B6 (attendance in appraisal) → B4 (employee documents) → B3 (screening form) → B5 (policy library). B3, B4 and B5 are independent of each other and can run in parallel.
 
+**Feature registry (new rule from 2026-09-07).** Every build except B2 registers its own key in `FEATURES` in `alvoraa_portal/subscription.py` with `opt_in: True` and a `requires` list, so it stays off on every existing tenant until the console ticks it for a named tenant. Keys and dependencies are in file 00 §3. The subscription tests (`test_opt_in_features.py`) must be extended for each key. This is part of each build's scope, not a follow-up.
+
 Module home for all six: a new module **`alvoraa_hr_core`** in the `hrms` fork (like `performance_management`), plus portal work in `alvoraa_portal`. Nothing goes into `grace_group`. All doctypes are created as JSON in the module; all fields on ERPNext or stock Frappe HR doctypes are **Custom Fields** created in a `after_install`/patch, so upstream JSON is untouched. Tests with `bench run-tests --app hrms` for each module.
 
 ---

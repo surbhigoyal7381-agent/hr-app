@@ -9,6 +9,8 @@ returns immediately with a job_id; the client polls get_provision_status().
 
 import frappe
 
+from frappe.utils import nowdate
+
 from alvoraa_portal.subscription import PLANS, REQUIRED, requirement_error
 import os
 import json
@@ -242,12 +244,25 @@ def create_tenant(subdomain, tenant_name, plan="starter",
                   hr_email="", admin_email="",
                   company_name="", company_abbr="", country="India",
                   currency="INR", timezone="Asia/Kolkata", fy_start_date="",
-                  primary_color="#1a7f5a", logo_url="", support_email="", modules=None):
-    """Validate inputs, enqueue provisioning.
+                  primary_color="#1a7f5a", logo_url="", support_email="", modules=None,
+                  alvoraa_plan=None, customer=None, packs=None,
+                  implementation_fee=0, billing_frequency="Monthly"):
+    """Validate inputs, enqueue provisioning, and record what was sold.
 
     Returns {job_id, site_name, started_at, ...} and NO credentials: they do not
     exist yet. The worker generates them, and get_provision_status returns them
     once the job reports Done.
+
+    `alvoraa_plan` is the PRICED plan from the price list - a headcount band with
+    a fee. It is not the same thing as `plan`, which is the old feature-bundle
+    label derived from the ticked modules further down. Two different ideas wore
+    the same word for a while, and a tenant provisioned on the "enterprise"
+    bundle with twenty staff belongs on the "Starter" price band. The legacy
+    label is still written so nothing that reads it breaks; nothing new reads it.
+
+    Given `alvoraa_plan`, a subscription is created alongside the tenant. Without
+    it, provisioning behaves exactly as it did - which is what keeps this safe to
+    deploy on a live control plane.
     """
     _require_admin()
 
@@ -412,9 +427,14 @@ def create_tenant(subdomain, tenant_name, plan="starter",
         )
         raise
 
+    subscription = _create_subscription(
+        site_name, alvoraa_plan, customer, modules, packs,
+        implementation_fee, billing_frequency)
+
     return {
         "job_id":         job_id,
         "site_name":      site_name,
+        "subscription":   subscription,
         # Provisioning takes minutes and runs in a background worker. The console
         # shows this so the operator can close the dialog and come back, rather
         # than watching a spinner.
@@ -1360,3 +1380,91 @@ def _tenant_invoices(site_name):
             "state": {0: "draft", 1: "sent", 2: "cancelled"}.get(inv.docstatus),
         })
     return out
+
+
+def _create_subscription(site_name, alvoraa_plan, customer, modules, packs,
+                         implementation_fee=0, billing_frequency="Monthly"):
+    """Record what this tenant was sold, at the moment it was sold.
+
+    Created eagerly, before provisioning finishes, and deliberately.
+
+    If the site never comes up, a subscription pointing at nothing is visible on
+    the billing screen as a problem to resolve - which is the right way round.
+    The alternative is a failed provision leaving no record that anybody agreed
+    to anything, and a customer who was sold something the system has forgotten.
+
+    It cannot invoice by accident either: an invoice needs a usage count, and a
+    site that does not exist never produces one.
+
+    Returns None when no priced plan was chosen, so every existing caller - and
+    the console until it is updated - behaves exactly as before.
+    """
+    if not alvoraa_plan:
+        return None
+    if not frappe.db.exists("Alvoraa Plan", alvoraa_plan):
+        frappe.throw(f"No such plan: {alvoraa_plan}.")
+
+    included = set(frappe.get_all("Alvoraa Plan Feature",
+                                  filters={"parent": alvoraa_plan},
+                                  pluck="feature_key"))
+    # Anything ticked beyond what the fee covers is an add-on. Silently, because
+    # the operator ticked features - they should not also have to know which side
+    # of the platform fee each one falls.
+    addons = []
+    for key in sorted(set(modules or []) - included):
+        price = frappe.db.get_value("Alvoraa Module Price", key,
+                                    ["rate", "is_sellable"], as_dict=True)
+        if price and price.is_sellable:
+            addons.append({"feature_key": key, "agreed_rate": price.rate})
+
+    if isinstance(packs, str):
+        packs = frappe.parse_json(packs)
+
+    doc = frappe.get_doc({
+        "doctype": "Alvoraa Subscription",
+        "site_name": site_name,
+        # Trial, not Active: nothing has been provisioned yet, let alone used.
+        "status": "Trial",
+        "customer": customer or None,
+        "plan": alvoraa_plan,
+        "billing_frequency": billing_frequency or "Monthly",
+        "implementation_fee": implementation_fee or 0,
+        "started_on": nowdate(),
+        "addons": addons,
+        "packs": packs or [],
+    })
+    doc.insert(ignore_permissions=True)
+    return {"name": doc.name, "plan": doc.plan, "addons": len(doc.addons),
+            "packs": len(doc.packs)}
+
+
+@frappe.whitelist()
+def get_provisioning_plans(customer=None):
+    """The priced plans a new tenant can be put on.
+
+    Public plans always; a private one only when the customer it was built for is
+    the customer being set up. That is what stops a one-off discount agreed with
+    one client quietly becoming an option on every future deal.
+    """
+    _require_admin()
+    if not frappe.db.exists("DocType", "Alvoraa Plan"):
+        # Billing has not been set up on this control plane yet. The console
+        # falls back to provisioning without a subscription rather than failing.
+        return {"plans": [], "billing_ready": False}
+
+    rows = frappe.get_all(
+        "Alvoraa Plan", filters={"is_active": 1},
+        order_by="sequence asc, band_from asc",
+        fields=["name", "plan_name", "band_from", "band_to", "platform_fee",
+                "annual_fee", "included_employees", "additional_pepm",
+                "is_quote_only", "is_private", "built_for"])
+
+    out = []
+    for row in rows:
+        if row.is_private and (not customer or row.built_for != customer):
+            continue
+        row["features"] = frappe.get_all(
+            "Alvoraa Plan Feature", filters={"parent": row["name"]},
+            pluck="feature_key")
+        out.append(row)
+    return {"plans": out, "billing_ready": True}

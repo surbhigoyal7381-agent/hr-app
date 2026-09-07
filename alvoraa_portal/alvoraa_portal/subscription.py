@@ -34,6 +34,26 @@ from frappe import _
 
 # ── Alvoraa HR features ──────────────────────────────────────────────────────
 # `required` features cannot be switched off on any plan.
+#
+# `opt_in` features are OFF everywhere until somebody switches them on for a
+# named tenant. Mark anything new with it.
+#
+# The reason is that we deploy one image to every tenant at once. Without this,
+# adding a feature to the registry hands it to everyone the moment the container
+# restarts - including tenants on a plan that never included it, and customers
+# who have not asked for it, seen it, or been trained on it. A module appearing
+# in someone's desk overnight is not a gift; it is a support call, and sometimes
+# a compliance question about who could see what.
+#
+# It closes the two ways a new feature used to leak on. A site with no recorded
+# feature list falls back to "everything the registry has", and a plan bundle
+# like enterprise is defined the same way. Both now mean "everything except what
+# is opt-in", so the fallback keeps its job - never locking an existing tenant
+# out - without quietly handing out things nobody bought.
+#
+# Switching one on is one tick in the admin console, which writes the key into
+# that tenant's own feature list. Explicit always wins: a tenant who has been
+# given an opt-in feature keeps it.
 
 FEATURES = {
     "portal": {
@@ -298,6 +318,17 @@ CONTROL_PLANE_DOCTYPES = [
 
 REQUIRED = [k for k, v in FEATURES.items() if v.get("required")]
 
+# Everything a tenant gets without anybody deciding: the whole product, less
+# the features that have to be asked for.
+DEFAULT_ON = [k for k, v in FEATURES.items() if not v.get("opt_in")]
+
+OPT_IN = [k for k, v in FEATURES.items() if v.get("opt_in")]
+
+
+def is_opt_in(key):
+    """Whether this feature has to be switched on for a tenant by name."""
+    return bool(feature_spec(key).get("opt_in"))
+
 
 def feature_spec(key):
     """A feature's definition, from whichever catalogue holds it.
@@ -358,16 +389,36 @@ def plan_features(plan):
     Unknown means a tenant provisioned before this file existed, or a typo. The
     safe direction is to grant MORE, never to lock a paying customer out of
     something they had yesterday.
+
+    Opt-in features are excluded even when a plan bundle names one. A plan says
+    what a tenant is ENTITLED to; the tick in the console says what they have
+    actually been given. Those are different questions, and conflating them is
+    how a customer who bought Enterprise last year wakes up with a module built
+    this month that nobody has shown them.
+
+    It is not a way of withholding what was paid for: switching it on is one
+    tick, and the plan is what justifies the tick.
     """
-    return list(PLANS.get((plan or "").lower(), PLANS["enterprise"]))
+    keys = PLANS.get((plan or "").lower(), PLANS["enterprise"])
+    return [k for k in keys if not is_opt_in(k)]
 
 
 def enabled_features(conf=None):
     """Features enabled for the current site.
 
     Reads the site's own config, which a tenant cannot edit. A site with no
-    `features` recorded gets everything - that covers every tenant provisioned
-    before this existed, and a missing key must never lock anyone out.
+    `features` recorded falls back to the whole product LESS anything opt-in -
+    that covers every tenant provisioned before this existed, and a missing key
+    must never lock anyone out.
+
+    The opt-in exclusion is what makes a new feature default to off. We ship one
+    image to every tenant at once, so without it, adding a key to the registry
+    would hand that feature to every fallback site the moment the container
+    restarted. Existing features are unaffected: none of them are opt-in, so the
+    fallback grants exactly what it always did.
+
+    A tenant whose config NAMES an opt-in feature keeps it. Explicit always wins
+    over a default - that is the whole point of the tick in the console.
     """
     conf = conf if conf is not None else frappe.conf
     feats = conf.get("features")
@@ -379,7 +430,7 @@ def enabled_features(conf=None):
     plan = conf.get("subscription_plan")
     if plan:
         return plan_features(plan)
-    return list(FEATURES)
+    return list(DEFAULT_ON)
 
 
 def has_feature(name, conf=None):
@@ -741,6 +792,9 @@ def get_plan_catalogue():
             "icon": v.get("icon", ""),
             "required": bool(v.get("required")),
             "erpnext": bool(v.get("erpnext")),
+            # So the console can badge it: shipped, but nobody has it unless
+            # somebody ticks it for them.
+            "opt_in": bool(v.get("opt_in")),
         }
 
     # Two groups, one catalogue. The admin ticks freely across both; the plan
@@ -759,3 +813,43 @@ def get_plan_catalogue():
                     + [_row(k, v) for k, v in ERPNEXT_FEATURES.items()],
         "plans": {k: list(v) for k, v in PLANS.items()},
     }
+
+
+def feature_adoption(tenants):
+    """Every sellable feature, with the tenants that actually have it.
+
+    `tenants` is what list_tenants() returns, passed in rather than fetched so
+    this stays a pure function - it is the same list the console already has.
+
+    This is the answer to "we deployed something new, now what". A feature the
+    registry knows about and no tenant holds is either brand new or forgotten,
+    and both are worth seeing. Without it, an opt-in feature would sit switched
+    off for ever because nobody remembered it shipped.
+    """
+    rows = []
+    for key, spec in list(FEATURES.items()) + list(ERPNEXT_FEATURES.items()):
+        holders = []
+        for tenant in tenants or []:
+            recorded = tenant.get("modules")
+            if recorded is None:
+                # No list of its own, so it gets whatever the fallback grants -
+                # which never includes an opt-in feature.
+                if not spec.get("opt_in"):
+                    holders.append(tenant.get("site_name"))
+            elif key in recorded or spec.get("required"):
+                holders.append(tenant.get("site_name"))
+
+        rows.append({
+            "key": key,
+            "label": spec.get("label", key),
+            "erpnext": bool(spec.get("erpnext")),
+            "required": bool(spec.get("required")),
+            "opt_in": bool(spec.get("opt_in")),
+            "tenants": sorted(h for h in holders if h),
+            "count": len(holders),
+            # The line the console shows in amber: shipped, switchable, and
+            # nobody has it yet.
+            "waiting": bool(spec.get("opt_in")) and not holders,
+        })
+    rows.sort(key=lambda r: (not r["waiting"], r["erpnext"], r["label"]))
+    return rows

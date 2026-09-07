@@ -1234,3 +1234,22 @@ def _generate_password(length=18):
     # Alphanumeric only — avoids shell/SQL quoting issues when passed via env vars
     alphabet = string.ascii_letters + string.digits
     return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+@frappe.whitelist()
+def feature_adoption():
+    """Which features exist, and which tenants actually have each one.
+
+    The answer to "we shipped something, now what". A new feature is off
+    everywhere by design - see subscription.OPT_IN - so something has to say it
+    is there and waiting, or it stays off for ever because nobody remembered.
+    """
+    _require_admin()
+    from alvoraa_portal.subscription import feature_adoption as _adoption
+
+    rows = _adoption(list_tenants())
+    return {
+        "features": rows,
+        "waiting": [r for r in rows if r["waiting"]],
+        "tenant_count": len(list_tenants()),
+    }

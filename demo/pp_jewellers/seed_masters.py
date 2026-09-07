@@ -201,6 +201,9 @@ if frappe.db.exists("DocType", "Employee Document Type"):
         ("Security agency licence", "Statutory", 1, "Store Admin", "HR Manager", ["Security Guard"], 1),
     ]
     made = 0
+    for role in {t[4] for t in DOC_TYPES}:
+        if not frappe.db.exists("Role", role):      # a fresh site has no Payroll User yet
+            frappe.get_doc({"doctype": "Role", "role_name": role}).insert(ignore_permissions=True)
     for name, cat, mand, collect, verifier, desigs, expiry in DOC_TYPES:
         if frappe.db.exists("Employee Document Type", name):
             continue

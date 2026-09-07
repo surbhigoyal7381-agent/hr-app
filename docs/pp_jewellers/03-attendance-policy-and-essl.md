@@ -78,7 +78,7 @@ Use `requests` with a hand-built SOAP envelope and `xml.etree` to read the reply
 
 ### 2.4 For the demo: simulated punches
 
-`demo/pp_jewellers/generate_punches.py` writes `docs/pp_jewellers/data/punches.csv` (45,232 rows) and `data/expected_deductions.csv` (231 employee-weeks the rule must produce, with the violations listed, for verifying the build): `attendance_device_id, timestamp, log_type, device_id`. `demo/pp_jewellers/load_punches.py` reads it inside `bench console` and calls `add_log_based_on_employee_field` for each row, then sets `last_sync_of_checkin` on both Shift Types and runs `process_auto_attendance_for_all_shifts`. See file 11 for the run order.
+`demo/pp_jewellers/generate_punches.py` writes `docs/pp_jewellers/data/punches.csv` (45,232 rows) and `data/expected_deductions.csv` (231 employee-weeks the rule must produce, with the violations listed, for verifying the build): `attendance_device_id, timestamp, log_type, device_id`. `demo/pp_jewellers/seed_attendance.py` reads it inside `bench console` and calls `add_log_based_on_employee_field` for each row, then sets `last_sync_of_checkin` on both Shift Types and runs `process_auto_attendance_for_all_shifts`. See file 11 for the run order.
 
 The data has deliberate patterns so the demo has a story:
 

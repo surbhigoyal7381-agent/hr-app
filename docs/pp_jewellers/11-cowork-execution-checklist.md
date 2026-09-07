@@ -41,7 +41,7 @@ Every step below runs on the **ppj tenant**, never on `dev.alvoraa.co`.
 ## Block 3 — Shifts, punches, attendance (file 03)
 
 - [ ] Two Shift Types with the values in file 03 §1. Shift Assignments from 2026-07-01.
-- [ ] Copy `data/punches.csv` to `/tmp/punches.csv` in the container; console: `demo/pp_jewellers/load_punches.py`. Takes a few minutes for 45,232 rows.
+- [ ] Copy `data/punches.csv` to `/tmp/punches.csv` in the container; console: `demo/pp_jewellers/seed_attendance.py`. Takes a few minutes for 45,232 rows.
 - [ ] Check: Employee Checkin ≈ 45,232; Attendance ≈ 22,616 submitted; Monthly Attendance Sheet for August, Chandigarh, shows L flags; PPJ-0054 has late entries on 18 and 20 Aug and early exit on 22 Aug.
 - [ ] **(build B1)** Console → ppj tenant → Edit modules → tick `late_rules`. Then create Attendance Deduction Rule "PPJ Late Coming Rule" with the defaults; click "Run for range" 2026-07-01 to 2026-09-06.
 - [ ] Check: Attendance Deduction list matches `data/expected_deductions.csv` (231 rows). PPJ-0054 week 17 Aug = 0.5 from Casual Leave. PPJ-0058 week 3 Aug = 0.5 leave + 0.5 LWP with an Additional Salary dated 2026-08-09.

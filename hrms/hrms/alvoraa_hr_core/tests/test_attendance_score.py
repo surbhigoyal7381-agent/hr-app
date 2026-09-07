@@ -131,6 +131,17 @@ class TestAttendanceScore(IntegrationTestCase):
 		cycle.attendance_weight = 30
 		self.assertRaises(frappe.ValidationError, cycle.insert)
 
+	def test_a_broken_hand_edited_formula_is_caught_on_save(self):
+		cycle = frappe.copy_doc(self.cycle)
+		cycle.cycle_name = "Attendance Score Bad Formula"
+		cycle.include_attendance_score = 0
+		cycle.final_score_formula = "goal_score * 0.5 + averag_feedback_score * 0.5"
+		with self.assertRaises(frappe.ValidationError):
+			cycle.insert()
+		cycle.final_score_formula = "goal_score * 0.5 + average_feedback_score * 0.5"
+		cycle.insert()
+		self.assertEqual(cycle.final_score_formula, "goal_score * 0.5 + average_feedback_score * 0.5")
+
 	def test_formula_without_attendance(self):
 		self.assertEqual(build_formula(frappe._dict(include_attendance_score=0, goal_weight=50, feedback_weight=30)),
 		                 "goal_score")

@@ -6,10 +6,18 @@ Conventions: "desk" = the Frappe UI; "console" = `bench --site ppj.dev.alvoraa.c
 
 Data files are in `docs/pp_jewellers/data/`. Generator scripts in `demo/pp_jewellers/` are already run; re-run them only if you change the inputs.
 
-## Block 0 — Create the tenant (file 00)
+## Block 0 — Deploy and create the tenant (file 00)
 
-- [ ] Confirm the dev stack runs the `dev` image built from today's commits (feature registry with opt-in, subscription records). `BASE_DOMAIN` in `deploy/envs/dev.env` on the server must be `dev.alvoraa.co`.
-- [ ] Control-plane console `/alvoraa-admin` → New tenant: subdomain `ppj`, tenant name "PP Jewellers (demo)", company PP Jewellers Pvt Ltd / PPJ / India / INR / Asia/Kolkata / FY start 1 April. Tick all 13 Alvoraa HR features (the Enterprise bundle, vendor included). No ERPNext modules. No Indian Compliance.
+Runbook for the server, in order. The development container has no server access, so these are the steps a person (or a session with `deploy/server.env`) runs. Every command below is a deploy command under the project rules and needs a go-ahead.
+
+1. **Deploy `dev`** (it carries the six builds, merged 2026-09-07): on the server, in the repo checkout, `git pull origin dev`; rebuild or restart the dev image so the backend container has the new code; then inside it `bench --site dev.alvoraa.co migrate` (the patches create the new doctypes and custom fields; existing tenants get them the same way at their next migrate). No `bench build` is needed for the portal page.
+2. **Create the tenant**: `CONTROL_SITE=alvoraa.co demo/pp_jewellers/provision_ppj.sh` does steps 2 to 5 of this block in one go (create_tenant with the Enterprise bundle plus the five opt-in keys, wait, TLS name, subscription record, print the features). It is untested from here: read it, then run it. The manual equivalent is the ticks below.
+3. **Check a background worker runs** on the backend (`bench doctor`); without one the seeds stop after a few hundred queued jobs.
+4. **Seeds**: `docker cp demo/pp_jewellers compose-backend-1:/tmp/ppj && docker cp docs/pp_jewellers/data compose-backend-1:/tmp/ppj/data`, then `docker exec compose-backend-1 bash /tmp/ppj/run_all.sh --site ppj.dev.alvoraa.co` (about 35 minutes), then `verify_ppj.py` and compare with the table at the end of this file.
+5. **Walk the portal** as the four personas (file 01) and take the "demo-ready" backup.
+
+- [ ] Confirm the dev stack runs the `dev` image built from today's commits (feature registry with opt-in, subscription records, the six builds). `BASE_DOMAIN` in `deploy/envs/dev.env` on the server must be `dev.alvoraa.co`.
+- [ ] Control-plane console `/alvoraa-admin` → New tenant: subdomain `ppj`, tenant name "PP Jewellers (demo)", company PP Jewellers Pvt Ltd / PPJ / India / INR / Asia/Kolkata / FY start 1 April. Tick all 13 Alvoraa HR features (the Enterprise bundle, vendor included) **and the five opt-in features** (Late Coming Rules, Attendance in Appraisals, Employee Documents, Application Screening, Policy Library). No ERPNext modules. No Indian Compliance.
 - [ ] Wait for the provisioning job; save the Administrator password from the status screen.
 - [ ] Server: `deploy/add_tenant_cert.sh ppj.dev.alvoraa.co --dry-run`, then without `--dry-run`. Check `https://ppj.dev.alvoraa.co/alvoraa-login` loads with a valid certificate.
 - [ ] Control plane desk: Alvoraa Subscription for `ppj.dev.alvoraa.co`, status Internal, plan Enterprise, started today. Run one health check and one usage collection from the tenant page.

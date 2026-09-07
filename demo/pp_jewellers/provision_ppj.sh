@@ -20,8 +20,10 @@ SUBDOMAIN="${SUBDOMAIN:-ppj}"
 BASE_DOMAIN="${BASE_DOMAIN:-dev.alvoraa.co}"
 SITE="${SUBDOMAIN}.${BASE_DOMAIN}"
 TENANT_NAME="PP Jewellers (demo)"
-# The full Enterprise bundle. Vendor stays ticked so the derived plan label is "enterprise".
-MODULES='["portal","leaves","attendance","expenses","hr_setup","tenure","recruitment","payroll","tax_benefits","performance","goals","analytics","vendor"]'
+# The full Enterprise bundle (vendor stays ticked so the derived plan label is "enterprise")
+# plus the five opt-in keys the six builds need. create_tenant writes this list to the
+# site's features config, which is what the console tick does.
+MODULES='["portal","leaves","attendance","expenses","hr_setup","tenure","recruitment","payroll","tax_benefits","performance","goals","analytics","vendor","late_rules","attendance_scoring","employee_documents","screening_forms","policy_library"]'
 
 bench_exec() {   # bench_exec <site> <dotted.path> <json kwargs>
   docker exec "$BACKEND" bash -lc "cd /home/frappe/frappe-bench && bench --site $1 execute $2 --kwargs '$3'"
@@ -57,6 +59,10 @@ echo "== 4. Alvoraa Subscription (Internal, Enterprise)"
 PLAN=$(docker exec "$BACKEND" bash -lc "cd /home/frappe/frappe-bench && bench --site $CONTROL_SITE execute frappe.client.get_list --kwargs '{\"doctype\":\"Alvoraa Plan\",\"filters\":{\"name\":[\"like\",\"%Enterprise%\"]},\"limit_page_length\":1}'" | grep -o '"name": *"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
 docker exec "$BACKEND" bash -lc "cd /home/frappe/frappe-bench && bench --site $CONTROL_SITE execute frappe.client.insert --kwargs '{\"doc\":{\"doctype\":\"Alvoraa Subscription\",\"site_name\":\"$SITE\",\"status\":\"Internal\",\"plan\":\"$PLAN\",\"billing_frequency\":\"Monthly\",\"started_on\":\"$(date +%F)\",\"notes\":\"PP Jewellers sales demo tenant. Never invoiced.\"}}'"
 
-echo "== done. Next: run a health check and a usage collection from the console tenant page, then:"
+echo "== 5. features on the tenant (should already list the opt-in keys)"
+docker exec "$BACKEND" bash -lc "cd /home/frappe/frappe-bench && cat sites/$SITE/site_config.json | grep -A 20 features"
+echo "== done. Next: run a health check and a usage collection from the console tenant page, check a worker is running"
+echo "   (docker exec $BACKEND bash -lc 'cd /home/frappe/frappe-bench && bench doctor'), then:"
 echo "   docker cp demo/pp_jewellers $BACKEND:/tmp/ppj && docker cp docs/pp_jewellers/data $BACKEND:/tmp/ppj/data"
 echo "   docker exec $BACKEND bash /tmp/ppj/run_all.sh --site $SITE"
+echo "   docker exec $BACKEND bash -lc 'cd /home/frappe/frappe-bench/sites && PPJ_SCRIPT_DIR=/tmp/ppj PPJ_DATA_DIR=/tmp/ppj/data ../env/bin/python /tmp/ppj/verify_ppj.py --site $SITE'"

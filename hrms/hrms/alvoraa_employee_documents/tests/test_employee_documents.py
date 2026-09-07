@@ -135,10 +135,14 @@ class TestEmployeeDocuments(IntegrationTestCase):
 		emp.save(ignore_permissions=True)
 		self.assertEqual(self._row(emp, self.licence).status, "Verified")
 		frappe.db.set_value("Employee Document", row.name, "expiry_date", add_days(today(), -2))
+		frappe.db.set_value("Employee", emp.name, "user_id", "doc.tester@example.com")
 		result = expire_documents()
 		self.assertGreaterEqual(result["expired"], 1)
 		self.assertEqual(frappe.db.get_value("Employee Document", row.name, "status"), "Expired")
 		self.assertIn("expired", frappe.db.get_value("Employee", emp.name, "documents_summary"))
+		# the employee is told on the portal bell, not only by email
+		self.assertTrue(frappe.db.exists("Notification Log", {"for_user": "doc.tester@example.com",
+		                                                      "document_name": emp.name}))
 
 	def test_portal_attach_and_compliance(self):
 		emp = self._employee()

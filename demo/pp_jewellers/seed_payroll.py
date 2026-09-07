@@ -91,6 +91,8 @@ PF_ACC = account("PF Payable", "Duties and Taxes")
 ESI_ACC = account("ESI Payable", "Duties and Taxes")
 PT_ACC = account("Professional Tax Payable", "Duties and Taxes")
 IT_ACC = account("TDS on Salary Payable", "Duties and Taxes")
+if frappe.db.get_value("Account", PAYABLE_ACC, "account_type") != "Payable":
+    frappe.db.set_value("Account", PAYABLE_ACC, "account_type", "Payable")     # Payroll Entry insists on it
 frappe.db.set_value("Company", COMPANY, "default_payroll_payable_account", PAYABLE_ACC)
 COST_CENTER = frappe.db.get_value("Company", COMPANY, "cost_center") \
     or frappe.db.get_value("Cost Center", {"company": COMPANY, "is_group": 0}, "name")
@@ -120,19 +122,37 @@ COMPONENTS = [
 ]
 # Statutory rates (PF 12% on basic capped at 15,000; ESI 0.75% / 3.25% up to 21,000 gross) - VERIFY.
 ACCOUNT_FOR = {"PF": PF_ACC, "ESI": ESI_ACC, "PT": PT_ACC, "IT": IT_ACC, "EPF_ER": PF_ACC, "ESI_ER": ESI_ACC}
+UPDATABLE = ["formula", "condition", "amount", "depends_on_payment_days", "is_tax_applicable", "exempted_from_income_tax",
+             "remove_if_zero_valued", "variable_based_on_taxable_salary", "is_income_tax_component"]
 for name, abbr, ctype, vals in COMPONENTS:
-    if frappe.db.exists("Salary Component", name):
-        continue
-    sc = frappe.get_doc({"doctype": "Salary Component", "salary_component": name, "salary_component_abbr": abbr,
-                         "type": ctype, "amount_based_on_formula": 1 if vals.get("formula") else 0, **vals})
     acc = ACCOUNT_FOR.get(abbr, SALARY_ACC if ctype != "Deduction" else PAYABLE_ACC)
-    sc.append("accounts", {"company": COMPANY, "account": acc})
+    if frappe.db.exists("Salary Component", name):
+        # Frappe HR's India setup pre-creates Basic, HRA, PF and PT without formulas; apply the PPJ rules to them
+        sc = frappe.get_doc("Salary Component", name)
+        sc.salary_component_abbr = abbr
+        sc.type = ctype
+        sc.amount_based_on_formula = 1 if vals.get("formula") else 0
+        for f in UPDATABLE:
+            sc.set(f, vals.get(f, 0 if f != "condition" and f != "formula" else ""))
+        if not any(a.company == COMPANY for a in sc.accounts):
+            sc.append("accounts", {"company": COMPANY, "account": acc})
+        changed = True
+    else:
+        sc = frappe.get_doc({"doctype": "Salary Component", "salary_component": name, "salary_component_abbr": abbr,
+                             "type": ctype, "amount_based_on_formula": 1 if vals.get("formula") else 0, **vals})
+        sc.append("accounts", {"company": COMPANY, "account": acc})
+        changed = False
     if abbr in ("PF", "EPF_ER") and frappe.get_meta("Salary Component").has_field("component_type"):
         sc.component_type = "Provident Fund"
     if abbr == "PT" and frappe.get_meta("Salary Component").has_field("component_type"):
         sc.component_type = "Professional Tax"
-    sc.insert(ignore_permissions=True)
-    log(f"  [created] Salary Component: {name}")
+    sc.flags.ignore_permissions = True
+    if changed:
+        sc.save()
+        log(f"  [updated] Salary Component: {name}")
+    else:
+        sc.insert()
+        log(f"  [created] Salary Component: {name}")
 commit()
 
 # ── Salary Structures ───────────────────────────────────────────────────────

@@ -104,7 +104,11 @@ PPJ-0058 August: same structure, plus `Late Coming Deduction` = base / 31 × 0.5
 
 Salary Register (August, by branch), Provident Fund Deductions, ESI Deductions (new), Employee CTC Break Up, Bank Remittance. Number cards: Total Payroll Cost this month, Employees on ESI.
 
-## 9. Verification after this block
+## 9. Known blocker
+
+Payslips with income tax fail on the current `dev` code because of the regional override wrapper bug described in file 10, B0. Apply that hotfix before running Block 4 on the tenant.
+
+## 10. Verification after this block
 
 - 400 Salary Structure Assignments, 400 slips for July and August, all submitted, no "Leave Without Pay does not match" errors.
 - PPJ-0058 August slip: `leave_without_pay` = 0 (the LCD is a deduction line, not LWP days), `Late Coming Deduction` > 0.

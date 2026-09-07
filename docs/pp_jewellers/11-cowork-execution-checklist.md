@@ -91,7 +91,7 @@ Every step below runs on the **ppj tenant**, never on `dev.alvoraa.co`.
 - [ ] HR portal → cycle wizard: create "Q1 FY27 Performance Cycle" (Apr–Jun) and "Q2 FY27 Performance Cycle" (Jul–Sep), all 400 employees. **(build B6)** tick `attendance_scoring` for the ppj tenant in the console, then set weights 50 / 30 / 20 in the wizard; without B6, set `final_score_formula` on the cycle by hand to `goal_score * 0.5 + average_feedback_score * 0.3 + self_appraisal_score * 0.2` and say attendance is coming.
 - [ ] Goal Cascades for Q1 and Q2 with the store → floor → individual tree from `data/sales_targets.csv` (console script; 5 + 15 + 190 goals per quarter).
 - [ ] KPIs for all 400 for both quarters from `data/kpi_library.csv` (console script; generic 3-KPI set for roles not in the library). Q1: actuals and manager ratings filled; Q2: July and August progress logs from `data/sales_actuals_july.csv`.
-- [ ] Goal Evidence for July and August on every "Own sales" goal; run `recalculate_progress`; run the alignment check.
+- [ ] Goal Evidence for July and August on every "Own sales" goal; run `recalculate_progress`. (The alignment check reads Misaligned on a multi-level cascade until the fix in file 10 lands; skip it in the demo.)
 - [ ] Q1: Employee Performance Feedback per employee (submitted), potential ratings on KPIs, overall ratings on the extensions, generate and submit all 400 appraisals, calibration adjustments for 6 employees, calibration sign-off, cycle status Completed.
 - [ ] Q2: generate 400 Draft appraisals; manager ratings on ~150 KPIs; leave PPJ-0054 unrated for the live demo.
 - [ ] Upward Feedback from ~60 store staff for Q1.

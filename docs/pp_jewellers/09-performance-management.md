@@ -68,7 +68,9 @@ Goal Cascade: Q2 FY27 Company Sales — 5,800 lakh
 └── "South Extension store sales Q2" — 1,400 lakh …
 ```
 
-Every goal has `parent_goal` set, `goal_type` Business, `weightage` 0 (the KPI carries the weight, the goal carries the cascade), `company_value` = Customer Delight. The **Cascade Alignment Report** then shows company target vs sum of store targets = Aligned (variance 0%).
+Every goal has `parent_goal` set, `goal_type` Business, `weightage` 0 (the KPI carries the weight, the goal carries the cascade), `company_value` = Customer Delight, and `goal_cascade` set on every level, which is what the portal itself does when a child goal is created under a parent.
+
+**Bug found while testing:** the **Cascade Alignment Report** sums the targets of *every* goal on the cascade, so a three-level tree reports a variance of about 200% and "Misaligned", even though the five store targets add up exactly to the company target. The check should sum only top-level goals (those with no `parent_goal`). It is a two-line fix in `alvoraa_goals/controllers/cascade.py` and is listed in file 10. Until it lands, do not open the alignment report in the demo; the cascade's own progress figure is correct.
 
 Goal progress comes from **Goal Evidence** rows (Manual Entry, value = monthly sales in lakh, approved by the Floor Manager). Seed July and August evidence for every salesperson from `sales_actuals_july.csv` (August = July × a small random factor). Store and floor goals roll up by the hourly job; run `recalculate_progress` once after seeding.
 

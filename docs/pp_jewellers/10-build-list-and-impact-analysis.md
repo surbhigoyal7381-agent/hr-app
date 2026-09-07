@@ -40,6 +40,16 @@ Spec: file 03 §3.
 
 ---
 
+## B0 — Hotfix found while testing: regional override wrapper breaks income-tax payslips
+
+**Not a demo feature. A product bug that blocks payroll for any employee who owes income tax.**
+
+`hrms/hrms/hr/utils.py` defines its own `allow_regional` decorator (added by commit d0469c8, 24 Aug 2026, "Stop our hrms fork replacing ERPNext's core doctypes"). It does `frappe.get_attr(overrides[fn_path])`, but `frappe.get_hooks("regional_overrides")` merges hook values into **lists**, so the call receives a list and fails with `'list' object has no attribute 'split'`. ERPNext's own decorator takes `overrides[function_path][-1]` for exactly this reason. The wrapper guards `calculate_tax_with_marginal_relief`, `calculate_annual_eligible_hra_exemption` and `calculate_hra_exemption_for_period`, all called from Salary Slip for Indian companies, so every payslip whose taxable income crosses the first slab crashes with "Salary Slip creation failed". Seen on the local bench with PPJ-0054 (annual taxable 4.29 lakh).
+
+**Fix (three lines):** in the wrapper, if `overrides[fn_path]` is a list or tuple, use its last element before `frappe.get_attr`. Add a unit test that registers a regional override and calls a decorated function with the India country set.
+
+**Impact:** payroll only; no data change; restores behaviour that ERPNext has. Performance, security, scalability neutral. Reliability: fixes a hard failure. This needs your approval before it goes into the repo. The seed suite was verified with the fix applied on the local bench.
+
 ## B2 — ESI components and fields
 
 Spec: file 04 §3.
@@ -132,6 +142,8 @@ Spec: file 09 §8.
 | Maintainability | Improves. Removes the "Delivery Executive" hard-coding and the KRA-title matching. Unit tests for the formula with fixed attendance fixtures. |
 | Data integrity | Watch. The score is snapshotted on the Appraisal at save/submit; attendance corrections after submit do not change a submitted appraisal (correct; that is what submit means). Before submit, re-saving recomputes. |
 | Compliance / privacy | Neutral. |
+
+**Also in scope (found while testing)**: `alvoraa_goals/controllers/cascade.py` `run_alignment_check` sums every goal on the cascade, so a multi-level cascade always reads Misaligned. Filter to goals with no `parent_goal`. Two lines plus a test with a two-level tree.
 
 **Risk**: the formula is a `Code` field evaluated by `frappe.safe_eval`. The builder writes it; HR can still edit it by hand in desk. Validate on cycle save that the formula parses and references only known names.
 

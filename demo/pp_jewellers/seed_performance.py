@@ -190,6 +190,9 @@ def add_evidence(goal_name, date, value, approver):
                          "validation_notes": "Monthly POS sales report (manual entry)"})
     ev.flags.ignore_permissions = True
     ev.insert()
+    # The evidence hook parks every manual entry as Pending for HR review; the seed plays HR.
+    ev.db_set({"validation_status": "Approved", "approved_by": approver, "approved_on": f"{date} 18:30:00",
+               "validation_notes": "Monthly POS sales report, approved by the floor manager"}, update_modified=False)
 
 
 for e in emps:
@@ -232,6 +235,8 @@ for q in ("Q1", "Q2"):
                                      "validation_notes": "Roll-up of floor/team goals"})
                 ev.flags.ignore_permissions = True
                 ev.insert()
+                ev.db_set({"validation_status": "Approved", "approved_by": "Administrator",
+                           "validation_notes": "Roll-up of floor/team goals"}, update_modified=False)
             else:
                 frappe.db.set_value("Goal Evidence", {"parent": g.name, "validation_notes": "Roll-up of floor/team goals"}, "value", round(total, 2))
             recalculate_progress(g.name)
@@ -342,7 +347,7 @@ def manager_of(emp):
 
 
 def stars(x):
-    return max(0.2, min(1.0, round(x * 2) / 10))   # Rating field: 0-1 in steps of 0.1
+    return max(0.2, min(1.0, round(x * 10) / 10))   # Rating field: 0-1 fraction of 5 stars, steps of 0.1
 
 
 for e in emps:

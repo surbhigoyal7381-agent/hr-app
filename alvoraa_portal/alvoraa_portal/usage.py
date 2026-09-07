@@ -167,15 +167,21 @@ def measure_tenant(site, period, timeout=120):
 	return _write_record(site, period, payload, problem)
 
 
-def _read_payload(result):
-	"""Pull our JSON back out of bench's output, or say why we could not."""
+def _read_payload(result, sentinel=None):
+	"""Pull our JSON back out of bench's output, or say why we could not.
+
+	`sentinel` is a parameter so the health collector can share this parser
+	rather than copy it. bench has changed the shape of its output between
+	Frappe versions, and neither caller should have to learn that twice.
+	"""
+	sentinel = sentinel or SENTINEL
 	if result is None:
 		return None, "bench returned nothing"
 	blob = (getattr(result, "stdout", "") or "") + "\n" + (getattr(result, "stderr", "") or "")
 	for line in blob.splitlines():
-		if line.startswith(SENTINEL):
+		if line.startswith(sentinel):
 			try:
-				return json.loads(line[len(SENTINEL):]), None
+				return json.loads(line[len(sentinel):]), None
 			except Exception as exc:
 				return None, f"could not read the count: {exc}"
 	if getattr(result, "returncode", 1) != 0:

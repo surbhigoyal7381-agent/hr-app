@@ -314,6 +314,7 @@ CONTROL_PLANE_DOCTYPES = [
     "Alvoraa Pricing Settings",
     "Alvoraa Subscription", "Alvoraa Subscription Addon", "Alvoraa Subscription Pack",
     "Alvoraa Usage Record", "Alvoraa Usage Pack",
+    "Alvoraa Tenant Health", "Alvoraa Tenant Error",
 ]
 
 REQUIRED = [k for k, v in FEATURES.items() if v.get("required")]

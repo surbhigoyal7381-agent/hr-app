@@ -1,0 +1,159 @@
+{
+ "actions": [],
+ "autoname": "format:{site_name} {on_date}",
+ "creation": "2026-09-07 14:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "site_name",
+  "on_date",
+  "cb0",
+  "checked_at",
+  "ok",
+  "err_sec",
+  "errors_24h",
+  "errors_7d",
+  "cb1",
+  "distinct_kinds",
+  "top_sec",
+  "top_errors",
+  "sched_sec",
+  "scheduler_enabled",
+  "last_job",
+  "cb2",
+  "hours_since_job",
+  "res_sec",
+  "error"
+ ],
+ "fields": [
+  {
+   "fieldname": "site_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Site",
+   "reqd": 1
+  },
+  {
+   "fieldname": "on_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cb0",
+   "fieldtype": "Column Break",
+   "label": null
+  },
+  {
+   "fieldname": "checked_at",
+   "fieldtype": "Datetime",
+   "label": "Checked At",
+   "read_only": 1
+  },
+  {
+   "description": "Whether the site answered at all. A site that cannot be reached is the loudest signal here.",
+   "fieldname": "ok",
+   "fieldtype": "Check",
+   "label": "Answered",
+   "read_only": 1
+  },
+  {
+   "fieldname": "err_sec",
+   "fieldtype": "Section Break",
+   "label": "Errors"
+  },
+  {
+   "fieldname": "errors_24h",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Errors, last 24 hours"
+  },
+  {
+   "fieldname": "errors_7d",
+   "fieldtype": "Int",
+   "label": "Errors, last 7 days"
+  },
+  {
+   "fieldname": "cb1",
+   "fieldtype": "Column Break",
+   "label": null
+  },
+  {
+   "description": "One error a thousand times is a bug. A thousand different errors is a site falling over.",
+   "fieldname": "distinct_kinds",
+   "fieldtype": "Int",
+   "label": "Different kinds"
+  },
+  {
+   "fieldname": "top_sec",
+   "fieldtype": "Section Break",
+   "label": "What is going wrong"
+  },
+  {
+   "fieldname": "top_errors",
+   "fieldtype": "Table",
+   "label": "Top Errors",
+   "options": "Alvoraa Tenant Error"
+  },
+  {
+   "fieldname": "sched_sec",
+   "fieldtype": "Section Break",
+   "label": "Background work"
+  },
+  {
+   "description": "With this off nothing runs by itself on that tenant: no payroll, no leave allocation, no reminders. It fails silently, which is what makes it worth watching.",
+   "fieldname": "scheduler_enabled",
+   "fieldtype": "Check",
+   "label": "Scheduler Enabled"
+  },
+  {
+   "fieldname": "last_job",
+   "fieldtype": "Datetime",
+   "label": "Last Background Job"
+  },
+  {
+   "fieldname": "cb2",
+   "fieldtype": "Column Break",
+   "label": null
+  },
+  {
+   "description": "How long since anything ran. A scheduler switched on but stalled looks healthy until you check this.",
+   "fieldname": "hours_since_job",
+   "fieldtype": "Int",
+   "label": "Hours Since"
+  },
+  {
+   "fieldname": "res_sec",
+   "fieldtype": "Section Break",
+   "label": "Result"
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Small Text",
+   "label": "What Went Wrong",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-09-07 14:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa Tenant Health",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "title_field": "site_name",
+ "track_changes": 0
+}

@@ -16,6 +16,11 @@
   "cb1",
   "from_date",
   "to_date",
+  "auth_sec",
+  "delegate_authority",
+  "delegated_approvals",
+  "exception_sec",
+  "load_exception_reason",
   "why_sec",
   "reason"
  ],
@@ -104,6 +109,38 @@
    "fieldname": "to_date",
    "fieldtype": "Date",
    "label": "To"
+  },
+  {
+   "description": "Required when this pushes somebody past the organisation's ceiling. A written reason is what makes the exception a decision rather than a drift.",
+   "fieldname": "load_exception_reason",
+   "fieldtype": "Small Text",
+   "label": "Why they may go over the cap"
+  },
+  {
+   "fieldname": "exception_sec",
+   "fieldtype": "Section Break",
+   "label": "Over the cap"
+  },
+  {
+   "depends_on": "delegate_authority",
+   "fieldname": "delegated_approvals",
+   "fieldtype": "Table",
+   "label": "What was re-routed",
+   "options": "Alvoraa Delegated Approval",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.assignment_type!='Permanent'",
+   "description": "A title without authority is a half-measure that makes cover useless. Tick this and the people under the covered seat have their leave and expense approvals routed to whoever is standing in - and routed back when the cover ends. What it changes is recorded below so it can be undone exactly.",
+   "fieldname": "delegate_authority",
+   "fieldtype": "Check",
+   "label": "Give them the seat's approval authority"
+  },
+  {
+   "depends_on": "eval:doc.assignment_type!='Permanent'",
+   "fieldname": "auth_sec",
+   "fieldtype": "Section Break",
+   "label": "Authority"
   },
   {
    "fieldname": "why_sec",

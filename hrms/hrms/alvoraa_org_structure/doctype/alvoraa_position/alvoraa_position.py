@@ -16,6 +16,8 @@ from frappe import _
 from frappe.utils import flt, nowdate
 from frappe.utils.nestedset import NestedSet
 
+from hrms.alvoraa_org_structure import settings
+
 
 class AlvoraaPosition(NestedSet):
 	nsm_parent_field = "reports_to_position"
@@ -101,13 +103,28 @@ class AlvoraaPosition(NestedSet):
 		"""
 		return sum(flt(a.weight) for a in self._current_assignments()) / 100.0
 
-	def vacancy(self):
+	def vacancy(self, for_recruitment=False):
 		"""Seats minus the people in them.
 
 		Worked out on read, never stored. A stored count drifts the first time
 		somebody resigns on a Friday, and a chart that calls a filled seat empty
 		is worse than no chart at all.
+
+		`for_recruitment` is the number that should drive hiring, and it is
+		deliberately different. Once somebody is covering a seat the urgency
+		drops, the requisition quietly stalls, and a three-month gap becomes a
+		year - so by default a covered seat still counts as fully open to
+		recruitment even though the chart shows it partly filled.
+
+		Whether that holds is the organisation's setting, because a company that
+		is happy for an acting manager to run a store for two quarters should not
+		be nagged about it.
 		"""
 		if self.status != "Active":
 			return 0.0
+		if for_recruitment and settings.get("alvoraa_cover_vacancy_stays_open"):
+			# Cover does not count towards filling it. Permanent does.
+			permanent = sum(flt(a.weight) for a in self._current_assignments()
+			                if (a.assignment_type or "Permanent") == "Permanent") / 100.0
+			return max(0.0, flt(self.seats) - permanent)
 		return max(0.0, flt(self.seats) - self.filled_weight())

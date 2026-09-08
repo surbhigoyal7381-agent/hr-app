@@ -204,7 +204,7 @@ class TestEdgeCases(FrappeTestCase):
 	def test_a_site_with_no_features_key_gets_everything(self):
 		"""Covers every tenant provisioned before this existed. A missing key
 		must never lock anyone out."""
-		self.assertEqual(sorted(sub.enabled_features({})), sorted(sub.FEATURES))
+		self.assertEqual(sorted(sub.enabled_features({})), sorted(sub.DEFAULT_ON))
 
 	def test_an_explicitly_empty_list_is_not_the_same_as_missing(self):
 		"""[] is a real state a downgrade produces: "nothing beyond required".
@@ -530,7 +530,7 @@ class TestGatingReadsTheSiteConfig(FrappeTestCase):
 		starts hiding things, the fallback changed and the comment above it is
 		wrong."""
 		self._configure(subscription_plan="custom")
-		self.assertEqual(sorted(sub.enabled_features()), sorted(sub.FEATURES))
+		self.assertEqual(sorted(sub.enabled_features()), sorted(sub.DEFAULT_ON))
 		ma.sync_workspaces()
 		if "Payroll" in self._ws:
 			self.assertEqual(frappe.db.get_value("Workspace", "Payroll", "is_hidden"), 0,

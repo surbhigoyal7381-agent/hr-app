@@ -2,7 +2,7 @@
 
 Frappe HR payroll handles all of this by configuration, except two additions: an ESI component pair (Frappe HR India ships PF and Professional Tax but no ESI) and one custom field for the ESI number. PF and ESI filing stays with the client's third party for now; the demo shows the amounts on the slip and the statutory reports, so the client can see that moving it in-house is a switch, not a project.
 
-Statutory figures below are the commonly used ones. **They are marked "verify" because I cannot confirm today's values.** Check them on the EPFO and ESIC sites before the demo.
+Statutory figures below are the commonly used ones. **Decision 2026-09-07: they are applied as they stand for the demo** (ESI wage ceiling 21,000 gross per month, ESI 0.75% employee and 3.25% employer, PF 12% + 12% on basic capped at 15,000). I could not confirm today's values from a primary source; check them on the EPFO and ESIC sites before any real payroll runs on them.
 
 ## 1. Payroll Settings
 
@@ -40,7 +40,7 @@ Type E = Earning, D = Deduction, EC = Employer Contribution. Abbreviations are w
 | Employer PF Contribution | EPF_ER | EC | `min(B, 15000) * 0.12` (8.33% EPS + 3.67% EPF; show as one line) | no | no |
 | Employer ESI Contribution | ESI_ER | EC | `gross_pay * 0.0325` — condition `esi_applicable` | no | no |
 
-Rates to verify: PF 12% + 12% on basic capped at 15,000; ESI 0.75% employee, 3.25% employer, wage ceiling 21,000 gross per month.
+Rates applied for the demo (see the note at the top of this file): PF 12% + 12% on basic capped at 15,000; ESI 0.75% employee, 3.25% employer, wage ceiling 21,000 gross per month.
 
 ## 3. The ESI fields (build B2, implemented)
 

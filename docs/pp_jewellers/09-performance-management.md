@@ -113,7 +113,7 @@ Worked example, PPJ-0054, Q2 to 6 September: scheduled 58, absent 0, LWP 0 → r
 
 ## 8. Build B6: generalise the attendance hook and make it configurable
 
-**Status: built and tested 2026-09-07 (file 10, B6).** Module **Alvoraa HR Core** (`hrms/hrms/alvoraa_hr_core`), opt-in feature key `attendance_scoring`. Two things differ from the text below: the numbers come from the submitted Attendance rows only (On Leave rows whose leave type is loss-of-pay count as loss of pay; the Leave Ledger is not read), and "weight redistributed" is done by giving the attendance part the average of the other two parts, which is the same thing without changing the formula per employee. The demo's Q1 window (April to June) has no attendance records, so Q1 appraisals use that rule; the Q2 drafts carry real numbers.
+**Status: built and tested 2026-09-07 (file 10, B6).** Module **Alvoraa HR Core** (`hrms/hrms/alvoraa_hr_core`), opt-in feature key `attendance_scoring`. Two things differ from the text below: the numbers come from the submitted Attendance rows only (On Leave rows whose leave type is loss-of-pay count as loss of pay; the Leave Ledger is not read), and "weight redistributed" is done by giving the attendance part the average of the other two parts, which is the same thing without changing the formula per employee. The demo's Q1 window (April to June) has no attendance records, so Q1 appraisals use that rule; the Q2 drafts carry real numbers. Decision 2026-09-07: no Q1 attendance data is to be seeded; the Q2 drafts are where attendance in the score is shown.
 
 ### 8.1 What exists
 

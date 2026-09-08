@@ -120,7 +120,7 @@ COMPONENTS = [
     ("Employer PF Contribution", "EPF_ER", "Employer Contribution", {"condition": "pf_applicable", "formula": "min(B, 15000) * 0.12"}),
     ("Employer ESI Contribution", "ESI_ER", "Employer Contribution", {"condition": "esi_applicable", "formula": "gross_pay * 0.0325", "remove_if_zero_valued": 1}),
 ]
-# Statutory rates (PF 12% on basic capped at 15,000; ESI 0.75% / 3.25% up to 21,000 gross) - VERIFY.
+# Statutory rates (PF 12% on basic capped at 15,000; ESI 0.75% / 3.25% up to 21,000 gross) - applied for the demo; confirm before real payroll.
 ACCOUNT_FOR = {"PF": PF_ACC, "ESI": ESI_ACC, "PT": PT_ACC, "IT": IT_ACC, "EPF_ER": PF_ACC, "ESI_ER": ESI_ACC}
 UPDATABLE = ["formula", "condition", "amount", "depends_on_payment_days", "is_tax_applicable", "exempted_from_income_tax",
              "remove_if_zero_valued", "variable_based_on_taxable_salary", "is_income_tax_component"]

@@ -1468,3 +1468,21 @@ def get_provisioning_plans(customer=None):
             pluck="feature_key")
         out.append(row)
     return {"plans": out, "billing_ready": True}
+
+
+@frappe.whitelist()
+def get_customers(search=None):
+    """ERPNext customers, for choosing who a new tenant is billed to.
+
+    Read-only and admin-only. Kept here rather than letting the console call
+    frappe.client.get_list directly, so every method the page uses stays in one
+    place and stays covered by the call-path test.
+    """
+    _require_admin()
+    if not frappe.db.exists("DocType", "Customer"):
+        return []
+    filters = {}
+    if search:
+        filters["customer_name"] = ("like", f"%{search}%")
+    return frappe.get_all("Customer", filters=filters, fields=["name", "customer_name"],
+                          order_by="customer_name asc", limit=50)

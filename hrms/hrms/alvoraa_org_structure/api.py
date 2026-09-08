@@ -334,3 +334,175 @@ def reporting_mismatches():
 				"reports_to_says_name": frappe.db.get_value("Employee", says, "employee_name"),
 			})
 	return {"mismatches": out, "count": len(out)}
+
+
+# ── the view an employee actually wants ──────────────────────────────────────
+
+@frappe.whitelist()
+def my_view(employee=None, as_at=None):
+	"""The chart around one person: their chain up, themselves, their team.
+
+	An employee and an HR manager want different products from the same data.
+	HR wants the whole tree. An employee wants four things, and none of them is
+	"the whole company": where am I, who is my manager, who else is on my team,
+	and who do I talk to in Finance.
+
+	Most org charts on a portal fail by giving the employee the HR view - four
+	hundred boxes to pan around looking for themselves. So this returns three
+	levels and a breadcrumb, and nothing else. Everything past that is a click.
+
+	Works with or without positions. Without them it walks `reports_to`, which
+	is what Frappe HR has always drawn.
+	"""
+	as_at = as_at or nowdate()
+	employee = employee or frappe.db.get_value(
+		"Employee", {"user_id": frappe.session.user}, "name")
+	if not employee:
+		return {"me": None, "reason": "no employee record for this login"}
+
+	if _enabled() and frappe.db.count("Alvoraa Position", {"status": "Active"}):
+		return _my_view_by_position(employee, as_at)
+	return _my_view_by_person(employee)
+
+
+def _card(employee):
+	e = frappe.db.get_value(
+		"Employee", employee,
+		["name", "employee_name", "designation", "department", "branch", "image"],
+		as_dict=True)
+	if not e:
+		return None
+	return {"employee": e.name, "name": e.employee_name, "title": e.designation or "",
+	        "department": e.department or "", "branch": e.branch or "", "image": e.image}
+
+
+def _my_view_by_position(employee, as_at):
+	mine = _running("Alvoraa Position Assignment",
+	                {"employee": employee, "from_date": ("<=", as_at)},
+	                ["position", "weight", "is_primary", "assignment_type"], as_at)
+	if not mine:
+		return _my_view_by_person(employee)
+
+	primary = next((r for r in mine if r.is_primary), mine[0])
+	seat = frappe.db.get_value("Alvoraa Position", primary.position,
+	                           ["name", "position_title", "reports_to_position"],
+	                           as_dict=True)
+
+	me = _card(employee)
+	me["seats"] = [{"position": r.position, "weight": flt(r.weight),
+	                "is_primary": bool(r.is_primary),
+	                "cover": (r.assignment_type or "Permanent") != "Permanent"}
+	               for r in mine]
+
+	# Up: the chain to the top, so the shape is legible without drawing it.
+	chain, at, guard = [], seat.reports_to_position, 0
+	while at and guard < 20:
+		guard += 1
+		node = frappe.db.get_value("Alvoraa Position", at,
+		                           ["name", "position_title", "reports_to_position"],
+		                           as_dict=True)
+		if not node:
+			break
+		chain.append({"position": node.name, "title": node.position_title,
+		              "people": [_card(h.employee) for h in _holders_of(node.name, as_at)]})
+		at = node.reports_to_position
+	chain.reverse()
+
+	return {
+		"mode": "position",
+		"me": me,
+		"my_position": {"position": seat.name, "title": seat.position_title},
+		"breadcrumb": chain,
+		"manager": chain[-1] if chain else None,
+		"peers": [_card(h.employee) for h in _holders_of(seat.name, as_at)
+		          if h.employee != employee],
+		"team": _team_under(seat.name, as_at),
+		"dotted": _dotted_for(seat.name, as_at),
+	}
+
+
+def _holders_of(position, as_at):
+	return _running("Alvoraa Position Assignment",
+	                {"position": position, "from_date": ("<=", as_at)},
+	                ["employee", "weight", "assignment_type"], as_at)
+
+
+def _team_under(position, as_at):
+	"""One level down, with empty seats shown as empty.
+
+	A person looking at their own team should see the vacancy they are covering
+	for - that is not a restructuring signal, it is why they are busy.
+	"""
+	out = []
+	for child in frappe.get_all("Alvoraa Position",
+	                            filters={"reports_to_position": position,
+	                                     "status": ("!=", "Closed")},
+	                            fields=["name", "position_title", "seats"],
+	                            order_by="position_title asc"):
+		people = _holders_of(child.name, as_at)
+		out.append({
+			"position": child.name, "title": child.position_title,
+			"people": [{**_card(p.employee), "weight": flt(p.weight),
+			            "cover": (p.assignment_type or "Permanent") != "Permanent"}
+			           for p in people],
+			"open": max(0.0, flt(child.seats)
+			            - sum(flt(p.weight) for p in people) / 100.0),
+		})
+	return out
+
+
+def _dotted_for(position, as_at):
+	"""Shown as a line on the card - "also works with" - not as a crossing line.
+	Five crossing lines turn a chart into spaghetti."""
+	out = []
+	for line in get_reporting_lines(as_at):
+		if line["from_position"] != position:
+			continue
+		for h in _holders_of(line["to_position"], as_at):
+			card = _card(h.employee)
+			if card:
+				out.append({**card, "line_type": line["line_type"]})
+	return out
+
+
+def _my_view_by_person(employee):
+	"""The fallback, for the great majority of tenants who keep no positions."""
+	me = _card(employee)
+	chain, at, guard = [], frappe.db.get_value("Employee", employee, "reports_to"), 0
+	while at and guard < 20:
+		guard += 1
+		chain.append({"position": None, "title": None, "people": [_card(at)]})
+		at = frappe.db.get_value("Employee", at, "reports_to")
+	chain.reverse()
+
+	boss = frappe.db.get_value("Employee", employee, "reports_to")
+	return {
+		"mode": "person",
+		"me": me,
+		"my_position": None,
+		"breadcrumb": chain,
+		"manager": chain[-1] if chain else None,
+		"peers": [_card(e) for e in frappe.get_all(
+			"Employee", filters={"reports_to": boss, "status": "Active",
+			                     "name": ("!=", employee)}, pluck="name")] if boss else [],
+		"team": [{"position": None, "title": None, "open": 0,
+		          "people": [_card(e)]} for e in frappe.get_all(
+			"Employee", filters={"reports_to": employee, "status": "Active"},
+			pluck="name")],
+		"dotted": [],
+	}
+
+
+@frappe.whitelist()
+def search_people(q, limit=12):
+	"""Type a name, land on their card. That is how an org chart is actually
+	used - somebody is looking for one person, not browsing a company."""
+	q = (q or "").strip()
+	if len(q) < 2:
+		return []
+	return frappe.get_all(
+		"Employee",
+		filters={"status": "Active", "employee_name": ("like", f"%{q}%")},
+		fields=["name as employee", "employee_name as name", "designation as title",
+		        "department", "image"],
+		order_by="employee_name asc", limit=int(limit))

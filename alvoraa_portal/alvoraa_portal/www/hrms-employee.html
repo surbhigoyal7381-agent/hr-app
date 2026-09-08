@@ -1943,6 +1943,63 @@ body.panel-fullscreen{overflow:hidden}
 /* 8 — Home activity card fills available width cleanly */
 .home-left-col>.card{min-height:180px}
 
+
+/* ── Organisation chart, employee view ─────────────────────────────
+   Three levels and a breadcrumb, never the whole company. An employee
+   opening this wants to know where they sit, not to pan around four
+   hundred boxes looking for themselves. */
+.oc-search-wrap{position:relative}
+.oc-search{font:inherit;font-size:13px;padding:8px 12px;border:1px solid var(--border);
+  border-radius:8px;background:var(--surface);color:var(--text);min-width:220px}
+.oc-results{position:absolute;top:calc(100% + 4px);right:0;min-width:280px;z-index:40;
+  background:var(--surface);border:1px solid var(--border);border-radius:8px;
+  box-shadow:0 8px 24px rgba(0,0,0,.12);overflow:hidden;display:none}
+.oc-results.open{display:block}
+.oc-hit{display:flex;gap:10px;align-items:center;padding:8px 12px;cursor:pointer;font-size:13px}
+.oc-hit:hover{background:var(--bg)}
+.oc-hit .t{color:var(--text3);font-size:11.5px}
+
+.oc-crumb{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:16px;
+  font-size:12.5px;color:var(--text3)}
+.oc-crumb button{background:none;border:0;font:inherit;color:var(--accent,#16A373);
+  cursor:pointer;padding:0}
+.oc-crumb .sep{opacity:.5}
+
+.oc-body{display:flex;flex-direction:column;gap:18px}
+.oc-row-label{font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--text3);font-weight:700;margin-bottom:8px}
+.oc-strip{display:flex;flex-wrap:wrap;gap:10px}
+
+.oc-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  padding:12px 14px;min-width:210px;max-width:280px;display:flex;gap:10px;align-items:flex-start}
+.oc-card.me{border-color:var(--accent,#16A373);box-shadow:0 0 0 2px rgba(22,163,115,.12)}
+.oc-card.vacant{border-style:dashed;background:transparent}
+.oc-card .av{width:34px;height:34px;border-radius:50%;flex:none;object-fit:cover;
+  background:var(--bg);display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:700;color:var(--text3)}
+.oc-card .nm{font-size:13.5px;font-weight:650;color:var(--text);line-height:1.3}
+.oc-card .ti{font-size:11.5px;color:var(--text3);margin-top:1px}
+.oc-card .meta{font-size:11px;color:var(--text3);margin-top:4px}
+.oc-card.clickable{cursor:pointer}
+.oc-card.clickable:hover{border-color:var(--border2,#cbd5e1)}
+
+.oc-tag{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.03em;
+  padding:1px 6px;border-radius:10px;margin-left:6px;vertical-align:middle}
+.oc-tag.w{background:var(--bg);color:var(--text3)}
+.oc-tag.c{background:#fef3c7;color:#92400e}
+.oc-tag.v{background:#fee2e2;color:#b91c1c}
+
+.oc-muted{color:var(--text3);font-size:13px}
+.oc-dotted{font-size:12px;color:var(--text3);margin-top:6px}
+.oc-dotted b{color:var(--text);font-weight:600}
+
+/* On a phone this is a list, not a canvas. A pannable chart on a small
+   screen is miserable, and most of these users are on one. */
+@media (max-width:640px){
+  .oc-card{min-width:0;width:100%;max-width:none}
+  .oc-search{min-width:0;width:100%}
+  .oc-results{right:auto;left:0;width:100%}
+}
 </style>
 {% endblock %}
 
@@ -2015,6 +2072,10 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
         <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg></span>
         <span class="nav-label">Policies</span>
         <span class="nav-badge" id="sb-policies-badge" style="display:none">0</span>
+      </div>
+      <div class="nav-item" data-panel="org-chart" id="nav-org-chart" onclick="switchPanel('org-chart',this)" style="display:none">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="5" rx="1"/><rect x="2" y="17" width="6" height="5" rx="1"/><rect x="16" y="17" width="6" height="5" rx="1"/><path d="M12 7v4M5 17v-3h14v3"/></svg></span>
+        <span class="nav-label">Organisation</span>
       </div>
       <div id="mgmt-section-hdr" class="sidebar-section" style="margin-top:8px;display:none">Management</div>
       <div class="nav-item" data-panel="team" id="nav-team" onclick="switchPanel('team',this)" style="display:none">
@@ -2313,6 +2374,22 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
       </div>
 
       <!-- ══ POLICIES (build B5) ════════════════════════════ -->
+      <div id="panel-org-chart" class="panel">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">Organisation</h1>
+            <p class="page-sub" id="oc-sub">Where you sit, and who is around you</p>
+          </div>
+          <div class="oc-search-wrap">
+            <input id="oc-search" class="oc-search" placeholder="Find someone&hellip;"
+                   autocomplete="off" oninput="ocSearch(this.value)">
+            <div id="oc-results" class="oc-results"></div>
+          </div>
+        </div>
+        <div id="oc-crumb" class="oc-crumb"></div>
+        <div id="oc-body" class="oc-body"><p class="oc-muted">Loading&hellip;</p></div>
+      </div>
+
       <div id="panel-policies" class="panel">
         <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:20px">
           <div>
@@ -4524,6 +4601,191 @@ function expenseStatusBadge(s) {
 }
 
 /* ── Panel switching ─────────────────────────────── */
+
+/* ── Organisation chart, employee view ────────────────────────────────
+   Three levels and a breadcrumb, opened on YOU. An employee wants four
+   things and none of them is the whole company: where am I, who is my
+   manager, who else is on my team, who do I talk to in Finance.
+
+   Most org charts fail on a portal by handing the employee the HR view -
+   four hundred boxes to pan around looking for themselves.
+*/
+var OC = { at: null, data: null };
+
+function ocEsc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+  });
+}
+
+function ocInitials(name) {
+  return String(name || "?").trim().split(/\s+/).slice(0, 2)
+    .map(function (w) { return w[0]; }).join("").toUpperCase();
+}
+
+function ocAvatar(p) {
+  return p && p.image
+    ? '<img class="av" src="' + ocEsc(p.image) + '" alt="">'
+    : '<span class="av">' + ocEsc(ocInitials(p && p.name)) + "</span>";
+}
+
+function ocCard(p, opts) {
+  opts = opts || {};
+  if (!p) return "";
+  var tags = "";
+  // The weight is always shown. It explains why somebody appears twice, and
+  // hiding it makes the chart look broken rather than discreet.
+  if (opts.weight != null && opts.weight < 100) {
+    tags += '<span class="oc-tag w">' + Math.round(opts.weight) + "%</span>";
+  }
+  if (opts.cover) tags += '<span class="oc-tag c">covering</span>';
+  return '<div class="oc-card' + (opts.me ? " me" : "")
+    + (opts.clickable === false ? "" : " clickable") + '"'
+    + (opts.clickable === false ? "" : ' onclick="ocGoTo(\'' + ocEsc(p.employee) + '\')"')
+    + ">" + ocAvatar(p) + "<div>"
+    + '<div class="nm">' + ocEsc(p.name) + tags + "</div>"
+    + '<div class="ti">' + ocEsc(p.title || "") + "</div>"
+    + (p.department ? '<div class="meta">' + ocEsc(p.department) + "</div>" : "")
+    + "</div></div>";
+}
+
+function ocVacant(seat, open) {
+  return '<div class="oc-card vacant"><span class="av">&mdash;</span><div>'
+    + '<div class="nm">' + ocEsc(seat)
+    + '<span class="oc-tag v">' + (open === 1 ? "open" : open.toFixed(1) + " open")
+    + "</span></div>"
+    + '<div class="ti">Nobody in this seat</div></div></div>';
+}
+
+function ocRow(label, html) {
+  if (!html) return "";
+  return '<div><div class="oc-row-label">' + ocEsc(label) + "</div>"
+    + '<div class="oc-strip">' + html + "</div></div>";
+}
+
+window.ocGoTo = function (employee) {
+  ocLoad(employee);
+  var res = document.getElementById("oc-results");
+  if (res) res.classList.remove("open");
+  var box = document.getElementById("oc-search");
+  if (box) box.value = "";
+};
+
+window.ocLoad = async function (employee) {
+  var body = document.getElementById("oc-body");
+  body.innerHTML = '<p class="oc-muted">Loading&hellip;</p>';
+  var d;
+  try {
+    d = await gpFetch("hrms.alvoraa_org_structure.api.my_view",
+                      employee ? { employee: employee } : {});
+  } catch (e) {
+    body.innerHTML = '<p class="oc-muted">Could not load the chart: '
+      + ocEsc(e && e.message ? e.message : e) + "</p>";
+    return;
+  }
+  OC.data = d; OC.at = d && d.me ? d.me.employee : null;
+
+  if (!d || !d.me) {
+    body.innerHTML = '<p class="oc-muted">'
+      + ocEsc((d && d.reason) || "Nothing to show yet.") + "</p>";
+    document.getElementById("oc-crumb").innerHTML = "";
+    return;
+  }
+
+  // Breadcrumb: the shape of the whole company without drawing it.
+  var crumb = (d.breadcrumb || []).map(function (step) {
+    var who = (step.people || [])[0];
+    var label = who ? who.name : (step.title || "Vacant");
+    return who
+      ? '<button onclick="ocGoTo(\'' + ocEsc(who.employee) + '\')">' + ocEsc(label) + "</button>"
+      : "<span>" + ocEsc(label) + "</span>";
+  });
+  crumb.push("<span><strong>" + ocEsc(d.me.name) + "</strong></span>");
+  document.getElementById("oc-crumb").innerHTML =
+    crumb.join('<span class="sep">&rsaquo;</span>');
+
+  var isMe = !employee || employee === OC.at;
+  document.getElementById("oc-sub").textContent = isMe
+    ? "Where you sit, and who is around you"
+    : d.me.name + " \u2014 " + (d.me.title || "");
+
+  var mgr = d.manager && (d.manager.people || [])[0];
+  var html = "";
+  html += ocRow("Reports to", mgr
+    ? ocCard(mgr)
+    : (d.manager
+        ? ocVacant(d.manager.title || "Manager", 1)
+        : '<p class="oc-muted">Top of the tree.</p>'));
+
+  html += ocRow(isMe ? "You" : d.me.name,
+    ocCard(d.me, { me: true, clickable: false })
+    + (d.my_position
+        ? '<div class="oc-dotted">Seat: <b>' + ocEsc(d.my_position.title) + "</b></div>"
+        : ""));
+
+  // Dotted lines as a LINE on the card, never as crossing lines on a canvas -
+  // five of those turn a chart into spaghetti.
+  if ((d.dotted || []).length) {
+    html += ocRow("Also works with", (d.dotted || []).map(function (x) {
+      return ocCard(x, {});
+    }).join(""));
+  }
+
+  if ((d.peers || []).length) {
+    html += ocRow("Alongside", (d.peers || []).map(function (x) {
+      return ocCard(x, {});
+    }).join(""));
+  }
+
+  var team = (d.team || []).map(function (seat) {
+    var cards = (seat.people || []).map(function (x) {
+      return ocCard(x, { weight: x.weight, cover: x.cover });
+    }).join("");
+    // An employee seeing their own team SHOULD see the seat they are covering
+    // for. That is not a restructuring signal, it is why they are busy.
+    if (seat.open >= 0.5) cards += ocVacant(seat.title || "Open seat", seat.open);
+    return cards;
+  }).join("");
+  html += ocRow(isMe ? "Your team" : "Their team",
+                team || '<p class="oc-muted">Nobody reports here.</p>');
+
+  body.innerHTML = html;
+};
+
+var _ocSearchTimer = null;
+window.ocSearch = function (q) {
+  clearTimeout(_ocSearchTimer);
+  var res = document.getElementById("oc-results");
+  if (!q || q.trim().length < 2) { res.classList.remove("open"); return; }
+  // Typed on every keystroke, so wait for a pause rather than asking the
+  // server about every letter.
+  _ocSearchTimer = setTimeout(async function () {
+    var hits = [];
+    try {
+      hits = await gpFetch("hrms.alvoraa_org_structure.api.search_people", { q: q });
+    } catch (e) { /* an empty result is not an error worth showing */ }
+    if (!hits || !hits.length) {
+      res.innerHTML = '<div class="oc-hit"><span class="t">Nobody by that name</span></div>';
+      res.classList.add("open");
+      return;
+    }
+    res.innerHTML = hits.map(function (h) {
+      return '<div class="oc-hit" onclick="ocGoTo(\'' + ocEsc(h.employee) + '\')">'
+        + ocAvatar(h) + "<div><div>" + ocEsc(h.name) + "</div>"
+        + '<div class="t">' + ocEsc(h.title || "") + "</div></div></div>";
+    }).join("");
+    res.classList.add("open");
+  }, 220);
+};
+
+document.addEventListener("click", function (e) {
+  var wrap = document.querySelector(".oc-search-wrap");
+  if (wrap && !wrap.contains(e.target)) {
+    var r = document.getElementById("oc-results");
+    if (r) r.classList.remove("open");
+  }
+});
+
 function switchPanel(name, triggerEl) {
   // If the employee drawer is open, close it before switching panels so body overflow is restored
   var _ed = document.getElementById("emp-drawer");
@@ -4533,6 +4795,8 @@ function switchPanel(name, triggerEl) {
   if (window.tvClosePop) { window.tvClosePop(); window.tvCloseNew(); }
   document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
   document.getElementById("panel-" + name).classList.add("active");
+
+  if (name === "org-chart") { ocLoad(); }
 
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
   if (triggerEl) triggerEl.classList.add("active");
@@ -5850,6 +6114,8 @@ function loadPortalContext() {
     if (navOrgSettings) navOrgSettings.style.display = ctx.is_hr ? "flex" : "none";
     const navPolicies = document.getElementById("nav-policies");
     if (navPolicies) navPolicies.style.display = _f.plan_policy_library ? "flex" : "none";
+    const navOrgChart = document.getElementById("nav-org-chart");
+    if (navOrgChart) navOrgChart.style.display = _f.plan_org_structure ? "flex" : "none";
     sbUpdateScrollBtns();
 
     // Team goals section (home page)

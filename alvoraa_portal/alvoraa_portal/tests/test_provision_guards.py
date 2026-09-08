@@ -592,5 +592,5 @@ class TestProvisioningRecordsWhatWasBought(FrappeTestCase):
 		from alvoraa_portal import subscription as sub
 
 		got = sub.enabled_features({"subscription_plan": "custom"})
-		self.assertEqual(sorted(got), sorted(sub.FEATURES),
+		self.assertEqual(sorted(got), sorted(sub.DEFAULT_ON),
 		                 "custom with no feature list grants the whole product")

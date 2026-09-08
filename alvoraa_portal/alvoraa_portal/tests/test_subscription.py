@@ -33,7 +33,7 @@ class TestPlanLadder(FrappeTestCase):
 		self.assertNotIn("goals", f)
 
 	def test_enterprise_has_everything_we_sell(self):
-		self.assertEqual(set(sub.plan_features("enterprise")), set(sub.FEATURES))
+		self.assertEqual(set(sub.plan_features("enterprise")), set(sub.DEFAULT_ON))
 
 	def test_custom_has_every_hr_feature_too(self):
 		"""Custom is Enterprise PLUS ERPNext, not a different HR product."""
@@ -41,14 +41,14 @@ class TestPlanLadder(FrappeTestCase):
 
 	def test_unknown_plan_grants_everything(self):
 		"""Tenants provisioned before this existed must not lose access."""
-		self.assertEqual(set(sub.plan_features("nonsense")), set(sub.FEATURES))
-		self.assertEqual(set(sub.plan_features(None)), set(sub.FEATURES))
+		self.assertEqual(set(sub.plan_features("nonsense")), set(sub.DEFAULT_ON))
+		self.assertEqual(set(sub.plan_features(None)), set(sub.DEFAULT_ON))
 
 
 class TestEntitlement(FrappeTestCase):
 	def test_a_site_with_no_config_gets_everything(self):
 		"""A missing key must never lock a tenant out."""
-		self.assertEqual(set(sub.enabled_features({})), set(sub.FEATURES))
+		self.assertEqual(set(sub.enabled_features({})), set(sub.DEFAULT_ON))
 
 	def test_features_list_wins_when_present(self):
 		feats = sub.enabled_features({"features": ["portal", "leaves", "payroll"]})

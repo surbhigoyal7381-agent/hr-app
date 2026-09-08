@@ -36,7 +36,9 @@ class AlvoraaPositionAssignment(Document):
 	def validate(self):
 		self._check_weight()
 		self._check_dates()
+		self._check_not_before_they_join()
 		self._check_position_is_open()
+		self._check_cover_is_temporary()
 		self._check_person_adds_up()
 		self._check_one_primary()
 
@@ -51,9 +53,42 @@ class AlvoraaPositionAssignment(Document):
 		if flt(self.weight) > 100:
 			frappe.throw(_("A weight cannot be more than 100 - a person is one person."))
 
+	@property
+	def is_cover(self):
+		"""Acting, Interim and Additional Charge are cover carried ON TOP of the
+		person's own job. Permanent is the job itself."""
+		return self.assignment_type and self.assignment_type != "Permanent"
+
 	def _check_dates(self):
 		if self.from_date and self.to_date and str(self.to_date) < str(self.from_date):
 			frappe.throw(_("This assignment ends before it starts."))
+
+	def _check_not_before_they_join(self):
+		"""A new joiner is put in a seat weeks before they arrive - the seat is
+		created, the offer is signed, the chart is planned. They must not appear
+		as though they are in it until the day they actually start.
+
+		Enforced against the Employee's own joining date rather than trusted from
+		the form, because the form is where somebody types the planned date and
+		then the start slips a fortnight.
+		"""
+		joins = frappe.db.get_value("Employee", self.employee, "date_of_joining")
+		if joins and self.from_date and str(self.from_date) < str(joins):
+			frappe.throw(
+				_("{0} joins on {1}. An assignment cannot start before that - "
+				  "they would show in the seat on a day they do not work here.")
+				.format(frappe.bold(self.employee_name or self.employee), joins))
+
+	def _check_cover_is_temporary(self):
+		"""Cover that never ends is not cover. Warned, not refused: an interim
+		arrangement genuinely can be open-ended while a search runs, and refusing
+		it would send somebody to record it as permanent, which is worse."""
+		if self.is_cover and not self.to_date:
+			frappe.msgprint(
+				_("{0} cover with no end date. If it is not temporary, it is a "
+				  "permanent assignment - and if it is, say when it ends.")
+				.format(self.assignment_type),
+				indicator="orange", alert=True)
 
 	def _check_position_is_open(self):
 		status = frappe.db.get_value("Alvoraa Position", self.position, "status")
@@ -63,33 +98,74 @@ class AlvoraaPositionAssignment(Document):
 				.format(frappe.bold(self.position)))
 
 	def _current_rows_for_person(self):
-		return frappe.get_all(
+		rows = frappe.get_all(
 			"Alvoraa Position Assignment",
 			filters={"employee": self.employee, "name": ("!=", self.name or ""),
 			         "to_date": ("is", "not set")},
-			fields=["name", "position", "weight", "is_primary"])
+			fields=["name", "position", "weight", "is_primary", "assignment_type"])
+		for r in rows:
+			r["is_cover"] = bool(r.assignment_type and r.assignment_type != "Permanent")
+		return rows
 
 	def _check_person_adds_up(self):
-		"""A person's weights total 100. Not more, because a person is one person."""
+		"""A person's PERMANENT weights total 100. Cover is counted separately.
+
+		The distinction matters and it is not bookkeeping. A store in-charge who
+		covers a second store still does their own job in full - the cover is
+		extra duty, not a reallocation. Squeezing it into the same 100 would
+		force somebody to pretend they had reduced their real role, and the
+		chart would then understate what the first store actually has.
+
+		So cover is allowed to push the total past 100, and the person is FLAGGED
+		rather than refused. Somebody carrying 130% is a real risk worth seeing,
+		not a data-entry error worth blocking.
+		"""
 		if self.to_date:
 			return                      # a closed assignment is history, not a claim
-		total = flt(self.weight) + sum(flt(r.weight) for r in self._current_rows_for_person())
-		if total > 100 + TOLERANCE:
-			others = ", ".join(f"{r.position} {flt(r.weight):g}%"
-			                   for r in self._current_rows_for_person())
-			frappe.throw(
-				_("{0} would be at {1}% across their positions. A person is one "
-				  "person. Already holding: {2}.")
-				.format(frappe.bold(self.employee_name or self.employee),
-				        f"{total:g}", others or _("nothing else")),
-				title=_("Weights add up to more than one person"))
+		rows = self._current_rows_for_person()
+		permanent = sum(flt(r.weight) for r in rows if not r.get("is_cover"))
+		cover = sum(flt(r.weight) for r in rows if r.get("is_cover"))
+
+		if not self.is_cover:
+			total = flt(self.weight) + permanent
+			if total > 100 + TOLERANCE:
+				held = ", ".join(f"{r.position} {flt(r.weight):g}%"
+				                 for r in rows if not r.get("is_cover"))
+				frappe.throw(
+					_("{0} would be at {1}% of their own job. A person is one "
+					  "person. Already holding: {2}. If this is temporary cover, "
+					  "set the type instead.")
+					.format(frappe.bold(self.employee_name or self.employee),
+					        f"{total:g}", held or _("nothing else")),
+					title=_("Weights add up to more than one person"))
+			return
+
+		load = flt(self.weight) + permanent + cover
+		if load > 100 + TOLERANCE:
+			frappe.msgprint(
+				_("{0} will be carrying {1}% once this cover starts - their own "
+				  "role plus what they are standing in for. That is allowed, and "
+				  "worth knowing.")
+				.format(frappe.bold(self.employee_name or self.employee), f"{load:g}"),
+				indicator="orange", alert=True)
 
 	def _check_one_primary(self):
 		"""Exactly one primary per person - it decides where they appear by
-		default and which line the rest of the product follows."""
+		default and which line the rest of the product follows.
+
+		Cover is never primary. Somebody standing in for a fortnight should not
+		become the person whose appraisal and approvals route through the seat
+		they are covering.
+		"""
+		# Cover first. Checking `to_date` before this skipped the rule for every
+		# temporary assignment - and temporary assignments are the only ones that
+		# have a to_date, so the rule never ran at all.
+		if self.is_cover:
+			self.is_primary = 0
+			return
 		if self.to_date:
 			return
-		others = self._current_rows_for_person()
+		others = [r for r in self._current_rows_for_person() if not r.get("is_cover")]
 		if not others:
 			self.is_primary = 1         # their only position is the primary one
 			return

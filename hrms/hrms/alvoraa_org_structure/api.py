@@ -127,14 +127,25 @@ def _people_in(position, as_at):
 			"weight": flt(r.weight),
 			"is_primary": bool(r.is_primary),
 			"image": frappe.db.get_value("Employee", r.employee, "image"),
-			# So the chart can mark somebody who also appears elsewhere rather
-			# than looking like a duplicate.
-			"also_elsewhere": frappe.db.count(
+			# So the chart marks somebody who also appears elsewhere rather than
+			# reading as a duplicate. Anything not yet ended, so a person on
+			# temporary cover in another store is marked too.
+			"also_elsewhere": bool(_running(
 				"Alvoraa Position Assignment",
 				{"employee": r.employee, "position": ("!=", position),
-				 "to_date": ("is", "not set")}) > 0,
+				 "from_date": ("<=", as_at)}, ["name"], as_at)),
 		})
 	return sorted(people, key=lambda p: (not p["is_primary"], p["name"] or ""))
+
+
+def _running(doctype, filters, fields, on):
+	"""Rows in force on a date: started, and not yet ended.
+
+	Cover always carries an end date, so a filter that only accepts an EMPTY one
+	silently drops every temporary arrangement.
+	"""
+	rows = frappe.get_all(doctype, filters=filters, fields=fields + ["to_date"])
+	return [r for r in rows if not r.to_date or str(r.to_date) >= str(on)]
 
 
 def _descendant_count(lft, rgt, company):
@@ -272,7 +283,7 @@ def create_proposed_positions(positions):
 			if frappe.db.exists("Alvoraa Position Assignment",
 			                    {"employee": person["employee"],
 			                     "position": row["position_title"],
-			                     "to_date": ("is", "not set")}):
+			                     "to_date": ("is", "not set")}):  # noqa: E501
 				continue
 			frappe.get_doc({
 				"doctype": "Alvoraa Position Assignment",
@@ -300,17 +311,18 @@ def reporting_mismatches():
 	"""
 	frappe.only_for(["HR Manager", "System Manager"])
 	out = []
-	for a in frappe.get_all("Alvoraa Position Assignment",
-	                        filters={"is_primary": 1, "to_date": ("is", "not set")},
-	                        fields=["employee", "employee_name", "position"]):
+	today = nowdate()
+	for a in _running("Alvoraa Position Assignment",
+	                  {"is_primary": 1, "from_date": ("<=", today)},
+	                  ["employee", "employee_name", "position"], today):
 		parent = frappe.db.get_value("Alvoraa Position", a.position, "reports_to_position")
 		if not parent:
 			continue
 		# Who holds the parent seat?
-		holders = frappe.get_all("Alvoraa Position Assignment",
-		                         filters={"position": parent, "is_primary": 1,
-		                                  "to_date": ("is", "not set")},
-		                         pluck="employee")
+		holders = [h.employee for h in _running(
+			"Alvoraa Position Assignment",
+			{"position": parent, "is_primary": 1, "from_date": ("<=", today)},
+			["employee"], today)]
 		says = frappe.db.get_value("Employee", a.employee, "reports_to")
 		if holders and says and says not in holders:
 			out.append({

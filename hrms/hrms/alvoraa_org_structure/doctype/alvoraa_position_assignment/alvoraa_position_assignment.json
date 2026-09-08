@@ -10,6 +10,8 @@
   "position",
   "weight_sec",
   "weight",
+  "assignment_type",
+  "covering_for",
   "is_primary",
   "cb1",
   "from_date",
@@ -62,6 +64,24 @@
    "reqd": 1
   },
   {
+   "depends_on": "eval:doc.assignment_type!='Permanent'",
+   "description": "Whose absence this covers, when there is one. Blank for a vacant seat.",
+   "fieldname": "covering_for",
+   "fieldtype": "Link",
+   "label": "Covering For",
+   "options": "Employee"
+  },
+  {
+   "default": "Permanent",
+   "description": "Permanent is the person's real job and counts toward their 100. Acting, Interim and Additional Charge are cover carried ON TOP of it - the person keeps their own role and takes this as well, which is why they are not squeezed into the same 100.",
+   "fieldname": "assignment_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Assignment Type",
+   "options": "Permanent\nActing\nInterim\nAdditional Charge",
+   "reqd": 1
+  },
+  {
    "default": "1",
    "description": "Exactly one per person. Where they appear by default and the line the rest of the product follows.",
    "fieldname": "is_primary",
@@ -80,7 +100,7 @@
    "reqd": 1
   },
   {
-   "description": "Blank means current. Set it rather than deleting the row - last year's chart still has to render.",
+   "description": "Blank means current. Set it rather than deleting the row - last year's chart still has to render. Cover that never ends is not cover, so a temporary assignment is warned about without one.",
    "fieldname": "to_date",
    "fieldtype": "Date",
    "label": "To"

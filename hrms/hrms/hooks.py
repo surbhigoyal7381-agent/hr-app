@@ -226,7 +226,16 @@ doc_events = {
 			"hrms.grace_group.hooks.appraisal_metrics.fetch_metrics",
 			"hrms.alvoraa_hr_core.attendance_score.compute",
 		],
-		"before_submit": "hrms.alvoraa_hr_core.attendance_score.compute",
+		# Ask the dotted-line managers once the solid-line manager has scored it -
+		# after, not alongside, or the second opinion anchors on the first.
+		"on_update": "hrms.alvoraa_org_structure.dotted_line.request_dotted_line_feedback",
+		"before_submit": [
+			"hrms.alvoraa_hr_core.attendance_score.compute",
+			# A block, not a reminder. An optional second opinion never arrives
+			# in a busy quarter, which leaves somebody rated by a manager who
+			# saw half their work.
+			"hrms.alvoraa_org_structure.dotted_line.require_dotted_line_feedback",
+		],
 	},
 	"Appraisal Cycle": {
 		"validate": "hrms.alvoraa_hr_core.attendance_score.apply_cycle_settings",

@@ -13,7 +13,7 @@ position" stays one indexed read rather than a recursive walk.
 
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import flt, nowdate
 from frappe.utils.nestedset import NestedSet
 
 
@@ -74,15 +74,24 @@ class AlvoraaPosition(NestedSet):
 			frappe.throw(_("The position ends before it starts."))
 
 	# ── derived, never stored ────────────────────────────────────────────
-	def _current_assignments(self):
-		# `is not set`, not `in ("", None)`: an empty Date is stored as NULL, and
-		# Frappe's query builder does not turn an `in` list containing None into
-		# `IS NULL`. That filter silently matched nothing, so every seat looked
-		# empty however many people were in it - and every vacancy was wrong.
-		return frappe.get_all(
+	def _current_assignments(self, on=None):
+		"""Who is in this seat now - including anybody whose cover ends later.
+
+		"Current" means NOT YET ENDED, not "never ends". Filtering on an empty
+		end date alone excluded every temporary assignment, because cover always
+		has one - so an acting store in-charge filled nothing and the seat they
+		were covering read as completely vacant.
+
+		`is not set` rather than `in ("", None)` for the empty case: an empty Date
+		is NULL, and Frappe's query builder will not turn an `in` list containing
+		None into `IS NULL`. That one matched nothing at all.
+		"""
+		on = on or nowdate()
+		rows = frappe.get_all(
 			"Alvoraa Position Assignment",
-			filters={"position": self.name, "to_date": ("is", "not set")},
-			fields=["employee", "weight"])
+			filters={"position": self.name, "from_date": ("<=", on)},
+			fields=["employee", "weight", "to_date", "assignment_type"])
+		return [r for r in rows if not r.to_date or str(r.to_date) >= str(on)]
 
 	def filled_weight(self):
 		"""How much of this position is occupied, in whole people.

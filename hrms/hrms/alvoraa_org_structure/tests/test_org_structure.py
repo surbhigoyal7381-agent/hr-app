@@ -15,6 +15,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, nowdate
 
+from alvoraa_portal import subscription as sub
 from hrms.alvoraa_org_structure import api
 
 COMPANY = None
@@ -57,10 +58,19 @@ def _clear():
 
 class OrgCase(FrappeTestCase):
 	def setUp(self):
+		# org_structure is opt-in, so it is OFF on every site until a tenant is
+		# ticked. Without switching it on here the chart falls back to drawing
+		# people and every position test silently checks nothing.
+		self._features = frappe.conf.get("features")
+		frappe.conf["features"] = list(sub.DEFAULT_ON) + ["org_structure"]
 		_clear()
 		self._people = []
 
 	def tearDown(self):
+		if self._features is None:
+			frappe.conf.pop("features", None)
+		else:
+			frappe.conf["features"] = self._features
 		_clear()
 		for emp in self._people:
 			frappe.delete_doc("Employee", emp, force=True, ignore_permissions=True)
@@ -261,3 +271,134 @@ class TestItStillWorksWithoutPositions(OrgCase):
 	def test_no_positions_means_the_people_chart(self):
 		nodes = api.get_children(company=_company())
 		self.assertTrue(all(n.get("kind") == "person" for n in nodes), nodes[:2])
+
+
+class TestTemporaryCover(OrgCase):
+	"""A store in-charge covering a second store still does their own job in
+	full. The cover is extra duty, not a reallocation - so it is not squeezed
+	into the same 100, and the extra load is shown rather than hidden."""
+
+	def test_cover_is_carried_on_top_of_a_full_role(self):
+		ambala = self.pos("Store In-charge Ambala")
+		chandigarh = self.pos("Store In-charge Chandigarh")
+		ravi = self.person("Ravi")
+		self.assign(ravi, ambala.name, weight=100)
+		self.assign(ravi, chandigarh.name, weight=30,
+		            assignment_type="Acting", to_date="2026-12-31")
+		self.assertEqual(frappe.db.count("Alvoraa Position Assignment", {"employee": ravi}), 2)
+
+	def test_a_second_permanent_role_is_still_refused(self):
+		"""The cap has not been switched off - only cover is exempt from it."""
+		a, b = self.pos("Store In-charge Ambala"), self.pos("Store In-charge Chandigarh")
+		ravi = self.person("Ravi")
+		self.assign(ravi, a.name, weight=100)
+		with self.assertRaises(frappe.ValidationError):
+			self.assign(ravi, b.name, weight=30)
+
+	def test_cover_partly_fills_the_seat_it_covers(self):
+		"""Honest arithmetic: a seat covered at 30 is still 70 vacant, because
+		it is. Counting cover as a full head would hide the hole."""
+		chandigarh = self.pos("Store In-charge Chandigarh", seats=1)
+		self.assign(self.person("Ravi"), chandigarh.name, weight=30,
+		            assignment_type="Acting", to_date="2026-12-31")
+		chandigarh.reload()
+		self.assertAlmostEqual(chandigarh.vacancy(), 0.7, places=2)
+
+	def test_cover_is_never_the_primary_position(self):
+		"""Somebody standing in for a fortnight must not become the person whose
+		appraisal and approvals route through the covered seat."""
+		own = self.pos("Store In-charge Ambala")
+		cover = self.pos("Store In-charge Chandigarh")
+		ravi = self.person("Ravi")
+		self.assign(ravi, own.name, weight=100)
+		row = self.assign(ravi, cover.name, weight=30,
+		                  assignment_type="Acting", to_date="2026-12-31",
+		                  is_primary=1)
+		row.reload()
+		self.assertFalse(row.is_primary)
+		self.assertTrue(frappe.db.get_value(
+			"Alvoraa Position Assignment",
+			{"employee": ravi, "position": own.name}, "is_primary"))
+
+
+class TestANewJoinerIsNotThereYet(OrgCase):
+	def test_an_assignment_cannot_start_before_they_join(self):
+		"""The seat is created and the offer signed weeks ahead. They must not
+		appear in the chart on a day they do not work here."""
+		p = self.pos("Senior Sales Executive")
+		who = self.person("Ritika")
+		frappe.db.set_value("Employee", who, "date_of_joining", "2026-11-01")
+		with self.assertRaises(frappe.ValidationError):
+			self.assign(who, p.name, from_date="2026-10-01")
+
+	def test_from_their_joining_date_onwards_is_fine(self):
+		p = self.pos("Senior Sales Executive")
+		who = self.person("Ritika")
+		frappe.db.set_value("Employee", who, "date_of_joining", "2026-11-01")
+		self.assign(who, p.name, from_date="2026-11-01")   # no raise
+
+	def test_they_do_not_fill_the_seat_before_they_arrive(self):
+		"""The chart for today must show the seat empty, whatever is planned."""
+		p = self.pos("Senior Sales Executive", seats=1)
+		who = self.person("Ritika")
+		frappe.db.set_value("Employee", who, "date_of_joining", "2099-01-01")
+		self.assign(who, p.name, from_date="2099-01-01")
+		people = api._people_in(p.name, nowdate())
+		self.assertEqual(people, [])
+
+
+class TestDottedLineInTheAppraisal(OrgCase):
+	"""The person who judges half of somebody's work should have a say in their
+	rating. Today the appraisal hears only the solid line."""
+
+	def setUp(self):
+		super().setUp()
+		from hrms.alvoraa_org_structure import dotted_line
+
+		self.dl = dotted_line
+
+	def _wire(self):
+		acct = self.pos("Accountant Chandigarh")
+		fin = self.pos("Finance Controller")
+		who, boss = self.person("Anita"), self.person("Meera")
+		self.assign(who, acct.name)
+		self.assign(boss, fin.name)
+		frappe.get_doc({"doctype": "Alvoraa Reporting Line",
+		                "from_position": acct.name, "to_position": fin.name,
+		                "line_type": "Functional"}).insert(ignore_permissions=True)
+		return who, boss
+
+	def test_it_finds_the_dotted_line_manager(self):
+		who, boss = self._wire()
+		found = [b["employee"] for b in self.dl.dotted_line_managers(who)]
+		self.assertEqual(found, [boss])
+
+	def test_somebody_with_no_dotted_line_has_none(self):
+		p = self.pos("Cashier")
+		who = self.person("Sunil")
+		self.assign(who, p.name)
+		self.assertEqual(self.dl.dotted_line_managers(who), [])
+
+	def test_cover_does_not_drag_somebody_into_an_appraisal(self):
+		"""Standing in for a fortnight is not grounds to judge a whole quarter."""
+		acct = self.pos("Accountant Chandigarh")
+		fin = self.pos("Finance Controller")
+		who, stand_in = self.person("Anita"), self.person("Temp")
+		self.assign(who, acct.name)
+		self.assign(stand_in, fin.name, weight=40,
+		            assignment_type="Interim", to_date="2026-12-31")
+		frappe.get_doc({"doctype": "Alvoraa Reporting Line",
+		                "from_position": acct.name, "to_position": fin.name}
+		               ).insert(ignore_permissions=True)
+		self.assertEqual(self.dl.dotted_line_managers(who), [])
+
+	def test_nobody_is_their_own_dotted_line_manager(self):
+		"""Happens the moment one person holds two linked positions."""
+		a, b = self.pos("Head of Ops"), self.pos("Head of Quality")
+		who = self.person("Priya")
+		self.assign(who, a.name, weight=60)
+		self.assign(who, b.name, weight=40)
+		frappe.get_doc({"doctype": "Alvoraa Reporting Line",
+		                "from_position": a.name, "to_position": b.name}
+		               ).insert(ignore_permissions=True)
+		self.assertEqual(self.dl.dotted_line_managers(who), [])

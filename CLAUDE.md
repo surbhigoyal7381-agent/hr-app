@@ -12,6 +12,7 @@ These instructions are mandatory in every session. They override default behavio
 - Before any git operation, confirm the working branch is `dev`.
 - If on another branch, stash changes, switch to `dev`, and reapply — do not commit to `main` without explicit instruction.
 - `main` is reserved for deliberate production releases only.
+- **Pull before you push.** More than one session can be working on this repository on the same day. On 2026-09-07 two sessions edited the same file from different sessions; nothing broke, but only by luck. Whoever pushes next runs `git fetch` and `git pull --rebase` on the working branch first, then pushes.
 
 ---
 

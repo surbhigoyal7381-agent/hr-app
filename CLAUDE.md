@@ -12,6 +12,9 @@ These instructions are mandatory in every session. They override default behavio
 - Before any git operation, confirm the working branch is `dev`.
 - If on another branch, stash changes, switch to `dev`, and reapply — do not commit to `main` without explicit instruction.
 - `main` is reserved for deliberate production releases only.
+- **Fetch `origin/dev` before you start editing, and again before every commit or push.** More than one session can be working on this repository on the same day. On 2026-09-07 two sessions edited the same file; nothing broke, but only by luck.
+- **Rebase, never merge**, when bringing in what others pushed (`git fetch origin dev && git rebase origin/dev`; on the working branch `git pull --rebase`).
+- **Say out loud when a pull or rebase brought in someone else's work.** Name the commits and files that came in. Never absorb them quietly. On 2026-09-08 a force-push rewrote a working branch and hid a 30 KB block of obfuscated JavaScript inside three `postcss.config.js` files, plus unrelated font files; it was caught only because the incoming diff was read. Read every incoming diff before building or pushing it.
 
 ---
 

@@ -112,7 +112,8 @@ class TestNothingExistingChanged(FrappeTestCase):
 	# Every feature that ships opt-in is named here on purpose. Adding one means
 	# adding it to this list; removing the flag from an existing feature would
 	# hand it to every tenant on the fallback path, which is the leak this guards.
-	SHIPPED_OPT_IN = ["late_rules", "attendance_scoring", "employee_documents", "screening_forms", "policy_library"]
+	SHIPPED_OPT_IN = ["late_rules", "attendance_scoring", "employee_documents",
+	                  "screening_forms", "policy_library", "org_structure"]
 
 	def test_only_the_named_features_are_opt_in(self):
 		"""If this ever fails, some existing feature just silently switched off

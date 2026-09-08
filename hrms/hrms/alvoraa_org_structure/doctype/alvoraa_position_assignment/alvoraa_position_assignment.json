@@ -1,0 +1,151 @@
+{
+ "actions": [],
+ "creation": "2026-09-08 14:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "employee",
+  "employee_name",
+  "cb0",
+  "position",
+  "weight_sec",
+  "weight",
+  "is_primary",
+  "cb1",
+  "from_date",
+  "to_date",
+  "why_sec",
+  "reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Employee",
+   "options": "Employee",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "employee.employee_name",
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cb0",
+   "fieldtype": "Column Break",
+   "label": null
+  },
+  {
+   "fieldname": "position",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Position",
+   "options": "Alvoraa Position",
+   "reqd": 1
+  },
+  {
+   "fieldname": "weight_sec",
+   "fieldtype": "Section Break",
+   "label": "Weight"
+  },
+  {
+   "default": "100",
+   "description": "How much of this person belongs to this position. A management judgement about where they mostly sit - NOT a claim about hours, and never to be shown as one. A person's weights add up to 100.",
+   "fieldname": "weight",
+   "fieldtype": "Percent",
+   "in_list_view": 1,
+   "label": "Weight",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "description": "Exactly one per person. Where they appear by default and the line the rest of the product follows.",
+   "fieldname": "is_primary",
+   "fieldtype": "Check",
+   "label": "Primary"
+  },
+  {
+   "fieldname": "cb1",
+   "fieldtype": "Column Break",
+   "label": null
+  },
+  {
+   "fieldname": "from_date",
+   "fieldtype": "Date",
+   "label": "From",
+   "reqd": 1
+  },
+  {
+   "description": "Blank means current. Set it rather than deleting the row - last year's chart still has to render.",
+   "fieldname": "to_date",
+   "fieldtype": "Date",
+   "label": "To"
+  },
+  {
+   "fieldname": "why_sec",
+   "fieldtype": "Section Break",
+   "label": null
+  },
+  {
+   "description": "Why this split exists. A reader six months later is usually asking why, not what.",
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
+  }
+ ],
+ "links": [],
+ "modified": "2026-09-08 14:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Org Structure",
+ "name": "Alvoraa Position Assignment",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR User",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Employee"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "title_field": "employee_name",
+ "track_changes": 1
+}

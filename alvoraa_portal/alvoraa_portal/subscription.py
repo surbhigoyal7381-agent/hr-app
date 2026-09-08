@@ -188,6 +188,17 @@ FEATURES = {
         "opt_in": True,
         "requires": ["recruitment"],
     },
+    "org_structure": {
+        "desc": "Positions, vacancies and weighted assignment; the chart shows seats, not just people",
+        "icon": "🏛️",
+        "label": "Org Structure & Positions",
+        "module_defs": ["Alvoraa Org Structure"],
+        "opt_in": True,
+        # The chart itself needs nothing - it falls back to drawing people, which
+        # is what Frappe HR already does. This layer is what adds seats, so it
+        # only needs the portal the chart is shown on.
+        "requires": ["portal"],
+    },
     "policy_library": {
         "desc": "Central policy library: department-owned, versioned, acknowledged, on the portal home page",
         "icon": "📚",

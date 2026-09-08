@@ -6,3 +6,4 @@ Alvoraa HR Core
 Alvoraa Employee Documents
 Alvoraa Screening
 Alvoraa Policy Library
+Alvoraa Org Structure

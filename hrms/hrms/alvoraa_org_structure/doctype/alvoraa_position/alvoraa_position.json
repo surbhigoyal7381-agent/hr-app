@@ -1,0 +1,254 @@
+{
+ "actions": [],
+ "autoname": "field:position_title",
+ "creation": "2026-09-08 14:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "position_title",
+  "company",
+  "cb0",
+  "status",
+  "is_key_position",
+  "tree_sec",
+  "reports_to_position",
+  "is_group",
+  "cb1",
+  "department",
+  "designation",
+  "grade",
+  "branch",
+  "seat_sec",
+  "seats",
+  "cb2",
+  "cost_center",
+  "time_sec",
+  "effective_from",
+  "cb3",
+  "effective_to",
+  "misc_sec",
+  "notes",
+  "lft",
+  "rgt",
+  "old_parent"
+ ],
+ "fields": [
+  {
+   "description": "What the SEAT is called, not the person. 'Regional Manager - South', not 'Manager'.",
+   "fieldname": "position_title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Position Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cb0",
+   "fieldtype": "Column Break",
+   "label": null
+  },
+  {
+   "default": "Active",
+   "description": "Frozen means real but not to be filled - a hiring pause is not the same as abolishing the job. Closed keeps the record so history still resolves.",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Active\nFrozen\nClosed",
+   "reqd": 1
+  },
+  {
+   "description": "Succession planning starts by naming which seats matter.",
+   "fieldname": "is_key_position",
+   "fieldtype": "Check",
+   "label": "Key Position"
+  },
+  {
+   "fieldname": "tree_sec",
+   "fieldtype": "Section Break",
+   "label": "Where it sits"
+  },
+  {
+   "description": "The hierarchy. One parent - a second reporting line is a separate record, because a second parent breaks the tree and every count built on it.",
+   "fieldname": "reports_to_position",
+   "fieldtype": "Link",
+   "label": "Reports To",
+   "options": "Alvoraa Position"
+  },
+  {
+   "fieldname": "is_group",
+   "fieldtype": "Check",
+   "label": "Is Group"
+  },
+  {
+   "fieldname": "cb1",
+   "fieldtype": "Column Break",
+   "label": null
+  },
+  {
+   "fieldname": "department",
+   "fieldtype": "Link",
+   "label": "Department",
+   "options": "Department"
+  },
+  {
+   "fieldname": "designation",
+   "fieldtype": "Link",
+   "label": "Designation",
+   "options": "Designation"
+  },
+  {
+   "fieldname": "grade",
+   "fieldtype": "Link",
+   "label": "Grade",
+   "options": "Employee Grade"
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "label": "Branch",
+   "options": "Branch"
+  },
+  {
+   "fieldname": "seat_sec",
+   "fieldtype": "Section Break",
+   "label": "Seats"
+  },
+  {
+   "default": "1",
+   "description": "How many people this position may hold, measured in whole people. Usually 1. Two for a job share; twelve for 'Field Sales Executive', where the seat is a role rather than a chair. Counted in weights, so a one-seat position filled by two halves is full.",
+   "fieldname": "seats",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Seats",
+   "precision": "2"
+  },
+  {
+   "fieldname": "cb2",
+   "fieldtype": "Column Break",
+   "label": null
+  },
+  {
+   "fieldname": "cost_center",
+   "fieldtype": "Link",
+   "label": "Cost Center",
+   "options": "Cost Center"
+  },
+  {
+   "fieldname": "time_sec",
+   "fieldtype": "Section Break",
+   "label": "When it exists"
+  },
+  {
+   "description": "What lets a restructure be modelled before it happens.",
+   "fieldname": "effective_from",
+   "fieldtype": "Date",
+   "label": "Effective From"
+  },
+  {
+   "fieldname": "cb3",
+   "fieldtype": "Column Break",
+   "label": null
+  },
+  {
+   "fieldname": "effective_to",
+   "fieldtype": "Date",
+   "label": "Effective To"
+  },
+  {
+   "fieldname": "misc_sec",
+   "fieldtype": "Section Break",
+   "label": null
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes"
+  },
+  {
+   "fieldname": "lft",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "lft",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "rgt",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "rgt",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "old_parent",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "old_parent",
+   "no_copy": 1,
+   "options": "Alvoraa Position",
+   "read_only": 1
+  }
+ ],
+ "is_tree": 1,
+ "links": [],
+ "modified": "2026-09-08 14:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Org Structure",
+ "name": "Alvoraa Position",
+ "nsm_parent_field": "reports_to_position",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR User",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Employee"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "title_field": "position_title",
+ "track_changes": 1
+}

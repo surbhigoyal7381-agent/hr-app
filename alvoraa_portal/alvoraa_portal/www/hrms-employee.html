@@ -297,7 +297,15 @@ body.sb-collapsed .sidebar:hover .sb-scroll-btn{display:flex}
 }
 
 /* ── Main content ────────────────────────────────── */
-.main-content{margin-left:var(--sidebar-w);flex:1;min-width:0;padding:28px;padding-bottom:44px;transition:margin-left .22s cubic-bezier(.4,0,.2,1);will-change:margin-left}
+/* No `will-change` here, and it must stay that way.
+   will-change:margin-left made this element a CONTAINING BLOCK, so every
+   position:fixed descendant anchored to IT instead of the viewport. On a
+   short page nobody noticed. On Objectives & KPIs with 3,510 rows the
+   element is tens of thousands of pixels tall, so a dialog centred at
+   `top:50%` opened somewhere far below the fold and looked as though the
+   button had done nothing.
+   The transition works perfectly well without the hint. */
+.main-content{margin-left:var(--sidebar-w);flex:1;min-width:0;padding:28px;padding-bottom:44px;transition:margin-left .22s cubic-bezier(.4,0,.2,1)}
 
 /* ── Bottom nav ──────────────────────────────────── */
 .bottom-nav{

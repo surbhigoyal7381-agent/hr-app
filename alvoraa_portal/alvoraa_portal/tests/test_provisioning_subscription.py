@@ -180,3 +180,49 @@ class TestPrivatePlans(ProvisioningCase):
 		           if p["name"] == "Starter"][0]
 		self.assertIn("leaves", starter["features"])
 		self.assertNotIn("payroll", starter["features"])
+
+
+class TestThePlanLabel(FrappeTestCase):
+	"""Every tenant ever provisioned came out "custom", including full Enterprise.
+
+	create_tenant prepends a legacy `hrms` marker to every module list. It is not
+	a feature and appears in no plan, so the comparison against PLANS was always
+	one member short of matching. The label had been wrong long enough that
+	nobody questioned it - it surfaced only when a demo needed the console to say
+	"Enterprise" in front of a customer.
+
+	update_tenant had a second copy of the same comparison with the same bug,
+	which is what a second copy is for. There is one function now.
+	"""
+
+	def test_a_full_enterprise_tick_is_called_enterprise(self):
+		from alvoraa_portal.subscription import FEATURES
+
+		everything = ["hrms"] + [k for k, v in FEATURES.items() if not v.get("opt_in")]
+		self.assertEqual(api._plan_label(everything), "enterprise")
+
+	def test_the_starter_five_are_called_starter(self):
+		from alvoraa_portal.subscription import PLANS
+
+		self.assertEqual(api._plan_label(["hrms"] + list(PLANS["starter"])), "starter")
+
+	def test_it_works_without_the_legacy_marker_too(self):
+		from alvoraa_portal.subscription import PLANS
+
+		self.assertEqual(api._plan_label(list(PLANS["business"])), "business")
+
+	def test_an_opt_in_extra_does_not_change_the_bundle(self):
+		"""An Enterprise tenant with the late-coming rule switched on is still
+		Enterprise. Opt-in features are extras, not a different plan."""
+		from alvoraa_portal.subscription import FEATURES, OPT_IN
+
+		base = ["hrms"] + [k for k, v in FEATURES.items() if not v.get("opt_in")]
+		if OPT_IN:
+			self.assertEqual(api._plan_label(base + [OPT_IN[0]]), "enterprise")
+
+	def test_a_genuinely_odd_selection_is_still_custom(self):
+		self.assertEqual(api._plan_label(["hrms", "portal", "payroll"]), "custom")
+
+	def test_nothing_at_all_is_custom_not_a_crash(self):
+		self.assertEqual(api._plan_label(None), "custom")
+		self.assertEqual(api._plan_label([]), "custom")

@@ -11,7 +11,7 @@ import frappe
 
 from frappe.utils import nowdate
 
-from alvoraa_portal.subscription import PLANS, REQUIRED, requirement_error
+from alvoraa_portal.subscription import OPT_IN, PLANS, REQUIRED, requirement_error
 import os
 import json
 import re
@@ -302,8 +302,7 @@ def create_tenant(subdomain, tenant_name, plan="starter",
     # Plan is derived from the feature set, using the ONE definition in
     # subscription.py. It used to be redefined here and again in update_tenant,
     # with a third copy in the admin page's JavaScript.
-    mset = set(modules)
-    plan = next((p for p, feats in PLANS.items() if set(feats) == mset), "custom")
+    plan = _plan_label(modules)
 
     # ── Validation ────────────────────────────────────────────────────────
     if not re.match(r'^[a-z0-9][a-z0-9\-]{1,30}[a-z0-9]$', subdomain):
@@ -554,12 +553,17 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
         if _unmet:
             frappe.throw(_unmet)
 
-    # Derive plan label from module set
-    from alvoraa_portal.subscription import PLANS, REQUIRED
-
+    # Derive plan label from module set - the SAME function create_tenant uses.
+    # It used to be a second copy of the comparison here, which is how the two
+    # drifted: this one never stripped the `hrms` marker either.
+    #
+    # No local import. There used to be one here, and because Python makes a name
+    # local to the whole function the moment it is imported anywhere inside it,
+    # `REQUIRED` was unbound at the line forty rows ABOVE that adds the required
+    # features - so update_tenant raised UnboundLocalError for any caller that
+    # passed a module list. Both names come from the module-level import instead.
     if modules is not None:
-        mset = set(modules)
-        plan = next((p for p, feats in PLANS.items() if set(feats) == mset), "custom")
+        plan = _plan_label(modules)
 
     # Update scalar site_config values
     for key, val in [
@@ -1486,3 +1490,28 @@ def get_customers(search=None):
         filters["customer_name"] = ("like", f"%{search}%")
     return frappe.get_all("Customer", filters=filters, fields=["name", "customer_name"],
                           order_by="customer_name asc", limit=50)
+
+
+def _plan_label(modules):
+    """The bundle name for a set of ticked features, or "custom".
+
+    Two things are stripped before comparing, and without them it can never
+    match anything.
+
+    `hrms` is a legacy marker that create_tenant prepends to every module list.
+    It is not a feature and appears in no plan, so leaving it in made the set
+    permanently one member too big - EVERY tenant ever provisioned came out
+    "custom", including a full Enterprise selection. It had been that way long
+    enough that nobody questioned the label.
+
+    Opt-in features are stripped because they are extras switched on for one
+    tenant, not part of any bundle. An Enterprise tenant that also has the
+    late-coming rule switched on is still Enterprise.
+
+    One function rather than the two copies that were here before - the copy in
+    update_tenant had the same bug, which is what a second copy is for.
+    """
+    from alvoraa_portal.subscription import OPT_IN, PLANS
+
+    mset = set(modules or []) - {"hrms"} - set(OPT_IN)
+    return next((p for p, feats in PLANS.items() if set(feats) == mset), "custom")

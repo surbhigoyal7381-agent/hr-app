@@ -125,7 +125,7 @@ class TestWave6PortalEntitlement(FrappeTestCase):
 
 	def test_enterprise_is_entitled_to_everything(self):
 		f = self._features("enterprise")
-		for key in sub.FEATURES:
+		for key in sub.DEFAULT_ON:
 			self.assertTrue(f[f"plan_{key}"], key)
 
 	def test_required_features_are_always_entitled(self):

@@ -474,6 +474,28 @@ html, body {
   .ka-dot.on  { background:var(--green); }
   .ka-dot.off { background:var(--border2); }
 
+  /* ── Plan picker in the create form ───────────────────────── */
+  #ka-plan-list { display:grid; gap:6px; margin-bottom:8px; }
+  .ka-plan-opt { display:grid; grid-template-columns:auto 1fr auto; gap:10px;
+                 align-items:center; padding:9px 12px; border:1px solid var(--border);
+                 border-radius:var(--radius-sm); background:var(--surface);
+                 cursor:pointer; transition:border-color var(--t); }
+  .ka-plan-opt:hover { border-color:var(--border2); }
+  .ka-plan-opt.sel { border-color:var(--green); background:var(--green-lt); }
+  .ka-plan-opt .nm { font-size:.88rem; font-weight:600; color:var(--ink0); }
+  .ka-plan-opt .bd { font-size:.76rem; color:var(--ink2); }
+  .ka-plan-opt .fee { font-family:ui-monospace,monospace; font-size:.86rem;
+                      font-weight:600; color:var(--ink0); white-space:nowrap; }
+  .ka-plan-opt .rad { width:15px; height:15px; border-radius:50%;
+                      border:2px solid var(--border2); flex:none; }
+  .ka-plan-opt.sel .rad { border-color:var(--green); background:var(--green);
+                          box-shadow:inset 0 0 0 3px var(--surface); }
+  .ka-plan-private { font-size:.68rem; background:var(--violet-lt); color:var(--violet);
+                     padding:1px 6px; border-radius:10px; margin-left:6px; }
+  #ka-plan-cost { font-size:.82rem; color:var(--ink1); background:var(--bg);
+                  border:1px solid var(--border); border-radius:var(--radius-sm);
+                  padding:8px 11px; margin-top:8px; }
+  #ka-plan-cost b { color:var(--ink0); }
   .ka-bill-empty { padding:28px; text-align:center; color:var(--ink3); font-size:.85rem; }
 </style>
 </head>
@@ -639,9 +661,20 @@ html, body {
         <label class="ka-label">Workspace Name *</label>
         <input class="ka-input" id="f-name" placeholder="Acme Corporation">
       </div>
+      <div class="ka-field" id="ka-plan-field">
+        <label class="ka-label">Plan</label>
+        <div id="ka-plan-list"><!-- rendered by JS --></div>
+        <div id="ka-plan-cost" style="display:none"></div>
+        <div class="ka-hint" style="margin-top:6px">The band decides the monthly fee. Anything ticked below that the plan does not include is charged on top.</div>
+      </div>
+      <div class="ka-field" id="ka-customer-field">
+        <label class="ka-label">Bill to</label>
+        <select class="ka-input" id="f-customer" onchange="loadPlans()"></select>
+        <div class="ka-hint">The ERPNext customer the invoice goes to. Leave blank for a tenant of ours &mdash; nothing is invoiced without one.</div>
+      </div>
       <div class="ka-field">
         <label class="ka-label">Modules</label>
-        <div class="ka-presets">
+        <div class="ka-presets" id="ka-preset-row" style="display:none">
           <button type="button" class="ka-preset-btn selected" id="preset-starter"    onclick="applyPreset('starter')">Starter</button>
           <button type="button" class="ka-preset-btn"          id="preset-business"   onclick="applyPreset('business')">Business</button>
           <button type="button" class="ka-preset-btn"          id="preset-enterprise" onclick="applyPreset('enterprise')">Enterprise</button>
@@ -921,6 +954,106 @@ html, body {
     renderModules();
     syncPresetButtons();
   };
+  /* ── Plans and who is billed ──────────────────────────────────
+     The plan chosen here is the PRICED one: a headcount band with a
+     fee. It is not the old starter/business/enterprise bundle, which
+     was a set of feature ticks wearing the same three words. A tenant
+     on the "enterprise" bundle with twenty staff belongs on the
+     "Starter" band, and picking the wrong one puts a wrong number on
+     an invoice.
+
+     If billing has not been set up on this control plane, the price
+     list is empty - so the old preset buttons come back and
+     provisioning behaves exactly as it always did.
+  */
+  var KA_PLANS = [];
+  var selectedPlan = null;
+
+  window.loadCustomers = async function() {
+    var sel = document.getElementById('f-customer');
+    var keep = sel.value;
+    sel.innerHTML = '<option value="">&mdash; ours, not invoiced &mdash;</option>';
+    try {
+      (await api('alvoraa_portal.tenant_api.get_customers') || []).forEach(function(c) {
+        var o = document.createElement('option');
+        o.value = c.name;
+        o.textContent = c.customer_name || c.name;
+        sel.appendChild(o);
+      });
+    } catch (e) { /* a control plane without ERPNext customers is not an error */ }
+    sel.value = keep;
+  };
+
+  window.loadPlans = async function() {
+    var list = document.getElementById('ka-plan-list');
+    var customer = document.getElementById('f-customer').value;
+    var out;
+    try {
+      out = await api('alvoraa_portal.tenant_api.get_provisioning_plans'
+                      + (customer ? '?customer=' + encodeURIComponent(customer) : ''));
+    } catch (e) { out = { plans: [], billing_ready: false }; }
+
+    KA_PLANS = out.plans || [];
+    var billingReady = out.billing_ready && KA_PLANS.length;
+
+    // No price list yet: fall back to how this form has always worked.
+    document.getElementById('ka-plan-field').style.display = billingReady ? '' : 'none';
+    document.getElementById('ka-customer-field').style.display = billingReady ? '' : 'none';
+    document.getElementById('ka-preset-row').style.display = billingReady ? 'none' : '';
+    if (!billingReady) { selectedPlan = null; return; }
+
+    if (!KA_PLANS.some(function(p) { return p.name === selectedPlan; })) {
+      selectedPlan = KA_PLANS[0].name;
+    }
+    list.innerHTML = KA_PLANS.map(function(p) {
+      var band = p.band_from + (p.band_to ? '\u2013' + p.band_to : '+') + ' employees';
+      var fee = p.is_quote_only ? 'quoted' : rupees(p.platform_fee) + '/mo';
+      return '<div class="ka-plan-opt' + (p.name === selectedPlan ? ' sel' : '') + '"'
+           + ' onclick="pickPlan(\'' + esc(p.name) + '\')">'
+           + '<span class="rad"></span>'
+           + '<span><span class="nm">' + esc(p.plan_name || p.name) + '</span>'
+           + (p.is_private ? '<span class="ka-plan-private">private</span>' : '')
+           + '<br><span class="bd">' + band + ', ' + p.included_employees + ' included</span></span>'
+           + '<span class="fee">' + fee + '</span></div>';
+    }).join('');
+    applyPlanFeatures();
+  };
+
+  window.pickPlan = function(name) {
+    selectedPlan = name;
+    loadPlans();
+  };
+
+  function currentPlan() {
+    return KA_PLANS.filter(function(p) { return p.name === selectedPlan; })[0] || null;
+  }
+
+  function applyPlanFeatures() {
+    var plan = currentPlan();
+    if (!plan) return;
+    // Tick what the fee already covers. The operator adds extras on top; they
+    // should not have to know which side of the fee each feature falls on.
+    selectedModules = withRequired((plan.features || []).slice());
+    renderModules();
+    showPlanCost();
+  }
+
+  window.showPlanCost = function() {
+    var plan = currentPlan();
+    var box = document.getElementById('ka-plan-cost');
+    if (!plan) { box.style.display = 'none'; return; }
+    var extras = (selectedModules || []).filter(function(m) {
+      return (plan.features || []).indexOf(m) === -1;
+    });
+    box.style.display = '';
+    box.innerHTML = '<b>' + (plan.is_quote_only ? 'Quoted' : rupees(plan.platform_fee)
+                             + ' a month') + '</b> for the first '
+      + plan.included_employees + ' employees'
+      + (plan.additional_pepm ? ', then ' + rupees(plan.additional_pepm)
+                                + ' each' : '')
+      + (extras.length ? '.<br>Charged on top: ' + esc(extras.join(', ')) : '.');
+  };
+
   window.applyPreset = function(preset) {
     selectedModules = withRequired(MODULE_PRESETS[preset]);
     renderModules();
@@ -1091,6 +1224,16 @@ html, body {
       + '</div></div>';
   }
 
+  // Ticking a module changes what is charged on top, so the cost line has to
+  // follow it. Without this the figure quietly stops matching the ticks.
+  var _renderModules = renderModules;
+  renderModules = function() {
+    _renderModules.apply(this, arguments);
+    if (typeof showPlanCost === 'function' && document.getElementById('ka-plan-cost')) {
+      try { showPlanCost(); } catch (e) {}
+    }
+  };
+
   window.filterTenants = renderTenants;
 
   window.setFilter = function(btn, filter) {
@@ -1153,6 +1296,10 @@ html, body {
     renderModules();
     document.getElementById('ka-modal-backdrop').classList.add('open');
     document.getElementById('f-subdomain').focus();
+    // Both are awaited nowhere on purpose: the form opens immediately and the
+    // plan list fills a moment later. Blocking the dialog on two reads would
+    // make a fast action feel slow for no gain.
+    loadCustomers().then(loadPlans);
   };
   window.closeModal = function() {
     document.getElementById('ka-modal-backdrop').classList.remove('open');
@@ -1164,7 +1311,13 @@ html, body {
     document.getElementById('ka-form-error').style.display = 'none';
     document.getElementById('ka-domain-preview').className = '';
     document.getElementById('ka-domain-preview').textContent = 'Enter a subdomain above';
-    applyPreset('starter');
+    // Only when billing is not set up. With a price list, the plan picker owns
+    // which modules are ticked, and re-applying a bundle here would silently
+    // change the selection after a plan was chosen.
+    if (!KA_PLANS.length) applyPreset('starter');
+    else { selectedPlan = null; loadPlans(); }
+    var cust = document.getElementById('f-customer');
+    if (cust) cust.value = '';
     document.querySelectorAll('.ka-swatch').forEach(function(s){
       s.classList.toggle('selected', s.dataset.color === '#16A373');
     });
@@ -1234,6 +1387,10 @@ html, body {
         company_name: company_name, company_abbr: company_abbr,
         fy_start_date: fy_start_date, country: country, currency: currency,
         modules: selectedModules,
+        // Sent only when billing is set up on this control plane. Without them
+        // create_tenant behaves exactly as it did before any of this existed.
+        alvoraa_plan: selectedPlan || null,
+        customer: document.getElementById('f-customer').value || null,
       });
       closeModal();
       // No password is passed: create_tenant returns none, because the worker

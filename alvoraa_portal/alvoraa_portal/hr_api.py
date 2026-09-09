@@ -2649,3 +2649,92 @@ def get_policy_compliance(branch=None):
             "employees": sorted(rows, key=lambda r: (r["branch"], r["employee_name"]))[:200],
             "pending_total": len(rows), "active": len(employees),
             "review_due": [{"name": r.name, "title": r.title, "review_due": str(r.review_due), "department": r.owner_department} for r in review]}
+
+
+# ── This week, at a glance ───────────────────────────────────────────────────
+
+@frappe.whitelist()
+def get_week_presence(offset=0):
+    """Who on my team or in my department is in this week.
+
+    Presence ONLY. Never why somebody is away, never a leave type, never a
+    running absence count. Absence can reveal a pregnancy, a diagnosis or a
+    family crisis, and a colleague has no business inferring any of that from a
+    home page. A manager's analytics view may go further because they carry a
+    duty of care; a peer's must not.
+
+    That is why this returns four states and nothing else:
+        in       marked present, or working from home
+        away     not at work - approved leave and absence look identical
+        due      a working day still to come
+        off      a holiday or a non-working day
+    """
+    from frappe.utils import add_days, get_first_day_of_week, getdate, nowdate
+
+    me = _get_employee()
+    if not me:
+        return {"no_employee": True}
+
+    start = getdate(add_days(get_first_day_of_week(nowdate()), 7 * cint(offset)))
+    days = [add_days(start, i) for i in range(7)]
+    today = getdate(nowdate())
+
+    # My people if I have any, otherwise the people I sit with. A department can
+    # be large, so it is capped - this is a glance, not a report.
+    team = frappe.get_all("Employee",
+                          filters={"reports_to": me.name, "status": "Active"},
+                          fields=["name", "employee_name", "designation", "image"],
+                          order_by="employee_name asc", limit=40)
+    basis = "team"
+    if not team and me.department:
+        team = frappe.get_all("Employee",
+                              filters={"department": me.department, "status": "Active",
+                                       "name": ("!=", me.name)},
+                              fields=["name", "employee_name", "designation", "image"],
+                              order_by="employee_name asc", limit=40)
+        basis = "department"
+    if not team:
+        return {"rows": [], "basis": "none", "days": [str(d) for d in days]}
+
+    ids = [e.name for e in team]
+    marked = {}
+    for r in frappe.get_all("Attendance",
+                            filters={"employee": ("in", ids), "docstatus": 1,
+                                     "attendance_date": ("between", [days[0], days[-1]])},
+                            fields=["employee", "attendance_date", "status"]):
+        marked[(r.employee, str(r.attendance_date))] = r.status
+
+    holidays = _holiday_dates(me, days)
+
+    rows = []
+    for e in team:
+        cells = []
+        for d in days:
+            ds = str(d)
+            status = marked.get((e.name, ds))
+            if status in ("Present", "Work From Home"):
+                cells.append("in")
+            elif status:                       # On Leave, Absent, Half Day
+                cells.append("away")
+            elif ds in holidays:
+                cells.append("off")
+            else:
+                cells.append("due" if getdate(d) >= today else "away")
+        rows.append({"employee": e.name, "name": e.employee_name,
+                     "title": e.designation or "", "image": e.image, "week": cells})
+
+    return {"rows": rows, "basis": basis, "start": str(days[0]),
+            "days": [str(d) for d in days], "today": str(today)}
+
+
+def _holiday_dates(employee, days):
+    """A weekend is not an absence, and neither is Diwali."""
+    hl = frappe.db.get_value("Employee", employee.name, "holiday_list")
+    if not hl:
+        hl = frappe.db.get_value("Company", employee.company, "default_holiday_list")
+    if not hl:
+        return set()
+    return {str(h.holiday_date) for h in frappe.get_all(
+        "Holiday", filters={"parent": hl,
+                            "holiday_date": ("between", [days[0], days[-1]])},
+        fields=["holiday_date"])}

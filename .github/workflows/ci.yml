@@ -88,6 +88,20 @@ jobs:
       - name: App integrity
         run: python scripts/check_app_integrity.py
 
+      # The visual system, counted rather than judged. The employee portal
+      # reached 120 hand-picked colours, 29 font sizes and 43 shadows because
+      # every individual change was reasonable - only a counter notices the
+      # aggregate. It also fails on any text colour that cannot meet WCAG AA
+      # contrast on the theme it appears in.
+      #
+      # NON-BLOCKING for now: the driver, vendor, admin and login pages have not
+      # been through the design pass yet, and each carries its own brand colour,
+      # which is a product decision rather than a cleanup. Flip to blocking once
+      # those four are done.
+      - name: Design system
+        continue-on-error: true
+        run: python scripts/check_design_system.py
+
       # Node, for the portal handler check below.
       - uses: actions/setup-node@v4
         with:

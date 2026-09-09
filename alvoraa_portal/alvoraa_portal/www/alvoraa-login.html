@@ -533,6 +533,11 @@ html, body {
         document.documentElement.style.setProperty('--primary-h', shadeHex(cfg.primary_color, -20));
         document.documentElement.style.setProperty('--primary-d', shadeHex(cfg.primary_color, +30));
         document.documentElement.style.setProperty('--primary-lt',  hexAlpha(cfg.primary_color, .1));
+        // The brand panel too, or the button comes out in the customer's colour
+        // while the panel behind it stays the default purple - which is exactly
+        // what happened on the jeweller's site. It is dark in both themes and
+        // carries white text, so it takes a deep shade rather than the raw one.
+        document.documentElement.style.setProperty('--hero-bg', deepen(cfg.primary_color, .42));
       }
 
       // Support email
@@ -552,6 +557,20 @@ html, body {
     const g = Math.min(255, Math.max(0, ((n >> 8) & 0xff) + amt));
     const b = Math.min(255, Math.max(0, (n & 0xff) + amt));
     return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+  }
+
+  /* A deep version of a colour, for a panel that carries white text.
+
+     Proportional rather than a fixed offset: subtracting a constant from each
+     channel turns an already-dark brand colour into black, and a jeweller's
+     maroon is already dark. */
+  function deepen(hex, factor) {
+    hex = hex.replace('#', '');
+    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+    const n = parseInt(hex, 16);
+    const ch = [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff]
+      .map(v => Math.round(v * factor));
+    return '#' + ch.map(v => v.toString(16).padStart(2, '0')).join('');
   }
 
   function hexAlpha(hex, alpha) {

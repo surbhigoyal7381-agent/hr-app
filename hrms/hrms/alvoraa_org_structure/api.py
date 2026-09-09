@@ -20,7 +20,9 @@ cost. Where the holes are is a restructuring signal and belongs to HR.
 
 import frappe
 from frappe import _
-from frappe.utils import flt, nowdate
+from frappe.utils import cint, flt, nowdate
+
+from hrms.alvoraa_org_structure import settings
 
 FEATURE = "org_structure"
 
@@ -506,3 +508,372 @@ def search_people(q, limit=12):
 		fields=["name as employee", "employee_name as name", "designation as title",
 		        "department", "image"],
 		order_by="employee_name asc", limit=int(limit))
+
+
+# ── the expandable tree ──────────────────────────────────────────────────────
+
+# Two levels at a time. One at a time makes somebody click through a company
+# node by node; three fills the screen with people they were not looking for and
+# pushes what they wanted off the bottom.
+DEFAULT_DEPTH = 2
+
+
+def reach():
+	"""How far this person may see, and whether they may roam.
+
+	An ordinary employee gets a window around their own seat - two levels up and
+	two down by default. That answers the questions they actually have without
+	handing everybody a map of the whole company: structure is commercially
+	sensitive, and a full org chart is the first thing that walks out of the door
+	with a leaver.
+
+	HR and leadership roam freely because they cannot do their jobs otherwise,
+	and so does anybody with people reporting to them - a manager who cannot see
+	past their own team cannot plan around the one next door.
+
+	Enforced HERE rather than in the page. A limit that lives in JavaScript is a
+	suggestion: the endpoint is whitelisted, and anybody who can open the portal
+	can call it with any root they like.
+	"""
+	roles = set(frappe.get_roles())
+	allowed = {r.strip() for r in
+	           str(settings.get("alvoraa_org_full_reach_roles") or "").split(",")
+	           if r.strip()}
+	if roles & allowed:
+		return {"unlimited": True, "why": "role"}
+
+	if settings.get("alvoraa_org_managers_see_all") and _has_people_under_them():
+		return {"unlimited": True, "why": "manager"}
+
+	return {"unlimited": False,
+	        "up": int(settings.get("alvoraa_org_reach_up")),
+	        "down": int(settings.get("alvoraa_org_reach_down"))}
+
+
+def _has_people_under_them():
+	"""Does this person manage anybody?
+
+	Asked once per box while the tree renders, and the answer cannot change
+	inside one request - so it is worked out once. Without this a thirty-box
+	chart was thirty round trips for the same answer.
+
+	Kept apart from reach() itself, which still reads its settings live: caching
+	the whole verdict would mean a setting changed mid-request stopped taking
+	effect, and a test that changes one and re-asks would pass against a stale
+	answer.
+	"""
+	cache = getattr(frappe.local, "_alvoraa_leads", None)
+	if cache is None:
+		cache = frappe.local._alvoraa_leads = {}
+	user = frappe.session.user
+	if user not in cache:
+		me = _me()
+		cache[user] = bool(me and (
+			frappe.db.count("Employee", {"reports_to": me, "status": "Active"})
+			or _leads_a_position(me)))
+	return cache[user]
+
+
+def _leads_a_position(employee):
+	"""A manager by structure rather than by `reports_to` - somebody whose seat
+	has seats under it, even when nobody has been pointed at them yet."""
+	seat = _my_position_of(employee, nowdate())
+	if not seat:
+		return False
+	return bool(frappe.db.count("Alvoraa Position", {"reports_to_position": seat}))
+
+
+def _my_position_of(employee, as_at):
+	mine = _running("Alvoraa Position Assignment",
+	                {"employee": employee, "from_date": ("<=", as_at)},
+	                ["position", "is_primary"], as_at)
+	if not mine:
+		return None
+	return next((r.position for r in mine if r.is_primary), mine[0].position)
+
+
+def _within_reach(root, as_at):
+	"""Is this node inside the window the viewer is allowed to see?
+
+	Walks up from the requested node looking for the viewer's own seat within
+	`up` steps, and up from the viewer looking for the node within `down`. One
+	of the two has to hold, or they are asking about a part of the company that
+	is not theirs.
+	"""
+	r = reach()
+	if r["unlimited"]:
+		return True
+
+	positions = _enabled() and frappe.db.count("Alvoraa Position", {"status": "Active"})
+	mine = _my_position_of(_me(), as_at) if positions else _me()
+	if not mine or not root:
+		return True                        # nothing to compare; the default view
+	if root == mine:
+		return True
+
+	def up_from(node, steps):
+		seen, at = [], node
+		for _ in range(steps):
+			at = (frappe.db.get_value("Alvoraa Position", at, "reports_to_position")
+			      if positions
+			      else frappe.db.get_value("Employee", at, "reports_to"))
+			if not at:
+				break
+			seen.append(at)
+		return seen
+
+	# Above me, up to `up` steps: my manager, my manager's manager.
+	if root in up_from(mine, r["up"]):
+		return True
+	# Below me, up to `down` steps: walking up from the node should reach me.
+	if mine in up_from(root, r["down"]):
+		return True
+	return False
+
+
+@frappe.whitelist()
+def subtree(root=None, depth=None, as_at=None, kind=None):
+	"""A node and the levels beneath it, ready to render.
+
+	Expansion rather than re-centring. Clicking a box opens what is under it in
+	place, so the reader keeps the context they built - re-centring throws away
+	the path they took to get there, which is the thing they were using to
+	understand the shape.
+
+	`root` is an employee when the tenant keeps no positions, and a position
+	when it does. `kind` says which, and is returned so the caller does not have
+	to guess on the way back in.
+	"""
+	as_at = as_at or nowdate()
+	depth = int(depth or DEFAULT_DEPTH)
+
+	# Refused rather than quietly returned empty. An employee who asks about a
+	# part of the company that is not theirs should be told so, not left staring
+	# at a blank box wondering whether it is broken.
+	if root and not _within_reach(root, as_at):
+		frappe.throw(
+			_("That part of the organisation is outside what you can see. You can "
+			  "look two levels above and below your own role."),
+			frappe.PermissionError)
+
+	r = reach()
+	if not r["unlimited"]:
+		depth = min(depth, r["down"] + 1)
+
+	positions = _enabled() and frappe.db.count("Alvoraa Position", {"status": "Active"})
+
+	if positions:
+		root = root or _my_position(as_at)
+		if not root:
+			return _person_subtree(_me(), depth, as_at)
+		return _position_subtree(root, depth, as_at)
+	return _person_subtree(root or _me(), depth, as_at)
+
+
+def _me():
+	return frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")
+
+
+def _my_position(as_at):
+	mine = _running("Alvoraa Position Assignment",
+	                {"employee": _me(), "from_date": ("<=", as_at)},
+	                ["position", "is_primary"], as_at)
+	if not mine:
+		return None
+	return next((r.position for r in mine if r.is_primary), mine[0].position)
+
+
+def _position_subtree(position, depth, as_at):
+	pos = frappe.db.get_value(
+		"Alvoraa Position", position,
+		["name", "position_title", "designation", "department", "seats", "status",
+		 "is_key_position"],
+		as_dict=True)
+	if not pos:
+		return None
+
+	people = _holders_of(pos.name, as_at)
+	filled = sum(flt(p.weight) for p in people) / 100.0
+	kids = frappe.get_all("Alvoraa Position",
+	                      filters={"reports_to_position": pos.name,
+	                               "status": ("!=", "Closed")},
+	                      pluck="name", order_by="position_title asc")
+
+	node = {
+		"kind": "position",
+		"id": pos.name,
+		"title": pos.position_title,
+		"subtitle": pos.designation or pos.department or "",
+		# What is wrong with this box, if anything. Worked out here so the chart
+		# and the health dashboard cannot drift apart and disagree about which
+		# seats are in trouble.
+		"flags": _node_flags(pos, people, filled, len(kids)),
+		"people": [{**_card(p.employee), "weight": flt(p.weight),
+		            "cover": (p.assignment_type or "Permanent") != "Permanent"}
+		           for p in people],
+		"seats": flt(pos.seats),
+		"open": max(0.0, flt(pos.seats) - filled),
+		"frozen": pos.status == "Frozen",
+		# How many are underneath, so a collapsed box can say what it is hiding
+		# rather than just offering a chevron.
+		"child_count": len(kids),
+		"children": [],
+		# The caller needs to know whether there is more, even when it stopped
+		# fetching. Without this the last row looks like the bottom of the tree.
+		"has_more": bool(kids) and depth <= 1,
+	}
+	if kids and depth > 1:
+		node["children"] = [c for c in
+		                    (_position_subtree(k, depth - 1, as_at) for k in kids) if c]
+	return node
+
+
+SEVERITY_RANK = {"high": 3, "medium": 2, "low": 1}
+
+
+def _node_flags(pos, people, filled, child_count):
+	"""Why this box is tinted.
+
+	Two audiences with different rights. Anybody may see that a seat next to
+	them is open or being covered - that is not a secret, it is why everybody
+	there is busy. The rest is register hygiene and headcount planning, and it
+	is HR's business, so it is only attached for somebody who may already see
+	the whole chart.
+
+	Each flag carries its own words. A coloured box with no explanation gets
+	ignored by the second week.
+	"""
+	flags = []
+	open_seats = flt(pos.seats) - filled
+
+	if pos.status == "Frozen":
+		flags.append({"code": "frozen", "severity": "low", "label": "Frozen",
+		              "why": "No hiring into this seat at the moment."})
+	elif open_seats >= 0.5:
+		key = bool(pos.get("is_key_position"))
+		flags.append({
+			"code": "key_vacant" if key else "vacant",
+			"severity": "high" if key else "medium",
+			"label": "Key seat empty" if key else "Vacant",
+			"why": ("A seat somebody marked critical has nobody permanently in it."
+			        if key else "Budgeted and nobody permanently in it.")})
+
+	if any((p.assignment_type or "Permanent") != "Permanent" for p in people):
+		flags.append({"code": "covered", "severity": "low", "label": "Covered",
+		              "why": "Somebody is standing in temporarily."})
+
+	if not _can_see_health():
+		return flags
+
+	if flt(pos.seats) and filled > flt(pos.seats) + 0.01:
+		flags.append({"code": "over_filled", "severity": "high",
+		              "label": "More people than seats",
+		              "why": "Headcount and cost from this seat down are wrong."})
+
+	wide = cint(settings.get("alvoraa_org_span_wide"))
+	narrow = cint(settings.get("alvoraa_org_span_narrow"))
+	if wide and child_count >= wide:
+		flags.append({"code": "span_wide", "severity": "medium",
+		              "label": f"{child_count} direct reports",
+		              "why": "Too many to manage properly. Usually a missing layer."})
+	elif narrow and child_count == narrow:
+		flags.append({"code": "span_narrow", "severity": "low",
+		              "label": "A layer of one",
+		              "why": "One person managing one person. Often a title, not a job."})
+
+	return flags
+
+
+def _can_see_health():
+	"""Register-hygiene flags are for the people who can act on them."""
+	try:
+		return bool(reach().get("unlimited"))
+	except Exception:
+		return False
+
+
+def _person_flags(child_count):
+	"""Without positions there are no seats to be empty, so span of control is
+	the only thing left worth colouring."""
+	if not _can_see_health():
+		return []
+	wide = cint(settings.get("alvoraa_org_span_wide"))
+	narrow = cint(settings.get("alvoraa_org_span_narrow"))
+	if wide and child_count >= wide:
+		return [{"code": "span_wide", "severity": "medium",
+		         "label": f"{child_count} direct reports",
+		         "why": "Too many to manage properly. Usually a missing layer."}]
+	if narrow and child_count == narrow:
+		return [{"code": "span_narrow", "severity": "low", "label": "A layer of one",
+		         "why": "One person managing one person. Often a title, not a job."}]
+	return []
+
+
+def _person_subtree(employee, depth, as_at):
+	card = _card(employee)
+	if not card:
+		return None
+	kids = frappe.get_all("Employee",
+	                      filters={"reports_to": employee, "status": "Active"},
+	                      pluck="name", order_by="employee_name asc")
+	node = {
+		"kind": "person",
+		"id": employee,
+		"title": card["name"],
+		"subtitle": card["title"],
+		"people": [card],
+		"seats": 1, "open": 0, "frozen": False,
+		"flags": _person_flags(len(kids)),
+		"child_count": len(kids),
+		"children": [],
+		"has_more": bool(kids) and depth <= 1,
+	}
+	if kids and depth > 1:
+		node["children"] = [c for c in
+		                    (_person_subtree(k, depth - 1, as_at) for k in kids) if c]
+	return node
+
+
+@frappe.whitelist()
+def chain_to_top(node=None, as_at=None):
+	"""The breadcrumb: every step from the top down to this node.
+
+	Separate from the subtree because it changes only when the reader moves, and
+	fetching it again on every expansion would be a query per click for something
+	that did not change.
+	"""
+	as_at = as_at or nowdate()
+	positions = _enabled() and frappe.db.count("Alvoraa Position", {"status": "Active"})
+	chain, guard = [], 0
+
+	if positions:
+		at = node or _my_position(as_at)
+		while at and guard < 30:
+			guard += 1
+			p = frappe.db.get_value("Alvoraa Position", at,
+			                        ["name", "position_title", "reports_to_position"],
+			                        as_dict=True)
+			if not p:
+				break
+			holders = _holders_of(p.name, as_at)
+			chain.append({"id": p.name, "title": p.position_title,
+			              "who": (_card(holders[0].employee) or {}).get("name")
+			              if holders else None})
+			at = p.reports_to_position
+	else:
+		at = node or _me()
+		while at and guard < 30:
+			guard += 1
+			c = _card(at)
+			if not c:
+				break
+			chain.append({"id": at, "title": c["name"], "who": c["name"]})
+			at = frappe.db.get_value("Employee", at, "reports_to")
+
+	chain.reverse()
+	r = reach()
+	if not r["unlimited"] and len(chain) > r["up"] + 1:
+		# Only as far up as they may see. A breadcrumb that names the chief
+		# executive to everybody is the org chart leaking one row at a time.
+		chain = chain[-(r["up"] + 1):]
+	return chain

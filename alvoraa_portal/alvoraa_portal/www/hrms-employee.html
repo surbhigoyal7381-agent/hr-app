@@ -2000,6 +2000,119 @@ body.panel-fullscreen{overflow:hidden}
   .oc-search{min-width:0;width:100%}
   .oc-results{right:auto;left:0;width:100%}
 }
+
+/* ── Organisation chart: the tree ──────────────────────────────────
+   Boxes and elbows drawn with borders rather than SVG, so it reflows on a
+   narrow screen instead of needing a canvas to pan around. */
+.oc-tree{overflow-x:auto;padding:4px 2px 24px;display:flex;justify-content:center}
+.oc-branch{display:flex;flex-direction:column;align-items:center;position:relative}
+.oc-kids{display:flex;gap:18px;padding-top:22px;position:relative}
+.oc-kids::before{content:"";position:absolute;top:0;left:50%;width:1px;height:22px;
+  background:var(--border)}
+.oc-kids > .oc-branch::before{content:"";position:absolute;top:-22px;left:50%;
+  width:1px;height:22px;background:var(--border)}
+.oc-kids > .oc-branch:first-child::after,
+.oc-kids > .oc-branch:last-child::after{content:"";position:absolute;top:-22px;
+  width:50%;height:1px;background:var(--border)}
+.oc-kids > .oc-branch:first-child::after{left:50%}
+.oc-kids > .oc-branch:last-child::after{right:50%}
+.oc-kids > .oc-branch:only-child::after{display:none}
+
+.oc-node{position:relative;display:flex;flex-direction:column;align-items:center}
+.oc-box{background:var(--surface);border:1px solid var(--border);
+  border-left:3px solid var(--border);border-radius:10px;padding:10px 12px;
+  min-width:196px;max-width:240px;cursor:pointer;
+  transition:border-color .12s,box-shadow .12s}
+.oc-box:hover{box-shadow:0 2px 10px rgba(0,0,0,.07)}
+.oc-node.root > .oc-box{border-color:var(--accent,#16A373);
+  box-shadow:0 0 0 2px rgba(22,163,115,.10)}
+.oc-box-hd{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.oc-box-hd .ti{font-size:13px;font-weight:650;color:var(--text);line-height:1.3}
+.oc-box .sub{font-size:11px;color:var(--text3);margin-top:1px}
+.oc-who{display:flex;gap:7px;align-items:center;margin-top:8px;font-size:12px;color:var(--text)}
+.oc-who .av{width:24px;height:24px;border-radius:50%;flex:none;object-fit:cover;
+  background:var(--bg);display:flex;align-items:center;justify-content:center;
+  font-size:10px;font-weight:700;color:var(--text3)}
+.oc-who.oc-empty{color:var(--text3);font-style:italic}
+
+.oc-toggle{margin-top:-1px;position:relative;z-index:1;background:var(--surface);
+  border:1px solid var(--border);border-radius:999px;color:var(--text3);font:inherit;
+  font-size:12px;line-height:1;padding:3px 9px;cursor:pointer;display:flex;gap:5px;
+  align-items:center}
+.oc-toggle:hover{border-color:var(--accent,#16A373);color:var(--accent,#16A373)}
+.oc-toggle .c{font-size:10px;font-weight:700;opacity:.7}
+.oc-more{background:none;border:1px dashed var(--border);border-radius:8px;
+  color:var(--text3);font:inherit;font-size:11.5px;padding:6px 10px;cursor:pointer}
+.oc-more:hover{color:var(--accent,#16A373);border-color:var(--accent,#16A373)}
+.oc-up{background:var(--surface);border:1px solid var(--border);border-radius:7px;
+  font:inherit;font-size:11.5px;padding:4px 9px;color:var(--text);cursor:pointer}
+.oc-up:hover{border-color:var(--accent,#16A373);color:var(--accent,#16A373)}
+
+/* ── Colour coding ─────────────────────────────────────────────────
+   Three tones, kept deliberately pale. Written as low-alpha colour over
+   whatever surface is behind it, so the same rules read correctly in dark
+   mode instead of needing a second palette that drifts out of step.
+
+   Colour is never the message on its own - every tinted box also carries a
+   worded chip, because roughly one in twelve men cannot separate the red
+   from the amber. */
+.oc-box.tone-high{border-left-color:#e11d48;background:rgba(225,29,72,.045)}
+.oc-box.tone-medium{border-left-color:#d97706;background:rgba(217,119,6,.05)}
+.oc-box.tone-low{border-left-color:#0284c7;background:rgba(2,132,199,.04)}
+.oc-flags{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.oc-flag{font-size:10px;font-weight:650;letter-spacing:.02em;padding:1px 6px;
+  border-radius:999px;border:1px solid transparent;cursor:help}
+.oc-flag.high{background:rgba(225,29,72,.10);color:#be123c;border-color:rgba(225,29,72,.22)}
+.oc-flag.medium{background:rgba(217,119,6,.12);color:#b45309;border-color:rgba(217,119,6,.24)}
+.oc-flag.low{background:rgba(2,132,199,.10);color:#0369a1;border-color:rgba(2,132,199,.22)}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .oc-flag.high{color:#fda4af}
+  :root:not([data-theme="light"]) .oc-flag.medium{color:#fcd34d}
+  :root:not([data-theme="light"]) .oc-flag.low{color:#7dd3fc}
+}
+:root[data-theme="dark"] .oc-flag.high{color:#fda4af}
+:root[data-theme="dark"] .oc-flag.medium{color:#fcd34d}
+:root[data-theme="dark"] .oc-flag.low{color:#7dd3fc}
+
+/* ── The numbers above the chart ───────────────────────────────────
+   HR only. Summary before detail, so what needs attention reads before
+   anybody starts scrolling a tree looking for it. */
+.oc-stats{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.oc-stats:empty{display:none}
+.oc-stat{border:1px solid var(--border);border-left:3px solid var(--border);
+  border-radius:9px;padding:8px 14px;min-width:112px;background:var(--surface)}
+.oc-stat.clickable{cursor:pointer}
+.oc-stat.clickable:hover{box-shadow:0 2px 10px rgba(0,0,0,.07)}
+.oc-stat .n{font-size:19px;font-weight:700;color:var(--text);line-height:1.1;
+  font-variant-numeric:tabular-nums}
+.oc-stat .l{font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--text3);font-weight:700;margin-top:3px}
+.oc-stat.tone-high{border-left-color:#e11d48;background:rgba(225,29,72,.045)}
+.oc-stat.tone-medium{border-left-color:#d97706;background:rgba(217,119,6,.05)}
+.oc-stat.tone-low{border-left-color:#0284c7;background:rgba(2,132,199,.04)}
+.oc-legend{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px;font-size:11px;
+  color:var(--text3)}
+.oc-legend:empty{display:none}
+.oc-legend span{display:flex;align-items:center;gap:5px}
+.oc-legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+
+.oc-drill:empty{display:none}
+.oc-drill{border:1px solid var(--border);border-radius:10px;background:var(--surface);
+  padding:12px 14px;margin-bottom:14px}
+.oc-drill h4{margin:0 0 2px;font-size:13px;color:var(--text)}
+.oc-drill .why{font-size:11.5px;color:var(--text3);margin:0 0 8px}
+.oc-drill ul{margin:0;padding-left:16px;font-size:12px;color:var(--text)}
+.oc-drill li{margin:3px 0}
+.oc-drill li b{font-weight:650}
+.oc-drill a{color:inherit}
+.oc-drill .d{opacity:.65}
+
+@media (max-width:640px){
+  .oc-kids{flex-direction:column;align-items:center;gap:10px}
+  .oc-kids::before,.oc-kids > .oc-branch::before,
+  .oc-kids > .oc-branch::after{display:none}
+  .oc-box{min-width:0;width:100%;max-width:none}
+}
 </style>
 {% endblock %}
 
@@ -2386,6 +2499,9 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
             <div id="oc-results" class="oc-results"></div>
           </div>
         </div>
+        <div id="oc-stats" class="oc-stats"></div>
+        <div id="oc-drill" class="oc-drill"></div>
+        <div id="oc-legend" class="oc-legend"></div>
         <div id="oc-crumb" class="oc-crumb"></div>
         <div id="oc-body" class="oc-body"><p class="oc-muted">Loading&hellip;</p></div>
       </div>
@@ -4610,7 +4726,22 @@ function expenseStatusBadge(s) {
    Most org charts fail on a portal by handing the employee the HR view -
    four hundred boxes to pan around looking for themselves.
 */
-var OC = { at: null, data: null };
+var OC = { root: null, chain: [], open: {}, health: null, drill: null };
+
+/* An expandable tree, not a canvas to pan around.
+
+   It opens on YOU with two levels beneath. Clicking a box opens two more
+   levels UNDER it, in place - expansion rather than re-centring, because
+   re-centring throws away the path the reader took to get there, and that
+   path is what they were using to understand the shape.
+
+   Moving back up is a first-class action, not a browser Back button: the
+   breadcrumb re-roots at any ancestor, and "Up one level" is always there.
+
+   Two levels at a time is deliberate. One makes somebody click through a
+   company node by node; three fills the screen with people they were not
+   looking for and pushes what they wanted off the bottom.
+*/
 
 function ocEsc(s) {
   return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
@@ -4629,128 +4760,264 @@ function ocAvatar(p) {
     : '<span class="av">' + ocEsc(ocInitials(p && p.name)) + "</span>";
 }
 
-function ocCard(p, opts) {
-  opts = opts || {};
-  if (!p) return "";
-  var tags = "";
-  // The weight is always shown. It explains why somebody appears twice, and
-  // hiding it makes the chart look broken rather than discreet.
-  if (opts.weight != null && opts.weight < 100) {
-    tags += '<span class="oc-tag w">' + Math.round(opts.weight) + "%</span>";
+/* The worst thing wrong with a box decides its colour. Tinting a box for the
+   mildest of three problems hides the serious one. */
+var OC_RANK = { high: 3, medium: 2, low: 1 };
+function ocTone(flags) {
+  var best = null;
+  (flags || []).forEach(function (f) {
+    if (!best || (OC_RANK[f.severity] || 0) > (OC_RANK[best] || 0)) best = f.severity;
+  });
+  return best;
+}
+
+/* One box. Several people when a seat is shared; a dashed box when empty. */
+function ocNodeCard(n, isRoot) {
+  var who = n.people && n.people.length
+    ? n.people.map(function (p) {
+        var tags = "";
+        if (p.weight != null && p.weight < 100) {
+          tags += '<span class="oc-tag w">' + Math.round(p.weight) + "%</span>";
+        }
+        if (p.cover) tags += '<span class="oc-tag c">covering</span>';
+        return '<div class="oc-who">' + ocAvatar(p)
+          + "<span>" + ocEsc(p.name) + tags + "</span></div>";
+      }).join("")
+    : '<div class="oc-who oc-empty"><span class="av">&mdash;</span>'
+      + "<span>Nobody in this seat</span></div>";
+
+  var open = "";
+  if (n.open >= 0.5) {
+    open = '<span class="oc-tag v">' + (n.open === 1 ? "open" : n.open.toFixed(1) + " open")
+      + "</span>";
   }
-  if (opts.cover) tags += '<span class="oc-tag c">covering</span>';
-  return '<div class="oc-card' + (opts.me ? " me" : "")
-    + (opts.clickable === false ? "" : " clickable") + '"'
-    + (opts.clickable === false ? "" : ' onclick="ocGoTo(\'' + ocEsc(p.employee) + '\')"')
-    + ">" + ocAvatar(p) + "<div>"
-    + '<div class="nm">' + ocEsc(p.name) + tags + "</div>"
-    + '<div class="ti">' + ocEsc(p.title || "") + "</div>"
-    + (p.department ? '<div class="meta">' + ocEsc(p.department) + "</div>" : "")
-    + "</div></div>";
+
+  var toggle = "";
+  if (n.child_count) {
+    var isOpen = !!(n.children && n.children.length);
+    toggle = '<button class="oc-toggle" onclick="event.stopPropagation();ocToggle(\''
+      + ocEsc(n.id) + '\')" aria-label="Expand">'
+      + (isOpen ? "&minus;" : "+") + '<span class="c">' + n.child_count + "</span></button>";
+  }
+
+  // Colour says "look here"; the chip says why. Never colour on its own -
+  // roughly one in twelve men cannot separate the red from the amber, and a
+  // chart that says it only in colour says nothing at all to them.
+  var flags = n.flags || [];
+  var tone = ocTone(flags);
+  var chips = flags.length
+    ? '<div class="oc-flags">' + flags.map(function (f) {
+        return '<span class="oc-flag ' + ocEsc(f.severity) + '" title="'
+          + ocEsc(f.why) + '">' + ocEsc(f.label) + "</span>";
+      }).join("") + "</div>"
+    : "";
+
+  return '<div class="oc-node' + (isRoot ? " root" : "") + '">'
+    + '<div class="oc-box' + (tone ? " tone-" + tone : "")
+    + '" onclick="ocFocus(\'' + ocEsc(n.id) + '\')">'
+    + '<div class="oc-box-hd"><span class="ti">' + ocEsc(n.title) + "</span>" + open + "</div>"
+    + (n.subtitle ? '<div class="sub">' + ocEsc(n.subtitle) + "</div>" : "")
+    + who + chips + "</div>" + toggle + "</div>";
 }
 
-function ocVacant(seat, open) {
-  return '<div class="oc-card vacant"><span class="av">&mdash;</span><div>'
-    + '<div class="nm">' + ocEsc(seat)
-    + '<span class="oc-tag v">' + (open === 1 ? "open" : open.toFixed(1) + " open")
-    + "</span></div>"
-    + '<div class="ti">Nobody in this seat</div></div></div>';
+function ocRender(n, isRoot) {
+  if (!n) return "";
+  var kids = "";
+  if (n.children && n.children.length) {
+    kids = '<div class="oc-kids">'
+      + n.children.map(function (c) { return ocRender(c, false); }).join("")
+      + "</div>";
+  } else if (n.has_more) {
+    // Without this the last row reads as the bottom of the organisation.
+    kids = '<div class="oc-kids"><button class="oc-more" onclick="ocToggle(\''
+      + ocEsc(n.id) + '\')">' + n.child_count + " more below&hellip;</button></div>";
+  }
+  return '<div class="oc-branch">' + ocNodeCard(n, isRoot) + kids + "</div>";
 }
 
-function ocRow(label, html) {
-  if (!html) return "";
-  return '<div><div class="oc-row-label">' + ocEsc(label) + "</div>"
-    + '<div class="oc-strip">' + html + "</div></div>";
+/* ── moving around ─────────────────────────────────────────────────── */
+
+function ocFind(node, id) {
+  if (!node) return null;
+  if (node.id === id) return node;
+  for (var i = 0; i < (node.children || []).length; i++) {
+    var hit = ocFind(node.children[i], id);
+    if (hit) return hit;
+  }
+  return null;
 }
 
-window.ocGoTo = function (employee) {
-  ocLoad(employee);
-  var res = document.getElementById("oc-results");
-  if (res) res.classList.remove("open");
-  var box = document.getElementById("oc-search");
-  if (box) box.value = "";
+/* Expand two more levels under a box, in place. Collapse on a second click. */
+window.ocToggle = async function (id) {
+  var node = ocFind(OC.root, id);
+  if (!node) return;
+  if (node.children && node.children.length) {
+    node.children = [];
+    node.has_more = !!node.child_count;
+    ocPaint();
+    return;
+  }
+  try {
+    var sub = await gpFetch("hrms.alvoraa_org_structure.api.subtree",
+                            { root: id, depth: 3 });
+    node.children = (sub && sub.children) || [];
+    node.has_more = false;
+  } catch (e) { /* leave it collapsed rather than showing half a tree */ }
+  ocPaint();
 };
 
-window.ocLoad = async function (employee) {
+/* Re-root here. Used by the breadcrumb and by clicking a box. */
+window.ocFocus = function (id) { ocLoad(id); };
+
+/* What makes going back up a first-class action rather than a browser Back. */
+window.ocUp = function () {
+  if (OC.chain.length < 2) return;
+  ocLoad(OC.chain[OC.chain.length - 2].id);
+};
+
+window.ocTop = function () {
+  if (!OC.chain.length) return;
+  ocLoad(OC.chain[0].id);
+};
+
+window.ocMe = function () { ocLoad(null); };
+
+function ocPaint() {
+  document.getElementById("oc-body").innerHTML =
+    '<div class="oc-tree">' + ocRender(OC.root, true) + "</div>";
+}
+
+window.ocLoad = async function (id) {
   var body = document.getElementById("oc-body");
   body.innerHTML = '<p class="oc-muted">Loading&hellip;</p>';
-  var d;
+  var root, chain;
   try {
-    d = await gpFetch("hrms.alvoraa_org_structure.api.my_view",
-                      employee ? { employee: employee } : {});
+    root = await gpFetch("hrms.alvoraa_org_structure.api.subtree",
+                         id ? { root: id } : {});
+    chain = await gpFetch("hrms.alvoraa_org_structure.api.chain_to_top",
+                          id ? { node: id } : {});
   } catch (e) {
     body.innerHTML = '<p class="oc-muted">Could not load the chart: '
       + ocEsc(e && e.message ? e.message : e) + "</p>";
     return;
   }
-  OC.data = d; OC.at = d && d.me ? d.me.employee : null;
-
-  if (!d || !d.me) {
-    body.innerHTML = '<p class="oc-muted">'
-      + ocEsc((d && d.reason) || "Nothing to show yet.") + "</p>";
+  if (!root) {
+    body.innerHTML = '<p class="oc-muted">Nothing to show yet. '
+      + "Your record is not on the chart.</p>";
     document.getElementById("oc-crumb").innerHTML = "";
     return;
   }
+  OC.root = root;
+  OC.chain = chain || [];
+  ocStats();
 
-  // Breadcrumb: the shape of the whole company without drawing it.
-  var crumb = (d.breadcrumb || []).map(function (step) {
-    var who = (step.people || [])[0];
-    var label = who ? who.name : (step.title || "Vacant");
-    return who
-      ? '<button onclick="ocGoTo(\'' + ocEsc(who.employee) + '\')">' + ocEsc(label) + "</button>"
-      : "<span>" + ocEsc(label) + "</span>";
+  var crumb = OC.chain.map(function (step, i) {
+    var last = i === OC.chain.length - 1;
+    var label = step.who || step.title;
+    return last
+      ? "<span><strong>" + ocEsc(label) + "</strong></span>"
+      : '<button onclick="ocFocus(\'' + ocEsc(step.id) + '\')">' + ocEsc(label) + "</button>";
   });
-  crumb.push("<span><strong>" + ocEsc(d.me.name) + "</strong></span>");
   document.getElementById("oc-crumb").innerHTML =
-    crumb.join('<span class="sep">&rsaquo;</span>');
+    (OC.chain.length > 1
+      ? '<button class="oc-up" onclick="ocUp()">&uarr; Up one level</button>'
+        + '<button class="oc-up" onclick="ocTop()">Top</button>'
+      : "")
+    + '<button class="oc-up" onclick="ocMe()">Back to me</button>'
+    + '<span class="sep">|</span>'
+    + crumb.join('<span class="sep">&rsaquo;</span>');
 
-  var isMe = !employee || employee === OC.at;
-  document.getElementById("oc-sub").textContent = isMe
-    ? "Where you sit, and who is around you"
-    : d.me.name + " \u2014 " + (d.me.title || "");
-
-  var mgr = d.manager && (d.manager.people || [])[0];
-  var html = "";
-  html += ocRow("Reports to", mgr
-    ? ocCard(mgr)
-    : (d.manager
-        ? ocVacant(d.manager.title || "Manager", 1)
-        : '<p class="oc-muted">Top of the tree.</p>'));
-
-  html += ocRow(isMe ? "You" : d.me.name,
-    ocCard(d.me, { me: true, clickable: false })
-    + (d.my_position
-        ? '<div class="oc-dotted">Seat: <b>' + ocEsc(d.my_position.title) + "</b></div>"
-        : ""));
-
-  // Dotted lines as a LINE on the card, never as crossing lines on a canvas -
-  // five of those turn a chart into spaghetti.
-  if ((d.dotted || []).length) {
-    html += ocRow("Also works with", (d.dotted || []).map(function (x) {
-      return ocCard(x, {});
-    }).join(""));
-  }
-
-  if ((d.peers || []).length) {
-    html += ocRow("Alongside", (d.peers || []).map(function (x) {
-      return ocCard(x, {});
-    }).join(""));
-  }
-
-  var team = (d.team || []).map(function (seat) {
-    var cards = (seat.people || []).map(function (x) {
-      return ocCard(x, { weight: x.weight, cover: x.cover });
-    }).join("");
-    // An employee seeing their own team SHOULD see the seat they are covering
-    // for. That is not a restructuring signal, it is why they are busy.
-    if (seat.open >= 0.5) cards += ocVacant(seat.title || "Open seat", seat.open);
-    return cards;
-  }).join("");
-  html += ocRow(isMe ? "Your team" : "Their team",
-                team || '<p class="oc-muted">Nobody reports here.</p>');
-
-  body.innerHTML = html;
+  document.getElementById("oc-sub").textContent =
+    OC.chain.length ? (OC.chain[OC.chain.length - 1].title || "") : "";
+  ocPaint();
 };
+
+/* ── the numbers above the chart ─────────────────────────────────────
+   Only HR and system administrators get these, and the endpoint refuses
+   everybody else - so a failure here is the normal case for an employee,
+   not an error worth showing them.
+
+   Summary before detail: somebody opening this to plan headcount should not
+   have to scroll a tree hunting for the holes. */
+window.ocStats = async function () {
+  var box = document.getElementById("oc-stats");
+  var legend = document.getElementById("oc-legend");
+  if (!box) return;
+  var h;
+  try {
+    h = await gpFetch("hrms.alvoraa_org_structure.metrics.org_health", {});
+  } catch (e) { box.innerHTML = ""; return; }
+  if (!h || !h.headline) { box.innerHTML = ""; return; }
+  OC.health = h;
+
+  var k = h.headline;
+  var tiles = [
+    { n: k.positions, l: "Positions" },
+    { n: k.seats_vacant, l: "Seats vacant", kind: "vacant",
+      tone: k.seats_vacant > 0 ? "medium" : null },
+    { n: k.people_over_capacity, l: "Over capacity", kind: "over_capacity",
+      tone: k.people_over_capacity > 0 ? "high" : null },
+    { n: k.positions_flagged, l: "Positions flagged" }
+  ];
+  // Every other flag type, worst first. This is the "some other reason"
+  // column - a number somebody can open, not something they have to go
+  // hunting through the chart to find.
+  (h.by_kind || []).forEach(function (g) {
+    if (g.kind === "vacant" || g.kind === "over_capacity") return;
+    tiles.push({ n: g.count, l: g.label, kind: g.kind, tone: g.severity });
+  });
+
+  box.innerHTML = tiles.map(function (x) {
+    var cls = "oc-stat" + (x.tone ? " tone-" + x.tone : "") + (x.kind ? " clickable" : "");
+    var click = x.kind ? ' onclick="ocDrill(\'' + ocEsc(x.kind) + '\')"' : "";
+    return '<div class="' + cls + '"' + click + '><div class="n">'
+      + ocEsc(x.n) + '</div><div class="l">' + ocEsc(x.l) + "</div></div>";
+  }).join("");
+
+  if (legend) {
+    legend.innerHTML =
+      '<span><i style="background:#e11d48"></i>Needs attention now</span>'
+      + '<span><i style="background:#d97706"></i>Worth planning for</span>'
+      + '<span><i style="background:#0284c7"></i>For information</span>'
+      + "<span>Hover any tag to see what it means.</span>";
+  }
+};
+
+/* Clicking a number lists what is behind it. A count nobody can open is a
+   number people learn to ignore. */
+window.ocDrill = function (kind) {
+  var box = document.getElementById("oc-drill");
+  var h = OC.health;
+  if (!box || !h) return;
+  if (OC.drill === kind) { OC.drill = null; box.innerHTML = ""; return; }
+  OC.drill = kind;
+  var g = (h.by_kind || []).filter(function (x) { return x.kind === kind; })[0];
+  if (!g) { box.innerHTML = ""; return; }
+  box.innerHTML = "<h4>" + ocEsc(g.label) + " &middot; " + g.count + "</h4>"
+    + '<p class="why">' + ocEsc(g.why) + "</p><ul>"
+    + g.items.slice(0, 40).map(function (i) {
+        var who = i.name ? ocEsc(i.name) : "";
+        var what = ocEsc(i.title || i.position || "");
+        var detail = [];
+        if (i.open != null) detail.push(i.open + " open");
+        if (i.load != null) detail.push(i.load + "% of a person, limit " + i.cap + "%");
+        if (i.days != null) detail.push(i.days + " days");
+        if (i.reports != null) detail.push(i.reports + " reports");
+        if (i.seats != null) detail.push(i.filled + " people in " + i.seats + " seats");
+        var head = i.position
+          ? '<b><a href="#" onclick="ocFocus(\'' + ocEsc(i.position)
+            + '\');return false;">' + (what || ocEsc(i.position)) + "</a></b>"
+            + (who ? " &mdash; " + who : "")
+          : "<b>" + (who || what) + "</b>";
+        return "<li>" + head
+          + (detail.length ? ' <span class="d">(' + ocEsc(detail.join(", ")) + ")</span>" : "")
+          + "</li>";
+      }).join("")
+    + "</ul>"
+    + (g.count > 40 ? '<p class="why">' + (g.count - 40) + " more not listed.</p>" : "");
+};
+
+/* ── search ────────────────────────────────────────────────────────── */
 
 var _ocSearchTimer = null;
 window.ocSearch = function (q) {
@@ -4770,12 +5037,28 @@ window.ocSearch = function (q) {
       return;
     }
     res.innerHTML = hits.map(function (h) {
-      return '<div class="oc-hit" onclick="ocGoTo(\'' + ocEsc(h.employee) + '\')">'
+      return '<div class="oc-hit" onclick="ocJump(\'' + ocEsc(h.employee) + '\')">'
         + ocAvatar(h) + "<div><div>" + ocEsc(h.name) + "</div>"
         + '<div class="t">' + ocEsc(h.title || "") + "</div></div></div>";
     }).join("");
     res.classList.add("open");
   }, 220);
+};
+
+window.ocJump = async function (employee) {
+  var res = document.getElementById("oc-results");
+  if (res) res.classList.remove("open");
+  var box = document.getElementById("oc-search");
+  if (box) box.value = "";
+  // Search returns a PERSON. On a tenant that keeps positions the tree is made
+  // of seats, so land on the seat they sit in rather than failing quietly.
+  var seat = employee;
+  try {
+    var v = await gpFetch("hrms.alvoraa_org_structure.api.my_view",
+                          { employee: employee });
+    if (v && v.my_position) seat = v.my_position.position;
+  } catch (e) { /* fall back to the employee id */ }
+  ocLoad(seat);
 };
 
 document.addEventListener("click", function (e) {

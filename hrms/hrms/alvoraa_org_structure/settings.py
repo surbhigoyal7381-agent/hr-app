@@ -42,6 +42,32 @@ DEFAULTS = {
 	# The ceiling on one person's total load, cover included.
 	"alvoraa_cover_max_load": 130,
 
+	# How far an ordinary employee may see on the org chart. Two levels up and
+	# two down is enough to answer the questions they actually have - where am
+	# I, who is my manager, who is on my team - without handing everybody a map
+	# of the whole company. Structure is commercially sensitive, and a full org
+	# chart is the first thing that walks out of the door with a leaver.
+	"alvoraa_org_reach_up": 2,
+	"alvoraa_org_reach_down": 2,
+
+	# Who may roam the whole thing. HR needs it to do their job; leadership
+	# needs it to run the place.
+	"alvoraa_org_full_reach_roles": "HR Manager,HR User,System Manager",
+
+	# Anybody with people reporting to them. On by default because a manager
+	# who cannot see past their own team cannot plan around the one next door.
+	"alvoraa_org_managers_see_all": 1,
+
+	# Span of control. Past about nine, a manager cannot give anybody real
+	# attention - one-to-ones stop and appraisals become a form to fill in.
+	# Usually the sign that a layer is missing rather than that anybody is lazy.
+	"alvoraa_org_span_wide": 9,
+
+	# One person managing one person is usually a title rather than a job.
+	# Sometimes it is a deliberate deputy, so this is a low-severity note, not
+	# an error. Set to 0 to stop flagging it at all.
+	"alvoraa_org_span_narrow": 1,
+
 	# Above the ceiling: refuse, or allow with a written reason. Allowing with a
 	# reason is the default, because a flat refusal gets worked around by
 	# recording the cover as permanent, which is worse than the thing it stops.
@@ -67,6 +93,16 @@ LABELS = {
 		"Their own role plus everything they are covering."),
 	"alvoraa_cover_allow_over_cap": ("Allow going over, with a written reason",
 		"Off means refused outright. On means allowed once somebody says why."),
+	"alvoraa_org_reach_up": ("Levels an employee may see above them", "Two is usually enough."),
+	"alvoraa_org_reach_down": ("Levels an employee may see below them", "Two is usually enough."),
+	"alvoraa_org_full_reach_roles": ("Roles that may see the whole chart",
+		"Comma separated. HR and system administrators by default."),
+	"alvoraa_org_managers_see_all": ("Anybody with direct reports sees the whole chart",
+		"Off means a manager is bounded like everybody else."),
+	"alvoraa_org_span_wide": ("Flag a manager with this many reports or more",
+		"Past about nine, one-to-ones stop happening. Usually a missing layer."),
+	"alvoraa_org_span_narrow": ("Flag a manager with this many reports",
+		"One person managing one person. Set to 0 to stop flagging it."),
 }
 
 

@@ -1946,6 +1946,13 @@ body.panel-fullscreen{overflow:hidden}
 }
 
 
+/* A day's attendance as one sentence rather than two rows of "Checked
+   in" / "Checked out", which is 80 pixels to say what everybody already
+   knows. */
+.act-line{padding:7px 0 9px;font-size:var(--fs-base);color:var(--text2);
+  line-height:1.5}
+.act-line b{color:var(--text);font-weight:650;font-variant-numeric:tabular-nums}
+
 /* ── This week, at a glance ────────────────────────────────────────
    Presence only: in, away, still to come, non-working. Never the reason
    somebody is away and never a running tally - absence can reveal a
@@ -5624,22 +5631,61 @@ function renderActivityFeed(activities) {
     return "";
   }
 
+  function hhmm(ts) {
+    return ts ? new Date(ts.replace(" ", "T"))
+      .toLocaleTimeString("en-IN", {hour: "2-digit", minute: "2-digit"}) : "";
+  }
+
+  /* "8h 18m". Minutes are dropped once it is a round hour, because "8h 00m"
+     reads as a machine talking. */
+  function spanText(fromTs, toTs) {
+    var a = new Date(fromTs.replace(" ", "T")), b = new Date(toTs.replace(" ", "T"));
+    var mins = Math.round((b - a) / 60000);
+    if (!(mins > 0)) return "";
+    var h = Math.floor(mins / 60), m = mins % 60;
+    return h ? (m ? h + "h " + m + "m" : h + "h") : m + "m";
+  }
+
   var dates = Object.keys(groups).sort().reverse();
   el.innerHTML = dates.map(function(date) {
     var items = groups[date];
-    return '<div class="act-day-hdr">' + dateHdr(date) + '</div>' +
-      items.map(function(a) {
-        var t = a.time ? new Date(a.time.replace(" ", "T")).toLocaleTimeString("en-IN", {hour:"2-digit", minute:"2-digit"}) : "";
-        return '<div class="act-item">' +
-          iconHtml(a) +
+
+    /* The day's attendance as one sentence. Two rows saying "Checked in" and
+       "Checked out" tell somebody what they already know; how long they were
+       there is the part they cannot work out at a glance. */
+    var ins  = items.filter(function(a) { return a.type === "checkin" && a.icon === "IN"; });
+    var outs = items.filter(function(a) { return a.type === "checkin" && a.icon !== "IN"; });
+    var rest = items.filter(function(a) { return a.type !== "checkin"; });
+
+    var line = "";
+    if (ins.length || outs.length) {
+      /* Earliest in, latest out - somebody who steps out at lunch has several
+         of each, and the day still ran from the first to the last. */
+      var first = ins.map(function(a) { return a.time; }).sort()[0];
+      var last  = outs.map(function(a) { return a.time; }).sort().pop();
+      var body;
+      if (first && last) {
+        var dur = spanText(first, last);
+        body = (dur ? "Logged <b>" + dur + "</b> between " : "In and out between ")
+          + hhmm(first) + " and " + hhmm(last);
+      } else if (first) {
+        body = "Checked in at " + hhmm(first) + " &mdash; still in";
+      } else {
+        body = "Checked out at " + hhmm(last);
+      }
+      line = '<div class="act-line">' + body + "</div>";
+    }
+
+    return '<div class="act-day-hdr">' + dateHdr(date) + "</div>" + line +
+      rest.map(function(a) {
+        return '<div class="act-item">' + iconHtml(a) +
           '<div class="act-body">' +
-            '<div class="act-label">' + esc(a.label || "") + statusBadge(a) + '</div>' +
-            (a.detail ? '<div class="act-detail">' + esc(a.detail) + '</div>' : '') +
-          '</div>' +
-          '<div class="act-time">' + t + '</div>' +
-        '</div>';
-      }).join("") +
-    '';
+            '<div class="act-label">' + esc(a.label || "") + statusBadge(a) + "</div>" +
+            (a.detail ? '<div class="act-detail">' + esc(a.detail) + "</div>" : "") +
+          "</div>" +
+          '<div class="act-time">' + hhmm(a.time) + "</div>" +
+        "</div>";
+      }).join("");
   }).join("");
 }
 

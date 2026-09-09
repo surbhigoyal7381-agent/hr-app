@@ -9,54 +9,17 @@
 {% block head_include %}
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+{% include "templates/includes/design_system.html" %}
+{% include "templates/includes/design_system.html" %}
+{% include "templates/includes/design_system.html" %}
+{% include "templates/includes/design_system.html" %}
 <style>
 /* ── Reset & Base ──────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-:root {
-  --amber:        #E8891A;
-  --amber-dark:   #c97614;
-  --amber-light:  #fef3e2;
-  --dark-nav:     #0F1929;
-  --dark-nav2:    #1a2744;
-  --success:      #1CB86A;
-  --success-bg:   #e6f9ef;
-  --danger:       #e53e3e;
-  --danger-bg:    #fff5f5;
-  --bg:           #f0f2f5;
-  --card-bg:      #ffffff;
-  --border:       #e2e8f0;
-  --text:         #1a202c;
-  --text-muted:   #718096;
-  --text-light:   #a0aec0;
-  --radius:       12px;
-  --shadow:       0 2px 8px rgba(0,0,0,0.08);
-  --shadow-md:    0 4px 16px rgba(0,0,0,0.12);
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg:         #0d1117;
-    --card-bg:    #161d28;
-    --border:     #222c3c;
-    --text:       #dee3ec;
-    --text-muted: #8896ab;
-    --text-light: #566070;
-    --amber-light:  rgba(232,137,26,.15);
-    --success-bg:   rgba(28,184,106,.15);
-    --danger-bg:    rgba(229,62,62,.15);
-  }
-}
-:root[data-theme="dark"] {
-  --bg:         #0d1117;
-  --card-bg:    #161d28;
-  --border:     #222c3c;
-  --text:       #dee3ec;
-  --text-muted: #8896ab;
-  --text-light: #566070;
-  --amber-light:  rgba(232,137,26,.15);
-  --success-bg:   rgba(28,184,106,.15);
-  --danger-bg:    rgba(229,62,62,.15);
-}
+
+
+
 
 /* Frappe page overrides */
 .page-content { padding-top: 0 !important; padding-bottom: 0 !important; }
@@ -77,7 +40,7 @@ section.page-content,
   min-height: calc(100vh - 60px);
   color: var(--text);
   line-height: 1.5;
-  font-size: 15px;
+  font-size:var(--fs-md);
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -87,46 +50,46 @@ section.page-content,
 
 /* ── Admin Demo Bar ───────────────────────────────────────────────────────── */
 #gdp-admin-bar {
-  background: var(--dark-nav);
+  background: var(--sidebar-bg);
   padding: 10px 16px;
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  border-bottom: 3px solid var(--amber);
+  border-bottom: 3px solid var(--primary);
 }
 .admin-pill {
-  background: var(--amber);
-  color: #fff;
-  font-size: 10px;
+  background: var(--primary);
+  color: var(--surface);
+  font-size:var(--fs-xs);
   font-weight: 800;
   letter-spacing: 1.2px;
   text-transform: uppercase;
   padding: 3px 10px;
-  border-radius: 20px;
+  border-radius:var(--r-full);
   white-space: nowrap;
   flex-shrink: 0;
 }
 #gdp-admin-bar label {
-  color: #8899bb;
-  font-size: 12px;
+  color: var(--border2);
+  font-size:var(--fs-sm);
   font-weight: 500;
   white-space: nowrap;
   flex-shrink: 0;
 }
 #gdp-driver-select {
-  background: var(--dark-nav2);
-  border: 1px solid #2d3f66;
-  color: #e2e8f0;
+  background: var(--surface2);
+  border: 1px solid var(--primary);
+  color: var(--surface2);
   padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius:var(--r);
+  font-size:var(--fs-base);
   min-width: 180px;
   flex: 1;
   cursor: pointer;
   height: 36px;
 }
-#gdp-driver-select:focus { outline: 2px solid var(--amber); border-color: transparent; }
+#gdp-driver-select:focus { outline: 2px solid var(--primary); border-color: transparent; }
 
 /* ── Loading & Error States ───────────────────────────────────────────────── */
 #gdp-loading {
@@ -136,13 +99,13 @@ section.page-content,
   justify-content: center;
   padding: 64px 24px;
   gap: 16px;
-  color: var(--text-muted);
+  color: var(--text2);
 }
 .gdp-spinner {
   width: 40px;
   height: 40px;
   border: 3px solid var(--border);
-  border-top-color: var(--amber);
+  border-top-color: var(--primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -152,15 +115,15 @@ section.page-content,
   padding: 48px 24px;
   text-align: center;
 }
-.error-icon { font-size: 48px; margin-bottom: 12px; }
-#gdp-error-msg { color: var(--danger); font-size: 15px; }
+.error-icon { font-size:var(--fs-2xl); margin-bottom: 12px; }
+#gdp-error-msg { color: var(--red); font-size:var(--fs-md); }
 
 /* ── LIST VIEW ────────────────────────────────────────────────────────────── */
 #gdp-list-view { display: flex; flex-direction: column; }
 
 /* Header */
 #gdp-list-header {
-  background: var(--dark-nav);
+  background: var(--sidebar-bg);
   padding: 16px;
   display: flex;
   align-items: center;
@@ -176,43 +139,43 @@ section.page-content,
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: var(--amber);
+  background: var(--primary);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
+  font-size:var(--fs-xl);
   flex-shrink: 0;
 }
 .driver-name {
-  color: #f0f4f8;
-  font-size: 16px;
+  color: var(--primary-lt);
+  font-size:var(--fs-md);
   font-weight: 700;
   line-height: 1.2;
 }
 .hub-info {
-  color: #8899bb;
-  font-size: 12px;
+  color: var(--border2);
+  font-size:var(--fs-sm);
   margin-top: 2px;
 }
 .today-count {
-  background: var(--amber);
-  color: #fff;
-  font-size: 11px;
+  background: var(--primary);
+  color: var(--surface);
+  font-size:var(--fs-xs);
   font-weight: 700;
   padding: 2px 8px;
-  border-radius: 12px;
+  border-radius:var(--r);
   margin-left: 4px;
 }
 
 /* GPS header pill */
 #gdp-gps-header-pill {
-  background: #1d3a5f;
-  border: 1px solid #3b82f6;
-  color: #93c5fd;
-  font-size: 11px;
+  background: var(--primary);
+  border: 1px solid var(--primary);
+  color: var(--primary);
+  font-size:var(--fs-xs);
   font-weight: 700;
   padding: 5px 10px;
-  border-radius: 20px;
+  border-radius:var(--r-full);
   white-space: nowrap;
   display: flex;
   align-items: center;
@@ -223,18 +186,18 @@ section.page-content,
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #3b82f6;
+  background: var(--primary);
   animation: pulse-dot 1.5s ease-out infinite;
 }
 @keyframes pulse-dot {
-  0%   { box-shadow: 0 0 0 0 rgba(59,130,246,0.6); }
-  70%  { box-shadow: 0 0 0 6px rgba(59,130,246,0); }
-  100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); }
+  0%   { box-shadow:var(--sh1); }
+  70%  { box-shadow:var(--sh2); }
+  100% { box-shadow:var(--sh1); }
 }
 
 /* Stats Bar */
 #gdp-stats-bar {
-  background: var(--dark-nav2);
+  background: var(--surface2);
   display: flex;
   border-bottom: 1px solid rgba(255,255,255,0.06);
 }
@@ -247,22 +210,22 @@ section.page-content,
 .stat-item:last-child { border-right: none; }
 .stat-num {
   display: block;
-  font-size: 22px;
+  font-size:var(--fs-xl);
   font-weight: 800;
-  color: #f0f4f8;
+  color: var(--primary-lt);
   line-height: 1;
 }
 .stat-lbl {
   display: block;
-  font-size: 10px;
+  font-size:var(--fs-xs);
   font-weight: 500;
-  color: #8899bb;
+  color: var(--border2);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-top: 4px;
 }
-.stat-item.stat-delivered .stat-num { color: var(--success); }
-.stat-item.stat-inprog   .stat-num { color: var(--amber); }
+.stat-item.stat-delivered .stat-num { color: var(--green); }
+.stat-item.stat-inprog   .stat-num { color: var(--primary); }
 
 /* Order Cards Section */
 #gdp-order-list {
@@ -276,19 +239,19 @@ section.page-content,
 
 /* Order Card */
 .order-card {
-  background: var(--card-bg);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  background: var(--surface);
+  border-radius: var(--r);
+  box-shadow: var(--sh2);
   border: 2px solid transparent;
   overflow: hidden;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 .order-card.active {
-  border-color: var(--amber);
-  box-shadow: 0 4px 16px rgba(232,137,26,0.15);
+  border-color: var(--primary);
+  box-shadow:var(--sh2);
 }
 .order-card.delivered {
-  border-color: var(--success);
+  border-color: var(--green);
   opacity: 0.82;
 }
 
@@ -304,22 +267,22 @@ section.page-content,
   margin-bottom: 8px;
 }
 .order-id {
-  font-size: 11px;
+  font-size:var(--fs-xs);
   font-weight: 700;
-  color: var(--text-muted);
+  color: var(--text2);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 .order-customer {
-  font-size: 16px;
+  font-size:var(--fs-md);
   font-weight: 700;
   color: var(--text);
   margin-top: 2px;
   line-height: 1.2;
 }
 .order-address {
-  font-size: 12px;
-  color: var(--text-muted);
+  font-size:var(--fs-sm);
+  color: var(--text2);
   margin-top: 4px;
   display: flex;
   align-items: flex-start;
@@ -335,48 +298,48 @@ section.page-content,
   margin-top: 10px;
 }
 .order-amount {
-  font-size: 15px;
+  font-size:var(--fs-md);
   font-weight: 700;
   color: var(--text);
 }
 .order-date {
-  font-size: 11px;
-  color: var(--text-muted);
+  font-size:var(--fs-xs);
+  color: var(--text2);
   margin-left: 8px;
 }
 
 /* Status Badge */
 .status-badge {
-  font-size: 11px;
+  font-size:var(--fs-xs);
   font-weight: 700;
   padding: 3px 9px;
-  border-radius: 20px;
+  border-radius:var(--r-full);
   text-transform: uppercase;
   letter-spacing: 0.4px;
   white-space: nowrap;
 }
-.status-Pending     { background: #e2e8f0; color: #4a5568; }
-.status-Assigned    { background: #ebf4ff; color: #2b6cb0; }
-.status-Picked-Up   { background: #f0e8ff; color: #6b21a8; }
-.status-In-Transit  { background: var(--amber-light); color: #92400e; }
-.status-Nearby      { background: #fff7ed; color: #c05621; }
-.status-At-Location { background: #fff3cd; color: #7c4700; }
-.status-Delivered   { background: var(--success-bg); color: #065f46; }
+.status-Pending     { background: var(--surface2); color: var(--text2); }
+.status-Assigned    { background: var(--primary-lt); color: var(--primary); }
+.status-Picked-Up   { background: var(--primary-lt); color: var(--primary); }
+.status-In-Transit  { background: var(--primary-lt); color: var(--primary); }
+.status-Nearby      { background: var(--primary-lt); color: var(--primary); }
+.status-At-Location { background: var(--primary-lt); color: var(--primary); }
+.status-Delivered   { background: var(--green-lt); color: var(--green-lt); }
 
 .order-delivered-check {
-  color: var(--success);
-  font-size: 20px;
+  color: var(--green);
+  font-size:var(--fs-lg);
   line-height: 1;
 }
 
 /* Open Button */
 .order-open-btn {
-  background: var(--amber);
-  color: #fff;
+  background: var(--primary);
+  color: var(--surface);
   border: none;
-  border-radius: 8px;
+  border-radius:var(--r);
   padding: 8px 16px;
-  font-size: 13px;
+  font-size:var(--fs-base);
   font-weight: 700;
   cursor: pointer;
   min-height: 36px;
@@ -384,15 +347,15 @@ section.page-content,
   transition: background 0.15s;
   white-space: nowrap;
 }
-.order-open-btn:active { background: var(--amber-dark); }
+.order-open-btn:active { background: var(--primary-h); }
 
 /* Empty state */
 .empty-state {
   text-align: center;
   padding: 48px 24px;
-  color: var(--text-muted);
+  color: var(--text2);
 }
-.empty-state-icon { font-size: 48px; margin-bottom: 12px; }
+.empty-state-icon { font-size:var(--fs-2xl); margin-bottom: 12px; }
 
 /* ── DETAIL VIEW ──────────────────────────────────────────────────────────── */
 #gdp-detail-view {
@@ -403,7 +366,7 @@ section.page-content,
 
 /* Detail Nav Bar */
 #gdp-detail-nav {
-  background: var(--dark-nav);
+  background: var(--sidebar-bg);
   padding: 0 16px;
   display: flex;
   align-items: center;
@@ -415,8 +378,8 @@ section.page-content,
 #gdp-back-btn {
   background: none;
   border: none;
-  color: #93c5fd;
-  font-size: 15px;
+  color: var(--primary);
+  font-size:var(--fs-md);
   font-weight: 600;
   cursor: pointer;
   padding: 8px 0;
@@ -426,18 +389,18 @@ section.page-content,
   gap: 6px;
   white-space: nowrap;
 }
-#gdp-back-btn:active { color: #bfdbfe; }
-.back-arrow { font-size: 18px; }
+#gdp-back-btn:active { color: var(--primary-lt); }
+.back-arrow { font-size:var(--fs-lg); }
 
 .demo-mode-pill {
-  background: #f97316;
-  color: #fff;
-  font-size: 10px;
+  background: var(--primary);
+  color: var(--surface);
+  font-size:var(--fs-xs);
   font-weight: 800;
   letter-spacing: 1.2px;
   text-transform: uppercase;
   padding: 4px 10px;
-  border-radius: 20px;
+  border-radius:var(--r-full);
   animation: demo-pulse 2s ease-in-out infinite;
 }
 @keyframes demo-pulse {
@@ -447,7 +410,7 @@ section.page-content,
 
 /* Order Header */
 #gdp-order-header {
-  background: var(--dark-nav2);
+  background: var(--surface2);
   padding: 14px 16px;
   display: flex;
   align-items: flex-start;
@@ -456,32 +419,32 @@ section.page-content,
   border-bottom: 1px solid rgba(255,255,255,0.06);
 }
 #gdp-detail-customer {
-  font-size: 18px;
+  font-size:var(--fs-lg);
   font-weight: 800;
-  color: #f0f4f8;
+  color: var(--primary-lt);
   line-height: 1.2;
 }
 #gdp-detail-address {
-  font-size: 12px;
-  color: #8899bb;
+  font-size:var(--fs-sm);
+  color: var(--border2);
   margin-top: 4px;
   line-height: 1.4;
 }
 #gdp-detail-order-id {
-  font-size: 11px;
-  color: #4d6690;
+  font-size:var(--fs-xs);
+  color: var(--text2);
   margin-top: 6px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 #gdp-detail-amount-badge {
-  background: var(--amber);
-  color: #fff;
-  font-size: 15px;
+  background: var(--primary);
+  color: var(--surface);
+  font-size:var(--fs-md);
   font-weight: 800;
   padding: 6px 14px;
-  border-radius: 24px;
+  border-radius:var(--r-full);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -516,9 +479,9 @@ section.page-content,
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #3b82f6;
-  border: 2.5px solid #ffffff;
-  box-shadow: 0 0 0 2px rgba(59,130,246,0.4);
+  background: var(--primary);
+  border: 2.5px solid var(--surface);
+  box-shadow:var(--sh1);
 }
 @keyframes loc-pulse {
   0%   { transform: scale(1); opacity: 0.8; }
@@ -526,16 +489,16 @@ section.page-content,
 }
 
 .gdp-hub-icon {
-  background: var(--success);
+  background: var(--green);
   border-radius: 50%;
   width: 32px;
   height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  border: 2px solid #fff;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  font-size:var(--fs-md);
+  border: 2px solid var(--surface);
+  box-shadow:var(--sh2);
 }
 .gdp-customer-icon {
   width: 0;
@@ -552,10 +515,10 @@ section.page-content,
 
 /* Status Section */
 #gdp-status-section {
-  background: var(--card-bg);
+  background: var(--surface);
   margin: 12px;
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-radius: var(--r);
+  box-shadow: var(--sh2);
   overflow: hidden;
 }
 .status-section-header {
@@ -567,9 +530,9 @@ section.page-content,
   border-bottom: 1px solid var(--border);
 }
 .status-section-label {
-  font-size: 12px;
+  font-size:var(--fs-sm);
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text2);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -579,25 +542,25 @@ section.page-content,
   display: block;
   width: calc(100% - 32px);
   margin: 14px 16px;
-  background: var(--amber);
-  color: #fff;
+  background: var(--primary);
+  color: var(--surface);
   border: none;
-  border-radius: 10px;
+  border-radius:var(--r);
   padding: 16px;
-  font-size: 17px;
+  font-size:var(--fs-lg);
   font-weight: 800;
   cursor: pointer;
   min-height: 56px;
   letter-spacing: 0.3px;
   transition: background 0.15s, transform 0.1s;
-  box-shadow: 0 4px 12px rgba(232,137,26,0.35);
+  box-shadow:var(--sh2);
 }
 #gdp-advance-btn:active {
-  background: var(--amber-dark);
+  background: var(--primary-h);
   transform: scale(0.98);
 }
 #gdp-advance-btn:disabled {
-  background: #cbd5e0;
+  background: var(--border);
   box-shadow: none;
   cursor: not-allowed;
   transform: none;
@@ -606,33 +569,33 @@ section.page-content,
 /* Delivered State */
 #gdp-delivered-state {
   margin: 14px 16px;
-  background: var(--success-bg);
-  border: 2px solid var(--success);
-  border-radius: 10px;
+  background: var(--green-lt);
+  border: 2px solid var(--green);
+  border-radius:var(--r);
   padding: 20px 16px;
   text-align: center;
-  color: #065f46;
+  color: var(--green-lt);
 }
-.delivered-icon { font-size: 40px; margin-bottom: 8px; }
+.delivered-icon { font-size:var(--fs-2xl); margin-bottom: 8px; }
 .delivered-title {
-  font-size: 20px;
+  font-size:var(--fs-lg);
   font-weight: 800;
-  color: var(--success);
+  color: var(--green);
   margin-bottom: 4px;
 }
-.delivered-sub { font-size: 13px; color: #4d7c6f; }
+.delivered-sub { font-size:var(--fs-base); color: var(--text2); }
 
 /* Closed / locked order state */
-#gdp-closed-state { padding: 20px 16px; text-align: center; color: #374151; }
-#gdp-closed-state .delivered-title { color: #6b7280; }
-#gdp-closed-state .delivered-sub   { color: #9ca3af; }
+#gdp-closed-state { padding: 20px 16px; text-align: center; color: var(--text2); }
+#gdp-closed-state .delivered-title { color: var(--text3); }
+#gdp-closed-state .delivered-sub   { color: var(--border2); }
 
 /* Distance / ETA bar */
 #gdp-distance-bar {
-  background: var(--card-bg);
+  background: var(--surface);
   margin: 0 12px 12px;
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-radius: var(--r);
+  box-shadow: var(--sh2);
   padding: 14px 16px;
 }
 .dist-row { display: flex; gap: 0; }
@@ -643,24 +606,24 @@ section.page-content,
   border-right: 1px solid rgba(0,0,0,.07);
 }
 .dist-cell:last-child { border-right: none; }
-.dist-label { font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 4px; }
-.dist-val { font-size: 18px; font-weight: 800; color: var(--text); line-height: 1.2; }
-.dist-eta { color: var(--amber); }
+.dist-label { font-size:var(--fs-xs); font-weight: 700; color: var(--border2); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 4px; }
+.dist-val { font-size:var(--fs-lg); font-weight: 800; color: var(--text); line-height: 1.2; }
+.dist-eta { color: var(--primary); }
 
 /* GPS Section */
 #gdp-gps-section {
-  background: var(--card-bg);
+  background: var(--surface);
   margin: 0 12px 12px;
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-radius: var(--r);
+  box-shadow: var(--sh2);
   overflow: hidden;
 }
 .gps-section-title {
-  background: #1e293b;
+  background: var(--text);
   padding: 10px 16px;
-  font-size: 11px;
+  font-size:var(--fs-xs);
   font-weight: 700;
-  color: #94a3b8;
+  color: var(--border2);
   text-transform: uppercase;
   letter-spacing: 0.8px;
   display: flex;
@@ -686,8 +649,8 @@ section.page-content,
 .toggle-track {
   position: absolute;
   inset: 0;
-  background: #cbd5e0;
-  border-radius: 14px;
+  background: var(--border);
+  border-radius:var(--r);
   cursor: pointer;
   transition: background 0.2s;
 }
@@ -699,22 +662,22 @@ section.page-content,
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  background: var(--surface);
+  box-shadow:var(--sh1);
   transition: transform 0.2s;
 }
-.toggle-switch input:checked + .toggle-track { background: #3b82f6; }
+.toggle-switch input:checked + .toggle-track { background: var(--primary); }
 .toggle-switch input:checked + .toggle-track::after { transform: translateX(22px); }
-.toggle-switch input:focus-visible + .toggle-track { outline: 2px solid #3b82f6; outline-offset: 2px; }
+.toggle-switch input:focus-visible + .toggle-track { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 /* GPS Status */
 #gdp-gps-status {
   padding: 10px 16px;
-  font-size: 12px;
-  color: #3b82f6;
+  font-size:var(--fs-sm);
+  color: var(--primary);
   font-weight: 500;
-  background: #eff6ff;
-  border-bottom: 1px solid #bfdbfe;
+  background: var(--primary-lt);
+  border-bottom: 1px solid var(--primary-lt);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -724,7 +687,7 @@ section.page-content,
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #3b82f6;
+  background: var(--primary);
   flex-shrink: 0;
   animation: pulse-dot 1.5s ease-out infinite;
 }
@@ -735,43 +698,43 @@ section.page-content,
   width: calc(100% - 32px);
   margin: 12px 16px;
   background: none;
-  border: 2px dashed #cbd5e0;
-  color: var(--text-muted);
-  border-radius: 8px;
+  border: 2px dashed var(--border);
+  color: var(--text2);
+  border-radius:var(--r);
   padding: 12px;
-  font-size: 13px;
+  font-size:var(--fs-base);
   font-weight: 600;
   cursor: pointer;
   min-height: 44px;
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
 #gdp-sim-btn:hover, #gdp-sim-btn:focus {
-  border-color: #f97316;
-  color: #f97316;
-  background: #fff7ed;
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-lt);
   outline: none;
 }
 #gdp-sim-btn.sim-active {
-  border-color: #f97316;
-  color: #fff;
-  background: #f97316;
+  border-color: var(--primary);
+  color: var(--surface);
+  background: var(--primary);
   border-style: solid;
 }
 
 /* Order Details Section */
 #gdp-order-details {
-  background: var(--card-bg);
+  background: var(--surface);
   margin: 0 12px 12px;
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-radius: var(--r);
+  box-shadow: var(--sh2);
   overflow: hidden;
 }
 .detail-section-title {
   background: var(--bg);
   padding: 10px 16px;
-  font-size: 11px;
+  font-size:var(--fs-xs);
   font-weight: 700;
-  color: var(--text-muted);
+  color: var(--text2);
   text-transform: uppercase;
   letter-spacing: 0.8px;
   border-bottom: 1px solid var(--border);
@@ -786,21 +749,21 @@ section.page-content,
 }
 .detail-row:last-child { border-bottom: none; }
 .detail-row-icon {
-  font-size: 18px;
+  font-size:var(--fs-lg);
   line-height: 1;
   flex-shrink: 0;
   margin-top: 1px;
 }
 .detail-row-label {
-  font-size: 11px;
+  font-size:var(--fs-xs);
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text2);
   text-transform: uppercase;
   letter-spacing: 0.4px;
   margin-bottom: 2px;
 }
 .detail-row-value {
-  font-size: 14px;
+  font-size:var(--fs-base);
   color: var(--text);
   font-weight: 500;
 }
@@ -817,23 +780,23 @@ section.page-content,
   padding: 20px;
 }
 #gdp-confirm-dialog {
-  background: var(--card-bg);
-  border-radius: 16px;
+  background: var(--surface);
+  border-radius:var(--r);
   padding: 24px;
   width: 100%;
   max-width: 340px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  box-shadow:var(--sh3);
 }
 #gdp-confirm-title {
-  font-size: 18px;
+  font-size:var(--fs-lg);
   font-weight: 800;
   color: var(--text);
   margin-bottom: 10px;
   text-align: center;
 }
 #gdp-confirm-msg {
-  font-size: 14px;
-  color: var(--text-muted);
+  font-size:var(--fs-base);
+  color: var(--text2);
   text-align: center;
   line-height: 1.5;
   margin-bottom: 20px;
@@ -845,9 +808,9 @@ section.page-content,
 .confirm-buttons button {
   flex: 1;
   border: none;
-  border-radius: 10px;
+  border-radius:var(--r);
   padding: 14px;
-  font-size: 15px;
+  font-size:var(--fs-md);
   font-weight: 700;
   cursor: pointer;
   min-height: 50px;
@@ -856,11 +819,11 @@ section.page-content,
 .confirm-buttons button:active { opacity: 0.8; }
 #gdp-confirm-cancel {
   background: var(--border);
-  color: var(--text-muted);
+  color: var(--text2);
 }
 #gdp-confirm-ok {
-  background: var(--amber);
-  color: #fff;
+  background: var(--primary);
+  color: var(--surface);
 }
 
 /* ── Toast ────────────────────────────────────────────────────────────────── */
@@ -869,13 +832,13 @@ section.page-content,
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%) translateY(100px);
-  background: #1a202c;
-  color: #fff;
-  font-size: 14px;
+  background: var(--text);
+  color: var(--surface);
+  font-size:var(--fs-base);
   font-weight: 600;
   padding: 12px 20px;
-  border-radius: 24px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  border-radius:var(--r-full);
+  box-shadow:var(--sh3);
   z-index: 9999;
   white-space: nowrap;
   max-width: calc(100vw - 40px);
@@ -905,19 +868,19 @@ section.page-content,
 @media (max-width: 479px) {
   #gdp-stats-bar { flex-wrap: wrap; }
   .stat-item { flex: 1 1 50%; border-bottom: 1px solid rgba(255,255,255,0.06); }
-  .stat-num { font-size: 18px; }
+  .stat-num { font-size:var(--fs-lg); }
   #gdp-admin-bar { gap: 8px; }
   #gdp-driver-select { min-width: 0; }
 }
 
 /* ── Performance Dashboard ─────────────────────────────────────────────────── */
 #gdp-perf-btn {
-  background: var(--dark-nav2);
-  border: 1px solid #2d3f66;
-  color: #93c5fd;
+  background: var(--surface2);
+  border: 1px solid var(--primary);
+  color: var(--primary);
   padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 12px;
+  border-radius:var(--r);
+  font-size:var(--fs-sm);
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
@@ -926,8 +889,8 @@ section.page-content,
   height: 36px;
   flex-shrink: 0;
 }
-#gdp-perf-btn:hover, #gdp-perf-btn.active { background: #1a2f5a; border-color: #60a5fa; }
-#gdp-perf-btn.active { color: #fff; background: #2563eb; border-color: #2563eb; }
+#gdp-perf-btn:hover, #gdp-perf-btn.active { background: var(--primary); border-color: var(--primary); }
+#gdp-perf-btn.active { color: var(--surface); background: var(--primary); border-color: var(--primary); }
 
 #gdp-perf-view {
   display: flex;
@@ -937,40 +900,40 @@ section.page-content,
 }
 
 #gdp-perf-header {
-  background: var(--dark-nav);
+  background: var(--sidebar-bg);
   padding: 14px 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 3px solid var(--amber);
+  border-bottom: 3px solid var(--primary);
   flex-shrink: 0;
 }
 #gdp-perf-header h2 {
-  color: #f0f4f8;
-  font-size: 17px;
+  color: var(--primary-lt);
+  font-size:var(--fs-lg);
   font-weight: 700;
   margin: 0 0 2px;
 }
-#gdp-perf-updated { color: #5a7099; font-size: 11px; }
+#gdp-perf-updated { color: var(--text3); font-size:var(--fs-xs); }
 #gdp-perf-refresh {
-  background: var(--dark-nav2);
-  border: 1px solid #2d3f66;
-  color: #60a5fa;
+  background: var(--surface2);
+  border: 1px solid var(--primary);
+  color: var(--primary);
   padding: 7px 14px;
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius:var(--r);
+  font-size:var(--fs-base);
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.15s;
 }
-#gdp-perf-refresh:hover { background: #1e3558; }
+#gdp-perf-refresh:hover { background: var(--primary); }
 
 #gdp-perf-kpis {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  background: var(--dark-nav2);
+  background: var(--surface2);
   border-bottom: 1px solid rgba(255,255,255,0.06);
   flex-shrink: 0;
 }
@@ -982,22 +945,22 @@ section.page-content,
 .kpi-card:last-child { border-right: none; }
 .kpi-num {
   display: block;
-  font-size: 26px;
+  font-size:var(--fs-2xl);
   font-weight: 800;
-  color: #f0f4f8;
+  color: var(--primary-lt);
   line-height: 1;
   margin-bottom: 4px;
 }
 .kpi-lbl {
   display: block;
-  font-size: 10px;
+  font-size:var(--fs-xs);
   font-weight: 500;
-  color: #5a7099;
+  color: var(--text3);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
-.kpi-card.kpi-active   .kpi-num { color: var(--amber); }
-.kpi-card.kpi-delivered .kpi-num { color: var(--success); }
+.kpi-card.kpi-active   .kpi-num { color: var(--primary); }
+.kpi-card.kpi-delivered .kpi-num { color: var(--green); }
 
 #gdp-perf-list {
   flex: 1;
@@ -1010,15 +973,15 @@ section.page-content,
 }
 
 .perf-card {
-  background: var(--card-bg);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  background: var(--surface);
+  border-radius: var(--r);
+  box-shadow: var(--sh2);
   overflow: hidden;
   border: 2px solid transparent;
   transition: border-color 0.2s, box-shadow 0.2s;
   cursor: pointer;
 }
-.perf-card:hover { border-color: var(--amber); box-shadow: var(--shadow-md); }
+.perf-card:hover { border-color: var(--primary); box-shadow: var(--sh3); }
 
 .perf-card-header {
   display: flex;
@@ -1030,42 +993,42 @@ section.page-content,
 .perf-rank {
   width: 28px; height: 28px;
   border-radius: 50%;
-  background: #cbd5e0;
-  color: #fff;
-  font-size: 12px;
+  background: var(--border);
+  color: var(--surface);
+  font-size:var(--fs-sm);
   font-weight: 800;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 }
-.perf-rank.r1 { background: #f59e0b; }
-.perf-rank.r2 { background: #94a3b8; }
-.perf-rank.r3 { background: #b45309; }
+.perf-rank.r1 { background: var(--primary); }
+.perf-rank.r2 { background: var(--border2); }
+.perf-rank.r3 { background: var(--primary); }
 .perf-name { flex: 1; min-width: 0; }
 .perf-name-text {
-  font-size: 15px;
+  font-size:var(--fs-md);
   font-weight: 700;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.perf-hub { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+.perf-hub { font-size:var(--fs-xs); color: var(--text2); margin-top: 1px; }
 
 .perf-status-pill {
-  font-size: 10px;
+  font-size:var(--fs-xs);
   font-weight: 700;
   padding: 3px 9px;
-  border-radius: 20px;
+  border-radius:var(--r-full);
   text-transform: uppercase;
   letter-spacing: 0.4px;
   white-space: nowrap;
   flex-shrink: 0;
 }
-.pill-active  { background: #dcfce7; color: #166534; }
-.pill-idle    { background: #f1f5f9; color: #64748b; }
-.pill-done    { background: #dbeafe; color: #1e40af; }
+.pill-active  { background: var(--green-lt); color: var(--green); }
+.pill-idle    { background: var(--primary-lt); color: var(--text3); }
+.pill-done    { background: var(--primary-lt); color: var(--primary); }
 
 .perf-card-stats {
   display: grid;
@@ -1080,57 +1043,57 @@ section.page-content,
 .perf-stat:last-child { border-right: none; }
 .perf-stat-num {
   display: block;
-  font-size: 18px;
+  font-size:var(--fs-lg);
   font-weight: 800;
   color: var(--text);
   line-height: 1;
 }
 .perf-stat-lbl {
   display: block;
-  font-size: 9px;
+  font-size:var(--fs-xs);
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text2);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-top: 3px;
 }
-.perf-stat.ps-today  .perf-stat-num { color: var(--amber); }
-.perf-stat.ps-ontime .perf-stat-num { color: var(--success); }
+.perf-stat.ps-today  .perf-stat-num { color: var(--primary); }
+.perf-stat.ps-ontime .perf-stat-num { color: var(--green); }
 
 .perf-card-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 8px 14px;
-  background: #fafbfc;
+  background: var(--surface);
   border-top: 1px solid var(--border);
 }
 .perf-rating {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 13px;
+  font-size:var(--fs-base);
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text2);
 }
-.perf-star { color: var(--amber); font-size: 15px; }
+.perf-star { color: var(--primary); font-size:var(--fs-md); }
 .perf-view-btn {
-  background: var(--amber);
-  color: #fff;
+  background: var(--primary);
+  color: var(--surface);
   border: none;
-  border-radius: 7px;
+  border-radius:var(--r-sm);
   padding: 6px 14px;
-  font-size: 12px;
+  font-size:var(--fs-sm);
   font-weight: 700;
   cursor: pointer;
   min-height: 32px;
   transition: background 0.15s;
 }
-.perf-view-btn:hover { background: var(--amber-dark); }
+.perf-view-btn:hover { background: var(--primary-h); }
 .perf-empty {
   text-align: center;
   padding: 48px 24px;
-  color: var(--text-muted);
+  color: var(--text2);
 }
 
 @media (max-width: 600px) {
@@ -1153,7 +1116,7 @@ section.page-content,
     <select id="gdp-driver-select">
       <option value="">Select a driver…</option>
     </select>
-    <button id="gdp-perf-btn" type="button">📊 Fleet</button>
+    <button id="gdp-perf-btn" type="button"><i class=ic-chart></i> Fleet</button>
   </div>
 
   <!-- ── Loading ─────────────────────────────────────────────────────────── -->
@@ -1164,7 +1127,7 @@ section.page-content,
 
   <!-- ── Error ───────────────────────────────────────────────────────────── -->
   <div id="gdp-error-state" class="hidden">
-    <div class="error-icon">⚠️</div>
+    <div class="error-icon"><i class=ic-alert></i></div>
     <p id="gdp-error-msg">Something went wrong. Please refresh and try again.</p>
   </div>
 
@@ -1176,7 +1139,7 @@ section.page-content,
     <!-- Header -->
     <div id="gdp-list-header">
       <div class="list-header-left">
-        <div class="driver-avatar">🚚</div>
+        <div class="driver-avatar"><i class=ic-truck></i></div>
         <div>
           <div class="driver-name" id="gdp-driver-name">Driver</div>
           <div class="hub-info">
@@ -1214,7 +1177,7 @@ section.page-content,
     <!-- Order Cards -->
     <div id="gdp-order-list">
       <div class="empty-state">
-        <div class="empty-state-icon">📦</div>
+        <div class="empty-state-icon"><i class=ic-package></i></div>
         <p>No deliveries today</p>
       </div>
     </div>
@@ -1258,12 +1221,12 @@ section.page-content,
         </div>
         <button id="gdp-advance-btn" class="hidden"></button>
         <div id="gdp-delivered-state" class="hidden">
-          <div class="delivered-icon">✅</div>
+          <div class="delivered-icon"><i class=ic-check></i></div>
           <div class="delivered-title">Delivery Complete!</div>
           <div class="delivered-sub">This order has been successfully delivered.</div>
         </div>
         <div id="gdp-closed-state" class="hidden">
-          <div class="delivered-icon">🔒</div>
+          <div class="delivered-icon"><i class=ic-lock></i></div>
           <div class="delivered-title" id="gdp-closed-title">Order Closed</div>
           <div class="delivered-sub">This order is read-only and cannot be modified.</div>
         </div>
@@ -1290,14 +1253,14 @@ section.page-content,
       <!-- GPS Section -->
       <div id="gdp-gps-section">
         <div class="gps-section-title">
-          📍 Location Tracking
+          <i class=ic-pin></i> Location Tracking
         </div>
         <div id="gdp-gps-status" class="hidden">
           <span class="gps-status-dot"></span>
-          <span id="gdp-gps-status-text">GPS Active 📍</span>
+          <span id="gdp-gps-status-text">GPS Active <i class=ic-pin></i></span>
         </div>
         <button id="gdp-sim-btn" type="button">
-          🗺️ Simulate GPS (Demo)
+          <i class=ic-map></i> Simulate GPS (Demo)
         </button>
       </div>
 
@@ -1305,28 +1268,28 @@ section.page-content,
       <div id="gdp-order-details">
         <div class="detail-section-title">Order Details</div>
         <div class="detail-row">
-          <span class="detail-row-icon">📅</span>
+          <span class="detail-row-icon"><i class=ic-calendar></i></span>
           <div>
             <div class="detail-row-label">Delivery Date</div>
             <div class="detail-row-value" id="gdp-detail-date">—</div>
           </div>
         </div>
         <div class="detail-row">
-          <span class="detail-row-icon">📦</span>
+          <span class="detail-row-icon"><i class=ic-package></i></span>
           <div>
             <div class="detail-row-label">Items</div>
             <div class="detail-row-value" id="gdp-detail-items">—</div>
           </div>
         </div>
         <div class="detail-row">
-          <span class="detail-row-icon">📞</span>
+          <span class="detail-row-icon"><i class=ic-phone></i></span>
           <div>
             <div class="detail-row-label">Customer Phone</div>
             <div class="detail-row-value" id="gdp-detail-phone">—</div>
           </div>
         </div>
         <div class="detail-row">
-          <span class="detail-row-icon">📝</span>
+          <span class="detail-row-icon"><i class=ic-note></i></span>
           <div>
             <div class="detail-row-label">Special Instructions</div>
             <div class="detail-row-value" id="gdp-detail-instructions">None</div>
@@ -1473,7 +1436,7 @@ window.TENANT_NAME = {{ tenant_name | tojson }};
         if (r.exc || !r.message || !r.message.length || !state.leafletMap) return;
         var pts = r.message.map(function (p) { return [p.lat, p.lng]; });
         // Draw the completed route as a green trail
-        L.polyline(pts, { color: '#22c55e', weight: 4, opacity: 0.85 })
+        L.polyline(pts, { color: 'var(--green)', weight: 4, opacity: 0.85 })
           .addTo(state.leafletMap)
           .bindPopup('Delivery route');
         // Mark last known GPS position
@@ -1657,7 +1620,7 @@ window.TENANT_NAME = {{ tenant_name | tojson }};
   var toastTimer = null;
   function showToast(msg, type) {
     els.toast.textContent = msg;
-    els.toast.style.background = type === 'success' ? '#1CB86A' : (type === 'error' ? '#e53e3e' : '#1a202c');
+    els.toast.style.background = type === 'success' ? 'var(--green)' : (type === 'error' ? 'var(--red)' : 'var(--text)');
     els.toast.classList.add('visible');
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(function () {
@@ -1769,7 +1732,7 @@ window.TENANT_NAME = {{ tenant_name | tojson }};
         var partners = r.message || [];
         initAdminBar(partners);
         showError('Select a driver above to begin.');
-        els.errorMsg.style.color = '#718096';
+        els.errorMsg.style.color = 'var(--text3)';
         hide(els.loading);
         show(els.errorState);
       }
@@ -1829,7 +1792,7 @@ window.TENANT_NAME = {{ tenant_name | tojson }};
 
     // Cards
     if (!orders.length) {
-      els.orderList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📦</div><p>No deliveries assigned today</p></div>';
+      els.orderList.innerHTML = '<div class="empty-state"><div class="empty-state-icon"><i class=ic-package></i></div><p>No deliveries assigned today</p></div>';
       return;
     }
 
@@ -1858,13 +1821,13 @@ window.TENANT_NAME = {{ tenant_name | tojson }};
             '<div class="order-customer">' + esc(order.customer_name || 'Customer') + '</div>',
             '<div class="order-address">',
               '<svg width="12" height="14" viewBox="0 0 12 14" fill="none" aria-hidden="true">',
-                '<path d="M6 0C3.24 0 1 2.24 1 5c0 3.75 5 9 5 9s5-5.25 5-9c0-2.76-2.24-5-5-5zm0 6.75A1.75 1.75 0 1 1 6 3.25a1.75 1.75 0 0 1 0 3.5z" fill="#a0aec0"/>',
+                '<path d="M6 0C3.24 0 1 2.24 1 5c0 3.75 5 9 5 9s5-5.25 5-9c0-2.76-2.24-5-5-5zm0 6.75A1.75 1.75 0 1 1 6 3.25a1.75 1.75 0 0 1 0 3.5z" fill="var(--border2)"/>',
               '</svg>',
               esc(order.delivery_address || '—'),
             '</div>',
           '</div>',
           delivered
-            ? '<span class="order-delivered-check" title="Delivered">✅</span>'
+            ? '<span class="order-delivered-check" title="Delivered"><i class=ic-check></i></span>'
             : '<span class="' + badgeCls + '">' + esc(status) + '</span>',
         '</div>',
         '<div class="order-card-bottom">',
@@ -1875,7 +1838,7 @@ window.TENANT_NAME = {{ tenant_name | tojson }};
           (active
             ? '<button class="order-open-btn" data-open="' + esc(order.name) + '" type="button">Open</button>'
             : (delivered
-                ? '<button class="order-open-btn" style="background:#1CB86A;" data-open="' + esc(order.name) + '" type="button">View</button>'
+                ? '<button class="order-open-btn" style="background:var(--green);" data-open="' + esc(order.name) + '" type="button">View</button>'
                 : '')),
         '</div>',
       '</div>'
@@ -2050,7 +2013,7 @@ window.TENANT_NAME = {{ tenant_name | tojson }};
     // Hub Marker (green warehouse)
     var hubIcon = L.divIcon({
       className: '',
-      html: '<div class="gdp-hub-icon" title="Hub">🏭</div>',
+      html: '<div class="gdp-hub-icon" title="Hub"><i class=ic-building></i></div>',
       iconSize:   [32, 32],
       iconAnchor: [16, 16],
       popupAnchor: [0, -18]
@@ -2062,7 +2025,7 @@ window.TENANT_NAME = {{ tenant_name | tojson }};
     // Customer Marker (red pin via default Leaflet icon tinted)
     var custIcon = L.divIcon({
       className: '',
-      html: '<div style="font-size:28px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));" title="Delivery location">📍</div>',
+      html: '<div style="font-size:var(--fs-2xl);line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));" title="Delivery location"><i class=ic-pin></i></div>',
       iconSize:   [28, 32],
       iconAnchor: [14, 32],
       popupAnchor: [0, -34]
@@ -2110,7 +2073,7 @@ window.TENANT_NAME = {{ tenant_name | tojson }};
       state.routeLine.setLatLngs(pts);
     } else {
       state.routeLine = L.polyline(pts, {
-        color:    '#E8891A',
+        color:    'var(--primary)',
         weight:   3,
         opacity:  0.85,
         dashArray: '8 6'
@@ -2176,7 +2139,7 @@ window.TENANT_NAME = {{ tenant_name | tojson }};
   }
 
   function updateGpsStatusUI() {
-    var parts = ['GPS Active 📍'];
+    var parts = ['GPS Active <i class=ic-pin></i>'];
     if (state.myAccuracy != null) {
       parts.push('±' + Math.round(state.myAccuracy) + 'm');
     }
@@ -2234,7 +2197,7 @@ window.TENANT_NAME = {{ tenant_name | tojson }};
       }
 
       if (state.simIndex >= SIM_WAYPOINTS.length) {
-        els.gpsStatusText.textContent = 'DEMO GPS · Arrived at destination ✅';
+        els.gpsStatusText.textContent = 'DEMO GPS · Arrived at destination <i class=ic-check></i>';
         stopSim();
       }
     }, SIM_STEP_MS);
@@ -2246,7 +2209,7 @@ window.TENANT_NAME = {{ tenant_name | tojson }};
       state.simTimer = null;
     }
     state.simActive = false;
-    els.simBtn.textContent = '🗺️ Simulate GPS (Demo)';
+    els.simBtn.textContent = '<i class=ic-map></i> Simulate GPS (Demo)';
     els.simBtn.classList.remove('sim-active');
     hide(els.demoModePill);
     if (!state.gpsActive) {
@@ -2302,7 +2265,7 @@ window.TENANT_NAME = {{ tenant_name | tojson }};
       method: 'alvoraa_portal.portal_api.get_drivers_performance',
       callback: function (r) {
         if (r.exc) {
-          els.perfList.innerHTML = '<div class="perf-empty"><p style="color:#e53e3e">Could not load performance data.</p></div>';
+          els.perfList.innerHTML = '<div class="perf-empty"><p style="color:var(--red)">Could not load performance data.</p></div>';
           return;
         }
         renderPerformance(r.message || {});
@@ -2342,11 +2305,11 @@ window.TENANT_NAME = {{ tenant_name | tojson }};
       var ratingStars = '';
       if (p.avg_rating > 0) {
         for (var s = 1; s <= 5; s++) {
-          ratingStars += s <= Math.round(p.avg_rating) ? '★' : '☆';
+          ratingStars += s <= Math.round(p.avg_rating) ? '<i class=ic-star></i>' : '<i class=ic-star></i>';
         }
         ratingStars = '<span class="perf-star">' + ratingStars + '</span> ' + p.avg_rating.toFixed(1);
       } else {
-        ratingStars = '<span style="color:#cbd5e0">No ratings</span>';
+        ratingStars = '<span style="color:var(--border)">No ratings</span>';
       }
 
       var card = document.createElement('div');
@@ -2408,7 +2371,7 @@ window.TENANT_NAME = {{ tenant_name | tojson }};
       if (!els.perfView.classList.contains('hidden')) {
         // Toggle back to list/select view
         showError('Select a driver above to begin.');
-        els.errorMsg.style.color = '#718096';
+        els.errorMsg.style.color = 'var(--text3)';
         hide(els.loading);
         show(els.errorState);
         els.perfBtn.classList.remove('active');
@@ -2469,27 +2432,27 @@ window.TENANT_NAME = {{ tenant_name | tojson }};
     var url = window.location.pathname;
     document.getElementById('gdp-root').innerHTML =
       '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;' +
-      'background:linear-gradient(160deg,#0f2a1e 0%,#1a4030 60%,#0b2418 100%)">' +
-        '<div style="background:#fff;border-radius:16px;padding:48px 40px;max-width:400px;width:90%;' +
-        'box-shadow:0 24px 64px rgba(0,0,0,.45);text-align:center">' +
-          '<div style="width:72px;height:72px;background:#2d8c5f;border-radius:50%;margin:0 auto 20px;' +
+      'background:var(--surface)">' +
+        '<div style="background:var(--surface);border-radius:var(--r);padding:48px 40px;max-width:400px;width:90%;' +
+        'box-shadow:var(--sh3);text-align:center">' +
+          '<div style="width:72px;height:72px;background:var(--green);border-radius:50%;margin:0 auto 20px;' +
           'display:flex;align-items:center;justify-content:center">' +
-            '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+            '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--surface)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
               '<rect x="3" y="11" width="18" height="11" rx="2"/>' +
               '<path d="M7 11V7a5 5 0 0 1 10 0v4"/>' +
             '</svg>' +
           '</div>' +
-          '<h2 style="margin:0 0 6px;font-size:22px;font-weight:700;color:#0f1a2e">Driver Portal</h2>' +
-          '<p style="margin:0 0 8px;font-size:13px;color:#64748b;font-weight:500">' + window.TENANT_NAME + '</p>' +
-          '<p style="margin:0 0 28px;font-size:14px;color:#475569">' +
+          '<h2 style="margin:0 0 6px;font-size:var(--fs-xl);font-weight:700;color:var(--primary-lt)">Driver Portal</h2>' +
+          '<p style="margin:0 0 8px;font-size:var(--fs-base);color:var(--text3);font-weight:500">' + window.TENANT_NAME + '</p>' +
+          '<p style="margin:0 0 28px;font-size:var(--fs-base);color:var(--text2)">' +
             'Sign in with your driver account to view deliveries and update your location.' +
           '</p>' +
           '<a href="/login?redirect-to=' + encodeURIComponent(url) + '" ' +
-          'style="display:block;background:#2d8c5f;color:#fff;text-decoration:none;' +
-          'padding:14px 24px;border-radius:8px;font-size:15px;font-weight:600">' +
+          'style="display:block;background:var(--green);color:var(--surface);text-decoration:none;' +
+          'padding:14px 24px;border-radius:var(--r);font-size:var(--fs-md);font-weight:600">' +
             'Sign In to Continue' +
           '</a>' +
-          '<p style="margin:20px 0 0;font-size:12px;color:#94a3b8">' +
+          '<p style="margin:20px 0 0;font-size:var(--fs-sm);color:var(--border2)">' +
             'Contact your fleet manager if you need access.' +
           '</p>' +
         '</div>' +
@@ -2499,21 +2462,21 @@ window.TENANT_NAME = {{ tenant_name | tojson }};
   function showAccessDenied() {
     document.getElementById('gdp-root').innerHTML =
       '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;' +
-      'background:linear-gradient(160deg,#0f2a1e 0%,#1a4030 60%,#0b2418 100%)">' +
-        '<div style="background:#fff;border-radius:16px;padding:48px 40px;max-width:400px;width:90%;' +
-        'box-shadow:0 24px 64px rgba(0,0,0,.45);text-align:center">' +
-          '<div style="width:72px;height:72px;background:#ef4444;border-radius:50%;margin:0 auto 20px;' +
+      'background:var(--surface)">' +
+        '<div style="background:var(--surface);border-radius:var(--r);padding:48px 40px;max-width:400px;width:90%;' +
+        'box-shadow:var(--sh3);text-align:center">' +
+          '<div style="width:72px;height:72px;background:var(--red);border-radius:50%;margin:0 auto 20px;' +
           'display:flex;align-items:center;justify-content:center">' +
-            '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2">' +
+            '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--surface)" stroke-width="2.2">' +
               '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>' +
             '</svg>' +
           '</div>' +
-          '<h2 style="margin:0 0 6px;font-size:22px;font-weight:700;color:#0f1a2e">Access Restricted</h2>' +
-          '<p style="margin:0 0 28px;font-size:14px;color:#475569">' +
+          '<h2 style="margin:0 0 6px;font-size:var(--fs-xl);font-weight:700;color:var(--primary-lt)">Access Restricted</h2>' +
+          '<p style="margin:0 0 28px;font-size:var(--fs-base);color:var(--text2)">' +
             'Your account is not registered as a delivery partner. ' +
             'Please contact your fleet manager.' +
           '</p>' +
-          '<a href="/login" style="display:inline-block;color:#2d8c5f;font-size:13px;font-weight:600">← Sign in with a different account</a>' +
+          '<a href="/login" style="display:inline-block;color:var(--green);font-size:var(--fs-base);font-weight:600">← Sign in with a different account</a>' +
         '</div>' +
       '</div>';
   }
@@ -2564,7 +2527,7 @@ window.TENANT_NAME = {{ tenant_name | tojson }};
 
 })();
 </script>
-<footer style="text-align:center;padding:10px 0 14px;font-size:11px;color:#94a3b8">
+<footer style="text-align:center;padding:10px 0 14px;font-size:var(--fs-xs);color:var(--border2)">
   Powered by <a href="https://allabouthr.co" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;opacity:.7">AllAboutHR.co</a>
 </footer>
 {% endblock %}

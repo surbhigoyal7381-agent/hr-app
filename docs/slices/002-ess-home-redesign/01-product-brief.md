@@ -102,6 +102,24 @@ to that pile — a rose, an amber and a blue for the flag severities. Correct in
 isolation, more entropy in aggregate. That is exactly how a page reaches 120
 colours: every change is individually reasonable.
 
+## Correction: the empty column that was not empty
+
+An earlier version of this brief claimed the home grid reserved a 300px column
+that nothing used, and that a third of the page was therefore wasted. **That was
+wrong.** The grid has two columns and both are populated: `home-left-col` at
+938px and `home-actions-col` at 300px, the latter holding approvals, holidays
+and documents.
+
+The claim was made from a grep rather than from the rendered page, and building
+to it added a third column that wrapped below the fold, with the new week widget
+squeezed into the narrow one where seven days of five people cannot fit. Found
+by rendering the page and looking at it, which is the only way it could have
+been found.
+
+The space still improved, but by the honest route: blocks that have nothing to
+say are no longer drawn, and the type scale and flat surfaces give back the
+room that decoration was using.
+
 ## What "better space utilisation" means here
 
 Not smaller text and tighter margins. It means **more answer per square inch**:

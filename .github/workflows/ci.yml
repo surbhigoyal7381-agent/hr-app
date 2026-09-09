@@ -94,12 +94,10 @@ jobs:
       # aggregate. It also fails on any text colour that cannot meet WCAG AA
       # contrast on the theme it appears in.
       #
-      # NON-BLOCKING for now: the driver, vendor, admin and login pages have not
-      # been through the design pass yet, and each carries its own brand colour,
-      # which is a product decision rather than a cleanup. Flip to blocking once
-      # those four are done.
+      # BLOCKING. All five portal pages pass, and the point of the check is to
+      # keep it that way - the page reached 120 colours one reasonable change at
+      # a time, and only a counter notices the aggregate.
       - name: Design system
-        continue-on-error: true
         run: python scripts/check_design_system.py
 
       # Node, for the portal handler check below.

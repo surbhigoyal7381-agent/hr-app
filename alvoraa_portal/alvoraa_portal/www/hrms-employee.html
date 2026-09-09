@@ -10525,12 +10525,16 @@ function deleteDrawerNote(noteId, empId) {
      perfZone: 0=low(left), 1=mid, 2=high(right)
      potZone:  0=low(bottom), 1=mid, 2=high(top)
      Color table [potZone][perfZone]                                    */
+  /* The grid's own scale, not the page's semantic colours. Four bands that
+     have to stay apart from each other: mapping them onto --red/--amber/--green
+     collapsed both oranges into one and both greens into another, and a
+     nine-box grid whose cells look alike tells you nothing. */
   var _CAL_COLORS = [
-    /* pot LOW  */  ["var(--red)", "var(--green)", "var(--amber)"],
-    /* pot MID  */  ["var(--green)", "var(--green)", "var(--amber)"],
-    /* pot HIGH */  ["var(--red)", "var(--amber)", "var(--amber)"],
+    /* pot LOW  */  ["var(--box-risk)", "var(--box-solid)", "var(--box-watch)"],
+    /* pot MID  */  ["var(--box-solid)", "var(--box-solid)", "var(--box-watch)"],
+    /* pot HIGH */  ["var(--box-risk)", "var(--box-watch)", "var(--box-emerging)"],
   ];
-  /* Yellow (var(--amber)) is light enough to need dark text */
+  /* --box-emerging is a light yellow and is the one cell that needs dark text. */
   var _CAL_DARK_TEXT = [[false,false,false],[false,false,false],[false,false,true]];
 
   function _calZone(normPerf, normPot) {

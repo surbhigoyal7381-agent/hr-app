@@ -104,6 +104,29 @@ def commit():
     frappe.db.commit()
 
 
+def preset_name(doc, name):
+    """Give a document the name we chose instead of a generated one.
+
+    Sets the naming series as well, and that second line is the whole point.
+
+    ERPNext skips its autoname step when the name is already set, and autoname
+    is what normally fills the series in. Left empty it is invisible: the field
+    is required, but it can only be set once, so on a saved record it turns
+    read-only - and Frappe does not draw a read-only field that is empty. The
+    result is a form that refuses to save, asking for a field that is nowhere
+    on the page.
+
+    That is what left 402 of PP Jewellers' 403 employees uneditable until it
+    was repaired by hand on 9 September 2026. The two lines belong together, so
+    they live in one function where neither can be forgotten.
+    """
+    from erpnext.utilities.naming import get_default_naming_series
+
+    doc.name = name
+    if doc.meta.get_field("naming_series") and not doc.get("naming_series"):
+        doc.naming_series = get_default_naming_series(doc.doctype)
+
+
 def dept(name):
     """Department docnames carry the company abbreviation."""
     return f"{name} - {ABBR}"

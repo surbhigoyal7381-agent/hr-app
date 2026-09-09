@@ -202,7 +202,7 @@ for eid, fn, ln, gender, dob, branch, department, desig, grade, rep, hol, dev, c
                         "attendance_device_id": dev, "company_email": f"{fn.lower()}.{ln.lower()}@ppjewellers.demo",
                         "prefered_contact_email": "Company Email", "ctc": ctc * 12, "salary_currency": "INR"})
     e.flags.ignore_mandatory = True
-    e.name = eid
+    preset_name(e, eid)
     frappe.flags.in_import = True
     try:
         e.insert(ignore_permissions=True)

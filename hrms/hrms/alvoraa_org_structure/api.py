@@ -612,8 +612,11 @@ def _within_reach(root, as_at):
 		return True
 
 	def up_from(node, steps):
+		# Not `for _ in` - that would shadow frappe's translation function `_`
+		# inside this scope, and the next person to add a message in here would
+		# get a baffling TypeError instead of a translated string.
 		seen, at = [], node
-		for _ in range(steps):
+		for _step in range(steps):
 			at = (frappe.db.get_value("Alvoraa Position", at, "reports_to_position")
 			      if positions
 			      else frappe.db.get_value("Employee", at, "reports_to"))

@@ -52,7 +52,7 @@ for r in rows:
     # ERPNext's Employee autoname always uses the naming series (the HR Settings
     # "Employee Number" option is not wired to it in this fork). Import mode keeps a
     # preset name, which is exactly what Data Import relies on.
-    emp.name = r["employee_id"]
+    preset_name(emp, r["employee_id"])
     frappe.flags.in_import = True
     try:
         emp.insert(ignore_permissions=True)

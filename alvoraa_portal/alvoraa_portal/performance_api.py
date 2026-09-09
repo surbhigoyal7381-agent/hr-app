@@ -49,7 +49,9 @@ def _assert_hr_can_view(appraisal_name):
     """Block HR from opening appraisals that have not yet reached HR Review stage."""
     if not _is_hr():
         return
-    if frappe.has_role("System Manager"):
+    # As above: frappe.has_role() is not a function. The line two above this
+    # one already shows the right way to ask.
+    if "System Manager" in frappe.get_roles():
         return
     status = frappe.db.get_value(
         "Alvoraa Appraisal Extension", {"appraisal": appraisal_name}, "review_status"

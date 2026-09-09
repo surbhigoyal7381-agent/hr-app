@@ -1942,7 +1942,10 @@ def set_org_setting(key, value):
 
 
 def _require_hr():
-    if not (frappe.has_role("HR Manager") or frappe.has_role("System Manager")):
+    # frappe.has_role() does not exist. It threw AttributeError instead of
+    # checking anything, which failed all five endpoints behind this guard -
+    # "Company Values" among them - for everybody including HR.
+    if not {"HR Manager", "System Manager"} & set(frappe.get_roles()):
         frappe.throw("Not permitted", frappe.PermissionError)
 
 

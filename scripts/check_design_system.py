@@ -35,6 +35,7 @@ LIMITS = {
 	"font_sizes": 7,    # AC-2
 	"shadows": 3,       # AC-3
 	"radii": 3,         # AC-4
+	"undefined_vars": 0,
 	"gradients": 0,     # AC-5
 	"emoji": 0,         # AC-6
 }
@@ -42,6 +43,13 @@ LIMITS = {
 # Pages that carry their own visual language. goals-portal is a 15-line stub.
 PAGES = ["hrms-employee.html", "driver-portal.html", "vendor-portal.html",
          "alvoraa-admin.html", "alvoraa-login.html"]
+
+INCLUDE = os.path.join("alvoraa_portal", "alvoraa_portal", "templates",
+                       "includes", "design_system.html")
+SHARED_TOKENS = set()
+if os.path.exists(INCLUDE):
+	SHARED_TOKENS = set(re.findall(r"(--[a-z0-9-]+)\s*:",
+	                               open(INCLUDE, encoding="utf-8").read()))
 
 
 # ── measuring ────────────────────────────────────────────────────────────────
@@ -80,6 +88,14 @@ def measure(text: str) -> dict:
 		                 re.findall(r"border-radius:\s*([^;}\"']+)", t)
 		                 if "var(" not in r and "%" not in r
 		                 and len(re.findall(r"[0-9.]+px", r)) == 1}),
+		# A var() with nothing behind it is invisible until somebody looks at
+		# the page. `font-family: var(--font)` with no --font falls back to the
+		# browser's default serif, which is how the login page ended up looking
+		# like a 1998 document after its own :root block was removed in favour
+		# of the shared include.
+		"undefined_vars": sorted(set(re.findall(r"var\((--[a-z0-9-]+)", t))
+		                         - set(re.findall(r"(--[a-z0-9-]+)\s*:", t))
+		                         - SHARED_TOKENS),
 		"gradients": re.findall(r"(?:linear|radial|conic)-gradient", t),
 		"emoji": [c for c in t if _is_emoji(c)],
 	}
@@ -158,7 +174,8 @@ def main() -> int:
 			print("\n" + "=" * 70)
 			print(name)
 			print("=" * 70)
-			for k in ("loose_colours", "font_sizes", "shadows", "radii", "gradients", "emoji"):
+			for k in ("loose_colours", "undefined_vars", "font_sizes", "shadows",
+			          "radii", "gradients", "emoji"):
 				mark = "ok " if counts[k] <= LIMITS[k] else "OVER"
 				print("  %-11s %4d  (limit %2d)  %s" % (k, counts[k], LIMITS[k], mark))
 			bad = [c for c in text_colours(m["colours"] + m["loose_colours"])
@@ -171,15 +188,17 @@ def main() -> int:
 					      % (c, contrast(c, GROUNDS["light"]), contrast(c, GROUNDS["dark"])))
 
 	print()
-	print("%-24s %7s %6s %6s %8s %6s %10s %6s" %
-	      ("page", "palette", "loose", "sizes", "shadows", "radii", "gradients", "emoji"))
+	hdr = ("page", "palette", "loose", "undef", "sizes", "shadows", "radii",
+	       "gradient", "emoji")
+	fmt = "%-24s %7s %6s %6s %6s %8s %6s %9s %6s"
+	print(fmt % hdr)
 	for name, c in rows:
-		print("%-24s %7d %6d %6d %8d %6d %10d %6d" %
-		      (name, c["colours"], c["loose_colours"], c["font_sizes"], c["shadows"],
-		       c["radii"], c["gradients"], c["emoji"]))
-	print("%-24s %7s %6s %6s %8s %6s %10s %6s" %
-	      ("LIMIT", "-", LIMITS["loose_colours"], LIMITS["font_sizes"], LIMITS["shadows"],
-	       LIMITS["radii"], LIMITS["gradients"], LIMITS["emoji"]))
+		print(fmt % (name, c["colours"], c["loose_colours"], c["undefined_vars"],
+		             c["font_sizes"], c["shadows"], c["radii"], c["gradients"],
+		             c["emoji"]))
+	print(fmt % ("LIMIT", "-", LIMITS["loose_colours"], LIMITS["undefined_vars"],
+	             LIMITS["font_sizes"], LIMITS["shadows"], LIMITS["radii"],
+	             LIMITS["gradients"], LIMITS["emoji"]))
 
 	if report:
 		return 0

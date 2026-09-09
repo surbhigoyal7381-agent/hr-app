@@ -8310,23 +8310,83 @@ function deleteDrawerNote(noteId, empId) {
     } catch(e) { return String(d); }
   }
 
+  /* Pull a readable sentence out of whatever Frappe returned. */
+  function gpErr(r, fallback) {
+    var msg = "";
+    try { msg = JSON.parse(JSON.parse(r._server_messages)[0]).message; } catch (e) {}
+    if (!msg && r && typeof r.exc === "string") {
+      try { msg = JSON.parse(r.exc)[0].trim().split("\n").pop(); } catch (e) {}
+    }
+    return new Error(msg || (r && r.message) || fallback || "Request failed");
+  }
+
+  /* The token this page was rendered with, cleaned up.
+
+     Frappe writes it into the HTML as `frappe.csrf_token = "<value>"`. When the
+     session has no token yet, that value is Python's None printed as the string
+     "None" - truthy in JavaScript, so it used to be sent as though it were real. */
+  function gpCsrf() {
+    var c = (window.frappe && window.frappe.csrf_token) || "";
+    return (c === "None" || c === "null" || c === "undefined") ? "" : c;
+  }
+
+  /* Ask the server for the session's current token.
+
+     Every rendered page carries it, so re-reading one is the way to find out
+     what it is now. Needed because the value is fixed when the page is built:
+     a tab left open from before the session gained a token will hold the old
+     one for as long as it stays open, and nothing else would ever correct it. */
+  function gpRefreshCsrf() {
+    return fetch(window.location.pathname, {credentials: "same-origin"})
+      .then(function(r) { return r.text(); })
+      .then(function(html) {
+        var m = html.match(/frappe\.csrf_token\s*=\s*"([^"]*)"/);
+        var tok = m ? m[1] : "";
+        if (tok && tok !== "None") {
+          if (!window.frappe) window.frappe = {};
+          /* Set globally, so frappe.call() - which api() uses everywhere else
+             on this page - is repaired by the same round trip. */
+          window.frappe.csrf_token = tok;
+          return tok;
+        }
+        return "";
+      })
+      .catch(function() { return ""; });
+  }
+
+  function gpSend(method, args) {
+    var headers = {"Content-Type": "application/json"};
+    var csrf = gpCsrf();
+    /* Sent only when it is a real token. An absent header is fine for a session
+       that has none, because Frappe skips the check in that case; a wrong one
+       is refused either way. */
+    if (csrf) headers["X-Frappe-CSRF-Token"] = csrf;
+    var opts = {method: args !== undefined ? "POST" : "GET", headers: headers,
+                credentials: "same-origin"};
+    if (args) opts.body = JSON.stringify(args);
+    return fetch("/api/method/" + method, opts).then(function(res) {
+      return res.json().then(function(data) { return {res: res, data: data}; });
+    });
+  }
+
   function gpFetch(method, args) {
     return new Promise(function(resolve, reject) {
-      var csrf = (window.frappe && frappe.csrf_token) ? frappe.csrf_token : "";
-      var opts = {
-        method: args !== undefined ? "POST" : "GET",
-        headers: {"X-Frappe-CSRF-Token": csrf, "Content-Type": "application/json"},
-      };
-      if (args) opts.body = JSON.stringify(args);
-      fetch("/api/method/" + method, opts).then(function(res) {
-        res.json().then(function(data) {
-          if (!res.ok || data.exc_type) {
-            var msg = "";
-            try { msg = JSON.parse(JSON.parse(data._server_messages)[0]).message; } catch(e2) {}
-            reject(new Error(msg || data.message || res.statusText));
-          } else {
-            resolve(data.message);
-          }
+      gpSend(method, args).then(function(out) {
+        var res = out.res, data = out.data;
+        if (res.ok && !data.exc_type) { resolve(data.message); return; }
+
+        var stale = data.exc_type === "CSRFTokenError"
+          || (res.status === 400 && /invalid request/i.test(data.message || ""));
+        if (!stale) { reject(gpErr(data, res.statusText)); return; }
+
+        /* One retry, with a token read fresh from the server. If that fails
+           too the answer is a real refusal, not a stale token. */
+        gpRefreshCsrf().then(function(tok) {
+          if (!tok) { reject(gpErr(data, res.statusText)); return; }
+          gpSend(method, args).then(function(o2) {
+            if (o2.res.ok && !o2.data.exc_type) { resolve(o2.data.message); }
+            else { reject(gpErr(o2.data, o2.res.statusText)); }
+          }).catch(reject);
         });
       }).catch(reject);
     });

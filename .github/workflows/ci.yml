@@ -193,6 +193,13 @@ jobs:
 
       - name: System dependencies
         run: |
+          # GitHub's runner image ships Google's Chrome repository. We install
+          # nothing from it, but `apt-get update` still reads it - and on
+          # 2026-09-09 it served a bad index ("Hash Sum mismatch"), which
+          # returns exit 100 and failed the whole job twice before a single
+          # test ran. Dropping a source we do not use makes this job depend on
+          # Ubuntu's archive alone.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list                      /etc/apt/sources.list.d/google-chrome.sources
           sudo apt-get update
           sudo apt-get install -y libcups2-dev redis-tools mariadb-client libmariadb-dev
           pip install frappe-bench

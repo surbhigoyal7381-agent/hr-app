@@ -5819,14 +5819,18 @@ function aiPaint() {
      period nor the unit was anywhere on screen, so both go in the heading
      rather than being repeated seven times. */
   out += '<div class="ai-week-hd"><b>Short days by day of the week</b>'
-    + "<span>" + gpEsc(aiWhen(d.from, d.to)) + " · every day worked by the "
-    + gpEsc(d.people) + " people in this view</span></div>";
+    + "<span>" + gpEsc(aiWhen(d.from, d.to)) + " · " + gpEsc(d.people)
+    + " people · each person’s day counted once</span></div>";
 
   out += '<div class="ai-week">' + days.map(function (x) {
     return "<div><div class='d'>" + x.day.slice(0, 3) + "</div>"
       + "<div class='r'>" + aiPct(x.rate) + "</div>"
       + "<div class='bar'><i style='width:" + Math.round(100 * x.rate / top) + "%'></i></div>"
-      + "<div>" + x.short + " of " + x.present + " worked</div></div>";
+      /* "person-days", spelled out, because the number is not a count of
+         Mondays. August 2026 had five Mondays; this figure was 69, and two
+         readers in a row took it for a count of dates. The unit has to be ON
+         the number, not only in the heading above it. */
+      + "<div>" + x.short + " of " + x.present + " person-days</div></div>";
   }).join("") + "</div>";
 
   if (d.view === "mine") {

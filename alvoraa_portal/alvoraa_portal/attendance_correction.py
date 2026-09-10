@@ -167,8 +167,23 @@ def install_review_fields():
 
 
 def after_migrate():
+	"""Wired to BOTH after_migrate and after_install.
+
+	after_migrate alone was not enough, and CI caught it: a site is built with
+	`bench install-app`, which never runs a migrate, so the columns were simply
+	absent and every write to them failed with "Unknown column". That was not a
+	CI quirk - a brand new tenant would have been missing them in exactly the
+	same way.
+
+	Guarded on the doctype existing because install order is not ours to
+	choose. A site that installs this app before Frappe HR gets nothing here
+	and picks it up on the next migrate, rather than failing the install.
+	"""
+	if not frappe.db.exists("DocType", REQUEST):
+		return False
 	install_reasons()
 	install_review_fields()
+	return True
 
 
 # ── keeping the state true when the Desk is used ─────────────────────────────

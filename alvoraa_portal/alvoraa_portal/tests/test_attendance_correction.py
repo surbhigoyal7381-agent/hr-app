@@ -19,6 +19,21 @@ SHIFT = "AC Test Shift"          # 09:00-18:00, nine hours
 HOLIDAYS = "AC Test Holidays"
 
 
+def setUpModule():
+	"""The reasons and the review fields have to be on the site before any of
+	this can pass.
+
+	They arrive through after_install and after_migrate in production. A test
+	run should not depend on which of those a particular site happened to go
+	through - CI builds its site with `bench install-app` and nothing else, and
+	before this line existed the whole file failed on "Unknown column
+	alvoraa_review_status". Both calls run by themselves and cost nothing when
+	the fields are already there.
+	"""
+	ac.after_migrate()
+	frappe.clear_cache(doctype=ac.REQUEST)
+
+
 def _company():
 	return frappe.db.get_value("Company", {}, "name")
 
@@ -92,6 +107,52 @@ class TheReasonsWeOffer(FrappeTestCase):
 		values = {r["value"] for r in ac.reasons()}
 		self.assertIn("Work From Home", values)
 		self.assertIn("On Duty", values)
+
+
+class TheFieldsReachEverySite(FrappeTestCase):
+	"""How the columns get onto a site, which CI caught us getting wrong.
+
+	The hook was wired to after_migrate only. A site is BUILT with
+	`bench install-app`, which never runs a migrate, so a brand new tenant had
+	no review columns and every correction died on "Unknown column
+	alvoraa_review_status". Not a CI quirk - CI just happened to be the first
+	fresh site anyone made.
+	"""
+
+	def test_it_is_wired_to_a_fresh_install_not_only_to_migrate(self):
+		want = "alvoraa_portal.attendance_correction.after_migrate"
+		self.assertIn(want, frappe.get_hooks("after_install", app_name="alvoraa_portal") or [],
+		              "a fresh tenant would have no review columns")
+		self.assertIn(want, frappe.get_hooks("after_migrate", app_name="alvoraa_portal") or [],
+		              "an existing tenant would never receive them")
+
+	def test_the_columns_actually_exist(self):
+		"""The field being on the meta is not the same as the column being in
+		the table, and it is the column that the write hits."""
+		ac.after_migrate()
+		columns = frappe.db.get_table_columns(ac.REQUEST)
+		for field in ("alvoraa_review_status", "alvoraa_review_note",
+		              "alvoraa_reviewed_by", "alvoraa_reviewed_on"):
+			self.assertIn(field, columns)
+
+	def test_running_it_twice_changes_nothing(self):
+		"""It runs on every migrate for the life of the product."""
+		ac.after_migrate()
+		before = frappe.get_meta(ac.REQUEST).get_field("reason").options
+		ac.after_migrate()
+		frappe.clear_cache(doctype=ac.REQUEST)
+		self.assertEqual(before, frappe.get_meta(ac.REQUEST).get_field("reason").options)
+
+	def test_it_declines_quietly_when_frappe_hr_is_not_there_yet(self):
+		"""Install order is not ours to choose. Failing here would fail the
+		whole app install rather than wait for the next migrate."""
+		real = frappe.db.exists
+		frappe.db.exists = lambda dt, name=None, *a, **k: (
+			None if (dt == "DocType" and name == ac.REQUEST) else real(dt, name, *a, **k))
+		try:
+			self.assertFalse(ac.after_migrate())
+		finally:
+			frappe.db.exists = real
 
 
 class CorrectionCase(FrappeTestCase):

@@ -167,3 +167,11 @@ scheduler_events = {
 after_migrate = [
     "alvoraa_portal.attendance_correction.after_migrate",
 ]
+
+# And on a fresh install, which never runs a migrate. Without this a brand new
+# tenant has no review columns at all, and every correction fails on "Unknown
+# column alvoraa_review_status". CI is what found it - it builds its site with
+# `bench install-app` and nothing else.
+after_install = [
+    "alvoraa_portal.attendance_correction.after_migrate",
+]

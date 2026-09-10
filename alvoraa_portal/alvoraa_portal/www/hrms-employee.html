@@ -1163,7 +1163,11 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
 .pd-toolbar{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:20px}
 .pd-stats-strip{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:20px}
 .pd-stat{flex:1;min-width:110px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px 16px}
-.pd-stat-val{font-size:var(--fs-xl);font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;line-height:1}
+.pd-stat-val{font-size:var(--fs-xl);font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;line-height:1;overflow-wrap:anywhere}
+/* "Median Overall" holds a rating NAME, not a number. At 24px "Exceeds
+   Expectations" ran straight out of the side of its tile. Words get a size
+   they fit in, and are allowed to wrap onto a second line. */
+.pd-stat-val-word{font-size:var(--fs-md);line-height:1.25;font-variant-numeric:normal}
 .pd-stat-lbl{font-size:var(--fs-xs);color:var(--text3);margin-top:3px}
 .pd-charts-row{display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap}
 .pd-chart-card{flex:1;min-width:280px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px 14px}
@@ -1213,7 +1217,7 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
 .cal-cell{width:180px;min-width:160px;vertical-align:top;border-radius:var(--r);overflow:hidden;border:none}
 /* cell internal label (col_label Performance · row_label Potential) */
 .cal-cell-lbl{font-size:var(--fs-xs);font-weight:700;line-height:1.4;padding:10px 12px 7px;color:var(--surface);letter-spacing:.01em}
-.cal-cell-lbl-dark{color:rgba(0,0,0,.72)}  /* for light-bg cells */
+.cal-cell-lbl-dark{color:var(--box-fg)}  /* text drawn ON a nine-box square */
 /* employee list inside each cell */
 .cal-cell-emps{display:flex;flex-direction:column;gap:5px;padding:0 8px 10px;min-height:56px}
 .cal-emp-row{display:flex;align-items:center;gap:7px;background:rgba(255,255,255,.2);border-radius:var(--r-sm);padding:5px 8px;cursor:default}
@@ -1222,13 +1226,13 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
 .cal-emp-name{font-size:var(--fs-sm);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--surface);line-height:1.2}
 .cal-emp-meta{font-size:var(--fs-xs);color:rgba(255,255,255,.72);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
 /* dark-bg cell text overrides */
-.cal-cell-dark .cal-emp-name{color:rgba(0,0,0,.8)}
-.cal-cell-dark .cal-emp-meta{color:rgba(0,0,0,.55)}
-.cal-cell-dark .cal-emp-row{background:rgba(0,0,0,.08)}
-.cal-cell-dark .cal-emp-av{border-color:rgba(0,0,0,.2)}
+.cal-cell-dark .cal-emp-name{color:var(--box-fg)}
+.cal-cell-dark .cal-emp-meta{color:var(--box-fg-dim)}
+.cal-cell-dark .cal-emp-row{background:var(--box-line)}
+.cal-cell-dark .cal-emp-av{border-color:var(--box-line)}
 /* empty-cell placeholder */
 .cal-cell-none{font-size:var(--fs-xs);color:rgba(255,255,255,.5);font-style:italic;padding:6px 12px 10px}
-.cal-cell-dark .cal-cell-none{color:rgba(0,0,0,.35)}
+.cal-cell-dark .cal-cell-none{color:var(--box-fg-dim)}
 /* count badge inside label */
 .cal-cell-count{font-size:var(--fs-xs);font-weight:400;opacity:.65;margin-left:4px}
 .cal-more-toggle{font-size:var(--fs-xs);cursor:pointer;padding:2px 8px;border-radius:var(--r-sm);text-align:center;opacity:.72;background:rgba(0,0,0,.10);margin-top:2px;transition:opacity .15s;flex-shrink:0}
@@ -11238,7 +11242,11 @@ function deleteDrawerNote(noteId, empId) {
   }
 
   function _pdStat(val, lbl) {
-    return '<div class="pd-stat"><div class="pd-stat-val">' + gpEsc(val) + '</div><div class="pd-stat-lbl">' + gpEsc(lbl) + '</div></div>';
+    /* A figure and a rating name want different sizes, and only the value
+       itself can say which this is. */
+    var isWord = !/^[\d.,%\s—-]+$/.test(String(val));
+    return '<div class="pd-stat"><div class="pd-stat-val' + (isWord ? " pd-stat-val-word" : "")
+      + '">' + gpEsc(val) + '</div><div class="pd-stat-lbl">' + gpEsc(lbl) + '</div></div>';
   }
 
   /* ── Employee table ───────────────────────────────────────── */
@@ -11431,7 +11439,10 @@ function deleteDrawerNote(noteId, empId) {
       {key:"Not Started",           label:"Not Started",     color:"var(--text3)", bg:"var(--surface2)", border:"var(--border)"},
       {key:"Employee Review",       label:"Self-Review",     color:"var(--primary)",      bg:"var(--primary-lt)",         border:"var(--primary-lt)"},
       {key:"Manager Review",        label:"With Manager",    color:"var(--amber)",      bg:"var(--amber-lt)",         border:"var(--amber)"},
-      {key:"Employee Final Review", label:"Feedback Shared", color:"var(--green-lt)",      bg:"var(--green-lt)",         border:"var(--green)"},
+      // color was --green-lt, the SAME value as its own background, so the
+      // count and the word "Feedback Shared" were painted in the background
+      // colour and the tile looked blank.
+      {key:"Employee Final Review", label:"Feedback Shared", color:"var(--green)",      bg:"var(--green-lt)",         border:"var(--green)"},
       {key:"HR Review",             label:"HR Review",       color:"var(--primary)",      bg:"var(--primary-lt)",         border:"var(--primary-lt)"},
       {key:"Completed",             label:"Completed",       color:"var(--green)",      bg:"var(--green-lt)",         border:"var(--green)"},
     ];
@@ -11552,13 +11563,28 @@ function deleteDrawerNote(noteId, empId) {
      have to stay apart from each other: mapping them onto --red/--amber/--green
      collapsed both oranges into one and both greens into another, and a
      nine-box grid whose cells look alike tells you nothing. */
+  /* Colour follows the MEANING of the square, not its position in the grid.
+     The old mapping had Potential Gem in red and Inconsistent Player in green,
+     which told the reader the opposite of the truth.
+
+       green   somebody to keep - Solid Performer, High Performer,
+               Potential Gem, High Potential
+       blue    Core Player, the dependable middle
+       yellow  Star, the one square that should catch the eye
+       orange  needs a conversation - Average Performer, Inconsistent Player
+       red     Risk
+
+     Pastel on purpose. Nine saturated blocks make every square shout equally,
+     and the point of this grid is that your eye lands on the few that matter. */
   var _CAL_COLORS = [
-    /* pot LOW  */  ["var(--box-risk)", "var(--box-solid)", "var(--box-watch)"],
-    /* pot MID  */  ["var(--box-solid)", "var(--box-solid)", "var(--box-watch)"],
-    /* pot HIGH */  ["var(--box-risk)", "var(--box-watch)", "var(--box-emerging)"],
+    /* pot LOW  */  ["var(--box-red)",   "var(--box-orange)", "var(--box-green)"],
+    /* pot MID  */  ["var(--box-orange)","var(--box-blue)",   "var(--box-green)"],
+    /* pot HIGH */  ["var(--box-green)", "var(--box-green)",  "var(--box-yellow)"],
   ];
-  /* --box-emerging is a light yellow and is the one cell that needs dark text. */
-  var _CAL_DARK_TEXT = [[false,false,false],[false,false,false],[false,false,true]];
+  /* Every square now carries text from --box-fg, which flips with the theme -
+     dark on the pastels, light on their deepened dark-mode counterparts. The
+     flag stays true everywhere so the one text path is used for all nine. */
+  var _CAL_DARK_TEXT = [[true,true,true],[true,true,true],[true,true,true]];
 
   function _calZone(normPerf, normPot) {
     /* normalize 0-1 → 0/1/2 zone bucket */
@@ -11569,8 +11595,8 @@ function deleteDrawerNote(noteId, empId) {
 
   function _calEmpRow(r, darkText) {
     var meta = [r.department, r.designation].filter(Boolean).join(" · ");
-    var nameStyle = darkText ? "color:rgba(0,0,0,.82)" : "color:var(--surface)";
-    var metaStyle = darkText ? "color:rgba(0,0,0,.55)" : "color:rgba(255,255,255,.72)";
+    var nameStyle = darkText ? "color:var(--box-fg)" : "color:var(--surface)";
+    var metaStyle = darkText ? "color:var(--box-fg-dim)" : "color:rgba(255,255,255,.72)";
     var avBg      = _calColor(r.employee_name);
     return "<div class=\"cal-emp-row" + (darkText ? " cal-emp-row-dark" : "") + "\">" +
       "<div class=\"cal-emp-av\" style=\"background:" + avBg + "\">" + _calInitials(r.employee_name) + "</div>" +
@@ -11634,12 +11660,12 @@ function deleteDrawerNote(noteId, empId) {
         var bucket  = rows.filter(function(r) { return parseFloat(r.overall_rating) === parseFloat(col.value); });
         var normPf  = oCols.length > 1 ? ci / (oCols.length - 1) : 0.5;
         var zone    = _calZone(normPf, 0.5);
-        var dim1d   = zone.dark ? "rgba(0,0,0,.48)" : "rgba(255,255,255,.72)";
+        var dim1d   = zone.dark ? "var(--box-fg-dim)" : "rgba(255,255,255,.72)";
         var empHtml = bucket.length
           ? _calEmpCapped(bucket, zone.dark, "1d-" + ci, dim1d)
           : "<div style=\"font-size:var(--fs-xs);padding:6px 2px;font-style:italic;color:" +
-              (zone.dark ? "rgba(0,0,0,.35)" : "rgba(255,255,255,.45)") + "\">No employees</div>";
-        var lblColor  = zone.dark ? "rgba(0,0,0,.75)" : "var(--surface)";
+              (zone.dark ? "var(--box-fg-dim)" : "rgba(255,255,255,.45)") + "\">No employees</div>";
+        var lblColor  = zone.dark ? "var(--box-fg)" : "var(--surface)";
         var filterBtn1d = "<span class=\"cal-cell-filter-btn\" style=\"color:" + lblColor + "\" title=\"Open filters\"" +
           " onclick=\"(function(){var f=document.getElementById('cal-filters');if(f&&f.style.display==='none'){calToggleFilters();}document.getElementById('cal-filter-btn').scrollIntoView({behavior:'smooth',block:'nearest'});})()\">" +
           "<svg width='11' height='11' viewBox='0 0 12 12' fill='currentColor'><path d='M1 2h10L7 7v3.5l-2-1V7z'/></svg>" +
@@ -11695,8 +11721,8 @@ function deleteDrawerNote(noteId, empId) {
       for (var pz = 0; pz <= 2; pz++) {
         var bg     = _CAL_COLORS[ptz][pz];
         var dark   = _CAL_DARK_TEXT[ptz][pz];
-        var lblClr = dark ? "rgba(0,0,0,.80)" : "var(--surface)";
-        var dimClr = dark ? "rgba(0,0,0,.48)" : "rgba(255,255,255,.72)";
+        var lblClr = dark ? "var(--box-fg)" : "var(--surface)";
+        var dimClr = dark ? "var(--box-fg-dim)" : "rgba(255,255,255,.72)";
         var bkt    = bkts[ptz][pz];
         var empsHtml = bkt.length
           ? _calEmpCapped(bkt, dark, ptz + "-" + pz, dimClr)

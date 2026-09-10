@@ -5798,7 +5798,9 @@ function aiPaint() {
     return "<div><div class='d'>" + x.day.slice(0, 3) + "</div>"
       + "<div class='r'>" + aiPct(x.rate) + "</div>"
       + "<div class='bar'><i style='width:" + Math.round(100 * x.rate / top) + "%'></i></div>"
-      + "<div>" + x.short + " of " + x.present + "</div></div>";
+      /* "2 of 69" did not say what it was counting, and the first person to
+         see it had to ask. */
+      + "<div>" + x.short + " short of " + x.present + " worked</div></div>";
   }).join("") + "</div>";
 
   if (d.view === "mine") {

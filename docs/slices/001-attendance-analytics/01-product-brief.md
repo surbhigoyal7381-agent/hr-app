@@ -239,18 +239,24 @@ The second half of the request, and the part that makes this more than a table.
 
 ### The pattern that changes what you do about it
 
-On the tenant I checked, short days by weekday looked like this:
+**Correction to an earlier draft of this brief.** It said Saturday ran about 40%
+above Monday on the tenant I checked, and called that a rota problem. That was
+wrong. It compared raw *counts* of short days by weekday — and there are simply
+more Saturdays and Thursdays worked than Mondays, so the counts were always
+going to lean that way. Measured as a rate (short days divided by days worked),
+the same tenant runs 5.8% to 6.6% on every weekday. There is no weekday effect
+there at all.
 
-| Sat | Thu | Sun | Wed | Fri | Tue | Mon |
-|---|---|---|---|---|---|---|
-| 251 | 213 | 206 | 206 | 197 | 185 | 176 |
+The lesson stands, and it is now built into the screen: a count by weekday is
+meaningless, so the screen only ever compares rates, and it says nothing when
+the rates are level — as they are here.
 
-Saturday runs about 40% above Monday, across the whole business.
+When a real one does appear, it matters more than anything else on the screen:
 
-**That is not 400 people deciding to leave early on Saturday. That is a rota, a
-shift definition, or a closing routine that does not match the roster.** No
-amount of managing individuals will fix it, and every conversation held about it
-with an individual will be unfair.
+**A whole group short on the same weekday is not people deciding to leave early.
+It is a rota, a shift definition, or a closing routine that does not match the
+roster.** No amount of managing individuals will fix it, and every conversation
+held about it with an individual will be unfair.
 
 This is the single most valuable thing this screen can do, and it is what
 separates it from every competitor's version: **tell the user whether they are

@@ -1953,6 +1953,157 @@ body.panel-fullscreen{overflow:hidden}
   line-height:1.5}
 .act-line b{color:var(--text);font-weight:650;font-variant-numeric:tabular-nums}
 
+/* ── Attendance insights ──────────────────────────────────────────
+   Rates, never raw counts. Almost everybody is short at some point;
+   how OFTEN is the only thing that separates a habit from a dentist
+   appointment. */
+.ai-views{display:flex;gap:4px;background:var(--surface2);padding:3px;
+  border-radius:var(--r);width:fit-content;margin-bottom:14px}
+.ai-views button{border:0;background:none;font:inherit;font-size:var(--fs-sm);
+  font-weight:600;color:var(--text2);padding:6px 14px;border-radius:var(--r-sm);
+  cursor:pointer}
+.ai-views button.on{background:var(--surface);color:var(--text);box-shadow:var(--sh1)}
+.ai-views button:disabled{opacity:.4;cursor:not-allowed}
+
+.ai-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
+.ai-bar select,.ai-bar input{font:inherit;font-size:var(--fs-sm);padding:6px 10px;
+  border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);
+  color:var(--text)}
+.ai-bar label{font-size:var(--fs-xs);color:var(--text3);font-weight:700;
+  letter-spacing:.04em;text-transform:uppercase}
+
+.ai-tiles{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.ai-tile{border:1px solid var(--border);border-left:3px solid var(--border);
+  border-radius:var(--r-sm);padding:9px 15px;min-width:118px;background:var(--surface)}
+.ai-tile .n{font-size:var(--fs-xl);font-weight:700;color:var(--text);line-height:1.1;
+  font-variant-numeric:tabular-nums}
+.ai-tile .l{font-size:var(--fs-xs);letter-spacing:.04em;text-transform:uppercase;
+  color:var(--text3);font-weight:700;margin-top:3px}
+.ai-tile.warn{border-left-color:var(--amber);background:var(--amber-lt)}
+.ai-tile.bad{border-left-color:var(--red);background:var(--red-lt)}
+
+/* The rota-or-person note. Said in words, above the names, because a day
+   that runs high across a whole group is a shift definition rather than a
+   group of people who all chose to leave early. */
+.ai-verdict{border:1px solid var(--border);border-left:3px solid var(--amber);
+  background:var(--amber-lt);border-radius:var(--r-sm);padding:11px 15px;
+  margin-bottom:16px;font-size:var(--fs-base);color:var(--text2);line-height:1.55}
+.ai-verdict b{color:var(--text)}
+
+.ai-week{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:18px}
+.ai-week div{text-align:center;font-size:var(--fs-xs);color:var(--text3)}
+.ai-week .d{font-weight:700;color:var(--text2);margin-bottom:4px}
+.ai-week .r{font-size:var(--fs-md);font-weight:700;color:var(--text);
+  font-variant-numeric:tabular-nums}
+.ai-week .bar{height:4px;border-radius:2px;background:var(--border);margin-top:5px}
+.ai-week .bar i{display:block;height:100%;border-radius:2px;background:var(--amber)}
+
+.ai-tbl{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
+.ai-tbl th{text-align:right;font-size:var(--fs-xs);letter-spacing:.04em;
+  text-transform:uppercase;color:var(--text3);font-weight:700;padding:8px 10px;
+  border-bottom:1px solid var(--border);white-space:nowrap}
+.ai-tbl th:first-child,.ai-tbl td:first-child{text-align:left}
+.ai-tbl td{padding:9px 10px;border-bottom:1px solid var(--border);text-align:right;
+  color:var(--text2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.ai-tbl tbody tr{cursor:pointer}
+.ai-tbl tbody tr:hover{background:var(--surface2)}
+.ai-tbl .who{color:var(--text);font-weight:600}
+.ai-tbl .hi{color:var(--red);font-weight:700}
+.ai-empty{padding:22px;text-align:center;color:var(--text3);font-size:var(--fs-base)}
+
+.ai-note{font-size:var(--fs-xs);color:var(--text3);margin-top:10px;line-height:1.6}
+
+/* ── My attendance record ─────────────────────────────────────────
+   A log of days, not a grid of coloured squares. The grid answers "how
+   was my month"; only a row per day can answer "what happened on the
+   3rd", which is the question somebody has when they think a day is
+   wrong. The strip in each row is the day itself: the shift as the
+   track, the time actually worked laid over it. A missing second punch
+   is invisible in a total and obvious in a strip. */
+.ac-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.ac-bar select,.ac-bar input{font:inherit;font-size:var(--fs-sm);padding:6px 10px;
+  border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);
+  color:var(--text)}
+.ac-bar .sp{margin-left:auto}
+.ac-who{font-size:var(--fs-sm);color:var(--text2)}
+.ac-who b{color:var(--text)}
+
+.ac-tiles{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.ac-tile{border:1px solid var(--border);border-left:3px solid var(--border);
+  border-radius:var(--r-sm);padding:9px 15px;min-width:112px;background:var(--surface)}
+.ac-tile .n{font-size:var(--fs-xl);font-weight:700;color:var(--text);line-height:1.1;
+  font-variant-numeric:tabular-nums}
+.ac-tile .l{font-size:var(--fs-xs);letter-spacing:.04em;text-transform:uppercase;
+  color:var(--text3);font-weight:700;margin-top:3px}
+.ac-tile.warn{border-left-color:var(--amber);background:var(--amber-lt)}
+
+.ac-tbl{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
+.ac-tbl th{text-align:right;font-size:var(--fs-xs);letter-spacing:.04em;
+  text-transform:uppercase;color:var(--text3);font-weight:700;padding:8px 10px;
+  border-bottom:1px solid var(--border);white-space:nowrap}
+.ac-tbl th:first-child,.ac-tbl td:first-child{text-align:left}
+.ac-tbl th.t,.ac-tbl td.t{text-align:left;width:36%}
+.ac-tbl td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:right;
+  color:var(--text2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.ac-tbl tbody tr.pick{cursor:pointer}
+.ac-tbl tbody tr.pick:hover{background:var(--surface2)}
+.ac-tbl tbody tr.off td{color:var(--text3)}
+.ac-tbl .day{color:var(--text);font-weight:600}
+.ac-tbl .dow{color:var(--text3);font-weight:400;margin-left:5px}
+.ac-tbl .hi{color:var(--red);font-weight:700}
+
+/* The strip. One neutral track for the shift, one filled block for the
+   time worked. Colour is spent only where something is wrong, so a
+   normal month reads as quiet. */
+.ac-strip{position:relative;height:8px;border-radius:2px;background:var(--surface2);
+  border:1px solid var(--border);min-width:120px}
+.ac-strip i{position:absolute;top:0;bottom:0;background:var(--primary);border-radius:2px}
+.ac-strip i.gap{background:var(--amber)}
+.ac-strip.none{background:transparent;border-style:dashed}
+
+.ac-tag{display:inline-block;font-size:var(--fs-xs);font-weight:700;padding:1px 7px;
+  border-radius:var(--r-sm);border:1px solid var(--border);color:var(--text3);
+  background:var(--surface2);letter-spacing:.03em;margin-left:6px}
+.ac-tag.warn{border-color:var(--amber);background:var(--amber-lt);color:var(--amber)}
+.ac-tag.ok{border-color:var(--green);background:var(--green-lt);color:var(--green)}
+
+/* The day detail, and the form for disputing it. Opens under the row it
+   belongs to rather than in a modal - the point is to compare it with
+   the days around it. */
+.ac-open{background:var(--surface2)}
+.ac-open td{padding:0;border-bottom:1px solid var(--border)}
+.ac-detail{padding:14px 12px;font-size:var(--fs-sm);color:var(--text2);line-height:1.6}
+.ac-punches{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px}
+.ac-punch{border:1px solid var(--border);border-radius:var(--r-sm);padding:4px 9px;
+  background:var(--surface);font-size:var(--fs-xs);color:var(--text2);
+  font-variant-numeric:tabular-nums}
+.ac-punch b{color:var(--text);font-weight:700}
+.ac-facts{display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px}
+.ac-facts div{font-size:var(--fs-xs);color:var(--text3);font-weight:700;
+  letter-spacing:.04em;text-transform:uppercase}
+.ac-facts div span{display:block;font-size:var(--fs-md);color:var(--text);
+  font-weight:700;letter-spacing:0;text-transform:none;
+  font-variant-numeric:tabular-nums;margin-top:2px}
+.ac-form{border-top:1px solid var(--border);padding-top:12px;margin-top:4px}
+.ac-form select,.ac-form textarea,.ac-form input{font:inherit;font-size:var(--fs-sm);
+  padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-sm);
+  background:var(--surface);color:var(--text);width:100%;max-width:420px}
+.ac-form textarea{min-height:56px;resize:vertical}
+.ac-help{font-size:var(--fs-xs);color:var(--text3);margin:5px 0 10px;line-height:1.5}
+.ac-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+
+.ac-req{border:1px solid var(--border);border-left:3px solid var(--border);
+  border-radius:var(--r-sm);padding:10px 14px;margin-bottom:8px;background:var(--surface)}
+.ac-req.waiting{border-left-color:var(--amber)}
+.ac-req.approved{border-left-color:var(--green)}
+.ac-req.declined{border-left-color:var(--red)}
+.ac-req .h{font-size:var(--fs-sm);font-weight:650;color:var(--text)}
+.ac-req .m{font-size:var(--fs-xs);color:var(--text3);margin-top:2px}
+.ac-req .s{font-size:var(--fs-xs);font-weight:700;margin-top:5px;color:var(--text2)}
+.ac-req .note{font-size:var(--fs-xs);color:var(--text2);margin-top:5px;
+  border-left:2px solid var(--border);padding-left:9px;line-height:1.5}
+.ac-empty{padding:22px;text-align:center;color:var(--text3);font-size:var(--fs-base)}
+
 /* ── This week, at a glance ────────────────────────────────────────
    Presence only: in, away, still to come, non-working. Never the reason
    somebody is away and never a running tally - absence can reveal a
@@ -2151,6 +2302,14 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
         <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg></span>
         <span class="nav-label">Policies</span>
         <span class="nav-badge" id="sb-policies-badge" style="display:none">0</span>
+      </div>
+      <div class="nav-item" data-panel="attendance-insights" id="nav-att-insights" onclick="switchPanel('attendance-insights',this)">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="13" y="7" width="3" height="10"/></svg></span>
+        <span class="nav-label">Attendance Insights</span>
+      </div>
+      <div class="nav-item" data-panel="att-record" id="nav-att-record" onclick="switchPanel('att-record',this)">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M9 16h6"/></svg></span>
+        <span class="nav-label">My Attendance</span>
       </div>
       <div class="nav-item" data-panel="org-chart" id="nav-org-chart" onclick="switchPanel('org-chart',this)" style="display:none">
         <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="5" rx="1"/><rect x="2" y="17" width="6" height="5" rx="1"/><rect x="16" y="17" width="6" height="5" rx="1"/><path d="M12 7v4M5 17v-3h14v3"/></svg></span>
@@ -2475,6 +2634,41 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
       </div>
 
       <!-- ══ POLICIES (build B5) ════════════════════════════ -->
+      <div id="panel-attendance-insights" class="panel">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">Attendance Insights</h1>
+            <p class="page-sub" id="ai-sub">Who is short of their hours, and how often</p>
+          </div>
+        </div>
+
+        <div class="ai-views" id="ai-views"></div>
+        <div class="ai-bar" id="ai-bar"></div>
+        <div id="ai-body"><p class="ai-empty">Loading&hellip;</p></div>
+      </div>
+
+      <div id="panel-att-record" class="panel">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">My Attendance</h1>
+            <p class="page-sub" id="ac-sub">Every day of the month, and how to get one corrected</p>
+          </div>
+        </div>
+
+        <div class="ac-bar" id="ac-bar"></div>
+        <div id="ac-body"><p class="ac-empty">Loading&hellip;</p></div>
+
+        <div id="ac-review-wrap" style="display:none;margin-top:26px">
+          <div class="sec-divider">Waiting for you</div>
+          <div id="ac-review"></div>
+        </div>
+
+        <div id="ac-mine-wrap" style="margin-top:26px">
+          <div class="sec-divider">Corrections you have asked for</div>
+          <div id="ac-mine"></div>
+        </div>
+      </div>
+
       <div id="panel-org-chart" class="panel">
         <div class="page-head">
           <div>
@@ -4685,7 +4879,10 @@ function initials(name) {
 
 // HTML-escape any server-returned string before inserting into innerHTML.
 function esc(s) {
-  return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  // `s || ""` blanked every zero, because 0 is falsy - so a count of none
+  // rendered as an empty cell, which reads as "failed to load" rather than
+  // "none". Only null and undefined are nothing.
+  return String(s === null || s === undefined ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 
 function leaveStatusBadge(s, ds) {
@@ -5067,6 +5264,8 @@ function switchPanel(name, triggerEl) {
   document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
   document.getElementById("panel-" + name).classList.add("active");
 
+  if (name === "attendance-insights") { aiOpen(); }
+  if (name === "att-record")         { acOpen(); }
   if (name === "org-chart") { ocLoad(); }
 
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
@@ -5427,6 +5626,707 @@ window.orgLoadDocuments = function() {
   }, function(e) {
     document.getElementById("org-docs-body").innerHTML = "<div class=\"callout callout-warn\">" + esc((e && e.message) || "Could not load") + "</div>";
   });
+};
+
+/* ── Attendance insights ─────────────────────────────────────────────
+   Three views over one calculation: your own record, your team, the whole
+   organisation. The view decides who is counted; it never changes what a
+   number means.
+
+   Every figure is a rate or a repeat count. On this data 370 of 403 people
+   had at least one short day, so a list of people who were ever short is a
+   list of the workforce. Twenty short days is a habit; one is a dentist
+   appointment. */
+var AI = {view: null, can: {}, opts: null, data: null, depth: "direct"};
+
+function aiApi(fn, args) {
+  return gpFetch("alvoraa_portal.attendance_analytics." + fn, args || {});
+}
+
+window.aiOpen = async function () {
+  try {
+    AI.can = await aiApi("views");
+  } catch (e) {
+    document.getElementById("ai-body").innerHTML =
+      '<p class="ai-empty">' + gpEsc(e.message) + "</p>";
+    return;
+  }
+  var order = [["mine", "My attendance"], ["team", "My team"],
+               ["organisation", "Organisation"]];
+  /* Views they do not have are shown greyed rather than hidden, so a manager
+     can see that an Organisation view exists and that it is not theirs -
+     rather than wondering whether the screen is broken. */
+  document.getElementById("ai-views").innerHTML = order.map(function (o) {
+    return '<button id="ai-v-' + o[0] + '"' + (AI.can[o[0]] ? "" : " disabled")
+      + ' onclick="aiSetView(\'' + o[0] + '\')">' + o[1] + "</button>";
+  }).join("");
+  AI.view = AI.can.mine ? "mine" : (AI.can.team ? "team" : "organisation");
+  if (AI.can.organisation && !AI.opts) {
+    try { AI.opts = await aiApi("filter_options"); } catch (e) { AI.opts = null; }
+  }
+  aiSetView(AI.view);
+};
+
+window.aiSetView = function (v) {
+  if (!AI.can[v]) return;
+  AI.view = v;
+  ["mine", "team", "organisation"].forEach(function (k) {
+    var b = document.getElementById("ai-v-" + k);
+    if (b) b.classList.toggle("on", k === v);
+  });
+  aiBar();
+  aiLoad();
+};
+
+function aiMonthOptions() {
+  var out = [], d = new Date();
+  for (var i = 0; i < 12; i++) {
+    var m = new Date(d.getFullYear(), d.getMonth() - i, 1);
+    out.push([m.getFullYear() + "-" + String(m.getMonth() + 1).padStart(2, "0"),
+              m.toLocaleDateString("en-IN", {month: "long", year: "numeric"})]);
+  }
+  return out;
+}
+
+function aiBar() {
+  var bits = ['<label>Month</label><select id="ai-month" onchange="aiLoad()">'
+    + aiMonthOptions().map(function (m, i) {
+        return '<option value="' + m[0] + '"' + (i === 1 ? " selected" : "") + ">"
+          + m[1] + "</option>";
+      }).join("") + "</select>"];
+
+  /* Both, because a manager wants either at different moments: the team they
+     speak to weekly, and the whole line they are accountable for. */
+  if (AI.view !== "mine") {
+    bits.push('<label>Covering</label><select id="ai-depth" onchange="aiLoad()">'
+      + '<option value="direct">Direct reports</option>'
+      + '<option value="all">Everyone below</option></select>');
+  }
+  if (AI.view === "organisation" && AI.opts) {
+    [["department", "Department"], ["branch", "Branch"],
+     ["designation", "Role"]].forEach(function (f) {
+      var vals = AI.opts[f[0]] || [];
+      /* A dropdown with nothing in it is the clearest sign a product was
+         built for somebody else, so one is not drawn at all. */
+      if (vals.length < 2) return;
+      bits.push('<select id="ai-' + f[0] + '" onchange="aiLoad()"><option value="">All '
+        + f[1].toLowerCase() + "s</option>"
+        + vals.map(function (v) { return "<option>" + gpEsc(v) + "</option>"; }).join("")
+        + "</select>");
+    });
+    var mgrs = (AI.opts.manager || []);
+    if (mgrs.length > 1) {
+      bits.push('<select id="ai-manager" onchange="aiLoad()"><option value="">Any manager</option>'
+        + mgrs.map(function (m) {
+            return '<option value="' + gpEsc(m.id) + '">' + gpEsc(m.name) + "</option>";
+          }).join("") + "</select>");
+    }
+  }
+  document.getElementById("ai-bar").innerHTML = bits.join("");
+}
+
+function aiVal(id) { var e = document.getElementById(id); return e ? e.value : ""; }
+
+window.aiLoad = async function () {
+  var body = document.getElementById("ai-body");
+  body.innerHTML = '<p class="ai-empty">Loading&hellip;</p>';
+  var month = aiVal("ai-month") || "";
+  var args = {view: AI.view, depth: aiVal("ai-depth") || "direct"};
+  if (month) {
+    var y = +month.split("-")[0], m = +month.split("-")[1];
+    args.date_from = month + "-01";
+    args.date_to = month + "-" + String(new Date(y, m, 0).getDate()).padStart(2, "0");
+  }
+  ["department", "branch", "designation", "manager"].forEach(function (f) {
+    var v = aiVal("ai-" + f);
+    if (v) args[f] = v;
+  });
+  try {
+    AI.data = await aiApi("summary", args);
+  } catch (e) {
+    body.innerHTML = '<p class="ai-empty">' + gpEsc(e.message) + "</p>";
+    return;
+  }
+  aiPaint();
+};
+
+function aiPct(v) { return (Math.round(v * 10) / 10) + "%"; }
+
+function aiPaint() {
+  var d = AI.data, h = d.headline, body = document.getElementById("ai-body");
+  document.getElementById("ai-sub").textContent =
+    d.people + (d.people === 1 ? " person" : " people") + " \u00b7 "
+    + d.from + " to " + d.to + " \u00b7 short means more than "
+    + d.tolerance_mins + " minutes under the shift";
+
+  if (!h.days_present) {
+    body.innerHTML = '<p class="ai-empty">No attendance recorded in this period.</p>';
+    return;
+  }
+
+  var tiles = [
+    {n: aiPct(h.short_rate), l: "Days short", cls: h.short_rate > 10 ? "warn" : ""},
+    {n: Math.round(h.hours_short), l: "Hours owed", cls: ""},
+    {n: h.absences, l: "Absences", cls: ""},
+    {n: h.late, l: "Late arrivals", cls: ""}
+  ];
+  /* A median of one person is that person, and nobody can be "well above" a
+     group of themselves. Neither belongs on a single record. */
+  if (d.view !== "mine") {
+    tiles.splice(2, 0,
+      {n: h.above_median, l: "Well above the median", cls: h.above_median ? "bad" : ""},
+      {n: aiPct(h.median_short_rate), l: "Median person", cls: ""});
+  }
+  var out = '<div class="ai-tiles">' + tiles.map(function (x) {
+    return '<div class="ai-tile ' + x.cls + '"><div class="n">' + gpEsc(x.n)
+      + '</div><div class="l">' + gpEsc(x.l) + "</div></div>";
+  }).join("") + "</div>";
+
+  var v = d.weekday && d.weekday.verdict;
+  if (v) {
+    out += '<div class="ai-verdict"><b>Look at the rota before the people.</b> '
+      + gpEsc(v.message) + "</div>";
+  }
+
+  var days = (d.weekday && d.weekday.days) || [];
+  var top = Math.max.apply(null, days.map(function (x) { return x.rate; }).concat([1]));
+  out += '<div class="ai-week">' + days.map(function (x) {
+    return "<div><div class='d'>" + x.day.slice(0, 3) + "</div>"
+      + "<div class='r'>" + aiPct(x.rate) + "</div>"
+      + "<div class='bar'><i style='width:" + Math.round(100 * x.rate / top) + "%'></i></div>"
+      + "<div>" + x.short + " of " + x.present + "</div></div>";
+  }).join("") + "</div>";
+
+  if (d.view === "mine") {
+    out += aiOwnTable(d.rows[0]);
+  } else {
+    out += aiPeopleTable(d);
+  }
+  out += '<p class="ai-note">Short days are counted against the shift each person '
+    + "was on. Somebody with no shift set is not counted, because there is nothing "
+    + "to be short of. The median is this group\u2019s own middle, so the comparison "
+    + "is with the people beside them rather than the whole company.</p>";
+  body.innerHTML = out;
+}
+
+function aiOwnTable(r) {
+  if (!r) return '<p class="ai-empty">Nothing recorded.</p>';
+  var rows = [
+    ["Days present", r.present], ["Days short of hours", r.short_days],
+    ["How often", aiPct(r.short_rate)], ["Hours owed", r.hours_short],
+    ["Longest run of short days", r.longest_run],
+    ["Late arrivals", r.late], ["Early exits", r.early],
+    ["Absences", r.absent], ["Leave days", r.leave]
+  ];
+  return '<table class="ai-tbl"><tbody>' + rows.map(function (x) {
+    return "<tr><td class='who'>" + gpEsc(x[0]) + "</td><td>" + gpEsc(x[1]) + "</td></tr>";
+  }).join("") + "</tbody></table>";
+}
+
+function aiPeopleTable(d) {
+  var rows = d.rows.filter(function (r) { return r.present; });
+  if (!rows.length) return '<p class="ai-empty">Nobody has attendance in this period.</p>';
+  var med = d.median_short_rate;
+  return '<table class="ai-tbl"><thead><tr>'
+    + "<th>Person</th><th>Present</th><th>Short</th><th>How often</th>"
+    + "<th>Hours owed</th><th>Longest run</th><th>Late</th><th>Absent</th>"
+    + "</tr></thead><tbody>"
+    + rows.map(function (r) {
+        /* Marked only when they are well clear of their own group's middle.
+           Colouring everybody above the median would flag half the workforce
+           by definition. */
+        var hi = med && r.short_rate > med * 2;
+        return '<tr onclick="aiPerson(\'' + gpEsc(r.employee) + '\')">'
+          + "<td class='who'>" + gpEsc(r.name) + "</td>"
+          + "<td>" + r.present + "</td><td>" + r.short_days + "</td>"
+          + "<td class='" + (hi ? "hi" : "") + "'>" + aiPct(r.short_rate) + "</td>"
+          + "<td>" + r.hours_short + "</td><td>" + r.longest_run + "</td>"
+          + "<td>" + r.late + "</td><td>" + r.absent + "</td></tr>";
+      }).join("")
+    + "</tbody></table>";
+}
+
+/* A name is worth opening: whether it is every Monday or one bad fortnight
+   decides what somebody says in the conversation. */
+window.aiPerson = async function (employee) {
+  var body = document.getElementById("ai-body");
+  var prev = body.innerHTML;
+  body.innerHTML = '<p class="ai-empty">Loading&hellip;</p>';
+  var d;
+  try {
+    d = await aiApi("person", {employee: employee, date_from: AI.data.from,
+                               date_to: AI.data.to});
+  } catch (e) {
+    body.innerHTML = '<p class="ai-empty">' + gpEsc(e.message) + "</p>";
+    return;
+  }
+  var rows = d.days.filter(function (x) { return x.short_by > 0; });
+  body.innerHTML =
+    '<button class="oc-up" onclick="aiPaint()">&larr; Back to the list</button>'
+    + '<h3 style="margin:14px 0 4px;font-size:var(--fs-lg)">' + gpEsc(d.name) + "</h3>"
+    + '<p class="ai-note" style="margin:0 0 14px">' + d.from + " to " + d.to + " \u00b7 "
+    + rows.length + " day(s) short of the shift</p>"
+    + (rows.length
+        ? '<table class="ai-tbl"><thead><tr><th>Date</th><th>Day</th><th>Worked</th>'
+          + "<th>Expected</th><th>Short by</th></tr></thead><tbody>"
+          + rows.map(function (x) {
+              return "<tr><td class='who'>" + gpEsc(x.date) + "</td><td>"
+                + gpEsc(x.weekday) + "</td><td>" + x.hours + "h</td><td>"
+                + (x.expected_hours || "\u2014") + "h</td><td class='hi'>"
+                + x.short_by + "h</td></tr>";
+            }).join("") + "</tbody></table>"
+        : '<p class="ai-empty">No short days in this period.</p>');
+};
+
+/* ── My attendance record ──────────────────────────────────────────
+   A log of days, and a way to say one of them is wrong.
+
+   The reason list is fetched, never written here. It used to be a
+   hardcoded copy of the field's options and had drifted from it, so four
+   of the six reasons on offer threw on save - including the one somebody
+   reaches for when they forgot to punch in. A copy can drift again; the
+   field cannot disagree with itself. */
+function acApi(fn, args) {
+  return gpFetch("alvoraa_portal.attendance_correction." + fn, args || {});
+}
+
+var acState = {year: 0, month: 0, employee: null, data: null,
+               reasons: null, people: null, open: null};
+
+window.acOpen = async function () {
+  if (!acState.year) {
+    var now = new Date();
+    acState.year = now.getFullYear();
+    acState.month = now.getMonth() + 1;
+  }
+  await acLoad();
+};
+
+window.acNav = function (step) {
+  acState.month += step;
+  if (acState.month > 12) { acState.month = 1; acState.year++; }
+  if (acState.month < 1)  { acState.month = 12; acState.year--; }
+  acState.open = null;
+  acLoad();
+};
+
+window.acPick = function (employee) {
+  acState.employee = employee || null;
+  acState.open = null;
+  acLoad();
+};
+
+async function acLoad() {
+  var body = document.getElementById("ac-body");
+  body.innerHTML = '<p class="ac-empty">Loading&hellip;</p>';
+  try {
+    var d = await acApi("month", {year: acState.year, month: acState.month,
+                                  employee: acState.employee});
+    acState.data = d;
+    if (!acState.reasons) acState.reasons = await acApi("reasons");
+    acBar();
+    acPaint();
+    acMine();
+    if (d.can_review) acReviewQueue();
+  } catch (e) {
+    body.innerHTML = '<p class="ac-empty">' + gpEsc(e.message || "Could not load your attendance.") + "</p>";
+    document.getElementById("ac-bar").innerHTML = "";
+  }
+}
+
+var AC_MONTHS = ["January","February","March","April","May","June","July",
+                 "August","September","October","November","December"];
+
+function acBar() {
+  var d = acState.data;
+  var html = '<button class="btn btn-outline" onclick="acNav(-1)">&lsaquo;</button>'
+    + '<select onchange="acJump(this.value)">'
+    + acMonthOptions().map(function (o) {
+        return '<option value="' + o.v + '"' + (o.on ? " selected" : "") + ">"
+          + gpEsc(o.l) + "</option>";
+      }).join("")
+    + "</select>"
+    + '<button class="btn btn-outline" onclick="acNav(1)">&rsaquo;</button>';
+
+  /* The picker only appears for somebody who has people to look at. An
+     empty dropdown is the clearest possible sign a screen was built for
+     somebody else. */
+  if (acState.people && acState.people.length) {
+    html += '<select onchange="acPick(this.value)" style="min-width:180px">'
+      + '<option value="">' + gpEsc(d.is_self ? "Me" : "Choose a person") + "</option>"
+      + acState.people.map(function (p) {
+          return '<option value="' + gpEsc(p.name) + '"'
+            + (p.name === d.employee ? " selected" : "") + ">"
+            + gpEsc(p.employee_name) + (p.designation ? " · " + gpEsc(p.designation) : "")
+            + "</option>";
+        }).join("")
+      + "</select>";
+  }
+
+  html += '<span class="sp ac-who">'
+    + (d.is_self ? "Your record" : "Viewing <b>" + gpEsc(d.employee_name) + "</b>")
+    + "</span>";
+  document.getElementById("ac-bar").innerHTML = html;
+
+  if (acState.people === null) {
+    acApi("whose_months_i_can_open", {limit: 500}).then(function (people) {
+      acState.people = people || [];
+      if (acState.people.length) acBar();
+    }).catch(function () { acState.people = []; });
+  }
+}
+
+window.acJump = function (value) {
+  var bits = String(value).split("-");
+  acState.year = parseInt(bits[0], 10);
+  acState.month = parseInt(bits[1], 10);
+  acState.open = null;
+  acLoad();
+};
+
+function acMonthOptions() {
+  var out = [], now = new Date();
+  for (var i = 0; i < 15; i++) {
+    var dt = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    var y = dt.getFullYear(), m = dt.getMonth() + 1;
+    out.push({v: y + "-" + m, l: AC_MONTHS[m - 1] + " " + y,
+              on: y === acState.year && m === acState.month});
+  }
+  return out;
+}
+
+function acPaint() {
+  var d = acState.data, tt = d.totals;
+  var tiles = [
+    {n: tt.present, l: "Days present"},
+    {n: tt.hours_worked + "h", l: "Hours worked"},
+    {n: tt.short_days, l: "Days short", warn: tt.short_days > 0},
+    {n: tt.missing_punches, l: "Missing punches", warn: tt.missing_punches > 0},
+    {n: tt.late_days, l: "Late arrivals", warn: tt.late_days > 0},
+    {n: tt.leave, l: "On leave"}
+  ];
+  var html = '<div class="ac-tiles">' + tiles.map(function (x) {
+    return '<div class="ac-tile' + (x.warn ? " warn" : "") + '">'
+      + '<div class="n">' + gpEsc(x.n) + '</div><div class="l">' + gpEsc(x.l) + "</div></div>";
+  }).join("") + "</div>";
+
+  html += '<div class="tbl-wrap"><table class="ac-tbl"><thead><tr>'
+    + '<th>Day</th><th class="t">The day</th><th>In</th><th>Out</th>'
+    + "<th>Worked</th><th>Expected</th><th>Arrival</th><th></th>"
+    + "</tr></thead><tbody>";
+
+  d.days.forEach(function (x) {
+    html += acRow(x);
+    if (acState.open === x.date) html += acDetail(x);
+  });
+  html += "</tbody></table></div>";
+  html += '<p class="ai-note">A day counts as short only once it is more than '
+    + gpEsc(d.tolerance_mins) + " minutes under the shift, so a few minutes either "
+    + "way is not treated as an event. Days with no shift are not judged at all "
+    + "— there is nothing to be short of.</p>";
+
+  document.getElementById("ac-body").innerHTML = html;
+  document.getElementById("ac-sub").textContent =
+    AC_MONTHS[d.month - 1] + " " + d.year + (d.is_self ? "" : " · " + d.employee_name);
+}
+
+/* One row per day. Weekends and days still to come are drawn quietly
+   rather than left out - a gap in a list reads as a bug, and somebody
+   checking a Saturday needs to see that the Saturday was considered. */
+function acRow(x) {
+  var quiet = x.state === "future" || x.state === "no_record"
+    || x.state === "holiday" || !x.attendance;
+  var pick = !!x.attendance || (!x.future && x.state === "no_record");
+
+  var label = "";
+  if (x.holiday) label = '<span class="ac-tag">Holiday</span>';
+  else if (x.leave_type) label = '<span class="ac-tag">' + gpEsc(x.leave_type) + "</span>";
+  else if (x.state === "future") label = '<span class="ac-tag">To come</span>';
+  else if (!x.attendance) label = '<span class="ac-tag">No record</span>';
+  else label = '<span class="ac-tag' + (x.status === "Absent" ? " warn" : "") + '">'
+    + gpEsc(x.status) + "</span>";
+
+  if (x.missing_punch) label += '<span class="ac-tag warn">Missing punch</span>';
+  if (x.request) label += '<span class="ac-tag' + (x.request.state === "approved" ? " ok" : "")
+    + '">' + gpEsc(acSay(x.request.state)) + "</span>";
+
+  var arrival = "—";
+  if (x.late_by_mins > 0) arrival = '<span class="hi">' + acMins(x.late_by_mins) + " late</span>";
+  else if (x.in_time) arrival = "On time";
+
+  var mon = AC_MONTHS[parseInt(x.date.slice(5, 7), 10) - 1].slice(0, 3);
+  return '<tr class="' + (quiet ? "off " : "") + (pick ? "pick" : "") + '"'
+    + (pick ? ' onclick="acToggle(&quot;' + x.date + '&quot;)"' : "") + ">"
+    + '<td class="day">' + gpEsc(x.date.slice(8)) + " " + gpEsc(mon)
+    + '<span class="dow">' + gpEsc(x.weekday.slice(0, 3)) + "</span></td>"
+    + '<td class="t">' + acStrip(x) + label + "</td>"
+    + "<td>" + gpEsc(x.in_time || "—") + "</td>"
+    + "<td>" + gpEsc(x.out_time || "—") + "</td>"
+    + "<td" + (x.short_by > 0 ? ' class="hi"' : "") + ">"
+    + (x.hours === null ? "—" : x.hours + "h") + "</td>"
+    + "<td>" + (x.expected_hours ? x.expected_hours + "h" : "—") + "</td>"
+    + "<td>" + arrival + "</td>"
+    + "<td>" + (pick ? "&rsaquo;" : "") + "</td></tr>";
+}
+
+/* The strip: the shift as the track, the punches laid over it. Where
+   there are no punch records it falls back to the one in-and-out on the
+   attendance row, which is all most tenants have. */
+function acStrip(x) {
+  if (!x.attendance || !x.shift_starts) return '<div class="ac-strip none"></div>';
+  var from = acMinutes(x.shift_starts), to = acMinutes(x.shift_ends);
+  /* A night shift ends on the next calendar day, so its end reads as a
+     SMALLER number than its start. Adding the day back is what keeps the
+     track eight hours long instead of collapsing it - the server does the
+     same thing in _shift_minutes, for the same reason. */
+  if (to <= from) to += 24 * 60;
+  var span = to - from;
+  var pairs = acPairs(x, from);
+  if (!pairs.length) return '<div class="ac-strip"></div>';
+
+  var blocks = pairs.map(function (p) {
+    var a = Math.max(0, Math.min(100, ((p[0] - from) / span) * 100));
+    var b = Math.max(0, Math.min(100, ((p[1] - from) / span) * 100));
+    if (b - a < 1.5) b = a + 1.5;
+    return '<i class="' + (p[2] ? "gap" : "") + '" style="left:' + a.toFixed(1)
+      + "%;width:" + (b - a).toFixed(1) + '%"></i>';
+  }).join("");
+  return '<div class="ac-strip">' + blocks + "</div>";
+}
+
+/* Punches come as a stream of INs and OUTs. Pairing them is what turns
+   them into time worked. An IN with no OUT after it is drawn to the end
+   of the shift and marked, because that unfinished block IS the problem
+   the person came to this screen about. */
+function acPairs(x, from) {
+  /* On a shift that crosses midnight, a clock time before the shift start
+     belongs to the NEXT day - the 06:02 punch out of a 22:00 shift. Without
+     that, the block lands at the far left of the track instead of the far
+     right.
+
+     Only on such a shift, though. On an ordinary 09:00 shift an 08:31 punch
+     means somebody arrived early, and rolling that forward put their whole
+     day off the right-hand end. Arriving early is simply a negative offset,
+     which the clamp already draws correctly as the start of the track. */
+  var ends = acMinutes(x.shift_ends);
+  var overnight = from !== null && from !== undefined
+    && ends !== null && ends <= from;
+
+  function at(t) {
+    var m = acMinutes(t);
+    if (m === null) return null;
+    return (overnight && m < from) ? m + 24 * 60 : m;
+  }
+
+  var out = [], openAt = null;
+  (x.punches || []).forEach(function (p) {
+    var when = at(p.at);
+    if (when === null) return;
+    if (p.log_type === "IN") { if (openAt === null) openAt = when; }
+    else if (openAt !== null) { out.push([openAt, when, false]); openAt = null; }
+  });
+  if (openAt !== null) out.push([openAt, at(x.shift_ends), true]);
+  if (out.length) return out;
+
+  if (x.in_time) {
+    return [[at(x.in_time),
+             x.out_time ? at(x.out_time) : at(x.shift_ends),
+             !x.out_time]];
+  }
+  return [];
+}
+
+function acMinutes(hhmm) {
+  if (!hhmm) return null;
+  var bits = String(hhmm).split(":");
+  if (bits.length < 2) return null;
+  return parseInt(bits[0], 10) * 60 + parseInt(bits[1], 10);
+}
+
+function acMins(n) {
+  if (n < 60) return n + " min";
+  var h = Math.floor(n / 60), m = n % 60;
+  return h + "h" + (m ? " " + m + "m" : "");
+}
+
+function acSay(state) {
+  return {waiting: "Waiting for HR", approved: "Corrected",
+          declined: "Not approved", withdrawn: "Withdrawn"}[state] || state;
+}
+
+window.acToggle = function (date) {
+  acState.open = acState.open === date ? null : date;
+  acPaint();
+};
+
+/* The detail, opened under the row rather than in a modal, so the day
+   can still be compared with the days around it. */
+function acDetail(x) {
+  var d = acState.data;
+  var html = '<tr class="ac-open"><td colspan="8"><div class="ac-detail">';
+
+  html += '<div class="ac-facts">'
+    + "<div>Shift<span>"
+    + gpEsc(x.shift_starts ? x.shift_starts + " – " + x.shift_ends : "None set")
+    + "</span></div>"
+    + "<div>Worked<span>" + (x.hours === null ? "—" : x.hours + "h") + "</span></div>"
+    + "<div>Expected<span>" + (x.expected_hours ? x.expected_hours + "h" : "—") + "</span></div>"
+    + (x.short_by > 0 ? "<div>Short by<span>" + x.short_by + "h</span></div>" : "")
+    + (x.late_by_mins > 0 ? "<div>Late by<span>" + acMins(x.late_by_mins) + "</span></div>" : "")
+    + "</div>";
+
+  if (x.punches && x.punches.length) {
+    html += '<div class="ac-punches">' + x.punches.map(function (m) {
+      return '<span class="ac-punch"><b>' + gpEsc(m.log_type === "IN" ? "In" : "Out")
+        + "</b> " + gpEsc(m.at) + (m.where ? " · " + gpEsc(m.where) : "") + "</span>";
+    }).join("") + "</div>";
+  } else if (x.attendance) {
+    html += '<p class="ac-help">No individual punches were recorded for this day '
+      + "— only the totals on the attendance record.</p>";
+  }
+
+  if (x.missing_punch) {
+    html += '<p class="ac-help"><b>One punch never registered.</b> That is the '
+      + "commonest reason a day looks short, and it is what the correction "
+      + "below is for.</p>";
+  }
+
+  if (x.request) {
+    html += acReqCard(x.request, d.is_self);
+  } else if (d.can_request) {
+    html += acForm(x);
+  } else {
+    html += '<p class="ac-help">Only ' + gpEsc(d.employee_name)
+      + " can ask for a correction on their own record.</p>";
+  }
+  return html + "</div></td></tr>";
+}
+
+function acForm(x) {
+  var opts = (acState.reasons || []).map(function (r) {
+    return '<option value="' + gpEsc(r.value) + '">' + gpEsc(r.value) + "</option>";
+  }).join("");
+  return '<div class="ac-form">'
+    + '<label class="form-label">What went wrong?</label>'
+    + '<select id="ac-reason" onchange="acReasonHelp()">'
+    + '<option value="">Choose a reason&hellip;</option>' + opts + "</select>"
+    + '<p class="ac-help" id="ac-reason-help">Pick the one that matches. '
+    + "It decides what the day becomes if HR agrees.</p>"
+    + '<label class="form-label">Anything HR should know</label>'
+    + '<textarea id="ac-explain" placeholder="Say briefly what happened."></textarea>'
+    + '<div class="ac-acts">'
+    + '<button class="btn btn-primary" onclick="acSubmit(&quot;' + x.date + '&quot;)">Ask HR to correct this day</button>'
+    + '<button class="btn btn-outline" onclick="acToggle(&quot;' + x.date + '&quot;)">Cancel</button>'
+    + "</div></div>";
+}
+
+window.acReasonHelp = function () {
+  var sel = document.getElementById("ac-reason");
+  var help = document.getElementById("ac-reason-help");
+  if (!sel || !help) return;
+  var r = (acState.reasons || []).filter(function (o) { return o.value === sel.value; })[0];
+  help.innerHTML = r
+    ? gpEsc(r.help) + " <b>The day would be marked " + gpEsc(r.becomes) + ".</b>"
+    : "Pick the one that matches. It decides what the day becomes if HR agrees.";
+};
+
+window.acSubmit = async function (date) {
+  var reason = (document.getElementById("ac-reason") || {}).value;
+  var explain = (document.getElementById("ac-explain") || {}).value;
+  if (!reason) { toast("Please choose a reason.", "err"); return; }
+  showLoad();
+  try {
+    await acApi("raise_correction", {from_date: date, reason: reason, explanation: explain});
+    hideLoad();
+    toast("Sent to HR.", "ok");
+    acState.open = null;
+    await acLoad();
+  } catch (e) {
+    hideLoad();
+    toast(e.message || "Could not send that.", "err");
+  }
+};
+
+function acReqCard(r, mine) {
+  var html = '<div class="ac-req ' + gpEsc(r.state) + '">'
+    + '<div class="h">' + gpEsc(r.reason) + "</div>"
+    + '<div class="m">' + gpEsc(r.from_date)
+    + (r.to_date !== r.from_date ? " to " + gpEsc(r.to_date) : "") + "</div>"
+    + '<div class="s">' + gpEsc(r.says) + "</div>"
+    + (r.note ? '<div class="note">' + gpEsc(r.note) + "</div>" : "")
+    + (r.explanation ? '<div class="note">' + gpEsc(r.explanation) + "</div>" : "");
+  if (mine && r.state === "waiting") {
+    html += '<div class="ac-acts"><button class="btn btn-outline" onclick="acWithdraw(&quot;'
+      + gpEsc(r.name) + '&quot;)">Withdraw</button></div>';
+  }
+  return html + "</div>";
+}
+
+window.acWithdraw = async function (name) {
+  showLoad();
+  try {
+    await acApi("withdraw", {name: name});
+    hideLoad(); toast("Withdrawn.", "ok");
+    await acLoad();
+  } catch (e) { hideLoad(); toast(e.message || "Could not withdraw that.", "err"); }
+};
+
+async function acMine() {
+  var el = document.getElementById("ac-mine");
+  var wrap = document.getElementById("ac-mine-wrap");
+  try {
+    var rows = await acApi("my_requests", {limit: 20});
+    if (!rows || !rows.length) { wrap.style.display = "none"; return; }
+    wrap.style.display = "";
+    el.innerHTML = rows.map(function (r) { return acReqCard(r, true); }).join("");
+  } catch (e) {
+    wrap.style.display = "none";
+  }
+}
+
+/* HR's side. Approving submits the request, and it is that submit which
+   makes Frappe HR write the corrected attendance - nothing here writes
+   an attendance row itself. */
+async function acReviewQueue() {
+  var wrap = document.getElementById("ac-review-wrap");
+  var el = document.getElementById("ac-review");
+  try {
+    var rows = await acApi("to_review", {limit: 100});
+    if (!rows || !rows.length) { wrap.style.display = "none"; return; }
+    wrap.style.display = "";
+    el.innerHTML = rows.map(function (r) {
+      return '<div class="ac-req waiting">'
+        + '<div class="h">' + gpEsc(r.employee_name) + " · " + gpEsc(r.reason) + "</div>"
+        + '<div class="m">' + gpEsc(r.from_date)
+        + (r.to_date !== r.from_date ? " to " + gpEsc(r.to_date) : "") + "</div>"
+        + (r.explanation ? '<div class="note">' + gpEsc(r.explanation) + "</div>" : "")
+        + '<div class="ac-acts">'
+        + '<button class="btn btn-outline" onclick="acPick(&quot;' + gpEsc(r.employee) + '&quot;)">See their month</button>'
+        + '<button class="btn btn-primary" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,1)">Approve</button>'
+        + '<button class="btn btn-outline" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,0)">Decline</button>'
+        + "</div></div>";
+    }).join("");
+  } catch (e) { wrap.style.display = "none"; }
+}
+
+window.acDecide = async function (name, approve) {
+  var note = "";
+  if (!approve) {
+    /* A bare refusal tells the employee nothing about what to do next, so
+       the endpoint requires a reason and so does this. */
+    note = window.prompt("Why is this not being approved? The employee will see this.");
+    if (note === null) return;
+    if (!note.trim()) { toast("A reason is needed so the employee knows what to do next.", "err"); return; }
+  } else {
+    note = window.prompt("Anything to tell the employee? (optional)") || "";
+  }
+  showLoad();
+  try {
+    await acApi("decide", {name: name, approve: approve ? 1 : 0, note: note});
+    hideLoad();
+    toast(approve ? "Approved — the day has been corrected." : "Declined.", "ok");
+    await acLoad();
+  } catch (e) { hideLoad(); toast(e.message || "Could not save that.", "err"); }
 };
 
 /* ── Blocks that earn their place ──────────────────────────────────

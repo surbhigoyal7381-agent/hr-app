@@ -57,6 +57,17 @@ doc_events = {
         "validate": "alvoraa_portal.kra_api.validate_goal_kra",
     },
 
+    # ── An attendance correction must report its real state ───────────────
+    # Submitting an Attendance Request IS approving it - the submit is what
+    # writes the corrected Attendance row. So a request decided from the Desk
+    # has to stop saying "Waiting" to the person who raised it. Hung off the
+    # document, not the portal endpoint, because the Desk is the other half of
+    # where these get decided.
+    "Attendance Request": {
+        "on_submit": "alvoraa_portal.attendance_correction.on_submit",
+        "on_cancel": "alvoraa_portal.attendance_correction.on_cancel",
+    },
+
     # ── Portal context cache invalidation ─────────────────────────────────
     # Clear per-user portal_ctx_{user} cache when role or employee record changes
     "Employee": {
@@ -145,3 +156,14 @@ scheduler_events = {
         "alvoraa_portal.usage.collect_scheduled",
     ],
 }
+
+
+# ── Attendance corrections: the field's own option list, and the review fields
+#
+# after_migrate rather than the `baseline` seeder: baseline seeds NEW tenants
+# only, so every site already live would never have received these - including
+# the one the missing "forgot to punch in" reason was reported on. Both calls
+# are idempotent.
+after_migrate = [
+    "alvoraa_portal.attendance_correction.after_migrate",
+]

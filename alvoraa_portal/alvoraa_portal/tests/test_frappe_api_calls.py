@@ -91,6 +91,71 @@ class TestEveryFrappeCallResolves(FrappeTestCase):
 				"  frappe.%s()  in %s" % (a, ", ".join(sorted(f)))
 				for a, f in sorted(missing.items())))
 
+	def test_no_call_passes_a_keyword_frappe_does_not_accept(self):
+		"""The same bug one level down: a real function, a keyword it never had.
+
+		`frappe.has_permission(..., raise_exception=False)` was written twice in
+		hr_api. There is no such argument, so every call raised TypeError - and
+		both were inside `try/except Exception`, which turned the crash into a
+		quiet `False`. The result was that the Attendance Request and Request
+		Advance items were hidden in the sidebar for every user on every tenant,
+		with nothing in any log to say why.
+
+		Checking the name exists was never going to catch that. Checking the
+		signature does, and costs one `inspect` call per distinct function.
+		"""
+		import inspect
+
+		wrong = {}
+		for path in _source_files():
+			try:
+				tree = ast.parse(open(path, encoding="utf-8-sig").read())
+			except Exception:
+				continue
+			for node in ast.walk(tree):
+				if not isinstance(node, ast.Call):
+					continue
+				fn = node.func
+				if not (isinstance(fn, ast.Attribute)
+						and isinstance(fn.value, ast.Name) and fn.value.id == "frappe"):
+					continue
+				if fn.attr in RUNTIME_ONLY:
+					continue
+				target = getattr(frappe, fn.attr, None)
+				if not callable(target):
+					continue
+				try:
+					sig = inspect.signature(target)
+				except (ValueError, TypeError):
+					continue
+				# A function taking **kwargs accepts anything, so there is
+				# nothing to be wrong about.
+				if any(p.kind is inspect.Parameter.VAR_KEYWORD
+				       for p in sig.parameters.values()):
+					continue
+				for kw in node.keywords:
+					if kw.arg and kw.arg not in sig.parameters:
+						wrong.setdefault("frappe.%s(%s=...)" % (fn.attr, kw.arg),
+						                 set()).add(os.path.basename(path))
+
+		self.assertEqual(
+			wrong, {},
+			"These pass a keyword the function does not accept, so every call "
+			"raises TypeError: " + "; ".join(
+				"%s in %s" % (c, ", ".join(sorted(f)))
+				for c, f in sorted(wrong.items())))
+
+	def test_the_sidebar_items_that_were_always_hidden_now_appear(self):
+		"""Both features were computed as False for everybody, so the screens
+		behind them could not be reached from the portal at all."""
+		from alvoraa_portal.hr_api import get_available_features
+
+		frappe.set_user("Administrator")
+		features = get_available_features()
+		self.assertTrue(features["attendance_request"],
+		                "Administrator can create these, so the item must show")
+		self.assertTrue(features["advance_request"])
+
 	def test_the_guard_that_was_broken_now_works(self):
 		"""_require_hr refused everybody, including HR, by raising AttributeError
 		before it could decide anything."""

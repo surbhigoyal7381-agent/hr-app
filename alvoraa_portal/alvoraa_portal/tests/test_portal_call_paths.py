@@ -36,6 +36,20 @@ FULL_CALL = re.compile(r'\bgpFetch\(\s*["\']([A-Za-z_][A-Za-z0-9_.]*)["\']')
 # var PF = "alvoraa_portal.performance_api.";
 PF_CONST = re.compile(r'\bPF\s*=\s*["\']([A-Za-z_][A-Za-z0-9_.]*\.)["\']')
 
+# Newer screens route through a small helper rather than naming the method at
+# the call site:
+#
+#     function acApi(fn, args) { return gpFetch("alvoraa_portal.x." + fn, args) }
+#
+# The only string literal in the page is the module prefix, so matching gpFetch
+# alone yielded a path ending in a dot and a method name of "". Skipping those
+# would leave the two newest screens - attendance analytics and attendance
+# corrections - entirely unchecked, which is the opposite of the point. So the
+# helper is followed instead: find its definition, then find its callers.
+HELPER_DEF = re.compile(
+    r'function\s+(\w+)\s*\(\s*fn\b[^)]*\)\s*\{\s*return\s+gpFetch\(\s*'
+    r'["\']([A-Za-z_][A-Za-z0-9_.]*)\.["\']\s*\+\s*fn')
+
 
 def _app_root():
     """The alvoraa_portal package directory, however the bench lays it out."""
@@ -79,7 +93,14 @@ def _called_paths():
     prefix = prefixes[0]
 
     paths = {prefix + name for name in PF_CALL.findall(html)}
-    paths |= {p for p in FULL_CALL.findall(html) if p.startswith("alvoraa_portal.")}
+    paths |= {p for p in FULL_CALL.findall(html)
+              if p.startswith("alvoraa_portal.") and not p.endswith(".")}
+
+    for helper, module in HELPER_DEF.findall(html):
+        calls = re.findall(r'\b%s\(\s*["\']([A-Za-z_]\w*)["\']' % re.escape(helper), html)
+        assert calls, "%s() is defined but never called - has it been renamed?" % helper
+        paths |= {module + "." + name for name in calls}
+
     return sorted(paths)
 
 

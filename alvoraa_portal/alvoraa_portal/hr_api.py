@@ -1179,16 +1179,21 @@ def get_available_features():
     # ── Permission flags: live per user, never cached ──────────────────────────
     features = dict(static)
 
+    # frappe.has_permission returns a bool and takes no `raise_exception`. It
+    # was called with one, which raised TypeError, which the except swallowed -
+    # so both of these were False for every user on every tenant, and the two
+    # sidebar items they gate were permanently invisible. The except is kept for
+    # a doctype an app has not installed; it no longer hides our own mistakes.
     try:
         features["attendance_request"] = bool(
-            frappe.has_permission("Attendance Request", "create", raise_exception=False)
+            frappe.has_permission("Attendance Request", "create")
         )
     except Exception:
         features["attendance_request"] = False
 
     try:
         features["advance_request"] = bool(
-            frappe.has_permission("Employee Advance", "create", raise_exception=False)
+            frappe.has_permission("Employee Advance", "create")
         )
     except Exception:
         features["advance_request"] = False

@@ -18,6 +18,8 @@ Two things are deliberately withheld from the employee portal: vacancy detail an
 cost. Where the holes are is a restructuring signal and belongs to HR.
 """
 
+import re
+
 import frappe
 from frappe import _
 from frappe.utils import cint, flt, nowdate
@@ -220,15 +222,41 @@ def propose_positions(company=None):
 	                               "company", "grade", "branch", "reports_to"],
 	                       limit_page_length=0)
 
+	# Branch is part of what a seat IS when a company has more than one. A
+	# jeweller with six stores has six Sales Executive seats, not one holding
+	# 121 people - and a vacancy belongs to a store, which is the whole reason
+	# somebody opens this screen. Left out for a single-site company, where it
+	# would only append the same branch name to every title.
+	multi_site = len({e.branch for e in staff if e.branch}) > 1
+
 	def key(e):
-		return (e.designation or "Unspecified", e.department or "")
+		base = (e.designation or "Unspecified", e.department or "")
+		return base + ((e.branch or "",) if multi_site else ())
 
 	groups = {}
 	for e in staff:
 		groups.setdefault(key(e), []).append(e)
 
 	by_employee = {e.name: key(e) for e in staff}
-	title = lambda k: f"{k[0]} - {k[1]}" if k[1] else k[0]  # noqa: E731
+	abbr = frappe.db.get_value("Company", staff[0].company, "abbr") if staff else None
+
+	def _trim(part):
+		"""Drop the company from a department or branch name.
+
+		Frappe writes departments as "Sales - PPJ", and branches are usually
+		named "PPJ Ambala City", so joining the raw values repeated the company
+		twice in every title. It is already on the record; it does not belong in
+		the name.
+		"""
+		if not part or not abbr:
+			return part
+		part = re.sub(r"\s*-\s*%s$" % re.escape(abbr), "", part)     # "Sales - PPJ"
+		part = re.sub(r"^%s\s+" % re.escape(abbr), "", part)          # "PPJ Ambala City"
+		return part.strip()
+
+	def title(k):
+		parts = [k[0]] + [_trim(p) for p in k[1:] if p]
+		return " - ".join(p for p in parts if p)
 
 	proposed = []
 	for k, members in sorted(groups.items()):
@@ -248,12 +276,14 @@ def propose_positions(company=None):
 			"department": k[1] or None,
 			"company": members[0].company,
 			"grade": members[0].grade,
-			"branch": members[0].branch,
+			# From the key when it is part of it, so the seat and its title agree.
+			"branch": (k[2] if len(k) > 2 else members[0].branch) or None,
 			"seats": len(members),
 			"people": [{"employee": m.name, "name": m.employee_name} for m in members],
 			"note": note,
 		})
 	return {"positions": proposed, "employees": len(staff),
+	        "grouped_by_branch": multi_site,
 	        "roots": len([p for p in proposed if not p["reports_to_position"]])}
 
 
@@ -263,8 +293,26 @@ def create_proposed_positions(positions):
 	frappe.only_for(["HR Manager", "System Manager"])
 	positions = frappe.parse_json(positions) if isinstance(positions, str) else positions
 
-	# Parents before children, or the tree link points at nothing yet.
-	ordered = sorted(positions, key=lambda p: bool(p.get("reports_to_position")))
+	# Parents before children, or the tree link points at nothing yet - and
+	# "before" has to hold all the way down, not just for the roots. Sorting on
+	# whether a row HAS a parent only separates the top layer; a grandchild
+	# could still be written before its parent and Frappe refuses the link.
+	ordered, waiting = [], list(positions)
+	done = {p["position_title"] for p in positions
+	        if frappe.db.exists("Alvoraa Position", p["position_title"])}
+	while waiting:
+		ready = [p for p in waiting
+		         if not p.get("reports_to_position") or p["reports_to_position"] in done]
+		if not ready:
+			# Either a parent nobody proposed, or a cycle. Say which, rather than
+			# writing a partial tree and leaving somebody to find the gap.
+			orphans = sorted({p["reports_to_position"] for p in waiting} - done)
+			frappe.throw(
+				_("These positions are reported to but not proposed, so the tree "
+				  "cannot be built: {0}").format(", ".join(orphans[:5])))
+		ordered.extend(ready)
+		done.update(p["position_title"] for p in ready)
+		waiting = [p for p in waiting if p not in ready]
 	made, assigned = 0, 0
 	for row in ordered:
 		if frappe.db.exists("Alvoraa Position", row["position_title"]):

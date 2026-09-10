@@ -46,19 +46,40 @@ def _is_hr(user=None):
 
 
 def _assert_hr_can_view(appraisal_name):
-    """Block HR from opening appraisals that have not yet reached HR Review stage."""
+    """Stop HR reading an appraisal that is still being written.
+
+    Only when they are acting AS HR, which is the part this got wrong. It asked
+    "do you hold an HR role?" rather than "is this somebody else's appraisal?",
+    so anybody holding HR Manager was blocked from their OWN review - and from
+    their team's. On PP Jewellers that is the Owner and Managing Director, who
+    holds HR Manager and could not open his own appraisal.
+
+    Two exemptions, and both are about WHOSE appraisal it is:
+
+      - your own is never HR snooping;
+      - one belonging to somebody who reports to you is not either. In that
+        moment you are their manager, and the manager review stage is exactly
+        when you are supposed to be in there.
+    """
     if not _is_hr():
         return
-    # As above: frappe.has_role() is not a function. The line two above this
-    # one already shows the right way to ask.
+    # frappe.has_role() is not a function. The line two above this one already
+    # shows the right way to ask.
     if "System Manager" in frappe.get_roles():
         return
+
+    me = _employee_id()
+    owner = frappe.db.get_value("Appraisal", appraisal_name, "employee")
+    if me and owner and (owner == me or owner in _subordinates(me)):
+        return
+
     status = frappe.db.get_value(
         "Alvoraa Appraisal Extension", {"appraisal": appraisal_name}, "review_status"
     )
     if status and status not in ("HR Review", "Completed"):
         frappe.throw(
-            "This appraisal is not yet in HR Review stage.",
+            "This appraisal is still with the employee and their manager. "
+            "It reaches HR once their review is finished.",
             frappe.PermissionError,
         )
 

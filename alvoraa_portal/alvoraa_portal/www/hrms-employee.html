@@ -6399,6 +6399,9 @@ function loadHome() {
   const ciBtn = document.getElementById("ci-btn");
 
   api("get_checkin_status", {}, function(data) {
+    // Set before anything else: whether the button must ask the browser for a
+    // position is decided by the tenant, and the first press must already know.
+    ciNeedsLocation = !!data.needs_location;
     if (data.no_employee) {
       document.getElementById("ci-emp-name").textContent = "No employee record";
       document.getElementById("ci-status-txt").textContent = "Contact HR to set up your profile.";
@@ -6630,14 +6633,88 @@ function updateCheckinUI(checkedIn, lastAction) {
   btn.disabled = false;
 }
 
+/* ── Where a check-in happened ─────────────────────────────────────
+   Some organisations record it. Frappe HR refuses a check-in with no
+   coordinates whenever that is switched on, which is why this button
+   simply failed on those tenants - the portal had never sent any.
+
+   A browser can NEVER read a location quietly. It shows its own
+   Allow/Block bar the first time and remembers the answer, so the
+   prompt appears once and later check-ins are silent.
+
+   Only asked where the employer actually records it. `needs_location`
+   comes back with the check-in status, so a company that does not is
+   never shown a location prompt at all. */
+var ciNeedsLocation = false;
+
+function ciGetPosition() {
+  return new Promise(function (resolve, reject) {
+    if (!navigator.geolocation) {
+      reject({code: 0, message: "This browser cannot share a location."});
+      return;
+    }
+    /* Geolocation is refused outright on an insecure origin, and the
+       browser gives no useful reason for it. Say so plainly instead. */
+    if (window.isSecureContext === false) {
+      reject({code: 0, message: "Location only works over a secure (https) connection."});
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      function (pos) {
+        resolve({latitude: pos.coords.latitude, longitude: pos.coords.longitude,
+                 accuracy: pos.coords.accuracy});
+      },
+      function (err) { reject(err); },
+      /* Fifteen seconds: a cold GPS fix indoors is slow, and failing at
+         five would send people away thinking it is broken. A minute-old
+         position is good enough for "were you at work just now". */
+      {enableHighAccuracy: true, timeout: 15000, maximumAge: 60000}
+    );
+  });
+}
+
+function ciLocationProblem(err) {
+  /* 1 PERMISSION_DENIED, 2 POSITION_UNAVAILABLE, 3 TIMEOUT. Each needs a
+     different thing FROM THE PERSON, so each gets its own sentence -
+     "could not get location" tells nobody what to do next. */
+  if (err && err.code === 1) {
+    return "Your organisation records where check-ins happen. Please allow "
+      + "location access for this site in your browser, then try again.";
+  }
+  if (err && err.code === 2) {
+    return "Your device could not work out where it is. Move somewhere with a "
+      + "clearer signal and try again.";
+  }
+  if (err && err.code === 3) {
+    return "Finding your location took too long. Please try again.";
+  }
+  return (err && err.message) || "Could not read your location.";
+}
+
 function doCheckin() {
   const btn = document.getElementById("ci-btn");
   const action = btn.dataset.action;
   if (!action) return;
   btn.disabled = true;
-  api("do_checkin", {log_type: action}, function(data) {
+
+  if (!ciNeedsLocation) { ciSend(action, null); return; }
+
+  ciGetPosition().then(function (pos) {
+    ciSend(action, pos);
+  }).catch(function (err) {
+    btn.disabled = false;
+    toast(ciLocationProblem(err), "err");
+  });
+}
+
+function ciSend(action, pos) {
+  const btn = document.getElementById("ci-btn");
+  const args = {log_type: action};
+  if (pos) { args.latitude = pos.latitude; args.longitude = pos.longitude; }
+  api("do_checkin", args, function(data) {
     toast(action === "IN" ? "Checked in successfully!" : "Checked out. Have a great day!", "ok");
     api("get_checkin_status", {}, function(d) {
+      ciNeedsLocation = !!d.needs_location;
       updateCheckinUI(d.checked_in, d.last_action);
       renderTimeline(d.todays_checkins || []);
     }, function() { btn.disabled = false; });

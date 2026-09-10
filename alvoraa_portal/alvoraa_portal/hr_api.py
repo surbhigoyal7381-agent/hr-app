@@ -2,7 +2,7 @@ import frappe
 
 from alvoraa_portal.subscription import requires_feature
 import calendar as _calendar
-from frappe.utils import cint, today, get_first_day, get_last_day, getdate, add_days, now
+from frappe.utils import cint, flt, today, get_first_day, get_last_day, getdate, add_days, now
 from alvoraa_goals.permissions import get_effective_manager
 
 # ── Cache invalidation helpers (called by doc_events hooks in hooks.py) ──────
@@ -1257,16 +1257,46 @@ def get_checkin_status():
         "last_action": last,
         "todays_checkins": checkins,
         "attendance": att,
+        # Tells the page whether to ask the browser for a position before it
+        # calls do_checkin. Sent with the status so the button knows before it
+        # is ever pressed, rather than finding out from a failure.
+        "needs_location": checkin_needs_location(),
     }
 
 
+def checkin_needs_location():
+    """Whether this organisation records where a check-in happened.
+
+    Frappe HR refuses a check-in with no coordinates whenever
+    `allow_geolocation_tracking` is on, so the page has to ask the browser for
+    a position BEFORE it calls. Asked per tenant rather than always: a browser
+    location prompt is an intrusion, and there is no reason to show it to
+    somebody whose employer does not record this.
+    """
+    try:
+        return bool(frappe.db.get_single_value("HR Settings", "allow_geolocation_tracking"))
+    except Exception:
+        return False
+
+
 @frappe.whitelist()
-def do_checkin(log_type):
+def do_checkin(log_type, latitude=None, longitude=None):
     if log_type not in ("IN", "OUT"):
         frappe.throw("Invalid log_type")
     emp = _get_employee()
     if not emp:
         frappe.throw("No employee record found for this user")
+
+    # Said here, in words about this screen, rather than letting Frappe HR's
+    # "Latitude and longitude values are required for checking in." reach
+    # somebody who has no idea what a latitude is or why one is wanted.
+    if checkin_needs_location() and latitude in (None, "") and longitude in (None, ""):
+        frappe.throw(
+            "Your organisation records where check-ins happen, so this needs "
+            "your location. Allow location access for this site in your browser, "
+            "then try again."
+        )
+
     doc = frappe.get_doc({
         "doctype": "Employee Checkin",
         "employee": emp.name,
@@ -1274,6 +1304,11 @@ def do_checkin(log_type):
         "log_type": log_type,
         "time": now(),
         "device_id": "web-portal",
+        # Stored against this one moment. The portal asks the browser at the
+        # instant somebody presses the button and never between times - there
+        # is no continuous tracking anywhere in this product.
+        "latitude": flt(latitude) if latitude not in (None, "") else None,
+        "longitude": flt(longitude) if longitude not in (None, "") else None,
     })
     doc.insert(ignore_permissions=True)
     frappe.db.commit()

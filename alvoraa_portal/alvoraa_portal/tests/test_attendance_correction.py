@@ -223,9 +223,14 @@ class CorrectionCase(FrappeTestCase):
 		# a time on a row that already carries one ("please cancel the
 		# attendance before modifying time"), and the real auto-attendance job
 		# writes them in this order for the same reason.
+		# Coordinates supplied so these tests do not depend on whether the site
+		# happens to have geolocation tracking on. They are about punches, not
+		# about where somebody was, and a global setting should not decide
+		# whether they can run.
 		c = frappe.get_doc({
 			"doctype": "Employee Checkin", "employee": employee, "time": when,
 			"log_type": log_type, "device_id": where,
+			"latitude": 28.6519, "longitude": 77.1906,
 			"skip_auto_attendance": 1}).insert(ignore_permissions=True)
 		if attendance:
 			frappe.db.set_value("Employee Checkin", c.name, "attendance", attendance,

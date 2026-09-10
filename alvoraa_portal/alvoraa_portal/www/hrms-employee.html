@@ -5761,6 +5761,20 @@ function aiPct(v) { return (Math.round(v * 10) / 10) + "%"; }
 
 /* "2026-08-01 to 2026-08-31" is a whole month said the long way. Say the month
    when that is what it is, and a plain range when it is not. */
+/* Names the group in words. "15 people" is true and still left a reader
+   asking whether their manager was one of the fifteen - the Team view is
+   strictly somebody's reports, and their own record lives on the Mine tab. */
+function aiWho(d) {
+  var n = d.people;
+  if (d.view === "mine") return "your own record";
+  if (d.view === "team") {
+    return d.depth === "all"
+      ? n + " people reporting to you, at any level"
+      : "your " + n + " direct reports";
+  }
+  return n + " people in this view";
+}
+
 function aiWhen(from, to) {
   if (!from || !to) return "";
   var a = new Date(from + "T00:00:00"), b = new Date(to + "T00:00:00");
@@ -5818,9 +5832,12 @@ function aiPaint() {
      MONDAYS WORKED: everybody in view, added up, over one month. Neither the
      period nor the unit was anywhere on screen, so both go in the heading
      rather than being repeated seven times. */
+  /* The "counted once" note only means something when there is more than one
+     person to count. On your own record it is noise. */
   out += '<div class="ai-week-hd"><b>Short days by day of the week</b>'
-    + "<span>" + gpEsc(aiWhen(d.from, d.to)) + " · " + gpEsc(d.people)
-    + " people · each person’s day counted once</span></div>";
+    + "<span>" + gpEsc(aiWhen(d.from, d.to)) + " · " + gpEsc(aiWho(d))
+    + (d.people > 1 ? " · each person’s day counted once" : "")
+    + "</span></div>";
 
   out += '<div class="ai-week">' + days.map(function (x) {
     return "<div><div class='d'>" + x.day.slice(0, 3) + "</div>"

@@ -330,6 +330,10 @@ def summary(view="mine", depth="direct", date_from=None, date_to=None,
 
 	return {
 		"view": view,
+		# Sent back so the page can name the group in words. "15 people" left a
+		# reader asking whether their manager was one of the fifteen; only the
+		# view and the depth together can answer that.
+		"depth": depth,
 		"from": str(start), "to": str(end),
 		"tolerance_mins": tolerance,
 		"people": len(rows),

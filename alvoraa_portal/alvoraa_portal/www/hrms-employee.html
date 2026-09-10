@@ -1994,6 +1994,9 @@ body.panel-fullscreen{overflow:hidden}
   margin-bottom:16px;font-size:var(--fs-base);color:var(--text2);line-height:1.55}
 .ai-verdict b{color:var(--text)}
 
+.ai-week-hd{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin-bottom:8px}
+.ai-week-hd b{font-size:var(--fs-sm);font-weight:700;color:var(--text)}
+.ai-week-hd span{font-size:var(--fs-xs);color:var(--text3)}
 .ai-week{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:18px}
 .ai-week div{text-align:center;font-size:var(--fs-xs);color:var(--text3)}
 .ai-week .d{font-weight:700;color:var(--text2);margin-bottom:4px}
@@ -5756,6 +5759,21 @@ window.aiLoad = async function () {
 
 function aiPct(v) { return (Math.round(v * 10) / 10) + "%"; }
 
+/* "2026-08-01 to 2026-08-31" is a whole month said the long way. Say the month
+   when that is what it is, and a plain range when it is not. */
+function aiWhen(from, to) {
+  if (!from || !to) return "";
+  var a = new Date(from + "T00:00:00"), b = new Date(to + "T00:00:00");
+  var opts = {day: "numeric", month: "short", year: "numeric"};
+  var wholeMonth = a.getDate() === 1
+    && b.getFullYear() === a.getFullYear() && b.getMonth() === a.getMonth()
+    && b.getDate() === new Date(a.getFullYear(), a.getMonth() + 1, 0).getDate();
+  if (wholeMonth) {
+    return a.toLocaleDateString("en-IN", {month: "long", year: "numeric"});
+  }
+  return a.toLocaleDateString("en-IN", opts) + " to " + b.toLocaleDateString("en-IN", opts);
+}
+
 function aiPaint() {
   var d = AI.data, h = d.headline, body = document.getElementById("ai-body");
   document.getElementById("ai-sub").textContent =
@@ -5794,13 +5812,21 @@ function aiPaint() {
 
   var days = (d.weekday && d.weekday.days) || [];
   var top = Math.max.apply(null, days.map(function (x) { return x.rate; }).concat([1]));
+
+  /* The strip had no heading at all - seven columns of bare numbers. A reader
+     took "2 of 69" to mean sixty-nine Mondays, so a year, when it is sixty-nine
+     MONDAYS WORKED: everybody in view, added up, over one month. Neither the
+     period nor the unit was anywhere on screen, so both go in the heading
+     rather than being repeated seven times. */
+  out += '<div class="ai-week-hd"><b>Short days by day of the week</b>'
+    + "<span>" + gpEsc(aiWhen(d.from, d.to)) + " · every day worked by the "
+    + gpEsc(d.people) + " people in this view</span></div>";
+
   out += '<div class="ai-week">' + days.map(function (x) {
     return "<div><div class='d'>" + x.day.slice(0, 3) + "</div>"
       + "<div class='r'>" + aiPct(x.rate) + "</div>"
       + "<div class='bar'><i style='width:" + Math.round(100 * x.rate / top) + "%'></i></div>"
-      /* "2 of 69" did not say what it was counting, and the first person to
-         see it had to ask. */
-      + "<div>" + x.short + " short of " + x.present + " worked</div></div>";
+      + "<div>" + x.short + " of " + x.present + " worked</div></div>";
   }).join("") + "</div>";
 
   if (d.view === "mine") {

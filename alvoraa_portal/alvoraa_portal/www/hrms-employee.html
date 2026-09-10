@@ -7515,15 +7515,9 @@ function loadPortalContext() {
     // Role AND plan. Being HR says you may see Analytics; the plan says
     // whether this tenant bought it. Until wave 6 only the first was
     // checked, so every tenant got the panel.
-    var _f = window._features || {};
-    var anaSold = _f.plan_analytics !== false;   // absent = unknown, show
-    if (navAna)  navAna.style.display   = (ctx.is_hr && anaSold) ? "flex" : "none";
     const navOrgSettings = document.getElementById("nav-org-settings");
     if (navOrgSettings) navOrgSettings.style.display = ctx.is_hr ? "flex" : "none";
-    const navPolicies = document.getElementById("nav-policies");
-    if (navPolicies) navPolicies.style.display = _f.plan_policy_library ? "flex" : "none";
-    const navOrgChart = document.getElementById("nav-org-chart");
-    if (navOrgChart) navOrgChart.style.display = _f.plan_org_structure ? "flex" : "none";
+    applyPlanNav();
     sbUpdateScrollBtns();
 
     // Team goals section (home page)
@@ -7564,9 +7558,39 @@ function loadPortalContext() {
 window._features = {};
 window._empId = null;
 
+/* Which sidebar items the tenant has BOUGHT.
+   Called from two places on purpose. get_portal_context and
+   get_available_features are separate calls that race, and the context one
+   usually wins - so when this lived only inside it, window._features was
+   still {} and "Organisation" was hidden on a tenant that owns it. Nothing
+   re-ran the line afterwards, so the item never appeared at all.
+
+   Reads window._roles rather than the context object, so it can be called
+   again the moment the features land. */
+function applyPlanNav() {
+  var f = window._features || {};
+  var roles = window._roles || {};
+
+  var navAna = document.getElementById("nav-analytics");
+  // Absent means "not answered yet", which must not read as "not bought".
+  if (navAna) navAna.style.display =
+    (roles.is_hr && f.plan_analytics !== false) ? "flex" : "none";
+
+  var navPolicies = document.getElementById("nav-policies");
+  if (navPolicies) navPolicies.style.display =
+    f.plan_policy_library ? "flex" : "none";
+
+  var navOrgChart = document.getElementById("nav-org-chart");
+  if (navOrgChart) navOrgChart.style.display =
+    f.plan_org_structure ? "flex" : "none";
+}
+
 function loadAvailableFeatures() {
   api("get_available_features", {}, function(f) {
     window._features = f;
+    // The plan-gated items are decided here too, because this call may land
+    // after loadPortalContext has already drawn the sidebar.
+    applyPlanNav();
     const map = {
       "shift-req":  f.shift_request,
       "att-req":    f.attendance_request,

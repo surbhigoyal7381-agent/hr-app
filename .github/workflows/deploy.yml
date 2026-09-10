@@ -326,7 +326,45 @@ jobs:
             docker restart compose-nginx-1 >/dev/null 2>&1 || true
             sleep 5
 
-            docker image prune -f --filter "until=168h" || true
+            # ── Keep the disk from filling up with old builds ──────────────
+            #
+            # `docker image prune -f` removes DANGLING images only - untagged
+            # leftovers. Every build here is tagged (hr-app:dev-<sha>), so this
+            # line never touched a single one of them, and the "until=168h" it
+            # carried was beside the point.
+            #
+            # They piled up: 43 images at 11.2 GB each. On 2026-09-10 that took
+            # the 193 GB disk to 100% full and three deploys in a row hung with
+            # nowhere to write the new image - each dying silently after ~27
+            # minutes, because a stalled `docker compose pull` says nothing.
+            #
+            # So the dangling sweep stays, and the tagged builds are handled
+            # too. Anything a container is running is kept - docker refuses to
+            # remove those anyway - plus the two most recent prod tags and the
+            # three most recent dev tags. That is the rollback window. Older
+            # ones still exist in the registry; rolling back to one costs a
+            # few minutes to pull rather than being impossible.
+            docker image prune -f --filter "until=48h" || true
+
+            KEEP=$(
+              {
+                docker ps --format '{{.Image}}'
+                docker images --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}' \
+                  | grep 'hr-app:prod-' | sort -r | head -2 | cut -f2-
+                docker images --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}' \
+                  | grep 'hr-app:dev-'  | sort -r | head -3 | cut -f2-
+              } | sort -u
+            )
+            # An empty KEEP would make the grep below match nothing and delete
+            # everything, including what is running. Never guess here.
+            if [ -n "$KEEP" ]; then
+              docker images --format '{{.Repository}}:{{.Tag}}' \
+                | grep 'hr-app:' | grep -v ':<none>' \
+                | grep -vxF "$KEEP" \
+                | xargs -r -n1 docker rmi >/dev/null 2>&1 || true
+            fi
+            echo "Disk after cleanup:"
+            df -h / | tail -1
 
       # Runs whatever happened above, including a failed deploy.
       #

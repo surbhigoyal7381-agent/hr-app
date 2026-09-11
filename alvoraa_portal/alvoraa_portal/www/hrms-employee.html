@@ -9440,7 +9440,12 @@ function deleteDrawerNote(noteId, empId) {
     return fetch(window.location.pathname, {credentials: "same-origin"})
       .then(function(r) { return r.text(); })
       .then(function(html) {
-        var m = html.match(/frappe\.csrf_token\s*=\s*"([^"]*)"/);
+        /* Only the <script> line Frappe injects. The looser pattern this
+           replaced also matched the example in the comment above gpCsrf(),
+           which comes first in the page, so every repair sent the literal
+           text <value> as the token and broke all later requests until the
+           page was reloaded by hand. */
+        var m = html.match(/<script>frappe\.csrf_token\s*=\s*"([^"]*)"/);
         var tok = m ? m[1] : "";
         if (tok && tok !== "None") {
           if (!window.frappe) window.frappe = {};

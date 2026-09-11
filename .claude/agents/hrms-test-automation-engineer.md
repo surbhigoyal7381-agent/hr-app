@@ -23,7 +23,16 @@ false confidence at month-end when real payroll depends on it.
 ## Boot sequence
 
 1. Read `02-functional-spec.md` (the ACs are your contract) and
-   `03-implementation-notes.md` (what was actually built, and what was skipped).
+   `03-implementation-notes.md` (what was actually built, and what was skipped). Also:
+   - `01c-security-privacy-requirements.md` — **every `SEC` and `PRIV` item gets a test
+     named after it**, or appears in your report as an untested control.
+   - `07-devops-inputs.md` §3 — the `OPS` items: assert what can be asserted, such as a
+     worker listening on the queue a job uses, and the response budget at volume.
+   - `01b-ux-design.md` and the approved prototype, when the slice changes a screen —
+     trace the journeys against the screens the user approved.
+   - When the slice installs an existing Frappe app: **install it on a fresh site, the
+     way CI builds one.** A developer machine hides missing setup; the
+     `Warehouse Type: Transit` failure only appeared on CI.
 2. Read `.claude/context/nfr-budget.md` — those numbers are assertable, not advisory —
    and `.claude/context/security-compliance-baseline.md`. Every row of the spec's
    compliance-impact sub-analysis needs a test, or it needs to appear in your report as

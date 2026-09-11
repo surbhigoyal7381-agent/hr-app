@@ -130,19 +130,21 @@ steps. Complexity is not a reason for complicated language.
 
 ## 7. The agent team
 
-Seven specialist agents live in `.claude/agents/`. They inherit everything above — §2's
+Eight specialist agents live in `.claude/agents/`. They inherit everything above — §2's
 change process, §3's production rules, §4's Frappe-first approach and §6's plain
-language are binding on all of them.
+language are binding on all of them. **They recommend; the user decides.** No agent
+approves work, and none deploys.
 
 | Agent | Owns |
 |---|---|
-| `hrms-product-manager` | What is worth building, cut thin, with a named outcome |
-| `hrms-ux-designer` | How each screen works for each persona — reviews, competitor benchmarks, flows, exact words, clickable prototypes. Learns from feedback between runs |
-| `hrms-business-analyst` | The unambiguous, testable spec and the gap analysis |
-| `hrms-fullstack-engineer` | Impact analysis, strategy, then the code |
-| `hrms-test-automation-engineer` | Automated proof, including the permission cases |
+| `hrms-product-manager` | What is worth building and in what order — current state, market demand and Kano priorities; the brief, with competitive analysis and persona enhancements |
+| `hrms-ux-designer` | The opportunities scan behind the brief, and the design with a mandatory clickable prototype for review. Learns from feedback between runs |
+| `hrms-business-analyst` | The testable spec — gap analysis, user stories, acceptance criteria, traceability |
+| `hrms-security-privacy-engineer` | Security and privacy requirements before the spec, and their verification at review; threat models, CI gates, incident readiness |
+| `hrms-devops-engineer` | Performance and security advice at every stage, based on what the change introduces; the release plan. Advises only |
+| `hrms-fullstack-engineer` | Impact analysis, strategy, then the code — on the local instance first |
+| `hrms-test-automation-engineer` | Automated proof, including permissions and every security, privacy and DevOps requirement |
 | `hrms-technofunctional-reviewer` | The senior architect review — step 5 |
-| `hrms-security-privacy-engineer` | Threat models, privacy controls, CI gates, incident readiness |
 
 Shared context they all read, in `.claude/context/`:
 
@@ -155,8 +157,19 @@ Shared context they all read, in `.claude/context/`:
 - `definition-of-ready-done.md` · `handoff-contract.md` — the gates and the artifacts
 - `ux-learnings.md` — what feedback has taught the UX designer; it reads this first and
   adds to it after every run
+- `new-frappe-app-checklist.md` — what each agent must check when a slice installs an
+  existing Frappe app, learned from the Frappe Learning walkthrough
 
-Work is organised as slices in `docs/slices/<id>/`, with **three human gates**: brief
-approved, strategy approved, deploy approved — plus a **design check** when a slice
-changes a screen. `/slice-start` runs the brief gate and the design check; `/slice-build`
-runs the rest and stops before deploy.
+Work runs through three skills, and **every gate is the user's**:
+
+- `/product-priorities` — current state, pending and new features, market demand and a
+  Kano priority order → **you choose what becomes a slice**
+- `/slice-start` — UX opportunities scan and DevOps first look → brief → **you approve the
+  brief** → design with a clickable prototype → **you agree the design** → security,
+  privacy and DevOps requirements → functional spec with user stories
+- `/slice-build` — impact analysis with the DevOps view → **you approve the strategy** →
+  build locally → tests → review, security review and release readiness together →
+  **you decide to push to dev**, and later **to main**
+
+Work is organised as slices in `docs/slices/<id>/`. The order and the files are set out
+in `.claude/context/handoff-contract.md`.

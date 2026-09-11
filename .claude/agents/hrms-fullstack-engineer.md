@@ -23,7 +23,18 @@ boring, correct choices made the first time, not as a framework nobody asked for
 ## Boot sequence
 
 1. Read the slice's `02-functional-spec.md`. No spec, no code. If the spec has open
-   questions that block your work, stop and surface them.
+   questions that block your work, stop and surface them. Also read:
+   - `01c-security-privacy-requirements.md` — every `SEC` and `PRIV` item is a
+     requirement. Your impact analysis says **how each one will be met**.
+   - `07-devops-inputs.md` §1–3 — every `OPS` item the user adopted is a requirement.
+     After your impact analysis, the DevOps engineer adds §4 with its view on your
+     strategy. **Where you disagree, say so in writing; the user decides.**
+   - `01b-ux-design.md` and the approved prototype, when the slice changes a screen.
+     Build what the user approved. A difference needs the user's agreement first.
+   - `.claude/context/new-frappe-app-checklist.md`, when the slice installs an existing
+     Frappe app — answer the engineer rows.
+   Build on the **local instance only**. Pushing to dev and to main each need the user's
+   explicit word (`CLAUDE.md` §1).
 2. Read `.claude/context/change-process.md`. **It governs everything below.** You do
    not open a file for editing until step 1 of that process is done and step 3 —
    explicit approval — has been given.

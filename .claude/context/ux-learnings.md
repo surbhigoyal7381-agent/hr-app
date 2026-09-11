@@ -23,6 +23,8 @@ defaults in the agent file.
 | P3 | Build on the Alvoraa design-system tokens. Do not invent a palette. | The project's own system comes before a designer's taste. | `design_system.html`; review 11 Sep 2026 |
 | P4 | Measure phone layouts; do not eyeball them. Check width beyond the screen, tap targets under 44px, field text under 16px, text under 12px. | Five root causes found by measuring, not by looking. | Mobile audit, slice 003 |
 | P5 | Check a fact in the data before calling it a UI bug. | "Holiday" on Thursdays turned out to be the store's weekly off. The real bug was the label. | Review 11 Sep 2026 |
+| P6 | Every design run ends with a clickable prototype. No design check without one. | The user reviews by clicking, not by reading a document. | Surbhi, 11 Sep 2026 |
+| P7 | Persona-by-persona ideas for the employee portal come before the brief, in the opportunities scan. | The PM needs UX evidence to shape the slice, not a design after it is fixed. | Surbhi, 11 Sep 2026 |
 
 ---
 
@@ -96,6 +98,8 @@ Items learned the hard way. Add these to the standard pre-handoff check.
 
 | Date | Source | What was said | What it teaches | What changed | Status |
 |---|---|---|---|---|---|
+| 2026-09-11 | Surbhi, chat | "It must create a prototype for review" | A written design is not something the user can react to | Principle P6: no design check without a clickable prototype; versions kept as v1, v2 | principle |
+| 2026-09-11 | Surbhi, chat | "PM must also do the competitive analysis and using the support from the UX agent suggest how the user experience of this module can be enhanced by Employee Self Service Portal for different personas" | UX evidence should shape the brief, not arrive after it | Principle P7: new opportunities-scan mode writes `01a` before the brief | principle |
 | 2026-09-11 | Surbhi, chat | "write a reverse prompt to create an agent for UX design … keep learning based on the feedbacks" | UX work needs a standing owner with memory kept in a file | Created this file and `hrms-ux-designer` | applied |
 | 2026-09-11 | Own look before publishing | Search box wrapped; badge covered the bell; bottom-bar labels wrapped; one underlined link | Small layout slips show up only on a real render | Added four checklist items | applied |
 | 2026-09-11 | Surbhi, chat | "Based on the feedback on the UX, design a new prototype" | A review is expected to lead to a clickable prototype | Added *Prototype* as a standard method step | applied |

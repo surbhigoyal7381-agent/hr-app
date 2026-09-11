@@ -118,13 +118,19 @@ instead of the other:
 
 | Slice artifact | Change-process step |
 |---|---|
-| `01-product-brief.md` → **human gate** | Deciding the work is worth doing |
+| `docs/product/priorities/` → **user chooses the slices** | Deciding what is worth doing at all |
+| `01a-ux-opportunities.md`, `07-devops-inputs.md` §1 | Evidence for the brief |
+| `01-product-brief.md` → **human gate** | Deciding this slice is worth doing |
+| `01b-ux-design.md` + clickable prototype, `07` §2 → **design check** | Agreeing what the user will see |
+| `01c-security-privacy-requirements.md`, `07` §3 | Requirements that feed step 1 |
 | `02-functional-spec.md` | Feeds step 1 |
 | **`00-impact-analysis.md`** | **Step 1** — written by the engineer before any edit |
-| Strategy section of the impact analysis → **human gate** | Steps 2 and 3 |
+| Strategy in the impact analysis, with `07` §4 → **human gate** | Steps 2 and 3 |
 | `03-implementation-notes.md` | Steps 4 and 6 |
 | `04-test-report.md` | Step 4 |
-| `05-review.md`, `06-security-review.md` | Step 5 |
-| → **human gate** | Step 7 |
+| `05-review.md`, `06-security-review.md`, `07` §5 | Step 5 |
+| → **human gate: push to dev**, then later **push to main** | Step 7 |
 
-**Three human gates, not one.** Brief approved, strategy approved, deploy approved.
+**Every gate is the user's.** Slices chosen, brief approved, design agreed, strategy
+approved, and deploy approved — separately for dev and for main. Agents recommend; they
+never approve.

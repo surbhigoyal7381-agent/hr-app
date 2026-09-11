@@ -125,3 +125,38 @@ codebase follow it? If not, rewrite it.
 
 If something really is complex, say so in one plain sentence, then break it into
 steps. Complexity is not a reason for complicated language.
+
+---
+
+## 7. The agent team
+
+Seven specialist agents live in `.claude/agents/`. They inherit everything above — §2's
+change process, §3's production rules, §4's Frappe-first approach and §6's plain
+language are binding on all of them.
+
+| Agent | Owns |
+|---|---|
+| `hrms-product-manager` | What is worth building, cut thin, with a named outcome |
+| `hrms-ux-designer` | How each screen works for each persona — reviews, competitor benchmarks, flows, exact words, clickable prototypes. Learns from feedback between runs |
+| `hrms-business-analyst` | The unambiguous, testable spec and the gap analysis |
+| `hrms-fullstack-engineer` | Impact analysis, strategy, then the code |
+| `hrms-test-automation-engineer` | Automated proof, including the permission cases |
+| `hrms-technofunctional-reviewer` | The senior architect review — step 5 |
+| `hrms-security-privacy-engineer` | Threat models, privacy controls, CI gates, incident readiness |
+
+Shared context they all read, in `.claude/context/`:
+
+- `change-process.md` — §2 above, expanded so every agent applies it the same way
+- `frappe-conventions.md` — §1, §3, §4 and §5 above, expanded
+- `product-context.md` — who we serve, build status, competitive frame
+- `nfr-budget.md` — the numbers behind §2's non-functional dimensions
+- `security-compliance-baseline.md` — DPDP, CERT-In, ISO, SOC 2, GDPR, EU AI Act
+- `compliance-feature-map.md` — the features that make those obligations real
+- `definition-of-ready-done.md` · `handoff-contract.md` — the gates and the artifacts
+- `ux-learnings.md` — what feedback has taught the UX designer; it reads this first and
+  adds to it after every run
+
+Work is organised as slices in `docs/slices/<id>/`, with **three human gates**: brief
+approved, strategy approved, deploy approved — plus a **design check** when a slice
+changes a screen. `/slice-start` runs the brief gate and the design check; `/slice-build`
+runs the rest and stops before deploy.

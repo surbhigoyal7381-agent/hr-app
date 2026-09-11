@@ -30,8 +30,12 @@ deploy/envs/*.env
 deploy/compose/.image.env
 backups/
 
-# Claude Code agent working directory (worktrees, session data)
-.claude/
+# Claude Code: keep the agent team in git (agents, shared context, skills).
+# Ignore session data — worktrees (115 MB) and personal local settings.
+.claude/*
+!.claude/agents/
+!.claude/context/
+!.claude/skills/
 
 # Logs
 *debug.log

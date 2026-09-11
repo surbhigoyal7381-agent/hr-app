@@ -162,12 +162,61 @@ class TestWave6IsWiredIntoTheUi(FrappeTestCase):
 			self.skipTest("portal page not found on this bench")
 		self.html = io.open(page, encoding="utf-8-sig").read()
 
+	def _plan_nav(self):
+		"""The body of applyPlanNav().
+
+		Asserting on the WHOLE page meant asserting on the variable names that
+		function happened to use - "_f.plan_analytics !== false" and
+		"ctx.is_hr && anaSold". Both were true statements about the code and
+		neither was a statement about its behaviour, so a rename that changed
+		nothing broke them. Reading one function keeps the tests specific
+		without pinning its spelling.
+		"""
+		start = self.html.find("function applyPlanNav(")
+		self.assertNotEqual(start, -1,
+		                    "applyPlanNav() is gone - the plan gates moved somewhere else")
+		depth, i = 0, self.html.index("{", start)
+		while i < len(self.html):
+			if self.html[i] == "{":
+				depth += 1
+			elif self.html[i] == "}":
+				depth -= 1
+				if depth == 0:
+					return self.html[start:i + 1]
+			i += 1
+		self.fail("applyPlanNav() is never closed")
+
 	def test_analytics_needs_role_and_plan(self):
 		"""It used to be `ctx.is_hr` alone, so every tenant got the panel."""
-		self.assertIn("plan_analytics", self.html)
-		self.assertIn("ctx.is_hr && anaSold", self.html)
+		body = self._plan_nav()
+		self.assertIn("is_hr", body)
+		self.assertIn("plan_analytics", body)
 
 	def test_an_unknown_flag_does_not_hide_the_panel(self):
 		"""Absent is not the same as false. An older cached payload with no
 		entitlement key must not black out Analytics for an HR user."""
-		self.assertIn("_f.plan_analytics !== false", self.html)
+		self.assertIn("plan_analytics !== false", self._plan_nav())
+
+	def test_the_plan_gates_run_again_once_the_flags_arrive(self):
+		"""The bug this function was extracted for.
+
+		get_portal_context drew the sidebar and get_available_features set the
+		flags it needed - two calls that race, with the context one usually
+		first. window._features was still empty, so plan_org_structure read as
+		undefined, "Organisation" was hidden, and nothing re-ran the decision
+		when the flags landed. PP Jewellers owned the feature, had 120
+		positions, and saw no chart.
+		"""
+		calls = re.findall(r"applyPlanNav\(\)", self.html)
+		# One definition, and at least two call sites.
+		self.assertGreaterEqual(
+			len(calls), 3,
+			"applyPlanNav must be called after the sidebar is drawn AND again "
+			"when the entitlement flags arrive; found %d mentions" % len(calls))
+
+	def test_every_plan_gated_item_is_decided_in_one_place(self):
+		"""A gate left behind in loadPortalContext would race exactly as the
+		Organisation item did."""
+		body = self._plan_nav()
+		for flag in ("plan_analytics", "plan_policy_library", "plan_org_structure"):
+			self.assertIn(flag, body, "%s is gated outside applyPlanNav" % flag)

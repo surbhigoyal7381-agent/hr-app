@@ -5825,7 +5825,6 @@ function aiPaint() {
   }
 
   var days = (d.weekday && d.weekday.days) || [];
-  var top = Math.max.apply(null, days.map(function (x) { return x.rate; }).concat([1]));
 
   /* The strip had no heading at all - seven columns of bare numbers. A reader
      took "2 of 69" to mean sixty-nine Mondays, so a year, when it is sixty-nine
@@ -5842,7 +5841,13 @@ function aiPaint() {
   out += '<div class="ai-week">' + days.map(function (x) {
     return "<div><div class='d'>" + x.day.slice(0, 3) + "</div>"
       + "<div class='r'>" + aiPct(x.rate) + "</div>"
-      + "<div class='bar'><i style='width:" + Math.round(100 * x.rate / top) + "%'></i></div>"
+      /* The bar is the real share of that day's person-days that ran short,
+         out of 100: 8.9% short fills 8.9% of the track. It used to be scaled
+         against the worst day in view, so the worst day was always a full bar
+         whatever its figure, and a harmless 2% could look like everybody.
+         A day that is not zero keeps at least a sliver, so it never reads as
+         zero. */
+      + "<div class='bar'><i style='width:" + (x.rate > 0 ? Math.max(x.rate, 1) : 0) + "%'></i></div>"
       /* "person-days", spelled out, because the number is not a count of
          Mondays. August 2026 had five Mondays; this figure was 69, and two
          readers in a row took it for a count of dates. The unit has to be ON

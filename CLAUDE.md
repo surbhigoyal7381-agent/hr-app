@@ -12,7 +12,12 @@ These instructions are mandatory in every session. They override default behavio
 - Before any git operation, confirm the working branch is `dev`.
 - If on another branch, stash changes, switch to `dev`, and reapply — do not commit to `main` without explicit instruction.
 - `main` is reserved for deliberate production releases only.
-- **Never open a pull request or push against `main`** until the change is running and tested on `dev` and the user has given a manual go-ahead for that release. Working branches target `dev`. (Rule given 2026-09-08 after a pull request against `main` appeared for a working branch.)
+- **Work moves through three stages, and each step forward needs the user to say so explicitly.** (Rule given 2026-09-11.)
+  1. **Local** — develop and test on the local instance (the Docker bench `hrlocal-bench`). Commit locally if useful, but **do not push**.
+  2. **`dev`** — push to `dev` **only when the user explicitly says to push to dev**. Passing tests is not permission, and neither is "go ahead" said about local work. Changing a dev tenant's data or config (site config, `clear-cache`, records) is a dev-stage action too.
+  3. **`main`** — push or merge to `main` **only when the user explicitly says to push to main**, after they have tested on `dev`. This keeps `main` in step with what was proven.
+  - When local work is done, report it and stop. Batch related revisions into one considered change before asking to push. On 2026-09-10 six pushes to `dev` in an hour — four of them revisions of one label — made deploys cancel each other and left `dev` two commits behind what had been built.
+- **Never open a pull request or push against `main`** without that explicit instruction. Working branches target `dev`. (Rule given 2026-09-08 after a pull request against `main` appeared for a working branch.)
 - **Fetch `origin/dev` before you start editing, and again before every commit or push.** More than one session can be working on this repository on the same day. On 2026-09-07 two sessions edited the same file; nothing broke, but only by luck.
 - **Rebase, never merge**, when bringing in what others pushed (`git fetch origin dev && git rebase origin/dev`; on the working branch `git pull --rebase`).
 - **Say out loud when a pull or rebase brought in someone else's work.** Name the commits and files that came in. Never absorb them quietly. On 2026-09-08 a force-push rewrote a working branch and hid a 30 KB block of obfuscated JavaScript inside three `postcss.config.js` files, plus unrelated font files; it was caught only because the incoming diff was read. Read every incoming diff before building or pushing it.

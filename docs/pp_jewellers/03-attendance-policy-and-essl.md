@@ -21,7 +21,7 @@ Two Shift Types. Both 9:30 to 18:30.
 | Mark auto attendance on holidays | 1 (stores work festivals) | 0 |
 | Process Attendance After | 2026-07-01 | 2026-07-01 |
 | Last Sync of Checkin | set by the loader after punches are pushed | same |
-| Auto-update last sync | 1 | 1 |
+| Auto-update last sync | 1 for the demo loader; **0 once the live feed is on** (see 2.4.3) | same |
 
 Two grace periods matter and they are different things:
 
@@ -33,6 +33,8 @@ Shift Assignment: one per employee, `default_shift` on Employee is enough for au
 Attendance Requests (Work From Home / On Duty) stay available for head-office staff. Store staff do not use Work From Home.
 
 ## 2. ESSL punch feed
+
+> **Status 2026-09-11: designed, not built.** The 45,140 check-ins on the demo tenant were loaded by `seed_attendance.py`, not by any machine. Before building, confirm what PPJ actually runs (2.4.1).
 
 ### 2.1 What the eSSL eBioServerNew Web API offers (from the manual, v1.3, 27 March 2025)
 
@@ -72,13 +74,94 @@ Product-side pieces:
 | Separation hook | `Employee.on_update` when status → Left | `DeleteEmployee(code)` |
 | Dashboard | number card | "Devices not pinged in 30 min" from `GetDeviceLastPing` |
 
-Duplicates are safe: Employee Checkin already rejects a second log for the same employee, time and log type. Unknown employee codes are counted in the sync log and skipped, not raised.
+Duplicates and unknown employee codes: Frappe HR **refuses** both with an error (see 2.4.5), so the job catches each refusal, counts it in the sync log and moves on to the next record.
 
-One rule found while testing: when a Shift Assignment carries a geofenced Shift Location, every check-in must carry coordinates, or Frappe HR refuses it. So the bridge sends the store's own coordinates with each punch (the `Biometric Location Map` row holds them). The demo loader does the same.
+One rule found while testing: whenever location tracking is on in HR Settings, every check-in must carry coordinates, or Frappe HR refuses it (corrected 2026-09-11: it was first written as depending on a geofenced Shift Location; see 2.4.5). So the bridge sends the store's own coordinates with each punch (the `Biometric Location Map` row holds them). The demo loader does the same.
 
 Use `requests` with a hand-built SOAP envelope and `xml.etree` to read the reply. No new Python dependency.
 
-### 2.4 For the demo: simulated punches
+### 2.4 Rollout across PPJ's branches, and what to confirm first (added 2026-09-11)
+
+#### 2.4.1 Step zero: find out what PPJ actually runs
+
+Everything in 2.1 to 2.3 assumes PPJ already has eSSL's **eBioServerNew** collecting punches from every machine. Nobody has confirmed that. Before building anything, ask PPJ's IT team (through Ritika) three questions:
+
+1. **Is eBioServer set up?** If yes: where does it run, and does every branch's machine send its punches to it? If no: how is attendance taken off the machines today (another eSSL program such as eTimeTrack Lite, a USB download from each machine, or a payroll or HR system that pulls it)?
+2. **Which machines, and how are they connected?** The model, how many at each branch, and whether each is on the internet or office network or works on its own.
+3. **A sample of today's attendance data.** One day's punches in whatever form already exists, to see how date, time and IN/OUT are recorded.
+
+How the answer decides the build:
+
+| PPJ's IT says | Approach |
+|---|---|
+| eBioServer is set up and every branch reports to it | 2.3 as designed: one bridge for the company |
+| eBioServer, but one per branch | one bridge per server, or point every machine at a single server (a machine's server address can be changed) |
+| Another eSSL program, such as eTimeTrack Lite | read punches from that program's database instead of the web API |
+| No software; data comes off the machines by USB | depends on the models: machines that take a server address can send to a central server; older ones need eBioServer installed first |
+
+Access (an eBioServer API user, an always-on computer on their network) is asked for only once this is known, because what is needed depends on the answer.
+
+#### 2.4.2 Why one bridge covers every branch
+
+eBioServerNew is organised around **locations**. Each store is a location (`UpdateLocation`, with a `LocationCode`). Each machine belongs to a location and is pointed at the server by its web server address and port (`Device Change Web Server Address` / `Device Change Web Port Number` in the manual), so machines at remote stores send their punches to one central server over the internet. `GetDeviceLogsByLogId` takes a location code, or blank for all locations. One central server therefore means one bridge for the whole company.
+
+PPJ as configured on the demo tenant:
+
+| Branch | Active staff | Machines | Shift Location |
+|---|---|---|---|
+| PPJ Head Office Chandigarh | 40 | ESSL-HO-1 | yes |
+| PPJ Noida Sector 18 | 74 | ESSL-NOI-1, ESSL-NOI-2 | yes |
+| PPJ Delhi Karol Bagh | 73 | ESSL-DKB-1, ESSL-DKB-2 | yes |
+| PPJ Delhi South Extension | 72 | ESSL-DSE-1, ESSL-DSE-2 | yes |
+| PPJ Chandigarh Sector 17 | 72 | ESSL-CHD-1, ESSL-CHD-2 | yes |
+| PPJ Ambala City | 72 | ESSL-AMB-1, ESSL-AMB-2 | yes |
+
+`Employee.attendance_device_id` is unique across the company, so a punch from any branch's machine resolves to the right person. The machine name stays on each Employee Checkin, so reports can still split by branch. The `Biometric Location Map` in 2.3 needs one row per branch: ESSL location code, Branch, Shift Location, and that location's last log id.
+
+The manual does not say whether eBioServer's log ids run as one sequence across all locations or restart per location. The sample export in 2.4.1 answers it. A `last_log_id` kept per location works either way.
+
+#### 2.4.3 The branch problem to design around: punches that arrive late
+
+Checked in `hrms/hr/doctype/shift_type/shift_type.py`. Auto attendance only processes shifts that ended before the Shift Type's `last_sync_of_checkin`: `get_employee_checkins` filters on `shift_actual_end < last_sync_of_checkin`, and absentees are marked up to the same point. With `auto_update_last_sync = 1`, the hourly `update_last_sync_of_checkin` moves that point to shift end + 1 minute as soon as the clock passes it, **whether or not the punches have actually arrived**.
+
+So if a store's internet drops, its machines hold the punches and send them later, and by then its staff can already have been marked Absent. When the real check-ins arrive, an Attendance already exists for the day, so they do not correct it. HR has to fix each person by hand.
+
+The design change:
+
+- Set `auto_update_last_sync = 0` on every Shift Type once the live feed is on. (The demo loader keeps 1.)
+- The sync job owns `last_sync_of_checkin`. It advances it only to the earliest point that **every** mapped location has reported past: the newest punch received from each location, or `GetDeviceLastPing` for a location that sent no punches, so a quiet branch does not hold everyone back.
+- A cap, as a setting (default 24 hours). After it, attendance is marked anyway and the location that is behind is flagged on the HR dashboard.
+- Individual misses still go through the attendance correction flow on the portal (Attendance Request), which already exists.
+
+**Decision needed for PPJ.** `last_sync_of_checkin` belongs to a Shift Type, and PPJ has two (Store, Head Office) shared by every store:
+
+| Option | Effect |
+|---|---|
+| Keep two Shift Types | every store waits for the slowest store, up to the cap |
+| One Shift Type per branch | each branch is marked as soon as its own machines report; six Shift Types to maintain |
+
+#### 2.4.4 Staff who punch at more than one branch
+
+A person can only punch on machines they are enrolled on. Area managers, and the owner who oversees all six sites, need enrolling at every location they visit. On a branch transfer (`Employee Transfer`, part of the Onboarding & Exit feature, key `tenure`), their location on eBioServer must be updated. The demo data has nobody punching outside their own branch, so this path is untested.
+
+#### 2.4.5 Corrections to 2.3
+
+- **Duplicates and unknown codes are refused, not skipped.** `EmployeeCheckin.validate_duplicate_log` throws when a check-in with the same employee, time and log type exists, and `add_log_based_on_employee_field` throws "No Employee found for the given employee field value". The job must catch each refusal per record, count it in the Biometric Sync Log, and carry on. One bad record must not stop a batch.
+- **Coordinates come from location tracking, not from the geofence.** `validate_distance_from_shift_location` demands a latitude and longitude on every check-in whenever `HR Settings.allow_geolocation_tracking` is on, whether or not the Shift Assignment has a Shift Location. PPJ has tracking on, so machine punches need coordinates too. PPJ's store radii were set to 0 on 2026-09-10 (record where, never refuse), so distance no longer blocks anyone. Sending the store's coordinates with machine punches still works; tag machine punches by device id so reports never read them as phone GPS.
+- **A dedicated integration user.** The bridge signs in as a user whose API key can only create Employee Checkin, never as Administrator.
+- **Time zone.** Machines record local India time. Confirm the site's time zone matches, or every punch shifts by hours.
+
+#### 2.4.6 Other ways in, if PPJ's setup rules out 2.3
+
+| Option | How | When |
+|---|---|---|
+| A. Bridge + eBioServer (2.3) | pull from eBioServer, push to Alvoraa | eBioServer runs and every branch reports to it. Preferred. |
+| B. Machines report straight to Alvoraa | point the machines' server address at Alvoraa and implement their push protocol | no eBioServer and capable machines; a bigger build that takes over eBioServer's role |
+| C. Frappe's biometric sync tool | reads the machines directly over the network | last resort; goes around eBioServer and can clash with it |
+
+**First slice, once 2.4.1 is answered:** the punch sync only (settings, location map, 5-minute job, sync log), built and tested on the local instance against the sample export before touching a live machine. Pushing joiners and leavers to the machines, and machine health, follow.
+
+### 2.5 For the demo: simulated punches
 
 `demo/pp_jewellers/generate_punches.py` writes `docs/pp_jewellers/data/punches.csv` (45,140 rows) and `data/expected_deductions.csv` (212 employee-weeks the rule must produce, with the violations listed, for verifying the build): `attendance_device_id, timestamp, log_type, device_id`. `demo/pp_jewellers/seed_attendance.py` reads it inside `bench console` and calls `add_log_based_on_employee_field` for each row, then sets `last_sync_of_checkin` on both Shift Types and runs `process_auto_attendance_for_all_shifts`. See file 11 for the run order.
 

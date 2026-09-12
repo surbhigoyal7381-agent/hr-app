@@ -653,6 +653,14 @@ html, body {
         </div>
       </div>
       <div class="ka-field">
+        <label class="ka-label">Accent Color</label>
+        <div class="ka-color-row">
+          <input type="color" class="ka-color-input" id="f-accent" value="#f59e0b">
+        </div>
+        <div class="ka-hint">Used for highlights beside the brand colour. Both are
+          darkened automatically if they would be unreadable as white-on-colour.</div>
+      </div>
+      <div class="ka-field">
         <label class="ka-label">Support Email (optional)</label>
         <input class="ka-input" id="f-email" type="email" placeholder="support@acmecorp.com">
         <div class="ka-hint">Shown as help contact in the tenant's login page</div>
@@ -768,6 +776,13 @@ html, body {
             <div class="ka-swatch" style="background:var(--text2)" data-color="var(--text2)" onclick="pickEditSwatch(this)"></div>
           </div>
         </div>
+      </div>
+      <div class="ka-field">
+        <label class="ka-label">Accent Color</label>
+        <div class="ka-color-row">
+          <input type="color" class="ka-color-input" id="edit-accent" value="#f59e0b">
+        </div>
+        <div class="ka-hint">Used for highlights beside the brand colour.</div>
       </div>
       <div class="ka-field">
         <label class="ka-label">Support Email (optional)</label>
@@ -1306,6 +1321,7 @@ html, body {
     var subdomain    = document.getElementById('f-subdomain').value.trim().toLowerCase();
     var tenant_name  = document.getElementById('f-name').value.trim();
     var primary_color = document.getElementById('f-color').value;
+    var accent_color  = document.getElementById('f-accent').value;
     var support_email = document.getElementById('f-email').value.trim();
       var hr_email    = document.getElementById('f-hr-email').value.trim();
       var admin_email = document.getElementById('f-admin-email').value.trim();
@@ -1337,7 +1353,8 @@ html, body {
         // anything passed here. Sending one meant referencing a variable that was
         // never declared, so every attempt died on "not defined".
         subdomain: subdomain, tenant_name: tenant_name,
-        primary_color: primary_color, support_email: support_email, logo_url: logo_url,
+        primary_color: primary_color, accent_color: accent_color,
+        support_email: support_email, logo_url: logo_url,
         hr_email: hr_email, admin_email: admin_email,
         company_name: company_name, company_abbr: company_abbr,
         fy_start_date: fy_start_date, country: country, currency: currency,
@@ -2000,6 +2017,8 @@ html, body {
     document.getElementById('edit-email').value = t.support_email || '';
     var color = t.primary_color || 'var(--green)';
     document.getElementById('edit-color').value = color;
+    var accentEl = document.getElementById('edit-accent');
+    if (accentEl) accentEl.value = t.accent_color || '#f59e0b';
     syncEditSwatch(color);
     var ids = siteModulesToIds(t.modules);
       // Was `ids.length ? ids : required`, so the required features were added
@@ -2035,6 +2054,7 @@ html, body {
         tenant_name:   tenantName,
         modules:       editSelectedModules,
         primary_color: primaryColor,
+        accent_color:  (document.getElementById('edit-accent') || {}).value || '',
         support_email: supportEmail,
       });
       label.textContent = 'Saved <i class=ic-check></i>';

@@ -227,6 +227,7 @@ def list_tenants():
             "plan":          cfg.get("subscription_plan", "—"),
             "status":        status,
             "primary_color": cfg.get("primary_color", "#1a7f5a"),
+            "accent_color":  cfg.get("accent_color", "#f59e0b"),
             "logo_url":      cfg.get("tenant_logo_url", ""),
             "host_name":     cfg.get("host_name", f"http://{site_name}"),
             "modules":       raw_modules,
@@ -244,7 +245,8 @@ def create_tenant(subdomain, tenant_name, plan="starter",
                   hr_email="", admin_email="",
                   company_name="", company_abbr="", country="India",
                   currency="INR", timezone="Asia/Kolkata", fy_start_date="",
-                  primary_color="#1a7f5a", logo_url="", support_email="", modules=None,
+                  primary_color="#1a7f5a", accent_color="#f59e0b",
+                  logo_url="", support_email="", modules=None,
                   alvoraa_plan=None, customer=None, packs=None,
                   implementation_fee=0, billing_frequency="Monthly"):
     """Validate inputs, enqueue provisioning, and record what was sold.
@@ -404,6 +406,7 @@ def create_tenant(subdomain, tenant_name, plan="starter",
             plan=plan,
             modules=",".join(modules),
             primary_color=primary_color,
+            accent_color=accent_color,
             logo_url=logo_url,
             support_email=support_email,
             base_domain=base_domain,
@@ -521,7 +524,7 @@ def suspend_tenant(site_name, suspend=1):
 
 @frappe.whitelist()
 def update_tenant(site_name, tenant_name="", plan="", modules=None,
-                  primary_color="", support_email=""):
+                  primary_color="", accent_color="", support_email=""):
     """Update an existing tenant's config; queues a background app-install if new modules need it."""
     _require_admin()
     _validate_site_name(site_name)
@@ -570,6 +573,7 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
         ("tenant_name",      tenant_name),
         ("subscription_plan", plan),
         ("primary_color",    primary_color),
+        ("accent_color",     accent_color),
         ("support_email",    support_email),
     ]:
         if val:
@@ -697,6 +701,7 @@ def get_tenant_stats(site_name):
 def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
                    primary_color, logo_url, support_email,
                    base_domain,
+                   accent_color="#f59e0b",
                    hr_email=None, admin_email=None,
                    company_name=None, company_abbr=None, country="India",
                    currency="INR", timezone="Asia/Kolkata", fy_start_date=None,
@@ -774,6 +779,7 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
         "ADMIN_PASSWORD":  admin_password,
         "DB_ROOT_PASSWORD": db_root_password,
         "PRIMARY_COLOR":   primary_color,
+        "ACCENT_COLOR":    accent_color or "#f59e0b",
         "SUPPORT_EMAIL":   support_email or "support@kinexus.in",
     }
 

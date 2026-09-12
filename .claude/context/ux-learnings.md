@@ -35,6 +35,13 @@ a usability test shows it, or the same need comes up again.
 
 | Pattern | What it solves | Where it was used | Status |
 |---|---|---|---|
+| **One screen per failure**, each with a picture, one sentence, numbered steps and one button | A driver cannot parse a toast or an inline error while standing in the sun | Slice 008, 12 states | applied |
+| **The server's own sentence wins when it names a real number** ("You are about 140 m from PPJ Noida") | A generic heading plus the real figure beats a rewritten vague one | Slice 008, E5 | applied |
+| **No action button where no action would work** (blocked, left, not in plan offer only "Go back") | A button that fails again teaches a person the app is broken | Slice 008, E9–E11 | applied |
+| **Keep the captured photo across a retry** | A driver refused for distance or signal should not pose twice | Slice 008, punch retry | applied |
+| **Degrade, do not block**: camera off still allows the punch, result says "Photo: Not taken" | A guard who turned up must be marked present; the photo is evidence, not the rule | Slice 008, D2 | applied |
+| **Sample mode inside the shipped page**, woken only by the literal server address `demo`, with a state switcher | Lets the user click every state with no backend, without a second throwaway file | Slice 008 | applied |
+| **State in words beside the colour on every chip and button** ("Not checked in yet today") | Sunlight and cheap panels destroy colour differences | Slice 008, Home | applied |
 | **Needs you** strip at the top of Home | Nothing told people what was due (review H1) | Prototype, Home | applied |
 | Labelled menu grouped **Me · Time · Pay · Growth · Team · Company** | Icon-only menu; five attendance entries (G2, G3) | Prototype, menu | applied |
 | Bell on every screen plus an **Inbox** with "Waiting on me" and "My requests" | No approvals entry on desktop (G4) | Prototype, Inbox | applied |
@@ -91,6 +98,8 @@ Items learned the hard way. Add these to the standard pre-handoff check.
 | Hindi and Punjabi labels in the prototype are machine drafts. | Surbhi, or a native reviewer | Any language work shipping |
 | Competitor scorecard is not verified with trial accounts. | Surbhi | Quoting the scorecard externally |
 | None of the prototype patterns has been tested with real users yet. | Surbhi | Promoting patterns to `confirmed` |
+| Slice 008: how long check-in photos are kept (a DPDP obligation, brief §6). The field app tells the driver who can see the photo but not for how long. | Surbhi | Nothing for the demo; a real obligation after it |
+| Slice 008: the Hindi strings in the field app are machine drafts. The EN/हिं switch is built but Hindi is in the brief's backlog. | Surbhi, or a native reviewer | Showing Hindi to a customer |
 
 ---
 
@@ -98,6 +107,10 @@ Items learned the hard way. Add these to the standard pre-handoff check.
 
 | Date | Source | What was said | What it teaches | What changed | Status |
 |---|---|---|---|---|---|
+| 2026-09-12 | Surbhi, via the session, slice 008 | "do not build a throwaway prototype … the prototype and the deliverable are the same artifact" | When the thing shipped is one HTML page, a separate mock wastes the clock and splits the truth. P6 is satisfied by shipping production code that is clickable. | Added a variation to P6: if the deliverable is itself a single page, design it as real code and mark the sample mode clearly. Sample mode pattern added. | heard |
+| 2026-09-12 | Own look before publishing, slice 008 | The sample-state switcher sat on top of the Check In button; Playwright could not click it | A review aid that covers the main control is a bug, not a convenience. Measuring caught it; looking would not have. | Switcher became one scrolling row; the footer reserves space for it. Reinforces P4. | applied |
+| 2026-09-12 | Slice 008 brief §2 | The user is "a driver or a security guard … may be barely literate in English, may never have used a work app" | The portal's 13 px base type is a laptop number. A field app needs its own scale. | Field pages use a 15/17/19/22/28/34 scale, nothing under 15 px, and pin the light theme because the screen is read in sunlight. | applied |
+| 2026-09-12 | Slice 008, reading `field_checkin.py` | The server throws plain English sentences, not error codes | Matching errors on text is fragile. It works, but the wording and the UI must change together. | Logged as a risk in `01b`; a machine-readable error key went to the backlog. | heard |
 | 2026-09-11 | Surbhi, chat | "It must create a prototype for review" | A written design is not something the user can react to | Principle P6: no design check without a clickable prototype; versions kept as v1, v2 | principle |
 | 2026-09-11 | Surbhi, chat | "PM must also do the competitive analysis and using the support from the UX agent suggest how the user experience of this module can be enhanced by Employee Self Service Portal for different personas" | UX evidence should shape the brief, not arrive after it | Principle P7: new opportunities-scan mode writes `01a` before the brief | principle |
 | 2026-09-11 | Surbhi, chat | "write a reverse prompt to create an agent for UX design … keep learning based on the feedbacks" | UX work needs a standing owner with memory kept in a file | Created this file and `hrms-ux-designer` | applied |

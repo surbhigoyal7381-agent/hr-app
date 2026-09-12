@@ -36,6 +36,9 @@ website_route_rules = [
     {"from_route": "/goals-portal",    "to_route": "goals-portal"},
     {"from_route": "/alvoraa-login",   "to_route": "alvoraa-login"},
     {"from_route": "/alvoraa-admin",   "to_route": "alvoraa-admin"},
+    # The field app. Short and typeable, because a driver is given this address
+    # verbally or on a slip of paper, not as a link.
+    {"from_route": "/checkin",         "to_route": "field-checkin"},
 ]
 
 # ── Doctype event hooks ────────────────────────────────────────────────────
@@ -71,7 +74,15 @@ doc_events = {
     # ── Portal context cache invalidation ─────────────────────────────────
     # Clear per-user portal_ctx_{user} cache when role or employee record changes
     "Employee": {
-        "on_update": "alvoraa_portal.hr_api.invalidate_portal_context_cache",
+        # Two handlers, one event. The second stops a field phone working the
+        # day its owner leaves: the punch endpoint already refuses a non-Active
+        # employee, but a status that comes back to Active - a rehire, a
+        # correction, a script - would otherwise re-arm a device secret that
+        # somebody took with them.
+        "on_update": [
+            "alvoraa_portal.hr_api.invalidate_portal_context_cache",
+            "alvoraa_portal.field_checkin.block_devices_for_leaver",
+        ],
         "on_trash":  "alvoraa_portal.hr_api.invalidate_portal_context_cache",
     },
     # ── Module access follows the plan, for the whole life of the tenant ──
@@ -166,6 +177,9 @@ scheduler_events = {
 # are idempotent.
 after_migrate = [
     "alvoraa_portal.attendance_correction.after_migrate",
+    # The photo, GPS accuracy and offline columns on Employee Checkin. Same
+    # reasoning as the line above: sites already live never get a baseline run.
+    "alvoraa_portal.field_checkin.after_migrate",
 ]
 
 # And on a fresh install, which never runs a migrate. Without this a brand new
@@ -174,4 +188,5 @@ after_migrate = [
 # `bench install-app` and nothing else.
 after_install = [
     "alvoraa_portal.attendance_correction.after_migrate",
+    "alvoraa_portal.field_checkin.after_migrate",
 ]

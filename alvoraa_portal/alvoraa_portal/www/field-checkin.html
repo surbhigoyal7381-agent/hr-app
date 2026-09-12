@@ -1,0 +1,1119 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#3D3461">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="{{ tenant_name or 'Attendance' }}">
+<meta name="referrer" content="same-origin">
+<title>{{ tenant_name or "Attendance" }}</title>
+
+<!--
+  Alvoraa field check-in. Slice 008. One self-contained page.
+  Engineer notes:
+  - Replace the blob manifest built in boot() with a real file once this page
+    lives in the app, e.g. /assets/alvoraa_portal/field-checkin.webmanifest.
+    Android needs a manifest for the install banner. iPhone does not: Safari
+    adds to the home screen from Share > Add to Home Screen.
+  - Endpoints used, exactly as alvoraa_portal/field_checkin.py defines them:
+      alvoraa_portal.field_checkin.register_device(employee_id, device_label, platform)
+      alvoraa_portal.field_checkin.field_checkin(token, log_type, latitude,
+                                    longitude, accuracy, photo, captured_at)
+      alvoraa_portal.field_checkin.field_status(token)
+  - Type "demo" in the server address to run the page with sample data and a
+    state switcher. That mode never touches a server. Remove SAMPLE before
+    shipping if you do not want reviewers to have it.
+-->
+
+<style>
+/* Alvoraa design tokens, from templates/includes/design_system.html.
+   The field app PINS the light theme. It is used outdoors, in sunlight, on a
+   cheap screen, so dark mode there is unreadable. Deliberate deviation from
+   the portal; written up in 01b-ux-design.md. */
+:root{
+  --bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;
+  --text:#2D2622;--text2:#5A544E;--text3:#736D65;
+  --primary:#5B4B8A;--primary-h:#4A3D73;--primary-d:#3D3461;--primary-lt:#EDEAF4;
+  --green:#1B7F5A;--green-lt:#E8F4EF;--green-h:#166B4C;
+  --red:#B3261E;--red-lt:#FBEAE8;--amber:#9A6510;--amber-lt:#FBF1E0;
+  --sh1:0 1px 2px rgba(0,0,0,.05);--sh2:0 4px 12px rgba(0,0,0,.10);--sh3:0 12px 32px rgba(0,0,0,.16);
+  --font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --r:10px;--r-sm:6px;--r-lg:16px;--r-full:999px;
+  /* Field type scale. The portal's base is 13px, which is a laptop number.
+     Nothing here is under 15px, and nothing a driver must read to act is
+     under 17px. */
+  --fs-sm:15px;--fs-base:17px;--fs-md:19px;--fs-lg:22px;--fs-xl:28px;--fs-2xl:34px;
+  --t:.18s cubic-bezier(.4,0,.2,1);
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --safe-t:env(safe-area-inset-top,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;height:100%;overflow:hidden;overscroll-behavior:none}
+body{font-family:var(--font);font-size:var(--fs-base);line-height:1.45;
+  color:var(--text);background:var(--bg);-webkit-text-size-adjust:100%}
+
+/* Screens */
+.screen{position:fixed;inset:0;display:none;flex-direction:column;
+  padding-top:var(--safe-t);background:var(--bg)}
+.screen.on{display:flex}
+.scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px}
+
+/* Top bar */
+.bar{display:flex;align-items:center;gap:10px;min-height:56px;padding:8px 16px;
+  background:var(--primary-d);color:#fff}
+.bar h1{margin:0;font-size:var(--fs-md);font-weight:650;letter-spacing:.2px}
+.bar .who{margin-left:auto;text-align:right;font-size:var(--fs-sm);opacity:.92;
+  max-width:46%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lang{display:flex;border:2px solid rgba(255,255,255,.55);border-radius:var(--r-full);
+  overflow:hidden;flex:none}
+.lang button{min-height:38px;min-width:50px;border:0;background:transparent;color:#fff;
+  font-size:var(--fs-sm);font-weight:700;padding:0 10px;font-family:inherit}
+.lang button[aria-pressed="true"]{background:#fff;color:var(--primary-d)}
+
+/* Type */
+h2{margin:0 0 8px;font-size:var(--fs-xl);font-weight:700;line-height:1.25}
+h3{margin:0 0 6px;font-size:var(--fs-md);font-weight:650}
+p{margin:0 0 14px;color:var(--text2)}
+p.lead{color:var(--text);font-size:var(--fs-md)}
+.muted{color:var(--text3);font-size:var(--fs-sm)}
+strong{font-weight:650;color:var(--text)}
+
+/* Fields */
+label{display:block;font-weight:650;font-size:var(--fs-base);margin:0 0 6px}
+label .hint{display:block;font-weight:400;font-size:var(--fs-sm);color:var(--text3);margin-top:2px}
+input[type=text]{width:100%;height:60px;padding:0 14px;font-size:var(--fs-md);
+  font-family:inherit;color:var(--text);background:var(--surface);
+  border:2px solid var(--border2);border-radius:var(--r)}
+input:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+input[aria-invalid="true"]{border-color:var(--red);background:var(--red-lt)}
+.field{margin-bottom:22px}
+.field .err{display:none;margin-top:6px;color:var(--red);font-weight:650;font-size:var(--fs-sm)}
+.field.bad .err{display:block}
+
+/* Buttons */
+button{font-family:inherit}
+.btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
+  min-height:64px;padding:14px 18px;border:0;border-radius:var(--r-lg);
+  font-size:var(--fs-md);font-weight:700;color:#fff;background:var(--primary-d);
+  box-shadow:var(--sh2);cursor:pointer;transition:transform var(--t),background var(--t)}
+.btn:active{transform:scale(.985);background:var(--primary-h)}
+.btn[disabled]{opacity:.5;box-shadow:none}
+.btn.ghost{background:var(--surface);color:var(--primary-d);border:2px solid var(--border2);
+  box-shadow:none;font-weight:650}
+.btn.link{background:none;color:var(--primary);box-shadow:none;min-height:48px;
+  font-weight:650;text-decoration:underline}
+/* The one control this app exists for. */
+.btn-punch{min-height:104px;border-radius:20px;font-size:var(--fs-2xl);font-weight:800;
+  letter-spacing:.3px;box-shadow:var(--sh3)}
+.btn-punch.in{background:var(--green)}
+.btn-punch.in:active{background:var(--green-h)}
+.btn-punch.out{background:var(--primary-d)}
+.btn-punch svg{width:38px;height:38px;flex:none}
+/* The arrow points in for Check In and out for Check Out, so the picture
+   says the same thing as the word. */
+.btn-punch.out svg{transform:scaleX(-1)}
+.footer{padding:12px 16px calc(12px + var(--safe-b));background:var(--bg);
+  border-top:1px solid var(--border)}
+.footer.plain{border-top:0}
+.stack>*+*{margin-top:10px}
+
+/* State chip */
+.chip{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:var(--r);
+  font-size:var(--fs-base);font-weight:650;border:2px solid transparent;margin:12px 16px 0}
+.chip .dot{width:14px;height:14px;border-radius:50%;flex:none}
+.chip.yes{background:var(--green-lt);color:var(--green-h);border-color:var(--green)}
+.chip.yes .dot{background:var(--green)}
+.chip.no{background:var(--surface2);color:var(--text2);border-color:var(--border2)}
+.chip.no .dot{background:var(--text3)}
+
+/* Camera */
+.cam{position:relative;flex:1;min-height:140px;margin:12px 16px 0;border-radius:var(--r-lg);
+  overflow:hidden;background:#141210;display:flex;align-items:center;justify-content:center}
+.cam video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+.cam .off{color:#fff;text-align:center;padding:18px;font-size:var(--fs-base)}
+.cam .off .btn{margin-top:12px}
+.cam .tag{position:absolute;left:10px;bottom:10px;background:rgba(0,0,0,.62);color:#fff;
+  font-size:var(--fs-sm);font-weight:650;padding:5px 10px;border-radius:var(--r-full)}
+.flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:60}
+.flash.go{animation:fl .45s ease-out}
+@keyframes fl{0%{opacity:.9}100%{opacity:0}}
+
+/* Punch list */
+.punches{margin:12px 16px 0;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r);overflow:hidden;max-height:32vh;overflow-y:auto}
+.punches .hd{padding:9px 14px;font-size:var(--fs-sm);font-weight:650;color:var(--text2);
+  background:var(--surface2);border-bottom:1px solid var(--border);
+  display:flex;justify-content:space-between;position:sticky;top:0}
+.punch{display:flex;align-items:center;gap:12px;padding:12px 14px;min-height:56px;
+  border-bottom:1px solid var(--border)}
+.punch:last-child{border-bottom:0}
+.punch .k{font-weight:700;font-size:var(--fs-base);min-width:96px}
+.punch .k.in{color:var(--green-h)}
+.punch .k.out{color:var(--primary-d)}
+.punch .tm{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:700;font-size:var(--fs-md)}
+.punch .src{font-size:var(--fs-sm);color:var(--text3)}
+.punches .none{padding:16px 14px;color:var(--text3)}
+
+/* Big result and error screens */
+.big{display:flex;flex-direction:column;align-items:center;text-align:center;padding:18px 20px 6px}
+.big .circle{width:96px;height:96px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;margin-bottom:14px}
+.big .circle svg{width:52px;height:52px}
+.big.ok .circle{background:var(--green-lt);color:var(--green)}
+.big.warn .circle{background:var(--amber-lt);color:var(--amber)}
+.big.stop .circle{background:var(--red-lt);color:var(--red)}
+.big h2{font-size:var(--fs-xl)}
+.big .time{font-size:54px;font-weight:800;line-height:1.05;letter-spacing:-1px;
+  font-variant-numeric:tabular-nums;margin:2px 0 4px}
+.big p{font-size:var(--fs-md);color:var(--text2);max-width:330px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
+  padding:14px;margin:0 16px 14px;text-align:left}
+.card.amber{background:var(--amber-lt);border-color:var(--amber)}
+.card.green{background:var(--green-lt);border-color:var(--green)}
+.rowline{display:flex;gap:10px;align-items:flex-start;padding:7px 0;font-size:var(--fs-base)}
+.rowline .n{flex:none;width:28px;height:28px;border-radius:50%;background:var(--primary-d);
+  color:#fff;font-weight:700;font-size:var(--fs-sm);display:flex;align-items:center;justify-content:center}
+.kv{display:flex;justify-content:space-between;gap:12px;padding:6px 0;font-size:var(--fs-base)}
+.kv .k{color:var(--text2)}
+.kv .v{font-weight:650;text-align:right}
+
+/* Busy overlay */
+.busy{position:fixed;inset:0;background:rgba(26,24,21,.74);display:none;z-index:50;
+  flex-direction:column;align-items:center;justify-content:center;color:#fff;gap:18px;padding:24px}
+.busy.on{display:flex}
+.busy .sp{width:58px;height:58px;border:6px solid rgba(255,255,255,.28);
+  border-top-color:#fff;border-radius:50%;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.busy .msg{font-size:var(--fs-md);font-weight:650;text-align:center}
+@media (prefers-reduced-motion:reduce){
+  .busy .sp{animation-duration:2.4s}.flash.go{animation:none}.btn:active{transform:none}
+}
+
+/* Sample-data mode only */
+.ribbon{background:var(--amber);color:#fff;font-size:var(--fs-sm);font-weight:700;
+  padding:5px 16px;text-align:center;display:none}
+body.demo .ribbon{display:block}
+/* One scrolling row, so it never covers the Check In button. */
+#devbar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:70;background:#241F1B;
+  color:#fff;padding:5px 8px calc(5px + var(--safe-b));gap:6px;align-items:center;
+  overflow-x:auto;white-space:nowrap;border-top:2px solid var(--amber);height:auto}
+body.demo #devbar{display:flex}
+body.demo .footer{padding-bottom:calc(56px + var(--safe-b))}
+#devbar button{flex:none;background:#3A342F;color:#fff;border:1px solid #5A544E;border-radius:6px;
+  font-size:12px;padding:6px 8px;min-height:32px}
+#devbar .lbl{flex:none;font-size:11px;color:#C4BEB6;padding-right:4px}
+.sronly{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* Anything wider than a phone: keep it phone-shaped and centred. */
+@media (min-width:520px){
+  body{background:#241F1B}
+  .screen{max-width:420px;left:50%;transform:translateX(-50%);box-shadow:0 0 0 1px rgba(0,0,0,.35)}
+}
+</style>
+
+<!-- The tenant's own colours. One implementation, shared with the login page
+     and every portal, so a customer's purple is the SAME purple everywhere.
+     Runs before first paint and sets the phone status bar too. -->
+{% include "templates/includes/brand_color.html" %}
+</head>
+<body>
+
+<div class="flash" id="flash" aria-hidden="true"></div>
+
+<!-- 1. SETUP ------------------------------------------------------------- -->
+<section class="screen" id="s-setup" aria-labelledby="setup-h">
+  <div class="bar">
+    <h1>{{ tenant_name or "Attendance" }}</h1>
+    <div class="lang" role="group" aria-label="Language">
+      <button type="button" data-lang="en" aria-pressed="true">EN</button>
+      <button type="button" data-lang="hi" aria-pressed="false" lang="hi">&#2361;&#2367;&#2306;</button>
+    </div>
+  </div>
+  <div class="ribbon" data-t="demo.ribbon">Sample data. Nothing is sent to a server.</div>
+  <div class="scroll">
+    <h2 id="setup-h" data-t="setup.h">Set up this phone</h2>
+    <p class="lead" data-t="setup.p">You only do this once. HR gives you these two things.</p>
+
+    <div class="field" id="f-server">
+      <label for="i-server" data-t="setup.server">Server address
+        <span class="hint" data-t="setup.server.hint">HR gives you this. It usually starts with https://</span>
+      </label>
+      <input type="text" id="i-server" inputmode="url" autocapitalize="off" autocorrect="off"
+             spellcheck="false" autocomplete="off" placeholder="https://">
+      <div class="err" id="e-server" role="alert"></div>
+    </div>
+
+    <div class="field" id="f-emp">
+      <label for="i-emp" data-t="setup.emp">Your employee ID
+        <span class="hint" data-t="setup.emp.hint">On your ID card, or ask HR. Example: HR-EMP-00042</span>
+      </label>
+      <input type="text" id="i-emp" autocapitalize="characters" autocorrect="off"
+             spellcheck="false" autocomplete="off" placeholder="HR-EMP-">
+      <div class="err" id="e-emp" role="alert"></div>
+    </div>
+
+    <p class="muted" data-t="setup.privacy">This phone is linked to you. Your photo and place are
+      recorded only at the moment you press Check In. You are not tracked at any other time.</p>
+  </div>
+  <div class="footer">
+    <button class="btn" id="b-register" data-t="setup.cta">Set up</button>
+  </div>
+</section>
+
+<!-- 2. SETUP DONE -------------------------------------------------------- -->
+<section class="screen" id="s-done" aria-labelledby="done-h">
+  <div class="bar"><h1>{{ tenant_name or "Attendance" }}</h1></div>
+  <div class="ribbon" data-t="demo.ribbon">Sample data. Nothing is sent to a server.</div>
+  <div class="scroll" style="padding-top:0">
+    <div class="big ok">
+      <div class="circle" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      </div>
+      <h2 id="done-h"><span data-t="done.h">You are set up,</span> <span id="done-name">&mdash;</span></h2>
+      <p data-t="done.p">Now put this app on your home screen, so you can open it like any other app.</p>
+    </div>
+    <div class="card" id="a2hs">
+      <h3 id="a2hs-h" data-t="a2hs.android.h">On Android</h3>
+      <div id="a2hs-steps"></div>
+    </div>
+  </div>
+  <div class="footer stack">
+    <button class="btn" id="b-done" data-t="done.cta">Start</button>
+    <button class="btn link" id="b-a2hs-other" data-t="a2hs.switch">I have an iPhone</button>
+  </div>
+</section>
+
+<!-- 3. HOME -------------------------------------------------------------- -->
+<section class="screen" id="s-home" aria-labelledby="home-h">
+  <div class="bar">
+    <h1 id="home-h">{{ tenant_name or "Attendance" }}</h1>
+    <div class="lang" role="group" aria-label="Language">
+      <button type="button" data-lang="en" aria-pressed="true">EN</button>
+      <button type="button" data-lang="hi" aria-pressed="false" lang="hi">&#2361;&#2367;&#2306;</button>
+    </div>
+    <div class="who" id="home-who">&mdash;</div>
+  </div>
+  <div class="ribbon" data-t="demo.ribbon">Sample data. Nothing is sent to a server.</div>
+
+  <div class="chip no" id="home-state" role="status">
+    <span class="dot" aria-hidden="true"></span>
+    <span id="home-state-text" data-t="home.state.out">Not checked in yet today</span>
+  </div>
+
+  <div class="cam" id="cam">
+    <video id="video" playsinline muted autoplay></video>
+    <span class="tag" id="cam-tag" data-t="home.cam.tag">Your photo is taken when you press the button</span>
+    <div class="off" id="cam-off" hidden>
+      <div data-t="home.cam.off">The camera is off. You can still check in, but there will be no photo.</div>
+      <button class="btn ghost" id="b-cam-retry" data-t="home.cam.retry">Turn on the camera</button>
+    </div>
+  </div>
+
+  <div class="punches" id="punches" aria-labelledby="punches-h">
+    <div class="hd"><span id="punches-h" data-t="home.today">Today</span><span id="punch-date"></span></div>
+    <div id="punch-rows"><div class="none" data-t="home.none">No punches yet today.</div></div>
+  </div>
+
+  <div class="footer">
+    <p class="muted" id="home-place" style="margin:0 0 8px;text-align:center"></p>
+    <button class="btn btn-punch in" id="b-punch">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/>
+      </svg>
+      <span id="b-punch-text" data-t="home.checkin">Check In</span>
+    </button>
+  </div>
+</section>
+
+<!-- 4. RESULT ------------------------------------------------------------ -->
+<section class="screen" id="s-result" aria-labelledby="res-h">
+  <div class="bar"><h1>{{ tenant_name or "Attendance" }}</h1><div class="who" id="res-who"></div></div>
+  <div class="ribbon" data-t="demo.ribbon">Sample data. Nothing is sent to a server.</div>
+  <div class="scroll" style="padding-top:0">
+    <div class="big ok">
+      <div class="circle" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      </div>
+      <h2 id="res-h">Checked in</h2>
+      <div class="time" id="res-time">&mdash;</div>
+      <p id="res-date" class="muted" style="margin-bottom:14px"></p>
+    </div>
+    <div class="card">
+      <div class="kv"><span class="k" data-t="res.where">Where you were</span><span class="v" id="res-place">&mdash;</span></div>
+      <div class="kv"><span class="k" data-t="res.photo">Photo</span><span class="v" id="res-photo">&mdash;</span></div>
+      <div class="kv"><span class="k" data-t="res.saved">Saved</span><span class="v" id="res-saved">&mdash;</span></div>
+    </div>
+    <p class="muted" style="margin:0 16px" data-t="res.privacy">Only HR and your supervisor can see this.</p>
+  </div>
+  <div class="footer">
+    <button class="btn" id="b-res-done" data-t="res.cta">Done</button>
+  </div>
+</section>
+
+<!-- 5. PROBLEM (every failure state) ------------------------------------- -->
+<section class="screen" id="s-err" aria-labelledby="err-h">
+  <div class="bar"><h1>{{ tenant_name or "Attendance" }}</h1><div class="who" id="err-who"></div></div>
+  <div class="ribbon" data-t="demo.ribbon">Sample data. Nothing is sent to a server.</div>
+  <div class="scroll" style="padding-top:0">
+    <div class="big" id="err-big">
+      <div class="circle" id="err-icon" aria-hidden="true"></div>
+      <h2 id="err-h">&mdash;</h2>
+      <p id="err-p">&mdash;</p>
+    </div>
+    <div class="card" id="err-card" hidden><div id="err-steps"></div></div>
+  </div>
+  <div class="footer stack">
+    <button class="btn" id="b-err-1">&mdash;</button>
+    <button class="btn ghost" id="b-err-2" hidden>&mdash;</button>
+  </div>
+</section>
+
+<!-- Busy overlay --------------------------------------------------------- -->
+<div class="busy" id="busy" role="status" aria-live="polite">
+  <div class="sp" aria-hidden="true"></div>
+  <div class="msg" id="busy-msg">&mdash;</div>
+</div>
+
+<!-- Sample-data state switcher (only in demo mode) ----------------------- -->
+<div id="devbar" aria-label="Sample state switcher">
+  <span class="lbl">Sample mode &mdash; jump to any state</span>
+</div>
+
+<script>
+"use strict";
+
+/* ── storage ─────────────────────────────────────────────────────────────── */
+/* Set by the server from this tenant's branding. */
+var BRAND = {
+  name: {{ (tenant_name or "Attendance") | tojson }},
+  /* Read back from the token brand_color.html computed, rather than passed
+     separately - a second source would be a second thing to drift. */
+  get deep(){
+    return getComputedStyle(document.documentElement)
+             .getPropertyValue("--primary-d").trim() || "#3D3461";
+  }
+};
+
+var KEY = "alvoraa.field.v1";
+var store = { server:"", token:"", employee:"", employee_name:"", lang:"en" };
+try { Object.assign(store, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch (e) {}
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(store)); } catch(e){} }
+
+/* ── words ───────────────────────────────────────────────────────────────
+   English is the shipped language. The Hindi column is a MACHINE DRAFT and
+   must be checked by a native speaker before it is switched on for a customer
+   (brief section 6 puts Hindi in the backlog). The switch is here because the
+   primary user is Hindi-first; remove the .lang control to ship English only. */
+var T = {
+  "app.name":            ["Attendance", "हाज़िरी"],
+  "demo.ribbon":         ["Sample data. Nothing is sent to a server.", "नमूना डेटा। कुछ भी सर्वर पर नहीं जाता।"],
+
+  "setup.h":             ["Set up this phone", "यह फ़ोन सेट करें"],
+  "setup.p":             ["You only do this once. HR gives you these two things.", "यह केवल एक बार करना है। ये दो चीज़ें HR से मिलेंगी।"],
+  "setup.server":        ["Server address", "सर्वर पता"],
+  "setup.server.hint":   ["HR gives you this. It usually starts with https://", "HR यह देगा। यह आम तौर पर https:// से शुरू होता है।"],
+  "setup.emp":           ["Your employee ID", "आपकी कर्मचारी आईडी"],
+  "setup.emp.hint":      ["On your ID card, or ask HR. Example: HR-EMP-00042", "आपके आईडी कार्ड पर, या HR से पूछें। जैसे: HR-EMP-00042"],
+  "setup.privacy":       ["This phone is linked to you. Your photo and place are recorded only at the moment you press Check In. You are not tracked at any other time.", "यह फ़ोन आपसे जुड़ा है। आपकी फ़ोटो और जगह केवल तभी दर्ज होती है जब आप चेक इन दबाते हैं। बाकी समय आप पर नज़र नहीं रखी जाती।"],
+  "setup.cta":           ["Set up", "सेट करें"],
+  "setup.err.server":    ["Please enter the server address HR gave you.", "कृपया HR का दिया सर्वर पता लिखें।"],
+  "setup.err.emp":       ["Please enter your employee ID.", "कृपया अपनी कर्मचारी आईडी लिखें।"],
+
+  "done.h":              ["You are set up,", "आप तैयार हैं,"],
+  "done.p":              ["Now put this app on your home screen, so you can open it like any other app.", "अब इस ऐप को अपनी होम स्क्रीन पर लगाएँ, ताकि बाकी ऐप की तरह खुल जाए।"],
+  "done.cta":            ["Start", "शुरू करें"],
+  "a2hs.android.h":      ["On Android", "Android पर"],
+  "a2hs.ios.h":          ["On iPhone", "iPhone पर"],
+  "a2hs.switch.ios":     ["I have an iPhone", "मेरे पास iPhone है"],
+  "a2hs.switch.android": ["I have an Android phone", "मेरे पास Android फ़ोन है"],
+
+  "home.state.out":      ["Not checked in yet today", "आज अभी चेक इन नहीं हुआ"],
+  "home.state.in":       ["You are checked in since {0}", "आप {0} से चेक इन हैं"],
+  "home.checkin":        ["Check In", "चेक इन"],
+  "home.checkout":       ["Check Out", "चेक आउट"],
+  "home.today":          ["Today", "आज"],
+  "home.none":           ["No punches yet today.", "आज अभी कोई हाज़िरी नहीं।"],
+  "home.in":             ["Checked in", "चेक इन"],
+  "home.out":            ["Checked out", "चेक आउट"],
+  "home.src.phone":      ["This phone", "यह फ़ोन"],
+  "home.src.machine":    ["Reception machine", "रिसेप्शन मशीन"],
+  "home.cam.tag":        ["Your photo is taken when you press the button", "बटन दबाते ही फ़ोटो लिया जाएगा"],
+  "home.cam.off":        ["The camera is off. You can still check in, but there will be no photo.", "कैमरा बंद है। आप फिर भी चेक इन कर सकते हैं, पर फ़ोटो नहीं होगी।"],
+  "home.cam.retry":      ["Turn on the camera", "कैमरा चालू करें"],
+  "home.place":          ["You must be within {0} m of {1}", "आपको {1} से {0} मीटर के अंदर होना चाहिए"],
+
+  "busy.photo":          ["Taking your photo", "फ़ोटो ली जा रही है"],
+  "busy.place":          ["Finding where you are", "आपकी जगह देखी जा रही है"],
+  "busy.send":           ["Saving your attendance", "हाज़िरी सेव हो रही है"],
+  "busy.setup":          ["Setting up this phone", "फ़ोन सेट हो रहा है"],
+
+  "res.in.h":            ["Checked in", "चेक इन हो गया"],
+  "res.out.h":           ["Checked out", "चेक आउट हो गया"],
+  "res.where":           ["Where you were", "आप कहाँ थे"],
+  "res.photo":           ["Photo", "फ़ोटो"],
+  "res.photo.yes":       ["Taken", "ली गई"],
+  "res.photo.no":        ["Not taken", "नहीं ली गई"],
+  "res.saved":           ["Saved", "सेव हो गयी"],
+  "res.saved.yes":       ["In your HR record", "आपके HR रिकॉर्ड में"],
+  "res.privacy":         ["Only HR and your supervisor can see this.", "यह केवल HR और आपके सुपरवाइज़र को दिखता है।"],
+  "res.cta":             ["Done", "ठीक है"],
+  "res.atwork":          ["At {0}", "{0} पर"],
+  "res.recorded":        ["Your place was recorded", "आपकी जगह दर्ज हो गई"],
+
+  "btn.try":             ["Try again", "फिर से कोशिश करें"],
+  "btn.back":            ["Go back", "वापस जाएँ"],
+  "btn.setup":           ["Set up this phone again", "फ़ोन दोबारा सेट करें"],
+  "btn.how":             ["How do I turn on location?", "लोकेशन कैसे चालू करें?"]
+};
+function t(key, a, b){
+  var row = T[key];
+  var s = row ? (row[store.lang === "hi" ? 1 : 0] || row[0]) : key;
+  if (a !== undefined) s = s.replace("{0}", a);
+  if (b !== undefined) s = s.replace("{1}", b);
+  return s;
+}
+function applyLang(){
+  document.documentElement.lang = store.lang;
+  var nodes = document.querySelectorAll("[data-t]");
+  for (var i = 0; i < nodes.length; i++) nodes[i].textContent = t(nodes[i].getAttribute("data-t"));
+  var btns = document.querySelectorAll(".lang button");
+  for (var j = 0; j < btns.length; j++)
+    btns[j].setAttribute("aria-pressed", String(btns[j].getAttribute("data-lang") === store.lang));
+  renderA2HS();
+}
+document.addEventListener("click", function(ev){
+  var b = ev.target.closest ? ev.target.closest(".lang button") : null;
+  if (!b) return;
+  store.lang = b.getAttribute("data-lang"); save(); applyLang();
+  if (current === "s-home") renderHome(lastStatus);
+});
+
+/* ── little helpers ──────────────────────────────────────────────────────── */
+var $ = function(id){ return document.getElementById(id); };
+var current = "s-setup";
+function show(id){
+  var all = document.querySelectorAll(".screen");
+  for (var i = 0; i < all.length; i++) all[i].classList.toggle("on", all[i].id === id);
+  current = id;
+  var sc = $(id).querySelector(".scroll"); if (sc) sc.scrollTop = 0;
+}
+function busy(on, msgKey){
+  $("busy").classList.toggle("on", !!on);
+  if (msgKey) $("busy-msg").textContent = t(msgKey);
+}
+function two(n){ return (n < 10 ? "0" : "") + n; }
+function parseTime(s){
+  if (!s) return new Date();
+  if (s instanceof Date) return s;
+  var m = String(s).replace("T", " ").match(/(\d{4})-(\d{2})-(\d{2})[ ]?(\d{2})?:?(\d{2})?:?(\d{2})?/);
+  if (!m) return new Date();
+  return new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+}
+function clock(s){
+  var d = parseTime(s), h = d.getHours(), ap = h < 12 ? "am" : "pm";
+  h = h % 12; if (h === 0) h = 12;
+  return h + ":" + two(d.getMinutes()) + " " + ap;
+}
+function longDate(s){
+  var d = parseTime(s);
+  var M = ["January","February","March","April","May","June","July","August",
+           "September","October","November","December"];
+  var W = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  return W[d.getDay()] + ", " + d.getDate() + " " + M[d.getMonth()];
+}
+function shortDate(s){
+  var d = parseTime(s);
+  var M = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return d.getDate() + " " + M[d.getMonth()];
+}
+function esc(s){ var d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }
+
+/* ── the server ──────────────────────────────────────────────────────────── */
+var SAMPLE = false;           /* true when the server address is "demo" */
+function normServer(v){
+  v = (v || "").trim().replace(/\/+$/, "");
+  if (!v) return "";
+  if (v.toLowerCase() === "demo") return "demo";
+  if (!/^https?:\/\//i.test(v)) v = "https://" + v;
+  return v;
+}
+/* Frappe answers an error with _server_messages: a JSON array of JSON strings. */
+function serverMessage(body){
+  try {
+    var sm = body && body._server_messages;
+    if (sm) {
+      var list = typeof sm === "string" ? JSON.parse(sm) : sm;
+      var out = [];
+      for (var i = 0; i < list.length; i++) {
+        var one = list[i];
+        try { one = JSON.parse(one); } catch (e) {}
+        out.push(typeof one === "string" ? one : (one.message || ""));
+      }
+      return out.join(" ").replace(/<[^>]+>/g, "").trim();
+    }
+    if (body && body.exception) return String(body.exception).replace(/^[\w.]+Error:\s*/, "").trim();
+    if (body && body.message && typeof body.message === "string") return body.message;
+  } catch (e) {}
+  return "";
+}
+function ApiError(text, status){ this.name = "ApiError"; this.text = text || ""; this.status = status || 0; }
+function NetError(){ this.name = "NetError"; }
+
+function call(method, args){
+  if (SAMPLE) return mockCall(method, args);
+  var url = store.server + "/api/method/alvoraa_portal.field_checkin." + method;
+  return fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify(args || {}),
+    credentials: "omit",
+    cache: "no-store"
+  }).then(function(r){
+    return r.text().then(function(txt){
+      var body = null; try { body = JSON.parse(txt); } catch (e) {}
+      if (!r.ok) throw new ApiError(serverMessage(body) || txt.slice(0, 200), r.status);
+      return body && body.message !== undefined ? body.message : body;
+    });
+  }, function(){ throw new NetError(); });
+}
+
+/* ── the phone's position ────────────────────────────────────────────────── */
+function position(){
+  return new Promise(function(resolve, reject){
+    if (!navigator.geolocation) return reject({ kind: "LOCATION_OFF" });
+    var done = false;
+    var timer = setTimeout(function(){ if (!done) { done = true; reject({ kind: "LOCATION_SLOW" }); } }, 20000);
+    navigator.geolocation.getCurrentPosition(
+      function(p){ if (done) return; done = true; clearTimeout(timer); resolve(p.coords); },
+      function(err){
+        if (done) return; done = true; clearTimeout(timer);
+        reject({ kind: err && err.code === 1 ? "LOCATION_BLOCKED" : "LOCATION_OFF" });
+      },
+      { enableHighAccuracy: true, timeout: 18000, maximumAge: 0 }
+    );
+  });
+}
+
+/* ── the camera ──────────────────────────────────────────────────────────── */
+var stream = null;
+function startCamera(){
+  if (SAMPLE || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return camOff();
+  navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 640 } }, audio: false
+  }).then(function(s){
+    stream = s;
+    var v = $("video"); v.srcObject = s; v.hidden = false;
+    $("cam-off").hidden = true; $("cam-tag").hidden = false;
+    var play = v.play(); if (play && play.catch) play.catch(function(){});
+  }).catch(camOff);
+}
+function camOff(){
+  stream = null;
+  $("video").hidden = true; $("cam-off").hidden = false; $("cam-tag").hidden = true;
+}
+function stopCamera(){
+  if (!stream) return;
+  stream.getTracks().forEach(function(tr){ tr.stop(); });
+  stream = null;
+}
+/* A photo is evidence, not a portrait. 480px wide, JPEG 0.6, well under the
+   2 MB the server accepts, and small enough to send on a weak 3G link. */
+function snap(){
+  if (!stream) return null;
+  try {
+    var v = $("video"), w = 480;
+    var h = Math.round(w * (v.videoHeight || 480) / (v.videoWidth || 640));
+    var c = document.createElement("canvas"); c.width = w; c.height = h;
+    var x = c.getContext("2d");
+    x.translate(w, 0); x.scale(-1, 1);          /* un-mirror before saving */
+    x.drawImage(v, 0, 0, w, h);
+    return c.toDataURL("image/jpeg", 0.6);
+  } catch (e) { return null; }
+}
+
+/* ── screen 1: setup ─────────────────────────────────────────────────────── */
+function badField(wrap, errId, msg){
+  $(wrap).classList.add("bad");
+  $(wrap.replace("f-", "i-")).setAttribute("aria-invalid", "true");
+  $(errId).textContent = msg;
+}
+function clearField(wrap, errId){
+  $(wrap).classList.remove("bad");
+  $(wrap.replace("f-", "i-")).removeAttribute("aria-invalid");
+  $(errId).textContent = "";
+}
+$("b-register").addEventListener("click", function(){
+  clearField("f-server", "e-server"); clearField("f-emp", "e-emp");
+  var srv = normServer($("i-server").value);
+  var emp = ($("i-emp").value || "").trim();
+  if (!srv) { badField("f-server", "e-server", t("setup.err.server")); $("i-server").focus(); return; }
+  if (!emp) { badField("f-emp", "e-emp", t("setup.err.emp")); $("i-emp").focus(); return; }
+
+  SAMPLE = (srv === "demo");
+  document.body.classList.toggle("demo", SAMPLE);
+  store.server = srv;
+
+  busy(true, "busy.setup");
+  call("register_device", { employee_id: emp, device_label: deviceLabel(), platform: platform() })
+    .then(function(res){
+      busy(false);
+      if (!res || res.status === "pending") return problem("PENDING", res && res.message);
+      store.token = res.token; store.employee = res.employee;
+      store.employee_name = res.employee_name; save();
+      $("done-name").textContent = res.employee_name;
+      renderA2HS();
+      show("s-done");
+    })
+    .catch(function(e){
+      busy(false);
+      if (e instanceof NetError) return badField("f-server", "e-server",
+        store.lang === "hi"
+          ? "सर्वर से बात नहीं हुई। पता जाँचें और इंटरनेट देखें।"
+          : "We could not reach that server. Check the address, and check you have internet.");
+      var txt = (e && e.text) || "";
+      if (/already registered|waiting for HR/i.test(txt)) return problem("PENDING", txt);
+      if (/not available|subscription|feature/i.test(txt)) return problem("FEATURE_OFF", txt);
+      badField("f-emp", "e-emp", txt || (store.lang === "hi"
+        ? "यह आईडी नहीं मिली। HR से जाँचें।"
+        : "We could not find an active employee with that ID. Please check it with HR."));
+    });
+});
+function platform(){
+  var ua = navigator.userAgent || "";
+  if (/iPhone|iPad|iPod/i.test(ua)) return "iOS";
+  if (/Android/i.test(ua)) return "Android";
+  return "Other";
+}
+function deviceLabel(){
+  var ua = navigator.userAgent || "";
+  var m = ua.match(/Android[^;]*;\s*([^;)]+)/);
+  return (m ? m[1].trim() : platform()) + " / web";
+}
+
+/* ── screen 2: you are set up + add to home screen ───────────────────────── */
+var a2hsShow = null;    /* null = follow the phone; "ios" or "android" = forced */
+function renderA2HS(){
+  var isIOS = a2hsShow ? a2hsShow === "ios" : platform() === "iOS";
+  var steps = isIOS
+    ? (store.lang === "hi"
+        ? ["Safari में नीचे शेयर बटन दबाएँ (तीर वाला बक्सा)।",
+           "नीचे स्क्रॉल करके “Add to Home Screen” दबाएँ।",
+           "“Add” दबाएँ। अब ऐप होम स्क्रीन पर है।"]
+        : ["In Safari, press the Share button at the bottom (a box with an arrow).",
+           "Scroll down and press “Add to Home Screen”.",
+           "Press “Add”. The app is now on your home screen."])
+    : (store.lang === "hi"
+        ? ["Chrome में ऊपर दाईं ओर के तीन बिंदु दबाएँ।",
+           "“Add to Home screen” या “Install app” दबाएँ।",
+           "“Add” दबाएँ। अब ऐप होम स्क्रीन पर है।"]
+        : ["In Chrome, press the three dots at the top right.",
+           "Press “Add to Home screen” or “Install app”.",
+           "Press “Add”. The app is now on your home screen."]);
+  $("a2hs-h").textContent = t(isIOS ? "a2hs.ios.h" : "a2hs.android.h");
+  $("b-a2hs-other").textContent = t(isIOS ? "a2hs.switch.android" : "a2hs.switch.ios");
+  var html = "";
+  for (var i = 0; i < steps.length; i++)
+    html += '<div class="rowline"><span class="n">' + (i + 1) + '</span><span class="tx">' + esc(steps[i]) + "</span></div>";
+  $("a2hs-steps").innerHTML = html;
+}
+$("b-a2hs-other").addEventListener("click", function(){
+  var isIOS = a2hsShow ? a2hsShow === "ios" : platform() === "iOS";
+  a2hsShow = isIOS ? "android" : "ios";
+  renderA2HS();
+});
+$("b-done").addEventListener("click", function(){ goHome(); });
+
+/* ── screen 3: home ──────────────────────────────────────────────────────── */
+var lastStatus = null;
+function goHome(){
+  show("s-home");
+  startCamera();
+  refresh();
+}
+function refresh(){
+  return call("field_status", { token: store.token })
+    .then(function(s){ lastStatus = s; renderHome(s); })
+    .catch(function(e){ handle(e); });
+}
+function renderHome(s){
+  s = s || {};
+  var inNow = !!s.checked_in;
+  $("home-who").textContent = s.employee_name || store.employee_name || "";
+  $("punch-date").textContent = shortDate(s.server_time);
+
+  var chip = $("home-state");
+  chip.className = "chip " + (inNow ? "yes" : "no");
+  var since = "";
+  var rows = s.todays_checkins || [];
+  for (var i = rows.length - 1; i >= 0; i--) if (rows[i].log_type === "IN") { since = clock(rows[i].time); break; }
+  $("home-state-text").textContent = inNow ? t("home.state.in", since) : t("home.state.out");
+
+  var b = $("b-punch");
+  b.className = "btn btn-punch " + (inNow ? "out" : "in");
+  $("b-punch-text").textContent = t(inNow ? "home.checkout" : "home.checkin");
+  b.setAttribute("data-type", inNow ? "OUT" : "IN");
+
+  var html = "";
+  if (!rows.length) html = '<div class="none">' + esc(t("home.none")) + "</div>";
+  for (var j = 0; j < rows.length; j++){
+    var r = rows[j], isIn = r.log_type === "IN";
+    var src = r.device_id === "alvoraa-field-app" ? t("home.src.phone") : t("home.src.machine");
+    html += '<div class="punch"><span class="k ' + (isIn ? "in" : "out") + '">'
+          + esc(t(isIn ? "home.in" : "home.out")) + '</span>'
+          + '<span class="src">' + esc(src) + "</span>"
+          + '<span class="tm">' + esc(clock(r.time)) + "</span></div>";
+  }
+  $("punch-rows").innerHTML = html;
+
+  var wl = s.work_location;
+  $("home-place").textContent = wl ? t("home.place", wl.radius, wl.name) : "";
+}
+
+/* The whole app, in one tap. */
+var pending = null;   /* the punch we are retrying: keeps the photo */
+$("b-punch").addEventListener("click", function(){
+  var type = this.getAttribute("data-type") || "IN";
+  busy(true, "busy.photo");
+  var photo = snap();
+  if (photo) { $("flash").classList.remove("go"); void $("flash").offsetWidth; $("flash").classList.add("go"); }
+  pending = { log_type: type, photo: photo };
+  sendPunch();
+});
+$("b-cam-retry").addEventListener("click", startCamera);
+
+function sendPunch(){
+  busy(true, "busy.place");
+  position().then(function(c){
+    busy(true, "busy.send");
+    return call("field_checkin", {
+      token: store.token,
+      log_type: pending.log_type,
+      latitude: c.latitude,
+      longitude: c.longitude,
+      accuracy: c.accuracy,
+      photo: pending.photo || null
+    });
+  }).then(function(res){
+    busy(false);
+    result(res, pending);
+    pending = null;
+    refresh();
+  }).catch(function(e){
+    busy(false);
+    handle(e);
+  });
+}
+
+/* ── screen 4: it worked ─────────────────────────────────────────────────── */
+function result(res, sent){
+  var isIn = (res.log_type || "IN") === "IN";
+  $("res-who").textContent = res.employee_name || store.employee_name || "";
+  $("res-h").textContent = t(isIn ? "res.in.h" : "res.out.h");
+  $("res-time").textContent = clock(res.time);
+  $("res-date").textContent = longDate(res.time);
+  var wl = lastStatus && lastStatus.work_location;
+  $("res-place").textContent = wl ? t("res.atwork", wl.name) : t("res.recorded");
+  $("res-photo").textContent = t(sent && sent.photo ? "res.photo.yes" : "res.photo.no");
+  $("res-saved").textContent = t("res.saved.yes");
+  show("s-result");
+}
+$("b-res-done").addEventListener("click", function(){ show("s-home"); refresh(); });
+
+/* ── screen 5: every way it can go wrong ─────────────────────────────────── */
+var ICONS = {
+  pin:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.4 7-11a7 7 0 1 0-14 0c0 4.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/><path d="M3 3l18 18"/></svg>',
+  aim:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5" stroke-dasharray="4 3"/><circle cx="12" cy="12" r="2.4"/></svg>',
+  walk: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4.2" r="2"/><path d="M8 21l3-6 1-4-3 2-2 3"/><path d="M12 11l3 2 1 3 2 3"/></svg>',
+  wifi: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5a15 15 0 0 1 20 0"/><path d="M5.5 12.3a10 10 0 0 1 13 0"/><path d="M9 16a5 5 0 0 1 6 0"/><circle cx="12" cy="19.6" r="1.1" fill="currentColor"/><path d="M3 3l18 18"/></svg>',
+  time: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.5l3.5 2"/></svg>',
+  phone:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.4"/><path d="M10.5 18.2h3"/></svg>',
+  stop: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><path d="M12 16.4h.01"/></svg>'
+};
+/* One place that decides what a driver sees when something stops the punch.
+   tone: ok | warn | stop.  a1/a2: the buttons, in order of what to do next. */
+var PROBLEMS = {
+  LOCATION_OFF: {
+    tone: "warn", icon: "pin",
+    h:  ["Location is off", "लोकेशन बंद है"],
+    p:  ["We need to know where you are to mark your attendance. Turn on location, then try again.",
+         "हाज़िरी लगाने के लिए आपकी जगह चाहिए। लोकेशन चालू करके फिर कोशिश करें।"],
+    steps: [["Swipe down from the top of your phone.", "फ़ोन के ऊपर से नीचे स्वाइप करें।"],
+            ["Press Location so it turns on.", "Location दबाएँ ताकि वह चालू हो जाए।"],
+            ["Come back here and press Try again.", "यहाँ आकर “फिर से कोशिश” दबाएँ।"]],
+    a1: "retry", a2: "home"
+  },
+  LOCATION_BLOCKED: {
+    tone: "warn", icon: "pin",
+    h:  ["This app cannot see your location", "यह ऐप आपकी जगह नहीं देख पा रहा"],
+    p:  ["You said no to location earlier. Allow it for this app, then try again.",
+         "पहले आपने लोकेशन को मना कर दिया था। इस ऐप को इजाज़त दें, फिर कोशिश करें।"],
+    steps: [["Press the lock icon next to the address at the top.", "ऊपर पते के पास ताले का निशान दबाएँ।"],
+            ["Press Permissions, then allow Location.", "Permissions दबाएँ, फिर Location को इजाज़त दें।"],
+            ["Come back here and press Try again.", "यहाँ आकर “फिर से कोशिश” दबाएँ।"]],
+    a1: "retry", a2: "home"
+  },
+  LOCATION_SLOW: {
+    tone: "warn", icon: "time",
+    h:  ["Still looking for your location", "आपकी जगह अभी मिल नहीं रही"],
+    p:  ["Your phone is taking too long to find you. Step into the open, wait a few seconds, and try again.",
+         "फ़ोन को जगह ढूंढने में बहुत समय लग रहा है। खुली जगह पर जाएँ, कुछ सेकंड रुकें और फिर कोशिश करें।"],
+    a1: "retry", a2: "home"
+  },
+  GPS_VAGUE: {
+    tone: "warn", icon: "aim",
+    h:  ["Your location is not exact enough", "आपकी जगह ठीक से पता नहीं चल रही"],
+    p:  ["Your phone is not sure where you are. Step outside or away from buildings, wait a few seconds, and try again.",
+         "फ़ोन को ठीक जगह नहीं मिल रही। बाहर या इमारतों से दूर जाएँ, कुछ सेकंड रुकें, फिर कोशिश करें।"],
+    a1: "retry", a2: "home"
+  },
+  OUTSIDE: {
+    tone: "warn", icon: "walk",
+    h:  ["You are too far from work", "आप काम की जगह से दूर हैं"],
+    p:  ["", ""],   /* filled with the server's own sentence, which names the distance */
+    p2: ["Walk closer and press Try again. Nothing has been saved.",
+         "पास जाएँ और “फिर से कोशिश” दबाएँ। अभी कुछ सेव नहीं हुआ है।"],
+    a1: "retry", a2: "home"
+  },
+  NO_SIGNAL: {
+    tone: "warn", icon: "wifi",
+    h:  ["No internet", "इंटरनेट नहीं है"],
+    p:  ["Your attendance has not been saved yet. Move to a place with signal and press Try again. Your photo is kept until then.",
+         "आपकी हाज़िरी अभी सेव नहीं हुई है। जहाँ सिग्नल हो वहाँ जाकर “फिर से कोशिश” दबाएँ। आपकी फ़ोटो तब तक रखी रहेगी।"],
+    a1: "retry", a2: "home"
+  },
+  NOT_REGISTERED: {
+    tone: "stop", icon: "phone",
+    h:  ["This phone is not set up", "यह फ़ोन सेट नहीं है"],
+    p:  ["Set it up again with the server address and employee ID HR gave you. It takes a minute.",
+         "HR का दिया सर्वर पता और कर्मचारी आईडी डालकर दोबारा सेट करें। एक मिनट लगेगा।"],
+    a1: "setup"
+  },
+  PENDING: {
+    tone: "warn", icon: "time",
+    h:  ["Waiting for HR to approve this phone", "HR की मंजूरी का इंतज़ार है"],
+    p:  ["HR checks every new phone before it can mark attendance. They have been told. You only wait once.",
+         "HR हर नए फ़ोन को जाँचता है, तभी हाज़िरी लग सकती है। उन्हें बता दिया गया है। यह इंतज़ार केवल एक बार है।"],
+    a1: "retry", a2: "setup"
+  },
+  BLOCKED: {
+    tone: "stop", icon: "stop",
+    h:  ["This phone has been stopped", "यह फ़ोन रोक दिया गया है"],
+    p:  ["HR has blocked this phone from marking attendance. Please speak to HR.",
+         "HR ने इस फ़ोन से हाज़िरी लगाना रोक दिया है। कृपया HR से बात करें।"],
+    a1: "none"
+  },
+  LEFT: {
+    tone: "stop", icon: "stop",
+    h:  ["You cannot mark attendance here", "यहाँ हाज़िरी नहीं लग सकती"],
+    p:  ["Your employee record is not active any more. If that is wrong, please speak to HR.",
+         "आपका कर्मचारी रिकॉर्ड अब चालू नहीं है। अगर यह गलत है तो HR से बात करें।"],
+    a1: "none"
+  },
+  FEATURE_OFF: {
+    tone: "stop", icon: "stop",
+    h:  ["This app is not switched on for your company", "यह ऐप आपकी कंपनी के लिए चालू नहीं है"],
+    p:  ["Field check-in is not part of your company's plan yet. Please tell HR.",
+         "फ़ील्ड चेक इन अभी आपकी कंपनी के प्लान में नहीं है। कृपया HR को बताएँ।"],
+    a1: "none"
+  },
+  UNKNOWN: {
+    tone: "stop", icon: "stop",
+    h:  ["Something went wrong", "कुछ गलत हो गया"],
+    p:  ["Your attendance was not saved. Press Try again. If it keeps happening, show this screen to HR.",
+         "आपकी हाज़िरी सेव नहीं हुई। “फिर से कोशिश” दबाएँ। बार-बार हो तो यह स्क्रीन HR को दिखाएँ।"],
+    a1: "retry", a2: "home"
+  }
+};
+var ACTIONS = {
+  retry: { key: "btn.try",   run: function(){ if (pending) { show("s-home"); sendPunch(); } else { show("s-home"); refresh(); } } },
+  home:  { key: "btn.back",  run: function(){ pending = null; show("s-home"); refresh(); } },
+  setup: { key: "btn.setup", run: function(){ pending = null; show("s-setup"); } }
+};
+function pick(pair){ return pair[store.lang === "hi" ? 1 : 0] || pair[0]; }
+
+function problem(kind, serverText){
+  var d = PROBLEMS[kind] || PROBLEMS.UNKNOWN;
+  $("err-who").textContent = store.employee_name || "";
+  $("err-big").className = "big " + (d.tone === "stop" ? "stop" : d.tone === "ok" ? "ok" : "warn");
+  $("err-icon").innerHTML = ICONS[d.icon] || ICONS.stop;
+  $("err-h").textContent = pick(d.h);
+  /* When the server wrote a sentence a driver can act on, that sentence wins:
+     it names the real distance and the real branch. */
+  var body = pick(d.p);
+  if (kind === "OUTSIDE" && serverText) body = serverText + " " + pick(d.p2);
+  else if (!body && serverText) body = serverText;
+  $("err-p").textContent = body;
+
+  if (d.steps) {
+    var html = "";
+    for (var i = 0; i < d.steps.length; i++)
+      html += '<div class="rowline"><span class="n">' + (i + 1) + '</span><span class="tx">'
+            + esc(pick(d.steps[i])) + "</span></div>";
+    $("err-steps").innerHTML = html; $("err-card").hidden = false;
+  } else { $("err-card").hidden = true; }
+
+  var b1 = $("b-err-1"), b2 = $("b-err-2");
+  if (d.a1 === "none" || !d.a1) {
+    /* Nothing the driver can do fixes these. Do not offer a button that will
+       fail again; offer the way back and let them show the screen to HR. */
+    b1.hidden = false; b1.textContent = t("btn.back");
+    b1.className = "btn ghost"; b1.onclick = ACTIONS.home.run;
+    b2.hidden = true;
+  } else {
+    b1.hidden = false; b1.className = "btn";
+    b1.textContent = t(ACTIONS[d.a1].key); b1.onclick = ACTIONS[d.a1].run;
+    if (d.a2) { b2.hidden = false; b2.className = "btn ghost";
+      b2.textContent = t(ACTIONS[d.a2].key); b2.onclick = ACTIONS[d.a2].run; }
+    else b2.hidden = true;
+  }
+  show("s-err");
+}
+
+/* Turn anything that went wrong into one of the screens above. The server
+   already writes plain sentences; we match on them rather than on codes,
+   because field_checkin.py throws text, not error keys. */
+function handle(e){
+  if (!e) return problem("UNKNOWN");
+  if (e.kind) return problem(e.kind);                 /* from position() */
+  if (e instanceof NetError || e.name === "NetError") return problem("NO_SIGNAL");
+  var txt = e.text || "";
+  if (/not set up|register it again/i.test(txt))      return problem("NOT_REGISTERED");
+  if (/waiting for HR|already registered/i.test(txt)) return problem("PENDING", txt);
+  if (/blocked/i.test(txt))                           return problem("BLOCKED");
+  if (/no longer active/i.test(txt))                  return problem("LEFT");
+  if (/could not get your location/i.test(txt))       return problem("LOCATION_OFF");
+  if (/accurate to about/i.test(txt))                 return problem("GPS_VAGUE", txt);
+  if (/m from|too far/i.test(txt))                    return problem("OUTSIDE", txt);
+  if (/not available|subscription|feature/i.test(txt))return problem("FEATURE_OFF");
+  return problem("UNKNOWN", txt);
+}
+window.addEventListener("offline", function(){ if (pending) problem("NO_SIGNAL"); });
+
+/* ── sample mode: the same screens, no server ────────────────────────────── */
+var mockState = { checked_in: false, rows: [], scenario: "ok" };
+function nowStr(d){
+  d = d || new Date();
+  return d.getFullYear() + "-" + two(d.getMonth() + 1) + "-" + two(d.getDate()) + " "
+       + two(d.getHours()) + ":" + two(d.getMinutes()) + ":" + two(d.getSeconds());
+}
+function mockCall(method, args){
+  return new Promise(function(resolve, reject){
+    setTimeout(function(){
+      if (method === "register_device") {
+        if (mockState.scenario === "pending")
+          return resolve({ status: "pending", message: "A phone is already registered for Ramesh Kumar. HR has been asked to approve this one." });
+        return resolve({ status: "active", token: "sample-token-0000000000000000000000",
+                         employee: args.employee_id, employee_name: "Ramesh Kumar",
+                         message: "Set up for Ramesh Kumar." });
+      }
+      if (method === "field_status") {
+        return resolve({
+          employee: "HR-EMP-00042", employee_name: "Ramesh Kumar", designation: "Driver",
+          checked_in: mockState.checked_in, todays_checkins: mockState.rows.slice(),
+          server_time: nowStr(),
+          work_location: { name: "Sample Branch", radius: 100, latitude: 28.57, longitude: 77.32 }
+        });
+      }
+      if (method === "field_checkin") {
+        var s = mockState.scenario;
+        if (s === "outside")  return reject(new ApiError("You are about 140 m from Sample Branch. You need to be within 100 m to check in.", 417));
+        if (s === "vague")    return reject(new ApiError("Your location is only accurate to about 380 m, which is not close enough to record. Step outside or into the open and try again.", 417));
+        if (s === "nosignal") return reject(new NetError());
+        if (s === "notreg")   return reject(new ApiError("This phone is not set up. Please register it again.", 401));
+        if (s === "pending")  return reject(new ApiError("This phone is waiting for HR to approve it. Another phone is already registered for this employee.", 401));
+        if (s === "left")     return reject(new ApiError("This employee record is no longer active. Please speak to HR.", 401));
+        if (s === "blocked")  return reject(new ApiError("This phone has been blocked. Please speak to HR.", 401));
+        if (s === "unknown")  return reject(new ApiError("", 500));
+        var tm = nowStr();
+        mockState.rows.push({ name: "EMP-CKIN-" + (mockState.rows.length + 1),
+                              log_type: args.log_type, time: tm, device_id: "alvoraa-field-app" });
+        mockState.checked_in = args.log_type === "IN";
+        return resolve({ status: "ok", log_type: args.log_type, time: tm,
+                         name: "EMP-CKIN-0000" + mockState.rows.length, employee_name: "Ramesh Kumar" });
+      }
+      reject(new ApiError("Unknown method", 404));
+    }, 550);
+  });
+}
+/* The state switcher. Only ever visible in sample mode. */
+var DEV = [
+  ["Setup",        function(){ show("s-setup"); }],
+  ["Set up, done", function(){ $("done-name").textContent = "Ramesh Kumar"; renderA2HS(); show("s-done"); }],
+  ["Home, out",    function(){ mockState.checked_in = false; mockState.rows = []; show("s-home"); refresh(); }],
+  ["Home, in",     function(){ mockState.checked_in = true;
+                     mockState.rows = [{ name:"c1", log_type:"IN", time:nowStr(new Date(Date.now()-8100000)),
+                                         device_id:"alvoraa-field-app" }];
+                     show("s-home"); refresh(); }],
+  ["Checked in",   function(){ pending = { photo: "x" };
+                     result({ log_type:"IN", time:nowStr(), employee_name:"Ramesh Kumar" }, pending); pending = null; }],
+  ["Checked out",  function(){ pending = { photo: "x" };
+                     result({ log_type:"OUT", time:nowStr(), employee_name:"Ramesh Kumar" }, pending); pending = null; }],
+  ["Location off", function(){ problem("LOCATION_OFF"); }],
+  ["Location no",  function(){ problem("LOCATION_BLOCKED"); }],
+  ["GPS slow",     function(){ problem("LOCATION_SLOW"); }],
+  ["GPS vague",    function(){ problem("GPS_VAGUE"); }],
+  ["Too far",      function(){ problem("OUTSIDE", "You are about 140 m from Sample Branch. You need to be within 100 m to check in."); }],
+  ["No signal",    function(){ problem("NO_SIGNAL"); }],
+  ["Not set up",   function(){ problem("NOT_REGISTERED"); }],
+  ["2nd phone",    function(){ problem("PENDING"); }],
+  ["Blocked",      function(){ problem("BLOCKED"); }],
+  ["Left company", function(){ problem("LEFT"); }],
+  ["Not in plan",  function(){ problem("FEATURE_OFF"); }],
+  ["Unknown",      function(){ problem("UNKNOWN"); }],
+  ["Camera off",   function(){ show("s-home"); camOff(); }]
+];
+function buildDev(){
+  var bar = $("devbar");
+  for (var i = 0; i < DEV.length; i++) {
+    (function(row){
+      var b = document.createElement("button");
+      b.type = "button"; b.textContent = row[0]; b.onclick = row[1];
+      bar.appendChild(b);
+    })(DEV[i]);
+  }
+}
+
+/* ── start ───────────────────────────────────────────────────────────────── */
+function manifest(){
+  /* Temporary, so the page installs while it is still one file. Replace with a
+     real .webmanifest served from the app. */
+  try {
+    var m = {
+      name: BRAND.name, short_name: BRAND.name, start_url: ".", display: "standalone",
+      background_color: "#F8F6F3", theme_color: BRAND.deep, orientation: "portrait",
+      icons: [{ src: "data:image/svg+xml;base64," + btoa(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">' +
+        '<rect width="192" height="192" rx="36" fill="' + BRAND.deep + '"/>' +
+        '<path d="M58 100l24 24 52-56" fill="none" stroke="#fff" stroke-width="16" ' +
+        'stroke-linecap="round" stroke-linejoin="round"/></svg>'),
+        sizes: "192x192", type: "image/svg+xml", purpose: "any" }]
+    };
+    var link = document.createElement("link");
+    link.rel = "manifest";
+    link.href = URL.createObjectURL(new Blob([JSON.stringify(m)], { type: "application/manifest+json" }));
+    document.head.appendChild(link);
+  } catch (e) {}
+}
+function boot(){
+  manifest();
+  buildDev();
+  applyLang();
+  SAMPLE = store.server === "demo";
+  document.body.classList.toggle("demo", SAMPLE);
+  if (store.server) $("i-server").value = store.server;
+  if (store.token) { goHome(); } else { show("s-setup"); }
+}
+document.addEventListener("visibilitychange", function(){
+  if (document.hidden) { stopCamera(); }
+  else if (current === "s-home") { startCamera(); refresh(); }
+});
+boot();
+</script>
+</body>
+</html>

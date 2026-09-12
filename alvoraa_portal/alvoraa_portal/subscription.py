@@ -172,6 +172,20 @@ FEATURES = {
         "opt_in": True,
         "requires": ["performance", "attendance"],
     },
+    "field_checkin": {
+        "desc": "Attendance from a phone for staff with no desk: photo, place and time, checked against the branch radius",
+        "icon": "📍",
+        "label": "Field Check-in & Geofencing",
+        # Lives in the portal app, like the vendor and analytics features. The
+        # real gate is @requires_feature on the endpoints, not a hidden module:
+        # this one is reached from a phone that never opens the desk.
+        "app": "alvoraa_portal",
+        "module_defs": ["Alvoraa Portal"],
+        "opt_in": True,
+        # Attendance only. Deliberately NOT late_rules: a customer can buy field
+        # punches without buying deductions, and most will start that way.
+        "requires": ["attendance"],
+    },
     "employee_documents": {
         "desc": "Document checklist on every employee: collected, verified, expiring",
         "icon": "🗂️",

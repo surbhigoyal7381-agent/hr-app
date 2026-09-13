@@ -117,22 +117,28 @@ button{font-family:inherit}
 /* The arrow points in for Check In and out for Check Out, so the picture
    says the same thing as the word. */
 .btn-punch.out svg{transform:scaleX(-1)}
-.footer{padding:12px 16px calc(12px + var(--safe-b));background:var(--bg);
+.footer{padding:8px 16px calc(10px + var(--safe-b));background:var(--bg);
   border-top:1px solid var(--border)}
 .footer.plain{border-top:0}
 .stack>*+*{margin-top:10px}
 
 /* State chip */
-.chip{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:var(--r);
-  font-size:var(--fs-base);font-weight:650;border:2px solid transparent;margin:12px 16px 0}
-.chip .dot{width:14px;height:14px;border-radius:50%;flex:none}
+/* One slim line, not a card. It says one short thing and must not compete with
+   the camera for height. */
+.chip{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:var(--r-full);
+  font-size:var(--fs-sm);font-weight:650;border:1px solid transparent;
+  margin:8px 16px 0;flex:0 0 auto}
+.chip .dot{width:10px;height:10px;border-radius:50%;flex:none}
 .chip.yes{background:var(--green-lt);color:var(--green-h);border-color:var(--green)}
 .chip.yes .dot{background:var(--green)}
 .chip.no{background:var(--surface2);color:var(--text2);border-color:var(--border2)}
 .chip.no .dot{background:var(--text3)}
 
 /* Camera */
-.cam{position:relative;flex:1;min-height:140px;margin:12px 16px 0;border-radius:var(--r-lg);
+/* Takes every pixel the other rows do not need, and never less than 44% of
+   the screen. It was flex:1 against a 32vh punch list, so on a small phone the
+   camera ended up the smallest thing on a screen that exists to take a photo. */
+.cam{position:relative;flex:1 1 auto;min-height:44vh;margin:8px 16px 0;border-radius:var(--r-lg);
   overflow:hidden;background:#141210;display:flex;align-items:center;justify-content:center}
 .cam video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
 .cam .off{color:#fff;text-align:center;padding:18px;font-size:var(--fs-base)}
@@ -144,12 +150,14 @@ button{font-family:inherit}
 @keyframes fl{0%{opacity:.9}100%{opacity:0}}
 
 /* Punch list */
-.punches{margin:12px 16px 0;background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--r);overflow:hidden;max-height:32vh;overflow-y:auto}
-.punches .hd{padding:9px 14px;font-size:var(--fs-sm);font-weight:650;color:var(--text2);
+/* Today's punches are a reference, not the job. Two rows deep, scrollable,
+   and the first thing to give up space when the screen is short. */
+.punches{margin:8px 16px 0;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r);overflow:hidden;flex:0 1 auto;max-height:116px;overflow-y:auto}
+.punches .hd{padding:5px 14px;font-size:13px;font-weight:650;color:var(--text2);
   background:var(--surface2);border-bottom:1px solid var(--border);
   display:flex;justify-content:space-between;position:sticky;top:0}
-.punch{display:flex;align-items:center;gap:12px;padding:12px 14px;min-height:56px;
+.punch{display:flex;align-items:center;gap:10px;padding:7px 14px;min-height:44px;
   border-bottom:1px solid var(--border)}
 .punch:last-child{border-bottom:0}
 .punch .k{font-weight:700;font-size:var(--fs-base);min-width:96px}
@@ -157,7 +165,7 @@ button{font-family:inherit}
 .punch .k.out{color:var(--primary-d)}
 .punch .tm{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:700;font-size:var(--fs-md)}
 .punch .src{font-size:var(--fs-sm);color:var(--text3)}
-.punches .none{padding:16px 14px;color:var(--text3)}
+.punches .none{padding:10px 14px;color:var(--text3);font-size:var(--fs-sm)}
 
 /* Big result and error screens */
 .big{display:flex;flex-direction:column;align-items:center;text-align:center;padding:18px 20px 6px}

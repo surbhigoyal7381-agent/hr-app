@@ -669,9 +669,19 @@ $("b-register").addEventListener("click", function(){
   call("register_device", { employee_id: emp, device_label: deviceLabel(), platform: platform() })
     .then(function(res){
       busy(false);
+      /* Keep the secret whenever the server issued one, EVEN when the answer is
+         "pending". Every registration is pending now - HR approves each phone -
+         and an earlier version of this treated pending as a failure and threw
+         the token away. The phone then had nothing stored, so it went back to
+         this screen on every refresh, and activating it in the desk changed
+         nothing because the phone had already forgotten its secret. */
+      if (res && res.token) {
+        store.token = res.token;
+        store.employee = res.employee || "";
+        store.employee_name = res.employee_name || "";
+        save();
+      }
       if (!res || res.status === "pending") return problem("PENDING", res && res.message);
-      store.token = res.token; store.employee = res.employee;
-      store.employee_name = res.employee_name; save();
       $("done-name").textContent = res.employee_name;
       renderA2HS();
       show("s-done");

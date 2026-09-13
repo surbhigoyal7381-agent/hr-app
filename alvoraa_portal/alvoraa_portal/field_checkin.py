@@ -259,6 +259,13 @@ def field_checkin(token, log_type, latitude=None, longitude=None,
 		# real distance, and leave every other failure alone.
 		friendly = _geofence_message(e, emp.name, lat, lon)
 		if friendly:
+			# REPLACE Frappe's wording, do not add to it. Its message is already
+			# queued in the message log by the time we get here, so throwing on
+			# top produced both sentences stitched together - "You must be within
+			# 250 meters of your shift location to check in. You are about 2029 m
+			# from Demo Field Site..." - which is twice as long and says the
+			# radius twice.
+			frappe.clear_messages()
 			frappe.throw(friendly, exc=frappe.ValidationError)
 		raise
 

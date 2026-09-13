@@ -249,16 +249,7 @@ body.demo .footer{padding-bottom:calc(56px + var(--safe-b))}
   <div class="ribbon" data-t="demo.ribbon">Sample data. Nothing is sent to a server.</div>
   <div class="scroll">
     <h2 id="setup-h" data-t="setup.h">Set up this phone</h2>
-    <p class="lead" data-t="setup.p">You only do this once. HR gives you these two things.</p>
-
-    <div class="field" id="f-server">
-      <label for="i-server" data-t="setup.server">Server address
-        <span class="hint" data-t="setup.server.hint">HR gives you this. It usually starts with https://</span>
-      </label>
-      <input type="text" id="i-server" inputmode="url" autocapitalize="off" autocorrect="off"
-             spellcheck="false" autocomplete="off" placeholder="https://">
-      <div class="err" id="e-server" role="alert"></div>
-    </div>
+    <p class="lead" data-t="setup.p">You only do this once. Just your employee ID, from HR.</p>
 
     <div class="field" id="f-emp">
       <label for="i-emp" data-t="setup.emp">Your employee ID
@@ -430,7 +421,7 @@ var T = {
   "demo.ribbon":         ["Sample data. Nothing is sent to a server.", "नमूना डेटा। कुछ भी सर्वर पर नहीं जाता।"],
 
   "setup.h":             ["Set up this phone", "यह फ़ोन सेट करें"],
-  "setup.p":             ["You only do this once. HR gives you these two things.", "यह केवल एक बार करना है। ये दो चीज़ें HR से मिलेंगी।"],
+  "setup.p":             ["You only do this once. Just your employee ID, from HR.", "यह केवल एक बार करना है। बस HR से मिली कर्मचारी आईडी।"],
   "setup.server":        ["Server address", "सर्वर पता"],
   "setup.server.hint":   ["HR gives you this. It usually starts with https://", "HR यह देगा। यह आम तौर पर https:// से शुरू होता है।"],
   "setup.emp":           ["Your employee ID", "आपकी कर्मचारी आईडी"],
@@ -550,14 +541,9 @@ function shortDate(s){
 function esc(s){ var d = document.createElement("div"); d.textContent = s == null ? "" : s; return d.innerHTML; }
 
 /* ── the server ──────────────────────────────────────────────────────────── */
-var SAMPLE = false;           /* true when the server address is "demo" */
-function normServer(v){
-  v = (v || "").trim().replace(/\/+$/, "");
-  if (!v) return "";
-  if (v.toLowerCase() === "demo") return "demo";
-  if (!/^https?:\/\//i.test(v)) v = "https://" + v;
-  return v;
-}
+/* Sample mode is now a query flag, ?demo, because there is no server box to
+   type "demo" into any more. It still never touches a server. */
+var SAMPLE = /[?&]demo/.test(location.search);
 /* Frappe answers an error with _server_messages: a JSON array of JSON strings. */
 function serverMessage(body){
   try {
@@ -582,7 +568,11 @@ function NetError(){ this.name = "NetError"; }
 
 function call(method, args){
   if (SAMPLE) return mockCall(method, args);
-  var url = store.server + "/api/method/alvoraa_portal.field_checkin." + method;
+  /* Relative, so it always talks to the site that served this page. The
+     address used to be typed in at setup and stored; that was a field a driver
+     could get wrong, and the only thing it could ever correctly contain was the
+     address they had already opened. */
+  var url = "/api/method/alvoraa_portal.field_checkin." + method;
   return fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Accept": "application/json" },
@@ -664,15 +654,9 @@ function clearField(wrap, errId){
   $(errId).textContent = "";
 }
 $("b-register").addEventListener("click", function(){
-  clearField("f-server", "e-server"); clearField("f-emp", "e-emp");
-  var srv = normServer($("i-server").value);
+  clearField("f-emp", "e-emp");
   var emp = ($("i-emp").value || "").trim();
-  if (!srv) { badField("f-server", "e-server", t("setup.err.server")); $("i-server").focus(); return; }
   if (!emp) { badField("f-emp", "e-emp", t("setup.err.emp")); $("i-emp").focus(); return; }
-
-  SAMPLE = (srv === "demo");
-  document.body.classList.toggle("demo", SAMPLE);
-  store.server = srv;
 
   busy(true, "busy.setup");
   call("register_device", { employee_id: emp, device_label: deviceLabel(), platform: platform() })
@@ -697,10 +681,10 @@ $("b-register").addEventListener("click", function(){
     })
     .catch(function(e){
       busy(false);
-      if (e instanceof NetError) return badField("f-server", "e-server",
+      if (e instanceof NetError) return badField("f-emp", "e-emp",
         store.lang === "hi"
-          ? "सर्वर से बात नहीं हुई। पता जाँचें और इंटरनेट देखें।"
-          : "We could not reach that server. Check the address, and check you have internet.");
+          ? "इंटरनेट नहीं मिला। कनेक्शन जाँचें और फिर कोशिश करें।"
+          : "We could not reach the server. Check your internet and try again.");
       var txt = (e && e.text) || "";
       if (/already registered|waiting for HR/i.test(txt)) return problem("PENDING", txt);
       if (/not available|subscription|feature/i.test(txt)) return problem("FEATURE_OFF", txt);
@@ -1137,9 +1121,7 @@ function boot(){
   installable();
   buildDev();
   applyLang();
-  SAMPLE = store.server === "demo";
   document.body.classList.toggle("demo", SAMPLE);
-  if (store.server) $("i-server").value = store.server;
   if (store.token) { goHome(); } else { show("s-setup"); }
 }
 document.addEventListener("visibilitychange", function(){

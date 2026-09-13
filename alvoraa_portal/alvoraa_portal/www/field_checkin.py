@@ -21,4 +21,8 @@ def get_context(context):
 	context.no_header = 1
 	context.no_sidebar = 1
 	context.update(get_branding())
+	# The notice states the real retention period, read from settings, so it
+	# can never promise one thing while the organisation does another.
+	from alvoraa_portal.field_checkin import notice_facts
+	context.update(notice_facts())
 	return context

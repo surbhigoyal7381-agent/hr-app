@@ -47,6 +47,11 @@ from alvoraa_portal.subscription import requires_feature
 
 DEVICE = "Alvoraa Field Device"
 
+# The version of the notice shown at setup. Change it whenever the notice's
+# meaning changes. A consent record that says only "agreed" cannot answer "agreed
+# to what?" once the words have moved on; one that names the version can.
+CONSENT_VERSION = "2026-09-13"
+
 # A phone that cannot place itself better than this cannot be used to answer
 # "were you at the branch". Roughly the accuracy of a decent fix outdoors; a
 # reading worse than this usually means the phone fell back to the mobile
@@ -129,7 +134,8 @@ def _device_from_token(token: str):
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @requires_feature("field_checkin")
 @rate_limit(limit=10, seconds=60 * 60)
-def register_device(employee_id, device_label=None, platform=None):
+def register_device(employee_id, device_label=None, platform=None,
+                    consent=0, consent_version=None):
 	"""Tie this phone to an employee and hand it a secret, which HR must enable.
 
 	Open to guests because the person doing it has no login - that is the whole
@@ -152,6 +158,18 @@ def register_device(employee_id, device_label=None, platform=None):
 	POST only. On a GET, nginx writes the whole query string - device secret and
 	all - into an access log that is backed up and outlives the punch.
 	"""
+	# Before anything else, and before the employee is looked up. Checked later,
+	# it would refuse a real ID and a fake one differently - the staff-directory
+	# leak this endpoint was rebuilt to close.
+	if not cint(consent):
+		frappe.throw(_("Please read the notice and tick the box to continue."))
+	if consent_version != CONSENT_VERSION:
+		# The page and the server disagree on what was shown - an old cached
+		# page, most likely. Agreement to words the person never saw is not
+		# agreement, so ask again rather than record it.
+		frappe.throw(_("This screen is out of date. Close the app, open it "
+		               "again, and read the notice."))
+
 	employee_id = (employee_id or "").strip()
 	if not employee_id:
 		frappe.throw(_("Please enter your employee ID."))
@@ -185,6 +203,8 @@ def register_device(employee_id, device_label=None, platform=None):
 		"platform": (platform or "")[:60],
 		"token_hash": _hash(token),
 		"registered_on": now(),
+		"consent_given_on": now(),
+		"consent_version": CONSENT_VERSION,
 	}).insert(ignore_permissions=True)
 	frappe.db.commit()
 
@@ -503,6 +523,237 @@ def field_status(token):
 	}
 
 
+# ── settings the organisation owns ───────────────────────────────────────────
+#
+# Kept in Frappe's Default store, which is what get_org_setting/set_org_setting
+# in hr_api.py already read and write, so the ESS Org Settings screen can edit
+# them without a second mechanism. Each has a default that is safe when nobody
+# has ever opened that screen - which is every tenant, on the day it is created.
+
+SETTING_RETENTION_DAYS = "alvoraa_checkin_photo_retention_days"
+
+# 90 days: long enough to settle a disputed punch or a payroll query, short
+# enough that a leak years later cannot expose faces from years ago. Security
+# recommended it; the organisation can change it.
+DEFAULT_RETENTION_DAYS = 90
+
+
+def _setting(key, default):
+	"""Read an org setting, falling back to the default on anything unusable.
+
+	A missing key, an empty string, or somebody typing "ninety" must never stop
+	attendance working or start deleting the wrong thing.
+	"""
+	try:
+		raw = frappe.db.get_default(key)
+	except Exception:
+		return default
+	if raw in (None, ""):
+		return default
+	try:
+		return int(str(raw).strip())
+	except (TypeError, ValueError):
+		return default
+
+
+def notice_facts():
+	"""What the setup notice has to state, from this organisation's settings.
+
+	Rendered into the page rather than written into it, so the notice cannot
+	promise 90 days while the organisation keeps photos for a year.
+	"""
+	days = photo_retention_days()
+	return {
+		"photo_retention_days": days,
+		"consent_version": CONSENT_VERSION,
+	}
+
+
+def photo_retention_days():
+	"""How long a check-in photo is kept. 0 means keep it for ever."""
+	days = _setting(SETTING_RETENTION_DAYS, DEFAULT_RETENTION_DAYS)
+	return max(0, days)
+
+
+# ── deleting photos when their time is up ────────────────────────────────────
+
+def purge_old_checkin_photos():
+	"""Delete check-in photos older than the retention period. Runs daily.
+
+	Only the PHOTO goes. The attendance record, the time and the coordinates
+	stay, because they are the record of work done and pay owed. A face is
+	evidence for a short window; the punch is a business record.
+
+	Three things this deliberately does:
+
+	  * **0 means never.** An organisation that has to keep photos - a dispute,
+	    an audit, a jurisdiction we have not met yet - sets 0 and nothing is
+	    deleted. It is not a hidden "delete everything" value.
+	  * **Legal hold wins.** A check-in flagged for hold is skipped however old
+	    it is. Deleting evidence somebody has asked you to preserve is worse
+	    than keeping it too long.
+	  * **It says what it did.** The count goes to the log, so "are photos
+	    actually being deleted" has an answer that is not "look in the files
+	    folder and guess".
+	"""
+	days = photo_retention_days()
+	if days <= 0:
+		return {"skipped": "retention disabled (0 = keep for ever)"}
+
+	if not frappe.db.has_column("Employee Checkin", "alvoraa_checkin_photo"):
+		return {"skipped": "field check-in is not installed on this site"}
+
+	cutoff = add_to_date(now(), days=-days)
+
+	filters = {
+		"alvoraa_checkin_photo": ["is", "set"],
+		"time": ["<", cutoff],
+	}
+	if frappe.db.has_column("Employee Checkin", "alvoraa_legal_hold"):
+		filters["alvoraa_legal_hold"] = 0
+
+	rows = frappe.get_all("Employee Checkin", filters=filters,
+	                      fields=["name", "alvoraa_checkin_photo"], limit=2000)
+
+	deleted = failed = 0
+	for row in rows:
+		try:
+			for f in frappe.get_all("File", filters={
+				"attached_to_doctype": "Employee Checkin",
+				"attached_to_name": row.name,
+			}, pluck="name"):
+				frappe.delete_doc("File", f, force=True, ignore_permissions=True,
+				                  delete_permanently=True)
+			frappe.db.set_value("Employee Checkin", row.name,
+			                    "alvoraa_checkin_photo", None, update_modified=False)
+			deleted += 1
+		except Exception:
+			failed += 1
+			frappe.log_error(f"Could not purge the photo on {row.name}",
+			                 "Field check-in retention")
+
+	frappe.db.commit()
+	if deleted or failed:
+		frappe.logger("alvoraa").info(
+			f"check-in photo purge: {deleted} deleted, {failed} failed, "
+			f"older than {days} days")
+	return {"retention_days": days, "deleted": deleted, "failed": failed,
+	        "considered": len(rows)}
+
+
+# ── who may see a punch, and its photo ───────────────────────────────────────
+#
+# The spec found NO row filter on Employee Checkin anywhere in Frappe HR or in
+# this app. The `Employee` role holds plain read on it, so the only thing
+# standing between a curious colleague and everybody's faces and coordinates was
+# whether ERPNext happened to create a User Permission row for each user. That
+# is a setting, not a control: one missing row and the whole tenant is readable.
+#
+# Two hooks, because they answer different questions. The query condition filters
+# LISTS and reports; has_permission guards opening ONE record by name. A list
+# filter alone leaves /app/employee-checkin/EMP-CKIN-00042 wide open.
+
+_HR_ROLES = {"HR Manager", "HR User", "System Manager", "Administrator"}
+
+
+def _viewer(user=None):
+	"""(is_hr, employee_id) for the user asking."""
+	user = user or frappe.session.user
+	roles = set(frappe.get_roles(user))
+	is_hr = bool(_HR_ROLES & roles)
+	emp = frappe.db.get_value("Employee", {"user_id": user, "status": "Active"}, "name")
+	return is_hr, emp
+
+
+def checkin_query_conditions(user=None):
+	"""Row filter for the Employee Checkin list.
+
+	HR sees everything. A manager sees their own and their direct reports'. An
+	employee sees their own. Anybody with no employee record sees nothing, which
+	is deliberately stricter than "sees everything" - the failure mode of a
+	permission rule should be silence, not disclosure.
+	"""
+	is_hr, emp = _viewer(user)
+	if is_hr:
+		return ""
+	if not emp:
+		return "1=0"
+
+	esc = frappe.db.escape
+	allowed = [esc(emp)]
+	# A line manager legitimately needs their own team's attendance. Direct
+	# reports only - not the whole tree - because that is what a manager acts on
+	# and it keeps the list from quietly widening as an org chart deepens.
+	allowed += [esc(e) for e in frappe.get_all(
+		"Employee", filters={"reports_to": emp, "status": "Active"}, pluck="name")]
+
+	return "`tabEmployee Checkin`.employee in ({0})".format(", ".join(allowed))
+
+
+def checkin_has_permission(doc, user=None, permission_type=None):
+	"""Guards ONE record, opened by name or through the API."""
+	is_hr, emp = _viewer(user)
+	if is_hr:
+		return True
+	if not emp:
+		return False
+	if doc.employee == emp:
+		return True
+	return bool(frappe.db.exists("Employee", {
+		"name": doc.employee, "reports_to": emp, "status": "Active"}))
+
+
+# ── who looked at a face, and when ───────────────────────────────────────────
+
+ACCESS_LOG = "Alvoraa Photo Access Log"
+
+
+def log_photo_view(doc, method=None):
+	"""Record that somebody opened a check-in carrying a photo.
+
+	A face is the most sensitive thing this feature stores, and "who has looked
+	at my photo" is a question an employee is entitled to ask. Without this the
+	only honest answer is "we do not know".
+
+	Deliberately narrow, because an access log that records everything is one
+	nobody reads:
+	  * only check-ins that actually HAVE a photo
+	  * never the employee looking at their own
+	  * one row per viewer per record per day, not one per page refresh
+	"""
+	if not doc.get("alvoraa_checkin_photo"):
+		return
+	if not frappe.db.exists("DocType", ACCESS_LOG):
+		return
+
+	user = frappe.session.user
+	if user in ("Guest", "Administrator"):
+		return
+
+	is_hr, emp = _viewer(user)
+	if emp and doc.employee == emp:
+		return
+
+	try:
+		if frappe.db.exists(ACCESS_LOG, {
+			"checkin": doc.name, "viewed_by": user, "viewed_on_date": today()}):
+			return
+		frappe.get_doc({
+			"doctype": ACCESS_LOG,
+			"checkin": doc.name,
+			"employee": doc.employee,
+			"employee_name": doc.employee_name,
+			"viewed_by": user,
+			"viewed_at": now(),
+			"viewed_on_date": today(),
+		}).insert(ignore_permissions=True)
+		frappe.db.commit()
+	except Exception:
+		# Never let the log stop somebody doing their job.
+		frappe.log_error(f"Could not record photo access on {doc.name}",
+		                 "Field check-in access log")
+
+
 # ── install: the fields this feature adds to Employee Checkin ────────────────
 
 def after_migrate():
@@ -557,6 +808,14 @@ def after_migrate():
 				"read_only": 1,
 				"no_copy": 1,
 				"description": "What the phone said the time was. The punch time beside it is the server's. A wide gap is worth a look.",
+			},
+			{
+				"fieldname": "alvoraa_legal_hold",
+				"label": "Hold (do not delete photo)",
+				"fieldtype": "Check",
+				"insert_after": "alvoraa_field_device",
+				"default": "0",
+				"description": "Keeps the photo past the retention period. For a dispute, an investigation or anything somebody has asked you to preserve.",
 			},
 			{
 				"fieldname": "alvoraa_field_device",

@@ -18,7 +18,10 @@
   "token_hash",
   "activity_section",
   "last_seen",
-  "checkin_count"
+  "checkin_count",
+  "consent_section",
+  "consent_given_on",
+  "consent_version"
  ],
  "fields": [
   {
@@ -116,6 +119,25 @@
    "fieldtype": "Int",
    "label": "Check-ins",
    "read_only": 1
+  },
+  {
+   "fieldname": "consent_section",
+   "fieldtype": "Section Break",
+   "label": "Notice"
+  },
+  {
+   "fieldname": "consent_given_on",
+   "fieldtype": "Datetime",
+   "label": "Notice Accepted On",
+   "read_only": 1,
+   "description": "When the employee ticked that they had read the notice on this phone."
+  },
+  {
+   "fieldname": "consent_version",
+   "fieldtype": "Data",
+   "label": "Notice Version",
+   "read_only": 1,
+   "description": "Which version of the notice they saw. Changes whenever the notice's meaning changes."
   }
  ],
  "index_web_pages_for_search": 0,

@@ -178,6 +178,18 @@ button{font-family:inherit}
   align-items:center;justify-content:center;border:3px solid var(--bg)}
 .shot .tick svg{width:22px;height:22px}
 
+/* The setup notice */
+.notice{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
+  padding:12px 14px;margin:6px 0 4px}
+.notice h3{margin:0 0 6px;font-size:var(--fs-base)}
+.notice ul{margin:0;padding:0;list-style:none}
+.notice li{padding:6px 0;border-bottom:1px solid var(--border);font-size:var(--fs-sm);color:var(--text2)}
+.notice li:last-child{border-bottom:0}
+.notice li strong{display:block;color:var(--text);font-size:var(--fs-sm)}
+.agree{display:flex;align-items:center;gap:12px;margin:12px 0 2px;min-height:44px;
+  font-weight:650;font-size:var(--fs-base);cursor:pointer}
+.agree input{width:26px;height:26px;flex:none;accent-color:var(--primary)}
+
 /* Big result and error screens */
 .big{display:flex;flex-direction:column;align-items:center;text-align:center;padding:18px 20px 6px}
 .big .circle{width:96px;height:96px;border-radius:50%;display:flex;align-items:center;
@@ -271,8 +283,31 @@ body.demo .footer{padding-bottom:calc(56px + var(--safe-b))}
       <div class="err" id="e-emp" role="alert"></div>
     </div>
 
-    <p class="muted" data-t="setup.privacy">This phone is linked to you. Your photo and place are
-      recorded only at the moment you press Check In. You are not tracked at any other time.</p>
+    <!-- The notice. Itemised and plain, because DPDP asks for notice a person can
+         actually understand, and because a driver who does not know what this
+         records will not trust it. Retention is rendered from the organisation's
+         setting so the notice can never promise something the site does not do. -->
+    <div class="notice" id="notice">
+      <h3 data-t="notice.h">Before you start</h3>
+      <ul>
+        <li><strong data-t="notice.what.h">What we record</strong>
+          <span data-t="notice.what">A photo of you, where you are, and the time — only when you press Check In or Check Out.</span></li>
+        <li><strong data-t="notice.not.h">What we do not record</strong>
+          <span data-t="notice.not">Nothing between punches. You are not tracked while you work.</span></li>
+        <li><strong data-t="notice.why.h">Why</strong>
+          <span data-t="notice.why">To mark your attendance, and to confirm you were at your workplace.</span></li>
+        <li><strong data-t="notice.who.h">Who can see it</strong>
+          <span data-t="notice.who">HR and your manager. Not your colleagues.</span></li>
+        <li><strong data-t="notice.keep.h">How long</strong>
+          <span id="notice-keep"></span></li>
+        <li><strong data-t="notice.ask.h">Your rights</strong>
+          <span data-t="notice.ask">Ask HR to see what was recorded about you, or to correct it.</span></li>
+      </ul>
+      <label class="agree">
+        <input type="checkbox" id="i-agree">
+        <span data-t="notice.agree">I have read this and I understand.</span>
+      </label>
+    </div>
   </div>
   <div class="footer">
     <button class="btn" id="b-register" data-t="setup.cta">Set up</button>
@@ -414,6 +449,12 @@ body.demo .footer{padding-bottom:calc(56px + var(--safe-b))}
 
 /* ── storage ─────────────────────────────────────────────────────────────── */
 /* Set by the server from this tenant's branding. */
+/* Facts the notice must state truthfully, from this organisation's settings. */
+var NOTICE = {
+  retentionDays: {{ photo_retention_days | default(90) | tojson }},
+  version: {{ consent_version | default("") | tojson }}
+};
+
 var BRAND = {
   name: {{ (tenant_name or "Attendance") | tojson }},
   /* Read back from the token brand_color.html computed, rather than passed
@@ -446,6 +487,22 @@ var T = {
   "setup.emp.hint":      ["On your ID card, or ask HR. Example: HR-EMP-00042", "आपके आईडी कार्ड पर, या HR से पूछें। जैसे: HR-EMP-00042"],
   "setup.privacy":       ["This phone is linked to you. Your photo and place are recorded only at the moment you press Check In. You are not tracked at any other time.", "यह फ़ोन आपसे जुड़ा है। आपकी फ़ोटो और जगह केवल तभी दर्ज होती है जब आप चेक इन दबाते हैं। बाकी समय आप पर नज़र नहीं रखी जाती।"],
   "setup.cta":           ["Set up", "सेट करें"],
+  "notice.h":            ["Before you start", "शुरू करने से पहले"],
+  "notice.what.h":       ["What we record", "हम क्या दर्ज करते हैं"],
+  "notice.what":         ["A photo of you, where you are, and the time — only when you press Check In or Check Out.", "आपकी फ़ोटो, आपकी जगह और समय — केवल जब आप चेक इन या चेक आउट दबाते हैं।"],
+  "notice.not.h":        ["What we do not record", "हम क्या दर्ज नहीं करते"],
+  "notice.not":          ["Nothing between punches. You are not tracked while you work.", "बीच के समय में कुछ नहीं। काम करते समय आप पर नज़र नहीं रखी जाती।"],
+  "notice.why.h":        ["Why", "क्यों"],
+  "notice.why":          ["To mark your attendance, and to confirm you were at your workplace.", "आपकी हाज़िरी लगाने, और यह पुष्टि करने के लिए कि आप काम की जगह पर थे।"],
+  "notice.who.h":        ["Who can see it", "इसे कौन देख सकता है"],
+  "notice.who":          ["HR and your manager. Not your colleagues.", "HR और आपके मैनेजर। आपके साथी नहीं।"],
+  "notice.keep.h":       ["How long", "कितने समय तक"],
+  "notice.keep.days":    ["Photos are deleted after {0} days. The attendance record is kept.", "फ़ोटो {0} दिन बाद हटा दी जाती है। हाज़िरी का रिकॉर्ड रखा जाता है।"],
+  "notice.keep.ever":    ["Photos are kept by your employer until they choose to remove them.", "फ़ोटो तब तक रखी जाती है जब तक आपका नियोक्ता उसे हटाना न चाहे।"],
+  "notice.ask.h":        ["Your rights", "आपके अधिकार"],
+  "notice.ask":          ["Ask HR to see what was recorded about you, or to correct it.", "HR से पूछें कि आपके बारे में क्या दर्ज है, या उसे ठीक करवाएँ।"],
+  "notice.agree":        ["I have read this and I understand.", "मैंने इसे पढ़ लिया है और समझ गया/गई हूँ।"],
+  "notice.err":          ["Please tick the box above to show you have read the notice.", "कृपया ऊपर का बॉक्स टिक करें कि आपने सूचना पढ़ ली है।"],
   "setup.err.server":    ["Please enter the server address HR gave you.", "कृपया HR का दिया सर्वर पता लिखें।"],
   "setup.err.emp":       ["Please enter your employee ID.", "कृपया अपनी कर्मचारी आईडी लिखें।"],
 
@@ -510,6 +567,13 @@ function applyLang(){
   for (var j = 0; j < btns.length; j++)
     btns[j].setAttribute("aria-pressed", String(btns[j].getAttribute("data-lang") === store.lang));
   renderA2HS();
+  renderNotice();
+}
+function renderNotice(){
+  var el = $("notice-keep"); if (!el) return;
+  el.textContent = NOTICE.retentionDays > 0
+    ? t("notice.keep.days", NOTICE.retentionDays)
+    : t("notice.keep.ever");
 }
 document.addEventListener("click", function(ev){
   var b = ev.target.closest ? ev.target.closest(".lang button") : null;
@@ -675,9 +739,17 @@ $("b-register").addEventListener("click", function(){
   clearField("f-emp", "e-emp");
   var emp = ($("i-emp").value || "").trim();
   if (!emp) { badField("f-emp", "e-emp", t("setup.err.emp")); $("i-emp").focus(); return; }
+  if (!$("i-agree").checked) {
+    badField("f-emp", "e-emp", t("notice.err"));
+    $("notice").scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
 
   busy(true, "busy.setup");
-  call("register_device", { employee_id: emp, device_label: deviceLabel(), platform: platform() })
+  call("register_device", {
+    employee_id: emp, device_label: deviceLabel(), platform: platform(),
+    consent: 1, consent_version: NOTICE.version
+  })
     .then(function(res){
       busy(false);
       /* Keep the secret whenever the server issued one, EVEN when the answer is

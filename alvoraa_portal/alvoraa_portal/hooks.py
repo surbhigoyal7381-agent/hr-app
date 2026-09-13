@@ -73,6 +73,17 @@ doc_events = {
 
     # ── Portal context cache invalidation ─────────────────────────────────
     # Clear per-user portal_ctx_{user} cache when role or employee record changes
+    # ── A punch, and the face on it, is not public inside the company ─────
+    # Frappe HR ships no row filter for Employee Checkin and the Employee role
+    # holds plain read on it, so without these two the only thing keeping one
+    # employee out of another's photos is whether ERPNext happened to create a
+    # User Permission row. The query condition filters lists; has_permission
+    # guards opening one record by name. Both are needed - a list filter alone
+    # leaves /app/employee-checkin/<name> open to anyone who guesses a name.
+    "Employee Checkin": {
+        "onload": "alvoraa_portal.field_checkin.log_photo_view",
+    },
+
     "Employee": {
         # Two handlers, one event. The second stops a field phone working the
         # day its owner leaves: the punch endpoint already refuses a non-Active
@@ -143,6 +154,15 @@ doc_events = {
     },
 }
 
+# ── Row-level security ───────────────────────────────────────────────────────
+permission_query_conditions = {
+    "Employee Checkin": "alvoraa_portal.field_checkin.checkin_query_conditions",
+}
+
+has_permission = {
+    "Employee Checkin": "alvoraa_portal.field_checkin.checkin_has_permission",
+}
+
 scheduler_events = {
     "all": [
         "alvoraa_portal.scheduled_jobs.update_delivery_tracking",
@@ -151,6 +171,11 @@ scheduler_events = {
         "alvoraa_portal.scheduled_jobs.calculate_driver_ratings",
     ],
     "daily": [
+        # Faces have a shelf life. Deletes check-in photos past the retention
+        # period the organisation set (default 90 days, 0 = keep for ever).
+        # The punch, the time and the place stay - they are the record of work
+        # done. Only the photo goes.
+        "alvoraa_portal.field_checkin.purge_old_checkin_photos",
         "alvoraa_portal.scheduled_jobs.send_arrival_notifications",
         "alvoraa_portal.scheduled_jobs.check_compliance_alerts",
         # Pulls each tenant's error counts and scheduler state up to the control

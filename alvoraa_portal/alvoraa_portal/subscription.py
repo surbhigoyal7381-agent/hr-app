@@ -393,6 +393,9 @@ CONTROL_PLANE_DOCTYPES = [
 # derivation; it is to say which kind each one is.
 TENANT_DOCTYPES = [
     "Alvoraa Field Device",
+    # Who opened whose check-in photo. The tenant's own record about its own
+    # staff, so it belongs to the tenant, not to our control plane.
+    "Alvoraa Photo Access Log",
 ]
 
 REQUIRED = [k for k, v in FEATURES.items() if v.get("required")]

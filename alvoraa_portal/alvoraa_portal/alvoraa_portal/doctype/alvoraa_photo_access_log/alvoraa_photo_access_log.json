@@ -1,0 +1,101 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-09-13 05:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "description": "Who opened a check-in that carried a photo. One row per viewer per record per day.",
+ "field_order": [
+  "checkin",
+  "employee",
+  "employee_name",
+  "column_break_a",
+  "viewed_by",
+  "viewed_at",
+  "viewed_on_date"
+ ],
+ "fields": [
+  {
+   "fieldname": "checkin",
+   "fieldtype": "Link",
+   "options": "Employee Checkin",
+   "label": "Check-in",
+   "read_only": 1,
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "options": "Employee",
+   "label": "Employee",
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
+   "label": "Employee Name",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "column_break_a",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "viewed_by",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Viewed By",
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "viewed_at",
+   "fieldtype": "Datetime",
+   "label": "Viewed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "viewed_on_date",
+   "fieldtype": "Date",
+   "label": "Viewed On",
+   "read_only": 1,
+   "search_index": 1,
+   "description": "The day, so the log holds one row per viewer per record per day rather than one per page refresh."
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-09-13 05:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa Photo Access Log",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "role": "System Manager"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "role": "HR Manager"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "employee_name",
+ "track_changes": 0
+}

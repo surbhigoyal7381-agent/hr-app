@@ -353,6 +353,7 @@ body.demo .footer{padding-bottom:calc(56px + var(--safe-b))}
     <div class="card">
       <div class="kv"><span class="k" data-t="res.where">Where you were</span><span class="v" id="res-place">&mdash;</span></div>
       <div class="kv"><span class="k" data-t="res.photo">Photo</span><span class="v" id="res-photo">&mdash;</span></div>
+      <div class="kv" id="res-photo-why" hidden><span class="k"></span><span class="v" style="font-weight:400;color:var(--text3);font-size:var(--fs-sm)">The camera was not on. Your attendance still counts.</span></div>
       <div class="kv"><span class="k" data-t="res.saved">Saved</span><span class="v" id="res-saved">&mdash;</span></div>
     </div>
     <p class="muted" style="margin:0 16px" data-t="res.privacy">Only HR and your supervisor can see this.</p>
@@ -835,11 +836,13 @@ function result(res, sent){
   $("res-date").textContent = longDate(res.time);
   var wl = lastStatus && lastStatus.work_location;
   $("res-place").textContent = wl ? t("res.atwork", wl.name) : t("res.recorded");
-  $("res-photo").textContent = t(sent && sent.photo ? "res.photo.yes" : "res.photo.no");
+  var hadPhoto = !!(sent && sent.photo);
+  $("res-photo").textContent = t(hadPhoto ? "res.photo.yes" : "res.photo.no");
+  $("res-photo-why").hidden = hadPhoto;
   $("res-saved").textContent = t("res.saved.yes");
   show("s-result");
 }
-$("b-res-done").addEventListener("click", function(){ show("s-home"); refresh(); });
+$("b-res-done").addEventListener("click", function(){ goHome(); });
 
 /* ── screen 5: every way it can go wrong ─────────────────────────────────── */
 var ICONS = {
@@ -896,6 +899,13 @@ var PROBLEMS = {
          "पास जाएँ और “फिर से कोशिश” दबाएँ। अभी कुछ सेव नहीं हुआ है।"],
     a1: "retry", a2: "home"
   },
+  ALREADY_DONE: {
+    tone: "ok", icon: "time",
+    h:  ["That is already recorded", "यह पहले से दर्ज है"],
+    p:  ["You pressed the button twice. Your attendance is saved - there is nothing more to do.",
+         "बटन दो बार दब गया। आपकी हाज़िरी सेव है - और कुछ करने की ज़रूरत नहीं।"],
+    a1: "home"
+  },
   NO_SIGNAL: {
     tone: "warn", icon: "wifi",
     h:  ["No internet", "इंटरनेट नहीं है"],
@@ -947,9 +957,13 @@ var PROBLEMS = {
   }
 };
 var ACTIONS = {
-  retry: { key: "btn.try",   run: function(){ if (pending) { show("s-home"); sendPunch(); } else { show("s-home"); refresh(); } } },
-  home:  { key: "btn.back",  run: function(){ pending = null; show("s-home"); refresh(); } },
-  setup: { key: "btn.setup", run: function(){ pending = null; show("s-setup"); } }
+  /* goHome(), not show("s-home"). Only goHome() starts the camera, and NONE of
+     the buttons a person actually presses went through it - so arriving at the
+     check-in screen from any error, or from the confirmation, left the camera
+     off and every punch afterwards recorded "Photo: Not taken". */
+  retry: { key: "btn.try",   run: function(){ if (pending) { show("s-home"); startCamera(); sendPunch(); } else { goHome(); } } },
+  home:  { key: "btn.back",  run: function(){ pending = null; goHome(); } },
+  setup: { key: "btn.setup", run: function(){ pending = null; stopCamera(); show("s-setup"); } }
 };
 function pick(pair){ return pair[store.lang === "hi" ? 1 : 0] || pair[0]; }
 
@@ -1003,6 +1017,7 @@ function handle(e){
   if (/waiting for HR|already registered/i.test(txt)) return problem("PENDING", txt);
   if (/blocked/i.test(txt))                           return problem("BLOCKED");
   if (/no longer active/i.test(txt))                  return problem("LEFT");
+  if (/already recorded/i.test(txt))                  return problem("ALREADY_DONE");
   if (/could not get your location/i.test(txt))       return problem("LOCATION_OFF");
   if (/accurate to about/i.test(txt))                 return problem("GPS_VAGUE", txt);
   if (/m from|too far/i.test(txt))                    return problem("OUTSIDE", txt);

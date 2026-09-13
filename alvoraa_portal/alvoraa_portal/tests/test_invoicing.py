@@ -280,7 +280,10 @@ class TestBillingNeverWidensTenantAccess(FrappeTestCase):
 		                      filters={"module": "Alvoraa Portal",
 		                               "name": ("like", "Alvoraa %")},
 		                      pluck="name")
-		missing = [d for d in ours if d not in sub.CONTROL_PLANE_DOCTYPES]
+		known = set(sub.CONTROL_PLANE_DOCTYPES) | set(sub.TENANT_DOCTYPES)
+		missing = [d for d in ours if d not in known]
 		self.assertEqual(missing, [],
-		                 "control-plane doctypes not excluded from tenant access "
-		                 "derivation: " + ", ".join(missing))
+		                 "Alvoraa Portal doctypes classified as neither "
+		                 "control-plane nor tenant-side, so nobody has decided "
+		                 "whether they belong in the tenant access derivation: "
+		                 + ", ".join(missing))

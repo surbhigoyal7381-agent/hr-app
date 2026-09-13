@@ -383,6 +383,18 @@ CONTROL_PLANE_DOCTYPES = [
     "Alvoraa Tenant Health", "Alvoraa Tenant Error",
 ]
 
+# Doctypes in the Alvoraa Portal module that belong to the TENANT, not to us.
+#
+# Kept as a list beside the one above so that every `Alvoraa %` doctype in this
+# module is deliberately classified as one or the other. Before this existed,
+# every one of them was control-plane and a test asserted exactly that - so the
+# first tenant-side doctype failed it. The answer is not to widen the
+# control-plane list, which would quietly exclude tenant data from the access
+# derivation; it is to say which kind each one is.
+TENANT_DOCTYPES = [
+    "Alvoraa Field Device",
+]
+
 REQUIRED = [k for k, v in FEATURES.items() if v.get("required")]
 
 # Everything a tenant gets without anybody deciding: the whole product, less

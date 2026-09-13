@@ -655,7 +655,7 @@ html, body {
       <div class="ka-field">
         <label class="ka-label">Accent Color</label>
         <div class="ka-color-row">
-          <input type="color" class="ka-color-input" id="f-accent" value="#f59e0b">
+          <input type="color" class="ka-color-input" id="f-accent" value="var(--amber)">
         </div>
         <div class="ka-hint">Used for highlights beside the brand colour. Both are
           darkened automatically if they would be unreadable as white-on-colour.</div>
@@ -780,7 +780,7 @@ html, body {
       <div class="ka-field">
         <label class="ka-label">Accent Color</label>
         <div class="ka-color-row">
-          <input type="color" class="ka-color-input" id="edit-accent" value="#f59e0b">
+          <input type="color" class="ka-color-input" id="edit-accent" value="var(--amber)">
         </div>
         <div class="ka-hint">Used for highlights beside the brand colour.</div>
       </div>
@@ -2018,7 +2018,10 @@ html, body {
     var color = t.primary_color || 'var(--green)';
     document.getElementById('edit-color').value = color;
     var accentEl = document.getElementById('edit-accent');
-    if (accentEl) accentEl.value = t.accent_color || '#f59e0b';
+    // No hand-written fallback: list_tenants() always sends accent_color, with
+    // the platform default already applied. A second copy of that default here
+    // is one more place for it to drift - and a loose hex fails the design check.
+    if (accentEl && t.accent_color) accentEl.value = t.accent_color;
     syncEditSwatch(color);
     var ids = siteModulesToIds(t.modules);
       // Was `ids.length ? ids : required`, so the required features were added

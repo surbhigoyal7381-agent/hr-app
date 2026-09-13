@@ -9,6 +9,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="{{ tenant_name or 'Attendance' }}">
 <meta name="referrer" content="same-origin">
+<link rel="manifest" href="/api/method/alvoraa_portal.field_checkin.manifest">
+<link rel="apple-touch-icon" href="/api/method/alvoraa_portal.field_checkin.app_icon?size=192">
 <title>{{ tenant_name or "Attendance" }}</title>
 
 <!--
@@ -207,10 +209,14 @@ body.demo .footer{padding-bottom:calc(56px + var(--safe-b))}
 #devbar .lbl{flex:none;font-size:11px;color:#C4BEB6;padding-right:4px}
 .sronly{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
-/* Anything wider than a phone: keep it phone-shaped and centred. */
-@media (min-width:520px){
+/* Fill the screen on anything phone-sized. The frame below is for a laptop.
+   This was 520px, which is NOT a safe phone boundary: large Androids, foldables
+   and anything in desktop-site mode report more than that, and the app arrived
+   as a narrow strip with black bars down both sides. 900px is past every phone
+   in portrait. */
+@media (min-width:900px){
   body{background:#241F1B}
-  .screen{max-width:420px;left:50%;transform:translateX(-50%);box-shadow:0 0 0 1px rgba(0,0,0,.35)}
+  .screen{max-width:460px;left:50%;transform:translateX(-50%);box-shadow:0 0 0 1px rgba(0,0,0,.35)}
 }
 </style>
 
@@ -1080,28 +1086,22 @@ function buildDev(){
 }
 
 /* ── start ───────────────────────────────────────────────────────────────── */
-function manifest(){
-  /* Temporary, so the page installs while it is still one file. Replace with a
-     real .webmanifest served from the app. */
+/* A service worker has to exist, with a fetch handler, before Chrome will
+   offer to install the page. It caches nothing on purpose - see the note in
+   field_checkin.py. Failure here is silent: a phone that will not register one
+   can still mark attendance, which is the job. */
+function installable(){
+  if (!("serviceWorker" in navigator)) return;
   try {
-    var m = {
-      name: BRAND.name, short_name: BRAND.name, start_url: ".", display: "standalone",
-      background_color: "#F8F6F3", theme_color: BRAND.deep, orientation: "portrait",
-      icons: [{ src: "data:image/svg+xml;base64," + btoa(
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">' +
-        '<rect width="192" height="192" rx="36" fill="' + BRAND.deep + '"/>' +
-        '<path d="M58 100l24 24 52-56" fill="none" stroke="#fff" stroke-width="16" ' +
-        'stroke-linecap="round" stroke-linejoin="round"/></svg>'),
-        sizes: "192x192", type: "image/svg+xml", purpose: "any" }]
-    };
-    var link = document.createElement("link");
-    link.rel = "manifest";
-    link.href = URL.createObjectURL(new Blob([JSON.stringify(m)], { type: "application/manifest+json" }));
-    document.head.appendChild(link);
+    navigator.serviceWorker.register(
+      "/api/method/alvoraa_portal.field_checkin.service_worker",
+      { scope: "/checkin" }
+    ).catch(function(){});
   } catch (e) {}
 }
+
 function boot(){
-  manifest();
+  installable();
   buildDev();
   applyLang();
   SAMPLE = store.server === "demo";

@@ -721,12 +721,24 @@ def service_worker():
 	that header says so - and this one is served from /api/method/, which would
 	otherwise be able to control nothing that matters.
 	"""
-	frappe.local.response.type = "binary"
-	frappe.local.response.filename = "checkin-sw.js"
-	frappe.local.response.filecontent = _SERVICE_WORKER.encode("utf-8")
-	frappe.local.response.display_content_as = "inline"
-	frappe.local.response.headers = {
-		"Content-Type": "application/javascript; charset=utf-8",
-		"Service-Worker-Allowed": "/",
-		"Cache-Control": "no-cache",
-	}
+	# A werkzeug Response, returned directly, because Frappe's own response types
+	# cannot express what a service worker needs. `binary` hardcodes
+	# application/octet-stream, and a browser REFUSES to register a worker that
+	# is not served as JavaScript - so the first version of this registered
+	# nothing at all and failed silently. Frappe's handler passes a Response
+	# through untouched, which is the supported way to set both headers.
+	from werkzeug.wrappers import Response
+
+	return Response(
+		_SERVICE_WORKER,
+		mimetype="application/javascript",
+		headers={
+			# Without this the worker's scope could only be /api/method/, which
+			# controls nothing worth controlling.
+			"Service-Worker-Allowed": "/",
+			# Never cache the worker itself. nginx serves /assets/ as immutable
+			# for 30 days, and a worker frozen for a month is a bug that cannot
+			# be shipped a fix.
+			"Cache-Control": "no-cache, no-store, must-revalidate",
+		},
+	)

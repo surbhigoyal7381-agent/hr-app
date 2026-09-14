@@ -113,6 +113,11 @@ def can_validate_evidence(goal_name, goal=None):
     except Exception:
         return False
 
+    # Never your own goal's evidence, whatever roles you hold (SEC-9).
+    from hrms.alvoraa_hr_core.access import is_own_record
+    if is_own_record(goal.employee):
+        return False
+
     if not frappe.has_permission("Individual Goal", "write", goal.name):
         return False
 
@@ -126,6 +131,9 @@ def can_validate_evidence(goal_name, goal=None):
 
 
 def _assert_can_validate(goal_name, goal=None):
+    goal = goal or frappe.get_doc("Individual Goal", goal_name)
+    from hrms.alvoraa_hr_core.access import refuse_own_decision
+    refuse_own_decision(goal.employee, "Individual Goal", goal.name, "evidence.validate")
     if can_validate_evidence(goal_name, goal=goal):
         return
     owner = frappe.db.get_value("Individual Goal", goal_name, "employee")

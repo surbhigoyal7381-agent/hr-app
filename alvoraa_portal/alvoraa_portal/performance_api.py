@@ -376,6 +376,9 @@ def approve_kpi_update(kpi, row_name, action, comment=""):
         frappe.throw("action must be 'Approved' or 'Rejected'.")
 
     doc = frappe.get_doc("KPI", kpi)
+    # Nobody approves their own update, whatever roles they hold (SEC-9).
+    from hrms.alvoraa_hr_core.access import refuse_own_decision
+    refuse_own_decision(doc.employee, "KPI", doc.name, "performance_api.approve_kpi_update")
     # Gate: only the employee's direct manager or HR may approve.
     kpi_emp_mgr = frappe.db.get_value("Employee", doc.employee, "reports_to")
     my_emp      = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")

@@ -1050,6 +1050,9 @@ def approve_goal_update(goal_id, row_name, action, comment=""):
         frappe.throw("action must be 'Approved' or 'Rejected'.")
 
     goal = frappe.get_doc("Individual Goal", goal_id)
+    # Nobody approves their own update, whatever roles they hold (SEC-9).
+    from hrms.alvoraa_hr_core.access import refuse_own_decision
+    refuse_own_decision(goal.employee, "Individual Goal", goal.name, "goals_api.approve_goal_update")
     goal_mgr = frappe.db.get_value("Employee", goal.employee, "reports_to")
     my_emp   = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")
     if not (_is_hr() or my_emp == goal_mgr):
@@ -1090,7 +1093,8 @@ def get_goal_update_log(goal_id):
     # Seeing the log and being able to action it are different things: the
     # employee sees their own updates and cannot approve them. Drawing the
     # buttons for everyone who can READ was the bug.
-    can_action = bool(_is_hr() or (goal_mgr and emp_id == goal_mgr))
+    # Never on your own goal, even for HR - approve_goal_update refuses it.
+    can_action = bool(goal.employee != emp_id and (_is_hr() or (goal_mgr and emp_id == goal_mgr)))
 
     rows = sorted(
         goal.progress_updates or [],
@@ -1131,8 +1135,9 @@ def get_pending_approvals():
         return {"kpi_updates": [], "goal_updates": [], "total": 0}
 
     if is_hr:
+        # Everyone but yourself: your own updates are not yours to approve.
         all_employees = frappe.get_all(
-            "Employee", filters={"status": "Active"}, pluck="name"
+            "Employee", filters={"status": "Active", "name": ["!=", emp_id]}, pluck="name"
         )
     else:
         all_employees = frappe.get_all(

@@ -1,4 +1,5 @@
 import frappe
+from frappe import _
 
 from alvoraa_portal.subscription import requires_feature
 import calendar as _calendar
@@ -555,6 +556,11 @@ def _can_action_leave(name, doc=None):
     except Exception:
         return False
 
+    # Never your own leave, even when you are named as your own approver.
+    from hrms.alvoraa_hr_core.access import is_own_record
+    if is_own_record(doc.employee):
+        return False
+
     if frappe.session.user != _leave_approver_for(doc):
         return False
 
@@ -573,6 +579,11 @@ def action_leave(leave_id, action):
     """Approve or reject a leave application."""
     user = frappe.session.user
     doc  = frappe.get_doc("Leave Application", leave_id)
+
+    # Nobody approves or rejects their own leave, even when HR Settings would
+    # allow it (SEC-9). Checked first, so the message says why.
+    from hrms.alvoraa_hr_core.access import refuse_own_decision
+    refuse_own_decision(doc.employee, "Leave Application", doc.name, "hr_api.action_leave")
 
     # The same rule the button uses. No role bypass: holding HR Manager does not
     # make somebody the approver, and Frappe HR does not treat it as though it

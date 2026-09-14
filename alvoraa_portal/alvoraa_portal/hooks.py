@@ -69,6 +69,8 @@ doc_events = {
     "Attendance Request": {
         "on_submit": "alvoraa_portal.attendance_correction.on_submit",
         "on_cancel": "alvoraa_portal.attendance_correction.on_cancel",
+        # Nobody approves their own correction - desk, REST or import (slice 010, SEC-9)
+        "before_submit": "hrms.alvoraa_hr_core.access.refuse_own_submit",
     },
 
     # ── Portal context cache invalidation ─────────────────────────────────
@@ -151,6 +153,13 @@ doc_events = {
     },
     "Delivery Performance Scorecard": {
         "before_save": "alvoraa_portal.controllers.scorecard.before_save",
+    },
+    # ── Nobody approves their own leave ───────────────────────────────────
+    # Submitting a Leave Application is what approves or rejects it. Hung off
+    # the document so the desk and REST API get the same rule as the portal,
+    # even where HR Settings allows self-approval (slice 010, SEC-9).
+    "Leave Application": {
+        "before_submit": "hrms.alvoraa_hr_core.access.refuse_own_submit",
     },
 }
 

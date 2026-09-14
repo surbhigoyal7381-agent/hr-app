@@ -712,8 +712,13 @@ def to_review(limit=50):
 	"""
 	if not _may_review():
 		frappe.throw(_("You do not review attendance corrections."), frappe.PermissionError)
+	filters = {"docstatus": 0}
+	# Your own requests are not yours to decide, so they are not in your queue.
+	me = _employee_for(frappe.session.user)
+	if me:
+		filters["employee"] = ["!=", me.name]
 	rows = frappe.get_list(
-		REQUEST, filters={"docstatus": 0}, fields=REQUEST_FIELDS,
+		REQUEST, filters=filters, fields=REQUEST_FIELDS,
 		order_by="creation asc", limit_page_length=cint(limit) or 50)
 	out = [_shape(r) for r in rows]
 	return [r for r in out if r["state"] == "waiting"]
@@ -732,6 +737,10 @@ def decide(name, approve, note=None):
 		frappe.throw(_("You do not review attendance corrections."), frappe.PermissionError)
 
 	doc = frappe.get_doc(REQUEST, name)
+	# Approve and decline alike: deciding your own correction is not a review.
+	# The before_submit hook repeats this for the desk and the REST API.
+	from hrms.alvoraa_hr_core.access import refuse_own_decision
+	refuse_own_decision(doc.employee, REQUEST, doc.name, "attendance_correction.decide")
 	if doc.docstatus != 0:
 		frappe.throw(_("This one has already been decided."))
 	if doc.get("alvoraa_review_status") in ("Declined", "Withdrawn"):

@@ -4810,6 +4810,23 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
 <div class="toast-wrap" id="toast-wrap"></div>
 
 <!-- Employee detail drawer -->
+<!-- One payslip. Drawn from alvoraa_portal.hr_api.get_payslip, which checks the
+     slip is the caller's own. It used to open in the desk, which needed the
+     Employee role to read Salary Slip - the permission that let managers open
+     their team's pay. -->
+<div class="emp-drawer-overlay" id="payslip-drawer-overlay" onclick="closePayslip()"></div>
+<div class="emp-drawer" id="payslip-drawer" role="dialog" aria-modal="true" aria-labelledby="ps-title">
+  <div class="emp-drawer-head">
+    <div class="emp-drawer-av"><i class=ic-money></i></div>
+    <div class="emp-drawer-meta">
+      <div class="emp-drawer-name" id="ps-title">Payslip</div>
+      <div class="emp-drawer-role" id="ps-sub"></div>
+    </div>
+    <button class="emp-drawer-close" onclick="closePayslip()" aria-label="Close"><i class=ic-x></i></button>
+  </div>
+  <div class="emp-drawer-body" id="ps-body"></div>
+</div>
+
 <div class="emp-drawer-overlay" id="emp-drawer-overlay" onclick="closeEmpDrawer()"></div>
 <div class="emp-drawer" id="emp-drawer">
   <div class="emp-drawer-head">
@@ -7453,10 +7470,68 @@ function loadSalary() {
     el.innerHTML = slips.map(function(s) {
       const sd = new Date(s.start_date);
       const label = months[sd.getMonth()] + " " + sd.getFullYear();
-      return '<div class="payslip-row" onclick="openFrappe(\'/app/salary-slip/' + s.name + '\')"><div><div class="payslip-month">' + label + '</div><div style="font-size:var(--fs-xs);color:var(--text3);margin-top:3px">' + fmtDate(s.start_date) + ' – ' + fmtDate(s.end_date) + '</div></div><div style="text-align:right"><div class="payslip-net">' + fmtMoney(s.net_pay) + '</div><div class="payslip-deductions">Deductions: ' + fmtMoney(s.total_deduction) + '</div></div><div class="payslip-arrow">›</div></div>';
+      return '<div class="payslip-row" role="button" tabindex="0" onclick="openPayslip(' + esc(JSON.stringify(s.name)) + ')"><div><div class="payslip-month">' + label + '</div><div style="font-size:var(--fs-xs);color:var(--text3);margin-top:3px">' + fmtDate(s.start_date) + ' – ' + fmtDate(s.end_date) + '</div></div><div style="text-align:right"><div class="payslip-net">' + fmtMoney(s.net_pay) + '</div><div class="payslip-deductions">Deductions: ' + fmtMoney(s.total_deduction) + '</div></div><div class="payslip-arrow">›</div></div>';
     }).join("");
   }, function() { toast("Failed to load payslips", "err"); });
 }
+
+  // On window, because the payslip rows call it from an inline onclick and this
+  // code sits inside a closure. A plain function here threw ReferenceError on
+  // click - caught by scripts/check_app_integrity.py, not by any test.
+  window.openPayslip = function(name) {
+    document.getElementById("payslip-drawer-overlay").classList.add("open");
+    document.getElementById("payslip-drawer").classList.add("open");
+    document.body.style.overflow = "hidden";
+    document.getElementById("ps-title").textContent = "Payslip";
+    document.getElementById("ps-sub").textContent = "";
+    document.getElementById("ps-body").innerHTML =
+      '<div style="padding:40px;text-align:center;color:var(--text3)">Loading your payslip&hellip;</div>';
+    api("get_payslip", {name: name}, renderPayslip, function(e) {
+      document.getElementById("ps-body").innerHTML =
+        '<div style="padding:40px;text-align:center;color:var(--danger)">' +
+        esc((e && e.message) || "We could not load that payslip.") + '</div>';
+    });
+  };
+
+  window.closePayslip = function() {
+    document.getElementById("payslip-drawer-overlay").classList.remove("open");
+    document.getElementById("payslip-drawer").classList.remove("open");
+    document.body.style.overflow = "";
+  };
+
+  function renderPayslip(d) {
+    const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const sd = new Date(d.start_date);
+    document.getElementById("ps-title").textContent = months[sd.getMonth()] + " " + sd.getFullYear();
+    document.getElementById("ps-sub").textContent = fmtDate(d.start_date) + " to " + fmtDate(d.end_date);
+
+    function table(title, rows, total) {
+      if (!rows.length) return "";
+      return '<div style="margin-top:18px"><div style="font-weight:700;margin-bottom:6px">' + esc(title) + '</div>' +
+        '<table class="pf-table" style="width:100%">' +
+        rows.map(function(r) {
+          return '<tr><td>' + esc(r.component) + '</td><td style="text-align:right;font-variant-numeric:tabular-nums">' + fmtMoney(r.amount) + '</td></tr>';
+        }).join("") +
+        '<tr><td style="font-weight:700">Total</td><td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums">' + fmtMoney(total) + '</td></tr>' +
+        '</table></div>';
+    }
+
+    const pay = d.rounded_total || d.net_pay;
+    document.getElementById("ps-body").innerHTML =
+      '<div style="padding:4px 2px 0">' +
+        '<div style="font-size:var(--fs-sm);color:var(--text3)">Take-home pay</div>' +
+        '<div style="font-size:32px;font-weight:800;color:var(--green);font-variant-numeric:tabular-nums">' + fmtMoney(pay) + '</div>' +
+        '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;font-size:var(--fs-sm);color:var(--text2)">' +
+          '<span>Working days <b>' + esc(d.total_working_days) + '</b></span>' +
+          '<span>Paid days <b>' + esc(d.payment_days) + '</b></span>' +
+          (d.leave_without_pay ? '<span>Unpaid leave <b>' + esc(d.leave_without_pay) + '</b></span>' : '') +
+        '</div>' +
+        table("Earnings", d.earnings, d.gross_pay) +
+        table("Deductions", d.deductions, d.total_deduction) +
+        '<a class="btn btn-primary" style="margin-top:22px;width:100%;justify-content:center" ' +
+          'href="/api/method/' + MOD + '.download_payslip?name=' + encodeURIComponent(d.name) + '">Download PDF</a>' +
+      '</div>';
+  }
 
 /* ── Sidebar drawer (mobile) ─────────────────────── */
 function openSidebar() {

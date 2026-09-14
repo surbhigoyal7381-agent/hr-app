@@ -1391,6 +1391,103 @@ def get_payslips():
     return {"payslips": slips, "employee": emp}
 
 
+# ── One payslip, shown in the portal ─────────────────────────────────────────
+#
+# Employees used to open a payslip in the desk, at /app/salary-slip/<name>. That
+# needed the Employee role to hold READ on Salary Slip - and that permission was
+# a back door. The Employee role's read is meant to be narrowed to the person's
+# own records by a User Permission, so wherever that permission is wider or
+# missing, other people's pay showed: a floor manager, whose permission covers
+# his reporting line, could open all 18 of his team's payslips, and head-office
+# HR staff with no User Permission could open every one of 400.
+#
+# So the Employee role no longer reads payroll records at all, and the portal
+# shows the payslip itself. Ownership is therefore the WHOLE check, and it lives
+# here, on the server, before anything is returned.
+
+def _own_payslip(name):
+    """The caller's own submitted salary slip, or a refusal.
+
+    The refusal is identical whether the slip belongs to somebody else, is a
+    draft, or does not exist - so a slip name cannot be used to find out whose
+    payslips exist.
+    """
+    emp = _get_employee()
+    row = None
+    if name and isinstance(name, str):
+        row = frappe.db.get_value("Salary Slip", name, ["name", "employee", "docstatus"], as_dict=True)
+    if not emp or not row or row.docstatus != 1 or row.employee != emp.name:
+        frappe.throw(frappe._("That payslip is not available."), frappe.PermissionError)
+    return frappe.get_doc("Salary Slip", row.name)
+
+
+@frappe.whitelist()
+@requires_feature("payroll")
+def get_payslip(name):
+    """One of the caller's own payslips, for the portal to draw."""
+    slip = _own_payslip(name)
+
+    def lines(rows):
+        return [{"component": r.salary_component, "amount": flt(r.amount)}
+                for r in (rows or []) if flt(r.amount)]
+
+    return {
+        "name": slip.name,
+        "employee_name": slip.employee_name,
+        "designation": slip.designation,
+        "department": slip.department,
+        "company": slip.company,
+        "start_date": slip.start_date,
+        "end_date": slip.end_date,
+        "posting_date": slip.posting_date,
+        "currency": slip.currency,
+        "total_working_days": flt(slip.total_working_days),
+        "payment_days": flt(slip.payment_days),
+        "leave_without_pay": flt(slip.leave_without_pay),
+        "absent_days": flt(slip.get("absent_days")),
+        "gross_pay": flt(slip.gross_pay),
+        "total_deduction": flt(slip.total_deduction),
+        "net_pay": flt(slip.net_pay),
+        "rounded_total": flt(slip.rounded_total),
+        "earnings": lines(slip.earnings),
+        "deductions": lines(slip.deductions),
+    }
+
+
+@frappe.whitelist()
+@requires_feature("payroll")
+def download_payslip(name):
+    """The caller's own payslip as a PDF, in the organisation's print format.
+
+    Frappe's print pipeline checks permission again, inside
+    get_rendered_template, and employees no longer hold read on Salary Slip. It
+    honours frappe.flags.ignore_print_permissions for exactly this case, so the
+    flag is raised only after _own_payslip has proved the slip is the caller's,
+    and put back whatever happens.
+
+    NOT frappe.set_user("Administrator"). That was the first version, and it is
+    wrong in a web request: set_user overwrites the session id with the user
+    name, empties the session's stored data and clears form_dict, and switching
+    back restores only the name. An employee pressing Download could have been
+    signed out, or left with a broken session. A script test cannot see that,
+    because a script has no browser session to break.
+    """
+    slip = _own_payslip(name)
+    print_format = frappe.get_meta("Salary Slip").default_print_format or None
+
+    previous = frappe.flags.ignore_print_permissions
+    try:
+        frappe.flags.ignore_print_permissions = True
+        pdf = frappe.get_print("Salary Slip", slip.name, print_format=print_format, as_pdf=True)
+    finally:
+        frappe.flags.ignore_print_permissions = previous
+
+    period = str(slip.start_date)[:7]
+    frappe.local.response.filename = f"Payslip-{period}-{slip.employee}.pdf"
+    frappe.local.response.filecontent = pdf
+    frappe.local.response.type = "download"
+
+
 @frappe.whitelist()
 def get_expense_claims():
     emp = _get_employee()

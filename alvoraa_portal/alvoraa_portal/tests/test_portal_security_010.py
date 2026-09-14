@@ -872,11 +872,14 @@ class _GoalTeam(_Base):
 		return frappe.get_doc("Individual Goal", goal.name)
 
 	def _file(self, owner, private=True, attached=None):
+		tag = frappe.generate_hash(length=8)
 		f = frappe.get_doc(
 			{
 				"doctype": "File",
-				"file_name": f"s010-{frappe.generate_hash(length=8)}.txt",
-				"content": b"s010 evidence",
+				"file_name": f"s010-{tag}.txt",
+				# Different content each time: Frappe re-uses one file on disk for
+				# identical uploads, which would blur whose file is whose.
+				"content": f"s010 evidence {tag}".encode(),
 				"is_private": 1 if private else 0,
 			}
 		)
@@ -935,6 +938,16 @@ class TestSec3EvidenceWaitsForApproval(_GoalTeam):
 			evidence.approve_evidence(goal.name, goal.evidence_items[0].name)
 		frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.get_value("Goal Evidence", goal.evidence_items[0].name, "validation_status"), "Pending")
+
+	def setUp(self):
+		super().setUp()
+		# The evidence endpoints sit behind the Goals plan gate; test_site has no plan.
+		self._goals_plan = patch("alvoraa_portal.subscription.has_feature", return_value=True)
+		self._goals_plan.start()
+
+	def tearDown(self):
+		self._goals_plan.stop()
+		super().tearDown()
 
 	def test_decision5_approval_list_shows_what_this_user_may_decide(self):
 		from alvoraa_portal import hr_api
@@ -1056,11 +1069,13 @@ class TestPriv7PatchMakesOldEvidenceFilesPrivate(_GoalTeam):
 			("Goal Progress Update", goal.progress_updates[0].name),
 			("KPI Progress Log", kpi.progress_log[0].name),
 		)
-		urls = {}
-		for doctype, name in rows:
-			url = self._file(self.rep_user, private=False)
+		# The goal evidence and the KPI log share one public link - Frappe does
+		# that for identical uploads - and the goal update has its own.
+		shared = self._file(self.rep_user, private=False)
+		own = self._file(self.rep_user, private=False)
+		urls = {rows[0]: shared, rows[1]: own, rows[2]: shared}
+		for (doctype, name), url in urls.items():
 			frappe.db.set_value(doctype, name, "evidence_file", url)
-			urls[(doctype, name)] = url
 		frappe.db.commit()
 
 		with patch("builtins.print"):

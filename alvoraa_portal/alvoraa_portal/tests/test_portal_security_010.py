@@ -39,7 +39,15 @@ SECOND_COMPANY = "S010 Second Company"
 
 
 def _user(local, roles):
-	return ensure_user(f"s010.{local}@example.com", roles=roles)
+	user = ensure_user(f"s010.{local}@example.com", roles=roles)
+	# module_access points every new user at the site's plan profile. On a test
+	# site with no plan that profile blocks every Alvoraa module, so a test about
+	# OUR rules would pass or fail because of the plan. Take it off these users.
+	frappe.db.set_value("User", user, "module_profile", None, update_modified=False)
+	frappe.db.delete("Block Module", {"parent": user, "parenttype": "User"})
+	frappe.clear_cache(user=user)
+	frappe.db.commit()
+	return user
 
 
 def _employee(first, company=None, reports_to=None, user=None):
@@ -157,6 +165,19 @@ def _portal_page():
 
 
 class _Base(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		# Start from the shipped permissions. test_module_access and
+		# test_subscription_access apply plan restrictions and never release
+		# them; on CI's fresh site that left the Employee role without Individual
+		# Goal and Attendance Deduction, and six tests here failed for a reason
+		# that is not ours. test_access_control starts the same way.
+		from alvoraa_portal import module_access
+
+		module_access.release_permissions()
+		frappe.db.commit()
+
 	def setUp(self):
 		frappe.set_user("Administrator")
 		self._cleanup = []

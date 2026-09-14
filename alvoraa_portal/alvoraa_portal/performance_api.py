@@ -3114,20 +3114,22 @@ def get_calibration_matrix(cycle):
 # ══════════════════════════════════════════════════════════════════════════
 
 def _send_notification(to_user, subject, message):
-    """Send an in-app + email notification. Silently skips if user not found."""
+    """Send the review email. A failure never blocks the review step.
+
+    The server never pushes script to a browser (slice 010, SEC-12): this used
+    to publish an `eval_js` event after every email. A failure is logged with
+    the traceback only - no recipient, subject or names.
+    """
     try:
         frappe.sendmail(
             recipients=[to_user],
             subject=subject,
             message=message,
         )
-        frappe.publish_realtime(
-            "eval_js",
-            {"script": "console.log('notification sent');"},
-            user=to_user,
-        )
     except Exception:
-        pass
+        # The plain traceback, passed in: log_error's own default captures the
+        # local variables, which here are the recipient, subject and message.
+        frappe.log_error(title="Review notification failed", message=frappe.get_traceback())
 
 
 def _employee_user(employee_id):

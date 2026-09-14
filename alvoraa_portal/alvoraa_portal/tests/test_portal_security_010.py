@@ -588,3 +588,68 @@ class TestPriv3ManagersNeverReceiveTheLossOfPayAmount(_Base):
 		self.assertTrue(all(not r.get("lwp_amount") for r in rows))
 
 
+# ── SEC-12 · The server never pushes script to a browser (S9) ───────────────
+
+
+class TestSec12NoScriptPush(_Base):
+	NEEDLE = "eval" + "_js"
+
+	def test_sec12_no_eval_js_in_our_apps(self):
+		import alvoraa_goals
+		import alvoraa_portal
+		import hrms
+
+		roots = [os.path.dirname(alvoraa_portal.__file__), os.path.dirname(alvoraa_goals.__file__)]
+		hrms_root = os.path.dirname(hrms.__file__)
+		roots += [os.path.join(hrms_root, d) for d in os.listdir(hrms_root) if d.startswith("alvoraa_")]
+		hits = []
+		for root in roots:
+			for folder, _dirs, files in os.walk(root):
+				for fname in files:
+					if fname.endswith((".py", ".js", ".html")):
+						path = os.path.join(folder, fname)
+						with open(path, encoding="utf-8", errors="ignore") as f:
+							if self.NEEDLE in f.read():
+								hits.append(path)
+		self.assertEqual(hits, [])
+
+	def test_sec12_notification_sends_email_only_and_logs_failure_without_names(self):
+		from alvoraa_portal import performance_api
+
+		with patch("frappe.sendmail") as sendmail, patch("frappe.publish_realtime") as realtime:
+			performance_api._send_notification("someone@example.com", "Review for Asha", "<p>Hi Asha</p>")
+		sendmail.assert_called_once()
+		realtime.assert_not_called()
+
+		with patch("frappe.sendmail", side_effect=Exception("smtp down")), patch("frappe.log_error") as log_error:
+			performance_api._send_notification("someone@example.com", "Review for Asha", "<p>Hi Asha</p>")
+		log_error.assert_called_once()
+		logged = json.dumps(log_error.call_args.kwargs) + json.dumps(log_error.call_args.args)
+		for secret in ("someone@example.com", "Asha"):
+			self.assertNotIn(secret, logged)
+
+
+# ── SEC-16 · ignore_permissions does not grow in the files this slice touches ─
+
+
+class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
+	# Counts at 4e3ba28, lowered whenever a use is removed. Never raised.
+	CEILINGS = {
+		("alvoraa_portal", "performance_api.py"): 88,
+		("alvoraa_portal", "hr_api.py"): 77,
+		("alvoraa_portal", "goals_api.py"): 15,
+		("alvoraa_portal", "attendance_correction.py"): 2,
+		("alvoraa_goals", "api/goal_api.py"): 0,
+		("alvoraa_goals", "controllers/evidence.py"): 0,
+		("hrms", "alvoraa_org_structure/api.py"): 2,
+		("hrms", "alvoraa_hr_core/access.py"): 0,
+	}
+
+	def test_sec16_ignore_permissions_does_not_grow(self):
+		import importlib
+
+		for (app, rel), ceiling in self.CEILINGS.items():
+			root = os.path.dirname(importlib.import_module(app).__file__)
+			with open(os.path.join(root, rel), encoding="utf-8") as f:
+				count = len(re.findall(r"ignore_permissions", f.read()))
+			self.assertLessEqual(count, ceiling, f"{app}/{rel}")

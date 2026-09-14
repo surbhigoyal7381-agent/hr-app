@@ -34,29 +34,15 @@ def validate_evidence(doc, method=None):
     if not doc.uploaded_by:
         doc.uploaded_by = frappe.session.user
 
-    if doc.evidence_type == "Invoice":
-        result = validate_invoice(doc, goal)
-        doc.validation_notes = result["notes"]
-        if result["errors"]:
-            doc.validation_status = "Pending"
-            doc.validation_notes += "\n→ Pending: rule(s) failed — sent for HR review"
-        else:
-            doc.validation_status = "Approved"
-            doc.approved_by = "System"
-            doc.approved_on = now_datetime()
-            doc.validation_notes += "\n→ Auto-approved by System"
-
-    elif doc.evidence_type == "Sales Order":
-        result = validate_sales_order(doc, goal)
-        doc.validation_notes = result["notes"]
-        if result["errors"]:
-            doc.validation_status = "Pending"
-            doc.validation_notes += "\n→ Pending: rule(s) failed — sent for HR review"
-        else:
-            doc.validation_status = "Approved"
-            doc.approved_by = "System"
-            doc.approved_on = now_datetime()
-            doc.validation_notes += "\n→ Auto-approved by System"
+    # Every new row waits for a person (slice 010, SEC-3). The automated rules
+    # still run, and their result is a note for the approver - not an approval.
+    if doc.evidence_type in ("Invoice", "Sales Order"):
+        check = validate_invoice if doc.evidence_type == "Invoice" else validate_sales_order
+        result = check(doc, goal)
+        doc.validation_status = "Pending"
+        doc.validation_notes = result["notes"] + (
+            "\n→ Rule(s) failed — check before approving" if result["errors"]
+            else "\n→ Rules passed — waiting for approval")
 
     else:
         doc.validation_status = "Pending"
@@ -118,7 +104,10 @@ def can_validate_evidence(goal_name, goal=None):
     if is_own_record(goal.employee):
         return False
 
-    if not frappe.has_permission("Individual Goal", "write", goal.name):
+    # READ, not write. Write on a goal belongs to whoever created it, so asking
+    # for write shut out every manager who had not created their report's goal.
+    # Read still keeps out anyone the goal is hidden from (slice 010, decision 5).
+    if not frappe.has_permission("Individual Goal", "read", goal.name):
         return False
 
     roles = set(frappe.get_roles(frappe.session.user))
@@ -149,33 +138,92 @@ def _assert_can_validate(goal_name, goal=None):
         frappe.PermissionError)
 
 
+def _pending_row(goal, evidence_row):
+    """The evidence row, found by its NAME and still waiting. Fails closed.
+
+    By name, not list position: a position points at a different row the
+    moment another row is added or the list is sorted (slice 010, SEC-3).
+    """
+    row = next((r for r in (goal.evidence_items or []) if r.name == evidence_row), None)
+    if not row:
+        frappe.throw(_("That evidence is not on this goal."), frappe.DoesNotExistError)
+    if (row.validation_status or "Pending") != "Pending":
+        frappe.throw(_("This evidence has already been decided."))
+    return row
+
+
 @frappe.whitelist()
-def approve_evidence(goal_name, evidence_idx):
+def approve_evidence(goal_name, evidence_row):
     goal = frappe.get_doc("Individual Goal", goal_name)
     _assert_can_validate(goal_name, goal=goal)
-    evidence = goal.evidence_items[int(evidence_idx)]
-    evidence.validation_status = "Approved"
-    evidence.approved_by = frappe.session.user
-    evidence.approved_on = now_datetime()
-    evidence.validation_notes = (evidence.validation_notes or "") + f"\n→ Manually approved by {frappe.session.user}"
-    goal.flags.ignore_validate = True
-    goal.save()
+    row = _pending_row(goal, evidence_row)
+    # The row alone, not a save of the whole goal: the approver is the manager
+    # or HR, who can read the goal but may not be allowed to write it.
+    frappe.db.set_value("Goal Evidence", row.name, {
+        "validation_status": "Approved",
+        "approved_by": frappe.session.user,
+        "approved_on": now_datetime(),
+        "validation_notes": (row.validation_notes or "") + f"\n→ Manually approved by {frappe.session.user}",
+    })
     frappe.db.commit()
+    # Progress moves here, and only here: on approval.
     recalculate_progress(goal_name)
     _append_audit_log(goal_name, "Evidence Approved", "Pending", "Approved", frappe.session.user)
     return {"status": "approved"}
 
 
 @frappe.whitelist()
-def reject_evidence(goal_name, evidence_idx, reason):
+def reject_evidence(goal_name, evidence_row, reason=""):
     goal = frappe.get_doc("Individual Goal", goal_name)
     _assert_can_validate(goal_name, goal=goal)
-    evidence = goal.evidence_items[int(evidence_idx)]
-    evidence.validation_status = "Rejected"
-    evidence.rejection_reason = reason
-    evidence.validation_notes = (evidence.validation_notes or "") + f"\n→ Rejected by {frappe.session.user}: {reason}"
-    goal.flags.ignore_validate = True
-    goal.save()
+    row = _pending_row(goal, evidence_row)
+    frappe.db.set_value("Goal Evidence", row.name, {
+        "validation_status": "Rejected",
+        "rejection_reason": reason,
+        "validation_notes": (row.validation_notes or "") + f"\n→ Rejected by {frappe.session.user}: {reason}",
+    })
     frappe.db.commit()
     _append_audit_log(goal_name, "Evidence Rejected", "Pending", "Rejected", frappe.session.user, reason)
     return {"status": "rejected"}
+
+
+# ── Evidence files ──────────────────────────────────────────────────────────
+
+def claim_evidence_file(file_url, doctype, name, endpoint):
+    """Accept an evidence file only if the caller uploaded it, privately.
+
+    Used by every path that stores an evidence or progress file: goal
+    evidence, goal progress updates and KPI progress logs (slice 010, SEC-4).
+    The browser sends the file URL, so it is treated as hostile: a public
+    link, an outside address, a `javascript:` string or somebody else's file
+    is refused, and nothing is written.
+
+    The accepted file is attached to the goal or KPI, so reading it follows
+    reading that record: the owner, their manager line and HR can open it; a
+    colleague cannot. Returns the URL to store, or None when there is no file.
+    """
+    if file_url in (None, ""):
+        return None
+    from hrms.alvoraa_hr_core.access import refuse
+
+    file_url = str(file_url).strip()
+    message = _("Attach a file you uploaded yourself, as a private file.")
+    if not file_url.startswith("/private/files/"):
+        refuse(message, "SEC-4", endpoint, doctype, name)
+    files = frappe.get_all(
+        "File",
+        filters={"file_url": file_url, "owner": frappe.session.user, "is_private": 1, "is_folder": 0},
+        fields=["name", "attached_to_doctype", "attached_to_name"],
+        limit=20,
+    )
+    if not files:
+        refuse(message, "SEC-4", endpoint, doctype, name)
+    if any(f.attached_to_doctype == doctype and f.attached_to_name == name for f in files):
+        return file_url
+    free = next((f for f in files if not f.attached_to_name), None)
+    if not free:
+        # Already attached to a different record: evidence for one goal is not
+        # evidence for another.
+        refuse(message, "SEC-4", endpoint, doctype, name)
+    frappe.db.set_value("File", free.name, {"attached_to_doctype": doctype, "attached_to_name": name})
+    return file_url

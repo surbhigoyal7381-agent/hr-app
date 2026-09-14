@@ -3563,17 +3563,6 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
           <div id="org-scales-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
         </div>
 
-        <!-- Evidence Approval -->
-        <div class="pf-card">
-          <div style="font-weight:600;font-size:var(--fs-md);margin-bottom:4px">Evidence Approval</div>
-          <div style="font-size:var(--fs-sm);color:var(--text3);margin-bottom:16px">Controls whether goal and KPI progress entries need manager approval before being counted.</div>
-          <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
-            <input type="checkbox" id="org-auto-approve" style="width:16px;height:16px;accent-color:var(--primary)" onchange="orgSaveAutoApprove(this.checked)">
-            <span style="font-size:var(--fs-base)">Auto-approve all evidence submissions (no manager approval required)</span>
-          </label>
-          <div style="font-size:var(--fs-xs);color:var(--text3);margin-top:8px">When off, every progress entry is sent to the employee's manager for approval before it counts towards the goal or KPI.</div>
-        </div>
-
         <!-- Key Result Areas -->
         <div class="pf-card">
           <div style="font-weight:600;font-size:var(--fs-md);margin-bottom:4px">Key Result Areas</div>
@@ -8421,16 +8410,16 @@ function renderProgressApprovals(r) {
   goals.forEach(function(g) {
     var ev = g.evidence || {};
     rows.push(
-      '<div class="appr-card" id="pa-goal-' + gpEsc(g.goal_name) + '-' + ev.idx + '">' +
+      '<div class="appr-card" id="pa-goal-' + gpEsc(ev.row) + '">' +
         '<div class="appr-info"><div class="appr-avatar">' + initials(g.employee_name) + '</div>' +
         '<div><div class="appr-name">' + gpEsc(g.employee_name) + '</div>' +
         '<div class="appr-detail">Goal: <strong>' + gpEsc(g.goal_name) + '</strong>' +
-        (ev.value ? ' &nbsp;·&nbsp; Value: ' + Number(ev.value).toLocaleString("en-IN", {maximumFractionDigits: 2}) + (g.unit ? ' ' + g.unit : '') : '') +
+        (ev.value ? ' &nbsp;·&nbsp; Value: ' + Number(ev.value).toLocaleString("en-IN", {maximumFractionDigits: 2}) + (g.unit ? ' ' + gpEsc(g.unit) : '') : '') +
         (ev.extracted_date ? ' &nbsp;·&nbsp; ' + fmtDate(ev.extracted_date) : '') +
         '</div></div></div>' +
         '<div class="appr-actions">' +
-          '<button class="btn btn-green btn-sm" onclick="actionProgressApproval(\'goal\',\'' + gpEsc(g.name) + '\',' + ev.idx + ',\'approve\',this)"><i class=ic-check></i> Approve</button>' +
-          '<button class="btn btn-danger btn-sm" onclick="actionProgressApproval(\'goal\',\'' + gpEsc(g.name) + '\',' + ev.idx + ',\'reject\',this)"><i class=ic-x></i> Reject</button>' +
+          '<button class="btn btn-green btn-sm" onclick="actionProgressApproval(\'goal\',\'' + gpEsc(g.name) + '\',\'' + gpEsc(ev.row) + '\',\'approve\',this)"><i class=ic-check></i> Approve</button>' +
+          '<button class="btn btn-danger btn-sm" onclick="actionProgressApproval(\'goal\',\'' + gpEsc(g.name) + '\',\'' + gpEsc(ev.row) + '\',\'reject\',this)"><i class=ic-x></i> Reject</button>' +
         '</div>' +
       '</div>'
     );
@@ -8466,7 +8455,7 @@ function actionProgressApproval(type, docName, idx, action, btn) {
     ? (action === "approve" ? "approve_goal_evidence" : "reject_goal_evidence")
     : (action === "approve" ? "approve_kpi_progress" : "reject_kpi_progress"));
   var params = type === "goal"
-    ? {goal_name: docName, evidence_idx: idx}
+    ? {goal_name: docName, evidence_row: idx}
     : {kpi_name: docName, log_idx: idx};
   gpFetch(apiName, params).then(function() {
     toast(action === "approve" ? "Approved" : "Rejected", action === "approve" ? "ok" : "");
@@ -8972,7 +8961,7 @@ window.gpSubmitGoalLog = async function() {
     var evidenceUrl = null;
     var fi = document.getElementById("gp-goal-log-file");
     if (fi.files.length > 0) {
-      var fd = new FormData(); fd.append("file", fi.files[0]); fd.append("is_private", "0");
+      var fd = new FormData(); fd.append("file", fi.files[0]); fd.append("is_private", "1");
       var up = await fetch("/api/method/upload_file", {method:"POST", body:fd,
         headers:{"X-Frappe-CSRF-Token": frappe && frappe.csrf_token ? frappe.csrf_token : ""}});
       var ud = await up.json();
@@ -9064,7 +9053,7 @@ function submitGoalEvidence(gid) {
       evidence_file:      fileUrl || null,
       raw_extracted_data: note    || null,
     }, function() {
-      toast("Evidence submitted — progress updated", "ok");
+      toast("Evidence sent to your manager for approval", "ok");
       closeGoalDrawer();
       _goalData = null;
       gpResetContext();   // not `_gpCtx = null` - that assigns a different scope
@@ -9081,7 +9070,7 @@ function submitGoalEvidence(gid) {
     if (btn) btn.textContent = "Uploading file...";
     var fd = new FormData();
     fd.append("file", fileEl.files[0]);
-    fd.append("is_private", "0");
+    fd.append("is_private", "1");
     var _ctrl = new AbortController();
     var _timer = setTimeout(function() { _ctrl.abort(); }, 30000);
     fetch("/api/method/upload_file", {
@@ -10343,7 +10332,7 @@ function deleteDrawerNote(noteId, empId) {
         extracted_date: date,
         raw_extracted_data: note || null, evidence_file: fileUrl || null,
       }, function() {
-        toast("Evidence submitted — progress updated", "ok");
+        toast("Evidence sent to your manager for approval", "ok");
         window.gpOpenDetail(gid);
         _goalData = null; _gpCtx = null;
       }, function(e) {
@@ -10356,7 +10345,7 @@ function deleteDrawerNote(noteId, empId) {
       if (btn) btn.textContent = "Uploading file...";
       var fd = new FormData();
       fd.append("file", fileEl.files[0]);
-      fd.append("is_private", "0");
+      fd.append("is_private", "1");
       var ctrl = new AbortController();
       var timer = setTimeout(function() { ctrl.abort(); }, 30000);
       fetch("/api/method/upload_file", {
@@ -12059,7 +12048,7 @@ function deleteDrawerNote(noteId, empId) {
       if (fileInput.files.length > 0) {
         var fd = new FormData();
         fd.append("file", fileInput.files[0]);
-        fd.append("is_private", "0");
+        fd.append("is_private", "1");
         var upResp = await fetch("/api/method/upload_file", {method: "POST", body: fd,
           headers: {"X-Frappe-CSRF-Token": frappe && frappe.csrf_token ? frappe.csrf_token : ""}});
         var upData = await upResp.json();
@@ -15988,17 +15977,14 @@ function deleteDrawerNote(noteId, empId) {
       pf("get_company_values", {}),
       pf("get_leadership_principles", {}),
       pf("get_rating_scales", {}),
-      window.gpFetch("alvoraa_portal.hr_api.get_org_setting", {key: "auto_approve_evidence"}),
       window.gpFetch("alvoraa_portal.hr_api.get_org_setting", {key: "kra_link_mandatory"}),
     ]).then(function(res) {
       orgRenderValues(res[0] || []);
       orgRenderPrinciples(res[1] || []);
       rsRenderScales(res[2] || []);
       _apsRatingScales = res[2] || [];
-      var chk = document.getElementById("org-auto-approve");
-      if (chk) chk.checked = (res[3] === "1" || res[3] === 1 || res[3] === true);
       var kchk = document.getElementById("org-kra-mandatory");
-      if (kchk) kchk.checked = (res[4] === "1" || res[4] === 1 || res[4] === true);
+      if (kchk) kchk.checked = (res[3] === "1" || res[3] === 1 || res[3] === true);
     }).catch(function(e) {
       pfSetHtml("org-values-body", "<div class=\"callout callout-warn\">Failed to load: " + gpEsc(e.message) + "</div>");
     });
@@ -16007,11 +15993,6 @@ function deleteDrawerNote(noteId, empId) {
   window.orgSaveKraMandatory = function(enabled) {
     window.gpFetch("alvoraa_portal.hr_api.set_org_setting", {key: "kra_link_mandatory", value: enabled ? "1" : "0"})
       .then(function() { toast(enabled ? "KRA linking is now required" : "KRA linking is now optional", "ok"); })
-      .catch(function(e) { toast("Failed to save setting: " + e.message, "err"); });
-  };
-
-  window.orgSaveAutoApprove = function(enabled) {
-    window.gpFetch("alvoraa_portal.hr_api.set_org_setting", {key: "auto_approve_evidence", value: enabled ? "1" : "0"})
       .catch(function(e) { toast("Failed to save setting: " + e.message, "err"); });
   };
 

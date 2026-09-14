@@ -984,6 +984,9 @@ def submit_goal_update(goal_id, new_value, note="", evidence_url=None):
     if goal.docstatus == 2:
         frappe.throw("Goal is cancelled.")
 
+    # Private, uploaded by the caller, and attached to this goal - or refused (SEC-4).
+    from alvoraa_goals.controllers.evidence import claim_evidence_file
+    evidence_url = claim_evidence_file(evidence_url, "Individual Goal", goal.name, "goals_api.submit_goal_update")
     ev_missing = 1 if not evidence_url else 0
     val = flt(new_value)
 

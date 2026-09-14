@@ -82,6 +82,11 @@ def recalculate_progress(goal_name):
         goal.status = "Completed"
     goal.flags.ignore_validate = True
     goal.flags.ignore_validate_update_after_submit = True
+    # Progress is worked out from approved evidence, never typed in, so it is
+    # saved whoever triggered it. Every caller checks its own caller first:
+    # approve_evidence (the manager or HR, who may not have write on the goal),
+    # the whitelisted recalculate_progress (write), and the hourly job (slice 010).
+    goal.flags.ignore_permissions = True
     goal.save()
     frappe.db.commit()
     _append_audit_log(goal_name, "Progress Updated", old, total, frappe.session.user, "Recalculated from approved evidence")

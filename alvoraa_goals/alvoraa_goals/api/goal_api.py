@@ -60,6 +60,9 @@ def submit_goal_evidence(goal_id, evidence_type, value=None, extracted_date=None
     user_employee = frappe.get_value("Employee", {"user_id": frappe.session.user}, "name")
     if goal.employee != user_employee and not frappe.has_permission("Individual Goal", "write", goal_id):
         frappe.throw(_("Not permitted to submit evidence for this goal"), frappe.PermissionError)
+    # Private, uploaded by the caller, and attached to this goal - or refused (SEC-4).
+    from alvoraa_goals.controllers.evidence import claim_evidence_file
+    evidence_file = claim_evidence_file(evidence_file, "Individual Goal", goal_id, "goal_api.submit_goal_evidence")
     evidence = {
         "doctype": "Goal Evidence",
         "parenttype": "Individual Goal",
@@ -68,25 +71,22 @@ def submit_goal_evidence(goal_id, evidence_type, value=None, extracted_date=None
         "evidence_type": evidence_type,
         "uploaded_by": frappe.session.user,
         "upload_date": now_datetime(),
-        "validation_status": "Approved",
+        # Waits for the manager or HR. Progress moves only when it is approved,
+        # in controllers/evidence.approve_evidence (slice 010, SEC-3).
+        "validation_status": "Pending",
         "value": value,
         "extracted_date": extracted_date,
         "evidence_file": evidence_file,
         "raw_extracted_data": raw_extracted_data,
     }
-    goal.append("evidence_items", evidence)
+    row = goal.append("evidence_items", evidence)
     goal.flags.ignore_validate_update_after_submit = True
     goal.save()
     frappe.db.commit()
 
-    # Recalculate progress immediately so the submission is reflected at once
-    from alvoraa_goals.controllers.goal import recalculate_progress
-    recalculate_progress(goal_id)
-
-    goal.reload()
     return {
-        "status": "Approved",
-        "evidence_idx": len(goal.evidence_items) - 1,
+        "status": "Pending",
+        "evidence_row": row.name,
         "progress": goal.actual_progress,
         "progress_pct": goal.progress_pct,
     }

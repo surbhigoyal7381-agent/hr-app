@@ -148,6 +148,14 @@ def _all_keys(value):
 	return set()
 
 
+def _portal_page():
+	import alvoraa_portal
+
+	path = os.path.join(os.path.dirname(alvoraa_portal.__file__), "www", "hrms-employee.html")
+	with open(path, encoding="utf-8") as f:
+		return f.read()
+
+
 class _Base(FrappeTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
@@ -661,6 +669,9 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		("alvoraa_portal", "attendance_correction.py"): 2,
 		("alvoraa_goals", "api/goal_api.py"): 0,
 		("alvoraa_goals", "controllers/evidence.py"): 0,
+		# 2 at 4e3ba28; +1 on purpose in slice 010: recalculate_progress saves a
+		# derived value after its callers have checked their own callers.
+		("alvoraa_goals", "controllers/goal.py"): 3,
 		("hrms", "alvoraa_org_structure/api.py"): 2,
 		("hrms", "alvoraa_hr_core/access.py"): 0,
 	}
@@ -819,3 +830,235 @@ class TestSec8OrgChartObeysReach(_OrgBase):
 		self.assertEqual(api.my_view(employee=self.top)["me"]["employee"], self.top)
 		api.chain_to_top(node=self.leaf)
 		api.get_children(parent=self.top)
+
+
+# ── SEC-3 / SEC-14 / decision 5 · Evidence waits for a person (S2) ──────────
+
+
+class _GoalTeam(_Base):
+	"""A manager, their report with a goal the report created, HR, and a stranger."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.mgr_user = _user("ev.manager", ("Employee",))
+		cls.mgr = _employee("EvManager", user=cls.mgr_user)
+		cls.rep_user = _user("ev.report", ("Employee",))
+		cls.rep = _employee("EvReport", reports_to=cls.mgr, user=cls.rep_user)
+		cls.stranger_user = _user("ev.stranger", ("Employee",))
+		cls.stranger = _employee("EvStranger", user=cls.stranger_user)
+		cls.hr_user = _user("ev.hr", ("HR Manager", "Employee"))
+		cls.hr_emp = _employee("EvHr", user=cls.hr_user)
+
+	def _report_goal(self, pending_values=()):
+		goal = frappe.get_doc(
+			{
+				"doctype": "Individual Goal",
+				"employee": self.rep,
+				"goal_name": f"{TAG} Evidence Goal",
+				"target_value": 100,
+				"start_date": add_days(nowdate(), -10),
+				"end_date": add_days(nowdate(), 50),
+			}
+		)
+		for v in pending_values:
+			goal.append("evidence_items", {"evidence_type": "Manual Entry", "value": v,
+			                               "validation_status": "Pending", "uploaded_by": self.rep_user})
+		goal.insert(ignore_permissions=True)
+		# The report created it, so the report may save it - the usual portal case.
+		frappe.db.set_value("Individual Goal", goal.name, "owner", self.rep_user)
+		frappe.db.commit()
+		self._cleanup.append(("Individual Goal", goal.name))
+		return frappe.get_doc("Individual Goal", goal.name)
+
+	def _file(self, owner, private=True, attached=None):
+		f = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": f"s010-{frappe.generate_hash(length=8)}.txt",
+				"content": b"s010 evidence",
+				"is_private": 1 if private else 0,
+			}
+		)
+		f.insert(ignore_permissions=True)
+		frappe.db.set_value("File", f.name, "owner", owner)
+		if attached:
+			frappe.db.set_value("File", f.name, {"attached_to_doctype": attached[0], "attached_to_name": attached[1]})
+		frappe.db.commit()
+		self._cleanup.insert(0, ("File", f.name))   # deleted after the goal
+		return f.file_url
+
+
+class TestSec3EvidenceWaitsForApproval(_GoalTeam):
+	def test_sec3_new_evidence_is_pending_and_progress_does_not_move(self):
+		from alvoraa_goals.api import goal_api
+
+		goal = self._report_goal()
+		debug_logs = frappe.db.count("Error Log", {"method": ["like", "[DEBUG]%"]})
+		frappe.set_user(self.rep_user)
+		res = goal_api.submit_goal_evidence(goal.name, "Manual Entry", value=40)
+		frappe.set_user("Administrator")
+		self.assertEqual(res["status"], "Pending")
+		self.assertEqual(frappe.db.get_value("Goal Evidence", res["evidence_row"], "validation_status"), "Pending")
+		self.assertEqual(frappe.db.get_value("Individual Goal", goal.name, "actual_progress"), 0)
+		self.assertEqual(frappe.db.count("Error Log", {"method": ["like", "[DEBUG]%"]}), debug_logs)
+
+	def test_sec3_manager_approves_by_row_name_and_only_then_progress_moves(self):
+		from alvoraa_goals.controllers import evidence
+
+		goal = self._report_goal(pending_values=(10, 30))
+		first, second = goal.evidence_items[0].name, goal.evidence_items[1].name
+		frappe.set_user(self.mgr_user)                       # did not create the goal
+		evidence.approve_evidence(goal.name, second)
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Goal Evidence", second, "validation_status"), "Approved")
+		self.assertEqual(frappe.db.get_value("Goal Evidence", first, "validation_status"), "Pending")
+		self.assertEqual(frappe.db.get_value("Individual Goal", goal.name, "actual_progress"), 30)
+		self.assertTrue(frappe.db.exists("Goal Progress Audit Log", {"goal_id": goal.name, "event_type": "Evidence Approved"}))
+
+		frappe.set_user(self.mgr_user)
+		with self.assertRaises(frappe.ValidationError):
+			evidence.approve_evidence(goal.name, second)   # already decided
+		with self.assertRaises(frappe.DoesNotExistError):
+			evidence.approve_evidence(goal.name, "not-a-row")
+		evidence.reject_evidence(goal.name, first, "wrong month")
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Goal Evidence", first, "validation_status"), "Rejected")
+		self.assertEqual(frappe.db.get_value("Individual Goal", goal.name, "actual_progress"), 30)
+
+	def test_sec3_a_colleague_outside_the_line_cannot_decide(self):
+		from alvoraa_goals.controllers import evidence
+
+		goal = self._report_goal(pending_values=(10,))
+		frappe.set_user(self.stranger_user)
+		with self.assertRaises(frappe.PermissionError):
+			evidence.approve_evidence(goal.name, goal.evidence_items[0].name)
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Goal Evidence", goal.evidence_items[0].name, "validation_status"), "Pending")
+
+	def test_decision5_approval_list_shows_what_this_user_may_decide(self):
+		from alvoraa_portal import hr_api
+
+		goal = self._report_goal(pending_values=(10,))
+		row = goal.evidence_items[0].name
+		frappe.set_user(self.mgr_user)
+		self.assertIn(row, [g["evidence"]["row"] for g in hr_api.get_pending_approvals()["goals"]])
+		frappe.set_user(self.hr_user)
+		self.assertIn(row, [g["evidence"]["row"] for g in hr_api.get_pending_approvals()["goals"]])
+		frappe.set_user(self.rep_user)                      # the owner: never their own
+		self.assertNotIn(row, [g["evidence"]["row"] for g in hr_api.get_pending_approvals()["goals"]])
+		frappe.set_user(self.stranger_user)
+		self.assertNotIn(row, [g["evidence"]["row"] for g in hr_api.get_pending_approvals()["goals"]])
+
+		frappe.set_user(self.mgr_user)
+		hr_api.approve_goal_evidence(goal.name, row)
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Goal Evidence", row, "validation_status"), "Approved")
+
+	def test_decision5_hr_can_list_old_self_approved_evidence_read_only(self):
+		from alvoraa_portal import hr_api
+
+		goal = self._report_goal(pending_values=(10,))
+		row = goal.evidence_items[0].name
+		frappe.db.set_value("Goal Evidence", row, {"validation_status": "Approved", "approved_by": self.rep_user})
+		frappe.db.commit()
+		frappe.set_user(self.hr_user)
+		self.assertIn(row, [r["evidence_row"] for r in hr_api.get_self_approved_evidence()])
+		frappe.set_user(self.mgr_user)
+		with self.assertRaises(frappe.PermissionError):
+			hr_api.get_self_approved_evidence()
+
+
+# ── SEC-4 · Evidence files are private, the caller's own, and attached (S2) ─
+
+
+class TestSec4EvidenceFilesArePrivate(_GoalTeam):
+	def test_sec4_bad_file_links_are_refused_and_nothing_is_written(self):
+		from alvoraa_goals.api import goal_api
+
+		goal = self._report_goal()
+		public = self._file(self.rep_user, private=False)
+		someone_elses = self._file(self.stranger_user)
+		frappe.set_user(self.rep_user)
+		for bad in (public, "https://evil.example/x.pdf", "javascript:alert(1)", someone_elses):
+			with self.assertRaises(frappe.PermissionError, msg=bad):
+				goal_api.submit_goal_evidence(goal.name, "Manual Entry", value=1, evidence_file=bad)
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.count("Goal Evidence", {"parent": goal.name}), 0)
+
+	def test_sec4_own_private_file_is_accepted_and_readable_only_along_the_line(self):
+		from alvoraa_goals.api import goal_api
+
+		goal = self._report_goal()
+		url = self._file(self.rep_user)
+		frappe.set_user(self.rep_user)
+		res = goal_api.submit_goal_evidence(goal.name, "Manual Entry", value=1, evidence_file=url)
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Goal Evidence", res["evidence_row"], "evidence_file"), url)
+		f = frappe.get_doc("File", {"file_url": url, "owner": self.rep_user})
+		self.assertEqual((f.attached_to_doctype, f.attached_to_name), ("Individual Goal", goal.name))
+		self.assertTrue(frappe.has_permission("File", "read", doc=f, user=self.mgr_user))
+		self.assertTrue(frappe.has_permission("File", "read", doc=f, user=self.hr_user))
+		self.assertFalse(frappe.has_permission("File", "read", doc=f, user=self.stranger_user))
+
+	def test_sec4_goal_update_and_kpi_progress_use_the_same_check(self):
+		from alvoraa_portal import goals_api, performance_api
+
+		goal = self._report_goal()
+		kpi = _kpi(self.rep, "files")
+		frappe.db.commit()
+		self._cleanup.append(("KPI", kpi.name))
+		public = self._file(self.rep_user, private=False)
+		frappe.set_user(self.rep_user)
+		with self.assertRaises(frappe.PermissionError):
+			goals_api.submit_goal_update(goal.name, 5, evidence_url="javascript:alert(1)")
+		with self.assertRaises(frappe.PermissionError):
+			performance_api.log_kpi_progress(kpi.name, 2, evidence_url=public)
+		url = self._file(self.rep_user)
+		frappe.set_user(self.rep_user)
+		performance_api.log_kpi_progress(kpi.name, 2, evidence_url=url)
+		frappe.set_user("Administrator")
+		f = frappe.get_doc("File", {"file_url": url, "owner": self.rep_user})
+		self.assertEqual((f.attached_to_doctype, f.attached_to_name), ("KPI", kpi.name))
+
+	def test_sec4_the_portal_never_uploads_evidence_publicly(self):
+		self.assertNotIn('"is_private", "0"', _portal_page())
+
+
+# ── PRIV-7 · Old public evidence files are made private (S2) ────────────────
+
+
+class TestPriv7PatchMakesOldEvidenceFilesPrivate(_GoalTeam):
+	def test_priv7_patch_moves_public_evidence_files_and_is_safe_to_run_twice(self):
+		from alvoraa_goals.patches.v1_0 import make_evidence_files_private as patch_module
+
+		goal = self._report_goal(pending_values=(1,))
+		goal.append("progress_updates", {"log_date": nowdate(), "value": 1, "approval_status": "Pending"})
+		goal.save(ignore_permissions=True)
+		kpi = _kpi(self.rep, "patch")
+		frappe.db.commit()
+		self._cleanup.append(("KPI", kpi.name))
+		rows = (
+			("Goal Evidence", goal.evidence_items[0].name),
+			("Goal Progress Update", goal.progress_updates[0].name),
+			("KPI Progress Log", kpi.progress_log[0].name),
+		)
+		urls = {}
+		for doctype, name in rows:
+			url = self._file(self.rep_user, private=False)
+			frappe.db.set_value(doctype, name, "evidence_file", url)
+			urls[(doctype, name)] = url
+		frappe.db.commit()
+
+		with patch("builtins.print"):
+			patch_module.execute()
+			patch_module.execute()
+
+		for (doctype, name), old in urls.items():
+			new = frappe.db.get_value(doctype, name, "evidence_file")
+			self.assertTrue(new.startswith("/private/files/"), (doctype, new))
+			f = frappe.get_doc("File", {"file_url": new})
+			self.assertEqual(f.is_private, 1)
+			self.assertTrue(f.attached_to_name)
+			self.assertFalse(os.path.exists(frappe.get_site_path("public", "files", old.split("/")[-1])))
+

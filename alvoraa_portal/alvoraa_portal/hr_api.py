@@ -2071,24 +2071,117 @@ def submit_goal_evidence_portal(goal_id, evidence_type="Manual Entry",
     )
 
 
+EVIDENCE_HR_ROLES = {"HR Manager", "HR User"}   # the roles can_validate_evidence accepts
+
+
 @frappe.whitelist()
 def get_pending_approvals():
-    from alvoraa_goals.api.goal_api import get_pending_approvals as _gpa
-    return _gpa()
+    """Goal evidence waiting for THIS user's decision (slice 010, decision 5).
+
+    It used to import a function that does not exist, so the Team panel's
+    progress approvals card always failed. It now lists pending evidence the
+    caller may decide, by the same rule approve_evidence enforces:
+      - a manager: their direct reports' goals;
+      - HR: goals of employees in the companies they look after;
+      - never the caller's own goals.
+    Three bounded queries whatever the headcount. KPI progress approvals are
+    listed by goals_api.get_pending_approvals, so `kpis` stays empty here.
+    """
+    empty = {"goals": [], "kpis": []}
+    if not frappe.db.exists("DocType", "Individual Goal"):
+        return empty
+    me = _get_employee()
+    my_id = me.name if me else None
+    if EVIDENCE_HR_ROLES & set(frappe.get_roles()):
+        from hrms.alvoraa_hr_core.access import permitted_companies
+        companies = permitted_companies()
+        emp_filters = {"company": ["in", companies]} if companies else None
+    elif my_id:
+        emp_filters = {"reports_to": my_id}
+    else:
+        emp_filters = None
+    if emp_filters is None:
+        return empty
+
+    pending = frappe.get_all(
+        "Goal Evidence",
+        filters={"parenttype": "Individual Goal", "validation_status": "Pending"},
+        fields=["name", "parent", "evidence_type", "value", "extracted_date", "upload_date"],
+        order_by="upload_date asc", limit=500,
+    )
+    if not pending:
+        return empty
+    goals = {g.name: g for g in frappe.get_all(
+        "Individual Goal",
+        filters={"name": ["in", list({p.parent for p in pending})], "docstatus": ["!=", 2]},
+        fields=["name", "goal_name", "employee", "employee_name", "unit"],
+    )}
+    emp_filters.update({"name": ["in", list({g.employee for g in goals.values()})]})
+    allowed = set(frappe.get_all("Employee", filters=emp_filters, pluck="name")) - {my_id}
+
+    out = []
+    for p in pending:
+        g = goals.get(p.parent)
+        if not g or g.employee not in allowed:
+            continue
+        out.append({
+            "name": g.name, "goal_name": g.goal_name, "employee": g.employee,
+            "employee_name": g.employee_name, "unit": g.unit,
+            "evidence": {"row": p.name, "type": p.evidence_type, "value": p.value,
+                         "extracted_date": str(p.extracted_date) if p.extracted_date else None},
+        })
+    return {"goals": out, "kpis": []}
 
 
 @frappe.whitelist()
 @requires_feature("goals")
-def approve_goal_evidence(goal_name, evidence_idx):
+def approve_goal_evidence(goal_name, evidence_row):
     from alvoraa_goals.controllers.evidence import approve_evidence
-    return approve_evidence(goal_name, evidence_idx)
+    return approve_evidence(goal_name, evidence_row)
 
 
 @frappe.whitelist()
 @requires_feature("goals")
-def reject_goal_evidence(goal_name, evidence_idx, reason=""):
+def reject_goal_evidence(goal_name, evidence_row, reason=""):
     from alvoraa_goals.controllers.evidence import reject_evidence
-    return reject_evidence(goal_name, evidence_idx, reason)
+    return reject_evidence(goal_name, evidence_row, reason)
+
+
+@frappe.whitelist()
+@requires_feature("goals")
+def get_self_approved_evidence(limit=200):
+    """Read-only, for HR: evidence approved with no person's sign-off.
+
+    Before slice 010 every evidence row approved itself. Those rows are left
+    as they are (decision 5); this lists the ones that need a second look -
+    approved by nobody, by "System", or by the person who uploaded them - so
+    HR can review them. It changes nothing.
+    """
+    if not EVIDENCE_HR_ROLES & set(frappe.get_roles()):
+        frappe.throw(_("Only HR can see this list."), frappe.PermissionError)
+    from hrms.alvoraa_hr_core.access import permitted_companies
+    companies = permitted_companies()
+    if not companies:
+        return []
+
+    ev = frappe.qb.DocType("Goal Evidence")
+    goal = frappe.qb.DocType("Individual Goal")
+    emp = frappe.qb.DocType("Employee")
+    no_person = (ev.approved_by.isnull() | (ev.approved_by == "") | (ev.approved_by == "System")
+                 | (ev.approved_by == ev.uploaded_by))
+    rows = (
+        frappe.qb.from_(ev)
+        .join(goal).on(goal.name == ev.parent)
+        .join(emp).on(emp.name == goal.employee)
+        .select(ev.name.as_("evidence_row"), goal.name.as_("goal"), goal.goal_name, goal.employee,
+                goal.employee_name, ev.evidence_type, ev.value, ev.upload_date, ev.uploaded_by,
+                ev.approved_by)
+        .where((ev.parenttype == "Individual Goal") & (ev.validation_status == "Approved")
+               & no_person & emp.company.isin(companies))
+        .orderby(ev.upload_date, order=frappe.qb.desc)
+        .limit(min(cint(limit) or 200, 1000))
+    ).run(as_dict=True)
+    return rows
 
 
 @frappe.whitelist()

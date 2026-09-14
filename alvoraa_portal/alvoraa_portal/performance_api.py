@@ -316,6 +316,9 @@ def log_kpi_progress(kpi, value, note="", evidence_url=None):
     if doc.status in ("Cancelled",):
         frappe.throw("This KPI is cancelled and no longer accepts progress updates.")
 
+    # Private, uploaded by the caller, and attached to this KPI - or refused (SEC-4).
+    from alvoraa_goals.controllers.evidence import claim_evidence_file
+    evidence_url = claim_evidence_file(evidence_url, "KPI", doc.name, "performance_api.log_kpi_progress")
     ev_missing = 1 if not evidence_url else 0
     row = doc.append("progress_log", {
         "log_date":        today(),

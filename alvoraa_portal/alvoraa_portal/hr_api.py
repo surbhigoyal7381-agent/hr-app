@@ -2530,8 +2530,18 @@ def get_team_late_list(weeks=4):
                     "detail": [f"{str(v['attendance_date'])[5:]} {v['violation_type']} {str(v['actual_time'])[:5]}"
                                for v in p["violations"]]})
     since = frappe.utils.add_days(frappe.utils.nowdate(), -7 * int(weeks))
-    recent = _deduction_rows({"employee": ["in", [m.name for m in team]], "docstatus": 1,
-                              "week_start": [">=", since]}, limit=50)
+    # Days only. A manager never receives a report's loss-of-pay amount, the
+    # explanation text or the per-day punch times (slice 010, PRIV-3). A fixed
+    # field list rather than _deduction_rows, which is the employee's own view.
+    recent = frappe.get_all(
+        "Attendance Deduction",
+        filters={"employee": ["in", [m.name for m in team]], "docstatus": 1, "week_start": [">=", since]},
+        fields=["name", "employee", "employee_name", "week_start", "week_end", "deduction_days", "lwp_days"],
+        order_by="week_start desc", limit=50,
+    )
+    for r in recent:
+        r["week_start"] = str(r.week_start)
+        r["week_end"] = str(r.week_end)
     return {"enabled": True, "week_start": out and current_week_projection(rule, team[0].name)["week_start"],
             "team": out, "recent": recent}
 

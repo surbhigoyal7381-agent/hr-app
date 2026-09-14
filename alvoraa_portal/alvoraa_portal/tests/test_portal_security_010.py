@@ -463,3 +463,128 @@ class TestSec13HrActsOnlyForTheirCompanies(_Base):
 		self.assertEqual(for_other["employee"]["name"], self.emp_a)
 
 
+# ── PRIV-3 / PRIV-4 · Managers get days, never the amount (S5) ──────────────
+
+
+class TestPriv3ManagersNeverReceiveTheLossOfPayAmount(_Base):
+	RULE = frappe._dict(
+		name="S010 Rule", late_threshold_minutes=60, early_exit_threshold_minutes=0, count_early_exit=0,
+		free_violations_per_week=1, deduction_per_violation_days=0.25, round_up_from_days=0, round_up_to_days=0,
+	)
+	PROJECTION = {"week_start": "2026-09-14", "violations": [], "counted": 0, "projected_days": 0}
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.mgr_user = _user("late.manager", ("Employee",))
+		cls.mgr = _employee("LateManager", user=cls.mgr_user)
+		cls.rep_user = _user("late.report", ("Employee",))
+		cls.rep = _employee("LateReport", reports_to=cls.mgr, user=cls.rep_user)
+
+	def _deduction(self):
+		doc = frappe.get_doc(
+			{
+				"doctype": "Attendance Deduction",
+				"employee": self.rep,
+				"employee_name": f"LateReport {TAG}",
+				"rule": "S010 Rule",
+				"week_start": add_days(nowdate(), -7),
+				"week_end": add_days(nowdate(), -1),
+			}
+		)
+		doc.flags.ignore_validate = True
+		doc.flags.ignore_links = True
+		doc.insert(ignore_permissions=True)
+		frappe.db.set_value(
+			"Attendance Deduction", doc.name,
+			{"docstatus": 1, "deduction_days": 1, "lwp_days": 0.5, "lwp_amount": 548.39,
+			 "explanation": "Taken: 0.5 from Casual Leave, 0.5 as loss of pay."},
+		)
+		return doc.name
+
+	def test_priv3_manager_late_list_has_days_but_no_amount_or_explanation(self):
+		from alvoraa_portal import hr_api
+
+		self._deduction()
+		frappe.set_user(self.mgr_user)
+		with patch("alvoraa_portal.hr_api._late_rule_for", return_value=self.RULE), patch(
+			"hrms.alvoraa_late_rules.late_rules.current_week_projection", return_value=self.PROJECTION
+		):
+			res = hr_api.get_team_late_list(weeks=4)
+		self.assertTrue(res["recent"])
+		keys = _all_keys(res)
+		self.assertNotIn("lwp_amount", keys)
+		self.assertNotIn("explanation", keys)
+		self.assertNotIn("548", json.dumps(res, default=str))
+		self.assertEqual(res["recent"][0]["lwp_days"], 0.5)
+
+	def test_priv3_employee_still_sees_their_own_amount(self):
+		from alvoraa_portal import hr_api
+
+		self._deduction()
+		frappe.set_user(self.rep_user)
+		with patch("alvoraa_portal.hr_api._late_rule_for", return_value=self.RULE), patch(
+			"hrms.alvoraa_late_rules.late_rules.current_week_projection", return_value=dict(self.PROJECTION)
+		):
+			res = hr_api.get_my_attendance_deductions()
+		self.assertEqual(res["rows"][0]["lwp_amount"], 548.39)
+
+	def test_priv3_deduction_email_names_leave_type_and_days_but_no_amount(self):
+		"""Decision 9 (2026-09-14): the email to employee and manager keeps the
+		leave type and the days, and never carries a money figure."""
+		rule = frappe.get_doc(
+			{"doctype": "Attendance Deduction Rule", "rule_name": "S010 Email Rule", "company": ensure_company(),
+			 "enabled": 0, "week_start_day": "Monday", "late_threshold_minutes": 60, "free_violations_per_week": 0,
+			 "deduction_per_violation_days": 0.5, "notify_employee": 1, "notify_manager": 1}
+		)
+		rule.flags.ignore_validate = True
+		rule.flags.ignore_links = True
+		rule.flags.ignore_mandatory = True
+		rule.insert(ignore_permissions=True)
+		doc = frappe.get_doc(
+			{
+				"doctype": "Attendance Deduction", "employee": self.rep, "employee_name": f"LateReport {TAG}",
+				"rule": rule.name, "week_start": "2026-09-07", "week_end": "2026-09-13",
+				"total_violations": 2, "counted_violations": 2, "computed_days": 1, "deduction_days": 1,
+				"lwp_days": 0.5, "lwp_amount": 548.39,
+				"leave_deductions": [{"leave_type": "Casual Leave", "days": 0.5}],
+			}
+		)
+		doc.docstatus = 1
+		doc.explanation = doc.build_explanation()
+		with patch("frappe.sendmail") as sendmail:
+			doc.notify()
+		kwargs = sendmail.call_args.kwargs
+		self.assertIn(self.mgr_user, kwargs["recipients"])
+		self.assertIn("Casual Leave", kwargs["message"])
+		self.assertIn("0.5", kwargs["message"])
+		for text in (kwargs["message"], kwargs["subject"]):
+			self.assertNotIn("548", text)
+
+	def test_priv4_amount_fields_are_hr_only_in_the_shipped_doctype(self):
+		import hrms
+
+		path = os.path.join(
+			os.path.dirname(hrms.__file__),
+			"alvoraa_late_rules", "doctype", "attendance_deduction", "attendance_deduction.json",
+		)
+		with open(path) as f:
+			meta = json.load(f)
+		fields = {d["fieldname"]: d for d in meta["fields"]}
+		for fieldname in ("lwp_amount", "additional_salary"):
+			self.assertGreaterEqual(fields[fieldname].get("permlevel", 0), 1, fieldname)
+		level1_readers = {p["role"] for p in meta["permissions"] if p.get("permlevel", 0) >= 1 and p.get("read")}
+		self.assertEqual(level1_readers, {"HR Manager", "HR User", "System Manager"})
+
+	def test_priv4_manager_desk_read_does_not_return_the_amount(self):
+		if not frappe.get_meta("Attendance Deduction").get_field("lwp_amount").permlevel:
+			self.skipTest("test_site has not been migrated to the permlevel change yet")
+		name = self._deduction()
+		frappe.set_user(self.mgr_user)
+		doc = frappe.get_doc("Attendance Deduction", name)
+		doc.apply_fieldlevel_read_permissions()
+		self.assertFalse(doc.get("lwp_amount"))
+		rows = frappe.get_list("Attendance Deduction", filters={"name": name}, fields=["name", "lwp_amount"])
+		self.assertTrue(all(not r.get("lwp_amount") for r in rows))
+
+

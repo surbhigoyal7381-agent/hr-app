@@ -3,7 +3,7 @@
  "name": "Attendance Deduction",
  "module": "Alvoraa Late Rules",
  "creation": "2026-09-07 12:00:00.000000",
- "modified": "2026-09-07 13:00:00.000000",
+ "modified": "2026-09-14 12:00:00.000000",
  "modified_by": "Administrator",
  "owner": "Administrator",
  "docstatus": 0,
@@ -199,6 +199,7 @@
    "fieldname": "lwp_amount",
    "fieldtype": "Currency",
    "label": "Loss of Pay Amount",
+   "permlevel": 1,
    "read_only": 1
   },
   {
@@ -206,6 +207,7 @@
    "fieldtype": "Link",
    "label": "Additional Salary",
    "options": "Additional Salary",
+   "permlevel": 1,
    "read_only": 1
   },
   {
@@ -276,6 +278,21 @@
    "export": 1,
    "report": 1,
    "share": 1
+  },
+  {
+   "role": "HR Manager",
+   "permlevel": 1,
+   "read": 1
+  },
+  {
+   "role": "HR User",
+   "permlevel": 1,
+   "read": 1
+  },
+  {
+   "role": "System Manager",
+   "permlevel": 1,
+   "read": 1
   }
  ],
  "links": [],

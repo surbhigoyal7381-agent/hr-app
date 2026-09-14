@@ -66,8 +66,14 @@ def _employee(first, company=None, reports_to=None, user=None):
 	doc.status = "Active"
 	doc.reports_to = reports_to
 	doc.user_id = user
+	# No automatic "Employee = self" User Permission. It narrows every list the
+	# user sees, so a test about OUR rules would pass or fail because of it.
+	doc.create_user_permission = 0
 	doc.flags.ignore_permissions = True
 	doc.save(ignore_permissions=True)
+	if user:
+		frappe.db.delete("User Permission", {"user": user})
+		frappe.clear_cache(user=user)
 	frappe.db.commit()
 	return doc.name
 
@@ -187,9 +193,9 @@ class TestSec9NobodyDecidesTheirOwnRequest(_Base):
 
 		doc = self._correction(self.emp_self)
 		frappe.set_user(self.hr_self)
-		with self.assertRaises(frappe.PermissionError):
+		with self.assertRaisesRegex(frappe.PermissionError, "cannot decide your own request"):
 			ac.decide(doc.name, approve=1)
-		with self.assertRaises(frappe.PermissionError):
+		with self.assertRaisesRegex(frappe.PermissionError, "cannot decide your own request"):
 			ac.decide(doc.name, approve=0, note="declining my own")
 		frappe.set_user("Administrator")
 		row = frappe.db.get_value(ac.REQUEST, doc.name, ["docstatus", "alvoraa_review_status"], as_dict=True)
@@ -210,7 +216,7 @@ class TestSec9NobodyDecidesTheirOwnRequest(_Base):
 		self.assertIn("hrms.alvoraa_hr_core.access.refuse_own_submit", hooks)
 		doc = self._correction(self.emp_self)
 		frappe.set_user(self.hr_self)
-		with self.assertRaises(frappe.PermissionError):
+		with self.assertRaisesRegex(frappe.PermissionError, "cannot decide your own request"):
 			doc.run_method("before_submit")
 		frappe.set_user(self.hr_other)
 		doc.run_method("before_submit")  # someone else: allowed
@@ -220,7 +226,11 @@ class TestSec9NobodyDecidesTheirOwnRequest(_Base):
 		emp = ensure_employee_with_leave("S010Leave", lt, days=10, last_name="Self")
 		link_user_to_employee(emp, self.hr_self)
 		frappe.db.set_value("Employee", self.emp_self, "user_id", None)
+		frappe.db.delete("User Permission", {"user": ["in", [self.hr_self, self.hr_other]]})
+		frappe.clear_cache(user=self.hr_self)
+		frappe.clear_cache(user=self.hr_other)
 		reset_leave_applications(emp)
+		was = frappe.db.get_single_value("HR Settings", "prevent_self_leave_approval")
 		frappe.db.set_single_value("HR Settings", "prevent_self_leave_approval", 0)
 		try:
 			la = frappe.get_doc(
@@ -237,7 +247,7 @@ class TestSec9NobodyDecidesTheirOwnRequest(_Base):
 			la.insert(ignore_permissions=True)
 			la.status = "Approved"
 			frappe.set_user(self.hr_self)
-			with self.assertRaises(frappe.PermissionError):
+			with self.assertRaisesRegex(frappe.PermissionError, "cannot decide your own request"):
 				la.submit()
 			frappe.set_user("Administrator")
 			self.assertEqual(frappe.db.get_value("Leave Application", la.name, "docstatus"), 0)
@@ -252,6 +262,7 @@ class TestSec9NobodyDecidesTheirOwnRequest(_Base):
 		finally:
 			frappe.set_user("Administrator")
 			frappe.db.rollback()
+			frappe.db.set_single_value("HR Settings", "prevent_self_leave_approval", was)
 			frappe.db.set_value("Employee", emp, "user_id", None)
 			_employee("HrSelf", user=self.hr_self)
 			reset_leave_applications(emp)
@@ -280,7 +291,7 @@ class TestSec9NobodyDecidesTheirOwnRequest(_Base):
 			la.insert(ignore_permissions=True)
 			frappe.set_user(self.hr_self)
 			self.assertFalse(hr_api._can_action_leave(la.name))
-			with self.assertRaises(frappe.PermissionError):
+			with self.assertRaisesRegex(frappe.PermissionError, "cannot decide your own request"):
 				hr_api.action_leave(la.name, "approve")
 			frappe.set_user("Administrator")
 			row = frappe.db.get_value("Leave Application", la.name, ["docstatus", "status"], as_dict=True)
@@ -300,7 +311,7 @@ class TestSec9NobodyDecidesTheirOwnRequest(_Base):
 		self._cleanup.append(("KPI", kpi.name))
 		row = kpi.progress_log[0].name
 		frappe.set_user(self.hr_self)
-		with self.assertRaises(frappe.PermissionError):
+		with self.assertRaisesRegex(frappe.PermissionError, "cannot decide your own request"):
 			performance_api.approve_kpi_update(kpi.name, row, "Approved")
 		frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.get_value("KPI Progress Log", row, "approval_status"), "Pending")
@@ -319,7 +330,7 @@ class TestSec9NobodyDecidesTheirOwnRequest(_Base):
 		row = goal.progress_updates[0].name
 		frappe.set_user(self.hr_self)
 		self.assertFalse(any(r["can_action"] for r in goals_api.get_goal_update_log(goal.name)))
-		with self.assertRaises(frappe.PermissionError):
+		with self.assertRaisesRegex(frappe.PermissionError, "cannot decide your own request"):
 			goals_api.approve_goal_update(goal.name, row, "Approved")
 		pending = goals_api.get_pending_approvals()
 		self.assertNotIn(goal.name, [g["goal"] for g in pending["goal_updates"]])
@@ -336,9 +347,9 @@ class TestSec9NobodyDecidesTheirOwnRequest(_Base):
 		row = goal.evidence_items[0].name
 		frappe.set_user(self.hr_self)
 		self.assertFalse(evidence.can_validate_evidence(goal.name))
-		with self.assertRaises(frappe.PermissionError):
+		with self.assertRaisesRegex(frappe.PermissionError, "cannot decide your own request"):
 			evidence.approve_evidence(goal.name, 0)
-		with self.assertRaises(frappe.PermissionError):
+		with self.assertRaisesRegex(frappe.PermissionError, "cannot decide your own request"):
 			evidence.reject_evidence(goal.name, 0, "no")
 		frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.get_value("Goal Evidence", row, "validation_status"), "Pending")
@@ -349,7 +360,7 @@ class TestSec9NobodyDecidesTheirOwnRequest(_Base):
 		logger = MagicMock()
 		frappe.set_user(self.hr_self)
 		with patch("frappe.logger", return_value=logger):
-			with self.assertRaises(frappe.PermissionError):
+			with self.assertRaisesRegex(frappe.PermissionError, "cannot decide your own request"):
 				access.refuse_own_decision(self.emp_self, "KPI", "KPI-X", "test.endpoint")
 		line = json.loads(logger.warning.call_args[0][0])
 		self.assertEqual(
@@ -594,7 +605,7 @@ class TestPriv3ManagersNeverReceiveTheLossOfPayAmount(_Base):
 class TestSec12NoScriptPush(_Base):
 	NEEDLE = "eval" + "_js"
 
-	def test_sec12_no_eval_js_in_our_apps(self):
+	def test_sec12_no_script_push_event_in_our_apps(self):
 		import alvoraa_goals
 		import alvoraa_portal
 		import hrms
@@ -653,3 +664,4 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 			with open(os.path.join(root, rel), encoding="utf-8") as f:
 				count = len(re.findall(r"ignore_permissions", f.read()))
 			self.assertLessEqual(count, ceiling, f"{app}/{rel}")
+

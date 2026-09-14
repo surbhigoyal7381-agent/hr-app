@@ -3117,7 +3117,7 @@ def _send_notification(to_user, subject, message):
     """Send the review email. A failure never blocks the review step.
 
     The server never pushes script to a browser (slice 010, SEC-12): this used
-    to publish an `eval_js` event after every email. A failure is logged with
+    to publish a realtime event carrying a script after every email. A failure is logged with
     the traceback only - no recipient, subject or names.
     """
     try:

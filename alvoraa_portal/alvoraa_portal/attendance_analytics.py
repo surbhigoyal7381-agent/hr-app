@@ -149,10 +149,13 @@ def _population(view, depth, people, filters):
 				f[field] = filters[field]
 		if filters.get("manager"):
 			f["name"] = ("in", _reports_to(filters["manager"], deep=(depth == "all")) or [""])
-		# get_list, not get_all: the caller's User Permissions apply. A store's
-		# HR person (Branch permission) sees their store; central HR, with none,
-		# still sees everyone (slice 011).
-		staff = frappe.get_list("Employee", filters=f, pluck="name")
+		# HR: get_list, so the caller's User Permissions apply. A store's HR
+		# person (Branch permission) sees their store; central HR, with none,
+		# still sees everyone (slice 011). System Manager is treated as CXO for
+		# now (slice 010 decision of 2026-09-14) and has no Employee read of its
+		# own, so it keeps the unfiltered read.
+		read = frappe.get_all if "System Manager" in frappe.get_roles() else frappe.get_list
+		staff = read("Employee", filters=f, pluck="name")
 		chosen = _chosen(people)
 		if chosen:
 			outside = sorted(set(chosen) - set(staff))

@@ -162,3 +162,16 @@ class WhoSeesWhat(BranchCase):
 		staff, _me = aa._population("organisation", None, None, {})
 		self.assertIn(self.a, staff)
 		self.assertIn(self.b, staff)
+
+	def test_system_manager_alone_still_sees_every_store_in_the_portal_view(self):
+		"""System Manager is CXO for now (slice 010, 2026-09-14) and holds no
+		Employee read of its own. A permission-checked read would refuse it."""
+		email = "bssysadmin.bs@example.com"
+		if not frappe.db.exists("User", email):
+			frappe.get_doc({"doctype": "User", "email": email, "first_name": "BSSysAdmin",
+			                "send_welcome_email": 0}).insert(ignore_permissions=True)
+		frappe.get_doc("User", email).add_roles("System Manager")
+		frappe.set_user(email)
+		staff, _me = aa._population("organisation", None, None, {})
+		self.assertIn(self.a, staff)
+		self.assertIn(self.b, staff)

@@ -79,21 +79,29 @@ def _employee(first, company=None, reports_to=None, user=None):
 
 
 def _second_company():
-	if frappe.db.exists("Company", SECOND_COMPANY):
-		return SECOND_COMPANY
-	_ensure_erpnext_company_prerequisites()
-	doc = frappe.get_doc(
-		{
-			"doctype": "Company",
-			"company_name": SECOND_COMPANY,
-			"abbr": "S10SC",
-			"default_currency": "INR",
-			"country": "India",
-		}
-	)
-	doc.insert(ignore_permissions=True)
+	"""A second company, kept the OLDEST company on the site.
+
+	ensure_company() hands every other test the newest company. A company
+	created here would quietly become every other test's company - one with no
+	holiday list or fiscal year - so its creation date is set far back.
+	Call this BEFORE ensure_company().
+	"""
+	if not frappe.db.exists("Company", SECOND_COMPANY):
+		ensure_company()   # on a fresh site the ordinary test company must exist first
+		_ensure_erpnext_company_prerequisites()
+		doc = frappe.get_doc(
+			{
+				"doctype": "Company",
+				"company_name": SECOND_COMPANY,
+				"abbr": "S10SC",
+				"default_currency": "INR",
+				"country": "India",
+			}
+		)
+		doc.insert(ignore_permissions=True)
+	frappe.db.set_value("Company", SECOND_COMPANY, "creation", "2000-01-01 00:00:00", update_modified=False)
 	frappe.db.commit()
-	return doc.name
+	return SECOND_COMPANY
 
 
 def _goal(employee, suffix=""):
@@ -377,8 +385,9 @@ class TestSec13HrActsOnlyForTheirCompanies(_Base):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
-		cls.company_a = ensure_company()
 		cls.company_b = _second_company()
+		cls.company_a = ensure_company()
+		assert cls.company_a != cls.company_b
 		cls.lt = ensure_leave_type("Alvoraa Casual")
 		cls.hr_a = _user("hr.companya", ("HR User", "Employee"))
 		cls.hr_a_emp = _employee("HrCompanyA", company=cls.company_a, user=cls.hr_a)

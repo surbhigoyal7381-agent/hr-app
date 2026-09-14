@@ -359,3 +359,107 @@ class TestSec9NobodyDecidesTheirOwnRequest(_Base):
 		self.assertEqual(set(line), {"event", "at", "user", "endpoint", "doctype", "name", "rule"})
 
 
+# ── SEC-13 / PRIV-6 · HR acts only for their companies (S10) ────────────────
+
+
+class TestSec13HrActsOnlyForTheirCompanies(_Base):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.company_a = ensure_company()
+		cls.company_b = _second_company()
+		cls.lt = ensure_leave_type("Alvoraa Casual")
+		cls.hr_a = _user("hr.companya", ("HR User", "Employee"))
+		cls.hr_a_emp = _employee("HrCompanyA", company=cls.company_a, user=cls.hr_a)
+		cls.emp_a = _employee("StaffA", company=cls.company_a)
+		cls.emp_b = _employee("StaffB", company=cls.company_b)
+		cls.hr_nowhere = _user("hr.nowhere", ("HR Manager",))
+		cls.sysman = _user("sysman", ("System Manager",))
+
+	def test_sec13_apply_leave_for_another_company_is_refused(self):
+		from alvoraa_portal import hr_api
+
+		before = frappe.db.count("Leave Application", {"employee": self.emp_b})
+		frappe.set_user(self.hr_a)
+		with self.assertRaises(frappe.PermissionError):
+			hr_api.apply_leave(self.lt, WEEK_MON, WEEK_MON, on_behalf_of=self.emp_b)
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.count("Leave Application", {"employee": self.emp_b}), before)
+
+	def test_sec13_preview_and_summary_for_another_company_are_refused(self):
+		from alvoraa_portal import hr_api
+
+		frappe.set_user(self.hr_a)
+		with self.assertRaises(frappe.PermissionError):
+			hr_api.preview_leave_request(self.lt, WEEK_MON, WEEK_MON, on_behalf_of=self.emp_b)
+		with self.assertRaises(frappe.PermissionError):
+			hr_api.get_leave_summary(employee_id=self.emp_b)
+
+	def test_sec13_unknown_employee_gets_the_same_refusal(self):
+		from alvoraa_portal import hr_api
+
+		frappe.set_user(self.hr_a)
+		with self.assertRaises(frappe.PermissionError) as unknown:
+			hr_api.get_leave_summary(employee_id="S010-NOBODY")
+		with self.assertRaises(frappe.PermissionError) as elsewhere:
+			hr_api.get_leave_summary(employee_id=self.emp_b)
+		self.assertEqual(str(unknown.exception), str(elsewhere.exception))
+
+	def test_sec13_employee_picker_lists_only_own_company_without_permissions(self):
+		from alvoraa_portal import hr_api
+
+		frappe.set_user(self.hr_a)
+		names = [e.name for e in hr_api.get_all_active_employees()["employees"]]
+		self.assertIn(self.emp_a, names)
+		self.assertNotIn(self.emp_b, names)
+
+	def test_sec13_company_user_permission_decides_the_scope(self):
+		from alvoraa_portal import hr_api
+		from hrms.alvoraa_hr_core.access import permitted_companies
+
+		up = frappe.get_doc(
+			{"doctype": "User Permission", "user": self.hr_a, "allow": "Company", "for_value": self.company_b,
+			 "apply_to_all_doctypes": 1}
+		)
+		up.insert(ignore_permissions=True)
+		frappe.db.commit()
+		try:
+			self.assertEqual(permitted_companies(self.hr_a), [self.company_b])
+			frappe.set_user(self.hr_a)
+			names = [e.name for e in hr_api.get_all_active_employees()["employees"]]
+			self.assertIn(self.emp_b, names)
+			self.assertNotIn(self.emp_a, names)
+		finally:
+			frappe.set_user("Administrator")
+			frappe.delete_doc("User Permission", up.name, force=True, ignore_permissions=True)
+			frappe.db.commit()
+
+	def test_sec13_hr_with_no_company_and_no_employee_gets_nobody(self):
+		from alvoraa_portal import hr_api
+		from hrms.alvoraa_hr_core.access import permitted_companies
+
+		self.assertEqual(permitted_companies(self.hr_nowhere), [])
+		frappe.set_user(self.hr_nowhere)
+		self.assertEqual(hr_api.get_all_active_employees()["employees"], [])
+		with self.assertRaises(frappe.PermissionError):
+			hr_api.get_leave_summary(employee_id=self.emp_a)
+
+	def test_sec13_system_manager_covers_every_company(self):
+		from hrms.alvoraa_hr_core.access import permitted_companies
+
+		companies = permitted_companies(self.sysman)
+		self.assertIn(self.company_a, companies)
+		self.assertIn(self.company_b, companies)
+
+	def test_priv6_leave_summary_returns_only_the_fields_the_screen_uses(self):
+		from alvoraa_portal import hr_api
+
+		allowed = {"name", "employee_name", "company", "department"}
+		frappe.set_user(self.hr_a)
+		for_other = hr_api.get_leave_summary(employee_id=self.emp_a)
+		own = hr_api.get_leave_summary()
+		for res in (for_other, own):
+			self.assertEqual(set(res["employee"]), allowed)
+		self.assertEqual(for_other["employee"]["name"], self.emp_a)
+
+

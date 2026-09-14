@@ -1521,9 +1521,14 @@ def get_all_active_employees():
     roles = frappe.get_roles()
     if not ({"HR Manager", "HR User", "System Manager"} & set(roles)):
         frappe.throw("Not permitted.", frappe.PermissionError)
+    # Only the companies this HR user looks after (slice 010, SEC-13).
+    from hrms.alvoraa_hr_core.access import permitted_companies
+    companies = permitted_companies()
+    if not companies:
+        return {"employees": []}
     employees = frappe.get_all(
         "Employee",
-        filters={"status": "Active"},
+        filters={"status": "Active", "company": ["in", companies]},
         fields=["name", "employee_name", "department", "designation"],
         order_by="employee_name asc",
         ignore_permissions=True,
@@ -1531,12 +1536,31 @@ def get_all_active_employees():
     return {"employees": employees}
 
 
+def _hr_target_employee(employee_id, endpoint):
+    """The employee HR is acting for, or a refusal. Fails closed (SEC-13).
+
+    Only employees of a company in permitted_companies(). The message is the
+    same whether the employee is in another company or does not exist, so the
+    refusal does not confirm who exists elsewhere. Returns only the fields the
+    leave screens need - never the whole Employee record (PRIV-6).
+    """
+    from hrms.alvoraa_hr_core.access import permitted_companies, refuse
+
+    emp = frappe.db.get_value(
+        "Employee", employee_id, ["name", "employee_name", "company", "department"], as_dict=True
+    )
+    if not emp or emp.company not in permitted_companies():
+        refuse(_("You can only act for employees of the companies you look after."),
+               "SEC-13", endpoint, "Employee", employee_id)
+    return emp
+
+
 @frappe.whitelist()
 def get_leave_summary(employee_id=None):
     roles = frappe.get_roles()
     is_hr = bool({"HR Manager", "HR User", "System Manager"} & set(roles))
     if employee_id and is_hr:
-        emp = frappe.get_doc("Employee", employee_id)
+        emp = _hr_target_employee(employee_id, "hr_api.get_leave_summary")
     else:
         emp = _get_employee()
     if not emp:
@@ -1603,7 +1627,11 @@ def get_leave_summary(employee_id=None):
     ever_allocated = bool(frappe.db.exists("Leave Allocation",
                                            {"employee": emp.name, "docstatus": 1}))
 
-    return {"balances": balances, "applications": applications, "employee": emp,
+    # Only what the leave screen needs. This used to return the whole Employee
+    # record - salary, PAN and bank details included - to any HR User (PRIV-6).
+    employee = {"name": emp.name, "employee_name": emp.employee_name,
+                "company": emp.company, "department": emp.department}
+    return {"balances": balances, "applications": applications, "employee": employee,
             "ever_allocated": ever_allocated}
 
 
@@ -1662,7 +1690,7 @@ def apply_leave(leave_type, from_date, to_date, half_day=0, half_day_date=None, 
     is_hr = bool({"HR Manager", "HR User", "System Manager"} & set(roles))
 
     if on_behalf_of and is_hr:
-        emp = frappe.get_doc("Employee", on_behalf_of)
+        emp = _hr_target_employee(on_behalf_of, "hr_api.apply_leave")
     else:
         emp = _get_employee()
     if not emp:
@@ -1710,7 +1738,7 @@ def preview_leave_request(leave_type, from_date, to_date, half_day=0, half_day_d
 
     # same rule as apply_leave: only HR may act for someone else
     if on_behalf_of and is_hr:
-        emp = frappe.get_doc("Employee", on_behalf_of)
+        emp = _hr_target_employee(on_behalf_of, "hr_api.preview_leave_request")
     else:
         emp = _get_employee()
     if not emp:

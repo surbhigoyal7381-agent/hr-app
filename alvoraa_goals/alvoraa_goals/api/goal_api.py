@@ -21,8 +21,10 @@ def get_employee_goals(employee_id=None):
         employee_id = user_employee
     if not employee_id:
         frappe.throw(_("No employee record found for your account."), frappe.DoesNotExistError)
-    if user_employee != employee_id and not frappe.has_permission("Individual Goal", "write"):
-        frappe.throw(_("Not permitted to view other employees' goals"), frappe.PermissionError)
+    if user_employee != employee_id and not _may_see_goals_of(employee_id, user_employee):
+        from hrms.alvoraa_hr_core.access import refuse
+        refuse(_("Not permitted to view other employees' goals"), "SEC-14",
+               "goal_api.get_employee_goals", "Employee", employee_id)
     goals = frappe.get_all(
         "Individual Goal",
         filters={"employee": employee_id, "status": ["!=", "Cancelled"], "docstatus": 1},
@@ -39,6 +41,20 @@ def get_employee_goals(employee_id=None):
             "Goal Evidence", {"parent": goal["name"], "validation_status": "Pending"}
         )
     return goals
+
+
+def _may_see_goals_of(employee_id, user_employee):
+    """HR, or somebody above this employee in the reporting line (SEC-14).
+
+    It used to ask for doctype-wide write on Individual Goal, which every
+    Employee holds, so anybody could read anybody's goals and evidence values.
+    """
+    from alvoraa_goals.permissions import _has_full_access, descendants
+
+    user = frappe.session.user
+    if user == "Administrator" or _has_full_access(user):
+        return True
+    return bool(user_employee) and employee_id in descendants(user_employee)
 
 
 @frappe.whitelist()

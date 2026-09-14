@@ -968,6 +968,19 @@ class TestSec3EvidenceWaitsForApproval(_GoalTeam):
 		with self.assertRaises(frappe.PermissionError):
 			hr_api.get_self_approved_evidence()
 
+	def test_sec14_get_employee_goals_checks_the_person_not_the_doctype(self):
+		from alvoraa_goals.api import goal_api
+
+		goal = self._report_goal()
+		frappe.db.set_value("Individual Goal", goal.name, "docstatus", 1)
+		frappe.set_user(self.stranger_user)
+		with self.assertRaises(frappe.PermissionError):
+			goal_api.get_employee_goals(employee_id=self.rep)
+		frappe.set_user(self.mgr_user)
+		self.assertIn(goal.name, [g["name"] for g in goal_api.get_employee_goals(employee_id=self.rep)])
+		frappe.set_user(self.rep_user)
+		self.assertIn(goal.name, [g["name"] for g in goal_api.get_employee_goals()])
+
 
 # ── SEC-4 · Evidence files are private, the caller's own, and attached (S2) ─
 
@@ -1062,3 +1075,38 @@ class TestPriv7PatchMakesOldEvidenceFilesPrivate(_GoalTeam):
 			self.assertTrue(f.attached_to_name)
 			self.assertFalse(os.path.exists(frappe.get_site_path("public", "files", old.split("/")[-1])))
 
+
+# ── SEC-11 / PRIV-8 · Escaped drawer, no debug logging (S8) ─────────────────
+
+
+class TestSec11GoalDrawerEscapesWhatPeopleTyped(FrappeTestCase):
+	FIELDS = ("g.goal_name", "g.employee_name", "g.unit", "tLabel", "ev.evidence_type", "ev.validation_notes",
+	          "ev.raw_extracted_data", "ev.evidence_file", "casc.cascade_name", "c.content")
+
+	def _between(self, start, end):
+		page = _portal_page()
+		i = page.index(start)
+		return page[i:page.index(end, i)]
+
+	def test_sec11_no_raw_field_is_concatenated_into_the_goal_drawer(self):
+		body = self._between("function renderGoalDrawer(", "\nfunction loadGoalUpdateHistory")
+		for field in self.FIELDS:
+			raw = re.findall(r"\+\s*\(?\s*" + re.escape(field) + r"\b(?!\s*\?)(?!\s*\|\|\s*\"Evidence\"\))", body)
+			self.assertEqual(raw, [], f"{field} is put into the drawer HTML without esc()")
+
+	def test_sec11_file_links_are_drawn_only_for_private_files(self):
+		body = self._between("function _safeFileUrl(", "\nfunction loadGoalUpdateHistory")
+		self.assertIn('indexOf("/private/files/") === 0', body)
+		self.assertIn("_safeFileUrl(ev.evidence_file)", body)
+		self.assertNotIn("href=\"' + ev.evidence_file", body)
+
+	def test_sec11_team_goal_card_escapes_the_goal_name(self):
+		page = _portal_page()
+		self.assertNotIn("white-space:nowrap\">' + g.goal_name +", page)
+
+	def test_priv8_no_debug_logging_of_evidence_values(self):
+		import inspect
+
+		from alvoraa_goals.controllers import evidence
+
+		self.assertNotIn("[DEBUG]", inspect.getsource(evidence))

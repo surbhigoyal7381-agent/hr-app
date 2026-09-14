@@ -7997,7 +7997,7 @@ function renderScorecard(d, color) {
           var pct = Math.min(100, Math.round(parseFloat(g.progress_pct) || 0));
           var col = TRAJ[g.status] || TRAJ[g.trajectory] || "var(--primary)";
           return '<div class="sc-goal-item" onclick="openTeamGoalDrawer(\'' + g.name + '\')" style="cursor:pointer">' +
-            '<div class="sc-goal-name" title="' + (g.goal_name||"") + '">' + (g.goal_name || "—") + '</div>' +
+            '<div class="sc-goal-name" title="' + esc(g.goal_name||"") + '">' + esc(g.goal_name || "—") + '</div>' +
             '<div class="sc-goal-bar-wrap"><div class="sc-goal-bar" style="width:' + pct + '%;background:' + col + '"></div></div>' +
             '<div class="sc-goal-pct">' + pct + '%</div>' +
             '<div style="font-size:var(--fs-base);color:var(--text3);flex-shrink:0;margin-left:4px">›</div>' +
@@ -8716,6 +8716,13 @@ function closeGoalDrawer() {
   document.body.style.overflow = "";
 }
 
+// Only our own private file links are drawn. Anything else - an outside
+// address, a javascript: link - draws no link at all (slice 010, SEC-11).
+function _safeFileUrl(u) {
+  u = String(u === null || u === undefined ? "" : u);
+  return u.indexOf("/private/files/") === 0 ? esc(u) : "";
+}
+
 function renderGoalDrawer(g, casc, isOwner, canEdit) {
   if (isOwner === undefined) isOwner = true;
   if (canEdit === undefined) canEdit = true;
@@ -8728,10 +8735,10 @@ function renderGoalDrawer(g, casc, isOwner, canEdit) {
   // Header
   document.getElementById("gd-head").innerHTML =
     '<div style="flex:1;min-width:0">' +
-    '<div style="font-size:var(--fs-lg);font-weight:700;color:var(--surface);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + g.goal_name + '</div>' +
+    '<div style="font-size:var(--fs-lg);font-weight:700;color:var(--surface);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(g.goal_name) + '</div>' +
     '<div style="margin-top:6px"><span class="traj-badge ' + _trajBadge(g.trajectory) + '">' +
-    '<span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;flex-shrink:0"></span> ' + tLabel + '</span>' +
-    (g.employee_name ? '<span style="font-size:var(--fs-xs);color:rgba(255,255,255,.5);margin-left:10px">' + g.employee_name + '</span>' : '') +
+    '<span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;flex-shrink:0"></span> ' + esc(tLabel) + '</span>' +
+    (g.employee_name ? '<span style="font-size:var(--fs-xs);color:rgba(255,255,255,.5);margin-left:10px">' + esc(g.employee_name) + '</span>' : '') +
     '</div></div>' +
     '<button class="emp-drawer-close" onclick="closeGoalDrawer()"><i class=ic-x></i></button>';
 
@@ -8741,24 +8748,25 @@ function renderGoalDrawer(g, casc, isOwner, canEdit) {
   const evHtml = evidence.length
     ? evidence.map(function(ev) {
         const vs    = ev.validation_status || "Pending";
-        const parts = [ev.evidence_type];
+        const parts = [esc(ev.evidence_type)];
         if (ev.extracted_date)   parts.push(fmtDate(ev.extracted_date));
         if (ev.extracted_amount) parts.push(parseFloat(ev.extracted_amount).toLocaleString("en-IN", {maximumFractionDigits: 2}));
-        var isImg = ev.evidence_file && /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(ev.evidence_file);
-        const fileHtml = ev.evidence_file
+        const safeFile = _safeFileUrl(ev.evidence_file);
+        var isImg = safeFile && /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(safeFile);
+        const fileHtml = safeFile
           ? (isImg
-              ? '<div style="margin-top:6px"><a href="' + ev.evidence_file + '" target="_blank"><img src="' + ev.evidence_file + '" alt="evidence" style="max-width:100%;max-height:120px;border-radius:var(--r-sm);border:1px solid var(--border);object-fit:cover;cursor:zoom-in"></a></div>'
-              : '<div style="margin-top:4px"><a href="' + ev.evidence_file + '" target="_blank" style="font-size:var(--fs-xs);color:var(--primary);display:flex;align-items:center;gap:4px"><svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>View attached file</a></div>')
+              ? '<div style="margin-top:6px"><a href="' + safeFile + '" target="_blank" rel="noopener"><img src="' + safeFile + '" alt="evidence" style="max-width:100%;max-height:120px;border-radius:var(--r-sm);border:1px solid var(--border);object-fit:cover;cursor:zoom-in"></a></div>'
+              : '<div style="margin-top:4px"><a href="' + safeFile + '" target="_blank" rel="noopener" style="font-size:var(--fs-xs);color:var(--primary);display:flex;align-items:center;gap:4px"><svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>View attached file</a></div>')
           : '';
         const notesHtml = ev.validation_notes
-          ? '<div style="font-size:var(--fs-xs);color:var(--text3);margin-top:2px;font-style:italic">' + ev.validation_notes + '</div>' : '';
+          ? '<div style="font-size:var(--fs-xs);color:var(--text3);margin-top:2px;font-style:italic">' + esc(ev.validation_notes) + '</div>' : '';
         const rawNote = ev.raw_extracted_data
-          ? '<div style="font-size:var(--fs-xs);color:var(--text2);margin-top:2px">' + ev.raw_extracted_data + '</div>' : '';
+          ? '<div style="font-size:var(--fs-xs);color:var(--text2);margin-top:2px">' + esc(ev.raw_extracted_data) + '</div>' : '';
         return '<div class="ev-item">' +
-          '<span class="ev-dot ' + vs + '"></span>' +
-          '<div class="ev-body"><div class="ev-type">' + (ev.evidence_type || "Evidence") + '</div>' +
+          '<span class="ev-dot ' + esc(vs) + '"></span>' +
+          '<div class="ev-body"><div class="ev-type">' + esc(ev.evidence_type || "Evidence") + '</div>' +
           '<div class="ev-meta">' + parts.join(" · ") + '</div>' + rawNote + fileHtml + notesHtml + '</div>' +
-          '<span class="badge ' + (vs==="Approved"?"badge-green":vs==="Rejected"?"badge-red":"badge-amber") + '">' + vs + '</span>' +
+          '<span class="badge ' + (vs==="Approved"?"badge-green":vs==="Rejected"?"badge-red":"badge-amber") + '">' + esc(vs) + '</span>' +
           '</div>';
       }).join("")
     : '<div style="padding:14px 0;color:var(--text3);font-size:var(--fs-base)">No evidence submitted yet.</div>';
@@ -8769,7 +8777,7 @@ function renderGoalDrawer(g, casc, isOwner, canEdit) {
     ? '<div style="margin-top:14px">' +
       '<button class="btn btn-outline btn-sm" id="ev-toggle-' + gid + '" onclick="toggleGoalEvidenceForm(\'' + gid + '\')">+ Submit Evidence</button>' +
       '<div id="ev-form-' + gid + '" style="display:none;margin-top:14px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:16px">' +
-      '<div class="form-row"><div class="form-group"><label class="form-label">Value / Progress' + (g.unit ? ' (' + g.unit + ')' : '') + '</label><input class="form-control" type="number" id="ev-amount-' + gid + '" placeholder="e.g. 75" min="0" step="any"></div>' +
+      '<div class="form-row"><div class="form-group"><label class="form-label">Value / Progress' + (g.unit ? ' (' + esc(g.unit) + ')' : '') + '</label><input class="form-control" type="number" id="ev-amount-' + gid + '" placeholder="e.g. 75" min="0" step="any"></div>' +
       '<div class="form-group"><label class="form-label">Date *</label><input class="form-control" type="date" id="ev-date-' + gid + '"></div></div>' +
       '<div class="form-group"><label class="form-label">Note / Description</label><input class="form-control" type="text" id="ev-note-' + gid + '" placeholder="Optional details"></div>' +
       '<div class="form-group"><label class="form-label">Attach Image or File</label>' +
@@ -8805,14 +8813,14 @@ function renderGoalDrawer(g, casc, isOwner, canEdit) {
     '<div class="gd-pct">' + pct + '<span style="font-size:var(--fs-xl);font-weight:400">%</span></div>' +
     '<div class="gd-pct-lbl">Progress towards target</div>' +
     '<div class="gd-prog-bar"><div class="gd-prog-fill" style="width:' + pct + '%;background:' + tColor + '"></div></div>' +
-    '<div class="gd-actual">' + actFmt + ' / ' + tgtFmt + (g.unit ? ' ' + g.unit : '') + '</div>' +
+    '<div class="gd-actual">' + actFmt + ' / ' + tgtFmt + (g.unit ? ' ' + esc(g.unit) : '') + '</div>' +
     '</div>' +
     // Goal info
     '<div class="ed-section">' +
     '<div class="ed-section-title">Goal Details</div>' +
     '<div class="holiday-item"><div style="flex:1"><div class="holiday-name">Period</div><div class="holiday-days">' + fmtDate(g.start_date) + ' → ' + fmtDate(g.end_date) + '</div></div></div>' +
-    '<div class="holiday-item"><div style="flex:1"><div class="holiday-name">Cascade</div><div class="holiday-days">' + (casc.cascade_name || '—') + '</div></div></div>' +
-    '<div class="holiday-item"><div style="flex:1"><div class="holiday-name">Target</div></div><div class="holiday-days num">' + tgtFmt + (g.unit ? ' ' + g.unit : '') + '</div></div>' +
+    '<div class="holiday-item"><div style="flex:1"><div class="holiday-name">Cascade</div><div class="holiday-days">' + esc(casc.cascade_name || '—') + '</div></div></div>' +
+    '<div class="holiday-item"><div style="flex:1"><div class="holiday-name">Target</div></div><div class="holiday-days num">' + tgtFmt + (g.unit ? ' ' + esc(g.unit) : '') + '</div></div>' +
     '<div class="holiday-item"><div style="flex:1"><div class="holiday-name">Status</div></div>' +
     '<span id="gd-status-badge-' + gid + '" class="badge ' + (g.status==="Active"?"badge-green":g.status==="Completed"?"badge-blue":"badge-gray") + '">' + (g.status||"—") + '</span></div>' +
     '</div>' +
@@ -8860,8 +8868,8 @@ function loadGoalComments(goalId) {
       return '<div class="comment-item">' +
         '<div class="comment-av">' + initials(c.commenter_name) + '</div>' +
         '<div class="comment-body">' +
-        '<div class="comment-meta"><strong>' + (c.commenter_name||c.owner) + '</strong> · ' + when + '</div>' +
-        '<div class="comment-text">' + (c.content||"") + '</div>' +
+        '<div class="comment-meta"><strong>' + esc(c.commenter_name||c.owner) + '</strong> · ' + when + '</div>' +
+        '<div class="comment-text">' + esc(c.content||"") + '</div>' +
         '</div></div>';
     }).join("");
   }, function() {
@@ -9113,7 +9121,7 @@ function renderDrawerGoals(goals, empId) {
       const isDraft = g.docstatus === 0;
       html += '<div class="hg-card ' + _trajClass(g.trajectory) + '" onclick="openTeamGoalDrawer(\'' + g.name + '\')" style="margin-bottom:8px">' +
         '<div style="flex:1;min-width:0">' +
-        '<div style="font-size:var(--fs-sm);font-weight:600;color:var(--text);margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + g.goal_name +
+        '<div style="font-size:var(--fs-sm);font-weight:600;color:var(--text);margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(g.goal_name) +
         (isDraft ? ' <span class="badge badge-amber" style="font-size:var(--fs-xs)">Draft</span>' : '') + '</div>' +
         '<div style="background:var(--surface2);border-radius:var(--r-full);height:5px;overflow:hidden">' +
         '<div style="height:100%;border-radius:var(--r-full);width:' + pct + '%;background:' + _trajColor(g.trajectory) + '"></div></div>' +
@@ -10216,7 +10224,7 @@ function deleteDrawerNote(noteId, empId) {
           evSec.style.display = "";
           var evForm = document.getElementById("gp-dp-ev-form");
           if (evForm) evForm.innerHTML =
-            '<div class="form-row"><div class="form-group"><label class="form-label">Value / Progress' + (g.unit ? ' (' + g.unit + ')' : '') + '</label><input class="form-control" type="number" id="dp-ev-amount" placeholder="e.g. 75" min="0" step="any"></div>' +
+            '<div class="form-row"><div class="form-group"><label class="form-label">Value / Progress' + (g.unit ? ' (' + esc(g.unit) + ')' : '') + '</label><input class="form-control" type="number" id="dp-ev-amount" placeholder="e.g. 75" min="0" step="any"></div>' +
             '<div class="form-group"><label class="form-label">Date *</label><input class="form-control" type="date" id="dp-ev-date"></div></div>' +
             '<div class="form-group"><label class="form-label">Note</label><input class="form-control" type="text" id="dp-ev-note" placeholder="Optional"></div>' +
             '<div class="form-group"><label class="form-label">Attach Image or File</label>' +

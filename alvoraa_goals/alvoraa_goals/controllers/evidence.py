@@ -8,26 +8,8 @@ from alvoraa_goals.controllers.goal import recalculate_progress, _append_audit_l
 
 
 def validate_evidence(doc, method=None):
-    # ── DEBUG ─────────────────────────────────────────────────────────────
-    # Diagnostic logging, trimmed to the fields Goal Evidence actually has. It used to
-    # print order_count, amount, customer, volume and volume_unit - all removed when
-    # evidence became a single generic `value`.
-    frappe.log_error(
-        f"[DEBUG] validate_evidence CALLED\n"
-        f"  parent goal  : {doc.parent}\n"
-        f"  evidence_type: {doc.evidence_type}\n"
-        f"  value        : {doc.value}\n"
-        f"  date         : {doc.extracted_date}\n"
-        f"  evidence_file: {doc.evidence_file}",
-        "[DEBUG] validate_evidence entry"
-    )
-    frappe.msgprint(
-        f"[DEBUG] Validation hook fired - type: <b>{doc.evidence_type}</b> | "
-        f"value: {doc.value}",
-        alert=True, indicator="blue"
-    )
-    # ── END DEBUG ──────────────────────────────────────────────────────────
-
+    # The debug blocks that wrote the goal, value and file link into the Error
+    # Log and on-screen popups are gone (slice 010, PRIV-8).
     goal = frappe.get_doc("Individual Goal", doc.parent)
     if not doc.upload_date:
         doc.upload_date = now_datetime()
@@ -48,21 +30,6 @@ def validate_evidence(doc, method=None):
         doc.validation_status = "Pending"
         doc.validation_notes = "[Manual Entry] No automated validation — pending HR review"
 
-    # ── DEBUG ─────────────────────────────────────────────────────────────
-    frappe.log_error(
-        f"[DEBUG] validate_evidence RESULT\n"
-        f"  validation_status: {doc.validation_status}\n"
-        f"  approved_by      : {doc.approved_by}\n"
-        f"  validation_notes :\n{doc.validation_notes}",
-        "[DEBUG] validate_evidence result"
-    )
-    frappe.msgprint(
-        f"[DEBUG] Validation result — status: <b>{doc.validation_status}</b> | "
-        f"approved_by: {doc.approved_by or 'none'}",
-        alert=True, indicator="green" if doc.validation_status == "Approved" else "orange"
-    )
-    # ── END DEBUG ──────────────────────────────────────────────────────────
-
     dup_result = check_duplicate(doc, goal.name)
     if dup_result:
         doc.validation_status = "Pending"
@@ -71,12 +38,6 @@ def validate_evidence(doc, method=None):
 
 
 def after_insert_evidence(doc, method=None):
-    # ── DEBUG ─────────────────────────────────────────────────────────────
-    frappe.log_error(
-        f"[DEBUG] after_insert_evidence CALLED — status={doc.validation_status}",
-        "[DEBUG] after_insert_evidence"
-    )
-    # ── END DEBUG ──────────────────────────────────────────────────────────
     _append_audit_log(doc.parent, "Evidence Added", None, doc.evidence_type, frappe.session.user, f"Evidence type: {doc.evidence_type}, status: {doc.validation_status}")
     if doc.validation_status == "Approved":
         recalculate_progress(doc.parent)

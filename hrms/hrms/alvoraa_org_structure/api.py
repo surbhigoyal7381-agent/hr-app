@@ -60,6 +60,11 @@ def get_children(parent=None, company=None, as_at=None):
 	restructure viewable before it happens and last April viewable after it.
 	"""
 	as_at = as_at or nowdate()
+	# The same reach rule as subtree (slice 010, SEC-8). The top of the chart is
+	# not inside a limited window, so only full-reach callers may ask for it.
+	node = parent if (parent and parent != company) else None
+	if not (_within_reach(node, as_at) if node else reach()["unlimited"]):
+		_refuse_outside_reach("api.get_children", node)
 	if _enabled() and frappe.db.count("Alvoraa Position", {"status": "Active"}):
 		return _position_children(parent, company, as_at)
 	return _people_children(parent, company)
@@ -405,12 +410,19 @@ def my_view(employee=None, as_at=None):
 	is what Frappe HR has always drawn.
 	"""
 	as_at = as_at or nowdate()
-	employee = employee or frappe.db.get_value(
-		"Employee", {"user_id": frappe.session.user}, "name")
+	me = _me()
+	positions = _enabled() and frappe.db.count("Alvoraa Position", {"status": "Active"})
+	# Somebody else's view obeys the same reach rule as the chart (slice 010,
+	# SEC-8). Their seat is what reach compares on a positions tenant.
+	if employee and employee != me:
+		seat = (_my_position_of(employee, as_at) if positions else None) or employee
+		if not _within_reach(seat, as_at):
+			_refuse_outside_reach("api.my_view", employee)
+	employee = employee or me
 	if not employee:
 		return {"me": None, "reason": "no employee record for this login"}
 
-	if _enabled() and frappe.db.count("Alvoraa Position", {"status": "Active"}):
+	if positions:
 		return _my_view_by_position(employee, as_at)
 	return _my_view_by_person(employee)
 
@@ -550,12 +562,43 @@ def search_people(q, limit=12):
 	q = (q or "").strip()
 	if len(q) < 2:
 		return []
+	filters = _search_scope()
+	if filters is None:
+		return []
+	filters.update({"status": "Active", "employee_name": ("like", f"%{q}%")})
 	return frappe.get_all(
 		"Employee",
-		filters={"status": "Active", "employee_name": ("like", f"%{q}%")},
+		filters=filters,
 		fields=["name as employee", "employee_name as name", "designation as title",
 		        "department", "image"],
-		order_by="employee_name asc", limit=int(limit))
+		order_by="employee_name asc", limit=min(cint(limit) or 12, 50))
+
+
+def _search_scope():
+	"""Who this caller may find, as Employee filters. None means nobody.
+
+	Decision of 2026-09-14 (slice 010, PRIV-5). Fails closed:
+	  - System Manager (treated as CXO) and HR: employees of the companies they
+	    are permitted, from hrms.alvoraa_hr_core.access.permitted_companies;
+	  - everyone else: themselves and everyone below them in reports_to, at any
+	    depth, read from Employee's nested set in one query. Somebody with no
+	    reports finds only themselves;
+	  - no Employee record and no HR role: nobody.
+	"""
+	from hrms.alvoraa_hr_core.access import HR_ROLES, permitted_companies
+
+	roles = set(frappe.get_roles())
+	if frappe.session.user == "Administrator" or roles & (HR_ROLES | {"System Manager"}):
+		companies = permitted_companies()
+		return {"company": ("in", companies)} if companies else None
+
+	me = _me()
+	if not me:
+		return None
+	lft, rgt = frappe.db.get_value("Employee", me, ["lft", "rgt"]) or (None, None)
+	if not (lft and rgt):
+		return {"name": me}
+	return {"lft": (">=", lft), "rgt": ("<=", rgt)}
 
 
 # ── the expandable tree ──────────────────────────────────────────────────────
@@ -651,11 +694,19 @@ def _within_reach(root, as_at):
 	r = reach()
 	if r["unlimited"]:
 		return True
+	if not root:
+		return True                        # the caller's own default view
 
+	# Fails closed (slice 010, SEC-8). A login with no Employee record - a
+	# vendor, driver or website user - used to be let through here, because
+	# there was "nothing to compare". Nothing to compare means nothing to see.
+	me = _me()
+	if not me:
+		return False
 	positions = _enabled() and frappe.db.count("Alvoraa Position", {"status": "Active"})
-	mine = _my_position_of(_me(), as_at) if positions else _me()
-	if not mine or not root:
-		return True                        # nothing to compare; the default view
+	mine = _my_position_of(me, as_at) if positions else me
+	if not mine:
+		return False
 	if root == mine:
 		return True
 
@@ -702,10 +753,7 @@ def subtree(root=None, depth=None, as_at=None, kind=None):
 	# part of the company that is not theirs should be told so, not left staring
 	# at a blank box wondering whether it is broken.
 	if root and not _within_reach(root, as_at):
-		frappe.throw(
-			_("That part of the organisation is outside what you can see. You can "
-			  "look two levels above and below your own role."),
-			frappe.PermissionError)
+		_refuse_outside_reach("api.subtree", root)
 
 	r = reach()
 	if not r["unlimited"]:
@@ -719,6 +767,16 @@ def subtree(root=None, depth=None, as_at=None, kind=None):
 			return _person_subtree(_me(), depth, as_at)
 		return _position_subtree(root, depth, as_at)
 	return _person_subtree(root or _me(), depth, as_at)
+
+
+def _refuse_outside_reach(endpoint, node):
+	"""One refusal for every chart endpoint, logged without names (SEC-8, SEC-17)."""
+	from hrms.alvoraa_hr_core.access import refuse
+
+	refuse(
+		_("That part of the organisation is outside what you can see. You can "
+		  "look two levels above and below your own role."),
+		"SEC-8", endpoint, None, node)
 
 
 def _me():
@@ -894,6 +952,9 @@ def chain_to_top(node=None, as_at=None):
 	that did not change.
 	"""
 	as_at = as_at or nowdate()
+	# Somebody else's chain obeys the reach rule, exactly as subtree does (SEC-8).
+	if node and not _within_reach(node, as_at):
+		_refuse_outside_reach("api.chain_to_top", node)
 	positions = _enabled() and frappe.db.count("Alvoraa Position", {"status": "Active"})
 	chain, guard = [], 0
 

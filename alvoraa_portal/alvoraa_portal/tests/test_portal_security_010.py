@@ -674,3 +674,148 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 				count = len(re.findall(r"ignore_permissions", f.read()))
 			self.assertLessEqual(count, ceiling, f"{app}/{rel}")
 
+
+# ── PRIV-5 · People search finds only what the searcher may see (S6) ────────
+
+
+class _OrgBase(_Base):
+	"""Person-mode org chart with the shipped reach defaults."""
+
+	REACH = {"alvoraa_org_reach_up": 2, "alvoraa_org_reach_down": 2,
+	         "alvoraa_org_full_reach_roles": "HR Manager,HR User,System Manager",
+	         "alvoraa_org_managers_see_all": 1}
+
+	def setUp(self):
+		super().setUp()
+		self._saved = {k: frappe.db.get_default(k) for k in self.REACH}
+		for k, v in self.REACH.items():
+			frappe.db.set_default(k, v)
+		# Positions are a paid layer; these tests are about people.
+		self._positions = patch("hrms.alvoraa_org_structure.api._enabled", return_value=False)
+		self._positions.start()
+		frappe.local._alvoraa_leads = {}
+
+	def tearDown(self):
+		self._positions.stop()
+		frappe.set_user("Administrator")
+		for k, v in self._saved.items():
+			frappe.db.set_default(k, v if v is not None else "")
+		frappe.db.commit()
+		frappe.local._alvoraa_leads = {}
+		super().tearDown()
+
+	def _as(self, user):
+		frappe.set_user(user)
+		frappe.local._alvoraa_leads = {}
+
+
+class TestPriv5PeopleSearchScope(_OrgBase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.company_b = _second_company()
+		cls.company_a = ensure_company()
+		assert cls.company_a != cls.company_b
+		cls.boss_user = _user("search.boss", ("Employee",))
+		cls.boss = _employee("SearchBoss", user=cls.boss_user)
+		cls.mid = _employee("SearchMid", reports_to=cls.boss)
+		cls.leaf_user = _user("search.leaf", ("Employee",))
+		cls.leaf = _employee("SearchLeaf", reports_to=cls.mid, user=cls.leaf_user)
+		cls.stranger = _employee("SearchStranger")
+		cls.other_co = _employee("SearchOtherCo", company=cls.company_b)
+		cls.hr_user = _user("search.hr", ("HR User", "Employee"))
+		cls.hr_emp = _employee("SearchHr", user=cls.hr_user)
+		cls.sysman = _user("search.sysman", ("System Manager",))
+		cls.nobody = _user("search.nobody", ("Employee",))
+
+	def _found(self, user):
+		from hrms.alvoraa_org_structure import api
+
+		self._as(user)
+		return {r["employee"] for r in api.search_people("Search", limit=50)}
+
+	def test_priv5_someone_with_no_reports_finds_only_themselves(self):
+		self.assertEqual(self._found(self.leaf_user), {self.leaf})
+
+	def test_priv5_a_manager_finds_their_whole_line_and_nobody_else(self):
+		found = self._found(self.boss_user)
+		self.assertTrue({self.boss, self.mid, self.leaf} <= found)
+		self.assertNotIn(self.stranger, found)
+		self.assertNotIn(self.other_co, found)
+
+	def test_priv5_hr_without_company_permission_finds_only_their_company(self):
+		found = self._found(self.hr_user)
+		self.assertIn(self.stranger, found)
+		self.assertNotIn(self.other_co, found)
+
+	def test_priv5_system_manager_finds_every_company(self):
+		found = self._found(self.sysman)
+		self.assertIn(self.stranger, found)
+		self.assertIn(self.other_co, found)
+
+	def test_priv5_a_login_with_no_employee_finds_nobody(self):
+		self.assertEqual(self._found(self.nobody), set())
+
+
+# ── SEC-8 · Every org-chart endpoint obeys reach (S6) ───────────────────────
+
+
+class TestSec8OrgChartObeysReach(_OrgBase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.top = _employee("ReachTop")
+		cls.l1 = _employee("ReachL1", reports_to=cls.top)
+		cls.l2 = _employee("ReachL2", reports_to=cls.l1)
+		cls.leaf_user = _user("reach.leaf", ("Employee",))
+		cls.leaf = _employee("ReachLeaf", reports_to=cls.l2, user=cls.leaf_user)
+		cls.side = _employee("ReachSide")
+		cls.hr_user = _user("reach.hr", ("HR Manager", "Employee"))
+		cls.hr_emp = _employee("ReachHr", user=cls.hr_user)
+		cls.nobody = _user("reach.nobody", ("Employee",))
+
+	def test_sec8_my_view_of_someone_out_of_reach_is_refused(self):
+		from hrms.alvoraa_org_structure import api
+
+		self._as(self.leaf_user)
+		with self.assertRaises(frappe.PermissionError):
+			api.my_view(employee=self.top)          # three levels up
+		with self.assertRaises(frappe.PermissionError):
+			api.my_view(employee=self.side)         # another branch
+		self.assertEqual(api.my_view(employee=self.l1)["me"]["employee"], self.l1)   # two up: fine
+		self.assertEqual(api.my_view()["me"]["employee"], self.leaf)
+
+	def test_sec8_chain_to_top_of_someone_out_of_reach_is_refused(self):
+		from hrms.alvoraa_org_structure import api
+
+		self._as(self.leaf_user)
+		with self.assertRaises(frappe.PermissionError):
+			api.chain_to_top(node=self.side)
+		self.assertTrue(api.chain_to_top())
+
+	def test_sec8_get_children_checks_reach_too(self):
+		from hrms.alvoraa_org_structure import api
+
+		self._as(self.leaf_user)
+		with self.assertRaises(frappe.PermissionError):
+			api.get_children(parent=self.top)
+		with self.assertRaises(frappe.PermissionError):
+			api.get_children()                      # the top of the company
+
+	def test_sec8_a_login_with_no_employee_sees_nothing(self):
+		from hrms.alvoraa_org_structure import api
+
+		self._as(self.nobody)
+		self.assertFalse(api._within_reach(self.leaf, nowdate()))
+		with self.assertRaises(frappe.PermissionError):
+			api.subtree(root=self.leaf)
+		with self.assertRaises(frappe.PermissionError):
+			api.my_view(employee=self.leaf)
+
+	def test_sec8_hr_still_roams(self):
+		from hrms.alvoraa_org_structure import api
+
+		self._as(self.hr_user)
+		self.assertEqual(api.my_view(employee=self.top)["me"]["employee"], self.top)
+		api.chain_to_top(node=self.leaf)
+		api.get_children(parent=self.top)

@@ -5241,7 +5241,7 @@ window.ocSearch = function (q) {
       hits = await gpFetch("hrms.alvoraa_org_structure.api.search_people", { q: q });
     } catch (e) { /* an empty result is not an error worth showing */ }
     if (!hits || !hits.length) {
-      res.innerHTML = '<div class="oc-hit"><span class="t">Nobody by that name</span></div>';
+      res.innerHTML = '<div class="oc-hit"><span class="t">Nobody by that name among the people you can see</span></div>';
       res.classList.add("open");
       return;
     }

@@ -371,7 +371,7 @@ class TestSec9NobodyDecidesTheirOwnRequest(_Base):
 		self.assertEqual(frappe.db.get_value("Goal Evidence", row, "validation_status"), "Pending")
 
 	def test_sec17_a_refusal_is_logged_without_field_values(self):
-		from hrms.alvoraa_hr_core import access
+		import hrms.alvoraa_hr_core.access as access
 
 		logger = MagicMock()
 		frappe.set_user(self.hr_self)
@@ -740,7 +740,7 @@ class TestPriv5PeopleSearchScope(_OrgBase):
 		cls.nobody = _user("search.nobody", ("Employee",))
 
 	def _found(self, user):
-		from hrms.alvoraa_org_structure import api
+		import hrms.alvoraa_org_structure.api as api
 
 		self._as(user)
 		return {r["employee"] for r in api.search_people("Search", limit=50)}
@@ -786,7 +786,7 @@ class TestSec8OrgChartObeysReach(_OrgBase):
 		cls.nobody = _user("reach.nobody", ("Employee",))
 
 	def test_sec8_my_view_of_someone_out_of_reach_is_refused(self):
-		from hrms.alvoraa_org_structure import api
+		import hrms.alvoraa_org_structure.api as api
 
 		self._as(self.leaf_user)
 		with self.assertRaises(frappe.PermissionError):
@@ -797,7 +797,7 @@ class TestSec8OrgChartObeysReach(_OrgBase):
 		self.assertEqual(api.my_view()["me"]["employee"], self.leaf)
 
 	def test_sec8_chain_to_top_of_someone_out_of_reach_is_refused(self):
-		from hrms.alvoraa_org_structure import api
+		import hrms.alvoraa_org_structure.api as api
 
 		self._as(self.leaf_user)
 		with self.assertRaises(frappe.PermissionError):
@@ -805,7 +805,7 @@ class TestSec8OrgChartObeysReach(_OrgBase):
 		self.assertTrue(api.chain_to_top())
 
 	def test_sec8_get_children_checks_reach_too(self):
-		from hrms.alvoraa_org_structure import api
+		import hrms.alvoraa_org_structure.api as api
 
 		self._as(self.leaf_user)
 		with self.assertRaises(frappe.PermissionError):
@@ -814,7 +814,7 @@ class TestSec8OrgChartObeysReach(_OrgBase):
 			api.get_children()                      # the top of the company
 
 	def test_sec8_a_login_with_no_employee_sees_nothing(self):
-		from hrms.alvoraa_org_structure import api
+		import hrms.alvoraa_org_structure.api as api
 
 		self._as(self.nobody)
 		self.assertFalse(api._within_reach(self.leaf, nowdate()))
@@ -824,7 +824,7 @@ class TestSec8OrgChartObeysReach(_OrgBase):
 			api.my_view(employee=self.leaf)
 
 	def test_sec8_hr_still_roams(self):
-		from hrms.alvoraa_org_structure import api
+		import hrms.alvoraa_org_structure.api as api
 
 		self._as(self.hr_user)
 		self.assertEqual(api.my_view(employee=self.top)["me"]["employee"], self.top)

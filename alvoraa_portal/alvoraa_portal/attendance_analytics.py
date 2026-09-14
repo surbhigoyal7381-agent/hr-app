@@ -149,7 +149,10 @@ def _population(view, depth, people, filters):
 				f[field] = filters[field]
 		if filters.get("manager"):
 			f["name"] = ("in", _reports_to(filters["manager"], deep=(depth == "all")) or [""])
-		staff = frappe.get_all("Employee", filters=f, pluck="name")
+		# get_list, not get_all: the caller's User Permissions apply. A store's
+		# HR person (Branch permission) sees their store; central HR, with none,
+		# still sees everyone (slice 011).
+		staff = frappe.get_list("Employee", filters=f, pluck="name")
 		chosen = _chosen(people)
 		if chosen:
 			outside = sorted(set(chosen) - set(staff))

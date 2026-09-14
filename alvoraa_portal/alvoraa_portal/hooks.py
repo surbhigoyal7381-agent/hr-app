@@ -214,6 +214,9 @@ after_migrate = [
     # The photo, GPS accuracy and offline columns on Employee Checkin. Same
     # reasoning as the line above: sites already live never get a baseline run.
     "alvoraa_portal.field_checkin.after_migrate",
+    # A branch on attendance, leave, claims and the rest, so location HR's
+    # Branch permission applies to them (slice 011). See branch_scope.py.
+    "alvoraa_portal.branch_scope.after_migrate",
 ]
 
 # And on a fresh install, which never runs a migrate. Without this a brand new
@@ -223,4 +226,5 @@ after_migrate = [
 after_install = [
     "alvoraa_portal.attendance_correction.after_migrate",
     "alvoraa_portal.field_checkin.after_migrate",
+    "alvoraa_portal.branch_scope.after_migrate",
 ]

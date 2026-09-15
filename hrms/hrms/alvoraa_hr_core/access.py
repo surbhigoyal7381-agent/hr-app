@@ -3,6 +3,7 @@
 Kept in one place so they cannot drift apart:
 
   refuse_own_decision(employee)  nobody approves or declines their own request
+  refuse_own_rating(employee)    nobody rates or closes their own review
   permitted_companies(user)      which companies an HR user acts for
 
 It lives in hrms because every one of our apps can import hrms, and hrms must
@@ -66,6 +67,23 @@ def refuse_own_decision(employee, doctype=None, name=None, endpoint=None):
 		refuse(
 			_("You cannot decide your own request. Someone else must approve it."),
 			"SEC-9",
+			endpoint,
+			doctype,
+			name,
+		)
+
+
+def refuse_own_rating(employee, doctype=None, name=None, endpoint=None):
+	"""Stop anyone rating, calibrating or closing their own review (SEC-10).
+
+	The same check as refuse_own_decision, logged as its own rule. No role is
+	exempt: an HR Manager or System Manager whose own review it is must leave
+	it to their manager and to another HR person.
+	"""
+	if is_own_record(employee):
+		refuse(
+			_("You cannot rate or decide anything in your own review. Your manager and HR do that."),
+			"SEC-10",
 			endpoint,
 			doctype,
 			name,

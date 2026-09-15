@@ -171,3 +171,86 @@ def individual_goal_query(user=None):
 
 def kpi_query(user=None):
     return employee_query_conditions(user, "KPI")
+
+
+# ── The review record: Alvoraa Appraisal Extension (slice 010, SEC-5, SEC-27) ─
+#
+# Employees and managers have no role on it at all; every portal read and write
+# goes through the review endpoints and their stage rules. HR Manager, HR User
+# and System Manager keep a desk role, but the desk now follows the SAME rule as
+# the portal (decision 15):
+#
+#   read   a review in HR Review or Completed, for a company they look after;
+#          or a review in their own line once the self-review has been sent.
+#          Never their own review (it holds their potential rating, PRIV-1).
+#   write  nobody below Administrator. Desk edits would skip every stage and
+#          stamp rule the portal enforces.
+#
+# The copies (Alvoraa Review Item) are child rows, read through this record.
+# A tenant's Custom DocPerm that re-grants Employee does not reopen it either:
+# these hooks deny anyone without an HR role.
+
+REVIEW_DRAFT_STAGES = ("", "Not Started", "Employee Review")
+REVIEW_HR_STAGES = ("HR Review", "Completed")
+
+
+def appraisal_extension_query(user=None):
+    user = user or frappe.session.user
+    if user == "Administrator":
+        return ""
+    if not _has_full_access(user):
+        return "1=0"
+
+    from hrms.alvoraa_hr_core.access import permitted_companies
+
+    table = "`tabAlvoraa Appraisal Extension`"
+    clauses = []
+    companies = permitted_companies(user)
+    if companies:
+        joined = ", ".join(frappe.db.escape(c) for c in companies)
+        clauses.append(
+            f"({table}.review_status in ('HR Review', 'Completed') and {table}.employee in "
+            f"(select `name` from `tabEmployee` where `company` in ({joined})))"
+        )
+    own = employee_for(user)
+    if own:
+        line = frappe.db.get_value("Employee", own, ["lft", "rgt"], as_dict=True)
+        if line and line.lft and line.rgt:
+            clauses.append(
+                f"(ifnull({table}.review_status, '') not in ('', 'Not Started', 'Employee Review') "
+                f"and {table}.employee in (select `name` from `tabEmployee` "
+                f"where `lft` > {int(line.lft)} and `rgt` < {int(line.rgt)}))"
+            )
+    if not clauses:
+        return "1=0"
+    condition = "(" + " or ".join(clauses) + ")"
+    if own:
+        condition += f" and ifnull({table}.employee, '') != {frappe.db.escape(own)}"
+    return condition
+
+
+def has_appraisal_extension_permission(doc, ptype=None, user=None):
+    user = user or frappe.session.user
+    if user == "Administrator":
+        return True
+    if ptype not in ("read", "select"):
+        return False
+    if not _has_full_access(user):
+        return False
+
+    employee = doc.get("employee") if hasattr(doc, "get") else None
+    if not employee:
+        return False
+    own = employee_for(user)
+    if own and employee == own:
+        return False
+
+    status = doc.get("review_status") or ""
+    if status in REVIEW_HR_STAGES:
+        from hrms.alvoraa_hr_core.access import permitted_companies
+
+        if frappe.db.get_value("Employee", employee, "company") in permitted_companies(user):
+            return True
+    if own and status not in REVIEW_DRAFT_STAGES and employee in descendants(own):
+        return True
+    return False

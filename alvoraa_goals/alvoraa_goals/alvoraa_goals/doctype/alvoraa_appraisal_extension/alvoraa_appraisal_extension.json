@@ -78,7 +78,7 @@
   {"fieldname": "overall_flag_answered_on", "fieldtype": "Datetime", "label": "Overall Flag Answered On", "read_only": 1}
  ],
  "links": [],
- "modified": "2026-09-15 10:00:00.000000",
+ "modified": "2026-09-15 11:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Goals",
  "name": "Alvoraa Appraisal Extension",
@@ -86,8 +86,7 @@
  "permissions": [
   {"role": "System Manager", "read": 1, "write": 1, "create": 1, "delete": 1},
   {"role": "HR Manager", "read": 1, "write": 1, "create": 1},
-  {"role": "HR User", "read": 1, "write": 1, "create": 1},
-  {"role": "Employee", "read": 1, "write": 1, "create": 1}
+  {"role": "HR User", "read": 1, "write": 1, "create": 1}
  ],
  "sort_field": "modified",
  "sort_order": "DESC",

@@ -32,11 +32,15 @@ doc_events = {
 permission_query_conditions = {
     "Individual Goal": "alvoraa_goals.permissions.individual_goal_query",
     "KPI":             "alvoraa_goals.permissions.kpi_query",
+    # Slice 010 group D (SEC-27): HR's desk follows the portal's stage rule.
+    "Alvoraa Appraisal Extension": "alvoraa_goals.permissions.appraisal_extension_query",
 }
 
 has_permission = {
     "Individual Goal": "alvoraa_goals.permissions.has_employee_permission",
     "KPI":             "alvoraa_goals.permissions.has_employee_permission",
+    # Slice 010 group D (SEC-27): read by stage and company; desk writes refused.
+    "Alvoraa Appraisal Extension": "alvoraa_goals.permissions.has_appraisal_extension_permission",
 }
 
 scheduler_events = {

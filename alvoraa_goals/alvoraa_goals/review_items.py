@@ -693,6 +693,48 @@ def raise_rating_flags(ext):
     return raised
 
 
+def custom_docperm_report():
+    """Read-only. Tenant permission rows that would reopen review records (M3).
+
+    A Custom DocPerm replaces a DocType's shipped permissions on that site, so a
+    tenant that once re-granted Employee keeps that grant after this slice. This
+    lists such rows and changes nothing; removing one is the tenant's decision.
+
+    Run on a site before deploying:
+        bench --site <site> execute alvoraa_goals.review_items.custom_docperm_report
+
+    Reported:
+      Alvoraa Appraisal Extension  any right for a role that is not HR
+      Appraisal                    write, create or delete for a role that is not HR
+      KPI                          any right at level 1 or above for a role that is not HR
+    """
+    hr = {"HR Manager", "HR User", "System Manager", "Administrator"}
+    rows = frappe.get_all(
+        "Custom DocPerm",
+        filters={"parent": ["in", ["Alvoraa Appraisal Extension", "Appraisal", "KPI"]]},
+        fields=["parent", "role", "permlevel", "read", "write", "create", "delete"],
+        order_by="parent asc, role asc, permlevel asc",
+    )
+    found = []
+    for r in rows:
+        if r.role in hr:
+            continue
+        rights = [p for p in ("read", "write", "create", "delete") if cint(r.get(p))]
+        if r.parent == "Alvoraa Appraisal Extension" and rights:
+            why = "Opens review records to a role that is not HR"
+        elif r.parent == "Appraisal" and set(rights) & {"write", "create", "delete"}:
+            why = "Lets a role that is not HR change appraisals"
+        elif r.parent == "KPI" and cint(r.permlevel) >= 1 and rights:
+            why = "Opens restricted KPI fields to a role that is not HR"
+        else:
+            continue
+        found.append({
+            "doctype": r.parent, "role": r.role, "permlevel": cint(r.permlevel),
+            "rights": rights, "why": why,
+        })
+    return found
+
+
 def open_blocking_flags(ext):
     """Flags that stop HR completing the review: manager ratings and the overall
     rating. Self-rating flags are information only (decision 13)."""

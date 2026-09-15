@@ -317,12 +317,12 @@ class TestSec28ReviewSettings(_ReviewBase):
 			frappe.db.rollback()
 
 		# The desk sends the whole settings form back; that save leaves a Version row.
-		import frappe.client
+		from frappe.client import save as desk_save
 
 		versions = frappe.db.count("Version", {"ref_doctype": "HR Settings"})
 		data = frappe.get_doc("HR Settings").as_dict()
 		data["alvoraa_review_freeze_point"] = "Manager review sent"
-		frappe.client.save(data)
+		desk_save(data)
 		self.assertEqual(frappe.db.count("Version", {"ref_doctype": "HR Settings"}), versions + 1)
 
 
@@ -675,3 +675,366 @@ class TestQueryCountOfRefresh(_ReviewBase):
 		large = self._queries_to_refresh(self._review_with(goals=3, kpis=8))
 		self.assertEqual(small, large)
 		self.assertLessEqual(large, 6)
+
+
+# ── SEC-5, PRIV-1, PRIV-2, SEC-6, SEC-10, SEC-27 · Review access (commit 3) ──
+
+
+def _shipped_permissions(app, *path):
+	import importlib
+	import os
+
+	root = os.path.dirname(importlib.import_module(app).__file__)
+	with open(os.path.join(root, *path), encoding="utf-8-sig") as f:
+		return json.load(f)["permissions"]
+
+
+class _Team(_ReviewBase):
+	"""A manager and their report, HR in two companies, a System Manager and a stranger."""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.company_b = _second_company()
+		cls.company_a = ensure_company()
+
+		def person(local, roles, company=None, reports_to=None):
+			user = _user(f"d.team.{local}", roles)
+			return _employee(f"DTeam{local}", company=company or cls.company_a, reports_to=reports_to, user=user), user
+
+		cls.manager, cls.manager_user = person("manager", ("Employee",))
+		cls.subject, cls.subject_user = person("subject", ("Employee",), reports_to=cls.manager)
+		cls.stranger, cls.stranger_user = person("stranger", ("Employee",))
+		cls.hr, cls.hr_user = person("hr", ("HR Manager", "Employee"))
+		cls.hr2, cls.hr2_user = person("hrtwo", ("HR Manager", "Employee"))
+		cls.hr_desk, cls.hr_desk_user = person("hrdesk", ("HR User", "Employee"))
+		cls.sysman, cls.sysman_user = person("sysman", ("System Manager", "Employee"))
+		# An HR Manager with a review of their own, reporting to the manager.
+		cls.hr_subject, cls.hr_subject_user = person("hrsubject", ("HR Manager", "Employee"), reports_to=cls.manager)
+		cls.subject_b, cls.subject_b_user = person("subjectb", ("Employee",), company=cls.company_b)
+		# An HR Manager who is also someone's manager.
+		cls.hr_boss, cls.hr_boss_user = person("hrboss", ("HR Manager", "Employee"))
+		cls.hr_report, cls.hr_report_user = person("hrreport", ("Employee",), reports_to=cls.hr_boss)
+
+	def _review_of(self, employee, status, company=None, **values):
+		start, end = self._window()
+		ap = self._appraisal(employee, self._cycle(start, end, company=company), status=status)
+		if values:
+			frappe.db.set_value("Alvoraa Appraisal Extension", ap, values)
+			frappe.db.commit()
+		return ap
+
+	def _as(self, user):
+		frappe.set_user(user)
+
+
+class TestSec5ReviewRecordHasNoEmployeeRole(_Team):
+	def test_sec5_employee_and_manager_cannot_reach_the_review_record_through_the_desk_or_rest(self):
+		from frappe.client import get as desk_get
+
+		roles = {p["role"] for p in _shipped_permissions(
+			"alvoraa_goals", "alvoraa_goals", "doctype", "alvoraa_appraisal_extension", "alvoraa_appraisal_extension.json")}
+		self.assertNotIn("Employee", roles)
+		self.assertNotIn("Employee", {p.role for p in frappe.get_meta("Alvoraa Appraisal Extension").permissions})
+
+		ap = self._review_of(self.subject, "Completed", overall_rating=4, potential_rating=5)
+		for user in (self.subject_user, self.manager_user):
+			self._as(user)
+			with self.assertRaises(frappe.PermissionError, msg=user):
+				desk_get("Alvoraa Appraisal Extension", ap)
+			# The copies are child rows: they follow the record's permission.
+			with self.assertRaises(frappe.PermissionError, msg=user):
+				frappe.get_list("Alvoraa Review Item", parent_doctype="Alvoraa Appraisal Extension", fields=["name"])
+
+	def test_m3_report_lists_a_tenant_grant_to_employee_and_changes_nothing(self):
+		import alvoraa_goals.review_items as review_items
+
+		grant = frappe.get_doc({
+			"doctype": "Custom DocPerm", "parent": "Alvoraa Appraisal Extension", "parenttype": "DocType",
+			"parentfield": "permissions", "role": "Employee", "permlevel": 0, "read": 1, "write": 1,
+		})
+		grant.name = frappe.generate_hash(length=10)
+		grant.db_insert()
+		try:
+			found = review_items.custom_docperm_report()
+			self.assertIn(
+				("Alvoraa Appraisal Extension", "Employee"), {(r["doctype"], r["role"]) for r in found}
+			)
+			self.assertTrue(frappe.db.exists("Custom DocPerm", grant.name), "the report must never remove a row")
+		finally:
+			frappe.db.rollback()
+
+	def test_decision22_employee_cannot_write_or_create_an_hrms_appraisal(self):
+		employee = [p for p in _shipped_permissions("hrms", "hr", "doctype", "appraisal", "appraisal.json")
+		            if p["role"] == "Employee"]
+		self.assertEqual(len(employee), 1)
+		self.assertTrue(employee[0].get("read"))
+		self.assertFalse(employee[0].get("write"))
+		self.assertFalse(employee[0].get("create"))
+
+	def test_sec27_hr_desk_reads_follow_the_stage_and_company_rule_and_nobody_writes(self):
+		from frappe.client import get as desk_get
+		from frappe.client import set_value as desk_set_value
+
+		ap = self._review_of(self.subject, "Manager Review")
+		self._as(self.hr_desk_user)
+		with self.assertRaises(frappe.PermissionError):
+			desk_get("Alvoraa Appraisal Extension", ap)
+		self.assertNotIn(ap, frappe.get_list("Alvoraa Appraisal Extension", filters={"name": ap}, pluck="name"))
+
+		self._set_status(ap, "HR Review")
+		self._as(self.hr_desk_user)
+		self.assertEqual(desk_get("Alvoraa Appraisal Extension", ap)["name"], ap)
+		self.assertIn(ap, frappe.get_list("Alvoraa Appraisal Extension", filters={"name": ap}, pluck="name"))
+
+		# Another company, and the reader's own review: refused even in HR Review.
+		other = self._review_of(self.subject_b, "HR Review", company=self.company_b)
+		own = self._review_of(self.hr_desk, "HR Review")
+		self._as(self.hr_desk_user)
+		for name in (other, own):
+			with self.assertRaises(frappe.PermissionError, msg=name):
+				desk_get("Alvoraa Appraisal Extension", name)
+
+		# Writes in the desk skip every portal rule, so nobody below Administrator makes one.
+		self._as(self.hr_user)
+		with self.assertRaises(frappe.PermissionError):
+			desk_set_value("Alvoraa Appraisal Extension", ap, "overall_rating", 5)
+
+
+class TestPriv1SubjectNeverSeesPotential(_Team):
+	def test_priv1_subject_never_receives_potential_and_sees_the_overall_rating_from_final_review(self):
+		import alvoraa_portal.performance_api as pa
+
+		ap = self._review_of(self.subject, "Manager Review", overall_rating=4, potential_rating=5,
+		                     avg_potential_rating=3.5, potential_category="High Potential")
+		for status in ("Employee Review", "Manager Review", "Employee Final Review", "HR Review", "Completed"):
+			self._set_status(ap, status)
+			self._as(self.subject_user)
+			ext = pa.get_appraisal_extension(ap)
+			self.assertFalse({"avg_potential_rating", "potential_category", "potential_rating"} & set(ext), status)
+			own = next(r for r in pa.get_my_appraisals()["own"] if r["name"] == ap)
+			if status in ("Employee Final Review", "HR Review", "Completed"):
+				self.assertEqual(ext["overall_rating"], 4, status)
+				self.assertEqual(own["overall_rating"], 4, status)
+			else:
+				self.assertIsNone(ext["overall_rating"], status)
+				self.assertIsNone(own["overall_rating"], status)
+			if status == "Employee Final Review":
+				final = pa.get_employee_final_review(ap)
+				self.assertFalse({"potential_rating", "potential_category"} & set(final))
+
+		# The manager still sees it.
+		self._set_status(ap, "Manager Review")
+		self._as(self.manager_user)
+		self.assertEqual(pa.get_appraisal_extension(ap)["avg_potential_rating"], 3.5)
+
+	def test_priv1_team_reviews_hide_your_own_potential_and_strangers_ratings_before_hr_review(self):
+		import alvoraa_portal.performance_api as pa
+
+		start, end = self._window()
+		cycle = self._cycle(start, end)
+		own = self._appraisal(self.hr, cycle, status="Manager Review")
+		theirs = self._appraisal(self.stranger, cycle, status="Manager Review")
+		for ap in (own, theirs):
+			frappe.db.set_value("Alvoraa Appraisal Extension", ap, {"overall_rating": 4, "potential_rating": 5})
+		frappe.db.commit()
+
+		def rows():
+			self._as(self.hr_user)
+			return {r["employee"]: r for r in pa.get_team_reviews(cycle)["team"]}
+
+		team = rows()
+		self.assertEqual((team[self.hr]["overall_rating"], team[self.hr]["potential_rating"]), (None, None))
+		self.assertEqual((team[self.stranger]["overall_rating"], team[self.stranger]["potential_rating"]), (None, None))
+
+		self._set_status(own, "Completed")
+		self._set_status(theirs, "HR Review")
+		team = rows()
+		self.assertEqual((team[self.hr]["overall_rating"], team[self.hr]["potential_rating"]), (4, None))
+		self.assertEqual((team[self.stranger]["overall_rating"], team[self.stranger]["potential_rating"]), (4, 5))
+
+
+class TestPriv2Sec6ManagerReviewOrder(_Team):
+	def test_priv2_nobody_else_opens_a_self_review_before_it_is_sent_or_after_it_is_returned(self):
+		import alvoraa_portal.performance_api as pa
+
+		marker = f"{TAG}-DRAFT-{_uid()}"
+		ap = self._review_of(self.subject, "Employee Review", achievements_text=marker,
+		                     page_data=json.dumps({"past-dev": {"achievements": marker}}))
+
+		self._as(self.manager_user)
+		with self.assertRaises(frappe.PermissionError):
+			pa.get_manager_review(ap)
+		self.assertNotIn(marker, json.dumps(pa.get_appraisal_extension(ap)))
+		# An HR person who is also the manager does not get round it through the
+		# employee's own screen.
+		line_ap = self._review_of(self.hr_report, "Employee Review", achievements_text=marker)
+		self._as(self.hr_boss_user)
+		with self.assertRaises(frappe.PermissionError):
+			pa.get_my_review(line_ap)
+		with self.assertRaises(frappe.PermissionError):
+			pa.get_manager_review(line_ap)
+
+		self._as(self.subject_user)
+		pa.submit_employee_review(ap)
+		self._as(self.manager_user)
+		self.assertIn(marker, json.dumps(pa.get_manager_review(ap)["page_data"]))
+
+		pa.return_for_revision(ap, "")
+		self._as(self.manager_user)
+		with self.assertRaises(frappe.PermissionError):
+			pa.get_manager_review(ap)
+
+	def test_sec6_calls_from_people_who_may_not_act_create_no_review_record(self):
+		import alvoraa_portal.performance_api as pa
+
+		start, end = self._window()
+		ap = self._appraisal(self.subject, self._cycle(start, end), with_extension=False)
+		calls = [
+			lambda: pa.get_manager_review(ap),
+			lambda: pa.save_manager_review(ap, "x"),
+			lambda: pa.submit_manager_review(ap, "x"),
+			lambda: pa.save_overall_rating(ap, 3),
+			lambda: pa.invite_reviewer(ap, self.hr),
+			lambda: pa.invite_reviewers_batch(ap, "[]"),
+			lambda: pa.advance_review_status(ap),
+			lambda: pa.return_for_revision(ap, ""),
+			lambda: pa.add_action_item(ap, "x"),
+			lambda: pa.update_action_item_status(ap, "nope", "Open"),
+			lambda: pa.get_reviewer_view(ap),
+			lambda: pa.submit_reviewer_comments(ap, "x"),
+			lambda: pa.get_employee_final_review(ap),
+			lambda: pa.acknowledge_final_review(ap),
+			lambda: pa.get_appraisal_extension(ap),
+		]
+		for user in (self.stranger_user, self.hr_user):
+			for i, call in enumerate(calls):
+				self._as(user)
+				try:
+					call()
+				except (frappe.PermissionError, frappe.ValidationError):
+					pass
+				else:
+					if user == self.stranger_user:
+						self.fail(f"call {i} was allowed for a stranger")
+				frappe.set_user("Administrator")
+				self.assertEqual(frappe.db.count("Alvoraa Appraisal Extension", {"appraisal": ap}), 0, f"{user} call {i}")
+
+		# And the stranger is refused as a permission matter, not a stage message.
+		self._as(self.stranger_user)
+		for i, call in enumerate(calls):
+			with self.assertRaises(frappe.PermissionError, msg=f"call {i}"):
+				call()
+
+	def test_manager_draft_save_keeps_the_ratings_already_given(self):
+		import alvoraa_portal.performance_api as pa
+
+		ap = self._review_of(self.subject, "Manager Review")
+		self._as(self.manager_user)
+		pa.save_manager_review(ap, "first", "notes", overall_rating=4, potential_rating=3)
+		# What "Save draft" sends when the manager did not touch the ratings.
+		pa.save_manager_review(ap, "second", "notes", overall_rating=0, potential_rating="0")
+
+		frappe.set_user("Administrator")
+		ext = self._ext(ap)
+		self.assertEqual((ext.manager_feedback, ext.overall_rating, ext.potential_rating), ("second", 4, 3))
+		self.assertEqual(ext.overall_rated_by, self.manager_user)
+		self.assertTrue(ext.overall_rating_basis)
+
+
+class TestSec10NobodyRatesTheirOwnReview(_Team):
+	def test_sec10_an_hr_manager_cannot_rate_calibrate_or_close_their_own_review(self):
+		import alvoraa_portal.performance_api as pa
+
+		start, end = self._window()
+		cycle = self._cycle(start, end)
+		kpi = self._kpi(self.hr_subject, cycle)
+		ap = self._appraisal(self.hr_subject, cycle, status="Manager Review")
+
+		self._as(self.hr_subject_user)
+		for name, call in (
+			("get_manager_review", lambda: pa.get_manager_review(ap)),
+			("save_manager_review", lambda: pa.save_manager_review(ap, "x", overall_rating=5)),
+			("submit_manager_review", lambda: pa.submit_manager_review(ap, "x", overall_rating=5)),
+			("save_overall_rating", lambda: pa.save_overall_rating(ap, 5)),
+			("invite_reviewer", lambda: pa.invite_reviewer(ap, self.stranger)),
+			("return_for_revision", lambda: pa.return_for_revision(ap, "")),
+			("advance_review_status", lambda: pa.advance_review_status(ap)),
+			("submit_appraisal", lambda: pa.submit_appraisal(ap)),
+			("sync_appraisal_from_kpis", lambda: pa.sync_appraisal_from_kpis(ap)),
+			("suggest_ratings", lambda: pa.suggest_ratings(self.hr_subject, cycle)),
+			("save_kpi_manager_review", lambda: pa.save_kpi_manager_review(kpi, 5)),
+		):
+			with self.assertRaises(frappe.PermissionError, msg=name):
+				call()
+
+		self._set_status(ap, "HR Review")
+		self._as(self.hr_subject_user)
+		for name, call in (
+			("advance_review_status", lambda: pa.advance_review_status(ap)),
+			("save_calibration_note", lambda: pa.save_calibration_note(ap, "", 5)),
+		):
+			with self.assertRaises(frappe.PermissionError, msg=name):
+				call()
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Alvoraa Appraisal Extension", ap, "review_status"), "HR Review")
+		self.assertFalse(frappe.db.get_value("Alvoraa Appraisal Extension", ap, "overall_rating"))
+
+		# Another HR Manager closes it.
+		self._as(self.hr2_user)
+		self.assertEqual(pa.advance_review_status(ap)["review_status"], "Completed")
+
+
+class TestDecisions15And16HrScope(_Team):
+	def test_decision15_system_manager_follows_the_stage_rule(self):
+		import alvoraa_portal.performance_api as pa
+
+		ap = self._review_of(self.subject, "Manager Review")
+		self._as(self.sysman_user)
+		with self.assertRaises(frappe.PermissionError):
+			pa._assert_hr_can_view(ap)
+		self._set_status(ap, "HR Review")
+		self._as(self.sysman_user)
+		pa._assert_hr_can_view(ap)
+
+	def test_decision16_hr_acts_only_for_the_companies_they_look_after(self):
+		import alvoraa_portal.performance_api as pa
+
+		start, end = self._window()
+		mine = self._appraisal(self.subject, self._cycle(start, end), status="HR Review")
+		elsewhere = self._appraisal(self.subject_b, self._cycle(start, end, company=self.company_b), status="HR Review")
+
+		self._as(self.hr_user)
+		pa._assert_hr_can_view(mine)
+		with self.assertRaises(frappe.PermissionError):
+			pa._assert_hr_can_view(elsewhere)
+		with self.assertRaises(frappe.PermissionError):
+			pa.advance_review_status(elsewhere)
+		names = {r["name"] for r in pa.list_appraisals()["appraisals"]}
+		self.assertIn(mine, names)
+		self.assertNotIn(elsewhere, names)
+		team = {r["employee"] for r in pa.get_team_reviews()["team"]}
+		self.assertIn(self.subject, team)
+		self.assertNotIn(self.subject_b, team)
+
+
+class TestScorecardsHideUnreleasedRatings(_Team):
+	def test_scorecards_show_an_overall_rating_only_once_it_is_released(self):
+		import alvoraa_portal.hr_api as hr_api
+
+		start, end = self._window()
+		cycle = self._cycle(start, end)
+		ap = self._appraisal(self.subject, cycle, status="Manager Review")
+		frappe.db.set_value("Alvoraa Appraisal Extension", ap, "overall_rating", 4)
+		frappe.db.commit()
+
+		def seen():
+			self._as(self.manager_user)
+			history = [r for r in hr_api.get_employee_scorecard(self.subject)["appraisal_history"]
+			           if r["cycle_label"] == cycle]
+			member = next(m for m in hr_api.get_team_scorecard()["members"] if m["name"] == self.subject)
+			return history[0]["overall_rating"], member["appraisal_rating"]
+
+		self.assertEqual(seen(), ("", ""))
+		self._set_status(ap, "Employee Final Review")
+		self.assertEqual(seen(), (4, 4))

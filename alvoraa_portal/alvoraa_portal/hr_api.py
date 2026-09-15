@@ -698,6 +698,11 @@ def get_portal_activity(days=7):
     return {"activities": activity}
 
 
+# Review stages from which an overall rating is released to the employee, and so
+# may show on screens outside the review (slice 010 group D, decision 3).
+_REVIEW_RATING_RELEASED = ("Employee Final Review", "HR Review", "Completed")
+
+
 @frappe.whitelist()
 def get_employee_scorecard(employee_id):
     """Comprehensive scorecard for one employee — for manager view."""
@@ -844,11 +849,15 @@ def get_employee_scorecard(employee_id):
             LIMIT 8
         """, employee_id, as_dict=True)
         for r in rows:
+            # A rating and its score show outside the review only once released
+            # to the employee (slice 010, decision 3 / PRIV-1). Before that the
+            # scorecard says where the review is, not what it says.
+            released = r.review_status in _REVIEW_RATING_RELEASED
             appraisal_history.append({
                 "cycle_label": (r.cycle_label or "—"),
                 "review_status": r.review_status or "",
-                "overall_rating": r.overall_rating or "",
-                "score": float(r.score or 0),
+                "overall_rating": (r.overall_rating or "") if released else "",
+                "score": float(r.score or 0) if released else 0,
             })
 
     # Today's check-in status
@@ -946,7 +955,7 @@ def get_team_scorecard():
         # .format() only inserts "%s" placeholders — no user data in the format string; safe.
         placeholders = ",".join(["%s"] * len(emp_ids))
         rows = frappe.db.sql("""
-            SELECT ae.employee, ae.overall_rating,
+            SELECT ae.employee, ae.overall_rating, ae.review_status,
                    (SELECT a2.total_score FROM `tabAppraisal` a2 WHERE a2.name = ae.name LIMIT 1) AS score
             FROM `tabAlvoraa Appraisal Extension` ae
             WHERE ae.employee IN ({})
@@ -954,6 +963,9 @@ def get_team_scorecard():
             ORDER BY ae.creation DESC
         """.format(placeholders), emp_ids, as_dict=True)
         for r in rows:
+            # The latest review whose rating has been released (slice 010, PRIV-1).
+            if r.review_status not in _REVIEW_RATING_RELEASED:
+                continue
             if r.employee not in score_by_emp:
                 score_by_emp[r.employee] = {
                     "score": float(r.score or 0),

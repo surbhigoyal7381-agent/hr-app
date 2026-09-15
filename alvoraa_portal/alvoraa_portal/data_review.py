@@ -478,7 +478,13 @@ def data_review_items():
 	if scope.not_linked:
 		return {"not_linked": True}
 
-	recheck(scope)
+	try:
+		recheck(scope)
+	except Exception as e:
+		# The re-check only clears records; if it fails, HR still gets the list as
+		# the morning left it. Error type only, as for the job.
+		frappe.log_error(title="Data to review re-check failed",
+		                 message=json.dumps({"stage": "page re-check", "error": type(e).__name__}))
 
 	rows = frappe.get_list(
 		DOCTYPE, filters=item_filters(scope, status="Open"),

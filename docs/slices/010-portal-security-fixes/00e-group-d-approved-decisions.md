@@ -64,6 +64,18 @@ Asked in `03d-implementation-notes-group-d.md` §9; the user took every recommen
 | 27 | HR opening **their own** review record in the desk (it holds their own potential rating) | **Refused**, as built in phase 1. |
 | 28 | `hr_api.get_employee_scorecard` lets any HR person open an employee from any company | **Fix inside 010**, in phase 3: scope to `permitted_companies()`, as in groups A–C. |
 
+## Decisions after phases 2 and 3 (2026-09-15)
+
+Asked in `03d-implementation-notes-group-d.md` (Phase 2 and Phase 3 sections); the user took every recommendation.
+
+| # | Question | Decision |
+|---|---|---|
+| 29 | When may managers and HR remove items from a review? | **As built:** manager during Manager Review, HR during HR Review. Not during Employee Final Review. |
+| 30 | Should an Objective target change agreed in the review get past the older "no target change once progress exists" rule on write-back? | **Yes.** The agreed change is written back at completion, with its audit entry. The older rule still applies to changes made outside a review. |
+| 31 | Email the employee when their overall rating changes | **Only once the rating has been released to them**, as built. |
+| 32 | Lock release set to 0 (never released): repeating reminder? | **No reminder** when the setting is 0. |
+| 33 | `hr_api.get_goal_detail` lets any HR person open a goal from any company | **Fix inside 010:** scope to `permitted_companies()` for HR, keeping the manager-line rule. |
+
 ## Coordination
 
 - Slice 012's plan adds the same KPI indexes. **010 claims the KPI DocType file** on the

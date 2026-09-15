@@ -13,6 +13,38 @@ employee, a name or a leave type.
 
 import frappe
 
+DOCTYPE = "Alvoraa Data Review Item"
+
+# More Open items than one scope can have: 25 branches x 35 days, plus a few per company.
+MAX_ITEMS = 1000
+
+
+def item_filters(scope, **extra):
+	"""Filters limiting review records to an HR scope.
+
+	The explicit branch filter matters for location HR: Frappe's User Permissions
+	let a record with an EMPTY branch through, and a company-wide item carries
+	company-wide counts that a store's HR person has no business reading.
+	"""
+	filters = {"company": ["in", list(scope.companies) or [""]], **extra}
+	if scope.branches is not None:
+		filters["alvoraa_branch"] = ["in", list(scope.branches) or [""]]
+	return filters
+
+
+def review_summary(scope):
+	"""How many figures need review in this scope, and which days look wrong (AC-17, AC-46).
+
+	Read with get_list, so the caller's own permissions apply too.
+	"""
+	if scope.not_linked:
+		return {"open_count": 0, "doubtful_dates": []}
+	rows = frappe.get_list(DOCTYPE, filters=item_filters(scope, status="Open"),
+	                       fields=["item_type", "check_date"], limit_page_length=MAX_ITEMS)
+	dates = sorted({str(r.check_date) for r in rows if r.item_type == "Doubtful day" and r.check_date})
+	return {"open_count": len(rows), "doubtful_dates": dates}
+
+
 # ── indexes (US-1, OPS-52, OPS-70) ───────────────────────────────────────────
 #
 # One-column indexes need a Property Setter as well as the index. Frappe 16

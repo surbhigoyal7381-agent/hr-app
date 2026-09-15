@@ -688,7 +688,15 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# to the one review-record save in review_items.py; 64 after phase 3's HR
 		# cycle screens stopped reading live KPIs around permissions.
 		("alvoraa_portal", "performance_api.py"): 64,
-		("alvoraa_portal", "hr_api.py"): 77,
+		# 77 until slice 012 G1 moved HR Analytics' two name lists to get_list.
+		("alvoraa_portal", "hr_api.py"): 75,
+		# Slice 012 (OPS-75): new files start at zero, so "no new ignore_permissions"
+		# is proven for them too, not only for files already listed.
+		("alvoraa_portal", "org_figures.py"): 0,
+		("alvoraa_portal", "data_review.py"): 0,
+		("alvoraa_portal", "attendance_analytics.py"): 0,
+		("alvoraa_portal", "alvoraa_portal/doctype/alvoraa_data_review_item/alvoraa_data_review_item.py"): 0,
+		("alvoraa_portal", "alvoraa_portal/doctype/alvoraa_leader_view_settings/alvoraa_leader_view_settings.py"): 0,
 		("alvoraa_portal", "goals_api.py"): 15,
 		("alvoraa_portal", "attendance_correction.py"): 2,
 		("alvoraa_goals", "api/goal_api.py"): 0,

@@ -120,14 +120,17 @@ def rate(counts):
 	return flt((present + half / 2.0) / expected * 100.0, 1)
 
 
+NO_ATTENDANCE = {"present": 0, "wfh": 0, "half": 0, "absent": 0, "on_leave": 0,
+                 "late": 0, "short": 0, "people": 0, "rate": None}
+
+
 def attendance_figures(scope, start, end):
 	"""Attendance counts and % for the scope and dates. One query.
 
 	Open doubtful days of each branch are left out; a Confirmed one ("the absence
 	was real") counts again.
 	"""
-	empty = {"present": 0, "wfh": 0, "half": 0, "absent": 0, "on_leave": 0,
-	         "late": 0, "short": 0, "people": 0, "rate": None}
+	empty = dict(NO_ATTENDANCE)
 	if scope.not_linked:
 		return empty
 	where, params = condition(scope, "a", "alvoraa_branch")
@@ -285,6 +288,34 @@ def leave_figures(scope, as_of=None):
 	if out["allocated"]:
 		out["used_pct"] = flt(out["taken"] / out["allocated"] * 100.0, 1)
 	return out
+
+
+# ── observability ────────────────────────────────────────────────────────────
+
+SLOW_SECONDS = 1.0
+
+
+def log_if_slow(endpoint, scope, started, **extra):
+	"""One line when a call takes more than a second (OPS-56).
+
+	Endpoint, scope kind, how many branches, duration. Never a figure, a name,
+	a company or a branch name (OPS-57).
+	"""
+	import json
+	import time
+
+	elapsed = time.monotonic() - started
+	if elapsed <= SLOW_SECONDS:
+		return
+	try:
+		frappe.logger("leader_view").info(json.dumps({
+			"event": "slow_call", "endpoint": endpoint, "scope": scope.kind,
+			"branches": len(scope.branches) if scope.branches is not None else None,
+			"duration_ms": int(elapsed * 1000),
+			**{k: v for k, v in extra.items() if isinstance(v, int | float | bool)},
+		}))
+	except Exception:
+		pass
 
 
 # ── people ───────────────────────────────────────────────────────────────────

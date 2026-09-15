@@ -381,119 +381,137 @@ def get_hr_analytics():
     if not ({"HR Manager", "HR User", "Administrator"} & set(roles)):
         frappe.throw("Access denied", frappe.PermissionError)
 
-    td       = today()
+    # Slice 012 G1 (SEC-16): every figure and name below is limited to the
+    # caller's companies, and to their branches when they are location HR. It
+    # used to cover the whole tenant - a store's HR person saw every store's and
+    # every company's names, gender and joining dates. Attendance and leave come
+    # from the one calculation the leader view uses (org_figures.py).
+    import time as _time
+    from alvoraa_portal import data_review, org_figures as of
+
+    started = _time.monotonic()
+    scope = of.hr_scope()
+    if scope.not_linked:
+        # Fail closed: no company, no figures and no names (BA-Q5). The page
+        # explains how to get linked.
+        return {"not_linked": True}
+
+    td       = getdate(today())
     mo_start = get_first_day(td)
     mo_end   = get_last_day(td)
-    yr_start = _leave_year_start(td)
 
     # ── Headcount ─────────────────────────────────────────────────────────
-    total_active = frappe.db.count("Employee", {"status": "Active"})
-    total_all    = frappe.db.count("Employee")
-
-    # New joiners this month
-    new_joiners = frappe.db.count("Employee",
-        {"date_of_joining": ["between", [mo_start, mo_end]]})
+    people = of.people_figures(scope, td, mo_start, mo_end)
+    emp_where, emp_params = of.employee_condition(scope)
+    scope_filters = {"company": ["in", list(scope.companies)]}
+    if scope.branches is not None:
+        scope_filters["branch"] = ["in", list(scope.branches)]
 
     # ── Department distribution ───────────────────────────────────────────
-    dept_dist = frappe.db.sql("""
-        SELECT department, COUNT(*) AS count
-        FROM `tabEmployee` WHERE status = 'Active' AND department IS NOT NULL
-        GROUP BY department ORDER BY count DESC
-    """, as_dict=True)
+    dept_dist = frappe.db.sql(f"""
+        SELECT e.department, COUNT(*) AS count
+        FROM `tabEmployee` e WHERE e.status = 'Active' AND e.department IS NOT NULL AND {emp_where}
+        GROUP BY e.department ORDER BY count DESC
+    """, emp_params, as_dict=True)
 
     # ── Gender ratio ─────────────────────────────────────────────────────
-    gender_dist = frappe.db.sql("""
-        SELECT COALESCE(NULLIF(gender,''),'Not Specified') AS gender, COUNT(*) AS count
-        FROM `tabEmployee` WHERE status = 'Active'
+    gender_dist = frappe.db.sql(f"""
+        SELECT COALESCE(NULLIF(e.gender,''),'Not Specified') AS gender, COUNT(*) AS count
+        FROM `tabEmployee` e WHERE e.status = 'Active' AND {emp_where}
         GROUP BY gender
-    """, as_dict=True)
+    """, emp_params, as_dict=True)
 
     # ── Location / Branch ────────────────────────────────────────────────
-    loc_dist = frappe.db.sql("""
-        SELECT COALESCE(NULLIF(branch,''),'HQ') AS location, COUNT(*) AS count
-        FROM `tabEmployee` WHERE status = 'Active'
+    loc_dist = frappe.db.sql(f"""
+        SELECT COALESCE(NULLIF(e.branch,''),'HQ') AS location, COUNT(*) AS count
+        FROM `tabEmployee` e WHERE e.status = 'Active' AND {emp_where}
         GROUP BY location ORDER BY count DESC
-    """, as_dict=True)
+    """, emp_params, as_dict=True)
 
     # ── Monthly joiners (last 6 months) ──────────────────────────────────
-    six_months_ago = add_days(td, -180)
-    joiners_trend = frappe.db.sql("""
-        SELECT DATE_FORMAT(date_of_joining,'%%b %%Y') AS month,
-               DATE_FORMAT(date_of_joining,'%%Y-%%m') AS sort_key,
+    joiners_trend = frappe.db.sql(f"""
+        SELECT DATE_FORMAT(e.date_of_joining,'%%b %%Y') AS month,
+               DATE_FORMAT(e.date_of_joining,'%%Y-%%m') AS sort_key,
                COUNT(*) AS count
-        FROM `tabEmployee`
-        WHERE date_of_joining >= %s
+        FROM `tabEmployee` e
+        WHERE e.date_of_joining >= %(six_months_ago)s AND {emp_where}
         GROUP BY month, sort_key ORDER BY sort_key
-    """, six_months_ago, as_dict=True)
+    """, {**emp_params, "six_months_ago": add_days(td, -180)}, as_dict=True)
 
-    # ── Attendance KPIs this month ────────────────────────────────────────
-    att_summary = frappe.db.sql("""
-        SELECT status, COUNT(*) AS count
-        FROM `tabAttendance`
-        WHERE attendance_date >= %s AND docstatus = 1
-        GROUP BY status
-    """, mo_start, as_dict=True)
-    att_map = {r.status: r.count for r in att_summary}
-    present  = att_map.get("Present", 0) + att_map.get("Half Day", 0) * 0.5
-    absent   = att_map.get("Absent", 0)
-    att_rate = round(present / max(present + absent, 1) * 100, 1)
+    # ── Attendance: the month of the last day with data (decision D-13) ──
+    period = of.period(scope)
+    att = of.attendance_figures(scope, *period) if period else dict(of.NO_ATTENDANCE)
+    att_rate = att["rate"]
+    present = att["present"] + att["wfh"] + att["half"] * 0.5
+    absent = att["absent"]
 
-    # ── Leave utilization (current year) ─────────────────────────────────
-    total_alloc = frappe.db.sql(
-        "SELECT COALESCE(SUM(total_leaves_allocated),0) FROM `tabLeave Allocation` WHERE docstatus=1"
-    )[0][0] or 0
-    total_taken = frappe.db.sql(
-        "SELECT COALESCE(SUM(total_leave_days),0) FROM `tabLeave Application` WHERE docstatus=1 AND status='Approved' AND from_date>=%s",
-        yr_start,
-    )[0][0] or 0
-    leave_util = round(float(total_taken) / max(float(total_alloc), 1) * 100, 1)
+    # ── Leave used this leave year, per company ──────────────────────────
+    leave = of.leave_figures(scope, td)
 
     # ── Pending approvals ─────────────────────────────────────────────────
-    pending_count = frappe.db.count("Leave Application", {"status": "Open", "docstatus": 0})
+    pending_filters = {"status": "Open", "docstatus": 0, "company": ["in", list(scope.companies)]}
+    if scope.branches is not None:
+        pending_filters["alvoraa_branch"] = ["in", list(scope.branches)]
+    pending_count = frappe.db.count("Leave Application", pending_filters)
 
     # ── Confirmations due this month ─────────────────────────────────────
-    confirmations = frappe.get_all(
+    # get_list: the caller's own User Permissions apply as well as the scope.
+    confirmations = frappe.get_list(
         "Employee",
         filters={
             "scheduled_confirmation_date": ["between", [mo_start, mo_end]],
             "status": "Active",
+            **scope_filters,
         },
         fields=["name", "employee_name", "designation", "department", "date_of_joining", "scheduled_confirmation_date"],
-        ignore_permissions=True,
+        limit_page_length=500,
     )
 
-    # ── Department-wise leave utilization ────────────────────────────────
-    dept_leave = frappe.db.sql("""
+    # ── Department-wise leave, each company's own leave year ─────────────
+    year_or, year_params = [], {}
+    for i, (company, figs) in enumerate(sorted(leave["by_company"].items())):
+        year_params.update({f"lc{i}": company, f"lys{i}": figs["year_start"], f"lye{i}": figs["year_end"]})
+        year_or.append(f"(la.company = %(lc{i})s AND la.from_date BETWEEN %(lys{i})s AND %(lye{i})s)")
+    dept_leave = frappe.db.sql(f"""
         SELECT e.department, COALESCE(SUM(la.total_leave_days),0) AS taken
         FROM `tabEmployee` e
         LEFT JOIN `tabLeave Application` la
-            ON la.employee = e.name AND la.docstatus=1 AND la.status='Approved' AND la.from_date>=%s
-        WHERE e.status='Active' AND e.department IS NOT NULL
+            ON la.employee = e.name AND la.docstatus=1 AND la.status='Approved'
+           AND ({' OR '.join(year_or) or '1=0'})
+        WHERE e.status='Active' AND e.department IS NOT NULL AND {emp_where}
         GROUP BY e.department ORDER BY taken DESC
-    """, yr_start, as_dict=True)
+    """, {**emp_params, **year_params}, as_dict=True)
 
     # ── Designation distribution ─────────────────────────────────────────
-    desig_dist = frappe.db.sql("""
-        SELECT COALESCE(NULLIF(designation,''),'Not Set') AS designation, COUNT(*) AS count
-        FROM `tabEmployee` WHERE status='Active'
+    desig_dist = frappe.db.sql(f"""
+        SELECT COALESCE(NULLIF(e.designation,''),'Not Set') AS designation, COUNT(*) AS count
+        FROM `tabEmployee` e WHERE e.status='Active' AND {emp_where}
         GROUP BY designation ORDER BY count DESC LIMIT 10
-    """, as_dict=True)
+    """, emp_params, as_dict=True)
 
     # ── Recent employee list (for lifecycle tab) ──────────────────────────
-    recent_employees = frappe.get_all(
+    recent_employees = frappe.get_list(
         "Employee",
-        filters={"status": "Active"},
+        filters={"status": "Active", **scope_filters},
         fields=["name", "employee_name", "designation", "department", "date_of_joining", "gender"],
         order_by="date_of_joining desc",
-        limit=10,
-        ignore_permissions=True,
+        limit_page_length=10,
     )
 
+    review = data_review.review_summary(scope)
+    of.log_if_slow("get_hr_analytics", scope, started)
+
     return {
+        "not_linked": False,
+        "scope": {"kind": scope.kind, "companies": len(scope.companies),
+                  "branches": len(scope.branches) if scope.branches is not None else None},
+        "data_up_to": str(period[1]) if period else None,
+        "period": {"from": str(period[0]), "to": str(period[1])} if period else None,
+        "review": review,
         "headcount": {
-            "active":      total_active,
-            "total":       total_all,
-            "new_joiners": new_joiners,
+            "active":      people["active"],
+            "total":       people["total"],
+            "new_joiners": people["joiners"],
         },
         "dept_distribution":    dept_dist,
         "gender_distribution":  gender_dist,
@@ -501,11 +519,12 @@ def get_hr_analytics():
         "joiners_trend":        joiners_trend,
         "desig_distribution":   desig_dist,
         "kpis": {
+            # None, not 0, when there is nothing to divide: "No figures yet".
             "attendance_rate":      att_rate,
-            "leave_utilization":    leave_util,
+            "leave_utilization":    leave["used_pct"],
             "pending_approvals":    pending_count,
-            "total_leave_taken":    float(total_taken),
-            "total_leave_allocated": float(total_alloc),
+            "total_leave_taken":    float(leave["taken"]),
+            "total_leave_allocated": float(leave["allocated"]),
         },
         "org_health": {
             "attendance_rate":    att_rate,

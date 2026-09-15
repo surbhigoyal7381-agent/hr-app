@@ -200,6 +200,14 @@ scheduler_events = {
         # anything to count. See usage.py.
         "alvoraa_portal.usage.collect_scheduled",
     ],
+    # Slice 012: 06:30 site time, after overnight device sync and auto attendance.
+    # Only queues the job on the long queue (a cron entry runs on default).
+    # Finds doubtful attendance days and figures whose data needs review.
+    "cron": {
+        "30 6 * * *": [
+            "alvoraa_portal.data_review.enqueue_morning_checks",
+        ],
+    },
 }
 
 

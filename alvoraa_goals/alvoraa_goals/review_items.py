@@ -1402,9 +1402,22 @@ def holds(doctype, names):
     server's date (R9, SEC-22); 0 days means never, and so does a cycle with no
     end date. Returns name -> release date, or None when it is never released.
     """
+    out = {}
+    for r in _holding_reviews(doctype, names):
+        release = r.release
+        if r.source_name in out and (out[r.source_name] is None or (release and out[r.source_name] >= release)):
+            continue
+        out[r.source_name] = release
+    return out
+
+
+def _holding_reviews(doctype, names):
+    """Every open review still holding one of these live records, with its release
+    date and period end. One query. Shared by the lock and the badge, so the two
+    can never disagree about what "in a review" means."""
     names = sorted({n for n in (names or []) if n})
     if not names:
-        return {}
+        return []
     item = frappe.qb.DocType("Alvoraa Review Item")
     ext = frappe.qb.DocType("Alvoraa Appraisal Extension")
     appraisal = frappe.qb.DocType("Appraisal")
@@ -1423,19 +1436,35 @@ def holds(doctype, names):
         .where(appraisal.docstatus != 2)
     ).run(as_dict=True)
     if not rows:
-        return {}
+        return []
 
     days = review_settings()["lock_release_days"]
     today = getdate(nowdate())
-    out = {}
+    held = []
     for r in rows:
         end = r.end_date or r.review_window_end
-        release = getdate(add_days(end, days)) if (days and end) else None
-        if release and today >= release:
+        r.release = getdate(add_days(end, days)) if (days and end) else None
+        if r.release and today >= r.release:
             continue
-        if r.source_name in out and (out[r.source_name] is None or (release and out[r.source_name] >= release)):
-            continue
-        out[r.source_name] = release
+        held.append(r)
+    return held
+
+
+def review_badges(doctype, names):
+    """The "in review" badge for live records outside the review (R5, PRIV-10).
+
+    name -> {"in_review": 1, "updates_after": "YYYY-MM-DD"} for each record an
+    open review holds: it is in a review, and updates dated after that day do not
+    change the review. Nothing else: no review, stage, rating, reviewer or freeze
+    state, because anyone who can see the live record sees the badge. With two
+    open reviews (R16) the later period end is given. One query.
+    """
+    out = {}
+    for r in _holding_reviews(doctype, names):
+        end = str(getdate(r.review_window_end)) if r.review_window_end else ""
+        current = out.get(r.source_name)
+        if current is None or (end and end > current["updates_after"]):
+            out[r.source_name] = {"in_review": 1, "updates_after": end}
     return out
 
 

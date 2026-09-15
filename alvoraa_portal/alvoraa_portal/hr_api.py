@@ -2285,6 +2285,11 @@ def get_goal_detail(goal_id):
     goal = goals[0] if goals else None
     if not goal:
         frappe.throw("Goal not found")
+    # Slice 010 group D (R5, PRIV-10): "in a review", and the day after which
+    # updates no longer change it. Nothing else about the review.
+    import alvoraa_goals.review_items as review_items
+
+    goal["review_badge"] = review_items.review_badges("Individual Goal", [goal_id]).get(goal_id)
     try:
         evs = frappe.get_all(
             "Goal Evidence",

@@ -32,6 +32,12 @@ def _require_employee():
     return emp
 
 
+def _review_badges(doctype, names):
+    import alvoraa_goals.review_items as review_items
+
+    return review_items.review_badges(doctype, names)
+
+
 def _is_manager(employee_id):
     return frappe.db.count("Employee", {"reports_to": employee_id, "status": "Active"}) > 0
 
@@ -655,6 +661,9 @@ def get_goal_detail(goal_id):
         "can_edit":        int(_is_hr() or goal.owner == frappe.session.user),
         "is_mine":         int(goal.employee == emp_id),
         "is_organisational": int(not goal.parent_goal and not goal.goal_cascade),
+        # Slice 010 group D (R5, PRIV-10): only "in a review" and the day after
+        # which updates no longer change it.
+        "review_badge":    _review_badges("Individual Goal", [goal.name]).get(goal.name),
         "linked_kpis":     linked,
         "contributors":    sorted(contributors.values(), key=lambda c: c["employee_name"]),
         "child_goals":     child_goals,
@@ -724,13 +733,20 @@ def get_appraisal_data():
         return {"cycle": cycle, "appraisal": None}
 
     ap = frappe.get_doc("Appraisal", ap_list[0]["name"])
+    # Slice 010 group D: no item score here, ever (R14, decision 14): those are
+    # KPI and Objective ratings, shown only inside the review. The totals follow
+    # the overall rating's release rule for the employee (decision 3, PRIV-9).
+    stage = frappe.db.get_value("Alvoraa Appraisal Extension", ap.name, "review_status") or "Not Started"
+    released = stage in ("Employee Final Review", "HR Review", "Completed")
+
+    def total(value):
+        return flt(value) if released else None
 
     kras = [
         {
             "kra":             k.kra or "",
             "per_weightage":   flt(k.per_weightage),
             "goal_completion": flt(k.goal_completion),
-            "goal_score":      flt(k.goal_score),
         }
         for k in (ap.appraisal_kra or [])
     ]
@@ -751,8 +767,6 @@ def get_appraisal_data():
         {
             "kra":           g.kra or "",
             "per_weightage": flt(g.per_weightage),
-            "score":         flt(g.score),
-            "score_earned":  flt(g.score_earned),
         }
         for g in (ap.goals or [])
     ]
@@ -762,8 +776,8 @@ def get_appraisal_data():
         "appraisal": {
             "name":        ap.name,
             "docstatus":   ap.docstatus,
-            "total_score": flt(ap.total_score),
-            "final_score": flt(ap.final_score),
+            "total_score": total(ap.total_score),
+            "final_score": total(ap.final_score),
             "self_score":  flt(ap.self_score),
             "reflections": ap.reflections or "",
             "kras":        kras,

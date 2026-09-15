@@ -257,22 +257,27 @@ def get_performance_context():
 # Employee self-service
 # ══════════════════════════════════════════════════════════════════════════
 
+# No rating or comment fields: ratings are given and shown only inside a review,
+# on its copy (slice 010 group D: R14, PRIV-9). This list feeds the tree, "My
+# KPIs" and the team's KPIs, which every employee and manager can open.
 KPI_FIELDS = [
     "name", "kpi_name", "employee", "employee_name", "appraisal_cycle", "category",
     "status", "unit", "direction", "baseline_value", "target_value", "actual_value",
     "attainment_pct", "weightage", "period_start", "period_end", "goal_cascade",
-    "individual_goal", "self_rating", "self_comment", "manager_rating",
-    "manager_comment", "potential_rating", "potential_comment",
+    "individual_goal",
     "company_value", "is_extra_initiative", "description", "owner",
 ]
 
 
 def _decorate_kpis(rows):
-    """Add the objective label and whether this caller may revise each row."""
+    """Add the objective label, whether this caller may revise each row, and the
+    plain "in review" badge (R5): one query for every row."""
     hr = _is_hr()
     user = frappe.session.user
     goal_names = {}
+    badges = review_items.review_badges("KPI", [r.get("name") for r in rows])
     for r in rows:
+        r["review_badge"] = badges.get(r.get("name"))
         r["can_edit"] = int(hr or r.get("owner") == user)
         gid = r.get("individual_goal")
         if gid and gid not in goal_names:
@@ -485,10 +490,18 @@ def get_my_appraisal(cycle=None):
     if not cycle:
         return {"cycle": None, "appraisal": None}
 
-    return _appraisal_payload(emp_id, cycle)
+    return _appraisal_payload(emp_id, cycle, subject=True)
 
 
-def _appraisal_payload(emp_id, cycle):
+def _appraisal_payload(emp_id, cycle, subject=False):
+    """The HRMS appraisal summary, as a screen outside the review shows it.
+
+    No item score, ever: each goal row's score is a KPI or Objective rating, and
+    those are shown only inside the review (R14, decision 14). The appraisal's
+    totals follow the overall rating's release rule (decision 3): the person the
+    appraisal is about sees them from Employee Final Review on. Callers decide
+    who else may open it before calling.
+    """
     names = frappe.get_all(
         "Appraisal",
         filters={"employee": emp_id, "appraisal_cycle": cycle, "docstatus": ["!=", 2]},
@@ -508,6 +521,11 @@ def _appraisal_payload(emp_id, cycle):
         return {"cycle": cycle_doc, "appraisal": None}
 
     ap = frappe.get_doc("Appraisal", names[0])
+    released = not subject or _review_status(ap.name) in _RATING_RELEASED
+
+    def total(value):
+        return flt(value) if released else None
+
     return {
         "cycle": cycle_doc,
         "appraisal": {
@@ -515,10 +533,10 @@ def _appraisal_payload(emp_id, cycle):
             "employee":     ap.employee,
             "employee_name": ap.employee_name,
             "docstatus":    ap.docstatus,
-            "total_score":  flt(ap.total_score),
-            "self_score":   flt(ap.self_score),
-            "avg_feedback_score": flt(ap.avg_feedback_score),
-            "final_score":  flt(ap.final_score),
+            "total_score":  total(ap.total_score),
+            "self_score":   total(ap.self_score),
+            "avg_feedback_score": total(ap.avg_feedback_score),
+            "final_score":  total(ap.final_score),
             "attendance_score": flt(ap.get("attendance_score")),
             "attendance_reliability_pct": ap.get("attendance_reliability_pct"),
             "attendance_punctuality_pct": ap.get("attendance_punctuality_pct"),
@@ -531,8 +549,6 @@ def _appraisal_payload(emp_id, cycle):
                     "idx": g.idx,
                     "kra": g.kra,
                     "per_weightage": flt(g.per_weightage),
-                    "score": flt(g.score),
-                    "score_earned": flt(g.score_earned),
                 }
                 for g in (ap.goals or [])
             ],
@@ -580,13 +596,30 @@ def list_appraisals(cycle=None, status=None):
     )
 
     my_reports = set(_reports_of(me))
+    my_line = set(_subordinates(me))
     cycle_status = {
         c["name"]: c["status"]
         for c in frappe.get_all("Appraisal Cycle", fields=["name", "status"])
     }
+    # Scores follow the overall rating's release rule (decision 3, PRIV-9): your
+    # own from Employee Final Review; your line's always; anyone else's, for HR,
+    # from HR Review. One query for every row's stage.
+    stages = dict(frappe.get_all(
+        "Alvoraa Appraisal Extension",
+        filters={"name": ["in", [r["name"] for r in rows] or [""]]},
+        fields=["name", "review_status"], as_list=True,
+    ))
 
     out = []
     for r in rows:
+        stage = stages.get(r["name"]) or "Not Started"
+        if r["employee"] == me:
+            scores_visible = stage in _RATING_RELEASED
+        else:
+            scores_visible = r["employee"] in my_line or stage in ("HR Review", "Completed")
+        if not scores_visible:
+            for field in ("total_score", "self_score", "avg_feedback_score", "final_score"):
+                r[field] = None
         _serialise_dates(r, "start_date", "end_date")
         submitted = r["docstatus"] == 1
         r["status"] = "Submitted" if submitted else "Draft"
@@ -631,7 +664,7 @@ def get_appraisal(appraisal):
         )
     _assert_hr_can_view(appraisal)
 
-    payload = _appraisal_payload(ap.employee, ap.appraisal_cycle)
+    payload = _appraisal_payload(ap.employee, ap.appraisal_cycle, subject=ap.employee == me)
     detail = payload.get("appraisal") or {}
     detail["designation"] = ap.designation or ""
     detail["department"] = ap.department or ""
@@ -639,12 +672,14 @@ def get_appraisal(appraisal):
     detail["can_review"] = int(ap.docstatus == 0 and
                                (_is_hr() or ap.employee in _reports_of(me)))
     detail["can_self_assess"] = int(ap.docstatus == 0 and ap.employee == me)
+    # A self-rating reaches anyone else only once the self-review is sent (PRIV-2).
+    self_ratings_visible = ap.employee == me or _review_status(appraisal) not in _SELF_REVIEW_DRAFT
     detail["self_ratings"] = [
         {"criteria": str(getattr(r, "criteria", "")),
          "per_weightage": flt(getattr(r, "per_weightage", 0)),
          "rating": flt(getattr(r, "rating", 0))}
         for r in (ap.self_ratings or [])
-    ]
+    ] if self_ratings_visible else []
     payload["appraisal"] = detail
     return payload
 
@@ -841,7 +876,7 @@ def get_team_kpis(cycle=None):
             entry = {"employee": emp_id, "employee_name": name, "kpis": []}
         kpis = entry["kpis"]
         entry["total_weightage"] = flt(sum(flt(k["weightage"]) for k in kpis), 2)
-        entry["rated_count"] = sum(1 for k in kpis if flt(k["manager_rating"]) > 0)
+        # No "rated" count: ratings live in the review, not on the live KPI (R14).
         entry["avg_attainment"] = flt(
             sum(flt(k["attainment_pct"]) for k in kpis) / len(kpis), 1
         ) if kpis else 0
@@ -882,9 +917,23 @@ def suggest_ratings(employee, cycle):
 
 @frappe.whitelist()
 def get_team_appraisal(employee, cycle):
-    """One report's appraisal, for the manager's review screen."""
+    """One report's appraisal, for the manager's review screen.
+
+    HR acting for someone outside their own line follows the review's stage and
+    company rule (SEC-26, decision 16); it used to open any company's appraisal.
+    """
     _require_can_review(employee)
-    return _appraisal_payload(employee, cycle)
+    me = _employee_id()
+    if employee not in _reports_of(me):
+        appraisal = frappe.db.get_value(
+            "Appraisal", {"employee": employee, "appraisal_cycle": cycle, "docstatus": ["!=", 2]}, "name"
+        )
+        if appraisal:
+            _assert_hr_can_view(appraisal)
+        elif employee != me and frappe.db.get_value("Employee", employee, "company") not in permitted_companies():
+            refuse("This employee belongs to a company you do not look after.",
+                   "SEC-26", "get_team_appraisal", "Employee", employee)
+    return _appraisal_payload(employee, cycle, subject=employee == me)
 
 
 @frappe.whitelist()
@@ -1058,11 +1107,26 @@ def get_cycle_items(cycle, employee=None):
 
     Returns goals and KPIs side by side with an `is_overdue` flag, which is what
     the appraisal screen highlights.
+
+    Slice 010 group D: once the employee's review for this cycle has its own
+    copies, and the caller may open that review at its stage, the list is built
+    from those copies by row name and never names a live record (VIS-3). Before
+    that, or for someone who may not open the review yet (a manager while the
+    self-review is still a draft, PRIV-2), it is the live Objectives and KPIs.
+    No rating in either (R14): `source` says which one it is.
     """
     me = _require_employee()
     emp = employee or me
     if emp != me:
         _require_manages(emp)
+        if emp not in _subordinates(me) and frappe.db.get_value("Employee", emp, "company") not in permitted_companies():
+            # HR acts only for the companies they look after (decision 16).
+            refuse("This employee belongs to a company you do not look after.",
+                   "SEC-26", "get_cycle_items", "Employee", emp)
+
+    copies = _cycle_items_from_review(emp, me, cycle)
+    if copies is not None:
+        return copies
 
     goals = frappe.get_all(
         "Individual Goal",
@@ -1081,8 +1145,7 @@ def get_cycle_items(cycle, employee=None):
         "KPI",
         filters={"employee": emp, "appraisal_cycle": cycle, "status": ["!=", "Cancelled"]},
         fields=["name", "kpi_name", "target_value", "actual_value", "attainment_pct",
-                "unit", "status", "period_start", "period_end", "weightage",
-                "manager_rating"],
+                "unit", "status", "period_start", "period_end", "weightage"],
         ignore_permissions=True,
     )
     for k in kpis:
@@ -1091,16 +1154,57 @@ def get_cycle_items(cycle, employee=None):
         k["label"] = k["kpi_name"]
         k["is_overdue"] = int(_is_overdue(k["period_end"]))
 
+    return _cycle_items_result(cycle, emp, goals, kpis, "live")
+
+
+def _cycle_items_result(cycle, emp, goals, kpis, source):
     total = sum(flt(i["weightage"]) for i in goals + kpis)
     return {
         "cycle": cycle,
         "employee": emp,
+        "source": source,
         "goals": goals,
         "kpis": kpis,
         "total_weightage": flt(total, 2),
         "weightage_complete": flt(total, 2) == TOTAL_WEIGHTAGE,
         "overdue_count": sum(1 for i in goals + kpis if i["is_overdue"]),
     }
+
+
+def _cycle_items_from_review(emp, me, cycle):
+    """get_cycle_items from the review's copies, or None when the live list applies."""
+    appraisal = frappe.db.get_value(
+        "Appraisal", {"employee": emp, "appraisal_cycle": cycle, "docstatus": ["!=", 2]}, "name"
+    )
+    ext = _extension(appraisal) if appraisal else None
+    if not ext or not ext.get("items_taken_on"):
+        return None
+    if emp != me and (ext.review_status or "Not Started") in _SELF_REVIEW_DRAFT:
+        return None
+    if emp != me:
+        _assert_hr_can_view(appraisal)
+
+    goals, kpis = [], []
+    for row in ext.review_items:
+        if row.removed:
+            continue
+        item = {
+            "name": row.name, "label": row.title or "", "unit": row.unit or "",
+            "target_value": flt(row.target_value), "weightage": flt(row.weightage),
+            "status": "Cancelled" if row.source_cancelled else "Active",
+            "is_overdue": int(_is_overdue(row.period_end)),
+        }
+        if row.item_type == "Objective":
+            item.update({"kind": "goal", "goal_name": item["label"], "actual_progress": flt(row.actual_value),
+                         "progress_pct": flt(row.attainment_pct),
+                         "start_date": str(row.period_start or ""), "end_date": str(row.period_end or "")})
+            goals.append(item)
+        else:
+            item.update({"kind": "kpi", "kpi_name": item["label"], "actual_value": flt(row.actual_value),
+                         "attainment_pct": flt(row.attainment_pct),
+                         "period_start": str(row.period_start or ""), "period_end": str(row.period_end or "")})
+            kpis.append(item)
+    return _cycle_items_result(cycle, emp, goals, kpis, "review")
 
 
 def _review_copies_for_scoring(appraisal):
@@ -2041,16 +2145,23 @@ def get_performance_tree(cycle=None, show="all", date_from=None, date_to=None,
         g["is_organisational"] = int(not g["parent_goal"] and not g["goal_cascade"])
         g["context"] = int(g["name"] in context_ids)
         g["is_overdue"] = int(_is_overdue(g["end_date"]))
-        g["in_cycle"] = g.get("appraisal_cycle") or ""
         g["children"] = []
         g["kpis"] = []
+    # The tree's "in review" tag means an open review holds the record, not just
+    # that it is tagged to a cycle (R5). One query per kind; the badge says only
+    # that, and from which day updates no longer change the review (PRIV-10).
+    goal_badges = review_items.review_badges("Individual Goal", [g["name"] for g in goals])
+    for g in goals:
+        g["review_badge"] = goal_badges.get(g["name"])
+        g["in_cycle"] = (g.get("appraisal_cycle") or "") if g["review_badge"] else ""
     for k in kpis:
         k["type"] = "kpi"
         k["trajectory"] = _kpi_trajectory(k)
         _serialise_dates(k, "period_start", "period_end")
         k["is_overdue"] = int(_is_overdue(k["period_end"]))
-        k["in_cycle"] = k.get("appraisal_cycle") or ""
     _decorate_kpis(kpis)
+    for k in kpis:
+        k["in_cycle"] = (k.get("appraisal_cycle") or "") if k["review_badge"] else ""
 
     by_id = {g["name"]: g for g in goals}
 

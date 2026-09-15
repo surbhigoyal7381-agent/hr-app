@@ -862,15 +862,21 @@ def suggest_ratings(employee, cycle):
     """Pre-fill manager ratings from measured attainment, for review not for record."""
     refuse_own_rating(employee, "Employee", employee, "suggest_ratings")
     _require_can_review(employee)
-    rows = _kpi_rows({"employee": employee, "appraisal_cycle": cycle})
+    appraisal = frappe.db.get_value(
+        "Appraisal", {"employee": employee, "appraisal_cycle": cycle, "docstatus": ["!=", 2]}, "name"
+    )
+    if not appraisal:
+        frappe.throw("There is no review for this employee in this cycle.")
+    _ext, copies = _review_copies_for_scoring(appraisal)
+    # From the review's own copies, by row name (VIS-7, VIS-3).
     return [
         {
-            "kpi": r["name"],
-            "kpi_name": r["kpi_name"],
-            "attainment_pct": flt(r["attainment_pct"]),
-            "suggested_rating": flt(rating_from_attainment(r["attainment_pct"]), 2),
+            "item": r.name,
+            "kpi_name": r.title,
+            "attainment_pct": flt(r.attainment_pct),
+            "suggested_rating": flt(rating_from_attainment(r.attainment_pct), 2),
         }
-        for r in rows
+        for r in copies if r.item_type == "KPI"
     ]
 
 
@@ -911,20 +917,13 @@ def sync_appraisal_from_kpis(appraisal):
 
 
 def _sync_potential_to_extension(appraisal, employee, cycle):
-    """Compute avg potential rating from KPIs and store it on the extension."""
-    rows = frappe.get_all(
-        "KPI",
-        filters={"employee": employee, "appraisal_cycle": cycle, "status": ["!=", "Cancelled"]},
-        fields=["potential_rating"],
-    )
-    rated = [flt(r["potential_rating"]) for r in rows if r.get("potential_rating")]
+    """Average the potential ratings on the review's copies onto its record (VIS-7)."""
+    ext, copies = _review_copies_for_scoring(appraisal)
+    rated = [flt(r.potential_rating) for r in copies if flt(r.potential_rating)]
     if not rated:
         return
-    avg = flt(sum(rated) / len(rated), 2)
-
-    ext = _get_or_create_extension(appraisal)
-    ext.avg_potential_rating = avg
-    ext.save(ignore_permissions=True)
+    ext.avg_potential_rating = flt(sum(rated) / len(rated), 2)
+    review_items.save_review_record(ext)
 
 
 def _cycle_window(cycle):
@@ -1085,12 +1084,40 @@ def get_cycle_items(cycle, employee=None):
     }
 
 
-def _scored_items(employee, cycle):
-    """Goals and KPIs carrying a weightage — the rows an appraisal scores.
+def _review_copies_for_scoring(appraisal):
+    """The review's live copies, or a refusal. Scores never fall back to the live
+    Objectives and KPIs (VIS-7)."""
+    ext = _extension(appraisal)
+    if not ext or not ext.get("items_taken_on"):
+        frappe.throw("This review has no items of its own yet. Open the review first: "
+                     "scores are taken from the review, not from the live Objectives and KPIs.")
+    return ext, [r for r in ext.review_items if not r.removed]
 
-    Zero-weightage items ride along on the cycle for context but are not part
-    of the score, so they are excluded here and listed separately on screen.
+
+def _scored_items(ap):
+    """Items carrying a weightage — the rows an appraisal scores.
+
+    From the review's own copies (VIS-7): a KPI scores its manager rating, an
+    Objective its attainment on the same 0-5 scale. Only an appraisal that is
+    being created, before its review record can exist, is projected from the
+    live records tagged to the cycle (hr_generate_appraisals).
+
+    Zero-weightage items ride along for context but are not part of the score.
     """
+    if not ap.is_new():
+        _ext, copies = _review_copies_for_scoring(ap.name)
+        return [
+            {"label": r.title, "weightage": flt(r.weightage),
+             "score": flt(r.manager_rating) if r.item_type == "KPI" else flt(rating_from_attainment(r.attainment_pct)),
+             "end_date": r.period_end}
+            for r in sorted(copies, key=lambda r: (r.item_type != "KPI", r.title or ""))
+            if flt(r.weightage)
+        ]
+    return _scored_live_items(ap.employee, ap.appraisal_cycle)
+
+
+def _scored_live_items(employee, cycle):
+    """The first projection of a new appraisal, before it has a review record."""
     rows = []
     for k in frappe.get_all(
         "KPI",
@@ -1128,14 +1155,17 @@ def _apply_kpis_to_appraisal(ap):
     unless the weightages total exactly 100, so an employee whose weightages are
     incomplete cannot be scored — the caller is told the number and why.
     """
-    rows = _scored_items(ap.employee, ap.appraisal_cycle)
+    rows = _scored_items(ap)
     who = ap.employee_name or ap.employee
 
     if not rows:
-        attached = frappe.db.count("KPI", {"employee": ap.employee,
-                                           "appraisal_cycle": ap.appraisal_cycle}) + \
-                   frappe.db.count("Individual Goal", {"employee": ap.employee,
-                                                       "appraisal_cycle": ap.appraisal_cycle})
+        if ap.is_new():
+            attached = frappe.db.count("KPI", {"employee": ap.employee,
+                                               "appraisal_cycle": ap.appraisal_cycle}) + \
+                       frappe.db.count("Individual Goal", {"employee": ap.employee,
+                                                           "appraisal_cycle": ap.appraisal_cycle})
+        else:
+            attached = len(_review_copies_for_scoring(ap.name)[1])
         frappe.throw(
             f"{who} has nothing weighted in this cycle. "
             + (f"{attached} item(s) are attached but all sit at 0% weightage — "
@@ -2587,9 +2617,21 @@ def advance_review_status(appraisal):
             frappe.throw("At least one action item must be added before advancing the review. "
                          "Use the 'Add Action Item' button in the team review card.")
 
+    write_back_notes = 0
+    if nxt == "Completed":
+        # Numbers are brought up to date first, so a rating question raised by
+        # the last facts is seen now rather than after the review closes (R7).
+        review_items.open_review(ext)
+        _refuse_open_rating_questions(ext, appraisal)
+
     ext.review_status = nxt
     ext.return_reason = ""
-    ext.save(ignore_permissions=True)
+    review_items.apply_stage(ext)
+    if nxt == "Completed":
+        _refuse_open_rating_questions(ext, appraisal)
+        ext.completed_on = frappe.utils.now_datetime()
+        write_back_notes = review_items.write_back(ext)
+    review_items.save_review_record(ext)
     frappe.db.commit()
 
     emp_user = _employee_user(ap.employee)
@@ -2611,7 +2653,23 @@ def advance_review_status(appraisal):
             f"<p>Your performance review has been completed. Log in to view your final assessment.</p>",
         )
 
-    return {"review_status": nxt, "message": f"Review moved to '{nxt}'."}
+    out = {"review_status": nxt, "message": f"Review moved to '{nxt}'."}
+    if nxt == "Completed":
+        # How many items carry a note about handing their changes back (R15).
+        out["write_back_notes"] = write_back_notes
+    return out
+
+
+def _refuse_open_rating_questions(ext, appraisal):
+    """HR cannot complete a review while a manager or overall rating waits for an
+    answer (R7, SEC-23). Self-rating questions are information only (decision 13)."""
+    waiting = review_items.open_blocking_flags(ext)
+    if waiting:
+        refuse(
+            f"{waiting} rating(s) were given on numbers that changed since. The person who gave "
+            "them must keep or change them before this review can be completed.",
+            "SEC-23", "advance_review_status", "Appraisal", appraisal,
+        )
 
 
 @frappe.whitelist()
@@ -2640,7 +2698,9 @@ def return_for_revision(appraisal, reason=""):
 
     ext.review_status = "Employee Review"
     ext.return_reason = reason
-    ext.save(ignore_permissions=True)
+    # Back before the freeze point: the numbers take facts again (decision 18).
+    review_items.apply_stage(ext)
+    review_items.save_review_record(ext)
     frappe.db.commit()
 
     emp_user = _employee_user(ap.employee)
@@ -2672,7 +2732,8 @@ def return_to_manager(appraisal, reason=""):
 
     ext.review_status = "Manager Review"
     ext.return_reason = reason
-    ext.save(ignore_permissions=True)
+    review_items.apply_stage(ext)
+    review_items.save_review_record(ext)
     frappe.db.commit()
 
     # Notify the manager
@@ -3743,6 +3804,7 @@ def submit_employee_review(appraisal, overall_comment=""):
 
     ext.overall_comment = overall_comment
     ext.review_status   = "Manager Review"
+    review_items.apply_stage(ext)
     review_items.save_review_record(ext)
     frappe.db.commit()
     return {"review_status": "Manager Review"}
@@ -4385,7 +4447,8 @@ def submit_manager_review(appraisal, manager_feedback="", manager_internal_notes
     ext.manager_internal_notes      = manager_internal_notes
     ext.reviewer_comments_visible   = int(reviewer_comments_visible or 0)
     ext.review_status               = "Employee Final Review"
-    ext.save(ignore_permissions=True)
+    review_items.apply_stage(ext)
+    review_items.save_review_record(ext)
     frappe.db.commit()
     # Notify employee
     emp_user = frappe.db.get_value("Employee", ap.employee, "user_id")
@@ -4412,7 +4475,8 @@ def acknowledge_final_review(appraisal):
     if not ext or ext.review_status != "Employee Final Review":
         frappe.throw("Review is not in Employee Final Review stage.")
     ext.review_status = "HR Review"
-    ext.save(ignore_permissions=True)
+    review_items.apply_stage(ext)
+    review_items.save_review_record(ext)
     frappe.db.commit()
     return {"review_status": "HR Review"}
 

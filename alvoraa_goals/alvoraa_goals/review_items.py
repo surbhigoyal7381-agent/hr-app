@@ -1265,6 +1265,124 @@ def answer_flag(ext, target, keep, rating=None, user=None):
     return before != flt(row.manager_rating)
 
 
+# ── Freezing, completion and write-back (commit 6: R6, R15, SEC-25, VIS-10) ──
+
+# Set on a live KPI or Objective by write_back() only. The definition lock lets
+# that one save through; nothing else can set a document flag from outside.
+WRITE_BACK_FLAG = "alvoraa_review_write_back"
+
+# A copy's editable definition fields, and the live record's field for each.
+LIVE_FIELD = {
+    "KPI": {"title": "kpi_name", "target_value": "target_value", "weightage": "weightage",
+            "period_start": "period_start", "period_end": "period_end"},
+    "Individual Goal": {"title": "goal_name", "target_value": "target_value", "weightage": "weightage",
+                        "period_start": "start_date", "period_end": "end_date"},
+}
+
+
+def apply_stage(ext):
+    """Freeze or unfreeze the numbers after the review's stage has changed.
+
+    Numbers freeze when the review reaches the freeze point stamped on it (R6),
+    after one last count. Sending the review back before that point unfreezes
+    them, and facts that arrived meanwhile flow in (decision 18). A review whose
+    copies have not been taken yet is left alone: taking them stamps the right
+    state. Returns True when something changed.
+    """
+    if not ext.get("items_taken_on"):
+        return False
+    past = is_past_freeze_point(ext.review_status, ext.freeze_point)
+    if past and not cint(ext.get("frozen")):
+        _recount(ext)
+        raise_rating_flags(ext)
+        ext.frozen = 1
+        ext.frozen_on = now_datetime()
+        audit(ext, f"Review numbers frozen at {ext.review_status} (freeze point: {ext.freeze_point}).")
+        return True
+    if not past and cint(ext.get("frozen")) and ext.review_status != "Completed":
+        ext.frozen = 0
+        ext.frozen_on = None
+        _recount(ext)
+        raise_rating_flags(ext)
+        audit(ext, f"Review numbers unfrozen: the review went back to {ext.review_status}.")
+        return True
+    return False
+
+
+def _live_value(field, value):
+    """A live record's value in the same form definition_at_start stores it."""
+    if field in ("target_value", "weightage", "baseline_value"):
+        return flt(value, 6)
+    if field in ("period_start", "period_end"):
+        return str(getdate(value)) if value else ""
+    return cstr(value)
+
+
+def write_back(ext):
+    """Hand agreed definition changes back to the live records, once (R15, SEC-25).
+
+    Called at completion. For each copy whose name, target, weight or period
+    was changed inside the review: a field is written only if the live record
+    still holds the value the review started from. Someone else's later change
+    is never overwritten; it is recorded instead. The save goes through the
+    document, so the live record's own rules and change history apply; a
+    refused save does not stop completion and is recorded on the copy. Ratings
+    are never written back (R13). Returns the number of copies with a note.
+    """
+    noted = 0
+    for row in ext.get("review_items") or []:
+        if cint(row.removed) or row.get("written_back_on"):
+            continue
+        changes = definition_changes(row)
+        if not changes:
+            continue
+        row.written_back_on = now_datetime()
+        noted += 1
+        mapping = LIVE_FIELD.get(row.source_doctype)
+        if not mapping or not frappe.db.exists(row.source_doctype, row.source_name):
+            row.write_back_note = _("Not written back: the live record no longer exists.")
+            continue
+
+        doc = frappe.get_doc(row.source_doctype, row.source_name)
+        written, kept = [], []
+        for field, started in changes.items():
+            live_field = mapping[field]
+            if _live_value(field, doc.get(live_field)) != started:
+                kept.append(live_field)
+                continue
+            written.append((live_field, doc.get(live_field), row.get(field)))
+            doc.set(live_field, row.get(field))
+
+        notes = []
+        if written:
+            savepoint = f"review_write_back_{row.name}"
+            frappe.db.savepoint(savepoint)
+            doc.flags[WRITE_BACK_FLAG] = True
+            try:
+                doc.save(ignore_permissions=True)
+                doc.add_comment("Info", _("Changed in review {0}: {1}. Agreed in the review when the manager sent it.").format(
+                    ext.name, "; ".join(f"{f} {cstr(old)} to {cstr(new)}" for f, old, new in written)))
+                notes.append(_("Written back: {0}.").format(", ".join(f for f, _o, _n in written)))
+            except Exception as e:
+                frappe.db.rollback(save_point=savepoint)
+                notes.append(_("Not written back: {0}").format(_plain(e)))
+                frappe.log_error(title="Review write-back refused",
+                                 message=f"{ext.name} {row.name} {row.source_doctype} {row.source_name}")
+            finally:
+                doc.flags[WRITE_BACK_FLAG] = False
+        if kept:
+            notes.append(_("Not written back, because the live record was changed after the review started: {0}.").format(
+                ", ".join(kept)))
+        row.write_back_note = " ".join(notes)
+    return noted
+
+
+def _plain(error):
+    import re
+
+    return re.sub(r"<[^>]+>", "", cstr(getattr(error, "message", None) or error)).strip()[:500]
+
+
 def audit(ext, text):
     """An Info entry on the review record's timeline: who did what to which row.
 

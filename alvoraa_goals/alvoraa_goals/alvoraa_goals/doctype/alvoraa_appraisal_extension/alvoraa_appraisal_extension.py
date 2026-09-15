@@ -35,13 +35,23 @@ class AlvoraaAppraisalExtension(Document):
         still send a changed row. Without this, HR could edit a rating, a stamp
         or a number around every stage and stamp rule. No role is exempt.
         """
-        if self.flags.get(REVIEW_ITEMS_WRITE_FLAG):
-            return
         before = self.get_doc_before_save()
+        if self.flags.get(REVIEW_ITEMS_WRITE_FLAG) and not (before and before.review_status == "Completed"):
+            return
         if _review_item_snapshot(before) == _review_item_snapshot(self):
             return
         from hrms.alvoraa_hr_core.access import refuse
 
+        if before and before.review_status == "Completed":
+            # A completed review is the record of that review: its copies,
+            # stamps and removals never change again, from any path (VIS-10).
+            refuse(
+                _("This review is completed. Its items can no longer be changed."),
+                "VIS-10",
+                "Alvoraa Appraisal Extension save",
+                self.doctype,
+                self.name,
+            )
         refuse(
             _("Review items can only be changed from the review screens in the portal."),
             "R1",

@@ -49,6 +49,29 @@ class _Screens(_Team):
 			self._set_status(ap, status)
 		return frappe._dict(ap=ap, cycle=cycle, start=start, end=end, goal=goal, under=under, alone=alone)
 
+	def _flagged_review(self, manager_user, subject, subject_user):
+		import alvoraa_portal.performance_api as pa
+
+		start, end = self._window()
+		cycle = self._cycle(start, end)
+		kpi = self._kpi(subject, cycle, target=100)
+		self._reading(kpi, _day(start, 1), 40)
+		ap = self._appraisal(subject, cycle, status="Employee Review")
+		self._as(subject_user)
+		pa.get_my_review(ap)
+		self._set_status(ap, "Manager Review")
+		row = _row_for(self._ext(ap), kpi).name
+		self._as(manager_user)
+		pa.save_review_item_rating(ap, row, 4)
+		pa.save_manager_review(ap, "feedback", overall_rating=4)
+		self._reading(kpi, _day(start, 2), 30)
+		self._as(manager_user)
+		pa.get_manager_review(ap)     # the refresh raises the flags
+		frappe.set_user("Administrator")
+		ext = self._ext(ap)
+		self.assertEqual((_row_for(ext, kpi).manager_flag, ext.overall_rating_flag), (1, 1))
+		return ap, row
+
 	def _invite(self, ap, employee, pages):
 		user = frappe.db.get_value("Employee", employee, "user_id")
 		frappe.db.set_value(
@@ -541,29 +564,6 @@ class TestR2DefinitionChangesInsideTheReview(_Screens):
 
 
 class TestR7FlagAnswers(_Screens):
-	def _flagged_review(self, manager_user, subject, subject_user):
-		import alvoraa_portal.performance_api as pa
-
-		start, end = self._window()
-		cycle = self._cycle(start, end)
-		kpi = self._kpi(subject, cycle, target=100)
-		self._reading(kpi, _day(start, 1), 40)
-		ap = self._appraisal(subject, cycle, status="Employee Review")
-		self._as(subject_user)
-		pa.get_my_review(ap)
-		self._set_status(ap, "Manager Review")
-		row = _row_for(self._ext(ap), kpi).name
-		self._as(manager_user)
-		pa.save_review_item_rating(ap, row, 4)
-		pa.save_manager_review(ap, "feedback", overall_rating=4)
-		self._reading(kpi, _day(start, 2), 30)
-		self._as(manager_user)
-		pa.get_manager_review(ap)     # the refresh raises the flags
-		frappe.set_user("Administrator")
-		ext = self._ext(ap)
-		self.assertEqual((_row_for(ext, kpi).manager_flag, ext.overall_rating_flag), (1, 1))
-		return ap, row
-
 	def test_r7_decision12_the_rater_answers_a_flag_and_nobody_else_does(self):
 		import alvoraa_portal.performance_api as pa
 
@@ -618,3 +618,186 @@ class TestR7FlagAnswers(_Screens):
 			frappe.set_user("Administrator")
 			frappe.db.set_value("Employee", boss, "status", "Active")
 			frappe.db.commit()
+
+
+# ── Commit 6 · Freeze at the review's freeze point, and write back once ────
+
+
+class TestR6FreezeAndUnfreeze(_Screens):
+	def test_r6_decision18_numbers_freeze_at_the_stamped_point_and_a_return_unfreezes_them(self):
+		import alvoraa_goals.review_items as review_items
+		import alvoraa_portal.performance_api as pa
+
+		r = self._review()
+		frappe.db.set_value("Alvoraa Appraisal Extension", r.ap, "freeze_point", review_items.FREEZE_SELF_SENT)
+		frappe.db.commit()
+
+		self._as(self.subject_user)
+		pa.submit_employee_review(r.ap)
+		frappe.set_user("Administrator")
+		ext = self._ext(r.ap)
+		self.assertEqual(ext.frozen, 1)
+		self.assertTrue(ext.frozen_on)
+
+		self._reading(r.alone, _day(r.start, 6), 5)
+		self._as(self.manager_user)
+		pa.get_manager_review(r.ap)
+		frappe.set_user("Administrator")
+		self.assertEqual(_row_for(self._ext(r.ap), r.alone).actual_value, 10)
+
+		# Sent back before the freeze point: facts flow again (decision 18).
+		self._as(self.manager_user)
+		pa.return_for_revision(r.ap, "")
+		frappe.set_user("Administrator")
+		ext = self._ext(r.ap)
+		self.assertEqual((ext.frozen, _row_for(ext, r.alone).actual_value), (0, 15))
+
+	def test_r6_with_the_default_the_numbers_freeze_when_hr_completes_the_review(self):
+		import alvoraa_portal.performance_api as pa
+
+		r = self._review(status="HR Review")
+		self.assertEqual(self._ext(r.ap).freeze_point, "HR sent")
+		self._reading(r.alone, _day(r.start, 7), 5)
+		self._as(self.hr_user)
+		self.assertEqual(pa.advance_review_status(r.ap)["review_status"], "Completed")
+		frappe.set_user("Administrator")
+		ext = self._ext(r.ap)
+		self.assertEqual((ext.frozen, ext.review_status), (1, "Completed"))
+		self.assertTrue(ext.completed_on)
+		# The last count happened on the way out.
+		self.assertEqual(_row_for(ext, r.alone).actual_value, 15)
+
+
+class TestSec23CompletionWaitsForAnswers(_Screens):
+	def test_r7_sec23_hr_cannot_complete_while_a_manager_or_overall_rating_waits_for_an_answer(self):
+		import alvoraa_portal.performance_api as pa
+
+		ap, row = self._flagged_review(self.manager_user, self.subject, self.subject_user)
+		self._set_status(ap, "HR Review")
+		self._as(self.hr_user)
+		with self.assertRaises(frappe.PermissionError):
+			pa.advance_review_status(ap)
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Alvoraa Appraisal Extension", ap, "review_status"), "HR Review")
+
+		self._as(self.manager_user)
+		pa.answer_rating_flag(ap, row, keep=1)
+		self._as(self.hr_user)
+		with self.assertRaises(frappe.PermissionError):
+			pa.advance_review_status(ap)            # the overall rating still waits
+		self._as(self.manager_user)
+		pa.answer_rating_flag(ap, "overall", keep=1)
+
+		# A self-rating question is information only (decision 13).
+		frappe.set_user("Administrator")
+		frappe.db.set_value("Alvoraa Review Item", row, "self_flag", 1)
+		frappe.db.commit()
+		self._as(self.hr_user)
+		self.assertEqual(pa.advance_review_status(ap)["review_status"], "Completed")
+
+
+class TestR15WriteBack(_Screens):
+	def test_r15_sec25_agreed_changes_go_back_once_and_nobody_elses_change_is_overwritten(self):
+		import alvoraa_goals.review_items as review_items
+		import alvoraa_portal.performance_api as pa
+
+		r = self._review()
+		ext = self._ext(r.ap)
+		rows = {s: _row_for(ext, s).name for s in (r.alone, r.under)}
+		# Not in the review: it arrived after the copies were taken.
+		self._kpi(self.subject, r.cycle, target=10, weightage=50)
+
+		self._as(self.subject_user)
+		pa.save_review_item_definition(r.ap, rows[r.alone], target_value=80)
+		pa.save_review_item_definition(r.ap, rows[r.under], weightage=90)
+		self._set_status(r.ap, "Manager Review")
+		self._as(self.manager_user)
+		pa.save_review_item_rating(r.ap, rows[r.alone], 4)
+		self._set_status(r.ap, "HR Review")
+
+		self._as(self.hr_user)
+		result = pa.advance_review_status(r.ap)
+		self.assertEqual((result["review_status"], result["write_back_notes"]), ("Completed", 2))
+
+		frappe.set_user("Administrator")
+		ext = self._ext(r.ap)
+		self.assertEqual(frappe.db.get_value("KPI", r.alone, "target_value"), 80)
+		written = _row_for(ext, r.alone)
+		self.assertTrue(written.written_back_on)
+		self.assertIn("Written back", written.write_back_note)
+		self.assertEqual(frappe.db.count("Comment", {"reference_doctype": "KPI", "reference_name": r.alone,
+		                                             "content": ["like", f"%{r.ap}%"]}), 1)
+		# The 90% weight would take this person past 100% on the live cycle: the
+		# save is refused, the review still completes, and the reason is kept.
+		refused = _row_for(ext, r.under)
+		self.assertIn("Not written back", refused.write_back_note)
+		self.assertEqual(frappe.db.get_value("KPI", r.under, "weightage"), 0)
+		# Ratings are never written back (R13).
+		self.assertFalse(frappe.db.get_value("KPI", r.alone, "manager_rating"))
+
+		# Once only.
+		self.assertEqual(review_items.write_back(self._ext(r.ap)), 0)
+
+	def test_sec25_a_live_record_changed_after_the_review_started_keeps_its_value(self):
+		import alvoraa_goals.review_items as review_items
+
+		r = self._review(status="HR Review")
+		ext = self._ext(r.ap)
+		row = _row_for(ext, r.alone)
+		review_items.change_definition(ext, row, {"target_value": 70})
+		review_items.save_review_record(ext)
+		# Someone changed the live target after the lock was released.
+		frappe.db.set_value("KPI", r.alone, "target_value", 60)
+		frappe.db.commit()
+
+		ext = self._ext(r.ap)
+		self.assertEqual(review_items.write_back(ext), 1)
+		self.assertIn("changed after the review started", _row_for(ext, r.alone).write_back_note)
+		self.assertEqual(frappe.db.get_value("KPI", r.alone, "target_value"), 60)
+
+
+class TestVis10CompletedReviewsNeverChange(_Screens):
+	def test_vis10_a_completed_reviews_copies_cannot_change_by_any_path(self):
+		import alvoraa_goals.review_items as review_items
+		import alvoraa_portal.performance_api as pa
+
+		r = self._review(status="HR Review")
+		self._as(self.hr_user)
+		pa.advance_review_status(r.ap)
+		frappe.set_user("Administrator")
+
+		ext = self._ext(r.ap)
+		_row_for(ext, r.alone).manager_rating = 1
+		with self.assertRaises(frappe.PermissionError):
+			review_items.save_review_record(ext)
+		frappe.db.rollback()
+		self.assertFalse(_row_for(self._ext(r.ap), r.alone).manager_rating)
+
+
+class TestVis7ScoringReadsCopies(_Screens):
+	def test_vis7_scores_come_from_the_reviews_copies_never_the_live_records(self):
+		import alvoraa_portal.performance_api as pa
+
+		r = self._review(status="Manager Review")
+		row = _row_for(self._ext(r.ap), r.alone).name
+		self._as(self.manager_user)
+		pa.save_review_item_definition(r.ap, row, weightage=100, title="Copy title")
+		pa.save_review_item_rating(r.ap, row, 4)
+		frappe.set_user("Administrator")
+		frappe.db.set_value("KPI", r.alone, {"manager_rating": 1, "weightage": 30, "kpi_name": "Live title"})
+		frappe.db.commit()
+
+		scored = pa._scored_items(frappe.get_doc("Appraisal", r.ap))
+		self.assertEqual([(x["label"], x["weightage"], x["score"]) for x in scored], [("Copy title", 100, 4)])
+		self._as(self.manager_user)
+		suggestions = pa.suggest_ratings(self.subject, r.cycle)
+		self.assertEqual({s["item"] for s in suggestions}, {x.name for x in self._ext(r.ap).review_items
+		                                                       if x.item_type == "KPI"})
+
+		# A review with no copies is never scored from the live records.
+		start, end = self._window()
+		cycle = self._cycle(start, end)
+		self._kpi(self.stranger, cycle, weightage=100)
+		bare = self._appraisal(self.stranger, cycle, status="Manager Review")
+		with self.assertRaises(frappe.ValidationError):
+			pa._scored_items(frappe.get_doc("Appraisal", bare))

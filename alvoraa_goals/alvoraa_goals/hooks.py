@@ -20,6 +20,10 @@ doc_events = {
     "KPI": {
         "validate": "alvoraa_goals.controllers.kpi.validate_kpi",
     },
+    # Slice 010 group D: the three review settings accept only their own choices.
+    "HR Settings": {
+        "validate": "alvoraa_goals.review_items.validate_hr_settings",
+    },
 }
 
 # ── Row-level scoping ─────────────────────────────────────────────────────
@@ -46,6 +50,16 @@ scheduler_events = {
 }
 
 fixtures = ["Evidence Validator"]
+
+# Slice 010 group D: the review settings on HR Settings. On install too, because
+# a site built with `bench install-app` never runs a migrate.
+after_migrate = [
+    "alvoraa_goals.review_items.after_migrate",
+]
+
+after_install = [
+    "alvoraa_goals.review_items.after_migrate",
+]
 
 doctype_js = {
     "Shift Request": "public/js/shift_request.js",

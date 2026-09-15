@@ -2306,13 +2306,18 @@ def get_goal_detail(goal_id):
     goal_employee = frappe.db.get_value("Individual Goal", goal_id, "employee")
     roles = frappe.get_roles()
     is_hr = bool({"HR Manager", "HR User", "Administrator"} & set(roles))
-    is_owner = goal_employee == emp.name
-    if not is_owner and not is_hr:
-        dr = frappe.db.get_value("Employee",
+    is_owner = bool(goal_employee) and goal_employee == emp.name
+    if not is_owner:
+        dr = goal_employee and frappe.db.get_value("Employee",
             {"name": goal_employee, "reports_to": emp.name, "status": "Active"},
             "name")
         if not dr:
-            frappe.throw("Access denied", frappe.PermissionError)
+            if not is_hr:
+                frappe.throw("Access denied", frappe.PermissionError)
+            # HR outside its own line opens goals only for the companies it looks
+            # after (slice 010 group D, decision 33). It used to open any
+            # company's goal. Same refusal for "other company" and "no such goal".
+            _hr_target_employee(goal_employee, "hr_api.get_goal_detail")
     # Query directly — include drafts (docstatus=0) as well as submitted
     goals = frappe.get_all(
         "Individual Goal",

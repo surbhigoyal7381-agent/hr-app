@@ -563,6 +563,38 @@ class TestDecision28ScorecardCompanyScope(_Team):
 				call(self.subject_b)
 
 
+# ── Decision 33 · HR opens goal details only for the companies it looks after ─
+
+
+class TestDecision33GoalDetailCompanyScope(_Team):
+	def test_decision33_hr_opens_a_goal_only_in_its_companies_and_managers_keep_their_line(self):
+		import alvoraa_portal.hr_api as hr_api
+
+		start, end = self._window()
+		goal_a = self._goal(self.subject, self._cycle(start, end), start, end)
+		goal_b = self._goal(self.subject_b, self._cycle(start, end, company=self.company_b), start, end)
+
+		self._as(self.hr_user)
+		self.assertEqual(hr_api.get_goal_detail(goal_a)["goal"]["name"], goal_a)
+		with self.assertRaises(frappe.PermissionError):
+			hr_api.get_goal_detail(goal_b)
+		# A goal that does not exist gets the same refusal, so HR cannot probe names.
+		with self.assertRaises(frappe.PermissionError):
+			hr_api.get_goal_detail("S010D no such goal")
+
+		# The manager line still opens its own report's goal, and nobody else's.
+		self._as(self.manager_user)
+		self.assertEqual(hr_api.get_goal_detail(goal_a)["goal"]["name"], goal_a)
+		with self.assertRaises(frappe.PermissionError):
+			hr_api.get_goal_detail(goal_b)
+		# The owner still opens their own goal; a colleague outside the line does not.
+		self._as(self.subject_user)
+		self.assertTrue(hr_api.get_goal_detail(goal_a)["is_owner"])
+		self._as(self.stranger_user)
+		with self.assertRaises(frappe.PermissionError):
+			hr_api.get_goal_detail(goal_a)
+
+
 # ── Commit 9 · SEC-7, decisions 2 and 17 · reviewers from the reviewed person's company ─
 
 

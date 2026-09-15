@@ -3,7 +3,7 @@ slice: 010-portal-security-fixes
 artifact: 03d-implementation-notes-group-d
 author: hrms-fullstack-engineer
 date: 2026-09-15
-status: phase 1 (commits 1-3) built and tested locally; phases 2-4 not started
+status: phases 1 (commits 1-3) and 2 (commits 4-7) built and tested locally; phases 3-4 not started
 inputs: [00e-group-d-approved-decisions.md (wins), 00d-impact-analysis-group-d.md, 01d-security-privacy-group-d.md, 00c-review-copies-decisions.md, 03-implementation-notes.md]
 ---
 
@@ -325,4 +325,358 @@ Nothing else was migrated. `ppj.localhost` was not touched.
 - **Commit 7:** definition lock hooks (`before_validate`, `on_trash`) on KPI and
   Individual Goal, refresh hook (`on_update`), lock release, `attach_ongoing_to_cycle`
   role check and skip, `set_goal_progress` blocked while held (decision 21).
+- Before starting: fetch `origin/dev`, read the work board, rebase.
+
+---
+
+# Phase 2 — commits 4, 5, 6 and 7
+
+## The short answer
+
+**Phase 2 is built, committed on `slice/010-portal-security-fixes`, and tested on the
+local bench. Nothing is pushed.**
+
+- **30 new pin tests, all passing** (`alvoraa_portal/tests/test_review_screens_010d.py`).
+  Phase 1's 34 still pass.
+- **Full suites:** only the failures that were already there. `alvoraa_portal`: 490 tests, 3 errors (`test_leave_year`, known); then 355 tests, 1 failure + 10 errors (`test_invoicing`, known). `alvoraa_goals`: 18 tests, OK (2 skipped). Nothing new.
+- **Integrity check:** "OK - all consistent" before every commit.
+- **No migration was needed.** Phase 2 changes no DocType JSON. The new hooks were live
+  on `test_site` without one (the lock tests prove it).
+- **Three things you should know first:**
+  1. **The portal page is not changed yet (commit 11, phase 4), so some review buttons
+     now fail safely instead of working.** The review screens send copy row names now.
+     The wizard's "Remove" still calls `delete_goal` / `delete_kpi`, which now find no
+     such record and do nothing (before, they deleted the real goal). "Edit" opens the old
+     goal form with a row name, which fails. "Add/remove" works but removing needs a
+     confirmation the page does not send yet. Group D must ship as one batch.
+  2. **Decision 19 is only half done.** On the Future Objectives page, "Remove" on a
+     carried-forward goal from an earlier cycle calls `delete_goal` on that live goal.
+     The server cannot tell that call from a normal delete, so it still deletes the goal
+     unless an open review holds it. The fix is the page change in commit 11.
+  3. **Writing a goal's target back often fails, by an older rule.** The Objective
+     controller refuses any target change once progress exists
+     (`controllers/goal.py`). Write-back does not override it: completion goes ahead and
+     the copy records "Not written back" with that reason. KPIs are not affected.
+
+## 1. Commits
+
+On `slice/010-portal-security-fixes`, oldest first, after phase 1's `11bba93`. Brought
+into local `dev` with `merge --ff-only` for testing.
+
+| Commit | What |
+|---|---|
+| `f5525f8` | Commit 4: review screens show the review's copies, never the live records |
+| `7445820` | Commit 5: ratings, removals and definition changes are made on the copies (also fixes one commit 4 test that froze too early) |
+| `70366bb` | Commit 6: freeze at the stamped point, unfreeze on return, completion block, write-back once, completed copies never change, scoring from copies |
+| `8ad6ea3` | Commit 7: definition lock, release, delete rule, refresh hook, `attach_ongoing_to_cycle` and `set_goal_progress` guards |
+| `4c30722` | Test fix: the static lock test reads files with a byte-order mark |
+| `4bb3d8d` | Test fix: the static lock test proves it found the two guarded writers |
+| this file | Phase 2 notes |
+
+One commit of mine was redone before anything saw it: my first commit 5 attempt
+swept the new tests into a commit named as a test fix. I undid it in my worktree
+(`reset --soft`, my branch only) and committed it again as `7445820` with an honest
+message.
+
+## 2. What came in from others
+
+- **`origin/dev`:** fetched before starting, before every merge, and before the full
+  suites. **Nothing came in.** It stayed at `c27fb56`.
+- **Work board:** only this slice's row. I marked "Bench in use" before each run and
+  cleared it after.
+- **Main checkout:** the same other sessions' uncommitted files as in phase 1
+  (`CLAUDE.md`, `.claude/agents/*`, `.claude/context/frappe-conventions.md`,
+  `.claude/context/ux-learnings.md`, `backlog/KPI_AUTOMATION_BACKLOG.md`, deleted
+  `OBJECTIVES_KPI_REQUIREMENTS.md`, `hrms/.../alvoraa_position.py`, untracked files).
+  None is a file phase 2 changes. Not touched. Every `merge --ff-only` went through.
+- No conflicts.
+
+## 3. What was built, file by file
+
+Mechanism key: **configure**, **extend** (hooks, existing functions), **build** (new code).
+
+### Commit 4 — review screens read the copies
+
+| File | Mechanism | What and why |
+|---|---|---|
+| `alvoraa_goals/review_items.py` | build | `review_payload(ext, viewer)`: the one place that decides which copy fields a viewer gets (table below). `late_facts(ext)`: R10. `definition_changes(row)`: what changed inside the review, for change markers. `copied_sources(ext)`. The fact queries were split out of `_recount` (`_load_facts`, `_row_window`, `_facts_in_window`) so the late-facts view counts exactly the same way |
+| `alvoraa_portal/performance_api.py` | extend | `get_my_review`, `get_manager_review`, `get_reviewer_view` return copies by row name, in the keys the page reads today, plus `removed_items` and `numbers_frozen`. The per-goal KPI query (`_goal_kpis`) is gone; the future-objectives cycle labels are one query instead of one per goal |
+
+**Who sees what (`review_payload`):**
+
+| Field group | Subject | Manager line | HR | Invited reviewer |
+|---|---|---|---|---|
+| Definition, numbers, facts count | yes | yes | yes | yes (only with `past-objectives`) |
+| Change markers | yes | yes | yes | no |
+| Self rating and comment | yes | once sent | once sent | once sent |
+| Manager rating and comment | from Employee Final Review (decision 11) | yes | yes | no |
+| Potential | never | yes | yes | no |
+| Stamps, flags, answerers | never | yes | yes | no |
+| Removed items | own removals; all from Employee Final Review, with label, date and reason, not who (decision 10) | yes, with who and stage | yes | no |
+| Facts dated by upload | no | no | yes (decision 5) | no |
+| Late facts (R10) | no | no | HR Review and Completed | no |
+
+- **VIS-3:** no response holds a live record's name. `past_incomplete_goals` (Future
+  Objectives page) stays on live records, as VIS-15 says, but leaves out anything this
+  review holds a copy of, so a copy is never shown beside its own live record.
+- **SEC-7, decision 17:** an invited reviewer is refused unless the review is in Manager
+  Review. `page_data` is cut to the invited pages (none means nothing). Copies come only
+  with `past-objectives`.
+
+### Commit 5 — changes on the copies
+
+| File | Mechanism | What and why |
+|---|---|---|
+| `review_items.py` | build | `live_row`, `is_rated`, `rating_value`, `apply_self_review` (SEC-1), `set_item_rating`, `remove_item` (R12, decision 9), `add_items` (VIS-5), `change_definition` (R2), `answer_flag` (R7), `audit` (an Info entry on the review record) |
+| `performance_api.py` | extend | `save_review_page`: past-objectives keys must be this review's copies, or the save is refused. `submit_employee_review`: self fields onto copies only, no progress write, no `except: pass`; future objectives are created with no cycle (decision 19) and a failed one stops the submission (VIS-15). `get_available_for_review` / `set_review_selection`: only the subject, only before sending; add and remove copies; no cycle writes; removal needs `acknowledge_removal=1` |
+| `performance_api.py` | build | New endpoints, all on copy row names: `save_review_item_rating`, `remove_review_item`, `delete_review_item`, `save_review_item_definition`, `answer_rating_flag`. One guard, `_review_actor`, decides subject / manager line / HR (HR under `_assert_hr_can_view`) and the stage each may act in, before anything is read or written |
+| `performance_api.py` | extend | Retired (refuse, rule `R13`): `save_kpi_self_review`, `save_kpi_manager_review`, `add_additional_reviewer`, `save_additional_reviewer_rating` |
+
+**Who may do what, and when (as built):**
+
+| Action | Subject | Manager line | HR |
+|---|---|---|---|
+| Rate an item | self rating, Not Started / Employee Review | manager rating and potential, Manager Review | no |
+| Change title, target, weight, period (decision 6) | Employee Review | Manager Review | no |
+| Add items (decision 7) | Employee Review, own live items meeting the period | no | no |
+| Remove an item | Employee Review, confirmation | Manager Review, confirmation and reason | HR Review, confirmation and reason |
+| Delete an item created in the review (R11) | same stages as removal; only if created after the copies were taken, unrated, with no progress or evidence |
+| Answer a rating question (decision 12) | never (SEC-10) | the rater, any stage from Manager Review until Completed | only when the rater has left or no longer manages the employee, in HR Review, with a reason |
+
+- **Decision 9:** a copy with any self, manager or potential rating is kept, marked
+  Removed, whatever the setting. An unknown setting keeps it too.
+- **Decision 12:** "left or changed role" is worked out on the server: the rater's
+  Employee is not Active, their login is disabled, or they are no longer in the
+  employee's manager line (or, for a rating HR gave, no longer HR for that company). A
+  rating stamped before raters were recorded is answered by the manager line. The
+  employee gets an email with no numbers when a released overall rating changes.
+- **Audit:** removal, delete, definition change, flag answer, freeze and unfreeze each
+  write an Info entry on the review record (row name, user, stage, and the reason where
+  one is given). The record opens only for HR under the stage rule (SEC-27).
+
+### Commit 6 — freeze, completion, write-back, scoring
+
+| File | Mechanism | What and why |
+|---|---|---|
+| `review_items.py` | build | `apply_stage(ext)`: after any stage move, freeze at the stamped freeze point (last count first), unfreeze when the review goes back before it (decision 18). `write_back(ext)`: R15 / SEC-25 |
+| `alvoraa_appraisal_extension.py` | extend | Once a review is Completed, its copies cannot change, even through the review code (VIS-10) |
+| `performance_api.py` | extend | Every stage move (`submit_employee_review`, `submit_manager_review`, `acknowledge_final_review`, `return_to_manager`, `return_for_revision`, `advance_review_status`) calls `apply_stage` and saves through the one review-record save. HR Review → Completed: refresh, refuse while `open_blocking_flags` > 0, freeze, stamp `completed_on`, write back; returns `write_back_notes` |
+| `performance_api.py` | extend | VIS-7: `_scored_items(ap)`, `_sync_potential_to_extension` and `suggest_ratings` read copies; a review with no copies is refused. Only a brand-new appraisal in `hr_generate_appraisals` is projected from live records |
+| `tests/test_portal_security_010.py` | configure | SEC-16 ceilings: `performance_api.py` 88 → 68; `review_items.py` 1 → 2 with its reason (the write-back save) |
+
+**Write-back, as built:** for each copy whose name, target, weight or period differs
+from `definition_at_start`, and only once (`written_back_on`):
+
+- a field is written only if the live record still holds the start value; otherwise it
+  is left alone and listed in `write_back_note`;
+- the save goes through the document with a flag the lock honours, so the live record's
+  own rules and change history apply, and an Info entry on the live record says which
+  review changed what;
+- a refused save (for example weights over 100% on the live cycle) is rolled back to a
+  savepoint, recorded on the copy, logged with document names only, and does not stop
+  completion.
+
+### Commit 7 — the lock on live records
+
+| File | Mechanism | What and why |
+|---|---|---|
+| `review_items.py` | build | `holds(doctype, names)`: one query; release date per record. `enforce_definition_lock`, `refuse_delete_while_held`, `refresh_copies_of` |
+| `alvoraa_goals/hooks.py` | extend | Individual Goal: `before_validate`, `before_update_after_submit`, `on_trash`, `on_update`. KPI: `before_validate`, `on_trash`, `on_update`. Added under the existing entries, with comments |
+| `performance_api.py` | extend | `attach_ongoing_to_cycle`: HR only, permitted companies only, skips held items and lists them under `held_by_open_review` (SEC-20). `set_cycle_membership`: refuses a held item |
+| `goals_api.py` | extend | `set_goal_progress` refused while a review holds the goal (decision 21) |
+
+- **Locked fields:** KPI `kpi_name`, `target_value`, `weightage`, `period_start`,
+  `period_end`, `appraisal_cycle`, `employee`, `progress_mode`, `direction`,
+  `baseline_value`, `unit`, `individual_goal`. Objective `goal_name`, `target_value`,
+  `weightage`, `start_date`, `end_date`, `appraisal_cycle`, `employee`, `progress_mode`,
+  `unit`, `parent_goal` (Objectives have no direction or baseline). Values are compared
+  by field type, so "50" sent over REST equals 50.0.
+- **Held** = a live copy in a review that is not Completed, whose appraisal is not
+  cancelled, and whose lock is not released. **Released** on the server's date at cycle
+  end + the setting's days; 0 days or no cycle end means never.
+- **Fail closed:** if the "is it held?" lookup itself fails, the change or delete is
+  refused.
+- **Refresh hook:** one query finds open, unfrozen reviews holding the record; for each
+  it refreshes the copies inside a savepoint. A failure is logged with names only and
+  never stops the live save; the review catches up when next opened.
+
+## 4. Requirements and decisions → test → result
+
+All in `alvoraa_portal.tests.test_review_screens_010d` unless named. Result is the last
+run on `test_site`.
+
+| Requirement / decision | Test | Result |
+|---|---|---|
+| VIS-3 (subject, manager, reviewer) | `test_vis3_review_screens_return_copies_and_never_a_live_record_name` | pass |
+| VIS-15 + VIS-3 (future objectives list) | `test_vis15_future_objectives_list_leaves_out_what_this_review_holds` | pass |
+| PRIV-1, PRIV-13, decision 11 | `test_priv1_priv13_each_viewer_receives_only_what_the_stage_allows` | pass |
+| SEC-7, decision 17 | `test_sec7_an_invited_reviewer_reads_only_their_pages_and_only_during_manager_review` | pass |
+| R10, PRIV-11 | `test_r10_facts_approved_after_the_freeze_are_shown_to_hr_and_never_change_the_score` | pass |
+| NFR: opening a review | `test_query_count_opening_a_review_does_not_grow_with_its_items` (3 vs 16 items) | pass |
+| SEC-1 | `test_sec1_the_self_review_writes_only_this_reviews_copies_and_never_progress` | pass |
+| VIS-15, decision 19 (no cycle) | `test_vis15_a_future_objective_that_cannot_be_created_stops_the_submission` | pass |
+| VIS-6, R13, retired endpoints, VIS-3 writes | `test_vis6_r13_ratings_are_saved_on_copies_and_the_old_rating_endpoints_are_retired` | pass |
+| R12, SEC-24, decisions 9 and 10, VIS-10 (remove after completion) | `test_r12_sec24_who_removes_when_and_a_rated_copy_is_always_kept` | pass |
+| VIS-5, decision 7 | `test_vis5_the_dialog_adds_and_removes_copies_and_never_moves_a_live_record` | pass |
+| R11 inside the review | `test_r11_only_an_item_created_inside_the_review_with_no_facts_can_be_deleted` | pass |
+| R2 inside the review, decision 6, R7 (definition moves a stamp) | `test_r2_decision6_the_employee_then_the_manager_change_a_copys_definition` | pass |
+| R7, decision 12, SEC-23 (who answers) | `test_r7_decision12_the_rater_answers_a_flag_and_nobody_else_does` | pass |
+| Decision 12 (HR for a rater who left; email) | `test_r7_decision12_hr_answers_with_a_reason_when_the_manager_has_left` | pass |
+| R6, decision 18 | `test_r6_decision18_numbers_freeze_at_the_stamped_point_and_a_return_unfreezes_them` | pass |
+| R6 default (HR sent) | `test_r6_with_the_default_the_numbers_freeze_when_hr_completes_the_review` | pass |
+| R7, SEC-23, decision 13 (completion block) | `test_r7_sec23_hr_cannot_complete_while_a_manager_or_overall_rating_waits_for_an_answer` | pass |
+| R15, SEC-25, R13 (once; refused save recorded) | `test_r15_sec25_agreed_changes_go_back_once_and_nobody_elses_change_is_overwritten` | pass |
+| SEC-25 (conflict kept) | `test_sec25_a_live_record_changed_after_the_review_started_keeps_its_value` | pass |
+| VIS-10 | `test_vis10_a_completed_reviews_copies_cannot_change_by_any_path` | pass |
+| VIS-7 | `test_vis7_scores_come_from_the_reviews_copies_never_the_live_records` | pass |
+| R2, SEC-19, decisions 8 and 20 (desk, REST, portal, ignore_validate) | `test_r2_sec19_a_held_definition_cannot_change_by_any_path` | pass |
+| R9, SEC-22 | `test_r9_sec22_the_lock_releases_n_days_after_the_cycle_ends_and_0_means_never` | pass |
+| R11 outside the review | `test_r11_a_held_record_cannot_be_deleted_by_any_path` | pass |
+| Decision 21 | `test_decision21_progress_cannot_be_set_by_hand_while_a_review_holds_the_goal` | pass |
+| SEC-20 | `test_sec20_only_hr_pulls_work_into_a_cycle_for_their_companies_and_held_items_stay` | pass |
+| R3 refresh hook | `test_r3_approving_a_fact_updates_the_open_reviews_copy_without_opening_it` | pass |
+| NFR: refresh hook | `test_query_count_the_refresh_hook_costs_one_query_when_no_open_review_holds_the_record` | pass |
+| SEC-19 static | `test_r2_static_no_code_writes_a_locked_field_around_the_lock` | pass |
+| SEC-16 ceilings | `test_portal_security_010.TestSec16IgnorePermissionsCeiling` | pass (full suite) |
+| Phase 1 pins still hold | `test_review_copies_010d` (34) | pass |
+
+**Where the documents differed, and what I followed:**
+
+- **VIS-9 (01d) vs decision 18 (00e):** 01d says a return never unfreezes. Decision 18
+  says it does. Built as decision 18.
+- **Manager and HR removal stages:** 01d SEC-24 allows Manager Review, Employee Final
+  Review and HR Review; 00d §6.4 says the manager in Manager Review and HR in HR Review.
+  I built 00d's narrower rule (nobody removes while the employee is reading the final
+  review). Say if you want the wider one.
+- **Who answers for a rater who left (decision 12 vs 01d Q-D11):** decision 12 says HR;
+  built that way, in HR Review only, because HR's stage rule (decision 15) keeps HR out
+  earlier.
+- **`save_kpi_self_review` / `save_kpi_manager_review`:** 00d said "redirect to the
+  copy"; 01d VIS-3 says a write must never accept a live record's name. I retired both
+  and added `save_review_item_rating`, which takes a row name.
+- **R11 "added inside the review":** an item picked in the dialog that existed before
+  the review can be removed, not deleted. Only an item created after the copies were
+  taken can be deleted (00d §4.4).
+- **Email on an overall rating change:** only when the rating is already released
+  (Employee Final Review onwards). Before that the employee has not seen a rating, so an
+  email would announce a change they cannot see.
+
+## 5. Non-functional dimensions, re-checked on the code written
+
+| Dimension | Before → after | Verdict | Why |
+|---|---|---|---|
+| Performance | per-goal KPI query in two readers; no hook | **improves** on review screens, small cost on saves | Review readers lost the N+1 `_goal_kpis`; opening a review costs the same for 3 or 16 items (tested). Every KPI and Objective save gains one indexed query (tested). A save that changes a locked field gains one more. Completion adds one save per changed copy |
+| Security | ratings and cycle moves reachable around the review | **improves** | SEC-1, SEC-7 pages, SEC-19, SEC-20, SEC-23, SEC-24, SEC-25, VIS-3, VIS-5, VIS-10 closed and pinned. Four rating writers on live KPIs retired. `attach_ongoing_to_cycle` no longer open to any employee. `ignore_permissions`: `performance_api.py` 88 → 68; `review_items.py` 1 → 2 (write-back, reason in the ceiling test) |
+| Reliability | silent `except: pass`, deletes of real goals from the wizard | **improves**, with two declared risks | Self-review submit fails whole instead of half-writing. Write-back failures are recorded, not raised. Risks: the refresh hook adds work to every save (bounded, in a savepoint, never blocks); the page's review buttons fail until commit 11 |
+| Scalability | — | **neutral** | Hook: 1 query per save when nothing holds the record; a held record refreshes at most the reviews that hold it (normally 1, 2 with overlapping cycles). `attach_ongoing_to_cycle` now narrows by permitted companies' employees |
+| Maintainability | — | **degrades slightly** | `review_items.py` is now about 1,400 lines and holds copies, access-filtered payloads, writes, freeze, write-back and the lock. Still one module with one save path, one field filter and one lock, each with named tests. Worth splitting into two files after group D ships |
+| Data integrity | live edits could change finished reviews | **improves** | Definitions cannot move under an open review; completed copies are immutable; write-back never overwrites a later live change; ratings never reach live records |
+| Compliance / privacy | potential and stamps reached the subject's screens | **improves** | One field filter; potential, stamps and flags never reach the subject; reviewers see only invited pages; removal reasons reach the employee only from Employee Final Review. New logs carry document names only. Audit entries hold user ids and reasons, on HR-only records |
+
+**Query counts:** measured on `test_site` with a probe that switched commits off and rolled everything back
+(checked afterwards: 0 probe records left). Times are single runs on the local bench, not a load test.
+
+| Call | 3 items | 20 items |
+|---|---|---|
+| `get_my_review`, first open (takes the copies; cold caches on the first probe) | 117 queries, 242 ms | 52 queries, 109 ms |
+| `get_my_review`, later opens | **18 queries, 25 ms** | **18 queries, 43 ms** |
+| Refresh hook, record held by one open review | 10 queries, 14 ms | 10 queries, 24 ms |
+| Refresh hook, record not held (the usual save) | **1 query, 3 ms** | — |
+
+The tests pin the shape: later opens cost the same for 3 and 16 items; the hook costs
+exactly 1 query when nothing holds the record and at most 12 when one review does.
+
+**Indexes added:** none in phase 2 (the lookups use phase 1's indexes on
+`tabAlvoraa Review Item.source_name` and `tabKPI.employee` / `appraisal_cycle`).
+
+**Sensitive fields touched:** self, manager and potential ratings and comments (now
+only on copies, filtered per viewer); removal reasons; stamps and flag answers.
+
+## 6. Commands run and real results
+
+All on `hrlocal-bench`, site `test_site`, one run at a time (`pgrep` first; work board
+marked).
+
+| When | Command | Result |
+|---|---|---|
+| Before every commit | `python scripts/check_app_integrity.py` | "OK - all consistent" (524 checks) |
+| After commit 4 | `--module …test_review_screens_010d` | 6 tests: 1 failure, a test fault (it froze the numbers before its own setup readings were approved). Fixed in commit 5 |
+| After commit 5 | same module | 15 tests, OK |
+| After commit 5 | `--module …test_review_copies_010d` | 34 tests, OK |
+| After commit 6 | `--module …test_review_screens_010d` | 22 tests, OK |
+| After commit 7 | same module | 29 tests OK; the static test class (run separately) 1 error: a byte-order mark in `performance_api.py`. Fixed in `4c30722` |
+| After `4c30722` and `4bb3d8d` | `--test test_r2_static_no_code_writes_a_locked_field_around_the_lock` | 1 test, OK (twice) |
+| End of phase (at `4bb3d8d`) | full `--app alvoraa_portal` | 490 tests: 3 errors (`test_leave_year`, known). 355 tests: 1 failure + 10 errors (`test_invoicing`, known). Failure list checked name by name: nothing else |
+| End of phase | full `--app alvoraa_goals` | 18 tests, OK (2 skipped) |
+| End of phase | query-count probe through `bench --site test_site console`, commits off, rolled back | figures in section 5; 0 records left |
+
+**Migrations run:** none in phase 2. No DocType JSON changed. Hooks and code were picked
+up by the test runner without one.
+
+## 7. Tenant steps and deploy notes (not done by me)
+
+- Nothing new beyond phase 1's `bench migrate`. Phase 2 adds no fields and no patch.
+- **Do not deploy phase 2 without commit 11.** The review screens now speak row names,
+  and the page does not yet.
+- The retired endpoints (`save_kpi_self_review`, `save_kpi_manager_review`,
+  `add_additional_reviewer`, `save_additional_reviewer_rating`) have no reachable page
+  caller (00d §9.2). Any integration calling them now gets a refusal.
+- `attach_ongoing_to_cycle` now needs an HR role. Its only caller in our code is
+  `hr_generate_appraisals` (HR already).
+
+## 8. Known gaps and shortcuts — honestly
+
+1. **Page not updated** (commit 11): see the short answer. Until then: wizard "Remove"
+   and "Delete" do nothing useful; "Edit" fails; removal from the dialog needs a
+   confirmation the page does not send; the manager screen has no flag answer, removal
+   or definition controls.
+2. **Decision 19 needs the page** (short answer, point 2).
+3. **Objective target write-back** is refused by the existing "no target change after
+   progress" rule, and recorded (short answer, point 3).
+4. **Outside screens still show live ratings and use live records**: `KPI_FIELDS`,
+   `get_cycle_items`, `get_team_kpis`, HR cycle screens, CSV export, calibration overview
+   (commit 8, phase 3). `get_cycle_items` and `get_team_appraisal` were in 01d's VIS-3
+   test list; I left them for commit 8 with the other outside payloads.
+5. **Invited reviewers still come from any company** (commit 9).
+6. **No lock reminder job** (commit 10).
+7. **Existing open reviews are not backfilled** (commit 12). **Commit 12 must bypass the
+   new VIS-10 guard** to write copies onto Completed reviews: the Extension now refuses
+   any change to a Completed review's copies, even through `save_review_record`.
+8. **`save_calibration_note` still fails** on the missing `calibration_notes` column
+   (phase 1 gap 5, unchanged).
+9. **An HR person who is also the employee's line manager acts as the manager** in the
+   item endpoints, so in HR Review they cannot remove items as HR. Rare; a second HR
+   person can.
+10. **`delete_review_item` in keep mode** keeps the deleted item's copy marked Removed
+    (the setting decides, as for removal). The copy then names a live record that no
+    longer exists. Harmless (plain text), but the review shows it as removed, not deleted.
+11. **The removal audit entry holds the reason as text** on the review record's timeline.
+    Only HR (stage rule) and System Manager (all Comments over REST) can read it.
+12. **`create_checkin` still writes progress with `ignore_validate`** (not a locked field,
+    and decision 21 names only `set_goal_progress`). It does not change a copy's number:
+    copies count dated facts only.
+13. **No browser trace** (no page change in this phase). **Response times not measured.**
+14. **SEC-15 revert proof not done** (the bench runs `dev`).
+
+## 9. Decisions needed
+
+1. **Removal stages:** keep manager = Manager Review, HR = HR Review (as built), or allow
+   removal during Employee Final Review too (01d SEC-24)?
+2. **Objective target write-back** (gap 3): leave the older "no target change after
+   progress" rule to refuse it and record it (as built), or let an agreed review change
+   pass that rule?
+3. **Email on overall rating change before release:** keep "only once released" (as
+   built)?
+
+## 10. What phase 3 must do next (commits 8, 9, 10, 12)
+
+- **Commit 8:** `KPI_FIELDS` without ratings; KPI rating fields to permlevel 1 (SEC-2,
+  PRIV-9); `get_cycle_items`, `get_team_kpis`, `get_team_appraisal` from copies or without
+  ratings; HR cycle screens and CSV from copies with SEC-26 scope; badge (R5, PRIV-10);
+  Employee loses read on HRMS Appraisal (decision 26); `get_employee_scorecard` scoped to
+  permitted companies (decision 28).
+- **Commit 9:** reviewer picker and invite endpoints limited to the subject's company.
+- **Commit 10:** daily reminder job for items still locked 15 days after a cycle ends.
+- **Commit 12:** backfill patch, dry-run report, rollback script. Needs its own way past
+  the VIS-10 guard for Completed reviews (gap 7).
 - Before starting: fetch `origin/dev`, read the work board, rebase.

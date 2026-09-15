@@ -56,14 +56,17 @@ def _assert_hr_can_view(appraisal_name):
     their team's. On PP Jewellers that is the Owner and Managing Director, who
     holds HR Manager and could not open his own appraisal.
 
-    Three exemptions, and all are about WHOSE appraisal it is:
+    Two exemptions, and both are about WHOSE appraisal it is:
 
       - your own is never HR snooping;
       - one belonging to somebody below you is not either. In that moment you
         are their manager, and the manager review stage is exactly when you are
-        supposed to be in there;
-      - one whose employee has no manager, when you are the HR Manager the
-        portal treats as their manager (get_effective_manager).
+        supposed to be in there.
+
+    The HR Manager who stands in for an employee with no manager is NOT exempt
+    here: that would open every manager-less employee's review to them at every
+    stage. The manager-review actions allow that stand-in themselves
+    (_is_line_manager).
 
     Acting as HR for anyone else (slice 010, group D):
 
@@ -77,9 +80,7 @@ def _assert_hr_can_view(appraisal_name):
 
     me = _employee_id()
     owner = frappe.db.get_value("Appraisal", appraisal_name, "employee")
-    if me and owner and (
-        owner == me or owner in _subordinates(me) or get_effective_manager(owner) == me
-    ):
+    if me and owner and (owner == me or owner in _subordinates(me)):
         return
 
     company = frappe.db.get_value("Employee", owner, "company") if owner else None
@@ -2389,6 +2390,27 @@ def _review_status(appraisal):
     ) or "Not Started"
 
 
+def _is_line_manager(employee, me, direct_only=False):
+    """Is `me` this employee's manager for a manager review?
+
+    The reporting line (direct reports only where an endpoint always was), or,
+    for an employee with no manager at all, the HR Manager the portal treats as
+    their manager (get_effective_manager). That stand-in is limited to the
+    manager-review actions; it does not open the review anywhere else.
+    """
+    if not me or not employee:
+        return False
+    if direct_only:
+        if employee in _reports_of(me):
+            return True
+    elif _is_manager_of(employee):
+        return True
+    return (
+        not frappe.db.get_value("Employee", employee, "reports_to")
+        and get_effective_manager(employee) == me
+    )
+
+
 def _manager_review_record(appraisal, endpoint, direct_only=False,
                            stage_message="Review is not in Manager Review stage."):
     """Everything a manager-review write checks, in order, before it reads or writes (SEC-6).
@@ -2404,10 +2426,10 @@ def _manager_review_record(appraisal, endpoint, direct_only=False,
     me = _require_employee()
     ap = frappe.get_doc("Appraisal", appraisal)
     refuse_own_rating(ap.employee, "Appraisal", appraisal, endpoint)
-    related = ap.employee in _reports_of(me) if direct_only else _is_manager_of(ap.employee)
-    if not related and not _is_hr():
-        frappe.throw("Not permitted.", frappe.PermissionError)
-    _assert_hr_can_view(appraisal)
+    if not _is_line_manager(ap.employee, me, direct_only):
+        if not _is_hr():
+            frappe.throw("Not permitted.", frappe.PermissionError)
+        _assert_hr_can_view(appraisal)
     ext = _extension(appraisal)
     if not ext or ext.review_status != "Manager Review":
         frappe.throw(stage_message)
@@ -2563,10 +2585,11 @@ def advance_review_status(appraisal):
             frappe.throw("Only the employee can advance from this stage.", frappe.PermissionError)
     elif current == "Manager Review":
         refuse_own_rating(ap.employee, "Appraisal", appraisal, "advance_review_status")
-        if not _is_hr() and ap.employee not in _reports_of(me):
-            frappe.throw("Only the direct manager or HR can advance from Manager Review.",
-                         frappe.PermissionError)
-        _assert_hr_can_view(appraisal)
+        if not _is_line_manager(ap.employee, me, direct_only=True):
+            if not _is_hr():
+                frappe.throw("Only the direct manager or HR can advance from Manager Review.",
+                             frappe.PermissionError)
+            _assert_hr_can_view(appraisal)
     elif current == "Employee Final Review":
         if ap.employee != me:
             frappe.throw("Only the subject employee can acknowledge the final review.",
@@ -2620,10 +2643,12 @@ def return_for_revision(appraisal, reason=""):
     me = _require_employee()
     ap = frappe.get_doc("Appraisal", appraisal)
     refuse_own_rating(ap.employee, "Appraisal", appraisal, "return_for_revision")
-    if not _is_hr() and ap.employee not in _reports_of(me):
-        frappe.throw("Only the direct manager or HR can return a review.",
-                     frappe.PermissionError)
-    _assert_hr_can_view(appraisal)
+    if not (_is_line_manager(ap.employee, me, direct_only=True)
+            and _review_status(appraisal) == "Manager Review"):
+        if not _is_hr():
+            frappe.throw("Only the direct manager or HR can return a review.",
+                         frappe.PermissionError)
+        _assert_hr_can_view(appraisal)
 
     ext = _extension(appraisal)
     current = (ext.review_status if ext else None) or "Not Started"
@@ -3850,9 +3875,10 @@ def get_manager_review(appraisal):
     # once the self-review has been sent (PRIV-2).
     refuse_own_rating(ap.employee, "Appraisal", appraisal, "get_manager_review")
     is_hr = _is_hr()
-    if not is_hr and not _is_manager_of(ap.employee):
-        frappe.throw("Only the employee's manager or HR can open this review.", frappe.PermissionError)
-    _assert_hr_can_view(appraisal)
+    if not _is_line_manager(ap.employee, me):
+        if not is_hr:
+            frappe.throw("Only the employee's manager or HR can open this review.", frappe.PermissionError)
+        _assert_hr_can_view(appraisal)
     if _review_status(appraisal) in _SELF_REVIEW_DRAFT:
         refuse(
             "The self-review has not been sent yet. You can open it once it is sent.",

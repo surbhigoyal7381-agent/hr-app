@@ -1023,6 +1023,34 @@ class TestDecisions15And16HrScope(_Team):
 		self.assertNotIn(self.subject_b, team)
 
 
+class TestHrStandInManager(_Team):
+	def test_the_hr_stand_in_for_a_manager_less_employee_reviews_in_manager_review_but_is_not_exempt_elsewhere(self):
+		"""get_effective_manager makes the first HR Manager the manager of anyone
+		with no manager. That must let them do the manager review, and must NOT
+		let them read that person's review at other stages through the HR guard."""
+		import alvoraa_portal.performance_api as pa
+		from alvoraa_goals.permissions import get_hr_manager_employee
+
+		stand_in = get_hr_manager_employee()
+		if not stand_in:
+			self.skipTest("no HR Manager employee on this site")
+		stand_in_user = frappe.db.get_value("Employee", stand_in, "user_id")
+		company = frappe.db.get_value("Employee", stand_in, "company")
+		user = _user(f"d.nomanager.{_uid()}", ("Employee",))
+		lone = _employee(f"DNoManager{_uid()}", company=company, user=user)
+		self._cleanup.append(("Employee", lone))
+
+		ap = self._review_of(lone, "Manager Review", company=company)
+		self._as(stand_in_user)
+		pa.get_manager_review(ap)
+		pa.save_manager_review(ap, "feedback", overall_rating=3)
+
+		self._set_status(ap, "Employee Review")
+		self._as(stand_in_user)
+		with self.assertRaises(frappe.PermissionError):
+			pa._assert_hr_can_view(ap)
+
+
 class TestScorecardsHideUnreleasedRatings(_Team):
 	def test_scorecards_show_an_overall_rating_only_once_it_is_released(self):
 		import alvoraa_portal.hr_api as hr_api

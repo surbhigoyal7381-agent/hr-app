@@ -26,7 +26,7 @@ class TestThePageKeepsDataToReview(FrappeTestCase):
 		self.assertIn('id="nav-data-review"', page)
 		self.assertIn('id="panel-data-review"', page)
 		self.assertIn('id="sb-dr-badge"', page)
-		self.assertRegex(page, r'id="dr-confirm".*?role="alertdialog"')
+		self.assertRegex(page, r'(?s)id="dr-confirm".*?role="alertdialog"')
 
 	def test_opening_the_panel_loads_it_and_the_menu_follows_the_analytics_rule(self):
 		page = _page()

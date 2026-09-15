@@ -713,8 +713,13 @@ def get_employee_scorecard(employee_id):
     roles = frappe.get_roles()
     is_hr = bool({"HR Manager", "HR User", "Administrator"} & set(roles))
     effective_mgr = get_effective_manager(employee_id)
-    if effective_mgr != mgr_emp.name and not is_hr:
-        frappe.throw("Access denied", frappe.PermissionError)
+    if effective_mgr != mgr_emp.name:
+        if not is_hr:
+            frappe.throw("Access denied", frappe.PermissionError)
+        # HR opens only employees of the companies they look after (slice 010
+        # group D, decision 28). It used to open any company's employee: contact
+        # details, attendance, leave and appraisal history.
+        _hr_target_employee(employee_id, "hr_api.get_employee_scorecard")
 
     emp = frappe.db.get_value(
         "Employee", employee_id,
@@ -1008,8 +1013,11 @@ def get_employee_detail_for_manager(employee_id):
     roles = frappe.get_roles()
     is_hr = bool({"HR Manager", "HR User", "Administrator"} & set(roles))
     emp_reports_to = frappe.db.get_value("Employee", employee_id, "reports_to")
-    if emp_reports_to != mgr_emp.name and not is_hr:
-        frappe.throw("Access denied", frappe.PermissionError)
+    if emp_reports_to != mgr_emp.name:
+        if not is_hr:
+            frappe.throw("Access denied", frappe.PermissionError)
+        # The same hole as get_employee_scorecard, closed the same way (decision 28).
+        _hr_target_employee(employee_id, "hr_api.get_employee_detail_for_manager")
 
     emp = frappe.db.get_value(
         "Employee", employee_id,

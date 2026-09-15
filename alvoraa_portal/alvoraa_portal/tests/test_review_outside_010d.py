@@ -541,3 +541,23 @@ class TestQueryCountOfHrCycleScreens(_CycleScreens):
 		large = self._queries(7)
 		print("HR cycle screen queries (2 vs 7 reviews):", small, large)
 		self.assertEqual(small, large)
+
+
+# ── Decision 28 · HR opens scorecards only for the companies it looks after ──
+
+
+class TestDecision28ScorecardCompanyScope(_Team):
+	def test_decision28_hr_opens_an_employee_scorecard_only_in_its_companies_and_managers_keep_their_line(self):
+		import alvoraa_portal.hr_api as hr_api
+
+		for call in (hr_api.get_employee_scorecard, hr_api.get_employee_detail_for_manager):
+			self._as(self.hr_user)
+			with self.assertRaises(frappe.PermissionError, msg=call.__name__):
+				call(self.subject_b)
+			self.assertTrue(call(self.subject), call.__name__)
+
+			# The manager line still opens its own report, and nobody else's.
+			self._as(self.manager_user)
+			self.assertTrue(call(self.subject), call.__name__)
+			with self.assertRaises(frappe.PermissionError, msg=call.__name__):
+				call(self.subject_b)

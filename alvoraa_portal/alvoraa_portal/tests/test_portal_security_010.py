@@ -695,6 +695,9 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		("alvoraa_goals", "controllers/goal.py"): 3,
 		("hrms", "alvoraa_org_structure/api.py"): 2,
 		("hrms", "alvoraa_hr_core/access.py"): 0,
+		# Slice 010 group D (new file): the one save of a review record, made after
+		# the endpoint has checked the person. Employees have no role on it (SEC-5).
+		("alvoraa_goals", "review_items.py"): 1,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

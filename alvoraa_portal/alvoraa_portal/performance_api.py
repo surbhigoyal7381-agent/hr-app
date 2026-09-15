@@ -19,6 +19,7 @@ from frappe.utils import cint, flt, today, getdate
 from alvoraa_goals.permissions import get_effective_manager
 
 from alvoraa_goals.controllers.kpi import MAX_RATING, TOTAL_WEIGHTAGE, rating_from_attainment
+import alvoraa_goals.review_items as review_items
 
 HR_ROLES = frozenset({"HR Manager", "HR User", "System Manager"})
 
@@ -3279,6 +3280,9 @@ def get_my_review(appraisal):
         except: pass
 
     ext = _get_or_create_extension(appraisal)
+    # The first open takes the review's own copies of its items (decision 4).
+    if review_items.open_review(ext):
+        frappe.db.commit()
     try: page_data = json.loads(ext.page_data or "{}")
     except: page_data = {}
     try: pages_completed = json.loads(ext.pages_completed or "[]")
@@ -3666,6 +3670,8 @@ def get_manager_review(appraisal):
         frappe.throw("Only the employee's manager or HR can open this review.", frappe.PermissionError)
 
     ext = _get_or_create_extension(appraisal)
+    if review_items.open_review(ext):
+        frappe.db.commit()
     cycle_name = ap.appraisal_cycle
 
     try: page_data = json.loads(ext.page_data or "{}")

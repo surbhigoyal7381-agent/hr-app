@@ -87,14 +87,21 @@ def _validate_target(doc):
 
 
 def _calculate_attainment(doc):
-    target = flt(doc.target_value)
-    actual = flt(doc.actual_value)
+    doc.attainment_pct = attainment(doc.actual_value, doc.target_value, doc.direction)
 
-    if doc.direction == "Lower is Better":
+
+def attainment(actual, target, direction):
+    """Attainment % for one KPI. Shared by the KPI and by review copies, so the
+    two can never disagree about the formula."""
+    target = flt(target)
+    actual = flt(actual)
+    if not target:
+        # A saved KPI never gets here (_validate_target refuses a zero target).
+        return 0
+    if direction == "Lower is Better":
         # No actual logged yet is not the same as a perfect score.
-        doc.attainment_pct = 0 if actual == 0 else flt(target / actual * 100, 2)
-    else:
-        doc.attainment_pct = flt(actual / target * 100, 2)
+        return 0 if actual == 0 else flt(target / actual * 100, 2)
+    return flt(actual / target * 100, 2)
 
 
 def _clamp_ratings(doc):

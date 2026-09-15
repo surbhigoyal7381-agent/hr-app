@@ -3,7 +3,7 @@ slice: 010-portal-security-fixes
 artifact: 03d-implementation-notes-group-d
 author: hrms-fullstack-engineer
 date: 2026-09-15
-status: phases 1 (commits 1-3) and 2 (commits 4-7) built and tested locally; phases 3-4 not started
+status: phases 1 (commits 1-3), 2 (commits 4-7) and 3 (commits 8-10, 12) built and tested locally; phase 4 not started
 inputs: [00e-group-d-approved-decisions.md (wins), 00d-impact-analysis-group-d.md, 01d-security-privacy-group-d.md, 00c-review-copies-decisions.md, 03-implementation-notes.md]
 ---
 
@@ -679,4 +679,384 @@ up by the test runner without one.
 - **Commit 10:** daily reminder job for items still locked 15 days after a cycle ends.
 - **Commit 12:** backfill patch, dry-run report, rollback script. Needs its own way past
   the VIS-10 guard for Completed reviews (gap 7).
+- Before starting: fetch `origin/dev`, read the work board, rebase.
+
+
+---
+
+# Phase 3 — commits 8, 9, 10 and 12, and decisions 26 and 28
+
+## The short answer
+
+**Phase 3 is built, committed on `slice/010-portal-security-fixes`, brought into local
+`dev`, and tested on the local bench. Nothing is pushed.**
+
+- **27 new pin tests, all passing** (`alvoraa_portal/tests/test_review_outside_010d.py`).
+  Phase 1's 34 and phase 2's 29 still pass.
+- **Full suites:** `alvoraa_portal`: 495 tests, 1 failure + 3 errors; then 441 tests, 1 failure + 10 errors.
+  All known (`test_leave_year` 3 errors, `test_invoicing` 1 failure + 10 errors) **except one that is not
+  mine:** `test_invoicing.test_every_billing_doctype_is_named_as_control_plane_only` fails because slice
+  012's two new doctypes are not classified in `subscription.py`. I left a note for 012 on the work board.
+  `alvoraa_goals`: 18 tests, OK (2 skipped).
+- **Integrity check:** "OK - all consistent" before every commit.
+- **`bench --site test_site migrate` was run once** (KPI and Appraisal permission changes, and
+  the new patch). `ppj.localhost` was not touched.
+- **The copy of existing reviews is fast:** 806 synthetic reviews in ppj's stage mix, 3,870
+  copies, **15.1 seconds**. The dry run took 1.4 seconds.
+- **Three things you should know first:**
+  1. **The portal page is still not changed (commit 11, phase 4).** Screens outside the review now
+     leave out ratings, so the page shows gaps: the appraisal detail's goal rows show "0.00" where a
+     score used to be, and the team KPI card has no "rated" count. The tree's "in review" tag now
+     appears only on items an open review holds. The reviewer picker still sends no review, so a
+     manager searches their own company. Group D must still ship as one batch.
+  2. **Employees lose every desk and REST read of HRMS Appraisal** (decision 26). The one portal
+     call that saved through that permission, "Save Self-Assessment", broke in phase 1 when
+     decision 22 removed write. I fixed it in commit 8: it now writes its one field after its own
+     owner check.
+  3. **One choice I made that you may want the other way:** with the lock release set to 0
+     (never), the HR reminder repeats every 7 days for as long as those reviews stay open. The
+     alternative is no reminder at all when the lock never releases. Question 1 in section 9.
+
+## 1. Commits
+
+On `slice/010-portal-security-fixes`, oldest first, after phase 2. Brought into local `dev`
+with `merge --ff-only`.
+
+| Commit | What |
+|---|---|
+| `f22a45e` | Commit 8, part 1: rating fields on the live KPI move to level 1 and nobody writes them (SEC-2, PRIV-9); Employee loses read on HRMS Appraisal (decision 26); desk list labels (R8); self-assessment save fixed |
+| `ccf043f` | Commit 8, part 2: outside screens show no Objective or KPI rating; appraisal totals follow the release rule; `get_cycle_items` from copies; the "in review" badge (R14, PRIV-9, VIS-3, R5, PRIV-10) |
+| `94d6eca` | Commit 8, part 3: HR cycle screens read the copies, scoped by company and stage (R8, SEC-26, SEC-30) |
+| `0d30808` | Commit 8, part 4: `get_employee_scorecard` and `get_employee_detail_for_manager` scoped to HR's companies (decision 28) |
+| `13f228f` | Commit 9: reviewer picker and invitees from the reviewed person's company (SEC-7, decisions 2 and 17) |
+| `285858a` | Commit 10: daily reminder to HR about items still locked (R9) |
+| `926369e` | Commit 12: copy existing reviews — patch, dry run, rollback helpers |
+| `5100f83` | Test: `performance_api.py` ceiling 68 → 64; `review_backfill.py` pinned at 0 |
+| `9c6d97b` | The M3 permission report also lists a tenant's read grant on Appraisal (decision 26) |
+| this file | Phase 3 notes |
+
+Commit 10 was amended once in my worktree, before it reached `dev`: my first commit carried a
+test with a broken settings helper, because a check in my own edit script stopped the fix from
+being applied. Nothing else was rewritten.
+
+## 2. What came in from others
+
+- **`origin/dev`:** fetched at the start, before every merge and at the end. **Nothing came in.**
+  It stayed at `c27fb56`.
+- **Local `dev` moved three times, all slice 012** (its own worktree, its own files). I read every
+  diff and rebased onto it each time. None touches a file phase 3 changes:
+  - `ed8732f`, `1d75c28`, `bdc50c0`: indexes (`data_review.py`), the Org Settings allow-list in
+    `hr_api.get_org_setting` / `set_org_setting`, attendance analytics scope.
+  - `b89cdfb`, `c692ea9`, `85f0073`, `e6bae5c`, `3c33d56`: two new doctypes (Data Review Item,
+    Leader View Settings), `org_figures.py`, their tests and fixtures, one `after_migrate` addition.
+  - **Worth knowing:** 012's allow-list means `set_org_setting` now accepts only
+    `kra_link_mandatory`. Decision 23's portal Org Settings for the three review settings (phase 4)
+    must write HR Settings, not Global Defaults — which is what 00d planned anyway.
+- **Work board:** 012 held the bench twice while I built; I waited, then marked "Bench in use"
+  for each of my runs and cleared it after.
+- **Main checkout:** the same other sessions' uncommitted files as in phases 1 and 2 (`CLAUDE.md`,
+  `.claude/agents/*`, `.claude/context/*`, `backlog/KPI_AUTOMATION_BACKLOG.md`, deleted
+  `OBJECTIVES_KPI_REQUIREMENTS.md`, `hrms/.../alvoraa_position.py`, untracked files). None is a
+  file phase 3 changes. Not touched. Every `merge --ff-only` went through.
+- No conflicts.
+
+## 3. What was built, file by file
+
+Mechanism key: **configure** (JSON, settings), **extend** (hooks, existing functions),
+**build** (new code).
+
+### Commit 8 — outside screens, HR cycle screens, decisions 26 and 28
+
+| File | Mechanism | What and why |
+|---|---|---|
+| `alvoraa_goals/.../doctype/kpi/kpi.json` | configure | `self_rating`, `self_comment`, `manager_rating`, `manager_comment`, `potential_rating`, `potential_comment` and the `additional_reviewers` table at permission level 1. Level-1 rows: read for HR Manager, HR User, System Manager; **no write for anyone**. Old values stay for HR (PRIV-9, PRIV-14) |
+| `alvoraa_goals/controllers/kpi.py` | build | `refuse_rating_changes` (before_validate): any change to those fields, or to an additional reviewer's rating or comment, is refused, Administrator included, with `ignore_validate` too. A new KPI may not arrive rated. Only a document flag set by the rollback script passes (`RATING_REPAIR_FLAG`) (SEC-2) |
+| `alvoraa_goals/hooks.py` | extend | KPI `before_validate` becomes a list: the lock first, then the rating guard |
+| `alvoraa_goals/.../kpi/kpi_list.js`, `.../individual_goal/individual_goal_list.js` (new) | build | Desk lists say "Live records, not the review record" (R8, VIS-12). API checked: `page.add_inner_message` in Frappe `ui/page.js:703`; `<doctype>_list.js` is loaded by `desk/form/meta.py:100` |
+| `hrms/hrms/hr/doctype/appraisal/appraisal.json` (our fork) | configure | Employee row removed: no read either (decision 26) |
+| `alvoraa_portal/goals_api.py` | extend | `save_self_assessment` writes `reflections` with `db.set_value` after its owner and draft checks (it saved through the Employee's permission, which is gone). `get_appraisal_data`: no item scores; totals from Employee Final Review. `get_goal_detail`: `review_badge` |
+| `alvoraa_portal/hr_api.py` | extend | `get_goal_detail`: `review_badge`. `get_employee_scorecard`, `get_employee_detail_for_manager`: HR outside its own line goes through `_hr_target_employee` (permitted companies, SEC-13 message); the manager-line rule is unchanged (decision 28). No signature change |
+| `alvoraa_goals/review_items.py` | build | `review_badges(doctype, names)`: `{"in_review": 1, "updates_after": <period end>}` and nothing else, one query; shares `_holding_reviews` with the lock so the two agree. `rating_fields_for(viewer, stage)` and `overall_rating_visible`: the one field rule, now also used by `review_payload`. `VIEWER_NONE` for HR rows before HR Review. `late_fact_counts(reviews, rows)`: R10 for many reviews in three queries |
+| `alvoraa_portal/performance_api.py` | extend | Table below |
+| `demo/pp_jewellers/seed_performance.py` | extend | Seeded history sets the repair flag, or the guard would refuse the seeder's rated KPIs. `demo/` never reaches `main` |
+
+`performance_api.py`, function by function:
+
+| Function | Change |
+|---|---|
+| `KPI_FIELDS` | The six rating fields removed (feeds the tree, My KPIs, team KPIs) |
+| `_decorate_kpis` | Adds `review_badge`, one query for all rows |
+| `get_team_kpis` | `rated_count` removed |
+| `get_performance_tree` | `review_badge` on goals and KPIs; `in_cycle` set only when an open review holds the item (R5) |
+| `_appraisal_payload` | Goal rows lose `score` and `score_earned`; totals (`total_score`, `self_score`, `avg_feedback_score`, `final_score`) are `None` for the subject before Employee Final Review |
+| `get_my_appraisal`, `get_appraisal` | Subject rule above; `get_appraisal` gives HRMS self-ratings to others only once the self-review is sent |
+| `get_team_appraisal` | HR outside the caller's direct reports: `_assert_hr_can_view`, or the company check when there is no appraisal |
+| `list_appraisals` | Scores per row: own from Employee Final Review; line always; HR outside the line from HR Review. One extra query |
+| `get_cycle_items` | From the review's copies by row name once the caller may open the review at its stage (`source: "review"`); otherwise live records (`source: "live"`); never a rating. HR limited to permitted companies |
+| new `_hr_cycle_reviews`, `_copies_of`, `_visible_ratings`, `_copy_numbers` | The scoped review list for HR screens, with a viewer per row: subject / manager (own line) / hr (HR Review on) / none |
+| `hr_list_kpis` | KPI copies of the cycle's scoped reviews; ratings per viewer. **Needs a cycle now** (it returned every KPI in the tenant) |
+| `hr_cycle_summary` | From copies; `rated` and `final_score` only where visible; branch average of final score only over visible rows |
+| `hr_list_appraisals` | Scoped; overall rating per viewer; responsible emails in two queries instead of three per row |
+| `send_review_reminder`, `archive_review`, `unarchive_review` | `_require_hr_for`: permitted companies or own line; no review record created |
+| `export_cycle_kpis_csv` | From copies (Objectives and KPIs), scoped, ratings per viewer; "KPI ID" is the row id; removed copies only for manager/HR viewers; new columns at the end: Item Type, Review, Review Stage, Removed, Facts Approved After Close (HR viewers only); text cells starting `= + - @` written as text; one security log line with counts |
+| `get_calibration_overview` | From copies, scoped; keys a viewer may not see are left out; no per-review `get_doc` |
+| `get_calibration_matrix` | Scoped; own row has no `potential_rating`; employees and managers read in two queries instead of per row |
+| `get_calibration_signoff` | HR only (SEC-30) |
+
+### Commit 9 — reviewers from the reviewed person's company
+
+| Function | Change |
+|---|---|
+| `search_employees(query="", appraisal=None)` | With `appraisal`: the review's manager line, or HR under `_assert_hr_can_view`; never the subject (SEC-10); results are active employees of the subject's company, not the subject, at most 50. Without: a manager (direct reports) gets their own company, HR its permitted companies, anyone else `[]`. One query (name or ID) |
+| new `_check_invitees` | Invitees must be active employees of the subject's company and not the subject; one bad invitee refuses the whole call before anything is saved or emailed (SEC-7) |
+| `invite_reviewer`, `invite_reviewers_batch` | Call it; the batch also refuses a malformed list |
+
+Decision 17 (reviewers lose access after Manager Review) was already built in phase 2; phase 3
+adds a pin for both the read and the comment submit.
+
+### Commit 10 — the lock reminder
+
+| File | Mechanism | What and why |
+|---|---|---|
+| `review_items.py` | build | `remind_hr_of_held_items()`: one query finds open reviews still holding items whose cycle ended 15 or more days ago; due on day 15, 22, 29… while the lock lasts; none if the lock releases on or before day 15; with 0 (never) it repeats until the reviews are completed. Each enabled HR Manager gets one Notification Log for their permitted companies: cycle name, count, date. No names (PRIV-15). A Notification Log also emails when the person's notification settings allow, so no second email is sent. A failure is logged with the user id only |
+| `alvoraa_goals/hooks.py` | extend | Added at the end of `scheduler_events["daily"]`, with a comment |
+
+### Commit 12 — copy existing reviews
+
+| File | Mechanism | What and why |
+|---|---|---|
+| `alvoraa_goals/review_backfill.py` (new) | build | `report(names=None)` read-only dry run; `run(names=None)` the copy; `undo_backfill(dry_run=1)`; `copy_ratings_back_for_rollback(dry_run=1)`. One planning function feeds both the report and the copy, so they agree |
+| `alvoraa_goals/patches/v1_0/take_review_copies.py` (new) | build | Syncs Alvoraa Review Item, the Extension and KPI first (a plain `patches.txt` line runs **before** the DocType sync — checked in Frappe `modules/patch_handler.py`), then `run()` |
+| `alvoraa_goals/patches.txt` | configure | One line at the end |
+
+**What the copy does, as built:**
+
+| Review | Result |
+|---|---|
+| Completed | Copies of the non-cancelled, non-future Objectives and KPIs tagged to that cycle and employee. Numbers as stored (`actual_value`/`attainment_pct`, `actual_progress`/`progress_pct`). KPI ratings and comments copied and stamped on those numbers. `frozen = 1`, `completed_on` = the record's last change, `backfilled = 1` on every copy. Overall rating stamped |
+| Employee Review, Manager Review, Employee Final Review, HR Review | The same, plus the freeze point and removal setting in force, frozen only if already past the freeze point, and the draft's `past-objectives` keys re-keyed from live names to row names (names not in the review are dropped and counted) |
+| Not Started | Nothing |
+| Appraisal missing or cancelled, no cycle, unknown stage | Nothing; counted in the report |
+| Nothing tagged to the cycle and employee | Nothing; listed by review name in the report |
+
+- **VIS-10 is not weakened.** Rows go straight into the table with `db_insert`, once, only for a
+  review with no copies. The Extension's guard is not touched; a test proves a backfilled
+  Completed review still refuses a change through the review record.
+- **Safe to run twice:** a review with any copy, or with `items_taken_on`, is skipped.
+- **Commits every 50 reviews; a savepoint per review;** a failure is logged by review name.
+- **Not done by the copy (declared):** R16 (an item held by another open review is not added to a
+  second review), additional reviewer ratings (0 rows on ppj), and a recount of open reviews —
+  that happens on their first open, by design.
+
+## 4. Requirements and decisions → test → result
+
+All in `alvoraa_portal.tests.test_review_outside_010d`. Result is the last run on `test_site`
+(27 tests, OK).
+
+| Requirement / decision | Test | Result |
+|---|---|---|
+| SEC-2 (JSON) | `test_sec2_rating_fields_sit_at_level_1_and_nobody_is_given_write_there` | pass |
+| SEC-2 (every path: desk/REST as creator, manager, HR Manager, System Manager; code with and without `ignore_validate`; Administrator; new rated KPI; additional reviewer row; a fact still saves) | `test_sec2_nobody_writes_a_rating_on_a_live_kpi_by_any_path` | pass |
+| SEC-2 static | `test_sec2_static_no_code_writes_kpi_ratings_around_the_document` | pass |
+| PRIV-9 (desk/REST read) | `test_priv9_only_hr_reads_the_old_ratings_on_a_live_kpi` | pass |
+| Decision 26, self-assessment save | `test_decision26_employee_reads_appraisals_only_through_the_portal` | pass |
+| R8, VIS-12 desk labels | `test_r8_vis12_desk_lists_say_they_are_live_records` | pass |
+| R14, PRIV-9 (11 outside payloads, 3 viewers) | `test_r14_priv9_outside_payloads_carry_no_objective_or_kpi_rating` | pass |
+| PRIV-9, decision 3 (totals) | `test_priv9_the_appraisal_summary_has_no_item_score_and_totals_follow_the_release_rule` | pass |
+| VIS-3 for `get_cycle_items`, PRIV-2, company scope | `test_vis3_get_cycle_items_uses_the_copies_once_the_caller_may_open_the_review` | pass |
+| R5, PRIV-10 | `test_r5_priv10_the_badge_says_in_review_and_the_period_end_and_nothing_else` | pass |
+| SEC-26 (company and stage on 5 HR screens) | `test_sec26_hr_cycle_screens_list_only_permitted_companies_and_follow_the_stage` | pass |
+| R8, SEC-26, R10, VIS-3 (CSV; log line with counts, no values) | `test_r8_sec26_the_csv_export_holds_copies_only_what_the_stage_allows_and_logs_counts` | pass |
+| PRIV-1, SEC-26 (own row) | `test_priv1_sec26_your_own_row_on_hr_screens_never_carries_potential` | pass |
+| SEC-26, SEC-6, SEC-30 (reminder, archive, sign-off) | `test_sec26_sec30_reminders_archive_and_sign_off_stay_inside_hrs_companies` | pass |
+| NFR: HR screens do not grow with reviews | `test_query_count_hr_cycle_screens_do_not_grow_with_the_number_of_reviews` | pass |
+| Decision 28 | `test_decision28_hr_opens_an_employee_scorecard_only_in_its_companies_and_managers_keep_their_line` | pass |
+| SEC-7, decision 2 (picker) | `test_sec7_decision2_the_picker_finds_the_reviewed_persons_company_not_only_the_managers_line` | pass |
+| SEC-7 (invitees) | `test_sec7_invitees_must_belong_to_the_reviewed_persons_company` | pass |
+| Decision 17 | `test_decision17_an_invited_reviewer_loses_access_once_manager_review_ends` | pass |
+| R9, SEC-22, PRIV-15 (day 15, not 16, day 22; own companies; no names) | `test_r9_hr_is_reminded_on_day_15_then_weekly_without_names_and_only_for_its_companies` | pass |
+| R9 (released lock, 0 = never) | `test_r9_no_reminder_once_the_lock_is_released_and_0_means_keep_reminding` | pass |
+| R9 scheduler line | `test_r9_the_reminder_runs_daily_from_the_goals_app` | pass |
+| Backfill dry run changes nothing and counts right | `test_backfill_dry_run_counts_and_changes_nothing` | pass |
+| Backfill: history as stored, open reviews, draft re-key, twice = once, VIS-10 kept, first open recounts and flags | `test_backfill_copies_history_as_stored_and_open_reviews_once_and_keeps_completed_copies_locked` | pass |
+| Rollback helpers | `test_backfill_undo_leaves_changed_reviews_and_ratings_go_back_before_a_rollback` | pass |
+| Patch line last; tables synced first | `test_backfill_patch_is_listed_last_and_syncs_its_tables_first` | pass |
+| Decision 22 pin kept (now no Employee row at all) | `test_review_copies_010d.test_decision22_employee_cannot_write_or_create_an_hrms_appraisal` (updated) | pass |
+| SEC-16 ceilings (`performance_api.py` 64, `review_backfill.py` 0) | `test_portal_security_010.TestSec16IgnorePermissionsCeiling` | pass |
+| Decision 26, M3 report lists a tenant read grant on Appraisal | `test_decision26_m3_report_lists_a_tenant_read_grant_on_appraisal_and_changes_nothing` | pass |
+
+**Where the documents differed, and what I followed:**
+
+- **PRIV-10 vs 00d §6.5 badge text:** 00d's badge showed the cycle label and "numbers closed";
+  PRIV-10 forbids the freeze state. I built PRIV-10's narrower payload (in review + the period
+  end). The tree's existing `in_cycle` tag still carries the cycle name the item is tagged to,
+  which anyone who sees the live record could already see.
+- **OQ-D12 (live record id in HR's CSV):** 01d VIS-3 says `source_name` never leaves the server.
+  Not added; HR cannot match a CSV row to a live KPI by id.
+- **00d §6.7 "removed rows left out of HR screens" vs "Removed column":** removed copies are left out
+  of every HR screen except the CSV, where manager and HR viewers see them marked Removed.
+- **R9 with 0 days:** 00d does not say. Built as "keep reminding weekly" (question 1).
+- **SEC-26 counts:** 01d allows status and counts before HR Review. I also left out the "rated"
+  counts there, because a count of manager-rated items shows how far a manager has got (fail closed).
+
+## 5. Non-functional dimensions, re-checked on the code written
+
+| Dimension | Before → after | Verdict | Why |
+|---|---|---|---|
+| Performance | per-row queries on HR screens | **improves** | HR screens run a fixed number of queries whatever the cycle size (tested: 2 and 7 reviews give the same counts). The calibration overview no longer loads each review record; the appraisals table no longer runs 3 queries per row; the matrix no longer reads each employee. Cost: one extra query on the tree, My KPIs, team KPIs and goal detail (the badge), one on `list_appraisals` |
+| Security | ratings writable and readable on live KPIs; HR screens unscoped; picker open to all | **improves** | SEC-2, SEC-7, SEC-26, SEC-30, PRIV-9, decisions 26 and 28 closed and pinned. `ignore_permissions`: `performance_api.py` 68 → 64 (ceiling lowered); no new use elsewhere |
+| Reliability | self-assessment save broken since phase 1 | **improves**, one risk | Save fixed. The backfill is safe to run twice and isolates failures. Risk: the reminder job runs daily for every open review (one query, bounded by open reviews) |
+| Scalability | HR screens N+1 | **improves** | Measured at 806 reviews: backfill 15.1 s, dry run 1.4 s. HR screens: constant query count; child rows read by indexed `parent` |
+| Maintainability | — | **neutral** | One field rule (`rating_fields_for`) now serves both review and HR screens, replacing duplicated logic. A new module for the backfill. `review_items.py` is now about 1,750 lines (still worth splitting after group D ships) |
+| Data integrity | live ratings could change | **improves** | Live ratings frozen as legacy; existing reviews get a replayable record; undo refuses to touch reviews changed since |
+| Compliance / privacy | potential and ratings on outside screens and exports | **improves** | Potential and ratings leave every outside payload; HR exports follow stage and company; export and refusals are logged with counts and names only; reminder has no names |
+
+**Query counts (measured on `test_site`, second call, caches warm):**
+
+| HR screen | 2 reviews | 7 reviews |
+|---|---|---|
+| `hr_list_appraisals` | 7 | 7 |
+| `hr_list_kpis` | 6 | 6 |
+| `hr_cycle_summary` | 6 | 6 |
+| `get_calibration_overview` | 7 | 7 |
+| `get_calibration_matrix` | 9 | 9 |
+| `export_cycle_kpis_csv` | 7 | 7 |
+
+Response times of the HR screens at a large cycle were not measured; only query counts.
+
+**Backfill timing (measured on `test_site`, commits off, rolled back, 0 records left):**
+
+| Step | Result |
+|---|---|
+| Synthetic data | 806 reviews (403 Completed, 269 Employee Review, 134 Manager Review), 3,467 KPIs, 403 Objectives, one approved reading per KPI |
+| `report()` | **1.43 s** |
+| `run()` | **15.10 s**: 806 reviews, 3,870 copies, 0 failed (about 19 ms per review) |
+| second `run()` | 0.52 s, 0 copied |
+| **Projection for ppj (806 reviews, 3,510 KPIs, 212 + Q1 Objectives)** | about 15–20 seconds inside `bench migrate`, plus the commits every 50 reviews (a few seconds). ppj's real counts are close to the synthetic set |
+
+**Indexes added:** none (reads use `tabAlvoraa Review Item.parent` and `source_name`, and the KPI
+indexes from phase 1).
+
+**Sensitive fields touched:** KPI self, manager and potential ratings and comments (now level 1,
+HR-read only); appraisal totals (release rule); HR screens' ratings (per viewer); invitee list.
+
+## 6. Commands run and real results
+
+All on `hrlocal-bench`, site `test_site`, one run at a time (`pgrep` first; work board marked).
+
+| When | Command | Result |
+|---|---|---|
+| Before every commit | `python scripts/check_app_integrity.py` | "OK - all consistent" (542 checks) |
+| Before migrate | `bench --site test_site execute alvoraa_goals.review_backfill.report` | Output in section 7: `test_site` has no review records |
+| After commits 8–12 | `bench --site test_site migrate` | Done. Patch ran: "Review copies: 0 reviews, 0 copies, 0 failed" (0.9 s). KPI level-1 fields and Appraisal permissions checked in the database afterwards |
+| Then | `--module alvoraa_portal.tests.test_review_outside_010d` | 26 tests, OK (first run) |
+| Then | `--module …test_review_copies_010d`; `--module …test_review_screens_010d` | 34 tests, OK; 29 tests, OK (plus its separate 1-test class, OK) |
+| Then | timing probe through the bench's Python, commits off, rolled back | section 5 |
+| End of phase (at `926369e`) | full `--app alvoraa_portal` | 495 tests: 1 failure + 3 errors. 441 tests: 1 failure + 10 errors. Checked name by name: `test_leave_year` 3 and `test_invoicing` 11 known; the other failure is slice 012's (see short answer) |
+| End of phase | full `--app alvoraa_goals` | 18 tests, OK (2 skipped) |
+| After `5100f83`, `9c6d97b` (brought into `dev`) | the ceiling test; the two M3 report tests | 1, 1, 1 tests, OK |
+
+**Migrations and patches run:** `bench --site test_site migrate`, once. It ran
+`alvoraa_goals.patches.v1_0.take_review_copies` on `test_site` (0 reviews there). Nothing else was
+migrated. `ppj.localhost` was not touched.
+
+## 7. The dry-run report output
+
+On `test_site` before its migrate (it has no review records):
+
+```
+{"reviews": 0, "by_cycle_and_stage": {}, "will_copy": {"reviews": 0, "items": 0, "completed": 0, "open": 0,
+ "open_already_frozen": 0}, "items_per_review": {"average": 0, "most": 0}, "skipped": {},
+ "cannot_copy_nothing_tagged": {"completed": [], "open": []}, "reviews_with_no_period": 0,
+ "rated_items_copied": 0, "approved_facts_dated_outside_the_review_period": {},
+ "open_items_whose_number_changes_on_first_open": 0, "rating_questions_expected_on_first_open": 0,
+ "draft_keys_dropped": 0, "cumulative_kpis_whose_readings_look_like_running_totals": 0,
+ "extensions_missing_employee_or_cycle": 0, "kpi_additional_reviewer_rows": 0,
+ "custom_docperm_rows_to_look_at": []}
+```
+
+On the 806-review synthetic set (timing probe, rolled back):
+
+```
+reviews 806; will_copy {reviews 806, items 3870, completed 403, open 403, open_already_frozen 0};
+items_per_review {average 4.8, most 6}; skipped {}; open_items_whose_number_changes_on_first_open 201;
+rating_questions_expected_on_first_open 0
+```
+
+(The 201 are the synthetic open reviews' Objectives: stored progress 5, no approved evidence, so
+their first open counts 0. On a real tenant the report shows the true number before migrate.)
+
+## 8. Tenant steps and deploy notes (not done by me)
+
+- **Every tenant needs `bench migrate`:** KPI JSON (level-1 rating fields), HRMS Appraisal JSON
+  (no Employee row), the patch, the scheduler entry.
+- **Before each tenant's migrate, on your word (read-only):**
+  `bench --site <site> execute alvoraa_goals.review_backfill.report`. Look at
+  `cannot_copy_nothing_tagged` (history that cannot be rebuilt), `rating_questions_expected_on_first_open`,
+  `cumulative_kpis_whose_readings_look_like_running_totals` and `custom_docperm_rows_to_look_at`.
+  Decision 24's M3 check is included in it.
+- **Tenants with a Custom DocPerm on KPI or Appraisal** keep their own permissions: a Custom
+  DocPerm replaces our JSON. The report lists any grant to a role that is not HR on Appraisal
+  (read included, since `9c6d97b`) and on KPI level 1. ppj has its own Appraisal Custom DocPerm
+  (System Manager only), which is already stricter.
+- **The patch prints one line** ("Review copies: N reviews, N copies, N failed") and takes about
+  15–20 seconds on ppj's volume.
+- **Rollback, in order, on your word:**
+  1. `bench --site <site> execute alvoraa_goals.review_backfill.copy_ratings_back_for_rollback --kwargs "{'dry_run': 1}"`,
+     then with `0` — only if ratings were given in the portal after go-live.
+  2. `git revert` of group D, deploy, `bench migrate` (KPI fields go back to level 0; the Appraisal
+     Employee row comes back).
+  3. Optionally `undo_backfill` (dry run first). The copy table itself is harmless if left.
+- **Do not deploy phase 3 without phase 4.** The page still reads rating keys that are now gone.
+
+## 9. Known gaps and shortcuts — honestly
+
+1. **The page is not updated** (commit 11, phase 4): see the short answer. Also: the CSV has new
+   columns at the end; `hr_list_kpis` needs a cycle (no page caller); calibration rows now leave
+   out keys instead of blanking them, and the page must not assume they exist.
+2. **`hr_api.get_goal_detail` still lets any HR role open any company's goal.** Same hole as
+   decision 28, in a function decision 28 did not name. Not changed. Question 2.
+3. **The new-appraisal projection** (`hr_generate_appraisals`, API only) still reads the legacy
+   `manager_rating` on live KPIs for its first score. No page calls it.
+4. **A skip-level manager with no direct reports** finds nobody in the reviewer picker until the
+   page sends the review (phase 4).
+5. **A desk user who edits a KPI rating sees no error**: Frappe silently resets a level-1 field
+   they may not write. The value does not change. Only code and Administrator get the refusal.
+6. **The reminder relies on the Notification Log's own email**, which follows each person's
+   notification settings; someone who turned those emails off sees the reminder only in the bell.
+7. **Backfill limits:** no R16 second copy; history's "facts approved after close" (R10) counts
+   facts approved after the copy was made, against numbers that were stored rather than counted;
+   `undo_backfill` deletes copy rows directly (an operator script, not a user path — the one
+   delete PRIV-14 did not foresee).
+8. **Found and fixed in this phase:** the M3 report checked Appraisal for write only; a tenant
+   read grant would have kept appraisal scores open unseen. Fixed in `9c6d97b`, pinned.
+9. **`save_calibration_note` still fails** on the missing `calibration_notes` column (phase 1 gap 5).
+10. **No browser trace** (no page change in this phase). **HR screen response times at scale were
+    not measured**; only query counts and the backfill.
+11. **SEC-15 revert proof not done** (the bench runs `dev`).
+
+## 10. Decisions needed
+
+1. **Reminder with lock release 0 (never):** keep reminding HR every 7 days while those reviews
+   stay open (as built), or send no reminder when the lock never releases?
+2. **`hr_api.get_goal_detail` HR company scope** (gap 2): fix inside 010, or separately?
+3. Still open from phase 2, unchanged in phase 3: removal stages; whether an agreed Objective
+   target change should pass the "no target change after progress" rule on write-back; emailing
+   the employee about an overall rating change only once released.
+
+## 11. What phase 4 must do next (commit 11 and the page items)
+
+- **Commit 11, the review screens:** keys are row names; Remove / Delete / Edit on copies with the
+  §6.4 warning and a reason box; the manager screen's flags (Keep/Change), removed rows, change
+  markers and late facts for HR; the blocked-completion message; Save draft sends only ratings set.
+- **Outside screens:** render `review_badge` ("In review · updates dated after <date> do not change
+  it") in the tree, goal drawer, goal detail panel and KPI log dialog; stop drawing goal-row scores
+  and the team "rated" count; handle `None` totals as "not released yet".
+- **Reviewer picker:** send `appraisal` from both call sites.
+- **HR screens:** handle absent rating keys in calibration rows; the CSV's new columns.
+- **Future Objectives page:** "Remove" unticks instead of deleting (decision 19).
+- **Decision 1** KPI dialog wording, **decision 2** reading date, **decision 23** portal Org
+  Settings for the three settings (HR Settings, not `set_org_setting`, which slice 012 limited).
+- Static page checks (`check_portal_handlers.js`, `check_undefined_js.js`), whole suites, a browser
+  trace at 200% zoom and 360 px, and the notes.
 - Before starting: fetch `origin/dev`, read the work board, rebase.

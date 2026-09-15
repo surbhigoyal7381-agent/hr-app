@@ -757,6 +757,53 @@ class TestR15WriteBack(_Screens):
 		self.assertIn("changed after the review started", _row_for(ext, r.alone).write_back_note)
 		self.assertEqual(frappe.db.get_value("KPI", r.alone, "target_value"), 60)
 
+	def test_decision30_an_agreed_objective_target_goes_back_although_progress_exists(self):
+		import alvoraa_portal.performance_api as pa
+
+		r = self._review()
+		# Progress is already on the live Objective: the older rule refuses any
+		# target change on it outside a review.
+		frappe.db.set_value("Individual Goal", r.goal, "actual_progress", 20)
+		frappe.db.commit()
+		row = _row_for(self._ext(r.ap), r.goal).name
+		self._as(self.subject_user)
+		pa.save_review_item_definition(r.ap, row, target_value=80)
+		self._set_status(r.ap, "HR Review")
+
+		self._as(self.hr_user)
+		self.assertEqual(pa.advance_review_status(r.ap)["review_status"], "Completed")
+		frappe.set_user("Administrator")
+		written = _row_for(self._ext(r.ap), r.goal)
+		self.assertIn("Written back", written.write_back_note)
+		self.assertEqual(frappe.db.get_value("Individual Goal", r.goal, "target_value"), 80)
+		# Its audit entry names the review and says why the rule was passed.
+		note = frappe.get_all("Comment", filters={"reference_doctype": "Individual Goal", "reference_name": r.goal,
+		                                          "comment_type": "Info", "content": ["like", f"%{r.ap}%"]},
+		                      pluck="content")
+		self.assertEqual(len(note), 1)
+		self.assertIn("although progress was already recorded", note[0])
+
+	def test_decision30_the_older_target_rule_still_holds_outside_a_review(self):
+		import alvoraa_goals.review_items as review_items
+
+		start, end = self._window()
+		goal = self._goal(self.subject, self._cycle(start, end), start, end, target=100)
+		frappe.db.set_value("Individual Goal", goal, "actual_progress", 20)
+		frappe.db.commit()
+
+		doc = frappe.get_doc("Individual Goal", goal)
+		doc.target_value = 80
+		with self.assertRaisesRegex(frappe.ValidationError, "Cannot change target after progress"):
+			doc.save(ignore_permissions=True)
+		frappe.db.rollback()
+		# The flag is the only way past it, and only code can set a document flag.
+		doc = frappe.get_doc("Individual Goal", goal)
+		doc.target_value = 80
+		doc.flags[review_items.WRITE_BACK_FLAG] = True
+		doc.save(ignore_permissions=True)
+		self.assertEqual(frappe.db.get_value("Individual Goal", goal, "target_value"), 80)
+		frappe.db.rollback()
+
 
 class TestVis10CompletedReviewsNeverChange(_Screens):
 	def test_vis10_a_completed_reviews_copies_cannot_change_by_any_path(self):

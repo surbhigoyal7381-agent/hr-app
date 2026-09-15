@@ -3495,31 +3495,15 @@ def get_my_review(appraisal):
     try: pages_completed = json.loads(ext.pages_completed or "[]")
     except: pages_completed = []
 
-    # Goals hierarchy: Individual Goal → KPIs
-    goals = frappe.get_all(
-        "Individual Goal",
-        filters={"employee": ap.employee, "appraisal_cycle": cycle_name, "docstatus": ["!=", 2]},
-        fields=["name", "goal_name", "parent_goal", "is_extra_initiative",
-                "target_value", "actual_progress", "progress_pct",
-                "unit", "status", "start_date", "end_date", "weightage", "employee", "owner"],
-        ignore_permissions=True, order_by="creation asc",
-    )
-    # Batch-resolve creator names (owner is a User email)
-    owner_emails = list({g["owner"] for g in goals if g.get("owner")})
-    user_full_names = {}
-    if owner_emails:
-        for u in frappe.get_all("User", filters={"name": ["in", owner_emails]},
-                                fields=["name", "full_name"], ignore_permissions=True):
-            user_full_names[u["name"]] = u["full_name"]
-    # Resolve employee display name for the review subject
-    assignee_name = frappe.db.get_value("Employee", ap.employee, "employee_name") or ap.employee_name or ""
-    for g in goals:
-        g["creator_name"] = user_full_names.get(g.get("owner", ""), "")
-        g["assignee_name"] = assignee_name
-        _serialise_dates(g, "start_date", "end_date")
-        g["kpis"] = _goal_kpis(g["name"], ap.employee)
+    # The review shows its own copies, never the live records (commit 4, VIS-3).
+    viewer = review_items.VIEWER_SUBJECT if ap.employee == me else review_items.VIEWER_HR
+    items = review_items.review_payload(ext, viewer, ap.employee, ap.employee_name)
 
-    # Incomplete goals from previous cycles — shown on Future Objectives page
+    # Incomplete goals from other cycles, for the Future Objectives page. These
+    # are next-period plans, not this review's items (VIS-15), so they stay live
+    # records - except any this review already holds a copy of, which would tie
+    # a copy to its live record (VIS-3).
+    copied = review_items.copied_sources(ext)
     past_incomplete = frappe.get_all(
         "Individual Goal",
         filters={
@@ -3527,36 +3511,23 @@ def get_my_review(appraisal):
             "appraisal_cycle": ["not in", [cycle_name, ""]],
             "docstatus": ["!=", 2],
             "status": ["not in", ["Completed", "Cancelled"]],
+            "name": ["not in", sorted(copied) or [""]],
         },
-        fields=["name", "goal_name", "parent_goal", "is_extra_initiative",
+        fields=["name", "goal_name", "is_extra_initiative",
                 "target_value", "actual_progress", "progress_pct",
-                "unit", "status", "start_date", "end_date", "appraisal_cycle", "owner"],
+                "unit", "status", "start_date", "end_date", "appraisal_cycle"],
         ignore_permissions=True, order_by="creation desc",
         limit=50,
     )
+    # One query for every label (it used to be one per goal).
+    cycle_labels = dict(frappe.get_all(
+        "Appraisal Cycle",
+        filters={"name": ["in", sorted({g["appraisal_cycle"] for g in past_incomplete}) or [""]]},
+        fields=["name", "cycle_name"], as_list=True,
+    ))
     for g in past_incomplete:
-        g["creator_name"] = user_full_names.get(g.get("owner", ""), "")
         _serialise_dates(g, "start_date", "end_date")
-        cycle_label = frappe.db.get_value("Appraisal Cycle", g.get("appraisal_cycle"), "cycle_name") or g.get("appraisal_cycle", "")
-        g["cycle_label"] = cycle_label
-
-    # Standalone KPIs (not linked to any goal)
-    standalone = frappe.get_all(
-        "KPI",
-        filters={"employee": ap.employee, "appraisal_cycle": cycle_name,
-                 "individual_goal": ("is", "not set"), "docstatus": ["!=", 2]},
-        fields=["name", "kpi_name", "target_value", "actual_value", "attainment_pct",
-                "unit", "weightage", "period_start", "period_end", "self_rating", "self_comment", "owner"],
-        ignore_permissions=True, order_by="kpi_name asc",
-    )
-    kpi_owners = list({k["owner"] for k in standalone if k.get("owner") and k["owner"] not in user_full_names})
-    if kpi_owners:
-        for u in frappe.get_all("User", filters={"name": ["in", kpi_owners]},
-                                fields=["name", "full_name"], ignore_permissions=True):
-            user_full_names[u["name"]] = u["full_name"]
-    for k in standalone:
-        k["creator_name"] = user_full_names.get(k.get("owner", ""), "")
-        _serialise_dates(k, "period_start", "period_end")
+        g["cycle_label"] = cycle_labels.get(g.get("appraisal_cycle")) or g.get("appraisal_cycle", "")
 
     cycle_info = frappe.db.get_value(
         "Appraisal Cycle", cycle_name,
@@ -3580,25 +3551,12 @@ def get_my_review(appraisal):
         "page_data":       page_data,
         "pages_completed": pages_completed,
         "overall_comment": ext.overall_comment or "",
-        "goals":                goals,
-        "standalone_kpis":      standalone,
+        "goals":                items["goals"],
+        "standalone_kpis":      items["standalone_kpis"],
+        "removed_items":        items["removed_items"],
+        "numbers_frozen":       items["numbers_frozen"],
         "past_incomplete_goals": past_incomplete,
     }
-
-
-def _goal_kpis(goal_name, employee):
-    """KPIs attached to one Individual Goal."""
-    rows = frappe.get_all(
-        "KPI",
-        filters={"individual_goal": goal_name, "employee": employee, "docstatus": ["!=", 2]},
-        fields=["name", "kpi_name", "target_value", "actual_value", "attainment_pct",
-                "unit", "weightage", "period_start", "period_end", "self_rating", "self_comment",
-                "baseline_value", "direction", "category", "owner"],
-        ignore_permissions=True, order_by="kpi_name asc",
-    )
-    for r in rows:
-        _serialise_dates(r, "period_start", "period_end")
-    return rows
 
 
 @frappe.whitelist()
@@ -3875,10 +3833,12 @@ def get_manager_review(appraisal):
     # once the self-review has been sent (PRIV-2).
     refuse_own_rating(ap.employee, "Appraisal", appraisal, "get_manager_review")
     is_hr = _is_hr()
+    viewer = review_items.VIEWER_MANAGER
     if not _is_line_manager(ap.employee, me):
         if not is_hr:
             frappe.throw("Only the employee's manager or HR can open this review.", frappe.PermissionError)
         _assert_hr_can_view(appraisal)
+        viewer = review_items.VIEWER_HR
     if _review_status(appraisal) in _SELF_REVIEW_DRAFT:
         refuse(
             "The self-review has not been sent yet. You can open it once it is sent.",
@@ -3921,16 +3881,10 @@ def get_manager_review(appraisal):
                 order_by="value desc")
             rating_scales[sname] = {"scale_name": sinfo.get("scale_name", sname), "items": sitems}
 
-    goals = frappe.get_all(
-        "Individual Goal",
-        filters={"employee": ap.employee, "appraisal_cycle": cycle_name, "docstatus": ["!=", 2]},
-        fields=["name", "goal_name", "target_value", "actual_progress", "progress_pct",
-                "unit", "status", "start_date", "end_date", "weightage", "employee", "owner"],
-        ignore_permissions=True, order_by="creation asc",
-    )
-    for g in goals:
-        _serialise_dates(g, "start_date", "end_date")
-        g["kpis"] = _goal_kpis(g["name"], ap.employee)
+    # The review's own copies (commit 4, VIS-3). HR acting as HR also sees facts
+    # that arrived after the numbers froze (R10); a manager who holds an HR role
+    # is here as the manager.
+    items = review_items.review_payload(ext, viewer, ap.employee, ap.employee_name)
 
     cycle_info = frappe.db.get_value("Appraisal Cycle", cycle_name,
         ["cycle_name", "start_date", "end_date"], as_dict=True) or {}
@@ -3952,8 +3906,12 @@ def get_manager_review(appraisal):
         "page_data":       page_data,
         "pages_completed": pages_completed,
         "overall_comment": ext.overall_comment or "",
-        "goals":           goals,
-        "standalone_kpis": [],
+        "goals":           items["goals"],
+        "standalone_kpis": items["standalone_kpis"],
+        "removed_items":   items["removed_items"],
+        "numbers_frozen":  items["numbers_frozen"],
+        "overall_rating_flag": items["overall_rating_flag"],
+        "open_blocking_flags": items["open_blocking_flags"],
         # Manager fields (visible because caller is manager/HR)
         "manager_feedback":      ext.manager_feedback or "",
         "manager_internal_notes": ext.manager_internal_notes or "",
@@ -4117,17 +4075,29 @@ def get_reviewer_view(appraisal):
     entry = next((r for r in invited if r.get("employee") == me_emp), None)
     if not entry:
         frappe.throw("You are not an invited reviewer for this appraisal.", frappe.PermissionError)
+    # An invitation is for the manager review only: not before the self-review
+    # is sent, and not after the manager has finished (SEC-7, decision 17).
+    if (ext.review_status or "") != "Manager Review":
+        refuse(
+            "This review is not open for reviewer feedback now.",
+            "SEC-7", "get_reviewer_view", "Appraisal", appraisal,
+        )
+    allowed_pages = entry.get("allowed_pages", [])
+    if not isinstance(allowed_pages, list):
+        allowed_pages = []
+    allowed_pages = [p for p in allowed_pages if isinstance(p, str)]
     try: page_data = json.loads(ext.page_data or "{}")
     except: page_data = {}
+    # Only the pages this reviewer was invited to read; none means nothing.
+    page_data = {k: v for k, v in (page_data if isinstance(page_data, dict) else {}).items()
+                 if k in allowed_pages}
     ap = frappe.get_doc("Appraisal", appraisal)
-    goals = frappe.get_all(
-        "Individual Goal",
-        filters={"employee": ap.employee, "appraisal_cycle": ap.appraisal_cycle, "docstatus": ["!=", 2]},
-        fields=["name", "goal_name", "parent_goal", "is_extra_initiative",
-                "status", "actual_progress", "progress_pct", "unit"],
-        ignore_permissions=True,
-    )
-    allowed_pages = entry.get("allowed_pages", [])
+    goals, standalone = [], []
+    if "past-objectives" in allowed_pages:
+        if review_items.open_review(ext):
+            frappe.db.commit()
+        items = review_items.review_payload(ext, review_items.VIEWER_REVIEWER, ap.employee, ap.employee_name)
+        goals, standalone = items["goals"], items["standalone_kpis"]
     page_comments = entry.get("page_comments", {})
     if isinstance(page_comments, str):
         try: page_comments = json.loads(page_comments)
@@ -4151,6 +4121,7 @@ def get_reviewer_view(appraisal):
         "allowed_pages":    allowed_page_objs,
         "page_data":        page_data,
         "goals":            goals,
+        "standalone_kpis":  standalone,
         "my_comments":      entry.get("comments", ""),
         "my_page_comments": page_comments,
         "my_status":        entry.get("status", "Invited"),

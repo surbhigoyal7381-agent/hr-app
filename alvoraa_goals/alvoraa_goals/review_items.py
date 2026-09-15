@@ -481,42 +481,10 @@ def _recount(ext):
     if not rows:
         return False
 
-    start = getdate(ext.review_window_start) if ext.get("review_window_start") else None
-    end = getdate(ext.review_window_end) if ext.get("review_window_end") else None
-
-    kpi_names = sorted({r.source_name for r in rows if r.source_doctype == "KPI" and r.source_name})
-    goal_names = sorted({r.source_name for r in rows if r.source_doctype == "Individual Goal" and r.source_name})
-
-    readings, evidence, updates, cancelled = {}, {}, {}, set()
-    if start and end and kpi_names:
-        for f in frappe.get_all(
-            "KPI Progress Log",
-            filters={"parenttype": "KPI", "parent": ["in", kpi_names], "approval_status": "Approved",
-                     "log_date": ["between", [start, end]]},
-            fields=["parent", "value", "log_date", "approved_on", "creation"],
-        ):
-            readings.setdefault(f.parent, []).append(f)
-    if start and end and goal_names:
-        # The date rule needs the fallbacks, so the database narrows by any of the
-        # three dates and _evidence_date decides.
-        for f in frappe.get_all(
-            "Goal Evidence",
-            filters={"parenttype": "Individual Goal", "parent": ["in", goal_names], "validation_status": "Approved"},
-            or_filters=[
-                ["extracted_date", "between", [start, end]],
-                ["upload_date", "between", [start, end]],
-                ["creation", "between", [start, end]],
-            ],
-            fields=["parent", "value", "extracted_date", "upload_date", "creation"],
-        ):
-            evidence.setdefault(f.parent, []).append(f)
-        for f in frappe.get_all(
-            "Goal Progress Update",
-            filters={"parenttype": "Individual Goal", "parent": ["in", goal_names], "approval_status": "Approved",
-                     "log_date": ["between", [start, end]]},
-            fields=["parent", "value", "log_date", "approved_on", "creation"],
-        ):
-            updates.setdefault(f.parent, []).append(f)
+    start, end = _window(ext)
+    kpi_names, goal_names = _source_names(rows)
+    readings, evidence, updates = _load_facts(rows, start, end)
+    cancelled = set()
     if kpi_names:
         cancelled |= set(frappe.get_all(
             "KPI", filters={"name": ["in", kpi_names], "status": "Cancelled"}, pluck="name"
@@ -540,15 +508,85 @@ def _recount(ext):
     return changed
 
 
-def _numbers_for(row, review_start, review_end, readings, evidence, updates):
-    empty = {"actual_value": 0, "attainment_pct": 0, "facts_count": 0, "facts_dated_by_upload": 0}
+def _window(ext):
+    start = getdate(ext.review_window_start) if ext.get("review_window_start") else None
+    end = getdate(ext.review_window_end) if ext.get("review_window_end") else None
+    return start, end
+
+
+def _source_names(rows):
+    kpis = sorted({r.source_name for r in rows if r.source_doctype == "KPI" and r.source_name})
+    goals = sorted({r.source_name for r in rows if r.source_doctype == "Individual Goal" and r.source_name})
+    return kpis, goals
+
+
+def _load_facts(rows, start, end):
+    """Approved facts for these copies, dated in the review period. Three queries at most."""
+    readings, evidence, updates = {}, {}, {}
+    if not (start and end):
+        return readings, evidence, updates
+    kpi_names, goal_names = _source_names(rows)
+    if kpi_names:
+        for f in frappe.get_all(
+            "KPI Progress Log",
+            filters={"parenttype": "KPI", "parent": ["in", kpi_names], "approval_status": "Approved",
+                     "log_date": ["between", [start, end]]},
+            fields=["parent", "value", "log_date", "approved_on", "creation"],
+        ):
+            readings.setdefault(f.parent, []).append(f)
+    if goal_names:
+        # The date rule needs the fallbacks, so the database narrows by any of the
+        # three dates and _evidence_date decides.
+        for f in frappe.get_all(
+            "Goal Evidence",
+            filters={"parenttype": "Individual Goal", "parent": ["in", goal_names], "validation_status": "Approved"},
+            or_filters=[
+                ["extracted_date", "between", [start, end]],
+                ["upload_date", "between", [start, end]],
+                ["creation", "between", [start, end]],
+            ],
+            fields=["parent", "value", "extracted_date", "upload_date", "approved_on", "creation"],
+        ):
+            evidence.setdefault(f.parent, []).append(f)
+        for f in frappe.get_all(
+            "Goal Progress Update",
+            filters={"parenttype": "Individual Goal", "parent": ["in", goal_names], "approval_status": "Approved",
+                     "log_date": ["between", [start, end]]},
+            fields=["parent", "value", "log_date", "approved_on", "creation"],
+        ):
+            updates.setdefault(f.parent, []).append(f)
+    return readings, evidence, updates
+
+
+def _row_window(row, review_start, review_end):
+    """The review period narrowed by the copy's own period, or None if they do not meet."""
     if not (review_start and review_end):
-        # No review period means nothing can be placed in it. Fail closed.
-        return empty
+        return None
     start = max(review_start, getdate(row.period_start)) if row.period_start else review_start
     end = min(review_end, getdate(row.period_end)) if row.period_end else review_end
-    if start > end:
+    return (start, end) if start <= end else None
+
+
+def _facts_in_window(row, window, readings, evidence, updates):
+    """Every fact counted for this copy, as (fact, dated_by_upload)."""
+    start, end = window
+    if row.source_doctype == "KPI":
+        return [(f, False) for f in readings.get(row.source_name, []) if start <= getdate(f.log_date) <= end]
+    out = [(f, False) for f in updates.get(row.source_name, []) if start <= getdate(f.log_date) <= end]
+    for f in evidence.get(row.source_name, []):
+        on, by_upload = _evidence_date(f)
+        if on and start <= on <= end:
+            out.append((f, by_upload))
+    return out
+
+
+def _numbers_for(row, review_start, review_end, readings, evidence, updates):
+    empty = {"actual_value": 0, "attainment_pct": 0, "facts_count": 0, "facts_dated_by_upload": 0}
+    window = _row_window(row, review_start, review_end)
+    if not window:
+        # No review period means nothing can be placed in it. Fail closed.
         return empty
+    start, end = window
 
     absolute = (row.progress_mode or "Cumulative") == "Absolute"
     target = flt(row.target_value)
@@ -743,3 +781,202 @@ def open_blocking_flags(ext):
         if not cint(row.removed) and cint(row.manager_flag)
     )
     return count + cint(ext.get("overall_rating_flag"))
+
+
+# ── What a review screen receives (commit 4: VIS-3, PRIV-1, PRIV-11, PRIV-12, PRIV-13) ─
+#
+# One place decides which copy fields each viewer gets, so the review screens
+# cannot drift apart. A copy is addressed by its row name only: the name of the
+# live Objective or KPI it came from never leaves the server (VIS-3).
+
+VIEWER_SUBJECT = "subject"
+VIEWER_MANAGER = "manager"
+VIEWER_HR = "hr"
+VIEWER_REVIEWER = "reviewer"
+VIEWERS = (VIEWER_SUBJECT, VIEWER_MANAGER, VIEWER_HR, VIEWER_REVIEWER)
+
+SELF_REVIEW_DRAFT = ("Not Started", "Employee Review")
+RATING_RELEASED = ("Employee Final Review", "HR Review", "Completed")
+
+# Definition fields a review may change on its copy (R2 inside the review).
+EDITABLE_DEFINITION = ("title", "target_value", "weightage", "period_start", "period_end")
+
+_STAMP_FIELDS = (
+    "self_basis_actual", "self_basis_target", "self_basis_weightage", "self_flag",
+    "manager_rated_by", "manager_rated_on",
+    "manager_basis_actual", "manager_basis_target", "manager_basis_weightage", "manager_flag",
+    "manager_flag_answered_by", "manager_flag_answered_on",
+)
+
+
+def _date(value):
+    return str(getdate(value)) if value else ""
+
+
+def definition_changes(row):
+    """Editable definition fields changed inside the review: field -> value at the start."""
+    try:
+        start = json.loads(row.definition_at_start or "{}")
+    except ValueError:
+        return {}
+    now = json.loads(_definition_json(row.as_dict()))
+    return {f: start.get(f) for f in EDITABLE_DEFINITION if f in start and start.get(f) != now.get(f)}
+
+
+def review_payload(ext, viewer, employee=None, employee_name=""):
+    """The review's items, cut to what this viewer may see at this stage.
+
+    viewer is one of VIEWERS and is decided by the endpoint after its own
+    checks. An unknown viewer gets nothing (fail closed).
+
+      subject   own self fields always; manager ratings and removals (label,
+                date, reason) from Employee Final Review (decisions 10, 11);
+                never potential, stamps, flags or late facts
+      manager   everything but late facts
+      hr        everything, and facts that arrived after the numbers froze
+      reviewer  definitions and numbers, plus self fields once sent; nothing
+                about manager ratings, potential, stamps, flags or removals
+    """
+    if viewer not in VIEWERS:
+        return {"goals": [], "standalone_kpis": [], "removed_items": []}
+
+    status = ext.review_status or "Not Started"
+    deciders = viewer in (VIEWER_MANAGER, VIEWER_HR)
+    see_self = viewer == VIEWER_SUBJECT or status not in SELF_REVIEW_DRAFT
+    see_manager = deciders or (viewer == VIEWER_SUBJECT and status in RATING_RELEASED)
+    rows = list(ext.get("review_items") or [])
+    live = [r for r in rows if not cint(r.removed)]
+    live_names = {r.name for r in live}
+    late = late_facts(ext) if viewer == VIEWER_HR and status in ("HR Review", "Completed") else {}
+
+    def item(row):
+        out = {
+            "name": row.name,
+            "item_type": row.item_type,
+            "title": row.title or "",
+            "description": row.description or "",
+            "unit": row.unit or "",
+            "direction": row.direction or "",
+            "category": row.category or "",
+            "progress_mode": row.progress_mode or "",
+            "baseline_value": flt(row.baseline_value),
+            "target_value": flt(row.target_value),
+            "weightage": flt(row.weightage),
+            "period_start": _date(row.period_start),
+            "period_end": _date(row.period_end),
+            "actual_value": flt(row.actual_value),
+            "attainment_pct": flt(row.attainment_pct),
+            "facts_count": cint(row.facts_count),
+            "source_cancelled": cint(row.source_cancelled),
+            "added_in_review": cint(row.added_in_review),
+            "employee": employee or "",
+            "employee_name": employee_name or "",
+        }
+        if viewer != VIEWER_REVIEWER:
+            out["definition_changed"] = definition_changes(row)
+        if see_self:
+            out["self_rating"] = flt(row.self_rating)
+            out["self_comment"] = row.self_comment or ""
+        if see_manager:
+            out["manager_rating"] = flt(row.manager_rating)
+            out["manager_comment"] = row.manager_comment or ""
+        if deciders:
+            out["potential_rating"] = flt(row.potential_rating)
+            out["potential_comment"] = row.potential_comment or ""
+            for field in _STAMP_FIELDS:
+                value = row.get(field)
+                out[field] = str(value) if value not in (None, "") and field.endswith("_on") else (
+                    value if value is not None else "")
+        if viewer == VIEWER_HR:
+            out["facts_dated_by_upload"] = cint(row.facts_dated_by_upload)
+            if row.name in late:
+                out["late_facts"] = late[row.name]
+        return out
+
+    goals, standalone = [], []
+    goal_out = {}
+    for row in live:
+        if row.item_type != "Objective":
+            continue
+        g = item(row)
+        # The keys the review page reads today.
+        g.update({
+            "goal_name": g["title"], "actual_progress": g["actual_value"], "progress_pct": g["attainment_pct"],
+            "start_date": g["period_start"], "end_date": g["period_end"], "parent_goal": "",
+            "status": "Cancelled" if g["source_cancelled"] else "Active", "kpis": [],
+        })
+        goal_out[row.name] = g
+        goals.append(g)
+    for row in live:
+        if row.item_type == "Objective":
+            continue
+        k = item(row)
+        k["kpi_name"] = k["title"]
+        k["status"] = "Cancelled" if k["source_cancelled"] else "Active"
+        parent = goal_out.get(row.parent_item) if row.parent_item in live_names else None
+        (parent["kpis"] if parent else standalone).append(k)
+
+    removed = []
+    if viewer != VIEWER_REVIEWER:
+        for row in rows:
+            if not cint(row.removed):
+                continue
+            if (viewer == VIEWER_SUBJECT and status not in RATING_RELEASED
+                    and (row.removed_at_stage or "") not in SELF_REVIEW_DRAFT):
+                # Before Employee Final Review the subject sees only their own removals.
+                continue
+            entry = {
+                "name": row.name, "item_type": row.item_type, "title": row.title or "",
+                "removed_on": str(row.removed_on) if row.removed_on else "",
+                "removal_reason": row.removal_reason or "",
+            }
+            if deciders:
+                entry.update({"removed_by": row.removed_by or "", "removed_at_stage": row.removed_at_stage or ""})
+            removed.append(entry)
+
+    out = {
+        "goals": goals,
+        "standalone_kpis": standalone,
+        "removed_items": removed,
+        "numbers_frozen": cint(ext.frozen),
+        "frozen_on": str(ext.frozen_on) if ext.frozen_on else "",
+    }
+    if deciders:
+        out["overall_rating_flag"] = cint(ext.overall_rating_flag)
+        out["open_blocking_flags"] = open_blocking_flags(ext)
+    return out
+
+
+def late_facts(ext):
+    """R10: facts dated inside a frozen review's period that were approved after
+    it froze. They never change a copy; HR sees them (PRIV-11). Three queries.
+
+    Returns row name -> {"count": n, "actual_with_late": number}.
+    """
+    if not cint(ext.get("frozen")) or not ext.get("frozen_on"):
+        return {}
+    rows = [r for r in (ext.get("review_items") or []) if not cint(r.removed)]
+    start, end = _window(ext)
+    if not rows or not (start and end):
+        return {}
+    frozen_on = get_datetime(ext.frozen_on)
+    readings, evidence, updates = _load_facts(rows, start, end)
+
+    out = {}
+    for row in rows:
+        window = _row_window(row, start, end)
+        if not window:
+            continue
+        count = sum(
+            1 for f, _by_upload in _facts_in_window(row, window, readings, evidence, updates)
+            if get_datetime(f.get("approved_on") or f.get("creation")) > frozen_on
+        )
+        if count:
+            with_late = _numbers_for(row, start, end, readings, evidence, updates)
+            out[row.name] = {"count": count, "actual_with_late": with_late["actual_value"]}
+    return out
+
+
+def copied_sources(ext):
+    """Names of the live records this review holds copies of. Server side only."""
+    return {r.source_name for r in (ext.get("review_items") or []) if r.source_name}

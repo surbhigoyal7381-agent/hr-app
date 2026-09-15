@@ -54,6 +54,16 @@ potential rating never; nobody sees a self-review before it is sent; reviewer pi
 the reviewed person's company, not limited to the manager's line; nobody decides or rates
 their own; the self-review stops changing goal progress.
 
+## Decisions after phase 1 (2026-09-15)
+
+Asked in `03d-implementation-notes-group-d.md` §9; the user took every recommendation.
+
+| # | Question | Decision |
+|---|---|---|
+| 26 | Should Employee also lose **read** on HRMS `Appraisal` (scores are still readable through REST)? | **Yes.** Remove read too, in commit 8 (phase 3). Reads go through our endpoints only. |
+| 27 | HR opening **their own** review record in the desk (it holds their own potential rating) | **Refused**, as built in phase 1. |
+| 28 | `hr_api.get_employee_scorecard` lets any HR person open an employee from any company | **Fix inside 010**, in phase 3: scope to `permitted_companies()`, as in groups A–C. |
+
 ## Coordination
 
 - Slice 012's plan adds the same KPI indexes. **010 claims the KPI DocType file** on the

@@ -1008,7 +1008,7 @@ class TestR2NoUnguardedWritesToLockedFields(FrappeTestCase):
 					if not filename.endswith(".py"):
 						continue
 					path = os.path.join(dirpath, filename)
-					with open(path, encoding="utf-8") as f:
+					with open(path, encoding="utf-8-sig") as f:
 						text = f.read()
 					for fn in ast.walk(ast.parse(text)):
 						if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):

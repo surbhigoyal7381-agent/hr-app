@@ -47,15 +47,24 @@ class G3Case(FrappeTestCase):
 		return email
 
 	def person(self, first, branch, user=None, reports_to=None, department=None):
+		# Frappe 16 rolls back at the end of the class, not after each test, so a
+		# login already linked by an earlier test is reused rather than linked twice.
+		if user and (existing := frappe.db.get_value("Employee", {"user_id": user}, "name")):
+			return existing
 		return frappe.get_doc({
 			"doctype": "Employee", "first_name": first, "company": self.company,
 			"date_of_birth": "1990-01-01", "date_of_joining": "2015-01-01",
 			"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
 			"status": "Active", "branch": branch, "user_id": user, "reports_to": reports_to,
 			"department": department,
+			# ERPNext would otherwise limit this login to its own Employee record,
+			# which is how a tenant sets up an employee, not an HR person.
+			"create_user_permission": 0,
 		}).insert(ignore_permissions=True).name
 
 	def branch_permission(self, user, branch):
+		if frappe.db.exists("User Permission", {"user": user, "allow": "Branch", "for_value": branch}):
+			return
 		frappe.get_doc({"doctype": "User Permission", "user": user, "allow": "Branch",
 		                "for_value": branch, "apply_to_all_doctypes": 1}).insert(ignore_permissions=True)
 

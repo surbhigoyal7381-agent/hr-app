@@ -2260,6 +2260,35 @@ body.panel-fullscreen{overflow:hidden}
   .oc-kids > .oc-branch::after{display:none}
   .oc-box{min-width:0;width:100%;max-width:none}
 }
+
+/* ── Data to review, and its lines on HR Analytics (slice 012) - dr prefix ── */
+.dr-note{border:1px solid var(--border);border-left:4px solid var(--amber);background:var(--amber-lt);
+  color:var(--text);border-radius:var(--r-sm);padding:12px 14px;margin-bottom:14px;font-size:var(--fs-base);line-height:1.5}
+.dr-note.neutral{border-left-color:var(--primary);background:var(--surface)}
+.dr-note p{margin:0 0 4px}
+.dr-note p:last-child{margin-bottom:0}
+.dr-link{color:var(--primary);font:inherit;font-weight:600;background:none;border:0;padding:0;
+  cursor:pointer;text-decoration:underline;min-height:44px}
+.dr-upto{font-size:var(--fs-sm);color:var(--text2);margin:-18px 0 14px}
+.dr-intro{font-size:var(--fs-md);color:var(--text2);margin:0 0 16px;max-width:760px;line-height:1.5}
+.dr-card{margin-bottom:14px}
+.dr-card .card-header{flex-wrap:wrap;gap:8px}
+.dr-card .card-body p{margin:0 0 8px;font-size:var(--fs-base);line-height:1.5;color:var(--text)}
+.dr-chip{margin-left:auto;display:inline-flex;align-items:center;gap:4px;padding:3px 10px;
+  border-radius:var(--r-full);font-size:var(--fs-sm);font-weight:600}
+.dr-chip.warn{background:var(--amber-lt);color:var(--text);border:1px solid var(--amber)}
+.dr-chip.review{background:var(--surface2);color:var(--text2);border:1px solid var(--border)}
+.dr-card .card-body .dr-leaders{color:var(--text2);font-size:var(--fs-sm)}
+.dr-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 8px}
+.dr-actions .btn{min-height:44px}
+.dr-card .card-body .dr-meta{font-size:var(--fs-sm);color:var(--text3);margin:0}
+.dr-foot{font-size:var(--fs-sm);color:var(--text3);margin:8px 0 0}
+#panel-data-review .btn:focus-visible,#panel-analytics .dr-link:focus-visible,
+#panel-data-review .dr-link:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+@media (max-width:640px){
+  .dr-actions .btn{width:100%;justify-content:center;white-space:normal}
+  .dr-chip{margin-left:0}
+}
 </style>
 {% endblock %}
 
@@ -2329,6 +2358,10 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
       </div>
       <div class="nav-item" data-panel="analytics" id="nav-analytics" onclick="switchPanel('analytics',this)" style="display:none">
         <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span> HR Analytics
+      </div>
+      <div class="nav-item" data-panel="data-review" id="nav-data-review" onclick="switchPanel('data-review',this)" style="display:none">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 14l2 2 4-4"/></svg></span> Data to review
+        <span class="nav-badge" id="sb-dr-badge" style="display:none">0</span>
       </div>
       <div class="nav-item" data-panel="org-settings" id="nav-org-settings" onclick="switchPanel('org-settings',this)" style="display:none">
         <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span> Org Settings
@@ -2900,6 +2933,8 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
           <div class="page-title">HR Analytics</div>
           <div class="page-sub">Organisation health &amp; workforce data</div>
         </div>
+        <!-- Slice 012: "data up to", doubtful days, figures that need review, not linked -->
+        <div id="ana-dr-notes" aria-live="polite"></div>
 
         <!-- KPI grid -->
         <div class="kpi-grid">
@@ -2960,6 +2995,27 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
                 <tr><td colspan="4" style="text-align:center;color:var(--text3)">Loading...</td></tr>
               </tbody>
             </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ DATA TO REVIEW (slice 012) ═══════════════════ -->
+      <div id="panel-data-review" class="panel">
+        <div class="page-header">
+          <div class="page-title">Data to review</div>
+          <div class="page-sub">Figures whose data looks wrong or incomplete</div>
+        </div>
+        <div id="dr-body" aria-live="polite" aria-busy="true">
+          <div class="empty-state"><div class="empty-state-text">Loading...</div></div>
+        </div>
+        <div class="gp-backdrop" id="dr-confirm">
+          <div class="gp-modal" role="alertdialog" aria-modal="true" aria-labelledby="dr-confirm-title" aria-describedby="dr-confirm-text" style="max-width:520px">
+            <div class="gp-modal-hdr"><h2 class="gp-modal-title" id="dr-confirm-title"></h2></div>
+            <div class="gp-modal-body"><p id="dr-confirm-text" style="margin:0;line-height:1.5"></p></div>
+            <div class="gp-modal-footer">
+              <button type="button" class="btn btn-outline" id="dr-confirm-keep" onclick="drCloseConfirm()"></button>
+              <button type="button" class="btn btn-primary" id="dr-confirm-go" onclick="drConfirmGo()"></button>
+            </div>
           </div>
         </div>
       </div>
@@ -5280,6 +5336,7 @@ function switchPanel(name, triggerEl) {
   if (name === "attendance-insights") { aiOpen(); }
   if (name === "att-record")         { acOpen(); }
   if (name === "org-chart") { ocLoad(); }
+  if (name === "data-review")        { drLoad(); }
 
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
   if (triggerEl) triggerEl.classList.add("active");
@@ -7644,6 +7701,8 @@ function applyPlanNav() {
   // Absent means "not answered yet", which must not read as "not bought".
   if (navAna) navAna.style.display =
     (roles.is_hr && f.plan_analytics !== false) ? "flex" : "none";
+  var navDr = document.getElementById("nav-data-review");   // slice 012: same rule as Analytics
+  if (navDr) navDr.style.display = navAna ? navAna.style.display : "none";
 
   var navPolicies = document.getElementById("nav-policies");
   if (navPolicies) navPolicies.style.display =
@@ -8503,6 +8562,10 @@ function loadAnalyticsPanel() {
 }
 
 function renderAnalyticsData(d) {
+  // Slice 012: the "not linked" message, "data up to", doubtful days and the
+  // review line. Not linked means no figures at all, so nothing below is drawn.
+  drAnalyticsNotes(d);
+  if (d.not_linked) return;
   const h   = d.headcount      || {};
   const kpi = d.kpis            || {};
   const oh  = d.org_health      || {};
@@ -8515,10 +8578,11 @@ function renderAnalyticsData(d) {
   // KPIs
   document.getElementById("kpi-active").textContent       = h.active        || 0;
   document.getElementById("kpi-joiners").textContent      = h.new_joiners   || 0;
-  document.getElementById("kpi-att-rate").textContent     = (kpi.attendance_rate || 0) + "%";
+  // No data is "—", never 0% (slice 012).
+  document.getElementById("kpi-att-rate").textContent     = kpi.attendance_rate == null ? "—" : kpi.attendance_rate + "%";
   document.getElementById("kpi-pend-leaves").textContent  = kpi.pending_approvals || 0;
   document.getElementById("kpi-confirmations").textContent = oh.confirmations_due || 0;
-  document.getElementById("kpi-leave-util").textContent   = (kpi.leave_utilization || 0) + "%";
+  document.getElementById("kpi-leave-util").textContent   = kpi.leave_utilization == null ? "—" : kpi.leave_utilization + "%";
 
   // Org health
   document.getElementById("oh-present").textContent = oh.present_this_month || 0;
@@ -8567,6 +8631,263 @@ function renderAnalyticsData(d) {
         return '<tr><td>' + esc(e.employee_name) + '</td><td>' + esc(e.designation||"—") + '</td><td>' + esc(e.department||"—") + '</td><td class="num">' + fmtDate(e.date_of_joining) + '</td></tr>';
       }).join("");
 }
+
+/* ── Data to review (slice 012) ──────────────────────
+   Its own block and name prefix (dr). The server decides everything shown here -
+   scope, which records exist, what may be confirmed, every figure. The page only
+   draws it; a hidden button is not a permission. */
+var DR = { cards: [], pending: null, returnFocus: null };
+
+// Translation when Frappe's __ is on the page; the plain English otherwise.
+// {0}, {1}... are filled here so no sentence is built from pieces.
+function drT(text, args) {
+  var out = (typeof window.__ === "function") ? window.__(text) : text;
+  (args || []).forEach(function (a, i) { out = out.split("{" + i + "}").join(a); });
+  return out;
+}
+
+function drDay(iso) {
+  return new Date(iso + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+function drDates(list) {
+  var days = (list || []).map(drDay);
+  try { return new Intl.ListFormat(undefined, { type: "conjunction" }).format(days); }
+  catch (e) { return days.join(", "); }
+}
+
+function drWhen(stamp) {
+  if (!stamp) return "";
+  var dt = new Date(String(stamp).slice(0, 19).replace(" ", "T"));
+  return dt.toLocaleDateString(undefined, { day: "numeric", month: "short" }) + ", " +
+    dt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+function drSetBadge(n) {
+  var b = document.getElementById("sb-dr-badge");
+  if (!b) return;
+  b.textContent = n || 0;
+  b.style.display = n ? "" : "none";
+}
+
+function drNotLinkedHtml() {
+  return '<div class="dr-note neutral" role="status"><p><b>' +
+    esc(drT("Your account is not linked to a company, so there are no figures to show.")) + '</b></p><p>' +
+    esc(drT("Ask your System Manager to give you permission for your company, or to link your employee record to your login.")) +
+    '</p></div>';
+}
+
+/* The lines at the top of HR Analytics. */
+function drAnalyticsNotes(d) {
+  var box = document.getElementById("ana-dr-notes");
+  var panel = document.getElementById("panel-analytics");
+  if (!box || !panel) return;
+  panel.querySelectorAll(":scope > .kpi-grid, :scope > .g2, :scope > .card").forEach(function (el) {
+    el.style.display = d.not_linked ? "none" : "";
+  });
+  if (d.not_linked) { box.innerHTML = drNotLinkedHtml(); return; }
+
+  var html = "";
+  if (d.data_up_to) {
+    html += '<p class="dr-upto">' + esc(drT("Data up to {0}", [fmtDate(d.data_up_to)])) + '</p>';
+  }
+  var review = d.review || {};
+  var dates = review.doubtful_dates || [];
+  if (dates.length) {
+    html += '<div class="dr-note" role="status"><p><b>' + esc(drT("Some attendance days look wrong")) + '</b></p><p>' +
+      esc(drT("On {0} almost everyone is marked absent. This is usually missing check-in data, not real absence. These days are left out of the attendance figures below until HR fixes or confirms them.", [drDates(dates)])) +
+      '</p></div>';
+  }
+  var n = review.open_count || 0;
+  if (n) {
+    html += '<div class="dr-note neutral"><p><b>' +
+      esc(n === 1 ? drT("1 figure needs review.") : drT("{0} figures need review.", [n])) + '</b> ' +
+      esc(drT("Leaders see 'Needs review' until they are fixed.")) + '</p>' +
+      '<p><button type="button" class="dr-link" onclick="switchPanel(\'data-review\')">' +
+      esc(drT("Open Data to review")) + '</button></p></div>';
+  }
+  drSetBadge(n);
+  box.innerHTML = html;
+}
+
+function drLoad() {
+  var body = document.getElementById("dr-body");
+  body.setAttribute("aria-busy", "true");
+  return window.gpFetch("alvoraa_portal.data_review.data_review_items", {}).then(function (d) {
+    drRender(d);
+  }).catch(function (e) {
+    body.innerHTML = '<div class="dr-note" role="alert"><p><b>' + esc(drT("Data to review did not load.")) +
+      '</b></p><p>' + esc((e && e.message) || drT("Check your connection and try again.")) + '</p>' +
+      '<p><button type="button" class="dr-link" onclick="drLoad()">' + esc(drT("Try again")) + '</button></p></div>';
+  }).then(function () {
+    body.setAttribute("aria-busy", "false");
+  });
+}
+
+function drDeskUrl(route, filters) {
+  var q = Object.keys(filters).map(function (k) {
+    var v = filters[k];
+    return encodeURIComponent(k) + "=" + encodeURIComponent(typeof v === "string" ? v : JSON.stringify(v));
+  }).join("&");
+  return "/app/" + route + (q ? "?" + q : "");
+}
+
+function drCard(c, i, manyCompanies) {
+  var title, chip, lines = [], leaders, acts = [], meta;
+  var company = manyCompanies ? '<p class="dr-meta">' + esc(drT("Company: {0}", [c.company])) + '</p>' : "";
+  if (c.kind === "doubtful") {
+    var n = c.dates.length;
+    title = n === 1 ? drT("1 attendance day looks wrong") : drT("{0} attendance days look wrong", [n]);
+    chip = '<span class="dr-chip warn">' + esc(drT("Doubtful days")) + '</span>';
+    var pct = c.absent_pct ? (c.absent_pct[0] === c.absent_pct[1] ? c.absent_pct[0] + "%" : c.absent_pct[0] + "–" + c.absent_pct[1] + "%") : "";
+    lines.push(drT("On {0}, {1} of the people expected at work at {2} are marked absent, and no more than {3}% checked in. This usually means the check-in device did not send its data.",
+      [drDates(c.dates), pct, (c.branches || []).join(", "), c.checked_in_pct || 0]));
+    lines.push(drT("These days are left out of attendance, late arrivals and short days, for HR and for leaders."));
+    leaders = n === 1 ? drT("an amber warning, \"1 doubtful day left out\", and attendance without that day.")
+                      : drT("an amber warning, \"{0} doubtful days left out\", and attendance without those days.", [n]);
+    acts.push('<a class="btn btn-primary" target="_blank" rel="noopener" href="' + esc(drDeskUrl("attendance", {
+      company: c.company, alvoraa_branch: ["in", c.branches || []],
+      attendance_date: ["between", [c.dates[0], c.dates[n - 1]]] })) + '">' + esc(drT("Open attendance for these days")) + '</a>');
+    if (c.can_confirm) acts.push('<button type="button" class="btn btn-outline" onclick="drAsk(' + i + ', this)">' + esc(drT("The absence was real")) + '</button>');
+    meta = drT("Found {0} · Checked again every morning", [drWhen(c.found_on)]);
+  } else if (c.kind === "leave") {
+    title = drT("Leave used");
+    chip = '<span class="dr-chip review">' + esc(drT("Needs review")) + '</span>';
+    lines.push(drT("Only {0} leave requests have been entered this leave year, for {1} people with {2} days of leave between them.",
+      [c.requests, c.people, Number(c.days_allocated || 0).toLocaleString()]));
+    lines.push(drT("Leave is probably being recorded somewhere else, so \"leave used 0%\" would mislead."));
+    leaders = drT("\"Needs review\" for leave used, on leave today and requests waiting.");
+    acts.push('<a class="btn btn-primary" target="_blank" rel="noopener" href="' + esc(drDeskUrl("leave-application", { company: c.company })) + '">' + esc(drT("Open leave requests")) + '</a>');
+    if (c.can_confirm) acts.push('<button type="button" class="btn btn-outline" onclick="drAsk(' + i + ', this)">' + esc(drT("The figure is right, show it")) + '</button>');
+    meta = drT("Found {0} · Checked again every morning", [drWhen(c.found_on)]);
+  } else {
+    title = drT("Leavers and attrition");
+    chip = '<span class="dr-chip review">' + esc(drT("Needs review")) + '</span>';
+    leaders = drT("\"Needs review\" for leavers and attrition.");
+    if (c.rule === "D18-1") {
+      lines.push(c.branch
+        ? drT("{0} people at {1} are marked as left but have no leaving date. Without a date, nobody can tell whether they left in the last 12 months.", [c.people, c.branch])
+        : drT("{0} people with no branch are marked as left but have no leaving date. Without a date, nobody can tell whether they left in the last 12 months.", [c.people]));
+      var f = { company: c.company, status: "Left", relieving_date: ["is", "not set"] };
+      if (c.branch) f.branch = c.branch;
+      acts.push('<a class="btn btn-primary" target="_blank" rel="noopener" href="' + esc(drDeskUrl("employee", f)) + '">' + esc(drT("Open these {0} people", [c.people])) + '</a>');
+      meta = drT("Found {0} · Clears by itself once every leaver has a leaving date", [drWhen(c.found_on)]);
+    } else {
+      lines.push(drT("Nobody in {0} has a leaving date in the last 12 months. If people did leave, their records are missing a leaving date.", [c.company]));
+      acts.push('<a class="btn btn-primary" target="_blank" rel="noopener" href="' + esc(drDeskUrl("employee", { company: c.company, status: "Left" })) + '">' + esc(drT("Open employees who left")) + '</a>');
+      if (c.can_confirm) acts.push('<button type="button" class="btn btn-outline" onclick="drAsk(' + i + ', this)">' + esc(drT("The figure is right, show it")) + '</button>');
+      meta = drT("Found {0} · Checked again every morning", [drWhen(c.found_on)]);
+    }
+  }
+  return '<section class="card dr-card" aria-labelledby="dr-card-' + i + '"><div class="card-header">' +
+    '<h2 class="card-title" id="dr-card-' + i + '">' + esc(title) + '</h2>' + chip + '</div><div class="card-body">' +
+    company + lines.map(function (l) { return '<p>' + esc(l) + '</p>'; }).join("") +
+    '<p class="dr-leaders"><b>' + esc(drT("Leaders see:")) + '</b> ' + esc(leaders) + '</p>' +
+    '<div class="dr-actions">' + acts.join("") + '</div>' +
+    '<p class="dr-meta">' + esc(meta) + '</p></div></section>';
+}
+
+function drRender(d) {
+  var body = document.getElementById("dr-body");
+  if (d.not_linked) { body.innerHTML = drNotLinkedHtml(); drSetBadge(0); return; }
+  DR.cards = d.cards || [];
+  drSetBadge(d.open_count || 0);
+
+  var html = '<p class="dr-intro">' + esc(drT("These figures show 'Needs review' to company and branch heads until you fix the data or confirm it is right. Leaders see the label and a short reason, not these details.")) + '</p>';
+  if (d.stale) {
+    html += '<div class="dr-note" role="status"><p>' + esc(d.last_checked
+      ? drT("Checks have not run since {0}", [drWhen(d.last_checked)])
+      : drT("Checks have not run yet. They run every morning.")) + '</p></div>';
+  } else if (d.last_checked) {
+    html += '<p class="dr-upto" style="margin-top:0">' + esc(drT("Last checked {0}", [drWhen(d.last_checked)])) + '</p>';
+  }
+  if (!DR.cards.length) {
+    html += '<div class="card"><div class="empty-state"><div class="empty-state-text">' +
+      esc(drT("Nothing to review. The data behind every figure in your scope looks complete. It is checked again every morning.")) +
+      '</div></div></div>';
+  } else {
+    var companies = {};
+    DR.cards.forEach(function (c) { companies[c.company] = 1; });
+    var many = Object.keys(companies).length > 1;
+    html += DR.cards.map(function (c, i) { return drCard(c, i, many); }).join("");
+  }
+  html += '<p class="dr-foot">' + esc(drT("Every 'the figure is right' confirmation is kept with who made it and when.")) + '</p>';
+  body.innerHTML = html;
+}
+
+/* Confirm dialogs: an alert dialog, focus on the safe choice, Escape keeps things as they are. */
+function drAsk(i, trigger) {
+  var c = DR.cards[i];
+  if (!c) return;
+  var title, text, keep, go, action;
+  if (c.kind === "doubtful") {
+    action = "absence_real";
+    title = drT("Count these days as real absence?");
+    text = (c.figure_with != null && drMovesFigure(c))
+      ? drT("Count {0} as real absence? Attendance for this month will drop to about {1}%. This is recorded with your name.", [drDates(c.dates), c.figure_with])
+      : drT("Count {0} as real absence? They will be counted in attendance again. This is recorded with your name.", [drDates(c.dates)]);
+    keep = drT("Keep them left out"); go = drT("Count them");
+  } else if (c.kind === "leave") {
+    action = "figure_right";
+    title = drT("Show leave used to leaders?");
+    text = drT("Leaders will see leave used as {0}%. Only do this if leave really is recorded in Alvoraa. This is recorded with your name.", [c.used_pct == null ? 0 : c.used_pct]);
+    keep = drT("Keep 'Needs review'"); go = drT("Show it");
+  } else {
+    action = "figure_right";
+    title = drT("Show leavers to leaders?");
+    text = drT("Leaders will see no leavers in the last 12 months for {0}. Only do this if nobody really left. This is recorded with your name.", [c.company]);
+    keep = drT("Keep 'Needs review'"); go = drT("Show it");
+  }
+  DR.pending = { items: c.items, action: action };
+  DR.returnFocus = trigger || null;
+  document.getElementById("dr-confirm-title").textContent = title;
+  document.getElementById("dr-confirm-text").textContent = text;
+  document.getElementById("dr-confirm-keep").textContent = keep;
+  document.getElementById("dr-confirm-go").textContent = go;
+  document.getElementById("dr-confirm-go").disabled = false;
+  document.getElementById("dr-confirm").classList.add("open");
+  document.getElementById("dr-confirm-keep").focus();
+}
+
+// The "drop to about" figure is for this month; a doubtful day in an earlier month does not move it.
+function drMovesFigure(c) {
+  return c.figure_without != null && c.figure_with !== c.figure_without;
+}
+
+function drCloseConfirm() {
+  DR.pending = null;
+  document.getElementById("dr-confirm").classList.remove("open");
+  if (DR.returnFocus && document.body.contains(DR.returnFocus)) DR.returnFocus.focus();
+}
+
+function drConfirmGo() {
+  var p = DR.pending;
+  if (!p) return;
+  var go = document.getElementById("dr-confirm-go");
+  go.disabled = true;           // a second tap sends nothing
+  window.gpFetch("alvoraa_portal.data_review.data_review_confirm", { items: p.items, action: p.action }).then(function () {
+    DR.returnFocus = null;
+    drCloseConfirm();
+    toast(drT("Recorded with your name. Leaders see the figure the next time they open their overview."));
+    drLoad();
+    loadedPanels.delete("analytics");   // HR Analytics picks up the change next time it opens
+  }).catch(function (e) {
+    go.disabled = false;
+    toast((e && e.message) || drT("Could not record this. Try again."), "err");
+  });
+}
+
+document.addEventListener("keydown", function (e) {
+  var dlg = document.getElementById("dr-confirm");
+  if (!dlg || !dlg.classList.contains("open")) return;
+  if (e.key === "Escape") { e.preventDefault(); drCloseConfirm(); return; }
+  if (e.key === "Tab") {        // keep focus inside the two choices
+    var keep = document.getElementById("dr-confirm-keep"), go = document.getElementById("dr-confirm-go");
+    var last = go.disabled ? keep : go;
+    if (e.shiftKey && document.activeElement === keep) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); keep.focus(); }
+  }
+});
 
 /* ── Home goals (compact) ────────────────────────── */
 let _teamGoalData = null;

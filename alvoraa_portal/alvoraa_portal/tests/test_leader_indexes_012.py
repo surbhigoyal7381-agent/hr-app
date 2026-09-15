@@ -69,6 +69,24 @@ class TestTheEightIndexes(FrappeTestCase):
 		self.assertAllEight()
 		self.assertMarked()
 
+	def test_the_resync_really_drops_an_unmarked_index(self):
+		"""OPS-71 tripwire for the tripwire (test engineer, 2026-09-15): proves the re-sync
+		above is a real re-sync. Without its Property Setter, one index must be gone after
+		`updatedb`; `add_indexes` then puts marker and index back."""
+		doctype, field = "Employee", "relieving_date"
+		try:
+			frappe.db.delete("Property Setter", {"doc_type": doctype, "field_name": field,
+			                                     "property": "search_index"})
+			frappe.clear_cache(doctype=doctype)
+			frappe.db.updatedb(doctype)
+			self.assertIsNone(frappe.db.get_column_index(f"tab{doctype}", field),
+			                  "updatedb kept an unmarked one-column index, so the survival test proves nothing")
+		finally:
+			data_review.add_indexes()
+			frappe.clear_cache(doctype=doctype)
+		self.assertAllEight()
+		self.assertMarked()
+
 	def test_the_hook_marks_fields_during_migrate_too(self):
 		"""OPS-71: `add_index` does not mark a field while in_migrate is set; ours must."""
 		saved = frappe.flags.in_migrate

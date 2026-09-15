@@ -999,7 +999,7 @@ class TestR2NoUnguardedWritesToLockedFields(FrappeTestCase):
 		hrms_root = os.path.dirname(importlib.import_module("hrms").__file__)
 		roots += [os.path.join(hrms_root, d) for d in os.listdir(hrms_root) if d.startswith("alvoraa_")]
 
-		offenders = []
+		offenders, guarded_writers = [], set()
 		for root in roots:
 			for dirpath, _dirs, files in os.walk(root):
 				if "tests" in dirpath.split(os.sep) or "patches" in dirpath.split(os.sep):
@@ -1028,4 +1028,8 @@ class TestR2NoUnguardedWritesToLockedFields(FrappeTestCase):
 								risky = bool(fields and fields & every_locked)
 							if risky and not guarded:
 								offenders.append(f"{path}:{call.lineno}")
+							elif risky:
+								guarded_writers.add(fn.name)
 		self.assertEqual(sorted(set(offenders)), [])
+		# The scan really read the code: the two writers that ask first were found.
+		self.assertTrue({"attach_ongoing_to_cycle", "set_cycle_membership"} <= guarded_writers, guarded_writers)

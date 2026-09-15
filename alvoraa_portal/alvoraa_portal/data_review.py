@@ -65,7 +65,17 @@ def add_indexes():
 def after_install():
 	"""A site built with `bench install-app` (CI) never runs after_migrate."""
 	add_indexes()
+	_ensure_settings()
 
 
 def after_migrate():
 	add_indexes()
+	_ensure_settings()
+
+
+def _ensure_settings():
+	from alvoraa_portal.alvoraa_portal.doctype.alvoraa_leader_view_settings.alvoraa_leader_view_settings import (
+		ensure_default,
+	)
+
+	ensure_default()

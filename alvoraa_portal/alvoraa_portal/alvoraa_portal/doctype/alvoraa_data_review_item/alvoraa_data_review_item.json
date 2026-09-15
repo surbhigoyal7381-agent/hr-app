@@ -1,0 +1,232 @@
+{
+ "actions": [],
+ "creation": "2026-09-15 12:00:00.000000",
+ "description": "A figure whose data looks wrong: a doubtful attendance day, leave that looks unrecorded, or leavers with no leaving date. Created and cleared by the morning check; confirmed by HR from the portal's Data to review page. Counts and dates only - no employee, name or leave type. Kept 13 months after the date it concerns plus one year (declared, not purged automatically).",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "item_type",
+  "rule",
+  "company",
+  "alvoraa_branch",
+  "check_date",
+  "column_break_key",
+  "status",
+  "first_found_on",
+  "counts_section",
+  "expected_count",
+  "absent_count",
+  "checked_in_count",
+  "column_break_counts",
+  "affected_count",
+  "people_count",
+  "days_allocated",
+  "confirmation_section",
+  "confirmation",
+  "confirmed_by",
+  "confirmed_on",
+  "column_break_confirmation",
+  "figure_without",
+  "figure_with"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "What needs review",
+   "options": "Doubtful day\nLeave used\nLeavers",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "D5 doubtful day, D6 leave used, D18-1 left with no leaving date, D18-2 no leaving date in 12 months.",
+   "fieldname": "rule",
+   "fieldtype": "Data",
+   "label": "Rule",
+   "read_only": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Company",
+   "options": "Company",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "Blank for a company-wide item.",
+   "fieldname": "alvoraa_branch",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Branch",
+   "options": "Branch",
+   "read_only": 1
+  },
+  {
+   "description": "The doubtful day, or the start of the leave year for leave and leavers items.",
+   "fieldname": "check_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Day or leave year start",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_key",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Open",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Open\nConfirmed\nCleared",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "first_found_on",
+   "fieldtype": "Datetime",
+   "label": "Found",
+   "read_only": 1
+  },
+  {
+   "fieldname": "counts_section",
+   "fieldtype": "Section Break",
+   "label": "Counts"
+  },
+  {
+   "default": "0",
+   "fieldname": "expected_count",
+   "fieldtype": "Int",
+   "label": "Expected at work",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "absent_count",
+   "fieldtype": "Int",
+   "label": "Marked absent",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "checked_in_count",
+   "fieldtype": "Int",
+   "label": "Checked in",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_counts",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Leave used: requests entered this leave year. Leavers: people marked Left with no leaving date.",
+   "fieldname": "affected_count",
+   "fieldtype": "Int",
+   "label": "Records affected",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Leave used: people with leave allocated this leave year.",
+   "fieldname": "people_count",
+   "fieldtype": "Int",
+   "label": "People in scope",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "days_allocated",
+   "fieldtype": "Float",
+   "label": "Days of leave allocated",
+   "read_only": 1
+  },
+  {
+   "fieldname": "confirmation_section",
+   "fieldtype": "Section Break",
+   "label": "Confirmation"
+  },
+  {
+   "fieldname": "confirmation",
+   "fieldtype": "Select",
+   "label": "Confirmation",
+   "options": "\nAbsence was real\nFigure is right",
+   "read_only": 1
+  },
+  {
+   "fieldname": "confirmed_by",
+   "fieldtype": "Link",
+   "label": "Confirmed by",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "confirmed_on",
+   "fieldtype": "Datetime",
+   "label": "Confirmed on",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_confirmation",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The figure HR saw before confirming (percent).",
+   "fieldname": "figure_without",
+   "fieldtype": "Float",
+   "label": "Figure without these days",
+   "precision": "1",
+   "read_only": 1
+  },
+  {
+   "description": "The figure leaders see once confirmed (percent).",
+   "fieldname": "figure_with",
+   "fieldtype": "Float",
+   "label": "Figure with these days",
+   "precision": "1",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-09-15 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa Data Review Item",
+ "naming_rule": "By script",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "HR User",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

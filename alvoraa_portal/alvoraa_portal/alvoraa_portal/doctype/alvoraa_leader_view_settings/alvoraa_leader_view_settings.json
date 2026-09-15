@@ -1,0 +1,59 @@
+{
+ "actions": [],
+ "creation": "2026-09-15 12:00:00.000000",
+ "description": "Privacy rules for the leader view. Only a System Manager may change them, with a reason; every change is kept in the history.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "min_group_size",
+  "change_reason",
+  "last_checks_run_on"
+ ],
+ "fields": [
+  {
+   "default": "5",
+   "description": "Allowed: 3 to 10. Leader figures for a group of fewer people are not shared, and the morning check only looks for doubtful attendance days in groups at least this big.",
+   "fieldname": "min_group_size",
+   "fieldtype": "Int",
+   "label": "Hide groups smaller than",
+   "reqd": 1
+  },
+  {
+   "description": "Required when you change the number. Kept in the change history. Do not name employees.",
+   "fieldname": "change_reason",
+   "fieldtype": "Small Text",
+   "label": "Why are you making this change?"
+  },
+  {
+   "description": "When the morning data check last finished for every company.",
+   "fieldname": "last_checks_run_on",
+   "fieldtype": "Datetime",
+   "label": "Last checked",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-09-15 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa Leader View Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "HR Manager"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

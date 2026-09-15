@@ -681,6 +681,14 @@ def set_goal_progress(goal_id, actual_progress):
     goal = frappe.get_doc("Individual Goal", goal_id)
     if not (_is_hr() or goal.owner == frappe.session.user):
         frappe.throw("Not permitted to update this goal", frappe.PermissionError)
+    # Progress set by hand has no dated fact behind it, so while a review holds
+    # the goal it would change the review's number unseen (decision 21).
+    import alvoraa_goals.review_items as review_items
+    if review_items.holds("Individual Goal", [goal.name]):
+        from hrms.alvoraa_hr_core.access import refuse
+        refuse("This Objective is in an open review. Log progress as an update instead, "
+               "so it can be approved and dated.", "R2", "goals_api.set_goal_progress",
+               "Individual Goal", goal.name)
     val = flt(actual_progress)
     goal.actual_progress = val
     goal.progress_pct = min((val / flt(goal.target_value)) * 100, 100) if goal.target_value else 0

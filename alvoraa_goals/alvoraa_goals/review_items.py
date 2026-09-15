@@ -29,7 +29,7 @@ from datetime import datetime
 
 import frappe
 from frappe import _
-from frappe.utils import cint, cstr, flt, get_datetime, getdate, now_datetime
+from frappe.utils import add_days, cint, cstr, flt, get_datetime, getdate, now_datetime, nowdate
 
 from alvoraa_goals.alvoraa_goals.doctype.alvoraa_appraisal_extension.alvoraa_appraisal_extension import (
     REVIEW_ITEMS_WRITE_FLAG,
@@ -1375,6 +1375,176 @@ def write_back(ext):
                 ", ".join(kept)))
         row.write_back_note = " ".join(notes)
     return noted
+
+
+# ── The definition lock on live records (commit 7: R2, R9, R11, SEC-19, SEC-22) ─
+#
+# Hung on the documents themselves (before_validate, before_update_after_submit,
+# on_trash), so the portal, the desk, REST and Data Import all meet it.
+# before_validate, not validate: set_goal_progress and others save with
+# flags.ignore_validate, which skips validate but not before_validate.
+
+LOCKED_FIELDS = {
+    "KPI": ("kpi_name", "target_value", "weightage", "period_start", "period_end", "appraisal_cycle",
+            "employee", "progress_mode", "direction", "baseline_value", "unit", "individual_goal"),
+    "Individual Goal": ("goal_name", "target_value", "weightage", "start_date", "end_date", "appraisal_cycle",
+                        "employee", "progress_mode", "unit", "parent_goal"),
+}
+_WHAT = {"KPI": "KPI", "Individual Goal": "Objective"}
+
+
+def holds(doctype, names):
+    """Which of these live records an open review holds. One query.
+
+    Held: a live (not removed) copy sits in a review that is not Completed,
+    whose appraisal is not cancelled, and whose lock has not been released.
+    The lock is released a number of days after the cycle ends, counted on the
+    server's date (R9, SEC-22); 0 days means never, and so does a cycle with no
+    end date. Returns name -> release date, or None when it is never released.
+    """
+    names = sorted({n for n in (names or []) if n})
+    if not names:
+        return {}
+    item = frappe.qb.DocType("Alvoraa Review Item")
+    ext = frappe.qb.DocType("Alvoraa Appraisal Extension")
+    appraisal = frappe.qb.DocType("Appraisal")
+    cycle = frappe.qb.DocType("Appraisal Cycle")
+    rows = (
+        frappe.qb.from_(item)
+        .join(ext).on(item.parent == ext.name)
+        .join(appraisal).on(appraisal.name == ext.appraisal)
+        .left_join(cycle).on(cycle.name == ext.appraisal_cycle)
+        .select(item.source_name, cycle.end_date, ext.review_window_end)
+        .where(item.parenttype == "Alvoraa Appraisal Extension")
+        .where(item.source_doctype == doctype)
+        .where(item.source_name.isin(names))
+        .where(item.removed == 0)
+        .where(ext.review_status != "Completed")
+        .where(appraisal.docstatus != 2)
+    ).run(as_dict=True)
+    if not rows:
+        return {}
+
+    days = review_settings()["lock_release_days"]
+    today = getdate(nowdate())
+    out = {}
+    for r in rows:
+        end = r.end_date or r.review_window_end
+        release = getdate(add_days(end, days)) if (days and end) else None
+        if release and today >= release:
+            continue
+        if r.source_name in out and (out[r.source_name] is None or (release and out[r.source_name] >= release)):
+            continue
+        out[r.source_name] = release
+    return out
+
+
+def _lock_value(meta, field, value):
+    """A field's value in a form that compares the same however it arrived
+    (a REST call may send "50" for 50.0, or a date as text)."""
+    fieldtype = (meta.get_field(field) or frappe._dict()).fieldtype
+    if fieldtype in ("Float", "Percent", "Currency", "Int"):
+        return flt(value, 6)
+    if fieldtype == "Date":
+        return str(getdate(value)) if value else ""
+    return cstr(value)
+
+
+def _held_or_refuse(doc, rule, endpoint):
+    """holds() for one document; a lookup that fails refuses (SEC-19 fails closed)."""
+    from hrms.alvoraa_hr_core.access import refuse
+
+    try:
+        return holds(doc.doctype, [doc.name])
+    except Exception:
+        refuse(_("This change cannot be checked against open reviews right now. Try again shortly."),
+               rule, endpoint, doc.doctype, doc.name)
+
+
+def enforce_definition_lock(doc, method=None):
+    """doc_events before_validate / before_update_after_submit on KPI and Individual Goal.
+
+    While an open review holds a live record, its definition cannot change here:
+    name, target, weight, period, cycle, person, progress mode, direction,
+    baseline, unit and parent link (R2, decision 8). Facts, status and
+    cancelling are not locked (decision 20). No role is exempt; only the
+    completion write-back passes.
+    """
+    if doc.is_new() or doc.flags.get(WRITE_BACK_FLAG) or doc.doctype not in LOCKED_FIELDS:
+        return
+    before = doc.get_doc_before_save() or frappe.get_doc(doc.doctype, doc.name)
+    changed = [f for f in LOCKED_FIELDS[doc.doctype]
+               if _lock_value(doc.meta, f, before.get(f)) != _lock_value(doc.meta, f, doc.get(f))]
+    if not changed:
+        return
+    held = _held_or_refuse(doc, "R2", f"{doc.doctype} save")
+    if doc.name not in held:
+        return
+    from hrms.alvoraa_hr_core.access import refuse
+
+    release = held[doc.name]
+    when = (_("or after {0}").format(frappe.utils.formatdate(release)) if release
+            else _("or once the review is completed"))
+    refuse(
+        _("This {0} is in an open review, so its {1} cannot be changed here. Change it inside the review, {2}.").format(
+            _(_WHAT[doc.doctype]), ", ".join(doc.meta.get_label(f) for f in changed), when),
+        "R2", f"{doc.doctype} save", doc.doctype, doc.name,
+    )
+
+
+def refuse_delete_while_held(doc, method=None):
+    """doc_events on_trash on KPI and Individual Goal (R11).
+
+    A live record an open review holds cannot be deleted by any path. An item
+    created inside the review is deleted through the review, which takes its
+    copy out first (delete_review_item). Cancelling stays possible.
+    """
+    held = _held_or_refuse(doc, "R11", f"{doc.doctype} delete")
+    if doc.name not in held:
+        return
+    from hrms.alvoraa_hr_core.access import refuse
+
+    refuse(
+        _("This {0} is in an open review, so it cannot be deleted. Remove it from the review instead.").format(
+            _(_WHAT[doc.doctype])),
+        "R11", f"{doc.doctype} delete", doc.doctype, doc.name,
+    )
+
+
+def refresh_copies_of(doc, method=None):
+    """doc_events on_update on KPI and Individual Goal: bring open reviews' copies
+    up to date when a live record's facts change (R3).
+
+    One query when no open, unfrozen review holds the record, which is the usual
+    case. A failure never stops the live save: it is logged with document names
+    only, and the review catches up the next time it is opened.
+    """
+    if doc.flags.get(WRITE_BACK_FLAG):
+        return
+    item = frappe.qb.DocType("Alvoraa Review Item")
+    ext_t = frappe.qb.DocType("Alvoraa Appraisal Extension")
+    appraisal = frappe.qb.DocType("Appraisal")
+    parents = (
+        frappe.qb.from_(item)
+        .join(ext_t).on(item.parent == ext_t.name)
+        .join(appraisal).on(appraisal.name == ext_t.appraisal)
+        .select(item.parent).distinct()
+        .where(item.parenttype == "Alvoraa Appraisal Extension")
+        .where(item.source_doctype == doc.doctype)
+        .where(item.source_name == doc.name)
+        .where(item.removed == 0)
+        .where(ext_t.frozen == 0)
+        .where(ext_t.review_status != "Completed")
+        .where(appraisal.docstatus != 2)
+    ).run(pluck=True)
+    for parent in parents:
+        savepoint = f"review_refresh_{frappe.generate_hash(length=8)}"
+        frappe.db.savepoint(savepoint)
+        try:
+            refresh_review_items(frappe.get_doc("Alvoraa Appraisal Extension", parent))
+        except Exception:
+            frappe.db.rollback(save_point=savepoint)
+            frappe.log_error(title="Review copy refresh failed", message=f"{parent} {doc.doctype} {doc.name}")
 
 
 def _plain(error):

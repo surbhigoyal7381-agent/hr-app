@@ -12,6 +12,13 @@ doc_events = {
         "after_insert": "alvoraa_goals.controllers.goal.after_insert_goal",
         "before_submit": "alvoraa_goals.controllers.goal.before_submit_goal",
         "on_submit": "alvoraa_goals.controllers.goal.on_submit_goal",
+        # Slice 010 group D: while an open review holds the Objective, its
+        # definition is locked (before_validate runs even with ignore_validate),
+        # it cannot be deleted, and a fact change reaches the review's copy.
+        "before_validate": "alvoraa_goals.review_items.enforce_definition_lock",
+        "before_update_after_submit": "alvoraa_goals.review_items.enforce_definition_lock",
+        "on_trash": "alvoraa_goals.review_items.refuse_delete_while_held",
+        "on_update": "alvoraa_goals.review_items.refresh_copies_of",
     },
     "Goal Evidence": {
         "before_insert": "alvoraa_goals.controllers.evidence.validate_evidence",
@@ -19,6 +26,10 @@ doc_events = {
     },
     "KPI": {
         "validate": "alvoraa_goals.controllers.kpi.validate_kpi",
+        # Slice 010 group D: the same review lock, delete rule and copy refresh.
+        "before_validate": "alvoraa_goals.review_items.enforce_definition_lock",
+        "on_trash": "alvoraa_goals.review_items.refuse_delete_while_held",
+        "on_update": "alvoraa_goals.review_items.refresh_copies_of",
     },
     # Slice 010 group D: the three review settings accept only their own choices.
     "HR Settings": {

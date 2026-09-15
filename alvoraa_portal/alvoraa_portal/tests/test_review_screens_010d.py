@@ -9,10 +9,12 @@ fails CI here. Refusals are tested, not only the allowed path. Synthetic people
 and records only, tagged S010D.
 """
 
+import ast
 import json
 from unittest.mock import patch
 
 import frappe
+from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, add_to_date, now_datetime
 
 from alvoraa_portal.tests.test_portal_security_010 import _employee, _user
@@ -801,3 +803,229 @@ class TestVis7ScoringReadsCopies(_Screens):
 		bare = self._appraisal(self.stranger, cycle, status="Manager Review")
 		with self.assertRaises(frappe.ValidationError):
 			pa._scored_items(frappe.get_doc("Appraisal", bare))
+
+
+# ── Commit 7 · The definition lock on the live Objective and KPI ───────────
+
+
+class TestR2DefinitionLockOnLiveRecords(_Screens):
+	def test_r2_sec19_a_held_definition_cannot_change_by_any_path(self):
+		import alvoraa_goals.review_items as review_items
+		import alvoraa_portal.goals_api as ga
+		import alvoraa_portal.performance_api as pa
+		from frappe.client import set_value as desk_set_value
+
+		r = self._review()
+		self._as(self.hr_user)
+		with self.assertRaisesRegex(frappe.PermissionError, "open review"):
+			desk_set_value("KPI", r.alone, "target_value", 1)                     # desk and REST
+		with self.assertRaisesRegex(frappe.PermissionError, "open review"):
+			pa.hr_save_kpi(self.subject, "Renamed", 50, r.cycle, kpi=r.alone)     # portal
+		with self.assertRaisesRegex(frappe.PermissionError, "open review"):
+			ga.update_goal(r.goal, target_value=5)
+
+		# Code that skips validation meets it too, for every locked field (decision 8).
+		frappe.set_user("Administrator")
+		for field, value in (("progress_mode", "Absolute"), ("direction", "Lower is Better"), ("unit", "Days"),
+		                     ("baseline_value", 3), ("individual_goal", None), ("weightage", 5),
+		                     ("appraisal_cycle", None), ("period_end", add_days(r.end, 1))):
+			doc = frappe.get_doc("KPI", r.under)
+			doc.set(field, value)
+			doc.flags.ignore_validate = True
+			with self.assertRaisesRegex(frappe.PermissionError, "open review", msg=field):
+				doc.save(ignore_permissions=True)
+			frappe.db.rollback()
+		goal = frappe.get_doc("Individual Goal", r.goal)
+		goal.end_date = add_days(r.end, 1)
+		goal.flags.ignore_validate = True
+		with self.assertRaisesRegex(frappe.PermissionError, "open review"):
+			goal.save(ignore_permissions=True)
+		frappe.db.rollback()
+
+		# Facts and status are not locked; cancelling stays possible (decision 20).
+		doc = frappe.get_doc("KPI", r.alone)
+		doc.actual_value = 7
+		doc.save(ignore_permissions=True)
+		doc = frappe.get_doc("KPI", r.under)
+		doc.status = "Cancelled"
+		doc.save(ignore_permissions=True)
+		frappe.db.commit()
+
+		# Taken out of the review, the live record is editable again.
+		row = _row_for(self._ext(r.ap), r.alone).name
+		self._as(self.subject_user)
+		pa.remove_review_item(r.ap, row, acknowledge=1)
+		frappe.set_user("Administrator")
+		self.assertFalse(review_items.holds("KPI", [r.alone]))
+		doc = frappe.get_doc("KPI", r.alone)
+		doc.target_value = 55
+		doc.save(ignore_permissions=True)
+
+	def test_r9_sec22_the_lock_releases_n_days_after_the_cycle_ends_and_0_means_never(self):
+		import alvoraa_goals.review_items as review_items
+
+		r = self._review()
+		end = frappe.db.get_value("Appraisal Cycle", r.cycle, "end_date")
+
+		def held_on(day):
+			with patch("alvoraa_goals.review_items.nowdate", return_value=str(add_days(end, day))):
+				return r.alone in review_items.holds("KPI", [r.alone])
+
+		self.assertTrue(held_on(29))
+		self.assertFalse(held_on(30))
+		try:
+			frappe.db.set_single_value("HR Settings", "alvoraa_review_lock_release_days", 0)
+			frappe.db.value_cache.pop("HR Settings", None)
+			self.assertTrue(held_on(400))
+		finally:
+			frappe.db.set_single_value("HR Settings", "alvoraa_review_lock_release_days", 30)
+			frappe.db.value_cache.pop("HR Settings", None)
+			frappe.db.commit()
+
+		# On the release day an edit goes through, and the copy keeps its own target.
+		with patch("alvoraa_goals.review_items.nowdate", return_value=str(add_days(end, 30))):
+			doc = frappe.get_doc("KPI", r.alone)
+			doc.target_value = 77
+			doc.save(ignore_permissions=True)
+		frappe.db.commit()
+		self.assertEqual(_row_for(self._ext(r.ap), r.alone).target_value, 50)
+
+		# A completed review releases its items at once.
+		self._set_status(r.ap, "Completed")
+		self.assertFalse(review_items.holds("Individual Goal", [r.goal]))
+
+	def test_r11_a_held_record_cannot_be_deleted_by_any_path(self):
+		import alvoraa_portal.performance_api as pa
+
+		r = self._review()
+		self._as(self.hr_user)
+		with self.assertRaisesRegex(frappe.PermissionError, "open review"):
+			pa.delete_kpi(r.alone)
+		frappe.set_user("Administrator")
+		with self.assertRaisesRegex(frappe.PermissionError, "open review"):
+			frappe.delete_doc("Individual Goal", r.goal, force=True, ignore_permissions=True)
+		frappe.db.rollback()
+		self.assertTrue(frappe.db.exists("KPI", r.alone))
+		self.assertTrue(frappe.db.exists("Individual Goal", r.goal))
+
+	def test_decision21_progress_cannot_be_set_by_hand_while_a_review_holds_the_goal(self):
+		import alvoraa_portal.goals_api as ga
+
+		r = self._review()
+		before = frappe.db.get_value("Individual Goal", r.goal, "actual_progress")
+		self._as(self.hr_user)
+		with self.assertRaisesRegex(frappe.PermissionError, "open review"):
+			ga.set_goal_progress(r.goal, 99)
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Individual Goal", r.goal, "actual_progress"), before)
+
+	def test_sec20_only_hr_pulls_work_into_a_cycle_for_their_companies_and_held_items_stay(self):
+		import alvoraa_portal.performance_api as pa
+
+		r = self._review()
+		# The review's cycle closes while its review is still open, so its items
+		# look free to claim. The review still holds them.
+		frappe.db.set_value("Appraisal Cycle", r.cycle, "status", "Completed")
+		frappe.db.commit()
+		later = self._cycle(r.start, r.end)
+		loose = self._kpi(self.subject, None, start=r.start, end=r.end)
+
+		self._as(self.subject_user)
+		with self.assertRaises(frappe.PermissionError):
+			pa.attach_ongoing_to_cycle(later)
+		self._as(self.hr_user)
+		with self.assertRaises(frappe.PermissionError):
+			pa.attach_ongoing_to_cycle(later, employee=self.subject_b)
+		out = pa.attach_ongoing_to_cycle(later, employee=self.subject)
+		with self.assertRaisesRegex(frappe.PermissionError, "open review"):
+			pa.set_cycle_membership("kpi", r.alone, later, 1)
+
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("KPI", r.alone, "appraisal_cycle"), r.cycle)
+		self.assertEqual(frappe.db.get_value("Individual Goal", r.goal, "appraisal_cycle"), r.cycle)
+		self.assertEqual(frappe.db.get_value("KPI", loose, "appraisal_cycle"), later)
+		self.assertIn(frappe.db.get_value("KPI", r.alone, "kpi_name"), out["held_by_open_review"]["kpis"])
+
+
+class TestR3RefreshHook(_Screens):
+	def test_r3_approving_a_fact_updates_the_open_reviews_copy_without_opening_it(self):
+		import alvoraa_portal.performance_api as pa
+
+		r = self._review()
+		pending = self._reading(r.alone, _day(r.start, 9), 7, status="Pending")
+		self._as(self.manager_user)
+		pa.approve_kpi_update(r.alone, pending, "Approved")
+		frappe.set_user("Administrator")
+		self.assertEqual(_row_for(self._ext(r.ap), r.alone).actual_value, 17)
+
+	def test_query_count_the_refresh_hook_costs_one_query_when_no_open_review_holds_the_record(self):
+		import alvoraa_goals.review_items as review_items
+
+		start, end = self._window()
+		loose = frappe.get_doc("KPI", self._kpi(self.stranger, self._cycle(start, end)))
+		with patch.object(frappe.db, "sql", wraps=frappe.db.sql) as sql:
+			review_items.refresh_copies_of(loose)
+		self.assertEqual(sql.call_count, 1)
+
+		r = self._review()
+		held = frappe.get_doc("KPI", r.alone)
+		with patch.object(frappe.db, "sql", wraps=frappe.db.sql) as sql:
+			review_items.refresh_copies_of(held)
+		self.assertLessEqual(sql.call_count, 12)
+
+
+class TestR2NoUnguardedWritesToLockedFields(FrappeTestCase):
+	def _fields(self, call):
+		if len(call.args) < 3:
+			return None
+		arg = call.args[2]
+		if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+			return {arg.value}
+		if isinstance(arg, ast.Dict) and all(isinstance(k, ast.Constant) for k in arg.keys):
+			return {k.value for k in arg.keys}
+		return None
+
+	def test_r2_static_no_code_writes_a_locked_field_around_the_lock(self):
+		"""frappe.db.set_value skips before_validate. Any function in our apps that
+		writes a locked field of a KPI or Objective that way must ask
+		review_items.holds() itself (SEC-19)."""
+		import importlib
+		import os
+
+		from alvoraa_goals.review_items import LOCKED_FIELDS
+
+		every_locked = set().union(*LOCKED_FIELDS.values())
+		roots = [os.path.dirname(importlib.import_module(a).__file__) for a in ("alvoraa_portal", "alvoraa_goals")]
+		hrms_root = os.path.dirname(importlib.import_module("hrms").__file__)
+		roots += [os.path.join(hrms_root, d) for d in os.listdir(hrms_root) if d.startswith("alvoraa_")]
+
+		offenders = []
+		for root in roots:
+			for dirpath, _dirs, files in os.walk(root):
+				if "tests" in dirpath.split(os.sep) or "patches" in dirpath.split(os.sep):
+					continue
+				for filename in files:
+					if not filename.endswith(".py"):
+						continue
+					path = os.path.join(dirpath, filename)
+					with open(path, encoding="utf-8") as f:
+						text = f.read()
+					for fn in ast.walk(ast.parse(text)):
+						if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+							continue
+						guarded = "review_items.holds(" in (ast.get_source_segment(text, fn) or "")
+						for call in ast.walk(fn):
+							if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+							        and call.func.attr == "set_value" and call.args):
+								continue
+							target, fields = call.args[0], self._fields(call)
+							if isinstance(target, ast.Constant):
+								if target.value not in LOCKED_FIELDS:
+									continue
+								risky = fields is None or bool(fields & set(LOCKED_FIELDS[target.value]))
+							else:
+								# A doctype in a variable: flag it when it names a locked field.
+								risky = bool(fields and fields & every_locked)
+							if risky and not guarded:
+								offenders.append(f"{path}:{call.lineno}")
+		self.assertEqual(sorted(set(offenders)), [])

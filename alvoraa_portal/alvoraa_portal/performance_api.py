@@ -953,10 +953,24 @@ def attach_ongoing_to_cycle(cycle, employee=None):
     be silently overwritten. Work whose cycle is already Completed *is* re-
     claimed, otherwise long-running goals would be stuck in a closed cycle and
     invisible to every review that follows.
+
+    HR only, and only for the companies they look after (SEC-20). An item an
+    open review still holds keeps its cycle and is listed under
+    held_by_open_review: the new cycle's review copies it instead (R16).
     """
+    _require_hr()
     start, end = _cycle_window(cycle)
     if not start or not end:
         frappe.throw(f"Cycle '{cycle}' has no period set.")
+
+    people = frappe.get_all(
+        "Employee", filters={"company": ["in", permitted_companies() or [""]]}, pluck="name"
+    )
+    if employee:
+        if employee not in people:
+            refuse("This employee belongs to a company you do not look after.",
+                   "SEC-20", "attach_ongoing_to_cycle", "Employee", employee)
+        people = [employee]
 
     closed = set(frappe.get_all(
         "Appraisal Cycle", filters={"status": "Completed"}, pluck="name"
@@ -965,37 +979,37 @@ def attach_ongoing_to_cycle(cycle, employee=None):
     def claimable(current):
         return (not current) or current == cycle or current in closed
 
-    attached = {"goals": [], "kpis": []}
+    attached = {"goals": [], "kpis": [], "held_by_open_review": {"goals": [], "kpis": []}}
 
-    goal_filters = {"docstatus": ["!=", 2], "status": ["!=", "Cancelled"]}
-    kpi_filters = {"status": ["!=", "Cancelled"]}
-    if employee:
-        goal_filters["employee"] = employee
-        kpi_filters["employee"] = employee
+    goal_filters = {"docstatus": ["!=", 2], "status": ["!=", "Cancelled"], "employee": ["in", people or [""]]}
+    kpi_filters = {"status": ["!=", "Cancelled"], "employee": ["in", people or [""]]}
 
-    for g in frappe.get_all("Individual Goal", filters=goal_filters,
-                            fields=["name", "goal_name", "start_date", "end_date",
-                                    "appraisal_cycle"], ignore_permissions=True):
-        if not claimable(g.appraisal_cycle):
-            continue
-        if g.appraisal_cycle == cycle:
-            continue
-        if _overlaps(str(g.start_date or ""), str(g.end_date or ""), str(start), str(end)):
-            frappe.db.set_value("Individual Goal", g.name, "appraisal_cycle", cycle,
-                                update_modified=False)
-            attached["goals"].append(g.goal_name)
+    goals = [g for g in frappe.get_all("Individual Goal", filters=goal_filters,
+                                       fields=["name", "goal_name", "start_date", "end_date",
+                                               "appraisal_cycle"], ignore_permissions=True)
+             if claimable(g.appraisal_cycle) and g.appraisal_cycle != cycle
+             and _overlaps(str(g.start_date or ""), str(g.end_date or ""), str(start), str(end))]
+    kpis = [k for k in frappe.get_all("KPI", filters=kpi_filters,
+                                      fields=["name", "kpi_name", "period_start", "period_end",
+                                              "appraisal_cycle"], ignore_permissions=True)
+            if claimable(k.appraisal_cycle) and k.appraisal_cycle != cycle
+            and _overlaps(str(k.period_start or ""), str(k.period_end or ""), str(start), str(end))]
 
-    for k in frappe.get_all("KPI", filters=kpi_filters,
-                            fields=["name", "kpi_name", "period_start", "period_end",
-                                    "appraisal_cycle"], ignore_permissions=True):
-        if not claimable(k.appraisal_cycle):
+    # One lookup per kind: which of these does an open review still hold (R2)?
+    held_goals = review_items.holds("Individual Goal", [g.name for g in goals])
+    held_kpis = review_items.holds("KPI", [k.name for k in kpis])
+    for g in goals:
+        if g.name in held_goals:
+            attached["held_by_open_review"]["goals"].append(g.goal_name)
             continue
-        if k.appraisal_cycle == cycle:
+        frappe.db.set_value("Individual Goal", g.name, "appraisal_cycle", cycle, update_modified=False)
+        attached["goals"].append(g.goal_name)
+    for k in kpis:
+        if k.name in held_kpis:
+            attached["held_by_open_review"]["kpis"].append(k.kpi_name)
             continue
-        if _overlaps(str(k.period_start or ""), str(k.period_end or ""), str(start), str(end)):
-            frappe.db.set_value("KPI", k.name, "appraisal_cycle", cycle,
-                                update_modified=False)
-            attached["kpis"].append(k.kpi_name)
+        frappe.db.set_value("KPI", k.name, "appraisal_cycle", cycle, update_modified=False)
+        attached["kpis"].append(k.kpi_name)
 
     frappe.db.commit()
     return attached
@@ -1017,6 +1031,11 @@ def set_cycle_membership(kind, name, cycle, include=1):
     if not owner_emp:
         frappe.throw(f"{doctype} '{name}' not found.")
     _require_manages(owner_emp)
+    # The cycle is part of the definition an open review locks (R2). This write
+    # skips the document's own lock, so it asks here.
+    if review_items.holds(doctype, [name]):
+        refuse("This item is in an open review, so its cycle cannot be changed now.",
+               "R2", "set_cycle_membership", doctype, name)
 
     if int(include or 0):
         if not frappe.db.exists("Appraisal Cycle", cycle):

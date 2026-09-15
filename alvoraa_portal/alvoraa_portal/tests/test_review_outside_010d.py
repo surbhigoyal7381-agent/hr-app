@@ -884,3 +884,21 @@ class TestBackfillCopiesExistingReviews(_Team):
 		patch_text = _source("alvoraa_goals", "patches", "v1_0", "take_review_copies.py")
 		for doctype in ("alvoraa_review_item", "alvoraa_appraisal_extension", "kpi"):
 			self.assertIn(f'frappe.reload_doc("alvoraa_goals", "doctype", "{doctype}")', patch_text)
+
+
+class TestDecision26TenantReadGrantIsReported(_Team):
+	def test_decision26_m3_report_lists_a_tenant_read_grant_on_appraisal_and_changes_nothing(self):
+		import alvoraa_goals.review_items as review_items
+
+		grant = frappe.get_doc({
+			"doctype": "Custom DocPerm", "parent": "Appraisal", "parenttype": "DocType",
+			"parentfield": "permissions", "role": "Employee", "permlevel": 0, "read": 1,
+		})
+		grant.name = frappe.generate_hash(length=10)
+		grant.db_insert()
+		try:
+			found = {(r["doctype"], r["role"]) for r in review_items.custom_docperm_report()}
+			self.assertIn(("Appraisal", "Employee"), found)
+			self.assertTrue(frappe.db.exists("Custom DocPerm", grant.name), "the report must never remove a row")
+		finally:
+			frappe.db.rollback()

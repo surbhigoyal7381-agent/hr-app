@@ -743,7 +743,8 @@ def custom_docperm_report():
 
     Reported:
       Alvoraa Appraisal Extension  any right for a role that is not HR
-      Appraisal                    write, create or delete for a role that is not HR
+      Appraisal                    any right for a role that is not HR (decision 26
+                                   removed Employee read as well as write)
       KPI                          any right at level 1 or above for a role that is not HR
     """
     hr = {"HR Manager", "HR User", "System Manager", "Administrator"}
@@ -762,6 +763,8 @@ def custom_docperm_report():
             why = "Opens review records to a role that is not HR"
         elif r.parent == "Appraisal" and set(rights) & {"write", "create", "delete"}:
             why = "Lets a role that is not HR change appraisals"
+        elif r.parent == "Appraisal" and rights:
+            why = "Lets a role that is not HR read appraisal scores outside the portal"
         elif r.parent == "KPI" and cint(r.permlevel) >= 1 and rights:
             why = "Opens restricted KPI fields to a role that is not HR"
         else:

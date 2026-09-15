@@ -99,6 +99,8 @@ class TestTheAttendanceFormula(FiguresCase):
 
 
 class TestDoubtfulDaysAreLeftOut(FiguresCase):
+	"""Alone in its class: it reads the whole company, and a class shares one transaction."""
+
 	def test_open_doubtful_days_leave_out_that_branch_only(self):
 		"""AC-16: Lakeside's rows on 8-10 Sep out; Station Road's rows on those dates still count."""
 		lakeside, station = fx.branch("Lakeside"), fx.branch("Station")
@@ -126,6 +128,8 @@ class TestDoubtfulDaysAreLeftOut(FiguresCase):
 		self.assertEqual(len(left_out), 3)
 		self.assertEqual(of.rate_with(lake_only, left_out.values()), 25.0)
 
+
+class TestConfirmedDoubtfulDays(FiguresCase):
 	def test_a_confirmed_absence_counts_again(self):
 		b = fx.branch("Confirmed")
 		p = self.staff(1, fx.KAVYA, b)[0]
@@ -218,7 +222,7 @@ class TestQueryCountsDoNotGrow(FiguresCase):
 		names = [fx.branch("QC") for _ in range(branches)]
 		for i in range(people):
 			b = names[i % branches]
-			p = fx.employee(f"QC{i}", fx.KAVYA, b)
+			p = fx.employee(f"QC{i}", fx.KAVYA, b, fast=True)
 			fx.attendance(p, fx.KAVYA, b, day(5), "Present" if i % 3 else "Absent")
 			fx.allocation(p, fx.KAVYA, b, "2026-04-01", "2027-03-31", 12)
 		return of.Scope((fx.KAVYA,), tuple(names))

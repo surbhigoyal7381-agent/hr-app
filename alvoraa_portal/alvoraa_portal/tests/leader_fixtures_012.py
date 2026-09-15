@@ -19,7 +19,6 @@ from frappe.utils import now_datetime
 
 from alvoraa_goals.tests.utils import _ensure_erpnext_company_prerequisites, ensure_company, ensure_gender
 from alvoraa_portal import branch_scope, data_review
-from alvoraa_portal.tests.leave_fixtures import ensure_user
 
 TAG = "S012"
 KAVYA = "S012 Kavya Retail"
@@ -58,8 +57,18 @@ def branch(prefix="Branch"):
 
 
 def user(local, roles):
+	"""A user with exactly these roles. No commit, so the class still rolls back cleanly."""
 	email = f"s012.{local.lower()}@example.com"
-	ensure_user(email, roles=roles)
+	if frappe.db.exists("User", email):
+		doc = frappe.get_doc("User", email)
+	else:
+		doc = frappe.get_doc({"doctype": "User", "email": email, "first_name": local,
+		                      "send_welcome_email": 0, "enabled": 1})
+		doc.insert(ignore_permissions=True)
+	doc.set("roles", [])
+	for role in roles:
+		doc.append("roles", {"role": role})
+	doc.save(ignore_permissions=True)
 	# The site's plan profile would block Alvoraa modules for a new user; these
 	# tests are about the slice's own rules, not the plan.
 	frappe.db.set_value("User", email, "module_profile", None, update_modified=False)
@@ -69,9 +78,21 @@ def user(local, roles):
 
 
 def employee(first, company, branch=None, user_id=None, status="Active", joined="2015-01-01",
-             relieving=None, department=None, reports_to=None, shift=SHIFT, gender=None):
+             relieving=None, department=None, reports_to=None, shift=SHIFT, gender=None, fast=False):
 	if user_id and (existing := frappe.db.get_value("Employee", {"user_id": user_id}, "name")):
 		return existing
+	if fast:
+		# Straight to the table, for the query-count tests that need a hundred people.
+		# No login, no manager: nothing that reads the nested set.
+		name = f"S012-{frappe.generate_hash(length=10)}"
+		frappe.get_doc({
+			"doctype": "Employee", "name": name, "first_name": first, "last_name": TAG,
+			"employee_name": f"{first} {TAG}", "company": company, "branch": branch,
+			"department": department, "gender": gender or ensure_gender(),
+			"date_of_birth": "1990-01-01", "date_of_joining": joined, "status": status,
+			"relieving_date": relieving, "default_shift": shift, "naming_series": "HR-EMP-",
+		}).db_insert()
+		return name
 	doc = frappe.get_doc({
 		"doctype": "Employee", "first_name": first, "last_name": TAG, "company": company,
 		"branch": branch, "department": department, "reports_to": reports_to,

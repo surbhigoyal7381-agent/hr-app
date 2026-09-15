@@ -257,7 +257,8 @@ class TestSec28ReviewSettings(_ReviewBase):
 
 		for key, field in review_items.SETTING_FIELDS.items():
 			frappe.db.set_single_value("HR Settings", field, review_items.DEFAULTS[key])
-		frappe.db.value_cache.pop("HR Settings", None)
+		# set_single_value leaves the cached settings document behind.
+		frappe.clear_document_cache("HR Settings", "HR Settings")
 		frappe.db.commit()
 
 	def tearDown(self):
@@ -319,9 +320,13 @@ class TestSec28ReviewSettings(_ReviewBase):
 		# The desk sends the whole settings form back; that save leaves a Version row.
 		from frappe.client import save as desk_save
 
+		frappe.db.rollback()
+		frappe.clear_document_cache("HR Settings", "HR Settings")
+		stored = frappe.db.get_single_value("HR Settings", "alvoraa_review_freeze_point", cache=False)
+		changed = "Manager review sent" if stored != "Manager review sent" else "HR sent"
 		versions = frappe.db.count("Version", {"ref_doctype": "HR Settings"})
 		data = frappe.get_doc("HR Settings").as_dict()
-		data["alvoraa_review_freeze_point"] = "Manager review sent"
+		data["alvoraa_review_freeze_point"] = changed
 		desk_save(data)
 		self.assertEqual(frappe.db.count("Version", {"ref_doctype": "HR Settings"}), versions + 1)
 

@@ -29,8 +29,9 @@ class SettingsCase(FrappeTestCase):
 	def setUp(self):
 		self.caller = frappe.session.user
 		frappe.set_user("Administrator")
-		frappe.db.set_single_value(DOCTYPE, "min_group_size", 5, update_modified=False)
-		frappe.db.set_single_value(DOCTYPE, "change_reason", None, update_modified=False)
+		# The record as set-up leaves it on a site that has never changed it.
+		frappe.db.delete("Singles", {"doctype": DOCTYPE})
+		lvs.ensure_default()
 		frappe.clear_document_cache(DOCTYPE, DOCTYPE)
 		self.sm = _user("VikramSet", "System Manager")
 		self.hrm = _user("PriyaSet", "HR Manager")
@@ -96,6 +97,12 @@ class TestTheRules(SettingsCase):
 	def test_a_save_without_a_change_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):
 			self.save_as(self.sm, 5, "no change")
+
+	def test_the_first_change_after_set_up_is_kept_in_the_history(self):
+		"""The set-up record is a whole record, so the first save is an update with a Version row."""
+		before = frappe.db.count("Version", {"ref_doctype": DOCTYPE})
+		self.save_as(self.sm, 6, "First change")
+		self.assertEqual(frappe.db.count("Version", {"ref_doctype": DOCTYPE}), before + 1)
 
 	def test_a_change_is_kept_with_its_reason_and_the_reason_is_then_cleared(self):
 		before = frappe.db.count("Version", {"ref_doctype": DOCTYPE})

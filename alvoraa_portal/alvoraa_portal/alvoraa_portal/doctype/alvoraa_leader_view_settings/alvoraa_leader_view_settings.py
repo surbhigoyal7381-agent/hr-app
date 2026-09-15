@@ -68,10 +68,18 @@ def min_group_size():
 def ensure_default():
 	"""Store 5 on a site that has never had a value. Never overwrites a stored one.
 
-	Written straight to the settings row: this is the set-up, not a change a
-	person made, and a broken stored value must stay visible (it reads as 10).
+	Written as a whole record without the controller: this is the set-up, not a
+	change a person made, and a broken stored value must stay visible (it reads
+	as 10). A whole record, name and timestamps included, because Frappe treats a
+	Single without them as new - and a first save that is an insert keeps no
+	change history, so the first real change would go unrecorded.
 	"""
 	stored = frappe.db.sql("select 1 from `tabSingles` where doctype=%s and field=%s",
 	                       (DOCTYPE, "min_group_size"))
-	if not stored:
-		frappe.db.set_single_value(DOCTYPE, "min_group_size", DEFAULT, update_modified=False)
+	if stored:
+		return
+	doc = frappe.get_doc(DOCTYPE)
+	now = frappe.utils.now()
+	doc.update({"name": DOCTYPE, "min_group_size": DEFAULT, "owner": "Administrator",
+	            "modified_by": "Administrator", "creation": now, "modified": now})
+	doc.update_single(doc.get_valid_dict(convert_dates_to_str=True))

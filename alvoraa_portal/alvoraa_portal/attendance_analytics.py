@@ -32,7 +32,7 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, cint, flt, getdate, nowdate
+from frappe.utils import add_days, add_months, cint, flt, getdate, nowdate
 
 # The tolerance before a day counts as short is an ORGANISATION's decision, not
 # ours. The same data gives 12.9% of days at no tolerance and 4.4% at an hour;
@@ -459,15 +459,19 @@ def filter_options():
 	base = {"status": "Active"}
 	if me and me.company:
 		base["company"] = me.company
+	# Slice 012 G3 (SEC-17): the same read the organisation list uses, so a
+	# store's HR person gets their store's departments and managers, not every
+	# store's manager names.
+	read = _org_read()
 
 	def distinct(field):
-		vals = {r[field] for r in frappe.get_all("Employee", filters=base,
-		                                         fields=[field]) if r.get(field)}
+		vals = {r[field] for r in read("Employee", filters=base,
+		                               fields=[field]) if r.get(field)}
 		return sorted(vals)
 
-	managers = frappe.get_all("Employee", filters=base, fields=["reports_to"])
+	managers = read("Employee", filters=base, fields=["reports_to"])
 	mgr_ids = sorted({m.reports_to for m in managers if m.reports_to})
-	mgr_names = {e.name: e.employee_name for e in frappe.get_all(
+	mgr_names = {e.name: e.employee_name for e in read(
 		"Employee", filters={"name": ("in", mgr_ids or [""])},
 		fields=["name", "employee_name"])}
 
@@ -475,8 +479,36 @@ def filter_options():
 		"department": distinct("department"),
 		"branch": distinct("branch"),
 		"designation": distinct("designation"),
-		"manager": [{"id": m, "name": mgr_names.get(m, m)} for m in mgr_ids],
+		# Only managers the caller may read. A manager in another store stays out
+		# rather than appearing as a bare employee id.
+		"manager": [{"id": m, "name": mgr_names[m]} for m in mgr_ids if m in mgr_names],
 	}
+
+
+def _org_read():
+	"""get_list, so User Permissions apply - except for System Manager.
+
+	System Manager is treated as CXO for now (slice 010 decision of 2026-09-14)
+	and holds no Employee read of its own, so it keeps the unfiltered read.
+	"""
+	return frappe.get_all if "System Manager" in frappe.get_roles() else frappe.get_list
+
+
+# Slice 012 AC-48: one person's days, at most a year at a time.
+PERSON_MAX_MONTHS = 12
+
+
+def _in_organisation(employee, me):
+	"""Is this employee inside the organisation population `summary` builds for the caller?
+
+	Same rule: the caller's own company, read with the caller's User Permissions.
+	Leavers inside that population may still be opened (decision D-7), so there
+	is no status filter. One indexed lookup, not the whole list.
+	"""
+	f = {"name": employee}
+	if me and me.company:
+		f["company"] = me.company
+	return bool(_org_read()("Employee", filters=f, pluck="name", limit=1))
 
 
 @frappe.whitelist()
@@ -490,15 +522,26 @@ def person(employee, date_from=None, date_to=None):
 	if not me:
 		frappe.throw(_("Your user is not linked to an employee record."),
 		             frappe.PermissionError)
+	if not isinstance(employee, str) or not employee:
+		frappe.throw(_("Choose a person to open."))
 	allowed = (employee == me.name
 	           or employee in _reports_to(me.name, deep=True)
-	           or _may_see_organisation())
+	           or (_may_see_organisation() and _in_organisation(employee, me)))
 	if not allowed:
-		frappe.throw(_("You cannot see that person's attendance."),
-		             frappe.PermissionError)
+		# Slice 012 G3 (SEC-17): being HR used to open ANY employee - another
+		# store's, another company's - with every day's leave type. Now only
+		# someone inside the population the organisation list shows this caller.
+		from hrms.alvoraa_hr_core.access import refuse
+
+		refuse(_("You cannot see that person's attendance."), "SEC-17",
+		       "attendance_analytics.person", "Employee", employee)
 
 	end = getdate(date_to or nowdate())
 	start = getdate(date_from) if date_from else add_days(end, -29)
+	# Cut, not refused: a long range is a mistake, not an attack.
+	earliest = add_days(add_months(end, -PERSON_MAX_MONTHS), 1)
+	if start < earliest:
+		start = earliest
 	tolerance = cint(frappe.db.get_default(TOLERANCE_KEY) or DEFAULT_TOLERANCE_MINS)
 
 	shift_cache = {}

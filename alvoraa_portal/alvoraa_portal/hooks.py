@@ -217,6 +217,9 @@ after_migrate = [
     # A branch on attendance, leave, claims and the rest, so location HR's
     # Branch permission applies to them (slice 011). See branch_scope.py.
     "alvoraa_portal.branch_scope.after_migrate",
+    # Slice 012: indexes for the scoped figures, then the first data check.
+    # Must stay AFTER branch_scope - two of the indexes need its column.
+    "alvoraa_portal.data_review.after_migrate",
 ]
 
 # And on a fresh install, which never runs a migrate. Without this a brand new
@@ -227,4 +230,6 @@ after_install = [
     "alvoraa_portal.attendance_correction.after_migrate",
     "alvoraa_portal.field_checkin.after_migrate",
     "alvoraa_portal.branch_scope.after_migrate",
+    # Slice 012: indexes only - a new site has no data to check. After branch_scope.
+    "alvoraa_portal.data_review.after_install",
 ]

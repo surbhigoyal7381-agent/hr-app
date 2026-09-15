@@ -685,8 +685,9 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 	# Counts at 4e3ba28, lowered whenever a use is removed. Never raised.
 	CEILINGS = {
 		# 88 at 4e3ba28; 68 after slice 010 group D phase 2 moved review writes
-		# to the one review-record save in review_items.py.
-		("alvoraa_portal", "performance_api.py"): 68,
+		# to the one review-record save in review_items.py; 64 after phase 3's HR
+		# cycle screens stopped reading live KPIs around permissions.
+		("alvoraa_portal", "performance_api.py"): 64,
 		("alvoraa_portal", "hr_api.py"): 77,
 		("alvoraa_portal", "goals_api.py"): 15,
 		("alvoraa_portal", "attendance_correction.py"): 2,
@@ -703,6 +704,9 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# to the live record after HR's completion was checked (R15). Whoever
 		# completes may not have write on that employee's KPI.
 		("alvoraa_goals", "review_items.py"): 2,
+		# Slice 010 group D phase 3 (new file): the copy of existing reviews writes
+		# as the patch's Administrator and needs none.
+		("alvoraa_goals", "review_backfill.py"): 0,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

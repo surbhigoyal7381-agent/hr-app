@@ -123,6 +123,11 @@ class TestHrAnalyticsPersonas(PersonaCase):
 			self.assertNotIn(emp, text)
 		self.assertEqual(d["review"]["open_count"],
 		                 frappe.db.count(fx.DRI, {"company": fx.OTHER, "status": "Open"}))
+		# Counts come from SQL that User Permissions do not filter, so they are the real test of the scope.
+		self.assertEqual(d["headcount"]["active"],
+		                 frappe.db.count("Employee", {"company": fx.OTHER, "status": "Active",
+		                                              "date_of_joining": ["<=", today()]}))
+		self.assertEqual(sum(r["count"] for r in d["location_distribution"]), d["headcount"]["active"])
 
 	def test_store_hr_with_no_employee_and_no_company_permission_is_not_linked(self):
 		"""BA-Q5: a Branch permission alone does not say which company; fail closed."""

@@ -712,7 +712,7 @@ class TestR9LockReminder(_Team):
 		for secret in ("secret title", "DTeam", self.subject, self.subject_b):
 			self.assertNotIn(secret, everything)
 
-	def test_r9_no_reminder_once_the_lock_is_released_and_0_means_keep_reminding(self):
+	def test_r9_decision32_no_reminder_once_the_lock_is_released_or_when_it_never_releases(self):
 		import alvoraa_goals.review_items as review_items
 
 		self._ended(29, self.subject, "M29")
@@ -723,11 +723,14 @@ class TestR9LockReminder(_Team):
 		review_items.remind_hr_of_held_items()     # released on day 20: day 29 is after it
 		self.assertEqual(self._reminders(self.hr_user, "M29"), [])
 
+		# Decision 32: 0 means the lock never releases, and then nobody is reminded.
+		# Day 29 is a reminder day (15 + 14), so a 30-day release does remind.
 		self._release_days(0)
+		self.assertEqual(review_items.remind_hr_of_held_items(), 0)
+		self.assertEqual(self._reminders(self.hr_user, "M29"), [])
+		self._release_days(30)
 		review_items.remind_hr_of_held_items()
-		text = self._reminders(self.hr_user, "M29")
-		self.assertEqual(len(text), 1)
-		self.assertIn("until the reviews are completed", text[0])
+		self.assertEqual(len(self._reminders(self.hr_user, "M29")), 1)
 
 	def test_r9_the_reminder_runs_daily_from_the_goals_app(self):
 		import alvoraa_goals.hooks as hooks

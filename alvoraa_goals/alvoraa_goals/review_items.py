@@ -1689,8 +1689,9 @@ def remind_hr_of_held_items():
 
     On day 15 after a cycle's end date, then every 7 days while the lock lasts.
     The date decides, so nothing is stored and a missed day is not made up. If
-    the lock is released on or before day 15 there is nothing to remind about;
-    with 0 (never released) the reminder repeats until the reviews are completed.
+    the lock is released on or before day 15 there is nothing to remind about.
+    With 0 (never released) there is no reminder at all (decision 32): the
+    organisation chose to keep the lock, so there is nothing for HR to act on.
 
     Each enabled HR Manager hears only about reviews of the companies they look
     after. The message holds the cycle name, a count and a date: no person's
@@ -1700,7 +1701,7 @@ def remind_hr_of_held_items():
     from hrms.alvoraa_hr_core.access import permitted_companies
 
     days = review_settings()["lock_release_days"]
-    if days and days <= REMINDER_FIRST_DAY:
+    if not days or days <= REMINDER_FIRST_DAY:
         return 0
     today = getdate(nowdate())
 
@@ -1728,7 +1729,7 @@ def remind_hr_of_held_items():
         after = (today - getdate(r.end_date)).days
         if (after - REMINDER_FIRST_DAY) % REMINDER_EVERY_DAYS:
             continue
-        if days and today >= getdate(add_days(r.end_date, days)):
+        if today >= getdate(add_days(r.end_date, days)):
             continue
         entry = due.setdefault(r.cycle, {"label": r.cycle_name or r.cycle, "end": getdate(r.end_date),
                                          "after": after, "companies": {}})
@@ -1752,8 +1753,7 @@ def remind_hr_of_held_items():
             count = sum(n for company, n in entry["companies"].items() if company in companies)
             if not count:
                 continue
-            until = (_("until {0}").format(frappe.utils.formatdate(add_days(entry["end"], days))) if days
-                     else _("until the reviews are completed"))
+            until = _("until {0}").format(frappe.utils.formatdate(add_days(entry["end"], days)))
             lines.append(_("{0}: {1} review(s) are still open {2} days after the cycle ended. "
                            "The Objectives and KPIs in them stay locked {3}.").format(
                 entry["label"], count, entry["after"], until))

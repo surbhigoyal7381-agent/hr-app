@@ -34,7 +34,7 @@ from frappe.utils import cint, cstr, flt, get_datetime, getdate, now_datetime
 from alvoraa_goals.alvoraa_goals.doctype.alvoraa_appraisal_extension.alvoraa_appraisal_extension import (
     REVIEW_ITEMS_WRITE_FLAG,
 )
-from alvoraa_goals.controllers.kpi import attainment
+from alvoraa_goals.controllers.kpi import MAX_RATING, attainment
 
 # ── Organisation settings (R6, R9, R12) ─────────────────────────────────────
 #
@@ -980,3 +980,295 @@ def late_facts(ext):
 def copied_sources(ext):
     """Names of the live records this review holds copies of. Server side only."""
     return {r.source_name for r in (ext.get("review_items") or []) if r.source_name}
+
+
+# ── Changes made on the copies (commit 5: SEC-1, R2, R7, R11, R12, VIS-5, VIS-6) ─
+#
+# These change the review record in memory. The endpoint has already decided who
+# the caller is and whether the stage allows it; it saves with save_review_record.
+# Nothing here writes a KPI or an Objective (R13).
+
+
+def live_row(ext, row_name):
+    """This review's copy with that row name, or None. Removed copies do not count."""
+    if not row_name or not isinstance(row_name, str):
+        return None
+    for row in ext.get("review_items") or []:
+        if row.name == row_name and not cint(row.removed):
+            return row
+    return None
+
+
+def is_rated(row):
+    return any(flt(row.get(f)) > 0 for f in ("self_rating", "manager_rating", "potential_rating"))
+
+
+def rating_value(value, what="Rating"):
+    """A rating that was really sent, or None when nothing was sent. 0 means nothing."""
+    if value in (None, ""):
+        return None
+    try:
+        rating = float(value)
+    except (TypeError, ValueError):
+        frappe.throw(_("{0} must be a number between 1 and {1}.").format(_(what), int(MAX_RATING)))
+    if rating <= 0:
+        return None
+    if rating > MAX_RATING:
+        frappe.throw(_("{0} must be a number between 1 and {1}.").format(_(what), int(MAX_RATING)))
+    return rating
+
+
+def _refuse(message, rule, endpoint, ext):
+    from hrms.alvoraa_hr_core.access import refuse
+
+    refuse(message, rule, endpoint, "Alvoraa Appraisal Extension", ext.name)
+
+
+def apply_self_review(ext, past_objectives, endpoint="submit_employee_review", write=True):
+    """Write the self-review's ratings and comments onto this review's copies (SEC-1).
+
+    Keys must be row names of this review's live copies. One key that is not
+    refuses the whole call: nothing is written. Progress typed on the page is
+    never written anywhere; progress comes from dated facts (decision 4).
+    With write=False only the keys are checked (a draft page save).
+    """
+    past = past_objectives if isinstance(past_objectives, dict) else {}
+    kpis = past.get("kpis") or {}
+    objectives = past.get("objectives") or {}
+    if not isinstance(kpis, dict) or not isinstance(objectives, dict):
+        _refuse(_("The self-review could not be read. Reload the page and try again."), "SEC-1", endpoint, ext)
+    for key in list(kpis) + list(objectives):
+        if not live_row(ext, key):
+            _refuse(_("The self-review names an item that is not in this review."), "SEC-1", endpoint, ext)
+    if not write:
+        return
+
+    for key, values in kpis.items():
+        values = values if isinstance(values, dict) else {}
+        row = live_row(ext, key)
+        rating = rating_value(values.get("self_rating"), "Self-rating")
+        if rating is not None:
+            row.self_rating = rating
+        if values.get("self_comment") is not None:
+            row.self_comment = cstr(values.get("self_comment"))
+        if rating is not None:
+            stamp_rating(row, "self")
+    for key, values in objectives.items():
+        values = values if isinstance(values, dict) else {}
+        if values.get("reflection") is not None:
+            live_row(ext, key).self_comment = cstr(values.get("reflection"))
+
+
+def set_item_rating(row, kind, rating=None, comment=None, potential=None, potential_comment=None, user=None):
+    """A self or manager rating on one copy, stamped with the copy's numbers now (R7)."""
+    rating = rating_value(rating)
+    if rating is not None:
+        row.set(f"{kind}_rating", rating)
+    if comment is not None:
+        row.set(f"{kind}_comment", cstr(comment))
+    if kind == "manager":
+        potential = rating_value(potential, "Potential rating")
+        if potential is not None:
+            row.potential_rating = potential
+        if potential_comment is not None:
+            row.potential_comment = cstr(potential_comment)
+    if rating is not None:
+        stamp_rating(row, kind, user)
+
+
+def remove_item(ext, row, reason, stage, user=None):
+    """Take a copy out of the review (R12). Returns "kept" or "discarded".
+
+    Discarded only when the review's stamped setting says so AND nothing on the
+    copy is rated: a rated copy is always kept, marked Removed (decision 9). An
+    unknown setting keeps it (fail closed). The live record, its facts and its
+    evidence are untouched.
+    """
+    user = user or frappe.session.user
+    keep = ext.get("removal_mode") != REMOVAL_DISCARD or is_rated(row)
+    if keep:
+        row.removed = 1
+        row.removed_by = user
+        row.removed_on = now_datetime()
+        row.removal_reason = cstr(reason)
+        row.removed_at_stage = stage
+    else:
+        for other in ext.get("review_items") or []:
+            if other.parent_item == row.name:
+                other.parent_item = ""
+        ext.remove(row)
+    raise_rating_flags(ext)
+    return "kept" if keep else "discarded"
+
+
+def add_items(ext, employee, goal_names=(), kpi_names=(), user=None):
+    """Add copies of the subject's own live Objectives and KPIs (VIS-5).
+
+    Each must belong to the subject, not be cancelled or a future plan, and meet
+    the review period. An Objective brings its KPIs with it. Anything else
+    refuses the whole call. Returns the number of copies added.
+    """
+    user = user or frappe.session.user
+    goal_names, kpi_names = sorted(set(goal_names)), sorted(set(kpi_names))
+    start, end = _window(ext)
+    if not (start and end):
+        frappe.throw(_("This review has no period, so nothing can be added to it. Ask HR to set the cycle dates."))
+    live = {r.source_name for r in (ext.get("review_items") or []) if not cint(r.removed)}
+
+    goals = frappe.get_all(
+        "Individual Goal",
+        filters={"name": ["in", goal_names or [""]], "employee": employee, "docstatus": ["!=", 2],
+                 "status": ["!=", "Cancelled"], "is_future_plan": ["!=", 1],
+                 "start_date": ["<=", end], "end_date": [">=", start]},
+        fields=_GOAL_FIELDS,
+    ) if goal_names else []
+    kpis = frappe.get_all(
+        "KPI",
+        filters={"name": ["in", kpi_names or [""]], "employee": employee, "status": ["!=", "Cancelled"]},
+        fields=_KPI_FIELDS,
+    ) if kpi_names else []
+    kpis = [k for k in kpis if (not k.period_start or getdate(k.period_start) <= end)
+            and (not k.period_end or getdate(k.period_end) >= start)]
+    if len(goals) != len(goal_names) or len(kpis) != len(kpi_names):
+        _refuse(_("Only your own current Objectives and KPIs for this review period can be added."),
+                "VIS-5", "set_review_selection", ext)
+
+    if goals:
+        kpis += frappe.get_all(
+            "KPI",
+            filters={"individual_goal": ["in", [g.name for g in goals]], "employee": employee,
+                     "status": ["!=", "Cancelled"], "name": ["not in", [k.name for k in kpis] or [""]]},
+            fields=_KPI_FIELDS,
+        )
+
+    goal_rows = {r.source_name: r.name for r in (ext.get("review_items") or [])
+                 if not cint(r.removed) and r.source_doctype == "Individual Goal"}
+    added = 0
+    arrived = {"added_in_review": 1, "added_by": user, "added_on": now_datetime()}
+    for goal in goals:
+        if goal.name in live:
+            continue
+        row = ext.append("review_items", dict(_goal_copy(goal), **arrived))
+        row.name = frappe.generate_hash(length=10)
+        goal_rows[goal.name] = row.name
+        added += 1
+    for kpi in kpis:
+        if kpi.name in live:
+            continue
+        values = dict(_kpi_copy(kpi), **arrived)
+        values["parent_item"] = goal_rows.get(kpi.individual_goal) or ""
+        row = ext.append("review_items", values)
+        row.name = frappe.generate_hash(length=10)
+        added += 1
+    if added:
+        _recount(ext)
+        raise_rating_flags(ext)
+    return added
+
+
+def change_definition(ext, row, values, user=None):
+    """Change a copy's title, target, weight or period inside the review (R2).
+
+    Returns the fields that changed. The copy remembers who changed it and when;
+    what it started from stays in definition_at_start, which is what completion
+    compares with before writing anything back (R15).
+    """
+    user = user or frappe.session.user
+    new = {}
+    if values.get("title") is not None:
+        title = cstr(values["title"]).strip()
+        if not title or len(title) > 140:
+            frappe.throw(_("Give the item a name of up to 140 characters."))
+        new["title"] = title
+    if values.get("target_value") not in (None, ""):
+        target = flt(values["target_value"])
+        if not target:
+            frappe.throw(_("The target cannot be 0. Progress is measured against it."))
+        new["target_value"] = target
+    if values.get("weightage") not in (None, ""):
+        weight = flt(values["weightage"])
+        if weight < 0 or weight > 100:
+            frappe.throw(_("The weight must be between 0 and 100."))
+        new["weightage"] = weight
+    for field in ("period_start", "period_end"):
+        if values.get(field) not in (None, ""):
+            try:
+                new[field] = getdate(values[field])
+            except Exception:
+                frappe.throw(_("Enter the period dates as dates."))
+    start = new.get("period_start") or (getdate(row.period_start) if row.period_start else None)
+    end = new.get("period_end") or (getdate(row.period_end) if row.period_end else None)
+    if start and end and start > end:
+        frappe.throw(_("The period must start on or before the day it ends."))
+
+    changed = [f for f, v in new.items() if _rounded_or_same(row.get(f)) != _rounded_or_same(v)]
+    if not changed:
+        return []
+    if "weightage" in changed:
+        total = sum(flt(r.weightage) for r in (ext.get("review_items") or [])
+                    if not cint(r.removed) and r.name != row.name) + new["weightage"]
+        if flt(total, 2) > 100:
+            frappe.throw(_("The weights in this review would add up to {0}%. They cannot pass 100%.").format(flt(total, 2)))
+    for field in changed:
+        row.set(field, new[field])
+    row.definition_changed_by = user
+    row.definition_changed_on = now_datetime()
+
+    if not cint(ext.get("frozen")):
+        _recount(ext)
+    elif "target_value" in changed:
+        # Frozen numbers take no new facts, but attainment follows the target.
+        if row.source_doctype == "KPI":
+            row.attainment_pct = attainment(row.actual_value, row.target_value, row.direction)
+        else:
+            row.attainment_pct = flt(min(flt(row.actual_value) / flt(row.target_value) * 100, 100), 2)
+    raise_rating_flags(ext)
+    return changed
+
+
+def _rounded_or_same(value):
+    if isinstance(value, (int, float)):
+        return flt(value, 6)
+    if hasattr(value, "year"):
+        return str(getdate(value))
+    return cstr(value)
+
+
+def answer_flag(ext, target, keep, rating=None, user=None):
+    """Keep or change a flagged manager or overall rating (R7, decision 12).
+
+    Keeping re-stamps the rating on today's numbers; changing sets the new
+    rating and stamps it. The answerer is recorded. Returns True when the
+    rating itself changed.
+    """
+    user = user or frappe.session.user
+    if target == "overall":
+        if not cint(ext.get("overall_rating_flag")):
+            frappe.throw(_("This rating has no open question."))
+        before, rated_by = flt(ext.overall_rating), ext.overall_rated_by
+        if not keep:
+            ext.overall_rating = rating
+        stamp_overall_rating(ext, user=rated_by if keep and rated_by else user)
+        ext.overall_flag_answered_by = user
+        ext.overall_flag_answered_on = now_datetime()
+        return before != flt(ext.overall_rating)
+
+    row = live_row(ext, target)
+    if not row or not cint(row.manager_flag):
+        frappe.throw(_("This rating has no open question."))
+    before, rated_by = flt(row.manager_rating), row.manager_rated_by
+    if not keep:
+        row.manager_rating = rating
+    stamp_rating(row, "manager", user=rated_by if keep and rated_by else user)
+    row.manager_flag_answered_by = user
+    row.manager_flag_answered_on = now_datetime()
+    return before != flt(row.manager_rating)
+
+
+def audit(ext, text):
+    """An Info entry on the review record's timeline: who did what to which row.
+
+    The review record opens only for HR under the stage rule (SEC-27), so a
+    reason may be written here. Never a rating or a number.
+    """
+    ext.add_comment("Info", text)

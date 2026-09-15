@@ -733,3 +733,154 @@ class TestR9LockReminder(_Team):
 		import alvoraa_goals.hooks as hooks
 
 		self.assertEqual(hooks.scheduler_events["daily"][-1], "alvoraa_goals.review_items.remind_hr_of_held_items")
+
+
+# ── Commit 12 · 00d section 10 · existing reviews get their copies ──────────
+
+
+class TestBackfillCopiesExistingReviews(_Team):
+	"""Reviews made before group D: no copies, ratings still on the live KPIs."""
+
+	def _old_review(self, employee, status, overall=0, page_data=None):
+		start, end = self._window()
+		cycle = self._cycle(start, end)
+		kpi = self._kpi(employee, cycle, target=100, weightage=60)
+		goal = self._goal(employee, cycle, start, end, target=10, weightage=40)
+		frappe.db.set_value("KPI", kpi, {"actual_value": 80, "attainment_pct": 80}, update_modified=False)
+		frappe.db.set_value("Individual Goal", goal, {"actual_progress": 5, "progress_pct": 50}, update_modified=False)
+		_legacy_ratings(kpi, self_rating=3, manager_rating=4, potential_rating=5, manager_comment="old comment")
+		# Two approved readings in the period that add up to 50, not the stored 80.
+		self._reading(kpi, _day(start, 1), 20)
+		self._reading(kpi, _day(start, 2), 30)
+		ap = self._appraisal(employee, cycle, status=status)
+		values = {"overall_rating": overall}
+		if page_data is not None:
+			values["page_data"] = json.dumps(page_data(kpi, goal))
+		frappe.db.set_value("Alvoraa Appraisal Extension", ap, values, update_modified=False)
+		frappe.db.commit()
+		return frappe._dict(ap=ap, cycle=cycle, kpi=kpi, goal=goal)
+
+	def _setup(self):
+		c = frappe._dict()
+		c.done = self._old_review(self.stranger, "Completed", overall=4)
+		c.open = self._old_review(self.subject, "Manager Review", overall=3, page_data=lambda k, g: {
+			"past-objectives": {"kpis": {k: {"self_rating": 3}, "gone-kpi": {"self_rating": 1}},
+			                    "objectives": {g: {"reflection": "r"}}}})
+		c.fresh = self._old_review(self.hr_report, "Not Started")
+		start, end = self._window()
+		c.empty = self._appraisal(self.subject_b, self._cycle(start, end, company=self.company_b), status="Completed")
+		c.names = [c.done.ap, c.open.ap, c.fresh.ap, c.empty]
+		return c
+
+	def test_backfill_dry_run_counts_and_changes_nothing(self):
+		import alvoraa_goals.review_backfill as review_backfill
+
+		c = self._setup()
+		before = (frappe.db.count("Alvoraa Review Item", {"parent": ["in", c.names]}),
+		          [frappe.db.get_value("Alvoraa Appraisal Extension", n, "modified") for n in c.names])
+		out = review_backfill.report(c.names)
+		after = (frappe.db.count("Alvoraa Review Item", {"parent": ["in", c.names]}),
+		         [frappe.db.get_value("Alvoraa Appraisal Extension", n, "modified") for n in c.names])
+		self.assertEqual(before, after)
+
+		self.assertEqual(out["reviews"], 4)
+		self.assertEqual(out["will_copy"], {"reviews": 2, "items": 4, "completed": 1, "open": 1, "open_already_frozen": 0})
+		self.assertEqual(out["items_per_review"], {"average": 2, "most": 2})
+		self.assertEqual(out["skipped"], {"not started: copied when first opened": 1})
+		self.assertEqual(out["cannot_copy_nothing_tagged"], {"completed": [c.empty], "open": []})
+		self.assertEqual(out["rated_items_copied"], 2)
+		# The open review's KPI counts 50 from its readings, not the stored 80:
+		# one number moves, and a manager rating and the overall rating are asked about.
+		self.assertEqual(out["open_items_whose_number_changes_on_first_open"], 2)
+		self.assertEqual(out["rating_questions_expected_on_first_open"], 2)
+		self.assertEqual(out["draft_keys_dropped"], 1)
+		self.assertEqual(out["by_cycle_and_stage"][c.open.cycle], {"Manager Review": 1})
+
+	def test_backfill_copies_history_as_stored_and_open_reviews_once_and_keeps_completed_copies_locked(self):
+		import alvoraa_goals.review_backfill as review_backfill
+		import alvoraa_goals.review_items as review_items
+		import alvoraa_portal.performance_api as pa
+
+		c = self._setup()
+		result = review_backfill.run(c.names)
+		self.assertEqual((result["reviews_copied"], result["copies_made"], result["failed"]), (2, 4, []))
+
+		done = self._ext(c.done.ap)
+		kpi = _row_for(done, c.done.kpi)
+		self.assertEqual((done.frozen, bool(done.completed_on), bool(done.items_taken_on)), (1, True, True))
+		self.assertEqual((kpi.backfilled, kpi.actual_value, kpi.attainment_pct), (1, 80, 80))
+		self.assertEqual((kpi.self_rating, kpi.manager_rating, kpi.potential_rating, kpi.manager_comment),
+		                 (3, 4, 5, "old comment"))
+		self.assertEqual((kpi.manager_basis_actual, kpi.manager_flag), (80, 0))
+		self.assertEqual(_row_for(done, c.done.goal).actual_value, 5)
+		self.assertEqual(_row_for(done, c.done.kpi).parent_item, "")
+
+		opened = self._ext(c.open.ap)
+		open_kpi = _row_for(opened, c.open.kpi)
+		self.assertEqual((opened.frozen, opened.freeze_point), (0, review_items.FREEZE_HR_SENT))
+		self.assertEqual(review_items.open_blocking_flags(opened), 0)
+		draft = json.loads(opened.page_data)["past-objectives"]
+		self.assertEqual(draft["kpis"], {open_kpi.name: {"self_rating": 3}})
+		self.assertEqual(draft["objectives"], {_row_for(opened, c.open.goal).name: {"reflection": "r"}})
+		self.assertEqual(frappe.db.count("Alvoraa Review Item", {"parent": c.fresh.ap}), 0)
+
+		# Twice is the same as once.
+		self.assertEqual(review_backfill.run(c.names)["reviews_copied"], 0)
+		self.assertEqual(frappe.db.count("Alvoraa Review Item", {"parent": ["in", c.names]}), 4)
+
+		# The live records were not touched.
+		self.assertEqual(frappe.db.get_value("KPI", c.done.kpi, ["actual_value", "manager_rating"]), (80, 4))
+
+		# A completed review's copies still cannot change through the review record (VIS-10).
+		done = self._ext(c.done.ap)
+		done.review_items[0].manager_rating = 1
+		with self.assertRaises(frappe.PermissionError):
+			review_items.save_review_record(done)
+		frappe.db.rollback()
+
+		# The first open recounts the open review from facts, and asks the manager
+		# about the ratings given on the old number (R7).
+		self._as(self.manager_user)
+		pa.get_manager_review(c.open.ap)
+		frappe.set_user("Administrator")
+		opened = self._ext(c.open.ap)
+		self.assertEqual(_row_for(opened, c.open.kpi).actual_value, 50)
+		self.assertEqual(review_items.open_blocking_flags(opened), 2)
+
+	def test_backfill_undo_leaves_changed_reviews_and_ratings_go_back_before_a_rollback(self):
+		import alvoraa_goals.review_backfill as review_backfill
+		import alvoraa_goals.review_items as review_items
+
+		c = self._setup()
+		review_backfill.run(c.names)
+
+		# Someone rates the open review's KPI copy after the copy was made.
+		opened = self._ext(c.open.ap)
+		row = _row_for(opened, c.open.kpi)
+		row.manager_rating = 2
+		row.manager_rated_on = frappe.utils.add_to_date(opened.items_taken_on, minutes=5)
+		review_items.save_review_record(opened)
+		frappe.db.commit()
+
+		plan = review_backfill.undo_backfill(dry_run=1, names=c.names)
+		self.assertIn(c.open.ap, plan["kept_because_changed_since"])
+		self.assertEqual(frappe.db.count("Alvoraa Review Item", {"parent": c.done.ap}), 2)
+
+		ratings = review_backfill.copy_ratings_back_for_rollback(dry_run=1, names=c.names)
+		self.assertIn(c.open.kpi, ratings["kpis"])
+		self.assertNotIn(c.done.kpi, ratings["kpis"])       # completed reviews are history
+		self.assertEqual(frappe.db.get_value("KPI", c.open.kpi, "manager_rating"), 4)
+		review_backfill.copy_ratings_back_for_rollback(dry_run=0, names=c.names)
+		self.assertEqual(frappe.db.get_value("KPI", c.open.kpi, "manager_rating"), 2)
+
+		review_backfill.undo_backfill(dry_run=0, names=c.names)
+		self.assertEqual(frappe.db.count("Alvoraa Review Item", {"parent": c.done.ap}), 0)
+		self.assertFalse(frappe.db.get_value("Alvoraa Appraisal Extension", c.done.ap, "items_taken_on"))
+		self.assertEqual(frappe.db.count("Alvoraa Review Item", {"parent": c.open.ap}), 2)
+
+	def test_backfill_patch_is_listed_last_and_syncs_its_tables_first(self):
+		lines = [line.strip() for line in _source("alvoraa_goals", "patches.txt").splitlines() if line.strip()]
+		self.assertEqual(lines[-1], "alvoraa_goals.patches.v1_0.take_review_copies")
+		patch_text = _source("alvoraa_goals", "patches", "v1_0", "take_review_copies.py")
+		for doctype in ("alvoraa_review_item", "alvoraa_appraisal_extension", "kpi"):
+			self.assertIn(f'frappe.reload_doc("alvoraa_goals", "doctype", "{doctype}")', patch_text)

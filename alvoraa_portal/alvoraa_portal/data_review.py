@@ -20,6 +20,7 @@ from alvoraa_portal.alvoraa_portal.doctype.alvoraa_data_review_item.alvoraa_data
 	COUNT_FIELDS,
 	item_name,
 )
+from alvoraa_portal.subscription import requires_feature
 
 DOCTYPE = "Alvoraa Data Review Item"
 SETTINGS = "Alvoraa Leader View Settings"
@@ -384,3 +385,242 @@ def apply_findings(existing, findings, allow_create):
 			doc.save(ignore_version=False)
 			changed += 1
 	return changed
+
+
+# ── Data to review: HR's page (US-4, US-6, SEC-7, SEC-13) ────────────────────
+
+HR_ROLES = frozenset({"HR Manager", "HR User"})
+MAX_CONFIRM_ITEMS = 40
+CONFIRMS_PER_HOUR = 30     # per user (OPS-40); Frappe's own limiter counts per IP address
+STALE_HOURS = 26
+
+ACTIONS = {
+	# action -> (what the record says afterwards, the kinds of record it may confirm)
+	"absence_real": ("Absence was real", {("Doubtful day", "D5")}),
+	# D-2: of the leavers rules, only "nobody left in a year" can be right as it stands.
+	"figure_right": ("Figure is right", {("Leave used", "D6"), ("Leavers", "D18-2")}),
+}
+
+
+def _require_hr(endpoint):
+	from frappe import _
+
+	from hrms.alvoraa_hr_core.access import refuse
+
+	user = frappe.session.user
+	if user == "Guest" or (user != "Administrator" and not HR_ROLES & set(frappe.get_roles())):
+		refuse(_("Only HR can open Data to review."), "SEC-7", endpoint)
+	try:
+		frappe.local.response_headers.set("Cache-Control", "no-store")
+	except Exception:
+		pass
+
+
+def _within_hourly_limit(endpoint, per_hour):
+	"""A per-user counter in Frappe's cache, for one hour. Cache trouble never blocks HR."""
+	from frappe import _
+
+	bucket = now_datetime().strftime("%Y%m%d%H")
+	try:
+		key = frappe.cache.make_key(f"alvoraa:limit:{endpoint}:{frappe.session.user}:{bucket}")
+		used = frappe.cache.incr(key)
+		if used == 1:
+			frappe.cache.expire(key, 3600)
+	except Exception:
+		return
+	if used > per_hour:
+		frappe.throw(_("Too many requests. Wait a minute and try again."),
+		             frappe.exceptions.TooManyRequestsError)
+
+
+def recheck(scope, as_of=None):
+	"""OPS-49: re-run the leave and leavers rules for the caller's scope, and save what changed.
+
+	Clears and updates records; never creates one (D-5) - new findings appear at
+	06:30. Location HR re-checks only their branches' leavers. Saves go through
+	the caller's own permissions.
+	"""
+	as_of = getdate(as_of or today())
+	rules = DAILY_RULES if scope.branches is None else ("D18-1",)
+	for company in scope.companies:
+		findings = company_findings(company, 0, as_of, rules=rules, branches=scope.branches)
+		existing = existing_items(company, as_of, rules=rules, branches=scope.branches)
+		apply_findings(existing, findings, allow_create=False)
+
+
+def _figures_for_confirming(scope):
+	"""The month's attendance without Open doubtful days, and what each one would add back.
+
+	Three queries, however many records there are.
+	"""
+	from alvoraa_portal import org_figures as of
+
+	period = of.period(scope)
+	if not period:
+		return None, dict(of.NO_ATTENDANCE), {}
+	return period, of.attendance_figures(scope, *period), of.open_doubtful_counts(scope, *period)
+
+
+@frappe.whitelist(methods=["POST"])
+@requires_feature("analytics")
+def data_review_items():
+	"""Figures in the caller's scope that leaders see as "Needs review" or left out.
+
+	Counts, dates, company and branch names only - never an employee (AC-36).
+	"""
+	import time
+
+	from alvoraa_portal import org_figures as of
+
+	started = time.monotonic()
+	_require_hr("data_review.data_review_items")
+	scope = of.hr_scope()
+	if scope.not_linked:
+		return {"not_linked": True}
+
+	recheck(scope)
+
+	rows = frappe.get_list(
+		DOCTYPE, filters=item_filters(scope, status="Open"),
+		fields=["name", "item_type", "rule", "company", "alvoraa_branch", "check_date", "first_found_on",
+		        *COUNT_FIELDS],
+		order_by="check_date asc", limit_page_length=MAX_ITEMS)
+
+	period, base, left_out = _figures_for_confirming(scope)
+	leave = of.leave_figures(scope) if any(r.rule == "D6" for r in rows) else {"by_company": {}}
+	whole_company = scope.branches is None
+
+	cards = []
+	# Doubtful days: one card per company and set of dates, naming the branches.
+	by_branch = {}
+	for r in rows:
+		if r.rule == "D5":
+			by_branch.setdefault((r.company, r.alvoraa_branch), []).append(r)
+	by_dates = {}
+	for (company, branch), items in sorted(by_branch.items()):
+		dates = tuple(str(i.check_date) for i in items)
+		by_dates.setdefault((company, dates), []).append((branch, items))
+	for (company, dates), groups in by_dates.items():
+		items = [i for _branch, group in groups for i in group]
+		absent = [100.0 * i.absent_count / i.expected_count for i in items if i.expected_count]
+		checked = [100.0 * i.checked_in_count / i.expected_count for i in items if i.expected_count]
+		cards.append({
+			"kind": "doubtful", "company": company, "branches": [b for b, _group in groups],
+			"dates": list(dates), "items": [i.name for i in items],
+			"absent_pct": [flt(min(absent), 0), flt(max(absent), 0)] if absent else None,
+			"checked_in_pct": flt(max(checked), 0) if checked else None,
+			"found_on": str(min(i.first_found_on for i in items)),
+			"figure_without": base["rate"],
+			"figure_with": of.rate_with(base, [left_out[i.name] for i in items if i.name in left_out]),
+			"can_confirm": True,
+		})
+	for r in rows:
+		if r.rule == "D6":
+			cards.append({
+				"kind": "leave", "company": r.company, "items": [r.name],
+				"requests": r.affected_count, "people": r.people_count, "days_allocated": r.days_allocated,
+				"used_pct": (leave["by_company"].get(r.company) or {}).get("used_pct"),
+				"found_on": str(r.first_found_on), "can_confirm": whole_company,
+			})
+		elif r.rule in ("D18-1", "D18-2"):
+			cards.append({
+				"kind": "leavers", "rule": r.rule, "company": r.company, "branch": r.alvoraa_branch,
+				"items": [r.name], "people": r.affected_count, "found_on": str(r.first_found_on),
+				"can_confirm": r.rule == "D18-2" and whole_company,
+			})
+
+	last = frappe.db.get_single_value(SETTINGS, "last_checks_run_on", cache=False)
+	stale = not last or (now_datetime() - frappe.utils.get_datetime(last)).total_seconds() > STALE_HOURS * 3600
+	of.log_if_slow("data_review_items", scope, started)
+	return {
+		"not_linked": False,
+		"scope": scope.kind,
+		"whole_company": whole_company,
+		"open_count": len(rows),
+		"last_checked": str(last) if last else None,
+		"stale": bool(stale),
+		"period": {"from": str(period[0]), "to": str(period[1])} if period else None,
+		"cards": cards,
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+@requires_feature("analytics")
+def data_review_confirm(items=None, action=None):
+	"""HR confirms that an absence was real, or that a figure is right (US-4, SEC-13).
+
+	All or nothing: every record must be Open, in the caller's scope, writable by
+	them and of the kind the action is for - otherwise nothing is saved. Rows are
+	locked while they are checked, so two HR people confirming at once cannot both
+	succeed. Each saved record keeps who, when, and the figure before and after.
+	"""
+	import time
+
+	from frappe import _
+
+	from alvoraa_portal import org_figures as of
+	from hrms.alvoraa_hr_core.access import refuse
+
+	endpoint = "data_review.data_review_confirm"
+	started = time.monotonic()
+	_require_hr(endpoint)
+
+	if isinstance(items, str):
+		items = frappe.parse_json(items) if items.strip().startswith("[") else [items]
+	if (not isinstance(items, list) or not items or len(items) > MAX_CONFIRM_ITEMS
+	        or not all(isinstance(i, str) and i for i in items) or action not in ACTIONS):
+		frappe.throw(_("Choose what you are confirming, then try again."))
+	_within_hourly_limit(endpoint, CONFIRMS_PER_HOUR)
+
+	scope = of.hr_scope()
+
+	def refused():
+		# One message whether the record is missing, someone else's or the wrong
+		# kind: the answer must not reveal what exists outside the caller's scope.
+		refuse(_("You cannot confirm this item. It may belong to another branch or company."),
+		       "SEC-13", endpoint, DOCTYPE)
+
+	if scope.not_linked:
+		refused()
+
+	confirmation, kinds = ACTIONS[action]
+	docs = []
+	for name in sorted(set(items)):       # one lock order, so two requests cannot deadlock
+		if not frappe.db.exists(DOCTYPE, name):
+			refused()
+		doc = frappe.get_doc(DOCTYPE, name, for_update=True)
+		if doc.company not in scope.companies:
+			refused()
+		if scope.branches is not None and doc.alvoraa_branch not in scope.branches:
+			# Location HR: their branches only, and never a company-wide record.
+			refused()
+		if not frappe.has_permission(DOCTYPE, "write", doc=doc):
+			refused()
+		if (doc.item_type, doc.rule) not in kinds:
+			refused()
+		if doc.status != "Open":
+			frappe.throw(_("This has already been confirmed, or the data was fixed. "
+			               "Open Data to review again to see what is left."))
+		docs.append(doc)
+
+	figures = {}
+	if action == "absence_real":
+		_period, base, left_out = _figures_for_confirming(scope)
+		with_all = of.rate_with(base, [left_out[d.name] for d in docs if d.name in left_out])
+		figures = {d.name: (base["rate"], with_all) for d in docs}
+	elif any(d.rule == "D6" for d in docs):
+		by_company = of.leave_figures(scope)["by_company"]
+		figures = {d.name: (None, (by_company.get(d.company) or {}).get("used_pct"))
+		           for d in docs if d.rule == "D6"}
+
+	now = now_datetime()
+	for doc in docs:
+		without, with_ = figures.get(doc.name, (None, None))
+		doc.update({"status": "Confirmed", "confirmation": confirmation,
+		            "confirmed_by": frappe.session.user, "confirmed_on": now,
+		            "figure_without": without, "figure_with": with_})
+		doc.flags.via_confirm = True
+		doc.save(ignore_version=False)
+
+	of.log_if_slow("data_review_confirm", scope, started, items=len(docs))
+	return {"ok": True, "confirmed": len(docs)}

@@ -27,7 +27,12 @@ doc_events = {
     "KPI": {
         "validate": "alvoraa_goals.controllers.kpi.validate_kpi",
         # Slice 010 group D: the same review lock, delete rule and copy refresh.
-        "before_validate": "alvoraa_goals.review_items.enforce_definition_lock",
+        # Phase 3 adds the rating guard after the lock: nobody writes a rating on
+        # the live KPI any more (SEC-2).
+        "before_validate": [
+            "alvoraa_goals.review_items.enforce_definition_lock",
+            "alvoraa_goals.controllers.kpi.refuse_rating_changes",
+        ],
         "on_trash": "alvoraa_goals.review_items.refuse_delete_while_held",
         "on_update": "alvoraa_goals.review_items.refresh_copies_of",
     },

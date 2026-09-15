@@ -783,8 +783,11 @@ def save_self_assessment(appraisal_id, reflections):
         frappe.throw("Not permitted.", frappe.PermissionError)
     if ap.docstatus == 1:
         frappe.throw("Appraisal is already submitted.")
-    ap.reflections = reflections
-    ap.save()
+    # The Employee role has no permission on HRMS Appraisal any more (slice 010
+    # group D, decisions 22 and 26): reads and writes go through checked
+    # endpoints like this one. The owner and draft checks above are the check,
+    # and only this one text field is written.
+    frappe.db.set_value("Appraisal", ap.name, "reflections", reflections)
     frappe.db.commit()
     return {"status": "ok", "message": "Self-assessment saved."}
 

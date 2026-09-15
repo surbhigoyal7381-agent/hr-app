@@ -218,12 +218,14 @@
    "fieldname": "self_rating",
    "fieldtype": "Float",
    "label": "Self Rating",
+   "permlevel": 1,
    "precision": "2"
   },
   {
    "fieldname": "self_comment",
    "fieldtype": "Small Text",
-   "label": "Self Comment"
+   "label": "Self Comment",
+   "permlevel": 1
   },
   {
    "fieldname": "col_break_4",
@@ -234,12 +236,14 @@
    "fieldname": "manager_rating",
    "fieldtype": "Float",
    "label": "Manager Rating",
+   "permlevel": 1,
    "precision": "2"
   },
   {
    "fieldname": "manager_comment",
    "fieldtype": "Small Text",
-   "label": "Manager Comment"
+   "label": "Manager Comment",
+   "permlevel": 1
   },
   {
    "fieldname": "col_break_flags",
@@ -268,13 +272,15 @@
    "fieldname": "potential_rating",
    "fieldtype": "Float",
    "label": "Potential Rating (0–5)",
+   "permlevel": 1,
    "precision": "2",
    "description": "Manager's view of this employee's growth potential, rated 0-5."
   },
   {
    "fieldname": "potential_comment",
    "fieldtype": "Small Text",
-   "label": "Potential Comment"
+   "label": "Potential Comment",
+   "permlevel": 1
   },
   {
    "fieldname": "col_break_potential",
@@ -290,7 +296,8 @@
    "fieldname": "additional_reviewers",
    "fieldtype": "Table",
    "label": "Additional Reviewers",
-   "options": "KPI Additional Reviewer"
+   "options": "KPI Additional Reviewer",
+   "permlevel": 1
   },
   {
    "fieldname": "section_detail",
@@ -315,7 +322,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-15 10:00:00.000000",
+ "modified": "2026-09-15 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Goals",
  "name": "KPI",
@@ -363,6 +370,21 @@
    "read": 1,
    "role": "Employee",
    "write": 1
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "HR Manager"
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "HR User"
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "System Manager"
   }
  ],
  "row_format": "Dynamic",

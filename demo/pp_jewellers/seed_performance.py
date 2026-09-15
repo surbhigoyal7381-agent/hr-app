@@ -341,6 +341,8 @@ for q, (cycle, start, end) in CYCLE_OF.items():
                 k.append("progress_log", {"log_date": "2026-07-31", "value": round(j, 2), "approval_status": "Approved", "note": "July POS report"})
                 k.append("progress_log", {"log_date": "2026-08-31", "value": round(actual - j, 2), "approval_status": "Approved", "note": "August POS report"})
             k.flags.ignore_permissions = True
+            # Seeded history: the live KPI refuses ratings otherwise (slice 010 group D, SEC-2).
+            k.flags.alvoraa_kpi_rating_repair = True
             k.insert()
             made += 1
             if made % 400 == 0:

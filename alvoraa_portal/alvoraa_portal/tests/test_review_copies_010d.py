@@ -772,10 +772,11 @@ class TestSec5ReviewRecordHasNoEmployeeRole(_Team):
 	def test_decision22_employee_cannot_write_or_create_an_hrms_appraisal(self):
 		employee = [p for p in _shipped_permissions("hrms", "hr", "doctype", "appraisal", "appraisal.json")
 		            if p["role"] == "Employee"]
-		self.assertEqual(len(employee), 1)
-		self.assertTrue(employee[0].get("read"))
-		self.assertFalse(employee[0].get("write"))
-		self.assertFalse(employee[0].get("create"))
+		# Decision 26 (phase 3) removed read too, so the row is gone; write and
+		# create must never come back with it.
+		for row in employee:
+			self.assertFalse(row.get("write"))
+			self.assertFalse(row.get("create"))
 
 	def test_sec27_hr_desk_reads_follow_the_stage_and_company_rule_and_nobody_writes(self):
 		from frappe.client import get as desk_get

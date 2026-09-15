@@ -7,7 +7,7 @@ above 100 rather than below it.
 """
 
 import frappe
-from frappe.utils import flt
+from frappe.utils import cstr, flt
 
 # HRMS scores appraisal goals out of 5, so 100% attainment maps to 5.
 MAX_RATING = 5.0
@@ -102,6 +102,66 @@ def attainment(actual, target, direction):
         # No actual logged yet is not the same as a perfect score.
         return 0 if actual == 0 else flt(target / actual * 100, 2)
     return flt(actual / target * 100, 2)
+
+
+# ── Ratings never change on the live KPI (slice 010 group D: SEC-2, R13, PRIV-9) ─
+#
+# Ratings are given inside a review, on the review's own copy of the KPI. The
+# rating fields on the live KPI keep only what earlier cycles stored there: HR
+# may read them (they sit at permission level 1), and nobody changes them.
+
+RATING_FIELDS = (
+    "self_rating", "self_comment", "manager_rating", "manager_comment",
+    "potential_rating", "potential_comment",
+)
+
+# Set on the document only by a repair or rollback script someone runs on the
+# user's word (review_backfill.copy_ratings_back_for_rollback). A desk or REST
+# save cannot set a document flag.
+RATING_REPAIR_FLAG = "alvoraa_kpi_rating_repair"
+
+
+def _rating_form(field, value):
+    """A rating or comment in a form that compares the same however it arrived."""
+    if field.endswith("_rating"):
+        return flt(value, 6)
+    return cstr(value).strip()
+
+
+def _reviewer_ratings(doc):
+    """Additional reviewers' ratings and comments on this KPI, by row."""
+    return {
+        row.name: (flt(row.get("rating"), 6), cstr(row.get("comment")).strip())
+        for row in (doc.get("additional_reviewers") or [])
+        if flt(row.get("rating")) or cstr(row.get("comment")).strip()
+    }
+
+
+def refuse_rating_changes(doc, method=None):
+    """doc_events before_validate on KPI: no path writes a rating here (SEC-2).
+
+    before_validate, so a save with flags.ignore_validate meets it too. No role is
+    exempt, Administrator included. Frappe already resets a level-1 field that a
+    user may not write, so this is what stops code that saves with
+    ignore_permissions, and Administrator. A new KPI may not arrive rated either.
+    """
+    if doc.flags.get(RATING_REPAIR_FLAG):
+        return
+    if doc.is_new():
+        changed = [f for f in RATING_FIELDS if _rating_form(f, doc.get(f))]
+        reviewers_changed = bool(_reviewer_ratings(doc))
+    else:
+        before = doc.get_doc_before_save() or frappe.get_doc(doc.doctype, doc.name)
+        changed = [f for f in RATING_FIELDS if _rating_form(f, before.get(f)) != _rating_form(f, doc.get(f))]
+        reviewers_changed = _reviewer_ratings(before) != _reviewer_ratings(doc)
+    if not changed and not reviewers_changed:
+        return
+    from hrms.alvoraa_hr_core.access import refuse
+
+    refuse(
+        "Ratings are given inside the review, not on the live KPI. Open the review to rate this item.",
+        "SEC-2", "KPI save", doc.doctype, doc.name,
+    )
 
 
 def _clamp_ratings(doc):

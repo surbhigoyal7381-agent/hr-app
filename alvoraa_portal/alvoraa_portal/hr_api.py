@@ -2208,15 +2208,38 @@ def reject_kpi_progress(kpi_name, log_idx, comment=None):
     return _rkp(kpi_name, log_idx, comment)
 
 
+# Slice 012 G2 (SEC-18): the only keys these two calls may touch, with the only
+# values each may take. They read and wrote ANY Frappe default before, so one
+# call could add "Employee" to alvoraa_attendance_org_roles and show every
+# employee everybody's leave types, with no record of who did it. The portal's
+# Org Settings screen uses kra_link_mandatory and nothing else. A key that grants
+# visibility must never be added here - it needs System Manager and a change record.
+ALLOWED_ORG_SETTINGS = {"kra_link_mandatory": ("0", "1")}
+
+
+def _refuse_org_setting(endpoint):
+    from hrms.alvoraa_hr_core.access import refuse
+
+    # Neither the key nor the value is logged: the rule id says enough.
+    refuse(_("This setting cannot be read or changed here."), "SEC-18", endpoint)
+
+
 @frappe.whitelist()
 def get_org_setting(key):
     _require_hr()
+    if not isinstance(key, str) or key not in ALLOWED_ORG_SETTINGS:
+        _refuse_org_setting("hr_api.get_org_setting")
     return frappe.db.get_default(key)
 
 
 @frappe.whitelist()
 def set_org_setting(key, value):
     _require_hr()
+    if not isinstance(key, str) or key not in ALLOWED_ORG_SETTINGS:
+        _refuse_org_setting("hr_api.set_org_setting")
+    value = str(value) if value is not None else ""
+    if value not in ALLOWED_ORG_SETTINGS[key]:
+        _refuse_org_setting("hr_api.set_org_setting")
     frappe.db.set_default(key, value)
     frappe.db.commit()
     return {"ok": True}

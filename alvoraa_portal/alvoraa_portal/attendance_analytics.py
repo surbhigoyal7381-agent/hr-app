@@ -28,6 +28,8 @@ Everything is derived on read. A stored count of anything drifts the first time
 somebody resigns on a Friday.
 """
 
+import json
+
 import frappe
 from frappe import _
 from frappe.utils import add_days, cint, flt, getdate, nowdate
@@ -52,9 +54,27 @@ def _me():
 	                           as_dict=True)
 
 
+# Slice 012 Q6 (SEC-19): roles the organisation view is never given, whatever the
+# stored setting says. Leadership sees totals only - listing it here would show
+# every leader named people and leave types, the shortcut the brief refused.
+# Employee-level roles would show that to everybody. All, Guest and Desk User are
+# roles Frappe gives every user or visitor automatically.
+NEVER_ORG_ROLES = frozenset({"Leadership", "Employee", "Employee Self Service",
+                             "All", "Guest", "Desk User"})
+
+
 def _org_roles():
 	raw = frappe.db.get_default(ORG_ROLES_KEY) or DEFAULT_ORG_ROLES
-	return {r.strip() for r in str(raw).split(",") if r.strip()}
+	listed = {r.strip() for r in str(raw).split(",") if r.strip()}
+	ignored = listed & NEVER_ORG_ROLES
+	if ignored:
+		# Role names only. Whoever stored them is found in the setting itself.
+		try:
+			frappe.logger("security").warning(json.dumps(
+				{"event": "org_roles_ignored", "rule": "SEC-19", "roles": sorted(ignored)}))
+		except Exception:
+			pass
+	return listed - NEVER_ORG_ROLES
 
 
 def _may_see_organisation():

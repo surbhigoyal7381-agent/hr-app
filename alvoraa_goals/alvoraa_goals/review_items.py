@@ -809,6 +809,84 @@ _STAMP_FIELDS = (
 )
 
 
+# A viewer that may see the review's status and counts but no rating at all:
+# HR for someone outside their line while the review is still before HR Review
+# (SEC-26). Never passed to review_payload; HR cycle screens only.
+VIEWER_NONE = "none"
+
+SELF_FIELDS = ("self_rating", "self_comment")
+MANAGER_FIELDS = ("manager_rating", "manager_comment")
+POTENTIAL_FIELDS = ("potential_rating", "potential_comment")
+
+
+def rating_fields_for(viewer, status):
+    """Which rating and comment fields of a copy this viewer may see at this stage.
+
+    The one rule for every screen that shows copies, so the review screens and
+    HR's cycle screens cannot drift apart (PRIV-1, PRIV-2, SEC-26):
+
+      subject   own self fields; manager fields from Employee Final Review;
+                never potential
+      manager   self fields once sent; manager and potential fields
+      hr        the same as the manager
+      reviewer  self fields once sent
+      none, or anything unknown: nothing
+    """
+    status = status or "Not Started"
+    sent = status not in SELF_REVIEW_DRAFT
+    if viewer == VIEWER_SUBJECT:
+        return SELF_FIELDS + (MANAGER_FIELDS if status in RATING_RELEASED else ())
+    if viewer in (VIEWER_MANAGER, VIEWER_HR):
+        return (SELF_FIELDS if sent else ()) + MANAGER_FIELDS + POTENTIAL_FIELDS
+    if viewer == VIEWER_REVIEWER:
+        return SELF_FIELDS if sent else ()
+    return ()
+
+
+def overall_rating_visible(viewer, status):
+    """The review's overall rating: the subject from Employee Final Review
+    (decision 3); the manager line and HR always; nobody else."""
+    if viewer == VIEWER_SUBJECT:
+        return (status or "Not Started") in RATING_RELEASED
+    return viewer in (VIEWER_MANAGER, VIEWER_HR)
+
+
+def late_fact_counts(reviews, rows_by_review):
+    """R10 for many reviews at once: how many facts dated in each frozen review's
+    period were approved after it froze, per copy. Three queries in all.
+
+    reviews: dicts with name, frozen, frozen_on, review_window_start and
+    review_window_end. rows_by_review: review name -> its copies (dicts).
+    Returns copy row name -> count, for copies with at least one.
+    """
+    frozen = [r for r in reviews if cint(r.get("frozen")) and r.get("frozen_on")
+              and r.get("review_window_start") and r.get("review_window_end")]
+    rows = [row for r in frozen for row in rows_by_review.get(r["name"], []) if not cint(row.get("removed"))]
+    if not rows:
+        return {}
+    start = min(getdate(r["review_window_start"]) for r in frozen)
+    end = max(getdate(r["review_window_end"]) for r in frozen)
+    readings, evidence, updates = _load_facts(rows, start, end)
+
+    out = {}
+    for r in frozen:
+        r_start, r_end = getdate(r["review_window_start"]), getdate(r["review_window_end"])
+        frozen_on = get_datetime(r["frozen_on"])
+        for row in rows_by_review.get(r["name"], []):
+            if cint(row.get("removed")):
+                continue
+            window = _row_window(frappe._dict(row), r_start, r_end)
+            if not window:
+                continue
+            count = sum(
+                1 for f, _by_upload in _facts_in_window(frappe._dict(row), window, readings, evidence, updates)
+                if get_datetime(f.get("approved_on") or f.get("creation")) > frozen_on
+            )
+            if count:
+                out[row["name"]] = count
+    return out
+
+
 def _date(value):
     return str(getdate(value)) if value else ""
 
@@ -842,8 +920,9 @@ def review_payload(ext, viewer, employee=None, employee_name=""):
 
     status = ext.review_status or "Not Started"
     deciders = viewer in (VIEWER_MANAGER, VIEWER_HR)
-    see_self = viewer == VIEWER_SUBJECT or status not in SELF_REVIEW_DRAFT
-    see_manager = deciders or (viewer == VIEWER_SUBJECT and status in RATING_RELEASED)
+    allowed = rating_fields_for(viewer, status)
+    see_self = "self_rating" in allowed
+    see_manager = "manager_rating" in allowed
     rows = list(ext.get("review_items") or [])
     live = [r for r in rows if not cint(r.removed)]
     live_names = {r.name for r in live}

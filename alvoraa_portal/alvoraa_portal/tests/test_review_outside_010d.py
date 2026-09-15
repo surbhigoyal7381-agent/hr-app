@@ -355,3 +355,189 @@ class TestR5Priv10InReviewBadge(_Outside):
 		self._as(self.subject_user)
 		mine = {k["name"]: k for k in pa.get_my_kpis(cycle=r.cycle)["kpis"]}
 		self.assertIsNone(mine[r.kpi]["review_badge"])
+
+
+# ── Commit 8 · R8, SEC-26, SEC-30 · HR cycle screens read the review record ──
+
+
+class _CycleScreens(_Team):
+	"""One cycle: the subject's review in Manager Review, the stranger's in HR
+	Review (frozen, with a fact approved after), another company's in HR Review,
+	and an HR Manager's own review in HR Review."""
+
+	MARK = "S010D-comment"
+
+	def _review_in(self, cycle, start, employee, status, freeze=False):
+		import alvoraa_goals.review_items as review_items
+
+		kpi = self._kpi(employee, cycle, target=100, weightage=100)
+		self._reading(kpi, _day(start, 1), 40)
+		ap = self._appraisal(employee, cycle, status="Employee Review")
+		review_items.ensure_review_items(self._ext(ap))
+		ext = self._ext(ap)
+		for row in ext.review_items:
+			row.self_rating, row.manager_rating, row.potential_rating = 3, 4, 5
+			row.self_comment = row.manager_comment = self.MARK
+			review_items.stamp_rating(row, "self")
+			review_items.stamp_rating(row, "manager")
+		ext.overall_rating, ext.potential_rating = 4, 5
+		review_items.stamp_overall_rating(ext)
+		if freeze:
+			ext.frozen, ext.frozen_on = 1, frappe.utils.now_datetime()
+		review_items.save_review_record(ext)
+		frappe.db.commit()
+		self._set_status(ap, status)
+		return frappe._dict(ap=ap, kpi=kpi, row=_row_for(self._ext(ap), kpi).name)
+
+	def _setup_cycle(self):
+		start, end = self._window()
+		cycle = self._cycle(start, end)
+		c = frappe._dict(cycle=cycle, start=start)
+		c.mr = self._review_in(cycle, start, self.subject, "Manager Review")
+		c.hrr = self._review_in(cycle, start, self.stranger, "HR Review", freeze=True)
+		c.other = self._review_in(cycle, start, self.subject_b, "HR Review")
+		c.own = self._review_in(cycle, start, self.hr_subject, "HR Review")
+		# Dated in the period, approved after the frozen review stopped taking facts (R10).
+		self._reading(c.hrr.kpi, _day(start, 3), 15,
+		              approved_on=frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=1))
+		return c
+
+
+class TestR8Sec26HrCycleScreens(_CycleScreens):
+	def test_sec26_hr_cycle_screens_list_only_permitted_companies_and_follow_the_stage(self):
+		import alvoraa_portal.performance_api as pa
+
+		c = self._setup_cycle()
+		self._as(self.hr_user)
+
+		table = {r["name"]: r for r in pa.hr_list_appraisals(c.cycle)}
+		self.assertTrue({c.mr.ap, c.hrr.ap, c.own.ap} <= set(table))
+		self.assertNotIn(c.other.ap, table)
+		self.assertIsNone(table[c.mr.ap]["overall_rating"])
+		self.assertEqual(table[c.hrr.ap]["overall_rating"], 4)
+
+		kpis = {r["name"]: r for r in pa.hr_list_kpis(c.cycle)}
+		self.assertEqual(set(kpis) & {c.mr.row, c.hrr.row, c.other.row}, {c.mr.row, c.hrr.row})
+		self.assertFalse(set(RATING_FIELDS) & set(kpis[c.mr.row]))
+		self.assertEqual((kpis[c.hrr.row]["manager_rating"], kpis[c.hrr.row]["potential_rating"]), (4, 5))
+		text = json.dumps(list(kpis.values()), default=str)
+		for live in (c.mr.kpi, c.hrr.kpi):
+			self.assertNotIn(live, text)
+
+		summary = {r["appraisal"]: r for r in pa.hr_cycle_summary(c.cycle)["rows"]}
+		self.assertNotIn(c.other.ap, summary)
+		self.assertFalse({"final_score", "rated"} & set(summary[c.mr.ap]))
+		self.assertEqual(summary[c.hrr.ap]["rated"], 1)
+
+		overview = {r["appraisal"]: r for r in pa.get_calibration_overview(c.cycle)["rows"]}
+		self.assertNotIn(c.other.ap, overview)
+		self.assertFalse({"overall_rating", "avg_potential_rating", "avg_potential", "rated_count",
+		                  "potential_category"} & set(overview[c.mr.ap]))
+		self.assertEqual(overview[c.hrr.ap]["overall_rating"], 4)
+		self.assertEqual(overview[c.mr.ap]["kpi_count"], 1)
+
+		matrix = pa.get_calibration_matrix(c.cycle)
+		self.assertEqual({r["appraisal"] for r in matrix["rows"]} & {c.mr.ap, c.hrr.ap, c.other.ap, c.own.ap},
+		                 {c.hrr.ap, c.own.ap})
+
+	def test_r8_sec26_the_csv_export_holds_copies_only_what_the_stage_allows_and_logs_counts(self):
+		import csv
+		import io
+		from unittest.mock import MagicMock, patch
+
+		import alvoraa_portal.performance_api as pa
+
+		c = self._setup_cycle()
+		logger = MagicMock()
+		self._as(self.hr_user)
+		with patch("frappe.logger", return_value=logger):
+			result = pa.export_cycle_kpis_csv(c.cycle)
+		rows = list(csv.DictReader(io.StringIO(result["csv"])))
+		by_id = {r["KPI ID"]: r for r in rows}
+
+		self.assertNotIn(c.other.row, by_id)
+		for live in (c.mr.kpi, c.hrr.kpi, c.other.kpi):
+			self.assertNotIn(live, result["csv"])
+		self.assertEqual((by_id[c.mr.row]["Manager Rating"], by_id[c.mr.row]["Self Comment"],
+		                  by_id[c.mr.row]["Potential Rating"]), ("", "", ""))
+		self.assertEqual(float(by_id[c.hrr.row]["Manager Rating"]), 4)
+		self.assertEqual(by_id[c.hrr.row]["Facts Approved After Close"], "1")
+		self.assertEqual(by_id[c.mr.row]["Facts Approved After Close"], "0")
+
+		logged = [json.loads(call.args[0]) for call in logger.info.call_args_list]
+		self.assertEqual([(e["event"], e["rows"]) for e in logged], [("export", len(rows))])
+		self.assertNotIn(self.MARK, json.dumps(logged))
+
+	def test_priv1_sec26_your_own_row_on_hr_screens_never_carries_potential(self):
+		import alvoraa_portal.performance_api as pa
+
+		c = self._setup_cycle()
+		self._as(self.hr_subject_user)
+		own_kpi = next(r for r in pa.hr_list_kpis(c.cycle) if r["name"] == c.own.row)
+		self.assertNotIn("potential_rating", own_kpi)
+		own = next(r for r in pa.get_calibration_overview(c.cycle)["rows"] if r["appraisal"] == c.own.ap)
+		self.assertFalse({"avg_potential", "avg_potential_rating", "potential_category"} & set(own))
+		plotted = next(r for r in pa.get_calibration_matrix(c.cycle)["rows"] if r["appraisal"] == c.own.ap)
+		self.assertNotIn("potential_rating", plotted)
+
+	def test_sec26_sec30_reminders_archive_and_sign_off_stay_inside_hrs_companies(self):
+		from unittest.mock import patch
+
+		import alvoraa_portal.performance_api as pa
+
+		c = self._setup_cycle()
+		self._as(self.hr_user)
+		for call in (pa.send_review_reminder, pa.archive_review, pa.unarchive_review):
+			with self.assertRaises(frappe.PermissionError, msg=call.__name__):
+				call(c.other.ap)
+
+		# A reminder for a review with no record yet creates none (SEC-6).
+		fresh = self._appraisal(self.manager, self._cycle(), with_extension=False)
+		self._as(self.hr_user)
+		with patch("frappe.sendmail"):
+			try:
+				pa.send_review_reminder(fresh)
+			except frappe.ValidationError:
+				pass   # no email address on the test employee
+		frappe.set_user("Administrator")
+		self.assertFalse(frappe.db.exists("Alvoraa Appraisal Extension", fresh))
+
+		self._as(self.stranger_user)
+		with self.assertRaises(frappe.PermissionError):
+			pa.get_calibration_signoff(c.cycle)
+		self._as(self.hr_user)
+		self.assertIsNone(pa.get_calibration_signoff(c.cycle))
+
+
+class TestQueryCountOfHrCycleScreens(_CycleScreens):
+	def _queries(self, reviews):
+		from unittest.mock import patch
+
+		import alvoraa_portal.performance_api as pa
+		from alvoraa_portal.tests.test_portal_security_010 import _employee
+
+		start, end = self._window()
+		cycle = self._cycle(start, end)
+		for i in range(reviews):
+			employee = _employee(f"DCount{i}", company=self.company_a)
+			self._review_in(cycle, start, employee, "HR Review")
+		self._as(self.hr_user)
+		counts = {}
+		for name, call in (("hr_list_appraisals", pa.hr_list_appraisals), ("hr_list_kpis", pa.hr_list_kpis),
+		                   ("hr_cycle_summary", pa.hr_cycle_summary),
+		                   ("get_calibration_overview", pa.get_calibration_overview),
+		                   ("get_calibration_matrix", pa.get_calibration_matrix),
+		                   ("export_cycle_kpis_csv", pa.export_cycle_kpis_csv)):
+			call(cycle)   # warm the caches
+			with patch.object(frappe.db, "sql", wraps=frappe.db.sql) as sql:
+				call(cycle)
+			counts[name] = sql.call_count
+		frappe.set_user("Administrator")
+		self.measured = counts
+		return counts
+
+	def test_query_count_hr_cycle_screens_do_not_grow_with_the_number_of_reviews(self):
+		small = self._queries(2)
+		large = self._queries(7)
+		print("HR cycle screen queries (2 vs 7 reviews):", small, large)
+		self.assertEqual(small, large)

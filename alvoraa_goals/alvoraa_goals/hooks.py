@@ -66,6 +66,8 @@ scheduler_events = {
     "daily": [
         "alvoraa_goals.scheduled_jobs.check_cascade_alignment",
         "alvoraa_goals.scheduled_jobs.send_progress_reminders",
+        # Slice 010 group D (R9): remind HR from day 15 when open reviews still lock items.
+        "alvoraa_goals.review_items.remind_hr_of_held_items",
     ],
 }
 

@@ -1668,3 +1668,102 @@ def audit(ext, text):
     reason may be written here. Never a rating or a number.
     """
     ext.add_comment("Info", text)
+
+
+# ── Reminding HR about items still locked after a cycle (commit 10: R9, SEC-22) ─
+
+REMINDER_FIRST_DAY = 15
+REMINDER_EVERY_DAYS = 7
+
+
+def remind_hr_of_held_items():
+    """Daily job: tell HR when open reviews still lock Objectives and KPIs after
+    their cycle ended (R9).
+
+    On day 15 after a cycle's end date, then every 7 days while the lock lasts.
+    The date decides, so nothing is stored and a missed day is not made up. If
+    the lock is released on or before day 15 there is nothing to remind about;
+    with 0 (never released) the reminder repeats until the reviews are completed.
+
+    Each enabled HR Manager hears only about reviews of the companies they look
+    after. The message holds the cycle name, a count and a date: no person's
+    name (PRIV-15). A failed notification is logged with the user id only and
+    never stops the others. Returns the number of notifications made.
+    """
+    from hrms.alvoraa_hr_core.access import permitted_companies
+
+    days = review_settings()["lock_release_days"]
+    if days and days <= REMINDER_FIRST_DAY:
+        return 0
+    today = getdate(nowdate())
+
+    item = frappe.qb.DocType("Alvoraa Review Item")
+    ext = frappe.qb.DocType("Alvoraa Appraisal Extension")
+    appraisal = frappe.qb.DocType("Appraisal")
+    cycle = frappe.qb.DocType("Appraisal Cycle")
+    rows = (
+        frappe.qb.from_(item)
+        .join(ext).on(item.parent == ext.name)
+        .join(appraisal).on(appraisal.name == ext.appraisal)
+        .join(cycle).on(cycle.name == ext.appraisal_cycle)
+        .select(ext.name, cycle.name.as_("cycle"), cycle.cycle_name, cycle.end_date, appraisal.company)
+        .distinct()
+        .where(item.parenttype == "Alvoraa Appraisal Extension")
+        .where(item.removed == 0)
+        .where(ext.review_status != "Completed")
+        .where(appraisal.docstatus != 2)
+        .where(cycle.end_date <= add_days(today, -REMINDER_FIRST_DAY))
+    ).run(as_dict=True)
+
+    # cycle -> company -> number of open reviews still holding items
+    due = {}
+    for r in rows:
+        after = (today - getdate(r.end_date)).days
+        if (after - REMINDER_FIRST_DAY) % REMINDER_EVERY_DAYS:
+            continue
+        if days and today >= getdate(add_days(r.end_date, days)):
+            continue
+        entry = due.setdefault(r.cycle, {"label": r.cycle_name or r.cycle, "end": getdate(r.end_date),
+                                         "after": after, "companies": {}})
+        entry["companies"][r.company] = entry["companies"].get(r.company, 0) + 1
+    if not due:
+        return 0
+
+    hr_managers = frappe.get_all(
+        "User",
+        filters={"enabled": 1, "name": ["in", frappe.get_all(
+            "Has Role", filters={"role": "HR Manager", "parenttype": "User"}, pluck="parent") or [""]]},
+        pluck="name",
+    )
+    sent = 0
+    for user in hr_managers:
+        if user in ("Administrator", "Guest"):
+            continue
+        companies = set(permitted_companies(user))
+        lines = []
+        for entry in sorted(due.values(), key=lambda e: e["label"]):
+            count = sum(n for company, n in entry["companies"].items() if company in companies)
+            if not count:
+                continue
+            until = (_("until {0}").format(frappe.utils.formatdate(add_days(entry["end"], days))) if days
+                     else _("until the reviews are completed"))
+            lines.append(_("{0}: {1} review(s) are still open {2} days after the cycle ended. "
+                           "The Objectives and KPIs in them stay locked {3}.").format(
+                entry["label"], count, entry["after"], until))
+        if not lines:
+            continue
+        savepoint = f"review_reminder_{frappe.generate_hash(length=8)}"
+        frappe.db.savepoint(savepoint)
+        try:
+            frappe.get_doc({
+                "doctype": "Notification Log",
+                "for_user": user,
+                "type": "Alert",
+                "subject": _("Objectives and KPIs are still locked in open reviews"),
+                "email_content": "<p>" + "</p><p>".join(frappe.utils.escape_html(line) for line in lines) + "</p>",
+            }).insert()
+            sent += 1
+        except Exception:
+            frappe.db.rollback(save_point=savepoint)
+            frappe.log_error(title="Review lock reminder failed", message=user)
+    return sent

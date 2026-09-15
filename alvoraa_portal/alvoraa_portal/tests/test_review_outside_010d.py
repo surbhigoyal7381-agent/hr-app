@@ -646,3 +646,90 @@ class TestSec7ReviewersComeFromTheReviewedPersonsCompany(_Team):
 				pa.get_reviewer_view(ap)
 			with self.assertRaises(frappe.ValidationError, msg=status):
 				pa.submit_reviewer_comments(ap, "later")
+
+
+# ── Commit 10 · R9, SEC-22, PRIV-15 · HR is reminded about items still locked ─
+
+
+class TestR9LockReminder(_Team):
+	def setUp(self):
+		super().setUp()
+		from alvoraa_portal.tests.test_portal_security_010 import _employee, _user
+
+		self.hr_b_user = _user("d.remind.hrb", ("HR Manager", "Employee"))
+		self.hr_b = _employee("DRemindHrB", company=self.company_b, user=self.hr_b_user)
+		self._release_days(30)
+
+	def _release_days(self, days):
+		frappe.db.set_single_value("HR Settings", "alvoraa_review_lock_release_days", days)
+		frappe.db.value_cache.pop("HR Settings", None)
+		frappe.db.commit()
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		self._release_days(30)
+		frappe.db.delete("Notification Log", {"subject": "Objectives and KPIs are still locked in open reviews"})
+		frappe.db.commit()
+		super().tearDown()
+
+	def _ended(self, days_ago, employee, marker):
+		import alvoraa_goals.review_items as review_items
+
+		end = frappe.utils.add_days(frappe.utils.nowdate(), -days_ago)
+		start = frappe.utils.add_days(end, -80)
+		cycle = self._cycle(start, end)
+		frappe.db.set_value("Appraisal Cycle", cycle, "cycle_name", f"{cycle} {marker}")
+		kpi = self._kpi(employee, cycle, target=10)
+		frappe.db.set_value("KPI", kpi, "kpi_name", f"S010D {marker} secret title")
+		ap = self._appraisal(employee, cycle, status="Manager Review")
+		review_items.ensure_review_items(self._ext(ap))
+		frappe.db.commit()
+		return cycle
+
+	def _reminders(self, user, marker):
+		return [n.email_content for n in frappe.get_all(
+			"Notification Log", filters={"for_user": user, "email_content": ["like", f"%{marker}%"]},
+			fields=["email_content"])]
+
+	def test_r9_hr_is_reminded_on_day_15_then_weekly_without_names_and_only_for_its_companies(self):
+		import alvoraa_goals.review_items as review_items
+
+		self._ended(15, self.subject, "M15")
+		self._ended(16, self.stranger, "M16")
+		self._ended(22, self.subject_b, "M22")
+		review_items.remind_hr_of_held_items()
+
+		day15 = self._reminders(self.hr_user, "M15")
+		self.assertEqual(len(day15), 1)
+		self.assertIn("1 review(s) are still open 15 days after the cycle ended", day15[0])
+		self.assertEqual(self._reminders(self.hr_user, "M16"), [])       # not a reminder day
+		self.assertEqual(self._reminders(self.hr_user, "M22"), [])       # another company
+		self.assertEqual(len(self._reminders(self.hr_b_user, "M22")), 1)  # day 22, its company
+		self.assertEqual(self._reminders(self.hr_b_user, "M15"), [])
+
+		everything = json.dumps(frappe.get_all("Notification Log", filters={
+			"subject": "Objectives and KPIs are still locked in open reviews"}, fields=["subject", "email_content"]))
+		for secret in ("secret title", "DTeam", self.subject, self.subject_b):
+			self.assertNotIn(secret, everything)
+
+	def test_r9_no_reminder_once_the_lock_is_released_and_0_means_keep_reminding(self):
+		import alvoraa_goals.review_items as review_items
+
+		self._ended(29, self.subject, "M29")
+		self._release_days(15)
+		self.assertEqual(review_items.remind_hr_of_held_items(), 0)
+
+		self._release_days(20)
+		review_items.remind_hr_of_held_items()     # released on day 20: day 29 is after it
+		self.assertEqual(self._reminders(self.hr_user, "M29"), [])
+
+		self._release_days(0)
+		review_items.remind_hr_of_held_items()
+		text = self._reminders(self.hr_user, "M29")
+		self.assertEqual(len(text), 1)
+		self.assertIn("until the reviews are completed", text[0])
+
+	def test_r9_the_reminder_runs_daily_from_the_goals_app(self):
+		import alvoraa_goals.hooks as hooks
+
+		self.assertEqual(hooks.scheduler_events["daily"][-1], "alvoraa_goals.review_items.remind_hr_of_held_items")

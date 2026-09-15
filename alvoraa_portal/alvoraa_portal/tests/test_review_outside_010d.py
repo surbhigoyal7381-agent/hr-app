@@ -561,3 +561,88 @@ class TestDecision28ScorecardCompanyScope(_Team):
 			self.assertTrue(call(self.subject), call.__name__)
 			with self.assertRaises(frappe.PermissionError, msg=call.__name__):
 				call(self.subject_b)
+
+
+# ── Commit 9 · SEC-7, decisions 2 and 17 · reviewers from the reviewed person's company ─
+
+
+class TestSec7ReviewersComeFromTheReviewedPersonsCompany(_Team):
+	def _found(self, **kwargs):
+		import alvoraa_portal.performance_api as pa
+
+		return {r["name"] for r in pa.search_employees(query="DTeam", **kwargs)}
+
+	def test_sec7_decision2_the_picker_finds_the_reviewed_persons_company_not_only_the_managers_line(self):
+		import alvoraa_portal.performance_api as pa
+
+		ap = self._review_of(self.subject, "Manager Review")
+
+		self._as(self.manager_user)
+		found = self._found(appraisal=ap)
+		self.assertIn(self.stranger, found)          # same company, outside the line
+		self.assertNotIn(self.subject_b, found)      # another company
+		self.assertNotIn(self.subject, found)        # never the person reviewed
+		self.assertLessEqual(len(pa.search_employees(appraisal=ap)), 50)
+
+		# Somebody who may not invite for this review finds nobody.
+		self._as(self.stranger_user)
+		with self.assertRaises(frappe.PermissionError):
+			pa.search_employees(query="DTeam", appraisal=ap)
+		self._as(self.subject_user)
+		with self.assertRaises(frappe.PermissionError):
+			pa.search_employees(query="DTeam", appraisal=ap)
+		self._as(self.hr_user)                       # a stranger to HR, still in Manager Review
+		with self.assertRaises(frappe.PermissionError):
+			pa.search_employees(query="DTeam", appraisal=ap)
+
+		# Without a review: a manager gets their company, HR its companies, others nobody.
+		self._as(self.manager_user)
+		found = self._found()
+		self.assertIn(self.stranger, found)
+		self.assertNotIn(self.subject_b, found)
+		self._as(self.hr_user)
+		self.assertNotIn(self.subject_b, self._found())
+		self._as(self.stranger_user)
+		self.assertEqual(pa.search_employees(query="DTeam"), [])
+
+	def test_sec7_invitees_must_belong_to_the_reviewed_persons_company(self):
+		from unittest.mock import patch
+
+		import alvoraa_portal.performance_api as pa
+
+		ap = self._review_of(self.subject, "Manager Review")
+		self._as(self.manager_user)
+		with patch("frappe.sendmail"):
+			with self.assertRaises(frappe.PermissionError):
+				pa.invite_reviewer(ap, self.subject_b)
+			with self.assertRaises(frappe.PermissionError):
+				pa.invite_reviewers_batch(ap, json.dumps([{"employee": self.stranger}, {"employee": self.subject_b}]))
+			frappe.set_user("Administrator")
+			self.assertEqual(json.loads(frappe.db.get_value("Alvoraa Appraisal Extension", ap, "invited_reviewers")
+			                            or "[]"), [])
+
+			self._as(self.manager_user)
+			pa.invite_reviewer(ap, self.stranger, json.dumps(["past-dev"]))
+		frappe.set_user("Administrator")
+		invited = json.loads(frappe.db.get_value("Alvoraa Appraisal Extension", ap, "invited_reviewers"))
+		self.assertEqual([r["employee"] for r in invited], [self.stranger])
+
+	def test_decision17_an_invited_reviewer_loses_access_once_manager_review_ends(self):
+		import alvoraa_portal.performance_api as pa
+
+		ap = self._review_of(self.subject, "Manager Review")
+		user = frappe.db.get_value("Employee", self.stranger, "user_id")
+		frappe.db.set_value("Alvoraa Appraisal Extension", ap, "invited_reviewers", json.dumps(
+			[{"employee": self.stranger, "user": user, "status": "Invited", "allowed_pages": ["past-dev"]}]))
+		frappe.db.commit()
+		self._as(self.stranger_user)
+		pa.get_reviewer_view(ap)
+		pa.submit_reviewer_comments(ap, "fine")
+
+		for status in ("Employee Final Review", "HR Review", "Completed"):
+			self._set_status(ap, status)
+			self._as(self.stranger_user)
+			with self.assertRaises(frappe.PermissionError, msg=status):
+				pa.get_reviewer_view(ap)
+			with self.assertRaises(frappe.ValidationError, msg=status):
+				pa.submit_reviewer_comments(ap, "later")

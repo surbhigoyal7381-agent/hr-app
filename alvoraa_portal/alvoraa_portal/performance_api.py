@@ -1646,34 +1646,81 @@ def get_cycle_config(cycle):
 
 
 @frappe.whitelist()
-def search_employees(query=""):
-    """Search active employees by name or ID — open to any logged-in user."""
+def search_employees(query="", appraisal=None):
+    """Find people to invite as reviewers, by name or employee ID.
+
+    It used to return up to 100 active employees of every company to anyone
+    logged in (slice 010 group D, commit 9).
+
+    With `appraisal` (the reviewer picker): only someone who may invite
+    reviewers for that review - its manager line, or HR under the review's stage
+    and company rule, never the person reviewed (SEC-7, SEC-10). Results are
+    active employees of the reviewed person's company, not limited to the
+    manager's line (decision 2), never the reviewed person.
+
+    Without it (the page does not send it yet): a manager searches their own
+    company, HR the companies they look after, anyone else finds nobody.
+    At most 50 people.
+    """
     if frappe.session.user == "Guest":
         frappe.throw("Please log in.", frappe.PermissionError)
-    query = (query or "").strip()
-    filters = {"status": "Active"}
+    query = (query if isinstance(query, str) else "").strip()
+    me = _employee_id()
+    subject = None
+    if appraisal:
+        if not isinstance(appraisal, str):
+            frappe.throw("Choose the review you are finding reviewers for.")
+        subject = frappe.db.get_value("Appraisal", appraisal, "employee")
+        if not subject:
+            frappe.throw("Appraisal not found.")
+        refuse_own_rating(subject, "Appraisal", appraisal, "search_employees")
+        if not _is_line_manager(subject, me):
+            if not _is_hr():
+                refuse("You can only find reviewers for a review you manage.",
+                       "SEC-7", "search_employees", "Appraisal", appraisal)
+            _assert_hr_can_view(appraisal)
+        companies = [frappe.db.get_value("Employee", subject, "company")]
+    elif _is_hr():
+        companies = permitted_companies()
+    elif me and _reports_of(me):
+        companies = [frappe.db.get_value("Employee", me, "company")]
+    else:
+        return []
+
+    companies = [c for c in companies if c]
+    if not companies:
+        return []
+    filters = {"status": "Active", "company": ["in", companies]}
+    if subject:
+        filters["name"] = ["!=", subject]
+    or_filters = None
     if query:
-        filters["employee_name"] = ["like", "%" + query + "%"]
-    rows = frappe.get_all(
+        or_filters = [["employee_name", "like", f"%{query}%"], ["name", "like", f"%{query}%"]]
+    return frappe.get_all(
         "Employee",
         filters=filters,
+        or_filters=or_filters,
         fields=["name", "employee_name", "designation", "department"],
         order_by="employee_name asc",
-        limit=80,
+        limit=50,
     )
-    # Also search by employee ID if query looks like one
-    if query:
-        by_id = frappe.get_all(
-            "Employee",
-            filters={"name": ["like", "%" + query + "%"], "status": "Active"},
-            fields=["name", "employee_name", "designation", "department"],
-            limit=20,
-        )
-        seen = {r["name"] for r in rows}
-        for r in by_id:
-            if r["name"] not in seen:
-                rows.append(r)
-    return rows
+
+
+def _check_invitees(ap, employees, endpoint):
+    """Invited reviewers are active employees of the reviewed person's company,
+    and never the reviewed person (SEC-7). One refusal stops the whole call, so
+    nothing is invited and nobody is emailed."""
+    wanted = sorted({e for e in employees if e})
+    company = frappe.db.get_value("Employee", ap.employee, "company")
+    allowed = set(frappe.get_all(
+        "Employee",
+        filters={"name": ["in", wanted or [""]], "status": "Active", "company": company},
+        pluck="name",
+    ))
+    for employee in wanted:
+        if employee == ap.employee or employee not in allowed:
+            refuse("Reviewers must be active employees of the same company as the person reviewed, "
+                   "and not that person.", "SEC-7", endpoint, "Appraisal", ap.name)
 
 
 @frappe.whitelist()
@@ -4535,6 +4582,9 @@ def invite_reviewer(appraisal, reviewer_employee, allowed_pages=None):
     )
     if reviewer_employee == ap.employee:
         frappe.throw("Cannot invite the subject employee as a reviewer.")
+    if not isinstance(reviewer_employee, str):
+        frappe.throw("Choose one employee to invite.")
+    _check_invitees(ap, [reviewer_employee], "invite_reviewer")
     try: invited = json.loads(ext.invited_reviewers or "[]")
     except: invited = []
     if any(r["employee"] == reviewer_employee for r in invited):
@@ -4585,6 +4635,14 @@ def invite_reviewers_batch(appraisal, reviewers):
     if isinstance(reviewers, str):
         try: reviewers = json.loads(reviewers)
         except: frappe.throw("Invalid reviewers format.")
+    if not isinstance(reviewers, list) or not all(isinstance(r, dict) for r in reviewers):
+        frappe.throw("Invalid reviewers format.")
+    _check_invitees(
+        ap,
+        [r.get("employee") for r in reviewers
+         if isinstance(r.get("employee"), str) and r.get("employee") != ap.employee],
+        "invite_reviewers_batch",
+    )
     try: invited = json.loads(ext.invited_reviewers or "[]")
     except: invited = []
     existing = {r["employee"] for r in invited}

@@ -1088,8 +1088,16 @@ class TestR2NoUnguardedWritesToLockedFields(FrappeTestCase):
 class TestDecision2ReadingDate(_Screens):
 	"""log_kpi_progress takes a date, checks it, and keeps the live number honest."""
 
-	def _kpi_of_subject(self, mode="Cumulative", start=None, end=None, target=100):
-		cycle = self._cycle(*self._window())
+	def _kpi_of_subject(self, mode="Cumulative", start=None, end=None, target=100, cycle=True):
+		"""A KPI of the subject's, with a period around today unless told otherwise.
+
+		A KPI with no period of its own takes its cycle's, so "no period" means
+		no cycle either.
+		"""
+		if cycle:
+			cycle = self._cycle(add_days(frappe.utils.today(), -60), add_days(frappe.utils.today(), 60))
+		else:
+			cycle = None
 		return self._kpi(self.subject, cycle, target=target, mode=mode, start=start, end=end)
 
 	def test_decision2_a_blank_date_means_today_and_a_chosen_day_is_kept(self):
@@ -1125,7 +1133,8 @@ class TestDecision2ReadingDate(_Screens):
 	def test_decision2_a_kpi_with_no_period_accepts_a_year_back_and_no_more(self):
 		import alvoraa_portal.performance_api as pa
 
-		kpi = self._kpi_of_subject()
+		kpi = self._kpi_of_subject(cycle=False)
+		self.assertFalse(frappe.db.get_value("KPI", kpi, "period_start"))
 		self._as(self.subject_user)
 		pa.log_kpi_progress(kpi, 5, log_date=add_days(frappe.utils.today(), -300))
 		with self.assertRaises(frappe.ValidationError):

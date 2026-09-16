@@ -150,6 +150,62 @@ class TestPersonIsScoped(G3Case):
 		self.assertEqual(aa.person(self.station_cashier)["employee"], self.station_cashier)
 
 
+class TestTheOrganisationListIsScoped(G3Case):
+	"""DEF-8 (2026-09-16): the Attendance Insights organisation list follows the same
+	rule as person() and filter_options.
+
+	Before this, a store's HR person saw colleagues with no branch - head office,
+	usually - with their names, days present and absent, late and short days and
+	leave types. Frappe's User Permissions are not strict, so an empty branch passed
+	a Branch permission.
+	"""
+
+	def setUp(self):
+		super().setUp()
+		# Built as Administrator: Frappe fills an empty Link from the caller's own
+		# User Permission, so these would be given a branch if made as store HR.
+		self.in_store = self.person("PopLakeG3", LAKESIDE)
+		self.other_store = self.person("PopStationG3", STATION)
+		self.head_office = self.person("PopHeadOfficeG3", None)
+
+	def test_store_hr_sees_their_own_store_and_nobody_without_a_branch(self):
+		store_hr = self.user("PopStoreHRG3", "HR User")
+		self.person("PopStoreHRG3", LAKESIDE, user=store_hr)
+		self.branch_permission(store_hr, LAKESIDE)
+		frappe.set_user(store_hr)
+		staff, _me = aa._population("organisation", None, None, {})
+		self.assertIn(self.in_store, staff)
+		self.assertNotIn(self.head_office, staff)
+		self.assertNotIn(self.other_store, staff)
+
+	def test_store_hr_cannot_ask_for_another_branch(self):
+		store_hr = self.user("PopStoreHRG3", "HR User")
+		self.person("PopStoreHRG3", LAKESIDE, user=store_hr)
+		self.branch_permission(store_hr, LAKESIDE)
+		frappe.set_user(store_hr)
+		with patch("hrms.alvoraa_hr_core.access.log_refusal") as logged:
+			with self.assertRaises(frappe.PermissionError):
+				aa._population("organisation", None, None, {"branch": STATION})
+		self.assertEqual(logged.call_args.args[0], "SEC-17")
+
+	def test_central_hr_still_sees_everyone_including_people_with_no_branch(self):
+		"""Slice 011's decision is untouched: no Branch permission, no narrowing."""
+		central = self.user("PopCentralHRG3", "HR User")
+		self.person("PopCentralHRG3", LAKESIDE, user=central)
+		frappe.set_user(central)
+		staff, _me = aa._population("organisation", None, None, {})
+		for employee in (self.in_store, self.other_store, self.head_office):
+			self.assertIn(employee, staff)
+
+	def test_system_manager_is_unchanged(self):
+		sm = self.user("PopSysManagerG3", "System Manager")
+		self.person("PopSysManagerG3", LAKESIDE, user=sm)
+		frappe.set_user(sm)
+		staff, _me = aa._population("organisation", None, None, {})
+		for employee in (self.in_store, self.other_store, self.head_office):
+			self.assertIn(employee, staff)
+
+
 class TestFilterOptionsAreScoped(G3Case):
 	def test_store_hr_sees_only_their_stores_options(self):
 		"""AC-49."""

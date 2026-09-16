@@ -169,6 +169,20 @@ def _population(view, depth, people, filters):
 				f[field] = filters[field]
 		if filters.get("manager"):
 			f["name"] = ("in", _reports_to(filters["manager"], deep=(depth == "all")) or [""])
+		# DEF-8 (2026-09-16), the same rule as person() and filter_options: a
+		# location HR person sees their own branches, and an employee with no
+		# branch is outside them. Frappe's User Permissions are not strict here, so
+		# an empty branch passed a Branch permission and this list returned
+		# head-office colleagues with their names, days and leave types.
+		linked = _linked_branches()
+		if linked is not None:
+			wanted = filters.get("branch")
+			if wanted and wanted not in linked:
+				from hrms.alvoraa_hr_core.access import refuse
+
+				refuse(_("You can only see your own branches."), "SEC-17",
+				       "attendance_analytics.summary")
+			f["branch"] = ("in", [wanted] if wanted else linked)
 		# HR: get_list, so the caller's User Permissions apply. A store's HR
 		# person (Branch permission) sees their store; central HR, with none,
 		# still sees everyone (slice 011). System Manager is treated as CXO for

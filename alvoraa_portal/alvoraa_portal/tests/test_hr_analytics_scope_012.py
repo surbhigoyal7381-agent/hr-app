@@ -6,6 +6,7 @@ every store's and every company's names, gender and joining dates.
 """
 
 import inspect
+import re
 from unittest.mock import patch
 
 import frappe
@@ -176,8 +177,10 @@ class TestTheCodeItself(FrappeTestCase):
 		"""
 		source = inspect.getsource(hr_api.get_hr_analytics)
 		recent = source[source.index("recent_employees = "):source.index("review = ")]
-		self.assertNotIn("gender", recent)
-		self.assertIn("gender_distribution", source)
+		fields = re.search(r"fields=\[([^\]]*)\]", recent).group(1)
+		self.assertNotIn("gender", fields)
+		self.assertIn("employee_name", fields)
+		self.assertIn("gender_distribution", source)      # the ratio card is counts, not people
 
 	def test_the_answer_is_post_only_and_never_stored(self):
 		"""F4: it carries names, roles and joining dates."""

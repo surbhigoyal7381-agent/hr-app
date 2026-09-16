@@ -1060,3 +1060,344 @@ their first open counts 0. On a real tenant the report shows the true number bef
 - Static page checks (`check_portal_handlers.js`, `check_undefined_js.js`), whole suites, a browser
   trace at 200% zoom and 360 px, and the notes.
 - Before starting: fetch `origin/dev`, read the work board, rebase.
+
+---
+
+# Phase 4 — commit 11, the page items, and the last of the decisions
+
+## The short answer
+
+The page now speaks the review's own copies, and group D is complete on the local
+instance. Five commits: the KPI reading date and the review-settings endpoints
+(decisions 1, 2, 23), the page itself, its pin tests, a test-fixture fix and the
+manager's "fill empty ratings" button.
+
+Three things are worth calling out.
+
+1. **Buttons that used to destroy data are gone.** "Remove" in a review deleted the
+   Objective or the KPI itself — on the Future Objectives page it could delete an
+   objective from an earlier cycle, taking its history with it. It now takes the
+   item out of the review and leaves the record alone (decision 19, R12). Rating a
+   KPI outside a review is gone with its dialog (R14).
+2. **The manager can now do their job inside the review.** Item ratings, a rating
+   question to keep or change, a definition change, a removal with a reason. None of
+   it was reachable from the page before this commit; the endpoints existed from
+   phase 2 with nothing to call them.
+3. **Nothing of slice 012's was lost.** Six more 012 commits landed in local `dev`
+   while this phase was building, one of them in `hrms-employee.html`. The rebase was
+   clean and both changes are in the file; §2 names them and shows the proof.
+
+## 1. Commits
+
+| Commit | What it does |
+|---|---|
+| `bc29257` | A KPI reading can name the day it is for; HR reads and saves the three review settings (decisions 1, 2, 23) |
+| `d2e7949` | The portal's review screens work on the review's own copies — commit 11 |
+| `0a070b6` | 26 pin checks on the page, so a merge cannot drop any of it |
+| `6269cf4` | Test fixture fix: the reading-date tests use a KPI whose period is around today |
+| `7ec35e0` | The manager's "fill empty ratings from attainment" button, reading the copies |
+
+All five are on `slice/010-portal-security-fixes` and in local `dev` by
+`git merge --ff-only`. **Nothing is pushed.**
+
+## 2. What came in from others
+
+Slice 012 pushed six commits into local `dev` between phase 3 and the end of this
+phase. The slice branch was rebased onto them before testing.
+
+| Commit | Files | Overlap with 010 |
+|---|---|---|
+| `18e9f7a` | `subscription.py` | none. This is the `test_invoicing` failure phase 3 reported to slice 012; it is now fixed by them |
+| `4de5423` | `data_review.py`, `test_morning_checks_edges_012.py` | none |
+| `502bddf` | `attendance_analytics.py`, `test_attendance_scope_012.py` | none |
+| `0f1a3ea` | `test_leader_indexes_012.py` | none |
+| `3a8850a` | `hr_api.py`, `hrms-employee.html`, two 012 tests | **the page.** One line added inside `loadPortalContext` |
+| `a6e38db` | `test_attendance_scope_012.py` | none |
+
+**The page was the only shared file, and the rebase applied with no conflict.** The
+two changes are in different functions, hundreds of lines apart. Proof that both
+survived, run on the rebased tree:
+
+    grep -c "drSetBadge(ctx.review_open_count" hrms-employee.html   -> 1   (012's line)
+    grep -c "riOpenRemove" hrms-employee.html                       -> 5   (010's block)
+    grep -c "riLoadSettings()" hrms-employee.html                   -> 1   (010's Org Settings)
+
+and the page's two static checks pass on the rebased file.
+
+Earlier phases' incoming work is in the phase 1, 2 and 3 sections.
+
+## 3. What was built, file by file
+
+| File | Mechanism | What changed |
+|---|---|---|
+| `alvoraa_portal/performance_api.py` | extend | `_reading_date` and `log_kpi_progress(..., log_date=None)`: a reading may name its day. Blank means today; the day must be real, not in the future, and not before the KPI's period — or, with no period, not more than a year back. A cumulative reading now **adds** to the live number instead of replacing it, because the box asks for the amount since the last update (decision 1). This matches what the review has always counted: `_numbers_for` sums cumulative readings. New `get_review_settings` / `save_review_settings`: HR reads, an HR Manager saves, through the `HR Settings` document so the change keeps its history (SEC-28). `get_team_reviews` also returns `rating_needs_answer`, and never on the person's own row |
+| `alvoraa_portal/www/hrms-employee.html` | extend | The page. One new block with its own `ri…` prefix and two new dialogs; every other change sits inside an existing function. No renames, no moves, no re-indent. Details below |
+| `alvoraa_portal/tests/test_review_screens_010d.py` | extend | Eight new checks: the reading date (four) and the review settings (four), including the refusals |
+| `alvoraa_portal/tests/test_review_page_010d.py` | build | 26 checks that read the page and fail if one of this slice's fixes goes missing |
+
+### The page, area by area
+
+| Area | Change |
+|---|---|
+| New `ri…` block | `riIndex` (the copies on screen, by row name), `riOpenEditItem` / `riSaveEditItem` (R2, decision 6), `riOpenRemove` / `riSwitchToDelete` / `riConfirmRemove` (R12, decisions 9, 10, 29), `riSaveItemRating`, `riSuggestRatings`, `riAnswerFlag` (R7, decisions 12, 13), `riReviewBadge` (R5), `riRemovedHtml`, `riReviewNotesHtml`, `riLoadSettings` / `riSaveSettings` (decision 23), and four small helpers that decide what to offer at each stage |
+| Wizard, past objectives | Keys were already row names; what was missing were the controls. Edit and Remove now appear by stage and part, not by whether the self-assessment boxes are open. The manager gets a rating, a comment, a potential box and the flag answer per item. Removed items are listed struck through, with who, when and why. The "Update actual progress" box is gone: the number comes from approved facts and the page says so |
+| Wizard, future objectives | "Edit" and "Remove" removed. Unticking the box is the whole of "do not carry this on" (decision 19). The old Remove deleted the Objective, including one from an earlier cycle |
+| Add/remove dialog | Names, statuses, units and periods escaped (SEC-11, they were raw). Unticking now warns before it removes, and sends the acknowledgement the server asks for |
+| Manager and HR | "Rate & Submit" carries the overall rating question. HR's "Finish Review" says how many ratings are waiting and is switched off until they are answered, instead of failing on the click |
+| Reviews list | "Rating needs your answer" on the rows that need one |
+| Reviewer picker | Both call sites send `appraisal`, so a skip-level manager searches the reviewed person's company (SEC-7) |
+| Badges outside the review | `tvCycleTag` takes the `review_badge` the server sends. Drawn in the tree, the goal drawer, the goal detail panel and the KPI update box. Text: "In review · updates dated after 30 Sep 2026 don't change it". No review name, no rating, no link (R5) |
+| No ratings outside | `pfOpenSelfRating`, `pfSubmitSelfRating`, `pfSaveRating`, `pfSuggest` and the self-rating dialog deleted — their endpoints refuse now. The appraisal screen's KPI table keeps the items and their weights and points to the review for the ratings; a score that has not been released says "Not shared yet" instead of a dash that reads like zero (decision 3) |
+| KPI update box | "Amount since your last update" for a cumulative KPI, "The reading now" for an absolute one (decision 1), plus a date field that cannot be set past today (decision 2) |
+| Org Settings | A "Performance reviews" card with the three settings, each with its own label. An HR User sees them read-only; only an HR Manager gets the save button |
+| One bug found on the way | `prOpenReview` never cleared `_pr.viewerRole`. A manager who had opened someone else's review earlier in the same session was still treated as a manager on their own review screen. Fixed |
+
+## 4. Requirements and decisions → test → result
+
+| Rule | Test | Result |
+|---|---|---|
+| Decision 1, R4 | `test_decision1_a_cumulative_reading_adds_up_and_an_absolute_one_replaces` | pass |
+| Decision 1 wording | `test_decision1_the_box_asks_for_the_amount_since_the_last_update` | pass |
+| Decision 2 | `test_decision2_a_blank_date_means_today_and_a_chosen_day_is_kept` | pass |
+| Decision 2, refusals | `test_decision2_a_future_day_or_a_day_before_the_period_is_refused` | pass |
+| Decision 2, no period | `test_decision2_a_kpi_with_no_period_accepts_a_year_back_and_no_more` | pass |
+| Decision 2, page | `test_decision2_the_box_offers_the_day_the_reading_is_for` | pass |
+| Decision 23, SEC-28 | `test_decision23_an_hr_manager_reads_and_saves_the_three_settings` | pass |
+| Decision 23, bad values | `test_decision23_a_value_outside_the_list_is_refused` | pass |
+| SEC-28, employee | `test_sec28_an_employee_cannot_read_or_change_the_review_settings` | pass |
+| SEC-28, HR User | `test_sec28_an_hr_user_reads_the_settings_but_only_an_hr_manager_saves_them` | pass |
+| Decision 23, page | `test_decision23_the_three_settings_have_a_labelled_field_each`, `test_decision23_the_card_loads_with_the_screen_and_saves_through_hr_settings`, `test_sec28_an_hr_user_who_cannot_save_is_not_offered_the_button` | pass |
+| R14 | `test_r14_the_page_has_no_way_to_rate_a_kpi_outside_a_review`, `test_r14_the_appraisal_screen_shows_no_item_rating_and_no_zero_score` | pass |
+| Decision 3 | `test_decision3_a_score_that_is_not_shared_yet_says_so` | pass |
+| R5 | `test_r5_the_badge_says_what_it_means_and_carries_nothing_else`, `test_r5_the_tree_the_drawer_the_detail_and_the_log_box_all_draw_it` | pass |
+| R11, R12 | `test_r11_r12_remove_no_longer_deletes_the_objective_or_the_kpi`, `test_r12_the_warning_says_what_is_lost_and_what_is_kept` | pass |
+| Decision 10 | `test_decision10_a_reason_is_required_of_everyone_but_the_subject`, `test_decision10_removed_items_are_shown_with_who_when_and_why` | pass |
+| R2, decision 6 | `test_r2_decision6_edit_changes_the_copy_not_the_live_record` | pass |
+| Decisions 6, 29 | `test_decision6_decision29_the_page_offers_each_action_only_at_its_stage` | pass |
+| R7, decision 12 | `test_decision12_the_manager_can_keep_or_change_a_flagged_rating`, `test_r7_the_reviews_list_says_a_rating_needs_an_answer` | pass |
+| Decision 13 | `test_decision13_a_self_rating_question_is_information_only` | pass |
+| SEC-23 | `test_sec23_hr_cannot_finish_while_a_rating_waits_for_an_answer` | pass |
+| VIS-3 | `test_vis3_review_screens_key_everything_by_the_copys_row_name` | pass |
+| R3 | `test_r3_progress_is_never_typed_into_a_review` | pass |
+| PRIV-1 (own review) | `test_a_manager_opening_their_own_review_is_not_treated_as_a_manager` | pass |
+| Decision 19 | `test_decision19_carrying_forward_has_no_delete_button_at_all` | pass |
+| SEC-11 | `test_sec11_the_add_remove_dialog_escapes_every_name_it_draws`, `test_sec11_removal_reasons_and_flag_text_are_escaped` | pass |
+
+Phases 1 to 3 keep their own tables above; all of those tests still pass.
+
+## 5. Non-functional dimensions, re-checked on the code written
+
+| Dimension | Before phase 4 | Verdict | Why |
+|---|---|---|---|
+| Performance | The page reloaded the whole review after every small change | **neutral to improves** | `riReload` makes one call, the same one the screen already makes. No new endpoint runs in a loop. `get_team_reviews` gained one field on a query it already ran, so no extra query. `get_review_settings` is three single-value reads on a Single doctype |
+| Security | Endpoints were closed in phases 1 to 3; the page still offered buttons that led to refusals, and some that destroyed data | **improves** | Rating outside a review is unreachable, not merely refused. Every ri* control is hidden unless the server would allow it, and the server still decides. The settings write goes through the `HR Settings` document with the caller's own permission, so it is refused for an HR User and recorded for an HR Manager |
+| Reliability | "Remove" deleted a live Objective, including one from an earlier cycle | **improves** | Nothing on a review screen deletes a live record except the explicit delete of something created inside the review, which the server already guards. HR's "Finish" is switched off rather than failing on the click. A reading dated wrongly is refused with a sentence that says what to do |
+| Scalability | — | **neutral** | No new query grows with headcount or with the number of items |
+| Maintainability | Review controls were scattered through the wizard | **improves** | One `ri…` block holds every change to a copy, with four small functions that answer "may this person do this now". The old dead handlers are deleted rather than left to rot. 26 page checks pin it |
+| Data integrity | The live KPI number replaced itself with each reading, while the review summed them | **improves** | The two now agree: a cumulative reading adds, an absolute one replaces unless it is back-dated behind a reading already logged. A reading cannot be dated in the future or before the KPI's period |
+| Compliance / privacy | A manager's own review could be drawn with manager controls; names and reasons from copies went into the add/remove dialog raw | **improves** | `_pr.viewerRole` is cleared when a person opens their own review. Everything drawn from a copy or a removal is escaped. The badge outside a review still carries no rating, no review name and no link |
+
+## 6. Commands run and real results
+
+Every command below was really run, and its real result is reported. The bench runs
+the main checkout on `dev`, so the slice branch was rebased on local `dev` and brought
+in with `git merge --ff-only` before each run. This slice's row on the work board was
+marked "bench in use" for the whole of it, and released afterwards. One run at a time.
+**No migrate was needed:** phase 4 adds no field and no doctype, and `test_site` was
+already migrated in phase 3.
+
+**The static page checks** (on the rebased page, after the last page commit):
+
+    node scripts/check_portal_handlers.js .../hrms-employee.html
+      -> ok   hrms-employee.html
+         portal handlers: all reachable and callable
+
+    node scripts/check_undefined_js.js .../hrms-employee.html
+      -> ok   hrms-employee.html
+         undefined identifiers: none
+
+    python scripts/check_app_integrity.py
+      -> app integrity: 558 checks
+         OK - all consistent
+
+`check_app_integrity.py` was run before every commit and said "OK - all consistent"
+every time.
+
+**The new page pin tests:**
+
+    bench --site test_site run-tests --module alvoraa_portal.tests.test_review_page_010d
+      -> Ran 26 tests in 0.923s
+         OK
+
+**The review-screen suite, phases 2 to 4 together:**
+
+    bench --site test_site run-tests --module alvoraa_portal.tests.test_review_screens_010d
+      -> Ran 39 tests in 326.720s
+         OK
+      -> Ran 1 test in 5.673s          (the static lock scan, run as its own category)
+         OK
+
+The first run of that suite had 2 errors, both in the new reading-date tests and both
+my fixture's fault: the KPI was built inside a far-future cycle, and a KPI with no
+period of its own takes its cycle's, so every reading dated today was before the KPI's
+period and refused. Commit `6269cf4` fixes the fixture. **No production code changed
+because of it.**
+
+**The whole `alvoraa_portal` suite**, run sequentially after it:
+
+    bench --site test_site run-tests --app alvoraa_portal
+      -> Ran 538 tests in 925.368s     FAILED (errors=3, skipped=4)
+      -> Ran 527 tests in 1382.220s    FAILED (failures=1, errors=10)
+
+Fifteen tests did not pass. **All fifteen are the known local-only failures, compared
+by name:**
+
+| Where | What | Ours? |
+|---|---|---|
+| `test_leave_year` | 3 errors: `test_uses_the_fiscal_year_when_one_exists`, `test_a_date_before_the_fiscal_year_start_belongs_to_the_previous_one`, `test_falls_back_to_the_calendar_year_when_no_year_covers_the_date` | No. Fiscal-year set-up on this bench, older than slice 010 |
+| `test_invoicing` | 1 failure and 10 errors, all named after invoices, charge lines, annual fees and headcounts | No. Older than slice 010 |
+
+Slice 012's `test_every_billing_doctype_is_named_as_control_plane_only`, which phase 3
+reported as a new failure not on the list, **now passes**: slice 012 fixed it in
+`18e9f7a`, which came in during this phase.
+
+**The whole `alvoraa_goals` suite**, run after it:
+
+    bench --site test_site run-tests --app alvoraa_goals
+      -> Ran 18 tests in 3.388s
+         OK (skipped=2)
+
+**The `ignore_permissions` ceilings held**, unchanged by this phase:
+`performance_api.py` 64 (ceiling 64), `review_items.py` 2 (ceiling 2).
+
+## 7. The browser trace — written, not run
+
+`C:/Surbhi-Git/hrlocal-data/mobile-audit/trace_review_copies_010d.py`.
+
+It signs in as three real people on the local ppj copy — Vinod Gupta, an accountant;
+Gurpreet Dhillon, the head of finance he reports to; and Arjun Bhatia, the head of HR
+— and walks the whole review: the employee on an iPhone 13, the manager and HR on a
+desktop window. It takes a screenshot per step, checks each screen for inputs without
+a label and for sideways overflow, checks the review screens for a live record name
+(the failure this whole slice is about), and checks the screens outside a review for
+any rating. It repeats the self-review screen at 200% zoom.
+
+**It is not run, because it writes to `ppj.localhost`.** To run it, two things need
+the user's word:
+
+    docker exec hrlocal-bench bash -lc \
+      "cd /home/frappe/frappe-bench && bench --site ppj.localhost migrate"
+    python C:/Surbhi-Git/hrlocal-data/mobile-audit/trace_review_copies_010d.py \
+      C:/Surbhi-Git/hrlocal-data/mobile-audit/2026-09-16-review-copies
+
+The migrate adds group D's fields and runs `alvoraa_goals`' `review_backfill` patch,
+which takes a copy of the items of every review already open on that site. The trace
+then sends a review and changes items. Neither touches dev or production. The logins
+were read from `ppj.localhost` read-only; nothing was written there.
+
+## 8. Release checklist for group D
+
+Group D ships as **one batch**. Phases 2 and 3 changed what the review endpoints
+return; the page only caught up in phase 4. Shipping any part without the rest leaves
+screens reading keys that are no longer there.
+
+**Order, per environment:**
+
+1. **Back up first.** A database dump of the tenant, kept until the release is
+   accepted.
+2. **Dry run, per tenant, read-only.** `alvoraa_goals.review_backfill.dry_run(site)`
+   prints how many reviews would get copies, how many items each, and any review it
+   cannot place in a period. Phase 3 §7 has the output shape. Read it before
+   migrating. A tenant with reviews it cannot place is a stop, not a warning.
+3. **Migrate.** `bench --site <site> migrate`. This adds the `Alvoraa Review Item`
+   child table, the new fields on `Alvoraa Appraisal Extension`, the three HR Settings
+   fields, the KPI rating permlevel and the indexes, and runs the backfill patch.
+4. **Build and clear the cache** so the page and the two new desk list scripts are
+   served: `bench build`, then `bench --site <site> clear-cache`.
+5. **The permission report, on every dev tenant, before any push (decision 24).**
+   `alvoraa_goals.review_items.custom_docperm_report()` — read-only. It lists every
+   custom DocPerm on `Appraisal`, `KPI`, `Individual Goal` and
+   `Alvoraa Appraisal Extension`. A tenant that has been given a grant by hand can
+   undo the slice's restrictions, and this is the only way to see it. **Run it and
+   read it before the push, not after.**
+6. **Check three things by hand on the deployed tenant:** an employee opens their
+   review and sees items; a manager opens one and can rate an item; HR opens Org
+   Settings and sees the three settings.
+
+**Rollback.** `alvoraa_goals.review_backfill.rollback(site)` removes the copies the
+patch made and clears `items_taken_on`, so reviews behave as they did before. The new
+fields and the child table stay; they are harmless when empty. The page is rolled back
+by deploying the previous image. **Roll the page and the server back together** — the
+same reason they ship together.
+
+**What to tell users**, before the release:
+
+- A review now keeps its own copy of each objective and KPI, so the numbers it was
+  decided on do not move afterwards.
+- Ratings are given inside the review. The rating boxes on the Objectives screens have
+  gone.
+- "Remove" in a review takes the item out of the review. It no longer deletes the
+  objective or the KPI.
+- The KPI update box asks for the amount added since the last update, and lets you say
+  which day it is for.
+
+## 9. Commits on this branch that are NOT slice 010's
+
+`slice/010-portal-security-fixes` is 57 commits ahead of `origin/dev`. **Twenty of them
+belong to slice 012** and came in through local `dev`. A push of 010 must not carry
+them unless slice 012 has said so.
+
+`ed8732f`, `bdc50c0`, `b89cdfb`, `c692ea9`, `85f0073`, `e6bae5c`, `3c33d56`, `0fa5952`,
+`bf79aad`, `96f3ef9`, `3e2f1e0`, `15a2dae`, `bda1290`, `05342a9`, `18e9f7a`, `4de5423`,
+`502bddf`, `0f1a3ea`, `3a8850a`, `a6e38db`
+
+The other 37 are 010's, from `e58ffa2` (the review-copies decisions) to `7ec35e0`.
+Because the two slices are interleaved in local `dev`, **010 cannot be pushed on its own
+by cherry-picking around 012.** Either both go together, with slice 012's agreement, or
+012 pushes first and 010 rebases onto the pushed `dev`. This is the user's call.
+
+## 10. Known gaps and shortcuts — honestly
+
+1. **No browser trace was run.** Everything above was proved by the suites and by the
+   page checks, which read the page as text. A real browser has not opened these
+   screens. The script is written and ready; running it needs §7's approvals. This is
+   the biggest gap in the phase.
+2. **Response times were not measured.** No screen was timed against the NFR budget.
+   The query counts are bounded and pinned by
+   `test_query_count_opening_a_review_does_not_grow_with_its_items`, but a bounded
+   query count is not a measured page.
+3. **The cumulative KPI number changes meaning for data already there.** From now on a
+   cumulative reading adds to the live number. Readings logged before this release were
+   typed as "the total so far" by people reading the old label, although the review
+   always summed them. The live number and the review's number may therefore disagree
+   on old KPIs until someone logs a new reading. Nothing is lost — every reading is
+   still there — but HR should know. This follows from decision 1; there is no
+   migration that can tell the two intentions apart.
+4. **The Future Objectives page still creates live records straight away** when someone
+   adds a new objective from it, although the review's own submit creates next-period
+   objectives with no cycle (decision 19). I corrected the sentence on the page so it
+   no longer promises a cycle tag, and left the behaviour alone: it is outside commit
+   11 and changing it is a product decision. **Worth a slice of its own.**
+5. **`riSwitchToDelete` offers the outright delete only to the person whose review it
+   is**, although the server allows a manager and HR to delete an item created inside
+   the review. Narrower than the rule, never wider. Easy to widen later.
+6. **The manager's per-item rating boxes save one at a time**, each with its own "Save
+   rating" button. A manager with twenty items presses twenty buttons. One save for the
+   whole page would be better and needs a server call that does not exist yet.
+7. **One dead payload key remains:** the Future Objectives page filters
+   `standalone_kpis` by `appraisal_cycle`, which copies no longer carry, so that "new
+   KPIs" list is always empty. It renders nothing and breaks nothing. Removing it
+   properly means deciding what that section is for.
+8. **`prReviewKpiRow` still takes an `onRemove` argument it no longer uses.** Left in
+   place on purpose: `hrms-employee.html` is the hottest file in the repo and changing
+   a signature makes other people's merges harder for no gain.
+
+## 11. Decisions needed
+
+None about the design. Every open question from phases 1 to 3 is answered in `00e`.
+What the user must decide is a release question:
+
+1. **Run the browser trace?** It needs `bench --site ppj.localhost migrate` plus the
+   backfill patch, and it writes to that site (§7).
+2. **How to push?** 010 and 012 are interleaved in local `dev` (§9). Both together, or
+   012 first and 010 rebased onto the pushed `dev`.

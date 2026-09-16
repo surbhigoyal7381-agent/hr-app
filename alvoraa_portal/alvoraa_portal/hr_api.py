@@ -385,7 +385,10 @@ def get_manager_dashboard():
     }
 
 
-@frappe.whitelist()
+# POST only, and never stored by a browser or proxy: the answer carries the names,
+# roles and joining dates of people due confirmation and of the newest joiners (F4).
+# The portal asks through frappe.call, which posts.
+@frappe.whitelist(methods=["POST"])
 @requires_feature("analytics")
 def get_hr_analytics():
     # Role AND plan. The role says this person may see analytics; the feature
@@ -404,6 +407,10 @@ def get_hr_analytics():
     from alvoraa_portal import data_review, org_figures as of
 
     started = _time.monotonic()
+    try:
+        frappe.local.response_headers.set("Cache-Control", "no-store")
+    except Exception:
+        pass
     scope = of.hr_scope()
     if scope.not_linked:
         # Fail closed: no company, no figures and no names (BA-Q5). The page
@@ -509,7 +516,9 @@ def get_hr_analytics():
     recent_employees = frappe.get_list(
         "Employee",
         filters={"status": "Active", **scope_filters},
-        fields=["name", "employee_name", "designation", "department", "date_of_joining", "gender"],
+        # No gender: the screen shows name, role, team and joining date, and nothing
+        # else reads this list. The gender ratio above is counts, not people (F3).
+        fields=["name", "employee_name", "designation", "department", "date_of_joining"],
         order_by="date_of_joining desc",
         limit_page_length=10,
     )

@@ -170,6 +170,22 @@ class TestTheCodeItself(FrappeTestCase):
 		self.assertIn('frappe.throw("Access denied", frappe.PermissionError)', source)
 		self.assertEqual(getattr(hr_api.get_hr_analytics, "__alvoraa_feature__", None), "analytics")
 
+	def test_the_newest_joiners_come_back_without_gender(self):
+		"""F3 (security review, 2026-09-16): no screen shows it, so it is not sent.
+		The gender ratio card is counts, not people, and is unchanged.
+		"""
+		source = inspect.getsource(hr_api.get_hr_analytics)
+		recent = source[source.index("recent_employees = "):source.index("review = ")]
+		self.assertNotIn("gender", recent)
+		self.assertIn("gender_distribution", source)
+
+	def test_the_answer_is_post_only_and_never_stored(self):
+		"""F4: it carries names, roles and joining dates."""
+		self.assertEqual(
+			frappe.allowed_http_methods_for_whitelisted_func.get(hr_api.get_hr_analytics), ["POST"])
+		self.assertIn('response_headers.set("Cache-Control", "no-store")',
+		               inspect.getsource(hr_api.get_hr_analytics))
+
 	def test_a_branch_name_with_a_quote_is_just_a_value(self):
 		"""SEC-8: scope values are parameters, never part of the SQL text."""
 		scope = of.Scope((fx.KAVYA,), ("Lake'side\" or 1=1 -- ",))

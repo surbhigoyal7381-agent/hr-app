@@ -474,6 +474,10 @@ def apply_findings(existing, findings, allow_create):
 HR_ROLES = frozenset({"HR Manager", "HR User"})
 MAX_CONFIRM_ITEMS = 40
 CONFIRMS_PER_HOUR = 30     # per user (OPS-40); Frappe's own limiter counts per IP address
+# The read half of OPS-40. Opening the page re-checks leave and leavers and saves
+# what changed, so it is a write as well as a read - it must not be callable in a
+# loop. Generous on purpose: normal use is a handful of opens an hour.
+READS_PER_HOUR = 120
 STALE_HOURS = 26
 
 ACTIONS = {
@@ -559,6 +563,7 @@ def data_review_items():
 
 	started = time.monotonic()
 	_require_hr("data_review.data_review_items")
+	_within_hourly_limit("data_review.data_review_items", READS_PER_HOUR)
 	scope = of.hr_scope()
 	if scope.not_linked:
 		return {"not_linked": True}

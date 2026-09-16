@@ -41,7 +41,8 @@ def environment():
 
 def _clear_limit(user):
 	bucket = now_datetime().strftime("%Y%m%d%H")
-	frappe.cache.delete_value(f"alvoraa:limit:data_review.data_review_confirm:{user}:{bucket}")
+	for endpoint in ("data_review_confirm", "data_review_items"):
+		frappe.cache.delete_value(f"alvoraa:limit:data_review.{endpoint}:{user}:{bucket}")
 
 
 class ReviewCase(FrappeTestCase):
@@ -317,6 +318,28 @@ class TestNothingToReview(ReviewCase):
 		fx.permission(quiet_hr, "Branch", quiet)
 		out = self.as_user(quiet_hr, dr.data_review_items)
 		self.assertEqual((out["open_count"], out["cards"]), (0, []))
+
+
+class TestReadLimit(ReviewCase):
+	"""M1 (code review, 2026-09-16): opening the page re-checks leave and leavers and
+	saves what changed, so it writes as well as reads. It must not be callable in a
+	loop. OPS-40's read half: 120 an hour per user, counted per user, not per address.
+	"""
+
+	def test_the_page_can_be_opened_only_so_often_per_user(self):
+		_clear_limit(self.priya)
+		_clear_limit(self.lake_hr)
+		with patch.object(dr, "READS_PER_HOUR", 2):
+			self.as_user(self.priya, dr.data_review_items)
+			self.as_user(self.priya, dr.data_review_items)
+			with self.assertRaises(frappe.exceptions.TooManyRequestsError):
+				self.as_user(self.priya, dr.data_review_items)
+			# A colleague on the same office Wi-Fi is not affected.
+			self.assertFalse(self.as_user(self.lake_hr, dr.data_review_items)["not_linked"])
+		_clear_limit(self.priya)
+
+	def test_the_limit_is_generous_enough_for_a_working_day(self):
+		self.assertGreaterEqual(dr.READS_PER_HOUR, 60)
 
 
 class TestConfirmLimit(ReviewCase):

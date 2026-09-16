@@ -102,7 +102,7 @@ def get_portal_context():
     try:
         cached = frappe.cache().get_value(cache_key)
         if cached:
-            return cached
+            return _with_review_count(cached)
     except Exception:
         pass
 
@@ -150,7 +150,21 @@ def get_portal_context():
         frappe.cache().set_value(cache_key, result, expires_in_sec=3600)
     except Exception:
         pass
-    return result
+    return _with_review_count(result)
+
+
+def _with_review_count(context):
+    """Slice 012: how many figures need review, for HR's menu badge (AC-31).
+
+    Added around the cache, not inside it, so a confirmation shows on the next
+    page load instead of up to an hour later. One permission-checked read, and
+    only for HR: everybody else gets the context untouched.
+    """
+    if not context.get("is_hr"):
+        return context
+    from alvoraa_portal.data_review import open_count_for_hr
+
+    return {**context, "review_open_count": open_count_for_hr()}
 
 
 @frappe.whitelist()

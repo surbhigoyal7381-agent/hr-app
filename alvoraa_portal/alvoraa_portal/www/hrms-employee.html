@@ -7644,6 +7644,7 @@ function loadPortalContext() {
     const navOrgSettings = document.getElementById("nav-org-settings");
     if (navOrgSettings) navOrgSettings.style.display = ctx.is_hr ? "flex" : "none";
     applyPlanNav();
+    drSetBadge(ctx.review_open_count || 0);   // slice 012: badge on page load (AC-31)
     sbUpdateScrollBtns();
 
     // Team goals section (home page)

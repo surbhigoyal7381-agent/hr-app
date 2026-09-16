@@ -282,6 +282,24 @@ class TestFixingTheDataClearsTheRecord(ReviewCase):
 		self.assertEqual(frappe.db.get_value(fx.DRI, name, "status"), "Cleared")
 		self.assertFalse([c for c in out["cards"] if c["kind"] == "leavers"])
 
+	def test_the_page_never_re_opens_a_cleared_record(self):
+		"""DEF-5 (2026-09-16), decision D-5: the page clears records, it never brings
+		one back. The morning run re-opens a finding that fires again.
+		"""
+		name = self.item("D18-1", self.lakeside)
+		for emp in self.leavers:
+			frappe.db.set_value("Employee", emp, "relieving_date", add_days(today(), -30))
+		self.as_user(self.lake_hr, dr.data_review_items)
+		self.assertEqual(frappe.db.get_value(fx.DRI, name, "status"), "Cleared")
+
+		# The gap comes back: the page leaves the record Cleared, the job re-opens it.
+		for emp in self.leavers:
+			frappe.db.set_value("Employee", emp, "relieving_date", None)
+		self.as_user(self.lake_hr, dr.data_review_items)
+		self.assertEqual(frappe.db.get_value(fx.DRI, name, "status"), "Cleared")
+		dr.run_morning_checks([fx.KAVYA])
+		self.assertEqual(frappe.db.get_value(fx.DRI, name, "status"), "Open")
+
 	def test_the_page_never_creates_a_record(self):
 		"""D-5: a new finding waits for the morning."""
 		third = fx.branch("NewLeavers")

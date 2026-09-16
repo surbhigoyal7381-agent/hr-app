@@ -45,6 +45,14 @@ class TestThePageKeepsDataToReview(FrappeTestCase):
 		# "No figures yet" is a dash, never 0%.
 		self.assertNotIn("(kpi.attendance_rate || 0)", render)
 
+	def test_the_badge_is_set_from_the_page_load_call(self):
+		"""DEF-3 / AC-31: the menu badge must be there on page load, not only after
+		HR opens one of the two panels.
+		"""
+		page = _page()
+		context = page[page.index("function loadPortalContext()"):page.index("function loadAvailableFeatures()")]
+		self.assertIn("drSetBadge(ctx.review_open_count", context)
+
 	def test_the_page_calls_real_post_endpoints(self):
 		import frappe
 

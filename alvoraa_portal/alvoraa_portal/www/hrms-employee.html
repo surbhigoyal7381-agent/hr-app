@@ -3619,6 +3619,31 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
           <div id="org-scales-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
         </div>
 
+        <!-- Review settings (slice 010 group D, decision 23) -->
+        <div class="pf-card" style="margin-bottom:24px" id="org-review-card">
+          <div style="font-weight:600;font-size:var(--fs-md);margin-bottom:4px">Performance reviews</div>
+          <div style="font-size:var(--fs-sm);color:var(--text3);margin-bottom:16px">A review takes its own copy of each objective and KPI, so the numbers it was decided on stay put. These three settings say when those numbers close, how long the originals stay locked, and what happens to an item taken out of a review.</div>
+          <div id="org-review-msg" style="font-size:var(--fs-sm);margin-bottom:10px"></div>
+          <div class="gp-field">
+            <label class="gp-label" for="org-review-freeze">When do a review's numbers close?</label>
+            <select class="gp-input" id="org-review-freeze"></select>
+            <div class="gp-hint">After this point, later progress and evidence no longer change the review.</div>
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="org-review-lock">Days after the cycle ends before the originals unlock</label>
+            <input class="gp-input" id="org-review-lock" type="number" min="0" max="3650" step="1">
+            <div class="gp-hint">While a review holds an objective or KPI, its name, target, weight and period cannot change. Use 0 to keep it locked until the review is finished.</div>
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="org-review-removal">When an item is taken out of a review</label>
+            <select class="gp-input" id="org-review-removal"></select>
+            <div class="gp-hint">An item that already has a rating is always kept and marked removed, whichever setting is chosen.</div>
+          </div>
+          <div style="text-align:right">
+            <button class="btn btn-primary btn-sm" id="org-review-save" onclick="riSaveSettings()">Save review settings</button>
+          </div>
+        </div>
+
         <!-- Key Result Areas -->
         <div class="pf-card">
           <div style="font-weight:600;font-size:var(--fs-md);margin-bottom:4px">Key Result Areas</div>
@@ -3918,12 +3943,17 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
           <input type="hidden" id="pf-log-kpi">
           <div class="pf-modal-context" id="pf-log-context"></div>
           <div class="gp-field">
-            <div class="gp-label">Current Value *</div>
+            <label class="gp-label" id="pf-log-value-label" for="pf-log-value">Amount since your last update *</label>
             <input class="gp-input" id="pf-log-value" type="number" step="any" placeholder="e.g. 32">
             <div class="gp-hint" id="pf-log-hint"></div>
           </div>
           <div class="gp-field">
-            <div class="gp-label">Comment <span style="font-weight:400;color:var(--text3)">(required)</span></div>
+            <label class="gp-label" for="pf-log-date">Which day is this reading for?</label>
+            <input class="gp-input" id="pf-log-date" type="date">
+            <div class="gp-hint">Leave it as today unless the reading is for an earlier day. It cannot be in the future.</div>
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="pf-log-note">Comment <span style="font-weight:400;color:var(--text3)">(required)</span></label>
             <input class="gp-input" id="pf-log-note" placeholder="What changed since the last update?">
           </div>
           <div class="gp-field">
@@ -3967,29 +3997,68 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
       </div>
     </div>
 
-    <!-- ── Self Rating Modal ──────────────────────────── -->
-    <div class="gp-backdrop" id="pf-self-modal">
+    <!-- ── Review item: change the definition inside the review (slice 010 D) ── -->
+    <div class="gp-backdrop" id="ri-edit-modal">
       <div class="gp-modal">
         <div class="gp-modal-hdr">
-          <div class="gp-modal-title">Rate Yourself</div>
-          <button class="gp-modal-close" onclick="pfCloseModal('pf-self-modal')">&times;</button>
+          <div>
+            <div class="gp-modal-title">Change this item in the review</div>
+            <div style="font-size:var(--fs-sm);color:var(--text3);margin-top:2px" id="ri-edit-sub"></div>
+          </div>
+          <button class="gp-modal-close" onclick="pfCloseModal('ri-edit-modal')">&times;</button>
         </div>
         <div class="gp-modal-body">
-          <div class="gp-error" id="pf-self-error"></div>
-          <input type="hidden" id="pf-self-kpi">
-          <div class="pf-modal-context" id="pf-self-context"></div>
+          <div class="gp-error" id="ri-edit-error"></div>
+          <input type="hidden" id="ri-edit-row">
+          <div class="pf-modal-context">The change stays inside this review until it is completed. The live record is not touched now.</div>
           <div class="gp-field">
-            <div class="gp-label">Your Rating (0&ndash;5) *</div>
-            <input class="gp-input" id="pf-self-rating" type="number" min="0" max="5" step="0.5" placeholder="4">
+            <label class="gp-label" for="ri-edit-title">Name</label>
+            <input class="gp-input" id="ri-edit-title" type="text">
           </div>
           <div class="gp-field">
-            <div class="gp-label">Comment</div>
-            <input class="gp-input" id="pf-self-comment" placeholder="Context for your manager">
+            <label class="gp-label" for="ri-edit-target">Target</label>
+            <input class="gp-input" id="ri-edit-target" type="number" step="any">
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="ri-edit-weight">Weight (%)</label>
+            <input class="gp-input" id="ri-edit-weight" type="number" step="any" min="0" max="100">
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="ri-edit-from">Period from</label>
+            <input class="gp-input" id="ri-edit-from" type="date">
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="ri-edit-to">Period to</label>
+            <input class="gp-input" id="ri-edit-to" type="date">
           </div>
         </div>
         <div class="gp-modal-footer">
-          <button class="btn btn-outline" onclick="pfCloseModal('pf-self-modal')">Cancel</button>
-          <button class="btn btn-primary" onclick="pfSubmitSelfRating()">Save Rating</button>
+          <button class="btn btn-outline" onclick="pfCloseModal('ri-edit-modal')">Cancel</button>
+          <button class="btn btn-primary" id="ri-edit-save" onclick="riSaveEditItem()">Save change</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Review item: take it out of the review (slice 010 D, R12) ── -->
+    <div class="gp-backdrop" id="ri-remove-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title" id="ri-remove-title">Remove from this review</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('ri-remove-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="ri-remove-error"></div>
+          <input type="hidden" id="ri-remove-row">
+          <input type="hidden" id="ri-remove-mode">
+          <div class="pf-modal-context" id="ri-remove-warning"></div>
+          <div class="gp-field" id="ri-remove-reason-field">
+            <label class="gp-label" for="ri-remove-reason">Why is it being removed? <span id="ri-remove-reason-req" style="font-weight:400;color:var(--text3)"></span></label>
+            <input class="gp-input" id="ri-remove-reason" type="text" placeholder="The employee will see this reason.">
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('ri-remove-modal')">Keep it</button>
+          <button class="btn btn-primary" id="ri-remove-confirm" onclick="riConfirmRemove()">Remove it</button>
         </div>
       </div>
     </div>
@@ -5359,7 +5428,7 @@ function switchPanel(name, triggerEl) {
     if (name === "team")        loadTeamPanel();
     if (name === "analytics")   loadAnalyticsPanel();
     if (name === "goals")       loadGoalsPanel();
-    if (name === "org-settings") { orgLoad(); orgLoadDocuments(); }
+    if (name === "org-settings") { orgLoad(); orgLoadDocuments(); riLoadSettings(); }
     if (name === "policies")    polLoad();
   }
 
@@ -9061,6 +9130,8 @@ function renderGoalDrawer(g, casc, isOwner, canEdit) {
     '<div style="margin-top:6px"><span class="traj-badge ' + _trajBadge(g.trajectory) + '">' +
     '<span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;flex-shrink:0"></span> ' + esc(tLabel) + '</span>' +
     (g.employee_name ? '<span style="font-size:var(--fs-xs);color:rgba(255,255,255,.5);margin-left:10px">' + esc(g.employee_name) + '</span>' : '') +
+    /* An open review holds this objective (slice 010 group D, R5). */
+    (window.riReviewBadge ? window.riReviewBadge(g.review_badge) : '') +
     '</div></div>' +
     '<button class="emp-drawer-close" onclick="closeGoalDrawer()"><i class=ic-x></i></button>';
 
@@ -10512,7 +10583,8 @@ function deleteDrawerNote(noteId, empId) {
         : (g.cascade_name || g.goal_cascade || "");
       el = document.getElementById("gp-dp-ring");         if (el) el.innerHTML = gpProgressRing(pct, tColor, 60);
       el = document.getElementById("gp-dp-progress-line");if (el) el.textContent = (g.actual_progress || 0) + " / " + g.target_value + " " + (g.unit || "");
-      el = document.getElementById("gp-dp-trajectory");   if (el) el.innerHTML = gpTrajBadge(g.trajectory);
+      /* R5: the owner and the line see that a review holds this objective. */
+      el = document.getElementById("gp-dp-trajectory");   if (el) el.innerHTML = gpTrajBadge(g.trajectory) + " " + riReviewBadge(g.review_badge);
       el = document.getElementById("gp-dp-status");       if (el) el.innerHTML = gpStatusBadge(g.status);
       el = document.getElementById("gp-dp-start");        if (el) el.textContent = gpFmtDate(g.start_date);
       el = document.getElementById("gp-dp-end");          if (el) el.textContent = gpFmtDate(g.end_date);
@@ -10983,34 +11055,41 @@ function deleteDrawerNote(noteId, empId) {
         {val: ap.self_score,  lbl: "Self Rating"},
         {val: ap.final_score, lbl: "Final Score"},
       ];
+      /* A score of null means the review has not released it yet (decision 3).
+         That is different from a score of nothing, so it is said in words. */
       var scoreHtml = "<div class=\"gp-score-grid\">" + scores.map(function(s) {
-        var pct = s.val ? Math.round((parseFloat(s.val) / 5) * 100) : 0;
+        var pending = (s.val === null || s.val === undefined);
+        var pct = (!pending && s.val) ? Math.round((parseFloat(s.val) / 5) * 100) : 0;
         return "<div class=\"gp-score-card\">" +
-          "<div class=\"gp-score-val\">" + (s.val ? parseFloat(s.val).toFixed(1) : "—") + "</div>" +
+          "<div class=\"gp-score-val\"" + (pending ? " style=\"font-size:var(--fs-sm);color:var(--text3)\"" : "") + ">" +
+            (pending ? "Not shared yet" : (s.val ? parseFloat(s.val).toFixed(1) : "—")) + "</div>" +
           "<div class=\"gp-score-lbl\">" + s.lbl + "</div>" +
           "<div class=\"gp-score-meter\"><div class=\"gp-score-fill\" style=\"width:" + pct + "%\"></div></div></div>";
-      }).join("") + "</div>";
+      }).join("") + "</div>" +
+      (scores.some(function(s) { return s.val === null || s.val === undefined; })
+        ? "<div style=\"font-size:var(--fs-sm);color:var(--text3);margin:-8px 0 16px\">" +
+            "Your scores appear here once your manager sends the review to you.</div>"
+        : "");
 
       var kraHtml;
       if (ap.goals && ap.goals.length) {
         // KPI-scored appraisal: HRMS fills the manual `goals` table, each row
         // a KPI rated out of 5 by the line manager.
+        /* Item ratings are given inside the review and shown there, never on a
+           screen outside it (slice 010 group D, R14). This table keeps the list
+           of items and their weights, which is what the screen is for. */
         kraHtml = "<div class=\"card\" style=\"margin-bottom:16px\">" +
           "<div class=\"card-header\"><span class=\"card-title\">KPI Performance</span>" +
-          "<span style=\"font-size:var(--fs-xs);color:var(--text3);margin-left:auto\">Rated by your manager</span></div>" +
+          "<span style=\"font-size:var(--fs-xs);color:var(--text3);margin-left:auto\">Rated inside the review</span></div>" +
           "<div class=\"tbl-wrap\"><table class=\"kra-table\"><thead><tr>" +
-          "<th>KPI</th><th>Weight</th><th>Rating</th><th>Weighted Score</th>" +
+          "<th>KPI</th><th>Weight</th>" +
           "</tr></thead><tbody>" +
           ap.goals.map(function(g) {
-            var rating = parseFloat(g.score || 0);
-            var pct = Math.round((rating / 5) * 100);
             return "<tr><td style=\"font-weight:600\">" + gpEsc(g.kra) + "</td>" +
-              "<td>" + parseFloat(g.per_weightage || 0).toFixed(0) + "%</td>" +
-              "<td>" + (rating ? rating.toFixed(1) + " / 5" : "<span style=\"color:var(--text3)\">not rated</span>") +
-                "<div class=\"kra-mini-bar\"><div class=\"kra-mini-fill\" style=\"width:" + pct + "%\"></div></div></td>" +
-              "<td style=\"font-weight:700;color:var(--primary)\">" +
-                parseFloat(g.score_earned || 0).toFixed(2) + "</td></tr>";
-          }).join("") + "</tbody></table></div></div>";
+              "<td>" + parseFloat(g.per_weightage || 0).toFixed(0) + "%</td></tr>";
+          }).join("") + "</tbody></table></div>" +
+          "<div style=\"padding:0 16px 14px;font-size:var(--fs-sm);color:var(--text3)\">" +
+            "Each item's rating lives in the review itself. Open your review to see it.</div></div>";
       } else if (ap.kras && ap.kras.length) {
         kraHtml = "<div class=\"card\" style=\"margin-bottom:16px\">" +
           "<div class=\"card-header\"><span class=\"card-title\">KRA Performance</span></div>" +
@@ -12345,18 +12424,32 @@ function deleteDrawerNote(noteId, empId) {
     var k = pfFindMyKpi(kpiId);
     pfClearErr("pf-log-error");
     document.getElementById("pf-log-kpi").value = kpiId;
-    document.getElementById("pf-log-value").value = k ? (k.actual_value || "") : "";
+    /* A cumulative KPI adds up its readings, so the box asks for the amount
+       since the last update and starts empty. An absolute one is a reading of
+       where things stand now, so it starts at the current number (decision 1). */
+    var cumulative = !k || (k.progress_mode || "Cumulative") !== "Absolute";
+    document.getElementById("pf-log-value").value = cumulative ? "" : (k.actual_value || "");
+    document.getElementById("pf-log-date").value = new Date().toISOString().slice(0, 10);
+    document.getElementById("pf-log-date").max = new Date().toISOString().slice(0, 10);
     document.getElementById("pf-log-note").value = "";
     document.getElementById("pf-log-file").value = "";
     document.getElementById("pf-log-file-name").textContent = "Click to attach image or document…";
+    var label = document.getElementById("pf-log-value-label");
+    if (label) label.textContent = cumulative
+      ? "Amount since your last update *"
+      : "The reading now *";
     pfSetHtml("pf-log-context", k
       ? "<strong>" + gpEsc(k.kpi_name) + "</strong><br>Target " + pfNum(k.target_value, 2) +
-        " " + gpEsc(k.unit || "") + " · currently at " + pfNum(k.attainment_pct) + "%"
+        " " + gpEsc(k.unit || "") + " · currently at " + pfNum(k.attainment_pct) + "%" +
+        /* An open review holds this KPI (R5). */
+        (k.review_badge ? "<br>" + riReviewBadge(k.review_badge) : "")
       : "");
     var hint = document.getElementById("pf-log-hint");
     if (hint) hint.textContent = k && k.direction === "Lower is Better"
       ? "Lower is better for this KPI — attainment rises as the value falls."
-      : "Enter the cumulative value reached so far.";
+      : (cumulative
+          ? "Not the running total: just what you added since you last logged progress."
+          : "The value as it stands today, not the amount added.");
     pfSetHtml("pf-log-history", "<div style=\"color:var(--text3);font-size:var(--fs-sm)\">Loading history…</div>");
     pfOpenModal("pf-log-modal");
     pfLoadKpiUpdateHistory(kpiId, focusRow);
@@ -12389,7 +12482,8 @@ function deleteDrawerNote(noteId, empId) {
           btn.disabled = false; btn.textContent = "Save Progress"; return;
         }
       }
-      await pf("log_kpi_progress", {kpi: kpi, value: value, note: pfVal("pf-log-note"), evidence_url: evidenceUrl});
+      await pf("log_kpi_progress", {kpi: kpi, value: value, note: pfVal("pf-log-note"),
+                                    evidence_url: evidenceUrl, log_date: pfVal("pf-log-date")});
       pfCloseModal("pf-log-modal");
       fileInput.value = "";
       document.getElementById("pf-log-file-name").textContent = "Click to attach image or document…";
@@ -12540,26 +12634,11 @@ function deleteDrawerNote(noteId, empId) {
   /* Boot: load notification count */
   setTimeout(function() { loadNotifPanel(); }, 1500);
 
-  window.pfOpenSelfRating = function(kpiId) {
-    var k = pfFindMyKpi(kpiId);
-    pfClearErr("pf-self-error");
-    document.getElementById("pf-self-kpi").value = kpiId;
-    document.getElementById("pf-self-rating").value = k && k.self_rating ? k.self_rating : "";
-    document.getElementById("pf-self-comment").value = k ? (k.self_comment || "") : "";
-    pfSetHtml("pf-self-context", k
-      ? "<strong>" + gpEsc(k.kpi_name) + "</strong><br>Attainment " + pfNum(k.attainment_pct) + "%"
-      : "");
-    pfOpenModal("pf-self-modal");
-  };
-
-  window.pfSubmitSelfRating = function() {
-    var rating = pfVal("pf-self-rating");
-    if (rating === "") { pfShowErr("pf-self-error", "Enter a rating between 0 and 5."); return; }
-    pf("save_kpi_self_review", {
-      kpi: pfVal("pf-self-kpi"), rating: rating, comment: pfVal("pf-self-comment")
-    }).then(function() { pfCloseModal("pf-self-modal"); pfLoadMyKpis(); })
-      .catch(function(e) { pfShowErr("pf-self-error", e.message); });
-  };
+  /* Rating a KPI outside the review is gone (slice 010 group D, R14). Ratings
+     are given on the review's own copy, inside the review, so a rating can
+     never reach a live record around the review's stage and stamp rules.
+     pfOpenSelfRating, pfSubmitSelfRating, pfSaveRating and pfSuggest were the
+     last callers of the retired endpoints and were removed with their dialog. */
 
   /* ══════════════════════════════════════════════════════════════════
      Objectives & KPIs — one view, hierarchy or flat list.
@@ -13041,7 +13120,7 @@ function deleteDrawerNote(noteId, empId) {
           (g.goal_type === "Development" ? "<span class=\"tv-badge\" style=\"background:var(--sky);color:var(--surface)\">Dev</span>" : "") +
           (g.is_extra_initiative ? "<span class=\"tv-badge\" style=\"background:var(--amber);color:var(--surface)\">Stretch</span>" : "") +
           (g.company_value ? "<span class=\"tv-badge\" style=\"background:var(--surface2);color:var(--text2)\" title=\"" + gpEsc(g.company_value) + "\">" + gpEsc(g.company_value) + "</span>" : "") +
-          tvOverdueTag(g.is_overdue) + tvCycleTag(g.in_cycle) + "</div>" +
+          tvOverdueTag(g.is_overdue) + tvCycleTag(g.review_badge) + "</div>" +
         "<div class=\"tv-meta\">" + tvHighlight(g.employee_name || "") +
           " · target " + (g.target_value || 0) + " " + gpEsc(g.unit || "") +
           " · " + gpFmtDate(g.start_date) + " – " + gpFmtDate(g.end_date) + "</div>" +
@@ -13082,7 +13161,7 @@ function deleteDrawerNote(noteId, empId) {
           "<span class=\"tv-badge tv-badge-kpi\">KPI</span>" +
           (k.is_extra_initiative ? "<span class=\"tv-badge\" style=\"background:var(--amber);color:var(--surface)\">Stretch</span>" : "") +
           (k.company_value ? "<span class=\"tv-badge\" style=\"background:var(--surface2);color:var(--text2)\" title=\"" + gpEsc(k.company_value) + "\">" + gpEsc(k.company_value) + "</span>" : "") +
-          tvOverdueTag(k.is_overdue) + tvCycleTag(k.in_cycle) + "</div>" +
+          tvOverdueTag(k.is_overdue) + tvCycleTag(k.review_badge) + "</div>" +
         "<div class=\"tv-meta\">" + tvHighlight(k.employee_name || "") +
           " · " + tvHighlight(k.category || "") +
           " · target " + (k.target_value || 0) + " " + gpEsc(k.unit || "") +
@@ -13114,9 +13193,12 @@ function deleteDrawerNote(noteId, empId) {
     return flag ? "<span class=\"tv-overdue-tag\" title=\"Deadline has passed\">overdue</span>" : "";
   }
 
-  function tvCycleTag(cycle) {
-    if (!cycle) return "";
-    return "<span class=\"tv-incycle\" title=\"Considered in " + gpEsc(cycle) + "\">in review</span>";
+  /* "In review" now means an open review holds this record, not that it is
+     tagged to a cycle (slice 010 group D, R5). The wording says what it means
+     for the owner: updates dated after that day do not change the review. It
+     carries no review name, no rating and no link. */
+  function tvCycleTag(badge) {
+    return riReviewBadge(badge);
   }
 
   /* Nominating work for a cycle. Unlike editing, this is open to the item's
@@ -13292,6 +13374,11 @@ function deleteDrawerNote(noteId, empId) {
     var ratingCell = (m.overall_rating != null && status !== "Not Started")
       ? "<span class=\"tr-rating\">" + pfNum(m.overall_rating, 1) + "<span class=\"tr-rating-denom\"> / 5</span></span>"
       : "<span style=\"color:var(--text3)\">—</span>";
+    /* The numbers changed after this rating was given (R7, decision 12). */
+    if (m.rating_needs_answer) {
+      ratingCell += "<div style=\"font-size:var(--fs-xs);color:var(--amber);margin-top:2px\">" +
+        "<i class=ic-alert></i> Rating needs your answer</div>";
+    }
 
     /* ── Action ── */
     var action = "";
@@ -13327,32 +13414,10 @@ function deleteDrawerNote(noteId, empId) {
     "</tr>";
   }
 
-  window.pfSaveRating = function(kpiId) {
-    var rating = document.getElementById("pf-r-" + kpiId);
-    var comment = document.getElementById("pf-c-" + kpiId);
-    var potential = document.getElementById("pf-p-" + kpiId);
-    if (!rating || rating.value === "") { alert("Enter a rating between 0 and 5."); return; }
-    var args = {kpi: kpiId, rating: rating.value, comment: comment ? comment.value : ""};
-    if (potential && potential.value !== "") {
-      args.potential_rating = potential.value;
-    }
-    pf("save_kpi_manager_review", args)
-      .then(function() { pfLoadReviews(); })
-      .catch(function(e) { alert("Could not save rating: " + e.message); });
-  };
-
-  window.pfSuggest = function(employee, cycle) {
-    pf("suggest_ratings", {employee: employee, cycle: cycle}).then(function(rows) {
-      rows.forEach(function(r) {
-        var el = document.getElementById("pf-r-" + r.kpi);
-        if (el && !el.value) el.value = r.suggested_rating;
-      });
-      pfSetHtml("pf-rev-msg-" + employee,
-        pfAlert("ok", "Filled unrated KPIs from measured attainment. Review, adjust, then Save each row."));
-    }).catch(function(e) {
-      pfSetHtml("pf-rev-msg-" + employee, pfAlert("err", e.message));
-    });
-  };
+  /* pfSaveRating and pfSuggest are gone with the KPI rating row: a manager
+     rates each item inside the review now (slice 010 group D, R14). The
+     suggestion from measured attainment moved to riSuggestRatings, which reads
+     the review's own copies. */
 
   window.pfSubmitReview = function(employee, cycle) {
     pfSetHtml("pf-rev-msg-" + employee, pfAlert("warn", "Submitting…"));
@@ -14632,6 +14697,10 @@ function deleteDrawerNote(noteId, empId) {
   window.prOpenReview = function(appraisalName) {
     _pr.appraisal = appraisalName;
     _pr.data = null;
+    /* This is the person's own review. Clearing the role matters: without it a
+       manager who opened someone else's review earlier in the same session
+       would still be treated as a manager on their own screen. */
+    _pr.viewerRole = null;
     _pr.pages = [];
     _pr.currentIdx = 0;
     _pr.viewMode = "hierarchical";  // "hierarchical" | "list"
@@ -14830,12 +14899,13 @@ function deleteDrawerNote(noteId, empId) {
         if (el.classList.contains("pr-kpi-comment")) kpis[n].self_comment = el.value;
       });
       /* Objective actual-progress + reflection */
+      /* Reflections only. Progress is never typed into a review: it comes from
+         approved facts dated inside the review period (slice 010 D, R3). */
       var objs = {};
       document.querySelectorAll("[data-pr-obj-name]").forEach(function(el) {
         var n = el.getAttribute("data-pr-obj-name");
         objs[n] = objs[n] || {};
-        if (el.classList.contains("pr-obj-progress-inp")) objs[n].actual_progress = el.value;
-        if (el.classList.contains("pr-obj-reflect-ta"))   objs[n].reflection      = el.value;
+        if (el.classList.contains("pr-obj-reflect-ta")) objs[n].reflection = el.value;
       });
       data.kpis = kpis; data.objectives = objs;
     } else if (isFutureObj) {
@@ -14902,11 +14972,21 @@ function deleteDrawerNote(noteId, empId) {
   function prRenderGoalsPage(d, saved, editable, title) {
     var goals = d.goals || [];
     var standalone = d.standalone_kpis || [];
+    /* These are the review's own copies. Their row names are the keys used
+       everywhere on this page (slice 010 group D, VIS-3). */
+    _riItems = {};
+    riIndex(goals);
+    riIndex(standalone);
     var isHier = _pr.viewMode !== "list";
     var header = "<div class=\"pr-page-title\">" + (title || "Past Objectives &amp; KPIs") + "</div>" +
       "<div class=\"pr-page-sub\">" +
-        (editable ? "Update progress, rate yourself, and comment on each KPI." : "Read-only — your review has been submitted.") +
+        (editable
+          ? "Rate yourself and comment on each item. The numbers come from approved progress and evidence dated inside the review period."
+          : (_pr.viewerRole
+              ? "This is the review's own copy of each item. Changing it here does not change the live record."
+              : "Read-only — your review has been submitted.")) +
       "</div>" +
+      riReviewNotesHtml(d) +
       "<div style=\"display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px\">" +
         "<div class=\"pr-view-toggle\">" +
           "<button class=\"pr-vtbtn" + (isHier ? " active" : "") + "\" onclick=\"prSetView('hierarchical')\">Hierarchical</button>" +
@@ -14927,12 +15007,13 @@ function deleteDrawerNote(noteId, empId) {
 
     if (!goals.length && !standalone.length) {
       document.getElementById("pr-content").innerHTML = header +
-        "<div style=\"color:var(--text3);font-size:var(--fs-base);text-align:center;padding:40px 0\">No objectives or KPIs found for this cycle.</div>";
+        "<div style=\"color:var(--text3);font-size:var(--fs-base);text-align:center;padding:40px 0\">No objectives or KPIs are in this review.</div>" +
+        riRemovedHtml(d);
       return;
     }
 
     document.getElementById("pr-content").innerHTML = header +
-      "<div id=\"pr-goals-body\"></div>";
+      "<div id=\"pr-goals-body\"></div>" + riRemovedHtml(d);
 
     if (isHier) {
       prRenderHierarchicalGoals(goals, standalone, saved, editable);
@@ -14957,7 +15038,6 @@ function deleteDrawerNote(noteId, empId) {
 
     function renderGoalNode(g) {
       var savedObj  = (saved.objectives && saved.objectives[g.name]) || {};
-      var savedProg = savedObj.actual_progress !== undefined ? savedObj.actual_progress : (g.actual_progress || "");
       var pct       = g.progress_pct != null ? parseFloat(g.progress_pct) : 0;
       var children  = childrenOf[g.name] || [];
       var kpis      = g.kpis || [];
@@ -14983,36 +15063,31 @@ function deleteDrawerNote(noteId, empId) {
               " · target " + (g.target_value || 0) + " " + gpEsc(g.unit || "") +
               " · " + (g.start_date ? gpFmtDate(g.start_date) : "?") + " – " + (g.end_date ? gpFmtDate(g.end_date) : "?") +
             "</div>" +
+            riChangeNote(g) +
           "</div>" +
           "<div class=\"tv-right\">" +
             "<div class=\"tv-bar\"><div class=\"tv-bar-fill\" style=\"width:" + Math.min(100,pct) + "%;background:" + colour + "\"></div></div>" +
             "<div class=\"tv-pct\">" + Math.round(pct) + "%</div>" +
-            (editable
-              ? "<div class=\"tv-acts\" style=\"opacity:1;display:flex;gap:4px\">" +
-                  "<button class=\"tv-icon\" title=\"Edit\" onclick=\"event.stopPropagation();prOpenGoalEditForReview('" + gpEsc(g.name) + "')\">" + TV_ICON.edit + "</button>" +
-                  "<button class=\"tv-icon tv-danger\" title=\"Remove\" onclick=\"event.stopPropagation();prRemoveGoalFromReview('" + gpEsc(g.name) + "')\">" + TV_ICON.del + "</button>" +
-                "</div>"
-              : "") +
+            riItemActions(g) +
           "</div>" +
         "</div>";
 
-      /* ── Review inputs (progress + reflection) ── */
+      /* ── Review inputs (reflection; the number comes from dated facts) ── */
       var inputsHtml =
         "<div class=\"pr-obj-body\" style=\"padding:10px 12px 8px;background:var(--surface2);border-left:3px solid " + colour + ";margin-bottom:0\">" +
-          (editable
-            ? "<div class=\"pr-prog-update\">" +
-                "<label>Update actual progress</label>" +
-                "<input type=\"number\" class=\"pr-obj-progress-inp\" data-pr-obj-name=\"" + gpEsc(g.name) +
-                  "\" value=\"" + gpEsc(savedProg + "") + "\" placeholder=\"e.g. 75\" min=\"0\">" +
-                "<span>" + (g.unit ? gpEsc(g.unit) : "units") + " (live: " + gpEsc((g.actual_progress || 0) + "") + ")</span>" +
-              "</div>"
-            : "") +
-          "<div class=\"pr-obj-reflect\"><label>Reflection</label>" +
-            "<textarea class=\"pr-obj-reflect-ta\" data-pr-obj-name=\"" + gpEsc(g.name) +
+          "<div style=\"font-size:var(--fs-xs);color:var(--text3);margin-bottom:6px\">" +
+            "Reached " + gpEsc(pfNum(g.actual_progress, 2) + " of " + pfNum(g.target_value, 2)) +
+            " " + gpEsc(g.unit || "") + " · " + gpEsc(pfNum(g.facts_count, 0)) + " approved updates counted in this review." +
+            " The figure comes from approved progress and evidence, so it is not typed in here." +
+          "</div>" +
+          "<div class=\"pr-obj-reflect\">" +
+            "<label for=\"pr-reflect-" + gpEsc(g.name) + "\">Reflection</label>" +
+            "<textarea id=\"pr-reflect-" + gpEsc(g.name) + "\" class=\"pr-obj-reflect-ta\" data-pr-obj-name=\"" + gpEsc(g.name) +
               "\" placeholder=\"How did this objective go? What could be improved?\"" +
               (editable ? "" : " readonly") + ">" +
               gpEsc(savedObj.reflection || "") + "</textarea>" +
           "</div>" +
+          riManagerRatingHtml(g) +
         "</div>";
 
       /* ── Children (KPIs + sub-objectives) ── */
@@ -15070,31 +15145,50 @@ function deleteDrawerNote(noteId, empId) {
           (kpiDateStr ? " · " + gpEsc(kpiDateStr) : "") +
           (k.creator_name ? " · by " + gpEsc(k.creator_name) : "") +
         "</div>" +
-        "<div class=\"pr-kpi-assess\" style=\"margin-top:8px\">" +
-          "<div class=\"pr-kpi-comment-wrap\"><textarea class=\"pr-kpi-comment\" data-pr-kpi-name=\"" + gpEsc(k.name) +
-            "\" placeholder=\"Your comment on this KPI...\"" + (editable ? "" : " readonly") + ">" +
-            gpEsc(comment) + "</textarea></div>" +
-          "<div class=\"pr-rating-wrap\"><div class=\"pr-rating-lbl\">Self-Rating</div>" +
-            "<input type=\"number\" class=\"pr-rating-inp pr-kpi-rating\" data-pr-kpi-name=\"" + gpEsc(k.name) +
-            "\" min=\"1\" max=\"5\" step=\"0.5\" value=\"" + gpEsc(rating+"") + "\" placeholder=\"1–5\"" +
-            (editable ? "" : " readonly") + "></div>" +
-        "</div>" +
+        riChangeNote(k) +
+        ((_pr.viewerRole && k.self_rating === undefined)
+          ? ""
+          : "<div class=\"pr-kpi-assess\" style=\"margin-top:8px\">" +
+              "<div class=\"pr-kpi-comment-wrap\">" +
+                "<label class=\"pr-rating-lbl\" for=\"pr-kc-" + gpEsc(k.name) + "\">" +
+                  (_pr.viewerRole ? "Employee's comment" : "Your comment") + "</label>" +
+                "<textarea id=\"pr-kc-" + gpEsc(k.name) + "\" class=\"pr-kpi-comment\" data-pr-kpi-name=\"" + gpEsc(k.name) +
+                  "\" placeholder=\"Your comment on this KPI...\"" + (editable ? "" : " readonly") + ">" +
+                  gpEsc(comment) + "</textarea></div>" +
+              "<div class=\"pr-rating-wrap\">" +
+                "<label class=\"pr-rating-lbl\" for=\"pr-kr-" + gpEsc(k.name) + "\">Self-rating</label>" +
+                "<input id=\"pr-kr-" + gpEsc(k.name) + "\" type=\"number\" class=\"pr-rating-inp pr-kpi-rating\" data-pr-kpi-name=\"" + gpEsc(k.name) +
+                "\" min=\"1\" max=\"5\" step=\"0.5\" value=\"" + gpEsc(rating+"") + "\" placeholder=\"1–5\"" +
+                (editable ? "" : " readonly") + "></div>" +
+            "</div>") +
+        riManagerRatingHtml(k) +
       "</div>" +
       "<div class=\"tv-right\" style=\"flex-shrink:0;align-self:flex-start\">" +
         "<div class=\"tv-bar\"><div class=\"tv-bar-fill\" style=\"width:" + pct + "%;background:" + colour + "\"></div></div>" +
         "<div class=\"tv-pct\" style=\"color:" + colour + "\">" + pfNum(att) + "%</div>" +
-        (onRemove
-          ? "<div class=\"tv-acts\" style=\"opacity:1\">" +
-              "<button class=\"tv-icon tv-danger\" title=\"Remove KPI\" onclick=\"" + onRemove + "\">" + TV_ICON.del + "</button>" +
-            "</div>"
-          : "") +
+        riItemActions(k) +
       "</div>" +
     "</div>";
   }
 
   function prRenderListGoals(goals, standalone, saved, editable) {
-    var editHead = editable ? "<th></th>" : "";
-    var thead = "<tr><th>KPI</th><th>Objective</th><th>Target</th><th>Actual</th><th>Attainment</th><th>Period</th><th>Created by</th><th style=\"min-width:80px\">Self-Rating<br><span style=\"font-weight:400\">(1–5)</span></th><th style=\"min-width:140px\">Comment</th>" + (editable ? "<th></th>" : "") + "</tr>";
+    /* Edit and Remove follow the review's stage and the person's part in it,
+       not whether the self-assessment boxes are open (slice 010 D). */
+    var canAct = riCanEditDefinition() || riCanRemove();
+    function acts(it) {
+      if (!canAct) return "";
+      var html = "";
+      if (riCanEditDefinition()) {
+        html += "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs);padding:3px 8px\" " +
+          "onclick=\"riOpenEditItem('" + gpEsc(it.name) + "')\">Edit</button> ";
+      }
+      if (riCanRemove()) {
+        html += "<button class=\"btn btn-sm\" style=\"font-size:var(--fs-xs);padding:3px 8px;color:var(--danger,var(--red));border:1px solid var(--danger,var(--red));background:none\" " +
+          "onclick=\"riOpenRemove('" + gpEsc(it.name) + "')\">Remove</button>";
+      }
+      return "<td style=\"white-space:nowrap\">" + html + "</td>";
+    }
+    var thead = "<tr><th>KPI</th><th>Objective</th><th>Target</th><th>Actual</th><th>Attainment</th><th>Period</th><th>Created by</th><th style=\"min-width:80px\">Self-Rating<br><span style=\"font-weight:400\">(1–5)</span></th><th style=\"min-width:140px\">Comment</th>" + (canAct ? "<th></th>" : "") + "</tr>";
     var rows = "";
     goals.forEach(function(g) {
       _prGoalStore[g.name] = g;
@@ -15120,10 +15214,7 @@ function deleteDrawerNote(noteId, empId) {
           "<td><textarea class=\"pr-kpi-comment\" data-pr-kpi-name=\"" + gpEsc(k.name) +
             "\" placeholder=\"Comment...\"" + (editable ? "" : " readonly") + ">" +
             gpEsc(comment) + "</textarea></td>" +
-          (editable ? "<td style=\"white-space:nowrap\">" +
-            "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs);padding:3px 8px\" onclick=\"prOpenGoalEditForReview('" + gpEsc(g.name) + "')\">Edit</button> " +
-            "<button class=\"btn btn-sm\" style=\"font-size:var(--fs-xs);padding:3px 8px;color:var(--danger,var(--red));border:1px solid var(--danger,var(--red));background:none\" onclick=\"prRemoveKpiFromReview('" + gpEsc(k.name) + "')\">Remove</button>" +
-            "</td>" : "") +
+          acts(k) +
         "</tr>";
       });
     });
@@ -15148,7 +15239,7 @@ function deleteDrawerNote(noteId, empId) {
         "<td><textarea class=\"pr-kpi-comment\" data-pr-kpi-name=\"" + gpEsc(k.name) +
           "\" placeholder=\"Comment...\"" + (editable ? "" : " readonly") + ">" +
           gpEsc(comment) + "</textarea></td>" +
-        (editable ? "<td><button class=\"btn btn-sm\" style=\"font-size:var(--fs-xs);padding:3px 8px;color:var(--danger,var(--red));border:1px solid var(--danger,var(--red));background:none\" onclick=\"prRemoveKpiFromReview('" + gpEsc(k.name) + "')\">Remove</button></td>" : "") +
+        acts(k) +
       "</tr>";
     });
     document.getElementById("pr-goals-body").innerHTML =
@@ -15223,24 +15314,22 @@ function deleteDrawerNote(noteId, empId) {
     var pct = g.progress_pct != null ? Math.round(parseFloat(g.progress_pct)) : 0;
     var meta = pct + "% complete";
     if (g.kpis && g.kpis.length) meta += " · " + g.kpis.length + " KPI(s)";
-    if (showCycleLabel && g.cycle_label) meta += " · " + gpEsc(g.cycle_label);
+    if (showCycleLabel && g.cycle_label) meta += " · " + g.cycle_label;
+    /* This page is a plan for the next period, so there is nothing to edit or
+       remove here. "Remove" used to delete the Objective itself, including one
+       from an earlier cycle, which took its history with it. Unticking the box
+       is the whole of "do not carry this forward" (slice 010 D, decision 19). */
     return "<div class=\"pr-carry-item\" style=\"align-items:flex-start\">" +
-      "<input type=\"checkbox\" data-pr-carry=\"" + gpEsc(g.name) + "\"" +
+      "<input type=\"checkbox\" id=\"pr-carry-" + gpEsc(g.name) + "\" data-pr-carry=\"" + gpEsc(g.name) + "\"" +
         (cf.include ? " checked" : "") + (editable ? "" : " disabled") +
         " style=\"margin-top:3px;flex-shrink:0\">" +
       "<div class=\"pr-carry-label\" style=\"flex:1;min-width:0\">" +
         "<div style=\"display:flex;align-items:center;gap:8px;flex-wrap:wrap\">" +
-          "<div class=\"pr-carry-name\">" + gpEsc(g.goal_name || g.name) + "</div>" +
-          (editable
-            ? "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs);padding:2px 9px\" " +
-                "onclick=\"prOpenGoalEditForReview('" + gpEsc(g.name) + "')\">Edit</button>" +
-              "<button class=\"btn btn-sm\" style=\"font-size:var(--fs-xs);padding:2px 9px;color:var(--danger,var(--red));border:1px solid var(--danger,var(--red));background:none\" " +
-                "onclick=\"prRemoveGoalFromReview('" + gpEsc(g.name) + "')\">Remove</button>"
-            : "") +
+          "<label class=\"pr-carry-name\" for=\"pr-carry-" + gpEsc(g.name) + "\">" + gpEsc(g.goal_name || g.name) + "</label>" +
         "</div>" +
-        "<div class=\"pr-carry-meta\">" + meta + "</div>" +
+        "<div class=\"pr-carry-meta\">" + gpEsc(meta) + "</div>" +
         (editable
-          ? "<textarea class=\"pr-carry-note\" data-pr-carry=\"" + gpEsc(g.name) +
+          ? "<textarea class=\"pr-carry-note\" aria-label=\"Note for this objective\" data-pr-carry=\"" + gpEsc(g.name) +
               "\" placeholder=\"What will you do differently or build on?\"" +
               " style=\"margin-top:6px;width:100%;min-height:48px;padding:6px 8px;border:1.5px solid var(--border2);border-radius:var(--r-sm);font-size:var(--fs-sm);font-family:inherit;resize:vertical;background:var(--surface);color:var(--text)\">" +
               gpEsc(cf.note || "") + "</textarea>"
@@ -15296,7 +15385,8 @@ function deleteDrawerNote(noteId, empId) {
 
     html += "<div class=\"pr-section-hdr\" style=\"margin-top:20px\">Add New Objectives or KPIs</div>" +
       "<div style=\"font-size:var(--fs-sm);color:var(--text3);margin-bottom:10px\">" +
-        "New objectives and KPIs are created immediately and linked to the current cycle." +
+        "These are plans for the next period. They are created as live records now; they do not join " +
+        "the review you are filling in, and they are not tagged to this cycle." +
       "</div>";
 
     if (editable) {
@@ -15350,12 +15440,9 @@ function deleteDrawerNote(noteId, empId) {
      edit buttons can look up full goal data without encoding JSON in onclick. */
   var _prGoalStore = {};
 
-  window.prOpenGoalEditForReview = function(goalName) {
-    var g = _prGoalStore[goalName];
-    if (!g) return;
-    _gpOnGoalCreated = function() { _gpOnGoalCreated = null; prRefreshCurrentPage(); };
-    gpOpenEditGoal(g);
-  };
+  /* Inside a review, "Edit" changes the review's own copy, never the live
+     Objective (slice 010 group D, R2, decision 6). */
+  window.prOpenGoalEditForReview = function(rowName) { riOpenEditItem(rowName); };
 
   window.prOpenKpiDialogForReview = function() {
     window._pfKpiOnSaved = function() { prRefreshCurrentPage(); };
@@ -15397,15 +15484,15 @@ function deleteDrawerNote(noteId, empId) {
     pfSetHtml("pr-sel-title", isObj ? "Add / Remove Objectives" : "Add / Remove KPIs");
     pfSetHtml("pr-sel-subtitle",
       items.length
-        ? items.length + " " + (isObj ? "objective" : "KPI") + (items.length !== 1 ? "s" : "") +
-          " found between " + pFrom + " and " + pTo
+        ? gpEsc(items.length + " " + (isObj ? "objective" : "KPI") + (items.length !== 1 ? "s" : "") +
+          " found between " + pFrom + " and " + pTo)
         : "");
     pfSetHtml("pr-sel-error", "");
 
     if (!items.length) {
       pfSetHtml("pr-sel-list",
         "<div class=\"sel-empty\">No " + (isObj ? "objectives" : "standalone KPIs") + " found" +
-        "<br>between <strong>" + pFrom + "</strong> and <strong>" + pTo + "</strong>." +
+        "<br>between <strong>" + gpEsc(pFrom) + "</strong> and <strong>" + gpEsc(pTo) + "</strong>." +
         "<br><span style=\"font-size:var(--fs-xs)\">Create them from the Goals section first.</span></div>");
     } else {
       var html = items.map(function(item) {
@@ -15417,11 +15504,13 @@ function deleteDrawerNote(noteId, empId) {
         if (item.status)  parts.push(item.status);
         if (item.target_value != null) parts.push("Target: " + item.target_value + (item.unit ? " " + item.unit : ""));
         if (!isObj && item.category) parts.push(item.category);
+        /* Names, statuses and units come from records other people can write,
+           so every one of them is escaped before it reaches the page (SEC-11). */
         return "<label class=\"sel-item\">" +
-          "<input type=\"checkbox\" class=\"sel-chk\" value=\"" + item.name + "\"" + (item.selected ? " checked" : "") + ">" +
+          "<input type=\"checkbox\" class=\"sel-chk\" value=\"" + gpEsc(item.name) + "\"" + (item.selected ? " checked" : "") + ">" +
           "<div class=\"sel-item-body\">" +
-            "<div class=\"sel-item-name\">" + label + "</div>" +
-            (parts.length ? "<div class=\"sel-item-meta\">" + parts.join(" · ") + "</div>" : "") +
+            "<div class=\"sel-item-name\">" + gpEsc(label) + "</div>" +
+            (parts.length ? "<div class=\"sel-item-meta\">" + gpEsc(parts.join(" · ")) + "</div>" : "") +
           "</div>" +
         "</label>";
       }).join("");
@@ -15433,8 +15522,17 @@ function deleteDrawerNote(noteId, empId) {
     btn.textContent = "Confirm";
     btn.onclick = function() {
       var checked = Array.from(document.querySelectorAll("#pr-sel-list .sel-chk:checked")).map(function(el) { return el.value; });
+      /* Unticking takes the review's copy out. Whatever was changed for that
+         item inside the review is lost, so say so first (slice 010 D, R12). */
+      var dropped = items.filter(function(it) { return it.selected && checked.indexOf(it.name) < 0; });
+      if (dropped.length && !confirm(
+            "Take " + dropped.length + " item" + (dropped.length === 1 ? "" : "s") +
+            " out of this review? Anything changed for them inside the review — target, weight, " +
+            "period and your rating — will be lost. Their progress and evidence stay on the live record.")) {
+        return;
+      }
       btn.disabled = true; btn.textContent = "Saving…";
-      var args = {appraisal: _pr.appraisal};
+      var args = {appraisal: _pr.appraisal, acknowledge_removal: dropped.length ? 1 : 0};
       if (isObj) args.selected_goals_json = JSON.stringify(checked);
       else       args.selected_kpis_json  = JSON.stringify(checked);
       pf("set_review_selection", args).then(function() {
@@ -15462,19 +15560,344 @@ function deleteDrawerNote(noteId, empId) {
     }).catch(function() {});
   }
 
-  window.prRemoveGoalFromReview = function(goalId) {
-    if (!confirm("Delete this objective? This cannot be undone.")) return;
-    window.gpFetch("alvoraa_portal.goals_api.delete_goal", {goal_id: goalId})
-      .then(function() { prRefreshCurrentPage(); })
-      .catch(function(e) { alert(e.message || "Could not delete objective."); });
+  /* Taking an item out of a review no longer deletes the Objective or the KPI
+     itself (slice 010 group D, R12). Both buttons now open the same dialog. */
+  window.prRemoveGoalFromReview = function(rowName) { riOpenRemove(rowName); };
+  window.prRemoveKpiFromReview  = function(rowName) { riOpenRemove(rowName); };
+
+  /* ══════════════════════════════════════════════════════════════════
+     ri* — the review's own copies (slice 010 group D, commit 11)
+
+     Every item on a review screen is a copy that belongs to the review, not
+     the live Objective or KPI. Its row name is the key everywhere here. These
+     functions change the copy: its definition, its rating, whether it is in
+     the review at all, and the answer to a rating question. Nothing here
+     writes a live record.
+     ══════════════════════════════════════════════════════════════════ */
+
+  /* Every copy on the screen now, by row name. Filled while rendering. */
+  var _riItems = {};
+
+  window.riIndex = function(items) {
+    (items || []).forEach(function(it) {
+      _riItems[it.name] = it;
+      (it.kpis || []).forEach(function(k) { _riItems[k.name] = k; });
+    });
   };
 
-  window.prRemoveKpiFromReview = function(kpiId) {
-    if (!confirm("Delete this KPI? This cannot be undone.")) return;
-    pf("delete_kpi", {kpi: kpiId})
-      .then(function() { prRefreshCurrentPage(); })
-      .catch(function(e) { alert(e.message || "Could not delete KPI."); });
+  function riItem(rowName) { return _riItems[rowName] || null; }
+
+  /* Who may change items, and when (decisions 6, 29). The server decides; the
+     page only hides what would be refused. */
+  function riCanEditDefinition() {
+    var st = (_pr.data && _pr.data.review_status) || "Not Started";
+    if (_pr.viewerRole) return _pr.viewerRole === "manager" && st === "Manager Review";
+    return st === "Not Started" || st === "Employee Review";
+  }
+
+  function riCanRemove() {
+    var st = (_pr.data && _pr.data.review_status) || "Not Started";
+    if (_pr.viewerRole === "manager") return st === "Manager Review";
+    if (_pr.viewerRole === "hr")      return st === "HR Review";
+    return st === "Not Started" || st === "Employee Review";
+  }
+
+  function riCanRateAsManager() {
+    return _pr.viewerRole === "manager" && _pr.data && _pr.data.review_status === "Manager Review";
+  }
+
+  /* A reason is required of everyone except the person whose review it is. */
+  function riReasonRequired() { return !!_pr.viewerRole; }
+
+  /* ── Change a definition inside the review (R2, decision 6) ── */
+
+  window.riOpenEditItem = function(rowName) {
+    var it = riItem(rowName);
+    if (!it) return;
+    pfClearErr("ri-edit-error");
+    document.getElementById("ri-edit-row").value = rowName;
+    document.getElementById("ri-edit-title").value  = it.title || it.goal_name || it.kpi_name || "";
+    document.getElementById("ri-edit-target").value = it.target_value != null ? it.target_value : "";
+    document.getElementById("ri-edit-weight").value = it.weightage != null ? it.weightage : "";
+    document.getElementById("ri-edit-from").value   = it.period_start || it.start_date || "";
+    document.getElementById("ri-edit-to").value     = it.period_end   || it.end_date   || "";
+    pfSetHtml("ri-edit-sub", gpEsc(it.title || it.goal_name || it.kpi_name || ""));
+    pfOpenModal("ri-edit-modal");
   };
+
+  window.riSaveEditItem = function() {
+    var btn = document.getElementById("ri-edit-save");
+    var title = (pfVal("ri-edit-title") || "").trim();
+    if (!title) { pfShowErr("ri-edit-error", "Give the item a name."); return; }
+    btn.disabled = true; btn.textContent = "Saving…";
+    pf("save_review_item_definition", {
+      appraisal:    _pr.appraisal,
+      row:          pfVal("ri-edit-row"),
+      title:        title,
+      target_value: pfVal("ri-edit-target"),
+      weightage:    pfVal("ri-edit-weight"),
+      period_start: pfVal("ri-edit-from"),
+      period_end:   pfVal("ri-edit-to"),
+    }).then(function() {
+      pfCloseModal("ri-edit-modal");
+      riReload();
+    }).catch(function(e) {
+      pfShowErr("ri-edit-error", (e && e.message) || "The change could not be saved.");
+    }).finally(function() { btn.disabled = false; btn.textContent = "Save change"; });
+  };
+
+  /* ── Take an item out of the review (R12, decisions 9, 10, 29) ── */
+
+  window.riOpenRemove = function(rowName) {
+    var it = riItem(rowName);
+    if (!it) return;
+    var title = it.title || it.goal_name || it.kpi_name || "this item";
+    var mine  = !_pr.viewerRole;
+    var deletable = !!it.added_in_review && mine;
+    pfClearErr("ri-remove-error");
+    document.getElementById("ri-remove-row").value = rowName;
+    document.getElementById("ri-remove-mode").value = "remove";
+    pfSetHtml("ri-remove-title", "Remove “" + gpEsc(title) + "” from this review?");
+    pfSetHtml("ri-remove-warning",
+      "Anything changed for it inside this review — its target, weight, period and " +
+      (mine ? "your rating" : "the ratings") + " — will be lost. " +
+      "Its progress and evidence stay on the live record, which is not deleted." +
+      (deletable
+        ? "<div style=\"margin-top:8px\">This item was created inside the review. " +
+          "<a href=\"#\" onclick=\"riSwitchToDelete();return false;\">Delete the Objective or KPI itself instead</a>.</div>"
+        : ""));
+    var req = riReasonRequired();
+    pfSetHtml("ri-remove-reason-req", req ? "(required)" : "(optional)");
+    document.getElementById("ri-remove-reason").value = "";
+    pfOpenModal("ri-remove-modal");
+  };
+
+  window.riSwitchToDelete = function() {
+    document.getElementById("ri-remove-mode").value = "delete";
+    pfSetHtml("ri-remove-title", "Delete this Objective or KPI?");
+    pfSetHtml("ri-remove-warning",
+      "This deletes the record itself, not only its place in the review. It can only be done " +
+      "for something created inside this review that has no progress, evidence or rating.");
+    document.getElementById("ri-remove-reason-field").style.display = "none";
+  };
+
+  window.riConfirmRemove = function() {
+    var btn = document.getElementById("ri-remove-confirm");
+    var row = pfVal("ri-remove-row");
+    var del = pfVal("ri-remove-mode") === "delete";
+    var reason = (pfVal("ri-remove-reason") || "").trim();
+    if (!del && riReasonRequired() && !reason) {
+      pfShowErr("ri-remove-error", "Say why this item is being removed. The employee will see the reason.");
+      return;
+    }
+    btn.disabled = true; btn.textContent = "Working…";
+    var call = del
+      ? pf("delete_review_item", {appraisal: _pr.appraisal, row: row, acknowledge: 1})
+      : pf("remove_review_item", {appraisal: _pr.appraisal, row: row, reason: reason, acknowledge: 1});
+    call.then(function() {
+      pfCloseModal("ri-remove-modal");
+      document.getElementById("ri-remove-reason-field").style.display = "";
+      riReload();
+    }).catch(function(e) {
+      pfShowErr("ri-remove-error", (e && e.message) || "The item could not be removed.");
+    }).finally(function() { btn.disabled = false; btn.textContent = "Remove it"; });
+  };
+
+  /* ── Rate one item, on its copy (VIS-6, R13) ── */
+
+  window.riSaveItemRating = function(rowName) {
+    var rating  = document.getElementById("ri-r-" + rowName);
+    var comment = document.getElementById("ri-c-" + rowName);
+    var pot     = document.getElementById("ri-p-" + rowName);
+    var msg     = document.getElementById("ri-msg-" + rowName);
+    var args = {appraisal: _pr.appraisal, row: rowName,
+                rating: rating ? rating.value : "", comment: comment ? comment.value : ""};
+    if (pot && pot.value !== "") args.potential_rating = pot.value;
+    if (msg) msg.textContent = "Saving…";
+    pf("save_review_item_rating", args).then(function() {
+      if (msg) { msg.textContent = "Saved"; setTimeout(function() { if (msg) msg.textContent = ""; }, 2000); }
+    }).catch(function(e) {
+      if (msg) msg.textContent = (e && e.message) || "Could not save this rating.";
+    });
+  };
+
+  /* Fill empty manager ratings from measured attainment on the copies. */
+  window.riSuggestRatings = function() {
+    if (!_pr.data) return;
+    pf("suggest_ratings", {employee: _pr.data.employee, cycle: _pr.data.cycle && _pr.data.cycle.name})
+      .then(function(rows) {
+        (rows || []).forEach(function(r) {
+          var el = document.getElementById("ri-r-" + r.item);
+          if (el && !el.value) el.value = r.suggested_rating;
+        });
+        gpShowToast("Empty ratings filled from measured attainment. Check each one, then save it.");
+      }).catch(function(e) { gpShowToast((e && e.message) || "Could not suggest ratings.", "error"); });
+  };
+
+  /* ── A rating given on numbers that changed since (R7, decisions 12, 13) ── */
+
+  window.riAnswerFlag = function(target, keep) {
+    var rating = "";
+    if (!keep) {
+      var el = document.getElementById("ri-r-" + target);
+      rating = el ? el.value : "";
+      if (target === "overall") {
+        var ov = document.getElementById("mgr-overall-rating");
+        rating = ov ? ov.value : "";
+      }
+      if (!rating) { gpShowToast("Choose the new rating first, then say it has changed.", "error"); return; }
+    }
+    var reason = "";
+    if (_pr.viewerRole === "hr") {
+      reason = prompt("Why is HR answering for this rating?") || "";
+      if (!reason.trim()) return;
+    }
+    pf("answer_rating_flag", {appraisal: _pr.appraisal, target: target,
+                              keep: keep ? 1 : 0, rating: rating, reason: reason})
+      .then(function() { riReload(); })
+      .catch(function(e) { gpShowToast((e && e.message) || "The answer could not be saved.", "error"); });
+  };
+
+  /* ── Shared bits of markup ── */
+
+  /* "In review · updates dated after 30 Sep 2026 don't change it" (R5).
+     No review name, no rating, no link: everyone who sees the record sees it. */
+  window.riReviewBadge = function(badge) {
+    if (!badge || !badge.in_review) return "";
+    var text = badge.updates_after
+      ? "In review · updates dated after " + gpFmtDate(badge.updates_after) + " don't change it"
+      : "In review";
+    return "<span class=\"tv-incycle\" title=\"" + gpEsc(text) + "\">" + gpEsc(text) + "</span>";
+  };
+
+  /* What changed inside the review, in words, never colour alone. */
+  function riChangeNote(it) {
+    var changed = it && it.definition_changed;
+    if (!changed) return "";
+    var labels = {title: "name", target_value: "target", weightage: "weight",
+                  period_start: "period start", period_end: "period end"};
+    var parts = Object.keys(changed).map(function(f) { return labels[f] || f; });
+    if (!parts.length) return "";
+    return "<div style=\"font-size:var(--fs-xs);color:var(--amber);margin-top:3px\">" +
+      "<i class=ic-edit></i> Changed in this review: " + gpEsc(parts.join(", ")) + "</div>";
+  }
+
+  /* A rating question on this item, for the manager and HR (R7). */
+  function riFlagNote(it) {
+    if (!it || !_pr.viewerRole) return "";
+    var out = "";
+    if (it.self_flag) {
+      out += "<div style=\"font-size:var(--fs-xs);color:var(--text3);margin-top:3px\">" +
+        "<i class=ic-info></i> The employee rated this before the numbers changed. " +
+        "This is for information: it does not block the review.</div>";
+    }
+    if (it.manager_flag) {
+      out += "<div style=\"font-size:var(--fs-xs);color:var(--amber);margin-top:4px\">" +
+        "<i class=ic-alert></i> This rating was given when the numbers were different. " +
+        "It is now " + gpEsc(pfNum(it.actual_value, 2) + " of " + pfNum(it.target_value, 2)) + ". " +
+        "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs);padding:2px 8px;margin-left:6px\" " +
+          "onclick=\"riAnswerFlag('" + gpEsc(it.name) + "',1)\">Keep the rating</button> " +
+        "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs);padding:2px 8px\" " +
+          "onclick=\"riAnswerFlag('" + gpEsc(it.name) + "',0)\">Use the rating I typed</button>" +
+        "</div>";
+    }
+    return out;
+  }
+
+  /* The manager's rating box for one copy. */
+  function riManagerRatingHtml(it) {
+    if (!_pr.viewerRole) return "";
+    var can = riCanRateAsManager();
+    var rating = it.manager_rating != null ? it.manager_rating : "";
+    var comment = it.manager_comment || "";
+    var pot = it.potential_rating != null ? it.potential_rating : "";
+    return "<div class=\"pr-kpi-assess\" style=\"margin-top:8px\">" +
+      "<div class=\"pr-kpi-comment-wrap\">" +
+        "<label class=\"pr-rating-lbl\" for=\"ri-c-" + gpEsc(it.name) + "\">Manager comment</label>" +
+        "<textarea id=\"ri-c-" + gpEsc(it.name) + "\" class=\"pr-kpi-comment\" " +
+          "placeholder=\"Your comment on this item…\"" + (can ? "" : " readonly") + ">" + gpEsc(comment) + "</textarea>" +
+      "</div>" +
+      "<div class=\"pr-rating-wrap\">" +
+        "<label class=\"pr-rating-lbl\" for=\"ri-r-" + gpEsc(it.name) + "\">Manager rating</label>" +
+        "<input id=\"ri-r-" + gpEsc(it.name) + "\" type=\"number\" class=\"pr-rating-inp\" min=\"1\" max=\"5\" step=\"0.5\" " +
+          "value=\"" + gpEsc(rating + "") + "\" placeholder=\"1–5\"" + (can ? "" : " readonly") + ">" +
+      "</div>" +
+      "<div class=\"pr-rating-wrap\">" +
+        "<label class=\"pr-rating-lbl\" for=\"ri-p-" + gpEsc(it.name) + "\">Potential</label>" +
+        "<input id=\"ri-p-" + gpEsc(it.name) + "\" type=\"number\" class=\"pr-rating-inp\" min=\"1\" max=\"5\" step=\"0.5\" " +
+          "value=\"" + gpEsc(pot + "") + "\" placeholder=\"1–5\"" + (can ? "" : " readonly") + ">" +
+      "</div>" +
+      (can
+        ? "<div style=\"display:flex;align-items:center;gap:8px;margin-top:4px\">" +
+            "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs)\" " +
+              "onclick=\"riSaveItemRating('" + gpEsc(it.name) + "')\">Save rating</button>" +
+            "<span id=\"ri-msg-" + gpEsc(it.name) + "\" style=\"font-size:var(--fs-xs);color:var(--text3)\"></span>" +
+          "</div>"
+        : "") +
+      riFlagNote(it) +
+    "</div>";
+  }
+
+  /* Edit and Remove for one copy, shown only when the server would allow it. */
+  function riItemActions(it) {
+    var html = "";
+    if (riCanEditDefinition()) {
+      html += "<button class=\"tv-icon\" title=\"Change this item in the review\" " +
+        "onclick=\"event.stopPropagation();riOpenEditItem('" + gpEsc(it.name) + "')\">" + TV_ICON.edit + "</button>";
+    }
+    if (riCanRemove()) {
+      html += "<button class=\"tv-icon tv-danger\" title=\"Remove from this review\" " +
+        "onclick=\"event.stopPropagation();riOpenRemove('" + gpEsc(it.name) + "')\">" + TV_ICON.del + "</button>";
+    }
+    return html ? "<div class=\"tv-acts\" style=\"opacity:1;display:flex;gap:4px\">" + html + "</div>" : "";
+  }
+
+  /* Items taken out of this review, struck through with who, when and why. */
+  window.riRemovedHtml = function(d) {
+    var rows = (d && d.removed_items) || [];
+    if (!rows.length) return "";
+    var items = rows.map(function(r) {
+      var who = r.removed_by ? " by " + gpEsc(r.removed_by) : "";
+      var when = r.removed_on ? " on " + gpFmtDate(r.removed_on) : "";
+      return "<div style=\"padding:8px 0;border-bottom:1px solid var(--border);font-size:var(--fs-sm)\">" +
+        "<span style=\"text-decoration:line-through;color:var(--text3)\">" + gpEsc(r.title || r.name) + "</span> " +
+        "<span class=\"tv-badge\" style=\"background:var(--surface2);color:var(--text2)\">Removed</span>" +
+        "<div style=\"color:var(--text3);margin-top:2px\">Removed" + who + when +
+          (r.removal_reason ? ": " + gpEsc(r.removal_reason) : ". No reason was given.") + "</div>" +
+      "</div>";
+    }).join("");
+    return "<div class=\"pr-section-hdr\" style=\"margin-top:20px\">Taken out of this review</div>" +
+      "<div class=\"pf-card\" style=\"padding:4px 16px\">" + items + "</div>";
+  };
+
+  /* The numbers are closed; and, for HR, what cannot be finished yet. */
+  window.riReviewNotesHtml = function(d) {
+    var html = "";
+    if (d && d.numbers_frozen) {
+      html += "<div class=\"callout\" style=\"margin-bottom:12px\">The numbers in this review are closed. " +
+        "Later updates to the live records do not change them.</div>";
+    }
+    var open = parseInt((d && d.open_blocking_flags) || 0, 10) || 0;
+    if (open) {
+      html += "<div class=\"callout callout-warn\" style=\"margin-bottom:12px\">" +
+        gpEsc(open + (open === 1 ? " rating was" : " ratings were")) +
+        " given on numbers that changed since. They must be kept or changed before this review can be completed." +
+      "</div>";
+    }
+    return html;
+  };
+
+  /* Reload the review after a change, whichever screen is open. */
+  function riReload() {
+    if (_pr.viewerRole) {
+      pf("get_manager_review", {appraisal: _pr.appraisal}).then(function(d) {
+        _pr.data = d;
+        prShowPage(_pr.currentIdx);
+      }).catch(function(e) { gpShowToast((e && e.message) || "Could not reload the review.", "error"); });
+    } else {
+      prRefreshCurrentPage();
+    }
+  }
 
   /* ── Future Development Plan ─────────────────────── */
 
@@ -15637,7 +16060,9 @@ function deleteDrawerNote(noteId, empId) {
     if (nextBtn) nextBtn.style.display = "";
     /* pre-load the employee list once so searches feel instant */
     if (!_prEmpCache) {
-      pf("search_employees", {query: ""}).then(function(rows) { _prEmpCache = rows || []; });
+      /* Naming the review makes the search run in the reviewed person's
+         company, so a skip-level manager finds the right people (SEC-7). */
+      pf("search_employees", {query: "", appraisal: _pr.appraisal}).then(function(rows) { _prEmpCache = rows || []; });
     }
   }
 
@@ -15694,7 +16119,7 @@ function deleteDrawerNote(noteId, empId) {
 
   window.prOpenReviewerList = function() {
     if (!_prEmpCache) {
-      pf("search_employees", {query: ""}).then(function(rows) {
+      pf("search_employees", {query: "", appraisal: _pr.appraisal}).then(function(rows) {
         _prEmpCache = rows || [];
         prFilterReviewerList();
       });
@@ -15897,9 +16322,22 @@ function deleteDrawerNote(noteId, empId) {
       "</div>";
     }
 
+    /* The overall rating was given on numbers that have changed since (R7,
+       decision 12). It must be kept or changed before HR can complete. */
+    var overallFlagHtml = d.overall_rating_flag
+      ? "<div class=\"callout callout-warn\" style=\"margin-bottom:16px\">" +
+          "This overall rating was given when the numbers in the review were different. " +
+          "Keep it, or pick a new one above and say it has changed." +
+          "<div style=\"margin-top:8px\">" +
+            "<button class=\"btn btn-outline btn-sm\" onclick=\"riAnswerFlag('overall',1)\">Keep the rating</button> " +
+            "<button class=\"btn btn-outline btn-sm\" onclick=\"riAnswerFlag('overall',0)\">Use the rating I picked</button>" +
+          "</div>" +
+        "</div>"
+      : "";
+
     var html = "<div class=\"pr-page-title\">Rate &amp; Submit</div>" +
       "<div class=\"pr-page-sub\">Provide overall ratings, optionally share reviewer comments, then submit your review to the employee.</div>" +
-      overallHtml + potentialHtml +
+      overallHtml + potentialHtml + overallFlagHtml +
       "<div style=\"margin-bottom:20px;display:flex;align-items:center;gap:10px\">" +
         "<input type=\"checkbox\" id=\"mgr-reviewer-visible\" " + visChecked + " style=\"width:16px;height:16px\">" +
         "<label for=\"mgr-reviewer-visible\" style=\"font-size:var(--fs-base);color:var(--text2)\">Show invited reviewer comments to employee</label>" +
@@ -15982,8 +16420,21 @@ function deleteDrawerNote(noteId, empId) {
       "</div>";
     }
 
+    /* HR cannot finish while a rating is waiting for an answer (R7, SEC-23).
+       Saying so here beats a refusal after the click. */
+    var open = parseInt(d.open_blocking_flags || 0, 10) || 0;
+    var blockHtml = open
+      ? "<div class=\"callout callout-warn\" style=\"margin-bottom:16px\">" +
+          gpEsc(open + (open === 1 ? " rating was" : " ratings were")) +
+          " given on numbers that changed since. The manager who gave " + (open === 1 ? "it" : "them") +
+          " must keep or change " + (open === 1 ? "it" : "them") + " before this review can be completed. " +
+          "Open the earlier pages of this review to see which." +
+        "</div>"
+      : "";
+
     var html = "<div class=\"pr-page-title\">Finalize Review</div>" +
       "<div class=\"pr-page-sub\">Review the manager's assessment below, then click <strong>Finish Review</strong> to complete this appraisal. The employee will be notified.</div>" +
+      blockHtml +
       (d.manager_feedback
         ? "<div style=\"background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r);padding:20px;margin-bottom:16px\">" +
             "<div style=\"font-size:var(--fs-sm);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px\">Manager Feedback</div>" +
@@ -15991,7 +16442,9 @@ function deleteDrawerNote(noteId, empId) {
           "</div>"
         : "") +
       (ratingsHtml ? "<div style=\"margin-bottom:20px\">" + ratingsHtml + "</div>" : "") +
-      "<button id=\"hr-finish-btn\" class=\"btn btn-primary\" onclick=\"prFinishHrReview()\" style=\"width:100%\">&#10003;&nbsp; Finish Review</button>" +
+      "<button id=\"hr-finish-btn\" class=\"btn btn-primary\" onclick=\"prFinishHrReview()\" style=\"width:100%\"" +
+        (open ? " disabled title=\"A rating is still waiting for an answer.\"" : "") +
+        ">&#10003;&nbsp; Finish Review</button>" +
       "<div id=\"hr-finish-msg\" style=\"margin-top:12px;font-size:var(--fs-base)\"></div>";
     document.getElementById("pr-content").innerHTML = html;
     var nextBtn = document.getElementById("pr-next-btn");
@@ -16317,6 +16770,56 @@ function deleteDrawerNote(noteId, empId) {
       if (kchk) kchk.checked = (res[3] === "1" || res[3] === 1 || res[3] === true);
     }).catch(function(e) {
       pfSetHtml("org-values-body", "<div class=\"callout callout-warn\">Failed to load: " + gpEsc(e.message) + "</div>");
+    });
+  };
+
+  /* ── The three review settings (slice 010 group D, decision 23) ──
+     They live on HR Settings, which keeps a history of every change. Only an
+     HR Manager may save them; an HR User sees them read-only, and anyone else
+     never sees this screen at all. */
+
+  window.riLoadSettings = function() {
+    pf("get_review_settings", {}).then(function(s) {
+      var card = document.getElementById("org-review-card");
+      if (card) card.style.display = "";
+      function fill(id, options, value) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.innerHTML = options.map(function(o) {
+          return "<option value=\"" + gpEsc(o) + "\"" + (o === value ? " selected" : "") + ">" + gpEsc(o) + "</option>";
+        }).join("");
+        el.disabled = !s.can_edit;
+      }
+      fill("org-review-freeze", s.freeze_points || [], s.freeze_point);
+      fill("org-review-removal", s.removal_modes || [], s.removal_mode);
+      var lock = document.getElementById("org-review-lock");
+      if (lock) { lock.value = s.lock_release_days; lock.disabled = !s.can_edit; }
+      var save = document.getElementById("org-review-save");
+      if (save) save.style.display = s.can_edit ? "" : "none";
+      pfSetHtml("org-review-msg", s.can_edit ? "" :
+        "<span style=\"color:var(--text3)\">Only an HR Manager can change these.</span>");
+    }).catch(function() {
+      /* Not HR for this site: the card simply is not there. */
+      var card = document.getElementById("org-review-card");
+      if (card) card.style.display = "none";
+    });
+  };
+
+  window.riSaveSettings = function() {
+    var btn = document.getElementById("org-review-save");
+    if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
+    pf("save_review_settings", {
+      freeze_point:      pfVal("org-review-freeze"),
+      lock_release_days: pfVal("org-review-lock"),
+      removal_mode:      pfVal("org-review-removal"),
+    }).then(function() {
+      pfSetHtml("org-review-msg", "<span style=\"color:var(--green)\">Saved.</span>");
+      setTimeout(function() { pfSetHtml("org-review-msg", ""); }, 3000);
+    }).catch(function(e) {
+      pfSetHtml("org-review-msg", "<span style=\"color:var(--danger,var(--red))\">" +
+        gpEsc((e && e.message) || "The settings could not be saved.") + "</span>");
+    }).finally(function() {
+      if (btn) { btn.disabled = false; btn.textContent = "Save review settings"; }
     });
   };
 

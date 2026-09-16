@@ -835,7 +835,8 @@ def get_team_reviews(cycle=None):
     for ext in frappe.get_all(
         "Alvoraa Appraisal Extension",
         filters={"appraisal": ["in", appraisal_names]},
-        fields=["appraisal", "review_status", "overall_rating", "potential_rating"],
+        fields=["appraisal", "review_status", "overall_rating", "potential_rating",
+                "overall_rating_flag"],
     ):
         ext_map[ext["appraisal"]] = ext
 
@@ -862,6 +863,12 @@ def get_team_reviews(cycle=None):
                 "review_status":  ext.get("review_status") or "Not Started",
                 "overall_rating": overall,
                 "potential_rating": potential,
+                # The overall rating was given on numbers that changed since, and
+                # is waiting to be kept or changed (R7). Only to whoever may see
+                # the rating itself; never on the subject's own row.
+                "rating_needs_answer": (
+                    cint(ext.get("overall_rating_flag")) if (overall is not None and emp_id != me) else 0
+                ),
                 "start_date":     ap.get("start_date") or "",
                 "end_date":       ap.get("end_date") or "",
             })

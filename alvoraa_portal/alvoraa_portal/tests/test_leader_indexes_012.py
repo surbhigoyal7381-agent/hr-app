@@ -1,4 +1,4 @@
-"""Slice 012 push 1 · the eight indexes exist, and survive Frappe re-syncing the tables.
+"""Slice 012 push 1 · the indexes exist, and survive Frappe re-syncing the tables.
 
 US-1 (AC-1, AC-2), OPS-52, OPS-70, OPS-71. The survival test is the one that
 matters: CI builds its site with `install-app` and never re-syncs Employee, so a
@@ -27,7 +27,7 @@ def _first_columns(doctype):
 
 
 class TestTheEightIndexes(FrappeTestCase):
-	def assertAllEight(self):
+	def assertEveryIndex(self):
 		for doctype, field in data_review.SINGLE_COLUMN_INDEXES:
 			self.assertIsNotNone(
 				frappe.db.get_column_index(f"tab{doctype}", field),
@@ -45,9 +45,9 @@ class TestTheEightIndexes(FrappeTestCase):
 				                    "value"),
 				"1", f"{doctype}.{field} is not marked indexed")
 
-	def test_install_creates_all_eight_indexes(self):
+	def test_install_creates_every_index(self):
 		"""AC-1."""
-		self.assertAllEight()
+		self.assertEveryIndex()
 		self.assertMarked()
 
 	def test_running_again_adds_and_changes_nothing(self):
@@ -66,7 +66,7 @@ class TestTheEightIndexes(FrappeTestCase):
 		for dt in ("Employee", "Employee Checkin", "Attendance"):
 			frappe.clear_cache(doctype=dt)
 			frappe.db.updatedb(dt)
-		self.assertAllEight()
+		self.assertEveryIndex()
 		self.assertMarked()
 
 	def test_the_resync_really_drops_an_unmarked_index(self):
@@ -84,7 +84,7 @@ class TestTheEightIndexes(FrappeTestCase):
 		finally:
 			data_review.add_indexes()
 			frappe.clear_cache(doctype=doctype)
-		self.assertAllEight()
+		self.assertEveryIndex()
 		self.assertMarked()
 
 	def test_the_hook_marks_fields_during_migrate_too(self):
@@ -95,7 +95,7 @@ class TestTheEightIndexes(FrappeTestCase):
 			data_review.add_indexes()
 		finally:
 			frappe.flags.in_migrate = saved
-		self.assertAllEight()
+		self.assertEveryIndex()
 		self.assertMarked()
 
 	def test_the_hook_lists_run_after_the_branch_column_installer(self):

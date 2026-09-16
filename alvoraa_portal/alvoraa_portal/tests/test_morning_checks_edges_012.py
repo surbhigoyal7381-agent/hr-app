@@ -13,7 +13,6 @@
 """
 
 import json
-import unittest
 from unittest.mock import patch
 
 import frappe
@@ -253,14 +252,12 @@ class TestConfirmationsSurviveFixedData(EdgeCase):
 
 
 class TestAnOldDoubtfulDay(EdgeCase):
-	@unittest.expectedFailure
 	def test_fixing_a_day_older_than_the_window_still_clears_it(self):
-		"""DEFECT 012-T2 (found by the test engineer, 2026-09-15). AC-18 has no time limit.
+		"""DEF-2, fixed 2026-09-16. AC-18 has no time limit.
 
-		existing_items() only loads D5 records inside the last 35 days, so an Open
-		doubtful day that HR fixes after 35 days is never Cleared: it stays Open for
-		ever, on HR's list and in the "N figures need review" count. Remove
-		expectedFailure when fixed.
+		A doubtful day HR fixes more than 35 days later used to stay Open for ever:
+		on HR's list and in the "N figures need review" count. The check now looks
+		again at the days of records that are still Open, however old they are.
 		"""
 		b = fx.branch("Old")
 		old = add_days(AS_OF, -40)

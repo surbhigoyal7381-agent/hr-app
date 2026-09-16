@@ -2,7 +2,7 @@
 
 Push 1 of the leadership view. Three things live here:
 
-  indexes           the eight indexes every scoped figure filters on
+  indexes           the nine indexes every scoped figure filters on
   morning checks    doubtful attendance days, leave that looks unrecorded,
                     leavers with no leaving date
   Data to review    HR's list of those findings, and their confirmations
@@ -53,6 +53,27 @@ def item_filters(scope, **extra):
 	return filters
 
 
+def open_count_for_hr():
+	"""How many figures need review in this HR user's scope, for the menu badge.
+
+	One permission-checked read, only for a tenant whose plan includes analytics.
+	Never raises: a badge is not worth breaking the portal for (DEF-3, AC-31).
+	"""
+	try:
+		from alvoraa_portal import org_figures as of
+		from alvoraa_portal.subscription import has_feature
+
+		if not has_feature("analytics"):
+			return 0
+		scope = of.hr_scope()
+		if scope.not_linked:
+			return 0
+		return len(frappe.get_list(DOCTYPE, filters=item_filters(scope, status="Open"),
+		                           pluck="name", limit_page_length=MAX_ITEMS))
+	except Exception:
+		return 0
+
+
 def review_summary(scope):
 	"""How many figures need review in this scope, and which days look wrong (AC-17, AC-46).
 
@@ -88,11 +109,16 @@ SINGLE_COLUMN_INDEXES = (
 TWO_COLUMN_INDEXES = (
 	("Employee Checkin", ("alvoraa_branch", "time")),
 	("Attendance", ("alvoraa_branch", "attendance_date")),
+	# Added 2026-09-16 (DEF-7). OPS-55 said this one waits until EXPLAIN shows a
+	# full scan: at 1,000 people it did. "Data up to" and the job's "has this
+	# company any attendance" read the whole Attendance table without it, and both
+	# run on every call.
+	("Attendance", ("company", "attendance_date")),
 )
 
 
 def add_indexes():
-	"""Create the eight indexes. Safe to run again: it changes nothing then."""
+	"""Create the nine indexes. Safe to run again: it changes nothing then."""
 	from frappe.custom.doctype.property_setter.property_setter import make_property_setter
 
 	for doctype, field in SINGLE_COLUMN_INDEXES:
@@ -189,9 +215,11 @@ def run_morning_checks(companies=None):
 	for company in companies or frappe.get_all("Company", pluck="name", order_by="name asc"):
 		stage = {"now": "start"}
 		try:
-			findings = company_findings(company, minimum, as_of, stage=stage)
+			existing = existing_items(company, as_of)
+			findings = company_findings(company, minimum, as_of, stage=stage,
+			                            also_days=_open_doubtful_days(existing))
 			stage["now"] = "save"
-			apply_findings(existing_items(company, as_of), findings, allow_create=True)
+			apply_findings(existing, findings, allow_create=True)
 			frappe.db.commit()
 		except Exception as e:
 			frappe.db.rollback()
@@ -221,10 +249,14 @@ def _finding(rule, item_type, company, branch=None, check_date=None, **counts):
 	        **{f: counts.get(f, 0) for f in COUNT_FIELDS}}
 
 
-def company_findings(company, minimum, as_of, rules=("D5",) + DAILY_RULES, branches=None, stage=None):
+def company_findings(company, minimum, as_of, rules=("D5",) + DAILY_RULES, branches=None, stage=None,
+                     also_days=None):
 	"""{record name: finding} for the rules asked, for one company. Grouped queries only.
 
 	`branches` limits D18-1 to those branches (location HR's page re-check).
+	`also_days` is (branch, day) pairs outside the 35-day window that must be
+	looked at as well - the days of records still Open from an earlier run. Left
+	out, they are read here; the job and the page pass the ones they already hold.
 	"""
 	from alvoraa_portal import org_figures as of
 
@@ -237,7 +269,9 @@ def company_findings(company, minimum, as_of, rules=("D5",) + DAILY_RULES, branc
 
 	if "D5" in rules:
 		stage["now"] = "doubtful days"
-		out.update(_doubtful_days(company, minimum, as_of))
+		if also_days is None:
+			also_days = _open_doubtful_days_before(company, add_days(as_of, -WINDOW_DAYS), branches)
+		out.update(_doubtful_days(company, minimum, as_of, also_days=also_days))
 
 	if "D6" in rules or "D18-2" in rules:
 		stage["now"] = "leave"
@@ -273,8 +307,9 @@ def company_findings(company, minimum, as_of, rules=("D5",) + DAILY_RULES, branc
 	return out
 
 
-def _doubtful_days(company, minimum, as_of):
-	"""D5 for every named branch and day in the window. Three queries for the company.
+def _doubtful_days(company, minimum, as_of, also_days=()):
+	"""D5 for every named branch and day in the window. Three queries for the company,
+	and a fourth only when a record older than the window is still Open.
 
 	Employees with no branch are not checked (decision D-12).
 	"""
@@ -291,9 +326,31 @@ def _doubtful_days(company, minimum, as_of):
 		group by a.alvoraa_branch, a.attendance_date
 		having expected >= %(minimum)s and absent * 100 >= expected * {absent_pct}
 	""".format(absent_pct=ABSENT_PCT), params, as_dict=True)
+
+	older = sorted({(b, getdate(d)) for b, d in also_days if b and getdate(d) < getdate(start)})
+	if older:
+		# The same rule, for named days only. A day whose data has since been fixed
+		# does not come back, and its record is Cleared below.
+		rows = frappe.db.sql("""
+			select a.alvoraa_branch as branch, a.attendance_date as day,
+			       sum(a.status != 'On Leave') as expected, sum(a.status = 'Absent') as absent
+			from `tabAttendance` a
+			where a.docstatus = 1 and a.company = %(company)s
+			  and a.alvoraa_branch in %(old_branches)s
+			  and a.attendance_date in %(old_days)s
+			group by a.alvoraa_branch, a.attendance_date
+			having expected >= %(minimum)s and absent * 100 >= expected * {absent_pct}
+		""".format(absent_pct=ABSENT_PCT),
+			{**params, "old_branches": sorted({b for b, _d in older}),
+			 "old_days": sorted({d for _b, d in older})}, as_dict=True)
+		days += [r for r in rows if (r.branch, getdate(r.day)) in older]
+
 	if not days:
 		return {}
 
+	# Check-ins are read from the oldest day being looked at, so a re-checked
+	# old day is judged on its own check-ins.
+	params = {**params, "start": min([getdate(d.day) for d in days] + [getdate(start)])}
 	any_checkins = frappe.db.sql("""
 		select 1 from `tabEmployee Checkin` c
 		join `tabEmployee` e on e.name = c.employee
@@ -333,9 +390,14 @@ def existing_items(company, as_of, rules=("D5",) + DAILY_RULES, branches=None):
 	if branches is not None:
 		base["alvoraa_branch"] = ["in", list(branches) or [""]]
 	if "D5" in rules:
-		for r in frappe.get_all(DOCTYPE, filters={**base, "rule": "D5",
-		                                          "check_date": [">=", add_days(as_of, -WINDOW_DAYS)]},
-		                        fields=fields, limit_page_length=0):
+		# Inside the window, plus every Open record older than it. Without the
+		# second half, a doubtful day HR fixed after 35 days stayed Open for ever:
+		# on their list, in the "needs review" count, and clearable only by saying
+		# the absence was real, which would be untrue.
+		for r in frappe.get_all(
+			DOCTYPE, filters={**base, "rule": "D5"},
+			or_filters=[["check_date", ">=", add_days(as_of, -WINDOW_DAYS)], ["status", "=", "Open"]],
+			fields=[*fields, "alvoraa_branch", "check_date"], limit_page_length=0):
 			out[r.name] = r
 	daily = [r for r in rules if r in DAILY_RULES]
 	if daily:
@@ -343,6 +405,22 @@ def existing_items(company, as_of, rules=("D5",) + DAILY_RULES, branches=None):
 		                        limit_page_length=0):
 			out[r.name] = r
 	return out
+
+
+def _open_doubtful_days_before(company, start, branches=None):
+	"""(branch, day) of doubtful-day records still Open from before the window."""
+	filters = {"company": company, "rule": "D5", "status": "Open", "check_date": ["<", start]}
+	if branches is not None:
+		filters["alvoraa_branch"] = ["in", list(branches) or [""]]
+	return [(r.alvoraa_branch, r.check_date) for r in frappe.get_all(
+		DOCTYPE, filters=filters, fields=["alvoraa_branch", "check_date"], limit_page_length=0)]
+
+
+def _open_doubtful_days(existing):
+	"""(branch, day) of every doubtful-day record still Open, so a day outside the
+	window is looked at again and can clear."""
+	return [(r.get("alvoraa_branch"), r.get("check_date")) for r in existing.values()
+	        if r.get("rule") == "D5" and r.get("status") == "Open" and r.get("check_date")]
 
 
 def apply_findings(existing, findings, allow_create):
@@ -367,6 +445,10 @@ def apply_findings(existing, findings, allow_create):
 				pass            # another run made it a moment ago
 			continue
 		if row.status == "Confirmed":
+			continue
+		if row.status == "Cleared" and not allow_create:
+			# Decision D-5: HR opening the page clears records; it never brings one
+			# back. A finding that fires again is re-opened by the morning run.
 			continue
 		counts_differ = any(flt(row.get(k), 2) != flt(f[k], 2) for k in COUNT_FIELDS)
 		if row.status == "Cleared" or counts_differ:
@@ -443,8 +525,9 @@ def recheck(scope, as_of=None):
 	as_of = getdate(as_of or today())
 	rules = DAILY_RULES if scope.branches is None else ("D18-1",)
 	for company in scope.companies:
-		findings = company_findings(company, 0, as_of, rules=rules, branches=scope.branches)
 		existing = existing_items(company, as_of, rules=rules, branches=scope.branches)
+		findings = company_findings(company, 0, as_of, rules=rules, branches=scope.branches,
+		                            also_days=_open_doubtful_days(existing))
 		apply_findings(existing, findings, allow_create=False)
 
 

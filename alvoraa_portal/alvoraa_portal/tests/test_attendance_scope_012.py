@@ -114,6 +114,16 @@ class TestPersonIsScoped(G3Case):
 			aa.person(elsewhere)
 		self.assertEqual(aa.person(self.station_cashier)["employee"], self.station_cashier)
 
+	def test_store_hr_cannot_open_someone_with_no_branch(self):
+		"""DEF-6 (2026-09-16): Frappe's User Permissions are not strict, so an empty
+		branch used to pass a Branch permission. HR Analytics leaves those people out
+		for store HR (D-8); person() and filter_options now do the same.
+		"""
+		head_office = self.person("HeadOfficeG3", None)
+		frappe.set_user(self.store_hr)
+		with self.assertRaises(frappe.PermissionError):
+			aa.person(head_office)
+
 	def test_a_long_range_is_cut_to_twelve_months(self):
 		"""AC-48."""
 		frappe.set_user(self.store_hr)
@@ -156,6 +166,10 @@ class TestFilterOptionsAreScoped(G3Case):
 		frappe.set_user(store_hr)
 		opts = aa.filter_options()
 		self.assertEqual(opts["branch"], [LAKESIDE])
+		# DEF-6: a no-branch colleague's manager and department stay out too.
+		no_branch_mgr = self.person("NoBranchMgrG3", None)
+		self.person("NoBranchStaffG3", None, reports_to=no_branch_mgr)
+		self.assertNotIn(no_branch_mgr, {m["id"] for m in aa.filter_options()["manager"]})
 		ids = {m["id"] for m in opts["manager"]}
 		self.assertIn(lake_mgr, ids)
 		self.assertNotIn(station_mgr, ids)

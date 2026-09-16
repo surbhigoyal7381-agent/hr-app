@@ -459,6 +459,10 @@ def filter_options():
 	base = {"status": "Active"}
 	if me and me.company:
 		base["company"] = me.company
+	branches = _linked_branches()
+	if branches is not None:
+		# Same rule as person(): no-branch staff are outside a store HR's scope.
+		base["branch"] = ("in", branches)
 	# Slice 012 G3 (SEC-17): the same read the organisation list uses, so a
 	# store's HR person gets their store's departments and managers, not every
 	# store's manager names.
@@ -485,6 +489,22 @@ def filter_options():
 	}
 
 
+def _linked_branches(user=None):
+	"""The branches a location HR person is limited to, or None for everyone else.
+
+	Frappe's User Permissions are not strict on this site, so a record with an
+	EMPTY branch passes a Branch permission. Employees with no branch - often
+	head office - were therefore openable by a store's HR person, while HR
+	Analytics leaves the same people out of their figures (decision D-8). The
+	two screens now agree, and this one fails closed (DEF-6, 2026-09-16).
+	"""
+	from frappe.core.doctype.user_permission.user_permission import get_user_permissions
+
+	branches = sorted({p.get("doc") for p in get_user_permissions(user).get("Branch", [])
+	                   if p.get("doc") and p.get("applicable_for") in (None, "", "Employee")})
+	return branches or None
+
+
 def _org_read():
 	"""get_list, so User Permissions apply - except for System Manager.
 
@@ -508,6 +528,9 @@ def _in_organisation(employee, me):
 	f = {"name": employee}
 	if me and me.company:
 		f["company"] = me.company
+	branches = _linked_branches()
+	if branches is not None:
+		f["branch"] = ("in", branches)      # an empty branch is not one of them
 	return bool(_org_read()("Employee", filters=f, pluck="name", limit=1))
 
 

@@ -329,21 +329,57 @@ def get_my_kpis(cycle=None, include_team=0):
     }
 
 
+# How far back a reading may be dated when the KPI has no period of its own.
+READING_DATE_MAX_DAYS_BACK = 366
+
+
+def _reading_date(doc, log_date):
+    """The date a KPI reading is for (slice 010 group D, decision 2).
+
+    Blank means today. Otherwise it must be a real date, not after today (the
+    server's date), and not before the KPI's period start - or, for a KPI with
+    no period, not more than a year back. A date after the period end is
+    allowed: people log late, and the review counts only dates inside its own
+    period anyway (R3).
+    """
+    if not log_date:
+        return getdate(today())
+    try:
+        day = getdate(log_date)
+    except Exception:
+        frappe.throw(frappe._("Choose the date this reading is for."))
+    if day > getdate(today()):
+        frappe.throw(frappe._("A reading cannot be dated in the future. Choose today or an earlier day."))
+    earliest = getdate(doc.period_start) if doc.period_start else getdate(frappe.utils.add_days(today(), -READING_DATE_MAX_DAYS_BACK))
+    if day < earliest:
+        frappe.throw(frappe._("A reading cannot be dated before {0}. Choose {0} or a later day.").format(
+            frappe.utils.formatdate(earliest)))
+    return day
+
+
 @frappe.whitelist()
-def log_kpi_progress(kpi, value, note="", evidence_url=None):
-    """Append a dated reading, set approval pending, and notify the manager."""
+def log_kpi_progress(kpi, value, note="", evidence_url=None, log_date=None):
+    """Append a dated reading, set approval pending, and notify the manager.
+
+    The portal asks for the amount since the last update on a Cumulative KPI
+    and for the current reading on an Absolute one (decision 1), and lets the
+    person say which day the reading is for (decision 2).
+    """
     doc = frappe.get_doc("KPI", kpi)
     _require_owns(doc.employee)
 
     if doc.status in ("Cancelled",):
         frappe.throw("This KPI is cancelled and no longer accepts progress updates.")
 
+    day = _reading_date(doc, log_date)
+
     # Private, uploaded by the caller, and attached to this KPI - or refused (SEC-4).
     from alvoraa_goals.controllers.evidence import claim_evidence_file
     evidence_url = claim_evidence_file(evidence_url, "KPI", doc.name, "performance_api.log_kpi_progress")
     ev_missing = 1 if not evidence_url else 0
+    latest = max((getdate(r.log_date) for r in (doc.progress_log or []) if r.log_date), default=None)
     row = doc.append("progress_log", {
-        "log_date":        today(),
+        "log_date":        day,
         "value":           flt(value),
         "note":            note,
         "logged_by":       frappe.session.user,
@@ -351,7 +387,14 @@ def log_kpi_progress(kpi, value, note="", evidence_url=None):
         "evidence_missing": ev_missing,
         "approval_status": "Pending",
     })
-    doc.actual_value = flt(value)
+    # The live number keeps meaning "reached so far": an amount since the last
+    # update adds to it; a current reading replaces it unless it is dated
+    # before a reading already logged. The review never reads this number: it
+    # counts approved readings by date (R3, R4).
+    if (doc.progress_mode or "Cumulative") == "Cumulative":
+        doc.actual_value = flt(doc.actual_value) + flt(value)
+    elif latest is None or day >= latest:
+        doc.actual_value = flt(value)
     doc.save(ignore_permissions=True)
     frappe.db.commit()
 
@@ -5004,3 +5047,64 @@ def get_calibration_signoff(cycle):
     except Exception:
         return None
     return settings.get("calibration_signoff")
+
+
+# ── Review settings on the portal's Org Settings screen (slice 010 group D, decision 23) ──
+#
+# The three settings live on HR Settings (SEC-28): typed, validated by
+# review_items.validate_hr_settings, and every change keeps a Version row. These
+# two calls only show and save those same fields. Not hr_api.set_org_setting,
+# which writes Global Defaults with no history and allows one listed key.
+
+
+def _review_settings_payload():
+    settings = review_items.review_settings()
+    return {
+        "freeze_point": settings["freeze_point"],
+        "lock_release_days": settings["lock_release_days"],
+        "removal_mode": settings["removal_mode"],
+        "freeze_points": list(review_items.FREEZE_POINTS),
+        "removal_modes": list(review_items.REMOVAL_MODES),
+        "can_edit": "HR Manager" in frappe.get_roles(),
+    }
+
+
+@frappe.whitelist()
+def get_review_settings():
+    """The three review settings, for HR. Anyone else is refused."""
+    if not _is_hr():
+        refuse(frappe._("Only HR can see the review settings."), "SEC-28", "performance_api.get_review_settings")
+    return _review_settings_payload()
+
+
+@frappe.whitelist(methods=["POST"])
+def save_review_settings(freeze_point, lock_release_days, removal_mode):
+    """Save the three review settings. HR Manager only, as in the desk (SEC-28).
+
+    Values are checked here and again by HR Settings' own validation; the save
+    goes through the document with the caller's own permission, so HR Settings'
+    change history records who changed what.
+    """
+    if "HR Manager" not in frappe.get_roles():
+        refuse(frappe._("Only an HR Manager can change the review settings."), "SEC-28",
+               "performance_api.save_review_settings")
+    if freeze_point not in review_items.FREEZE_POINTS:
+        frappe.throw(frappe._("Choose when review numbers freeze from the list."))
+    if removal_mode not in review_items.REMOVAL_MODES:
+        frappe.throw(frappe._("Choose what happens to a removed review item from the list."))
+    days = frappe.utils.cstr(lock_release_days).strip()
+    if not days.isdigit() or int(days) > 3650:
+        frappe.throw(frappe._("Enter the number of days as a whole number from 0 to 3650. Use 0 for never."))
+
+    doc = frappe.get_doc("HR Settings")
+    doc.set(review_items.SETTING_FIELDS["freeze_point"], freeze_point)
+    doc.set(review_items.SETTING_FIELDS["lock_release_days"], int(days))
+    doc.set(review_items.SETTING_FIELDS["removal_mode"], removal_mode)
+    doc.save()
+    frappe.db.commit()
+    import json
+
+    frappe.logger("security").info(json.dumps({
+        "event": "review_settings_saved", "at": str(frappe.utils.now_datetime()), "user": frappe.session.user,
+        "endpoint": "performance_api.save_review_settings", "doctype": "HR Settings"}))
+    return _review_settings_payload()

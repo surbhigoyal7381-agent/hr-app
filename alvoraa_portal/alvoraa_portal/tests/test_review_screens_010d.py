@@ -1080,3 +1080,151 @@ class TestR2NoUnguardedWritesToLockedFields(FrappeTestCase):
 		self.assertEqual(sorted(set(offenders)), [])
 		# The scan really read the code: the two writers that ask first were found.
 		self.assertTrue({"attach_ongoing_to_cycle", "set_cycle_membership"} <= guarded_writers, guarded_writers)
+
+
+# ── Decision 2 · The person says which day a KPI reading is for ─────────────
+
+
+class TestDecision2ReadingDate(_Screens):
+	"""log_kpi_progress takes a date, checks it, and keeps the live number honest."""
+
+	def _kpi_of_subject(self, mode="Cumulative", start=None, end=None, target=100):
+		cycle = self._cycle(*self._window())
+		return self._kpi(self.subject, cycle, target=target, mode=mode, start=start, end=end)
+
+	def test_decision2_a_blank_date_means_today_and_a_chosen_day_is_kept(self):
+		import alvoraa_portal.performance_api as pa
+
+		kpi = self._kpi_of_subject(start=add_days(frappe.utils.today(), -40),
+		                           end=add_days(frappe.utils.today(), 40))
+		self._as(self.subject_user)
+		pa.log_kpi_progress(kpi, 10, note="today")
+		chosen = add_days(frappe.utils.today(), -5)
+		pa.log_kpi_progress(kpi, 15, note="back-dated", log_date=chosen)
+		frappe.set_user("Administrator")
+
+		dates = [str(r.log_date) for r in frappe.get_doc("KPI", kpi).progress_log]
+		self.assertIn(str(frappe.utils.getdate(frappe.utils.today())), dates)
+		self.assertIn(str(frappe.utils.getdate(chosen)), dates)
+
+	def test_decision2_a_future_day_or_a_day_before_the_period_is_refused(self):
+		import alvoraa_portal.performance_api as pa
+
+		start = add_days(frappe.utils.today(), -10)
+		kpi = self._kpi_of_subject(start=start, end=add_days(frappe.utils.today(), 30))
+		self._as(self.subject_user)
+		with self.assertRaises(frappe.ValidationError):
+			pa.log_kpi_progress(kpi, 5, log_date=add_days(frappe.utils.today(), 1))
+		with self.assertRaises(frappe.ValidationError):
+			pa.log_kpi_progress(kpi, 5, log_date=add_days(start, -1))
+		with self.assertRaises(frappe.ValidationError):
+			pa.log_kpi_progress(kpi, 5, log_date="not a date")
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.get_doc("KPI", kpi).progress_log, [])
+
+	def test_decision2_a_kpi_with_no_period_accepts_a_year_back_and_no_more(self):
+		import alvoraa_portal.performance_api as pa
+
+		kpi = self._kpi_of_subject()
+		self._as(self.subject_user)
+		pa.log_kpi_progress(kpi, 5, log_date=add_days(frappe.utils.today(), -300))
+		with self.assertRaises(frappe.ValidationError):
+			pa.log_kpi_progress(kpi, 5, log_date=add_days(frappe.utils.today(), -400))
+		frappe.set_user("Administrator")
+		self.assertEqual(len(frappe.get_doc("KPI", kpi).progress_log), 1)
+
+	def test_decision1_a_cumulative_reading_adds_up_and_an_absolute_one_replaces(self):
+		"""The dialog asks for the amount since the last update, so the server adds it."""
+		import alvoraa_portal.performance_api as pa
+
+		cumulative = self._kpi_of_subject()
+		absolute = self._kpi_of_subject(mode="Absolute")
+		self._as(self.subject_user)
+		pa.log_kpi_progress(cumulative, 10)
+		pa.log_kpi_progress(cumulative, 15)
+		pa.log_kpi_progress(absolute, 60)
+		# Dated before the reading already logged, so it is history, not the number now.
+		pa.log_kpi_progress(absolute, 20, log_date=add_days(frappe.utils.today(), -3))
+		frappe.set_user("Administrator")
+
+		self.assertEqual(frappe.db.get_value("KPI", cumulative, "actual_value"), 25)
+		self.assertEqual(frappe.db.get_value("KPI", absolute, "actual_value"), 60)
+
+
+# ── Decision 23 · The three review settings on the portal's Org Settings ────
+
+
+class TestDecision23ReviewSettingsScreen(_Screens):
+	"""HR reads and writes the three settings; they live on HR Settings (SEC-28)."""
+
+	def setUp(self):
+		super().setUp()
+		import alvoraa_goals.review_items as review_items
+
+		self._before = {
+			field: frappe.db.get_single_value("HR Settings", field)
+			for field in review_items.SETTING_FIELDS.values()
+		}
+
+	def tearDown(self):
+		for field, value in self._before.items():
+			frappe.db.set_single_value("HR Settings", field, value)
+		frappe.db.commit()
+		super().tearDown()
+
+	def test_decision23_an_hr_manager_reads_and_saves_the_three_settings(self):
+		import alvoraa_goals.review_items as review_items
+		import alvoraa_portal.performance_api as pa
+
+		self._as(self.hr_user)
+		shown = pa.get_review_settings()
+		self.assertEqual(set(shown["freeze_points"]), set(review_items.FREEZE_POINTS))
+		self.assertEqual(set(shown["removal_modes"]), set(review_items.REMOVAL_MODES))
+		self.assertTrue(shown["can_edit"])
+
+		saved = pa.save_review_settings(review_items.FREEZE_SELF_SENT, "45", review_items.REMOVAL_KEEP)
+		frappe.set_user("Administrator")
+		self.assertEqual(saved["lock_release_days"], 45)
+		self.assertEqual(review_items.review_settings(), {
+			"freeze_point": review_items.FREEZE_SELF_SENT,
+			"lock_release_days": 45,
+			"removal_mode": review_items.REMOVAL_KEEP,
+		})
+
+	def test_decision23_a_value_outside_the_list_is_refused(self):
+		import alvoraa_goals.review_items as review_items
+		import alvoraa_portal.performance_api as pa
+
+		self._as(self.hr_user)
+		for args in (
+			("Whenever", "30", review_items.REMOVAL_DISCARD),
+			(review_items.FREEZE_HR_SENT, "30", "Shred it"),
+			(review_items.FREEZE_HR_SENT, "-1", review_items.REMOVAL_DISCARD),
+			(review_items.FREEZE_HR_SENT, "9999", review_items.REMOVAL_DISCARD),
+			(review_items.FREEZE_HR_SENT, "thirty", review_items.REMOVAL_DISCARD),
+		):
+			with self.assertRaises(frappe.ValidationError, msg=args):
+				pa.save_review_settings(*args)
+		frappe.set_user("Administrator")
+
+	def test_sec28_an_employee_cannot_read_or_change_the_review_settings(self):
+		import alvoraa_goals.review_items as review_items
+		import alvoraa_portal.performance_api as pa
+
+		for user in (self.subject_user, self.manager_user):
+			self._as(user)
+			with self.assertRaises(frappe.PermissionError, msg=user):
+				pa.get_review_settings()
+			with self.assertRaises(frappe.PermissionError, msg=user):
+				pa.save_review_settings(review_items.FREEZE_SELF_SENT, "5", review_items.REMOVAL_KEEP)
+		frappe.set_user("Administrator")
+
+	def test_sec28_an_hr_user_reads_the_settings_but_only_an_hr_manager_saves_them(self):
+		import alvoraa_goals.review_items as review_items
+		import alvoraa_portal.performance_api as pa
+
+		self._as(self.hr_desk_user)
+		self.assertFalse(pa.get_review_settings()["can_edit"])
+		with self.assertRaises(frappe.PermissionError):
+			pa.save_review_settings(review_items.FREEZE_SELF_SENT, "5", review_items.REMOVAL_KEEP)
+		frappe.set_user("Administrator")

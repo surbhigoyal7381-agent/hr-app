@@ -454,7 +454,9 @@ def get_hr_analytics():
 
     # ── Attendance: the month of the last day with data (decision D-13) ──
     period = of.period(scope)
-    att = of.attendance_figures(scope, *period) if period else dict(of.NO_ATTENDANCE)
+    # No late arrivals, short days or people count: this screen shows none of them,
+    # and asking for them costs two joins and a distinct count over the month.
+    att = of.attendance_figures(scope, *period, detail=False) if period else dict(of.NO_ATTENDANCE)
     att_rate = att["rate"]
     present = att["present"] + att["wfh"] + att["half"] * 0.5
     absent = att["absent"]

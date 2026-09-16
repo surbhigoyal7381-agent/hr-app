@@ -541,7 +541,9 @@ def _figures_for_confirming(scope):
 	period = of.period(scope)
 	if not period:
 		return None, dict(of.NO_ATTENDANCE), {}
-	return period, of.attendance_figures(scope, *period), of.open_doubtful_counts(scope, *period)
+	# Only the percentage is shown here, so the same cheap read as HR Analytics.
+	return (period, of.attendance_figures(scope, *period, detail=False),
+	        of.open_doubtful_counts(scope, *period))
 
 
 @frappe.whitelist(methods=["POST"])

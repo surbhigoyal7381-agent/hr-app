@@ -15002,6 +15002,11 @@ function deleteDrawerNote(noteId, empId) {
             ? "<button class=\"btn btn-outline btn-sm\" onclick=\"prOpenObjectiveSelector()\">Add/remove Objectives</button>" +
               "<button class=\"btn btn-outline btn-sm\" onclick=\"prOpenKpiSelector()\">Add/remove KPIs</button>"
             : "") +
+          /* What the manager lost when the old KPI rating row went: a first
+             guess from measured attainment, now read off the review's copies. */
+          (riCanRateAsManager()
+            ? "<button class=\"btn btn-outline btn-sm\" onclick=\"riSuggestRatings()\">Fill empty ratings from attainment</button>"
+            : "") +
         "</div>" +
       "</div>";
 

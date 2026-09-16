@@ -396,6 +396,12 @@ TENANT_DOCTYPES = [
     # Who opened whose check-in photo. The tenant's own record about its own
     # staff, so it belongs to the tenant, not to our control plane.
     "Alvoraa Photo Access Log",
+    # Slice 012. Both are the tenant's own records about its own data, read and
+    # written inside the tenant by HR and its System Manager - not our billing or
+    # provisioning plumbing. So they are tenant-side, and stay inside the tenant
+    # access derivation.
+    "Alvoraa Data Review Item",
+    "Alvoraa Leader View Settings",
 ]
 
 REQUIRED = [k for k, v in FEATURES.items() if v.get("required")]

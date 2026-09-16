@@ -202,14 +202,27 @@ def rate_with(base, extra_counts):
 
 
 def data_up_to(scope):
-	"""The last day with submitted attendance in scope, or None."""
+	"""The last day with submitted attendance in scope, or None.
+
+	One query per company, reading the newest row through the index and stopping
+	there. MAX() over the same rows does not: on a tenant with one company every
+	Attendance row is that company's, so the optimiser reads the whole table
+	(measured: 267,724 rows at 1,000 people, on every HR Analytics and Data to
+	review open). Companies in scope are one or two, never a crowd.
+	"""
 	if scope.not_linked:
 		return None
-	where, params = condition(scope, "a", "alvoraa_branch")
-	value = frappe.db.sql(
-		f"select max(a.attendance_date) from `tabAttendance` a where a.docstatus = 1 and {where}",
-		params)[0][0]
-	return getdate(value) if value else None
+	days = []
+	for company in scope.companies:
+		single = Scope((company,), scope.branches)
+		where, params = condition(single, "a", "alvoraa_branch")
+		value = frappe.db.sql(
+			f"""select a.attendance_date from `tabAttendance` a
+			    where a.docstatus = 1 and {where}
+			    order by a.attendance_date desc limit 1""", params)
+		if value and value[0][0]:
+			days.append(getdate(value[0][0]))
+	return max(days) if days else None
 
 
 def period(scope):

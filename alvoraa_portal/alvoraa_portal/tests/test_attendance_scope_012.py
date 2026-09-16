@@ -163,12 +163,15 @@ class TestFilterOptionsAreScoped(G3Case):
 		self.person("StationStaffG3", STATION, reports_to=station_mgr,
 		            department=depts[1] if len(depts) > 1 else None)
 
+		# DEF-6: a colleague with no branch, and their manager, stay out for store HR.
+		# Made before the login: Frappe fills an empty Link from the caller's own
+		# User Permission, so inserting these as store HR would give them a branch.
+		no_branch_mgr = self.person("NoBranchMgrG3", None)
+		self.person("NoBranchStaffG3", None, reports_to=no_branch_mgr)
+
 		frappe.set_user(store_hr)
 		opts = aa.filter_options()
 		self.assertEqual(opts["branch"], [LAKESIDE])
-		# DEF-6: a no-branch colleague's manager and department stay out too.
-		no_branch_mgr = self.person("NoBranchMgrG3", None)
-		self.person("NoBranchStaffG3", None, reports_to=no_branch_mgr)
 		self.assertNotIn(no_branch_mgr, {m["id"] for m in aa.filter_options()["manager"]})
 		ids = {m["id"] for m in opts["manager"]}
 		self.assertIn(lake_mgr, ids)

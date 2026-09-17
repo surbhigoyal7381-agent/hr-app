@@ -439,10 +439,11 @@ class TestCrM3ManagerWithHrRole(_Screens):
 		self._as(self.hr_boss_user)
 		self.assertEqual(pa.get_manager_review(ap)["viewer_role"], "manager")
 
-		# HR Review is HR's step: an HR role holder keeps HR's controls there.
+		# HR Review is HR's step, but not for someone in the subject's line: the
+		# manager keeps the manager's view there (decision 34, security M3).
 		self._set_status(ap, "HR Review")
 		self._as(self.hr_boss_user)
-		self.assertEqual(pa.get_manager_review(ap)["viewer_role"], "hr")
+		self.assertEqual(pa.get_manager_review(ap)["viewer_role"], "manager")
 		other = self._review_of(self.subject, "HR Review")
 		self._as(self.hr_user)
 		self.assertEqual(pa.get_manager_review(other)["viewer_role"], "hr")

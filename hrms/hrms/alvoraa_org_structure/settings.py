@@ -74,6 +74,20 @@ DEFAULTS = {
 	"alvoraa_cover_allow_over_cap": 1,
 }
 
+# Slice 012 F1 (SEC-18): the keys that decide who sees whom on the org chart.
+# Changing any of them can show people parts of the company they could not see
+# before, so only a System Manager changes them, and every change leaves a record.
+# The reach levels are here too: raising them to 99 gives every employee close to
+# the whole chart, just as adding "Employee" to the roles does.
+# The cover and span keys stay with HR - they change alerts and pay rules, not
+# who can see anybody.
+ACCESS_GRANTING = frozenset({
+	"alvoraa_org_full_reach_roles",
+	"alvoraa_org_managers_see_all",
+	"alvoraa_org_reach_up",
+	"alvoraa_org_reach_down",
+})
+
 # Kept apart from the numbers so the Org Setup page can render a label and an
 # explanation without either being duplicated in the front end.
 LABELS = {
@@ -140,12 +154,73 @@ def get_cover_settings():
 def set_cover_setting(key, value):
 	"""Change one. Refuses a key it does not know, so a typo in the front end
 	cannot quietly create a setting nothing ever reads."""
+	if isinstance(key, str) and key in ACCESS_GRANTING:
+		return _set_access_setting(key, value)
 	frappe.only_for(["HR Manager", "System Manager"])
 	if key not in DEFAULTS:
 		frappe.throw(f"Unknown cover setting: {key}")
 	frappe.db.set_default(key, value)
 	frappe.db.commit()
 	return {"ok": True, "key": key, "value": get(key)}
+
+
+def _set_access_setting(key, value):
+	"""A key that decides who sees whom (SEC-18).
+
+	System Manager only, and anyone else is refused and logged - an HR Manager
+	included. A real change writes a Version record in the same transaction as
+	the change itself: who (owner), when (creation), which key, the old value and
+	the new one. So there is never a change without its record. Version rows are
+	not cleared by Log Settings, and only a System Manager can read them.
+	"""
+	from frappe import _
+	from frappe.utils import cstr
+
+	from hrms.alvoraa_hr_core.access import refuse
+
+	endpoint = "alvoraa_org_structure.settings.set_cover_setting"
+	if "System Manager" not in frappe.get_roles():
+		refuse(
+			_("Only a System Manager can change who may see the org chart. "
+			  "Ask your System Manager to make this change."),
+			"SEC-18",
+			endpoint,
+			"DefaultValue",
+			key,
+		)
+
+	old = cstr(frappe.db.get_default(key))
+	new = cstr(value)
+	if old != new:
+		frappe.get_doc({
+			"doctype": "Version",
+			"ref_doctype": "DefaultValue",
+			"docname": key,
+			"data": frappe.as_json({"changed": [[key, old, new]]}, indent=None, separators=(",", ":")),
+		}).insert(ignore_permissions=True)  # Version has no create permission for anyone; Frappe writes its own the same way
+		frappe.db.set_default(key, new)
+		_log_access_change(endpoint, key)
+	frappe.db.commit()
+	return {"ok": True, "key": key, "value": get(key)}
+
+
+def _log_access_change(endpoint, key):
+	"""The same JSON line shape as a refusal, so one grep finds both. The key
+	only - the old and new values are in the Version record."""
+	import json
+
+	try:
+		frappe.logger("security").warning(json.dumps({
+			"event": "changed",
+			"at": str(frappe.utils.now_datetime()),
+			"user": frappe.session.user,
+			"endpoint": endpoint,
+			"doctype": "DefaultValue",
+			"name": key,
+			"rule": "SEC-18",
+		}))
+	except Exception:
+		pass
 
 
 # ── cover that has quietly become permanent ──────────────────────────────────

@@ -715,6 +715,9 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# Slice 010 group D phase 3 (new file): the copy of existing reviews writes
 		# as the patch's Administrator and needs none.
 		("alvoraa_goals", "review_backfill.py"): 0,
+		# Slice 012 F1: the one Version record written when a System Manager
+		# changes who may see the org chart. Nobody has create on Version.
+		("hrms", "alvoraa_org_structure/settings.py"): 1,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

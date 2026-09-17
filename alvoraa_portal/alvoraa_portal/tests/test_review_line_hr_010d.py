@@ -294,9 +294,6 @@ class TestD34Page(FrappeTestCase):
 		finalize = _between(page, "function prRenderHrFinalizePage(d)", "window.prFinishHrReview")
 		self.assertIn("var elsewhere = !!d.hr_steps_elsewhere;", finalize)
 		self.assertIn("var hrSteps = hrStage && !elsewhere;", finalize)
-		self.assertIn("(hrSteps
-", finalize.replace("
-", "
-"))
+		self.assertIn("(hrSteps\n", finalize.replace("\r\n", "\n"))
 		submit = _between(page, "function prRenderManagerSubmitPage(d, editable)", "var mgfPS")
 		self.assertIn('if (_pr.viewerRole === "hr") {', submit)

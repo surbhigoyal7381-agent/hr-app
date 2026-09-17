@@ -160,6 +160,55 @@ jobs:
       - name: No demo passwords in the repository
         run: python scripts/check_no_demo_passwords.py
 
+  # ── Key guard (slice 013, OPS-37, OPS-71, SEC-23) ─────────────────────────
+  # A signing key is handed out the moment it is pushed: the image is built from
+  # this repo, and everything published while it was public is already copied.
+  # Its own job, not steps in "lint", because the secret scan needs the commit
+  # history (fetch-depth 0) and the lint checkout is shallow. No path filter:
+  # it must run on app-only pushes too, which are the ones that could carry a key.
+  key-guard:
+    name: Key guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # `git add -f` walks past .gitignore. This reads what git actually tracks.
+      - name: No signing key or app secret file is tracked
+        run: python3 scripts/check_tracked_keys.py
+
+      # gitleaks, pinned by version AND by the SHA-256 GitHub publishes for the
+      # release, so a swapped download fails here instead of running. Scans only
+      # the commits this push or pull request adds; a full-history scan is a
+      # one-off job for the security engineer first (OPS-87).
+      - name: Secret scan of the new commits (gitleaks 8.30.1)
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "$RUNNER_TEMP/$archive" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/$archive" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" gitleaks
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            range="${PR_BASE}..${PR_HEAD}"
+          elif [ -n "${PUSH_BEFORE:-}" ] && [ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+            range="${PUSH_BEFORE}..${HEAD_SHA}"
+          else
+            range="-1 ${HEAD_SHA}"
+          fi
+          echo "Scanning: $range"
+          "$RUNNER_TEMP/gitleaks" git --no-banner --redact --log-opts="$range" .
+
   # ── Python / Frappe tests ─────────────────────────────────────────────────
   test-python:
     name: Python tests

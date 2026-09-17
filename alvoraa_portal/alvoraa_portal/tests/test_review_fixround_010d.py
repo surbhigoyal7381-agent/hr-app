@@ -10,6 +10,7 @@ not only the allowed path. Synthetic people and records only, tagged S010D.
 import json
 
 import frappe
+from frappe.tests.utils import FrappeTestCase
 from frappe.utils import now_datetime
 
 from alvoraa_portal.tests.test_portal_security_010 import _user
@@ -773,3 +774,56 @@ class TestCrM4ReviewerPickerSearchesTheServer(_Screens):
 		self.assertNotIn('pf("search_employees", {query: ""', page)
 		opener = _between(page, "window.prOpenManagerReview = function", 'pf("get_manager_review"')
 		self.assertIn("_prEmpCache = null;", opener)
+
+
+# ── Code review minors 1, 2, 3, 4, 8 and security m2 · the page ─────────────
+
+
+class TestPageMinors(FrappeTestCase):
+	def test_cr_minor1_future_objectives_are_not_tagged_to_the_cycle_under_review(self):
+		from alvoraa_portal.tests.test_review_page_010d import _between, _page
+
+		page = _page()
+		opener = _between(page, "window.prOpenGoalDialogForReview = function()", "var _prGoalStore")
+		self.assertNotIn("gp-c-cycle", opener)
+		kpi = _between(page, "window.pfOpenKpiModal = function(returnTo)", "window.pfEditKpi = function")
+		self.assertIn('_pfKpiReturnTo === "review" ? ""', kpi)
+		self.assertNotIn("they are not tagged to this cycle", page)
+
+	def test_cr_minor2_hr_sees_late_facts_and_evidence_dated_by_upload(self):
+		from alvoraa_portal.tests.test_review_page_010d import _between, _page
+
+		page = _page()
+		note = _between(page, "function riFactsNote(it)", "/* Edit and Remove for one copy")
+		self.assertIn('_pr.viewerRole !== "hr"', note)
+		self.assertIn("it.late_facts", note)
+		self.assertIn("late.actual_with_late", note)
+		self.assertIn("it.facts_dated_by_upload", note)
+		self.assertIn("riFactsNote(it) +", page)
+
+	def test_cr_minor3_the_subject_sees_how_many_cycle_items_are_not_in_the_review(self):
+		from alvoraa_portal.tests.test_review_page_010d import _between, _page
+
+		notes = _between(_page(), "window.riReviewNotesHtml = function(d)", "/* Reload the review after a change")
+		self.assertIn("d.not_in_review_count", notes)
+		self.assertIn("not in your review", notes)
+
+	def test_cr_minor4_the_reading_date_is_the_persons_own_day(self):
+		from alvoraa_portal.tests.test_review_page_010d import _between, _page
+
+		log = _between(_page(), "window.pfOpenLog = function(kpiId, focusRow)", "window.pfLogFileChanged")
+		self.assertNotIn("toISOString", log)
+		self.assertIn("now.getDate()", log)
+		self.assertIn('document.getElementById("pf-log-date").max = localDay;', log)
+
+	def test_cr_minor8_the_reason_box_comes_back_when_remove_opens_again(self):
+		from alvoraa_portal.tests.test_review_page_010d import _between, _page
+
+		opener = _between(_page(), "window.riOpenRemove = function(rowName)", "window.riSwitchToDelete")
+		self.assertIn('document.getElementById("ri-remove-reason-field").style.display = "";', opener)
+
+	def test_m2_the_update_log_shows_when_a_reading_was_typed(self):
+		from alvoraa_portal.tests.test_review_page_010d import _page
+
+		page = _page()
+		self.assertIn('"typed " + pfFmtDate(r.logged_on)', page)

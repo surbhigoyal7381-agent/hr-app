@@ -12429,8 +12429,13 @@ function deleteDrawerNote(noteId, empId) {
        where things stand now, so it starts at the current number (decision 1). */
     var cumulative = !k || (k.progress_mode || "Cumulative") !== "Absolute";
     document.getElementById("pf-log-value").value = cumulative ? "" : (k.actual_value || "");
-    document.getElementById("pf-log-date").value = new Date().toISOString().slice(0, 10);
-    document.getElementById("pf-log-date").max = new Date().toISOString().slice(0, 10);
+    /* The person's own day, not the UTC day: between midnight and 05:30 in
+       India toISOString gives yesterday (code review minor 4). */
+    var now = new Date();
+    var localDay = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" +
+      String(now.getDate()).padStart(2, "0");
+    document.getElementById("pf-log-date").value = localDay;
+    document.getElementById("pf-log-date").max = localDay;
     document.getElementById("pf-log-note").value = "";
     document.getElementById("pf-log-file").value = "";
     document.getElementById("pf-log-file-name").textContent = "Click to attach image or document…";

@@ -256,3 +256,41 @@ class TestM1ScoringCallsFollowTheStageAndCompanyRule(_Screens):
 		self.assertEqual(len(suggested), 2)
 
 
+# ── Security M2 · a rename cannot step round the lock ───────────────────────
+
+
+class TestM2RenameWhileHeld(_Screens):
+	def test_m2_a_held_kpi_cannot_be_renamed_and_copies_follow_a_later_rename(self):
+		review = self._review("Manager Review")
+		new_name = f"{review.alone}-{_uid()}"
+		with self.assertRaises(frappe.PermissionError):
+			frappe.rename_doc("KPI", review.alone, new_name, force=True)
+		self.assertTrue(frappe.db.exists("KPI", review.alone))
+
+		# Once the review is completed the lock is gone; the copy follows the rename.
+		self._set_status(review.ap, "Completed")
+		frappe.rename_doc("KPI", review.alone, new_name, force=True)
+		frappe.db.commit()
+		self._cleanup.append(("KPI", new_name))
+		self.assertIsNone(_row_for(self._ext(review.ap), review.alone))
+		self.assertTrue(_row_for(self._ext(review.ap), new_name))
+
+	def test_m2_a_held_objective_cannot_be_renamed_either(self):
+		review = self._review("Manager Review")
+		with self.assertRaises(frappe.PermissionError):
+			frappe.rename_doc("Individual Goal", review.goal, f"{review.goal}-{_uid()}", force=True)
+
+	def test_m2_minor7_rename_and_after_submit_hooks_are_registered(self):
+		events = frappe.get_doc_hooks()
+		for doctype in ("KPI", "Individual Goal"):
+			self.assertIn("alvoraa_goals.review_items.refuse_rename_while_held", events[doctype]["before_rename"])
+			self.assertIn("alvoraa_goals.review_items.follow_rename", events[doctype]["after_rename"])
+		self.assertIn("alvoraa_goals.review_items.refresh_copies_of",
+		              events["Individual Goal"]["on_update_after_submit"])
+		# A submitted Objective's locked fields are closed by Frappe itself on every
+		# path, because none of them may change after submit.
+		import alvoraa_goals.review_items as review_items
+
+		meta = frappe.get_meta("Individual Goal")
+		for field in review_items.LOCKED_FIELDS["Individual Goal"]:
+			self.assertFalse((meta.get_field(field) or frappe._dict()).allow_on_submit, field)

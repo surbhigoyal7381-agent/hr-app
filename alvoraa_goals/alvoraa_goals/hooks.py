@@ -19,6 +19,12 @@ doc_events = {
         "before_update_after_submit": "alvoraa_goals.review_items.enforce_definition_lock",
         "on_trash": "alvoraa_goals.review_items.refuse_delete_while_held",
         "on_update": "alvoraa_goals.review_items.refresh_copies_of",
+        # Fix round (security review M2; code review minor 7): a held Objective
+        # keeps its name, copies follow a rename, and a submitted Objective's
+        # facts reach its copies too.
+        "before_rename": "alvoraa_goals.review_items.refuse_rename_while_held",
+        "after_rename": "alvoraa_goals.review_items.follow_rename",
+        "on_update_after_submit": "alvoraa_goals.review_items.refresh_copies_of",
     },
     "Goal Evidence": {
         "before_insert": "alvoraa_goals.controllers.evidence.validate_evidence",
@@ -35,6 +41,9 @@ doc_events = {
         ],
         "on_trash": "alvoraa_goals.review_items.refuse_delete_while_held",
         "on_update": "alvoraa_goals.review_items.refresh_copies_of",
+        # Fix round (security review M2): a held KPI keeps its name; copies follow a rename.
+        "before_rename": "alvoraa_goals.review_items.refuse_rename_while_held",
+        "after_rename": "alvoraa_goals.review_items.follow_rename",
     },
     # Slice 010 group D: the three review settings accept only their own choices.
     "HR Settings": {

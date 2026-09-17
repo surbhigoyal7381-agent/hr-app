@@ -1626,6 +1626,46 @@ def refuse_delete_while_held(doc, method=None):
     )
 
 
+def refuse_rename_while_held(doc, method=None, old=None, new=None, merge=False):
+    """doc_events before_rename on KPI and Individual Goal (security review M2).
+
+    A rename runs no before_validate, so without this it would step round the
+    lock: the copies find a live record by its name, and after a rename holds()
+    finds nothing. While an open review holds the record, it keeps its name.
+    """
+    held = _held_or_refuse(doc, "R2", f"{doc.doctype} rename")
+    if doc.name not in held:
+        return
+    from hrms.alvoraa_hr_core.access import refuse
+
+    refuse(
+        _("This {0} is in an open review, so it cannot be renamed until the review is completed.").format(
+            _(_WHAT[doc.doctype])),
+        "R2", f"{doc.doctype} rename", doc.doctype, doc.name,
+    )
+
+
+def follow_rename(doc, method=None, old=None, new=None, merge=False):
+    """doc_events after_rename on KPI and Individual Goal (security review M2).
+
+    A rename allowed once no open review holds the record (a released lock, or
+    only completed reviews) still moves every copy's pointer to the new name,
+    so a review never loses its facts or its write-back target. Only the
+    pointer changes: nothing a completed review decided. One query.
+    """
+    if not old or not new or old == new:
+        return
+    item = frappe.qb.DocType("Alvoraa Review Item")
+    (
+        frappe.qb.update(item)
+        .set(item.source_name, new)
+        .where(item.source_doctype == doc.doctype)
+        .where(item.source_name == old)
+    ).run()
+    frappe.logger("review").info(json.dumps({"event": "copies follow rename", "doctype": doc.doctype,
+                                             "old": old, "new": new}))
+
+
 def refresh_copies_of(doc, method=None):
     """doc_events on_update on KPI and Individual Goal: bring open reviews' copies
     up to date when a live record's facts change (R3).

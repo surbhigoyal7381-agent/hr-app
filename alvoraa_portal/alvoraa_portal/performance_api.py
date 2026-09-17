@@ -1768,7 +1768,9 @@ def search_employees(query="", appraisal=None):
 
     Without it (the page does not send it yet): a manager searches their own
     company, HR the companies they look after, anyone else finds nobody.
-    At most 50 people.
+    At most 50 people, and only for a search of at least 2 letters: the picker
+    asks the server as the person types (code review M4), so nobody pages
+    through a company's staff list with an empty search.
     """
     if frappe.session.user == "Guest":
         frappe.throw("Please log in.", frappe.PermissionError)
@@ -1796,7 +1798,7 @@ def search_employees(query="", appraisal=None):
         return []
 
     companies = [c for c in companies if c]
-    if not companies:
+    if not companies or len(query) < 2:
         return []
     filters = {"status": "Active", "company": ["in", companies]}
     if subject:

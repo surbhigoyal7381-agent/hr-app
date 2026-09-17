@@ -15944,6 +15944,8 @@ function deleteDrawerNote(noteId, empId) {
     var content = document.getElementById("pr-content");
     if (content) content.innerHTML = "<div style=\"text-align:center;padding:40px;color:var(--text3)\">Loading review...</div>";
     document.getElementById("pr-nav").innerHTML = "";
+    /* A picker answer belongs to one review only (code review M4). */
+    _prEmpCache = null;
     pf("get_manager_review", {appraisal: appraisalName}).then(function(d) {
       _pr.appraisal = appraisalName;
       _pr.data = d;
@@ -16063,12 +16065,6 @@ function deleteDrawerNote(noteId, empId) {
     document.getElementById("pr-content").innerHTML = html;
     var nextBtn = document.getElementById("pr-next-btn");
     if (nextBtn) nextBtn.style.display = "";
-    /* pre-load the employee list once so searches feel instant */
-    if (!_prEmpCache) {
-      /* Naming the review makes the search run in the reviewed person's
-         company, so a skip-level manager finds the right people (SEC-7). */
-      pf("search_employees", {query: "", appraisal: _pr.appraisal}).then(function(rows) { _prEmpCache = rows || []; });
-    }
   }
 
   function prRenderEmployeePreReview(d, saved, editable) {
@@ -16120,31 +16116,44 @@ function deleteDrawerNote(noteId, empId) {
     document.getElementById("pr-content").innerHTML = html;
   }
 
+  /* The reviewer picker asks the server as the person types (code review M4).
+     It used to load the first 50 names once, with an empty search, and filter
+     them in the browser, so most of a large company could never be found, and
+     a second review opened later still showed the first review's company.
+     Naming the review makes the search run in the reviewed person's company
+     (SEC-7). The last answer is kept only for the review it was asked for. */
   var _prEmpCache = null;
+  var _prEmpTimer = null;
 
-  window.prOpenReviewerList = function() {
-    if (!_prEmpCache) {
-      pf("search_employees", {query: "", appraisal: _pr.appraisal}).then(function(rows) {
-        _prEmpCache = rows || [];
-        prFilterReviewerList();
-      });
-    } else {
-      prFilterReviewerList();
-    }
-  };
+  window.prOpenReviewerList = function() { prFilterReviewerList(); };
 
   window.prFilterReviewerList = function() {
     var inp = document.getElementById("mgr-invite-search");
     var list = document.getElementById("mgr-invite-list");
     if (!inp || !list) return;
-    var q = inp.value.toLowerCase();
-    var pool = _prEmpCache || [];
-    var matches = q
-      ? pool.filter(function(e) {
-          return (e.employee_name || "").toLowerCase().indexOf(q) > -1 ||
-                 (e.name || "").toLowerCase().indexOf(q) > -1;
-        })
-      : pool.slice(0, 40);
+    var q = inp.value.trim();
+    if (_prEmpTimer) clearTimeout(_prEmpTimer);
+    if (q.length < 2) {
+      list.innerHTML = "<div style=\"padding:10px 14px;font-size:var(--fs-base);color:var(--text3)\">Type at least 2 letters of a name or employee ID.</div>";
+      list.style.display = "";
+      return;
+    }
+    var forReview = _pr.appraisal;
+    _prEmpTimer = setTimeout(function() {
+      pf("search_employees", {query: q, appraisal: forReview}).then(function(rows) {
+        /* An answer for an older search or another review is dropped. */
+        if (forReview !== _pr.appraisal || inp.value.trim() !== q) return;
+        _prEmpCache = {appraisal: forReview, query: q, rows: rows || []};
+        prRenderReviewerMatches(list, _prEmpCache.rows);
+      }).catch(function(err) {
+        list.innerHTML = "<div style=\"padding:10px 14px;font-size:var(--fs-base);color:var(--text3)\">" +
+          gpEsc((err && err.message) || "The search did not work. Try again.") + "</div>";
+        list.style.display = "";
+      });
+    }, 300);
+  };
+
+  function prRenderReviewerMatches(list, matches) {
     if (!matches.length) {
       list.innerHTML = "<div style=\"padding:10px 14px;font-size:var(--fs-base);color:var(--text3)\">No employees found.</div>";
     } else {
@@ -16162,7 +16171,7 @@ function deleteDrawerNote(noteId, empId) {
       };
     }
     list.style.display = "";
-  };
+  }
 
   window.prSelectReviewer = function(empId, empName) {
     var inp = document.getElementById("mgr-invite-search");

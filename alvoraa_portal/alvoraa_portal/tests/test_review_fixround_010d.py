@@ -740,3 +740,36 @@ class TestReleaseRiskRunningTotalsReport(_Screens):
 		shipped = json.load(open(report.__file__.replace(".py", ".json"), encoding="utf-8"))
 		self.assertEqual((shipped["report_type"], {r["role"] for r in shipped["roles"]}),
 		                 ("Script Report", {"HR Manager", "HR User"}))
+
+
+# ── Code review M4 · the reviewer picker searches on the server ─────────────
+
+
+class TestCrM4ReviewerPickerSearchesTheServer(_Screens):
+	def test_cr_m4_search_needs_two_letters_and_finds_by_the_typed_name(self):
+		import alvoraa_portal.performance_api as pa
+
+		ap = self._review_of(self.subject, "Manager Review")
+		self._as(self.manager_user)
+		self.assertEqual(pa.search_employees(query="", appraisal=ap), [])
+		self.assertEqual(pa.search_employees(query="D", appraisal=ap), [])
+		found = {r["name"] for r in pa.search_employees(query="DTeamstranger", appraisal=ap)}
+		frappe.set_user("Administrator")
+		self.assertIn(self.stranger, found)
+		# Refusals still come first for someone who may not search for this review.
+		self._as(self.stranger_user)
+		with self.assertRaises(frappe.PermissionError):
+			pa.search_employees(query="", appraisal=ap)
+		frappe.set_user("Administrator")
+
+	def test_cr_m4_the_page_asks_the_server_as_the_person_types_and_forgets_between_reviews(self):
+		from alvoraa_portal.tests.test_review_page_010d import _between, _page
+
+		page = _page()
+		picker = _between(page, "window.prFilterReviewerList = function", "window.prSelectReviewer = function")
+		self.assertIn('pf("search_employees", {query: q, appraisal: forReview})', picker)
+		self.assertIn("q.length < 2", picker)
+		self.assertIn("setTimeout(", picker)
+		self.assertNotIn('pf("search_employees", {query: ""', page)
+		opener = _between(page, "window.prOpenManagerReview = function", 'pf("get_manager_review"')
+		self.assertIn("_prEmpCache = null;", opener)

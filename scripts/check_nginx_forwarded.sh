@@ -44,10 +44,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$WORK/ssl/live/alvoraa.co" "$WORK/ssl/live/alvox.in" "$WORK/echo"
+mkdir -p "$WORK/echo"
 # A config of our own, so a broken OPENSSL_CONF on this PC cannot stop the run.
 printf '[req]\ndistinguished_name = dn\n[dn]\n' > "$WORK/openssl.cnf"
-for d in alvoraa.co alvox.in; do
+# One self-signed certificate for every certificate folder the file names
+# (alvoraa-wildcard, alvox.in, ...), so a renamed certificate is tested too.
+CERT_NAMES="$(sed -n 's#.*ssl_certificate[^/]*/etc/nginx/ssl/live/\([^/]*\)/.*#\1#p' "$CONF" | sort -u)"
+[ -n "$CERT_NAMES" ] || { echo "no ssl_certificate lines found in $CONF"; exit 2; }
+for d in $CERT_NAMES; do
+	mkdir -p "$WORK/ssl/live/$d"
 	openssl req -config "$(winpath "$WORK/openssl.cnf")" -x509 -nodes -newkey rsa:2048 -days 1 -subj "/CN=$d" \
 		-keyout "$(winpath "$WORK/ssl/live/$d/privkey.pem")" \
 		-out "$(winpath "$WORK/ssl/live/$d/fullchain.pem")" >/dev/null 2>&1 \

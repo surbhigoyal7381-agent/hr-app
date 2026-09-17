@@ -1432,3 +1432,179 @@ What the user must decide is a release question:
    backfill patch, and it writes to that site (§7).
 2. **How to push?** 010 and 012 are interleaved in local `dev` (§9). Both together, or
    012 first and 010 rebased onto the pushed `dev`.
+
+
+---
+
+# Fix round — code review (05) and security review (06)
+
+## The short answer
+
+**Every finding in both reviews is fixed and tested on the local instance, except
+security M3, which waits for the user's decision. Nothing is pushed.**
+
+- **27 commits** on `slice/010-portal-security-fixes`, brought into local `dev`
+  with `merge --ff-only` (local `dev` at `6326307`).
+- **39 new pin tests** in `alvoraa_portal/tests/test_review_fixround_010d.py`, all
+  passing. Five existing tests were changed on purpose, where a fix changed the
+  behaviour they pinned (listed below).
+- **Full suites:** see "Commands run". Only the known local failures.
+- **Three things you should know first:**
+  1. **HR now sees less in the desk.** HRMS Appraisal records follow the review's
+     stage and company rule (security M4). HR's desk list of Appraisals shows nothing
+     for a review still before HR Review, unless it is in their own line. The portal
+     screens are unchanged.
+  2. **The live KPI number moves only when a reading is approved** (code review M2).
+     Logging a reading no longer changes "currently at …%" until the manager approves
+     it. Tell employees.
+  3. **Open reviews are counted from dated facts at copy time** (release risk). The
+     upgrade no longer raises a rating question on every open review with old
+     ratings; the ratings are stamped on the counted numbers instead. That is the
+     trade-off you asked for: nobody is asked about the change from the old live
+     number to the counted number.
+
+Commit hashes in some commit messages (`ecdb303`, `9351fec`) are from before the last
+rebase; their commits are now `780021d` and `d782a98`.
+
+## 1. What came in from others
+
+At the start, the slice branch was rebased onto local `dev`. Nine commits came in, none
+touching group D code: slice 012's last code and document commits up to `2db1d71`,
+`18af278` (parallel-work rules, portal redesign plan), `24eb10a` (slice 012 documents)
+and `6d0273f` (slice 012 F1: `hrms/alvoraa_org_structure/settings.py`, its test, and one
+new row at the end of the `CEILINGS` table in `test_portal_security_010.py`). Before
+testing, a second rebase brought in `c507030` (012 F1 notes, docs only). No conflicts.
+
+F1 writes Version rows about `DefaultValue` (`settings.py:197`). The new Version row
+rule (B1) touches only rows about `Alvoraa Appraisal Extension`, `Alvoraa Review Item`
+and `Appraisal`, so those rows are untouched, and `test_org_access_settings_012f1` ran in
+the full suite. The `CEILINGS` table was not edited in this round, so F1's row stays.
+
+The main checkout holds another session's uncommitted edits
+(`.claude/context/ux-learnings.md`, `backlog/KPI_AUTOMATION_BACKLOG.md`,
+`hrms/.../alvoraa_position.py`, a deleted `OBJECTIVES_KPI_REQUIREMENTS.md`). None is in a
+file this round changes; none was touched.
+
+## 2. Each finding → what changed → test → result
+
+"Test" names are in `test_review_fixround_010d.py` unless another file is named.
+
+### Security review
+
+| Finding | What changed | Pin test | Result |
+|---|---|---|---|
+| **B1** Version and Comment rows readable at any stage | `alvoraa_goals/permissions.py`: `version_query`, `comment_query`, `has_review_history_permission`, registered in `alvoraa_goals/hooks.py`. A Version or Comment row about a review record, one of its copies, or an HRMS Appraisal is readable only by someone who may read that record (same stage, company and "never your own" rule). Audit notes on the review record cannot be created, edited or deleted by hand below Administrator. Rows about any other doctype are untouched. **Chosen: row rules, not moving audit notes off Comment.** Frappe v16.33.1 applies app hooks for core doctypes in both list paths (`model/db_query.py:1159`, `database/query.py:1619`, AND-ed with Frappe's own) and in `has_controller_permissions` (`permissions.py:491`); the desk timeline loads comments only after the record's own read check. So the hook scopes them safely and change history for grievances stays. | `TestB1ReviewHistoryAndNotes` (4 tests: System Manager, Website Manager and HR at Manager Review; System Manager at HR Review; a System Manager's own review; ToDo history and notes still listed and read; hooks registered) | pass |
+| **M1** three scoring calls open to any HR at any stage | `performance_api._require_scoring_access`, used by `suggest_ratings`, `sync_appraisal_from_kpis`, `submit_appraisal`: never the subject; the direct manager or HR; HR outside the line needs HR Review or Completed and a company it looks after; nobody before the self-review is sent | `TestM1ScoringCallsFollowTheStageAndCompanyRule` (3) | pass |
+| **M2** a rename steps round the lock | `review_items.refuse_rename_while_held` (`before_rename`) and `follow_rename` (`after_rename`) on KPI and Individual Goal. A held record keeps its name; a later rename moves every copy's pointer (one query). Copies being robust matters because the lock can be released while a review is still open. | `TestM2RenameWhileHeld` (3) | pass |
+| **M3** manager with an HR role does every step | **Not changed. On hold for the user's decision.** Code review M3 was fixed so that in HR Review an HR role holder still gets HR's controls exactly as before. | — | open |
+| **M4** HR reads Appraisal scores in the desk | `permissions.appraisal_query` and `has_appraisal_permission` (hooked on `Appraisal`): read and write follow the review's stage and company rule and never your own; create needs a company the caller looks after; a submitted appraisal with no review record is history and readable. `permitted_companies()` gives HR with no Company user permission its own company only. | `TestM4HrmsAppraisalInTheDesk` (3) | pass |
+| **M5** release checklist | §8 above rewritten from phase 3 §8, with real functions and the copy-back in the rollback, both before the image rollback | — (documentation) | done; **not rehearsed** |
+| m1 lock release days live | New `lock_release_days` field on the review record, stamped with the others at first open and by the backfill; the lock and the HR reminder read each review's own value; patch `stamp_lock_release_days` after the backfill | `TestM1LockReleaseDaysStamped` (2); changed: `test_r9_sec22_…` (screens), `TestR9LockReminder._release_days` (outside), `test_backfill_patch_is_listed_last…` | pass |
+| m2 approvers cannot see when a reading was typed | `logged_on` in `get_kpi_update_log`, `goals_api.get_goal_update_log` and `get_pending_approvals`; the update log shows "typed <date>" when it differs | `test_m2_approvers_see_when_a_reading_was_typed`, `test_m2_the_update_log_shows_when_a_reading_was_typed` | pass |
+| m3 write-back note shows values to every reader | Live-record note names the review and fields only; values go to an audit note on the review record | `test_m3_the_live_records_note_names_fields…` | pass |
+| m4 PRIV-14: no `on_trash`, no test | `AlvoraaAppraisalExtension.on_trash` refuses when copies exist, for everyone including Administrator and `ignore_permissions` | `test_m4_priv14_no_path_deletes…` | pass |
+| m5 no PRIV-15 marker test | Marker in a title changed in the review, a removal reason, a comment and HR's answer reason; review run to completion with write-back; not in Error Log, Email Queue, Notification Log or the live record's notes | `test_m5_priv15_a_marker…` | pass |
+| m6 static lock test sees `set_value` only | Also flags `db_set`, `frappe.db.sql` updates on `tabKPI`/`tabIndividual Goal` and `frappe.qb.update` on those doctypes, unless the function asks `holds()`; checks it really saw `db_set` and `sql` calls | `test_r2_static_no_code_writes_a_locked_field_around_the_lock` (screens) | pass |
+| m7 HR-role line manager sees a draft's items | `_draft_hidden`: `hr_list_kpis` and the CSV skip a review in Employee Review for everyone but the subject | `TestM7HrScreensHideDraftItems` | pass |
+| m8 HR approves any company's reading | `approve_kpi_update` and `approve_goal_update`: HR who is not the direct manager only for `permitted_companies()`; `get_pending_approvals` lists only those companies plus own direct reports | `test_m8_hr_approves_readings_only…` | pass |
+
+### Code review
+
+| Finding | What changed | Pin test | Result |
+|---|---|---|---|
+| **M1** dialog removes KPIs it never showed | `_selectable_items` lists every KPI that does not come with an Objective already in the review (cascaded ones included); `set_review_selection` removes only what that list holds | `TestCrM1SelectionRemovesOnlyWhatWasListed` | pass |
+| **M2** rejected reading stays in the live number | `log_kpi_progress` no longer changes `actual_value`; `approve_kpi_update` moves it through `_move_live_number` (Cumulative adds on approval, takes off when an approval is reversed; Absolute takes the latest approved by date); attainment and Achieved/Missed follow on save | `TestCrM2LiveNumberMovesOnApproval` (approve, reject, reverse, same decision twice); changed: `test_decision1_a_cumulative_reading_adds_up…` (screens) | pass |
+| **M3** manager with an HR role gets HR's view | `get_manager_review` sends `viewer_role: "manager"` to the manager for this review; `"hr"` for HR outside the line, and for an HR role holder in HR Review (unchanged, security M3) | `TestCrM3ManagerWithHrRole` | pass |
+| **M4** reviewer picker: 50 names, never cleared | Page searches on the server as the person types (2 letters, 300 ms pause), drops stale answers, clears on opening a review; server returns nobody for fewer than 2 letters, after its permission checks, limit 50 | `TestCrM4ReviewerPickerSearchesTheServer` (2) | pass |
+| **M5** | as security M5 | — | done |
+| minor 1 Add Objective tags the cycle | No cycle stamped; KPI dialog from a review starts with no cycle; page text says what happens | `test_cr_minor1_…` | pass |
+| minor 2 late facts and "dated by upload" not shown | `riFactsNote` for HR on each item | `test_cr_minor2_…` | pass |
+| minor 3 "items not in your review" not built | `review_items.not_in_review_count`, `get_my_review.not_in_review_count` (subject, before sending), note in `riReviewNotesHtml` | `TestCrMinor3NotInReviewCount`, `test_cr_minor3_…` | pass |
+| minor 4 UTC reading date | Local date for value and `max` | `test_cr_minor4_…` | pass |
+| minor 5 item flags not on the Reviews list | `get_team_reviews` adds one query for flagged item ratings | `TestCrMinor5ItemFlagsOnTheReviewsList` | pass |
+| minor 6 read screens save and conflict | `open_review` runs under a savepoint; on "document has been modified" it takes its attempt back, reloads and carries on (all review screens and writes use it) | `TestCrMinor6OpeningTogether` | pass |
+| minor 7 submitted Objectives | `on_update_after_submit` refresh hook; locked fields on a submitted goal are closed by Frappe's own after-submit rule on every path (no locked field allows on submit), pinned | `test_m2_minor7_rename_and_after_submit_hooks_are_registered` | pass |
+| minor 8 reason box hidden after cancel | `riOpenRemove` shows it every time | `test_cr_minor8_…` | pass |
+| minor 9 `save_overall_rating` accepts 0 | Refuses 0 | `TestCrMinor9OverallRatingOfZero` | pass |
+
+### Release risks (05 §8)
+
+| Risk | What changed | Pin test | Result |
+|---|---|---|---|
+| Every open review raises rating questions on first open | Backfill counts open, unfrozen reviews from approved dated facts at copy time (facts loaded once for all reviews) and stamps ratings and the overall rating on those numbers; first open stamps an overall rating that has no stamp yet. `report()` keys renamed to `open_items_counted_from_facts_differ_from_live` and `ratings_stamped_on_counted_numbers` | `TestReleaseRiskOverallRatingStampedOnFirstOpen`; changed: two backfill tests (outside) — first open now asks nothing, a later fact still does | pass |
+| Running-total readings | Script Report "Cumulative KPI Readings Check" (HR Manager, HR User; own companies; no ratings; read-only) | `TestReleaseRiskRunningTotalsReport` | pass |
+
+## 3. Non-functional dimensions, re-checked on the code written
+
+| Dimension | Before → after | Verdict |
+|---|---|---|
+| Performance | Version/Comment lists by a System Manager carry two to three subqueries; Appraisal read checks add 2–4 small queries per document; `get_team_reviews` +1 query; `get_my_review` +2 for the subject in draft; `open_review` +1 SAVEPOINT; picker now one small query per search instead of one 50-row load; backfill loads facts once | neutral |
+| Security | B1, M1, M2, M4, m7, m8 close side doors; audit notes no longer editable by hand; picker returns nobody for short searches | improves |
+| Reliability | Selection dialog no longer refuses or drops items; read screens no longer fail on a save race; live KPI number self-corrects on rejection | improves |
+| Scalability | Everything bounded; backfill facts chunked by 500 | neutral |
+| Maintainability | Two more hook pairs in `alvoraa_goals/permissions.py`; one new report; `review_items.py` a little longer | neutral |
+| Data integrity | Live number counts approved readings only; each review keeps its lock days; copies follow renames; review records with copies cannot be deleted | improves |
+| Compliance / privacy | History and notes follow the review rule; potential no longer readable by the subject through Version rows; live-record notes carry no values; PRIV-14 and PRIV-15 now tested | improves |
+
+`ignore_permissions` counts unchanged: `performance_api.py` 64, `review_items.py` 2,
+`goals_api.py` 15; the new code adds none.
+
+## 4. Commands run and real results
+
+Every command below was really run. One test run at a time, with this slice's row on the
+work board marked "bench in use", after slice 012's F1 runs had finished.
+
+    python scripts/check_app_integrity.py            -> OK - all consistent (before every commit)
+    node scripts/check_portal_handlers.js            -> portal handlers: all reachable and callable
+    node scripts/check_undefined_js.js               -> undefined identifiers: none
+    bench --site test_site migrate                   -> completed (new field, patch, report)
+
+    bench --site test_site run-tests --module alvoraa_portal.tests.test_review_fixround_010d
+      first run  -> Ran 33 tests FAILED (failures=3, errors=3); Ran 6 tests FAILED (failures=2)
+      second run -> Ran 33 tests in 249.688s OK; Ran 6 tests in 0.207s OK
+
+The first run's eight problems were all in the new tests or a code comment, none in a
+fix (commit `6326307`): HR roles hold no role on Version or Comment, so the B1 test
+wrongly expected HR to list them; a removed copy was looked up with a helper that
+raises; the "rater who left" was a made-up user in a Link field; `modified` compared as
+a date against text; the picker test cut the page at the wrong place; the m2 page test
+quoted the wrong half of a string; and a comment contained the word the reading-date
+test looks for.
+
+    bench --site test_site run-tests --app alvoraa_portal
+      -> Ran 546 tests in 916.542s   FAILED (errors=3, skipped=4)
+      -> Ran 572 tests in 1516.409s  FAILED (failures=1, errors=10)
+
+Fourteen did not pass, **all the known local-only failures, compared by name**:
+`test_leave_year` 3 errors (fiscal-year set-up on this bench) and `test_invoicing`
+1 failure + 10 errors (invoices, charge lines, annual fees, headcounts). Every group D
+suite (`test_review_copies_010d`, `test_review_screens_010d`, `test_review_outside_010d`,
+`test_review_page_010d`, `test_review_fixround_010d`) and slice 012's
+`test_org_access_settings_012f1` passed.
+
+    bench --site test_site run-tests --app alvoraa_goals
+      -> Ran 18 tests in 2.880s  OK (skipped=2)
+
+**Not run:** a browser trace, and the release checklist rehearsal on ppj.localhost.
+
+## 5. What is still open
+
+1. **Security M3 is on hold** (a manager who also holds an HR role doing HR steps on
+   their own report's review: calibrate, HR removal, HR flag answer, complete). No code
+   changed; the user decides. Residual risk R4.
+2. **Residual-risk rows need a name and a date** from the user before anything is
+   accepted: R4 (M3), R7 (legacy ratings on live KPIs), R8 (tenant Custom DocPerm), R9
+   (potential back on KPIs after a code rollback), R10 (no retention engine), R11 (logs
+   in France), R12 (cumulative readings change meaning — now helped by the new report).
+   R1, R2, R3, R5, R6 and R13 are fixed by this round and no longer need acceptance;
+   R6's rehearsal is still to do.
+3. **The release checklist has not been rehearsed** on ppj.localhost (release train gate
+   2), and **no browser trace was run** for the page changes in this round. Both need the
+   user's word.
+4. **The HRMS desk Appraisal list now hides in-progress appraisals from HR** (M4). If HR
+   used that list to watch progress, they should use the portal's HR screens.
+5. **Counsel questions** C-D1, C-D3, C-D4 are unchanged.
+6. **Not changed, from the reviews' "worries" and "what to delete"** (not asked for in
+   this round): dotted-line managers' feedback form, the HR stand-in chosen by row order,
+   departed employees with an enabled login, `save_calibration_note`'s missing column
+   (F-D8), and the dead reviewer modal and `_scored_live_items` legacy rating.

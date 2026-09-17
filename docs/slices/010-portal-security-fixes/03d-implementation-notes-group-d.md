@@ -1297,38 +1297,69 @@ were read from `ppj.localhost` read-only; nothing was written there.
 
 ## 8. Release checklist for group D
 
-Group D ships as **one batch**. Phases 2 and 3 changed what the review endpoints
-return; the page only caught up in phase 4. Shipping any part without the rest leaves
-screens reading keys that are no longer there.
+*Corrected in the fix round (security review M5, code review M5). The first version
+named two functions that do not exist (`dry_run`, `rollback`), said the permission
+report covers Individual Goal, and left the rating copy-back out of the rollback.*
+
+Group D ships as **one batch**, with its fix round. Phases 2 and 3 changed what the
+review endpoints return; the page only caught up in phase 4. Shipping any part without
+the rest leaves screens reading keys that are no longer there.
 
 **Order, per environment:**
 
 1. **Back up first.** A database dump of the tenant, kept until the release is
    accepted.
-2. **Dry run, per tenant, read-only.** `alvoraa_goals.review_backfill.dry_run(site)`
-   prints how many reviews would get copies, how many items each, and any review it
-   cannot place in a period. Phase 3 §7 has the output shape. Read it before
-   migrating. A tenant with reviews it cannot place is a stop, not a warning.
-3. **Migrate.** `bench --site <site> migrate`. This adds the `Alvoraa Review Item`
-   child table, the new fields on `Alvoraa Appraisal Extension`, the three HR Settings
-   fields, the KPI rating permlevel and the indexes, and runs the backfill patch.
-4. **Build and clear the cache** so the page and the two new desk list scripts are
-   served: `bench build`, then `bench --site <site> clear-cache`.
-5. **The permission report, on every dev tenant, before any push (decision 24).**
-   `alvoraa_goals.review_items.custom_docperm_report()` — read-only. It lists every
-   custom DocPerm on `Appraisal`, `KPI`, `Individual Goal` and
-   `Alvoraa Appraisal Extension`. A tenant that has been given a grant by hand can
-   undo the slice's restrictions, and this is the only way to see it. **Run it and
-   read it before the push, not after.**
-6. **Check three things by hand on the deployed tenant:** an employee opens their
-   review and sees items; a manager opens one and can rate an item; HR opens Org
-   Settings and sees the three settings.
+2. **Dry run, per tenant, read-only, before migrate.**
+   `bench --site <site> execute alvoraa_goals.review_backfill.report`
+   It changes nothing. Read: `will_copy`, `cannot_copy_nothing_tagged`,
+   `reviews_with_no_period`, `open_items_counted_from_facts_differ_from_live`,
+   `ratings_stamped_on_counted_numbers`,
+   `cumulative_kpis_whose_readings_look_like_running_totals` and
+   `custom_docperm_rows_to_look_at`. **Stop** if `cannot_copy_nothing_tagged.open` is not
+   empty or `custom_docperm_rows_to_look_at` lists anything.
+3. **Migrate.** `bench --site <site> migrate`. It adds the `Alvoraa Review Item` child
+   table, the new review-record fields (including `lock_release_days`), the three HR
+   Settings fields, the KPI rating permission level and indexes, and the
+   "Cumulative KPI Readings Check" report. It runs two patches, in this order:
+   `take_review_copies` (the backfill) then `stamp_lock_release_days`. Check the output
+   line "Review copies: N reviews, N copies, 0 failed", and that the Error Log has no
+   "Review copy backfill failed".
+4. **Clear the cache** so the page, the desk list scripts and the report are served:
+   `bench --site <site> clear-cache`. (Assets come with the deploy image.)
+5. **The permission report, on every tenant (decision 24).**
+   `bench --site <site> execute alvoraa_goals.review_items.custom_docperm_report`
+   Read-only. It lists Custom DocPerm rows on `Alvoraa Appraisal Extension`,
+   `Appraisal` and `KPI` (level 1 and above) that give a role other than HR a right.
+   It does not look at `Individual Goal`. The Version, Comment and Appraisal row rules
+   (fix round B1, M4) are code hooks, which a Custom DocPerm cannot switch off.
+6. **HR runs "Cumulative KPI Readings Check"** in the desk for each company, and
+   corrects readings that were typed as running totals, before relying on reviews.
+7. **Check by hand on the deployed tenant** (05 section 8):
+   an employee opens a review and sees items, and logs a KPI reading (label and date);
+   a manager with no HR role and one who holds an HR role open Manager Review, rate an
+   item, change a target, remove an item with a reason; the reviewer picker finds a
+   name that sorts late; HR sees the three settings in Org Settings and the blocked
+   completion message when a rating question is open; on one Cumulative KPI, log,
+   reject, log again, and check the live number; for an employee with a cascaded KPI,
+   open "Add/remove KPIs" and add one.
 
-**Rollback.** `alvoraa_goals.review_backfill.rollback(site)` removes the copies the
-patch made and clears `items_taken_on`, so reviews behave as they did before. The new
-fields and the child table stay; they are harmless when empty. The page is rolled back
-by deploying the previous image. **Roll the page and the server back together** — the
-same reason they ship together.
+**Rollback, in this order, on the user's word.** Steps 1 and 2 need the group D code,
+so they run **before** the image is rolled back.
+
+1. **Put ratings back where the old code reads them** (only if ratings were given in the
+   portal after go-live):
+   `bench --site <site> execute alvoraa_goals.review_backfill.copy_ratings_back_for_rollback --kwargs "{'dry_run': 1}"`,
+   read it, then the same with `{'dry_run': 0}`. Tell HR: the old code shows potential
+   ratings on live KPIs to employees again (residual risk R9).
+2. **Optional: remove the backfilled copies** from reviews nobody changed since:
+   `bench --site <site> execute alvoraa_goals.review_backfill.undo_backfill --kwargs "{'dry_run': 1}"`,
+   then `{'dry_run': 0}`. Reviews changed since are listed and kept. The copy table is
+   harmless if left.
+3. **Roll the code back:** redeploy the previous image (`dev-c27fb56` on dev), then
+   `bench --site <site> migrate` (KPI rating fields go back to level 0; the Appraisal
+   Employee row comes back). If that fails, restore the backup from step 1 of the
+   release. **Roll the page and the server back together**, for the same reason they
+   ship together.
 
 **What to tell users**, before the release:
 

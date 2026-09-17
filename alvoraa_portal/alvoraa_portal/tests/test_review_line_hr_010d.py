@@ -197,9 +197,9 @@ class TestD34AnotherHrPersonDoesTheHrSteps(_LineHr):
 			pa.save_calibration_note(r.ap, "calibrated", 2)
 		except frappe.PermissionError:
 			self.fail("another HR person was refused calibration")
-		except Exception:
-			frappe.db.rollback()   # past every permission check; the note column is a separate bug (F-D8)
 		frappe.set_user("Administrator")
+		# F-D8 is fixed (decision 35): the save now goes all the way through.
+		self.assertEqual(self._ext(r.ap).calibration_notes, "calibrated")
 		self._set_status(r.ap, "HR Review")
 		self._as(self.hr_user)
 		self.assertEqual(pa.return_for_revision(r.ap, "please add evidence")["review_status"], "Employee Review")

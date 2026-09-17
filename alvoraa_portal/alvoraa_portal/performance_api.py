@@ -3686,11 +3686,11 @@ def save_calibration_note(appraisal, calibration_notes, calibrated_rating=None):
         if rating < 0 or rating > MAX_RATING:
             frappe.throw(f"Rating must be between 0 and {int(MAX_RATING)}.")
     review_items.open_review(ext)
-    if not hasattr(ext, "calibration_notes"):
-        frappe.db.set_value("Alvoraa Appraisal Extension", ext.name,
-                            "calibration_notes", calibration_notes)
-    else:
-        ext.calibration_notes = calibration_notes
+    # HR-stage content (decision 35): no portal screen returns it, and only
+    # people who may open the review record read it in the desk or its history.
+    if calibration_notes is not None and not isinstance(calibration_notes, str):
+        frappe.throw("Calibration notes must be plain text.")
+    ext.calibration_notes = calibration_notes or ""
     if calibrated_rating not in (None, ""):
         ext.overall_rating = flt(calibrated_rating)
         review_items.stamp_overall_rating(ext)

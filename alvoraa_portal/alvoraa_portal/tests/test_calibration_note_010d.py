@@ -201,8 +201,10 @@ class TestD35TheSubjectAndManagerNeverReadTheNote(_Notes):
 	def test_d35_rest_and_version_rows_follow_the_review_rule_even_for_a_subject_with_an_hr_role(self):
 		# hr_subject holds HR Manager and reports to manager, who holds no HR role.
 		r = self._review_for(self.hr_subject, self.hr_subject_user, "HR Review")
+		self._save_note(self.hr_user, r.ap, self._marker())
+		# A second, different note, so the save changes the field and Frappe
+		# writes a Version row holding the new text.
 		marker = self._marker()
-		self._save_note(self.hr_user, r.ap, marker)
 		version = self._version_with_note(r.ap, marker)
 
 		# The subject (with an HR role) and their manager (without) read neither.

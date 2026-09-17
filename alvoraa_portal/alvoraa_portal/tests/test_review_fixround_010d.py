@@ -527,3 +527,74 @@ class TestM1LockReleaseDaysStamped(_Screens):
 			lines = [line.strip() for line in f if line.strip()]
 		self.assertGreater(lines.index("alvoraa_goals.patches.v1_0.stamp_lock_release_days"),
 		                   lines.index("alvoraa_goals.patches.v1_0.take_review_copies"))
+
+
+# ── Security m3, m5 · names and values stay out of logs and live-record notes ─
+
+
+class TestM3M5WriteBackNoteAndMarkers(_Screens):
+	def test_m3_the_live_records_note_names_fields_and_the_values_sit_on_the_review(self):
+		import alvoraa_goals.review_items as review_items
+
+		r = self._review(status="HR Review")
+		ext = self._ext(r.ap)
+		review_items.change_definition(ext, _row_for(ext, r.alone), {"target_value": 73})
+		review_items.save_review_record(ext)
+		ext = self._ext(r.ap)
+		self.assertEqual(review_items.write_back(ext), 1)
+		review_items.save_review_record(ext)
+		frappe.db.commit()
+
+		live = frappe.get_all("Comment", filters={"reference_doctype": "KPI", "reference_name": r.alone,
+		                                          "comment_type": "Info"}, pluck="content")
+		self.assertEqual(len(live), 1)
+		self.assertIn("target_value", live[0])
+		self.assertIn(r.ap, live[0])
+		self.assertNotIn("73", live[0])
+		on_review = frappe.get_all("Comment", filters={"reference_doctype": "Alvoraa Appraisal Extension",
+		                                               "reference_name": r.ap, "content": ["like", "%written back%"]},
+		                           pluck="content")
+		self.assertTrue(any("to 73" in c for c in on_review), on_review)
+
+	def test_m5_priv15_a_marker_in_a_title_a_reason_and_an_answer_never_reaches_logs_or_messages(self):
+		import alvoraa_portal.performance_api as pa
+
+		marker = f"PRIV15MARK{_uid()}"
+		started = now_datetime()
+		r = self._review("Employee Review")
+		ext = self._ext(r.ap)
+		alone, under = _row_for(ext, r.alone).name, _row_for(ext, r.under).name
+
+		# The subject renames an item inside the review (it is written back later).
+		self._as(self.subject_user)
+		pa.save_review_item_definition(r.ap, alone, title=f"{marker} title")
+		pa.submit_employee_review(r.ap, overall_comment=f"{marker} comment")
+		# The manager rates one item and removes another with a reason.
+		self._as(self.manager_user)
+		pa.save_review_item_rating(r.ap, alone, 4, comment=f"{marker} rating comment")
+		pa.remove_review_item(r.ap, under, reason=f"{marker} removal reason", acknowledge=1)
+		frappe.set_user("Administrator")
+
+		# A new fact flags the rating; the rater has since left, so HR answers with a reason.
+		self._reading(r.alone, _day(r.start, 5), 7)
+		frappe.db.set_value("Alvoraa Review Item", alone, "manager_rated_by", "left.the.company@example.com")
+		self._set_status(r.ap, "HR Review")
+		self._as(self.hr_user)
+		pa.get_manager_review(r.ap)
+		pa.answer_rating_flag(r.ap, alone, keep=1, reason=f"{marker} answer reason")
+		self.assertEqual(pa.advance_review_status(r.ap)["review_status"], "Completed")
+		frappe.set_user("Administrator")
+
+		self.assertIn("Written back", _row_for(self._ext(r.ap), r.alone).write_back_note)
+		self.assertEqual(frappe.db.get_value("KPI", r.alone, "kpi_name"), f"{marker} title")
+		for doctype, fields in (("Error Log", ["method", "error"]),
+		                        ("Email Queue", ["message"]),
+		                        ("Notification Log", ["subject", "email_content"])):
+			rows = frappe.get_all(doctype, filters={"creation": [">=", started]}, fields=fields)
+			self.assertNotIn(marker, json.dumps(rows, default=str), doctype)
+		# The live record's own note names the field, never the new title (m3).
+		live_notes = frappe.get_all("Comment", filters={"reference_doctype": "KPI", "reference_name": r.alone},
+		                            pluck="content")
+		self.assertNotIn(marker, json.dumps(live_notes))
+
+

@@ -1447,10 +1447,16 @@ def write_back(ext):
                 doc.save(ignore_permissions=True)
                 past_rule = (row.source_doctype == "Individual Goal" and flt(doc.get("actual_progress")) > 0
                              and any(f == "target_value" for f, _o, _n in written))
+                # Everyone who reads the live record reads this note, so it says
+                # which fields and which review, never the values (security
+                # review m3). The values sit on the review record, which only its
+                # own readers open.
                 doc.add_comment("Info", _("Changed in review {0}: {1}. Agreed in the review when the manager sent it.").format(
-                    ext.name, "; ".join(f"{f} {cstr(old)} to {cstr(new)}" for f, old, new in written))
+                    ext.name, ", ".join(f for f, _o, _n in written))
                     + (" " + _("The target changed although progress was already recorded, because the review agreed it.")
                        if past_rule else ""))
+                audit(ext, f"Review item {row.name} written back to {row.source_doctype} {row.source_name}: "
+                           + "; ".join(f"{f} {cstr(old)} to {cstr(new)}" for f, old, new in written) + ".")
                 notes.append(_("Written back: {0}.").format(", ".join(f for f, _o, _n in written)))
             except Exception as e:
                 frappe.db.rollback(save_point=savepoint)

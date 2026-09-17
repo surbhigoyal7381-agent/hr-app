@@ -5,10 +5,28 @@ Run: bench --site hrms.localhost execute alvoraa_portal.alvoraa_portal.demo_setu
 import frappe
 from frappe.utils import today, add_days, now_datetime
 from datetime import datetime, timedelta
+import os
 import random
 
 NOW = now_datetime()
 TODAY = today()
+
+# The login password for the demo vendor users. There is no built-in default:
+# a password written in public code is one anyone can try on the site. Set it
+# before running this script:
+#     export PORTAL_DEMO_PASSWORD='<a new, strong password>'
+DEMO_PASSWORD = os.environ.get("PORTAL_DEMO_PASSWORD", "").strip()
+
+
+def _demo_password():
+    if not DEMO_PASSWORD:
+        frappe.throw(
+            "PORTAL_DEMO_PASSWORD is not set. Choose a password for the demo "
+            "users and export it before running this script:\n"
+            "  export PORTAL_DEMO_PASSWORD='<a new, strong password>'\n"
+            "Nothing was changed."
+        )
+    return DEMO_PASSWORD
 
 
 def make_user(email, first, last, roles=None):
@@ -23,7 +41,7 @@ def make_user(email, first, last, roles=None):
         "full_name": f"{first} {last}",
         "enabled": 1,
         "user_type": "Website User",
-        "new_password": "Grace@2024",
+        "new_password": _demo_password(),
         "send_welcome_email": 0,
     })
     doc.insert(ignore_permissions=True)
@@ -303,12 +321,12 @@ def execute():
 
     print("\n=== Setup Complete ===")
     print("\n📦 VENDOR ACCOUNTS:")
-    print("  Raj Wine Shop        → raj.wine@gracedemo.in     / Grace@2024  (3 orders)")
-    print("  Metro Wines          → metro.wines@gracedemo.in  / Grace@2024  (3 orders)")
-    print("  QuickStop Beverages  → quickstop@gracedemo.in    / Grace@2024  (2 orders)")
+    print("  Raj Wine Shop        → raj.wine@gracedemo.in  (3 orders)")
+    print("  Metro Wines          → metro.wines@gracedemo.in  (3 orders)")
+    print("  QuickStop Beverages  → quickstop@gracedemo.in  (2 orders)")
     print("\n🚛 DRIVER ACCOUNTS:")
-    print("  Rajan Kumar (Truck)  → driver.rajan@gracedemo.in  / Grace@2024  (4 deliveries)")
-    print("  Suresh Yadav (Tempo) → driver.suresh@gracedemo.in / Grace@2024  (4 deliveries)")
+    print("  Rajan Kumar (Truck)  → driver.rajan@gracedemo.in  (4 deliveries)")
+    print("  Suresh Yadav (Tempo) → driver.suresh@gracedemo.in  (4 deliveries)")
     print("\n🔗 PORTAL URLS:")
     print("  Vendor Portal → http://hrms.localhost:8000/vendor-portal")
     print("  Driver Portal → http://hrms.localhost:8000/driver-portal")

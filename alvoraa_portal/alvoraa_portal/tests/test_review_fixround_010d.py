@@ -379,3 +379,44 @@ class TestCrM2LiveNumberMovesOnApproval(_Screens):
 		for entry in (pending, logged):
 			self.assertEqual(entry["log_date"], str(frappe.utils.getdate(add_days(today(), -20))))
 			self.assertTrue(entry["logged_on"].startswith(str(frappe.utils.getdate(today()))))
+
+
+# ── Code review M1 · the add/remove dialog removes only what it listed ──────
+
+
+class TestCrM1SelectionRemovesOnlyWhatWasListed(_Screens):
+	def test_cr_m1_a_cascaded_kpi_is_listed_and_a_kpi_the_dialog_never_showed_is_kept(self):
+		import alvoraa_portal.performance_api as pa
+
+		start, end = self._window()
+		cycle = self._cycle(start, end)
+		managers_goal = self._goal(self.manager, cycle, start, end)
+		cascaded = self._kpi(self.subject, cycle, target=10, goal=managers_goal, start=start, end=end)
+		# Tagged to the cycle, so copied, but its own period is outside the review's.
+		outside = self._kpi(self.subject, cycle, target=10, start=_day(end, 30), end=_day(end, 60))
+		alone = self._kpi(self.subject, cycle, target=10, start=start, end=end)
+		later = self._kpi(self.subject, None, target=10, start=start, end=end)
+		ap = self._appraisal(self.subject, cycle, status="Employee Review")
+
+		self._as(self.subject_user)
+		pa.get_my_review(ap)
+		listed = {k["name"]: k["selected"] for k in pa.get_available_for_review(ap)["kpis"]}
+		self.assertTrue(listed.get(cascaded), "a cascaded KPI is listed, ticked")
+		self.assertNotIn(outside, listed)
+
+		# Adding one KPI with everything else as listed removes nothing and asks nothing.
+		ticked = [n for n, sel in listed.items() if sel] + [later]
+		result = pa.set_review_selection(ap, "[]", json.dumps(ticked), acknowledge_removal=0)
+		self.assertEqual((result["added"], result["removed"]), (1, 0))
+
+		# Unticking one listed KPI removes that one only; the unlisted KPI stays.
+		ticked.remove(alone)
+		result = pa.set_review_selection(ap, "[]", json.dumps(ticked), acknowledge_removal=1)
+		frappe.set_user("Administrator")
+		self.assertEqual(result["removed"], 1)
+		ext = self._ext(ap)
+		for name in (cascaded, outside, later):
+			self.assertTrue(_row_for(ext, name), name)
+		self.assertFalse(_row_for(ext, alone) and not _row_for(ext, alone).removed)
+
+

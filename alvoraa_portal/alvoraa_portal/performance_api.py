@@ -4051,6 +4051,18 @@ def get_available_for_review(appraisal):
     """The subject's live Objectives and standalone KPIs that meet the review period,
     for the add/remove dialog. `selected` means the review holds a copy of it."""
     ap, ext = _selection_record(appraisal, "get_available_for_review")
+    return _selectable_items(ap, ext)
+
+
+def _selectable_items(ap, ext):
+    """What the add/remove dialog lists. set_review_selection removes only from
+    this list, so nothing the person was never shown is taken out (code review M1).
+
+    Objectives meeting the review period, and KPIs meeting it that do not come
+    with an Objective already in the review. That includes a KPI linked to
+    someone else's Objective (a cascaded KPI) or to one of the person's own
+    Objectives that is not in this review: it is listed on its own.
+    """
     # The period stamped on the review when it opened, so a later change to the
     # cycle's page settings cannot move it (SEC-21).
     period_from = ext.review_window_start
@@ -4058,6 +4070,8 @@ def get_available_for_review(appraisal):
     if not (period_from and period_to):
         return {"goals": [], "kpis": [], "period_from": "", "period_to": ""}
     held = {r.source_name for r in ext.review_items if not r.removed}
+    held_goals = sorted({r.source_name for r in ext.review_items
+                         if not r.removed and r.source_doctype == "Individual Goal"})
 
     goals = frappe.get_all(
         "Individual Goal",
@@ -4076,16 +4090,20 @@ def get_available_for_review(appraisal):
         g["selected"] = g["name"] in held
         _serialise_dates(g, "start_date", "end_date")
 
-    # Only standalone KPIs (goal-linked KPIs are included automatically with their parent goal)
+    # KPIs under an Objective the review holds come with it; every other KPI is
+    # listed on its own.
     kpis = frappe.get_all(
         "KPI",
         filters={
             "employee": ap.employee,
-            "individual_goal": ("is", "not set"),
             "docstatus": ["!=", 2],
             "period_start": ["<=", period_to],
             "period_end":   [">=", period_from],
         },
+        or_filters=[
+            ["individual_goal", "is", "not set"],
+            ["individual_goal", "not in", held_goals or [""]],
+        ],
         fields=["name", "kpi_name", "period_start", "period_end", "status",
                 "target_value", "unit", "category", "appraisal_cycle"],
         ignore_permissions=True,
@@ -4128,14 +4146,20 @@ def set_review_selection(appraisal, selected_goals_json=None, selected_kpis_json
 
     goals, kpis = names(selected_goals_json), names(selected_kpis_json)
     live = [r for r in ext.review_items if not r.removed]
-    live_goals = {r.source_name: r for r in live if r.source_doctype == "Individual Goal"}
+    listed = _selectable_items(ap, ext)
+    listed_goals = {g["name"] for g in listed["goals"]}
+    listed_kpis = {k["name"] for k in listed["kpis"]}
     live_names = {r.name for r in live}
-    # The dialog lists standalone KPIs only; a KPI under a live Objective comes with it.
+    # Only what the dialog listed can be taken out by unticking it (code review
+    # M1). A KPI under a live Objective comes and goes with that Objective.
+    live_goals = {r.source_name: r for r in live
+                  if r.source_doctype == "Individual Goal" and r.source_name in listed_goals}
     live_kpis = {r.source_name: r for r in live
-                 if r.source_doctype == "KPI" and r.parent_item not in live_names}
+                 if r.source_doctype == "KPI" and r.parent_item not in live_names and r.source_name in listed_kpis}
+    held_names = {r.source_name for r in live}
 
-    add_goals = sorted(goals - set(live_goals)) if goals is not None else []
-    add_kpis = sorted(kpis - set(live_kpis)) if kpis is not None else []
+    add_goals = sorted(goals - held_names) if goals is not None else []
+    add_kpis = sorted(kpis - held_names) if kpis is not None else []
     remove = ([live_goals[n] for n in sorted(set(live_goals) - goals)] if goals is not None else []) + \
              ([live_kpis[n] for n in sorted(set(live_kpis) - kpis)] if kpis is not None else [])
     if remove and not cint(acknowledge_removal):

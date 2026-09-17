@@ -221,10 +221,23 @@ def open_review(ext):
     The first open takes the copies; later opens bring their numbers up to date
     (the safety net for any path that changed a fact without saving its parent).
     Returns True when the record was written, so the caller can commit.
+
+    Two people opening the same review at the same moment both bring it up to
+    date, and the second save used to fail with "document has been modified"
+    (code review minor 6). The other request has just written the same fresh
+    numbers, so this one takes its work back, reloads the record and carries on
+    with what is now stored.
     """
-    if ensure_review_items(ext):
-        return True
-    return refresh_review_items(ext)
+    savepoint = f"review_open_{frappe.generate_hash(length=8)}"
+    frappe.db.savepoint(savepoint)
+    try:
+        if ensure_review_items(ext):
+            return True
+        return refresh_review_items(ext)
+    except frappe.TimestampMismatchError:
+        frappe.db.rollback(save_point=savepoint)
+        ext.reload()
+        return False
 
 
 def ensure_review_items(ext):

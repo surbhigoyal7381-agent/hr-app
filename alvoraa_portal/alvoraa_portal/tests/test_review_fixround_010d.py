@@ -618,3 +618,21 @@ class TestM4Priv14ReviewRecordIsNotDeleted(_Screens):
 		self.assertFalse(frappe.db.exists("Alvoraa Appraisal Extension", empty))
 
 
+# ── Code review minor 6 · two people opening one review at once ─────────────
+
+
+class TestCrMinor6OpeningTogether(_Screens):
+	def test_cr_minor6_a_second_open_that_loses_the_save_race_carries_on(self):
+		import alvoraa_goals.review_items as review_items
+
+		r = self._review("Manager Review")
+		first, second = self._ext(r.ap), self._ext(r.ap)
+		self._reading(r.alone, _day(r.start, 6), 3)
+		self.assertTrue(review_items.open_review(first))
+		frappe.db.commit()
+		# The second copy of the record is now stale; before the fix its save failed.
+		self.assertFalse(review_items.open_review(second))
+		self.assertEqual(second.modified, first.modified)
+		self.assertEqual(_row_for(second, r.alone).actual_value, 13)
+
+

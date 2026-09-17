@@ -160,10 +160,16 @@ On the server, after Block 0:
 ```
 docker cp demo/pp_jewellers compose-backend-1:/tmp/ppj
 docker cp docs/pp_jewellers/data compose-backend-1:/tmp/ppj/data
-docker exec compose-backend-1 bash /tmp/ppj/run_all.sh --site ppj.dev.alvoraa.co
+docker exec -e PPJ_DEMO_PASSWORD="$PPJ_DEMO_PASSWORD" compose-backend-1 bash /tmp/ppj/run_all.sh --site ppj.dev.alvoraa.co
 docker exec compose-backend-1 bash -lc 'cd /home/frappe/frappe-bench/sites && PPJ_SCRIPT_DIR=/tmp/ppj ../env/bin/python /tmp/ppj/verify_ppj.py --site ppj.dev.alvoraa.co'
 ```
 
-Demo password for every seeded user: `Ppj@2026` (override with `PPJ_DEMO_PASSWORD`). Change it on the tenant after the demo.
+**Set the login password for the seeded users first.** There is no built-in one, and the scripts stop before writing anything if it is missing:
+
+```
+export PPJ_DEMO_PASSWORD='<a new, strong password>'
+```
+
+Pick a fresh value each time, keep it out of git and out of chat, and change it on the tenant after the demo.
 
 The `demo/` folder is git-isolated; add empty stubs on `main` per `demo/README.md` before the next merge.

@@ -77,7 +77,7 @@ Assign these templates programmatically via Leave Policy Assignment:
 Update the Employee records to ensure the Leave Approver field is correctly populated:
 
 * Drivers (Harpreet, Rajinder) \-\> Leave Approver: Gurpreet Singh (Logistics Manager).  
-* KAMs \-\> Leave Approver: Respective Director (Mukesh Mittal / Chaitanya Malhotra).
+* KAMs \-\> Leave Approver: Respective Director (Naresh Kamath / Aditya Rathore).
 
 **5\. Custom Python Server Script: The "Fleet Reallocation Warning"**
 

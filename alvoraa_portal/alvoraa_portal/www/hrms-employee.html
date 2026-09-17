@@ -15878,6 +15878,14 @@ function deleteDrawerNote(noteId, empId) {
   /* The numbers are closed; and, for HR, what cannot be finished yet. */
   window.riReviewNotesHtml = function(d) {
     var html = "";
+    /* Items tagged to this cycle after the copies were taken are not added
+       behind the person's back (00d section 2.4, code review minor 3). */
+    var missing = parseInt((d && d.not_in_review_count) || 0, 10) || 0;
+    if (missing && !_pr.viewerRole) {
+      html += "<div class=\"callout\" style=\"margin-bottom:12px\">" +
+        gpEsc(missing + (missing === 1 ? " item in this cycle is" : " items in this cycle are")) +
+        " not in your review. Use Add/remove Objectives or Add/remove KPIs to add them if they belong here.</div>";
+    }
     if (d && d.numbers_frozen) {
       html += "<div class=\"callout\" style=\"margin-bottom:12px\">The numbers in this review are closed. " +
         "Later updates to the live records do not change them.</div>";

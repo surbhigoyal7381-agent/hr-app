@@ -618,6 +618,23 @@ class TestM4Priv14ReviewRecordIsNotDeleted(_Screens):
 		self.assertFalse(frappe.db.exists("Alvoraa Appraisal Extension", empty))
 
 
+# ── Code review minor 5 · a flagged item rating shows on the Reviews list ───
+
+
+class TestCrMinor5ItemFlagsOnTheReviewsList(_Screens):
+	def test_cr_minor5_rating_needs_your_answer_shows_for_a_flagged_item_rating(self):
+		import alvoraa_portal.performance_api as pa
+
+		ap, _row = self._flagged_review(self.manager_user, self.subject, self.subject_user)
+		frappe.db.set_value("Alvoraa Appraisal Extension", ap, "overall_rating_flag", 0)
+		frappe.db.commit()
+		cycle = frappe.db.get_value("Appraisal", ap, "appraisal_cycle")
+		self._as(self.manager_user)
+		row = next(t for t in pa.get_team_reviews(cycle)["team"] if t["employee"] == self.subject)
+		frappe.set_user("Administrator")
+		self.assertEqual(row["rating_needs_answer"], 1)
+
+
 # ── Code review minor 6 · two people opening one review at once ─────────────
 
 

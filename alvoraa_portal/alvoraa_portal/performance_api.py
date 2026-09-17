@@ -891,6 +891,14 @@ def get_team_reviews(cycle=None):
         ext_map[ext["appraisal"]] = ext
 
     appraisal_by_emp = {a["employee"]: a for a in appraisals}
+    # Reviews with a flagged item manager rating (R7): they block completion as
+    # the overall rating's flag does (code review minor 5). One query.
+    item_flags = set(frappe.get_all(
+        "Alvoraa Review Item",
+        filters={"parenttype": "Alvoraa Appraisal Extension", "parent": ["in", appraisal_names],
+                 "manager_flag": 1, "removed": 0},
+        pluck="parent", distinct=True,
+    ))
 
     def ratings(emp_id, ext):
         status = ext.get("review_status") or "Not Started"
@@ -917,7 +925,8 @@ def get_team_reviews(cycle=None):
                 # is waiting to be kept or changed (R7). Only to whoever may see
                 # the rating itself; never on the subject's own row.
                 "rating_needs_answer": (
-                    cint(ext.get("overall_rating_flag")) if (overall is not None and emp_id != me) else 0
+                    int(bool(cint(ext.get("overall_rating_flag")) or ap["name"] in item_flags))
+                    if (overall is not None and emp_id != me) else 0
                 ),
                 "start_date":     ap.get("start_date") or "",
                 "end_date":       ap.get("end_date") or "",

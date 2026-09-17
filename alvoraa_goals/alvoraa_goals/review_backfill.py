@@ -81,16 +81,29 @@ def _get_all_in(doctype, field, values, filters=None, **kwargs):
     return rows
 
 
+def _group_d_schema():
+    """Does this site have group D's tables yet? (rehearsal C1)
+
+    The dry run must work on a site that has not been migrated to this release:
+    there the copy table and the review record's `items_taken_on` do not exist,
+    and no review can have copies. Reads the database's own list of tables and
+    columns; changes nothing.
+    """
+    return frappe.db.table_exists(ITEM, cached=False) and frappe.db.has_column(EXTENSION, "items_taken_on")
+
+
 def _plan(names=None):
     """Every review record (or only these), what would happen to it, and the copies it would get."""
     settings = review_items.review_settings()
+    migrated = _group_d_schema()
+    fields = _EXT_FIELDS if migrated else [f for f in _EXT_FIELDS if f != "items_taken_on"]
     extensions = frappe.get_all(EXTENSION, filters={"name": ["in", list(names) or [""]]} if names is not None else None,
-                                fields=_EXT_FIELDS, order_by="name asc")
+                                fields=fields, order_by="name asc")
     appraisals = {a.name: a for a in _get_all_in(
         "Appraisal", "name", [e.appraisal for e in extensions if e.appraisal],
         fields=["name", "employee", "appraisal_cycle", "start_date", "end_date", "docstatus"])}
     with_rows = set(_get_all_in(ITEM, "parent", [e.name for e in extensions], filters={"parenttype": EXTENSION},
-                                pluck="parent", distinct=True))
+                                pluck="parent", distinct=True)) if migrated else set()
 
     cycles = {c.name: c for c in frappe.get_all("Appraisal Cycle", fields=["name", "start_date", "end_date"])}
     wanted_cycles = sorted({(appraisals.get(e.appraisal) or e).get("appraisal_cycle") or e.appraisal_cycle
@@ -238,9 +251,11 @@ def _approved_facts(kpi_names, goal_names):
 def report(names=None):
     """Read-only. What run() would do on this site, in counts and document names.
 
-    Writes nothing. Run it on a site after the code is deployed and before its
-    migrate, on the user's word:
+    Writes nothing. Works on a site that has not been migrated to this release
+    yet (rehearsal C1) as well as on one that has. Run it with this release's
+    code, before the site's migrate, on the user's word:
         bench --site <site> execute alvoraa_goals.review_backfill.report
+    The release checklist (03d section 8) says where that is done for dev.
     `names` limits it to those review records (tests use this).
     """
     plans = _plan(names)
@@ -304,6 +319,7 @@ def report(names=None):
 
     return {
         "reviews": len(plans),
+        "site_already_has_group_d_tables": int(_group_d_schema()),
         "by_cycle_and_stage": by_cycle_stage,
         "will_copy": {"reviews": len(to_copy), "items": sum(items_per_review),
                       "completed": sum(1 for p in to_copy if p.status == "Completed"),
@@ -410,6 +426,10 @@ def undo_backfill(dry_run=1, names=None):
     alone. With dry_run (the default) nothing is written. The self-review draft
     is keyed back to the live record names. `names` limits it to those review
     records (tests use this).
+
+    Do not run it on a site that may get this release again: the copy patch is
+    already in the patch log, so a later release does not copy completed
+    reviews a second time, and their history copies would be gone for good.
     """
     dry_run = cint(dry_run)
     item_fields = ["name", "parent", "backfilled", "source_doctype", "source_name", "removed", "added_in_review",
@@ -424,6 +444,17 @@ def undo_backfill(dry_run=1, names=None):
         EXTENSION, "name", list(rows_by_parent),
         fields=["name", "items_taken_on", "frozen_on", "completed_on", "overall_rated_on",
                 "overall_flag_answered_on", "page_data"])}
+    # Every change a person makes to a review's items leaves an audit note on the
+    # review record (review_items.audit), including a removal that deletes an
+    # unrated copy in "Discard the copy" mode, which leaves no row behind
+    # (rehearsal F6). A note written after the copy means the review changed.
+    notes_on = {}
+    for note in _get_all_in("Comment", "reference_name", list(extensions),
+                            filters={"reference_doctype": EXTENSION, "comment_type": "Info"},
+                            fields=["reference_name", "creation"]):
+        last = notes_on.get(note.reference_name)
+        if last is None or note.creation > last:
+            notes_on[note.reference_name] = note.creation
 
     undo, kept = [], []
     for parent, rows in rows_by_parent.items():
@@ -439,7 +470,7 @@ def undo_backfill(dry_run=1, names=None):
             any(cint(r.removed) or cint(r.added_in_review) or r.definition_changed_on or later(r.self_rated_on)
                 or later(r.manager_rated_on) or r.manager_flag_answered_on for r in rows)
             or later(ext.frozen_on) or later(ext.completed_on) or later(ext.overall_rated_on)
-            or ext.overall_flag_answered_on
+            or ext.overall_flag_answered_on or later(notes_on.get(parent))
         )
         (kept if changed else undo).append(parent)
 
@@ -468,10 +499,13 @@ def undo_backfill(dry_run=1, names=None):
 
 
 def copy_ratings_back_for_rollback(dry_run=1, names=None):
-    """Before a code rollback: put ratings given on open reviews' copies back on
-    the live KPIs, which is where the old code reads them (00d section 10.3).
+    """Before a code rollback: put ratings given in reviews back on the live KPIs,
+    which is where the old code reads them (00d section 10.3).
 
-    For each KPI copied into an open review, the ratings on the copy of the
+    Reviews still open, and reviews completed after their copies were taken,
+    so completed under this release (rehearsal F5). Reviews that were already
+    completed when the backfill copied them are history whose ratings came from
+    the live KPIs, and are left out. For each KPI, the ratings on the copy of the
     review with the latest period are written to the KPI where they differ,
     through the document with the repair flag the rating guard honours. With
     dry_run (the default) nothing is written. Returns counts and the KPI names
@@ -489,7 +523,7 @@ def copy_ratings_back_for_rollback(dry_run=1, names=None):
         .where(item.parenttype == EXTENSION)
         .where(item.source_doctype == "KPI")
         .where(item.removed == 0)
-        .where(ext.review_status != "Completed")
+        .where((ext.review_status != "Completed") | (ext.completed_on > ext.items_taken_on))
         .where(ext.name.isin(list(names) or [""]) if names is not None else ext.name.isnotnull())
     ).run(as_dict=True)
     latest = {}

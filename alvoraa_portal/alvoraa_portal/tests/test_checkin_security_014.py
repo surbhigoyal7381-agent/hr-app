@@ -331,7 +331,9 @@ class RegistrationGivesNoIdAway(CheckinLogCase):
 		frappe.local.response = frappe._dict()
 		frappe.clear_messages()
 		self.call(fc.field_status, {"token": token})
-		return frappe.local.response.get("http_status_code"), json.dumps(frappe.local.message_log)
+		# Compare the words only: each queued message also carries a random id.
+		words = [m.get("message") if isinstance(m, dict) else m for m in frappe.local.message_log]
+		return frappe.local.response.get("http_status_code"), words
 
 	def test_014_register_device_same_reply_for_real_and_fake_id(self):
 		real = self.register(self.employee)

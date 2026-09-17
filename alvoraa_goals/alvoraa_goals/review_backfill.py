@@ -17,9 +17,11 @@ designs it:
   Not Started          nothing: copies are taken when the review is first opened.
   Cancelled appraisal  nothing.
 
-The first time an open review is opened afterwards, its numbers are recounted
-from approved facts dated in its period. Where that moves a number a rating
-was given on, the rating is flagged (R7). report() counts those in advance.
+An open review whose numbers are not frozen yet is counted from approved facts
+dated in its period at copy time, the same count its first open makes, and its
+ratings are stamped on those numbers. So the first open raises no rating
+question for every old review at once (release risk in the code review, 05
+section 8). report() counts how many numbers the recount moves.
 
 Functions, all run by a person on the user's word:
 
@@ -145,8 +147,13 @@ def _plan(names=None):
     return plans
 
 
-def _rows_for(plan, now):
-    """The copies one review gets, as field dicts, Objectives first."""
+def _rows_for(plan, now, facts=None):
+    """The copies one review gets, as field dicts, Objectives first.
+
+    With facts (readings, evidence, updates) an open, unfrozen review's copies
+    carry the numbers counted from approved facts dated in its period, which is
+    what its first open would count. Ratings are then stamped on those.
+    """
     rows, goal_rows = [], {}
     for goal in plan.goals:
         values = review_items._goal_copy(goal)
@@ -161,6 +168,12 @@ def _rows_for(plan, now):
         for field in _KPI_RATINGS:
             values[field] = kpi.get(field) or (0 if field.endswith("_rating") else "")
         rows.append(values)
+
+    if facts is not None and plan.status in OPEN_STAGES and not plan.frozen:
+        start = getdate(plan.start) if plan.start else None
+        end = getdate(plan.end) if plan.end else None
+        for values in rows:
+            values.update(review_items._numbers_for(frappe._dict(values), start, end, *facts))
 
     for values in rows:
         values.update(backfilled=1, facts_as_of=now)
@@ -251,7 +264,7 @@ def report(names=None):
         end = getdate(p.end) if p.end else None
         if not (start and end):
             no_period += 1
-        rows = [frappe._dict(r) for r in _rows_for(p, now)]
+        rows = [frappe._dict(r) for r in _rows_for(p, now)]   # as stored, to compare
         rated_items += sum(1 for r in rows if any(flt(r.get(f)) > 0 for f in ("self_rating", "manager_rating",
                                                                              "potential_rating")))
         for r in rows:
@@ -306,8 +319,11 @@ def report(names=None):
         "reviews_with_no_period": no_period,
         "rated_items_copied": rated_items,
         "approved_facts_dated_outside_the_review_period": dict(outside),
-        "open_items_whose_number_changes_on_first_open": numbers_change,
-        "rating_questions_expected_on_first_open": rating_questions,
+        # The copy counts these from approved facts dated in the review period, so
+        # they differ from the live record. Ratings on them are stamped on the
+        # counted number: nothing is asked on first open.
+        "open_items_counted_from_facts_differ_from_live": numbers_change,
+        "ratings_stamped_on_counted_numbers": rating_questions,
         "draft_keys_dropped": keys_dropped,
         "cumulative_kpis_whose_readings_look_like_running_totals": running_totals,
         "extensions_missing_employee_or_cycle": sum(1 for p in plans if not (p.ext.employee and p.ext.appraisal_cycle)),
@@ -326,12 +342,14 @@ def run(names=None):
     and the rest carry on. Commits every 50 reviews. Returns counts.
     """
     plans = [p for p in _plan(names) if p.action == "copy"]
+    counted = [p for p in plans if p.status in OPEN_STAGES and not p.frozen]
+    facts = _approved_facts([k.name for p in counted for k in p.kpis], [g.name for p in counted for g in p.goals])
     done, rows_made, failed = 0, 0, []
     for index, plan in enumerate(plans, start=1):
         savepoint = f"review_backfill_{index}"
         frappe.db.savepoint(savepoint)
         try:
-            rows_made += _copy_one(plan)
+            rows_made += _copy_one(plan, facts)
             done += 1
         except Exception:
             frappe.db.rollback(save_point=savepoint)
@@ -343,10 +361,10 @@ def run(names=None):
     return {"reviews_copied": done, "copies_made": rows_made, "failed": failed}
 
 
-def _copy_one(plan):
+def _copy_one(plan, facts=None):
     now = now_datetime()
     ext = plan.ext
-    rows = _rows_for(plan, now)
+    rows = _rows_for(plan, now, facts)
     for idx, values in enumerate(rows, start=1):
         doc = frappe.get_doc(dict(values, doctype=ITEM, parent=ext.name, parenttype=EXTENSION,
                                   parentfield="review_items", idx=idx))

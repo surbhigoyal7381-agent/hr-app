@@ -301,6 +301,12 @@ def ensure_review_items(ext):
         row.name = frappe.generate_hash(length=10)
 
     _recount(ext)
+    if flt(ext.get("overall_rating")) > 0 and not ext.get("overall_rating_basis"):
+        # An overall rating given before this review had copies is stamped on the
+        # numbers the copies start from, so the first open does not ask about it
+        # (release risk, code review section 8). Who gave it was not recorded.
+        ext.overall_rating_basis = json.dumps(overall_basis(ext), sort_keys=True)
+        ext.overall_rated_on = ext.get("overall_rated_on") or now_datetime()
     if is_past_freeze_point(ext.review_status, ext.freeze_point):
         ext.frozen = 1
         ext.frozen_on = now_datetime()

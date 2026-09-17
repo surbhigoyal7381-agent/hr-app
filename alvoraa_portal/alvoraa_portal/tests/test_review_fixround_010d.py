@@ -676,3 +676,23 @@ class TestCrMinor3NotInReviewCount(_Screens):
 		frappe.set_user("Administrator")
 
 
+# ── Release risk (05 section 8) · an overall rating from before the copies ──
+
+
+class TestReleaseRiskOverallRatingStampedOnFirstOpen(_Screens):
+	def test_rr_first_open_stamps_an_existing_overall_rating_instead_of_asking(self):
+		import alvoraa_portal.performance_api as pa
+
+		start, end = self._window()
+		cycle = self._cycle(start, end)
+		kpi = self._kpi(self.subject, cycle, target=10)
+		self._reading(kpi, _day(start, 1), 4)
+		ap = self._appraisal(self.subject, cycle, status="Manager Review")
+		frappe.db.set_value("Alvoraa Appraisal Extension", ap, "overall_rating", 3)
+		frappe.db.commit()
+
+		self._as(self.manager_user)
+		review = pa.get_manager_review(ap)
+		frappe.set_user("Administrator")
+		self.assertEqual((review["overall_rating_flag"], review["open_blocking_flags"]), (0, 0))
+		self.assertTrue(self._ext(ap).overall_rating_basis)

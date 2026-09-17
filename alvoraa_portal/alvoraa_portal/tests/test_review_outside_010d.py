@@ -829,10 +829,12 @@ class TestBackfillCopiesExistingReviews(_Team):
 		self.assertEqual(out["skipped"], {"not started: copied when first opened": 1})
 		self.assertEqual(out["cannot_copy_nothing_tagged"], {"completed": [c.empty], "open": []})
 		self.assertEqual(out["rated_items_copied"], 2)
-		# The open review's KPI counts 50 from its readings, not the stored 80:
-		# one number moves, and a manager rating and the overall rating are asked about.
-		self.assertEqual(out["open_items_whose_number_changes_on_first_open"], 2)
-		self.assertEqual(out["rating_questions_expected_on_first_open"], 2)
+		# The open review's KPI counts 50 from its readings, not the stored 80, and
+		# its Objective 0, not 5: the copy takes the counted numbers and stamps the
+		# KPI's ratings and the overall rating on them (fix round, release risk).
+		self.assertEqual(out["open_items_counted_from_facts_differ_from_live"], 2)
+		self.assertEqual(out["ratings_stamped_on_counted_numbers"], 2)
+		self.assertNotIn("rating_questions_expected_on_first_open", out)
 		self.assertEqual(out["draft_keys_dropped"], 1)
 		self.assertEqual(out["by_cycle_and_stage"][c.open.cycle], {"Manager Review": 1})
 
@@ -859,6 +861,8 @@ class TestBackfillCopiesExistingReviews(_Team):
 		open_kpi = _row_for(opened, c.open.kpi)
 		self.assertEqual((opened.frozen, opened.freeze_point), (0, review_items.FREEZE_HR_SENT))
 		self.assertEqual(review_items.open_blocking_flags(opened), 0)
+		# Counted from approved facts dated in the period, and the ratings stamped on that.
+		self.assertEqual((open_kpi.actual_value, open_kpi.manager_basis_actual), (50, 50))
 		draft = json.loads(opened.page_data)["past-objectives"]
 		self.assertEqual(draft["kpis"], {open_kpi.name: {"self_rating": 3}})
 		self.assertEqual(draft["objectives"], {_row_for(opened, c.open.goal).name: {"reflection": "r"}})
@@ -878,14 +882,20 @@ class TestBackfillCopiesExistingReviews(_Team):
 			review_items.save_review_record(done)
 		frappe.db.rollback()
 
-		# The first open recounts the open review from facts, and asks the manager
-		# about the ratings given on the old number (R7).
+		# The first open counts the same numbers, so it asks nothing (release risk,
+		# 05 section 8). A later fact still raises the question (R7).
 		self._as(self.manager_user)
 		pa.get_manager_review(c.open.ap)
 		frappe.set_user("Administrator")
 		opened = self._ext(c.open.ap)
 		self.assertEqual(_row_for(opened, c.open.kpi).actual_value, 50)
-		self.assertEqual(review_items.open_blocking_flags(opened), 2)
+		self.assertEqual(review_items.open_blocking_flags(opened), 0)
+		start = frappe.db.get_value("Appraisal Cycle", c.open.cycle, "start_date")
+		self._reading(c.open.kpi, _day(start, 3), 5)
+		self._as(self.manager_user)
+		pa.get_manager_review(c.open.ap)
+		frappe.set_user("Administrator")
+		self.assertEqual(review_items.open_blocking_flags(self._ext(c.open.ap)), 2)
 
 	def test_backfill_undo_leaves_changed_reviews_and_ratings_go_back_before_a_rollback(self):
 		import alvoraa_goals.review_backfill as review_backfill
@@ -920,7 +930,9 @@ class TestBackfillCopiesExistingReviews(_Team):
 
 	def test_backfill_patch_is_listed_last_and_syncs_its_tables_first(self):
 		lines = [line.strip() for line in _source("alvoraa_goals", "patches.txt").splitlines() if line.strip()]
-		self.assertEqual(lines[-1], "alvoraa_goals.patches.v1_0.take_review_copies")
+		# The fix round's lock-days stamp follows it (security review m1).
+		self.assertEqual(lines[-2:], ["alvoraa_goals.patches.v1_0.take_review_copies",
+		                              "alvoraa_goals.patches.v1_0.stamp_lock_release_days"])
 		patch_text = _source("alvoraa_goals", "patches", "v1_0", "take_review_copies.py")
 		for doctype in ("alvoraa_review_item", "alvoraa_appraisal_extension", "kpi"):
 			self.assertIn(f'frappe.reload_doc("alvoraa_goals", "doctype", "{doctype}")', patch_text)

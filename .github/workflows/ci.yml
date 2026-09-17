@@ -266,6 +266,12 @@ jobs:
           bench --site test_site install-app alvoraa_portal
           bench --site test_site install-app alvoraa_goals
           bench --site test_site set-config allow_tests true
+          # Frappe refuses to create more than 60 users an hour on a site (the
+          # "Throttled" error). The suite creates a few hundred test users in one
+          # run on this brand-new site, so CI hit it (run 35222132118). Raised for
+          # this throwaway test site only - the local test_site has the same key -
+          # never for a tenant or the control plane.
+          bench --site test_site set-config -p throttle_user_limit 1000
 
       # This step is also the smoke test for the PMS module: `install-app hrms`
       # creates its 37 doctypes. If they are malformed, this fails here rather

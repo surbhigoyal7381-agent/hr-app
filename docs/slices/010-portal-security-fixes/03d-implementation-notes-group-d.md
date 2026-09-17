@@ -1318,7 +1318,8 @@ the rest leaves screens reading keys that are no longer there.
    `custom_docperm_rows_to_look_at`. **Stop** if `cannot_copy_nothing_tagged.open` is not
    empty or `custom_docperm_rows_to_look_at` lists anything.
 3. **Migrate.** `bench --site <site> migrate`. It adds the `Alvoraa Review Item` child
-   table, the new review-record fields (including `lock_release_days`), the three HR
+   table, the new review-record fields (including `lock_release_days` and, from
+   decision 35, `calibration_notes` — without it portal calibration fails), the three HR
    Settings fields, the KPI rating permission level and indexes, and the
    "Cumulative KPI Readings Check" report. It runs two patches, in this order:
    `take_review_copies` (the backfill) then `stamp_lock_release_days`. Check the output
@@ -1798,3 +1799,96 @@ reviews lose at least one HR person to the rule; the fewest left on any review i
 4. **A browser trace** of the four page places was not run.
 5. The other residual-risk rows in `06` still need a name and a date; only R4 is
    marked, as fixed.
+
+# Decision 35 (F-D8 calibration notes)
+
+## The short answer
+
+**Saving a calibration note works again. Tested on the local instance. Nothing is
+pushed.** The user approved the fix on 2026-09-17 (decision 35) and kept the HR
+stand-in refused (decision 36).
+
+- **What was wrong:** `save_calibration_note` wrote `calibration_notes` on
+  `Alvoraa Appraisal Extension`, but that field never existed. `git log -S
+  calibration_notes` shows it was never in the DocType JSON in any commit; only the
+  endpoint and the docs named it. So every portal save failed on an unknown column.
+- **What changed:**
+  - `alvoraa_appraisal_extension.json`: new field `calibration_notes` (Text, label
+    "Calibration notes", read-only in the desk), after `manager_internal_notes`.
+    No permission level: no field on this record uses one, and employees and
+    managers have no role on the record at all (SEC-5).
+  - `performance_api.save_calibration_note`: the `hasattr` / `frappe.db.set_value`
+    branch is gone; it sets the field. A note that is not text is refused. Every
+    earlier check (own review, decision 34 line rule, company, HR Review only) is
+    unchanged.
+  - `test_review_line_hr_010d`: the calibration test no longer swallows the old
+    failure; it checks the note was stored.
+  - New `tests/test_calibration_note_010d.py` (9 tests).
+
+## Who can read the note, and why
+
+01c classes it as decision-bearing: "Manager line, HR. Never the subject". Nothing
+new was opened.
+
+| Who | Portal screens | Desk / REST / Version rows |
+|---|---|---|
+| Subject (with or without an HR role) | Never — no endpoint returns it | Never (the "never your own" rule) |
+| Manager without an HR role | Never | Never (no role on the record) |
+| HR for the subject's company, not in the line | Not shown on any screen (the calibration box opens empty) | From HR Review on, like the rest of the record |
+| Someone in the line who holds an HR role | Never | From Manager Review on, under the existing record rule (01c allows the line) |
+| System Manager | — | Version rows under the same record rule (B1) |
+
+`track_changes` is on, so each note change leaves a Version row with the text. Those
+rows already follow the review record's rule (fix round B1); the new test proves it
+for a real note Version row.
+
+## Tests and the fail-without-fix proof
+
+| Run | Result |
+|---|---|
+| `bench --site test_site migrate` | done, no errors |
+| `test_calibration_note_010d` | 9 tests OK (first run: 1 test fault — the Version row test reused the same note text, so no change and no Version; fixed in the second commit) |
+| `test_review_line_hr_010d` | 9 OK |
+| `test_review_fixround_010d` | 33 OK |
+| `test_review_screens_010d` | 39 OK |
+| `test_review_copies_010d` | 34 OK |
+| `test_portal_security_010` | 45 OK |
+| `test_review_page_010d` | 26 OK |
+
+**Switch-off proof.** A throwaway script was piped into the bench on stdin (no file
+copied, no repo file changed). In its own memory it left `calibration_notes` out of
+every write of the review record, then ran the two save tests:
+`test_d35_an_eligible_hr_person_saves_a_note_and_a_calibrated_rating_and_both_persist`
+failed (`None != 'S010D calibration note …'`) and
+`test_d34_a_different_hr_person_calibrates_and_sends_back` failed
+(`None != 'calibrated'`). A control run with nothing switched off: both passed.
+
+Full suites were not run (not asked).
+
+## Non-functional dimensions
+
+| Dimension | Verdict | Why |
+|---|---|---|
+| Performance | neutral | One more column in the same save; no extra query |
+| Security | neutral | Same checks; no new reader; desk writes still refused below Administrator |
+| Reliability | improves | The HR calibration step no longer fails every time |
+| Scalability | neutral | One text column |
+| Maintainability | improves | Dead fallback branch removed |
+| Data integrity | improves | The calibrated rating and its note are now saved together in one save |
+| Compliance / privacy | neutral | The note follows the record's rule; subject never reads it; nothing logged |
+
+## Release and rollback
+
+- Release: the field comes with `bench --site <site> migrate` (checklist §8 step 3
+  now says so). Without the migrate, portal calibration keeps failing.
+- Rollback: an older image leaves the column in place; that is harmless. The old
+  code would fail on calibration again.
+
+## What is still open
+
+1. HR cannot see a saved note in the portal: the calibration box opens empty, and no
+   screen lists notes. Showing it to HR would be a new visibility decision, so it was
+   not added.
+2. There is still no separate calibration change log beyond Version rows (feature map
+   E5).
+3. No browser trace of the calibration box was run.

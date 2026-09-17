@@ -84,6 +84,13 @@ Asked in `06-security-review-group-d.md` (M3, Q2, residual risk R4).
 |---|---|---|
 | 34 | Security M3 / Q2 / R4: may someone in the subject's reporting line do the HR steps (calibrate, HR removal, HR answer to a rating question, complete)? | **No.** Anyone in the subject's reporting line (manager or above) may not do the HR steps on that review, even with an HR role; a different HR person does them. User, 2026-09-17. |
 
+## Decisions after decision 34 (2026-09-17)
+
+| # | Question | Decision |
+|---|---|---|
+| 35 | Finding F-D8: saving a calibration note fails for everyone, because the review record has no `calibration_notes` field. Fix it in this release? | **Yes, fix it in this release.** Add the field to `Alvoraa Appraisal Extension` and let `save_calibration_note` set it. Who may read the note does not widen. User, 2026-09-17 ("Yes"). |
+| 36 | Decision 34 also refuses the HR stand-in (the HR Manager treated as manager for someone with no manager). Keep that? | **Yes, it stays refused.** User, 2026-09-17. |
+
 ## Coordination
 
 - Slice 012's plan adds the same KPI indexes. **010 claims the KPI DocType file** on the

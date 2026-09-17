@@ -11,6 +11,7 @@ and records only, tagged S010D.
 
 import ast
 import json
+import re
 from unittest.mock import patch
 
 import frappe
@@ -1046,6 +1047,8 @@ class TestR2NoUnguardedWritesToLockedFields(FrappeTestCase):
 		roots += [os.path.join(hrms_root, d) for d in os.listdir(hrms_root) if d.startswith("alvoraa_")]
 
 		offenders, guarded_writers = [], set()
+		seen = {"db_set": 0, "sql": 0}
+		locked_update = re.compile(r"update\s+`?tab(KPI|Individual Goal)`?", re.I)
 		for root in roots:
 			for dirpath, _dirs, files in os.walk(root):
 				if "tests" in dirpath.split(os.sep) or "patches" in dirpath.split(os.sep):
@@ -1059,10 +1062,35 @@ class TestR2NoUnguardedWritesToLockedFields(FrappeTestCase):
 					for fn in ast.walk(ast.parse(text)):
 						if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
 							continue
-						guarded = "review_items.holds(" in (ast.get_source_segment(text, fn) or "")
+						source = ast.get_source_segment(text, fn) or ""
+						guarded = "review_items.holds(" in source
 						for call in ast.walk(fn):
-							if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
-							        and call.func.attr == "set_value" and call.args):
+							if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.args):
+								continue
+							# Fix round, security review m6: doc.db_set, raw SQL and
+							# query-builder updates skip before_validate as well.
+							if call.func.attr == "db_set":
+								seen["db_set"] += 1
+								arg = call.args[0]
+								fields = ({arg.value} if isinstance(arg, ast.Constant) else
+								          {k.value for k in arg.keys if isinstance(k, ast.Constant)} if isinstance(arg, ast.Dict)
+								          else set())
+								if fields & every_locked and not guarded:
+									offenders.append(f"{path}:{call.lineno} db_set")
+								continue
+							if call.func.attr in ("sql", "multisql"):
+								seen["sql"] += 1
+								if locked_update.search(ast.get_source_segment(text, call.args[0]) or "") and not guarded:
+									offenders.append(f"{path}:{call.lineno} sql")
+								continue
+							if (call.func.attr == "update" and isinstance(call.func.value, ast.Attribute)
+							        and call.func.value.attr == "qb"):
+								if (re.search(r"DocType\(\s*[\"'](KPI|Individual Goal)[\"']", source)
+								        and any(f".{field})" in source or f".{field}," in source for field in every_locked)
+								        and not guarded):
+									offenders.append(f"{path}:{call.lineno} qb.update")
+								continue
+							if call.func.attr != "set_value":
 								continue
 							target, fields = call.args[0], self._fields(call)
 							if isinstance(target, ast.Constant):
@@ -1077,6 +1105,7 @@ class TestR2NoUnguardedWritesToLockedFields(FrappeTestCase):
 							elif risky:
 								guarded_writers.add(fn.name)
 		self.assertEqual(sorted(set(offenders)), [])
+		self.assertTrue(seen["db_set"] and seen["sql"], seen)
 		# The scan really read the code: the two writers that ask first were found.
 		self.assertTrue({"attach_ongoing_to_cycle", "set_cycle_membership"} <= guarded_writers, guarded_writers)
 

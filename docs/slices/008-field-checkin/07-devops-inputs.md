@@ -44,7 +44,7 @@ the same minute:
 
 | Check | Result |
 |---|---|
-| DNS `ppj.dev.alvoraa.co` | resolves to 169.58.108.3 |
+| DNS `ppj.dev.alvoraa.co` | resolves to the origin server (see `deploy/server.env`; reach it over Tailscale, never the public address) |
 | HTTP on that name | 200 from nginx |
 | ACME challenge path | served from the webroot (404 on a missing file, which is the right 404) |
 | Frappe site exists in devstack | yes — `ppj.dev.alvoraa.co` is in the dev sites list |

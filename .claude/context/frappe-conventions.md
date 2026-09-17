@@ -135,9 +135,13 @@ or currency formats.
 
 *From `CLAUDE.md` §1.*
 
-- **Always work on the `dev` branch** unless told otherwise, and **confirm the branch
-  before any git operation.**
-- On another branch: stash, switch to `dev`, reapply.
+- **Work lands on `dev`, and only `dev` is pushed.** Develop on a short-lived slice
+  branch in your own worktree, then bring it into `dev` with a rebase and
+  `git merge --ff-only`. **Confirm the branch and the folder before any git operation.**
+- **Never `git stash`, `git reset --hard`, `git checkout .`, `git add -A` or
+  `git commit -a` in the shared main checkout** — other sessions' unsaved work lives
+  there. Stage by path. Everything about working in parallel is in
+  `parallel-work.md`.
 - **Never commit to `main` without an explicit instruction.** `main` is for deliberate
   production releases only.
 - Committing is part of the deployment pipeline — the change-process checklist runs

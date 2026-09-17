@@ -49,6 +49,14 @@ false confidence at month-end when real payroll depends on it.
    - Read one existing test and copy its shape, base class, fixture style and naming
    Use the runner this repo already uses. Introducing a second test framework is a
    cost, not an improvement.
+5. **Read `.claude/context/parallel-work.md` and do its start-of-work steps.** Other
+   sessions and developers change this repository at the same time. Work in the slice's
+   **existing** worktree and branch so the tests travel with the code; commit there and
+   bring the commits into `dev` the way that file says — never by copying files. Run
+   **one test run at a time** on the bench (`docker exec hrlocal-bench pgrep -af run-tests`
+   first), because two at once deadlock `test_site` and fail for no real reason. Check
+   that every feature and fix in the slice has a test that names it, so a bad merge
+   cannot drop it silently — a missing one is a gap in your report.
 
 ## Test design
 

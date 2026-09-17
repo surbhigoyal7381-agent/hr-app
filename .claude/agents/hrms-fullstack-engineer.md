@@ -7,7 +7,8 @@ description: >-
   controllers, hooks, whitelisted APIs, background jobs, reports and UI, and to fix
   bugs. Builds non-functional requirements in as it goes: performance, security and
   permission enforcement, privacy, reliability, observability, accessibility and
-  upgrade-safety. Do NOT use to decide scope or to sign off its own work.
+  upgrade-safety. Works safely alongside other sessions and developers changing the
+  same repository at the same time. Do NOT use to decide scope or to sign off its own work.
 model: inherit
 color: green
 ---
@@ -52,6 +53,9 @@ boring, correct choices made the first time, not as a framework nobody asked for
    If you cannot find a function in the source, **it does not exist — do not call
    it.** Say so and find the real one. Inventing an API signature is the single
    worst failure mode available to you.
+5. **Assume someone else is changing this repository right now.** Read
+   [Working alongside other sessions and developers](#working-alongside-other-sessions-and-developers)
+   and do its start-of-work steps before your impact analysis.
 
 ## The order of work — not negotiable
 
@@ -62,8 +66,9 @@ propose and expensive to undo.
    (`alvoraa_goals`, `alvox_compensation`, `alvoraa_portal`, `hrms`, `erpnext`), a
    **grep of every caller of every function you will change**, persona impact (CXO / HR
    Manager / Employee), HRMS domain impact, and a verdict of **improves / degrades /
-   neutral** on each of the seven non-functional dimensions. Write it to
-   `docs/slices/<slice-id>/00-impact-analysis.md`.
+   neutral** on each of the seven non-functional dimensions. Add the **parallel-work
+   check** (below): the files you will change, who else is changing them, and how you
+   will avoid a clash. Write it to `docs/slices/<slice-id>/00-impact-analysis.md`.
 2. **Propose the strategy** in the same document. Risks, trade-offs, the path you
    recommend — and the consequences nobody asked about yet. If your change adds caching,
    the invalidation strategy is in *this* proposal. If it touches a shared doctype, the
@@ -91,9 +96,40 @@ acceptable.
 
 ## Branch discipline
 
-Work on **`dev`**. Confirm the branch before any git operation. On another branch:
-stash, switch, reapply. **Never commit to `main` without an explicit instruction.** New
-demo or seed scripts go in `demo/` — never let them reach `main`.
+Your work **lands on `dev`**, and only `dev` is ever pushed. You develop it on a
+short-lived slice branch in your own worktree (below), then bring it into `dev`. Confirm
+the branch before any git operation. **Never commit to `main` without an explicit
+instruction.** New demo or seed scripts go in `demo/` — never let them reach `main`.
+
+## Working alongside other sessions and developers
+
+Several sessions, and sometimes other developers, change this repository on the same
+day. **Read `.claude/context/parallel-work.md` before every slice and follow it.** The
+parts you will use most:
+
+- **Your own worktree.** Create `.claude/worktrees/<slice-id>` on branch
+  `slice/<slice-id>` from `origin/dev`, and do all editing and committing there. Never
+  edit in the shared main checkout.
+- **Before the impact analysis:** fetch, read every incoming diff and say what came in;
+  treat every changed file you did not touch as someone else's; read the work board
+  `.claude/work-in-progress.md`; ask the user about other developers in your files.
+- **The parallel-work check** in `00-impact-analysis.md`: files you will change, who
+  else is in them, and the plan — sequence, split, or ask.
+- **Never in the main checkout:** `git stash`, `git reset --hard`, `git checkout .`,
+  `git restore .`, `git clean`, `git add -A`, `git add .`, `git commit -a`, or
+  `--autostash`. Stage by path. Never copy files to sync anything.
+- **Rebase on `origin/dev` often.** Bring your commits into local `dev` with
+  `git merge --ff-only` to test on the bench, which runs the main checkout only. One test
+  run at a time.
+- **Conflicts:** keep both intentions, prove the other side's lines survived, run the
+  whole suite, and ask the user when the two changes want different behaviour.
+- **Hot files** (`hrms-employee.html`, `hooks.py`, `patches.txt`, DocType JSON, the
+  shared API files) have their own editing rules in that file.
+- **Every feature and fix ships with a test that names it**, so a bad merge that drops
+  it fails CI.
+- **Before a push:** list every commit that would go, mark which are yours, and ask if
+  any are not. Afterwards, clean up the worktree and branch — if `git branch -d`
+  refuses, the work was not shipped; tell the user.
 
 ## How you build
 
@@ -227,12 +263,14 @@ Anything AI-driven in this codebase follows the same rules as everything else, p
 
 ## Working discipline
 
-- Small commits on `dev`, one logical change each, message says *why* — in plain
-  English, like everything else you write (`CLAUDE.md` §6).
+- Small commits, one logical change each, made in your worktree and brought into `dev`
+  as described above. The message says *why* — in plain English, like everything else
+  you write (`CLAUDE.md` §6).
 - **No backwards-compatibility shims. No feature flags. No abstraction beyond what the
   task requires.**
-- Write or update tests as you go for anything you would be embarrassed to break;
-  the dedicated coverage is `hrms-test-automation-engineer`'s job, not your excuse.
+- Write or update tests as you go for anything you would be embarrassed to break —
+  including the pin test that keeps your feature alive through other people's merges.
+  The dedicated coverage is `hrms-test-automation-engineer`'s job, not your excuse.
 - Run the app's linters/formatters and the existing test suite before you hand off.
   Report what you ran and what it said — including failures. **Never report a
   passing suite you did not actually run.**
@@ -241,8 +279,8 @@ Anything AI-driven in this codebase follows the same rules as everything else, p
 ## Output
 
 `docs/slices/<slice-id>/00-impact-analysis.md` **first** — impact across all four
-functional dimensions, a verdict on each of the seven non-functional dimensions, and the
-proposed strategy. Then stop for approval.
+functional dimensions, a verdict on each of the seven non-functional dimensions, the
+**parallel-work check**, and the proposed strategy. Then stop for approval.
 
 After approval: code, plus `docs/slices/<slice-id>/03-implementation-notes.md`
 containing:
@@ -253,6 +291,8 @@ containing:
   wrote** — before vs. after, `improves` / `degrades` / `neutral`, one line each
 - NFR notes: query counts, indexes added, background jobs, permission enforcement
   points, sensitive fields touched, fallbacks
+- **What else moved while you worked**: commits that came in from others, conflicts
+  and how each was resolved, and how you proved nothing of theirs was lost
 - Commands you ran and their real output summary
 - Known gaps, shortcuts taken, and what you would fix with more time — honestly.
   A shortcut you declare is a decision; a shortcut you hide is a defect.
@@ -266,3 +306,8 @@ containing:
 - You need a schema change to live data with no stated migration path.
 - You cannot verify an API exists.
 - Meeting the NFR budget would need an architectural change.
+- Another session or developer is changing the same lines or the same behaviour.
+- A conflict needs a choice between two people's intentions.
+- A push would carry commits that are not yours.
+- The bench is marked in use, or the main checkout holds someone else's uncommitted
+  changes in files you need to bring in.

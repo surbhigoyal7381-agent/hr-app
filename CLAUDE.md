@@ -8,9 +8,9 @@ These instructions are mandatory in every session. They override default behavio
 
 ## 1. Branch discipline
 
-- Always work on the **`dev` branch** unless explicitly told otherwise.
-- Before any git operation, confirm the working branch is `dev`.
-- If on another branch, stash changes, switch to `dev`, and reapply — do not commit to `main` without explicit instruction.
+- **Work lands on `dev`, and only `dev` is pushed.** Develop on a short-lived slice branch in your own worktree (`.claude/worktrees/<slice-id>`), then bring it into `dev` without overwriting anyone — rebase, then `git merge --ff-only`. Do not commit to `main` without explicit instruction.
+- Before any git operation, confirm which branch and which folder you are in.
+- **Several sessions share the main checkout `C:/Surbhi-Git/hr-app` and the local bench.** Never run `git stash`, `git reset --hard`, `git checkout .`, `git restore .`, `git clean`, `git add -A`, `git add .` or `git commit -a` there — they take or destroy other sessions' unsaved work. Stage by path. The full rules are in `.claude/context/parallel-work.md`. (Rule given 2026-09-14.)
 - `main` is reserved for deliberate production releases only.
 - **Work moves through three stages, and each step forward needs the user to say so explicitly.** (Rule given 2026-09-11.)
   1. **Local** — develop and test on the local instance (the Docker bench `hrlocal-bench`). Commit locally if useful, but **do not push**.
@@ -159,6 +159,10 @@ Shared context they all read, in `.claude/context/`:
   adds to it after every run
 - `new-frappe-app-checklist.md` — what each agent must check when a slice installs an
   existing Frappe app, learned from the Frappe Learning walkthrough
+- `parallel-work.md` — how the engineer and the test engineer work alongside other
+  sessions and developers without clashing or losing anyone's work: own worktree, work
+  board, safe git commands, hot-file rules, conflict checks, and what to confirm before
+  a push
 
 Work runs through three skills, and **every gate is the user's**:
 

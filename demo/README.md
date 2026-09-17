@@ -47,7 +47,7 @@ docker exec -i compose-backend-1 \
 
 Copy the scripts to the server first:
 ```bash
-scp demo/<script>.py root@169.58.108.3:/tmp/
+scp demo/<script>.py root@<server-ip>:/tmp/
 docker exec -i compose-backend-1 \
   bash -c 'cd /home/frappe/frappe-bench && bench --site dev.alvoraa.co console' \
   < /tmp/<script>.py

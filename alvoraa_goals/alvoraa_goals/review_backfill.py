@@ -138,6 +138,7 @@ def _plan(names=None):
         plan.kpis = kpis.get((employee, cycle), [])
         plan.freeze_point = settings["freeze_point"]
         plan.removal_mode = settings["removal_mode"]
+        plan.lock_release_days = settings["lock_release_days"]
         plan.frozen = status == "Completed" or review_items.is_past_freeze_point(status, settings["freeze_point"])
         if not (plan.goals or plan.kpis):
             plan.action, plan.reason = "empty", "nothing tagged to this cycle and employee"
@@ -359,6 +360,7 @@ def _copy_one(plan):
         "review_window_end": plan.end,
         "freeze_point": plan.freeze_point,
         "removal_mode": plan.removal_mode,
+        "lock_release_days": plan.lock_release_days,
         "frozen": cint(plan.frozen),
         "frozen_on": now if plan.frozen else None,
     }
@@ -428,7 +430,8 @@ def undo_backfill(dry_run=1, names=None):
             rows = rows_by_parent[parent]
             back = {r.name: r.source_name for r in rows}
             update = {"items_taken_on": None, "review_window_start": None, "review_window_end": None,
-                      "freeze_point": None, "removal_mode": None, "frozen": 0, "frozen_on": None,
+                      "freeze_point": None, "removal_mode": None, "lock_release_days": 0,
+                      "frozen": 0, "frozen_on": None,
                       "completed_on": None, "overall_rating_basis": None, "overall_rated_on": None}
             try:
                 data = json.loads(extensions[parent].page_data or "{}")

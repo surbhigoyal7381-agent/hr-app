@@ -695,6 +695,11 @@ class TestR9LockReminder(_Team):
 	def _release_days(self, days):
 		frappe.db.set_single_value("HR Settings", "alvoraa_review_lock_release_days", days)
 		frappe.db.value_cache.pop("HR Settings", None)
+		# Each review keeps the days stamped when its copies were taken (m1), so
+		# the test changes this test's reviews as well as the setting.
+		for doctype, name in self._cleanup:
+			if doctype == "Alvoraa Appraisal Extension":
+				frappe.db.set_value(doctype, name, "lock_release_days", days)
 		frappe.db.commit()
 
 	def tearDown(self):

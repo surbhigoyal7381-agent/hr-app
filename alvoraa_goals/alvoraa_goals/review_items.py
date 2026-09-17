@@ -266,6 +266,9 @@ def ensure_review_items(ext):
     ext.review_window_end = end
     ext.freeze_point = settings["freeze_point"]
     ext.removal_mode = settings["removal_mode"]
+    # Stamped like the other settings, so a later change to HR Settings does not
+    # release (or extend) the lock of a review already running (security review m1).
+    ext.lock_release_days = settings["lock_release_days"]
     ext.items_taken_on = now_datetime()
 
     goals, kpis = _items_for_review(ext, ap, start, end)
@@ -1513,7 +1516,7 @@ def _holding_reviews(doctype, names):
         .join(ext).on(item.parent == ext.name)
         .join(appraisal).on(appraisal.name == ext.appraisal)
         .left_join(cycle).on(cycle.name == ext.appraisal_cycle)
-        .select(item.source_name, cycle.end_date, ext.review_window_end)
+        .select(item.source_name, cycle.end_date, ext.review_window_end, ext.lock_release_days)
         .where(item.parenttype == "Alvoraa Appraisal Extension")
         .where(item.source_doctype == doctype)
         .where(item.source_name.isin(names))
@@ -1524,10 +1527,11 @@ def _holding_reviews(doctype, names):
     if not rows:
         return []
 
-    days = review_settings()["lock_release_days"]
     today = getdate(nowdate())
     held = []
     for r in rows:
+        # The days stamped on the review when its copies were taken (SEC-22, m1).
+        days = max(cint(r.lock_release_days), 0)
         end = r.end_date or r.review_window_end
         r.release = getdate(add_days(end, days)) if (days and end) else None
         if r.release and today >= r.release:
@@ -1737,12 +1741,12 @@ def remind_hr_of_held_items():
     after. The message holds the cycle name, a count and a date: no person's
     name (PRIV-15). A failed notification is logged with the user id only and
     never stops the others. Returns the number of notifications made.
+
+    Each review's own lock release days count, as stamped when its copies were
+    taken (security review m1).
     """
     from hrms.alvoraa_hr_core.access import permitted_companies
 
-    days = review_settings()["lock_release_days"]
-    if not days or days <= REMINDER_FIRST_DAY:
-        return 0
     today = getdate(nowdate())
 
     item = frappe.qb.DocType("Alvoraa Review Item")
@@ -1754,7 +1758,8 @@ def remind_hr_of_held_items():
         .join(ext).on(item.parent == ext.name)
         .join(appraisal).on(appraisal.name == ext.appraisal)
         .join(cycle).on(cycle.name == ext.appraisal_cycle)
-        .select(ext.name, cycle.name.as_("cycle"), cycle.cycle_name, cycle.end_date, appraisal.company)
+        .select(ext.name, cycle.name.as_("cycle"), cycle.cycle_name, cycle.end_date, appraisal.company,
+                ext.lock_release_days)
         .distinct()
         .where(item.parenttype == "Alvoraa Appraisal Extension")
         .where(item.removed == 0)
@@ -1766,13 +1771,18 @@ def remind_hr_of_held_items():
     # cycle -> company -> number of open reviews still holding items
     due = {}
     for r in rows:
+        days = cint(r.lock_release_days)
+        if days <= REMINDER_FIRST_DAY:
+            continue
         after = (today - getdate(r.end_date)).days
         if (after - REMINDER_FIRST_DAY) % REMINDER_EVERY_DAYS:
             continue
-        if today >= getdate(add_days(r.end_date, days)):
+        release = getdate(add_days(r.end_date, days))
+        if today >= release:
             continue
         entry = due.setdefault(r.cycle, {"label": r.cycle_name or r.cycle, "end": getdate(r.end_date),
-                                         "after": after, "companies": {}})
+                                         "after": after, "until": release, "companies": {}})
+        entry["until"] = max(entry["until"], release)
         entry["companies"][r.company] = entry["companies"].get(r.company, 0) + 1
     if not due:
         return 0
@@ -1793,7 +1803,7 @@ def remind_hr_of_held_items():
             count = sum(n for company, n in entry["companies"].items() if company in companies)
             if not count:
                 continue
-            until = _("until {0}").format(frappe.utils.formatdate(add_days(entry["end"], days)))
+            until = _("until {0}").format(frappe.utils.formatdate(entry["until"]))
             lines.append(_("{0}: {1} review(s) are still open {2} days after the cycle ended. "
                            "The Objectives and KPIs in them stay locked {3}.").format(
                 entry["label"], count, entry["after"], until))

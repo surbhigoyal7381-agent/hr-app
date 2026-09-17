@@ -920,14 +920,13 @@ class TestR2DefinitionLockOnLiveRecords(_Screens):
 
 		self.assertTrue(held_on(29))
 		self.assertFalse(held_on(30))
-		try:
-			frappe.db.set_single_value("HR Settings", "alvoraa_review_lock_release_days", 0)
-			frappe.db.value_cache.pop("HR Settings", None)
-			self.assertTrue(held_on(400))
-		finally:
-			frappe.db.set_single_value("HR Settings", "alvoraa_review_lock_release_days", 30)
-			frappe.db.value_cache.pop("HR Settings", None)
-			frappe.db.commit()
+		# The review keeps the days stamped when its copies were taken (m1): 0 on
+		# the review means never.
+		frappe.db.set_value("Alvoraa Appraisal Extension", r.ap, "lock_release_days", 0)
+		frappe.db.commit()
+		self.assertTrue(held_on(400))
+		frappe.db.set_value("Alvoraa Appraisal Extension", r.ap, "lock_release_days", 30)
+		frappe.db.commit()
 
 		# On the release day an edit goes through, and the copy keeps its own target.
 		with patch("alvoraa_goals.review_items.nowdate", return_value=str(add_days(end, 30))):

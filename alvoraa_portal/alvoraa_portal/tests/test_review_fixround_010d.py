@@ -483,3 +483,47 @@ class TestM7HrScreensHideDraftItems(_Screens):
 		self.assertEqual(seen(), (False, False))
 		self._set_status(ap, "Manager Review")
 		self.assertEqual(seen(), (True, True))
+
+
+# ── Security m1 · lock release days are stamped on each review ──────────────
+
+
+class TestM1LockReleaseDaysStamped(_Screens):
+	def tearDown(self):
+		frappe.db.set_single_value("HR Settings", "alvoraa_review_lock_release_days", 30)
+		frappe.db.value_cache.pop("HR Settings", None)
+		frappe.db.commit()
+		super().tearDown()
+
+	def test_m1_a_settings_change_does_not_release_a_running_reviews_lock(self):
+		from unittest.mock import patch
+
+		import alvoraa_goals.review_items as review_items
+		from frappe.utils import add_days
+
+		frappe.db.set_single_value("HR Settings", "alvoraa_review_lock_release_days", 30)
+		frappe.db.value_cache.pop("HR Settings", None)
+		frappe.db.commit()
+		r = self._review()
+		self.assertEqual(self._ext(r.ap).lock_release_days, 30)
+		end = frappe.db.get_value("Appraisal Cycle", r.cycle, "end_date")
+
+		frappe.db.set_single_value("HR Settings", "alvoraa_review_lock_release_days", 1)
+		frappe.db.value_cache.pop("HR Settings", None)
+		frappe.db.commit()
+		with patch("alvoraa_goals.review_items.nowdate", return_value=str(add_days(end, 5))):
+			self.assertIn(r.alone, review_items.holds("KPI", [r.alone]))
+
+		# A review opened after the change takes the new value.
+		later = self._review()
+		self.assertEqual(self._ext(later.ap).lock_release_days, 1)
+
+	def test_m1_the_patch_is_listed_after_the_copy_backfill(self):
+		import os
+
+		import alvoraa_goals
+
+		with open(os.path.join(os.path.dirname(alvoraa_goals.__file__), "patches.txt"), encoding="utf-8") as f:
+			lines = [line.strip() for line in f if line.strip()]
+		self.assertGreater(lines.index("alvoraa_goals.patches.v1_0.stamp_lock_release_days"),
+		                   lines.index("alvoraa_goals.patches.v1_0.take_review_copies"))

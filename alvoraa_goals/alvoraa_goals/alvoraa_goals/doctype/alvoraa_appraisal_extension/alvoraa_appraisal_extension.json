@@ -14,7 +14,7 @@
   "section_dialogue", "return_reason", "action_items",
   "overall_comment", "page_data", "pages_completed", "archived",
   "section_review_items", "review_items",
-  "items_taken_on", "review_window_start", "review_window_end", "freeze_point", "removal_mode",
+  "items_taken_on", "review_window_start", "review_window_end", "freeze_point", "removal_mode", "lock_release_days",
   "col_break_review_items", "frozen", "frozen_on", "completed_on",
   "overall_rating_basis", "overall_rating_flag", "overall_rated_by", "overall_rated_on",
   "overall_flag_answered_by", "overall_flag_answered_on"
@@ -66,6 +66,8 @@
   {"fieldname": "review_window_end", "fieldtype": "Date", "label": "Review Period End", "read_only": 1},
   {"fieldname": "freeze_point", "fieldtype": "Data", "label": "Freeze Point (when copies were taken)", "read_only": 1},
   {"fieldname": "removal_mode", "fieldtype": "Data", "label": "Removal Setting (when copies were taken)", "read_only": 1},
+  {"fieldname": "lock_release_days", "fieldtype": "Int", "label": "Lock Release Days (when copies were taken)", "read_only": 1,
+   "description": "Days after the cycle ends before the Objective and KPI lock is released, as set when the copies were taken. 0 means never."},
   {"fieldname": "col_break_review_items", "fieldtype": "Column Break"},
   {"fieldname": "frozen", "fieldtype": "Check", "label": "Numbers Frozen", "read_only": 1},
   {"fieldname": "frozen_on", "fieldtype": "Datetime", "label": "Frozen On", "read_only": 1},
@@ -78,7 +80,7 @@
   {"fieldname": "overall_flag_answered_on", "fieldtype": "Datetime", "label": "Overall Flag Answered On", "read_only": 1}
  ],
  "links": [],
- "modified": "2026-09-15 11:00:00.000000",
+ "modified": "2026-09-17 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Goals",
  "name": "Alvoraa Appraisal Extension",

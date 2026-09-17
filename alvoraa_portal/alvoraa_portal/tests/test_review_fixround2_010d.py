@@ -322,7 +322,8 @@ class TestF3CalibrationNoteIsRead(_Views):
 		for status in ("Manager Review", "Completed"):
 			self._set_status(r.ap, status)
 			self._as(self.hr_user)
-			with self.assertRaises(frappe.ValidationError, msg=status):
+			# Manager Review: HR's stage rule refuses; Completed: the note is closed.
+			with self.assertRaises((frappe.PermissionError, frappe.ValidationError), msg=status):
 				pa.get_calibration_note(r.ap)
 			frappe.set_user("Administrator")
 

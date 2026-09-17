@@ -834,7 +834,9 @@ class TestPriv1SubjectNeverSeesPotential(_Team):
 		self._as(self.manager_user)
 		self.assertEqual(pa.get_appraisal_extension(ap)["avg_potential_rating"], 3.5)
 
-	def test_priv1_team_reviews_hide_your_own_potential_and_strangers_ratings_before_hr_review(self):
+	def test_priv1_hr_lists_hide_your_own_rating_and_strangers_ratings_before_hr_review(self):
+		"""Changed by decision 37: HR's own and a stranger's review are no longer
+		on HR's My team's reviews at all; the HR review list keeps the PRIV-1 rule."""
 		import alvoraa_portal.performance_api as pa
 
 		start, end = self._window()
@@ -847,17 +849,18 @@ class TestPriv1SubjectNeverSeesPotential(_Team):
 
 		def rows():
 			self._as(self.hr_user)
-			return {r["employee"]: r for r in pa.get_team_reviews(cycle)["team"]}
+			team = {r["employee"] for r in pa.get_team_reviews(cycle)["team"]}
+			self.assertFalse({self.hr, self.stranger} & team)
+			return {r["employee"]: r for r in pa.hr_list_appraisals(cycle)}
 
-		team = rows()
-		self.assertEqual((team[self.hr]["overall_rating"], team[self.hr]["potential_rating"]), (None, None))
-		self.assertEqual((team[self.stranger]["overall_rating"], team[self.stranger]["potential_rating"]), (None, None))
+		listed = rows()
+		self.assertEqual((listed[self.hr]["overall_rating"], listed[self.stranger]["overall_rating"]), (None, None))
 
 		self._set_status(own, "Completed")
 		self._set_status(theirs, "HR Review")
-		team = rows()
-		self.assertEqual((team[self.hr]["overall_rating"], team[self.hr]["potential_rating"]), (4, None))
-		self.assertEqual((team[self.stranger]["overall_rating"], team[self.stranger]["potential_rating"]), (4, 5))
+		listed = rows()
+		self.assertEqual((listed[self.hr]["overall_rating"], listed[self.stranger]["overall_rating"]), (4, 4))
+		self.assertNotIn("potential_rating", listed[self.hr])
 
 
 class TestPriv2Sec6ManagerReviewOrder(_Team):
@@ -870,7 +873,7 @@ class TestPriv2Sec6ManagerReviewOrder(_Team):
 
 		self._as(self.manager_user)
 		with self.assertRaises(frappe.PermissionError):
-			pa.get_manager_review(ap)
+			pa.get_manager_review(ap, view="manager")
 		self.assertNotIn(marker, json.dumps(pa.get_appraisal_extension(ap)))
 		# An HR person who is also the manager does not get round it through the
 		# employee's own screen.
@@ -878,18 +881,19 @@ class TestPriv2Sec6ManagerReviewOrder(_Team):
 		self._as(self.hr_boss_user)
 		with self.assertRaises(frappe.PermissionError):
 			pa.get_my_review(line_ap)
-		with self.assertRaises(frappe.PermissionError):
-			pa.get_manager_review(line_ap)
+		for view in ("manager", "hr"):
+			with self.assertRaises(frappe.PermissionError):
+				pa.get_manager_review(line_ap, view=view)
 
 		self._as(self.subject_user)
 		pa.submit_employee_review(ap)
 		self._as(self.manager_user)
-		self.assertIn(marker, json.dumps(pa.get_manager_review(ap)["page_data"]))
+		self.assertIn(marker, json.dumps(pa.get_manager_review(ap, view="manager")["page_data"]))
 
 		pa.return_for_revision(ap, "")
 		self._as(self.manager_user)
 		with self.assertRaises(frappe.PermissionError):
-			pa.get_manager_review(ap)
+			pa.get_manager_review(ap, view="manager")
 
 	def test_sec6_calls_from_people_who_may_not_act_create_no_review_record(self):
 		import alvoraa_portal.performance_api as pa
@@ -897,7 +901,8 @@ class TestPriv2Sec6ManagerReviewOrder(_Team):
 		start, end = self._window()
 		ap = self._appraisal(self.subject, self._cycle(start, end), with_extension=False)
 		calls = [
-			lambda: pa.get_manager_review(ap),
+			lambda: pa.get_manager_review(ap, view="manager"),
+			lambda: pa.get_manager_review(ap, view="hr"),
 			lambda: pa.save_manager_review(ap, "x"),
 			lambda: pa.submit_manager_review(ap, "x"),
 			lambda: pa.save_overall_rating(ap, 3),
@@ -959,7 +964,7 @@ class TestSec10NobodyRatesTheirOwnReview(_Team):
 
 		self._as(self.hr_subject_user)
 		for name, call in (
-			("get_manager_review", lambda: pa.get_manager_review(ap)),
+			("get_manager_review", lambda: pa.get_manager_review(ap, view="manager")),
 			("save_manager_review", lambda: pa.save_manager_review(ap, "x", overall_rating=5)),
 			("submit_manager_review", lambda: pa.submit_manager_review(ap, "x", overall_rating=5)),
 			("save_overall_rating", lambda: pa.save_overall_rating(ap, 5)),
@@ -1019,8 +1024,13 @@ class TestDecisions15And16HrScope(_Team):
 		names = {r["name"] for r in pa.list_appraisals()["appraisals"]}
 		self.assertIn(mine, names)
 		self.assertNotIn(elsewhere, names)
+		# Decision 37: HR's company-wide list is the HR review list; My team's
+		# reviews holds only the people HR manages.
+		listed = {r["name"] for r in pa.hr_list_appraisals(frappe.db.get_value("Appraisal", mine, "appraisal_cycle"))}
+		self.assertIn(mine, listed)
+		listed = {r["name"] for r in pa.hr_list_appraisals(frappe.db.get_value("Appraisal", elsewhere, "appraisal_cycle"))}
+		self.assertNotIn(elsewhere, listed)
 		team = {r["employee"] for r in pa.get_team_reviews()["team"]}
-		self.assertIn(self.subject, team)
 		self.assertNotIn(self.subject_b, team)
 
 
@@ -1043,7 +1053,7 @@ class TestHrStandInManager(_Team):
 
 		ap = self._review_of(lone, "Manager Review", company=company)
 		self._as(stand_in_user)
-		pa.get_manager_review(ap)
+		pa.get_manager_review(ap, view="manager")
 		pa.save_manager_review(ap, "feedback", overall_rating=3)
 
 		self._set_status(ap, "Employee Review")

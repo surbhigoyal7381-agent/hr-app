@@ -432,21 +432,22 @@ class TestCrM1SelectionRemovesOnlyWhatWasListed(_Screens):
 
 
 class TestCrM3ManagerWithHrRole(_Screens):
-	def test_cr_m3_viewer_role_is_manager_for_the_manager_and_hr_for_hr(self):
+	def test_cr_m3_viewer_role_is_the_view_the_review_was_opened_in(self):
+		"""Changed by decision 37: the role is no longer worked out from the
+		caller's roles. It is the view asked for, once the server allows it."""
 		import alvoraa_portal.performance_api as pa
 
 		ap = self._review_of(self.hr_report, "Manager Review")
 		self._as(self.hr_boss_user)
-		self.assertEqual(pa.get_manager_review(ap)["viewer_role"], "manager")
+		self.assertEqual(pa.get_manager_review(ap, view="manager")["viewer_role"], "manager")
 
-		# HR Review is HR's step, but not for someone in the subject's line: the
-		# manager keeps the manager's view there (decision 34, security M3).
 		self._set_status(ap, "HR Review")
 		self._as(self.hr_boss_user)
-		self.assertEqual(pa.get_manager_review(ap)["viewer_role"], "manager")
+		self.assertEqual(pa.get_manager_review(ap, view="manager")["viewer_role"], "manager")
+		self.assertEqual(pa.get_manager_review(ap, view="hr")["viewer_role"], "hr")
 		other = self._review_of(self.subject, "HR Review")
 		self._as(self.hr_user)
-		self.assertEqual(pa.get_manager_review(other)["viewer_role"], "hr")
+		self.assertEqual(pa.get_manager_review(other, view="hr")["viewer_role"], "hr")
 
 
 # ── Code review minor 9 · an overall rating of 0 is refused ─────────────────
@@ -591,8 +592,8 @@ class TestM3M5WriteBackNoteAndMarkers(_Screens):
 		frappe.db.set_value("Alvoraa Review Item", alone, "manager_rated_by", left)
 		self._set_status(r.ap, "HR Review")
 		self._as(self.hr_user)
-		pa.get_manager_review(r.ap)
-		pa.answer_rating_flag(r.ap, alone, keep=1, reason=f"{marker} answer reason")
+		pa.get_manager_review(r.ap, view="hr")
+		pa.answer_rating_flag(r.ap, alone, keep=1, reason=f"{marker} answer reason", view="hr")
 		self.assertEqual(pa.advance_review_status(r.ap)["review_status"], "Completed")
 		frappe.set_user("Administrator")
 
@@ -703,7 +704,7 @@ class TestReleaseRiskOverallRatingStampedOnFirstOpen(_Screens):
 		frappe.db.commit()
 
 		self._as(self.manager_user)
-		review = pa.get_manager_review(ap)
+		review = pa.get_manager_review(ap, view="manager")
 		frappe.set_user("Administrator")
 		self.assertEqual((review["overall_rating_flag"], review["open_blocking_flags"]), (0, 0))
 		self.assertTrue(self._ext(ap).overall_rating_basis)

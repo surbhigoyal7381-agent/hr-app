@@ -76,7 +76,7 @@ class _LineHr(_Screens):
 		frappe.db.set_value("Alvoraa Appraisal Extension", r.ap, "overall_rated_by", left)
 		self._set_status(r.ap, "HR Review")
 		self._as(self.hr_user)
-		pa.get_manager_review(r.ap)     # the refresh raises the questions
+		pa.get_manager_review(r.ap, view="hr")     # the refresh raises the questions
 		frappe.set_user("Administrator")
 		ext = self._ext(r.ap)
 		self.assertEqual((_row_for(ext, r.alone).manager_flag, ext.overall_rating_flag), (1, 1))
@@ -113,8 +113,8 @@ class TestD34ManagerWithHrRoleIsRefusedEveryHrStep(_LineHr):
 			("save_calibration_note", lambda: pa.save_calibration_note(r.ap, "calibrated", 2)),
 			("remove_review_item", lambda: pa.remove_review_item(r.ap, under, reason="why", acknowledge=1)),
 			("delete_review_item", lambda: pa.delete_review_item(r.ap, under, acknowledge=1)),
-			("answer_rating_flag", lambda: pa.answer_rating_flag(r.ap, alone, keep=1, reason="left")),
-			("answer_rating_flag overall", lambda: pa.answer_rating_flag(r.ap, "overall", keep=0, rating=2, reason="left")),
+			("answer_rating_flag", lambda: pa.answer_rating_flag(r.ap, alone, keep=1, reason="left", view="hr")),
+			("answer_rating_flag overall", lambda: pa.answer_rating_flag(r.ap, "overall", keep=0, rating=2, reason="left", view="hr")),
 			("return_for_revision", lambda: pa.return_for_revision(r.ap, "back")),
 			("advance_review_status", lambda: pa.advance_review_status(r.ap)),
 		))
@@ -183,8 +183,8 @@ class TestD34AnotherHrPersonDoesTheHrSteps(_LineHr):
 
 		self._as(self.hr_user)
 		self.assertEqual(pa.remove_review_item(r.ap, under, reason="not this cycle", acknowledge=1)["ok"], True)
-		pa.answer_rating_flag(r.ap, alone, keep=1, reason="manager left")
-		pa.answer_rating_flag(r.ap, "overall", keep=1, reason="manager left")
+		pa.answer_rating_flag(r.ap, alone, keep=1, reason="manager left", view="hr")
+		pa.answer_rating_flag(r.ap, "overall", keep=1, reason="manager left", view="hr")
 		self.assertEqual(pa.advance_review_status(r.ap)["review_status"], "Completed")
 		frappe.set_user("Administrator")
 
@@ -213,7 +213,7 @@ class TestD34ManagerStepsStayWithTheManager(_LineHr):
 		r = self._review_for(self.hr_report, self.hr_report_user, "Manager Review")
 		alone = _row_for(self._ext(r.ap), r.alone).name
 		self._as(self.hr_boss_user)
-		review = pa.get_manager_review(r.ap)
+		review = pa.get_manager_review(r.ap, view="manager")
 		self.assertEqual((review["viewer_role"], review["hr_steps_elsewhere"]), ("manager", 0))
 		pa.save_review_item_rating(r.ap, alone, 4, comment="good")
 		pa.save_overall_rating(r.ap, 4)
@@ -226,7 +226,7 @@ class TestD34ManagerStepsStayWithTheManager(_LineHr):
 
 		r = self._review_for(self.hr_report, self.hr_report_user, "HR Review")
 		self._as(self.hr_boss_user)
-		review = pa.get_manager_review(r.ap)
+		review = pa.get_manager_review(r.ap, view="manager")
 		frappe.set_user("Administrator")
 		self.assertEqual(review["appraisal"], r.ap)
 
@@ -237,18 +237,23 @@ class TestD34PageHidesHrButtonsForTheLine(_LineHr):
 
 		r = self._review_for(self.hr_report, self.hr_report_user, "HR Review")
 
+		# Decision 37: the HR view tells the page to show the note; the manager
+		# view has no HR buttons to hide. My team's reviews no longer carries
+		# the key at all.
 		self._as(self.hr_boss_user)
-		review = pa.get_manager_review(r.ap)
-		self.assertEqual((review["viewer_role"], review["hr_steps_elsewhere"]), ("manager", 1))
+		review = pa.get_manager_review(r.ap, view="hr")
+		self.assertEqual((review["viewer_role"], review["hr_steps_elsewhere"]), ("hr", 1))
+		review = pa.get_manager_review(r.ap, view="manager")
+		self.assertEqual((review["viewer_role"], review["hr_steps_elsewhere"]), ("manager", 0))
 		listed = {a["name"]: a for a in pa.hr_list_appraisals(r.cycle)}
 		self.assertEqual(listed[r.ap]["hr_steps_elsewhere"], 1)
 		calibration = {c["appraisal"]: c for c in pa.get_calibration_overview(r.cycle)["rows"]}
 		self.assertEqual(calibration[r.ap]["hr_steps_elsewhere"], 1)
 		team = {t["appraisal"]: t for t in pa.get_team_reviews(r.cycle)["team"] if t.get("appraisal")}
-		self.assertEqual(team[r.ap]["hr_steps_elsewhere"], 1)
+		self.assertNotIn("hr_steps_elsewhere", team[r.ap])
 
 		self._as(self.hr_user)
-		review = pa.get_manager_review(r.ap)
+		review = pa.get_manager_review(r.ap, view="hr")
 		self.assertEqual((review["viewer_role"], review["hr_steps_elsewhere"]), ("hr", 0))
 		listed = {a["name"]: a for a in pa.hr_list_appraisals(r.cycle)}
 		self.assertEqual(listed[r.ap]["hr_steps_elsewhere"], 0)
@@ -274,9 +279,9 @@ class TestD34Page(FrappeTestCase):
 		note = _between(page, "window.pfHrStepsElsewhereNote = function()", "window.pfFinishHrReview")
 		self.assertIn("Another HR person needs to do the HR steps for this review, because they report to you.", note)
 
-		team_row = _between(page, 'status === "HR Review" && m.hr_steps_elsewhere', '} else if (status === "HR Review") {')
-		self.assertNotIn("pfFinishHrReview", team_row)
-		self.assertIn("pfHrStepsElsewhereNote()", team_row)
+		# Decision 37: My team's reviews has no HR buttons at all.
+		team_card = _between(page, "function pfTeamReviewCard(m)", "window.pfSubmitReview")
+		self.assertNotIn("pfFinishHrReview", team_card)
 
 		hr_row = _between(page, 'a.review_status === "HR Review" && a.hr_steps_elsewhere', '} else if (a.review_status === "HR Review")')
 		self.assertNotIn("pfFinishHrReview", hr_row)
@@ -288,6 +293,10 @@ class TestD34Page(FrappeTestCase):
 
 		finalize = _between(page, "function prRenderHrFinalizePage(d)", "window.prFinishHrReview")
 		self.assertIn("var elsewhere = !!d.hr_steps_elsewhere;", finalize)
-		self.assertIn('(elsewhere ? "" :', finalize)
+		self.assertIn("var hrSteps = hrStage && !elsewhere;", finalize)
+		self.assertIn("(hrSteps
+", finalize.replace("
+", "
+"))
 		submit = _between(page, "function prRenderManagerSubmitPage(d, editable)", "var mgfPS")
-		self.assertIn('(_pr.viewerRole === "hr" || d.hr_steps_elsewhere) && d.review_status === "HR Review"', submit)
+		self.assertIn('if (_pr.viewerRole === "hr") {', submit)

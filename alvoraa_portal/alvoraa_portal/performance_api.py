@@ -84,12 +84,19 @@ def _assert_hr_can_view(appraisal_name):
     owner = frappe.db.get_value("Appraisal", appraisal_name, "employee")
     if me and owner and (owner == me or owner in _subordinates(me)):
         return
+    _assert_hr_rule(appraisal_name, owner)
 
+
+def _assert_hr_rule(appraisal_name, owner=None, endpoint="review"):
+    """HR's own rule for one review, with no exemption for the caller's line:
+    a company the caller looks after (decision 16), and the review at HR Review
+    or Completed (SEC-27, decision 15)."""
+    owner = owner or frappe.db.get_value("Appraisal", appraisal_name, "employee")
     company = frappe.db.get_value("Employee", owner, "company") if owner else None
     if not company or company not in permitted_companies():
         refuse(
             "This appraisal belongs to a company you do not look after.",
-            "SEC-13", "review", "Appraisal", appraisal_name,
+            "SEC-13", endpoint, "Appraisal", appraisal_name,
         )
 
     status = frappe.db.get_value(
@@ -99,8 +106,41 @@ def _assert_hr_can_view(appraisal_name):
         refuse(
             "This appraisal is still with the employee and their manager. "
             "It reaches HR once their review is finished.",
-            "SEC-27", "review", "Appraisal", appraisal_name,
+            "SEC-27", endpoint, "Appraisal", appraisal_name,
         )
+
+
+def _require_review_view(ap, view, endpoint):
+    """May the caller open this review in the view they chose (decision 37)?
+
+    A review is opened from one of two lists, and the list sets the view. Nothing
+    is guessed from the caller's roles:
+
+      manager  "My team's reviews": the caller is the subject's manager (the
+               reporting line, or the HR stand-in for someone with no manager);
+      hr       the HR review list: an HR role, a company the caller looks after,
+               and the review at HR Review or Completed. Being in the subject's
+               line does not open the HR view any earlier.
+
+    Never the subject, in either view (SEC-10). Any other view is refused (fails
+    closed). Each view is one of the paths that already existed before decision
+    37, so neither allows more than those rules did. Returns the viewer for
+    review_items.review_payload.
+    """
+    me = _require_employee()
+    refuse_own_rating(ap.employee, "Appraisal", ap.name, endpoint)
+    if view == "manager":
+        if not _is_line_manager(ap.employee, me):
+            refuse("Only this person's manager can open their review from My team's reviews.",
+                   "D37", endpoint, "Appraisal", ap.name)
+        return review_items.VIEWER_MANAGER
+    if view == "hr":
+        if not _is_hr():
+            refuse("Only HR can open a review from the HR review list.", "D37", endpoint, "Appraisal", ap.name)
+        _assert_hr_rule(ap.name, ap.employee, endpoint)
+        return review_items.VIEWER_HR
+    refuse("Open this review from My team's reviews or from the HR review list.",
+           "D37", endpoint, "Appraisal", ap.name)
 
 
 def _require_hr():
@@ -113,6 +153,24 @@ def _reports_of(employee_id):
     return frappe.get_all(
         "Employee",
         filters={"reports_to": employee_id, "status": "Active"},
+        pluck="name",
+    )
+
+
+def _stand_in_subjects(employee_id):
+    """Active people with no manager, for whom this employee is the HR stand-in
+    manager (get_effective_manager), in the companies the caller looks after.
+    None for anyone who is not the stand-in: two queries for an HR Manager,
+    none for anyone else."""
+    if not employee_id or not frappe.db.exists("Has Role", {"parent": frappe.session.user,
+                                                            "parenttype": "User", "role": "HR Manager"}):
+        return []
+    if get_hr_manager_employee() != employee_id:
+        return []
+    return frappe.get_all(
+        "Employee",
+        filters={"status": "Active", "reports_to": ["is", "not set"], "name": ["!=", employee_id],
+                 "company": ["in", permitted_companies() or [""]]},
         pluck="name",
     )
 
@@ -288,6 +346,8 @@ def get_performance_context():
         "department":    emp.get("department", ""),
         "is_hr":         _is_hr(),
         "is_manager":    bool(reports),
+        # "My team's reviews" is shown to whoever has someone in it (decision 37).
+        "has_team_reviews": bool(reports) or bool(emp_id and _stand_in_subjects(emp_id)),
         "report_count":  len(reports),
         "cycles":        cycles,
         "active_cycle":  active,
@@ -853,25 +913,21 @@ def save_reflections(appraisal, reflections):
 
 @frappe.whitelist()
 def get_team_reviews(cycle=None):
-    """Review status for the caller's direct reports, or for HR every active
-    employee of the companies they look after (decision 16).
+    """"My team's reviews": the caller's reviews as a manager (decision 37).
 
-    Ratings in each row follow who is looking: the manager line sees them; HR
-    sees them for someone outside their line only from HR Review on; and nobody
-    sees their own potential rating, or their own overall rating before it is
-    released (PRIV-1).
+    The caller's direct reports, and, for the HR stand-in, the people with no
+    manager in the companies they look after. The same for everyone, whatever
+    roles they hold: HR's reviews are on the HR review list (hr_list_appraisals),
+    which opens them as HR.
+
+    Ratings in each row: the direct reports' as the manager; the stand-in's
+    people only from HR Review on, as before decision 37 (PRIV-1).
     """
     me = _require_employee()
-    hr = _is_hr()
 
     reports = _reports_of(me)
-    if hr:
-        companies = permitted_companies()
-        scoped = frappe.get_all(
-            "Employee", filters={"status": "Active", "company": ["in", companies or [""]]}, pluck="name"
-        )
-        reports = list(dict.fromkeys(reports + scoped))
-    line = set(_subordinates(me)) if hr else set(reports)
+    line = set(reports)
+    reports = list(dict.fromkeys(reports + _stand_in_subjects(me)))
 
     if not reports:
         return {"team": [], "cycle": cycle or ""}
@@ -909,24 +965,24 @@ def get_team_reviews(cycle=None):
         "Alvoraa Appraisal Extension",
         filters={"appraisal": ["in", appraisal_names]},
         fields=["appraisal", "review_status", "overall_rating", "potential_rating",
-                "overall_rating_flag"],
+                "overall_rating_flag", "overall_rated_by"],
     ):
         ext_map[ext["appraisal"]] = ext
 
     appraisal_by_emp = {a["employee"]: a for a in appraisals}
-    # HR's steps on these belong to another HR person (decision 34). One walk.
-    elsewhere = _hr_steps_elsewhere([
-        a["employee"] for a in appraisals
-        if (ext_map.get(a["name"]) or {}).get("review_status") == "HR Review"
-    ])
-    # Reviews with a flagged item manager rating (R7): they block completion as
-    # the overall rating's flag does (code review minor 5). One query.
-    item_flags = set(frappe.get_all(
-        "Alvoraa Review Item",
-        filters={"parenttype": "Alvoraa Appraisal Extension", "parent": ["in", appraisal_names],
-                 "manager_flag": 1, "removed": 0},
-        pluck="parent", distinct=True,
-    ))
+    user = frappe.session.user
+    # Reviews with a flagged item manager rating that this manager answers (R7,
+    # code review minor 5): one they gave, or one given before raters were
+    # recorded. One query.
+    item_flags = {
+        f.parent for f in frappe.get_all(
+            "Alvoraa Review Item",
+            filters={"parenttype": "Alvoraa Appraisal Extension", "parent": ["in", appraisal_names],
+                     "manager_flag": 1, "removed": 0},
+            fields=["parent", "manager_rated_by"],
+        )
+        if f.manager_rated_by in (None, "", user)
+    }
 
     def ratings(emp_id, ext):
         status = ext.get("review_status") or "Not Started"
@@ -953,10 +1009,12 @@ def get_team_reviews(cycle=None):
                 # is waiting to be kept or changed (R7). Only to whoever may see
                 # the rating itself; never on the subject's own row.
                 "rating_needs_answer": (
-                    int(bool(cint(ext.get("overall_rating_flag")) or ap["name"] in item_flags))
-                    if (overall is not None and emp_id != me) else 0
+                    int(bool((cint(ext.get("overall_rating_flag"))
+                              and ext.get("overall_rated_by") in (None, "", user))
+                             or ap["name"] in item_flags))
+                    if (overall is not None and emp_id != me
+                        and (ext.get("review_status") or "") not in ("Completed",)) else 0
                 ),
-                "hr_steps_elsewhere": int(emp_id in elsewhere),
                 "start_date":     ap.get("start_date") or "",
                 "end_date":       ap.get("end_date") or "",
             })
@@ -3662,32 +3720,52 @@ def get_calibration_overview(cycle):
     return {"cycle": cycle, "rows": rows}
 
 
-@frappe.whitelist()
-def save_calibration_note(appraisal, calibration_notes, calibrated_rating=None):
-    """HR saves calibration notes and an optional adjusted rating, during HR Review.
-
-    Never on their own review (SEC-10), only for companies they look after
-    (decision 16), and never on a completed review (VIS-10).
-    """
+def _calibration_record(appraisal, endpoint):
+    """The review record for HR's calibration step, after its checks: an HR role,
+    never their own review (SEC-10), never someone in the subject's line
+    (decision 34), a company they look after (decision 16), and only during HR
+    Review (VIS-10)."""
     _require_hr()
     if not appraisal:
         frappe.throw("Appraisal is required.")
     owner = frappe.db.get_value("Appraisal", appraisal, "employee")
     if not owner:
         frappe.throw("Appraisal not found.")
-    refuse_own_rating(owner, "Appraisal", appraisal, "save_calibration_note")
-    _refuse_hr_step_in_line(owner, appraisal, "save_calibration_note")
+    refuse_own_rating(owner, "Appraisal", appraisal, endpoint)
+    _refuse_hr_step_in_line(owner, appraisal, endpoint)
     _assert_hr_can_view(appraisal)
     ext = _extension(appraisal)
     if not ext or ext.review_status != "HR Review":
         frappe.throw("Calibration can be changed only while the review is in HR Review.")
+    return ext
+
+
+@frappe.whitelist()
+def get_calibration_note(appraisal):
+    """The calibration note already saved, for the HR person about to change it
+    (rehearsal F3). The same people, at the same stage, as save_calibration_note.
+    Those people already read the note in the desk from HR Review on (decision
+    35), so this opens it to nobody new. The note only: no rating, no names."""
+    ext = _calibration_record(appraisal, "get_calibration_note")
+    return {"calibration_notes": ext.calibration_notes or ""}
+
+
+@frappe.whitelist()
+def save_calibration_note(appraisal, calibration_notes, calibrated_rating=None):
+    """HR saves calibration notes and an optional adjusted rating, during HR Review.
+
+    Never on their own review (SEC-10), never in the subject's line (decision
+    34), only for companies they look after (decision 16), and never on a
+    completed review (VIS-10).
+    """
+    ext = _calibration_record(appraisal, "save_calibration_note")
     if calibrated_rating not in (None, ""):
         rating = flt(calibrated_rating)
         if rating < 0 or rating > MAX_RATING:
             frappe.throw(f"Rating must be between 0 and {int(MAX_RATING)}.")
     review_items.open_review(ext)
-    # HR-stage content (decision 35): no portal screen returns it, and only
-    # people who may open the review record read it in the desk or its history.
+    # HR-stage content (decision 35): no list or review screen returns it; only
+    # get_calibration_note, to the people who may save it, and the desk.
     if calibration_notes is not None and not isinstance(calibration_notes, str):
         frappe.throw("Calibration notes must be plain text.")
     ext.calibration_notes = calibration_notes or ""
@@ -4553,19 +4631,64 @@ def _rater_still_acts(rater_user, subject):
     return False
 
 
+def _flag_answer_mode(ap, ext, rater, view, in_line, acts=None):
+    """How the caller answers one rating question in the view they opened the
+    review in (decisions 12, 34, 37). The view itself is already checked.
+
+      "rater"  the rating is theirs: the manager view for the rating's giver, or
+               for any manager when the rating was stamped before raters were
+               recorded; the HR view for HR who gave it (a calibrated rating)
+      "hr"     HR answers for a giver who has left or no longer acts, during
+               HR Review, with a reason
+      ""       not theirs to answer in this view. In the HR view that includes
+               everyone in the subject's line (decision 34): they answer their
+               own ratings from the manager view.
+
+    `acts` caches _rater_still_acts by user for a screen with many questions.
+    """
+    status = (ext.review_status if ext else None) or "Not Started"
+    if status in _SELF_REVIEW_DRAFT or status == "Completed":
+        return ""
+    user = frappe.session.user
+    acts = {} if acts is None else acts
+
+    def still(person):
+        if person not in acts:
+            acts[person] = _rater_still_acts(person, ap.employee)
+        return acts[person]
+
+    if view == "manager":
+        return "rater" if (not rater or (rater == user and still(user))) else ""
+    if view != "hr" or in_line:
+        return ""
+    if rater == user and still(user):
+        return "rater"
+    if status == "HR Review" and (not rater or not still(rater)):
+        return "hr"
+    return ""
+
+
+def _in_line_for_hr_view(ap, view):
+    """In the HR view: is the caller in the subject's line (decision 34)? One walk."""
+    return view == "hr" and bool(_hr_steps_elsewhere([ap.employee]))
+
+
 @frappe.whitelist()
-def answer_rating_flag(appraisal, target, keep=1, rating=None, reason=""):
+def answer_rating_flag(appraisal, target, keep=1, rating=None, reason="", view=None):
     """Keep or change a rating whose numbers changed after it was given (R7, decision 12).
 
-    target is "overall" or the row name of a copy with a manager rating. The
-    person who gave the rating answers. If they have left or no longer manage
-    the employee, HR answers, with a reason. The answerer is recorded. The
-    employee is emailed if a released overall rating changes. Self-rating
-    flags are information only (decision 13).
+    target is "overall" or the row name of a copy with a manager rating. `view`
+    is the list the review was opened from, "manager" or "hr" (decision 37), and
+    is checked first. The person who gave the rating answers, from the view they
+    gave it in: the manager from the manager view, in any stage up to
+    completion; HR who calibrated from the HR view. If the giver has left or no
+    longer manages the employee, HR answers from the HR view, during HR Review,
+    with a reason, and never someone in the subject's line (decision 34). The
+    answerer is recorded. The employee is emailed if a released overall rating
+    changes. Self-rating flags are information only (decision 13).
     """
-    me = _require_employee()
     ap = frappe.get_doc("Appraisal", appraisal)
-    refuse_own_rating(ap.employee, "Appraisal", appraisal, "answer_rating_flag")
+    _require_review_view(ap, view, "answer_rating_flag")
     ext = _extension(appraisal)
     status = (ext.review_status if ext else None) or "Not Started"
     if not ext or status in _SELF_REVIEW_DRAFT or status == "Completed":
@@ -4579,26 +4702,16 @@ def answer_rating_flag(appraisal, target, keep=1, rating=None, reason=""):
         rater = (_review_row(ext, target, "answer_rating_flag").manager_rated_by)
 
     user = frappe.session.user
-    line_manager = _is_line_manager(ap.employee, me)
-    # The rater answers. A rating stamped before raters were recorded is
-    # answered by the manager line.
-    as_rater = (rater == user and _rater_still_acts(user, ap.employee)) or (not rater and line_manager)
-    if as_rater and not line_manager:
-        _assert_hr_can_view(appraisal)   # a rating HR gave follows HR's stage rule
-    if not as_rater:
-        if (rater and _rater_still_acts(rater, ap.employee)) or not _is_hr():
-            refuse("Only the person who gave this rating can answer for it.",
-                   "SEC-23", "answer_rating_flag", "Appraisal", appraisal)
-        # The rater has left or no longer manages this employee: HR answers,
-        # during HR Review, for a company they look after, with a reason, and
-        # never someone in the subject's line (decision 34).
-        _refuse_hr_step_in_line(ap.employee, appraisal, "answer_rating_flag")
-        _assert_hr_can_view(appraisal)
-        if status != "HR Review":
-            refuse("HR answers for a former rater during HR Review.",
-                   "SEC-23", "answer_rating_flag", "Appraisal", appraisal)
-        if not (reason or "").strip():
-            frappe.throw("Say why HR is answering for this rating.")
+    in_line = _in_line_for_hr_view(ap, view)
+    mode = _flag_answer_mode(ap, ext, rater, view, in_line)
+    if not mode:
+        if in_line:
+            _refuse_hr_step_in_line(ap.employee, appraisal, "answer_rating_flag")
+        refuse("Only the person who gave this rating can answer for it.",
+               "SEC-23", "answer_rating_flag", "Appraisal", appraisal)
+    as_rater = mode == "rater"
+    if not as_rater and not (reason or "").strip():
+        frappe.throw("Say why HR is answering for this rating.")
 
     keep = cint(keep)
     new_rating = None
@@ -4633,22 +4746,19 @@ def answer_rating_flag(appraisal, target, keep=1, rating=None, reason=""):
 # ══════════════════════════════════════════════════════════════════════════
 
 @frappe.whitelist()
-def get_manager_review(appraisal):
-    """Manager or HR views the full review — employee self-assessment + manager fields."""
+def get_manager_review(appraisal, view=None):
+    """The full review for its manager or for HR: the self-review and the manager's fields.
+
+    `view` is the list the review was opened from (decision 37): "manager" from
+    My team's reviews, "hr" from the HR review list. The screen and its buttons
+    follow the view, never a guess from the caller's roles.
+    """
     import json
-    me = _require_employee()
     ap = frappe.get_doc("Appraisal", appraisal)
     # In order, before anything is read or created (SEC-6): never the subject
-    # (SEC-10); the manager line or HR; HR's stage and company rule; and only
-    # once the self-review has been sent (PRIV-2).
-    refuse_own_rating(ap.employee, "Appraisal", appraisal, "get_manager_review")
-    is_hr = _is_hr()
-    viewer = review_items.VIEWER_MANAGER
-    if not _is_line_manager(ap.employee, me):
-        if not is_hr:
-            frappe.throw("Only the employee's manager or HR can open this review.", frappe.PermissionError)
-        _assert_hr_can_view(appraisal)
-        viewer = review_items.VIEWER_HR
+    # (SEC-10); the right for the view asked for; and only once the self-review
+    # has been sent (PRIV-2).
+    viewer = _require_review_view(ap, view, "get_manager_review")
     if _review_status(appraisal) in _SELF_REVIEW_DRAFT:
         refuse(
             "The self-review has not been sent yet. You can open it once it is sent.",
@@ -4659,11 +4769,13 @@ def get_manager_review(appraisal):
     if review_items.open_review(ext):
         frappe.db.commit()
     cycle_name = ap.appraisal_cycle
-    # HR Review is HR's step, but not for someone in the subject's line
-    # (decision 34): they keep the manager's view, without HR's buttons.
-    hr_steps_elsewhere = bool(
-        is_hr and ext.review_status == "HR Review" and _hr_steps_elsewhere([ap.employee])
-    )
+    # Someone in the subject's line who opens the review as HR sees the HR
+    # screen without HR's buttons (decision 34), and the data the line saw
+    # before decision 37: the manager's, without the late facts HR gets (R10).
+    in_line = _in_line_for_hr_view(ap, view)
+    if in_line:
+        viewer = review_items.VIEWER_MANAGER
+    hr_steps_elsewhere = in_line and ext.review_status == "HR Review"
 
     try: page_data = json.loads(ext.page_data or "{}")
     except: page_data = {}
@@ -4696,10 +4808,17 @@ def get_manager_review(appraisal):
                 order_by="value desc")
             rating_scales[sname] = {"scale_name": sinfo.get("scale_name", sname), "items": sitems}
 
-    # The review's own copies (commit 4, VIS-3). HR acting as HR also sees facts
-    # that arrived after the numbers froze (R10); a manager who holds an HR role
-    # is here as the manager.
-    items = review_items.review_payload(ext, viewer, ap.employee, ap.employee_name)
+    # The review's own copies (commit 4, VIS-3). HR in the HR view also sees facts
+    # that arrived after the numbers froze (R10); the manager view does not.
+    items =review_items.review_payload(ext, viewer, ap.employee, ap.employee_name)
+    # Which rating questions this person answers in this view, so the page shows
+    # buttons only where the answer will be taken (decisions 12, 34, 37).
+    acts = {}
+    for item in items["goals"] + items["standalone_kpis"] + [k for g in items["goals"] for k in g.get("kpis", [])]:
+        item["flag_answer"] = (_flag_answer_mode(ap, ext, item.get("manager_rated_by") or None, view, in_line, acts)
+                               if cint(item.get("manager_flag")) else "")
+    overall_flag_answer = (_flag_answer_mode(ap, ext, ext.overall_rated_by or None, view, in_line, acts)
+                           if cint(ext.overall_rating_flag) else "")
 
     cycle_info = frappe.db.get_value("Appraisal Cycle", cycle_name,
         ["cycle_name", "start_date", "end_date"], as_dict=True) or {}
@@ -4734,14 +4853,10 @@ def get_manager_review(appraisal):
         "potential_rating":      ext.potential_rating or 0,
         "reviewer_comments_visible": ext.reviewer_comments_visible or 0,
         "invited_reviewers":     invited,
-        # The manager's view and controls for whoever is the manager here, even
-        # when they also hold an HR role (code review M3). HR Review is HR's
-        # step, so there an HR role holder gets HR's controls, unless they are
-        # in the subject's line (security M3, decision 34).
-        "viewer_role":           "hr" if (viewer == review_items.VIEWER_HR
-                                          or (is_hr and ext.review_status == "HR Review"
-                                              and not hr_steps_elsewhere)) else "manager",
+        # The view the review was opened in (decision 37).
+        "viewer_role":           view,
         "hr_steps_elsewhere":    int(hr_steps_elsewhere),
+        "overall_flag_answer":   overall_flag_answer,
         "rating_scales":         rating_scales,
     }
 

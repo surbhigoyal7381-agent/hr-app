@@ -885,7 +885,7 @@ class TestBackfillCopiesExistingReviews(_Team):
 		# The first open counts the same numbers, so it asks nothing (release risk,
 		# 05 section 8). A later fact still raises the question (R7).
 		self._as(self.manager_user)
-		pa.get_manager_review(c.open.ap)
+		pa.get_manager_review(c.open.ap, view="manager")
 		frappe.set_user("Administrator")
 		opened = self._ext(c.open.ap)
 		self.assertEqual(_row_for(opened, c.open.kpi).actual_value, 50)
@@ -893,7 +893,7 @@ class TestBackfillCopiesExistingReviews(_Team):
 		start = frappe.db.get_value("Appraisal Cycle", c.open.cycle, "start_date")
 		self._reading(c.open.kpi, _day(start, 3), 5)
 		self._as(self.manager_user)
-		pa.get_manager_review(c.open.ap)
+		pa.get_manager_review(c.open.ap, view="manager")
 		frappe.set_user("Administrator")
 		self.assertEqual(review_items.open_blocking_flags(self._ext(c.open.ap)), 2)
 

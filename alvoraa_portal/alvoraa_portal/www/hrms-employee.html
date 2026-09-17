@@ -3387,12 +3387,14 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
             </div>
           </div>
 
-          <!-- Section: Team Reviews (managers only, hidden until pfBoot confirms) -->
+          <!-- Section: My team's reviews (managers only, hidden until pfBoot confirms).
+               Reviews opened here open as their manager; HR's reviews are on the
+               HR review list in HR Setup (decision 37). -->
           <div class="rev-sec" id="rev-sec-team-reviews" style="display:none">
             <div class="rev-sec-hdr" onclick="toggleRevSec('team-reviews')">
               <div>
-                <div class="rev-sec-title">Team Reviews</div>
-                <div class="rev-sec-sub">Performance review status for each of your direct reports.</div>
+                <div class="rev-sec-title">My team's reviews</div>
+                <div class="rev-sec-sub">Reviews of the people who report to you. You open them as their manager.</div>
               </div>
               <div style="display:flex;gap:8px;align-items:center">
                 <select class="gp-input pf-cycle-select" id="pf-review-cycle" onchange="pfLoadReviews()" onclick="event.stopPropagation()"></select>
@@ -11375,7 +11377,9 @@ function deleteDrawerNote(noteId, empId) {
       pfFillCycleSelects();
       // Reveal role-gated tabs. The server enforces these too; hiding them is
       // only so people are not offered actions they cannot complete.
-      if (ctx.is_manager || ctx.is_hr) {
+      /* My team's reviews is the manager's list only; HR's list is in HR Setup
+         (decision 37). */
+      if (ctx.has_team_reviews) {
         var teamSec = document.getElementById("rev-sec-team-reviews");
         if (teamSec) teamSec.style.display = "";
         if (_gpLoadedTabs && _gpLoadedTabs["reviews"]) pfLoadReviews();
@@ -13391,23 +13395,19 @@ function deleteDrawerNote(noteId, empId) {
     }
 
     /* ── Action ── */
+    /* This list always opens a review as the manager (decision 37). HR's
+       buttons, such as Finish Review, are on the HR review list only. */
     var action = "";
     if (!m.appraisal) {
       action = "<span class=\"tr-no-ap\">No appraisal</span>";
     } else if (status === "Manager Review") {
       action = "<button class=\"btn btn-primary btn-sm\" style=\"font-size:var(--fs-xs)\" onclick=\"prOpenManagerReview('" +
-        gpEsc(m.appraisal) + "','" + gpEsc(m.employee_name) + "')\">Open Review</button>";
-    } else if (status === "HR Review" && m.hr_steps_elsewhere) {
-      action = "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs)\" onclick=\"prOpenManagerReview('" +
-        gpEsc(m.appraisal) + "','" + gpEsc(m.employee_name) + "')\">View</button><div>" + pfHrStepsElsewhereNote() + "</div>";
-    } else if (status === "HR Review") {
-      action = "<button class=\"btn btn-primary btn-sm\" style=\"font-size:var(--fs-xs)\" onclick=\"pfFinishHrReview('" +
-        gpEsc(m.appraisal) + "',this)\">Finish Review</button>" +
-        "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs);margin-left:5px\" onclick=\"prOpenManagerReview('" +
-        gpEsc(m.appraisal) + "','" + gpEsc(m.employee_name) + "')\">View</button>";
-    } else if (status === "Employee Final Review" || status === "Completed") {
-      action = "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs)\" onclick=\"prOpenManagerReview('" +
-        gpEsc(m.appraisal) + "','" + gpEsc(m.employee_name) + "')\">View Review</button>";
+        gpEsc(m.appraisal) + "','" + gpEsc(m.employee_name) + "','manager')\">Open Review</button>";
+    } else if (status === "Employee Final Review" || status === "HR Review" || status === "Completed") {
+      action = "<button class=\"btn " + (m.rating_needs_answer ? "btn-primary" : "btn-outline") +
+        " btn-sm\" style=\"font-size:var(--fs-xs)\" onclick=\"prOpenManagerReview('" +
+        gpEsc(m.appraisal) + "','" + gpEsc(m.employee_name) + "','manager')\">" +
+        (m.rating_needs_answer ? "Answer rating question" : "View Review") + "</button>";
     } else {
       action = "<span class=\"tr-await\">Awaiting employee</span>";
     }
@@ -13792,7 +13792,7 @@ function deleteDrawerNote(noteId, empId) {
     if (btn) { btn.disabled = true; btn.textContent = "Finishing…"; }
     pf("advance_review_status", {appraisal: appraisalName}).then(function() {
       gpShowToast("Review finalized — employee notified.");
-      pfLoadReviews();
+      pfLoadHrCycle();
     }).catch(function(e) {
       if (btn) { btn.disabled = false; btn.textContent = "Finish Review"; }
       gpShowToast(e.message || "Failed to finalize review.", "error");
@@ -13857,14 +13857,19 @@ function deleteDrawerNote(noteId, empId) {
           var canRemind = a.review_status !== "Completed";
           var canArchive = a.review_status === "Completed";
           actionCell = "";
+          /* This list always opens a review as HR (decision 37). HR opens a
+             review once it reaches HR Review; before that it is with the
+             employee and their manager. */
+          var hrOpen = "prOpenManagerReview('" + gpEsc(a.name) + "','" + gpEsc(a.employee_name || a.employee) + "','hr')";
           if (a.review_status === "HR Review" && a.hr_steps_elsewhere) {
-            actionCell += "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs)\" onclick=\"prOpenManagerReview('" + gpEsc(a.name) + "','" + gpEsc(a.employee_name || a.employee) + "')\">View</button> ";
+            actionCell += "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs)\" onclick=\"" + hrOpen + "\">View</button> ";
             actionCell += "<div>" + pfHrStepsElsewhereNote() + "</div>";
           } else if (a.review_status === "HR Review") {
             actionCell += "<button class=\"btn btn-primary btn-sm\" style=\"font-size:var(--fs-xs)\" onclick=\"pfFinishHrReview('" + gpEsc(a.name) + "',this)\">Finish Review</button> ";
-            actionCell += "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs)\" onclick=\"prOpenManagerReview('" + gpEsc(a.name) + "','" + gpEsc(a.employee_name || a.employee) + "')\">View</button> ";
-          } else {
-            actionCell += "<button class=\"btn btn-primary btn-sm\" style=\"font-size:var(--fs-xs)\" onclick=\"prOpenManagerReview('" + gpEsc(a.name) + "','" + gpEsc(a.employee_name || a.employee) + "')\">Open Review</button> ";
+            actionCell += "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs)\" onclick=\"" + hrOpen + "\">View</button> ";
+            actionCell += "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs)\" onclick=\"pfOpenCalibNoteModal('" + gpEsc(a.name) + "','" + gpEsc(a.employee_name || a.employee) + "')\">Calibration note</button> ";
+          } else if (a.review_status === "Completed") {
+            actionCell += "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs)\" onclick=\"" + hrOpen + "\">View</button> ";
           }
           if (canRemind) {
             actionCell += "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs)\" onclick=\"pfSendReminder('" + gpEsc(a.name) + "',this)\">Remind</button> ";
@@ -13890,8 +13895,9 @@ function deleteDrawerNote(noteId, empId) {
     }
     return "<div class=\"pf-card\" style=\"margin-bottom:20px\">" +
       "<div class=\"pf-card-hdr\">" +
-        "<div><div class=\"pf-card-name\">Performance Reviews</div>" +
-        "<div class=\"pf-card-meta\">" + activeCount + " active review" + (activeCount === 1 ? "" : "s") + " in this cycle</div></div>" +
+        "<div><div class=\"pf-card-name\">HR review list</div>" +
+        "<div class=\"pf-card-meta\">" + activeCount + " active review" + (activeCount === 1 ? "" : "s") + " in this cycle. " +
+          "You open these as HR. Your own team's reviews are under Reviews, in My team's reviews.</div></div>" +
         "<div style=\"display:flex;gap:8px;align-items:center\">" +
           "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-sm)\" onclick=\"pfToggleArchived()\">" + gpEsc(toggleLabel) + "</button>" +
           "<button class=\"btn btn-outline btn-sm\" onclick=\"pfLoadHrCycle()\">&#8635; Refresh</button>" +
@@ -15774,23 +15780,26 @@ function deleteDrawerNote(noteId, empId) {
 
   /* ── A rating given on numbers that changed since (R7, decisions 12, 13) ── */
 
-  window.riAnswerFlag = function(target, keep) {
+  /* mode is what the server said this person may do with this question in this
+     view: "rater" (their own rating) or "hr" (HR answering for someone who has
+     left, with a reason). Decisions 12, 34, 37. */
+  window.riAnswerFlag = function(target, keep, mode) {
     var rating = "";
     if (!keep) {
       var el = document.getElementById("ri-r-" + target);
       rating = el ? el.value : "";
       if (target === "overall") {
-        var ov = document.getElementById("mgr-overall-rating");
+        var ov = document.getElementById("mgr-overall-rating") || document.getElementById("hr-flag-overall-rating");
         rating = ov ? ov.value : "";
       }
       if (!rating) { gpShowToast("Choose the new rating first, then say it has changed.", "error"); return; }
     }
     var reason = "";
-    if (_pr.viewerRole === "hr") {
+    if (mode === "hr") {
       reason = prompt("Why is HR answering for this rating?") || "";
       if (!reason.trim()) return;
     }
-    pf("answer_rating_flag", {appraisal: _pr.appraisal, target: target,
+    pf("answer_rating_flag", {appraisal: _pr.appraisal, target: target, view: _pr.viewerRole,
                               keep: keep ? 1 : 0, rating: rating, reason: reason})
       .then(function() { riReload(); })
       .catch(function(e) { gpShowToast((e && e.message) || "The answer could not be saved.", "error"); });
@@ -15830,13 +15839,16 @@ function deleteDrawerNote(noteId, empId) {
         "This is for information: it does not block the review.</div>";
     }
     if (it.manager_flag) {
+      var mode = it.flag_answer === "rater" || it.flag_answer === "hr" ? it.flag_answer : "";
       out += "<div style=\"font-size:var(--fs-xs);color:var(--amber);margin-top:4px\">" +
         "<i class=ic-alert></i> This rating was given when the numbers were different. " +
         "It is now " + gpEsc(pfNum(it.actual_value, 2) + " of " + pfNum(it.target_value, 2)) + ". " +
-        "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs);padding:2px 8px;margin-left:6px\" " +
-          "onclick=\"riAnswerFlag('" + gpEsc(it.name) + "',1)\">Keep the rating</button> " +
-        "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs);padding:2px 8px\" " +
-          "onclick=\"riAnswerFlag('" + gpEsc(it.name) + "',0)\">Use the rating I typed</button>" +
+        (mode
+          ? "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs);padding:2px 8px;margin-left:6px\" " +
+              "onclick=\"riAnswerFlag('" + gpEsc(it.name) + "',1,'" + mode + "')\">Keep the rating</button> " +
+            "<button class=\"btn btn-outline btn-sm\" style=\"font-size:var(--fs-xs);padding:2px 8px\" " +
+              "onclick=\"riAnswerFlag('" + gpEsc(it.name) + "',0,'" + mode + "')\">Use the rating I typed</button>"
+          : "The person who gave this rating must keep or change it.") +
         "</div>";
     }
     return out;
@@ -15959,7 +15971,7 @@ function deleteDrawerNote(noteId, empId) {
   /* Reload the review after a change, whichever screen is open. */
   function riReload() {
     if (_pr.viewerRole) {
-      pf("get_manager_review", {appraisal: _pr.appraisal}).then(function(d) {
+      pf("get_manager_review", {appraisal: _pr.appraisal, view: _pr.viewerRole}).then(function(d) {
         _pr.data = d;
         prShowPage(_pr.currentIdx);
       }).catch(function(e) { gpShowToast((e && e.message) || "Could not reload the review.", "error"); });
@@ -16003,17 +16015,20 @@ function deleteDrawerNote(noteId, empId) {
 
   /* ── Manager Review: open review panel in manager mode ──── */
 
-  window.prOpenManagerReview = function(appraisalName, employeeName) {
+  /* view is the list the review is opened from: "manager" from My team's
+     reviews, "hr" from the HR review list. The screen follows it, and the
+     server checks the caller's right for it (decision 37). */
+  window.prOpenManagerReview = function(appraisalName, employeeName, view) {
     switchPanel("pms-review");
     var content = document.getElementById("pr-content");
     if (content) content.innerHTML = "<div style=\"text-align:center;padding:40px;color:var(--text3)\">Loading review...</div>";
     document.getElementById("pr-nav").innerHTML = "";
     /* A picker answer belongs to one review only (code review M4). */
     _prEmpCache = null;
-    pf("get_manager_review", {appraisal: appraisalName}).then(function(d) {
+    pf("get_manager_review", {appraisal: appraisalName, view: view}).then(function(d) {
       _pr.appraisal = appraisalName;
       _pr.data = d;
-      _pr.viewerRole = d.viewer_role; // "manager" or "hr"
+      _pr.viewerRole = d.viewer_role; // "manager" or "hr": the view it was opened in
       _pr.currentIdx = 0;
       _pr.viewMode = "hierarchical";
       _pr.draftGoals = [];
@@ -16045,7 +16060,8 @@ function deleteDrawerNote(noteId, empId) {
       pages.push({key: "manager-feedback-form", label: "Manager Feedback"});
       pages.push({key: "manager-submit", label: "Rate & Submit"});
       _pr.pages = pages;
-      document.getElementById("pr-title").textContent = "Manager Review — " + gpEsc(employeeName || d.employee_name || "");
+      document.getElementById("pr-title").textContent =
+        (d.viewer_role === "hr" ? "HR Review — " : "Manager Review — ") + (employeeName || d.employee_name || "");
       document.getElementById("pr-sub").textContent =
         (d.cycle && d.cycle.cycle_name ? d.cycle.cycle_name : "") +
         (d.employee_name ? " · " + d.employee_name : "");
@@ -16355,13 +16371,47 @@ function deleteDrawerNote(noteId, empId) {
       });
   };
 
+  /* A question on the overall rating (R7, decisions 12, 34, 37). mode is what
+     the server says this person may do in this view: "rater" (their own
+     rating), "hr" (HR answering for someone who has left, with a reason) or ""
+     (someone else must answer). hasPicker: the page already shows a rating
+     picker with id mgr-overall-rating; otherwise a labelled box is shown. */
+  window.riOverallFlagHtml = function(d, mode, hasPicker) {
+    if (!d || !d.overall_rating_flag) return "";
+    if (mode !== "rater" && mode !== "hr") {
+      return "<div class=\"callout callout-warn\" style=\"margin-bottom:16px\">" +
+        "The overall rating was given when the numbers in the review were different. " +
+        "The person who gave it must keep or change it before this review can be completed.</div>";
+    }
+    var picker = hasPicker ? "" :
+      "<div style=\"margin-top:8px\"><label for=\"hr-flag-overall-rating\" style=\"display:block;font-size:var(--fs-sm);margin-bottom:4px\">" +
+        "New overall rating (1 to 5), only if you are changing it</label>" +
+        "<input type=\"number\" id=\"hr-flag-overall-rating\" class=\"gp-input\" min=\"1\" max=\"5\" step=\"0.5\" style=\"width:120px\"></div>";
+    return "<div class=\"callout callout-warn\" style=\"margin-bottom:16px\">" +
+      "This overall rating was given when the numbers in the review were different. " +
+      (hasPicker ? "Keep it, or pick a new one above and say it has changed." : "Keep it, or type a new one and say it has changed.") +
+      picker +
+      "<div style=\"margin-top:8px\">" +
+        "<button class=\"btn btn-outline btn-sm\" onclick=\"riAnswerFlag('overall',1,'" + mode + "')\">Keep the rating</button> " +
+        "<button class=\"btn btn-outline btn-sm\" onclick=\"riAnswerFlag('overall',0,'" + mode + "')\">" +
+          (hasPicker ? "Use the rating I picked" : "Use the rating I typed") + "</button>" +
+      "</div>" +
+    "</div>";
+  };
+
   /* ── Manager rates + submits ──────────────────────── */
 
   function prRenderManagerSubmitPage(d, editable) {
-    if ((_pr.viewerRole === "hr" || d.hr_steps_elsewhere) && d.review_status === "HR Review") {
+    /* The HR view always gets HR's page, and the manager view the manager's,
+       whatever roles the person holds (decision 37). */
+    if (_pr.viewerRole === "hr") {
       prRenderHrFinalizePage(d);
       return;
     }
+    /* The manager's own step is Manager Review. After it, the manager can still
+       answer a question on a rating they gave, in any stage (decision 12). */
+    var inManagerReview = d.review_status === "Manager Review";
+    var overallMode = d.overall_flag_answer === "rater" ? "rater" : "";
     var mgfPS = (d.page_settings && d.page_settings["manager-feedback"]) || {};
     var scales = d.rating_scales || {};
     var overallScaleName   = mgfPS.overall_rating_scale   || "";
@@ -16383,7 +16433,9 @@ function deleteDrawerNote(noteId, empId) {
     }
 
     var overallHtml = "";
-    if (overallScale) {
+    /* The overall rating can be picked in Manager Review, and afterwards only
+       to answer a question on it. */
+    if (overallScale && (inManagerReview || overallMode)) {
       var scaleName = overallScale.scale_name || "Overall Rating";
       overallHtml = "<div class=\"pr-stmt-wrap\" style=\"margin-bottom:16px\">" +
         "<label style=\"display:block;font-size:var(--fs-sm);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px\">" + gpEsc(scaleName) + "</label>" +
@@ -16392,7 +16444,7 @@ function deleteDrawerNote(noteId, empId) {
     }
 
     var potentialHtml = "";
-    if (potentialScale) {
+    if (potentialScale && inManagerReview) {
       var potScaleName = potentialScale.scale_name || "Potential Rating";
       potentialHtml = "<div class=\"pr-stmt-wrap\" style=\"margin-bottom:16px\">" +
         "<label style=\"display:block;font-size:var(--fs-sm);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px\">" + gpEsc(potScaleName) + "</label>" +
@@ -16402,26 +16454,25 @@ function deleteDrawerNote(noteId, empId) {
 
     /* The overall rating was given on numbers that have changed since (R7,
        decision 12). It must be kept or changed before HR can complete. */
-    var overallFlagHtml = d.overall_rating_flag
-      ? "<div class=\"callout callout-warn\" style=\"margin-bottom:16px\">" +
-          "This overall rating was given when the numbers in the review were different. " +
-          "Keep it, or pick a new one above and say it has changed." +
-          "<div style=\"margin-top:8px\">" +
-            "<button class=\"btn btn-outline btn-sm\" onclick=\"riAnswerFlag('overall',1)\">Keep the rating</button> " +
-            "<button class=\"btn btn-outline btn-sm\" onclick=\"riAnswerFlag('overall',0)\">Use the rating I picked</button>" +
-          "</div>" +
-        "</div>"
-      : "";
+    var overallFlagHtml = riOverallFlagHtml(d, overallMode, !!overallHtml);
 
     var html = "<div class=\"pr-page-title\">Rate &amp; Submit</div>" +
-      "<div class=\"pr-page-sub\">Provide overall ratings, optionally share reviewer comments, then submit your review to the employee.</div>" +
+      (inManagerReview
+        ? "<div class=\"pr-page-sub\">Provide overall ratings, optionally share reviewer comments, then submit your review to the employee.</div>"
+        : "<div class=\"callout\" style=\"margin-bottom:16px\">This review is now at " + gpEsc(d.review_status || "") +
+            ". Your part as the manager is done" + (d.overall_rating_flag && overallMode ? ", except the rating question below." : ".") + "</div>" +
+          (d.overall_rating && !overallHtml
+            ? "<div style=\"margin-bottom:16px\">Overall rating: <strong>" + gpEsc(pfNum(d.overall_rating, 1)) + "</strong></div>"
+            : "")) +
       overallHtml + potentialHtml + overallFlagHtml +
-      "<div style=\"margin-bottom:20px;display:flex;align-items:center;gap:10px\">" +
-        "<input type=\"checkbox\" id=\"mgr-reviewer-visible\" " + visChecked + " style=\"width:16px;height:16px\">" +
-        "<label for=\"mgr-reviewer-visible\" style=\"font-size:var(--fs-base);color:var(--text2)\">Show invited reviewer comments to employee</label>" +
-      "</div>" +
-      "<button class=\"btn btn-primary\" onclick=\"prSubmitManagerReview()\" style=\"width:100%\">Submit Final Review to Employee</button>" +
-      "<div id=\"mgr-submit-msg\" style=\"margin-top:12px;font-size:var(--fs-base)\"></div>";
+      (inManagerReview
+        ? "<div style=\"margin-bottom:20px;display:flex;align-items:center;gap:10px\">" +
+            "<input type=\"checkbox\" id=\"mgr-reviewer-visible\" " + visChecked + " style=\"width:16px;height:16px\">" +
+            "<label for=\"mgr-reviewer-visible\" style=\"font-size:var(--fs-base);color:var(--text2)\">Show invited reviewer comments to employee</label>" +
+          "</div>" +
+          "<button class=\"btn btn-primary\" onclick=\"prSubmitManagerReview()\" style=\"width:100%\">Submit Final Review to Employee</button>" +
+          "<div id=\"mgr-submit-msg\" style=\"margin-top:12px;font-size:var(--fs-base)\"></div>"
+        : "");
     document.getElementById("pr-content").innerHTML = html;
     var nextBtn = document.getElementById("pr-next-btn");
     if (nextBtn) nextBtn.style.display = "none";
@@ -16499,24 +16550,32 @@ function deleteDrawerNote(noteId, empId) {
     }
 
     /* HR cannot finish while a rating is waiting for an answer (R7, SEC-23).
-       Saying so here beats a refusal after the click. */
+       Saying so here beats a refusal after the click. The person who gave a
+       rating answers it: a manager from My team's reviews, HR who calibrated
+       from here (decisions 12, 37). */
     var open = parseInt(d.open_blocking_flags || 0, 10) || 0;
     var blockHtml = open
       ? "<div class=\"callout callout-warn\" style=\"margin-bottom:16px\">" +
           gpEsc(open + (open === 1 ? " rating was" : " ratings were")) +
-          " given on numbers that changed since. The manager who gave " + (open === 1 ? "it" : "them") +
+          " given on numbers that changed since. The person who gave " + (open === 1 ? "it" : "them") +
           " must keep or change " + (open === 1 ? "it" : "them") + " before this review can be completed. " +
           "Open the earlier pages of this review to see which." +
         "</div>"
       : "";
 
-    /* In the subject's line: read only, no HR buttons (decision 34). */
+    /* In the subject's line: read only, no HR buttons (decision 34). HR's own
+       buttons only while the review is in HR Review. */
     var elsewhere = !!d.hr_steps_elsewhere;
-    var html = "<div class=\"pr-page-title\">Finalize Review</div>" +
+    var hrStage = d.review_status === "HR Review";
+    var hrSteps = hrStage && !elsewhere;
+    var overallMode = (d.overall_flag_answer === "rater" || d.overall_flag_answer === "hr") ? d.overall_flag_answer : "";
+    var html = "<div class=\"pr-page-title\">" + (hrStage ? "Finalize Review" : "Review") + "</div>" +
       (elsewhere
         ? "<div class=\"callout\" style=\"margin-bottom:16px\">" + pfHrStepsElsewhereNote() + "</div>"
-        : "<div class=\"pr-page-sub\">Review the manager's assessment below, then click <strong>Finish Review</strong> to complete this appraisal. The employee will be notified.</div>" +
-          blockHtml) +
+        : hrSteps
+        ? "<div class=\"pr-page-sub\">Review the manager's assessment below, then click <strong>Finish Review</strong> to complete this appraisal. The employee will be notified.</div>" +
+          blockHtml + riOverallFlagHtml(d, overallMode, false)
+        : "<div class=\"pr-page-sub\">This review is " + gpEsc(d.review_status || "") + ".</div>") +
       (d.manager_feedback
         ? "<div style=\"background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r);padding:20px;margin-bottom:16px\">" +
             "<div style=\"font-size:var(--fs-sm);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px\">Manager Feedback</div>" +
@@ -16524,11 +16583,14 @@ function deleteDrawerNote(noteId, empId) {
           "</div>"
         : "") +
       (ratingsHtml ? "<div style=\"margin-bottom:20px\">" + ratingsHtml + "</div>" : "") +
-      (elsewhere ? "" :
-        "<button id=\"hr-finish-btn\" class=\"btn btn-primary\" onclick=\"prFinishHrReview()\" style=\"width:100%\"" +
-          (open ? " disabled title=\"A rating is still waiting for an answer.\"" : "") +
-          ">&#10003;&nbsp; Finish Review</button>" +
-        "<div id=\"hr-finish-msg\" style=\"margin-top:12px;font-size:var(--fs-base)\"></div>");
+      (hrSteps
+        ? "<button class=\"btn btn-outline\" onclick=\"pfOpenCalibNoteModal('" + gpEsc(_pr.appraisal) + "','" +
+            gpEsc(d.employee_name || d.employee || "") + "','review')\" style=\"width:100%;margin-bottom:10px\">Calibration note</button>" +
+          "<button id=\"hr-finish-btn\" class=\"btn btn-primary\" onclick=\"prFinishHrReview()\" style=\"width:100%\"" +
+            (open ? " disabled title=\"A rating is still waiting for an answer.\"" : "") +
+            ">&#10003;&nbsp; Finish Review</button>" +
+          "<div id=\"hr-finish-msg\" style=\"margin-top:12px;font-size:var(--fs-base)\"></div>"
+        : "");
     document.getElementById("pr-content").innerHTML = html;
     var nextBtn = document.getElementById("pr-next-btn");
     if (nextBtn) nextBtn.style.display = "none";
@@ -16540,13 +16602,14 @@ function deleteDrawerNote(noteId, empId) {
     if (btn) { btn.disabled = true; btn.textContent = "Finishing…"; }
     pf("advance_review_status", {appraisal: _pr.appraisal}).then(function(res) {
       if (_pr.data) _pr.data.review_status = "Completed";
+      /* Finished from the HR view, so back to the HR review list (decision 37). */
       switchPanel("goals");
-      gpShowTab("reviews");
+      gpShowTab("hr");
       gpShowToast("Review finalized — employee notified.");
       _mrLoaded = false;
-      pfLoadReviews();
+      pfLoadHrCycle();
     }).catch(function(e) {
-      if (btn) { btn.disabled = false; btn.textContent = "<i class=ic-check></i>  Finish Review"; }
+      if (btn) { btn.disabled = false; btn.textContent = "\u2713  Finish Review"; }
       gpShowToast(e.message || "Failed to finalize review.", "error");
     });
   };
@@ -17979,13 +18042,29 @@ function deleteDrawerNote(noteId, empId) {
 
   /* ── Calibration note (HR Setup) ─────────────────── */
 
-  window.pfOpenCalibNoteModal = function(appraisal, employeeName) {
+  /* HR's calibration note, from the HR review list or HR's Finalize page (rehearsal
+     F3). The box shows the note already saved, which these same HR people can
+     read in the desk; the server checks them again (decisions 34 and 35). from
+     is "review" when opened inside the review, so that screen reloads. */
+  window.pfOpenCalibNoteModal = function(appraisal, employeeName, from) {
+    var modal = document.getElementById("pf-calib-note-modal");
+    var text = document.getElementById("pf-calib-note-text");
     document.getElementById("pf-calib-note-context").textContent = "Employee: " + employeeName;
-    document.getElementById("pf-calib-note-text").value = "";
+    text.value = "";
+    text.disabled = true;
     document.getElementById("pf-calib-rating").value = "";
-    document.getElementById("pf-calib-note-modal").dataset.appraisal = appraisal;
+    modal.dataset.appraisal = appraisal;
+    modal.dataset.from = from || "list";
     pfClearErr("pf-calib-note-error");
     pfOpenModal("pf-calib-note-modal");
+    pf("get_calibration_note", {appraisal: appraisal}).then(function(r) {
+      if (modal.dataset.appraisal !== appraisal) return;
+      text.value = (r && r.calibration_notes) || "";
+      text.disabled = false;
+    }).catch(function(e) {
+      text.disabled = false;
+      pfShowErr("pf-calib-note-error", (e && e.message) || "The saved note could not be loaded.");
+    });
   };
 
   window.pfSubmitCalibNote = function() {
@@ -17999,9 +18078,15 @@ function deleteDrawerNote(noteId, empId) {
     }
     pf("save_calibration_note", {appraisal: ap, calibration_notes: notes, calibrated_rating: ratingNum})
       .then(function(r) {
+        var from = document.getElementById("pf-calib-note-modal").dataset.from;
         pfCloseModal("pf-calib-note-modal");
-        pfSetHtml("pf-hr-msg", pfAlert("ok", r.message || "Note saved."));
-        pfLoadHrCycle();
+        if (from === "review" && _pr.appraisal === ap) {
+          gpShowToast(r.message || "Note saved.");
+          riReload();
+        } else {
+          pfSetHtml("pf-hr-msg", pfAlert("ok", r.message || "Note saved."));
+          pfLoadHrCycle();
+        }
       }).catch(function(e) { pfShowErr("pf-calib-note-error", e.message); });
   };
 

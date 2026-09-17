@@ -181,7 +181,7 @@ class TestD35TheSubjectAndManagerNeverReadTheNote(_Notes):
 				ga.get_appraisal_data,
 			))
 			manager_sees = self._portal_text(self.manager_user, (
-				lambda: pa.get_manager_review(r.ap),
+				lambda: pa.get_manager_review(r.ap, view="manager"),
 				lambda: pa.get_team_reviews(r.cycle),
 			))
 			self.assertNotIn(marker, subject_sees, f"subject at {status}")

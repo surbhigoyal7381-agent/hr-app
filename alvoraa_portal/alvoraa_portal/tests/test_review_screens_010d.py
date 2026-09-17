@@ -69,7 +69,7 @@ class _Screens(_Team):
 		pa.save_manager_review(ap, "feedback", overall_rating=4)
 		self._reading(kpi, _day(start, 2), 30)
 		self._as(manager_user)
-		pa.get_manager_review(ap)     # the refresh raises the flags
+		pa.get_manager_review(ap, view="manager")     # the refresh raises the flags
 		frappe.set_user("Administrator")
 		ext = self._ext(ap)
 		self.assertEqual((_row_for(ext, kpi).manager_flag, ext.overall_rating_flag), (1, 1))
@@ -103,7 +103,7 @@ class TestVis3ReviewScreensShowCopies(_Screens):
 		self._as(self.subject_user)
 		payloads.append(pa.get_my_review(r.ap))
 		self._as(self.manager_user)
-		payloads.append(pa.get_manager_review(r.ap))
+		payloads.append(pa.get_manager_review(r.ap, view="manager"))
 		self._as(self.stranger_user)
 		payloads.append(pa.get_reviewer_view(r.ap))
 
@@ -179,7 +179,7 @@ class TestPriv1Priv13FieldFilter(_Screens):
 		self.assertFalse(self.STAMPS & keys)
 
 		self._as(self.manager_user)
-		keys = self._keys(pa.get_manager_review(r.ap))
+		keys = self._keys(pa.get_manager_review(r.ap, view="manager"))
 		self.assertTrue({"manager_rating", "potential_rating"} <= keys)
 		self.assertTrue(self.STAMPS <= keys)
 		self.assertNotIn("late_facts", keys)
@@ -242,7 +242,7 @@ class TestR10LateFacts(_Screens):
 		row = _row_for(self._ext(r.ap), r.alone)
 
 		self._as(self.hr_user)
-		kpi = next(k for k in pa.get_manager_review(r.ap)["standalone_kpis"] if k["name"] == row.name)
+		kpi = next(k for k in pa.get_manager_review(r.ap, view="hr")["standalone_kpis"] if k["name"] == row.name)
 		self.assertEqual(kpi["late_facts"], {"count": 1, "actual_with_late": 25})
 		self.assertEqual(kpi["actual_value"], 10)
 		self.assertEqual(_row_for(self._ext(r.ap), r.alone).actual_value, 10)
@@ -251,7 +251,7 @@ class TestR10LateFacts(_Screens):
 		self._as(self.subject_user)
 		self.assertNotIn("late_facts", _names_in(pa.get_my_review(r.ap)))
 		self._as(self.manager_user)
-		self.assertNotIn("late_facts", _names_in(pa.get_manager_review(r.ap)))
+		self.assertNotIn("late_facts", _names_in(pa.get_manager_review(r.ap, view="manager")))
 
 
 class TestQueryCountOfOpeningAReview(_Screens):
@@ -572,13 +572,14 @@ class TestR7FlagAnswers(_Screens):
 
 		ap, row = self._flagged_review(self.manager_user, self.subject, self.subject_user)
 		for user in (self.subject_user, self.hr_user, self.stranger_user):
-			self._as(user)
-			with self.assertRaises(frappe.PermissionError, msg=user):
-				pa.answer_rating_flag(ap, row, keep=1)
+			for view in ("manager", "hr"):
+				self._as(user)
+				with self.assertRaises(frappe.PermissionError, msg=(user, view)):
+					pa.answer_rating_flag(ap, row, keep=1, view=view)
 
 		self._as(self.manager_user)
-		pa.answer_rating_flag(ap, row, keep=1)
-		pa.answer_rating_flag(ap, "overall", keep=0, rating=2)
+		pa.answer_rating_flag(ap, row, keep=1, view="manager")
+		pa.answer_rating_flag(ap, "overall", keep=0, rating=2, view="manager")
 		frappe.set_user("Administrator")
 		ext = self._ext(ap)
 		copy = next(x for x in ext.review_items if x.name == row)
@@ -603,11 +604,11 @@ class TestR7FlagAnswers(_Screens):
 		try:
 			self._as(self.hr_user)
 			with self.assertRaises(frappe.ValidationError):
-				pa.answer_rating_flag(ap, "overall", keep=1)        # no reason
+				pa.answer_rating_flag(ap, "overall", keep=1, view="hr")        # no reason
 			with patch("alvoraa_portal.performance_api._send_notification") as mail:
-				pa.answer_rating_flag(ap, row, keep=1, reason="manager left")
+				pa.answer_rating_flag(ap, row, keep=1, reason="manager left", view="hr")
 				self.assertFalse(mail.called)
-				pa.answer_rating_flag(ap, "overall", keep=0, rating=3, reason="manager left")
+				pa.answer_rating_flag(ap, "overall", keep=0, rating=3, reason="manager left", view="hr")
 				self.assertEqual(mail.call_count, 1)
 				self.assertEqual(mail.call_args[0][0], worker_user)
 				self.assertNotIn("3", mail.call_args[0][1] + mail.call_args[0][2])
@@ -644,7 +645,7 @@ class TestR6FreezeAndUnfreeze(_Screens):
 
 		self._reading(r.alone, _day(r.start, 6), 5)
 		self._as(self.manager_user)
-		pa.get_manager_review(r.ap)
+		pa.get_manager_review(r.ap, view="manager")
 		frappe.set_user("Administrator")
 		self.assertEqual(_row_for(self._ext(r.ap), r.alone).actual_value, 10)
 
@@ -684,12 +685,12 @@ class TestSec23CompletionWaitsForAnswers(_Screens):
 		self.assertEqual(frappe.db.get_value("Alvoraa Appraisal Extension", ap, "review_status"), "HR Review")
 
 		self._as(self.manager_user)
-		pa.answer_rating_flag(ap, row, keep=1)
+		pa.answer_rating_flag(ap, row, keep=1, view="manager")
 		self._as(self.hr_user)
 		with self.assertRaises(frappe.PermissionError):
 			pa.advance_review_status(ap)            # the overall rating still waits
 		self._as(self.manager_user)
-		pa.answer_rating_flag(ap, "overall", keep=1)
+		pa.answer_rating_flag(ap, "overall", keep=1, view="manager")
 
 		# A self-rating question is information only (decision 13).
 		frappe.set_user("Administrator")

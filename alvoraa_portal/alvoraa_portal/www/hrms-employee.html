@@ -15674,6 +15674,9 @@ function deleteDrawerNote(noteId, empId) {
     var req = riReasonRequired();
     pfSetHtml("ri-remove-reason-req", req ? "(required)" : "(optional)");
     document.getElementById("ri-remove-reason").value = "";
+    /* "Delete instead" hides the reason box; a cancelled dialog must not leave
+       it hidden for the next item (code review minor 8). */
+    document.getElementById("ri-remove-reason-field").style.display = "";
     pfOpenModal("ri-remove-modal");
   };
 

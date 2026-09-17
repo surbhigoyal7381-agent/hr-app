@@ -126,6 +126,13 @@ jobs:
       - name: No undefined identifiers in portal pages
         run: node scripts/check_undefined_js.js
 
+      # One nginx serves production and dev. Frappe trusts the first address in
+      # X-Forwarded-For, so nginx must never pass on what the caller wrote there
+      # (slice 014, OPS-19). A text check: no nginx needed. Parsing and behaviour
+      # are checked locally by scripts/check_nginx_forwarded.sh before a push.
+      - name: nginx never trusts a caller's address
+        run: python scripts/check_nginx_conf.py
+
       - name: Semgrep (Frappe security rules)
         continue-on-error: true
         run: |

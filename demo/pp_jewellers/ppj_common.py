@@ -19,7 +19,18 @@ from frappe.utils import cint, flt, getdate
 COMPANY = "PP Jewellers Pvt Ltd"
 ABBR = "PPJ"
 DATA_DIR = os.environ.get("PPJ_DATA_DIR", "/tmp/ppj/data")
-DEMO_PASSWORD = os.environ.get("PPJ_DEMO_PASSWORD", "Ppj@2026")
+# The login password for every seeded user. There is no built-in default: a
+# shared password in public code is a shared password anyone can try on the
+# tenant. Set it before running any seed script:
+#     export PPJ_DEMO_PASSWORD='<a new, strong password>'
+DEMO_PASSWORD = os.environ.get("PPJ_DEMO_PASSWORD", "").strip()
+if not DEMO_PASSWORD:
+    sys.exit(
+        "PPJ_DEMO_PASSWORD is not set. Choose a password for the seeded users "
+        "and export it before running the seed scripts:\n"
+        "  export PPJ_DEMO_PASSWORD='<a new, strong password>'\n"
+        "Nothing was changed."
+    )
 
 HEAD_OFFICE = "PPJ Head Office Chandigarh"
 STORES = ["PPJ Chandigarh Sector 17", "PPJ Ambala City", "PPJ Noida Sector 18",

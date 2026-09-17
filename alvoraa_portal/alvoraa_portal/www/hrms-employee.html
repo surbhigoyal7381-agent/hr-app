@@ -14417,7 +14417,10 @@ function deleteDrawerNote(noteId, empId) {
       var el = document.getElementById(id); if (el) el.value = "";
     });
     var cycleSel = document.getElementById("pf-k-cycle");
-    var current = _pfKpiReturnTo === "hr" ? pfVal("pf-hr-cycle") : pfVal("tv-cycle");
+    /* From inside a review nothing is chosen for the person: the cycle under
+       review is not the next period's (decision 19, code review minor 1). */
+    var current = _pfKpiReturnTo === "hr" ? pfVal("pf-hr-cycle")
+      : (_pfKpiReturnTo === "review" ? "" : pfVal("tv-cycle"));
     pfFillCycleSelect("pf-k-cycle", current);
     pfFillEmployeeSelect("pf-k-employee").then(function() { pfReloadObjectives(); });
     pfOpenModal("pf-kpi-modal");
@@ -15390,8 +15393,9 @@ function deleteDrawerNote(noteId, empId) {
 
     html += "<div class=\"pr-section-hdr\" style=\"margin-top:20px\">Add New Objectives or KPIs</div>" +
       "<div style=\"font-size:var(--fs-sm);color:var(--text3);margin-bottom:10px\">" +
-        "These are plans for the next period. They are created as live records now; they do not join " +
-        "the review you are filling in, and they are not tagged to this cycle." +
+        "These are plans for the next period. They are created as live records now and do not join " +
+        "the review you are filling in. A new Objective is not tagged to any cycle; for a new KPI, " +
+        "choose the cycle it belongs to." +
       "</div>";
 
     if (editable) {
@@ -15435,10 +15439,10 @@ function deleteDrawerNote(noteId, empId) {
       _gpOnGoalCreated = null;
       prRefreshCurrentPage();
     };
+    /* No cycle: a plan for the next period is never tagged to the cycle under
+       review (decision 19, VIS-15, code review minor 1). gpOpenCreateGoal
+       leaves the hidden cycle field empty. */
     gpOpenCreateGoal();
-    /* Stamp the current review cycle so the goal is linked to it */
-    var cycleEl = document.getElementById("gp-c-cycle");
-    if (cycleEl && _pr.data && _pr.data.cycle) cycleEl.value = _pr.data.cycle.name || "";
   };
 
   /* Store for goal objects keyed by name — populated during rendering so

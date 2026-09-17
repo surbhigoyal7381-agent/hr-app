@@ -16,6 +16,14 @@ on:
   push:
     branches: [dev, test, main]
     tags: ["v*"]
+    # App-only pushes are not in the image (deploy/Dockerfile copies only hrms,
+    # alvoraa_goals and alvoraa_portal). Building and deploying for them would
+    # restart the nginx that also serves production for nothing (slice 013,
+    # OPS-72). A push that mixes app and server files still builds. ci.yml has
+    # NO such filter on purpose: its key guard must run on app pushes.
+    paths-ignore:
+      - "mobile/**"
+      - ".github/workflows/mobile.yml"
   workflow_dispatch:
 
 env:

@@ -294,3 +294,88 @@ class TestM2RenameWhileHeld(_Screens):
 		meta = frappe.get_meta("Individual Goal")
 		for field in review_items.LOCKED_FIELDS["Individual Goal"]:
 			self.assertFalse((meta.get_field(field) or frappe._dict()).allow_on_submit, field)
+
+
+# ── Code review M2 · the live KPI number moves only on approval ─────────────
+
+
+class TestCrM2LiveNumberMovesOnApproval(_Screens):
+	def _kpi_ended(self, mode="Cumulative"):
+		from frappe.utils import add_days, today
+
+		cycle = self._cycle(add_days(today(), -90), add_days(today(), 60))
+		return self._kpi(self.subject, cycle, target=100, mode=mode,
+		                 start=add_days(today(), -90), end=add_days(today(), 60))
+
+	def test_cr_m2_a_rejected_reading_never_reaches_the_live_number(self):
+		import alvoraa_portal.performance_api as pa
+
+		kpi = self._kpi_ended()
+		self._as(self.subject_user)
+		wrong = pa.log_kpi_progress(kpi, 50)["row_name"]
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("KPI", kpi, "actual_value"), 0)
+
+		self._as(self.manager_user)
+		pa.approve_kpi_update(kpi, wrong, "Rejected")
+		self._as(self.subject_user)
+		right = pa.log_kpi_progress(kpi, 5)["row_name"]
+		self._as(self.manager_user)
+		pa.approve_kpi_update(kpi, right, "Approved")
+		# Deciding the same way twice changes nothing.
+		pa.approve_kpi_update(kpi, right, "Approved")
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("KPI", kpi, ["actual_value", "attainment_pct"]), (5, 5))
+
+	def test_cr_m2_taking_an_approval_back_takes_the_amount_off_and_status_follows(self):
+		import alvoraa_portal.performance_api as pa
+		from frappe.utils import add_days, today
+
+		kpi = self._kpi_ended()
+		self._as(self.subject_user)
+		row = pa.log_kpi_progress(kpi, 120, log_date=add_days(today(), -1))["row_name"]
+		self._as(self.manager_user)
+		pa.approve_kpi_update(kpi, row, "Approved")
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("KPI", kpi, "actual_value"), 120)
+
+		# The period ends; the end-of-period status follows the approved number.
+		frappe.db.set_value("KPI", kpi, "period_end", add_days(today(), -1))
+		frappe.db.commit()
+		self._as(self.manager_user)
+		pa.approve_kpi_update(kpi, row, "Rejected")
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("KPI", kpi, ["actual_value", "status"]), (0, "Missed"))
+
+	def test_m8_hr_approves_readings_only_for_the_companies_they_look_after(self):
+		import alvoraa_portal.goals_api as goals_api
+		import alvoraa_portal.performance_api as pa
+		from frappe.utils import add_days, today
+
+		start, end = add_days(today(), -30), add_days(today(), 30)
+		cycle = self._cycle(start, end, company=self.company_b)
+		kpi = self._kpi(self.subject_b, cycle, target=10, start=start, end=end)
+		self._as(self.subject_b_user)
+		row = pa.log_kpi_progress(kpi, 3)["row_name"]
+		self._as(self.hr_user)
+		with self.assertRaises(frappe.PermissionError):
+			pa.approve_kpi_update(kpi, row, "Approved")
+		self.assertNotIn(row, [u["row_name"] for u in goals_api.get_pending_approvals()["kpi_updates"]])
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("KPI Progress Log", row, "approval_status"), "Pending")
+
+	def test_m2_approvers_see_when_a_reading_was_typed(self):
+		import alvoraa_portal.goals_api as goals_api
+		import alvoraa_portal.performance_api as pa
+		from frappe.utils import add_days, today
+
+		kpi = self._kpi_ended()
+		self._as(self.subject_user)
+		row = pa.log_kpi_progress(kpi, 3, log_date=add_days(today(), -20))["row_name"]
+		self._as(self.manager_user)
+		pending = next(u for u in goals_api.get_pending_approvals()["kpi_updates"] if u["row_name"] == row)
+		logged = next(r for r in pa.get_kpi_update_log(kpi) if r["name"] == row)
+		frappe.set_user("Administrator")
+		for entry in (pending, logged):
+			self.assertEqual(entry["log_date"], str(frappe.utils.getdate(add_days(today(), -20))))
+			self.assertTrue(entry["logged_on"].startswith(str(frappe.utils.getdate(today()))))

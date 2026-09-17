@@ -1143,19 +1143,30 @@ class TestDecision2ReadingDate(_Screens):
 		self.assertEqual(len(frappe.get_doc("KPI", kpi).progress_log), 1)
 
 	def test_decision1_a_cumulative_reading_adds_up_and_an_absolute_one_replaces(self):
-		"""The dialog asks for the amount since the last update, so the server adds it."""
+		"""The dialog asks for the amount since the last update, so the server adds
+		it - once the reading is approved (fix round, code review M2)."""
 		import alvoraa_portal.performance_api as pa
 
 		cumulative = self._kpi_of_subject()
 		absolute = self._kpi_of_subject(mode="Absolute")
 		self._as(self.subject_user)
-		pa.log_kpi_progress(cumulative, 10)
-		pa.log_kpi_progress(cumulative, 15)
-		pa.log_kpi_progress(absolute, 60)
+		rows = [
+			pa.log_kpi_progress(cumulative, 10)["row_name"],
+			pa.log_kpi_progress(cumulative, 15)["row_name"],
+		]
+		latest = pa.log_kpi_progress(absolute, 60)["row_name"]
 		# Dated before the reading already logged, so it is history, not the number now.
-		pa.log_kpi_progress(absolute, 20, log_date=add_days(frappe.utils.today(), -3))
+		older = pa.log_kpi_progress(absolute, 20, log_date=add_days(frappe.utils.today(), -3))["row_name"]
 		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("KPI", cumulative, "actual_value"), 0)
+		self.assertEqual(frappe.db.get_value("KPI", absolute, "actual_value"), 0)
 
+		self._as(self.manager_user)
+		for row in rows:
+			pa.approve_kpi_update(cumulative, row, "Approved")
+		pa.approve_kpi_update(absolute, latest, "Approved")
+		pa.approve_kpi_update(absolute, older, "Approved")
+		frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.get_value("KPI", cumulative, "actual_value"), 25)
 		self.assertEqual(frappe.db.get_value("KPI", absolute, "actual_value"), 60)
 

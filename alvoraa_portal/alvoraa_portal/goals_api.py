@@ -1086,6 +1086,11 @@ def approve_goal_update(goal_id, row_name, action, comment=""):
     if not (_is_hr() or my_emp == goal_mgr):
         frappe.throw("Only this employee's manager or HR can approve updates.",
                      frappe.PermissionError)
+    from hrms.alvoraa_hr_core.access import permitted_companies, refuse
+    if my_emp != goal_mgr and frappe.db.get_value("Employee", goal.employee, "company") not in permitted_companies():
+        # HR approves only for the companies they look after (security review m8).
+        refuse("This employee belongs to a company you do not look after.",
+               "SEC-26", "goals_api.approve_goal_update", "Individual Goal", goal.name)
 
     for row in (goal.progress_updates or []):
         if row.name == row_name:
@@ -1136,6 +1141,8 @@ def get_goal_update_log(goal_id):
         result.append({
             "name":             r.name,
             "log_date":         str(r.log_date)   if r.log_date   else "",
+            # When it was typed, beside the day it is for (security review m2).
+            "logged_on":        str(r.creation)   if r.creation   else "",
             "value":            flt(r.value),
             "note":             r.note             or "",
             "logged_by":        r.logged_by        or "",
@@ -1163,10 +1170,17 @@ def get_pending_approvals():
         return {"kpi_updates": [], "goal_updates": [], "total": 0}
 
     if is_hr:
-        # Everyone but yourself: your own updates are not yours to approve.
-        all_employees = frappe.get_all(
-            "Employee", filters={"status": "Active", "name": ["!=", emp_id]}, pluck="name"
-        )
+        # Everyone but yourself, in the companies you look after, plus your own
+        # direct reports (security review m8: HR approves only there). Your own
+        # updates are not yours to approve.
+        from hrms.alvoraa_hr_core.access import permitted_companies
+        all_employees = sorted(set(frappe.get_all(
+            "Employee",
+            filters={"status": "Active", "name": ["!=", emp_id], "company": ["in", permitted_companies() or [""]]},
+            pluck="name",
+        )) | set(frappe.get_all(
+            "Employee", filters={"reports_to": emp_id, "status": "Active"}, pluck="name"
+        ) if emp_id else []))
     else:
         all_employees = frappe.get_all(
             "Employee",
@@ -1197,6 +1211,7 @@ def get_pending_approvals():
                         "employee":         emp,
                         "employee_name":    emp_name,
                         "log_date":         str(row.log_date)  if row.log_date else "",
+                        "logged_on":        str(row.creation)  if row.creation else "",
                         "value":            flt(row.value),
                         "note":             row.note           or "",
                         "logged_by_name":   by_name,
@@ -1221,6 +1236,7 @@ def get_pending_approvals():
                         "employee":         emp,
                         "employee_name":    emp_name,
                         "log_date":         str(row.log_date)  if row.log_date else "",
+                        "logged_on":        str(row.creation)  if row.creation else "",
                         "value":            flt(row.value),
                         "note":             row.note           or "",
                         "logged_by_name":   by_name,

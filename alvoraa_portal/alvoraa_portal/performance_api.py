@@ -397,7 +397,6 @@ def log_kpi_progress(kpi, value, note="", evidence_url=None, log_date=None):
     from alvoraa_goals.controllers.evidence import claim_evidence_file
     evidence_url = claim_evidence_file(evidence_url, "KPI", doc.name, "performance_api.log_kpi_progress")
     ev_missing = 1 if not evidence_url else 0
-    latest = max((getdate(r.log_date) for r in (doc.progress_log or []) if r.log_date), default=None)
     row = doc.append("progress_log", {
         "log_date":        day,
         "value":           flt(value),
@@ -407,14 +406,9 @@ def log_kpi_progress(kpi, value, note="", evidence_url=None, log_date=None):
         "evidence_missing": ev_missing,
         "approval_status": "Pending",
     })
-    # The live number keeps meaning "reached so far": an amount since the last
-    # update adds to it; a current reading replaces it unless it is dated
-    # before a reading already logged. The review never reads this number: it
-    # counts approved readings by date (R3, R4).
-    if (doc.progress_mode or "Cumulative") == "Cumulative":
-        doc.actual_value = flt(doc.actual_value) + flt(value)
-    elif latest is None or day >= latest:
-        doc.actual_value = flt(value)
+    # The live number moves only when a reading is approved (code review M2):
+    # a reading someone rejects never reaches it. The review never reads this
+    # number either: it counts approved readings by date (R3, R4).
     doc.save(ignore_permissions=True)
     frappe.db.commit()
 
@@ -473,13 +467,20 @@ def approve_kpi_update(kpi, row_name, action, comment=""):
     if not (_is_hr() or my_emp == kpi_emp_mgr):
         frappe.throw("Only this employee's manager or HR can approve updates.",
                      frappe.PermissionError)
+    if my_emp != kpi_emp_mgr and frappe.db.get_value("Employee", doc.employee, "company") not in permitted_companies():
+        # HR approves only for the companies they look after (security review m8):
+        # an approved reading flows into that employee's open review.
+        refuse("This employee belongs to a company you do not look after.",
+               "SEC-26", "approve_kpi_update", "KPI", doc.name)
 
     for row in (doc.progress_log or []):
         if row.name == row_name:
+            before = row.approval_status or "Pending"
             row.approval_status  = action
             row.approval_comment = comment
             row.approved_by      = frappe.session.user
             row.approved_on      = frappe.utils.now()
+            _move_live_number(doc, row, before, action)
             break
     else:
         frappe.throw(f"Progress log row '{row_name}' not found on KPI {kpi}.")
@@ -487,6 +488,33 @@ def approve_kpi_update(kpi, row_name, action, comment=""):
     doc.save(ignore_permissions=True)
     frappe.db.commit()
     return {"message": f"Update {action.lower()}."}
+
+
+def _reading_order(row):
+    return (str(row.log_date or ""), str(row.approved_on or ""), str(row.creation or ""))
+
+
+def _move_live_number(doc, row, before, after):
+    """The live KPI number counts approved readings only (code review M2).
+
+    Cumulative: an approved amount adds to it; taking an approval back takes
+    the amount off again. Absolute: the latest approved reading by date is the
+    number; with no approved reading left it stays as it is, so a number from
+    before readings needed approval is not wiped. Deciding the same way twice
+    changes nothing. Attainment and the end-of-period status follow on save
+    (controllers.kpi.validate_kpi).
+    """
+    if before == after:
+        return
+    if (doc.progress_mode or "Cumulative") == "Cumulative":
+        if after == "Approved":
+            doc.actual_value = flt(doc.actual_value) + flt(row.value)
+        elif before == "Approved":
+            doc.actual_value = flt(doc.actual_value) - flt(row.value)
+        return
+    approved = [r for r in (doc.progress_log or []) if (r.approval_status or "") == "Approved"]
+    if approved:
+        doc.actual_value = flt(max(approved, key=_reading_order).value)
 
 
 @frappe.whitelist()
@@ -511,6 +539,8 @@ def get_kpi_update_log(kpi):
         result.append({
             "name":             r.name,
             "log_date":         str(r.log_date)   if r.log_date   else "",
+            # When it was typed, beside the day it is for (security review m2).
+            "logged_on":        str(r.creation)   if r.creation   else "",
             "value":            flt(r.value),
             "note":             r.note             or "",
             "logged_by":        r.logged_by        or "",

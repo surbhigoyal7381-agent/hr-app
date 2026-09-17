@@ -12543,6 +12543,11 @@ function deleteDrawerNote(noteId, empId) {
         "<div class=\"upd-entry-hdr\">" +
           "<span class=\"upd-who\">" + gpEsc(r.logged_by_name || r.logged_by || "") + "</span>" +
           "<span class=\"upd-when\">" + pfFmtDate(r.log_date) + "</span>" +
+          /* When it was typed, beside the day it is for, so a back-dated
+             reading is plain to the approver (security review m2). */
+          (r.logged_on && String(r.logged_on).slice(0, 10) !== String(r.log_date || "").slice(0, 10)
+            ? "<span class=\"upd-when\">typed " + pfFmtDate(r.logged_on) + "</span>"
+            : "") +
           "<span class=\"upd-val\">Value: <strong>" + pfNum(r.value, 2) + "</strong></span>" +
         "</div>" +
         (r.note ? "<div class=\"upd-note\">" + gpEsc(r.note) + "</div>" : "") +

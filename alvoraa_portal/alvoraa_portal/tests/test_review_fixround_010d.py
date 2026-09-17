@@ -440,6 +440,22 @@ class TestCrM3ManagerWithHrRole(_Screens):
 		self.assertEqual(pa.get_manager_review(other)["viewer_role"], "hr")
 
 
+# ── Code review minor 9 · an overall rating of 0 is refused ─────────────────
+
+
+class TestCrMinor9OverallRatingOfZero(_Screens):
+	def test_cr_minor9_save_overall_rating_refuses_0_and_keeps_the_rating(self):
+		import alvoraa_portal.performance_api as pa
+
+		ap = self._review_of(self.subject, "Manager Review")
+		self._as(self.manager_user)
+		pa.save_overall_rating(ap, 3)
+		with self.assertRaises(frappe.ValidationError):
+			pa.save_overall_rating(ap, 0)
+		frappe.set_user("Administrator")
+		self.assertEqual(self._ext(ap).overall_rating, 3)
+
+
 # ── Security m7 · HR screens list no items of an unsent self-review ─────────
 
 

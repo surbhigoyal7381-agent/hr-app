@@ -3552,8 +3552,10 @@ def save_overall_rating(appraisal, overall_rating):
     Hidden from the employee until Employee Final Review.
     """
     rating = flt(overall_rating)
-    if rating < 0 or rating > MAX_RATING:
-        frappe.throw(f"Rating must be between 0 and {int(MAX_RATING)}.")
+    if rating <= 0 or rating > MAX_RATING:
+        # 0 is "no rating" everywhere else (code review minor 9), so it is not
+        # stamped as one here either.
+        frappe.throw(f"Choose an overall rating between 1 and {int(MAX_RATING)}.")
     ap, ext = _manager_review_record(appraisal, "save_overall_rating", direct_only=True)
     ext.overall_rating = rating
     review_items.stamp_overall_rating(ext)

@@ -131,10 +131,11 @@ class TestR2EditInsideTheReview(FrappeTestCase):
 class TestR7RatingQuestions(FrappeTestCase):
 	def test_decision12_the_manager_can_keep_or_change_a_flagged_rating(self):
 		page = _page()
-		self.assertIn("window.riAnswerFlag = function(target, keep)", page)
+		# Decision 37: the answer carries the mode the server gave for this view.
+		self.assertIn("window.riAnswerFlag = function(target, keep, mode)", page)
 		self.assertIn("answer_rating_flag", page)
-		self.assertIn("riAnswerFlag('overall',1)", page)
-		self.assertIn("riAnswerFlag('overall',0)", page)
+		self.assertIn("riAnswerFlag('overall',1,'\" + mode + \"')", page)
+		self.assertIn("riAnswerFlag('overall',0,'\" + mode + \"')", page)
 
 	def test_decision13_a_self_rating_question_is_information_only(self):
 		page = _page()

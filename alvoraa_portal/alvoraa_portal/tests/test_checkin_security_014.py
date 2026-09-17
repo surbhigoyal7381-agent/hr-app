@@ -313,3 +313,47 @@ class OldCopiesAreRedacted(FrappeTestCase):
 		with open(path, encoding="utf-8") as f:
 			self.assertIn("alvoraa_portal.patches.v1_0.redact_field_checkin_error_logs",
 			              f.read().split())
+
+
+class RegistrationGivesNoIdAway(CheckinLogCase):
+	"""register_device must not tell a caller whether an employee ID exists -
+	neither in its own reply nor in what the phone hears next."""
+
+	def register(self, employee_id):
+		frappe.local.response = frappe._dict()
+		frappe.clear_messages()
+		return self.call(fc.register_device, {
+			"employee_id": employee_id, "device_label": "CI / web", "platform": "Android",
+			"consent": 1, "consent_version": fc.CONSENT_VERSION,
+		})
+
+	def status_after(self, token):
+		frappe.local.response = frappe._dict()
+		frappe.clear_messages()
+		self.call(fc.field_status, {"token": token})
+		return frappe.local.response.get("http_status_code"), json.dumps(frappe.local.message_log)
+
+	def test_014_register_device_same_reply_for_real_and_fake_id(self):
+		real = self.register(self.employee)
+		fake = self.register("HR-EMP-DOES-NOT-EXIST-014")
+
+		self.assertEqual(sorted(real), sorted(fake), "reply keys differ")
+		self.assertEqual(real["status"], fake["status"])
+		self.assertEqual(real["message"], fake["message"])
+		self.assertTrue(real["token"] and fake["token"])
+		self.assertEqual(len(real["token"]), len(fake["token"]))
+
+		# A made-up ID's secret is never stored...
+		self.assertFalse(frappe.db.exists(fc.DEVICE, {"token_hash": fc._hash(fake["token"])}))
+		# ...and the next call answers it exactly like a real phone still waiting.
+		self.assertEqual(self.status_after(real["token"]), self.status_after(fake["token"]))
+
+	def test_014_register_device_error_leaks_no_employee_id_or_name(self):
+		with mock.patch.object(fc.secrets, "token_urlsafe",
+		                       side_effect=RuntimeError("boom " + NAME_MARKER)):
+			out = self.register(self.employee)
+		self.assertIsNone(out)
+		self.assertEqual(frappe.local.response.get("http_status_code"), 500)
+		self.assert_logs_clean()
+		for field in ("employee_id", "device_label", "platform"):
+			self.assertNotIn(field, frappe.local.form_dict)

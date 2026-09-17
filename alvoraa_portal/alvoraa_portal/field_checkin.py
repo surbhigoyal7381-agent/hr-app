@@ -204,8 +204,13 @@ def _device_from_token(token: str):
 
 	name = frappe.db.get_value(DEVICE, {"token_hash": _hash(token)}, "name")
 	if not name:
-		frappe.throw(_("This phone is not set up. Please register it again."),
-		             frappe.AuthenticationError)
+		# A well-formed secret we never stored gets the SAME answer as a phone
+		# waiting for approval. register_device hands out a secret for every ID,
+		# real or not (slice 014), so "not set up" here would tell the caller the
+		# ID they typed was fake - the staff-directory leak, one call later.
+		# The cost: a phone whose registration HR deleted also reads "waiting";
+		# that screen offers "set up again", and HR knows why.
+		_refuse_as_pending()
 
 	device = frappe.get_doc(DEVICE, name)
 
@@ -213,12 +218,16 @@ def _device_from_token(token: str):
 		frappe.throw(_("This phone has been blocked. Please speak to HR."),
 		             frappe.AuthenticationError)
 	if device.status == "Pending":
-		frappe.throw(
-			_("This phone is waiting for HR to approve it. You will be able to "
-			  "check in as soon as they do."),
-			frappe.AuthenticationError)
+		_refuse_as_pending()
 
 	return device
+
+
+def _refuse_as_pending():
+	frappe.throw(
+		_("This phone is waiting for HR to approve it. You will be able to "
+		  "check in as soon as they do."),
+		frappe.AuthenticationError)
 
 
 # ── registration: the one-time setup on the phone ────────────────────────────
@@ -282,10 +291,16 @@ def register_device(employee_id, device_label=None, platform=None,
 		             "check in. You only have to do this once."),
 	}
 
-	if not emp:
-		return answer
-
+	# Every caller gets a secret, so the reply has the same shape for a real ID
+	# and a made-up one. Before slice 014 only a real ID got a `token`, which
+	# told anyone which IDs exist. A made-up ID's secret is never stored, so it
+	# opens nothing; field_status answers it exactly as it answers a phone
+	# still waiting for HR.
 	token = secrets.token_urlsafe(32)
+
+	if not emp:
+		answer["token"] = token
+		return answer
 
 	frappe.get_doc({
 		"doctype": DEVICE,

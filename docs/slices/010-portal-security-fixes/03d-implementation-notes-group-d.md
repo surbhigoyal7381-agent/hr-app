@@ -1443,8 +1443,8 @@ What the user must decide is a release question:
 **Every finding in both reviews is fixed and tested on the local instance, except
 security M3, which waits for the user's decision. Nothing is pushed.**
 
-- **27 commits** on `slice/010-portal-security-fixes`, brought into local `dev`
-  with `merge --ff-only` (local `dev` at `6326307`).
+- **28 commits**, this notes commit included, on `slice/010-portal-security-fixes`, brought into local `dev`
+  with `merge --ff-only` (local `dev` at the notes commit).
 - **39 new pin tests** in `alvoraa_portal/tests/test_review_fixround_010d.py`, all
   passing. Five existing tests were changed on purpose, where a fix changed the
   behaviour they pinned (listed below).

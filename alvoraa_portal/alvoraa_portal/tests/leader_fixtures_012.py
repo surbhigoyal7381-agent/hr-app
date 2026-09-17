@@ -39,6 +39,12 @@ def setup_module_fixtures():
 			_ensure_erpnext_company_prerequisites()
 			frappe.get_doc({"doctype": "Company", "company_name": company, "abbr": abbr,
 			                "default_currency": "INR", "country": "India"}).insert(ignore_permissions=True)
+		# Keep these two the OLDEST companies on the site, as test_portal_security_010
+		# does for its second company. ensure_company() and get_value("Company", {})
+		# hand other tests the NEWEST company. Left new, "S012 Other Co" became the
+		# company of every leave test that ran later; their committed allocations
+		# then counted in this slice's company-wide leave check (CI run 35222132118).
+		frappe.db.set_value("Company", company, "creation", "2000-01-01 00:00:00", update_modified=False)
 	if not frappe.db.exists("Shift Type", SHIFT):
 		frappe.get_doc({"doctype": "Shift Type", "name": SHIFT,
 		                "start_time": "09:00:00", "end_time": "18:00:00"}).insert(ignore_permissions=True)

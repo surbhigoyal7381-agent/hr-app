@@ -27,8 +27,10 @@ driver can act on, with the real distance in it. The rule stays Frappe's.
 
 import base64
 import binascii
+import functools
 import hashlib
 import secrets
+import traceback
 
 import frappe
 from frappe import _
@@ -90,6 +92,96 @@ ADVISED_MIN_RADIUS_M = 50
 DEFAULT_RADIUS_M = 100
 
 
+# ── keeping photos, positions and names out of the logs (slice 014) ──────────
+#
+# Frappe writes a failed request into its logs in two ways, and neither knows
+# what a photo or a coordinate is:
+#
+#   * Every Error Log row - including the ones our own `frappe.log_error` calls
+#     write - carries the request's fields in `metadata`. Frappe hides only
+#     fields whose NAME contains password, secret, token, key or pwd. `photo`,
+#     `latitude` and `longitude` went in whole.
+#   * An exception that reaches Frappe's request handler is written with the
+#     local variables of every frame - on a 5xx always, and in developer mode
+#     (dev) on every refusal too. Frappe's own `frappe.call` frame holds the
+#     request arguments, so catching and re-raising cannot help: the new
+#     exception climbs through that frame and prints them all the same.
+#
+# So the wrapper below does two things. It takes the personal fields out of the
+# request as soon as the endpoint has them, and it never lets an exception leave
+# the endpoint: a refusal is answered exactly as Frappe would answer it (same
+# status, same sentence), and anything unexpected is rolled back, written to the
+# Error Log as a place in the code with no values, and answered with a plain 500.
+
+# What an operator sees for a crash: where it happened, never with what.
+_SERVER_ERROR_TITLE = "Field check-in: unexpected error"
+
+
+def _code_places(exc):
+	"""The exception's class and file:line:function for each frame. No values.
+
+	`str(exc)` is left out on purpose: a database error can quote the value it
+	choked on.
+	"""
+	places = [type(exc).__name__]
+	for frame in traceback.extract_tb(exc.__traceback__):
+		path = frame.filename.replace("\\", "/")
+		if "/apps/" in path:
+			path = path.split("/apps/", 1)[1]
+		places.append(f"{path}:{frame.lineno} in {frame.name}")
+	return "\n".join(places)
+
+
+def _private_request(*fields):
+	"""Keep personal data out of every log Frappe writes for this endpoint.
+
+	Put it directly under `@frappe.whitelist(...)`, so it also covers the plan
+	gate and the rate limit beneath it.
+	"""
+	def decorator(fn):
+		@functools.wraps(fn)
+		def wrapper(*args, **kwargs):
+			# The arguments were already handed to us; the copy in form_dict is
+			# only read by logging from here on.
+			for field in fields:
+				frappe.form_dict.pop(field, None)
+			try:
+				return fn(*args, **kwargs)
+			except Exception as exc:
+				status = getattr(exc, "http_status_code", None) or 500
+				frappe.db.rollback()
+				if status < 500:
+					# A refusal: frappe.throw has already queued its sentence, and
+					# the page matches on that sentence. Answer as Frappe would.
+					frappe.local.response["http_status_code"] = status
+					frappe.local.response["exc_type"] = type(exc).__name__
+					return None
+				_log_server_error(fn.__name__, exc)
+				frappe.clear_messages()
+				frappe.msgprint(_("Something went wrong on our side. Please try again "
+				                  "in a minute."))
+				frappe.local.response["http_status_code"] = 500
+				frappe.local.response["exc_type"] = "ServerError"
+				return None
+
+		wrapper.__alvoraa_private_request__ = fields    # so tests can see it
+		return wrapper
+
+	return decorator
+
+
+def _log_server_error(endpoint, exc):
+	"""One Error Log row an operator can find, with nothing personal in it."""
+	message = f"endpoint: {endpoint}\n{_code_places(exc)}"
+	try:
+		frappe.log_error(title=f"{_SERVER_ERROR_TITLE} in {endpoint}", message=message)
+	except Exception:
+		# The database may be the thing that failed. The log file still gets the
+		# same words; this logger does not add the request's fields.
+		frappe.logger("alvoraa_portal.field_checkin").error(
+			f"{_SERVER_ERROR_TITLE} in {endpoint} (Error Log not written)\n{message}")
+
+
 # ── the device secret ────────────────────────────────────────────────────────
 
 def _hash(token: str) -> str:
@@ -132,6 +224,7 @@ def _device_from_token(token: str):
 # ── registration: the one-time setup on the phone ────────────────────────────
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@_private_request("employee_id", "device_label", "platform")
 @requires_feature("field_checkin")
 @rate_limit(limit=10, seconds=60 * 60)
 def register_device(employee_id, device_label=None, platform=None,
@@ -217,6 +310,7 @@ def register_device(employee_id, device_label=None, platform=None,
 # ── the punch ────────────────────────────────────────────────────────────────
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@_private_request("photo", "latitude", "longitude", "accuracy", "captured_at")
 @requires_feature("field_checkin")
 @rate_limit(limit=60, seconds=60 * 60)
 def field_checkin(token, log_type, latitude=None, longitude=None,
@@ -480,6 +574,7 @@ def _attach_photo(checkin, photo):
 # ── what the phone shows ─────────────────────────────────────────────────────
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@_private_request()
 @requires_feature("field_checkin")
 @rate_limit(limit=120, seconds=60 * 60)
 def field_status(token):

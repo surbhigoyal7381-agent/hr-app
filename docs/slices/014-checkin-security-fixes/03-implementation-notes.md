@@ -5,8 +5,154 @@ Built 2026-09-17 by the full-stack engineer, on the local machine only, in workt
 Strategy: `00-impact-analysis.md`, approved by Surbhi 2026-09-17 with the recommended
 answers.
 
-**Nothing is pushed. Nothing is in local `dev`. Nothing touched the bench, dev or
-production.**
+**Nothing is pushed. Nothing touched the dev server or production.** Local `dev` now
+holds the slice (see Update 2), and the tests ran on the local bench.
+
+---
+
+## Update 2 — 2026-09-17 evening: rebase, wildcard certificate, driver fix, tests run
+
+**This section replaces section 0's points 1 and 2 and section 8's "owed" list, where
+they differ.** Sections below it are kept as written, with commit hashes updated.
+
+### What came in, and the rebase
+
+- `git fetch origin`: the "010 group D + 012 push 1 + F1" release had reached
+  `origin/dev` at `9138251`. The only commit on top of this branch's old base was
+  `9138251` itself: docs only (four slice 010 files). I read its file list; nothing
+  touches 014's files.
+- `origin/main` (`2fc623c`) holds `d6613ea` "nginx: use alvoraa-wildcard cert", which is
+  **not** on `dev`. The live server file matches main (pre-push checks, `00`).
+- The branch was rebased onto `origin/dev` with no conflicts. **`d6613ea` was
+  cherry-picked in before the nginx commit**, so 014's `deploy/nginx.conf` keeps the
+  `alvoraa-wildcard` certificate paths.
+
+### Commits now (oldest first)
+
+| Commit | What |
+|---|---|
+| `98e1682` | Field check-in: keep photos, positions and names out of error logs |
+| `a2ed577` | Blank field check-in data already copied into Error Logs |
+| `a6b83ce` | Field check-in setup: same answer for a real and a made-up employee ID |
+| `d6a7a31` | nginx: use alvoraa-wildcard cert (cherry-pick of main's `d6613ea`, unchanged) |
+| `abb1bca` | nginx: pass Frappe only the real client address |
+| `40b8b55` | Implementation notes (first version) |
+| `b6c0c7c` | nginx check script: makes test certificates for whatever folders the file names. Without this, `nginx -t` failed on the wildcard path, which does not exist in the throwaway container |
+| `6224f91` | **Driver location: only the assigned driver may post it** (scope addition) |
+| `5838ba8` | Registration test: compare message words, not their random ids |
+| `87e61e9` | Driver location test: the same fix |
+| `18e9ed5` | Driver location: drop the dead `partner or ""` fallback |
+| (this update) | Notes |
+
+The two test fixes came from the first real run. Every message Frappe queues carries a
+random `id`, so comparing the whole message as JSON could never be equal. The product
+code was right; the tests compared the wrong thing.
+
+### nginx — final file, checked again
+
+- **Diff against `git show origin/main:deploy/nginx.conf`** (`git diff --stat origin/main
+  HEAD -- deploy/nginx.conf`): **60 lines added, 12 removed.** The 12 removed lines are
+  exactly the 10 `X-Forwarded-For $proxy_add_x_forwarded_for` lines and the 2
+  `location = /api/method/login` lines. The 60 added lines are their replacements (10
+  lines, plus 2 × (3 comment lines + the regex location)) and the Cloudflare block (18
+  comment lines, 22 `set_real_ip_from`, `real_ip_header`, one blank). The certificate
+  lines are identical to main's. **Nothing else differs.**
+  - A plain `diff` against `git show` output lists every line, but only because the
+    Windows working copy uses CRLF line endings. Git stores LF, as the server has.
+- `python scripts/check_nginx_conf.py` → **OK**. On main's file → **FAIL** (10 forged-header
+  lines, no Cloudflare lines, v1/v2 login paths unlimited on both hosts).
+- `bash scripts/check_nginx_forwarded.sh deploy/nginx.conf` in throwaway `nginx:alpine`
+  containers → **21 PASS, ALL PASSED**:
+  - `nginx -t` ok, realip present
+  - no forged address reaches the backend on either host, or on `/files/`, `/socket.io/`
+    or pages
+  - 11 forged values → 1 bucket
+  - a forged `CF-Connecting-IP` is ignored
+  - all three login paths answer 429 on both hosts
+- On main's file (the live production file): **16 FAIL.**
+- No test containers or networks left behind.
+- The server's nginx is 1.31.5 with realip (K12, pre-push checks). This PC's image is
+  1.31.2.
+
+### Driver location fix (scope addition)
+
+- **Where:** `alvoraa_portal/portal_api.py`, `update_driver_location`, plus a new
+  `_driver_partner_for(user)` helper.
+- **What was wrong:** any logged-in user could insert a Vehicle Tracking row (position,
+  speed, heading, speeding alert) for any Delivery Order. The insert ignored permissions
+  and nothing checked the caller.
+- **Rule now:** the caller must be the Delivery Partner whose `primary_email` is the user.
+  This is the same rule `get_portal_context` uses to recognise a driver, so the driver the
+  portal serves is exactly the one allowed to post. The caller must also be the order's
+  `assigned_to_partner`.
+- **Everything else gets the same `PermissionError`** ("You can only share your location
+  for a delivery assigned to you."), and nothing is written. That covers: another driver,
+  a user who is not a driver, Administrator, Guest, an order with nobody assigned, and an
+  order that does not exist. Because every refusal is identical, the answer does not
+  reveal which orders exist.
+- **Callers:** one, `www/driver-portal.html` `postLocation()`. It is called from real GPS
+  (line 2113) and from the "Simulate GPS (Demo)" button (line 2196). The page is
+  unchanged.
+  - For the real driver, both still post.
+  - **For an admin using the demo simulator on another driver's order, the post is now
+    refused.** The page ignores errors on this call on purpose (`error:` is silent), so
+    the admin sees the simulated marker move as before. No Vehicle Tracking row is saved.
+    This is what the scope asked for.
+- **Persona impact:** Driver (Delivery Partner user) — no change. Vendor — the location
+  they read can no longer be faked by another user. HR Manager / System Manager — cannot
+  write a driver's trail through this endpoint (the desk form is unchanged). Employee — no
+  change.
+- **NFR:** 2 extra single-row lookups per post (partner by email; the order's partner was
+  already read). Security improves. No data exposure change. No `ignore_permissions`
+  added.
+- **Pin test:** `tests/test_driver_location_014.py`, 5 tests, all named
+  `test_014_driver_location_*`. Delivery Order's `before_save` geocodes over the internet
+  (Nominatim), so the fixture turns that off with `mock.patch` and the tests make no
+  outside calls.
+- **Found while doing it, not fixed (not in scope, needs a decision):** the rest of
+  `portal_api.py` has the same gap. `get_vendor_orders(vendor_id)`,
+  `get_driver_deliveries(partner_id)`, `driver_advance_status`, `submit_order_rating`,
+  `get_all_vendors`, `get_all_partners`, `get_delivery_route` and
+  `get_drivers_performance` take an ID from the caller and read or write with
+  permissions ignored, with no ownership check. So does
+  `controllers/delivery_assignment.update_gps_location` (any logged-in user can append a
+  GPS point and trigger an "arriving soon" email). Suggest one follow-up slice for the
+  driver and vendor portal APIs.
+
+### Tests on the bench (`test_site`)
+
+The bench was claimed on the board after `pgrep` showed it free.
+
+| Run | Result |
+|---|---|
+| `bench --site test_site migrate` | rc 0. The patch `redact_field_checkin_error_logs` ran |
+| `run-tests --module alvoraa_portal.tests.test_checkin_security_014` | First run: 13 tests, 1 failure (the random-id comparison, fixed in `5838ba8`). **Re-run: 13 tests, OK** |
+| `run-tests --module alvoraa_portal.tests.test_driver_location_014` | First run: 5 tests, 1 failure (the same comparison, fixed in `87e61e9`). **Re-run: 5 tests, OK** |
+| Full `alvoraa_portal` | 1,170 tests in two halves (557 + 613), 38 min. **Only the known 14 failures**: 3 errors in `test_leave_year`, 11 in `test_invoicing` (10 errors + 1 failure). Both 014 modules ran inside it and passed |
+| Full `alvoraa_goals` | 18 tests, OK (2 skipped) |
+
+One more commit came after the runs: `18e9ed5`, which drops a dead `partner or ""`
+fallback in the same function (the check above it already refuses an order with nobody
+assigned, and Vehicle Tracking needs the field). Python had already imported the module
+when the suite started, so the running tests were unaffected; the 5 driver tests passed
+again on the module run before it.
+
+**Local `dev`** was fast-forwarded (`merge --ff-only`) to the branch after each fix.
+**It now holds 014, which is not pushed. A push of local `dev` would carry 014, including
+`deploy/nginx.conf`.**
+
+### Still owed
+
+1. **Pushing is Surbhi's decision**, at a quiet moment. First she clears the in-place edit
+   in `/var/www/html/hr-app/deploy/nginx.conf` on the server (production wall — user
+   only), so the deploy's checkout is clean. Just before the push, re-run
+   `check_nginx_forwarded.sh` on the file being pushed.
+2. A hand trace of `/checkin` and of the driver portal on `ppj.localhost`. It needs a
+   migrate there, so ask first.
+3. The open checks K3–K8 and K11 (section 8).
+4. The follow-up for the rest of `portal_api.py` (above).
+5. **Parallel work:** the `ci-fix-9138251` session may also edit `.github/workflows/ci.yml`
+   (site config, test job). 014 adds one step to the lint job. If the two meet, keep both.
 
 ---
 
@@ -61,10 +207,10 @@ production.**
 
 | # | Commit | Files | Mechanism | Why this one |
 |---|---|---|---|---|
-| 1 | `88c6dcf` Field check-in: keep photos, positions and names out of error logs | `alvoraa_portal/field_checkin.py` (new `_private_request`, `_log_server_error`, `_code_places`; decorator on `register_device`, `field_checkin`, `field_status`); new `tests/test_checkin_security_014.py` | **Extend**: a decorator in our own app | Frappe's field masking is hard-coded, and changing it means editing upstream code. A decorator that removes the fields and never lets an exception reach Frappe's handler is the only in-app way to keep the local variables out |
-| 2 | `bc3c2b2` Blank field check-in data already copied into Error Logs | new `patches/v1_0/redact_field_checkin_error_logs.py`; one line at the end of `alvoraa_portal/patches.txt`; tests | **Build**: a one-time patch | Runs on every tenant at migrate, so nobody has to touch a server. It blanks the values and keeps the rows (user's decision 4) |
-| 3 | `ec1e479` Field check-in setup: same answer for a real and a made-up employee ID | `field_checkin.py` (`register_device`, `_device_from_token`, new `_refuse_as_pending`); tests | **Extend** | User's decision 7 |
-| 4 | `ff32b69` nginx: pass Frappe only the real client address | `deploy/nginx.conf`; new `scripts/check_nginx_forwarded.sh`; new `scripts/check_nginx_conf.py`; `.github/workflows/ci.yml` (one step) | **Configure** | User's decisions 1, 2, 8 and 9 |
+| 1 | `98e1682` (was 88c6dcf) Field check-in: keep photos, positions and names out of error logs | `alvoraa_portal/field_checkin.py` (new `_private_request`, `_log_server_error`, `_code_places`; decorator on `register_device`, `field_checkin`, `field_status`); new `tests/test_checkin_security_014.py` | **Extend**: a decorator in our own app | Frappe's field masking is hard-coded, and changing it means editing upstream code. A decorator that removes the fields and never lets an exception reach Frappe's handler is the only in-app way to keep the local variables out |
+| 2 | `a2ed577` (was bc3c2b2) Blank field check-in data already copied into Error Logs | new `patches/v1_0/redact_field_checkin_error_logs.py`; one line at the end of `alvoraa_portal/patches.txt`; tests | **Build**: a one-time patch | Runs on every tenant at migrate, so nobody has to touch a server. It blanks the values and keeps the rows (user's decision 4) |
+| 3 | `a6b83ce` (was ec1e479) Field check-in setup: same answer for a real and a made-up employee ID | `field_checkin.py` (`register_device`, `_device_from_token`, new `_refuse_as_pending`); tests | **Extend** | User's decision 7 |
+| 4 | `abb1bca` (was ff32b69) nginx: pass Frappe only the real client address | `deploy/nginx.conf`; new `scripts/check_nginx_forwarded.sh`; new `scripts/check_nginx_conf.py`; `.github/workflows/ci.yml` (one step) | **Configure** | User's decisions 1, 2, 8 and 9 |
 | 5 | (this file) | `docs/slices/014-checkin-security-fixes/03-implementation-notes.md` | — | — |
 
 ### Commit 1 — the log wrapper
@@ -334,7 +480,7 @@ They age out as backups are rotated.
   - Live proof on dev, on the user's word: 11 `register_device` calls with 11 forged
     `X-Forwarded-For` values and consent `0` (nothing is created). The 11th answers 429.
 - **Rollback:**
-  - `git revert ff32b69`, then push on the user's word.
+  - `git revert abb1bca`, then push on the user's word.
   - If nginx will not start: only the user can act, in `/var/www/html/hr-app`. Restore
     the previous `deploy/nginx.conf` from git, run `docker restart compose-nginx-1`, then
     check `docker logs`.

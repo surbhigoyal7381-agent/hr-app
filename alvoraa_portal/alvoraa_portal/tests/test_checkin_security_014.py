@@ -162,15 +162,19 @@ class TheWrapperIsInPlace(CheckinLogCase):
 			"field_status": (),
 		}
 		for name, fields in expected.items():
-			fn, seen_wrapper, seen_gate_first = getattr(fc, name), None, False
+			# functools.wraps copies attributes outwards, so the INNERMOST function
+			# holding an attribute is the decorator that set it.
+			chain, fn = [], getattr(fc, name)
 			while fn is not None:
-				if hasattr(fn, "__alvoraa_private_request__") and seen_wrapper is None:
-					seen_wrapper = fn.__alvoraa_private_request__
-				if hasattr(fn, "__alvoraa_feature__") and seen_wrapper is None:
-					seen_gate_first = True
+				chain.append(fn)
 				fn = getattr(fn, "__wrapped__", None)
-			self.assertEqual(seen_wrapper, fields, f"{name} is not wrapped by _private_request")
-			self.assertFalse(seen_gate_first, f"{name}: the wrapper must sit above requires_feature")
+			private = [i for i, f in enumerate(chain) if hasattr(f, "__alvoraa_private_request__")]
+			gate = [i for i, f in enumerate(chain) if hasattr(f, "__alvoraa_feature__")]
+			self.assertTrue(private, f"{name} is not wrapped by _private_request")
+			self.assertEqual(chain[private[-1]].__alvoraa_private_request__, fields, name)
+			self.assertTrue(gate, f"{name} lost its plan gate")
+			self.assertLess(private[-1], gate[-1],
+			                f"{name}: _private_request must sit above requires_feature")
 
 
 class NothingPersonalReachesTheLogs(CheckinLogCase):
@@ -242,3 +246,70 @@ class RefusalsStillReadTheSame(CheckinLogCase):
 		frappe.conf["features"] = []
 		self.call(fc.field_status, {"token": self.token})
 		self.assertEqual(frappe.local.response.get("http_status_code"), 403)
+
+
+class OldCopiesAreRedacted(FrappeTestCase):
+	"""The one-time patch blanks personal values in Error Log rows written before
+	the fix, keeps the rows, and leaves every other Error Log alone."""
+
+	def _row(self, method, error, metadata):
+		doc = frappe.get_doc({"doctype": "Error Log", "method": method,
+		                      "error": error, "metadata": metadata})
+		doc.insert(ignore_permissions=True)
+		return doc.name
+
+	def test_014_redaction_patch(self):
+		from alvoraa_portal.patches.v1_0 import redact_field_checkin_error_logs as patch
+
+		metadata = json.dumps({
+			"type": "http_request", "method": "POST",
+			"path": "/api/method/alvoraa_portal.field_checkin.field_checkin",
+			"form_dict": {"cmd": "alvoraa_portal.field_checkin.field_checkin",
+			              "token": "********", "log_type": "IN",
+			              "photo": "data:image/jpeg;base64," + PHOTO_MARKER,
+			              "latitude": LAT_MARKER, "longitude": LON_MARKER},
+			"user": "Guest",
+		})
+		error = "\n".join([
+			"Traceback with variables (most recent call last):",
+			'  File "apps/alvoraa_portal/alvoraa_portal/field_checkin.py", line 293, in field_checkin',
+			"    _attach_photo(doc, photo)",
+			f"      photo = 'data:image/jpeg;base64,{PHOTO_MARKER}'",
+			f"      emp = {{'name': 'HR-EMP-1', 'employee_name': '{NAME_MARKER}'}}",
+			"      src = 'first line",
+			f"      {NAME_MARKER} second line'",
+			"builtins.RuntimeError: boom",
+		])
+		leaky = self._row("Field check-in photo could not be decoded for EMP-CKIN-1", error, metadata)
+		other_error = '  File "apps/frappe/x.py", line 1, in y\n      value = 42'
+		other = self._row("Some other failure", other_error, json.dumps({"form_dict": {"photo": "keep"}}))
+
+		patch.execute()
+
+		row = frappe.db.get_value("Error Log", leaky, ["method", "error", "metadata"], as_dict=True)
+		self.assertIsNotNone(row, "the row is kept")
+		for marker in (PHOTO_MARKER, LAT_MARKER, LON_MARKER, NAME_MARKER):
+			self.assertNotIn(marker, row.error)
+			self.assertNotIn(marker, row.metadata)
+		self.assertIn("field_checkin.py\", line 293", row.error, "where it failed is kept")
+		self.assertIn("builtins.RuntimeError: boom", row.error)
+		self.assertEqual(json.loads(row.metadata)["form_dict"]["log_type"], "IN")
+
+		untouched = frappe.db.get_value("Error Log", other, ["error", "metadata"], as_dict=True)
+		self.assertEqual(untouched.error, other_error)
+		self.assertIn("keep", untouched.metadata)
+
+		# Safe to run twice.
+		before = frappe.db.get_value("Error Log", leaky, ["error", "metadata"], as_dict=True)
+		patch.execute()
+		after = frappe.db.get_value("Error Log", leaky, ["error", "metadata"], as_dict=True)
+		self.assertEqual(before, after)
+
+	def test_014_patch_is_registered(self):
+		import os
+
+		import alvoraa_portal
+		path = os.path.join(os.path.dirname(alvoraa_portal.__file__), "patches.txt")
+		with open(path, encoding="utf-8") as f:
+			self.assertIn("alvoraa_portal.patches.v1_0.redact_field_checkin_error_logs",
+			              f.read().split())

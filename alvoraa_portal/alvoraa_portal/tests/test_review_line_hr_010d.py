@@ -295,7 +295,7 @@ class TestD34Page(FrappeTestCase):
 		self.assertIn("var elsewhere = !!d.hr_steps_elsewhere;", finalize)
 		self.assertIn("var hrSteps = hrStage && !elsewhere;", finalize)
 		self.assertIn("(hrSteps
-", finalize.replace("
+", finalize.replace("
 ", "
 "))
 		submit = _between(page, "function prRenderManagerSubmitPage(d, editable)", "var mgfPS")

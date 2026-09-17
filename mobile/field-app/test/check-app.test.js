@@ -11,7 +11,7 @@ const { pathToFileURL } = require("node:url");
 const load = () => import(pathToFileURL(path.join(__dirname, "..", "scripts", "check_app.mjs")).href);
 
 const GOOD_CONFIG = {
-  appId: "co.alvoraa.fieldattendance",
+  appId: "co.alvoraa.app",
   webDir: "web",
   android: { allowMixedContent: false, webContentsDebuggingEnabled: false },
   plugins: { CapacitorHttp: { enabled: false }, CapacitorCookies: { enabled: false } },

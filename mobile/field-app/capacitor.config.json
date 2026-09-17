@@ -1,0 +1,17 @@
+{
+  "appId": "co.alvoraa.fieldattendance",
+  "appName": "Alvoraa Attendance",
+  "webDir": "web",
+  "android": {
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": false
+    },
+    "CapacitorCookies": {
+      "enabled": false
+    }
+  }
+}

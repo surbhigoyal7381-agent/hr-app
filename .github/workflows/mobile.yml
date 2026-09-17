@@ -1,0 +1,60 @@
+name: Mobile app
+
+# Checks for the field attendance app in mobile/field-app (slice 013, OPS-74).
+# None of them needs a signing key or the Android SDK. The key guard is NOT here:
+# it lives in ci.yml, which runs on every push including app-only ones.
+#
+# Still to add, in this order (DevOps 07 §4): the server codes table vs the app's
+# table (when the server codes file exists), the drift check on the copied camera,
+# photo and GPS code (when the copy exists), Gradle wrapper validation (when
+# android/ is generated), and the built-package checks before the first pilot build.
+
+on:
+  pull_request:
+    branches: [dev, test, main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile.yml"
+  push:
+    branches: [dev, test, main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  app-checks:
+    name: App checks (no keys, no SDK)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: mobile/field-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: mobile/field-app/.nvmrc
+
+      # Exact versions from the committed lock file. No install scripts: nothing
+      # a dependency ships gets to run on the runner.
+      - name: Install from the lock file
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # Host allow-list (AC-172) and the checks' own tests.
+      - name: Unit tests
+        run: npm test
+
+      # Config (no server.url, no debugging, native HTTP off globally), exact
+      # pins, no tracking libraries, no outside URLs or HTML-from-strings in the
+      # bundle, and the Android permission allow-list once android/ exists.
+      - name: App config, dependencies, bundle and permissions
+        run: npm run check

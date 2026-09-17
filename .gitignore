@@ -82,3 +82,7 @@ xcuserdata/
 *.aab
 android/app/release/
 android/app/build/
+# Android and Gradle build output for the phone app (slice 013)
+.gradle/
+android/build/
+android/capacitor-cordova-android-plugins/build/

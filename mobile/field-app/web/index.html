@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!--
+  Slice 013, SEC-16 / AC-174. The app loads nothing from the internet except the
+  tenant API: scripts, styles and images only from the app itself. connect-src
+  names only the tenant pattern; the debug build adds its local address at build
+  time, never in this file (OPS-84). scripts/check_app.mjs fails on any other URL.
+-->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src https://*.alvoraa.co; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="color-scheme" content="light">
+<title>Alvoraa Attendance</title>
+</head>
+<body>
+<!-- Skeleton only. The screens arrive with US-35 onwards. -->
+<main id="app">
+  <h1>Alvoraa Attendance</h1>
+</main>
+<script src="js/host-check.js"></script>
+</body>
+</html>

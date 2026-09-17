@@ -45,3 +45,17 @@ temp_interactive_push.bat
 
 # Rendered pages the contrast checker writes out while it runs
 scripts/_c_*.html
+
+# ── Slice 015 (repo history scan, 2026-09-17) ────────────────────────────────
+# Things that sit in the repo folder but must never be committed.
+
+# Backups of the .claude folder: they hold settings.local.json and archives.
+.claude.backup-*/
+
+# Reference PDFs and manuals dropped in the repo root while working. Real
+# third-party documents, so they stay out of git. Move them out of the folder
+# if you want to keep them.
+/*.pdf
+
+# NOT ignored on purpose: docs/product/legal/ — those templates are meant to
+# be committed once they are ready.

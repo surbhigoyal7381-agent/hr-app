@@ -1,0 +1,1326 @@
+<title>Alvoraa · Leadership view · prototype v2 (slice 012)</title>
+<style>
+/* Tokens copied from alvoraa_portal/templates/includes/design_system.html (light and dark).
+   Extra names proposed in slice 009 appendix A: --sunk, --border-strong, --on-primary, --scrim. */
+:root{
+  --bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;--text:#2D2622;--text2:#5A544E;--text3:#736D65;
+  --primary:#5B4B8A;--primary-h:#4A3D73;--primary-d:#3D3461;--primary-lt:#EDEAF4;--on-primary:#FFFFFF;
+  --green:#1B7F5A;--green-lt:#E8F4EF;--red:#B3261E;--red-lt:#FBEAE8;--amber:#9A6510;--amber-lt:#FBF1E0;
+  --hero-bg:#3D3461;--hero-fg:#FFFFFF;--hero-accent:#BBAEE0;
+  --sunk:var(--surface2);--border-strong:var(--border2);--scrim:rgba(29,24,21,.42);
+  --sh1:0 1px 2px rgba(0,0,0,.05);--sh2:0 4px 12px rgba(0,0,0,.10);--sh3:0 12px 32px rgba(0,0,0,.16);
+  --font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,"Noto Sans Devanagari","Nirmala UI",sans-serif;
+  --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --r:10px;--r-sm:6px;--r-full:999px;
+  --fs-xs:11px;--fs-sm:12px;--fs-base:13px;--fs-md:15px;--fs-lg:18px;--fs-xl:24px;--fs-2xl:32px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;--text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;
+    --primary:#A99AD4;--primary-h:#BBAEE0;--primary-d:#7A6BA8;--primary-lt:#2A2438;--on-primary:#1A1815;
+    --green:#5DBF97;--green-lt:#12332A;--red:#F08A82;--red-lt:#3A1C1A;--amber:#E0A94A;--amber-lt:#33280F;
+    --hero-bg:#2A2438;--hero-fg:#F0EDE8;--hero-accent:#BBAEE0;--scrim:rgba(0,0,0,.55);
+    --sh1:0 1px 2px rgba(0,0,0,.30);--sh2:0 4px 12px rgba(0,0,0,.45);--sh3:0 12px 32px rgba(0,0,0,.60);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;--text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;
+  --primary:#A99AD4;--primary-h:#BBAEE0;--primary-d:#7A6BA8;--primary-lt:#2A2438;--on-primary:#1A1815;
+  --green:#5DBF97;--green-lt:#12332A;--red:#F08A82;--red-lt:#3A1C1A;--amber:#E0A94A;--amber-lt:#33280F;
+  --hero-bg:#2A2438;--hero-fg:#F0EDE8;--hero-accent:#BBAEE0;--scrim:rgba(0,0,0,.55);
+  --sh1:0 1px 2px rgba(0,0,0,.30);--sh2:0 4px 12px rgba(0,0,0,.45);--sh3:0 12px 32px rgba(0,0,0,.60);
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:var(--fs-base);line-height:1.5;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:var(--r-sm)}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+.num{font-variant-numeric:tabular-nums}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+svg.i{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px}
+svg.i.sm{width:15px;height:15px}
+svg.i.lg{width:28px;height:28px}
+p{margin:0}
+ul{margin:0;padding-left:20px}
+li+li{margin-top:6px}
+
+/* ── Prototype controls (not part of the product) ─────────── */
+.pbar{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:10px 16px;background:var(--text);color:var(--bg);font-size:var(--fs-sm)}
+.pbar .tag{font-family:var(--mono);font-size:var(--fs-xs);letter-spacing:.06em;text-transform:uppercase;opacity:.8}
+.pbar label{display:flex;align-items:center;gap:6px;min-width:0}
+.pbar select{min-height:36px;max-width:100%;padding:4px 8px;border-radius:var(--r-sm);border:0;background:var(--bg);color:var(--text);font-size:14px}
+.pbar .pgrow{flex:1 1 260px;min-width:0}
+.pbar .pgrow select{flex:1;min-width:0}
+.pbar .note{flex-basis:100%;opacity:.85}
+
+/* ── Stage ─────────────────────────────────────────────────── */
+.stage{padding:0}
+.stage.phone{display:flex;justify-content:center;padding:24px 16px 40px}
+.stage.phone .app{width:390px;max-width:100%;height:820px;border:8px solid var(--text);border-radius:36px;overflow:hidden;box-shadow:var(--sh3)}
+.stage.phone .shell{height:100%}
+.stage.phone .main{height:100%;overflow-y:auto}
+.stage.phone .scrim,.stage.phone .sheet,.stage.phone .toast,.stage.phone .rail{position:absolute}
+
+/* ── App frame (slice 009) ─────────────────────────────────── */
+.app{background:var(--bg);position:relative}
+.shell{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:100vh}
+.rail{position:sticky;top:0;align-self:start;height:100vh;display:flex;flex-direction:column;gap:14px;padding:16px 12px;border-right:1px solid var(--border);background:var(--surface);overflow-y:auto;z-index:85}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 8px}
+.brand .mark{width:32px;height:32px;border-radius:8px;background:var(--hero-bg);color:var(--hero-fg);display:grid;place-items:center;font-weight:700;font-size:var(--fs-sm)}
+.brand .nm{font-weight:600;font-size:var(--fs-md);line-height:1.2}
+.brand .sub{font-size:var(--fs-sm);color:var(--text3)}
+.nav{display:grid;gap:12px}
+.nav h6{margin:0 0 2px;padding:0 10px;font-size:var(--fs-sm);font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--text3)}
+.nav button{display:flex;align-items:center;gap:10px;width:100%;min-height:40px;padding:7px 10px;border:0;border-radius:var(--r-sm);background:none;color:var(--text2);text-align:left;font-size:var(--fs-md)}
+.nav button:hover{background:var(--sunk);color:var(--text)}
+.nav button[aria-current="page"]{background:var(--primary-lt);color:var(--primary);font-weight:600}
+.nav .count{margin-left:auto;min-width:22px;padding:0 6px;border-radius:var(--r-full);background:var(--primary-lt);color:var(--primary);font-size:var(--fs-sm);font-weight:700;text-align:center}
+.me{margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px 8px 2px;border-top:1px solid var(--border)}
+.av{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:var(--fs-sm);font-weight:700;flex:none;background:var(--primary-lt);color:var(--primary)}
+.me .nm{font-weight:600;line-height:1.2}
+.me .sub{font-size:var(--fs-sm);color:var(--text3);line-height:1.3}
+
+.main{min-width:0;display:flex;flex-direction:column}
+.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:12px;padding:14px 28px;background:var(--bg);border-bottom:1px solid var(--border)}
+.top .tt{min-width:0}
+.crumb{font-size:var(--fs-sm);color:var(--text3);display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.crumb button{border:0;background:none;padding:0;color:var(--primary);font-size:var(--fs-sm)}
+.top h1{margin:0;font-size:var(--fs-xl);line-height:1.2;font-weight:650;overflow-wrap:anywhere}
+.top .acts{margin-left:auto;display:flex;align-items:center;gap:8px;flex:none}
+.iconbtn{position:relative;width:44px;height:44px;display:grid;place-items:center;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:var(--text2)}
+.iconbtn .dot{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;border-radius:var(--r-full);background:var(--primary);color:var(--on-primary);font-size:var(--fs-xs);font-weight:700;line-height:18px;text-align:center}
+.menubtn{display:none}
+.content{padding:22px 28px 56px;max-width:1180px;width:100%;display:grid;gap:18px;flex:1;align-content:start}
+
+/* ── Building blocks ───────────────────────────────────────── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh1);min-width:0}
+.card>.hd{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;padding:14px 18px;border-bottom:1px solid var(--border)}
+.card>.hd h2{margin:0;font-size:var(--fs-md);font-weight:650;display:flex;align-items:center;gap:8px}
+.card>.hd h2 svg{color:var(--primary)}
+.card>.bd{padding:16px 18px;display:grid;gap:12px}
+.card>.ft{padding:10px 18px;border-top:1px solid var(--border);font-size:var(--fs-sm);color:var(--text3);display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center}
+.linkbtn{border:0;background:none;padding:0;color:var(--primary);font-size:var(--fs-sm);font-weight:600;display:inline-flex;align-items:center;gap:4px;text-align:left;min-height:32px}
+.hd .linkbtn{margin-left:auto}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:8px 16px;border-radius:var(--r-sm);border:1px solid var(--border-strong);background:var(--surface);color:var(--text);font-weight:600;font-size:var(--fs-md)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+.btn.primary:hover{background:var(--primary-h);border-color:var(--primary-h)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--primary)}
+.btn.block{width:100%}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:var(--r-full);font-size:var(--fs-sm);font-weight:600;line-height:1.5}
+.c-warn{background:var(--amber-lt);color:var(--amber)}
+.c-info{background:var(--primary-lt);color:var(--primary)}
+.c-neutral{background:var(--sunk);color:var(--text2)}
+.c-good{background:var(--green-lt);color:var(--green)}
+.sample{font-family:var(--mono);font-size:var(--fs-xs);letter-spacing:.06em;text-transform:uppercase;padding:1px 6px;border-radius:4px;border:1px solid var(--border-strong);color:var(--text2);white-space:nowrap}
+.muted{color:var(--text2)}
+.faint{color:var(--text3)}
+.small{font-size:var(--fs-sm)}
+.grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start}
+.grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.pagehead{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;color:var(--text2)}
+.pagehead .fresh{display:inline-flex;align-items:center;gap:6px}
+.proto-note{font-size:var(--fs-sm);color:var(--text3);display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+
+/* Hero (WOW card) */
+.hero{background:var(--hero-bg);color:var(--hero-fg);border-radius:var(--r);padding:20px 22px;display:grid;gap:8px;box-shadow:var(--sh2)}
+.hero .eyebrow{font-size:var(--fs-sm);opacity:.85;font-weight:600}
+.hero .big{font-size:36px;font-weight:700;line-height:1.1;letter-spacing:-.01em}
+.hero .line{font-size:var(--fs-md);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.hero .line .cmp{color:var(--hero-accent);font-weight:600}
+.hero .foot{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;margin-top:6px}
+.hero .foot .fresh{font-size:var(--fs-sm);opacity:.85}
+.hero .go{min-height:44px;padding:0 18px;border-radius:var(--r-full);border:0;background:var(--hero-fg);color:var(--hero-bg);font-weight:700;font-size:var(--fs-md)}
+.hero .hwarn{display:flex;gap:8px;padding:10px 12px;border-radius:var(--r-sm);background:rgba(255,255,255,.12);font-size:var(--fs-md)}
+
+/* Metric cards */
+.metric .big{font-size:var(--fs-2xl);font-weight:700;line-height:1.05;letter-spacing:-.01em}
+.metric .bigl{color:var(--text2);font-size:var(--fs-md)}
+.metric .chg{display:flex;align-items:center;gap:6px;color:var(--text2);font-size:var(--fs-md)}
+.metric .cmp{font-size:var(--fs-md);color:var(--text)}
+.metric .cmp b{font-weight:650}
+.kv{display:grid;border-top:1px solid var(--border)}
+.kv>div{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--border)}
+.kv>div:last-child{border-bottom:0}
+.kv .k{color:var(--text2);font-size:var(--fs-md)}
+.kv .v{font-weight:650;font-size:var(--fs-md);text-align:right}
+.kv .s{grid-column:1/-1;font-size:var(--fs-sm);color:var(--text3)}
+.bar{height:8px;border-radius:var(--r-full);background:var(--sunk);overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--primary);border-radius:inherit}
+.hid{display:inline-flex;align-items:center;gap:5px;color:var(--text2);font-weight:600}
+.hidblock{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;align-items:center;padding:12px 14px;border:1px dashed var(--border-strong);border-radius:var(--r);background:var(--sunk)}
+.hidblock svg{color:var(--text2)}
+.hidblock b{font-size:var(--fs-md)}
+.hidblock .linkbtn{grid-column:2;justify-self:start}
+.notrec{font-size:var(--fs-xl);font-weight:650;color:var(--text2)}
+.warn-banner{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;padding:14px 16px;border-radius:var(--r);background:var(--amber-lt);border:1px solid color-mix(in srgb,var(--amber) 35%,transparent);border-left:4px solid var(--amber)}
+.warn-banner>svg{color:var(--amber);margin-top:2px}
+.warn-banner h2{margin:0;font-size:var(--fs-md)}
+.warn-banner p{font-size:var(--fs-md)}
+.warn-banner .acts{grid-column:2;display:flex;flex-wrap:wrap;gap:4px 16px}
+.errblock{display:grid;gap:10px;padding:6px 0}
+.errblock b{font-size:var(--fs-md)}
+
+/* Today strip */
+.today{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--border);border-radius:var(--r);overflow:hidden;border:1px solid var(--border)}
+.today>div{background:var(--surface);padding:12px 14px;display:grid;gap:2px}
+.today .v{font-size:var(--fs-xl);font-weight:700;line-height:1.1}
+.today .k{font-size:var(--fs-sm);color:var(--text2)}
+
+/* Trend */
+.trend{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;align-items:end;height:150px;padding-top:8px}
+.trend .col{display:grid;grid-template-rows:auto 1fr auto;height:100%;text-align:center;gap:4px}
+.trend .val{font-size:var(--fs-sm);font-weight:650}
+.trend .slot{display:flex;align-items:flex-end;justify-content:center}
+.trend .b{width:70%;max-width:44px;border-radius:4px 4px 0 0;background:var(--primary)}
+.trend .b.doubt{background:repeating-linear-gradient(45deg,var(--amber),var(--amber) 4px,var(--amber-lt) 4px,var(--amber-lt) 8px);border:1px solid var(--amber)}
+.trend .m{font-size:var(--fs-sm);color:var(--text2)}
+.days7{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;align-items:end;height:90px}
+.days7 .col{display:grid;grid-template-rows:auto 1fr auto;height:100%;text-align:center;gap:2px}
+.days7 .b{width:70%;margin:0 auto;border-radius:3px 3px 0 0;background:var(--border-strong)}
+.days7 .b.peak{background:var(--primary)}
+.days7 .slot{display:flex;align-items:flex-end}
+.days7 .slot .b{align-self:flex-end}
+
+/* Tables and group lists */
+.tblwrap{overflow-x:auto}
+.tbl{width:100%;border-collapse:collapse}
+.tbl th,.tbl td{text-align:left;padding:10px 14px;border-top:1px solid var(--border);font-size:var(--fs-base);vertical-align:middle}
+.tbl th{font-size:var(--fs-sm);font-weight:600;color:var(--text2);border-top:0;background:var(--sunk);white-space:nowrap}
+.tbl td.n,.tbl th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tbl tr.total td{font-weight:700;background:color-mix(in srgb,var(--sunk) 55%,transparent)}
+.tbl .rowbtn{border:0;background:none;padding:0;color:var(--primary);font-weight:600;text-align:left;display:inline-flex;align-items:center;gap:4px;min-height:32px}
+.glist{display:grid}
+.grow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;align-items:center;width:100%;padding:12px 16px;border:0;border-top:1px solid var(--border);background:none;text-align:left;min-height:64px}
+.grow:first-child{border-top:0}
+button.grow:hover{background:var(--sunk)}
+.grow .t{font-weight:650;font-size:var(--fs-md);line-height:1.3;display:flex;align-items:center;gap:4px}
+.grow .s{font-size:var(--fs-sm);color:var(--text2)}
+.grow .r{text-align:right}
+.grow .r .v{font-weight:700;font-size:var(--fs-lg);line-height:1.1}
+.grow .r .l{font-size:var(--fs-sm);color:var(--text2)}
+.grow.total{background:color-mix(in srgb,var(--sunk) 55%,transparent)}
+.rules{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.rules>div{border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;display:grid;gap:6px;align-content:start}
+.rules h3{margin:0;font-size:var(--fs-md)}
+
+/* Empty / explanatory state */
+.explainer{display:grid;justify-items:start;gap:14px;padding:28px;max-width:640px}
+.explainer .ring{width:56px;height:56px;border-radius:50%;display:grid;place-items:center;background:var(--primary-lt);color:var(--primary)}
+.explainer h2{margin:0;font-size:var(--fs-xl);line-height:1.25}
+.explainer p{font-size:var(--fs-md);color:var(--text2)}
+.quote{border-left:3px solid var(--primary);padding:10px 14px;background:var(--sunk);border-radius:0 var(--r-sm) var(--r-sm) 0;font-size:var(--fs-md);width:100%}
+
+/* Settings */
+.stepper{display:flex;align-items:center;gap:0;border:1px solid var(--border-strong);border-radius:var(--r);overflow:hidden;width:max-content;background:var(--surface)}
+.stepper button{width:48px;height:48px;border:0;background:var(--sunk);display:grid;place-items:center;color:var(--text)}
+.stepper output{min-width:120px;text-align:center;font-size:var(--fs-lg);font-weight:700}
+.field{display:grid;gap:6px}
+.field label{font-weight:600;font-size:var(--fs-md)}
+.field .hint{font-size:var(--fs-sm);color:var(--text2)}
+.field .err{font-size:var(--fs-sm);color:var(--red);font-weight:600}
+textarea.inp{width:100%;min-height:84px;padding:10px 12px;border:1px solid var(--border-strong);border-radius:var(--r-sm);background:var(--surface);font-size:16px;resize:vertical}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.lockline{display:flex;gap:8px;align-items:center;color:var(--text2);font-size:var(--fs-md)}
+.tabs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--border)}
+.tabs button{flex:none;border:0;background:none;padding:10px 12px;min-height:44px;color:var(--text2);font-weight:600;font-size:var(--fs-md);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs button[aria-selected="true"]{color:var(--primary);border-bottom-color:var(--primary)}
+
+/* Employee line */
+.whosees{display:grid;gap:10px}
+.whosees summary{cursor:pointer;display:flex;align-items:center;gap:8px;font-weight:600;font-size:var(--fs-md);min-height:44px;color:var(--primary);list-style:none}
+.whosees summary::-webkit-details-marker{display:none}
+.whosees ul{font-size:var(--fs-md);color:var(--text)}
+
+/* Skeleton */
+.sk{background:linear-gradient(90deg,var(--sunk),color-mix(in srgb,var(--sunk) 40%,var(--surface)),var(--sunk));background-size:200% 100%;animation:sk 1.2s linear infinite;border-radius:6px}
+@keyframes sk{from{background-position:200% 0}to{background-position:-200% 0}}
+
+/* Sheet, dialog, toast */
+.scrim{position:fixed;inset:0;background:var(--scrim);z-index:80;opacity:0;pointer-events:none;transition:opacity .18s}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{position:fixed;z-index:90;top:0;right:0;bottom:0;width:min(440px,100%);background:var(--surface);border-left:1px solid var(--border);box-shadow:var(--sh3);display:flex;flex-direction:column;transform:translateX(102%);transition:transform .22s ease;visibility:hidden}
+.sheet.on{transform:none;visibility:visible}
+.sheet .hd{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border)}
+.sheet .hd h2{margin:0;font-size:var(--fs-lg);flex:1}
+.sheet .bd{padding:18px;overflow-y:auto;display:grid;gap:14px;align-content:start;flex:1;font-size:var(--fs-md)}
+.sheet .ft{padding:12px 18px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.sheet.dialog{top:50%;left:50%;right:auto;bottom:auto;width:min(460px,calc(100% - 32px));border:1px solid var(--border);border-radius:var(--r);transform:translate(-50%,-46%);opacity:0;transition:.18s}
+.sheet.dialog.on{transform:translate(-50%,-50%);opacity:1}
+.toast{position:fixed;z-index:100;left:50%;bottom:96px;transform:translate(-50%,20px);opacity:0;background:var(--text);color:var(--bg);padding:10px 16px;border-radius:var(--r-full);font-weight:600;box-shadow:var(--sh3);transition:.2s;pointer-events:none;max-width:calc(100% - 32px);text-align:center}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+
+.bnav{display:none}
+
+/* ── Phone layout: driven by the app's own width (class set by script) ── */
+.app.is-phone .shell{grid-template-columns:minmax(0,1fr)}
+.app.is-phone .rail{position:fixed;top:0;left:0;bottom:0;height:auto;width:280px;transform:translateX(-102%);transition:transform .22s;box-shadow:var(--sh3);visibility:hidden}
+.app.is-phone .rail.open{transform:none;visibility:visible}
+.app.is-phone .top{padding:8px 16px;gap:8px}
+.app.is-phone .top h1{font-size:var(--fs-lg)}
+.app.is-phone .menubtn{display:grid}
+.app.is-phone .top .bell{display:none}
+.app.is-phone .content{padding:16px 16px 24px;gap:14px;font-size:var(--fs-md)}
+.app.is-phone .grid-3,.app.is-phone .grid-2,.app.is-phone .rules{grid-template-columns:minmax(0,1fr)}
+.app.is-phone .card>.hd,.app.is-phone .card>.bd{padding-left:16px;padding-right:16px}
+.app.is-phone .metric .big{font-size:36px}
+.app.is-phone .hero{padding:18px 16px}
+.app.is-phone .hero .go{width:100%}
+.app.is-phone .today .v{font-size:var(--fs-lg)}
+.app.is-phone .today>div{padding:10px 10px}
+.app.is-phone .explainer{padding:20px 16px}
+.app.is-phone .sheet{top:auto;left:0;width:100%;max-height:88%;border-left:0;border-top:1px solid var(--border);border-radius:18px 18px 0 0;transform:translateY(102%)}
+.app.is-phone .sheet.on{transform:none}
+.app.is-phone .sheet.dialog{top:50%;left:50%;bottom:auto;width:min(460px,calc(100% - 32px));border:1px solid var(--border);border-radius:var(--r);transform:translate(-50%,-46%);max-height:none}
+.app.is-phone .sheet.dialog.on{transform:translate(-50%,-50%)}
+.app.is-phone .bnav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));position:sticky;bottom:0;z-index:30;background:var(--surface);border-top:1px solid var(--border);padding:4px 2px calc(4px + env(safe-area-inset-bottom))}
+.app.is-phone .bnav button{display:grid;justify-items:center;align-content:center;gap:2px;border:0;background:none;color:var(--text2);font-size:var(--fs-sm);font-weight:600;min-height:52px;padding:4px 0}
+.app.is-phone .bnav button[aria-current="page"]{color:var(--primary)}
+.app.is-phone .toast{bottom:84px}
+#pageTitle:focus{outline:none}
+.app.is-phone .nav button{min-height:44px}
+.sample{font-size:var(--fs-sm)}
+.stepper button[aria-disabled="true"]{color:var(--text3)}
+.scopelink{display:none}
+.app.is-phone .scopebtn{display:none}
+.app.is-phone .scopelink{display:inline-flex}
+.app.is-phone .linkbtn{min-height:44px;margin:-6px 0}
+.app.is-phone .crumb button{min-height:44px;margin:-14px 0;padding:0 2px}
+/* v2: "Needs review" state */
+.rev{display:inline-flex;align-items:center;gap:5px;color:var(--text2);font-weight:600}
+/* v2: scope switcher for leaders linked to several branches */
+.scoperow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
+.scoperow .lbl{font-weight:600;color:var(--text2);font-size:var(--fs-md)}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--border-strong);border-radius:var(--r);overflow:hidden;background:var(--surface);max-width:100%}
+.seg button{border:0;border-left:1px solid var(--border);background:none;padding:8px 14px;min-height:40px;font-weight:600;font-size:var(--fs-md);color:var(--text2);display:inline-flex;align-items:center;gap:6px}
+.seg button:first-child{border-left:0}
+.seg button[aria-checked="true"]{background:var(--primary-lt);color:var(--primary)}
+.scopechip{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:6px 14px;border-radius:var(--r-full);border:1px solid var(--border-strong);background:var(--surface);font-weight:600;font-size:var(--fs-md);max-width:100%;text-align:left}
+.scopechip svg:last-child{transform:rotate(90deg)}
+.optlist{display:grid;gap:8px}
+.opt{display:grid;grid-template-columns:22px minmax(0,1fr);gap:2px 10px;align-items:center;min-height:56px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);text-align:left;width:100%}
+.opt[aria-checked="true"]{border-color:var(--primary);background:var(--primary-lt)}
+.opt .rd{width:18px;height:18px;border-radius:50%;border:2px solid var(--border-strong);display:block}
+.opt[aria-checked="true"] .rd{border-color:var(--primary);box-shadow:inset 0 0 0 3px var(--surface);background:var(--primary)}
+.opt .t{font-weight:650;font-size:var(--fs-md)}
+.opt .s{grid-column:2;font-size:var(--fs-sm);color:var(--text2)}
+.hero .linkbtn{color:var(--hero-accent)}
+.slot{min-width:0}
+/* v2: HR "Data to review" */
+.rvitem .hd .chip{margin-left:auto}
+.rvitem .meta{font-size:var(--fs-sm);color:var(--text3)}
+/* Inside the phone frame, pop-ups belong to the frame, not the window */
+.stage.phone .app .rail,.stage.phone .app .sheet,.stage.phone .app .scrim,.stage.phone .app .toast{position:absolute}
+</style>
+
+<div class="pbar" role="region" aria-label="Prototype controls (not part of the product)">
+  <span class="tag">Prototype v2 · slice 012</span>
+  <label class="pgrow">Screen
+    <select id="pState" aria-label="Choose a screen or state"></select>
+  </label>
+  <label>Device
+    <select id="pDevice"><option value="auto">Fit window</option><option value="phone">Phone frame</option><option value="desktop">Desktop</option></select>
+  </label>
+  <label>Theme
+    <select id="pTheme"><option value="auto">Auto</option><option value="light">Light</option><option value="dark">Dark</option></select>
+  </label>
+  <label>Language
+    <select id="pLang"><option value="en">English</option><option value="hi">हिंदी (draft)</option></select>
+  </label>
+  <label>Brand colour
+    <select id="pBrand"><option value="">Alvoraa default</option><option value="#0F766E">Tenant: teal</option><option value="#F2A93B">Tenant: pale saffron</option></select>
+  </label>
+  <label>Wording on a large group (D17)
+    <select id="pWord"><option value="same">Your wording everywhere</option><option value="variant">Variant: say it protects a smaller group</option></select>
+  </label>
+  <span class="note">Every name and number here is invented sample data. Tap rows, links and "Why?" buttons. Changing the smallest group in the System Manager screen changes what leaders see. New in v2: "Not shared" wording, "Needs review", the branch switcher, HR's "Data to review", and cards that fill in one by one.</span>
+</div>
+
+<div class="stage" id="stage">
+  <div class="app" id="app" lang="en">
+    <div class="shell">
+      <aside class="rail" id="rail" aria-label="Main menu"></aside>
+      <div class="main" id="main">
+        <header class="top" id="top"></header>
+        <main class="content" id="content" tabindex="-1"></main>
+        <nav class="bnav" id="bnav" aria-label="Quick menu"></nav>
+      </div>
+    </div>
+    <div class="scrim" id="scrim"></div>
+    <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+      <div class="hd"><h2 id="sheetTitle">Title</h2><button class="iconbtn" data-act="close" aria-label="Close"></button></div>
+      <div class="bd" id="sheetBody"></div>
+      <div class="ft" id="sheetFoot"></div>
+    </section>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ═══════════ Sample data — all invented ═══════════ */
+var UPTO = "13 Sep 2026", UPTO_S = "13 Sep", ASOF = "10:40", PREV = "1–13 Aug", LASTIN = "10:32";
+
+var CO = {id:"co", name:"Kavya Retail", branches:6, hc:288, hcPrev:271, join:48, leavers:31, att:96.8, attPrev:96.5, attRaw:71.4,
+  late:163, lateP:181, short:58, shortP:54, onLeave:11, used:1284, alloc:6912, wait:4, inNow:241, expected:277,
+  trend:[["Apr",96.2],["May",96.9],["Jun",97.1],["Jul",96.5],["Aug",96.6],["Sep",96.8]]};
+
+var BR = [
+  {id:"ho", name:"Head Office, Gurugram", hc:58, hcPrev:55, join:9, leavers:4, att:97.2, attPrev:96.9, late:22, lateP:27, short:9, shortP:8, onLeave:2, used:312, alloc:1392, wait:1},
+  {id:"hill", name:"Hilltop Kiosk", hc:4, hcPrev:3, join:1, leavers:0, att:99.0, attPrev:98.5, late:2, lateP:2, short:1, shortP:1, onLeave:0, used:16, alloc:96, wait:0, inNow:4, expected:4,
+    trend:[["Apr",98.0],["May",98.6],["Jun",99.1],["Jul",98.2],["Aug",98.5],["Sep",99.0]]},
+  {id:"lake", name:"Lakeside Mall", hc:64, hcPrev:60, join:11, leavers:7, att:96.1, attPrev:95.8, late:41, lateP:53, short:14, shortP:12, onLeave:3, used:281, alloc:1536, wait:1, inNow:51, expected:61,
+    trend:[["Apr",95.6],["May",96.0],["Jun",96.4],["Jul",95.9],["Aug",95.8],["Sep",96.1]],
+    week:{late:[18,25], short:[6,5], absent:[9,11]}, days:[6,4,5,5,6,13,2],
+    depts:[
+      {id:"d-sales", name:"Sales floor", hc:39, hcPrev:36, join:7, leavers:5, att:95.7, late:29, short:9, onLeave:2, used:170, alloc:936},
+      {id:"d-cash", name:"Cashiers", hc:12, hcPrev:12, join:2, leavers:1, att:96.9, late:8, short:3, onLeave:1, used:55, alloc:288},
+      {id:"d-sec", name:"Security", hc:4, hcPrev:4, join:1, leavers:0, att:97.5, late:1, short:1, onLeave:0, used:16, alloc:96},
+      {id:"d-stock", name:"Stock room", hc:9, hcPrev:8, join:1, leavers:1, att:97.0, late:3, short:1, onLeave:0, used:40, alloc:216}
+    ]},
+  {id:"old", name:"Old Market", hc:71, hcPrev:68, join:12, leavers:9, att:95.4, attPrev:95.9, late:48, lateP:44, short:17, shortP:15, onLeave:3, used:330, alloc:1704, wait:1, inNow:60, expected:67,
+    trend:[["Apr",95.9],["May",96.2],["Jun",96.0],["Jul",95.7],["Aug",95.9],["Sep",95.4]],
+    depts:[
+      {id:"o-sales", name:"Sales floor", hc:30, hcPrev:29, join:5, leavers:4, att:95.0, late:21, short:8, onLeave:1, used:140, alloc:720},
+      {id:"o-cash", name:"Cashiers", hc:20, hcPrev:19, join:4, leavers:3, att:95.6, late:14, short:5, onLeave:1, used:92, alloc:480},
+      {id:"o-stock", name:"Stock room", hc:11, hcPrev:10, join:2, leavers:1, att:96.1, late:8, short:2, onLeave:1, used:52, alloc:264},
+      {id:"o-sec", name:"Security", hc:6, hcPrev:6, join:1, leavers:1, att:95.8, late:3, short:1, onLeave:0, used:30, alloc:144},
+      {id:"o-alt", name:"Alterations", hc:4, hcPrev:4, join:0, leavers:0, att:96.5, late:2, short:1, onLeave:0, used:16, alloc:96}
+    ]},
+  {id:"river", name:"Riverside", hc:49, hcPrev:47, join:8, leavers:5, att:97.9, attPrev:97.6, late:24, lateP:29, short:8, shortP:9, onLeave:2, used:205, alloc:1176, wait:0, inNow:42, expected:46,
+    trend:[["Apr",97.2],["May",97.5],["Jun",97.8],["Jul",97.4],["Aug",97.6],["Sep",97.9]],
+    depts:[
+      {id:"r-sales", name:"Sales floor", hc:25, hcPrev:24, join:4, leavers:3, att:97.6, late:13, short:4, onLeave:1, used:105, alloc:600},
+      {id:"r-cash", name:"Cashiers", hc:14, hcPrev:13, join:3, leavers:1, att:98.2, late:7, short:2, onLeave:1, used:60, alloc:336},
+      {id:"r-stock", name:"Stock room", hc:6, hcPrev:6, join:1, leavers:1, att:98.0, late:3, short:1, onLeave:0, used:25, alloc:144},
+      {id:"r-sec", name:"Security", hc:4, hcPrev:4, join:0, leavers:0, att:98.5, late:1, short:1, onLeave:0, used:15, alloc:96}
+    ]},
+  {id:"station", name:"Station Road", hc:42, hcPrev:38, join:7, leavers:6, att:98.0, attPrev:97.7, late:26, lateP:26, short:9, shortP:9, onLeave:1, used:140, alloc:1008, wait:1, inNow:35, expected:38,
+    trend:[["Apr",97.5],["May",97.8],["Jun",98.1],["Jul",97.6],["Aug",97.7],["Sep",98.0]]}
+];
+function brById(id){ return BR.filter(function(b){ return b.id===id; })[0]; }
+/* Add up a leader's chosen branches. Attendance is weighted by people (an approximation for the sample). */
+function combine(list){
+  function sum(k){ return list.reduce(function(s,b){ return s+(b[k]||0); },0); }
+  var hc = sum("hc");
+  function w(k){ return list.reduce(function(s,b){ return s+b[k]*b.hc; },0)/hc; }
+  var o = {id:"set", name:"All my branches", names:list.map(function(b){return b.name;}).sort().join(" and "), branches:list.length,
+    hc:hc, hcPrev:sum("hcPrev"), join:sum("join"), leavers:sum("leavers"), att:w("att"), attPrev:w("attPrev"),
+    late:sum("late"), lateP:sum("lateP"), short:sum("short"), shortP:sum("shortP"), onLeave:sum("onLeave"), used:sum("used"), alloc:sum("alloc"), wait:sum("wait")};
+  if (list.every(function(b){ return b.inNow; })){ o.inNow = sum("inNow"); o.expected = sum("expected"); }
+  if (list.every(function(b){ return b.trend; })) o.trend = list[0].trend.map(function(m,i){ return [m[0], list.reduce(function(s,b){ return s+b.trend[i][1]*b.hc; },0)/hc]; });
+  return o;
+}
+/* Department sizes per branch, for the settings impact preview only */
+var DEPT_SIZES = {ho:[14,11,9,8,6,4,3,3], hill:[4], lake:[39,12,9,4], old:[30,20,11,6,4], river:[25,14,6,4], station:[22,12,5,3]};
+
+var CO2 = {id:"co2", name:"Meadow Foods", branches:2, hc:65, hcPrev:62, join:6, leavers:5, att:95.9, attPrev:95.2, late:38, lateP:41, short:12, shortP:10, onLeave:2, used:260, alloc:1560, wait:0};
+var BR2 = [
+  {id:"air", name:"Airport Kiosk", hc:4, hcPrev:4, join:1, leavers:1, att:97.0, attPrev:96.0, late:3, lateP:2, short:1, shortP:1, onLeave:0, used:14, alloc:96, wait:0},
+  {id:"main", name:"Main Store", hc:61, hcPrev:58, join:5, leavers:4, att:95.8, attPrev:95.2, late:35, lateP:39, short:11, shortP:9, onLeave:2, used:246, alloc:1464, wait:0}
+];
+
+var PEOPLE = {
+  bh:{name:"Arjun Mehta", role:"Store manager, Lakeside Mall", ini:"AM", lead:"branch"},
+  ch:{name:"Meera Nair", role:"Managing Director", ini:"MN", lead:"company"},
+  tiny:{name:"Farah Khan", role:"Kiosk lead, Hilltop Kiosk", ini:"FK", lead:"branch"},
+  two:{name:"Kabir Sethi", role:"Owner, Meadow Foods", ini:"KS", lead:"company"},
+  noperm:{name:"Rohan Das", role:"Regional manager", ini:"RD", lead:"none"},
+  multi:{name:"Neha Iyer", role:"Area manager", ini:"NI", lead:"multi", links:["old","river"]},
+  multi2:{name:"Dev Malhotra", role:"Cluster lead", ini:"DM", lead:"multi", links:["hill","station"]},
+  sm:{name:"Vikram Shah", role:"IT and systems, System Manager", ini:"VS", admin:"sm"},
+  hr:{name:"Priya Raman", role:"HR Manager", ini:"PR", admin:"hr"},
+  emp:{name:"Sunil Kumar", role:"Sales associate, Lakeside Mall", ini:"SK"}
+};
+
+var STATES = [
+  ["bh-home","Branch head · Home (the WOW card)"],
+  ["bh-overview","Branch head · Branch overview"],
+  ["ch-home","Company head · Home"],
+  ["ch-overview","Company head · Company overview (hidden groups)"],
+  ["drill:lake","Company head › Lakeside Mall (drill-down)"],
+  ["drill:station","Company head › Station Road (figures not shared)"],
+  ["ch-broken","Data looks wrong · doubtful days, leave and leavers need review"],
+  ["two","Company with exactly two branches, one tiny"],
+  ["tiny","Head of a branch with 4 people"],
+  ["noperm","Leadership role, no company or branch linked"],
+  ["multi-home","NEW · Leader of two branches · Home (last choice)"],
+  ["multi","NEW · Leader of two branches · All my branches"],
+  ["multi:old","NEW · Leader of two branches › Old Market"],
+  ["multi2","NEW · Leader of a large and a tiny branch · All my branches"],
+  ["loading","Loading (cards fill in one by one)"],
+  ["error","One card failed to load"],
+  ["sm","System Manager · Leader view privacy + change history"],
+  ["hr","HR Manager · same settings, read only"],
+  ["hr-review","NEW · HR Manager · Data to review (where \"Needs review\" leads)"],
+  ["emp","Employee · who can see my attendance"]
+];
+
+/* ═══════════ Words (Hindi = machine draft, partial, for layout testing) ═══════════ */
+var HI = {
+  "Home":"होम","Time":"समय","Inbox":"इनबॉक्स","More":"और","Branch":"शाखा","Company":"कंपनी","Pay":"वेतन","Growth":"विकास","Team":"टीम","Me":"मैं",
+  "Branch overview":"शाखा का सारांश","Company overview":"कंपनी का सारांश","Leader overview":"लीडर सारांश",
+  "Attendance":"हाज़िरी","Leave":"छुट्टी","People":"कर्मचारी",
+  "present, September so far":"उपस्थित, सितंबर में अब तक",
+  "Late arrivals":"देर से आए","Short days":"कम घंटे वाले दिन",
+  "on leave today":"आज छुट्टी पर","Leave used this leave year":"इस छुट्टी-वर्ष में ली गई छुट्टी",
+  "Requests waiting more than 3 days":"3 दिन से ज़्यादा रुकी अर्ज़ियाँ",
+  "people today":"कर्मचारी आज","Joined, last 12 months":"जुड़े, पिछले 12 महीने","Left, last 12 months":"छोड़कर गए, पिछले 12 महीने",
+  "How is this worked out?":"यह कैसे निकाला गया?","Why?":"क्यों?","Not shared":"साझा नहीं",
+  "Not shared: too few people in this group for a fair picture":"साझा नहीं: इस समूह में लोग बहुत कम हैं, इसलिए सही तस्वीर नहीं बनती",
+  "Not shared: it would let someone work out a smaller group's figures":"साझा नहीं: इससे किसी छोटे समूह के आँकड़े निकाले जा सकते हैं",
+  "Needs review":"जाँच बाकी है","All my branches":"मेरी सभी शाखाएँ","Showing":"दिखाया जा रहा है","Change":"बदलें",
+  "Data up to":"डेटा इस तारीख तक:","What you can see":"आप क्या देख सकते हैं",
+  "Today":"आज","in so far":"अब तक आए","not checked in yet":"अभी तक नहीं आए","on leave":"छुट्टी पर",
+  "By branch":"शाखा के अनुसार","By department":"विभाग के अनुसार",
+  "Some attendance days look wrong":"कुछ दिनों की हाज़िरी गलत लगती है",
+  "Try again":"फिर से कोशिश करें",
+  "Open branch overview":"शाखा का सारांश खोलें","Open company overview":"कंपनी का सारांश खोलें",
+  "Your leader view is not set up yet":"आपका लीडर व्यू अभी सेट नहीं है",
+  "Attendance, last 6 months":"हाज़िरी, पिछले 6 महीने"
+};
+function T(s){ return (S.lang==="hi" && HI[s]) ? HI[s] : s; }
+
+/* ═══════════ Icons ═══════════ */
+var ICON = {
+  home:'<path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
+  inbox:'<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13l3.5 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  wallet:'<rect x="2" y="6" width="20" height="14" rx="2"/><path d="M16 13h2M2 10h20"/>',
+  target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+  users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13A4 4 0 0 1 16 11"/>',
+  building:'<rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 6h.01M15 6h.01M9 10h.01M15 10h.01M9 14h.01M15 14h.01M10 22v-4h4v4"/>',
+  chart:'<path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="13" y="7" width="3" height="10"/>',
+  cal:'<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  leaf:'<path d="M11 20A7 7 0 0 1 4 13c0-6 8-9 16-9 0 8-3 16-9 16z"/><path d="M4 21c3-6 6-9 11-11"/>',
+  lock:'<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  alert:'<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+  info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/>',
+  menu:'<path d="M3 6h18M3 12h18M3 18h18"/>',
+  bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
+  x:'<path d="M18 6 6 18M6 6l12 12"/>',
+  right:'<path d="m9 18 6-6-6-6"/>',
+  up:'<path d="M12 19V5M5 12l7-7 7 7"/>',
+  down:'<path d="M12 5v14M19 12l-7 7-7-7"/>',
+  same:'<path d="M5 12h14"/>',
+  minus:'<path d="M5 12h14"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  eye:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  history:'<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/>',
+  refresh:'<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/>',
+  copy:'<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  review:'<rect x="5" y="4" width="14" height="18" rx="2"/><path d="M9 2h6v4H9zM9 12h6M9 16h4"/>',
+  layers:'<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>'
+};
+function ic(n, c){ return '<svg class="i '+(c||"")+'" viewBox="0 0 24 24" aria-hidden="true">'+(ICON[n]||"")+'</svg>'; }
+
+/* ═══════════ Helpers ═══════════ */
+function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+function num(x){ return Number(x).toLocaleString("en-IN"); }
+function pct(x){ return (Math.round(x*10)/10).toFixed(1)+"%"; }
+function share(a,b){ return b ? Math.round(a/b*100) : 0; }
+function byName(a,b){ return a.name.localeCompare(b.name); }
+
+var S = {
+  state:"bh-home", device:"auto", theme:"auto", lang:"en", brand:"",
+  min:5, draft:5, reason:"", errs:{}, showRaw:false, retried:false, railOpen:false,
+  word:"same", last:{multi:"multi", multi2:"multi2"}, loadToken:0,
+  history:[
+    {when:"12 Sep 2026, 16:40", who:"Vikram Shah", from:6, to:5, why:"Back to the default after the security review."},
+    {when:"2 Sep 2026, 11:05", who:"Vikram Shah", from:5, to:6, why:"Trying a larger minimum for the first month."},
+    {when:"1 Sep 2026, 09:30", who:"System (set up)", from:null, to:5, why:"Default when the leader view was switched on."}
+  ]
+};
+
+/* The small-group rule, as the server would apply it before sending anything.
+   1. Hide every group smaller than the minimum.
+   2. If any group is hidden, keep hiding the next-smallest group until at least two are hidden
+      and the hidden groups together reach the minimum. Headcount and joiners are never hidden. */
+function suppress(groups, min){
+  var list = groups.slice().sort(function(a,b){ return a.hc-b.hc; });
+  var hid = list.filter(function(g){ return g.hc < min; });
+  var rest = list.filter(function(g){ return g.hc >= min; });
+  var out = {};
+  if (!hid.length) return out;
+  function total(){ return hid.reduce(function(s,g){ return s+g.hc; },0); }
+  while ((hid.length < 2 || total() < min) && rest.length){ hid.push(rest.shift()); }
+  hid.forEach(function(g){ out[g.id] = true; });
+  return out;
+}
+function countHidden(obj){ return Object.keys(obj).length; }
+
+/* ═══════════ What each state shows ═══════════ */
+function multiScope(p, choice){
+  var links = PEOPLE[p].links.map(brById);
+  if (!choice || choice==="all") return {kind:"set", d:combine(links), groups:links, co:CO, viewer:"multi", pkey:p};
+  return {kind:"branch", d:brById(choice), co:CO, siblings:links, setHc:combine(links).hc, viewer:"multi", pkey:p};
+}
+function info(key){
+  var st = {key:key};
+  var mm = /^(multi2?)(-home)?(?::(\w+))?$/.exec(key);
+  if (mm){
+    st.person = mm[1];
+    if (mm[2]){ st.page = "home"; var lastKey = S.last[mm[1]] || mm[1]; st.scope = multiScope(mm[1], lastKey.split(":")[1]); }
+    else { st.page = "overview"; st.scope = multiScope(mm[1], mm[3]); }
+    return st;
+  }
+  if (key.indexOf("drill:")===0){
+    var id = key.split(":")[1];
+    var set = (id==="main"||id==="air") ? BR2 : BR;
+    var co = set===BR2 ? CO2 : CO;
+    st.person = set===BR2 ? "two" : "ch"; st.page = "overview";
+    st.scope = {kind:"branch", d:set.filter(function(b){return b.id===id;})[0], co:co, siblings:set, viewer:"company"};
+    return st;
+  }
+  switch(key){
+    case "bh-home": st.person="bh"; st.page="home"; st.scope={kind:"branch", d:BR[2], co:CO, siblings:BR, viewer:"branch"}; break;
+    case "bh-overview": st.person="bh"; st.page="overview"; st.scope={kind:"branch", d:BR[2], co:CO, siblings:BR, viewer:"branch"}; break;
+    case "ch-home": st.person="ch"; st.page="home"; st.scope={kind:"company", d:CO, groups:BR}; break;
+    case "ch-overview": st.person="ch"; st.page="overview"; st.scope={kind:"company", d:CO, groups:BR}; break;
+    case "ch-broken": st.person="ch"; st.page="overview"; st.scope={kind:"company", d:CO, groups:BR, broken:true}; break;
+    case "two": st.person="two"; st.page="overview"; st.scope={kind:"company", d:CO2, groups:BR2}; break;
+    case "tiny": st.person="tiny"; st.page="overview"; st.scope={kind:"branch", d:BR[1], co:CO, siblings:BR, viewer:"branch"}; break;
+    case "noperm": st.person="noperm"; st.page="noperm"; break;
+    case "hr-review": st.person="hr"; st.page="review"; break;
+    case "loading": st.person="bh"; st.page="loading"; break;
+    case "error": st.person="bh"; st.page="overview"; st.scope={kind:"branch", d:BR[2], co:CO, siblings:BR, viewer:"branch", error:true}; break;
+    case "sm": st.person="sm"; st.page="settings"; break;
+    case "hr": st.person="hr"; st.page="settings"; break;
+    case "emp": st.person="emp"; st.page="emp"; break;
+  }
+  return st;
+}
+
+/* Work out hiding for a scope, given the current minimum */
+function resolve(sc){
+  var r = {selfHidden:false, compareHidden:false, groupHidden:{}};
+  if (sc.kind==="branch"){
+    var parentHidden = suppress(sc.siblings, S.min)[sc.d.id];
+    if (sc.viewer==="company") r.selfHidden = !!parentHidden;       /* hidden in the company table stays hidden when opened */
+    else if (sc.viewer==="multi") r.selfHidden = !!parentHidden;    /* hidden in "All my branches" stays hidden when chosen alone */
+    else r.selfHidden = sc.d.hc < S.min;                          /* a branch head sees their own branch unless it is itself small */
+    if (sc.viewer==="branch") r.compareHidden = (sc.co.hc - sc.d.hc) < S.min && sc.co.hc !== sc.d.hc;
+    /* several branches: company minus this branch, and company minus all of theirs, must both reach the minimum */
+    if (sc.viewer==="multi") r.compareHidden = (sc.co.hc - sc.d.hc) < S.min || (sc.co.hc - sc.setHc) < S.min;
+    if (sc.d.depts) r.groupHidden = r.selfHidden ? all(sc.d.depts) : suppress(sc.d.depts, S.min);
+  } else if (sc.kind==="set"){
+    r.selfHidden = sc.d.hc < S.min;
+    r.compareHidden = (sc.co.hc - sc.d.hc) < S.min;                /* also hides it when their branches are the whole company */
+    r.groupHidden = r.selfHidden ? all(sc.groups) : suppress(sc.groups, S.min);
+  } else {
+    r.groupHidden = suppress(sc.groups, S.min);
+  }
+  return r;
+}
+function all(list){ var o={}; list.forEach(function(g){ o[g.id]=true; }); return o; }
+
+/* ═══════════ Frame ═══════════ */
+function scopeLabel(p){
+  var lead = PEOPLE[p].lead;
+  if (lead==="company") return "Company overview";
+  if (lead==="branch"||lead==="multi") return "Branch overview";
+  if (lead==="none") return "Leader overview";
+  return null;
+}
+function overviewKey(p){
+  if (p==="multi"||p==="multi2") return S.last[p] || p;
+  return {bh:"bh-overview", ch:"ch-overview", tiny:"tiny", two:"two", noperm:"noperm"}[p];
+}
+function homeKey(p){ return {bh:"bh-home", ch:"ch-home", multi:"multi-home", multi2:"multi2-home"}[p]; }
+
+function renderRail(st){
+  var p = st.person, who = PEOPLE[p], lead = scopeLabel(p);
+  var cur = st.page;
+  function item(icon, label, go, current, count){
+    return '<button '+(go?'data-go="'+go+'"':'data-toast="Not part of this prototype"')+(current?' aria-current="page"':'')+'>'+ic(icon)+'<span>'+esc(T(label))+'</span>'+(count?'<span class="count">'+count+'</span>':'')+'</button>';
+  }
+  var h = '<div class="brand"><div class="mark">'+(p==="two"?"MF":"KR")+'</div><div><div class="nm">'+(p==="two"?"Meadow Foods":"Kavya Retail")+'</div><div class="sub">Sample tenant</div></div></div><nav class="nav">';
+  h += '<div><h6>'+T("Me")+'</h6>'+item("home","Home",homeKey(p),cur==="home")+item("inbox","Inbox",null,false,p==="sm"?0:2)+'</div>';
+  h += '<div><h6>'+T("Time")+'</h6>'+item("clock","Attendance & leave",p==="emp"?"emp":null,cur==="emp")+'</div>';
+  h += '<div><h6>'+T("Pay")+'</h6>'+item("wallet","My pay")+'</div>';
+  if (p!=="sm") h += '<div><h6>'+T("Growth")+'</h6>'+item("target","Goals & reviews")+'</div>';
+  if (p==="bh"||p==="ch"||p==="tiny"||p==="two"||p==="multi"||p==="multi2") h += '<div><h6>'+T("Team")+'</h6>'+item("users","My team")+'</div>';
+  h += '<div><h6>'+T("Company")+'</h6>';
+  if (lead) h += item("chart", lead, overviewKey(p), cur==="overview"||cur==="noperm"||cur==="loading");
+  if (p==="hr") h += item("chart","HR analytics") + item("review","Data to review","hr-review",cur==="review",3);
+  h += item("building","Policies");
+  if (p==="sm"||p==="hr") h += item("shield","Org settings",p,cur==="settings");
+  h += '</div></nav>';
+  h += '<div class="me"><div class="av">'+who.ini+'</div><div><div class="nm">'+esc(who.name)+'</div><div class="sub">'+esc(who.role)+'</div></div></div>';
+  $("#rail").innerHTML = h;
+  $("#rail").classList.toggle("open", S.railOpen);
+}
+
+function renderTop(st, title, crumbs, withScope){
+  var h = '<button class="iconbtn menubtn" data-act="menu" aria-label="Open menu">'+ic("menu")+'</button><div class="tt">';
+  if (crumbs && crumbs.length){
+    h += '<div class="crumb">'+crumbs.map(function(c){ return c.go ? '<button data-go="'+c.go+'">'+esc(T(c.label))+'</button> ›' : esc(T(c.label))+' ›'; }).join(" ")+'</div>';
+  }
+  h += '<h1 id="pageTitle">'+esc(title)+'</h1></div><div class="acts">';
+  if (withScope) h += '<button class="btn scopebtn" data-explain="scope">'+ic("eye")+'<span>'+esc(T("What you can see"))+'</span></button>';
+  h += '<button class="iconbtn bell" aria-label="Inbox, 2 new" data-toast="Not part of this prototype">'+ic("bell")+'<span class="dot">2</span></button></div>';
+  $("#top").innerHTML = h;
+}
+
+function renderBnav(st){
+  var p = st.person, lead = scopeLabel(p);
+  var third = lead ? {icon:"chart", label: PEOPLE[p].lead==="company" ? "Company" : "Branch", go: overviewKey(p), on: ["overview","noperm","loading"].indexOf(st.page)>-1}
+                   : (p==="sm"||p==="hr") ? {icon:"shield", label:"Company", go:p, on:st.page==="settings"||st.page==="review"}
+                   : {icon:"wallet", label:"Pay", go:null, on:false};
+  var items = [
+    {icon:"home", label:"Home", go:homeKey(p), on:st.page==="home"},
+    {icon:"clock", label:"Time", go:p==="emp"?"emp":null, on:st.page==="emp"},
+    third,
+    {icon:"inbox", label:"Inbox", go:null, on:false},
+    {icon:"more", label:"More", go:null, on:false, act:"menu"}
+  ];
+  $("#bnav").innerHTML = items.map(function(i){
+    var attr = i.act ? 'data-act="menu"' : (i.go ? 'data-go="'+i.go+'"' : 'data-toast="Not part of this prototype"');
+    return '<button '+attr+(i.on?' aria-current="page"':'')+'>'+ic(i.icon)+'<span>'+esc(T(i.label))+'</span></button>';
+  }).join("");
+}
+
+/* ═══════════ Pieces ═══════════ */
+function freshLine(extra){
+  return '<div class="pagehead small"><span class="fresh">'+ic("cal","sm")+esc(T("Data up to"))+' '+UPTO+'</span><span>Figures as of '+ASOF+'</span><button class="linkbtn" data-explain="fresh">'+T("Why?")+'</button><button class="linkbtn scopelink" data-explain="scope">'+ic("eye","sm")+T("What you can see")+'</button><span class="sample">Sample data</span>'+(extra||"")+'</div>';
+}
+var NS_FULL = "Not shared: too few people in this group for a fair picture";
+var NS_VARIANT = "Not shared: it would let someone work out a smaller group's figures";
+/* big = the group itself reaches the minimum and is hidden only to protect a smaller one (D17) */
+function nsSentence(big){ return T(big && S.word==="variant" ? NS_VARIANT : NS_FULL); }
+function hiddenBlock(what, big){
+  return '<div class="hidblock">'+ic("lock")+'<b>'+esc(nsSentence(big))+'</b><span class="small muted" style="grid-column:2">'+esc(what)+'</span><button class="linkbtn" data-explain="hidden">Why is this not shared?</button></div>';
+}
+function hidInline(){ return '<span class="hid">'+ic("lock","sm")+T("Not shared")+'</span>'; }
+function revInline(key){ return '<span class="rev">'+ic("review","sm")+T("Needs review")+'</span>'; }
+function hasCompare(sc){ return sc.kind!=="company"; }
+function change(diff, unit, span){
+  var d = Math.round(diff*10)/10;
+  if (unit==="points"){
+    if (d>0) return ic("up","sm")+'Up '+Math.abs(d).toFixed(1)+' points on '+span;
+    if (d<0) return ic("down","sm")+'Down '+Math.abs(d).toFixed(1)+' points on '+span;
+    return ic("same","sm")+'Same as '+span;
+  }
+  if (d<0) return Math.abs(d)+' fewer than '+span;
+  if (d>0) return Math.abs(d)+' more than '+span;
+  return 'Same as '+span;
+}
+
+function cardAttendance(sc, r){
+  var d = sc.d, body;
+  if (sc.error && !S.retried){
+    body = '<div class="errblock" role="alert"><b>'+ic("alert")+' Attendance figures did not load</b><p class="muted">Your people and leave figures are up to date. This is usually a short network problem.</p><div><button class="btn" data-act="retry">'+ic("refresh")+T("Try again")+'</button></div></div>';
+  } else if (r.selfHidden){
+    body = hiddenBlock("Attendance, late arrivals and short days", d.hc >= S.min);
+  } else {
+    var v = (sc.broken && S.showRaw) ? d.attRaw : d.att;
+    body = '<div><div class="big num">'+pct(v)+'</div><div class="bigl">'+T("present, September so far")+'</div></div>';
+    if (sc.broken){
+      body += S.showRaw
+        ? '<div><span class="chip c-warn">'+ic("alert","sm")+'Includes 3 doubtful days, likely wrong</span></div><div><button class="linkbtn" data-act="raw">Leave the 3 doubtful days out again</button></div>'
+        : '<div><span class="chip c-warn">'+ic("alert","sm")+'3 doubtful days left out</span></div><div><button class="linkbtn" data-act="raw">Show the figure with those days ('+pct(d.attRaw)+')</button></div>';
+    }
+    if (!(sc.broken && S.showRaw)) body += '<div class="chg">'+change(d.att-d.attPrev,"points",PREV)+'</div>';
+    if (hasCompare(sc)){
+      body += r.compareHidden
+        ? '<div class="cmp small muted">'+ic("lock","sm")+' Company comparison not shared: it would let someone work out a small group\'s figures. <button class="linkbtn" data-explain="hidden">Why?</button></div>'
+        : '<div class="cmp">Company <b>'+pct(sc.co.att)+'</b></div>';
+    }
+    body += '<div class="kv">'+
+      '<div><span class="k">'+T("Late arrivals")+'</span><span class="v num">'+num(d.late)+'</span><span class="s">'+change(d.late-d.lateP,"count",PREV)+'</span></div>'+
+      '<div><span class="k">'+T("Short days")+'</span><span class="v num">'+num(d.short)+'</span><span class="s">'+change(d.short-d.shortP,"count",PREV)+'</span></div></div>';
+  }
+  return '<section class="card metric" aria-labelledby="h-att"><div class="hd"><h2 id="h-att">'+ic("clock")+T("Attendance")+'</h2><button class="linkbtn" data-explain="att">'+T("How is this worked out?")+'</button></div><div class="bd">'+body+'</div><div class="ft">'+T("Data up to")+' '+UPTO_S+'</div></section>';
+}
+
+function cardLeave(sc, r){
+  var d = sc.d, body;
+  if (r.selfHidden){
+    body = hiddenBlock("On leave today, leave used and requests waiting", d.hc >= S.min);
+  } else if (sc.broken){
+    body = '<div><div class="notrec">'+ic("review")+' '+T("Needs review")+'</div><div class="bigl muted">Leave used this leave year</div></div>'+
+      '<p class="muted">Only 3 leave requests have been entered this leave year, for '+num(d.hc)+' people with '+num(d.alloc)+' days of leave between them. A percentage would mislead, so HR is asked to check the leave data first.</p>'+
+      '<div class="kv"><div><span class="k">'+T("On leave today")+'</span><span class="v">'+revInline()+'</span></div>'+
+      '<div><span class="k">'+T("Requests waiting more than 3 days")+'</span><span class="v">'+revInline()+'</span></div></div>'+
+      '<button class="linkbtn" data-explain="review-leave">Why does this need review?</button>';
+  } else {
+    var u = share(d.used, d.alloc);
+    body = '<div><div class="big num">'+num(d.onLeave)+'</div><div class="bigl">'+T("on leave today")+'</div></div>'+
+      '<div class="kv">'+
+      '<div><span class="k">'+T("Leave used this leave year")+'</span><span class="v num">'+u+'%</span><span class="s">'+num(d.used)+' of '+num(d.alloc)+' days · 1 Apr 2026 to 31 Mar 2027</span><span class="s" style="grid-column:1/-1"><span class="bar" aria-hidden="true"><i style="width:'+u+'%"></i></span></span>'+
+        (hasCompare(sc) && !r.compareHidden ? '<span class="s">Company '+share(sc.co.used, sc.co.alloc)+'%</span>' : '')+'</div>'+
+      '<div><span class="k">'+T("Requests waiting more than 3 days")+'</span><span class="v num">'+num(d.wait)+'</span><span class="s">Managers and HR see who. You see the count only.</span></div></div>';
+  }
+  return '<section class="card metric" aria-labelledby="h-leave"><div class="hd"><h2 id="h-leave">'+ic("leaf")+T("Leave")+'</h2><button class="linkbtn" data-explain="leave">'+T("How is this worked out?")+'</button></div><div class="bd">'+body+'</div><div class="ft">Leave reasons and types are never shown</div></section>';
+}
+
+function cardPeople(sc, r){
+  var d = sc.d;
+  var body = '<div><div class="big num">'+num(d.hc)+'</div><div class="bigl">'+T("people today")+'</div></div>'+
+    '<div class="chg">'+(d.hc-d.hcPrev>=0?ic("up","sm")+'Up '+(d.hc-d.hcPrev):ic("down","sm")+'Down '+Math.abs(d.hc-d.hcPrev))+' from '+num(d.hcPrev)+' a year ago</div>'+
+    '<div class="kv"><div><span class="k">'+T("Joined, last 12 months")+'</span><span class="v num">'+num(d.join)+'</span></div>';
+  if (r.selfHidden){
+    body += '<div><span class="k">'+T("Left, last 12 months")+'</span><span class="v">'+hidInline()+'</span><span class="s"><button class="linkbtn" data-explain="hidden">Why is this not shared?</button></span></div>';
+  } else if (sc.broken){
+    body += '<div><span class="k">'+T("Left, last 12 months")+'</span><span class="v">'+revInline()+'</span></div>'+
+      '<div><span class="k">Attrition, last 12 months</span><span class="v">'+revInline()+'</span><span class="s">14 people are marked as left with no leaving date. <button class="linkbtn" data-explain="review-leavers">Why does this need review?</button></span></div>';
+  } else if (d.leavers===0){
+    body += '<div><span class="k">'+T("Left, last 12 months")+'</span><span class="v num">0</span><span class="s">Nobody left '+(sc.kind==="set"?'these branches':'this branch')+' in the last 12 months.</span></div>';
+  } else {
+    var at = d.leavers / ((d.hc+d.hcPrev)/2) * 100;
+    body += '<div><span class="k">'+T("Left, last 12 months")+'</span><span class="v num">'+num(d.leavers)+'</span></div>'+
+      '<div><span class="k">Attrition, last 12 months</span><span class="v num">'+pct(at)+'</span>'+
+      (hasCompare(sc) ? '<span class="s">Approximate for '+(sc.kind==="set"?'a group of branches':'a branch')+'. '+(r.compareHidden?'':'Company '+pct(sc.co.leavers/((sc.co.hc+sc.co.hcPrev)/2)*100)+'.')+'</span>' : '')+'</div>';
+  }
+  body += '</div>';
+  return '<section class="card metric" aria-labelledby="h-ppl"><div class="hd"><h2 id="h-ppl">'+ic("users")+T("People")+'</h2><button class="linkbtn" data-explain="people">'+T("How is this worked out?")+'</button></div><div class="bd">'+body+'</div><div class="ft">Headcount and joiners are always shown</div></section>';
+}
+
+function todayStrip(d, name, broken){
+  return '<section class="card" aria-labelledby="h-today"><div class="hd"><h2 id="h-today">'+ic("cal")+T("Today")+', Monday 15 Sep · '+esc(name)+'</h2><button class="linkbtn" data-explain="today">'+T("Why?")+'</button></div>'+
+    '<div class="bd"><div class="today">'+
+    '<div><span class="v num">'+num(d.inNow)+'</span><span class="k">'+T("in so far")+', of '+num(d.expected)+' expected</span></div>'+
+    (broken ? '<div><span class="v" style="font-size:var(--fs-md)">'+revInline()+'</span><span class="k">'+T("on leave")+'</span></div>'
+            : '<div><span class="v num">'+num(d.onLeave)+'</span><span class="k">'+T("on leave")+'</span></div>')+
+    '<div><span class="v num">'+num(d.expected-d.inNow)+'</span><span class="k">'+T("not checked in yet")+'</span></div>'+
+    '</div><p class="small faint">Last check-in received '+LASTIN+'. No names.</p></div></section>';
+}
+
+function trendCard(list, broken){
+  var cols = list.map(function(m, i){
+    var last = i===list.length-1;
+    var h = Math.max(6, (m[1]-90)/10*100);
+    var doubt = broken && last;
+    return '<div class="col"><span class="val num">'+pct(m[1])+'</span><div class="slot"><div class="b'+(doubt?' doubt':'')+'" style="height:'+h+'%"></div></div><span class="m">'+m[0]+(last?' (so far)':'')+'</span></div>';
+  }).join("");
+  return '<section class="card" aria-labelledby="h-trend"><div class="hd"><h2 id="h-trend">'+ic("chart")+T("Attendance, last 6 months")+'</h2></div><div class="bd"><div class="trend" role="img" aria-label="Attendance by month: '+list.map(function(m){return m[0]+" "+pct(m[1]);}).join(", ")+'">'+cols+'</div>'+
+    '<p class="small faint">Bars start at 90% so small changes are visible. '+(broken?'September is striped: 3 doubtful days are left out.':'')+'</p></div></section>';
+}
+
+function weekCard(d){
+  var mx = Math.max.apply(null, d.days), names = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  var cols = d.days.map(function(v,i){ return '<div class="col"><span class="small num">'+v+'</span><div class="slot"><div class="b'+(v===mx?' peak':'')+'" style="height:'+Math.max(6,v/mx*100)+'%"></div></div><span class="small muted">'+names[i]+'</span></div>'; }).join("");
+  return '<section class="card" aria-labelledby="h-week"><div class="hd"><h2 id="h-week">'+ic("clock")+'Last 7 days, and the pattern</h2></div><div class="bd">'+
+    '<div class="kv">'+
+    '<div><span class="k">'+T("Late arrivals")+'</span><span class="v num">'+d.week.late[0]+'</span><span class="s">'+d.week.late[1]+' in the 7 days before</span></div>'+
+    '<div><span class="k">'+T("Short days")+'</span><span class="v num">'+d.week.short[0]+'</span><span class="s">'+d.week.short[1]+' in the 7 days before</span></div>'+
+    '<div><span class="k">Days absent</span><span class="v num">'+d.week.absent[0]+'</span><span class="s">'+d.week.absent[1]+' in the 7 days before</span></div></div>'+
+    '<p><b>Late arrivals fall on Saturday far more than on other days.</b> <span class="muted">That usually points at the rota, not the people.</span></p>'+
+    '<div class="days7" role="img" aria-label="Late arrivals in September by weekday: '+d.days.map(function(v,i){return names[i]+" "+v;}).join(", ")+'">'+cols+'</div></div></section>';
+}
+
+function groupSection(sc, r, phone){
+  var set = sc.kind==="set";
+  var company = sc.kind==="company" || set;          /* "company" here means: rows are branches that open */
+  var groups = (company ? sc.groups : sc.d.depts).slice().sort(byName);
+  var parent = sc.d;
+  var nh = countHidden(r.groupHidden);
+  var title = company ? T("By branch") : T("By department");
+  var word = company ? "branches" : "departments";
+  var totalName = set ? "Your "+groups.length+" branches, together" : (sc.kind==="company" ? parent.name+", all branches" : parent.name+", whole branch");
+  function rowGo(g){ return set ? sc.pkey+":"+g.id : "drill:"+g.id; }
+  var body;
+  function val(g, key){
+    if (r.groupHidden[g.id]) return hidInline();
+    if (sc.broken && (key==="used"||key==="onLeave"||key==="leavers")) return revInline();
+    if (key==="att") return pct(g.att);
+    if (key==="used") return share(g.used,g.alloc)+"%";
+    return num(g[key]);
+  }
+  if (phone){
+    body = '<div class="glist">'+groups.map(function(g){
+      var hid = r.groupHidden[g.id];
+      var inner = '<div><div class="t">'+esc(g.name)+(company?ic("right","sm"):'')+'</div><div class="s">'+num(g.hc)+' people · '+num(g.join)+' joined in 12 months</div>'+
+        (hid ? '' : '<div class="s">Late '+val(g,"late")+' · On leave today '+val(g,"onLeave")+' · Leave used '+val(g,"used")+'</div>')+'</div>'+
+        '<div class="r">'+(hid ? hidInline() : '<div class="v num">'+val(g,"att")+'</div><div class="l">attendance</div>')+'</div>';
+      return company ? '<button class="grow" data-go="'+rowGo(g)+'" aria-label="Open '+esc(g.name)+'">'+inner+'</button>' : '<div class="grow">'+inner+'</div>';
+    }).join("")+
+    '<div class="grow total"><div><div class="t">'+esc(totalName)+'</div><div class="s">'+num(parent.hc)+' people</div></div><div class="r">'+(r.selfHidden?hidInline():'<div class="v num">'+pct(parent.att)+'</div><div class="l">attendance</div>')+'</div></div></div>';
+  } else {
+    body = '<div class="tblwrap"><table class="tbl"><caption class="sr">'+title+'</caption><thead><tr><th scope="col">'+(company?"Branch":"Department")+'</th><th class="n" scope="col">People</th><th class="n" scope="col">Joined (12 mo)</th><th class="n" scope="col">Attendance</th><th class="n" scope="col">Late arrivals</th><th class="n" scope="col">On leave today</th><th class="n" scope="col">Leave used</th><th class="n" scope="col">Left (12 mo)</th></tr></thead><tbody>'+
+      groups.map(function(g){
+        return '<tr><th scope="row" style="font-weight:600;background:none;border-top:1px solid var(--border);font-size:var(--fs-base)">'+(company?'<button class="rowbtn" data-go="'+rowGo(g)+'">'+esc(g.name)+ic("right","sm")+'</button>':esc(g.name))+'</th>'+
+          '<td class="n">'+num(g.hc)+'</td><td class="n">'+num(g.join)+'</td><td class="n">'+val(g,"att")+'</td><td class="n">'+val(g,"late")+'</td><td class="n">'+val(g,"onLeave")+'</td><td class="n">'+val(g,"used")+'</td><td class="n">'+val(g,"leavers")+'</td></tr>';
+      }).join("")+
+      '<tr class="total"><td>'+esc(totalName)+'</td><td class="n">'+num(parent.hc)+'</td><td class="n">'+num(parent.join)+'</td>'+
+      (r.selfHidden ? '<td class="n" colspan="5">'+hidInline()+'</td>' :
+        '<td class="n">'+pct(parent.att)+'</td><td class="n">'+num(parent.late)+'</td><td class="n">'+(sc.broken?revInline():num(parent.onLeave))+'</td><td class="n">'+(sc.broken?revInline():share(parent.used,parent.alloc)+"%")+'</td><td class="n">'+(sc.broken?revInline():num(parent.leavers))+'</td>')+'</tr>'+
+      '</tbody></table></div>';
+  }
+  var foot = 'Sorted by name. Totals only, no names.'+(nh ? ' <b>'+nh+' of '+groups.length+' '+word+': figures not shared.</b> <button class="linkbtn" data-explain="hidden">Why?</button>' : '');
+  if (sc.broken) foot += ' <span>Needs review: HR is checking the data behind leave and leavers.</span> <button class="linkbtn" data-explain="review-leave">Why?</button>';
+  if (company && groups.length===2 && nh===2) foot += ' <span>With two branches, sharing one would reveal the other.</span>';
+  var hint = set ? 'Tap a branch to look at it alone' : 'Tap a branch to open it';
+  return '<section class="card" aria-labelledby="h-groups"><div class="hd"><h2 id="h-groups">'+ic(company?"building":"users")+title+'</h2>'+(company?'<span class="small faint" style="margin-left:auto">'+hint+'</span>':'')+'</div>'+body+'<div class="ft">'+foot+'</div></section>';
+}
+
+function brokenBanner(){
+  return '<section class="warn-banner" role="note" aria-labelledby="h-warn">'+ic("alert")+'<div style="display:grid;gap:6px"><h2 id="h-warn">'+T("Some attendance days look wrong")+'</h2>'+
+    '<p>On 8, 9 and 10 Sep almost everyone is marked absent. This is usually missing check-in data, not real absence. These 3 days are left out of the attendance figures below until HR fixes or confirms them. HR sees the same warning.</p></div>'+
+    '<div class="acts"><button class="linkbtn" data-explain="broken">How doubtful days are found</button><button class="linkbtn" data-act="raw">'+(S.showRaw?'Leave the 3 days out again':'Show attendance with those days')+'</button></div></section>';
+}
+
+/* ═══════════ Pages ═══════════ */
+function pageHome(st){
+  var sc = st.scope, d = sc.d, r = resolve(sc), phone = isPhone();
+  var branch = sc.kind==="branch", set = sc.kind==="set", multi = !!PEOPLE[st.person].links;
+  renderTop(st, T("Home"), null, false);
+  var h = '<div class="pagehead"><span style="font-size:var(--fs-lg);font-weight:650;color:var(--text)">Good morning, '+esc(PEOPLE[st.person].name.split(" ")[0])+'</span><span class="sample">Sample data</span></div>';
+  var eyebrow = set ? T("All my branches")+' ('+d.names+')' : (branch ? d.name : d.name+", all branches");
+  h += '<section class="hero" aria-labelledby="h-hero"><div class="eyebrow">'+esc(eyebrow)+' · September so far'+(multi?' · <button class="linkbtn" data-act="scope">'+T("Change")+'</button>':'')+'</div>';
+  if (r.selfHidden){
+    h += '<div class="line" id="h-hero" style="font-size:var(--fs-lg);font-weight:650">'+ic("lock")+' '+esc(nsSentence(d.hc >= S.min))+'</div><div class="line">'+num(d.hc)+' people · '+num(d.join)+' joined in 12 months</div>';
+  } else {
+    h += '<div class="big num" id="h-hero">'+T("Attendance")+' '+pct(d.att)+'</div>';
+    h += '<div class="line">'+change(d.att-d.attPrev,"points",PREV)+(hasCompare(sc) && !r.compareHidden ? ' · <span class="cmp">Company '+pct(sc.co.att)+'</span>' : '')+'</div>';
+    h += '<div class="line">'+T("Late arrivals")+' '+num(d.late)+', '+change(d.late-d.lateP,"count",PREV)+'</div>';
+    if (!branch) h += '<div class="line">'+num(d.hc)+' people · '+num(d.join)+' joined and '+num(d.leavers)+' left in 12 months</div>';
+  }
+  h += '<div class="foot"><span class="fresh">'+T("Data up to")+' '+UPTO_S+' · as of '+ASOF+'</span><button class="go" data-go="'+overviewKey(st.person)+'">'+T(sc.kind==="company"?"Open company overview":"Open branch overview")+'</button></div></section>';
+  if (multi) h += '<p class="proto-note">The card shows the last choice made on the overview ('+esc(set?"All my branches":d.name)+'). The first time, it shows All my branches. The choice follows the person to their laptop.</p>';
+  if (d.inNow && !r.selfHidden) h += todayStrip(d, sc.kind==="company" ? "all branches" : (set ? T("All my branches") : d.name));
+  h += '<section class="card"><div class="hd"><h2>'+ic("home")+'Your own day</h2></div><div class="bd"><p class="muted">Check in, your leave, your requests and anything waiting on you stay here, as in the new Home from slice 009. The leader card above sits on top of them and does not replace them.</p><p class="proto-note">Placeholder, not designed in this slice. The leader card loads from its own small call, so it never waits for the overview.</p></div></section>';
+  $("#content").innerHTML = h;
+}
+
+function pageOverview(st){
+  var sc = st.scope, d = sc.d, r = resolve(sc), phone = isPhone();
+  var title, crumbs = [{label:"Company"}], sub;
+  if (sc.kind==="company"){ title = T("Company overview"); sub = esc(d.name)+' · all '+d.branches+' branches · '+num(d.hc)+' people · September so far'; }
+  else if (sc.kind==="set"){ title = T("Branch overview"); sub = T("All my branches")+': '+esc(d.names)+' · '+num(d.hc)+' people · September so far'; }
+  else if (sc.viewer==="company"){ title = d.name; crumbs = [{label:"Company overview", go: st.person==="two"?"two":"ch-overview"}]; sub = 'Branch · '+num(d.hc)+' people · September so far'; }
+  else if (sc.viewer==="multi"){ title = d.name; crumbs = [{label:"Branch overview", go: sc.pkey}]; sub = 'One of your '+sc.siblings.length+' branches · '+num(d.hc)+' people · September so far'; }
+  else { title = T("Branch overview"); sub = esc(d.name)+' · '+num(d.hc)+' people · September so far'; }
+  renderTop(st, title, crumbs, true);
+  var h = '';
+  if (sc.viewer==="multi") h += scopeSwitch(st, phone);
+  h += '<div style="display:grid;gap:4px"><p class="muted" style="font-size:var(--fs-md)">'+sub+'</p>'+freshLine()+'</div>';
+  if (sc.broken) h += brokenBanner();
+  if (r.selfHidden){
+    var big = d.hc >= S.min;
+    var why = sc.viewer==="branch"
+        ? 'Fewer than '+S.min+' people are counted in this branch\'s figures. One person\'s days would swing each total, so it would not be a fair picture, and a total could point at one person. Headcount and joiners are still shown. If you manage these people, you can see their days in My team.'
+        : sc.kind==="set"
+        ? 'Fewer than '+S.min+' people are counted across your branches. Headcount and joiners are still shown.'
+        : big
+        ? 'This branch has '+num(d.hc)+' people, but sharing its totals would let anyone work out the figures for a smaller branch by subtraction. Headcount and joiners are still shown. '+(sc.viewer==="multi"?'Your figures for all your branches together include this branch.':'Company totals include this branch.')
+        : 'Fewer than '+S.min+' people are counted in this branch\'s figures, so they would not be a fair picture and could point at one person. Headcount and joiners are still shown.';
+    h += '<section class="warn-banner" style="background:var(--sunk);border-color:var(--border);border-left-color:var(--text3)" role="note">'+ic("lock")+'<div style="display:grid;gap:6px"><h2>'+esc(nsSentence(big && sc.viewer!=="branch"))+'</h2><p>'+why+
+      '</p></div><div class="acts"><button class="linkbtn" data-explain="hidden">Why is this not shared?</button></div></section>';
+  }
+  if (sc.kind==="company" && d.inNow) h += todayStrip(d, "all branches", sc.broken);
+  if (sc.kind==="set" && d.inNow && !r.selfHidden) h += todayStrip(d, T("All my branches"));
+  if (sc.kind==="branch" && d.inNow && !r.selfHidden) h += todayStrip(d, d.name);
+  h += '<div class="grid-3">'+cardAttendance(sc,r)+cardLeave(sc,r)+cardPeople(sc,r)+'</div>';
+  var trend = sc.kind==="company" ? d.trend : d.trend;
+  if ((trend || d.week) && !r.selfHidden){
+    h += '<div class="grid-2">'+(trend?trendCard(trend, sc.broken):'')+(d.week?weekCard(d):'')+'</div>';
+  }
+  if (sc.kind==="company" || sc.kind==="set" || d.depts) h += groupSection(sc, r, phone);
+  else if (sc.kind==="branch") h += '<p class="proto-note">This sample branch has no department data. In the product, departments show here with the same rules.</p>';
+  h += '<p class="small faint">'+ic("shield","sm")+' You see totals only: never names, never why someone was away, never pay. <button class="linkbtn" data-explain="scope">'+T("What you can see")+'</button></p>';
+  $("#content").innerHTML = h;
+}
+
+function pageNoPerm(st){
+  renderTop(st, T("Leader overview"), [{label:"Company"}], false);
+  var msg = "Please link my Alvoraa account (Rohan Das) to my company or my branch, so my leader overview works. I have the Leadership role, but no company or branch is linked.";
+  $("#content").innerHTML = '<section class="card"><div class="explainer"><div class="ring">'+ic("lock","lg")+'</div>'+
+    '<h2>'+T("Your leader view is not set up yet")+'</h2>'+
+    '<p>You have leader access, but your account is not linked to a company or a branch. Until it is, this page shows nothing. That keeps everyone\'s information safe.</p>'+
+    '<p><b style="color:var(--text)">What to do:</b> ask your System Manager to link your account to your company or your branch. You can send them this message:</p>'+
+    '<div class="quote" id="copyText">'+esc(msg)+'</div>'+
+    '<div class="actions"><button class="btn primary" data-act="copy">'+ic("copy")+'Copy message</button><button class="btn ghost" data-toast="Home is not part of this prototype for this person">Go to Home</button></div>'+
+    '</div></section><p class="proto-note">The menu still shows "Leader overview" for someone with the Leadership role, so they can find this explanation. People without the role never see the entry.</p>';
+}
+
+/* Scope choices for a leader linked to several branches */
+function scopeOptions(p){
+  var links = PEOPLE[p].links.map(brById).slice().sort(byName), all = combine(links);
+  var opts = [{key:p, label:T("All my branches"), sub:all.names+' · '+num(all.hc)+' people, added together'}];
+  links.forEach(function(b){ opts.push({key:p+":"+b.id, label:b.name, sub:num(b.hc)+' people'}); });
+  return opts;
+}
+function scopeSwitch(st, phone){
+  var p = st.person, opts = scopeOptions(p), cur = st.key;
+  var curOpt = opts.filter(function(o){ return o.key===cur; })[0] || opts[0];
+  if (phone || opts.length > 5){
+    return '<div class="scoperow"><span class="lbl" id="scopeLbl">'+T("Showing")+'</span><button class="scopechip" data-act="scope" aria-haspopup="dialog" aria-describedby="scopeLbl">'+ic("layers","sm")+'<span>'+esc(curOpt.label)+'</span>'+ic("right","sm")+'</button></div>';
+  }
+  return '<div class="scoperow"><span class="lbl" id="scopeLbl">'+T("Showing")+'</span><div class="seg" role="radiogroup" aria-labelledby="scopeLbl">'+
+    opts.map(function(o){ return '<button role="radio" aria-checked="'+(o.key===cur)+'" data-go="'+o.key+'">'+(o.key===p?ic("layers","sm"):'')+esc(o.label)+'</button>'; }).join("")+'</div></div>';
+}
+function openScopeSheet(){
+  var st = info(S.state), p = st.person, opts = scopeOptions(p);
+  var cur = st.page==="home" ? (S.last[p] || p) : st.key;
+  var b = '<div class="optlist" role="radiogroup" aria-label="Choose what to show">'+opts.map(function(o){
+    return '<button class="opt" role="radio" aria-checked="'+(o.key===cur)+'" data-go="'+o.key+'"><span class="rd" aria-hidden="true"></span><span class="t">'+esc(o.label)+'</span><span class="s">'+esc(o.sub)+'</span></button>';
+  }).join("")+'</div><p class="small muted">Home shows your last choice. Figures that are not shared stay not shared, whichever you choose.</p>';
+  openSheet("Choose what to show", b, '<button class="btn" data-act="close">Cancel</button>', false);
+}
+
+function pageLoading(st){
+  renderTop(st, T("Branch overview"), [{label:"Company"}], true);
+  var sc = info("bh-overview").scope, r = resolve(sc), d = sc.d, phone = isPhone();
+  function skCard(hgt){ return '<section class="card" aria-hidden="true"><div class="hd"><div class="sk" style="width:40%;height:18px"></div></div><div class="bd"><div class="sk" style="width:50%;height:'+(hgt||36)+'px"></div><div class="sk" style="width:80%;height:14px"></div><div class="sk" style="width:100%;height:14px"></div><div class="sk" style="width:90%;height:14px"></div></div></section>'; }
+  $("#content").innerHTML = '<div style="display:grid;gap:14px"><span class="sr" role="status" id="loadStatus">Loading your branch figures</span>'+
+    '<div style="display:grid;gap:4px"><p class="muted" style="font-size:var(--fs-md)">Lakeside Mall · 64 people · September so far</p>'+freshLine()+'</div>'+
+    '<div class="slot" id="sl-today"><div class="sk" style="height:112px;border-radius:var(--r)"></div></div>'+
+    '<div class="grid-3"><div class="slot" id="sl-att">'+skCard()+'</div><div class="slot" id="sl-leave">'+skCard()+'</div><div class="slot" id="sl-ppl">'+skCard()+'</div></div>'+
+    '<div class="grid-2"><div class="slot" id="sl-trend">'+skCard(90)+'</div><div class="slot" id="sl-week">'+skCard(60)+'</div></div>'+
+    '<div class="slot" id="sl-groups">'+skCard(60)+'</div></div>'+
+    '<p class="proto-note">The frame and skeletons appear within 0.3 s. Each card fills in on its own as its figures arrive; a slow card never holds up the others. <button class="linkbtn" data-act="replay">Play again</button></p>';
+  var token = ++S.loadToken;
+  var steps = [
+    ["sl-today", 350, function(){ return todayStrip(d, d.name); }],
+    ["sl-ppl", 800, function(){ return cardPeople(sc, r); }],
+    ["sl-att", 1200, function(){ return cardAttendance(sc, r); }],
+    ["sl-leave", 1500, function(){ return cardLeave(sc, r); }],
+    ["sl-trend", 2100, function(){ return trendCard(d.trend, false); }],
+    ["sl-week", 2300, function(){ return weekCard(d); }],
+    ["sl-groups", 2700, function(){ return groupSection(sc, r, phone); }]
+  ];
+  steps.forEach(function(s, i){
+    setTimeout(function(){
+      if (S.loadToken!==token || S.state!=="loading") return;
+      var el = document.getElementById(s[0]); if (el) el.innerHTML = s[2]();
+      if (i===steps.length-1){ var ls = document.getElementById("loadStatus"); if (ls) ls.textContent = "All branch figures loaded"; }
+    }, s[1]);
+  });
+}
+
+function pageReview(st){
+  renderTop(st, "Data to review", [{label:"Company"},{label:"HR analytics"}], false);
+  var h = '<div class="pagehead"><span style="font-size:var(--fs-md)">These figures show <b>Needs review</b> to company and branch heads until you fix the data or confirm it is right. Leaders see the label and a short reason, not these details.</span><span class="sample">Sample data</span></div>';
+  function item(icon, title, chip, chipCls, lines, leaders, acts, meta){
+    return '<section class="card rvitem"><div class="hd"><h2>'+ic(icon)+esc(title)+'</h2><span class="chip '+chipCls+'">'+ic(chipCls==="c-warn"?"alert":"review","sm")+chip+'</span></div><div class="bd">'+
+      lines.map(function(l){ return '<p style="font-size:var(--fs-md)">'+l+'</p>'; }).join("")+
+      '<p class="small muted"><b>Leaders see:</b> '+leaders+'</p>'+
+      '<div class="actions">'+acts+'</div><p class="meta">'+meta+'</p></div></section>';
+  }
+  h += item("clock","3 attendance days look wrong","Doubtful days","c-warn",
+    ['On <b>8, 9 and 10 Sep</b>, 96–99% of the people expected at work are marked absent, and fewer than 2% checked in. This usually means the check-in device did not send its data.',
+     'These days are left out of attendance, late arrivals and short days, for HR and for leaders.'],
+    'an amber warning, "3 doubtful days left out", and attendance without those days.',
+    '<button class="btn primary" data-toast="Opens attendance for 8 to 10 Sep in the product">Open attendance for these days</button><button class="btn" data-act="confirmreal">The absence was real</button>',
+    'Found 11 Sep, 06:00 · Checked again every morning');
+  h += item("leaf","Leave used","Needs review","c-neutral",
+    ['Only <b>3 leave requests</b> have been entered this leave year, for 288 people with 6,912 days of leave between them.',
+     'Leave is probably being recorded somewhere else, so "leave used 0%" would mislead.'],
+    '"Needs review" for leave used, on leave today and requests waiting.',
+    '<button class="btn primary" data-toast="Opens Leave Application in the product">Open leave requests</button><button class="btn" data-act="confirmleave">The figure is right, show it</button>',
+    'Found 1 Jul, 06:00 (3 months into the leave year) · Checked again every morning');
+  h += item("users","Leavers and attrition","Needs review","c-neutral",
+    ['<b>14 people</b> are marked as left but have no leaving date. Without a date, nobody can tell whether they left in the last 12 months.'],
+    '"Needs review" for leavers and attrition.',
+    '<button class="btn primary" data-toast="Opens the 14 employee records in the product (HR can see the names)">Open these 14 people</button>',
+    'Found 14 Sep, 06:00 · Clears by itself once every leaver has a leaving date');
+  h += '<p class="small faint">'+ic("history","sm")+' Every "the figure is right" confirmation is kept with who made it and when. Store HR sees only items for their own branch.</p>';
+  h += '<p class="proto-note">Also reached from a "3 figures need review" line at the top of HR analytics, and from HR\'s "Needs you" strip on Home.</p>';
+  $("#content").innerHTML = h;
+}
+
+function pageSettings(st){
+  var sm = st.person==="sm";
+  renderTop(st, "Leader view privacy", [{label:"Company"},{label:"Org settings"}], false);
+  var phone = isPhone();
+  var hb = suppress(BR, S.draft), hbN = countHidden(hb), dTotal = 0, dHid = 0;
+  Object.keys(DEPT_SIZES).forEach(function(k){
+    var list = DEPT_SIZES[k].map(function(s,i){ return {id:k+i, hc:s}; });
+    dTotal += list.length;
+    dHid += hb[k] ? list.length : countHidden(suppress(list, S.draft));
+  });
+  var h = '<div class="tabs" role="tablist" aria-label="Org settings"><button role="tab" aria-selected="false" data-toast="Not part of this prototype">General</button><button role="tab" aria-selected="false" data-toast="Not part of this prototype">Documents</button><button role="tab" aria-selected="true">Leader view privacy</button></div>';
+  h += '<div class="pagehead"><span>These rules decide what company heads and branch heads can see. They apply to every leader in Kavya Retail.</span><span class="sample">Sample data</span></div>';
+
+  /* Card 1: smallest group */
+  h += '<section class="card" aria-labelledby="h-min"><div class="hd"><h2 id="h-min">'+ic("lock")+'Smallest group shown</h2></div><div class="bd">';
+  h += '<p class="muted" style="font-size:var(--fs-md)">Leaders see totals, never individuals. When fewer people than this number are counted in a group\'s figure, its attendance, leave and leaver figures are not shared: too few people for a fair picture. The next-smallest group is not shared either, so nobody can work the figure out by subtraction.</p>';
+  if (sm){
+    h += '<div class="field"><span id="lblMin" style="font-weight:600;font-size:var(--fs-md)">Hide groups smaller than</span>'+
+      '<div class="stepper" role="group" aria-labelledby="lblMin"><button data-act="dec" aria-label="Lower to '+(S.draft-1)+'"'+(S.draft<=3?' aria-disabled="true"':'')+'>'+ic("minus")+'</button><output aria-live="polite" class="num">'+S.draft+' people</output><button data-act="inc" aria-label="Raise to '+(S.draft+1)+'"'+(S.draft>=10?' aria-disabled="true"':'')+'>'+ic("plus")+'</button></div>'+
+      '<span class="hint">Allowed: 3 to 10. Default: 5. Now saved: '+S.min+'.</span>'+(S.errs.min?'<span class="err" role="alert">'+S.errs.min+'</span>':'')+'</div>';
+  } else {
+    h += '<div class="field"><span style="font-weight:600;font-size:var(--fs-md)">Hide groups smaller than</span><span style="font-size:var(--fs-xl);font-weight:700" class="num">'+S.min+' people</span>'+
+      '<span class="lockline">'+ic("lock","sm")+'Only a System Manager can change this setting.</span></div>';
+  }
+  h += '<div class="chip c-info" style="justify-self:start;white-space:normal">'+ic("info","sm")+'With '+S.draft+': about '+hbN+' of '+BR.length+' branches and '+dHid+' of '+dTotal+' departments have figures not shared</div>';
+  h += '<p class="small muted">"About", because this uses today\'s headcount. Leader figures count the people inside each figure for its period, so a group that has shrunk can have a few more figures not shared.</p>';
+  h += '<div class="rules">'+
+    '<div><h3>Not shared below the minimum</h3><ul class="small"><li>Attendance, late arrivals, short days</li><li>On leave today, leave used, requests waiting</li><li>Leavers and attrition</li></ul></div>'+
+    '<div><h3>Always shown</h3><ul class="small"><li>Headcount</li><li>Joiners</li></ul></div>'+
+    '<div><h3>Never shown to leaders</h3><ul class="small"><li>Anyone\'s name or days</li><li>Leave types and reasons</li><li>Pay</li></ul></div></div>';
+  if (sm){
+    h += '<div class="field"><label for="reason">Why are you making this change?</label><span class="hint" id="reasonHint">Required. Kept in the change history below.</span>'+
+      '<textarea class="inp" id="reason" aria-describedby="reasonHint'+(S.errs.reason?' reasonErr':'')+'"'+(S.errs.reason?' aria-invalid="true"':'')+'>'+esc(S.reason)+'</textarea>'+
+      (S.errs.reason?'<span class="err" id="reasonErr" role="alert">'+S.errs.reason+'</span>':'')+'</div>'+
+      '<div class="actions"><button class="btn primary" data-act="save">Save change</button>'+(S.draft!==S.min?'<button class="btn ghost" data-act="undo">Keep '+S.min+'</button>':'')+'</div>';
+  }
+  h += '</div></section>';
+
+  /* Card 2: who has leader access */
+  var rows = [
+    ["Meera Nair","Company: Kavya Retail","Company overview",""],
+    ["Arjun Mehta","Branch: Lakeside Mall","Branch overview",""],
+    ["Farah Khan","Branch: Hilltop Kiosk", 4 < S.min ? "Headcount and joiners only (fewer than "+S.min+" people)" : "Branch overview","info"],
+    ["Neha Iyer","Branches: Old Market, Riverside","Branch overview for 2 branches, together or one at a time",""],
+    ["Dev Malhotra","Branches: Hilltop Kiosk, Station Road", countHidden(suppress([brById("hill"),brById("station")], S.min)) ? "Branch overview for 2 branches. Totals together only; each branch's figures not shared" : "Branch overview for 2 branches, together or one at a time", ""],
+    ["Rohan Das","No company or branch","Nothing yet. No company or branch linked","warn"]
+  ];
+  h += '<section class="card" aria-labelledby="h-who"><div class="hd"><h2 id="h-who">'+ic("users")+'Who has leader access</h2></div>';
+  if (phone){
+    h += '<div class="glist">'+rows.map(function(x){ return '<div class="grow"><div><div class="t">'+x[0]+'</div><div class="s">'+x[1]+'</div><div class="s">'+(x[3]==="warn"?'<span class="chip c-warn">'+ic("alert","sm")+x[2]+'</span>':x[2])+'</div></div><div></div></div>'; }).join("")+'</div>';
+  } else {
+    h += '<div class="tblwrap"><table class="tbl"><thead><tr><th scope="col">Leader</th><th scope="col">Linked to</th><th scope="col">What they see</th></tr></thead><tbody>'+
+      rows.map(function(x){ return '<tr><td style="font-weight:600">'+x[0]+'</td><td>'+x[1]+'</td><td>'+(x[3]==="warn"?'<span class="chip c-warn">'+ic("alert","sm")+x[2]+'</span>':x[2])+'</td></tr>'; }).join("")+'</tbody></table></div>';
+  }
+  h += '<div class="ft">Leader access = the Leadership role plus a User Permission on a company or on one or more branches. Change it in Desk, User Permissions. Frappe keeps its own record of those changes. <button class="linkbtn" data-toast="Opens Desk › User Permission in the product">Open User Permissions</button></div></section>';
+
+  /* Card 3: change history */
+  h += '<section class="card" aria-labelledby="h-hist"><div class="hd"><h2 id="h-hist">'+ic("history")+'Change history</h2></div><div class="bd" style="padding-bottom:0"><p class="muted">Every change to these settings is kept here, with who made it and why. Nobody can edit these records. System Managers and HR Managers cannot delete them; only the site\'s Administrator account can.</p></div>';
+  function chg(x){ return 'Smallest group: '+(x.from===null?'set to '+x.to:x.from+' → '+x.to); }
+  if (phone){
+    h += '<div class="glist">'+S.history.map(function(x){ return '<div class="grow"><div><div class="t">'+chg(x)+'</div><div class="s">'+esc(x.when)+' · '+esc(x.who)+'</div><div class="s">"'+esc(x.why)+'"</div></div><div></div></div>'; }).join("")+'</div>';
+  } else {
+    h += '<div class="tblwrap"><table class="tbl"><thead><tr><th scope="col">When</th><th scope="col">Who</th><th scope="col">Change</th><th scope="col">Reason given</th></tr></thead><tbody>'+
+      S.history.map(function(x){ return '<tr><td style="white-space:nowrap">'+esc(x.when)+'</td><td>'+esc(x.who)+'</td><td style="white-space:nowrap">'+chg(x)+'</td><td>'+esc(x.why)+'</td></tr>'; }).join("")+'</tbody></table></div>';
+  }
+  h += '</section>';
+  $("#content").innerHTML = h;
+}
+
+function pageEmp(st){
+  renderTop(st, "Attendance & leave", [{label:"Time"}], false);
+  $("#content").innerHTML =
+    '<div class="pagehead"><span>September 2026</span><span class="sample">Sample data</span></div>'+
+    '<section class="card"><div class="bd"><details class="whosees"><summary>'+ic("eye")+'Who can see your attendance and leave'+ic("right","sm")+'</summary><ul>'+
+      '<li><b>You, your manager and HR</b> see your days, your times and your leave, including the type of leave.</li>'+
+      '<li><b>Your branch head and company head</b> see only totals for Lakeside Mall and the company. They never see your name, your days, or why you were away.</li>'+
+      '<li>Totals for groups of fewer than '+S.min+' people are not shared: too few people for a fair picture, and a total could point at you.</li>'+
+    '</ul></details></div></section>'+
+    '<section class="card"><div class="hd"><h2>'+ic("cal")+'My days</h2></div><div class="bd"><p class="muted">Calendar and day list as designed in slice 009 (Time). Not repeated here.</p><p class="proto-note">Placeholder</p></div></section>'+
+    '<p class="proto-note">The same line sits on My leave. The wording is built from the organisation\'s real settings, so it changes if the smallest group changes.</p>';
+}
+
+/* ═══════════ Explanations (sheets) ═══════════ */
+function explain(key){
+  var st = info(S.state), sc = st.scope;
+  var t = "", b = "";
+  switch(key){
+    case "att": t="How attendance is worked out";
+      b='<p><b>Present %</b> = days people were present, divided by days they were expected to work, for September so far.</p><ul><li>A half day counts as half a day present.</li><li>Work from home counts as present.</li><li>Weekly offs, holidays and approved leave are not expected days, so they do not lower the figure.</li><li>Days after '+UPTO_S+' are not counted yet.</li></ul>'+
+        '<p><b>Late arrivals</b>: days someone checked in after their shift start plus the grace time HR has set. One person late on 3 days counts as 3.</p><p><b>Short days</b>: days someone worked fewer hours than their shift asks for.</p>'+
+        '<p>Comparisons use the same days last month ('+PREV+'), so part of a month is never compared with a whole month.</p><p class="muted">HR Analytics uses exactly this calculation, so HR and leaders always see the same number.</p><p class="proto-note">Wording must match the Step 0 calculation once it is agreed</p>'; break;
+    case "leave": t="How leave is worked out";
+      b='<p><b>On leave today</b>: people on approved leave today. A count only. You never see who, or why.</p><p><b>Leave used</b> = leave days taken, divided by leave days given, for this leave year only (1 Apr 2026 to 31 Mar 2027). Leave from earlier years is not counted.</p><p><b>Requests waiting more than 3 days</b>: leave requests with no decision after 3 days. Managers and HR see the names and act on them. You see the count, so you can ask about delays.</p><p class="muted">Leave types and reasons are never shown to leaders, at any group size.</p>'; break;
+    case "people": t="How people figures are worked out";
+      b='<p><b>Headcount</b>: active people today. <b>Joined</b>: people whose joining date is in the last 12 months. Both are always shown, even for small groups, because they say nothing private about anyone.</p><p><b>Left</b>: people marked as left, with a leaving date in the last 12 months.</p><p><b>Attrition</b> = people who left in the last 12 months, divided by the average of headcount a year ago and today.</p><p class="muted">For a branch this is approximate. When someone moves branch, their history moves with them.</p>'; break;
+    case "today": t="Today's counts";
+      b='<p><b>In so far</b>: people with a check-in today.</p><p><b>Expected</b>: people on today\'s rota who are not on leave or a weekly off.</p><p><b>Not checked in yet</b>: expected minus in so far. It may still be early in their shift.</p><p><b>Last check-in received '+LASTIN+'</b>: check-ins arrive when the attendance device sends them, which can be a few minutes after people walk in.</p><p class="muted">Counts only. No names. Today\'s counts are not shared for groups of fewer than '+S.min+' people. If a branch has had no check-ins for 7 days, only "on leave" is shown.</p>'; break;
+    case "fresh": t="Why the data runs to "+UPTO_S;
+      b='<p><b>Data up to '+UPTO+'</b> is the last day with complete attendance. Attendance for a day is usually complete by the next morning.</p><p><b>Figures as of '+ASOF+'</b> is when these totals were last worked out. They refresh about every 15 minutes.</p>'; break;
+    case "hidden": t="Why is this not shared?";
+      b='<p><b>'+esc(T(NS_FULL))+'.</b></p><p>When <b>fewer than '+S.min+' people</b> are counted in a figure, one person\'s days can swing the whole number. It would not be a fair picture of the group. A small total can also point at one person.</p>'+
+        '<p>The count is the people inside that figure for its period, not today\'s headcount. A branch with 6 people today may have September attendance from only 4 of them.</p>'+
+        '<p>So that nobody can work out a figure by subtraction, the <b>next-smallest group is not shared either</b>. That is why a larger group can also show "Not shared".</p><p>Headcount and joiners are always shown. Company totals still include every group.</p>'+
+        '<p class="muted">Figures that are not shared are never sent to your phone or computer, so they cannot be found in the page. The minimum is set by your organisation\'s System Manager.</p>'; break;
+    case "broken": t="How doubtful days are found";
+      b='<p>A working day is marked <b>doubtful</b> when 95% or more of the people expected at work are marked absent, and fewer than 5% checked in.</p><p>That nearly always means check-in data did not arrive, not that everyone stayed home.</p><p>Doubtful days are left out of attendance, late arrivals and short days until HR fixes the data or confirms the absence was real. If HR confirms it, the day is counted again.</p><p class="muted">The check is only made for groups of at least '+S.min+' expected people, so a small team\'s real day off is not left out. HR sees the same warning, with a link to fix it.</p>'; break;
+    case "review-leave": t="Why leave needs review";
+      b='<p><b>Needs review</b> means the data behind a figure looks incomplete, so Alvoraa does not show a number that could mislead. It is never shown as 0 or 0%.</p>'+
+        '<p><b>For example:</b> 288 people have 6,912 days of leave between them this leave year, but only 3 leave requests have been entered. "Leave used 0%" would suggest nobody took any leave, which is very unlikely. Leave is probably being recorded somewhere else.</p>'+
+        '<p>So leave used, on leave today and requests waiting all say "Needs review", everywhere on this page.</p>'+
+        '<p><b>What happens next:</b> HR sees this in <i>Data to review</i>, with what to check. Once HR enters the missing leave, or confirms the figure is right, the number appears here.</p>'; break;
+    case "review-leavers": t="Why leavers need review";
+      b='<p><b>Needs review</b> means the data behind a figure looks incomplete, so Alvoraa does not show a number that could mislead. It is never shown as 0.</p>'+
+        '<p><b>For example:</b> 14 people are marked as left but have no leaving date. Without a date, nobody can tell whether they left in the last 12 months, so leavers and attrition would come out too low.</p>'+
+        '<p><b>What happens next:</b> HR sees these 14 records in <i>Data to review</i>. Once each has a leaving date, leavers and attrition appear here.</p>'; break;
+    case "scope":
+      t = T("What you can see");
+      var who = PEOPLE[st.person];
+      var where = sc ? (sc.kind==="company" ? sc.d.name+", all branches, "+num(sc.d.hc)+" people" : sc.viewer==="company" ? (sc.co.name+", all branches") : sc.viewer==="multi" ? (who.links.map(brById).map(function(x){return x.name;}).sort().join(" and ")+", together or one at a time") : sc.d.name+", "+num(sc.d.hc)+" people") : "Lakeside Mall, 64 people";
+      b='<ul><li><b>Where:</b> '+esc(where)+'.</li><li><b>What:</b> totals for people, attendance and leave.</li><li><b>Never:</b> anyone\'s name, their days, why they were away, or pay.</li><li><b>Small groups:</b> figures are not shared when fewer than '+S.min+' people are counted.</li><li><b>You are counted too:</b> your own attendance and leave are inside these totals.</li></ul>'+
+        '<p class="muted">Your access comes from the Leadership role and a link to '+(who.lead==="company"?"your company":who.lead==="multi"?"your branches":"your branch")+', set by your System Manager. Your employees see a line on their own attendance page that tells them this.</p>'; break;
+  }
+  openSheet(t, b, '<button class="btn primary" data-act="close">OK</button>', false);
+}
+
+/* ═══════════ Sheet, dialog, toast ═══════════ */
+var lastFocus = null;
+function openSheet(title, body, foot, dialog){
+  lastFocus = document.activeElement;
+  $("#sheetTitle").textContent = title;
+  $("#sheetBody").innerHTML = body;
+  $("#sheetFoot").innerHTML = foot || "";
+  var sh = $("#sheet");
+  sh.querySelector(".hd .iconbtn").innerHTML = ic("x");
+  sh.classList.toggle("dialog", !!dialog);
+  sh.setAttribute("role", dialog ? "alertdialog" : "dialog");
+  sh.classList.add("on"); $("#scrim").classList.add("on");
+  setTimeout(function(){ var f = sh.querySelector("#sheetFoot button") || sh.querySelector(".hd button"); if (f) f.focus(); }, 30);
+}
+function closeSheet(){
+  $("#sheet").classList.remove("on"); $("#scrim").classList.remove("on");
+  if (S.railOpen){ S.railOpen=false; $("#rail").classList.remove("open"); }
+  if (lastFocus && document.body.contains(lastFocus)) lastFocus.focus();
+}
+var toastTimer;
+function toast(msg){
+  var t = $("#toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(toastTimer); toastTimer = setTimeout(function(){ t.classList.remove("on"); }, 2600);
+}
+
+/* ═══════════ Render ═══════════ */
+function $(s){ return document.querySelector(s); }
+function isPhone(){ return $("#app").classList.contains("is-phone"); }
+
+function render(){
+  var st = info(S.state);
+  if (!st.person){ S.state = "bh-home"; st = info(S.state); }
+  $("#app").setAttribute("lang", S.lang);
+  renderRail(st); renderBnav(st);
+  switch(st.page){
+    case "home": pageHome(st); break;
+    case "overview": pageOverview(st); break;
+    case "noperm": pageNoPerm(st); break;
+    case "review": pageReview(st); break;
+    case "loading": pageLoading(st); break;
+    case "settings": pageSettings(st); break;
+    case "emp": pageEmp(st); break;
+  }
+  var sel = $("#pState");
+  sel.value = STATES.some(function(x){ return x[0]===S.state; }) ? S.state : sel.value;
+}
+
+function go(key){
+  S.state = key; S.railOpen = false; S.errs = {};
+  var mk = /^(multi2?)(?::\w+)?$/.exec(key); if (mk) S.last[mk[1]] = key;   /* remember the last choice for Home */
+  if (key!=="ch-broken") S.showRaw = false;
+  if (key==="error") S.retried = false;
+  if (key==="sm"||key==="hr"){ S.draft = S.min; S.reason = ""; }
+  render();
+  var m = $("#main"); if (m.scrollTop) m.scrollTop = 0;
+  if (!$("#stage").classList.contains("phone")) window.scrollTo(0, 0);
+  var t = $("#pageTitle"); if (t){ t.setAttribute("tabindex","-1"); t.focus({preventScroll:true}); }
+}
+
+/* ═══════════ Events ═══════════ */
+document.addEventListener("click", function(e){
+  var el = e.target.closest("[data-go],[data-explain],[data-toast],[data-act]");
+  if (!el) { return; }
+  if (el.hasAttribute("data-go")) { closeSheet(); go(el.getAttribute("data-go")); return; }
+  if (el.hasAttribute("data-explain")) { explain(el.getAttribute("data-explain")); return; }
+  if (el.hasAttribute("data-toast")) { toast(el.getAttribute("data-toast")); return; }
+  var a = el.getAttribute("data-act");
+  if (a==="close") closeSheet();
+  else if (a==="menu"){ S.railOpen = true; $("#rail").classList.add("open"); $("#scrim").classList.add("on"); var b=$("#rail button"); if(b) b.focus(); }
+  else if (a==="raw"){ S.showRaw = !S.showRaw; render(); }
+  else if (a==="retry"){ S.retried = true; render(); toast("Attendance figures loaded"); }
+  else if (a==="copy"){ toast("Message copied"); }
+  else if (a==="scope"){ openScopeSheet(); }
+  else if (a==="countreal"){ closeSheet(); toast("Recorded. The 3 days count again."); }
+  else if (a==="replay"){ render(); }
+  else if (a==="confirmreal"){
+    openSheet("Count 8, 9 and 10 Sep as real absence?", '<p>These days will count again in attendance, late arrivals and short days, for HR and for leaders. Attendance for September will drop to about 71.4%.</p><p>This is recorded with your name.</p>',
+      '<button class="btn" data-act="close">Keep them left out</button><button class="btn primary" data-act="countreal">Count them</button>', true);
+  }
+  else if (a==="confirmleave"){
+    openSheet("Show leave used as it is?", '<p>Leaders will see leave used as 0.2% (3 requests, 15 days of 6,912) instead of "Needs review".</p><p>Only do this if leave really is recorded in Alvoraa. This is recorded with your name.</p>',
+      '<button class="btn" data-act="close">Keep "Needs review"</button><button class="btn primary" data-act="close">Show it</button>', true);
+  }
+  else if (a==="dec"){ if (S.draft>3){ S.draft--; S.errs={}; keepReason(); render(); focusSel('[data-act="dec"]'); } else toast("3 is the lowest allowed"); }
+  else if (a==="inc"){ if (S.draft<10){ S.draft++; S.errs={}; keepReason(); render(); focusSel('[data-act="inc"]'); } else toast("10 is the highest allowed"); }
+  else if (a==="undo"){ S.draft = S.min; S.errs={}; keepReason(); render(); }
+  else if (a==="save"){
+    keepReason(); S.errs = {};
+    if (S.draft===S.min) S.errs.min = "Choose a different number first. The saved value is already "+S.min+".";
+    if (!S.reason.trim()) S.errs.reason = "Add a short reason. It is kept with the change.";
+    if (S.errs.min || S.errs.reason){ render(); var f = S.errs.min ? $('[data-act="dec"]') : $("#reason"); if (f) f.focus(); return; }
+    var lower = S.draft < S.min;
+    function span(a,b){ return a===b ? String(a) : (b-a===1 ? a+' or '+b : a+' to '+b); }
+    openSheet("Change the smallest group from "+S.min+" to "+S.draft+"?",
+      lower ? '<p>Leaders will start to see figures for groups of '+span(S.draft, S.min-1)+' people. In small groups, people can often guess who a figure is about.</p><p>This change is recorded with your name and reason.</p>'
+            : '<p>Leaders will stop seeing figures for groups of '+span(S.min, S.draft-1)+' people.</p><p>This change is recorded with your name and reason.</p>',
+      '<button class="btn" data-act="close">Keep '+S.min+'</button><button class="btn primary" data-act="confirm">Change to '+S.draft+'</button>', true);
+  }
+  else if (a==="confirm"){
+    S.history.unshift({when:"15 Sep 2026, 10:52", who:"Vikram Shah", from:S.min, to:S.draft, why:S.reason.trim()});
+    S.min = S.draft; S.reason = ""; closeSheet(); render(); toast("Saved. Leaders see the new rule the next time they open their overview.");
+  }
+});
+function keepReason(){ var r = $("#reason"); if (r) S.reason = r.value; }
+function focusSel(s){ var f = $(s); if (f) f.focus(); }
+$("#scrim").addEventListener("click", closeSheet);
+document.addEventListener("keydown", function(e){
+  var open = $("#sheet").classList.contains("on");
+  if (e.key==="Escape" && (open || S.railOpen)) { closeSheet(); return; }
+  if (e.key==="Tab" && open){
+    var f = Array.prototype.slice.call($("#sheet").querySelectorAll("button,[href],textarea,input,select,[tabindex]:not([tabindex='-1'])"));
+    if (!f.length) return;
+    if (e.shiftKey && document.activeElement===f[0]){ e.preventDefault(); f[f.length-1].focus(); }
+    else if (!e.shiftKey && document.activeElement===f[f.length-1]){ e.preventDefault(); f[0].focus(); }
+  }
+});
+
+/* Controls */
+var sel = $("#pState");
+sel.innerHTML = STATES.map(function(x){ return '<option value="'+x[0]+'">'+x[1]+'</option>'; }).join("");
+sel.addEventListener("change", function(){ go(sel.value); });
+$("#pDevice").addEventListener("change", function(e){ S.device = e.target.value; layout(); });
+$("#pTheme").addEventListener("change", function(e){
+  S.theme = e.target.value;
+  if (S.theme==="auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", S.theme);
+  applyBrand();
+});
+$("#pLang").addEventListener("change", function(e){ S.lang = e.target.value; render(); });
+$("#pWord").addEventListener("change", function(e){ S.word = e.target.value; render(); });
+$("#pBrand").addEventListener("change", function(e){ S.brand = e.target.value; applyBrand(); });
+if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyBrand);
+
+/* Tenant brand colour: same clamp as templates/includes/brand_color.html */
+function applyBrand(){
+  var root = document.documentElement;
+  ["--primary","--primary-h","--primary-d","--primary-lt","--hero-bg"].forEach(function(k){ root.style.removeProperty(k); });
+  var h = (S.brand||"").replace("#","");
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return;
+  var r = parseInt(h.slice(0,2),16)/255, g = parseInt(h.slice(2,4),16)/255, b = parseInt(h.slice(4,6),16)/255;
+  var mx = Math.max(r,g,b), mn = Math.min(r,g,b), hh = 0, ss = 0, ll = (mx+mn)/2;
+  if (mx !== mn){ var d = mx-mn; ss = ll>.5 ? d/(2-mx-mn) : d/(mx+mn);
+    if (mx===r) hh = (g-b)/d + (g<b?6:0); else if (mx===g) hh = (b-r)/d + 2; else hh = (r-g)/d + 4; hh = Math.round(hh/6*360); }
+  ss = Math.round(ss*100); ll = Math.round(ll*100);
+  var dark = root.getAttribute("data-theme")==="dark" || (!root.getAttribute("data-theme") && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  var L = dark ? Math.max(ll,62) : Math.min(ll,44), SS = ss+"%";
+  root.style.setProperty("--primary","hsl("+hh+","+SS+","+L+"%)");
+  root.style.setProperty("--primary-h","hsl("+hh+","+SS+","+(dark?Math.min(L+8,88):Math.max(L-8,12))+"%)");
+  root.style.setProperty("--primary-d","hsl("+hh+","+SS+","+(dark?Math.min(L+16,92):Math.max(L-14,10))+"%)");
+  root.style.setProperty("--primary-lt","hsl("+hh+","+Math.round(ss*.35)+"%,"+(dark?16:95)+"%)");
+  root.style.setProperty("--hero-bg","hsl("+hh+","+Math.max(ss*0.5,18)+"%,"+(dark?16:24)+"%)");
+}
+
+/* Device and phone layout */
+function layout(){
+  var stage = $("#stage"), app = $("#app");
+  var wantPhone = S.device==="phone" && window.innerWidth >= 480;
+  stage.classList.toggle("phone", wantPhone);
+  var w = app.clientWidth;
+  var phone = S.device==="phone" ? true : S.device==="desktop" ? (window.innerWidth < 760) : (w < 760);
+  var was = app.classList.contains("is-phone");
+  app.classList.toggle("is-phone", phone);
+  if (was !== phone) render();
+}
+if (window.ResizeObserver) new ResizeObserver(function(){ layout(); }).observe(document.body);
+window.addEventListener("resize", layout);
+
+layout();
+render();
+})();
+</script>

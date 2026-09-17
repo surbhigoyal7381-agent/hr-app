@@ -140,6 +140,14 @@ jobs:
           semgrep --config hrms/semgrep --error --skip-unknown-extensions \
             alvoraa_goals alvoraa_portal hrms/hrms
 
+      # Slice 015. The 2026-09-17 history scan found three shared demo passwords
+      # in public code, for sites anyone can reach. The seed scripts now read the
+      # password from an environment variable and stop if it is not set. This keeps
+      # it that way. Text only - demo/ never reaches the bench, so a unittest could
+      # not guard it.
+      - name: No demo passwords in the repository
+        run: python scripts/check_no_demo_passwords.py
+
   # ── Python / Frappe tests ─────────────────────────────────────────────────
   test-python:
     name: Python tests

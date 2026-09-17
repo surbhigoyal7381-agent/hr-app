@@ -211,10 +211,34 @@ def _safe_float(val, default=0.0):
         return default
 
 
+def _driver_partner_for(user):
+    """The Delivery Partner this user signs in as, or None.
+
+    The same rule get_portal_context uses to recognise a driver, so the driver
+    the portal shows the deliveries to is exactly the one allowed to post.
+    """
+    if not user or user == "Guest":
+        return None
+    return frappe.db.get_value("Delivery Partner", {"primary_email": user}, "name")
+
+
 @frappe.whitelist()
 def update_driver_location(delivery_order, lat, lng, speed=0, heading=0, accuracy=10):
-    """Called by driver browser to post real GPS update."""
+    """Called by the driver's browser to post a real GPS update.
+
+    Only the driver assigned to this Delivery Order may post (slice 014). Before,
+    any logged-in user could write a position, speed and heading for any order,
+    because the insert ignores permissions and nothing checked who was asking.
+    Every refusal is the same PermissionError, whether the order does not exist,
+    has nobody assigned, or belongs to someone else - so the answer does not
+    reveal which orders exist.
+    """
+    me = _driver_partner_for(frappe.session.user)
     partner = frappe.db.get_value("Delivery Order", delivery_order, "assigned_to_partner")
+    if not me or not partner or partner != me:
+        frappe.throw(frappe._("You can only share your location for a delivery assigned to you."),
+                     frappe.PermissionError)
+
     spd = _safe_float(speed)
     hdg = _safe_float(heading)
     acc = _safe_float(accuracy, 10.0)

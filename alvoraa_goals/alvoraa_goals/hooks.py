@@ -50,6 +50,13 @@ permission_query_conditions = {
     "KPI":             "alvoraa_goals.permissions.kpi_query",
     # Slice 010 group D (SEC-27): HR's desk follows the portal's stage rule.
     "Alvoraa Appraisal Extension": "alvoraa_goals.permissions.appraisal_extension_query",
+    # Slice 010 group D fix round (security review B1, M4): a review's change
+    # history and audit notes, and HRMS Appraisal scores, follow the same rule.
+    # Frappe adds these to its own rules for the core doctypes; rows about any
+    # other doctype are untouched.
+    "Version": "alvoraa_goals.permissions.version_query",
+    "Comment": "alvoraa_goals.permissions.comment_query",
+    "Appraisal": "alvoraa_goals.permissions.appraisal_query",
 }
 
 has_permission = {
@@ -57,6 +64,10 @@ has_permission = {
     "KPI":             "alvoraa_goals.permissions.has_employee_permission",
     # Slice 010 group D (SEC-27): read by stage and company; desk writes refused.
     "Alvoraa Appraisal Extension": "alvoraa_goals.permissions.has_appraisal_extension_permission",
+    # Slice 010 group D fix round (security review B1, M4).
+    "Version": "alvoraa_goals.permissions.has_review_history_permission",
+    "Comment": "alvoraa_goals.permissions.has_review_history_permission",
+    "Appraisal": "alvoraa_goals.permissions.has_appraisal_permission",
 }
 
 scheduler_events = {

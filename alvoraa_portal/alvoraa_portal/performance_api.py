@@ -2575,6 +2575,13 @@ def _copies_of(reviews):
     return out
 
 
+def _draft_hidden(review):
+    """Which items a person chose for a self-review they have not sent is theirs
+    alone (PRIV-2). HR screens list no items of such a review for anyone else,
+    including an HR person who is also in the subject's line (security review m7)."""
+    return review.status in _SELF_REVIEW_DRAFT and review.viewer != review_items.VIEWER_SUBJECT
+
+
 def _visible_ratings(row, review):
     """The rating and comment fields of one copy this row's viewer may see; absent otherwise."""
     return {
@@ -2608,6 +2615,8 @@ def hr_list_kpis(cycle=None, employee=None):
     copies = _copies_of(reviews)
     out = []
     for a in reviews:
+        if _draft_hidden(a):
+            continue
         for row in copies.get(a.name, []):
             if row.removed or row.item_type != "KPI":
                 continue
@@ -3387,6 +3396,8 @@ def export_cycle_kpis_csv(cycle):
     writer.writerow(headers)
     written = 0
     for a in reviews:
+        if _draft_hidden(a):
+            continue
         deciders = a.viewer in (review_items.VIEWER_MANAGER, review_items.VIEWER_HR)
         for row in copies.get(a.name, []):
             if row.removed and not deciders:

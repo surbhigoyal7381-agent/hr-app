@@ -420,3 +420,30 @@ class TestCrM1SelectionRemovesOnlyWhatWasListed(_Screens):
 		self.assertFalse(_row_for(ext, alone) and not _row_for(ext, alone).removed)
 
 
+# ── Security m7 · HR screens list no items of an unsent self-review ─────────
+
+
+class TestM7HrScreensHideDraftItems(_Screens):
+	def test_m7_an_hr_role_line_manager_sees_no_item_of_a_draft_on_hr_screens(self):
+		import alvoraa_portal.performance_api as pa
+
+		start, end = self._window()
+		cycle = self._cycle(start, end)
+		kpi = self._kpi(self.hr_report, cycle, target=10)
+		ap = self._appraisal(self.hr_report, cycle, status="Employee Review")
+		self._as(self.hr_report_user)
+		pa.get_my_review(ap)
+		row = _row_for(self._ext(ap), kpi).name
+
+		def seen():
+			self._as(self.hr_boss_user)
+			try:
+				listed = row in {r["name"] for r in pa.hr_list_kpis(cycle)}
+				exported = row in pa.export_cycle_kpis_csv(cycle)["csv"]
+				return listed, exported
+			finally:
+				frappe.set_user("Administrator")
+
+		self.assertEqual(seen(), (False, False))
+		self._set_status(ap, "Manager Review")
+		self.assertEqual(seen(), (True, True))

@@ -598,3 +598,23 @@ class TestM3M5WriteBackNoteAndMarkers(_Screens):
 		self.assertNotIn(marker, json.dumps(live_notes))
 
 
+# ── Security m4 · PRIV-14 · a review record with copies is never deleted ────
+
+
+class TestM4Priv14ReviewRecordIsNotDeleted(_Screens):
+	def test_m4_priv14_no_path_deletes_a_review_record_that_holds_copies(self):
+		r = self._review("Completed")
+		with self.assertRaises(frappe.PermissionError):
+			frappe.delete_doc("Alvoraa Appraisal Extension", r.ap, force=True, ignore_permissions=True)
+		frappe.db.rollback()
+		self.assertTrue(frappe.db.exists("Alvoraa Appraisal Extension", r.ap))
+		self.assertTrue(frappe.db.count("Alvoraa Review Item", {"parent": r.ap}))
+
+		# A record with no copies yet is not a decision record, and can still go.
+		start, end = self._window()
+		empty = self._appraisal(self.stranger, self._cycle(start, end), status="Not Started")
+		frappe.delete_doc("Alvoraa Appraisal Extension", empty, force=True, ignore_permissions=True)
+		frappe.db.commit()
+		self.assertFalse(frappe.db.exists("Alvoraa Appraisal Extension", empty))
+
+

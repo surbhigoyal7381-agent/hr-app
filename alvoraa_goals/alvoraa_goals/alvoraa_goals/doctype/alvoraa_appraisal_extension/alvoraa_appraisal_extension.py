@@ -16,6 +16,23 @@ class AlvoraaAppraisalExtension(Document):
         # flags.ignore_validate (frappe/model/document.py run_before_save_methods).
         self._refuse_direct_review_item_changes()
 
+    def on_trash(self):
+        """A review record that holds copies is the record of how that review was
+        decided. No path deletes it: not the desk, not REST, not Administrator,
+        not code that deletes with ignore_permissions (PRIV-14, security review
+        m4). Retention and erasure wait for counsel (C-D1)."""
+        if not frappe.db.exists("Alvoraa Review Item", {"parent": self.name, "parenttype": self.doctype}):
+            return
+        from hrms.alvoraa_hr_core.access import refuse
+
+        refuse(
+            _("This review record holds the items its review was decided on, so it cannot be deleted."),
+            "PRIV-14",
+            "Alvoraa Appraisal Extension delete",
+            self.doctype,
+            self.name,
+        )
+
     def validate(self):
         if self.avg_potential_rating and self.avg_potential_rating > 0:
             v = self.avg_potential_rating

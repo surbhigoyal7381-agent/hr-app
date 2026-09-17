@@ -76,6 +76,14 @@ Asked in `03d-implementation-notes-group-d.md` (Phase 2 and Phase 3 sections); t
 | 32 | Lock release set to 0 (never released): repeating reminder? | **No reminder** when the setting is 0. |
 | 33 | `hr_api.get_goal_detail` lets any HR person open a goal from any company | **Fix inside 010:** scope to `permitted_companies()` for HR, keeping the manager-line rule. |
 
+## Decision after the security review (2026-09-17)
+
+Asked in `06-security-review-group-d.md` (M3, Q2, residual risk R4).
+
+| # | Question | Decision |
+|---|---|---|
+| 34 | Security M3 / Q2 / R4: may someone in the subject's reporting line do the HR steps (calibrate, HR removal, HR answer to a rating question, complete)? | **No.** Anyone in the subject's reporting line (manager or above) may not do the HR steps on that review, even with an HR role; a different HR person does them. User, 2026-09-17. |
+
 ## Coordination
 
 - Slice 012's plan adds the same KPI indexes. **010 claims the KPI DocType file** on the

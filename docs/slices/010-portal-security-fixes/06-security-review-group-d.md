@@ -349,7 +349,7 @@ should be fixed rather than accepted, in my view; you decide.
 | R1 | System Manager and Website Manager read review history and audit notes (B1) | No row rule on Version and Comment | Fix before push to dev | — | — |
 | R2 | HR acts on any company's review through three scoring endpoints (M1) | Old `_require_can_review` guard | Fix before push to dev | — | — |
 | R3 | A KPI creator or HR renames a held KPI and escapes the lock (M2) | `allow_rename` with no `before_rename` | Fix before push to dev | — | — |
-| R4 | One person who is both manager and HR decides every step (M3) | Product rule, older than group D | Your decision: fix, or accept for small organisations | — | — |
+| R4 | One person who is both manager and HR decides every step (M3) | Product rule, older than group D | **Fixed by decision 34** (see `03d`, "Decision 34 (M3)") | — | — |
 | R5 | HR reads HRMS Appraisal scores at any stage and, without Company user permissions, for every company (M4) | Stock HRMS permissions, no hook | Fix, or accept as HR-trusted | — | — |
 | R6 | Rollback runbook names wrong functions (M5) | Documentation | Fix and rehearse before push | — | — |
 | R7 | Legacy ratings on live KPIs stay readable to HR in the desk | Decision records, not deleted (PRIV-14) | Accept | — | — |

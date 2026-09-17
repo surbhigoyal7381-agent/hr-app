@@ -1608,3 +1608,193 @@ suite (`test_review_copies_010d`, `test_review_screens_010d`, `test_review_outsi
    this round): dotted-line managers' feedback form, the HR stand-in chosen by row order,
    departed employees with an enabled login, `save_calibration_note`'s missing column
    (F-D8), and the dead reviewer modal and `_scored_live_items` legacy rating.
+
+# Decision 34 (M3) — the subject's line does not do HR's steps
+
+## The short answer
+
+**Security M3 is fixed, as the user decided on 2026-09-17: nobody in the
+subject's reporting line does the HR steps on that review, even with an HR
+role. A different HR person does them. Tested on the local instance. Nothing is
+pushed.**
+
+- **Two commits** plus this notes commit: `9cdc9d2` (the rule and the page),
+  `d1252e8` (pin tests).
+- **Things to know first:**
+  1. **On ppj.localhost this touches 402 of the 403 open reviews**, because the
+     managing director holds HR Manager and sits at the top of the tree. Every one
+     of them still has **at least 8** other HR people who can do the steps. No
+     open review is left with nobody (read-only count, below).
+  2. **The HR stand-in counts as the manager.** For someone with no manager, the
+     system already makes the first HR Manager their manager
+     (`get_effective_manager`). That person does the manager steps, so they are
+     refused the HR steps too. This goes one small step past "manager or above";
+     say if you want it taken out.
+  3. **Portal calibration is still broken for everyone** — the missing
+     `calibration_notes` column (F-D8, raised before, not in this fix). The
+     fail-without-fix run hit it.
+
+## 1. What came in from others
+
+Nothing. At the start the slice branch, local `dev` and the worktree were all at
+`07b261d`, and `origin/dev` was still at `c27fb56`. Fetched again before the
+commits: no change. The main checkout still holds another session's uncommitted
+edits in files this fix does not touch; none was touched.
+
+## 2. The rule, and where it is checked
+
+**One shared check** in `hrms/hrms/alvoraa_hr_core/access.py`, next to
+`refuse_own_rating`:
+
+- `subjects_in_my_line(employees, user, stand_in)` walks `reports_to` upward from
+  each subject, for all of them at once: one query per level, at most 50 levels,
+  a loop ends that person's walk, and a line still going at 50 counts as "in the
+  line" (fails closed). Every Employee record linked to the login counts as the
+  caller. `stand_in` is a function, called at most once and only when a subject
+  has no manager.
+- `refuse_hr_step_in_line(employee, …)` refuses with *"You are in this person's
+  reporting line, so you cannot do the HR steps on their review. Ask another HR
+  person in <company> to do this step."* It names the company, never a person,
+  and logs through `access.refuse` as rule **`D34`** (user, endpoint, doctype,
+  document name — no values).
+
+**Where it is used** (`performance_api.py`, all through `_refuse_hr_step_in_line`):
+
+| HR step | Where | Note |
+|---|---|---|
+| Calibration and calibrated rating | `save_calibration_note` | after the own-review check |
+| Complete (HR Review → Completed) | `advance_review_status`, HR Review branch | |
+| Send back from HR Review | `return_for_revision`, when the stage is HR Review | not asked for by name; it is an HR-only decision in HR Review, so it is included. The manager's own send-back in Manager Review is unchanged |
+| HR removal and deletion of items | `_review_actor`, for `remove_review_item` and `delete_review_item` | someone in the line was already refused here by accident (they count as "manager", and managers act only in Manager Review); now they get the D34 message and log line |
+| HR's answer to a rating question | `answer_rating_flag`, the "rater has left" path | the rater answering for their own rating stays a manager step and is allowed |
+| Desk: change the HRMS Appraisal | `alvoraa_goals.permissions.has_appraisal_permission` | from HR Review on, any non-read permission is refused to the line. Not logged: Frappe asks this hook for display as well as for a save. The review record itself was already closed to desk writes below Administrator |
+
+**Not HR steps, so not changed:** `suggest_ratings`, `sync_appraisal_from_kpis`
+and `submit_appraisal` (the line manager's scoring; security M1 already scoped
+HR's use), `add_action_item` (manager or HR, not a decision), and the cycle-level
+`save_calibration_signoff` (no single subject). The older `hrms/pms` review module
+(PMS Calibration Session) is a separate system that group D does not use; not
+touched.
+
+**Reading is unchanged.** The line keeps the manager's view in every stage.
+
+## 3. The page
+
+The server sends `hr_steps_elsewhere` (1 when the caller holds an HR role, the
+review is in HR Review and the caller is in the line) on `get_manager_review`,
+`hr_list_appraisals`, `get_calibration_overview` and `get_team_reviews`. Each list
+does one walk for all its HR Review rows, and none for a caller without an HR
+role. In `get_manager_review`, such a caller now gets `viewer_role: "manager"` in
+HR Review (it was `"hr"`, pinned by code review M3's test, changed on purpose).
+
+In `hrms-employee.html`, a new `pfHrStepsElsewhereNote()` shows *"Another HR
+person needs to do the HR steps for this review, because they report to you."*
+(words and an icon, not colour alone) in place of:
+
+- **Finish Review** in the team reviews table and the HR appraisal table (a
+  **View** button stays);
+- the calibration table's **Note** button;
+- the **Finish Review** button on the Finalize page of the review screen, which
+  now shows the manager's assessment read-only for the line.
+
+With `viewer_role: "manager"` in HR Review, the item **Remove** buttons and the
+HR reason prompt for rating answers no longer show for the line either.
+
+## 4. Tests
+
+New file `alvoraa_portal/tests/test_review_line_hr_010d.py` (10 tests), starting
+from shipped permissions like the other 010 tests:
+
+| Test | Proves |
+|---|---|
+| `test_d34_a_manager_with_hr_manager_is_refused_each_hr_step_and_each_refusal_is_logged` | calibration, removal, deletion, both flag answers, send-back and completion are refused to the manager with HR Manager; each logs exactly one `D34` line with the endpoint and review; nothing changed; message names the company and not the person |
+| `test_d34_a_skip_level_manager_with_an_hr_role_is_refused` | the same for an HR Manager two levels up |
+| `test_d34_the_hr_stand_in_for_someone_with_no_manager_is_refused` | the stand-in is refused completion |
+| `test_d34_a_different_hr_person_removes_answers_and_completes` | another HR person removes, answers both questions and completes |
+| `test_d34_a_different_hr_person_calibrates_and_sends_back` | another HR person passes every permission check on calibration (the save itself then hits F-D8) and sends back |
+| `test_d34_the_manager_with_an_hr_role_still_rates_in_manager_review` | item and overall ratings by the manager still work |
+| `test_d34_the_manager_still_reads_the_review_in_hr_review` | reading unchanged |
+| `test_d34_screens_tell_the_page_who_must_not_see_hr_buttons` | the four screens flag the line, and not another HR person |
+| `test_d34_the_desk_refuses_the_line_a_change_to_the_hrms_appraisal_from_hr_review` | desk write refused to the line in HR Review, allowed to other HR, and to the manager in Manager Review; read unchanged |
+| `test_d34_the_page_shows_a_note_instead_of_hr_buttons_for_the_line` | the page shows the note, not the buttons, in all four places |
+
+Changed on purpose: `TestCrM3ManagerWithHrRole` in `test_review_fixround_010d.py`
+now expects `"manager"` for the manager with an HR role in HR Review.
+
+## 5. Non-functional dimensions, re-checked on the code written
+
+| Dimension | Before → after | Verdict |
+|---|---|---|
+| Performance | HR step calls: +1 query for the caller's Employee rows and +1 per reporting level (usually under 6); +2 only when the subject has no manager (stand-in). Lists: one batched walk for their HR Review rows only; nothing for non-HR callers. Desk: only on non-read permission checks from HR Review on | neutral |
+| Security | Segregation of duties between manager and HR steps on one review; fails closed at the depth cap; server side on every path, page only hides | improves |
+| Reliability | Loops in the tree end cleanly; refusals are clear and say what to do | neutral |
+| Scalability | Walk is bounded (50 levels) and batched for lists | neutral |
+| Maintainability | One shared check used by six paths and one hook; no new abstraction beyond it | neutral |
+| Data integrity | No writes added; a refused step changes nothing (tested) | neutral |
+| Compliance / privacy | ISO/IEC 27001 segregation of duties and the anticipatory GDPR Art 22 "a second person decides" gap from `06` §5 closed for this case; log lines carry no values; message names no person | improves |
+
+`ignore_permissions` counts unchanged (`performance_api.py` 64, `access.py` 0,
+`permissions.py` not in the table and gains none).
+
+## 6. Commands run and real results
+
+    python scripts/check_app_integrity.py   -> app integrity: 579 checks, OK - all consistent (before each commit)
+    node scripts/check_portal_handlers.js    -> portal handlers: all reachable and callable
+    node scripts/check_undefined_js.js       -> undefined identifiers: none
+    git -C C:/Surbhi-Git/hr-app merge --ff-only slice/010-portal-security-fixes   -> fast-forward
+
+No migrate: no schema change. One test run at a time, work board marked.
+
+    bench --site test_site run-tests --module alvoraa_portal.tests.test_review_line_hr_010d
+      -> Ran 9 tests OK; Ran 1 test OK
+
+**Fail without the fix.** The bench runs the shared main checkout, which may not
+be edited, so the check was switched off inside the test process only: a Python
+run in the bench container patched `access.subjects_in_my_line` and
+`performance_api.subjects_in_my_line` to find nobody, and pointed the page test at
+the page from `07b261d` (piped to `/tmp` in the container and deleted after). No
+repository file changed.
+
+      -> Ran 9 tests FAILED (failures=3, errors=2); Ran 1 test FAILED (errors=1)
+         failed: the manager refusal test and the skip-level test (errors: the
+         call was not refused and ran into save_calibration_note's missing
+         column, F-D8), the stand-in test, the screens flag test, the desk test,
+         and the page test (the note is not in the old page)
+         passed either way, by design: the four "still allowed" tests (another HR
+         person, the manager still rates, the manager still reads)
+
+    bench --site test_site run-tests --module alvoraa_portal.tests.test_review_fixround_010d
+      -> Ran 33 tests OK; Ran 6 tests OK
+    bench --site test_site run-tests --module alvoraa_portal.tests.test_review_screens_010d
+      -> Ran 39 tests OK; Ran 1 test OK
+    bench --site test_site run-tests --module alvoraa_portal.tests.test_review_copies_010d
+      -> Ran 34 tests OK
+    bench --site test_site run-tests --module alvoraa_portal.tests.test_portal_security_010
+      -> Ran 45 tests OK; Ran 5 tests OK
+    bench --site test_site run-tests --module alvoraa_portal.tests.test_review_page_010d
+      -> Ran 26 tests OK
+
+**Not run:** the full `alvoraa_portal` and `alvoraa_goals` suites (a separate
+verification run follows), `test_review_outside_010d`, and a browser trace.
+
+**Read-only count on ppj.localhost** (a Python run with `frappe.get_all` reads
+only, rolled back, counts printed, no names): 403 open appraisals (not submitted,
+review not Completed), one company, 14 enabled HR Manager / HR User logins (11
+with an active Employee record). Open appraisals with **no** eligible HR person —
+every HR login for that company is the subject or in the subject's line:
+**0**, in every variant counted (any HR login or only those with an Employee
+record; with or without the stand-in; with or without System Manager). 402
+reviews lose at least one HR person to the rule; the fewest left on any review is
+8.
+
+## 7. What is still open
+
+1. **The stand-in rule** (point 2 at the top) is my reading of "the manager
+   recorded on the review"; there is no manager field on the review or the
+   Appraisal. Say if the stand-in should be allowed.
+2. **The desk hook does not log** its refusals (see §2). The portal paths do.
+3. **F-D8** (`calibration_notes` column missing) still breaks portal calibration
+   for everyone. Not in this fix.
+4. **A browser trace** of the four page places was not run.
+5. The other residual-risk rows in `06` still need a name and a date; only R4 is
+   marked, as fixed.

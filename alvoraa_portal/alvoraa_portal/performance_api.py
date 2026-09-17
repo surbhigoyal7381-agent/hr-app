@@ -16,11 +16,13 @@ see alvoraa_goals.permissions for the row-level rules applied to KPI queries.
 
 import frappe
 from frappe.utils import cint, flt, today, getdate
-from alvoraa_goals.permissions import get_effective_manager
+from alvoraa_goals.permissions import get_effective_manager, get_hr_manager_employee
 
 from alvoraa_goals.controllers.kpi import MAX_RATING, TOTAL_WEIGHTAGE, rating_from_attainment
 import alvoraa_goals.review_items as review_items
-from hrms.alvoraa_hr_core.access import permitted_companies, refuse, refuse_own_rating
+from hrms.alvoraa_hr_core.access import (
+    permitted_companies, refuse, refuse_hr_step_in_line, refuse_own_rating, subjects_in_my_line,
+)
 
 HR_ROLES = frozenset({"HR Manager", "HR User", "System Manager"})
 
@@ -176,6 +178,27 @@ def _require_scoring_access(appraisal, employee, endpoint):
             "The self-review has not been sent yet. Scores can be worked out once it is sent.",
             "PRIV-2", endpoint, "Appraisal", appraisal,
         )
+
+
+def _refuse_hr_step_in_line(employee, appraisal, endpoint):
+    """HR's steps on a review are never done by someone in the subject's
+    reporting line, whatever roles they hold (security review M3, decision 34).
+
+    The HR stand-in who acts as manager for someone with no manager counts as
+    in the line, as they do for the manager steps (_is_line_manager).
+    """
+    refuse_hr_step_in_line(employee, "Appraisal", appraisal, endpoint, stand_in=get_hr_manager_employee)
+
+
+def _hr_steps_elsewhere(employees):
+    """The subjects among these whose HR steps the caller may not do, because
+    the caller is in their line (decision 34). One walk for all of them, and
+    none for a caller without an HR role. For the page, which hides HR's
+    buttons on those reviews; the endpoints refuse on their own."""
+    employees = [e for e in employees if e]
+    if not employees or not _is_hr():
+        return set()
+    return subjects_in_my_line(employees, stand_in=get_hr_manager_employee)
 
 
 def _require_owns(kpi_employee):
@@ -891,6 +914,11 @@ def get_team_reviews(cycle=None):
         ext_map[ext["appraisal"]] = ext
 
     appraisal_by_emp = {a["employee"]: a for a in appraisals}
+    # HR's steps on these belong to another HR person (decision 34). One walk.
+    elsewhere = _hr_steps_elsewhere([
+        a["employee"] for a in appraisals
+        if (ext_map.get(a["name"]) or {}).get("review_status") == "HR Review"
+    ])
     # Reviews with a flagged item manager rating (R7): they block completion as
     # the overall rating's flag does (code review minor 5). One query.
     item_flags = set(frappe.get_all(
@@ -928,6 +956,7 @@ def get_team_reviews(cycle=None):
                     int(bool(cint(ext.get("overall_rating_flag")) or ap["name"] in item_flags))
                     if (overall is not None and emp_id != me) else 0
                 ),
+                "hr_steps_elsewhere": int(emp_id in elsewhere),
                 "start_date":     ap.get("start_date") or "",
                 "end_date":       ap.get("end_date") or "",
             })
@@ -1914,6 +1943,7 @@ def hr_list_appraisals(cycle, show_archived=0):
     if not reviews:
         return []
     emails = _responsible_emails(reviews)
+    elsewhere = _hr_steps_elsewhere([a.employee for a in reviews if a.status == "HR Review"])
     result = []
     for a in reviews:
         archived = int(a.extension.get("archived") or 0)
@@ -1930,6 +1960,7 @@ def hr_list_appraisals(cycle, show_archived=0):
                               if review_items.overall_rating_visible(a.viewer, a.status) else None,
             "archived": archived,
             "responsible_email": emails.get(a.name, ""),
+            "hr_steps_elsewhere": int(a.status == "HR Review" and a.employee in elsewhere),
         })
     return result
 
@@ -3080,6 +3111,7 @@ def advance_review_status(appraisal):
         _require_hr()
         # Nobody completes their own review, whatever roles they hold (SEC-10).
         refuse_own_rating(ap.employee, "Appraisal", appraisal, "advance_review_status")
+        _refuse_hr_step_in_line(ap.employee, appraisal, "advance_review_status")
         _assert_hr_can_view(appraisal)
 
     ext = _get_or_create_extension(appraisal)
@@ -3166,6 +3198,7 @@ def return_for_revision(appraisal, reason=""):
         frappe.throw("Can only return reviews that are in Manager Review or HR Review stage.")
     if current == "HR Review":
         _require_hr()
+        _refuse_hr_step_in_line(ap.employee, appraisal, "return_for_revision")
 
     ext.review_status = "Employee Review"
     ext.return_reason = reason
@@ -3599,6 +3632,7 @@ def get_calibration_overview(cycle):
         pluck="parent",
     ))
 
+    elsewhere = _hr_steps_elsewhere([a.employee for a in reviews if a.status == "HR Review"])
     rows = []
     for a in reviews:
         kpis = [c for c in copies.get(a.name, []) if not c.removed and c.item_type == "KPI"]
@@ -3611,6 +3645,7 @@ def get_calibration_overview(cycle):
             "kpi_count": len(kpis),
             "avg_attainment": flt(sum(flt(c.attainment_pct) for c in kpis) / len(kpis), 1) if kpis else 0,
             "action_items_count": actions.get(a.name, 0),
+            "hr_steps_elsewhere": int(a.status == "HR Review" and a.employee in elsewhere),
         }
         if "manager_rating" in allowed:
             row["rated_count"] = sum(1 for c in kpis if flt(c.manager_rating) > 0)
@@ -3641,6 +3676,7 @@ def save_calibration_note(appraisal, calibration_notes, calibrated_rating=None):
     if not owner:
         frappe.throw("Appraisal not found.")
     refuse_own_rating(owner, "Appraisal", appraisal, "save_calibration_note")
+    _refuse_hr_step_in_line(owner, appraisal, "save_calibration_note")
     _assert_hr_can_view(appraisal)
     ext = _extension(appraisal)
     if not ext or ext.review_status != "HR Review":
@@ -4361,6 +4397,10 @@ def _review_actor(appraisal, endpoint, roles):
         refuse("You cannot make this change in this review.", "SEC-6", endpoint, "Appraisal", appraisal)
     ext = _extension(appraisal)
     status = (ext.review_status if ext else None) or "Not Started"
+    if role == "manager" and "hr" in roles and status in _ITEM_STAGES["hr"] and _is_hr():
+        # Someone in the line who also holds an HR role, at HR's stage: this is
+        # HR's change, and not theirs to make (decision 34).
+        _refuse_hr_step_in_line(ap.employee, appraisal, endpoint)
     if not ext or status not in _ITEM_STAGES[role]:
         refuse(
             "This review is not at a stage where you can change its items.",
@@ -4550,7 +4590,9 @@ def answer_rating_flag(appraisal, target, keep=1, rating=None, reason=""):
             refuse("Only the person who gave this rating can answer for it.",
                    "SEC-23", "answer_rating_flag", "Appraisal", appraisal)
         # The rater has left or no longer manages this employee: HR answers,
-        # during HR Review, for a company they look after, with a reason.
+        # during HR Review, for a company they look after, with a reason, and
+        # never someone in the subject's line (decision 34).
+        _refuse_hr_step_in_line(ap.employee, appraisal, "answer_rating_flag")
         _assert_hr_can_view(appraisal)
         if status != "HR Review":
             refuse("HR answers for a former rater during HR Review.",
@@ -4617,6 +4659,11 @@ def get_manager_review(appraisal):
     if review_items.open_review(ext):
         frappe.db.commit()
     cycle_name = ap.appraisal_cycle
+    # HR Review is HR's step, but not for someone in the subject's line
+    # (decision 34): they keep the manager's view, without HR's buttons.
+    hr_steps_elsewhere = bool(
+        is_hr and ext.review_status == "HR Review" and _hr_steps_elsewhere([ap.employee])
+    )
 
     try: page_data = json.loads(ext.page_data or "{}")
     except: page_data = {}
@@ -4689,10 +4736,12 @@ def get_manager_review(appraisal):
         "invited_reviewers":     invited,
         # The manager's view and controls for whoever is the manager here, even
         # when they also hold an HR role (code review M3). HR Review is HR's
-        # step, so there an HR role holder keeps HR's controls, as before; who
-        # may do HR steps on their own report's review is security M3 (on hold).
+        # step, so there an HR role holder gets HR's controls, unless they are
+        # in the subject's line (security M3, decision 34).
         "viewer_role":           "hr" if (viewer == review_items.VIEWER_HR
-                                          or (is_hr and ext.review_status == "HR Review")) else "manager",
+                                          or (is_hr and ext.review_status == "HR Review"
+                                              and not hr_steps_elsewhere)) else "manager",
+        "hr_steps_elsewhere":    int(hr_steps_elsewhere),
         "rating_scales":         rating_scales,
     }
 

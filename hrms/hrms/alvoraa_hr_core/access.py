@@ -1,9 +1,10 @@
-"""Two access rules that the portal, goals and org-chart code all need.
+"""The access rules that the portal, goals and org-chart code all need.
 
 Kept in one place so they cannot drift apart:
 
   refuse_own_decision(employee)  nobody approves or declines their own request
   refuse_own_rating(employee)    nobody rates or closes their own review
+  refuse_hr_step_in_line(employee)  nobody above the subject does HR's steps
   permitted_companies(user)      which companies an HR user acts for
 
 It lives in hrms because every one of our apps can import hrms, and hrms must
@@ -84,6 +85,93 @@ def refuse_own_rating(employee, doctype=None, name=None, endpoint=None):
 		refuse(
 			_("You cannot rate or decide anything in your own review. Your manager and HR do that."),
 			"SEC-10",
+			endpoint,
+			doctype,
+			name,
+		)
+
+
+# How far up a reporting line is walked. Real lines are a handful of levels;
+# the cap only stops a broken tree from running forever.
+MAX_LINE_DEPTH = 50
+
+
+def subjects_in_my_line(employees, user=None, stand_in=None):
+	"""Which of these employees the caller is above: their manager, that
+	manager's manager, and so on up (decision 34).
+
+	One walk up `reports_to` for all of them together: one query per level,
+	at most MAX_LINE_DEPTH levels, and a loop in the tree ends that person's
+	walk. `stand_in` is a function returning the employee who acts as manager
+	for someone with no manager of their own
+	(alvoraa_goals.permissions.get_hr_manager_employee); it is called at most
+	once, and only when such a subject is met. For that subject the stand-in
+	counts as in the line.
+
+	Fails closed: a line still going at the depth cap counts as in the line.
+	Every Employee record linked to the login counts as the caller.
+	"""
+	user = user or frappe.session.user
+	subjects = {e for e in (employees or []) if e}
+	if not subjects or not user or user == "Guest":
+		return set()
+	mine = set(frappe.get_all("Employee", filters={"user_id": user}, pluck="name"))
+	if not mine:
+		return set()
+
+	manager_of = {}
+	stand_in_emp = []
+	at = {s: s for s in subjects}
+	seen = {s: {s} for s in subjects}
+	found = set()
+	for depth in range(MAX_LINE_DEPTH):
+		need = sorted({node for node in at.values() if node not in manager_of})
+		if need:
+			rows = frappe.get_all(
+				"Employee", filters={"name": ["in", need]}, fields=["name", "reports_to"]
+			)
+			manager_of.update({r.name: r.reports_to for r in rows})
+			for node in need:
+				manager_of.setdefault(node, None)
+		moved = {}
+		for subject, node in at.items():
+			manager = manager_of.get(node)
+			if not manager:
+				if depth == 0 and stand_in:
+					if not stand_in_emp:
+						stand_in_emp.append(stand_in())
+					if stand_in_emp[0] in mine:
+						found.add(subject)
+				continue
+			if manager in mine:
+				found.add(subject)
+			elif manager not in seen[subject]:
+				seen[subject].add(manager)
+				moved[subject] = manager
+		at = moved
+		if not at:
+			break
+	else:
+		found.update(at)
+	return found
+
+
+def refuse_hr_step_in_line(employee, doctype=None, name=None, endpoint=None, stand_in=None):
+	"""Stop anyone in the subject's reporting line doing the HR steps on their
+	review, whatever roles they hold (security review M3, decision 34).
+
+	The HR steps are calibration, HR removal of review items, HR's answer to a
+	rating question, sending a review back from HR Review, and completing it.
+	The manager steps stay with the manager; a different HR person does these.
+	"""
+	if employee and employee in subjects_in_my_line([employee], stand_in=stand_in):
+		company = frappe.db.get_value("Employee", employee, "company") or ""
+		refuse(
+			_(
+				"You are in this person's reporting line, so you cannot do the HR steps on their review. "
+				"Ask another HR person in {0} to do this step."
+			).format(company),
+			"D34",
 			endpoint,
 			doctype,
 			name,

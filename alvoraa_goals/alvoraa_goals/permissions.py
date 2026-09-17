@@ -353,7 +353,9 @@ def has_review_history_permission(doc, ptype=None, user=None):
 #                 submitted appraisal with no review record at all is history
 #                 and counts as completed.
 #   create        for a subject in a company the caller looks after.
-#   never         the caller's own appraisal, and nobody without an HR role.
+#   never         the caller's own appraisal, and nobody without an HR role;
+#                 and no change from HR Review on by someone in the subject's
+#                 reporting line (decision 34).
 
 
 def appraisal_query(user=None, doctype=None):
@@ -420,6 +422,14 @@ def has_appraisal_permission(doc, ptype=None, user=None):
     if status is None:
         # No review record: only a submitted appraisal (history) is readable.
         return in_company and frappe.db.get_value("Appraisal", name, "docstatus") == 1
+    if status in REVIEW_HR_STAGES and ptype not in _READ_PTYPES:
+        # From HR Review on, a change here is HR's, and never by someone in the
+        # subject's reporting line, whatever roles they hold (decision 34).
+        # Not logged: Frappe asks this for display as well as for a save.
+        from hrms.alvoraa_hr_core.access import subjects_in_my_line
+
+        if employee in subjects_in_my_line([employee], user, stand_in=get_hr_manager_employee):
+            return False
     if in_company and status in REVIEW_HR_STAGES:
         return True
     return bool(own and (status or "") not in REVIEW_DRAFT_STAGES and employee in descendants(own))

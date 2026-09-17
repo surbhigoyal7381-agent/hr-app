@@ -122,8 +122,11 @@ class OnlyTheAssignedDriverPosts(FrappeTestCase):
 			frappe.clear_messages()
 			with self.assertRaises(frappe.PermissionError):
 				self.post_as(DRIVER_A, order)
-			messages.append(str(frappe.local.message_log[-1]) if frappe.local.message_log else "")
+			last = frappe.local.message_log[-1] if frappe.local.message_log else {}
+			# The words only: each queued message also carries a random id.
+			messages.append(last.get("message") if isinstance(last, dict) else last)
 		self.assertEqual(self.rows(self.unassigned), 0)
+		self.assertTrue(messages[0])
 		self.assertEqual(messages[0], messages[1])
 
 	def test_014_driver_location_guest_refused(self):

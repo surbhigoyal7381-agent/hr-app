@@ -15840,7 +15840,30 @@ function deleteDrawerNote(noteId, empId) {
           "</div>"
         : "") +
       riFlagNote(it) +
+      riFactsNote(it) +
     "</div>";
+  }
+
+  /* For HR only, as the server sends it: facts approved after this review's
+     numbers closed (R10), and evidence with no date of its own, dated by its
+     upload (decision 5). Code review minor 2. */
+  function riFactsNote(it) {
+    if (!it || _pr.viewerRole !== "hr") return "";
+    var out = "";
+    var late = it.late_facts;
+    if (late && late.count) {
+      out += "<div style=\"font-size:var(--fs-xs);color:var(--text3);margin-top:4px\">" +
+        "<i class=ic-info></i> " + gpEsc(late.count + (late.count === 1 ? " update arrived" : " updates arrived")) +
+        " after this review's numbers closed. With them the number would be " + gpEsc(pfNum(late.actual_with_late, 2)) +
+        ". They do not change this review.</div>";
+    }
+    var byUpload = parseInt(it.facts_dated_by_upload || 0, 10) || 0;
+    if (byUpload) {
+      out += "<div style=\"font-size:var(--fs-xs);color:var(--text3);margin-top:4px\">" +
+        "<i class=ic-info></i> " + gpEsc(byUpload + (byUpload === 1 ? " piece of evidence had" : " pieces of evidence had")) +
+        " no date of its own, so it was dated by when it was uploaded.</div>";
+    }
+    return out;
   }
 
   /* Edit and Remove for one copy, shown only when the server would allow it. */

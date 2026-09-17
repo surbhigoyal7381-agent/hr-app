@@ -158,6 +158,26 @@ def _require_can_review(kpi_employee):
         )
 
 
+def _require_scoring_access(appraisal, employee, endpoint):
+    """Who may score a review through the older scoring calls (security review M1).
+
+    suggest_ratings, sync_appraisal_from_kpis and submit_appraisal used to let
+    any HR role act on any company's review at any stage. Now, in order:
+    never the subject (SEC-10); the direct manager or HR; HR acting for someone
+    outside their line follows the stage and company rule (decisions 15, 16);
+    and nobody scores a review whose self-review has not been sent (PRIV-2).
+    """
+    refuse_own_rating(employee, "Appraisal", appraisal, endpoint)
+    _require_can_review(employee)
+    if not _is_line_manager(employee, _employee_id()):
+        _assert_hr_can_view(appraisal)
+    if _review_status(appraisal) in _SELF_REVIEW_DRAFT:
+        refuse(
+            "The self-review has not been sent yet. Scores can be worked out once it is sent.",
+            "PRIV-2", endpoint, "Appraisal", appraisal,
+        )
+
+
 def _require_owns(kpi_employee):
     """Caller must be the employee the record belongs to."""
     if kpi_employee != _require_employee():
@@ -952,6 +972,7 @@ def suggest_ratings(employee, cycle):
     )
     if not appraisal:
         frappe.throw("There is no review for this employee in this cycle.")
+    _require_scoring_access(appraisal, employee, "suggest_ratings")
     _ext, copies = _review_copies_for_scoring(appraisal)
     # From the review's own copies, by row name (VIS-7, VIS-3).
     return [
@@ -995,8 +1016,7 @@ def sync_appraisal_from_kpis(appraisal):
     revised ratings through before submitting.
     """
     ap = frappe.get_doc("Appraisal", appraisal)
-    refuse_own_rating(ap.employee, "Appraisal", appraisal, "sync_appraisal_from_kpis")
-    _require_can_review(ap.employee)
+    _require_scoring_access(appraisal, ap.employee, "sync_appraisal_from_kpis")
     if ap.docstatus == 1:
         frappe.throw("This appraisal is already submitted.")
 
@@ -1371,8 +1391,7 @@ def _apply_kpis_to_appraisal(ap):
 def submit_appraisal(appraisal):
     """Manager submits a report's appraisal once every KPI is rated."""
     ap = frappe.get_doc("Appraisal", appraisal)
-    refuse_own_rating(ap.employee, "Appraisal", appraisal, "submit_appraisal")
-    _require_can_review(ap.employee)
+    _require_scoring_access(appraisal, ap.employee, "submit_appraisal")
     if ap.docstatus == 1:
         frappe.throw("This appraisal is already submitted.")
 

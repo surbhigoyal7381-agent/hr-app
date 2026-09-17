@@ -201,3 +201,58 @@ class TestM4HrmsAppraisalInTheDesk(_Screens):
 		frappe.db.commit()
 
 
+# ── Security M1 · the older scoring calls follow the stage and company rule ─
+
+
+class TestM1ScoringCallsFollowTheStageAndCompanyRule(_Screens):
+	def _calls(self, ap, employee, cycle):
+		import alvoraa_portal.performance_api as pa
+
+		return (
+			("suggest_ratings", lambda: pa.suggest_ratings(employee, cycle)),
+			("sync_appraisal_from_kpis", lambda: pa.sync_appraisal_from_kpis(ap)),
+			("submit_appraisal", lambda: pa.submit_appraisal(ap)),
+		)
+
+	def _refused(self, user, ap, employee, cycle):
+		refused = []
+		for name, call in self._calls(ap, employee, cycle):
+			self._as(user)
+			try:
+				call()
+			except frappe.PermissionError:
+				refused.append(name)
+			except frappe.ValidationError:
+				pass   # allowed in, then stopped by the data (nothing weighted)
+			finally:
+				frappe.set_user("Administrator")
+		return refused
+
+	def test_m1_hr_for_another_company_is_refused_at_every_stage(self):
+		start, end = self._window()
+		cycle = self._cycle(start, end, company=self.company_b)
+		self._kpi(self.subject_b, cycle, target=10)
+		ap = self._appraisal(self.subject_b, cycle, status="Manager Review")
+		self.assertEqual(len(self._refused(self.hr_user, ap, self.subject_b, cycle)), 3)
+		self._set_status(ap, "HR Review")
+		self.assertEqual(len(self._refused(self.hr_user, ap, self.subject_b, cycle)), 3)
+		self.assertEqual(frappe.db.get_value("Appraisal", ap, "docstatus"), 0)
+
+	def test_m1_hr_outside_the_line_waits_for_hr_review(self):
+		review = self._review("Manager Review")
+		self.assertEqual(len(self._refused(self.hr_user, review.ap, self.subject, review.cycle)), 3)
+		self._set_status(review.ap, "HR Review")
+		self.assertEqual(self._refused(self.hr_user, review.ap, self.subject, review.cycle), [])
+
+	def test_m1_priv2_nobody_scores_a_self_review_that_has_not_been_sent(self):
+		import alvoraa_portal.performance_api as pa
+
+		review = self._review("Employee Review")
+		self.assertEqual(len(self._refused(self.manager_user, review.ap, self.subject, review.cycle)), 3)
+		self._set_status(review.ap, "Manager Review")
+		self._as(self.manager_user)
+		suggested = pa.suggest_ratings(self.subject, review.cycle)
+		frappe.set_user("Administrator")
+		self.assertEqual(len(suggested), 2)
+
+

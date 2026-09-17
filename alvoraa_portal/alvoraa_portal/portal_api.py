@@ -246,7 +246,7 @@ def update_driver_location(delivery_order, lat, lng, speed=0, heading=0, accurac
     doc = frappe.get_doc({
         "doctype": "Vehicle Tracking",
         "delivery_order": delivery_order,
-        "delivery_partner": partner or "",
+        "delivery_partner": partner,
         "latitude": _safe_float(lat),
         "longitude": _safe_float(lng),
         "speed": spd,

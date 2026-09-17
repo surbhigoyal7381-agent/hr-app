@@ -341,7 +341,11 @@ against primary sources because they are within 90 days).
 
 ## 6 · Residual risk
 
-Nothing here is accepted yet. Each row needs your name and a date. "Before push" rows
+*Updated 2026-09-17 (fix round 2):* the user accepted R7–R12 with the conditions in the
+"Recommend" column (`00e`, after decision 38). R1–R6 and R13 were fixed in the fix
+round; R4 by decision 34.
+
+Each row needs your name and a date. "Before push" rows
 should be fixed rather than accepted, in my view; you decide.
 
 | # | Risk | Why it remains | Recommend | Accepted by | Date |
@@ -352,12 +356,12 @@ should be fixed rather than accepted, in my view; you decide.
 | R4 | One person who is both manager and HR decides every step (M3) | Product rule, older than group D | **Fixed by decision 34** (see `03d`, "Decision 34 (M3)") | — | — |
 | R5 | HR reads HRMS Appraisal scores at any stage and, without Company user permissions, for every company (M4) | Stock HRMS permissions, no hook | Fix, or accept as HR-trusted | — | — |
 | R6 | Rollback runbook names wrong functions (M5) | Documentation | Fix and rehearse before push | — | — |
-| R7 | Legacy ratings on live KPIs stay readable to HR in the desk | Decision records, not deleted (PRIV-14) | Accept | — | — |
-| R8 | A tenant's Custom DocPerm can re-open KPI level 1, Appraisal or the review record | Custom DocPerm replaces our JSON; the M3 report only lists. Dev tenants clean on 2026-09-17 | Accept; re-run the report before each deploy | — | — |
-| R9 | After a code rollback, `copy_ratings_back_for_rollback` puts potential ratings back on live KPIs, where the old code shows them to employees | That is how the old code works | Accept only with the rollback; tell HR | — | — |
-| R10 | No retention engine or legal hold for copies (feature map A6) | Out of scope; deletion is blocked instead | Accept until counsel answers C-D1 | — | — |
-| R11 | Security and audit logs are in France, not India (CERT-In) | Infrastructure (baseline §3a) | Accept at slice level; tracked in the baseline | — | — |
-| R12 | Cumulative KPI numbers change meaning for old readings (decision 1) | No way to tell old intentions apart (`03d` phase 4 gap 3) | Accept; tell HR | — | — |
+| R7 | Legacy ratings on live KPIs stay readable to HR in the desk | Decision records, not deleted (PRIV-14) | Accept | the user | 2026-09-17 |
+| R8 | A tenant's Custom DocPerm can re-open KPI level 1, Appraisal or the review record | Custom DocPerm replaces our JSON; the M3 report only lists. Dev tenants clean on 2026-09-17 | Accept; re-run the report before each deploy | the user | 2026-09-17 |
+| R9 | After a code rollback, `copy_ratings_back_for_rollback` puts potential ratings back on live KPIs, where the old code shows them to employees | That is how the old code works | Accept only with the rollback; tell HR | the user | 2026-09-17 |
+| R10 | No retention engine or legal hold for copies (feature map A6) | Out of scope; deletion is blocked instead | Accept until counsel answers C-D1 | the user | 2026-09-17 |
+| R11 | Security and audit logs are in France, not India (CERT-In) | Infrastructure (baseline §3a) | Accept at slice level; tracked in the baseline | the user | 2026-09-17 |
+| R12 | Cumulative KPI numbers change meaning for old readings (decision 1) | No way to tell old intentions apart (`03d` phase 4 gap 3) | Accept; tell HR | the user | 2026-09-17 |
 | R13 | Lock release days follow the current setting, not the one in force when the review opened (m1) | Not stamped | Fix soon, or accept with HR Settings history as the record | — | — |
 
 ---

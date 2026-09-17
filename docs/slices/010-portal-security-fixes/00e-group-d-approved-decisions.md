@@ -91,6 +91,22 @@ Asked in `06-security-review-group-d.md` (M3, Q2, residual risk R4).
 | 35 | Finding F-D8: saving a calibration note fails for everyone, because the review record has no `calibration_notes` field. Fix it in this release? | **Yes, fix it in this release.** Add the field to `Alvoraa Appraisal Extension` and let `save_calibration_note` set it. Who may read the note does not widen. User, 2026-09-17 ("Yes"). |
 | 36 | Decision 34 also refuses the HR stand-in (the HR Manager treated as manager for someone with no manager). Keep that? | **Yes, it stays refused.** User, 2026-09-17. |
 
+## Decisions after the ppj.localhost rehearsal (2026-09-17)
+
+Asked in `08-ppj-rehearsal.md` (findings F1–F9, checklist corrections C1–C9) and
+`06-security-review-group-d.md` §6. The user approved all of it on 2026-09-17.
+
+| # | Question | Decision |
+|---|---|---|
+| 37 | A person who is both a manager and holds an HR role: which screen do they get on a review? (rehearsal F1, F2) | **Two separate lists.** In the user's words: "the HR Managers' review list appear separate from Managers' review. So when they open the review as a manager, they see what a manager sees and similarly for HR manager role". "My team's reviews" opens a review as the manager, with everything a manager can do at that stage, including answering a question on a rating they gave (decision 12), in any stage including HR Review. The HR review list opens it as HR, with HR's actions; decision 34 still applies there (someone in the subject's line sees the "Another HR person…" note and no HR buttons). **The role comes from the list the review was opened from**, never from guessing "HR wins" or "manager wins". The server enforces it: each endpoint checks the right for the view asked for (manager view: the caller is the manager, or the rater, for that review; HR view: HR role, a permitted company, not their own review, and decision 34 for HR steps). No view may grant more than the rules before. Replaces the `viewer_role` guess (`fa262ba`) and decision 34's HR Review switch (`hr_steps_elsewhere` deciding the screen). The person who gave a rating answers it from the view they gave it in: the manager from the manager view; HR who gave it from the HR view, subject to decision 34. |
+| 38 | Which other rehearsal findings go in this release? | **In this release:** C1, C2 and the checklist corrections (C3–C9); F3 (a button for the calibration note); F5 and F6 (rollback helpers). **Later:** F4, F7, F8, F9, listed as follow-ups in `03d` ("Fix round 2"). |
+
+**Residual risks accepted by the user on 2026-09-17** (`06` §6), with the conditions
+recommended: R7; R8 — run the Custom DocPerm report before every deploy; R9 — only
+with a rollback, and tell HR first; R10 — until counsel answers C-D1; R11 — at slice
+level, tracked in the baseline; R12 — tell HR to run the "Cumulative KPI Readings
+Check" report before relying on reviews.
+
 ## Coordination
 
 - Slice 012's plan adds the same KPI indexes. **010 claims the KPI DocType file** on the

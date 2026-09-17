@@ -356,3 +356,109 @@ they must run before the image goes back, and the checklist says so. Three gaps:
 To go back to the pre-migrate state:
 `bench --site ppj.localhost restore sites/ppj.localhost/private/backups/20260917_125725-ppj_localhost-database.sql.gz --with-public-files …files.tar --with-private-files …private-files.tar`
 (on the user's word).
+
+---
+
+# Re-rehearsal after fix round 2 (decisions 37 and 38)
+
+Date: 2026-09-17. Who: fullstack engineer. Where: `ppj.localhost` on `hrlocal-bench`
+only. Code: local `dev` at `8a53522` (nothing pushed; `origin/dev` still `c27fb56`). Part
+of the rehearsal the user approved. PPJ data is dummy.
+
+## The short answer
+
+**Both release blockers are cleared on ppj.localhost.**
+
+1. **F1:** `HR-APR-2026-00417` (left stuck on purpose in the first rehearsal) is
+   **Completed**. Arjun Bhatia (manager, holds HR Manager) answered the question on his
+   own rating from **My team's reviews**; Sumit Kumar (HR User, not in the line) then
+   finished it from the **HR review list**.
+2. **C1:** the dry run works on a pre-release schema. On ppj it counts **806 reviews,
+   3,934 copies**, the same as the first rehearsal's real migrate. The code from before
+   the fix still fails there with the same `Unknown column 'items_taken_on'` error.
+
+Also proven in the browser: F2 (HR who gave the overall rating answers it from the HR
+view; the manager is told someone else must), F3 (the "Calibration note" button opens
+the box, and reopening it shows the saved note), and both lists for a person with both
+roles, and one list only for a plain manager and a plain HR person. F5 and F6 were checked with
+the rollback dry runs.
+
+**No migrate was run:** fix round 2 adds no patch and no field. No new backup was taken:
+the 12:57 IST backup from the first rehearsal is still the restore point.
+
+## 1. Dry run (C1), read-only
+
+Script piped on stdin into the bench (no file copied into the app, no repo change):
+
+| Run | What | Result |
+|---|---|---|
+| 1 | `report()` as the site is (migrated) | `site_already_has_group_d_tables` 1; 806 skipped "already has copies"; every count 0; 0.6 s |
+| 2 | Fixed `report()`, pre-release schema imitated | `site_already_has_group_d_tables` **0**; will_copy **806 reviews, 3,934 items** (405 completed, 401 open, 0 open already frozen); `cannot_copy_nothing_tagged` empty; `open_items_counted_from_facts_differ_from_live` 1,157; `ratings_stamped_on_counted_numbers` 401; `custom_docperm_rows_to_look_at` []; 1.0 s |
+| 3 | `report()` from `f51c130`, same imitation | **fails** as in the first rehearsal: `OperationalError(1054, "Unknown column 'items_taken_on' in 'field list'")` |
+| — | Before and after | copy rows, review records and their latest `modified` unchanged |
+
+**How the old schema was imitated, honestly:** for that one database session only, a
+MariaDB `TEMPORARY` table with the review records minus `items_taken_on` hid the real
+table (a temporary table shadows a base table of the same name for that connection;
+checked: selecting `items_taken_on` failed), and the two schema lookups were told the
+copy table and the column do not exist. Temporary tables are private to the session and
+were dropped; the session was rolled back. The counts differ a little from the first
+rehearsal (405/401 against 403/403, 1,157 against 1,161) because the first rehearsal's
+trace completed two reviews and changed some numbers.
+
+## 2. Browser trace
+
+Script: `C:/Surbhi-Git/hrlocal-data/mobile-audit/trace_review_copies_010d_v2.py`, updated
+for decision 37 (every review opened with its list's view; new stages `d37lists`,
+`d37unstick`, `d37f2`, which click the real buttons). Screenshots and `report.json`:
+**`C:/Surbhi-Git/hrlocal-data/mobile-audit/2026-09-17-fixround2-rehearsal/trace/`**
+(29 screenshots, `00`–`28`).
+
+**Result: 29 steps, 0 page errors, 0 console errors, 0 failed API calls.** The first run
+stopped twice on a fault in the trace script, not the product: a button search for
+"View" also matched "Finish Review". The script was fixed to use the exact button name
+and the two stages were split so their HR parts could carry on (`d37unstick_hr`,
+`d37f2_flag`). The stops are kept in `report.json` as `stage_failures_first_run`.
+
+| Flow | Result | Screenshots |
+|---|---|---|
+| Both lists for a person with both roles (Arjun) | **Pass.** Reviews tab shows "My team's reviews"; HR Setup shows "HR review list" | 00, 01 |
+| Plain manager (Gurpreet Dhillon) | **Pass.** "My team's reviews" shown; no HR Setup tab | 02 |
+| Plain HR person (Sumit Kumar) | **Pass.** No team list; HR Setup shows "HR review list" | 03, 04 |
+| F1: Arjun on the HR review list, `00417` | **Pass.** Row: View + the "Another HR person…" note, opens as `hr`; inside, Finalize page with the note, **0** answer buttons, no Finish | 05, 06 |
+| F1: Arjun on My team's reviews | **Pass.** Row says "Rating needs your answer" with an "Answer rating question" button, opens as `manager`. Last page: "This review is now at HR Review. Your part as the manager is done, except the rating question below.", **2** answer buttons. Clicked "Keep the rating": the question is gone | 07, 08, 09 |
+| F1: Sumit Kumar finishes `00417` from the HR review list | **Pass.** Finish enabled, clicked; the row now reads Completed, 3.0 / 5 | 18, 19 |
+| F2 setup: Gurpreet submits `HR-APR-2026-00412` (Manpreet Malhotra) from My team's reviews; Manpreet acknowledges | **Pass** | 10–14 |
+| F3: Sumit Kumar's row for `00412` | **Pass.** Buttons: Finish Review, View, **Calibration note**, Remind. Box opened empty the first time; note and rating 3.5 saved; **reopened, the box showed the saved note** | 15, 16, 17 |
+| F2: Sumit Kumar removes a rated item | **Pass.** Overall rating (his calibrated 3.5) flagged; his Finalize page shows the question with **2** answer buttons and a labelled box for a new rating; Finish disabled; wording "The person who gave it must keep or change it" | 20–24 |
+| F2: Gurpreet (manager) looks at `00412` | **Pass.** Row "View Review", no "needs your answer"; last page shows "The person who gave it must keep or change it…", **0** answer buttons, no submit button | 25, 26 |
+| F2: Sumit Kumar answers his own rating, then finishes | **Pass.** Typed 3, "Use the rating I typed" (no reason asked: it is his own rating); question gone, Finish enabled; review Completed, 3.0 / 5 | 27, 28 |
+
+## 3. Stored results and rollback dry runs (read-only)
+
+| Check | Result |
+|---|---|
+| `HR-APR-2026-00417` | Completed; overall 3.0; flag 0; rated by and answered by Arjun Bhatia |
+| `HR-APR-2026-00412` | Completed; overall 3.0; flag 0; rated by and answered by Sumit Kumar; calibration note stored |
+| `copy_ratings_back_for_rollback {'dry_run': 1}` | **`KPI-2026-01766`** now found (Gurpreet's portal rating on `00407`, a review completed in the first rehearsal). The first rehearsal found 0: **F5 fixed** |
+| `undo_backfill {'dry_run': 1}` | undone 801; kept `00417`, `00412`, `00414`, `00407` and **`00418`** (Kavita Jain's review with a discarded removal). The first rehearsal would have undone `00418`: **F6 fixed** |
+| Error Log | 0 new rows |
+
+## 4. Seen on the way, not fixed (all older than this round)
+
+- **HR's view of the "Manager Feedback" page shows editable boxes** (`mgr-feedback-ta`,
+  `mgr-notes-ta`, the reviewer search) in HR Review. The server refuses any save outside
+  Manager Review, so nothing can change; it is a dead end on screen, as before this
+  round. Worth folding into F8's page clean-up.
+- The same unlabelled inputs as F8 (`pf-review-cycle`, `pf-hr-cycle`,
+  `pf-calib-note-text`, `pf-calib-rating`, `mgr-overall-rating`, `mgr-potential-rating`).
+  The new box added in this round (`hr-flag-overall-rating`) has a label.
+
+## 5. Data the re-rehearsal left on ppj.localhost (dummy)
+
+| Review | State now |
+|---|---|
+| `HR-APR-2026-00417` Renu Gupta | Completed (was the F1 reproduction) |
+| `HR-APR-2026-00412` Manpreet Malhotra | Completed (manager feedback, calibration note, one rated item removed by HR, overall 3.0) |
+
+The restore point is unchanged: the 12:57 IST backup listed near the top of this file.

@@ -1301,68 +1301,150 @@ were read from `ppj.localhost` read-only; nothing was written there.
 named two functions that do not exist (`dry_run`, `rollback`), said the permission
 report covers Individual Goal, and left the rating copy-back out of the rollback.*
 
-Group D ships as **one batch**, with its fix round. Phases 2 and 3 changed what the
-review endpoints return; the page only caught up in phase 4. Shipping any part without
-the rest leaves screens reading keys that are no longer there.
+*Corrected again in fix round 2 (2026-09-17), after the ppj.localhost rehearsal
+(`08-ppj-rehearsal.md`, C1–C9, F5, F6). The main change is where the dry run happens.*
 
-**Order, per environment:**
+Group D ships as **one batch**, with both fix rounds. Phases 2 and 3 changed what the
+review endpoints return; the page only caught up in phase 4, and decision 37 changed
+the page and the server together. Shipping any part without the rest leaves screens
+calling the server in a way it refuses.
 
-1. **Back up first.** A database dump of the tenant, kept until the release is
-   accepted.
-2. **Dry run, per tenant, read-only, before migrate.**
-   `bench --site <site> execute alvoraa_goals.review_backfill.report`
-   It changes nothing. Read: `will_copy`, `cannot_copy_nothing_tagged`,
-   `reviews_with_no_period`, `open_items_counted_from_facts_differ_from_live`,
-   `ratings_stamped_on_counted_numbers`,
+### Why the dry run happens before the push, on a local copy (C1, C2)
+
+**What the dev deploy does by itself** (`.github/workflows/deploy.yml`, read on
+2026-09-17): a push to `dev` builds the image, then the Deploy job swaps the containers,
+turns maintenance mode on, runs `bench --site all migrate` and `bench --site all
+clear-cache`, turns maintenance mode off and restarts nginx. **All in one job, with no
+pause.** It takes **no backup on dev** (the backup step is skipped for dev).
+
+So there is no moment on a dev tenant when this release's code is there and the migrate
+has not run. And the dry run cannot run before the push on the tenant itself: the
+running image (`dev-c27fb56`) does not have the report, and putting new code into a
+running container by hand is not allowed.
+
+**Chosen: run the dry run with this release's code on a local copy of each tenant's
+fresh backup, before the push.** The local bench runs the same Frappe as dev, and since
+fix round 2 the report works on a database that has not been migrated (C1). It is the
+only place where the numbers can be read before the migrate changes anything.
+
+Not chosen, and why:
+
+- *A one-off container from the new image before migrate:* the image is built by CI
+  only after the push, and the push starts the migrate.
+- *Only the migrate's own output plus the backup:* it tells you after the change, not
+  before. It stays as the second check (step 8), not the gate.
+
+If you do not want tenant copies on this machine, say so: the gate then becomes the
+manual backup (step 2) and the migrate output (step 8), with the rollback below.
+
+### Order, per release to dev
+
+Every step that touches a server needs your word. Steps 3–6 are local.
+
+1. **Tell HR and managers** when the release goes in. During the deploy the sites are in
+   maintenance mode for a few minutes.
+2. **Back up every dev tenant by hand** (dev deploys take none, `012 07-devops-inputs.md`
+   OPS-84): on the dev stack, `bench --site all backup --with-files`. Note the file names.
+   This is the rollback point.
+3. **Copy the database backups to this machine**, outside the repo, for example
+   `C:/Surbhi-Git/hrlocal-data/backups/release-010d-<date>/`. They hold tenant data and
+   site config: never commit them.
+4. **Restore each onto a scratch local site** on `hrlocal-bench`
+   (`bench new-site <tenant>-dryrun.localhost`, then `bench --site <tenant>-dryrun.localhost
+   restore <database.sql.gz>`). **Do not migrate these sites.** ppj.localhost cannot be
+   used: it is already migrated.
+5. **Dry run, read-only, on each scratch site:**
+   `bench --site <tenant>-dryrun.localhost execute alvoraa_goals.review_backfill.report`
+   Check `site_already_has_group_d_tables` is **0** (it is a pre-release copy). Read:
+   `will_copy`, `cannot_copy_nothing_tagged`, `reviews_with_no_period`,
+   `open_items_counted_from_facts_differ_from_live` (how many review numbers people will
+   see change), `ratings_stamped_on_counted_numbers`,
    `cumulative_kpis_whose_readings_look_like_running_totals` and
    `custom_docperm_rows_to_look_at`. **Stop** if `cannot_copy_nothing_tagged.open` is not
-   empty or `custom_docperm_rows_to_look_at` lists anything.
-3. **Migrate.** `bench --site <site> migrate`. It adds the `Alvoraa Review Item` child
-   table, the new review-record fields (including `lock_release_days` and, from
-   decision 35, `calibration_notes` — without it portal calibration fails), the three HR
-   Settings fields, the KPI rating permission level and indexes, and the
-   "Cumulative KPI Readings Check" report. It runs two patches, in this order:
-   `take_review_copies` (the backfill) then `stamp_lock_release_days`. Check the output
-   line "Review copies: N reviews, N copies, 0 failed", and that the Error Log has no
-   "Review copy backfill failed".
-4. **Clear the cache** so the page, the desk list scripts and the report are served:
-   `bench --site <site> clear-cache`. (Assets come with the deploy image.)
-5. **The permission report, on every tenant (decision 24).**
-   `bench --site <site> execute alvoraa_goals.review_items.custom_docperm_report`
-   Read-only. It lists Custom DocPerm rows on `Alvoraa Appraisal Extension`,
-   `Appraisal` and `KPI` (level 1 and above) that give a role other than HR a right.
-   It does not look at `Individual Goal`. The Version, Comment and Appraisal row rules
-   (fix round B1, M4) are code hooks, which a Custom DocPerm cannot switch off.
-6. **HR runs "Cumulative KPI Readings Check"** in the desk for each company, and
-   corrects readings that were typed as running totals, before relying on reviews.
-7. **Check by hand on the deployed tenant** (05 section 8):
-   an employee opens a review and sees items, and logs a KPI reading (label and date);
-   a manager with no HR role and one who holds an HR role open Manager Review, rate an
-   item, change a target, remove an item with a reason; the reviewer picker finds a
-   name that sorts late; HR sees the three settings in Org Settings and the blocked
-   completion message when a rating question is open; on one Cumulative KPI, log,
-   reject, log again, and check the live number; for an employee with a cascaded KPI,
-   open "Add/remove KPIs" and add one.
+   empty or `custom_docperm_rows_to_look_at` lists anything (decision 24, residual risk
+   R8: this is the Custom DocPerm check before the deploy). Keep the output with the
+   release notes.
+   - `cumulative_kpis_whose_readings_look_like_running_totals` and the desk report
+     "Cumulative KPI Readings Check" (step 10) **measure different things** (C3). The dry
+     run counts Cumulative KPIs whose live number differs from the sum of their readings;
+     the report lists every Cumulative KPI with two or more readings that never go down.
+     The report is wider on purpose. A 0 in the dry run does not mean HR can skip step 10.
+     (ppj: 0 in the dry run, 125 rows in the report.)
+6. **Drop the scratch sites** (`bench drop-site <tenant>-dryrun.localhost --no-backup`).
+   Delete the local backup copies once the release is accepted.
+7. **Push to `dev`**, on your word. The deploy runs migrate and clear-cache by itself (C5:
+   no separate `clear-cache` step; only if a page is served stale afterwards).
+   What the migrate does: adds the `Alvoraa Review Item` child table, the new
+   review-record fields (including `lock_release_days` and, from decision 35,
+   `calibration_notes`), the three HR Settings fields, the KPI rating permission level and
+   indexes, and the "Cumulative KPI Readings Check" report. On dev it runs two group D
+   patches, in this order: `take_review_copies` (the backfill), then
+   `stamp_lock_release_days`. **A tenant not migrated since groups A–C also runs
+   `fill_branch_on_hr_records` and `make_evidence_files_private` first: four patches**
+   (C6). **How long:** on ppj (806 reviews) the patches took about 20 seconds and the
+   whole migrate 101 seconds (C6). A pause of about 25 seconds at "Removing orphan
+   doctypes" with "Command: Sleep" lines is normal: it waits for the site's own database
+   connection (C7). The deploy has the sites in maintenance mode for the whole migrate.
+8. **Read the migrate output** in the Deploy job's log, per site: "Review copies: N
+   reviews, N copies, 0 failed". N must match step 5's `will_copy`. Then, read-only over
+   SSH, check each tenant's Error Log has no "Review copy backfill failed".
+9. **The permission report, on every tenant, after the deploy** (decision 24, R8):
+   `bench --site <site> execute alvoraa_goals.review_items.custom_docperm_report`.
+   Read-only. **No output means no rows to look at** (C4): an empty answer prints nothing.
+   It lists Custom DocPerm rows on `Alvoraa Appraisal Extension`, `Appraisal` and `KPI`
+   (level 1 and above) that give a role other than HR a right. It does not look at
+   `Individual Goal`. The Version, Comment and Appraisal row rules are code hooks, which a
+   Custom DocPerm cannot switch off. From this release on the function exists on every
+   tenant, so R8's "before every deploy" check can use it directly.
+10. **HR runs "Cumulative KPI Readings Check"** in the desk for each company, and corrects
+    readings that were typed as running totals, before relying on reviews (R12).
+11. **Check by hand on the deployed tenant** (05 section 8, rehearsal C9, decision 37):
+    - an employee opens a review and sees items, and logs a KPI reading (label and date);
+    - a manager with no HR role and one who holds an HR role open **My team's reviews**
+      and a review there: rate an item, change a target, remove an item with a reason;
+    - the person with both roles also sees the **HR review list** in HR Setup; a plain
+      manager sees only My team's reviews; a plain HR person sees only the HR review list;
+    - **for a review whose manager holds an HR role, raise a rating question in HR Review
+      and check someone can answer it** (C9): the manager answers from My team's reviews;
+      a different HR person then finishes it from the HR review list;
+    - HR opens "Calibration note" from the HR review list: the box shows any saved note;
+    - the reviewer picker finds a name that sorts late; HR sees the three settings in Org
+      Settings and the blocked completion message when a rating question is open; on one
+      Cumulative KPI, log, reject, log again, and check the live number; for an employee
+      with a cascaded KPI, open "Add/remove KPIs" and add one.
 
-**Rollback, in this order, on the user's word.** Steps 1 and 2 need the group D code,
-so they run **before** the image is rolled back.
+### Rollback, in this order, on your word
 
-1. **Put ratings back where the old code reads them** (only if ratings were given in the
+Steps 2 and 3 need the group D code, so they run **before** the image is rolled back.
+
+1. **Stop people using reviews first** (C8). Tell HR and managers, and put the tenant in
+   maintenance mode (`bench --site <site> set-maintenance-mode on`). Anything rated in a
+   review between step 2 and the image switch is lost to the old code.
+2. **Put ratings back where the old code reads them** (only if ratings were given in the
    portal after go-live):
    `bench --site <site> execute alvoraa_goals.review_backfill.copy_ratings_back_for_rollback --kwargs "{'dry_run': 1}"`,
-   read it, then the same with `{'dry_run': 0}`. Tell HR: the old code shows potential
-   ratings on live KPIs to employees again (residual risk R9).
-2. **Optional: remove the backfilled copies** from reviews nobody changed since:
+   read it, then the same with `{'dry_run': 0}`. Since fix round 2 it covers open reviews
+   **and reviews completed under this release** (F5); reviews that were already
+   completed when the backfill copied them are history and are left out. **Tell HR
+   first:** the old code shows potential ratings on live KPIs to employees again
+   (residual risk R9, accepted only with a rollback).
+3. **Optional, and usually not: remove the backfilled copies** from reviews nobody
+   changed since:
    `bench --site <site> execute alvoraa_goals.review_backfill.undo_backfill --kwargs "{'dry_run': 1}"`,
-   then `{'dry_run': 0}`. Reviews changed since are listed and kept. The copy table is
-   harmless if left.
-3. **Roll the code back:** redeploy the previous image (`dev-c27fb56` on dev), then
-   `bench --site <site> migrate` (KPI rating fields go back to level 0; the Appraisal
-   Employee row comes back). If that fails, restore the backup from step 1 of the
-   release. **Roll the page and the server back together**, for the same reason they
-   ship together.
+   then `{'dry_run': 0}`. Reviews changed since are listed and kept; since fix round 2
+   that includes a review where someone removed an unrated item in "Discard the copy"
+   mode (F6). **Warning (C8): do not run this on a tenant that may get this release
+   again.** The copy patch is already in the patch log, so a later release does not copy
+   completed reviews a second time; their history copies would be gone for good. The
+   copy table is harmless if left.
+4. **Roll the code back:** Actions → Deploy → Run workflow, `environment: dev`,
+   `image_tag: dev-c27fb56`, `run_migrations: true` (KPI rating fields go back to level
+   0; the Appraisal Employee row comes back; the new table and columns stay, unused). If
+   that fails, restore the backup from step 2 of the release. **Roll the page and the
+   server back together**, for the same reason they ship together.
+5. Maintenance mode off, and tell HR and managers.
 
-**What to tell users**, before the release:
+### What to tell users, before the release
 
 - A review now keeps its own copy of each objective and KPI, so the numbers it was
   decided on do not move afterwards.
@@ -1372,6 +1454,11 @@ so they run **before** the image is rolled back.
   objective or the KPI.
 - The KPI update box asks for the amount added since the last update, and lets you say
   which day it is for.
+- **Managers who also have an HR role** now have two lists: "My team's reviews" (under
+  Reviews) opens a review as their manager; the "HR review list" (under HR Setup) opens
+  it as HR. Answer a question on your own rating from My team's reviews.
+- HR's list of reviews no longer has an "Open Review" button before a review reaches HR
+  Review; until then it is with the employee and their manager.
 
 ## 9. Commits on this branch that are NOT slice 010's
 
@@ -1892,3 +1979,205 @@ Full suites were not run (not asked).
 2. There is still no separate calibration change log beyond Version rows (feature map
    E5).
 3. No browser trace of the calibration box was run.
+
+# Fix round 2 — after the ppj.localhost rehearsal (decisions 37 and 38)
+
+## The short answer
+
+**Both release blockers from the rehearsal are fixed and tested on the local
+instance. Nothing is pushed.** The user approved this round on 2026-09-17
+(decisions 37 and 38, residual risks R7–R12 accepted; see `00e`).
+
+- **F1, the stuck review:** a manager who holds an HR role now answers a question on
+  their own rating from **My team's reviews**, in any stage, including HR Review. A
+  different HR person then finishes the review from the **HR review list**.
+- **C1, the dry run:** `review_backfill.report` now works on a site that has not been
+  migrated. **C2:** the dev deploy runs migrate by itself with no pause, so the
+  checklist (§8, rewritten) now runs the dry run **before the push, on a local copy of
+  each tenant's fresh backup.**
+- Also in: F2, F3, F5, F6 and checklist corrections C3–C9. Later: F4, F7, F8, F9.
+- **Things to know first:**
+  1. **HR's "Team Reviews" list is gone for HR.** "My team's reviews" now lists only
+     the people you manage (direct reports, and for the HR stand-in the people with no
+     manager). HR's company-wide list is the HR review list in HR Setup.
+  2. **The HR review list shows no "Open Review" button before HR Review.** The server
+     already refused HR there (SEC-27); the button was a dead end. A skip-level manager
+     with an HR role also loses the screen entry to a skip report's review before HR
+     Review (the server still allows it). Say if you want that back.
+  3. **Test results and the re-rehearsal are at the end of this section.**
+
+## 1. What came in from others
+
+Nothing. `origin/dev` stayed at `c27fb56` at the start and before each commit. Local
+`dev` was at `f51c130`, the same as the slice branch. The main checkout still holds
+another session's uncommitted edits (`ux-learnings.md`, `KPI_AUTOMATION_BACKLOG.md`,
+`009 00-assessment-and-plan.md`, `alvoraa_position.py`, a deleted
+`OBJECTIVES_KPI_REQUIREMENTS.md`). None is in a file this round changes; none was
+touched.
+
+## 2. Decision 37 — how it works
+
+**The rule.** A review is opened from one list, and the list sets the view. Nothing is
+guessed from roles.
+
+| View | Opened from | Server check (`performance_api._require_review_view`) |
+|---|---|---|
+| `manager` | My team's reviews | Never the subject; the caller is the subject's manager (`_is_line_manager`: the line, or the HR stand-in) |
+| `hr` | HR review list (HR Setup) | Never the subject; HR role; company in `permitted_companies()`; review at HR Review or Completed (`_assert_hr_rule`, which has **no** line exemption) |
+| anything else, or none | — | Refused, rule `D37` (fails closed) |
+
+Each view is one of the two paths that existed before, so neither allows more. Someone
+in the subject's line who opens the HR view gets the HR screen **with the manager's
+data** (no late facts, no upload dates: those were never theirs), the "Another HR
+person…" note and no HR buttons (decision 34).
+
+**Who answers a rating question** (`_flag_answer_mode`, shared by the screen and the
+endpoint):
+
+| View | Answers as | When |
+|---|---|---|
+| manager | `rater` | the rating is theirs, or was stamped before raters were recorded; any stage up to completion |
+| hr | `rater` | HR gave the rating (a calibrated overall rating); not in the subject's line |
+| hr | `hr` (reason required) | the giver has left or no longer acts; HR Review only; not in the line |
+| either | nobody (`""`) | anything else. In the HR view, the line is refused with the D34 message and log line |
+
+`get_manager_review` now sends `flag_answer` on every flagged item and
+`overall_flag_answer`, so the page shows buttons only where the answer will be taken.
+
+**Endpoints that take `view`:** `get_manager_review`, `answer_rating_flag`. **Why not
+the others:** every other review write already has exactly one role per stage (manager
+steps in Manager Review, HR steps in HR Review, D34 inside those), so there is no stage
+where the same person could act in both roles. `get_team_reviews` is the manager list;
+`hr_list_appraisals` and `get_calibration_overview` are HR's.
+
+**Callers checked** (grep of the whole repo, `.py`, `.js`, `.html`, `.vue`): the only
+callers of `get_manager_review`, `answer_rating_flag`, `get_team_reviews`,
+`hr_list_appraisals`, `advance_review_status`, `return_for_revision` and
+`save_calibration_note` are in `hrms-employee.html`. No other app or page calls them.
+
+## 3. Each finding → change → test → result
+
+"Test" names are in `test_review_fixround2_010d.py` unless another file is named.
+
+| Finding | What changed | Pin test | Result |
+|---|---|---|---|
+| **Decision 37** view rights | `_require_review_view`, `_assert_hr_rule` (split out of `_assert_hr_can_view`); `get_manager_review(view)` returns `viewer_role = view` | `TestD37EachViewNeedsItsOwnRight` (3) | pass |
+| **Decision 37** two lists | `get_team_reviews`: direct reports + `_stand_in_subjects` for everyone; `rating_needs_answer` only when this person answers; no `hr_steps_elsewhere` key. `get_performance_context.has_team_reviews`. Page: section "My team's reviews" (opens `'manager'`, no Finish button), card "HR review list" (opens `'hr'`) | `TestD37TwoLists` (2), `test_d37_each_list_opens_reviews_in_its_own_view` | pass |
+| **F1** stuck in HR Review | Manager view keeps the "Rate & Submit" page in every stage, with the overall question's buttons when `overall_flag_answer` says so, no submit button outside Manager Review; item buttons follow `flag_answer`; HR view always gets HR's page | `TestD37F1TheStuckReviewIsFinished` (2) | pass |
+| **F2** HR who rated told "the manager" | Same mode rule; HR's Finalize page shows the overall question's buttons (with a labelled box for the new rating) when HR is the rater; wording "The person who gave it…" | `TestD37F2HrWhoRatedAnswers`, `test_f1_f2_answer_buttons_follow_what_the_server_says` | pass |
+| **F3** no button for the calibration note | "Calibration note" on HR review list rows in HR Review (not for the line) and on HR's Finalize page. New `get_calibration_note`, the same checks as saving (`_calibration_record`), fills the box with the saved note | `TestF3CalibrationNoteIsRead`, `test_f3_the_calibration_note_has_buttons_and_the_box_loads_the_saved_note` | pass |
+| **C1** dry run fails before migrate | `review_backfill._group_d_schema()`; `_plan` reads without `items_taken_on` and the copy table when they do not exist; `report()` adds `site_already_has_group_d_tables` | `test_c1_the_dry_run_works_on_a_site_without_group_d_tables` (old schema imitated in memory) | pass |
+| **C2–C9** checklist | §8 rewritten (above) | — (documentation) | done |
+| **F5** copy-back skips reviews completed after go-live | Query takes open reviews **or** `completed_on > items_taken_on` | `test_f5_copy_back_includes_a_review_completed_under_this_release_and_not_history` | pass |
+| **F6** undo misses a discarded removal | An audit note on the review record after the copy counts as a change (one query, chunked) | `test_f6_undo_keeps_a_review_whose_unrated_item_was_removed_and_discarded` | pass |
+
+**Why showing the saved note to HR widens nothing (F3).** The note is shown only to the
+people who may save it: HR, a company they look after, not their own review, not in the
+subject's line, during HR Review. Decision 35's table says exactly those people already
+read the note in the desk from HR Review on. The subject, the manager and the line still
+never get it; `test_calibration_note_010d` (unchanged, passing) still proves no list or
+review screen echoes it.
+
+**Small things fixed on the way, in the lines this round rewrote:** the HR finish
+button's reset text showed `<i class=ic-check></i>` as text (part of F7's cause, in one
+place only); the review title was escaped twice.
+
+### Existing tests changed on purpose
+
+| Test | Why |
+|---|---|
+| Every call of `get_manager_review` / `answer_rating_flag` in `test_review_copies_010d`, `test_review_screens_010d`, `test_review_outside_010d`, `test_review_fixround_010d`, `test_review_line_hr_010d`, `test_calibration_note_010d` | Now pass the view of the person acting. Refusal checks now try **both** views |
+| `test_review_fixround_010d.TestCrM3ManagerWithHrRole` (renamed `…viewer_role_is_the_view_the_review_was_opened_in`) | Pinned the old role guess |
+| `test_review_line_hr_010d.test_d34_screens_tell_the_page_who_must_not_see_hr_buttons` | HR view now gives `("hr", 1)`, manager view `("manager", 0)`; team rows no longer carry the key |
+| `test_review_line_hr_010d.test_d34_the_page_shows_a_note_instead_of_hr_buttons_for_the_line` | The team card has no HR branch; the Finalize and submit page conditions changed |
+| `test_review_copies_010d.test_decision16_…` | HR's company scope is now asserted on the HR review list, not the team list |
+| `test_review_copies_010d.test_priv1_team_reviews_…` → `test_priv1_hr_lists_hide_your_own_rating_and_strangers_ratings_before_hr_review` | PRIV-1 for HR now asserted on the HR review list; HR's own and a stranger's review are not on the team list at all |
+| `test_review_page_010d.test_decision12_the_manager_can_keep_or_change_a_flagged_rating` | `riAnswerFlag` now takes the mode |
+
+## 4. Non-functional dimensions, re-checked on the code written
+
+| Dimension | Before → after | Verdict |
+|---|---|---|
+| Performance | `get_team_reviews` for HR no longer loads every active employee of their companies (on ppj about 400 rows → the HR person's reports) and no longer walks the line; +2–3 small queries for an HR Manager (stand-in check). `get_manager_review`: the line walk only in the HR view; flag modes only for flagged items, `_rater_still_acts` cached per person. `get_performance_context` +1 query when the caller has no reports. `undo_backfill` +1 query; `report()` +2 schema reads | improves |
+| Security | The screen's role is asked for and checked, not guessed; a missing view fails closed; the line in the HR view gets no HR data; buttons follow the server's answer rule. New read endpoint has the same checks as the save | improves |
+| Reliability | No review can get stuck behind a question nobody can answer on screen; the dry run runs where it is needed; rollback helpers cover two missed cases | improves |
+| Scalability | Team list bounded by span of control, not company size | improves |
+| Maintainability | One answer rule used by screen and endpoint; one calibration check used by read and save. Page has two list render paths as before | neutral |
+| Data integrity | No new writes; F5/F6 make the rollback keep more data | improves |
+| Compliance / privacy | Segregation of duties (decision 34) now enforced per view as well; F3 opens the note to nobody new; logs carry names only (`D37` rule added) | improves |
+
+`ignore_permissions` counts unchanged: `performance_api.py` 64, `review_backfill.py` 0.
+
+## 5. Commands run and real results
+
+    python scripts/check_app_integrity.py    -> app integrity: 579 checks, OK - all consistent (before every commit)
+    node scripts/check_portal_handlers.js     -> portal handlers: all reachable and callable
+    node scripts/check_undefined_js.js        -> undefined identifiers: none
+
+No migrate: no schema change in this round. One test run at a time, work board marked.
+
+    run-tests --module test_review_fixround2_010d
+      first run  -> Ran 12 tests FAILED (errors=1); Ran 3 tests OK
+                    (the F3 test expected a validation error at Manager Review; HR's stage
+                     rule refuses first with a permission error. Test fixed.)
+      second run -> Ran 12 tests OK; Ran 3 tests OK
+    test_review_copies_010d      -> Ran 34 OK
+    test_review_screens_010d     -> Ran 39 OK; Ran 1 OK
+    test_review_outside_010d     -> Ran 28 OK
+    test_review_page_010d        -> first Ran 26 FAILED (failures=1: pinned the old riAnswerFlag form; changed on purpose)
+                                    then Ran 26 OK
+    test_review_fixround_010d    -> Ran 33 OK; Ran 6 OK
+    test_review_line_hr_010d     -> Ran 9 OK; Ran 1 OK
+    test_calibration_note_010d   -> Ran 9 OK
+    test_portal_security_010     -> Ran 45 OK; Ran 5 OK
+
+Two of my own mistakes on the way, each fixed in its own commit: one test file was
+committed with Windows line endings (`63fc30e` puts them back), and one edit put a real
+line break inside a string (`6ba7160`).
+
+**Fail without the fix.** The bench runs the shared main checkout, which may not be
+edited, so each fix was switched off inside one Python process only, from a script piped
+on stdin. The code from `f51c130` was piped to `/tmp` in the container for the run and
+deleted after. No repository file changed.
+
+| Switched off | How | Result |
+|---|---|---|
+| S1 decision 37 on the server | view ignored, role guessed as before; old answer rule | 6 ran: **4 red** (view rights ×3, F1). 2 green by design: F2's and the plain manager's server rule were already right; their fault was on the page (S5) |
+| S2 the two lists | `get_team_reviews` and `get_performance_context` from `f51c130` | 2 ran: **2 red** |
+| S4 C1, F5, F6 | `report`, `undo_backfill`, `copy_ratings_back_for_rollback` from `f51c130` | 3 ran: **3 red** (C1: "Unknown column 'items_taken_on'", the rehearsal's own error) |
+| S5 the page | page tests read the page from `f51c130` | 3 ran: **3 red** |
+| control, nothing off | same process | 15 ran: **all green** |
+
+**Full suites**, on local `dev` at `8a53522` (every code and test commit of this round):
+
+    bench --site test_site run-tests --app alvoraa_portal
+      -> Ran 550 tests in 1288.070s   FAILED (errors=3, skipped=4)
+      -> Ran 602 tests in 2725.053s   FAILED (failures=1, errors=10)
+         1,152 tests in all (1,128 at the release verification + 9 calibration note
+         tests + 15 new here)
+    bench --site test_site run-tests --app alvoraa_goals
+      -> Ran 18 tests in 2.915s  OK (skipped=2)
+
+Fourteen did not pass, **all the known local-only failures, compared by name**:
+`test_leave_year` 3 errors and `test_invoicing` 1 failure + 10 errors. Nothing else.
+
+**Re-rehearsal on ppj.localhost:** passed. See `08-ppj-rehearsal.md`, "Re-rehearsal after
+fix round 2".
+
+## 6. Follow-ups, not in this release (decision 38)
+
+| ID | What | Note |
+|---|---|---|
+| F4 | Manager feedback lost on "Save & Continue" | Old; small page fix |
+| F7 | Stage bar shows `<i class=ic-check></i>` as text | Old; `dot.textContent` given HTML |
+| F8 | Inputs with no label (list in `08` §7) | Old; accessibility. The new overall-rating box in this round has a label |
+| F9 | Error answers carry a Python traceback | **On the local bench this comes from `bench serve`** (Frappe's `is_traceback_allowed()` is true for the dev server whatever the site config). On dev and production (gunicorn) it depends on System Settings "Allow error traceback" and on the user being a desk user. **Not checked on dev tenants** (not allowed in this round). Worth checking read-only before the push |
+
+## 7. What is still open
+
+1. **Push:** nothing is pushed. The release checklist (§8) now needs tenant backups
+   copied to this machine for the dry run; say if you prefer the fallback gate.
+2. Skip-level managers with an HR role lose the screen entry to a skip report's review
+   before HR Review (point 2 at the top).
+3. Counsel questions C-D1, C-D3, C-D4 unchanged.
+

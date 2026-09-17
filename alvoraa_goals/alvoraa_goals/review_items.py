@@ -1080,6 +1080,28 @@ def copied_sources(ext):
     return {r.source_name for r in (ext.get("review_items") or []) if r.source_name}
 
 
+def not_in_review_count(ext):
+    """How many of the subject's Objectives and KPIs tagged to this review's cycle
+    have no copy in it, removed ones included (00d section 2.4, code review
+    minor 3). A number only: the subject adds them from the add/remove dialog if
+    they want to. Two queries."""
+    if not (ext.get("items_taken_on") and ext.get("employee") and ext.get("appraisal_cycle")):
+        return 0
+    copied = copied_sources(ext)
+    goals = frappe.get_all(
+        "Individual Goal",
+        filters={"employee": ext.employee, "appraisal_cycle": ext.appraisal_cycle, "docstatus": ["!=", 2],
+                 "status": ["!=", "Cancelled"], "is_future_plan": ["!=", 1]},
+        pluck="name",
+    )
+    kpis = frappe.get_all(
+        "KPI",
+        filters={"employee": ext.employee, "appraisal_cycle": ext.appraisal_cycle, "status": ["!=", "Cancelled"]},
+        pluck="name",
+    )
+    return sum(1 for name in goals + kpis if name not in copied)
+
+
 # ── Changes made on the copies (commit 5: SEC-1, R2, R7, R11, R12, VIS-5, VIS-6) ─
 #
 # These change the review record in memory. The endpoint has already decided who

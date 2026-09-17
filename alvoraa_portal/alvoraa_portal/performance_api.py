@@ -4045,6 +4045,11 @@ def get_my_review(appraisal):
         "removed_items":        items["removed_items"],
         "numbers_frozen":       items["numbers_frozen"],
         "past_incomplete_goals": past_incomplete,
+        # The subject's own items tagged to this cycle that the review does not
+        # hold (00d section 2.4). Only to the subject, only before sending.
+        "not_in_review_count":  (review_items.not_in_review_count(ext)
+                                 if ap.employee == me and (ext.review_status or "Not Started") in _SELF_REVIEW_DRAFT
+                                 else 0),
     }
 
 

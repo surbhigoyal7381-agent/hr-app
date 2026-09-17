@@ -653,3 +653,26 @@ class TestCrMinor6OpeningTogether(_Screens):
 		self.assertEqual(_row_for(second, r.alone).actual_value, 13)
 
 
+# ── Code review minor 3 · items in the cycle that are not in the review ─────
+
+
+class TestCrMinor3NotInReviewCount(_Screens):
+	def test_cr_minor3_the_subject_is_told_how_many_cycle_items_the_review_does_not_hold(self):
+		import alvoraa_portal.performance_api as pa
+
+		r = self._review("Employee Review")
+		self._as(self.subject_user)
+		self.assertEqual(pa.get_my_review(r.ap)["not_in_review_count"], 0)
+		frappe.set_user("Administrator")
+		self._kpi(self.subject, r.cycle, target=5)
+		self._as(self.subject_user)
+		self.assertEqual(pa.get_my_review(r.ap)["not_in_review_count"], 1)
+		frappe.set_user("Administrator")
+
+		# Nobody else is told, and not after sending.
+		self._set_status(r.ap, "HR Review")
+		self._as(self.hr_user)
+		self.assertEqual(pa.get_my_review(r.ap)["not_in_review_count"], 0)
+		frappe.set_user("Administrator")
+
+

@@ -12430,7 +12430,7 @@ function deleteDrawerNote(noteId, empId) {
     var cumulative = !k || (k.progress_mode || "Cumulative") !== "Absolute";
     document.getElementById("pf-log-value").value = cumulative ? "" : (k.actual_value || "");
     /* The person's own day, not the UTC day: between midnight and 05:30 in
-       India toISOString gives yesterday (code review minor 4). */
+       India the UTC day is still yesterday (code review minor 4). */
     var now = new Date();
     var localDay = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" +
       String(now.getDate()).padStart(2, "0");

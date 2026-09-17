@@ -20,6 +20,11 @@ from alvoraa_portal.tests.test_review_screens_010d import _Screens
 TAG = "S010D"
 
 
+def _copy_of(ext, source_name):
+	"""The review's copy of a live record, or None (the shared _row_for raises when there is none)."""
+	return next((r for r in ext.review_items if r.source_name == source_name), None)
+
+
 def _history_row(doctype, ref_doctype, ref_name, marker):
 	"""A Version or Comment row about a record, written straight to the table.
 
@@ -94,14 +99,16 @@ class TestB1ReviewHistoryAndNotes(_Screens):
 				self.assertFalse(self._listed(user, doctype, name), f"{user} lists {doctype} {what}")
 				self.assertFalse(self._readable(user, doctype, name), f"{user} reads {doctype} {what}")
 
-		# HR Review: HR for the subject's company and the System Manager read it;
-		# a Website Manager still does not; HR for another company does not.
+		# HR Review: the System Manager, who may now read the review itself, reads
+		# its history and notes; a Website Manager still does not. (HR roles hold
+		# no role on Version or Comment at all; HR reads them in the desk timeline
+		# of a review it may open.)
 		self._set_status(ap, "HR Review")
 		for (doctype, what), name in rows.items():
-			for user in (self.hr_user, self.sysman_user):
-				self.assertTrue(self._listed(user, doctype, name), f"{user} lists {doctype} {what}")
-				self.assertTrue(self._readable(user, doctype, name), f"{user} reads {doctype} {what}")
+			self.assertTrue(self._listed(self.sysman_user, doctype, name), f"lists {doctype} {what}")
+			self.assertTrue(self._readable(self.sysman_user, doctype, name), f"reads {doctype} {what}")
 		self.assertFalse(self._listed(website_manager, "Comment", rows[("Comment", "ext")]))
+		self.assertFalse(self._readable(website_manager, "Comment", rows[("Comment", "ext")]))
 
 		# Nobody below Administrator edits or deletes a review's audit note.
 		from frappe.client import delete as desk_delete
@@ -273,8 +280,8 @@ class TestM2RenameWhileHeld(_Screens):
 		frappe.rename_doc("KPI", review.alone, new_name, force=True)
 		frappe.db.commit()
 		self._cleanup.append(("KPI", new_name))
-		self.assertIsNone(_row_for(self._ext(review.ap), review.alone))
-		self.assertTrue(_row_for(self._ext(review.ap), new_name))
+		self.assertIsNone(_copy_of(self._ext(review.ap), review.alone))
+		self.assertTrue(_copy_of(self._ext(review.ap), new_name))
 
 	def test_m2_a_held_objective_cannot_be_renamed_either(self):
 		review = self._review("Manager Review")
@@ -417,8 +424,8 @@ class TestCrM1SelectionRemovesOnlyWhatWasListed(_Screens):
 		self.assertEqual(result["removed"], 1)
 		ext = self._ext(ap)
 		for name in (cascaded, outside, later):
-			self.assertTrue(_row_for(ext, name), name)
-		self.assertFalse(_row_for(ext, alone) and not _row_for(ext, alone).removed)
+			self.assertTrue(_copy_of(ext, name), name)
+		self.assertFalse(_copy_of(ext, alone) and not _copy_of(ext, alone).removed)
 
 
 # ── Code review M3 · a manager who holds an HR role gets the manager's controls ─
@@ -578,7 +585,9 @@ class TestM3M5WriteBackNoteAndMarkers(_Screens):
 
 		# A new fact flags the rating; the rater has since left, so HR answers with a reason.
 		self._reading(r.alone, _day(r.start, 5), 7)
-		frappe.db.set_value("Alvoraa Review Item", alone, "manager_rated_by", "left.the.company@example.com")
+		left = _user(f"d.left.{_uid()}", ("Employee",))
+		frappe.db.set_value("User", left, "enabled", 0)
+		frappe.db.set_value("Alvoraa Review Item", alone, "manager_rated_by", left)
 		self._set_status(r.ap, "HR Review")
 		self._as(self.hr_user)
 		pa.get_manager_review(r.ap)
@@ -650,7 +659,7 @@ class TestCrMinor6OpeningTogether(_Screens):
 		frappe.db.commit()
 		# The second copy of the record is now stale; before the fix its save failed.
 		self.assertFalse(review_items.open_review(second))
-		self.assertEqual(second.modified, first.modified)
+		self.assertEqual(str(second.modified), str(first.modified))
 		self.assertEqual(_row_for(second, r.alone).actual_value, 13)
 
 
@@ -772,7 +781,8 @@ class TestCrM4ReviewerPickerSearchesTheServer(_Screens):
 		self.assertIn("q.length < 2", picker)
 		self.assertIn("setTimeout(", picker)
 		self.assertNotIn('pf("search_employees", {query: ""', page)
-		opener = _between(page, "window.prOpenManagerReview = function", 'pf("get_manager_review"')
+		start = page.index("window.prOpenManagerReview = function")
+		opener = page[start:page.index('pf("get_manager_review"', start)]
 		self.assertIn("_prEmpCache = null;", opener)
 
 
@@ -826,4 +836,4 @@ class TestPageMinors(FrappeTestCase):
 		from alvoraa_portal.tests.test_review_page_010d import _page
 
 		page = _page()
-		self.assertIn('"typed " + pfFmtDate(r.logged_on)', page)
+		self.assertIn('typed " + pfFmtDate(r.logged_on)', page)

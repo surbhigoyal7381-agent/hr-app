@@ -696,3 +696,47 @@ class TestReleaseRiskOverallRatingStampedOnFirstOpen(_Screens):
 		frappe.set_user("Administrator")
 		self.assertEqual((review["overall_rating_flag"], review["open_blocking_flags"]), (0, 0))
 		self.assertTrue(self._ext(ap).overall_rating_basis)
+
+
+# ── Release risk (05 section 8) · HR's check of running-total readings ─────
+
+
+class TestReleaseRiskRunningTotalsReport(_Screens):
+	def _kpi_with(self, employee, cycle, values, company=None):
+		kpi = self._kpi(employee, cycle, target=100)
+		start = frappe.db.get_value("Appraisal Cycle", cycle, "start_date")
+		for i, value in enumerate(values, start=1):
+			self._reading(kpi, _day(start, i), value)
+		return kpi
+
+	def test_rr_the_report_lists_cumulative_kpis_whose_readings_never_go_down_for_hr_only(self):
+		from alvoraa_goals.alvoraa_goals.report.cumulative_kpi_readings_check import (
+			cumulative_kpi_readings_check as report,
+		)
+
+		start, end = self._window()
+		cycle = self._cycle(start, end)
+		totals = self._kpi_with(self.subject, cycle, [10, 25, 40])
+		amounts = self._kpi_with(self.subject, cycle, [10, 5, 12])
+		single = self._kpi_with(self.subject, cycle, [30])
+		other_cycle = self._cycle(start, end, company=self.company_b)
+		elsewhere = self._kpi_with(self.subject_b, other_cycle, [1, 2, 3])
+
+		self._as(self.hr_user)
+		columns, rows = report.execute({"appraisal_cycle": cycle})
+		listed = {r["kpi"]: r for r in rows}
+		self.assertIn(totals, listed)
+		self.assertEqual((listed[totals]["readings"], listed[totals]["sum_of_readings"]), (3, 75))
+		self.assertNotIn(amounts, listed)
+		self.assertNotIn(single, listed)
+		self.assertNotIn(elsewhere, {r["kpi"] for r in report.execute({})[1]})
+		self.assertFalse({c["fieldname"] for c in columns} & {"self_rating", "manager_rating", "potential_rating"})
+
+		self._as(self.subject_user)
+		with self.assertRaises(frappe.PermissionError):
+			report.execute({})
+		frappe.set_user("Administrator")
+
+		shipped = json.load(open(report.__file__.replace(".py", ".json"), encoding="utf-8"))
+		self.assertEqual((shipped["report_type"], {r["role"] for r in shipped["roles"]}),
+		                 ("Script Report", {"HR Manager", "HR User"}))

@@ -420,6 +420,26 @@ class TestCrM1SelectionRemovesOnlyWhatWasListed(_Screens):
 		self.assertFalse(_row_for(ext, alone) and not _row_for(ext, alone).removed)
 
 
+# ── Code review M3 · a manager who holds an HR role gets the manager's controls ─
+
+
+class TestCrM3ManagerWithHrRole(_Screens):
+	def test_cr_m3_viewer_role_is_manager_for_the_manager_and_hr_for_hr(self):
+		import alvoraa_portal.performance_api as pa
+
+		ap = self._review_of(self.hr_report, "Manager Review")
+		self._as(self.hr_boss_user)
+		self.assertEqual(pa.get_manager_review(ap)["viewer_role"], "manager")
+
+		# HR Review is HR's step: an HR role holder keeps HR's controls there.
+		self._set_status(ap, "HR Review")
+		self._as(self.hr_boss_user)
+		self.assertEqual(pa.get_manager_review(ap)["viewer_role"], "hr")
+		other = self._review_of(self.subject, "HR Review")
+		self._as(self.hr_user)
+		self.assertEqual(pa.get_manager_review(other)["viewer_role"], "hr")
+
+
 # ── Security m7 · HR screens list no items of an unsent self-review ─────────
 
 

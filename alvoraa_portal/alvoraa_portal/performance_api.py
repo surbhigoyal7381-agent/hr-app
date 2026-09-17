@@ -4669,7 +4669,12 @@ def get_manager_review(appraisal):
         "potential_rating":      ext.potential_rating or 0,
         "reviewer_comments_visible": ext.reviewer_comments_visible or 0,
         "invited_reviewers":     invited,
-        "viewer_role":           "hr" if is_hr else "manager",
+        # The manager's view and controls for whoever is the manager here, even
+        # when they also hold an HR role (code review M3). HR Review is HR's
+        # step, so there an HR role holder keeps HR's controls, as before; who
+        # may do HR steps on their own report's review is security M3 (on hold).
+        "viewer_role":           "hr" if (viewer == review_items.VIEWER_HR
+                                          or (is_hr and ext.review_status == "HR Review")) else "manager",
         "rating_scales":         rating_scales,
     }
 

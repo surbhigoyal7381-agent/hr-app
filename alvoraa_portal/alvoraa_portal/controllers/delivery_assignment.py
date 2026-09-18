@@ -32,10 +32,18 @@ def after_insert(doc, method=None):
     frappe.db.set_value("Delivery Assignment", doc.name, "delivery_otp", otp)
     frappe.db.commit()
 
-    # Log notification for driver
     driver_name = doc.driver_name or frappe.db.get_value("Employee", doc.driver, "employee_name") or doc.driver
+
+    # Slice 016: this used to write the delivery OTP and the driver's name into
+    # the Error Log on every assignment. A secret in a log is a blocker by our
+    # own rule, and every System Manager on the site can read it. The plan gate
+    # does not help here - this is an after_insert doc_event, so it fires on a
+    # desk save and on /api/resource too, on any tenant.
+    #
+    # The record name is enough for a person to open the assignment and read the
+    # OTP from the field, which is where it belongs.
     frappe.log_error(
-        f"Delivery assignment {doc.name} created for driver {driver_name}. OTP: {otp}",
+        f"Delivery assignment {doc.name} created and an OTP was issued.",
         "Delivery Assignment Notification",
     )
 

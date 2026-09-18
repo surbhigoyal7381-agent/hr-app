@@ -48,13 +48,18 @@ class CheckinLogCase(FrappeTestCase):
 		frappe.set_user("Administrator")
 		cls.employee = cls._employee()
 		cls.token = secrets.token_urlsafe(32)
-		cls.device = frappe.get_doc({
+		phone = frappe.get_doc({
 			"doctype": fc.DEVICE,
 			"employee": cls.employee,
 			"employee_name": NAME_MARKER,
 			"status": "Active",
 			"token_hash": fc._hash(cls.token),
-		}).insert(ignore_permissions=True).name
+		})
+		# Slice 013: a phone record may only be made by server code, so a fixture
+		# has to say it is standing in for the server. Nothing else about this
+		# fixture, or about any assertion below, changed.
+		phone.flags[fc.device_rules.SERVER_FLAG] = True
+		cls.device = phone.insert(ignore_permissions=True).name
 		# The endpoints commit part-way, which would commit our fixtures anyway.
 		# Committing here makes that explicit, and tearDownClass removes them.
 		frappe.db.commit()
@@ -68,7 +73,11 @@ class CheckinLogCase(FrappeTestCase):
 				frappe.delete_doc("File", f, force=True, ignore_permissions=True)
 			frappe.delete_doc("Employee Checkin", name, force=True, ignore_permissions=True)
 		for name in frappe.get_all(fc.DEVICE, {"employee": cls.employee}, pluck="name"):
-			frappe.delete_doc(fc.DEVICE, name, force=True, ignore_permissions=True)
+			# Slice 013 refuses to delete a phone record, because the row is the
+			# only evidence of which phone sent a punch. A fixture clearing up
+			# after itself says so explicitly.
+			frappe.delete_doc(fc.DEVICE, name, force=True, ignore_permissions=True,
+			                  ignore_on_trash=True)
 		frappe.db.commit()
 		super().tearDownClass()
 
@@ -210,7 +219,10 @@ class NothingPersonalReachesTheLogs(CheckinLogCase):
 		frappe.conf["developer_mode"] = 1
 		out = self.call(fc.field_checkin, self.punch_args(log_type="SIDEWAYS"))
 		self.assertIsNone(out)
-		self.assertEqual(frappe.local.response.get("http_status_code"), 417)
+		# 400, not 417: slice 013 gave this refusal the INVALID_REQUEST code and
+		# its fixed status. What this test guards - no refusal leaves the
+		# endpoint as an exception, so developer mode logs nothing - is unchanged.
+		self.assertEqual(frappe.local.response.get("http_status_code"), 400)
 		self.assertEqual(self.new_error_logs(), [])
 		self.assert_logs_clean()
 
@@ -233,7 +245,12 @@ class RefusalsStillReadTheSame(CheckinLogCase):
 		"""www/field-checkin.html matches on the sentence in _server_messages and
 		on a non-2xx status. Both must survive the wrapper."""
 		self.call(fc.field_checkin, self.punch_args(log_type="SIDEWAYS"))
-		self.assertEqual(frappe.local.response.get("http_status_code"), 417)
+		# Slice 013 gave this refusal its own code, INVALID_REQUEST, whose fixed
+		# status is 400 rather than Frappe's generic 417. The page does not read
+		# the status or the error class at all - it matches on the sentence and
+		# on "not 2xx" (field-checkin.html:648-667) - so what this test was
+		# written to protect is unchanged, and the sentence below still pins it.
+		self.assertEqual(frappe.local.response.get("http_status_code"), 400)
 		self.assertEqual(frappe.local.response.get("exc_type"), "ValidationError")
 		self.assertIn("Invalid check-in type", json.dumps(frappe.local.message_log))
 

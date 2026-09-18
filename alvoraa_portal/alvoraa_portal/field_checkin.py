@@ -43,7 +43,12 @@ from frappe.utils import (
 	today,
 )
 
-from alvoraa_portal.subscription import requires_feature
+from alvoraa_portal import field_app_errors as errors
+from alvoraa_portal import field_app_notice as notice
+from alvoraa_portal.alvoraa_portal.doctype.alvoraa_field_device import (
+	alvoraa_field_device as device_rules,
+)
+from alvoraa_portal.field_app_errors import refuse, requires_field_app_plan
 
 # ── the pieces that used to live in this file ────────────────────────────────
 #
@@ -85,7 +90,11 @@ DEVICE = "Alvoraa Field Device"
 # The version of the notice shown at setup. Change it whenever the notice's
 # meaning changes. A consent record that says only "agreed" cannot answer "agreed
 # to what?" once the words have moved on; one that names the version can.
-CONSENT_VERSION = "2026-09-13"
+#
+# The words themselves now live in `field_app_notice`, as data, one entry per
+# version. This name is kept because the web page, the two stored fields and
+# slice 014's tests all call it that, and a name is not worth a migration.
+CONSENT_VERSION = notice.CURRENT_VERSION
 
 # A phone that cannot place itself better than this cannot be used to answer
 # "were you at the branch". Roughly the accuracy of a decent fix outdoors; a
@@ -161,6 +170,7 @@ def _private_request(*fields):
 			# only read by logging from here on.
 			for field in fields:
 				frappe.form_dict.pop(field, None)
+			_never_cache()
 			try:
 				return fn(*args, **kwargs)
 			except Exception as exc:
@@ -168,9 +178,13 @@ def _private_request(*fields):
 				frappe.db.rollback()
 				if status < 500:
 					# A refusal: frappe.throw has already queued its sentence, and
-					# the page matches on that sentence. Answer as Frappe would.
+					# the page matches on that sentence. Answer as Frappe would,
+					# plus the code the app picks its screen from (slice 013).
+					code, values = errors.code_and_values(exc, status)
 					frappe.local.response["http_status_code"] = status
-					frappe.local.response["exc_type"] = type(exc).__name__
+					frappe.local.response["exc_type"] = errors.exc_type_for(exc, status)
+					frappe.local.response["code"] = code
+					frappe.local.response["values"] = values
 					return None
 				_log_server_error(fn.__name__, exc)
 				frappe.clear_messages()
@@ -178,12 +192,29 @@ def _private_request(*fields):
 				                  "in a minute."))
 				frappe.local.response["http_status_code"] = 500
 				frappe.local.response["exc_type"] = "ServerError"
+				frappe.local.response["code"] = "SERVER_ERROR"
+				frappe.local.response["values"] = {}
 				return None
 
 		wrapper.__alvoraa_private_request__ = fields    # so tests can see it
 		return wrapper
 
 	return decorator
+
+
+def _never_cache():
+	"""No answer from a device endpoint may sit in a cache. AC-28.
+
+	Frappe already defaults API answers to no-store, which means this line
+	changes nothing today - and that is exactly why it is written down. A
+	default can move in a framework upgrade; a punch refusal served from a proxy
+	cache would tell somebody they are checked in when they are not.
+	"""
+	try:
+		frappe.local.response_headers["Cache-Control"] = "no-store"
+	except Exception:
+		# No request at all: a test, a console, a background job.
+		pass
 
 
 def _log_server_error(endpoint, exc):
@@ -208,17 +239,62 @@ def _hash(token: str) -> str:
 	return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+# The longest a device secret can honestly be. `secrets.token_urlsafe(32)` is 43
+# characters; anything past this is not one of ours and is refused before it is
+# hashed, so a very long string cannot be used to make the server work (AC-30).
+MAX_TOKEN_CHARS = 128
+
+# Only an Active phone may do anything. Every other state gets its own code, so
+# the app can show the right screen and so a blocked phone is never told why
+# (PRIV-13). "Consent not given" is the state a phone sits in when it is linked
+# but the person has not agreed to the notice yet; it holds a live secret and
+# may not punch.
+_REFUSAL_FOR_STATUS = {
+	"Blocked": ("DEVICE_BLOCKED",
+	            "This phone has been blocked. Please speak to HR."),
+	"Replaced": ("DEVICE_REPLACED",
+	             "You joined on another phone. Use that one, or ask HR for a new code."),
+	"Removed": ("DEVICE_REMOVED",
+	            "This phone is no longer linked. Ask HR for a new code to set it up again."),
+	"Consent not given": ("CONSENT_REQUIRED",
+	                      "Please read the notice and agree before you check in."),
+}
+
+# Which field carries the time each final state was reached, for the one value
+# the app is allowed to show. A blocked phone gets NOTHING - not a time, not a
+# reason - because the reason is HR's and the time invites a guess at it.
+_REFUSAL_TIME_VALUE = {
+	"Replaced": "replaced_at",
+	"Removed": "removed_at",
+}
+
+
 def _device_from_token(token: str):
-	"""Resolve a device secret to its registration, or throw.
+	"""Resolve a device secret to its registration, or refuse with a named code.
 
 	Looks up by hash, so the secret is never compared in the database and never
 	appears in a query log.
 	"""
 	if not token or not isinstance(token, str) or len(token) < 20:
-		frappe.throw(_("This phone is not set up. Please register it again."),
-		             frappe.AuthenticationError)
+		refuse("NOT_SET_UP",
+		       _("This phone is not set up. Please register it again."))
+	if len(token) > MAX_TOKEN_CHARS:
+		# Deliberately a different answer from "not set up": this is a malformed
+		# request, not a phone. It names no field, so it tells an attacker
+		# nothing about what we check (SEC-19).
+		refuse("INVALID_REQUEST", _("We could not read that request."))
 
-	name = frappe.db.get_value(DEVICE, {"token_hash": _hash(token)}, "name")
+	hashed = _hash(token)
+	retired = False
+	name = frappe.db.get_value(DEVICE, {"token_hash": hashed}, "name")
+	if not name:
+		retired = True
+		# A phone that stopped keeps its old hash in `retired_token_hash`, so the
+		# secret it is still holding is recognised and answered with its own
+		# reason - "you joined on another phone", not "this phone is not set up".
+		# Without this the person is told to set up again, does, and loses the
+		# record of why they were stopped.
+		name = frappe.db.get_value(DEVICE, {"retired_token_hash": hashed}, "name")
 	if not name:
 		# A well-formed secret we never stored gets the SAME answer as a phone
 		# waiting for approval. register_device hands out a secret for every ID,
@@ -230,28 +306,52 @@ def _device_from_token(token: str):
 
 	device = frappe.get_doc(DEVICE, name)
 
-	if device.status == "Blocked":
-		frappe.throw(_("This phone has been blocked. Please speak to HR."),
-		             frappe.AuthenticationError)
+	if retired and device.status not in ("Blocked", "Replaced", "Removed"):
+		# A retired hash on a phone that is not in a final state should be
+		# impossible - the two are written in the same save. If it ever happens,
+		# the row is not to be trusted, so the secret opens nothing.
+		frappe.log_error(f"field device {device.name} holds a retired secret while "
+		                 f"its status is {device.status}", "Field check-in")
+		_refuse_as_pending()
+
 	if device.status == "Pending":
 		_refuse_as_pending()
+
+	if device.status != "Active":
+		code, sentence = _REFUSAL_FOR_STATUS.get(
+			device.status,
+			# A status nobody has taught this code about. Fail closed: refuse,
+			# and say nothing about which state it is in.
+			("DEVICE_BLOCKED", "This phone has been blocked. Please speak to HR."))
+		values = {}
+		value_name = _REFUSAL_TIME_VALUE.get(device.status)
+		if value_name and device.get("status_changed_on"):
+			values[value_name] = str(device.status_changed_on)
+		if code == "CONSENT_REQUIRED":
+			values["version"] = CONSENT_VERSION
+		refuse(code, _(sentence), **values)
 
 	return device
 
 
 def _refuse_as_pending():
-	frappe.throw(
-		_("This phone is waiting for HR to approve it. You will be able to check "
-		  "in as soon as they do. If nothing happens today, check your employee ID "
-		  "with HR and set up again."),
-		frappe.AuthenticationError)
+	"""One answer for a phone waiting for HR and for a secret nobody holds.
+
+	The two must be indistinguishable, byte for byte, or this endpoint becomes a
+	way to ask "does this employee exist" one call after register_device refused
+	to answer it (slice 014, AC-1).
+	"""
+	refuse("DEVICE_PENDING",
+	       _("This phone is waiting for HR to approve it. You will be able to check "
+	         "in as soon as they do. If nothing happens today, check your employee ID "
+	         "with HR and set up again."))
 
 
 # ── registration: the one-time setup on the phone ────────────────────────────
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_private_request("employee_id", "device_label", "platform")
-@requires_feature("field_checkin")
+@requires_field_app_plan
 @rate_limit(limit=10, seconds=60 * 60)
 def register_device(employee_id, device_label=None, platform=None,
                     consent=0, consent_version=None):
@@ -281,17 +381,21 @@ def register_device(employee_id, device_label=None, platform=None,
 	# it would refuse a real ID and a fake one differently - the staff-directory
 	# leak this endpoint was rebuilt to close.
 	if not cint(consent):
-		frappe.throw(_("Please read the notice and tick the box to continue."))
+		refuse("CONSENT_REQUIRED",
+		       _("Please read the notice and tick the box to continue."),
+		       version=CONSENT_VERSION)
 	if consent_version != CONSENT_VERSION:
 		# The page and the server disagree on what was shown - an old cached
 		# page, most likely. Agreement to words the person never saw is not
 		# agreement, so ask again rather than record it.
-		frappe.throw(_("This screen is out of date. Close the app, open it "
-		               "again, and read the notice."))
+		refuse("NOTICE_CHANGED",
+		       _("This screen is out of date. Close the app, open it "
+		         "again, and read the notice."),
+		       version=CONSENT_VERSION)
 
 	employee_id = (employee_id or "").strip()
 	if not employee_id:
-		frappe.throw(_("Please enter your employee ID."))
+		refuse("INVALID_REQUEST", _("Please enter your employee ID."))
 
 	emp = frappe.db.get_value(
 		"Employee",
@@ -324,18 +428,26 @@ def register_device(employee_id, device_label=None, platform=None,
 		answer["token"] = token
 		return answer
 
-	frappe.get_doc({
+	phone = frappe.get_doc({
 		"doctype": DEVICE,
 		"employee": emp.name,
 		"employee_name": emp.employee_name,
 		"status": "Pending",
+		# How it arrived. It decides later which rules apply: only a web phone
+		# is switched on by a human in HR, because only a web phone was never
+		# approved in advance by somebody making a code.
+		"join_method": "Web check-in page",
 		"device_label": (device_label or "")[:140],
 		"platform": (platform or "")[:60],
 		"token_hash": _hash(token),
 		"registered_on": now(),
 		"consent_given_on": now(),
 		"consent_version": CONSENT_VERSION,
-	}).insert(ignore_permissions=True)
+	})
+	# Nobody makes one of these by hand any more (US-2). This says the server is
+	# the author, which is the only way a phone record is allowed to appear.
+	phone.flags[device_rules.SERVER_FLAG] = True
+	phone.insert(ignore_permissions=True)
 	frappe.db.commit()
 
 	# The phone keeps this and starts working the moment HR activates it. It is
@@ -348,7 +460,7 @@ def register_device(employee_id, device_label=None, platform=None,
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_private_request("photo", "latitude", "longitude", "accuracy", "captured_at")
-@requires_feature("field_checkin")
+@requires_field_app_plan
 @rate_limit(limit=60, seconds=60 * 60)
 def field_checkin(token, log_type, latitude=None, longitude=None,
                   accuracy=None, photo=None, captured_at=None):
@@ -364,10 +476,11 @@ def field_checkin(token, log_type, latitude=None, longitude=None,
 	limit key into the Redis key in clear, which would write every device
 	secret into Redis and into any error about it.
 	"""
+	errors.check_app_version()
 	device = _device_from_token(token)
 
 	if log_type not in ("IN", "OUT"):
-		frappe.throw(_("Invalid check-in type."))
+		refuse("INVALID_REQUEST", _("Invalid check-in type."))
 
 	lat, lon = _require_position(latitude, longitude, accuracy)
 	claimed = _validated_captured_at(captured_at)
@@ -376,8 +489,9 @@ def field_checkin(token, log_type, latitude=None, longitude=None,
 		"Employee", device.employee,
 		["name", "employee_name", "status"], as_dict=True)
 	if not emp or emp.status != "Active":
-		frappe.throw(_("This employee record is no longer active. Please speak "
-		               "to HR."), frappe.AuthenticationError)
+		refuse("EMPLOYEE_NOT_ACTIVE",
+		       _("This employee record is no longer active. Please speak "
+		         "to HR."))
 
 	_refuse_duplicate(device, log_type)
 
@@ -417,7 +531,7 @@ def field_checkin(token, log_type, latitude=None, longitude=None,
 			# from Demo Field Site..." - which is twice as long and says the
 			# radius twice.
 			frappe.clear_messages()
-			frappe.throw(friendly, exc=frappe.ValidationError)
+			refuse("OUTSIDE_WORKPLACE", friendly["message"], **friendly["values"])
 		raise
 
 	if photo:
@@ -451,15 +565,17 @@ def _require_position(latitude, longitude, accuracy):
 	it is already on sends them round in circles.
 	"""
 	if latitude in (None, "") or longitude in (None, ""):
-		frappe.throw(_("We could not get your location. Turn on location for "
-		               "this app and try again."))
+		refuse("LOCATION_MISSING",
+		       _("We could not get your location. Turn on location for "
+		         "this app and try again."))
 
 	acc = flt(accuracy) if accuracy not in (None, "") else None
 	if acc is not None and acc > MAX_ACCURACY_METRES:
-		frappe.throw(
-			_("Your location is only accurate to about {0} m, which is not "
-			  "close enough to record. Step outside or into the open and try "
-			  "again.").format(int(acc)))
+		refuse("GPS_NOT_EXACT",
+		       _("Your location is only accurate to about {0} m, which is not "
+		         "close enough to record. Step outside or into the open and try "
+		         "again.").format(int(acc)),
+		       accuracy_m=int(acc), limit_m=int(MAX_ACCURACY_METRES))
 
 	return flt(latitude), flt(longitude)
 
@@ -496,17 +612,23 @@ def _refuse_duplicate(device, log_type):
 			"log_type": log_type,
 			"time": [">", add_to_date(now(), seconds=-DUPLICATE_WINDOW_SECONDS)],
 		},
+		fields=["time"],
+		order_by="time desc",
 		limit=1,
 	)
 	if recent:
-		frappe.throw(_("That check-in is already recorded."))
+		refuse("ALREADY_RECORDED", _("That check-in is already recorded."),
+		       time=str(recent[0].time))
 
 
 def _geofence_message(exc, employee, lat, lon):
 	"""Turn Frappe HR's radius refusal into something a driver can act on.
 
 	Returns None for any other error, so real failures are never swallowed and
-	dressed up as a location problem.
+	dressed up as a location problem. Otherwise `{"message", "values"}`: the
+	sentence for the person reading it, and the same facts as named values so an
+	app can draw its own screen from them. The sentences are word for word what
+	they were before slice 013 (AC-35); only the values beside them are new.
 	"""
 	try:
 		from hrms.hr.doctype.employee_checkin.employee_checkin import (
@@ -520,17 +642,28 @@ def _geofence_message(exc, employee, lat, lon):
 
 	site = _shift_location_for(employee)
 	if not site:
-		return _("You are too far from your work location to check in.")
+		return {"message": _("You are too far from your work location to check in."),
+		        "values": {}}
 
 	try:
 		from hrms.hr.utils import get_distance_between_coordinates
 		distance = int(get_distance_between_coordinates(
 			site.latitude, site.longitude, lat, lon))
 	except Exception:
-		return _("You are too far from {0} to check in.").format(site.location_name)
+		return {"message": _("You are too far from {0} to check in.").format(
+			site.location_name),
+			"values": {"site": site.location_name,
+			           "radius_m": cint(site.checkin_radius)}}
 
-	return _("You are about {0} m from {1}. You need to be within {2} m to "
-	         "check in.").format(distance, site.location_name, cint(site.checkin_radius))
+	return {
+		"message": _("You are about {0} m from {1}. You need to be within {2} m to "
+		             "check in.").format(distance, site.location_name,
+		                                 cint(site.checkin_radius)),
+		# Never the workplace coordinates. The distance is what a person can act
+		# on; the position of the branch is not the phone's business (PRIV-6).
+		"values": {"distance_m": distance, "site": site.location_name,
+		           "radius_m": cint(site.checkin_radius)},
+	}
 
 
 def _shift_location_for(employee):
@@ -562,7 +695,7 @@ def _shift_location_for(employee):
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_private_request()
-@requires_feature("field_checkin")
+@requires_field_app_plan
 @rate_limit(limit=120, seconds=60 * 60)
 def field_status(token):
 	"""Today's punches for this phone, and whether they are currently in.
@@ -570,6 +703,7 @@ def field_status(token):
 	Deliberately narrow: this endpoint answers for one employee, on one
 	registered phone, for one day. It is not a way to read anybody else.
 	"""
+	errors.check_app_version()
 	device = _device_from_token(token)
 
 	emp = frappe.db.get_value(
@@ -621,6 +755,11 @@ def notice_facts():
 	return {
 		"photo_retention_days": days,
 		"consent_version": CONSENT_VERSION,
+		# The words themselves, so a screen can render the notice from the store
+		# instead of holding its own copy. The web page does not read these yet -
+		# that change belongs with the page's own work, and this slice's step 1
+		# must leave that page byte for byte as it was (AC-35).
+		"notice": notice.facts(),
 	}
 
 
@@ -710,14 +849,35 @@ def block_devices_for_leaver(doc, method=None):
 	second lock rather than the only one. It matters because a status that goes
 	back to Active - a rehire, a correction, a script - would otherwise re-arm a
 	secret that somebody left the company still holding.
+
+	**This used to write straight to the table** with
+	`frappe.db.set_value(..., update_modified=False)`, which skips `validate` and
+	`on_update`. Every rule slice 013 put in the controller - retiring the
+	secret's hash, recording who changed the status and when, requiring a reason
+	- would therefore have fired for every phone in the product EXCEPT a
+	leaver's, which is the one case that matters most. It now goes through the
+	document, so a leaver's phone is stopped exactly the way HR blocking it is.
 	"""
 	if doc.status == "Active":
 		return
 	if not frappe.db.exists("DocType", DEVICE):
 		return
+
 	for name in frappe.get_all(
 		DEVICE,
-		filters={"employee": doc.name, "status": ["in", ["Active", "Pending"]]},
+		filters={"employee": doc.name,
+		         "status": ["in", ["Active", "Pending", "Consent not given"]]},
 		pluck="name",
 	):
-		frappe.db.set_value(DEVICE, name, "status", "Blocked", update_modified=False)
+		try:
+			phone = frappe.get_doc(DEVICE, name)
+			phone.status = "Blocked"
+			phone.block_reason = "Left the company"
+			phone.flags[device_rules.SERVER_FLAG] = True
+			phone.save(ignore_permissions=True)
+		except Exception:
+			# One phone that will not save must not stop the others, and must not
+			# stop HR saving the employee record. The row is named; nothing
+			# personal goes into the log.
+			frappe.log_error(f"could not block field device {name} for a leaver",
+			                 "Field check-in leaver")

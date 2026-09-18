@@ -14,8 +14,17 @@
   "device_section",
   "device_label",
   "platform",
+  "join_method",
   "column_break_dev",
   "token_hash",
+  "retired_token_hash",
+  "status_section",
+  "status_changed_on",
+  "status_changed_by",
+  "column_break_status",
+  "status_change_source",
+  "block_reason",
+  "replaced_by",
   "activity_section",
   "last_seen",
   "checkin_count",
@@ -32,7 +41,9 @@
    "label": "Employee",
    "options": "Employee",
    "reqd": 1,
-   "search_index": 1
+   "search_index": 1,
+   "set_only_once": 1,
+   "description": "Who this phone belongs to. It can never be changed: the record of who punched has to stay true."
   },
   {
    "fetch_from": "employee.employee_name",
@@ -49,9 +60,9 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Pending\nActive\nBlocked",
+   "options": "Pending\nActive\nBlocked\nReplaced\nRemoved\nConsent not given",
    "reqd": 1,
-   "description": "Only an Active device may send a check-in. Every registration starts Pending and a human in HR activates it: on the day somebody is hired nobody has registered yet, so trusting the first phone to arrive would mean trusting whoever got there first."
+   "description": "Only an Active phone may send a check-in. Every other state is refused with its own reason. Blocked, Replaced and Removed are final - getting the app back always needs a new code. A phone that is linked but has not agreed to the notice sits in Consent not given and cannot punch."
   },
   {
    "fieldname": "column_break_reg",
@@ -89,6 +100,15 @@
    "read_only": 1
   },
   {
+   "fieldname": "join_method",
+   "fieldtype": "Select",
+   "label": "How it joined",
+   "options": "\nWeb check-in page\nApp QR code",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "Set by the server when the phone joined. Empty means it joined on the web check-in page before this was recorded."
+  },
+  {
    "fieldname": "column_break_dev",
    "fieldtype": "Column Break"
   },
@@ -103,6 +123,67 @@
    "description": "SHA-256 of the device secret. The secret itself is shown once, to the phone, and never stored."
   },
   {
+   "fieldname": "retired_token_hash",
+   "fieldtype": "Data",
+   "label": "Retired Token Hash",
+   "read_only": 1,
+   "hidden": 1,
+   "no_copy": 1,
+   "search_index": 1,
+   "description": "The secret's hash, moved here when the phone stopped. Keeps \"why did this phone stop working\" answerable while the live hash is empty."
+  },
+  {
+   "fieldname": "status_section",
+   "fieldtype": "Section Break",
+   "label": "Status history"
+  },
+  {
+   "fieldname": "status_changed_on",
+   "fieldtype": "Datetime",
+   "label": "Status changed on",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "When the status last moved. `modified` also moves when anything else is saved."
+  },
+  {
+   "fieldname": "status_changed_by",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Status changed by",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "Empty when the employee or the system changed it."
+  },
+  {
+   "fieldname": "column_break_status",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "status_change_source",
+   "fieldtype": "Select",
+   "label": "Changed by",
+   "options": "\nHR\nThe employee\nSystem",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "block_reason",
+   "fieldtype": "Select",
+   "label": "Why it was blocked",
+   "options": "\nPhone lost or stolen\nHas a new phone\nSomeone else was using it\nLeft the company\nOther",
+   "no_copy": 1,
+   "description": "Required whenever a phone is blocked. Kept in the record. It is never sent to the phone or shown to the employee."
+  },
+  {
+   "fieldname": "replaced_by",
+   "fieldtype": "Link",
+   "options": "Alvoraa Field Device",
+   "label": "Replaced by",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "The phone that took over from this one. Set by the server only."
+  },
+  {
    "fieldname": "activity_section",
    "fieldtype": "Section Break",
    "label": "Activity"
@@ -110,8 +191,9 @@
   {
    "fieldname": "last_seen",
    "fieldtype": "Datetime",
-   "label": "Last Seen",
-   "read_only": 1
+   "label": "Last punch",
+   "read_only": 1,
+   "description": "The last time this phone recorded a check-in. It does not move when the app is merely opened."
   },
   {
    "default": "0",
@@ -142,7 +224,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-09-12 09:00:00.000000",
+ "modified": "2026-09-18 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Portal",
  "name": "Alvoraa Field Device",
@@ -150,8 +232,6 @@
  "owner": "Administrator",
  "permissions": [
   {
-   "create": 1,
-   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,
@@ -162,8 +242,6 @@
    "write": 1
   },
   {
-   "create": 1,
-   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,

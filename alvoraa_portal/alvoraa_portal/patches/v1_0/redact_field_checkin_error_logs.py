@@ -56,24 +56,30 @@ def execute():
 
 
 def _matching_error_logs():
-	"""Names of Error Log rows that came from field check-in, oldest first."""
+	"""Names of Error Log rows that came from field check-in, in name order.
+
+	Paged on `name >`, not on an offset. None of the three searches can use an
+	index - they all start with a wildcard - so an offset page would re-scan the
+	whole table for every page, and this runs inside a migrate, with the site at
+	503. Walking the name forward reads each row once.
+	"""
 	names = []
-	start = 0
+	after = ""
 	while True:
 		batch = frappe.get_all(
 			"Error Log",
+			filters=[["name", ">", after]],
 			or_filters=[
 				["metadata", "like", "%alvoraa_portal.field_checkin%"],
 				["error", "like", "%alvoraa_portal/field_checkin.py%"],
 				["method", "like", "Field check-in%"],
 			],
-			pluck="name", order_by="creation asc",
-			limit_start=start, limit_page_length=BATCH,
+			pluck="name", order_by="name asc", limit_page_length=BATCH,
 		)
 		names.extend(batch)
 		if len(batch) < BATCH:
 			return names
-		start += BATCH
+		after = batch[-1]
 
 
 def redact(error, metadata):

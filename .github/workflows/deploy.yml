@@ -161,12 +161,28 @@ jobs:
       #
       # First step in the job on purpose - it is also the cheapest. A bad config now
       # costs twenty seconds instead of a ten-minute outage after a thirty-minute run.
+      # The fetch carries the job's own token in a header.
+      #
+      # The server's checkout has an HTTPS remote and NO stored credentials, and
+      # that is deliberate: nothing long-lived sits on the box, so there is nothing
+      # to leak, expire or rotate. The token here lives for the length of the job.
+      # It became necessary the moment the repository went private - on 18 Sep a
+      # deploy failed here with "could not read Username for https://github.com",
+      # exit 128, because a public repo had never needed to authenticate. Do not
+      # "fix" this by storing a credential on the server.
+      #
+      # `contents: read` on this job (above) is what the token needs; drop it and
+      # this fails with a 403 that reads nothing like an auth problem.
       - name: nginx config must parse
+        env:
+          GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           cd /var/www/html/hr-app
           BRANCH="${ENV_NAME/production/main}"
-          git fetch --quiet origin "$BRANCH"
+          AUTH=$(printf 'x-access-token:%s' "$GIT_TOKEN" | base64 -w0)
+          git -c http.extraheader="AUTHORIZATION: basic $AUTH" \
+              fetch --quiet origin "$BRANCH"
 
           # Where the real certificates live (TLS_CERT_DIR, /etc/letsencrypt). They
           # are mounted read-only, so nginx checks the certificate PATHS too: a typo
@@ -243,10 +259,18 @@ jobs:
               | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
 
       - name: Deploy
+        env:
+          GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
             set -euo pipefail
             cd /var/www/html/hr-app
-            git fetch --all --prune
+            # Same token header as the gate step above, and for the same reason:
+            # the repository is private and the server holds no credentials.
+            # `origin` is the only remote on this checkout, so --prune is safe here.
+            AUTH=$(printf 'x-access-token:%s' "$GIT_TOKEN" | base64 -w0)
+            git -c http.extraheader="AUTHORIZATION: basic $AUTH" \
+                fetch --prune origin
+            # The objects are local now, so the checkout itself needs no credential.
             git checkout --detach "origin/${ENV_NAME/production/main}" 2>/dev/null \
               || git checkout --detach origin/main
             cd deploy/compose

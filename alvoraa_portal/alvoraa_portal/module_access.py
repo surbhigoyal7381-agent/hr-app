@@ -193,12 +193,25 @@ def sync_site(features=None):
 
     # Wave 4. The only one of these that actually DENIES anything; everything
     # above it just stops drawing menus.
+    #
+    # This one is NOT swallowed, and the three around it are, and the difference
+    # matters. A failed workspace or sidebar sync draws too many menus; a failed
+    # permission sync can leave a customer's modules denied. Swallowing it is how
+    # a half-done denial used to reach apply_to_users(), which COMMITS - so the
+    # rows landed, the run reported success, and nobody knew anything was wrong.
+    #
+    # Both production callers already handle this: tenant_api runs sync_site as
+    # `bench execute` and reads the return code, logging a warning without
+    # failing the plan change or the provisioning. No scheduler job, hook or
+    # patch calls it at all.
     try:
         perms = sync_permissions(feats)
     except Exception:
-        perms = {"error": True}
-        frappe.log_error(title="module_access: permission sync failed",
+        frappe.log_error(title="module_access: permission sync failed - site NOT synced",
                          message=frappe.get_traceback())
+        print("Permission sync failed. Module access was NOT applied to this site. "
+              "See the Error Log entry 'module_access: permission sync failed'.")
+        raise
 
     # The desk's own menu gets a way back to the portal.
     try:
@@ -281,28 +294,48 @@ def _load(field):
 
 
 def _save(restricted=None, snapshot=None):
-    """Write the state record, re-reading it immediately first.
+    """Write the state record, re-reading it with a LOCK immediately first.
 
-    `frappe.get_single` hands back a CACHED document. Anything that saved this
-    record since - an earlier sync in the same request, a previous test, a hook
-    firing on the way past - leaves the copy in hand with an older `modified`
-    than the row, and Frappe refuses the write:
+    The lock is the whole point, and it took a measurement to find out why.
+
+    Frappe refuses a save whose copy is older than the row:
 
         TimestampMismatchError: ... has been modified after you have opened it
 
     That guard is worth keeping. `restricted_doctypes` is the only record of
     which doctypes we took permissions from, and losing an update to it means
     forgetting we restricted something and never being able to give it back. So
-    the fix is not to switch the check off; it is to make sure the copy we save
-    is the current one, which leaves the guard watching for a genuine concurrent
-    write instead of firing on our own stale cache.
+    the fix is not to switch the check off, and it is not a retry loop either -
+    both of those lose the update they are hiding.
 
-    One extra read of one small row, on an operation an administrator performs
-    by hand.
+    A plain re-read is not enough, which is not obvious. MariaDB runs at
+    REPEATABLE READ, so once this transaction has read anything it holds a
+    snapshot, and the two reads Frappe makes disagree by construction:
+
+        reload()          -> plain SELECT      -> the SNAPSHOT. A change another
+                                                  connection committed since is
+                                                  invisible.
+        check_if_latest() -> SELECT FOR UPDATE -> the LATEST COMMITTED row.
+                             (frappe/model/document.py:1432, for_update=True)
+
+    So with a plain reload the mismatch is guaranteed, not unlucky, whenever a
+    second connection writes this record while we are working - another sync, a
+    worker, another test run on a shared site. Measured on test_site: a plain
+    reload returned a 35-second-old timestamp and the save raised every time.
+
+    `flags.for_update` makes reload() a locking read too
+    (frappe/model/document.py:260), so we read exactly the row the guard will
+    compare against, and we hold it until commit. Under concurrent calls that
+    turns a lost update into a queue: the second sync waits, then reads the
+    first one's result and adds to it.
+
+    One extra locking read of one small row, on an operation an administrator
+    performs by hand.
     """
     import json as _json
 
     doc = _state()
+    doc.flags.for_update = True
     doc.reload()
     if restricted is not None:
         doc.restricted_doctypes = _json.dumps(sorted(restricted))
@@ -476,28 +509,54 @@ def sync_permissions(features=None, limit=None, only=None):
     # blocked to sold is never left denied by the same run that should free it.
     released = release_permissions(already - should_block)["released"]
 
-    to_restrict = sorted(should_block - _recorded_restrictions())
+    # Re-read AFTER the release, not the `already` from before it: the release
+    # took doctypes back out of the record, and adding `already` back in would
+    # quietly re-restrict everything the upgrade just freed.
+    still_recorded = _recorded_restrictions()
+
+    to_restrict = sorted(should_block - still_recorded)
     if limit:
         to_restrict = to_restrict[:limit]
 
     snapshot = _load("permission_snapshot")
     restricted, failed = [], []
 
+    # Snapshot FIRST, for every doctype we are about to take.
+    #
+    # setup_custom_perms returns True when it copied the standard rows, and
+    # False when custom rows were already there. The False case is the one that
+    # matters: 40 of the 450 doctypes a Starter tenant blocks already carry
+    # customisations from hrms/setup.py - Salary Slip among them - and skipping
+    # those would leave exactly the doctypes the plan is meant to deny wide
+    # open. So we take them too, having first recorded what was there. The
+    # snapshot is what makes the reversal a promise rather than a hope.
+    for dt in to_restrict:
+        if dt not in snapshot and frappe.db.exists("Custom DocPerm", {"parent": dt}):
+            snapshot[dt] = _snapshot_existing(dt)
+
+    # THE RECORD GOES IN BEFORE THE ROWS. This is load-bearing.
+    #
+    # It used to be the other way round, and that is how a tenant ended up with
+    # modules blocked and NO WAY TO UNBLOCK THEM. The rows were written, then
+    # _save raised, then sync_site swallowed the error and apply_to_users()
+    # committed anyway - so the denial rows were committed and unrecorded, and
+    # release_permissions() can never touch them, because by design it releases
+    # only what we recorded.
+    #
+    # Written first, a failure here leaves NOTHING denied, because not one row
+    # has been touched yet. And if the loop below dies part-way, the record
+    # names doctypes we never actually wrote - which is the SAFE direction:
+    # releasing such a doctype deletes rows that are not there (a no-op) and
+    # puts the snapshot back verbatim, leaving it exactly where it started.
+    #
+    # Both this and the row writes are one transaction - _save writes tabSingles
+    # with plain SQL and does not commit, and the only commit is at the end of
+    # this function.
+    if to_restrict:
+        _save(restricted=still_recorded | set(to_restrict), snapshot=snapshot)
+
     for dt in to_restrict:
         try:
-            # setup_custom_perms returns True when it copied the standard rows,
-            # and False when custom rows were already there. The False case is
-            # the one that matters: 40 of the 450 doctypes a Starter tenant
-            # blocks already carry customisations from hrms/setup.py - Salary
-            # Slip among them - and skipping those would leave exactly the
-            # doctypes the plan is meant to deny wide open.
-            #
-            # So we take them too, having first recorded what was there. The
-            # snapshot is what makes the reversal a promise rather than a hope.
-            if frappe.db.exists("Custom DocPerm", {"parent": dt}):
-                if dt not in snapshot:
-                    snapshot[dt] = _snapshot_existing(dt)
-
             # Deliberately NOT frappe.permissions.setup_custom_perms: it copies
             # the standard rows through the document layer, queueing a job per
             # row. We only ever KEEP the exempt roles, so copying everything and
@@ -512,14 +571,233 @@ def sync_permissions(features=None, limit=None, only=None):
                              message=frappe.get_traceback())
             failed.append(dt)
 
-    if restricted:
-        _save(restricted=_recorded_restrictions() | set(restricted), snapshot=snapshot)
+    # Bring the record back down to what actually landed. Only when something
+    # failed - the common path wrote the right answer already.
+    if failed:
+        _save(restricted=still_recorded | set(restricted), snapshot=snapshot)
 
     frappe.db.commit()
     frappe.clear_cache()
     return {"restricted": len(restricted), "released": len(released),
             "failed": len(failed), "snapshotted": len(snapshot),
             "total_recorded": len(_recorded_restrictions())}
+
+
+# ── The repair, for tenants stranded before the fix above ────────────────────
+#
+# Between wave 4 shipping and this fix, a failed _save could leave denial rows
+# COMMITTED and UNRECORDED. release_permissions() cannot touch those - by design
+# it releases only what we recorded - so the modules stayed dark with no
+# supported way back.
+#
+# This is a one-off clean-up an operator runs on a named site and watches:
+#
+#     bench --site acme.alvoraa.co execute \
+#         alvoraa_portal.module_access.find_unrecorded_restrictions
+#     bench --site acme.alvoraa.co execute \
+#         alvoraa_portal.module_access.repair_unrecorded_restrictions \
+#         --kwargs "{'apply': 1}"
+#
+# NOT a patch that runs on migrate. Three reasons: a patch edits tenant
+# permissions unattended on every site including production, and the cost of
+# getting that wrong is a customer locked out or a customer given access they
+# did not buy; the cause is fixed above, so this is history, not an ongoing
+# need; and a patch would run forever for a job that needs doing once.
+
+
+def _rows_by_doctype(doctypes):
+    """{doctype: [role, ...]} for the ones that have Custom DocPerm rows.
+
+    One query per 500 names, not one per doctype. A Starter tenant blocks about
+    450, and an N+1 here would be 450 round trips to answer one question.
+    """
+    out = {}
+    names = sorted(doctypes)
+    for i in range(0, len(names), 500):
+        for r in frappe.get_all("Custom DocPerm",
+                                filters={"parent": ["in", names[i:i + 500]]},
+                                fields=["parent", "role"], limit_page_length=0):
+            out.setdefault(r.parent, []).append(r.role)
+    return out
+
+
+def find_unrecorded_restrictions(features=None, doctypes=None):
+    """READ-ONLY. Are there denial rows on this tenant that nothing records?
+
+    Reads. Writes nothing, commits nothing, clears no cache. Safe to run on any
+    tenant, including production, at any time:
+
+        bench --site acme.alvoraa.co execute \\
+            alvoraa_portal.module_access.find_unrecorded_restrictions
+
+    This is the first question support should ask about a tenant whose plan has
+    ever been changed, so it is deliberately separate from the repair. Seeing
+    the answer must never require holding a tool that can also delete.
+
+    ── How it tells a stranded row from a legitimate one ────────────────────
+
+    NEVER "every Custom DocPerm row". A tenant's honest baseline is not zero:
+    `hrms/setup.py` writes rows at install through `add_default_hr_permissions`,
+    the Employee Self Service `User Type` generates rows for about 22 more, and
+    ppj.localhost carries 625 legitimate rows across 351 doctypes. A blanket
+    reading would call all of that a fault.
+
+    A doctype is `stranded` only when both hold:
+
+      1. it is NOT in `restricted_doctypes` - we do not admit to restricting it,
+         and
+      2. EVERY one of its Custom DocPerm rows names an **exempt** role
+         (System Manager).
+
+    (2) is the exact fingerprint `_keep_exempt_row()` leaves: one row, one
+    exempt role, nothing else, because sync_permissions deletes all the others
+    first. Every legitimate source names some other role - HR Manager, HR User,
+    Employee, Employee Self Service, Accounts User - so one such role anywhere
+    in the doctype's rows is enough to class it `legitimate` and walk past.
+
+    Measured on test_site while proving this: 365 doctypes carried rows, 319
+    matched the fingerprint, and the remaining 46 - every one of them an
+    Employee Self Service or HR grant - were correctly left alone.
+
+    ── What it CANNOT tell ──────────────────────────────────────────────────
+
+    * A tenant administrator who hand-made a single System Manager row on a
+      doctype has built the same shape by hand, and this report will call it
+      stranded. `first_seen` is there to help: a genuine strand is dated when a
+      plan was changed, an install-time row is dated when the site was made.
+      Nothing in the data settles it, so the repair is a separate, deliberate
+      act and not something that runs on migrate.
+    * It cannot say WHAT was there before a stranded doctype was denied. If the
+      snapshot was lost with the record, that information is gone; `restores`
+      says which doctypes are in that position.
+    * It reports; it does not judge whether the denial was correct. A doctype
+      the plan really should deny is still stranded if nothing recorded it,
+      because nothing can give it back.
+
+    `doctypes` narrows the scan. The default is **every doctype on the site that
+    has any Custom DocPerm row**, deliberately wider than the current plan's
+    blocked list, because a strand left by a plan the tenant has since moved off
+    would sit outside it and is exactly what support is looking for.
+    """
+    recorded = _recorded_restrictions()
+    snapshot = _load("permission_snapshot")
+    exempt = _exempt_roles()
+    feats = features if features is not None else enabled_features()
+    in_plan = set(blocked_doctypes(feats))
+
+    if doctypes is not None:
+        search = set(doctypes)
+    else:
+        search = set(frappe.get_all("Custom DocPerm", pluck="parent",
+                                    distinct=True, limit_page_length=0))
+
+    found = _rows_by_doctype(search - recorded)
+    stranded, legitimate = [], []
+    for dt, roles in sorted(found.items()):
+        if all(r in exempt for r in roles):
+            stranded.append({
+                "doctype": dt,
+                "rows": len(roles),
+                # Whether the original rows can go back verbatim, or only
+                # Frappe's standard permissions. See the docstring on repair.
+                "restores": "snapshot" if dt in snapshot else "standard permissions",
+                # A hint, not a verdict: rows dated long after the site was
+                # created are much more likely to be ours than install-time.
+                "first_seen": frappe.db.get_value(
+                    "Custom DocPerm", {"parent": dt}, "creation", order_by="creation asc"),
+                # Outside the current plan's blocked list usually means a plan
+                # the tenant has since moved off.
+                "in_current_plan": dt in in_plan,
+            })
+        else:
+            legitimate.append({"doctype": dt, "rows": len(roles),
+                               "roles": sorted(set(roles))})
+
+    out = {"stranded": stranded, "legitimate": legitimate,
+           # kept under the old key too: the repair and its tests read it
+           "suspect": legitimate,
+           "recorded": len(recorded), "checked": len(search)}
+    print(f"checked {len(search)} doctype(s) with permission rows | "
+          f"recorded by us: {len(recorded)} | "
+          f"STRANDED (denied, nothing records it): {len(stranded)} | "
+          f"legitimate, left alone: {len(legitimate)}")
+    for s in stranded:
+        plan = "" if s["in_current_plan"] else "  [not in the current plan]"
+        print(f"  stranded  {s['doctype']}  ({s['rows']} row(s), first seen "
+              f"{s['first_seen']}) -> {s['restores']}{plan}")
+    if not stranded:
+        print("  nothing stranded. Every permission row on this site is either "
+              "recorded by us or somebody else's.")
+    return out
+
+
+def repair_unrecorded_restrictions(features=None, doctypes=None, apply=False):
+    """Release exactly the stranded doctypes find_unrecorded_restrictions names.
+
+    Dry run unless `apply` is truthy. Nothing else is touched: a suspect doctype
+    keeps every row it has, and a doctype we DID record is left to
+    release_permissions(), which is the supported route for those.
+
+    Where we still hold the snapshot, the original rows go back verbatim. Where
+    we do not - because the snapshot was lost in the same failed save that lost
+    the record - deleting the leftover exempt row returns the doctype to
+    Frappe's STANDARD permissions.
+
+    Say that out loud, because it is the honest limit of this repair: for a
+    doctype that carried the tenant's own customisation before the failed sync,
+    standard permissions are NOT what was there. The report names every doctype
+    in that position so an operator can decide whether a restore from backup is
+    warranted. Being on standard permissions still beats being locked out.
+    """
+    apply = str(apply).strip().lower() in ("1", "true", "yes", "y", "on")
+    # The report scans the whole site on purpose; the REPAIR does not. Unless an
+    # operator names the doctypes, this stays inside the set this plan blocks -
+    # the only doctypes sync_permissions could have written. Read wide, write
+    # narrow. The report prints the names to pass for anything outside it.
+    feats = features if features is not None else enabled_features()
+    scope = set(doctypes) if doctypes is not None else set(blocked_doctypes(feats))
+    report = find_unrecorded_restrictions(features, doctypes=scope)
+    if not apply:
+        print("DRY RUN - nothing changed. Re-run with --kwargs \"{'apply': 1}\" to do it.")
+        return {**report, "applied": False, "released": []}
+
+    snapshot = _load("permission_snapshot")
+    released, from_snapshot = [], []
+    for item in report["stranded"]:
+        dt = item["doctype"]
+        if not frappe.db.exists("DocType", dt):
+            continue
+        try:
+            frappe.db.delete("Custom DocPerm", {"parent": dt})
+            if dt in snapshot:
+                _restore_snapshot(dt, snapshot.pop(dt))
+                from_snapshot.append(dt)
+            released.append(dt)
+        except Exception:
+            frappe.log_error(title=f"module_access: repair could not release {dt}",
+                             message=frappe.get_traceback())
+
+    if released:
+        # Only the snapshot moves. These doctypes were never in
+        # restricted_doctypes, which is the whole problem, so there is nothing
+        # to take out of it.
+        _save(snapshot=snapshot)
+        frappe.db.commit()
+        frappe.clear_cache()
+        # A deliberate change to a tenant's permissions needs a durable record.
+        # Doctype names only - there is no personal data anywhere near this.
+        frappe.log_error(
+            title="module_access: unrecorded restrictions repaired",
+            message=(f"released {len(released)} doctype(s); "
+                     f"{len(from_snapshot)} restored from snapshot, "
+                     f"{len(released) - len(from_snapshot)} returned to standard "
+                     f"permissions.\nreleased: {sorted(released)}\n"
+                     f"from snapshot: {sorted(from_snapshot)}"),
+        )
+    print(f"released {len(released)} | from snapshot {len(from_snapshot)} | "
+          f"to standard permissions {len(released) - len(from_snapshot)}")
+    return {**report, "applied": True, "released": sorted(released),
+            "restored_from_snapshot": sorted(from_snapshot)}
 
 
 @frappe.whitelist()

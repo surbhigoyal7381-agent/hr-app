@@ -39,8 +39,10 @@ from alvoraa_portal.attendance_analytics import (
 	DEFAULT_TOLERANCE_MINS,
 	TOLERANCE_KEY,
 	_reports_to,
+	_shift_grace,
 	_shift_minutes,
 	_shift_row,
+	org_late_grace,
 )
 
 REQUEST = "Attendance Request"
@@ -458,6 +460,7 @@ def month(year=None, month=None, employee=None):
 		"employee": me.name, "employee_name": me.employee_name,
 		"year": year, "month": month, "last_day": last,
 		"tolerance_mins": tolerance,
+		"late_grace_mins": org_late_grace(),
 		"days": days,
 		"totals": _totals(days),
 		"is_self": is_self,
@@ -481,7 +484,7 @@ def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, t
 		"leave_type": leave_days.get(date),
 		"status": None, "shift": None, "in_time": None, "out_time": None,
 		"hours": None, "expected_hours": None, "short_by": 0.0,
-		"late_entry": 0, "early_exit": 0,
+		"late_entry": 0, "early_exit": 0, "is_late": False, "grace_mins": 0,
 		"attendance": None,
 		"punches": list(marks),
 		"shift_starts": None, "shift_ends": None,
@@ -522,10 +525,18 @@ def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, t
 	# How late, in minutes, measured rather than taken on trust. Frappe's
 	# `late_entry` is a yes/no, and "late" without "by how much" is the kind of
 	# number that starts an unfair conversation.
+	#
+	# `late_by_mins` stays the plain fact: minutes past the shift start. Whether
+	# the day COUNTS as late is a separate question, because the organisation
+	# forgives the first few minutes, and the two must not be confused. The
+	# month total and the chip count `is_late`; the day itself still shows the
+	# true minutes, with the grace named beside them.
 	if begins is not None and att.in_time:
+		out["grace_mins"] = _shift_grace(shift_cache, shift)
 		arrived = _minutes(str(att.in_time)[11:16])
 		if arrived is not None and arrived > begins:
 			out["late_by_mins"] = int(round(arrived - begins))
+			out["is_late"] = out["late_by_mins"] > out["grace_mins"]
 
 	# An odd number of punches means one never registered. That is the single
 	# commonest cause of a short day and the reason this screen exists, so it
@@ -572,7 +583,10 @@ def _totals(days):
 		"short_days": len([d for d in days if d["short_by"] > 0]),
 		"hours_short": round(sum(d["short_by"] for d in days), 1),
 		"missing_punches": len([d for d in days if d["missing_punch"]]),
-		"late_days": len([d for d in days if d["late_by_mins"] > 0]),
+		# Only days past the grace period. A day inside it is on time as far as
+		# the organisation's policy is concerned, and counting it here is what
+		# made this total disagree with the deduction card beside it.
+		"late_days": len([d for d in days if d["is_late"]]),
 		"hours_worked": round(sum(d["hours"] or 0 for d in days), 1),
 	}
 

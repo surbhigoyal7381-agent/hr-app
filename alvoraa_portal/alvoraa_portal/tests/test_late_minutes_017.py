@@ -22,7 +22,9 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, getdate, nowdate
 
+from alvoraa_portal import attendance_analytics as aa
 from alvoraa_portal import attendance_correction as ac
+from alvoraa_portal import hr_api
 from alvoraa_portal.attendance_analytics import _shift_minutes, _shift_row
 
 # Start 09:30 = 570 minutes past midnight. Length = 540 minutes. The two must
@@ -214,8 +216,8 @@ class WhatTheEmployeeIsTold(LateCase):
 		self.assertEqual(day["shift_ends"], "06:00")
 
 
-class TheMoneyThatFollows(FrappeTestCase):
-	"""The late-coming rule, pinned to the true shift start.
+class _MoneyBase(FrappeTestCase):
+	"""Shared fixture for the tests that move pay. Holds no tests of its own.
 
 	These are not proof of the bug - the rule reads the shift start for itself
 	and has always been right. They are here so that it stays right. The
@@ -295,15 +297,41 @@ class TheMoneyThatFollows(FrappeTestCase):
 		ssa.submit()
 		return e.name
 
-	def _day(self, employee, date, in_time, out_time="18:35:00"):
+	def _day(self, employee, date, in_time, out_time="18:35:00", shift=SHIFT):
 		a = frappe.get_doc({
 			"doctype": "Attendance", "employee": employee, "attendance_date": date,
-			"status": "Present", "shift": SHIFT, "company": self.company,
+			"status": "Present", "shift": shift, "company": self.company,
 			"in_time": "%s %s" % (date, in_time), "out_time": "%s %s" % (date, out_time),
 		})
 		a.flags.ignore_permissions = True
 		a.insert()
 		a.submit()
+
+	def _day_span(self, employee, date, in_time, out_date, out_time,
+	              shift=SHIFT, in_at=None):
+		"""A day whose clock-out (or clock-in) falls on a different date.
+
+		Frappe stores both as full datetimes, which is what makes the shift
+		window comparable at all. These tests exist because the old code threw
+		the dates away and compared times of day.
+		"""
+		in_stamp = None
+		if in_at:
+			in_stamp = "%s %s" % in_at
+		elif in_time:
+			in_stamp = "%s %s" % (date, in_time)
+		a = frappe.get_doc({
+			"doctype": "Attendance", "employee": employee, "attendance_date": date,
+			"status": "Present", "shift": shift, "company": self.company,
+			"in_time": in_stamp, "out_time": "%s %s" % (out_date, out_time),
+		})
+		a.flags.ignore_permissions = True
+		a.insert()
+		a.submit()
+
+
+class TheMoneyThatFollows(_MoneyBase):
+	"""The late-coming rule, pinned to the true shift start."""
 
 	def test_the_rule_measures_lateness_from_the_shift_start(self):
 		"""45 minutes past 09:30 is not a violation. 75 minutes past 09:00 would
@@ -354,3 +382,328 @@ class TheMoneyThatFollows(FrappeTestCase):
 		# Every violation is stored with the minutes it was judged by, so an
 		# employee asking "why" gets the same number twice.
 		self.assertEqual(sorted({v.minutes for v in ded.violations}), [75])
+
+
+class TheGracePeriod(LateCase):
+	"""Grace is the organisation's decision, and it is configurable.
+
+	Resolution order, and each step of it pinned: the shift's own
+	`late_entry_grace_period` when it is set, then the organisation's default,
+	then nothing.
+	"""
+
+	def tearDown(self):
+		frappe.db.set_default(aa.LATE_GRACE_KEY, "")
+		frappe.db.set_value("Shift Type", SHIFT, "late_entry_grace_period", 0)
+		super().tearDown()
+
+	def test_the_shifts_own_grace_wins_when_it_is_set(self):
+		frappe.db.set_default(aa.LATE_GRACE_KEY, "30")
+		frappe.db.set_value("Shift Type", SHIFT, "late_entry_grace_period", 15)
+		self.assertEqual(aa._shift_grace({}, SHIFT), 15)
+
+	def test_the_organisation_grace_applies_when_the_shift_has_none(self):
+		frappe.db.set_default(aa.LATE_GRACE_KEY, "20")
+		frappe.db.set_value("Shift Type", SHIFT, "late_entry_grace_period", 0)
+		self.assertEqual(aa._shift_grace({}, SHIFT), 20)
+
+	def test_no_grace_anywhere_means_no_grace(self):
+		frappe.db.set_default(aa.LATE_GRACE_KEY, "")
+		frappe.db.set_value("Shift Type", SHIFT, "late_entry_grace_period", 0)
+		self.assertEqual(aa._shift_grace({}, SHIFT), 0)
+
+	def test_a_day_inside_the_grace_shows_the_minutes_but_is_not_marked_late(self):
+		"""Both halves of the decision in one test. The employee still sees
+		exactly how late they were; the day does not count against them."""
+		frappe.db.set_default(aa.LATE_GRACE_KEY, "15")
+		p, email = self.person("LMInGrace")
+		self.day(p, self.d(3), 9.0, in_time=self.d(3) + " 09:40:00")
+		frappe.set_user(email)
+		day = self.my_day(email, 3)
+		self.assertEqual(day["late_by_mins"], 10)
+		self.assertEqual(day["grace_mins"], 15)
+		self.assertFalse(day["is_late"])
+
+	def test_a_day_past_the_grace_is_marked_late(self):
+		frappe.db.set_default(aa.LATE_GRACE_KEY, "15")
+		p, email = self.person("LMPastGrace")
+		self.day(p, self.d(3), 9.0, in_time=self.d(3) + " 09:50:00")
+		frappe.set_user(email)
+		day = self.my_day(email, 3)
+		self.assertEqual(day["late_by_mins"], 20)
+		self.assertTrue(day["is_late"])
+
+	def test_arriving_exactly_on_the_grace_is_forgiven(self):
+		"""Fifteen minutes' grace forgives the fifteenth minute. Anything else
+		makes a liar of the words on the screen."""
+		frappe.db.set_default(aa.LATE_GRACE_KEY, "15")
+		p, email = self.person("LMOnGrace")
+		self.day(p, self.d(3), 9.0, in_time=self.d(3) + " 09:45:00")
+		frappe.set_user(email)
+		self.assertFalse(self.my_day(email, 3)["is_late"])
+
+	def test_the_month_total_counts_only_the_days_past_the_grace(self):
+		"""The number that has to agree with the deduction card beside it."""
+		frappe.db.set_default(aa.LATE_GRACE_KEY, "15")
+		p, email = self.person("LMGraceTotals")
+		self.day(p, self.d(3), 9.0, in_time=self.d(3) + " 09:40:00")   # 10 late, forgiven
+		self.day(p, self.d(4), 9.0, in_time=self.d(4) + " 10:05:00")   # 35 late, counted
+		frappe.set_user(email)
+		y, m = self.ym(3)
+		month = ac.month(y, m)
+		self.assertEqual(month["totals"]["late_days"], 1)
+		self.assertEqual(month["late_grace_mins"], 15)
+
+
+class ConfiguringTheGracePeriod(FrappeTestCase):
+	"""HR sets the number, and nothing else can be smuggled through the call."""
+
+	def setUp(self):
+		self.caller = frappe.session.user
+		frappe.set_user("Administrator")
+		email = "hrgrace.lm017@example.com"
+		if not frappe.db.exists("User", email):
+			frappe.get_doc({"doctype": "User", "email": email, "first_name": "HRGrace",
+			                "send_welcome_email": 0}).insert(ignore_permissions=True)
+		frappe.get_doc("User", email).add_roles("HR Manager")
+		self.hr = email
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		frappe.db.set_default(aa.LATE_GRACE_KEY, "")
+		frappe.set_user(self.caller)
+
+	def test_hr_can_set_and_read_the_grace_period(self):
+		frappe.set_user(self.hr)
+		self.assertEqual(hr_api.set_org_setting(aa.LATE_GRACE_KEY, "15"), {"ok": True})
+		self.assertEqual(hr_api.get_org_setting(aa.LATE_GRACE_KEY), "15")
+		self.assertEqual(aa.org_late_grace(), 15)
+
+	def test_zero_is_a_real_answer_and_saves(self):
+		"""Turning grace off is a decision, not a missing value."""
+		frappe.set_user(self.hr)
+		hr_api.set_org_setting(aa.LATE_GRACE_KEY, "0")
+		self.assertEqual(aa.org_late_grace(), 0)
+
+	def test_anything_that_is_not_whole_minutes_in_range_is_refused(self):
+		"""Refused, not quietly clamped. A threshold that silently became
+		something else is worse than an error nobody can miss."""
+		frappe.set_user(self.hr)
+		hr_api.set_org_setting(aa.LATE_GRACE_KEY, "10")
+		for bad in ("15.5", "abc", "-5", " 15", "15 ", "999", "", "1e2", "٥"):
+			with self.subTest(bad=bad), self.assertRaises(frappe.PermissionError):
+				hr_api.set_org_setting(aa.LATE_GRACE_KEY, bad)
+		# and the good value is still there, untouched by the refusals
+		self.assertEqual(aa.org_late_grace(), 10)
+
+	def test_the_yes_no_setting_is_still_validated_as_a_yes_no(self):
+		"""Adding a numeric key must not have loosened the existing one."""
+		frappe.set_user(self.hr)
+		with self.assertRaises(frappe.PermissionError):
+			hr_api.set_org_setting("kra_link_mandatory", "2")
+		self.assertEqual(hr_api.set_org_setting("kra_link_mandatory", "1"), {"ok": True})
+		frappe.db.set_default("kra_link_mandatory", "0")
+
+
+class MidnightAndTheMoney(_MoneyBase):
+	"""Punches either side of midnight, on the path that moves pay.
+
+	Comparing times of day wrapped at midnight, and the wrap cost real money in
+	both directions: it invented early exits for people who worked late, and it
+	hid late arrivals on night shifts.
+	"""
+
+	def _early_exit_on(self):
+		"""The rule counts early exits for these tests only."""
+		frappe.db.set_value("Attendance Deduction Rule", "LM Rule 017",
+		                    {"count_early_exit": 1, "early_exit_threshold_minutes": 60})
+		frappe.clear_document_cache("Attendance Deduction Rule", "LM Rule 017")
+		self.rule = frappe.get_doc("Attendance Deduction Rule", "LM Rule 017")
+
+	def tearDown(self):
+		frappe.db.set_value("Attendance Deduction Rule", "LM Rule 017",
+		                    {"count_early_exit": 0, "early_exit_threshold_minutes": 0})
+		frappe.clear_document_cache("Attendance Deduction Rule", "LM Rule 017")
+		super().tearDown()
+
+	def test_working_past_midnight_is_not_an_early_exit_and_costs_nothing(self):
+		"""The live bug. Clocking out at 00:30 after an 18:30 shift is four
+		hours of extra work. It read as 1,080 minutes EARLY, three times over,
+		and took half a day's pay."""
+		from hrms.alvoraa_late_rules.late_rules import process_week, violations_for
+
+		emp = self._employee("LMPastMidnight")
+		for day, nxt in (("2026-08-17", "2026-08-18"), ("2026-08-18", "2026-08-19"),
+		                 ("2026-08-19", "2026-08-20")):
+			self._day_span(emp, day, "09:35:00", nxt, "00:30:00")
+		self._early_exit_on()
+		self.assertEqual(
+			violations_for(self.rule, emp, getdate("2026-08-17"), getdate("2026-08-23")), [])
+		self.assertEqual(process_week(self.rule, "2026-08-17", commit=False)["created"], 0)
+		self.assertFalse(frappe.db.exists("Additional Salary", {"employee": emp}))
+
+	def test_a_real_early_exit_still_costs_the_exact_amount(self):
+		"""The other direction. Leaving at 17:00 from an 18:30 shift is 90
+		minutes early, three times, first free, two counted = 0.5 day = 500."""
+		from hrms.alvoraa_late_rules.late_rules import process_week
+
+		emp = self._employee("LMRealEarly")
+		for day in ("2026-08-17", "2026-08-18", "2026-08-19"):
+			self._day(emp, day, "09:35:00", out_time="17:00:00")
+		self._early_exit_on()
+		process_week(self.rule, "2026-08-17", commit=False)
+		ded = frappe.get_doc("Attendance Deduction",
+		                     {"employee": emp, "week_start": "2026-08-17"})
+		self.assertEqual([v.violation_type for v in ded.violations],
+		                 ["Early Exit"] * 3)
+		self.assertEqual(ded.deduction_days, 0.5)
+		self.assertEqual(ded.lwp_amount, 500.0)
+		self.assertEqual(sorted({v.minutes for v in ded.violations}), [90])
+
+	def test_a_night_shift_arrival_after_midnight_is_counted(self):
+		"""The hidden half. A 22:00 shift clocked into at 00:10 is 130 minutes
+		late. It came out as minus 1,310 and counted as on time."""
+		from hrms.alvoraa_late_rules.late_rules import violations_for
+
+		emp = self._employee("LMNightLate")
+		_shift(NIGHT, "22:00:00", "06:00:00")
+		self._day_span(emp, "2026-08-17", None, "2026-08-18", "06:05:00",
+		               shift=NIGHT, in_at=("2026-08-18", "00:10:00"))
+		found = violations_for(self.rule, emp, getdate("2026-08-17"), getdate("2026-08-23"))
+		self.assertEqual([v["violation_type"] for v in found], ["Late Arrival"])
+		self.assertEqual(found[0]["minutes"], 130)
+
+
+class WhoTheRuleActuallyCovers(_MoneyBase):
+	"""The portal must answer the same question the weekly job answers.
+
+	It used to answer a different one, so an employee could be shown days that
+	were never going to be taken off them.
+	"""
+
+	def test_an_exempt_grade_is_shown_nothing_rather_than_a_threat(self):
+		from hrms.alvoraa_late_rules.late_rules import current_week_projection
+
+		emp = self._employee("LMExempt")
+		if not frappe.db.exists("Employee Grade", "LM Exempt Grade 017"):
+			g = frappe.get_doc({"doctype": "Employee Grade",
+			                    "__newname": "LM Exempt Grade 017"})
+			g.name = "LM Exempt Grade 017"
+			g.insert(ignore_permissions=True)
+		frappe.db.set_value("Employee", emp, "grade", "LM Exempt Grade 017")
+		self.rule.append("exempt_grades", {"employee_grade": "LM Exempt Grade 017"})
+		self.rule.save(ignore_permissions=True)
+		try:
+			for day in ("2026-08-17", "2026-08-18", "2026-08-19"):
+				self._day(emp, day, "10:45:00")
+			p = current_week_projection(self.rule, emp, as_on="2026-08-19")
+			self.assertFalse(p["covered"])
+			self.assertEqual(p["violations"], [])
+			self.assertEqual(p["projected_days"], 0)
+			self.assertIsNone(hr_api._late_rule_for(emp))
+		finally:
+			self.rule.set("exempt_grades", [])
+			self.rule.save(ignore_permissions=True)
+
+	def test_a_week_before_the_rule_starts_is_not_projected(self):
+		from hrms.alvoraa_late_rules.late_rules import current_week_projection
+
+		emp = self._employee("LMBeforeStart")
+		frappe.db.set_value("Attendance Deduction Rule", "LM Rule 017",
+		                    "process_from", "2026-09-01")
+		frappe.clear_document_cache("Attendance Deduction Rule", "LM Rule 017")
+		rule = frappe.get_doc("Attendance Deduction Rule", "LM Rule 017")
+		try:
+			for day in ("2026-08-17", "2026-08-18", "2026-08-19"):
+				self._day(emp, day, "10:45:00")
+			p = current_week_projection(rule, emp, as_on="2026-08-19")
+			self.assertFalse(p["covered"])
+			self.assertEqual(p["projected_days"], 0)
+		finally:
+			frappe.db.set_value("Attendance Deduction Rule", "LM Rule 017",
+			                    "process_from", None)
+			frappe.clear_document_cache("Attendance Deduction Rule", "LM Rule 017")
+
+	def test_somebody_who_joined_after_the_week_is_not_projected(self):
+		from hrms.alvoraa_late_rules.late_rules import current_week_projection
+
+		emp = self._employee("LMNewJoiner")
+		frappe.db.set_value("Employee", emp, "date_of_joining", "2026-09-15")
+		for day in ("2026-08-17", "2026-08-18", "2026-08-19"):
+			self._day(emp, day, "10:45:00")
+		p = current_week_projection(self.rule, emp, as_on="2026-08-19")
+		self.assertFalse(p["covered"])
+		self.assertEqual(p["projected_days"], 0)
+
+
+SHIFT_B = "LM Test Shift 017 B"
+
+
+class TheTeamList(_MoneyBase):
+	"""A manager's list, with each report judged by their own rule.
+
+	It used to take the FIRST report's rule and apply it to everybody. A team
+	split across shifts was therefore measured against one person's thresholds.
+	"""
+
+	def _second_rule(self):
+		"""A second shift and rule, forgiving half as much as the first."""
+		_shift(SHIFT_B, "09:30:00", "18:30:00")
+		if not frappe.db.exists("Attendance Deduction Rule", "LM Rule 017 B"):
+			doc = frappe.get_doc({
+				"doctype": "Attendance Deduction Rule", "rule_name": "LM Rule 017 B",
+				"company": self.company, "shift_type": SHIFT_B, "enabled": 1,
+				"week_start_day": "Monday", "late_threshold_minutes": 30,
+				"count_early_exit": 0, "early_exit_threshold_minutes": 0,
+				"free_violations_per_week": 1, "deduction_per_violation_days": 0.25,
+				"round_up_from_days": 0.75, "round_up_to_days": 1.0,
+				"deduct_from_leave_first": 0, "lwp_salary_component": "LM LWP 017",
+				"notify_employee": 0, "notify_manager": 0,
+			})
+			doc.name = "LM Rule 017 B"
+			doc.set("__newname", "LM Rule 017 B")
+			doc.insert(ignore_permissions=True)
+
+	def _report(self, first, manager, shift):
+		email = "%s.lm017t@example.com" % first.lower()
+		if not frappe.db.exists("User", email):
+			frappe.get_doc({"doctype": "User", "email": email, "first_name": first,
+			                "send_welcome_email": 0}).insert(ignore_permissions=True)
+		e = frappe.get_doc({
+			"doctype": "Employee", "first_name": first, "employee_name": first,
+			"company": self.company, "date_of_birth": "1990-01-01",
+			"date_of_joining": "2015-01-01",
+			"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
+			"status": "Active", "default_shift": shift, "user_id": email,
+			"holiday_list": self.holidays, "reports_to": manager,
+		}).insert(ignore_permissions=True)
+		return e.name, email
+
+	def test_each_report_is_judged_by_their_own_rule(self):
+		"""Both arrive 45 minutes late. One rule forgives 60 minutes, the other
+		30. The forgiving one must not be applied to the person it does not
+		belong to."""
+		self._second_rule()
+		mgr, mgr_email = self._report("LMTeamBoss", None, SHIFT)
+		a, _ea = self._report("LMTeamA", mgr, SHIFT)      # threshold 60
+		b, _eb = self._report("LMTeamB", mgr, SHIFT_B)    # threshold 30
+		for emp, shift in ((a, SHIFT), (b, SHIFT_B)):
+			for day in ("2026-08-17", "2026-08-18", "2026-08-19"):
+				self._day(emp, day, "10:15:00", shift=shift)
+
+		frappe.set_user(mgr_email)
+		try:
+			out = hr_api.get_team_late_list(weeks=1)
+		finally:
+			frappe.set_user("Administrator")
+		rows = {r["employee"]: r for r in out["team"]}
+		self.assertEqual(rows[a]["violations"], 0,
+		                 "45 minutes against a 60-minute threshold is not a violation")
+		self.assertEqual(rows[b]["violations"], 3,
+		                 "45 minutes against a 30-minute threshold is three violations")
+		# The rows carry no grade, joining date or pay: the extra Employee fields
+		# the batching reads must stay on the server (slice 010, PRIV-3).
+		for r in out["team"]:
+			for leaked in ("grade", "date_of_joining", "company", "default_shift",
+			               "lwp_amount", "status"):
+				self.assertNotIn(leaked, r)

@@ -1,6 +1,9 @@
+import re
+
 import frappe
 from frappe import _
 
+from alvoraa_portal.attendance_analytics import LATE_GRACE_KEY
 from alvoraa_portal.subscription import requires_feature
 import calendar as _calendar
 from frappe.utils import cint, flt, today, get_first_day, get_last_day, getdate, add_days, now
@@ -2266,7 +2269,16 @@ def reject_kpi_progress(kpi_name, log_idx, comment=None):
 # employee everybody's leave types, with no record of who did it. The portal's
 # Org Settings screen uses kra_link_mandatory and nothing else. A key that grants
 # visibility must never be added here - it needs System Manager and a change record.
-ALLOWED_ORG_SETTINGS = {"kra_link_mandatory": ("0", "1")}
+#
+# Slice 017: the late-coming grace period joins the list. It is a number rather
+# than a yes/no, so a value may also be given as a `range` - whole minutes only,
+# and still an allow-list, just an arithmetic one. It grants no visibility: it
+# moves a threshold on a screen the person can already see, and it does not
+# touch the deduction rule, which keeps its own per-organisation threshold.
+ALLOWED_ORG_SETTINGS = {
+    "kra_link_mandatory": ("0", "1"),
+    LATE_GRACE_KEY: range(0, 241),          # up to four hours; nothing sensible is longer
+}
 
 
 def _refuse_org_setting(endpoint):
@@ -2290,7 +2302,14 @@ def set_org_setting(key, value):
     if not isinstance(key, str) or key not in ALLOWED_ORG_SETTINGS:
         _refuse_org_setting("hr_api.set_org_setting")
     value = str(value) if value is not None else ""
-    if value not in ALLOWED_ORG_SETTINGS[key]:
+    allowed = ALLOWED_ORG_SETTINGS[key]
+    if isinstance(allowed, range):
+        # Whole minutes, no sign, no spaces, and inside the range. Anything else
+        # is refused rather than coerced - a silently clamped threshold is worse
+        # than an error, because nobody finds out what was actually saved.
+        if not re.fullmatch(r"[0-9]{1,3}", value) or int(value) not in allowed:
+            _refuse_org_setting("hr_api.set_org_setting")
+    elif value not in allowed:
         _refuse_org_setting("hr_api.set_org_setting")
     frappe.db.set_default(key, value)
     frappe.db.commit()
@@ -2632,17 +2651,49 @@ def get_employee_goals_for_manager(employee_id):
 # Late-coming rule (build B1) - portal views of Attendance Deduction
 # ══════════════════════════════════════════════════════════════════════════
 
-def _late_rule_for(employee):
-    """The enabled rule that covers this employee, or None."""
-    if not frappe.db.exists("DocType", "Attendance Deduction Rule"):
+EMP_RULE_FIELDS = ["company", "default_shift", "grade", "date_of_joining", "status"]
+
+
+def _late_rule_for(employee, emp_row=None, cache=None):
+    """The enabled rule that would actually act on this employee, or None.
+
+    `emp_row` and `cache` exist so a manager's whole team can be answered without
+    a handful of queries per person: the caller passes the Employee row it already
+    read, and the cache holds the rule per company-and-shift. Called with neither,
+    it behaves exactly as it always did.
+    """
+    if cache is None:
+        cache = {}
+    if "_have_doctype" not in cache:
+        cache["_have_doctype"] = bool(frappe.db.exists("DocType", "Attendance Deduction Rule"))
+    if not cache["_have_doctype"]:
         return None
-    company, shift = frappe.db.get_value("Employee", employee, ["company", "default_shift"])
-    for filters in ({"company": company, "shift_type": shift, "enabled": 1},
-                    {"company": company, "shift_type": ["in", ["", None]], "enabled": 1}):
-        name = frappe.db.get_value("Attendance Deduction Rule", filters, "name")
-        if name:
-            return frappe.get_cached_doc("Attendance Deduction Rule", name)
-    return None
+    if emp_row is None:
+        emp_row = frappe.db.get_value("Employee", employee, EMP_RULE_FIELDS, as_dict=True)
+    if not emp_row:
+        return None
+
+    key = (emp_row.get("company"), emp_row.get("default_shift"))
+    if key in cache:
+        rule = cache[key]
+    else:
+        rule = None
+        for filters in ({"company": key[0], "shift_type": key[1], "enabled": 1},
+                        {"company": key[0], "shift_type": ["in", ["", None]], "enabled": 1}):
+            name = frappe.db.get_value("Attendance Deduction Rule", filters, "name")
+            if name:
+                rule = frappe.get_cached_doc("Attendance Deduction Rule", name)
+                break
+        cache[key] = rule
+    if not rule:
+        return None
+
+    # A rule that names this person's company is not the same as a rule that
+    # would act on this person. An exempt grade meant the portal showed
+    # deductions the weekly job was never going to make.
+    from hrms.alvoraa_late_rules.late_rules import covers
+
+    return rule if covers(rule, employee, emp=emp_row) else None
 
 
 def _deduction_rows(filters, limit=20):
@@ -2705,20 +2756,32 @@ def get_team_late_list(weeks=4):
     if not emp:
         return {"no_employee": True}
     team = frappe.get_all("Employee", filters={"reports_to": emp.name, "status": "Active"},
-                          fields=["name", "employee_name", "designation"], order_by="employee_name asc")
+                          fields=["name", "employee_name", "designation"] + EMP_RULE_FIELDS,
+                          order_by="employee_name asc")
     if not team:
         return {"enabled": False, "team": [], "recent": []}
-    rule = _late_rule_for(team[0].name)
-    if not rule:
-        return {"enabled": False, "team": [], "recent": []}
     from hrms.alvoraa_late_rules.late_rules import current_week_projection
+
+    # Each person against THEIR OWN rule. This used to look up the first team
+    # member's rule and apply it to everybody, so a team split across shifts was
+    # judged by one person's thresholds, and anyone the rule did not cover was
+    # still given a figure. The shared cache and the row we already read keep
+    # this to the same number of queries as the single-rule version.
     out = []
+    week_start = None
+    rule_cache = {}
     for m in team:
+        rule = _late_rule_for(m.name, emp_row=m, cache=rule_cache)
+        if not rule:
+            continue
         p = current_week_projection(rule, m.name)
+        week_start = week_start or p["week_start"]
         out.append({"employee": m.name, "employee_name": m.employee_name, "designation": m.designation,
                     "violations": len(p["violations"]), "counted": p["counted"], "projected_days": p["projected_days"],
                     "detail": [f"{str(v['attendance_date'])[5:]} {v['violation_type']} {str(v['actual_time'])[:5]}"
                                for v in p["violations"]]})
+    if not out:
+        return {"enabled": False, "team": [], "recent": []}
     since = frappe.utils.add_days(frappe.utils.nowdate(), -7 * int(weeks))
     # Days only. A manager never receives a report's loss-of-pay amount, the
     # explanation text or the per-day punch times (slice 010, PRIV-3). A fixed
@@ -2732,8 +2795,7 @@ def get_team_late_list(weeks=4):
     for r in recent:
         r["week_start"] = str(r.week_start)
         r["week_end"] = str(r.week_end)
-    return {"enabled": True, "week_start": out and current_week_projection(rule, team[0].name)["week_start"],
-            "team": out, "recent": recent}
+    return {"enabled": True, "week_start": week_start, "team": out, "recent": recent}
 
 
 # ── Employee documents (build B4) ──────────────────────────────────────────

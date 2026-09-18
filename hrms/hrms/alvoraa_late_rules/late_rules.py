@@ -42,10 +42,41 @@ def _to_time(value):
 	return value
 
 
-def _minutes_between(later, earlier):
-	l = _to_time(later)
-	e = _to_time(earlier)
-	return int(((l.hour * 60 + l.minute) - (e.hour * 60 + e.minute)))
+def _whole_minutes(later, earlier):
+	"""Minutes between two MOMENTS, seconds dropped. Never wraps at midnight."""
+	later = later.replace(second=0, microsecond=0)
+	earlier = earlier.replace(second=0, microsecond=0)
+	return int((later - earlier).total_seconds() // 60)
+
+
+def _shift_window(attendance_date, times):
+	"""The shift's start and end as moments in time, not as times of day.
+
+	Comparing times of day wrapped at midnight, and the wrap cost real money.
+	A day shift ending 18:30 with a clock-out at 00:30 read as 1,080 minutes
+	EARLY - a quarter-day deduction for somebody who had in fact worked four
+	hours extra. The mirror image also hid violations: a 22:00 night shift with
+	a clock-in at 00:10 came out as minus 1,310 and counted as on time, when
+	the person was over two hours late.
+
+	Anchoring both ends to the attendance date removes the wrap. This is the
+	same shape Frappe HR's own `shift_type` uses when it decides `late_entry`.
+	"""
+	date = getdate(attendance_date)
+	start = datetime.combine(date, _to_time(times.start_time))
+	end = datetime.combine(date, _to_time(times.end_time))
+	if end <= start:                     # the shift crosses midnight
+		end += timedelta(days=1)
+	return start, end
+
+
+def _as_datetime(value, fallback_date):
+	"""A punch as a moment. Frappe stores these as datetimes; older or
+	hand-made rows can hold a bare time, and those are read as being on the
+	attendance date."""
+	if isinstance(value, datetime):
+		return value
+	return datetime.combine(getdate(fallback_date), _to_time(value))
 
 
 def violations_for(rule, employee, week_start, week_end, shift_cache=None):
@@ -68,10 +99,11 @@ def violations_for(rule, employee, week_start, week_end, shift_cache=None):
 		if not shift:
 			continue
 		times = _shift_times(shift, shift_cache)
-		if not times:
+		if not times or times.start_time is None or times.end_time is None:
 			continue
+		begins, ends = _shift_window(att.attendance_date, times)
 		if att.in_time:
-			late = _minutes_between(att.in_time, times.start_time)
+			late = _whole_minutes(_as_datetime(att.in_time, att.attendance_date), begins)
 			if late > int(rule.late_threshold_minutes):
 				out.append(
 					{
@@ -84,7 +116,10 @@ def violations_for(rule, employee, week_start, week_end, shift_cache=None):
 					}
 				)
 		if rule.count_early_exit and att.out_time:
-			early = _minutes_between(times.end_time, att.out_time)
+			left = _as_datetime(att.out_time, att.attendance_date)
+			# Leaving before the shift even began is not an early exit, it is
+			# bad data. Counting it would deduct pay on the strength of it.
+			early = _whole_minutes(ends, left) if left > begins else 0
 			if early > int(rule.early_exit_threshold_minutes or 0):
 				out.append(
 					{
@@ -98,6 +133,34 @@ def violations_for(rule, employee, week_start, week_end, shift_cache=None):
 				)
 	out.sort(key=lambda v: (str(v["attendance_date"]), str(v["actual_time"])))
 	return out
+
+
+def covers(rule, employee, week_start=None, week_end=None, emp=None):
+	"""Would this rule actually take a deduction off this person for this week?
+
+	The same conditions the weekly job applies, asked about one person. The
+	portal used to skip all of them, so somebody on an exempt grade was shown
+	projected days that would never be taken off them, and so was somebody
+	whose week fell before the rule's start date or before they joined.
+
+	Called with no week, it answers the part that does not depend on a week.
+	`emp` lets a caller that has already read the Employee row pass it in, so a
+	whole team does not cost a query each.
+	"""
+	if emp is None:
+		emp = frappe.db.get_value(
+			"Employee", employee, ["grade", "date_of_joining", "status"], as_dict=True)
+	if not emp or emp.get("status") != "Active":
+		return False
+	exempt = {r.employee_grade for r in rule.exempt_grades}
+	if exempt and emp.get("grade") in exempt:
+		return False
+	if week_start and rule.process_from and getdate(week_start) < getdate(rule.process_from):
+		return False
+	joined = emp.get("date_of_joining")
+	if week_end and joined and getdate(joined) > getdate(week_end):
+		return False
+	return True
 
 
 def covered_employees(rule):
@@ -209,10 +272,17 @@ def current_week_projection(rule, employee, as_on=None):
 	"""What this week looks like so far, for the portal: not persisted."""
 	as_on = getdate(as_on or nowdate())
 	start = week_start_for(as_on, rule.week_start_day)
+	# Say nothing rather than something untrue. If the weekly job would not act
+	# on this person this week, a projected figure is a threat that will never
+	# be carried out, and they cannot tell the difference.
+	if not covers(rule, employee, start, add_days(start, 6)):
+		return {"week_start": str(start), "violations": [], "counted": 0,
+		        "projected_days": 0, "covered": False}
 	violations = violations_for(rule, employee, start, add_days(start, 6))
 	free = int(rule.free_violations_per_week or 0)
 	counted = max(0, len(violations) - free)
 	days = counted * float(rule.deduction_per_violation_days or 0)
 	if rule.round_up_from_days and days >= float(rule.round_up_from_days):
 		days = float(rule.round_up_to_days or days)
-	return {"week_start": str(start), "violations": violations, "counted": counted, "projected_days": days}
+	return {"week_start": str(start), "violations": violations, "counted": counted,
+	        "projected_days": days, "covered": True}

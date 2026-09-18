@@ -41,6 +41,22 @@ from frappe.utils import add_days, add_months, cint, flt, getdate, nowdate
 TOLERANCE_KEY = "alvoraa_attendance_short_tolerance_mins"
 DEFAULT_TOLERANCE_MINS = 30
 
+# How many minutes after the shift starts before an arrival counts as late is
+# the same kind of decision, and it is also the organisation's. It is stored
+# the same way as the tolerance above - a Frappe default, read per request -
+# so an existing tenant needs no migration to get one.
+#
+# Three places can answer, and they are tried in this order:
+#   1. the Shift Type's own `late_entry_grace_period`, when it is set
+#   2. this organisation-wide default
+#   3. no grace at all
+#
+# A Shift Type's grace is an Int, so "not set" and "zero" look identical. A
+# zero therefore falls through to the organisation's number. To allow nothing
+# anywhere, set the organisation default to 0 and leave the shifts alone.
+LATE_GRACE_KEY = "alvoraa_attendance_late_grace_mins"
+DEFAULT_LATE_GRACE_MINS = 0
+
 PRESENT = ("Present", "Work From Home")
 ORG_ROLES_KEY = "alvoraa_attendance_org_roles"
 DEFAULT_ORG_ROLES = "HR Manager,HR User,System Manager"
@@ -230,8 +246,21 @@ def _shift_row(cache, shift):
 	"""
 	if shift not in cache:
 		cache[shift] = frappe.db.get_value(
-			"Shift Type", shift, ["start_time", "end_time"], as_dict=True) or None
+			"Shift Type", shift,
+			["start_time", "end_time", "late_entry_grace_period"], as_dict=True) or None
 	return cache[shift]
+
+
+def org_late_grace():
+	"""The organisation's grace period, in minutes. Never negative."""
+	return max(0, cint(frappe.db.get_default(LATE_GRACE_KEY) or DEFAULT_LATE_GRACE_MINS))
+
+
+def _shift_grace(cache, shift):
+	"""How many minutes late this shift forgives, in the order set out above."""
+	row = _shift_row(cache, shift) if shift else None
+	own = cint(row.late_entry_grace_period) if row else 0
+	return own if own > 0 else org_late_grace()
 
 
 def _shift_minutes(cache, shift):

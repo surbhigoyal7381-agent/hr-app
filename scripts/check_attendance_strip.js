@@ -80,6 +80,10 @@ const base = {
   out_time: "18:04", hours: 8.53, expected_hours: 9, short_by: 0,
   late_entry: 1, early_exit: 0, attendance: "HR-ATT-1", punches: [],
   shift_starts: "09:00", shift_ends: "18:00", late_by_mins: 32,
+  // `is_late` is the day counting as late, which happens only past the
+  // organisation's grace period; `late_by_mins` stays the plain fact. The two
+  // are separate on purpose, so the sample data carries both.
+  is_late: true, grace_mins: 0,
   missing_punch: false, request: null, state: "present",
 };
 
@@ -99,8 +103,12 @@ const cases = {
     punches: [{log_type: "IN", at: "09:00"}],
   },
   "no punch rows at all": {...base, punches: []},
+  "late, but inside the grace period": {
+    ...base, in_time: "09:12", late_by_mins: 12, is_late: false, grace_mins: 15,
+    punches: [{log_type: "IN", at: "09:12"}, {log_type: "OUT", at: "18:04"}],
+  },
   "arrived before the shift started": {
-    ...base, in_time: "08:31", late_by_mins: 0,
+    ...base, in_time: "08:31", late_by_mins: 0, is_late: false,
     punches: [{log_type: "IN", at: "08:31"}, {log_type: "OUT", at: "18:04"}],
   },
   "stayed well past the shift": {
@@ -110,7 +118,8 @@ const cases = {
   "no record, a weekend": {
     ...base, status: null, in_time: null, out_time: null, hours: null,
     expected_hours: null, attendance: null, state: "no_record",
-    shift_starts: null, shift_ends: null, late_by_mins: 0, weekday: "Saturday",
+    shift_starts: null, shift_ends: null, late_by_mins: 0, is_late: false,
+    weekday: "Saturday",
   },
   "still to come": {
     ...base, future: true, state: "future", attendance: null,

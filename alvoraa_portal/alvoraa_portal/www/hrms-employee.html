@@ -6243,7 +6243,10 @@ function acRow(x) {
     + '">' + gpEsc(acSay(x.request.state)) + "</span>";
 
   var arrival = "—";
-  if (x.late_by_mins > 0) arrival = '<span class="hi">' + acMins(x.late_by_mins) + " late</span>";
+  // Only past the grace period does the day read as late. Inside it the person
+  // was on time as far as the organisation's policy goes, and saying otherwise
+  // is what made this column disagree with the deduction card.
+  if (x.is_late) arrival = '<span class="hi">' + acMins(x.late_by_mins) + " late</span>";
   else if (x.in_time) arrival = "On time";
 
   var mon = AC_MONTHS[parseInt(x.date.slice(5, 7), 10) - 1].slice(0, 3);
@@ -6364,7 +6367,12 @@ function acDetail(x) {
     + "<div>Worked<span>" + (x.hours === null ? "—" : x.hours + "h") + "</span></div>"
     + "<div>Expected<span>" + (x.expected_hours ? x.expected_hours + "h" : "—") + "</span></div>"
     + (x.short_by > 0 ? "<div>Short by<span>" + x.short_by + "h</span></div>" : "")
-    + (x.late_by_mins > 0 ? "<div>Late by<span>" + acMins(x.late_by_mins) + "</span></div>" : "")
+    + (x.late_by_mins > 0
+        ? "<div>Late by<span>" + acMins(x.late_by_mins)
+          + (x.is_late ? "" : " (within grace)") + "</span></div>"
+        : "")
+    + (x.grace_mins > 0
+        ? "<div>Grace allowed<span>" + acMins(x.grace_mins) + "</span></div>" : "")
     + "</div>";
 
   if (x.punches && x.punches.length) {

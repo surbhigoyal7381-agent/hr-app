@@ -34,6 +34,22 @@ left, and why. It continues `03-implementation-notes.md`.
 | Mi4, Mi5 | Realtime broadcast to the site room; proof-of-delivery accepts any file path | Phase 2. Both gated. |
 | — | `support@kinexus.in` in `auth.py`, `tenant_api.py` and the login page | **Allow-listed in the scan, not removed.** It is our own support address, not a customer's. Changing what a user is told to write to is a product decision, not a tidy-up. |
 
+## 2a · One thing the full suite caught that neither review did
+
+**Making `vendor` opt-in turned a full Enterprise tick back into "custom" in the
+admin console.** `tenant_api._plan_label` stripped opt-in keys from what a tenant
+has, but compared the result against the raw `PLANS` list, which still names the
+opt-in features a plan entitles a tenant to. So the two sets could never match
+once a bundled feature became opt-in.
+
+Nobody would have seen it until a demo, and the console is now the only way
+anyone gets this portal. Fixed by stripping opt-in from both sides
+(`c83b37d`). `test_provisioning_subscription.py` caught it, which is exactly what
+that test was written for - it says so in its own docstring.
+
+Worth saying plainly: the targeted module runs were all green before this. **Only
+the whole-app run found it.**
+
 ## 3 · Slice 014's driver-location findings are **gated, not fixed**
 
 Said plainly, because the temptation to tick them is real and because 014 and 016 go to

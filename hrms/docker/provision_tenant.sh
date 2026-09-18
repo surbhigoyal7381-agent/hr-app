@@ -1,5 +1,5 @@
 #!/bin/bash
-# Kinexus HRMS – Tenant Provisioning Script
+# Alvoraa HRMS – Tenant Provisioning Script
 #
 # Args: <subdomain> [tenant_name] [plan] [modules]
 #   modules = comma-separated IDs: hrms,payroll,recruitment,vendor,goals,analytics
@@ -22,7 +22,7 @@ MODULES="${4:-hrms}"   # comma-separated module IDs from the admin UI
 # ── Config ─────────────────────────────────────────────────────────────────
 BASE_DOMAIN="${BASE_DOMAIN:-localhost}"
 DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:-123}"
-SUPPORT_EMAIL="${SUPPORT_EMAIL:-support@kinexus.in}"
+SUPPORT_EMAIL="${SUPPORT_EMAIL:-support@alvoraa.co}"
 PRIMARY_COLOR="${PRIMARY_COLOR:-#16A373}"
 SITE_NAME="${SUBDOMAIN}.${BASE_DOMAIN}"
 
@@ -42,7 +42,7 @@ INSTALL_RECRUIT=0;has_module "recruitment" && INSTALL_RECRUIT=1|| true
 
 echo ""
 echo "╔══════════════════════════════════════════════════╗"
-echo "║   Kinexus HRMS – Provisioning New Tenant         ║"
+echo "║   Alvoraa HRMS – Provisioning New Tenant         ║"
 echo "╠══════════════════════════════════════════════════╣"
 echo "║  Site:    $SITE_NAME"
 echo "║  Name:    $TENANT_NAME"

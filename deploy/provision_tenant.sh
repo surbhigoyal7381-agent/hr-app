@@ -1,19 +1,19 @@
 #!/bin/bash
-# Kinexus HRMS – Tenant Provisioning Script
+# Alvoraa HRMS – Tenant Provisioning Script
 #
-# Creates a new isolated Frappe site (= one tenant) and installs all Kinexus apps.
+# Creates a new isolated Frappe site (= one tenant) and installs all Alvoraa apps.
 # Run from INSIDE the frappe container:
 #
 #   docker exec <frappe-container> bash /workspace/provision_tenant.sh <subdomain> [options]
 #
 # Examples:
-#   docker exec kinexus-frappe-1 bash /workspace/provision_tenant.sh acmecorp
-#   docker exec kinexus-frappe-1 bash /workspace/provision_tenant.sh acmecorp "Acme Corporation" business
+#   docker exec compose-frappe-1 bash /workspace/provision_tenant.sh acmecorp
+#   docker exec compose-frappe-1 bash /workspace/provision_tenant.sh acmecorp "Acme Corporation" business
 #
 # Environment variables (override defaults):
 #   DB_ROOT_PASSWORD   MariaDB root password (must match running MariaDB container)
 #   ADMIN_PASSWORD     Initial admin password for the new site (auto-generated if blank)
-#   BASE_DOMAIN        Domain suffix, default: kinexus.in
+#   BASE_DOMAIN        Domain suffix, default: alvoraa.co
 #   PRIMARY_COLOR      Hex brand color, default: #1a7f5a
 #   SUPPORT_EMAIL      Support address shown in tenant UI
 
@@ -33,9 +33,9 @@ has_feature() {
 }
 
 # ── Config ─────────────────────────────────────────────────────────────────
-BASE_DOMAIN="${BASE_DOMAIN:-kinexus.in}"
+BASE_DOMAIN="${BASE_DOMAIN:-alvoraa.co}"
 DB_ROOT_PASSWORD="${DB_ROOT_PASSWORD:?ERROR: DB_ROOT_PASSWORD must be set. Never fall back to a default — set it from the secret store.}"
-SUPPORT_EMAIL="${SUPPORT_EMAIL:-support@kinexus.in}"
+SUPPORT_EMAIL="${SUPPORT_EMAIL:-support@alvoraa.co}"
 PRIMARY_COLOR="${PRIMARY_COLOR:-#1a7f5a}"
 
 SITE_NAME="${SUBDOMAIN}.${BASE_DOMAIN}"
@@ -48,7 +48,7 @@ fi
 
 echo ""
 echo "╔══════════════════════════════════════════════════╗"
-echo "║   Kinexus HRMS – Provisioning New Tenant         ║"
+echo "║   Alvoraa HRMS – Provisioning New Tenant         ║"
 echo "╠══════════════════════════════════════════════════╣"
 echo "║  Site:   $SITE_NAME"
 echo "║  Name:   $TENANT_NAME"
@@ -111,7 +111,7 @@ bench --site "$SITE_NAME" set-config subscription_plan "$PLAN"
 bench --site "$SITE_NAME" set-config primary_color     "$PRIMARY_COLOR"
 bench --site "$SITE_NAME" set-config accent_color      "${ACCENT_COLOR:-#f59e0b}"
 bench --site "$SITE_NAME" set-config support_email     "$SUPPORT_EMAIL"
-bench --site "$SITE_NAME" set-config home_page         "/kinexus-login"
+bench --site "$SITE_NAME" set-config home_page         "/alvoraa-login"
 bench --site "$SITE_NAME" set-config host_name         "https://${SITE_NAME}"
 
 # `modules_enabled` is the legacy label list the tenant console displays. It used
@@ -153,6 +153,6 @@ echo "⚠️  Save the admin password now — it will not be shown again."
 echo ""
 echo "Next steps:"
 echo "  1. Point DNS: ${SITE_NAME} → this server's IP"
-echo "  2. Visit https://${SITE_NAME}/kinexus-login to verify"
+echo "  2. Visit https://${SITE_NAME}/alvoraa-login to verify"
 echo "  3. Log in as Administrator and configure Company, Employees, Vendors"
 echo ""

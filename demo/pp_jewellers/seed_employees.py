@@ -114,7 +114,7 @@ for r in rows:
     if not frappe.db.exists("User", email):
         user = frappe.get_doc({
             "doctype": "User", "email": email, "first_name": r["first_name"], "last_name": r["last_name"],
-            "send_welcome_email": 0, "user_type": "System User", "new_password": DEMO_PASSWORD,
+            "send_welcome_email": 0, "user_type": "System User", "new_password": demo_password(),
             "roles": [{"role": x} for x in roles],
         })
         user.flags.no_welcome_mail = True

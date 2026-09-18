@@ -21,16 +21,27 @@ ABBR = "PPJ"
 DATA_DIR = os.environ.get("PPJ_DATA_DIR", "/tmp/ppj/data")
 # The login password for every seeded user. There is no built-in default: a
 # shared password in public code is a shared password anyone can try on the
-# tenant. Set it before running any seed script:
+# tenant. Set it before running a script that creates users:
 #     export PPJ_DEMO_PASSWORD='<a new, strong password>'
-DEMO_PASSWORD = os.environ.get("PPJ_DEMO_PASSWORD", "").strip()
-if not DEMO_PASSWORD:
-    sys.exit(
-        "PPJ_DEMO_PASSWORD is not set. Choose a password for the seeded users "
-        "and export it before running the seed scripts:\n"
-        "  export PPJ_DEMO_PASSWORD='<a new, strong password>'\n"
-        "Nothing was changed."
-    )
+#
+# The check lives in demo_password(), not at import time. Eleven scripts do
+# "from ppj_common import *" and only two of them create users - verify_ppj.py
+# and the two reset scripts do not. Exiting at import would kill the
+# verification step after a good seed run, and print "nothing was changed",
+# which by then would be false.
+
+
+def demo_password():
+    """The seeded users' password, or stop before writing anything."""
+    value = os.environ.get("PPJ_DEMO_PASSWORD", "").strip()
+    if not value:
+        sys.exit(
+            "PPJ_DEMO_PASSWORD is not set. Choose a password for the seeded "
+            "users and export it before running the seed scripts:\n"
+            "  export PPJ_DEMO_PASSWORD='<a new, strong password>'\n"
+            "No user was created."
+        )
+    return value
 
 HEAD_OFFICE = "PPJ Head Office Chandigarh"
 STORES = ["PPJ Chandigarh Sector 17", "PPJ Ambala City", "PPJ Noida Sector 18",
@@ -183,7 +194,7 @@ def make_user(email, first_name, last_name, roles):
         user.save(ignore_permissions=True)
     else:
         user = frappe.get_doc({"doctype": "User", "email": email, "first_name": first_name, "last_name": last_name,
-                               "send_welcome_email": 0, "user_type": "System User", "new_password": DEMO_PASSWORD,
+                               "send_welcome_email": 0, "user_type": "System User", "new_password": demo_password(),
                                "roles": [{"role": r} for r in roles]})
         user.flags.no_welcome_mail = True
         frappe.flags.in_import = True       # bypass the 60-per-hour user creation throttle

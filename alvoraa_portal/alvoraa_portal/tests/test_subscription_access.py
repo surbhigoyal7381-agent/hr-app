@@ -46,7 +46,11 @@ PLAN_MATRIX = {
 	"enterprise": {
 		"features": ["portal", "leaves", "attendance", "expenses", "hr_setup",
 		             "tenure", "recruitment", "payroll", "tax_benefits",
-		             "performance", "goals", "analytics", "vendor"],
+		             # "vendor" is opt-in from slice 016: enterprise ENTITLES a
+		             # tenant to the vendor and driver portal, but a plan bundle
+		             # no longer hands it over on its own. The tick in the admin
+		             # console does that, and the plan is what justifies it.
+		             "performance", "goals", "analytics"],
 		"workspaces": ["Expenses", "HR Setup", "Leaves", "Payroll", "Performance",
 		               "Recruitment", "Shift & Attendance", "Tax & Benefits", "Tenure"],
 		"apps": ["alvoraa_goals", "alvoraa_portal"],

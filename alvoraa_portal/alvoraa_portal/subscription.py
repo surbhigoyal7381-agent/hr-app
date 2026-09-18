@@ -154,6 +154,13 @@ FEATURES = {
         "label": "Vendor & Driver Portal",
         "app": "alvoraa_portal",
         "module_defs": ["Alvoraa Portal"],
+        # Opt-in from slice 016. The app is installed on EVERY tenant, so the
+        # routes and doctypes exist everywhere whatever the plan - and
+        # provision_tenant.sh writes `subscription_plan` but never `features`,
+        # so the fallback in enabled_features() handed this module to every
+        # site it created. Opt-in means a tenant has it only when its own
+        # config names it, which is one tick in the admin console.
+        "opt_in": True,
     },
     # ── Opt-in features (off everywhere until the console ticks them for a tenant) ──
     "late_rules": {

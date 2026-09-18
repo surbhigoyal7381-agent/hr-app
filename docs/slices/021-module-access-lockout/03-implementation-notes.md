@@ -273,11 +273,32 @@ Employee Self Service and HR grants untouched.
 
 ### Other suites
 
+All of these were re-run on the **rebuilt** `test_site`, after the other
+session's work finished and the bench was free:
+
 | Module | Result |
 |---|---|
-| `test_module_access_lockout_021` (new) | **17 tests, OK** |
-| `test_access_state_save` (pins `_save`) | **3 tests, OK** — the existing pin still holds |
+| `test_module_access_lockout_021` (new) | **17 tests, OK**, 11s |
+| `test_access_state_save` (pins `_save`) | **3 tests, OK** — the existing pin still holds unchanged |
 | `test_access_control` (pins sync/release) | 34 tests, **2 failures, neither mine** — see §8 |
+
+The new module ran in 133 seconds before the snapshot batching and 11 after, on
+the same site and the same tests.
+
+### The report on a site with an honest baseline
+
+Run against `test_site` immediately after it was rebuilt from scratch, before
+any suite had touched it — 362 install-time rows across 73 doctypes:
+
+```
+checked 73 doctype(s) with permission rows | recorded by us: 0
+  | STRANDED (denied, nothing records it): 0 | legitimate, left alone: 73
+  nothing stranded. Every permission row on this site is either recorded by us
+  or somebody else's.
+```
+
+**Zero false positives** on a real `hrms/setup.py` + Employee Self Service
+baseline, which is the property that makes it safe to point at production.
 
 ## 7. The seven dimensions, against the code I actually wrote
 
@@ -350,7 +371,14 @@ python scripts/check_app_integrity.py        -> 580 checks, OK - all consistent
    adds an exempt role, rows written under the old set would no longer be
    exempt-only and the report would call them legitimate. Worth a note wherever
    `ADMIN_ROLES` is edited.
-6. **No full-suite run.** I ran the new module and the two that pin this code. A
+6. **`test_site` is stranded again, and I left it that way on purpose.** The
+   other session's full `alvoraa_portal` run that finished around 10:50 left 547
+   rows across 364 doctypes with 0 recorded — 319 of them stranded by the new
+   report's reckoning, 45 legitimate. That is the test-side leak slice 020 fixes,
+   not this one, and the bench state is theirs to decide about. The read-only
+   report and the repair are both on this branch if they want them; I did not
+   run the repair on their site. Noted on the work board.
+7. **No full-suite run.** I ran the new module and the two that pin this code. A
    clean full `alvoraa_portal` and `alvoraa_goals` pass is still owed, and is
    best done after the rebuilt `test_site` settles and slice 020's test fixes
    are merged — until they are, `test_module_access` and friends will strand the

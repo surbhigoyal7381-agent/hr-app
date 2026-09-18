@@ -100,20 +100,20 @@ well — see §6.
 `New_req.md:524` and `New_req.md:620`
 
 ```
-... Champion (Chaitanya) to sponsor.
-1. **HR & Chaitanya sign-off** on the blueprint ...
+... Champion (<real director 3>) to sponsor.
+1. **HR & <real director 3> sign-off** on the blueprint ...
 ```
 
 `New_req.md` is tracked and is on `origin/dev`, so it is public. The surrounding document
 is titled "Grace Group: Multi-Level Cascaded Goals" and carries the company's real shape
-(150–200 employees, 4 states, 15+ brands). "Chaitanya" is one of the three real promoters
+(150–200 employees, 4 states, 15+ brands). That first name is one of the three real promoters
 the slice set out to remove, named as the project sponsor.
 
 This also makes a claim in the notes untrue. `03-implementation-notes.md:62` says:
 
 > Final grep across the repository ... **zero** matches for any of the three real names.
 
-There are two. (The other `Malhotra` / `Mukesh` hits I found are invented PP Jewellers
+There are two. (The other surname and first-name hits I found are invented PP Jewellers
 demo people and a first-name pool in `generate_employees.py` — those are fine.)
 
 **Smallest fix.** Replace both with `Aditya`, the invented name already chosen for that

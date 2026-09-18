@@ -48,7 +48,7 @@ more urgent than the whole slice.
 | **A3** — were the secrets changed after the July–August malware window? | Unknown | **Not closed. Still unanswered, and now bigger.** | The slice never claimed this one. See §3 — because the malware is live on two branches dated 3 and 6 September, the window to worry about is not July–August. It runs to today. |
 | **B1** — malware in three `postcss.config.js` files | Crypto-wallet stealer that also reads environment variables | **Partly closed, and the scan was incomplete.** | `origin/claude/pp-jewellers-hr-spec-yvmi2a` is gone from my remote-tracking refs and archived locally at `refs/archive/malware-evidence-pp-jewellers-hr-spec` (`9cd082d`) — verified by reading local refs. **But** `origin/claude/hr-app-sme-agent-h1cf1h` and `origin/fix/deploy-workflow` still carry the 32 KB files at their tips. `origin/dev`, `origin/main` and `origin/fix/nginx-wildcard-cert` carry the clean 66–75 byte versions. See §3. |
 | **B2** — Grace Group brochure PDF | A real company's document, published without a record of consent | **Closed in the tree. Still in history.** | `git ls-files` finds no `Grace Group 2026.pdf` on the branch. Deleted in `a37b495`. |
-| **B3** — real names of three Grace Group promoters with invented appraisal scores | Privacy and reputation risk | **Partly closed — and partly re-opened by this slice.** | The seed scripts and the four `Frappe Vibe Coding` docs are clean. But `docs/slices/015-repo-hygiene/03-implementation-notes.md:49-51` prints all three real names beside their replacements, and `New_req.md:524` and `:620` still name "Chaitanya" as the project sponsor for a named real client. See Blocker 1 and Major 1. |
+| **B3** — real names of three Grace Group promoters with invented appraisal scores | Privacy and reputation risk | **Partly closed — and partly re-opened by this slice.** | The seed scripts and the four `Frappe Vibe Coding` docs are clean. But `docs/slices/015-repo-hygiene/03-implementation-notes.md:49-51` prints all three real names beside their replacements, and `New_req.md:524` and `:620` still name one of them as the project sponsor for a named real client. See Blocker 1 and Major 1. |
 | **B4** — origin server public IP `169.…` | Lets someone bypass Cloudflare | **Closed in the tree. Still in history. The firewall fix is not done.** | `git grep` for the address across the whole branch returns nothing. `demo/README.md:50` and `docs/slices/008-field-checkin/07-devops-inputs.md:47` now use a placeholder. The Contabo firewall restriction the scan recommended is not part of this slice and has not been done. |
 | **C** — `hrms/docker/init.sh.orig`, the leftover file with local admin and DB root passwords | Low value, no job | **Closed.** | Not in `git ls-files` on the branch. Deleted in `a430e33`. The notes record the grep that proved nothing referenced it; I re-ran it and agree. |
 
@@ -73,9 +73,9 @@ one. The tenant change closed the live one.
 `docs/slices/015-repo-hygiene/03-implementation-notes.md:49-51`
 
 ```
-| D.K. / D. K. Malhotra | V.P. / V. P. Rathore |
-| Mukesh Mittal | Naresh Kamath |
-| Chaitanya Malhotra | Aditya Rathore |
+| <real director 1> | V.P. / V. P. Rathore |
+| <real director 2> | Naresh Kamath |
+| <real director 3> | Aditya Rathore |
 ```
 
 **The scenario:** anyone with a browser opens the public repo, reads this table, and
@@ -151,7 +151,7 @@ strings in memory. No file was changed.)*
 
 ### Major 1 — `New_req.md` still names a real client and a real person
 
-`New_req.md:524` and `:620` name "Chaitanya" as the executive sponsor. Lines 12 and 630
+`New_req.md:524` and `:620` name a real director as the executive sponsor. Lines 12 and 630
 describe Grace Group as a real client with revenue (₹180 cr), headcount (150–200), four
 states and 15+ brands.
 
@@ -317,7 +317,7 @@ already running.
 | The brochure, `init.sh.orig` and the origin IP are absent from the branch | **verified by reading** — `git ls-files` and `git grep` |
 | The three real names are absent from the seed scripts and the four vibe-coding docs | **verified by reading** — `git grep` on the branch |
 | The three real names are present in `03-implementation-notes.md:49-51` | **verified by reading** |
-| "Chaitanya" and Grace Group business figures are present in `New_req.md` | **verified by reading** |
+| A real director's first name and Grace Group business figures are present in `New_req.md` | **verified by reading** |
 | The new CI step is blocking and runs on push/PR to `dev` | **verified by reading** `ci.yml` |
 | The CI check misses four realistic password forms | **verified by running** the script's own compiled patterns against test strings, in memory, changing nothing |
 | The stale branch `claude/pp-jewellers-hr-spec-yvmi2a` is gone and archived locally | **verified by reading** local refs — but whether GitHub really deleted it is **needs-a-check** (`git ls-remote`) |

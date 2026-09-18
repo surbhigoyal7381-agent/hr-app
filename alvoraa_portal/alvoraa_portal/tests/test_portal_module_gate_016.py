@@ -82,6 +82,19 @@ def _whitelisted(module):
 	return out
 
 
+def _dummy_args(fn):
+	"""One harmless positional value per required parameter.
+
+	The gate runs before the body, so the values never matter - they only have
+	to let Python make the call at all. Without them the call raises TypeError
+	for missing arguments and the refusal is never exercised.
+	"""
+	params = inspect.signature(fn).parameters.values()
+	return ["016-does-not-exist" for p in params
+	        if p.default is inspect.Parameter.empty
+	        and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+
+
 class TheWholeModuleIsGatedByPlan(FrappeTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
@@ -120,22 +133,44 @@ class TheWholeModuleIsGatedByPlan(FrappeTestCase):
 				                "%s: @frappe.whitelist() must be above the gate" % name)
 
 	def test_016_a_tenant_without_the_feature_is_refused_on_every_one(self):
-		"""Table-driven, the shape of the existing entitlement test. A starter
-		tenant gets a PermissionError from all 28, and no data."""
+		"""Table-driven over all 28: a starter tenant gets a PermissionError.
+
+		The first version of this test wrapped the call in `except TypeError:
+		raise frappe.PermissionError`, to get past endpoints that need
+		arguments. That made it pass whether the gate was there or not, for the
+		25 endpoints that take an argument - a test that looked like proof and
+		was not. It now builds a dummy argument for every parameter from
+		`inspect.signature`, so the call reaches the gate for real.
+		"""
 		frappe.conf["features"] = sub.plan_features("starter")
 		called = 0
 		for module in MODULES:
 			for name, _decs in _whitelisted(module):
 				fn = getattr(module, name)
+				args = _dummy_args(fn)
 				called += 1
 				with self.assertRaises(frappe.PermissionError, msg=name):
-					try:
-						fn()
-					except TypeError:
-						# Missing arguments would mask the gate, so treat it the
-						# way the gate is reached: the decorator runs first.
-						raise frappe.PermissionError
+					fn(*args)
 		self.assertGreaterEqual(called, ENDPOINTS_AT_THE_TIME)
+
+	def test_016_the_refusal_test_supplies_every_required_argument(self):
+		"""Proves the test above cannot be passing on a TypeError.
+
+		It does it by checking the arity, not by calling the endpoints a second
+		time with the feature on - several of them write, and a test should not
+		leave rows behind to prove a point about arguments.
+		"""
+		for module in MODULES:
+			for name, _decs in _whitelisted(module):
+				fn = getattr(module, name)
+				required = [
+					p for p in inspect.signature(fn).parameters.values()
+					if p.default is inspect.Parameter.empty
+					and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+				]
+				self.assertEqual(
+					len(_dummy_args(fn)), len(required),
+					"%s: the refusal test would raise TypeError, not reach the gate" % name)
 
 	def test_016_vendor_is_opt_in(self):
 		self.assertTrue(sub.is_opt_in("vendor"))
@@ -180,11 +215,41 @@ class NoCustomerDetailsInTheSource(FrappeTestCase):
 		"Grace" + " Drinks",
 	]
 
+	# Files this scan deliberately skips, each with a reason. Nothing else is
+	# skipped, and the list must not grow without one.
+	SKIPPED = {
+		# Slice 015 (repo hygiene) owns this file and has it open. Editing it
+		# here would clash. It still carries the five shop names and their
+		# addresses - see 03-implementation-notes.md §4.
+		"demo_setup.py",
+		# This test file names the banned strings on purpose, to look for them.
+		"test_portal_module_gate_016.py",
+	}
+
 	def _sources(self):
-		for module in MODULES:
-			path = inspect.getsourcefile(module)
-			with io.open(path, encoding="utf-8") as fh:
-				yield os.path.basename(path), fh.read()
+		"""Every source file in the installed app, not a hand-written list.
+
+		The first version read only the ten modules of the slice, so it passed
+		while the same customer's mailbox sat in `hooks.py`, three hub addresses
+		sat in `setup_data.py`, and the five named shops sat in the demo seeder.
+		The repository is public, so the scan has to cover what ships.
+		"""
+		root = os.path.dirname(os.path.dirname(os.path.abspath(
+			inspect.getsourcefile(portal_api))))
+		for dirpath, dirnames, filenames in os.walk(root):
+			dirnames[:] = [d for d in dirnames
+			               if d not in ("__pycache__", "node_modules", "dist", ".git")]
+			for filename in sorted(filenames):
+				if filename in self.SKIPPED:
+					continue
+				if not filename.endswith((".py", ".js", ".jsx", ".vue", ".html", ".json", ".md")):
+					continue
+				path = os.path.join(dirpath, filename)
+				try:
+					with io.open(path, encoding="utf-8") as fh:
+						yield os.path.relpath(path, root), fh.read()
+				except (UnicodeDecodeError, OSError):
+					continue
 
 	def test_016_no_customer_name_phone_shop_or_mailbox_is_hardcoded(self):
 		found = []
@@ -197,14 +262,27 @@ class NoCustomerDetailsInTheSource(FrappeTestCase):
 	def test_016_no_bare_email_address_is_hardcoded(self):
 		"""Not just that one mailbox - any literal address in this module is
 		somebody's, and it will be the wrong somebody on the next tenant."""
-		pattern = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
+		# The TLD has to be alphabetic, or an npm package spec like
+		# "leaflet@1.9.4" reads as an address.
+		pattern = re.compile(r"[\w.+-]+@[\w-]+\.[A-Za-z][\w.]*[A-Za-z]")
+		allowed = (
+			# obvious placeholders and test fixtures
+			"example.com", "example.org", "company.com", "acmecorp.com", ".test",
+			# our own demo data and our own domains
+			"gracedemo.in", "alvoraa.co",
+			# our own product support address; changing what a user is told to
+			# write to is a product decision, not a tidy-up (slice 016 notes §4)
+			"kinexus.in",
+			# upstream projects named in comments and docs
+			"erpnext.com", "frappe.io",
+		)
 		found = []
 		for name, text in self._sources():
 			for hit in pattern.findall(text):
-				if hit.endswith("example.com"):
+				if hit.endswith(allowed):
 					continue
 				found.append("%s: %s" % (name, hit))
-		self.assertEqual(found, [], "hardcoded email addresses: %s" % found)
+		self.assertEqual(sorted(set(found)), [], "hardcoded email addresses: %s" % sorted(set(found)))
 
 	def test_016_the_settings_come_from_site_config(self):
 		from alvoraa_portal import delivery_settings

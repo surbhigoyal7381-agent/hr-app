@@ -287,6 +287,19 @@ def _prepare_delivery_pipeline(order_name, vo=None):
     base_url = frappe.utils.get_url()
     da_new_url = f"{base_url}/app/delivery-assignment/new-delivery-assignment-1"
 
+    # Nobody holds the Logistics Manager role and no ops mailbox is configured,
+    # so there is nobody safe to send this to - it names the vendor and the
+    # order value (slice 016). The Delivery Order is still created; it waits for
+    # somebody to pick it up, and the log line says so.
+    if not manager_emails:
+        frappe.log_error(
+            f"DO {do.name} (Pending) created for VO {order_name}, but no "
+            f"Logistics Manager and no portal_ops_email - nobody was told to "
+            f"assign a driver.",
+            "Ready for Dispatch: nobody to notify",
+        )
+        return do.name
+
     try:
         frappe.sendmail(
             recipients=manager_emails,
@@ -320,9 +333,11 @@ def _prepare_delivery_pipeline(order_name, vo=None):
     except Exception:
         frappe.log_error(frappe.get_traceback(), f"Warehouse manager notification failed for {order_name}")
 
+    # The count, not the addresses: a log line should be enough for a person to
+    # open the record, and no more than that (slice 016).
     frappe.log_error(
         f"DO {do.name} (Pending) created for VO {order_name}. "
-        f"Notified managers: {manager_emails}",
+        f"Managers notified: {len(manager_emails)}",
         "Ready for Dispatch: Pipeline Ready",
     )
     return do.name

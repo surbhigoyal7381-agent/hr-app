@@ -252,10 +252,19 @@ jobs:
       # dev and production deploys can run at the same time on this one runner, and
       # a logout from either would pull the credential out from under the other
       # mid-pull.
+      #
+      # The token travels through `env:`, not inline in the command. Inline, the
+      # expanded secret is written into the step script on the runner's disk and is
+      # visible in `ps` while docker login runs. GitHub masks it in the LOG either
+      # way, which is what makes the inline form look safe when it is not - and this
+      # is our own machine, shared with production. Same reason the git fetches below
+      # take their token this way.
       - name: Sign in to the image registry
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
             set -euo pipefail
-            echo '${{ secrets.GITHUB_TOKEN }}' \
+            printf '%s' "$REGISTRY_TOKEN" \
               | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
 
       - name: Deploy

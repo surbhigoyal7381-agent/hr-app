@@ -110,6 +110,14 @@ jobs:
     runs-on: [self-hosted, contabo]
     timeout-minutes: 90
 
+    # `packages: read` so this job can sign in to ghcr.io and pull. Until the
+    # registry sign-in step below, it pulled ANONYMOUSLY and worked only because
+    # the image package was public - which also meant anyone could pull the image
+    # and read the whole application out of it. See that step.
+    permissions:
+      contents: read
+      packages: read
+
     # This is the approval gate for production.
     environment:
       name: ${{ needs.plan.outputs.environment }}
@@ -211,6 +219,28 @@ jobs:
             else
               echo "::warning::BACKUP_BUCKET not set — backups exist only on the server"
             fi
+
+      # ── Sign in to the image registry before pulling ──────────────────────
+      #
+      # The pull inside "Deploy" used to be anonymous. It worked, but only because
+      # the ghcr.io package was PUBLIC - and the image contains the entire
+      # application, so a public package makes the source readable to anyone who
+      # runs `docker pull`, private repository or not.
+      #
+      # With this step the package can be private: the job's own GITHUB_TOKEN has
+      # `packages: read` and is enough to pull. No long-lived token is stored on
+      # the server, and nothing has to be rotated by hand.
+      #
+      # No matching logout. The credential lands in the runner user's
+      # ~/.docker/config.json, and the token stops working when the job ends - but
+      # dev and production deploys can run at the same time on this one runner, and
+      # a logout from either would pull the credential out from under the other
+      # mid-pull.
+      - name: Sign in to the image registry
+        run: |
+            set -euo pipefail
+            echo '${{ secrets.GITHUB_TOKEN }}' \
+              | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
 
       - name: Deploy
         run: |

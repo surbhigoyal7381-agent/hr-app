@@ -40,7 +40,48 @@ def setUpModule():
 
 
 def _company():
-	return frappe.db.get_value("Company", {}, "name")
+	"""The site's own company - the one that existed before any test ran.
+
+	`get_value("Company", {})` returns whichever row the database hands back
+	first, and by the time a full suite reaches this file other tests have
+	created their own companies. Ordering by creation picks the one installed
+	with the site, every time and in any test order.
+	"""
+	return frappe.get_all("Company", pluck="name", order_by="creation asc", limit=1)[0]
+
+
+def _week_in_this_fiscal_year():
+	"""A whole week, in the past, inside an active fiscal year.
+
+	Fixed dates rot in two different ways, and this file was bitten by both.
+	A week written in August is not the current week in September, so anything
+	reading "this week" saw nothing. And a date in 2015 is inside no fiscal year
+	that a freshly created site has, so Salary Structure Assignment refused to
+	save and took nine tests down with it.
+
+	So the week is derived: three weeks back, pulled forward if that would fall
+	before the fiscal year starts. Returns the Monday and the fiscal year's
+	first day, which is the earliest date a salary assignment can safely carry.
+	"""
+	from erpnext.accounts.utils import get_fiscal_year
+
+	from hrms.alvoraa_late_rules.late_rules import week_start_for
+
+	today = getdate(nowdate())
+	fy_start, fy_end = get_fiscal_year(today, as_dict=False)[1:3]
+	monday = getdate(week_start_for(add_days(today, -21), "Monday"))
+	if monday < getdate(fy_start):
+		# Early in a fiscal year there is no "three weeks ago" inside it, so
+		# take the first whole week of the year instead.
+		monday = getdate(week_start_for(add_days(fy_start, 7), "Monday"))
+	return monday, getdate(fy_start)
+
+
+def _days_in_month_of(date):
+	from calendar import monthrange
+
+	d = getdate(date)
+	return monthrange(d.year, d.month)[1]
 
 
 def _shift(name, start, end):
@@ -232,6 +273,16 @@ class _MoneyBase(FrappeTestCase):
 		cls.company = _company()
 		_shift(SHIFT, "09:30:00", "18:30:00")
 		cls.holidays = _holiday_list(cls.company)
+		# The week under test, and the three working days inside it that every
+		# money test uses. Derived, never written down - see the helper.
+		cls.week_start, cls.fy_start = _week_in_this_fiscal_year()
+		cls.week_end = add_days(cls.week_start, 6)
+		cls.days = [str(add_days(cls.week_start, i)) for i in range(3)]
+		# The daily wage is base divided by the days in the month the week ends
+		# in, so a base of "days x 1000" makes it exactly 1,000 a day whichever
+		# month the derived week lands in. The rupee assertions stay readable
+		# and stop depending on August having 31 days.
+		cls.base = _days_in_month_of(cls.week_end) * 1000
 		if not frappe.db.exists("Salary Component", "LM LWP 017"):
 			frappe.get_doc({"doctype": "Salary Component", "salary_component": "LM LWP 017",
 			                "salary_component_abbr": "LMLWP017", "type": "Deduction"}
@@ -257,23 +308,27 @@ class _MoneyBase(FrappeTestCase):
 	def setUp(self):
 		self.caller = frappe.session.user
 		frappe.set_user("Administrator")
+		# A fresh copy of the rule for every test. Tests in this file change it
+		# - an exempt grade, a start date - and a document held on the class
+		# goes stale the moment another test writes to the row, which shows up
+		# later as a timestamp mismatch in whichever test happens to save next.
+		self.rule = frappe.get_doc("Attendance Deduction Rule", "LM Rule 017")
 
 	def tearDown(self):
 		frappe.set_user(self.caller)
 
-	def _employee(self, first):
+	def _employee(self, first, joined=None):
+		joined = joined or str(self.fy_start)
 		e = frappe.get_doc({
 			"doctype": "Employee", "first_name": first, "company": self.company,
-			"date_of_birth": "1990-01-01", "date_of_joining": "2015-01-01",
+			"date_of_birth": "1990-01-01", "date_of_joining": joined,
 			"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
 			"status": "Active", "default_shift": SHIFT, "holiday_list": self.holidays,
 		}).insert(ignore_permissions=True)
 		frappe.get_doc({
 			"doctype": "Shift Assignment", "employee": e.name, "shift_type": SHIFT,
-			"company": self.company, "start_date": "2015-01-01",
+			"company": self.company, "start_date": joined,
 		}).insert(ignore_permissions=True).submit()
-		# 31,000 over a 31-day month is 1,000 a day, so the arithmetic below is
-		# readable rather than a rounded guess.
 		if not frappe.db.exists("Salary Structure", "LM Structure 017"):
 			basic = frappe.db.exists("Salary Component", "LM Basic 017") or frappe.get_doc(
 				{"doctype": "Salary Component", "salary_component": "LM Basic 017",
@@ -283,14 +338,18 @@ class _MoneyBase(FrappeTestCase):
 				"doctype": "Salary Structure", "name": "LM Structure 017",
 				"__newname": "LM Structure 017", "company": self.company,
 				"currency": "INR", "payroll_frequency": "Monthly", "is_active": "Yes",
-				"earnings": [{"salary_component": basic, "abbr": "LMB017", "amount": 31000}],
+				"earnings": [{"salary_component": basic, "abbr": "LMB017",
+				              "amount": self.base}],
 			})
 			ss.insert(ignore_permissions=True)
 			ss.submit()
+		# The assignment must start inside an active fiscal year: Salary
+		# Structure Assignment asks ERPNext for the fiscal year of this date,
+		# and a freshly created site has only the current one.
 		ssa = frappe.get_doc({
 			"doctype": "Salary Structure Assignment", "employee": e.name,
 			"salary_structure": "LM Structure 017", "company": self.company,
-			"currency": "INR", "from_date": "2015-01-01", "base": 31000,
+			"currency": "INR", "from_date": str(self.fy_start), "base": self.base,
 		})
 		ssa.flags.ignore_permissions = True
 		ssa.insert()
@@ -339,9 +398,9 @@ class TheMoneyThatFollows(_MoneyBase):
 		from hrms.alvoraa_late_rules.late_rules import violations_for
 
 		emp = self._employee("LMRuleStart")
-		for day in ("2026-08-17", "2026-08-18", "2026-08-19"):
+		for day in self.days:
 			self._day(emp, day, "10:15:00")
-		found = violations_for(self.rule, emp, getdate("2026-08-17"), getdate("2026-08-23"))
+		found = violations_for(self.rule, emp, self.week_start, self.week_end)
 		self.assertEqual(found, [], "arriving at 10:15 on a 09:30 shift is 45 "
 		                           "minutes late and the threshold is 60")
 
@@ -351,12 +410,12 @@ class TheMoneyThatFollows(_MoneyBase):
 		from hrms.alvoraa_late_rules.late_rules import process_week
 
 		emp = self._employee("LMRuleNoPay")
-		for day in ("2026-08-17", "2026-08-18", "2026-08-19"):
+		for day in self.days:
 			self._day(emp, day, "10:15:00")
-		result = process_week(self.rule, "2026-08-17", commit=False)
+		result = process_week(self.rule, str(self.week_start), commit=False)
 		self.assertEqual(result["created"], 0)
 		self.assertFalse(frappe.db.exists("Attendance Deduction",
-		                                  {"employee": emp, "week_start": "2026-08-17"}))
+		                                  {"employee": emp, "week_start": str(self.week_start)}))
 		self.assertFalse(frappe.db.exists("Additional Salary", {"employee": emp}))
 
 	def test_a_real_late_week_costs_the_exact_amount_it_should(self):
@@ -367,11 +426,11 @@ class TheMoneyThatFollows(_MoneyBase):
 		from hrms.alvoraa_late_rules.late_rules import process_week
 
 		emp = self._employee("LMRulePays")
-		for day in ("2026-08-17", "2026-08-18", "2026-08-19"):
+		for day in self.days:
 			self._day(emp, day, "10:45:00")
-		process_week(self.rule, "2026-08-17", commit=False)
+		process_week(self.rule, str(self.week_start), commit=False)
 		ded = frappe.get_doc("Attendance Deduction",
-		                     {"employee": emp, "week_start": "2026-08-17"})
+		                     {"employee": emp, "week_start": str(self.week_start)})
 		self.assertEqual(ded.total_violations, 3)
 		self.assertEqual(ded.counted_violations, 2)
 		self.assertEqual(ded.deduction_days, 0.5)
@@ -533,13 +592,13 @@ class MidnightAndTheMoney(_MoneyBase):
 		from hrms.alvoraa_late_rules.late_rules import process_week, violations_for
 
 		emp = self._employee("LMPastMidnight")
-		for day, nxt in (("2026-08-17", "2026-08-18"), ("2026-08-18", "2026-08-19"),
-		                 ("2026-08-19", "2026-08-20")):
+		for day in self.days:
+			nxt = str(add_days(day, 1))
 			self._day_span(emp, day, "09:35:00", nxt, "00:30:00")
 		self._early_exit_on()
 		self.assertEqual(
-			violations_for(self.rule, emp, getdate("2026-08-17"), getdate("2026-08-23")), [])
-		self.assertEqual(process_week(self.rule, "2026-08-17", commit=False)["created"], 0)
+			violations_for(self.rule, emp, self.week_start, self.week_end), [])
+		self.assertEqual(process_week(self.rule, str(self.week_start), commit=False)["created"], 0)
 		self.assertFalse(frappe.db.exists("Additional Salary", {"employee": emp}))
 
 	def test_a_real_early_exit_still_costs_the_exact_amount(self):
@@ -548,12 +607,12 @@ class MidnightAndTheMoney(_MoneyBase):
 		from hrms.alvoraa_late_rules.late_rules import process_week
 
 		emp = self._employee("LMRealEarly")
-		for day in ("2026-08-17", "2026-08-18", "2026-08-19"):
+		for day in self.days:
 			self._day(emp, day, "09:35:00", out_time="17:00:00")
 		self._early_exit_on()
-		process_week(self.rule, "2026-08-17", commit=False)
+		process_week(self.rule, str(self.week_start), commit=False)
 		ded = frappe.get_doc("Attendance Deduction",
-		                     {"employee": emp, "week_start": "2026-08-17"})
+		                     {"employee": emp, "week_start": str(self.week_start)})
 		self.assertEqual([v.violation_type for v in ded.violations],
 		                 ["Early Exit"] * 3)
 		self.assertEqual(ded.deduction_days, 0.5)
@@ -567,9 +626,10 @@ class MidnightAndTheMoney(_MoneyBase):
 
 		emp = self._employee("LMNightLate")
 		_shift(NIGHT, "22:00:00", "06:00:00")
-		self._day_span(emp, "2026-08-17", None, "2026-08-18", "06:05:00",
-		               shift=NIGHT, in_at=("2026-08-18", "00:10:00"))
-		found = violations_for(self.rule, emp, getdate("2026-08-17"), getdate("2026-08-23"))
+		nxt = str(add_days(self.days[0], 1))
+		self._day_span(emp, self.days[0], None, nxt, "06:05:00",
+		               shift=NIGHT, in_at=(nxt, "00:10:00"))
+		found = violations_for(self.rule, emp, self.week_start, self.week_end)
 		self.assertEqual([v["violation_type"] for v in found], ["Late Arrival"])
 		self.assertEqual(found[0]["minutes"], 130)
 
@@ -594,9 +654,9 @@ class WhoTheRuleActuallyCovers(_MoneyBase):
 		self.rule.append("exempt_grades", {"employee_grade": "LM Exempt Grade 017"})
 		self.rule.save(ignore_permissions=True)
 		try:
-			for day in ("2026-08-17", "2026-08-18", "2026-08-19"):
+			for day in self.days:
 				self._day(emp, day, "10:45:00")
-			p = current_week_projection(self.rule, emp, as_on="2026-08-19")
+			p = current_week_projection(self.rule, emp, as_on=self.days[2])
 			self.assertFalse(p["covered"])
 			self.assertEqual(p["violations"], [])
 			self.assertEqual(p["projected_days"], 0)
@@ -610,13 +670,13 @@ class WhoTheRuleActuallyCovers(_MoneyBase):
 
 		emp = self._employee("LMBeforeStart")
 		frappe.db.set_value("Attendance Deduction Rule", "LM Rule 017",
-		                    "process_from", "2026-09-01")
+		                    "process_from", str(add_days(self.week_end, 1)))
 		frappe.clear_document_cache("Attendance Deduction Rule", "LM Rule 017")
 		rule = frappe.get_doc("Attendance Deduction Rule", "LM Rule 017")
 		try:
-			for day in ("2026-08-17", "2026-08-18", "2026-08-19"):
+			for day in self.days:
 				self._day(emp, day, "10:45:00")
-			p = current_week_projection(rule, emp, as_on="2026-08-19")
+			p = current_week_projection(rule, emp, as_on=self.days[2])
 			self.assertFalse(p["covered"])
 			self.assertEqual(p["projected_days"], 0)
 		finally:
@@ -628,10 +688,14 @@ class WhoTheRuleActuallyCovers(_MoneyBase):
 		from hrms.alvoraa_late_rules.late_rules import current_week_projection
 
 		emp = self._employee("LMNewJoiner")
-		frappe.db.set_value("Employee", emp, "date_of_joining", "2026-09-15")
-		for day in ("2026-08-17", "2026-08-18", "2026-08-19"):
+		# The days go in first. Frappe HR refuses an attendance row dated before
+		# somebody joined, so moving the joining date has to come afterwards -
+		# which is exactly the situation being tested: rows exist, and the rule
+		# must still leave this person alone.
+		for day in self.days:
 			self._day(emp, day, "10:45:00")
-		p = current_week_projection(self.rule, emp, as_on="2026-08-19")
+		frappe.db.set_value("Employee", emp, "date_of_joining", str(add_days(self.week_end, 7)))
+		p = current_week_projection(self.rule, emp, as_on=self.days[2])
 		self.assertFalse(p["covered"])
 		self.assertEqual(p["projected_days"], 0)
 
@@ -664,6 +728,20 @@ class TheTeamList(_MoneyBase):
 			doc.set("__newname", "LM Rule 017 B")
 			doc.insert(ignore_permissions=True)
 
+	def _days_so_far_this_week(self):
+		"""Monday to today, at most three days, never the future.
+
+		At most three so the numbers stay small, and never the future because an
+		attendance row dated tomorrow is not a thing. On a Monday this is one
+		day, which is why the assertion counts the list rather than a literal.
+		"""
+		from hrms.alvoraa_late_rules.late_rules import week_start_for
+
+		today = getdate(nowdate())
+		monday = getdate(week_start_for(today, "Monday"))
+		days = [add_days(monday, i) for i in range(3)]
+		return [str(d) for d in days if d <= today]
+
 	def _report(self, first, manager, shift):
 		email = "%s.lm017t@example.com" % first.lower()
 		if not frappe.db.exists("User", email):
@@ -687,8 +765,12 @@ class TheTeamList(_MoneyBase):
 		mgr, mgr_email = self._report("LMTeamBoss", None, SHIFT)
 		a, _ea = self._report("LMTeamA", mgr, SHIFT)      # threshold 60
 		b, _eb = self._report("LMTeamB", mgr, SHIFT_B)    # threshold 30
+		# This endpoint reports on THIS week - it takes no date - so the days
+		# have to be in this week, and not in the future. Written against a
+		# fixed week, this test passed only during the week it was written.
+		days = self._days_so_far_this_week()
 		for emp, shift in ((a, SHIFT), (b, SHIFT_B)):
-			for day in ("2026-08-17", "2026-08-18", "2026-08-19"):
+			for day in days:
 				self._day(emp, day, "10:15:00", shift=shift)
 
 		frappe.set_user(mgr_email)
@@ -699,8 +781,9 @@ class TheTeamList(_MoneyBase):
 		rows = {r["employee"]: r for r in out["team"]}
 		self.assertEqual(rows[a]["violations"], 0,
 		                 "45 minutes against a 60-minute threshold is not a violation")
-		self.assertEqual(rows[b]["violations"], 3,
-		                 "45 minutes against a 30-minute threshold is three violations")
+		self.assertEqual(rows[b]["violations"], len(days),
+		                 "45 minutes against a 30-minute threshold is a violation "
+		                 "on every one of those days")
 		# The rows carry no grade, joining date or pay: the extra Employee fields
 		# the batching reads must stay on the server (slice 010, PRIV-3).
 		for r in out["team"]:

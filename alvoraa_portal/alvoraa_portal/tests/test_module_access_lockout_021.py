@@ -35,6 +35,11 @@ class _StateRestored(FrappeTestCase):
         self._recorded = ma._recorded_restrictions()
         self._snapshot = ma._load("permission_snapshot")
         self._rows = {dt: ma._snapshot_existing(dt) for dt in WATCH}
+        # A tenant's honest baseline is NOT zero. hrms/setup.py and the Employee
+        # Self Service User Type write rows at install - on a freshly built site
+        # these three doctypes carry nine of them between them. The invariant is
+        # "the count comes back to where it started", never "the count is zero".
+        self._baseline = self.rows_on()
         self.addCleanup(self._restore)
 
     def _restore(self):
@@ -58,8 +63,6 @@ class TestTheRecordComesBeforeTheRows(_StateRestored):
         recorded. The new order cannot: the record is attempted first, so the
         failure happens before a single row is touched.
         """
-        self.assertEqual(self.rows_on(), 0, "start from a clean slate")
-
         broken = _break_save()
         self.addCleanup(broken.restore)
 
@@ -73,9 +76,10 @@ class TestTheRecordComesBeforeTheRows(_StateRestored):
         frappe.db.commit()
         broken.restore()
 
-        self.assertEqual(self.rows_on(), 0,
-                         "a failed record must leave ZERO denial rows behind, "
-                         "even when something commits straight afterwards")
+        self.assertEqual(self.rows_on(), self._baseline,
+                         "a failed record must leave the permission rows exactly "
+                         "where it found them, even when something commits "
+                         "straight afterwards")
         self.assertEqual(ma._recorded_restrictions() & set(WATCH), set())
 
     def test_the_record_is_written_before_the_first_row(self):
@@ -115,7 +119,8 @@ class TestTheRecordComesBeforeTheRows(_StateRestored):
 
         out = ma.release_permissions(WATCH)
         self.assertEqual(sorted(out["released"]), sorted(WATCH))
-        self.assertEqual(self.rows_on(), 0)
+        self.assertEqual(self.rows_on(), self._baseline,
+                         "the snapshot must put the tenant's own rows back")
         self.assertEqual(ma._recorded_restrictions() & set(WATCH), set())
 
 

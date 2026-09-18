@@ -76,20 +76,32 @@ lost update.
 release what the plan no longer blocks        (commits, as before)
 still_recorded = what is recorded AFTER that
 snapshot every doctype about to be taken
-_save(still_recorded | to_restrict, snapshot)     <- THE RECORD
+_save(still_recorded | to_restrict, snapshot); commit   <- THE RECORD
 for dt in to_restrict: delete rows; keep one exempt row
 if any failed: _save(still_recorded | restricted, snapshot)   <- correct it down
 frappe.db.commit()
 ```
 
-**On one transaction** — they already were one, and I checked rather than assumed:
-`_save` writes `tabSingles` with plain SQL through `update_single` and does not
-commit, and the only `frappe.db.commit()` is at the end of `sync_permissions`.
-What defeated the transaction was never the boundary; it was `sync_site`
-swallowing the error and `apply_to_users()` committing afterwards. Part 3 closes
-that, and record-first is the belt to it: if the record cannot be made, not one
-row has been touched, so there is nothing to strand even if something later
-commits.
+**On one transaction — I checked, and then deliberately chose not to.** They
+already were one: `_save` writes `tabSingles` with plain SQL through
+`update_single` and does not commit, and the only `frappe.db.commit()` was at the
+end of `sync_permissions`. What defeated it was never the boundary; it was
+`sync_site` swallowing the error and `apply_to_users()` committing afterwards,
+which part 3 closes.
+
+But holding the record open across the row loop turned out to be actively
+harmful. `_save` now takes a **locking** read of the state record (§2), and
+record-first would hold that lock across all 450 row writes — seconds to
+minutes. Two syncs overlapping on one site would then deadlock: each holding
+permission rows the other wants while waiting for the record. **Measured**, not
+theorised: a `QueryDeadlockError` on `tabCustom DocPerm` when this suite ran
+alongside another session's full run.
+
+So the record is committed immediately. The safety comes from the **order**, not
+from atomicity — if the record cannot be made, not one row has been touched; if
+the rows fail afterwards, we have over-recorded, which is the safe direction.
+Committing also makes the record durable against the process simply dying, which
+an open transaction is not.
 
 **Over-recording is the safe direction.** If the loop dies part-way, the record
 names doctypes whose rows were never written. Releasing such a doctype deletes

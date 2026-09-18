@@ -152,7 +152,13 @@ last. The proposal splits it:
 4. if any doctype failed, `_save` again to bring the record down to what actually
    landed
 
-**On one transaction:** they already are one. `_save` writes `tabSingles` with
+**On one transaction (revised during the build — see the implementation notes):**
+they already are one, but holding the record open across the row loop holds the
+state record's lock for the whole run and deadlocks two overlapping syncs. It was
+measured happening. The record is therefore committed immediately; the safety
+comes from the order, not from atomicity. Original reasoning below.
+
+They already are one. `_save` writes `tabSingles` with
 plain SQL and does not commit; the only `frappe.db.commit()` is at the end of
 `sync_permissions`. What defeated it was not the transaction boundary — it was
 `sync_site` swallowing the error and `apply_to_users()` committing afterwards.

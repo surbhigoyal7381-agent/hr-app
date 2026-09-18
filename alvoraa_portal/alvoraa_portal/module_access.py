@@ -371,6 +371,28 @@ def _snapshot_existing(doctype):
     return [dict(r) for r in rows]
 
 
+def _snapshot_many(doctypes):
+    """The same thing for a list, in two queries instead of nine hundred.
+
+    A Starter tenant blocks about 450 doctypes, and asking "does this one have
+    rows?" then "which rows?" one at a time is 900 round trips to build one
+    dictionary. Batched, it is one query per 500 names.
+
+    Only doctypes that actually have rows come back, so the caller gets the
+    "already customised" test for free.
+    """
+    out = {}
+    names = sorted(doctypes)
+    for i in range(0, len(names), 500):
+        for r in frappe.get_all("Custom DocPerm",
+                                filters={"parent": ["in", names[i:i + 500]]},
+                                fields=["parent", *_SNAPSHOT_FIELDS],
+                                limit_page_length=0):
+            row = dict(r)
+            out.setdefault(row.pop("parent"), []).append(row)
+    return out
+
+
 def _keep_exempt_row(doctype, exempt):
     """Leave at least one Custom DocPerm row on a restricted doctype.
 
@@ -530,9 +552,12 @@ def sync_permissions(features=None, limit=None, only=None):
     # those would leave exactly the doctypes the plan is meant to deny wide
     # open. So we take them too, having first recorded what was there. The
     # snapshot is what makes the reversal a promise rather than a hope.
-    for dt in to_restrict:
-        if dt not in snapshot and frappe.db.exists("Custom DocPerm", {"parent": dt}):
-            snapshot[dt] = _snapshot_existing(dt)
+    # Batched: one query per 500 doctypes, not two per doctype. Anything already
+    # in the snapshot stays as it is - that is the ORIGINAL, from before we
+    # first took this doctype, and re-reading it now would capture our own
+    # denial row and call it the tenant's.
+    for dt, rows in _snapshot_many(set(to_restrict) - set(snapshot)).items():
+        snapshot[dt] = rows
 
     # THE RECORD GOES IN BEFORE THE ROWS. This is load-bearing.
     #
@@ -549,11 +574,22 @@ def sync_permissions(features=None, limit=None, only=None):
     # releasing such a doctype deletes rows that are not there (a no-op) and
     # puts the snapshot back verbatim, leaving it exactly where it started.
     #
-    # Both this and the row writes are one transaction - _save writes tabSingles
-    # with plain SQL and does not commit, and the only commit is at the end of
-    # this function.
+    # AND IT IS COMMITTED IMMEDIATELY, on purpose.
+    #
+    # The safety comes from the ORDER, not from atomicity, so there is nothing
+    # to gain by holding it open - and two real things to lose. _save takes a
+    # locking read on the state record (see its docstring) and would then hold
+    # that lock across all 450 row writes, which is seconds to minutes. Two
+    # syncs overlapping on one site would deadlock: each holding permission
+    # rows the other wants while waiting for the record. Measured - a
+    # QueryDeadlockError on `tabCustom DocPerm` when this ran alongside another
+    # test suite. Committing here shrinks the lock to the moment of the write.
+    #
+    # It also makes the record durable against the process simply dying, which
+    # an open transaction is not.
     if to_restrict:
         _save(restricted=still_recorded | set(to_restrict), snapshot=snapshot)
+        frappe.db.commit()
 
     for dt in to_restrict:
         try:

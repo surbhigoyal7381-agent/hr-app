@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Client Onboarding Information Form</title>
+<style>
+  :root{
+    --purple:#8E2C87;
+    --violet:#6A4496;
+    --blue:#3A5DA8;
+    --teal:#0E7C9B;
+    --ink:#241F2B;
+    --muted:#6B6475;
+    --line:#D8D2DE;
+    --tint:#F7F4F9;
+  }
+  @page { size: A4; margin: 16mm 14mm 16mm 14mm; }
+  *{ box-sizing:border-box; }
+  body{
+    font-family:"Segoe UI",Arial,Helvetica,sans-serif;
+    color:var(--ink); font-size:10.2pt; line-height:1.45; margin:0;
+  }
+  h1,h2,h3{ margin:0; }
+  .rule{ height:5px; background:linear-gradient(90deg,var(--purple),var(--violet),var(--blue)); border-radius:3px; }
+
+  /* ---------- cover ---------- */
+  .cover{ page-break-after:always; padding-top:6mm; }
+  .mark{ text-align:center; margin:26mm 0 8mm; }
+  .mark .inf{
+    font-size:46pt; line-height:1; letter-spacing:-6px; font-weight:700;
+    background:linear-gradient(90deg,var(--purple),var(--blue));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .mark .name{
+    font-size:30pt; font-weight:800; letter-spacing:2px; margin-top:6px;
+    background:linear-gradient(90deg,var(--purple),var(--blue));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .mark .tag{
+    color:var(--teal); font-size:10pt; letter-spacing:3.5px; font-weight:600; margin-top:6px;
+  }
+  .cover h1{ font-size:24pt; text-align:center; margin:14mm 0 3mm; color:var(--ink); }
+  .cover .sub{ text-align:center; color:var(--muted); font-size:11pt; }
+  .cover .box{
+    margin:14mm auto 0; max-width:150mm; background:var(--tint);
+    border:1px solid var(--line); border-left:5px solid var(--purple);
+    border-radius:6px; padding:8mm;
+  }
+  .cover .box h3{ font-size:11pt; color:var(--purple); margin-bottom:4px; }
+  .meta{ margin:12mm auto 0; max-width:150mm; }
+  .meta td{ padding:4px 0; }
+  .meta .lbl{ color:var(--muted); width:45mm; }
+  .fill{ border-bottom:1px solid var(--line); display:inline-block; min-width:60mm; }
+
+  /* ---------- sections ---------- */
+  section{ page-break-inside:avoid; margin-top:7mm; }
+  .sechead{ display:flex; align-items:baseline; gap:8px; border-bottom:2px solid var(--purple); padding-bottom:3px; margin-bottom:4mm; }
+  .sechead .tagn{
+    background:linear-gradient(90deg,var(--purple),var(--blue)); color:#fff;
+    font-size:8.5pt; font-weight:700; padding:2px 8px; border-radius:10px; letter-spacing:.5px;
+  }
+  .sechead h2{ font-size:13pt; }
+  .sechead .note{ margin-left:auto; color:var(--muted); font-size:8.5pt; font-style:italic; }
+  p.lead{ color:var(--muted); margin:0 0 4mm; }
+
+  table.f{ width:100%; border-collapse:collapse; }
+  table.f th{
+    text-align:left; font-size:8.5pt; letter-spacing:.4px; text-transform:uppercase;
+    color:var(--blue); border-bottom:1px solid var(--line); padding:4px 6px;
+  }
+  table.f td{ border-bottom:1px solid var(--line); padding:6px; vertical-align:top; }
+  table.f td.q{ width:52mm; font-weight:600; }
+  table.f td.h{ color:var(--muted); font-size:8.7pt; width:48mm; }
+  table.f td.a{ background:var(--tint); }
+  .req{ color:var(--purple); font-weight:700; }
+
+  ul.chk{ list-style:none; padding:0; margin:0; column-count:2; column-gap:10mm; }
+  ul.chk li{ padding:3px 0; break-inside:avoid; }
+  ul.chk li::before{ content:"\2610"; color:var(--blue); margin-right:7px; font-size:12pt; }
+  ul.chk li b{ font-weight:600; }
+  ul.chk li span{ color:var(--muted); font-size:8.7pt; }
+
+  .grid{ width:100%; border-collapse:collapse; margin-top:2mm; }
+  .grid th{ background:var(--tint); border:1px solid var(--line); padding:5px; font-size:8.5pt; text-align:left; color:var(--blue); }
+  .grid td{ border:1px solid var(--line); padding:9px 5px; }
+
+  .callout{ background:var(--tint); border-left:4px solid var(--teal); padding:5mm; border-radius:0 5px 5px 0; margin-top:4mm; }
+  .callout b{ color:var(--teal); }
+
+  .foot{ margin-top:8mm; border-top:1px solid var(--line); padding-top:3mm; color:var(--muted); font-size:8.3pt; display:flex; }
+  .foot span:last-child{ margin-left:auto; }
+  .pb{ page-break-before:always; }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<div class="cover">
+  <div class="rule"></div>
+  <div class="mark">
+    <div class="inf">&#8734;</div>
+    <div class="name">ALL ABOUT HR</div>
+    <div class="tag">TALENT &nbsp;&bull;&nbsp; TECHNOLOGY &nbsp;&bull;&nbsp; TRANSFORMATION</div>
+  </div>
+
+  <h1>Client Onboarding Information Form</h1>
+  <div class="sub">What we need from you before your HR system goes live</div>
+
+  <div class="box">
+    <h3>Why we are asking</h3>
+    <p style="margin:0">Your HR system is built for your organisation alone &mdash; your own address,
+    your own staff, your own leave rules. Nothing is shared with anyone else. To build it we need
+    the facts below. Most of it you already have; it takes about thirty minutes to fill in.</p>
+    <p style="margin:6px 0 0"><b>Sections A to D are needed to create your system.</b> The rest can
+    follow within a week, but the sooner they arrive, the sooner your people can use it.</p>
+  </div>
+
+  <table class="meta">
+    <tr><td class="lbl">Organisation</td><td><span class="fill">&nbsp;</span></td></tr>
+    <tr><td class="lbl">Completed by</td><td><span class="fill">&nbsp;</span></td></tr>
+    <tr><td class="lbl">Role</td><td><span class="fill">&nbsp;</span></td></tr>
+    <tr><td class="lbl">Date</td><td><span class="fill">&nbsp;</span></td></tr>
+  </table>
+
+  <div class="foot"><span>All About HR &mdash; Client Onboarding Form</span><span>Page 1</span></div>
+</div>
+
+<!-- ============ SECTION A ============ -->
+<section>
+  <div class="sechead"><span class="tagn">A</span><h2>Your organisation</h2>
+    <span class="note">Needed to create your system</span></div>
+  <p class="lead">This sets up your company record, your financial year and your web address.</p>
+  <table class="f">
+    <tr><th>What we need</th><th>Why</th><th style="width:60mm">Your answer</th></tr>
+    <tr><td class="q">Registered legal name <span class="req">*</span></td>
+        <td class="h">Appears on payslips and official documents</td><td class="a"></td></tr>
+    <tr><td class="q">Trading or brand name</td>
+        <td class="h">Shown to your staff, if different from above</td><td class="a"></td></tr>
+    <tr><td class="q">Short code, 2&ndash;5 letters <span class="req">*</span></td>
+        <td class="h">Used as a prefix on document numbers, e.g. DTC</td><td class="a"></td></tr>
+    <tr><td class="q">Preferred web address <span class="req">*</span></td>
+        <td class="h">yourname.alvoraa.co &mdash; lowercase letters and numbers only</td><td class="a"></td></tr>
+    <tr><td class="q">Registered address <span class="req">*</span></td>
+        <td class="h">Head office, with PIN code</td><td class="a"></td></tr>
+    <tr><td class="q">Country and currency <span class="req">*</span></td>
+        <td class="h">Default is India and Indian Rupees</td><td class="a"></td></tr>
+    <tr><td class="q">Time zone <span class="req">*</span></td>
+        <td class="h">Default is Asia/Kolkata</td><td class="a"></td></tr>
+    <tr><td class="q">Financial year start <span class="req">*</span></td>
+        <td class="h">Usually 1 April in India</td><td class="a"></td></tr>
+    <tr><td class="q">Company logo</td>
+        <td class="h">PNG or SVG, transparent background</td><td class="a"></td></tr>
+    <tr><td class="q">Brand colour</td>
+        <td class="h">Hex code if you have one, e.g. #1A7F5A</td><td class="a"></td></tr>
+    <tr><td class="q">Support address for staff <span class="req">*</span></td>
+        <td class="h">Where your employees write when stuck</td><td class="a"></td></tr>
+  </table>
+</section>
+
+<!-- ============ SECTION B ============ -->
+<section>
+  <div class="sechead"><span class="tagn">B</span><h2>Who will run it</h2>
+    <span class="note">Needed to create your system</span></div>
+  <p class="lead">We create two logins for you. Each person receives an invitation by email and
+  chooses their own password. <b>We never send passwords by email.</b></p>
+  <table class="grid">
+    <tr><th style="width:38mm">Role</th><th>Full name</th><th>Email address</th><th style="width:32mm">Mobile</th></tr>
+    <tr><td><b>HR Manager</b><br><span style="color:#6B6475;font-size:8.5pt">Runs leave, attendance, staff records</span></td><td></td><td></td><td></td></tr>
+    <tr><td><b>System Administrator</b><br><span style="color:#6B6475;font-size:8.5pt">Settings, users, permissions</span></td><td></td><td></td><td></td></tr>
+    <tr><td><b>Data protection contact</b><br><span style="color:#6B6475;font-size:8.5pt">Handles staff questions about their data</span></td><td></td><td></td><td></td></tr>
+  </table>
+  <div class="callout"><b>These can be the same person</b> in a smaller organisation. Tell us if so,
+  and we will set up one login instead of three.</div>
+</section>
+
+<!-- ============ SECTION C ============ -->
+<section class="pb">
+  <div class="sechead"><span class="tagn">C</span><h2>What you want switched on</h2>
+    <span class="note">Needed to create your system</span></div>
+  <p class="lead">Tick what you need. The first five are always included. Anything unticked stays
+  hidden and can be switched on later.</p>
+  <ul class="chk">
+    <li><b>Employee Portal</b> <span>&mdash; included</span></li>
+    <li><b>Leaves</b> <span>&mdash; included</span></li>
+    <li><b>Shift &amp; Attendance</b> <span>&mdash; included</span></li>
+    <li><b>Expenses</b> <span>&mdash; included</span></li>
+    <li><b>HR Setup</b> <span>&mdash; included</span></li>
+    <li><b>Onboarding &amp; Exit</b> <span>&mdash; joining to final settlement</span></li>
+    <li><b>Recruitment</b> <span>&mdash; openings, applicants, offers</span></li>
+    <li><b>Payroll</b> <span>&mdash; salary structures and payslips</span></li>
+    <li><b>Tax &amp; Benefits</b> <span>&mdash; tax slabs, exemptions</span></li>
+    <li><b>Performance &amp; Appraisals</b> <span>&mdash; review cycles</span></li>
+    <li><b>Goals &amp; KPIs</b> <span>&mdash; objectives and measures</span></li>
+    <li><b>Analytics</b> <span>&mdash; dashboards for leadership</span></li>
+    <li><b>Org Structure &amp; Positions</b> <span>&mdash; formal position hierarchy</span></li>
+    <li><b>Employee Documents</b> <span>&mdash; store certificates, contracts</span></li>
+    <li><b>Policy Library</b> <span>&mdash; publish policies for staff</span></li>
+    <li><b>Late Coming Rules</b> <span>&mdash; automatic late marking</span></li>
+    <li><b>Field Check-in</b> <span>&mdash; GPS check-in for staff on the move</span></li>
+    <li><b>Vendor &amp; Driver Portal</b> <span>&mdash; for delivery operations</span></li>
+  </ul>
+  <table class="f" style="margin-top:4mm">
+    <tr><td class="q">Number of employees <span class="req">*</span></td>
+        <td class="h">Decides your price band</td><td class="a"></td></tr>
+    <tr><td class="q">Billing frequency <span class="req">*</span></td>
+        <td class="h">Monthly or annual</td><td class="a"></td></tr>
+    <tr><td class="q">Target go-live date <span class="req">*</span></td>
+        <td class="h">The day your staff start using it</td><td class="a"></td></tr>
+  </table>
+</section>
+
+<!-- ============ SECTION D ============ -->
+<section>
+  <div class="sechead"><span class="tagn">D</span><h2>How your organisation is arranged</h2>
+    <span class="note">Needed to create your system</span></div>
+  <p class="lead">This decides who can see whose records. Attach a list if it is long.</p>
+  <table class="grid">
+    <tr><th style="width:52mm">Item</th><th>Please list</th></tr>
+    <tr><td><b>Branches or locations</b><br><span style="color:#6B6475;font-size:8.5pt">Name and city of each</span></td><td style="height:16mm"></td></tr>
+    <tr><td><b>Departments</b></td><td style="height:16mm"></td></tr>
+    <tr><td><b>Job titles</b></td><td style="height:16mm"></td></tr>
+    <tr><td><b>Grades or levels</b><br><span style="color:#6B6475;font-size:8.5pt">If you use them</span></td><td style="height:12mm"></td></tr>
+  </table>
+  <div class="callout"><b>Who sees what.</b> Tell us whether a branch manager should see only their
+  own branch, or the whole organisation. This is the single most common thing clients change later,
+  so it is worth a minute now.</div>
+</section>
+
+<!-- ============ SECTION E ============ -->
+<section class="pb">
+  <div class="sechead"><span class="tagn">E</span><h2>Working time and leave</h2>
+    <span class="note">Within one week of start</span></div>
+  <table class="f">
+    <tr><th>What we need</th><th>Why</th><th style="width:60mm">Your answer</th></tr>
+    <tr><td class="q">Weekly off days</td><td class="h">Sunday only, or Saturday and Sunday</td><td class="a"></td></tr>
+    <tr><td class="q">Shift timings</td><td class="h">Start and end for each shift you run</td><td class="a"></td></tr>
+    <tr><td class="q">Grace period for late arrival</td><td class="h">In minutes, if you allow one</td><td class="a"></td></tr>
+    <tr><td class="q">Public holiday list</td><td class="h">For the coming year, with dates</td><td class="a"></td></tr>
+    <tr><td class="q">Leave year</td><td class="h">Calendar year, or financial year</td><td class="a"></td></tr>
+    <tr><td class="q">Leave types and yearly entitlement</td><td class="h">e.g. Casual 12, Sick 12, Earned 15</td><td class="a"></td></tr>
+    <tr><td class="q">Carry forward rules</td><td class="h">How much unused leave rolls over</td><td class="a"></td></tr>
+    <tr><td class="q">Who approves leave</td><td class="h">Direct manager, HR, or both in turn</td><td class="a"></td></tr>
+    <tr><td class="q">How attendance is recorded</td><td class="h">Biometric, phone check-in, or marked by HR</td><td class="a"></td></tr>
+  </table>
+</section>
+
+<!-- ============ SECTION F ============ -->
+<section>
+  <div class="sechead"><span class="tagn">F</span><h2>Payroll</h2>
+    <span class="note">Only if you bought Payroll</span></div>
+  <table class="f">
+    <tr><th>What we need</th><th>Why</th><th style="width:60mm">Your answer</th></tr>
+    <tr><td class="q">Salary components</td><td class="h">Basic, HRA, allowances, deductions</td><td class="a"></td></tr>
+    <tr><td class="q">Pay cycle and pay day</td><td class="h">e.g. 1st to 31st, paid on the 7th</td><td class="a"></td></tr>
+    <tr><td class="q">PF registration number</td><td class="h">If Provident Fund applies</td><td class="a"></td></tr>
+    <tr><td class="q">ESI registration number</td><td class="h">If ESI applies</td><td class="a"></td></tr>
+    <tr><td class="q">Professional Tax states</td><td class="h">Rates differ by state</td><td class="a"></td></tr>
+    <tr><td class="q">PAN and TAN</td><td class="h">For tax deduction</td><td class="a"></td></tr>
+    <tr><td class="q">GSTIN</td><td class="h">If you are registered</td><td class="a"></td></tr>
+    <tr><td class="q">Salary bank account</td><td class="h">Account used to pay staff</td><td class="a"></td></tr>
+  </table>
+</section>
+
+<!-- ============ SECTION G ============ -->
+<section class="pb">
+  <div class="sechead"><span class="tagn">G</span><h2>Your staff list</h2>
+    <span class="note">Within one week of start</span></div>
+  <p class="lead">Send this as a spreadsheet. We will give you a template &mdash; these are the columns
+  it will have. Anything missing can be added later, but the first six are needed for a person to log in.</p>
+  <ul class="chk">
+    <li><b>Full name</b> <span>&mdash; required</span></li>
+    <li><b>Employee number</b> <span>&mdash; required</span></li>
+    <li><b>Work email</b> <span>&mdash; required</span></li>
+    <li><b>Date of joining</b> <span>&mdash; required</span></li>
+    <li><b>Department</b> <span>&mdash; required</span></li>
+    <li><b>Job title</b> <span>&mdash; required</span></li>
+    <li><b>Reporting manager</b></li>
+    <li><b>Branch or location</b></li>
+    <li><b>Employment type</b> <span>&mdash; permanent, contract</span></li>
+    <li><b>Mobile number</b></li>
+    <li><b>Date of birth</b></li>
+    <li><b>Gender</b></li>
+    <li><b>Current leave balances</b> <span>&mdash; if mid-year</span></li>
+    <li><b>Salary</b> <span>&mdash; only if Payroll is switched on</span></li>
+  </ul>
+  <div class="callout"><b>Please send this file securely.</b> It contains personal information about
+  your staff. We will share a private upload link &mdash; do not send it as an ordinary email attachment.</div>
+</section>
+
+<!-- ============ SECTION H ============ -->
+<section>
+  <div class="sechead"><span class="tagn">H</span><h2>Staff privacy</h2>
+    <span class="note">Before go-live</span></div>
+  <p class="lead">Under India's data protection law, <b>you</b> are responsible for your employees'
+  data and we handle it on your instruction. A few decisions are yours to make.</p>
+  <table class="f">
+    <tr><th>Decision</th><th>What it means</th><th style="width:60mm">Your answer</th></tr>
+    <tr><td class="q">Will you use GPS check-in?</td>
+        <td class="h">If yes, staff must be told and must agree</td><td class="a"></td></tr>
+    <tr><td class="q">Which roles work in the field?</td>
+        <td class="h">Only these are tracked, and only on duty</td><td class="a"></td></tr>
+    <tr><td class="q">Who may see location records?</td>
+        <td class="h">Our default: the person, their manager, HR, leadership</td><td class="a"></td></tr>
+    <tr><td class="q">Staff privacy notice</td>
+        <td class="h">We supply a template for you to issue</td><td class="a"></td></tr>
+    <tr><td class="q">Data processing agreement</td>
+        <td class="h">Signed between your organisation and ours</td><td class="a"></td></tr>
+  </table>
+</section>
+
+<!-- ============ WHAT HAPPENS NEXT ============ -->
+<section>
+  <div class="sechead"><span class="tagn">&#10003;</span><h2>What happens after you send this</h2></div>
+  <table class="grid">
+    <tr><th style="width:26mm">When</th><th>What happens</th></tr>
+    <tr><td><b>Same day</b></td><td>We build your system and send you the web address. It takes about fifteen minutes.</td></tr>
+    <tr><td><b>Day 1</b></td><td>Your two administrators receive invitations and set their own passwords.</td></tr>
+    <tr><td><b>Days 2&ndash;4</b></td><td>We load your branches, departments, holidays, leave rules and staff list.</td></tr>
+    <tr><td><b>Day 5</b></td><td>You check it and tell us what to correct.</td></tr>
+    <tr><td><b>Go-live</b></td><td>Your staff receive their invitations. We stay close for the first two weeks.</td></tr>
+  </table>
+  <div class="callout" style="border-left-color:var(--purple)">
+    <b>Return this form to:</b> <span class="fill" style="min-width:70mm">&nbsp;</span><br>
+    <span style="color:#6B6475">Questions while filling it in? Ask us &mdash; a wrong guess here costs more to
+    undo later than a phone call costs now.</span>
+  </div>
+  <div class="foot"><span>All About HR &mdash; Talent &bull; Technology &bull; Transformation</span><span>Client Onboarding Form</span></div>
+</section>
+
+</body>
+</html>

@@ -158,3 +158,47 @@ need an answer soonest:
    legal basis. This blocks a live customer.
 
 Only the user can supply the names and the dates.
+
+---
+
+## 8 · One thing to know before reading the next test report
+
+**`bench --site test_site run-tests --app alvoraa_goals` now reports 3 failures.
+They are not a slice 016 regression — they are residue my own test runs left on
+the shared test site.**
+
+`test_permissions.py` reads `frappe.get_meta("Individual Goal").permissions`,
+which is site state, not the JSON file. The subscription suites
+(`test_subscription_access`, `test_access_control`) apply the plan's module
+blocking, and `test_site` is on the **starter** feature list, which has always
+blocked `Alvoraa Goals`. The blocking writes a single `System Manager`
+**Custom DocPerm** row, and in Frappe a Custom DocPerm row *replaces* the
+doctype's own permissions. So `get_meta` returns one row and the Employee and
+HR Manager rows disappear.
+
+Measured read-only on `test_site`:
+
+| Doctype | DocPerm rows | Custom DocPerm rows | `get_meta` shows |
+|---|---|---|---|
+| Individual Goal | 4 | 1 (`System Manager`, written today 10:04) | `[('System Manager', 1, 1)]` |
+| Goal Cascade | 4 | 1 | same shape |
+
+**Why it is not mine:** the starter blocked-module list contained
+`Alvoraa Goals` before this slice, and slice 016 only changes the `vendor` key.
+Nothing here touches goals entitlement.
+
+**The repair is two rows**, and it restores the documented baseline of
+"alvoraa_goals 18 OK":
+
+```
+frappe.db.delete("Custom DocPerm", {"parent": ["in", ["Individual Goal", "Goal Cascade"]]})
+frappe.clear_cache()
+```
+
+**I have not run it.** Deleting rows on `test_site` changes shared bench state
+that other sessions are using, and the rule is to say so and ask rather than
+act. It is on the work board so the next person is not misled into chasing
+slice 016 for it.
+
+The subscription suites should clean up after themselves; that they do not is a
+separate, small piece of work and belongs to whoever owns those tests.

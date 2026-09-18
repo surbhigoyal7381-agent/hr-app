@@ -13,12 +13,57 @@
       content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src https://*.alvoraa.co; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="color-scheme" content="light">
 <title>Alvoraa Attendance</title>
+<link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-<!-- Skeleton only. The screens arrive with US-35 onwards. -->
-<main id="app">
+<header>
   <h1>Alvoraa Attendance</h1>
+  <p class="build" id="build-line">Debug build</p>
+</header>
+
+<main id="app">
+  <!--
+    First phone test. The attendance screens arrive with US-35 onwards, and the
+    server endpoints with slice 014 and the 013 server stories. Until then this
+    page checks the two things the phone itself has to get right: the camera and
+    the position. It talks to no server, so nothing is sent or saved anywhere.
+  -->
+  <p class="banner" role="status">
+    This build is not connected to any server yet. Nothing on this screen is sent
+    or saved anywhere. It only checks that this phone's camera and location work.
+  </p>
+
+  <section aria-labelledby="cam-h">
+    <h2 id="cam-h">Camera</h2>
+    <p id="cam-state">Not tested yet.</p>
+    <video id="cam-view" playsinline muted hidden></video>
+    <img id="cam-shot" alt="The photo just taken on this phone" hidden>
+    <p id="cam-facts"></p>
+    <button id="b-cam" type="button">Turn the camera on</button>
+    <button id="b-shot" type="button" hidden>Take the photo</button>
+    <p class="small">The photo is kept in memory only, never saved as a file.</p>
+  </section>
+
+  <section aria-labelledby="loc-h">
+    <h2 id="loc-h">Location</h2>
+    <p id="loc-state">Not tested yet.</p>
+    <p id="loc-facts"></p>
+    <button id="b-loc" type="button">Find where I am</button>
+    <p class="small">Asked for only while the app is open. No map, no tracking.</p>
+  </section>
+
+  <section aria-labelledby="next-h">
+    <h2 id="next-h">Not built yet</h2>
+    <ul>
+      <li>Scanning HR's QR code, and joining.</li>
+      <li>Check In and Check Out, and the notice you agree to.</li>
+      <li>Anything that talks to your company's Alvoraa site.</li>
+    </ul>
+  </section>
 </main>
+
 <script src="js/host-check.js"></script>
+<script src="js/photo.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>

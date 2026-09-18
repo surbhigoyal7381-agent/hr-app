@@ -141,3 +141,10 @@ class OnlyTheAssignedDriverPosts(FrappeTestCase):
 	def test_014_driver_location_guest_refused(self):
 		with self.assertRaises(frappe.PermissionError):
 			self.post_as("Guest", self.order_a)
+
+	def test_014_driver_location_is_post_only(self):
+		"""A GET would put the driver's coordinates in nginx's access log, which
+		is backed up and outlives the delivery (review M2)."""
+		self.assertEqual(
+			frappe.allowed_http_methods_for_whitelisted_func[portal_api.update_driver_location],
+			["POST"])

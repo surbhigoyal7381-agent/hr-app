@@ -226,7 +226,10 @@ def _driver_partner_for(user):
     return frappe.db.get_value("Delivery Partner", {"primary_email": user}, "name")
 
 
-@frappe.whitelist()
+# POST only: a GET would put the driver's coordinates in the query string, and
+# nginx writes the query string into an access log that is backed up and outlives
+# the delivery. The portal already posts.
+@frappe.whitelist(methods=["POST"])
 @requires_feature("vendor")
 def update_driver_location(delivery_order, lat, lng, speed=0, heading=0, accuracy=10):
     """Called by the driver's browser to post a real GPS update.

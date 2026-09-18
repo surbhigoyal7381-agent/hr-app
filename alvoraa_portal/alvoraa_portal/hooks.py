@@ -2,7 +2,7 @@ app_name = "alvoraa_portal"
 app_title = "Alvoraa Portal"
 app_publisher = "AllAboutHR"
 app_description = "Multi-brand vendor portal with order tracking and delivery management"
-app_email = "ops@gracedrinks.in"
+app_email = "support@alvoraa.co"
 app_license = "MIT"
 required_apps = ["frappe/erpnext"]
 

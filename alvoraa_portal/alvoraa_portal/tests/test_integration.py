@@ -66,7 +66,7 @@ class TestFullOrderFlow(FrappeTestCase):
         # Create an Employee to serve as driver
         employee = frappe.new_doc("Employee")
         employee.employee_name = f"Driver {frappe.utils.random_string(4)}"
-        employee.company = frappe.get_value("Company", {}, "name") or "Grace Drinks"
+        employee.company = frappe.get_value("Company", {}, "name") or "Demo Company"
         employee.date_of_joining = frappe.utils.today()
         employee.gender = "Male"
         try:

@@ -21,7 +21,7 @@ export default function Account({ user }) {
         </div>
       </div>
       <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-500 text-center">
-        To update your profile or address, contact Grace Group operations at <a href="mailto:ops@gracedrinks.in" className="text-grace-700 underline">ops@gracedrinks.in</a>
+        To update your profile or address, contact your operations team.
       </div>
     </div>
   )

@@ -3,9 +3,9 @@ from setuptools import setup, find_packages
 setup(
     name="alvoraa_portal",
     version="0.0.1",
-    description="Grace Group Vendor Portal with Order & Delivery Tracking",
-    author="Grace Group",
-    author_email="ops@gracedrinks.in",
+    description="Alvoraa Vendor Portal with Order & Delivery Tracking",
+    author="Alvoraa",
+    author_email="support@alvoraa.co",
     packages=find_packages(),
     zip_safe=False,
     include_package_data=True,

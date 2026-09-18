@@ -165,7 +165,7 @@
    "fieldtype": "Link",
    "label": "Linked Employee",
    "options": "Employee",
-   "description": "Link if this partner is a Grace Group employee"
+   "description": "Link if this partner is also an employee"
   },
   {
    "fieldname": "reporting_manager",

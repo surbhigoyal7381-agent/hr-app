@@ -200,5 +200,29 @@ that other sessions are using, and the rule is to say so and ask rather than
 act. It is on the work board so the next person is not misled into chasing
 slice 016 for it.
 
-The subscription suites should clean up after themselves; that they do not is a
-separate, small piece of work and belongs to whoever owns those tests.
+**It is worse than the goals app.** Running the whole `alvoraa_portal` suite
+afterwards gave **414 tests, 14 failures and 113 errors** - almost all of them
+`setUpClass` errors in slice 010's review tests, which cannot build their
+fixtures without permissions. The test count itself dropped from ~1,190 to 414,
+because an error in `setUpClass` abandons the whole class.
+
+Measured read-only on `test_site`:
+
+| Measure | Value |
+|---|---|
+| `Custom DocPerm` rows on the site | **507** |
+| Distinct doctypes carrying one | **367** |
+| Written in the last 24 hours | **322** |
+| Most common role on them | `System Manager` (351 of 507) |
+
+That is the plan's module blocking having stripped the permissions off most of
+the site, one doctype at a time, and never putting them back.
+
+**So the shared test site is currently unusable for a full-suite verification by
+anyone**, and the next person who runs one will see a wall of red that has
+nothing to do with their change.
+
+The subscription suites should restore what they blocked; that they do not is a
+separate piece of work and belongs to whoever owns those tests. **Until the site
+is repaired, judge slice 016 on the targeted module runs**, which are listed
+above and are all green.

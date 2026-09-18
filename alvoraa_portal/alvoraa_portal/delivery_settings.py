@@ -121,7 +121,7 @@ def hub_coords():
 
 
 def vendor_coords(vendor_name):
-    """(lat, lng) to pin this vendor at, or the hub, or (None, None).
+    """(lat, lng) to pin this vendor at, or (None, None) when nothing is set.
 
     The five named shops that used to live here were five real businesses and
     their locations, in a public repository, serving every tenant. A tenant that
@@ -131,7 +131,10 @@ def vendor_coords(vendor_name):
     mapping = _conf("portal_vendor_coords") or {}
     if isinstance(mapping, dict) and vendor_name in mapping:
         return _pair(mapping[vendor_name])
-    return hub_coords()
+    # (None, None), not the hub. Returning the hub drew a customer marker sitting
+    # exactly on top of the warehouse marker with a zero-length route line, which
+    # looks like data and is not. The page already copes with no position.
+    return None, None
 
 
 def _pair(value):

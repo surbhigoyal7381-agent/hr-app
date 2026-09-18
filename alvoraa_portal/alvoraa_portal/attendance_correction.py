@@ -40,6 +40,7 @@ from alvoraa_portal.attendance_analytics import (
 	TOLERANCE_KEY,
 	_reports_to,
 	_shift_minutes,
+	_shift_row,
 )
 
 REQUEST = "Attendance Request"
@@ -71,15 +72,15 @@ REASONS = [
 def _shift_start(cache, shift):
 	"""What time the shift is meant to begin, in minutes past midnight.
 
-	Separate from `_shift_minutes`, which gives its LENGTH. Both come from the
-	same row; the length is imported from the analytics module so the two
-	screens can never disagree about how long a shift is.
+	Separate from `_shift_minutes`, which gives its LENGTH. Both read the same
+	cached row through `_shift_row`, so the two screens can never disagree
+	about a shift - and neither can read the other's answer by mistake, which
+	is what used to happen and is why a 09:30 shift was judged from 09:00.
 	"""
-	if shift in cache:
-		return cache[shift]
-	start = frappe.db.get_value("Shift Type", shift, "start_time")
-	cache[shift] = start.total_seconds() / 60.0 if start is not None else None
-	return cache[shift]
+	row = _shift_row(cache, shift)
+	if not row or row.start_time is None:
+		return None
+	return row.start_time.total_seconds() / 60.0
 
 
 def _becomes(reason):

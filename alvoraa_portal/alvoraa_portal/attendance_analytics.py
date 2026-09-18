@@ -214,20 +214,36 @@ def _chosen(people):
 
 # ── the arithmetic ───────────────────────────────────────────────────────────
 
+def _shift_row(cache, shift):
+	"""A Shift Type's start and end, read once per shift.
+
+	The cache holds the ROW, not an answer derived from it. It used to hold a
+	derived number, and two helpers derived different numbers under the same
+	key: `_shift_minutes` stored the shift's LENGTH and `_shift_start` stored
+	where it BEGINS. Whichever ran first won, and the other silently read its
+	answer. On a 09:30-18:30 shift the length is 540 minutes, so the day was
+	judged from 09:00 and every arrival looked half an hour later than it was.
+
+	Caching the row instead makes that class of mistake impossible: there is
+	one fact in the cache and each helper does its own arithmetic on it. It
+	also costs one query per shift instead of two.
+	"""
+	if shift not in cache:
+		cache[shift] = frappe.db.get_value(
+			"Shift Type", shift, ["start_time", "end_time"], as_dict=True) or None
+	return cache[shift]
+
+
 def _shift_minutes(cache, shift):
 	"""How long a shift is meant to last, in minutes."""
-	if shift in cache:
-		return cache[shift]
-	row = frappe.db.get_value("Shift Type", shift, ["start_time", "end_time"], as_dict=True)
-	mins = None
-	if row and row.start_time is not None and row.end_time is not None:
-		start = row.start_time.total_seconds() / 60.0
-		end = row.end_time.total_seconds() / 60.0
-		if end <= start:            # a night shift crosses midnight
-			end += 24 * 60
-		mins = end - start
-	cache[shift] = mins
-	return mins
+	row = _shift_row(cache, shift)
+	if not row or row.start_time is None or row.end_time is None:
+		return None
+	start = row.start_time.total_seconds() / 60.0
+	end = row.end_time.total_seconds() / 60.0
+	if end <= start:            # a night shift crosses midnight
+		end += 24 * 60
+	return end - start
 
 
 def _gather(employees, start, end):

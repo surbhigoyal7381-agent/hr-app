@@ -130,3 +130,6 @@ CI copies only `hrms/`, `alvoraa_goals/` and `alvoraa_portal/` into the bench (`
 ## 8. Recommended path
 
 Do exactly the six changes in §1, in six small commits, in the worktree, on top of local `dev`. Run the new static check and the repo's other lint scripts locally. Do not run the bench, do not touch a site, do not push. Then hand back with the list above.
+## Scan item A3 answered (Surbhi, 2026-09-18)
+
+**The secrets were changed after the malware incident.** So the rotation list in `06-security-review.md` is not outstanding as a whole. Note for the record: the two branches still carrying the obfuscated `postcss.config.js` were updated on 3 and 6 September and were deleted from GitHub on 2026-09-18 (archived locally as `refs/archive/malware-evidence-*`), so if any secret was last changed before early September it is still worth a second look.

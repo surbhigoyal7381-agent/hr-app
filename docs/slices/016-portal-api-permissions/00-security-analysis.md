@@ -459,3 +459,23 @@ They need an owner before this slice closes.
 | **`frappe.get_all` ignores permissions** | **Not verified in this repo — framework source absent. Must be confirmed on the bench.** | — |
 
 **I am not a lawyer.** Q8 is a question for counsel, not an answer.
+
+---
+
+## Who may see a driver's location (Surbhi, 2026-09-18)
+
+**Decision:** a driver's location and route must **not** be visible to any logged-in colleague. Limit it to:
+
+- **the driver themselves** (their own route and trips);
+- **their manager** (the reporting line above them, as elsewhere in the product);
+- **HR** (HR User / HR Manager, scoped to the companies they look after);
+- **company leadership** (the Leadership role from slice 012 / System Manager treated as CXO for now).
+
+This applies to every read path, not just the obvious one: `portal_api.get_delivery_route`, `get_order_live_location` (including its demo fallback that returns the most recent driver's name and position for an invented order id), the driver performance screens, and any realtime broadcast.
+
+**To settle while building (recommended answers):**
+- **A dispatcher / logistics operator** who is not the driver's line manager: allow only if the organisation names a Logistics Manager role, not "anyone who is not a driver or vendor" as today.
+- **The customer** tracking their own delivery: only through a per-order link or token that shows the vehicle position for that order, never a named driver or their history.
+- **The vendor** whose order it is: same as the customer — that order only, no driver identity beyond a first name if needed.
+
+This is **phase 2** of slice 016 (the shared ownership/role helper). Phase 1 gated the whole module by plan and it is now off on both dev sites, so nothing is reachable today.

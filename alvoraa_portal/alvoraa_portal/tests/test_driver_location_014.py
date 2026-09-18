@@ -59,6 +59,11 @@ class OnlyTheAssignedDriverPosts(FrappeTestCase):
 	def setUpClass(cls):
 		super().setUpClass()
 		frappe.set_user("Administrator")
+		# Slice 016 gated the whole vendor and driver module by plan, and
+		# test_site is on the starter feature list. These tests are about WHO may
+		# post, not about the plan, so the feature is switched on for them.
+		cls._saved_features = frappe.conf.get("features")
+		frappe.conf["features"] = list(cls._saved_features or []) + ["vendor"]
 		for email in (DRIVER_A, DRIVER_B, NOT_A_DRIVER):
 			_user(email)
 		cls.partner_a = _partner(DRIVER_A)
@@ -78,6 +83,10 @@ class OnlyTheAssignedDriverPosts(FrappeTestCase):
 		for partner in (cls.partner_a, cls.partner_b):
 			frappe.delete_doc("Delivery Partner", partner, force=True, ignore_permissions=True)
 		frappe.db.commit()
+		if cls._saved_features is None:
+			frappe.conf.pop("features", None)
+		else:
+			frappe.conf["features"] = cls._saved_features
 		super().tearDownClass()
 
 	def tearDown(self):

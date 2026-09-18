@@ -1,11 +1,14 @@
 import frappe
 from frappe.utils import now_datetime
 
-HUB_LAT = 30.7060
-HUB_LNG = 76.8001
+from alvoraa_portal import delivery_settings
+from alvoraa_portal.subscription import requires_feature
 
-WAREHOUSE_NAME  = "Grace Warehouse"
-WAREHOUSE_PHONE = "98761-00099"
+# Every whitelisted endpoint in this module belongs to ONE sellable feature,
+# so every one is gated (slice 016). Before, the panel was hidden and the door
+# still opened: a tenant that never bought the vendor and driver portal could
+# still call all 28 of these. The gate is entitlement, not ownership - who may
+# touch WHICH record is slice 016 phase 2.
 
 ACTIVE_STATUSES = ["In Transit", "At Location", "Nearby", "Assigned", "Picked Up"]
 
@@ -17,17 +20,9 @@ VALID_TRANSITIONS = {
     "At Location": "Delivered",
 }
 
-# Known vendor → destination coordinates (for demo map rendering)
-VENDOR_COORDS = {
-    "Raj Wine Shop":        (30.7404, 76.7871),
-    "Metro Wines & Spirits":(30.7333, 76.8000),
-    "Hotel Regent (Bar)":   (30.7181, 76.7918),
-    "QuickStop Beverages":  (30.7110, 76.7220),
-    "Celebrations Banquets":(30.6440, 76.8180),
-}
-
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_portal_context():
     user = frappe.session.user
     if user == "Guest":
@@ -63,6 +58,7 @@ def get_portal_context():
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_vendor_orders(vendor_id):
     """Return all Vendor Orders for a vendor with delivery assignment info."""
     orders = frappe.get_all(
@@ -74,13 +70,16 @@ def get_vendor_orders(vendor_id):
         ignore_permissions=True,
     )
 
+    warehouse_name  = delivery_settings.warehouse_name()
+    warehouse_phone = delivery_settings.warehouse_phone()
+
     for order in orders:
         order["has_tracking"] = order.get("order_status") in ("In Transit", "Dispatched", "Ready for Dispatch")
         order["driver_name"] = None
         order["vehicle_reg"] = None
 
-        order["warehouse_name"]  = WAREHOUSE_NAME
-        order["warehouse_phone"] = WAREHOUSE_PHONE
+        order["warehouse_name"]  = warehouse_name
+        order["warehouse_phone"] = warehouse_phone
         order["driver_phone"]    = None
 
         if order.get("delivery_assignment"):
@@ -102,15 +101,20 @@ def get_vendor_orders(vendor_id):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_order_live_location(vendor_order):
     """
     Return live GPS location for a Vendor Order.
     Lookup: Vendor Order → Delivery Assignment → vehicle_reg → Vehicle Tracking.
     Falls back to most-recent demo tracking data so the map always shows something.
     """
+    # NOTE (slice 016): that fallback is finding B3 in the security analysis - it
+    # hands back a live position for an order id that does not exist. It is fixed
+    # in phase 2 together with the ownership checks, not here.
+    hub_lat, hub_lng = delivery_settings.hub_coords()
     result = {
-        "hub_lat": HUB_LAT,
-        "hub_lng": HUB_LNG,
+        "hub_lat": hub_lat,
+        "hub_lng": hub_lng,
         "latest": None,
         "customer_lat": None,
         "customer_lng": None,
@@ -122,7 +126,7 @@ def get_order_live_location(vendor_order):
     # Resolve customer location for this vendor
     vendor = frappe.db.get_value("Vendor Order", vendor_order, "vendor")
     vendor_name = frappe.db.get_value("Vendor", vendor, "vendor_name") if vendor else ""
-    cust_lat, cust_lng = VENDOR_COORDS.get(vendor_name, (30.7333, 76.7794))
+    cust_lat, cust_lng = delivery_settings.vendor_coords(vendor_name)
     result["customer_lat"] = cust_lat
     result["customer_lng"] = cust_lng
 
@@ -223,6 +227,7 @@ def _driver_partner_for(user):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def update_driver_location(delivery_order, lat, lng, speed=0, heading=0, accuracy=10):
     """Called by the driver's browser to post a real GPS update.
 
@@ -261,6 +266,7 @@ def update_driver_location(delivery_order, lat, lng, speed=0, heading=0, accurac
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_driver_deliveries(partner_id):
     """Return all Delivery Orders for a partner, active ones first."""
     orders = frappe.get_all(
@@ -284,10 +290,12 @@ def get_driver_deliveries(partner_id):
 
     orders.sort(key=sort_key)
 
-    return {"orders": orders, "hub_lat": HUB_LAT, "hub_lng": HUB_LNG}
+    hub_lat, hub_lng = delivery_settings.hub_coords()
+    return {"orders": orders, "hub_lat": hub_lat, "hub_lng": hub_lng}
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def driver_advance_status(delivery_order, new_status):
     """Advance a Delivery Order to the next status."""
     # Use db.get_value to bypass doctype permissions (drivers are Website Users)
@@ -316,6 +324,7 @@ def driver_advance_status(delivery_order, new_status):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def submit_order_rating(order_name, rating, comment=""):
     """Submit a star rating for a delivered Vendor Order."""
     rating = int(rating)
@@ -350,6 +359,7 @@ def submit_order_rating(order_name, rating, comment=""):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_all_vendors():
     return frappe.get_all(
         "Vendor",
@@ -359,6 +369,7 @@ def get_all_vendors():
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_all_partners():
     return frappe.get_all(
         "Delivery Partner",
@@ -368,6 +379,7 @@ def get_all_partners():
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_delivery_route(delivery_order):
     """Return GPS breadcrumb trail recorded for a delivery order (static snapshot)."""
     rows = frappe.db.sql(
@@ -379,6 +391,7 @@ def get_delivery_route(delivery_order):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_drivers_performance():
     """Return aggregate performance stats for all delivery partners. Admin use only."""
     from frappe.utils import today as frappe_today

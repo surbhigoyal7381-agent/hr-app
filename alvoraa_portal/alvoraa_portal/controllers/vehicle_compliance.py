@@ -1,6 +1,15 @@
 import frappe
 from frappe.utils import today, date_diff, now_datetime
 
+from alvoraa_portal import delivery_settings
+from alvoraa_portal.subscription import requires_feature
+
+# Every whitelisted endpoint in this module belongs to ONE sellable feature,
+# so every one is gated (slice 016). Before, the panel was hidden and the door
+# still opened: a tenant that never bought the vendor and driver portal could
+# still call all 28 of these. The gate is entitlement, not ownership - who may
+# touch WHICH record is slice 016 phase 2.
+
 
 # ─── DocType event hooks ──────────────────────────────────────────────────────
 
@@ -120,10 +129,21 @@ def _send_compliance_alert(rec):
         timing_msg = f"due for renewal in {days} days"
         urgency = "WARNING"
 
-    recipient = rec.notification_recipient or "ops@gracedrinks.in"
+    # The record's own recipient wins; otherwise the tenant's configured ops
+    # mailbox. No configured mailbox means no email - this alert names a driver
+    # and a vehicle, and there is no safe address to guess (slice 016).
+    recipients = ([rec.notification_recipient] if rec.notification_recipient
+                  else delivery_settings.ops_recipients())
+    if not recipients:
+        frappe.log_error(
+            "No notification_recipient and no portal_ops_email; compliance alert "
+            "not sent. Reference: %s" % rec.name,
+            "Compliance alert not sent",
+        )
+        return
     try:
         frappe.sendmail(
-            recipients=[recipient],
+            recipients=recipients,
             subject=f"[{urgency}] Vehicle Compliance Alert — {rec.vehicle_registration} | {rec.compliance_type}",
             message=f"""
             <p><strong>Vehicle Compliance Alert — {urgency}</strong></p>
@@ -152,6 +172,7 @@ def _send_compliance_alert(rec):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_compliance_dashboard(hub_name=None):
     """Return compliance summary for the manager dashboard."""
     filters = {}

@@ -4,6 +4,15 @@ from frappe.utils import now_datetime, today, add_days
 import random
 import string
 
+from alvoraa_portal import delivery_settings
+from alvoraa_portal.subscription import requires_feature
+
+# Every whitelisted endpoint in this module belongs to ONE sellable feature,
+# so every one is gated (slice 016). Before, the panel was hidden and the door
+# still opened: a tenant that never bought the vendor and driver portal could
+# still call all 28 of these. The gate is entitlement, not ownership - who may
+# touch WHICH record is slice 016 phase 2.
+
 
 _SLOT_DAYS = {
     "Today":       0,
@@ -46,7 +55,7 @@ def after_insert(doc, method=None):
                     f"<strong>Phone:</strong> {doc.driver_phone or 'N/A'}<br>"
                     f"<strong>Vehicle:</strong> {doc.vehicle_reg}</p>"
                     f"<p>You will receive updates as your delivery progresses.</p>"
-                    f"<p>Grace Drinks Operations</p>"
+                    f"<p>{delivery_settings.ops_name()}</p>"
                 ),
             )
         except Exception:
@@ -178,6 +187,7 @@ def on_update(doc, method=None):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def update_gps_location(assignment_name, lat, lng, eta_minutes=None):
     assignment = frappe.get_doc("Delivery Assignment", assignment_name)
     assignment.append(
@@ -205,7 +215,7 @@ def update_gps_location(assignment_name, lat, lng, eta_minutes=None):
                     recipients=[vendor_email],
                     subject="Your delivery is arriving soon!",
                     message=(
-                        f"<p>Your Grace Drinks order will arrive in approximately "
+                        f"<p>Your order will arrive in approximately "
                         f"{eta_minutes} minutes. Please be available to receive it.</p>"
                     ),
                 )
@@ -216,6 +226,7 @@ def update_gps_location(assignment_name, lat, lng, eta_minutes=None):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def verify_delivery_otp(assignment_name, entered_otp):
     stored_otp = frappe.db.get_value("Delivery Assignment", assignment_name, "delivery_otp")
     vendor_order = frappe.db.get_value("Delivery Assignment", assignment_name, "vendor_order")

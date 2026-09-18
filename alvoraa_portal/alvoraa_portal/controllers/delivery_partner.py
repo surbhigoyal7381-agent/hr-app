@@ -1,6 +1,14 @@
 import frappe
 from frappe.utils import today, date_diff, now_datetime
 
+from alvoraa_portal.subscription import requires_feature
+
+# Every whitelisted endpoint in this module belongs to ONE sellable feature,
+# so every one is gated (slice 016). Before, the panel was hidden and the door
+# still opened: a tenant that never bought the vendor and driver portal could
+# still call all 28 of these. The gate is entitlement, not ownership - who may
+# touch WHICH record is slice 016 phase 2.
+
 
 def validate(doc, method=None):
     _sync_operational_status(doc)
@@ -44,6 +52,7 @@ def _check_compliance_expiry(doc):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_partner_performance_summary(partner_name):
     """Return aggregated performance summary for a delivery partner (for dashboard)."""
     partner = frappe.get_doc("Delivery Partner", partner_name)
@@ -83,6 +92,7 @@ def get_partner_performance_summary(partner_name):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def update_partner_stats_from_orders(partner_name):
     """Recalculate and persist delivery performance stats on the partner record.
     Call after bulk import or for manual refresh."""
@@ -129,14 +139,18 @@ def update_partner_stats_from_orders(partner_name):
     )
     avg_rating = avg_rating_row[0].r if avg_rating_row else 0
 
-    # GPS-based safety incidents (harsh_braking + speeding)
-    safety_row = frappe.db.sql(
-        """SELECT (SUM(harsh_braking) + SUM(speeding_alert)) as incidents
-           FROM `tabVehicle Tracking` WHERE delivery_partner=%s""",
-        partner_name,
-        as_dict=True,
-    )
-    safety = int(safety_row[0].incidents or 0) if safety_row else 0
+    # Slice 016: driving telemetry no longer sets safety_incidents.
+    #
+    # This used to read SUM(harsh_braking) + SUM(speeding_alert) from Vehicle
+    # Tracking and write the total onto the person's record, where the scorecard
+    # scored it. That is passive behavioural monitoring used as a performance
+    # input, which FR-H7 says we deliberately do not do: we measure outcomes,
+    # not activity signals.
+    #
+    # The field stays, and so do the raw tracking rows. safety_incidents is now
+    # only ever set by a person who records a real incident - a human judgement,
+    # which is a different thing. The value is left alone here rather than
+    # zeroed, so a recorded incident is not wiped by a stats refresh.
 
     frappe.db.set_value(
         "Delivery Partner",
@@ -145,7 +159,6 @@ def update_partner_stats_from_orders(partner_name):
             "total_deliveries": total,
             "on_time_delivery_percentage": round((on_time / total * 100), 2) if total else 0,
             "customer_satisfaction_rating": round(avg_rating or 0, 2),
-            "safety_incidents": safety,
             "cancellations_this_month": cancellations,
             "returns_initiated_this_month": returns_,
         },
@@ -155,6 +168,7 @@ def update_partner_stats_from_orders(partner_name):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_today_orders_for_partner(partner_name):
     """Used by the vendor portal / driver app to load today's order list."""
     from frappe.utils import today as frappe_today

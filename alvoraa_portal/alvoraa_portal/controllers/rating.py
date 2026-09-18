@@ -2,6 +2,15 @@ import frappe
 from frappe import _
 from frappe.utils import now_datetime
 
+from alvoraa_portal import delivery_settings
+from alvoraa_portal.subscription import requires_feature
+
+# Every whitelisted endpoint in this module belongs to ONE sellable feature,
+# so every one is gated (slice 016). Before, the panel was hidden and the door
+# still opened: a tenant that never bought the vendor and driver portal could
+# still call all 28 of these. The gate is entitlement, not ownership - who may
+# touch WHICH record is slice 016 phase 2.
+
 
 def validate(doc, method=None):
     # Ensure ratings are 1-5
@@ -45,8 +54,7 @@ def after_insert(doc, method=None):
     if doc.average_rating <= 2:
         frappe.db.set_value("Order Rating", doc.name, "escalated", 1)
         try:
-            frappe.sendmail(
-                recipients=["ops@gracedrinks.in"],
+            delivery_settings.send_ops_alert(
                 subject=f"[ALERT] Low Rating for Order {doc.vendor_order}",
                 message=(
                     f"<p>A low rating has been submitted for order <strong>{doc.vendor_order}</strong>.</p>"
@@ -56,6 +64,7 @@ def after_insert(doc, method=None):
                     f"<strong>Comments:</strong> {doc.comments or '—'}</p>"
                     f"<p>Please follow up with the vendor.</p>"
                 ),
+                context=doc.name,
             )
         except Exception:
             frappe.log_error(frappe.get_traceback(), "Low rating alert email failed")
@@ -76,7 +85,7 @@ def after_insert(doc, method=None):
                     f"<p>Dear {vendor_name},</p>"
                     f"<p>Thank you for rating your experience with order <strong>{doc.vendor_order}</strong>.</p>"
                     f"<p>Your feedback helps us improve our service.</p>"
-                    f"<p>Grace Drinks Operations</p>"
+                    f"<p>{delivery_settings.ops_name()}</p>"
                 ),
             )
     except Exception:
@@ -129,6 +138,7 @@ def _recalculate_driver_rating(driver_id):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_driver_ratings(driver_id):
     summary = frappe.get_value(
         "Driver Rating Summary",

@@ -27,6 +27,19 @@ Ten commits, smallest first. `demo/` changes are kept in their own commits so th
 
 ---
 
+
+**The review round (2026-09-18).** Both reviews said *Ship with fixes*. They are committed with the slice (`f63650e`), redacted (`ff4ff67` — see §3). The fixes:
+
+| Commit | Finding | What changed |
+|---|---|---|
+| `b0b0c20` | Code review: PP Jewellers failed closed at **import** | Eleven scripts do `from ppj_common import *`; only two create users. Exiting at import killed `verify_ppj.py` and the two reset scripts, so a good seed run was followed by a verification that died saying "Nothing was changed" — false by then. The check moved into `demo_password()`, called at the two places that set a new user's password (the shape `demo_setup.py` already used). |
+| `cfb6c48` | `demo/README.md` never named the required variables | A short section names all three and shows how to pass one into the container. |
+| `aadd120` | `New_req.md:524` and `:620` still named a real director | Renamed to the invented first name. This also made a claim in these notes untrue — corrected in §3. |
+| `4e2e48b` | Nit: the rebrand plan still listed the deleted brochure | Two lines updated. |
+| `0daea42` | **Security blocker**: the check itself carried the two leaked values in a comment, and did not scan itself; plus four real gaps in what it catches | See §4. |
+| `ff4ff67` | **Security blocker**: the two review documents quoted the three real names | Replaced with `<real director 1/2/3>`. The findings read the same. |
+| (this file) | The notes republished the real-to-invented mapping | Mapping moved out of the repo; see §3. |
+
 ## 2. Passwords found while grepping — all values masked
 
 | Where | Value | Public? | What was done |
@@ -44,13 +57,11 @@ Nothing else matched. The value characters are masked here and the check masks t
 
 ## 3. The rename
 
-| Real person | Invented replacement |
-|---|---|
-| D.K. / D. K. Malhotra | V.P. / V. P. Rathore |
-| Mukesh Mittal | Naresh Kamath |
-| Chaitanya Malhotra | Aditya Rathore |
+The three real Grace Group directors are now **V.P. Rathore**, **Naresh Kamath** and **Aditya Rathore** — invented people.
 
-Two of the three still share a surname, so the family-run-business shape of the demo story survives. The local variable `dk` was renamed to `vp` as well — an initialism is still a name.
+**The mapping is deliberately not in this repository.** Printing the real names beside their replacements here would undo the change: anyone could read the table and put every invented appraisal score back onto a real person. The security review raised exactly that (Blocker 1). The mapping lives outside the repo, at `C:/Surbhi-Git/hrlocal-data/security/2026-09-18-slice-015-name-mapping.md`.
+
+Two of the invented three still share a surname, the way two of the real ones did, so the family-run-business shape of the demo story survives. The local variable `dk` was renamed to `vp` as well — an initialism is still a name.
 
 **Why the data still works:** the names are used only as `first_name` / `last_name` strings and as the keys that `_get_employee(first, last)` and `emp_map[...]` look them up by. I read `_make_employee()`: it builds no email, no user id and no record name from them. A consistent rename therefore keeps every lookup, every `reports_to` link and every goal row working. All six Python files still parse (`ast.parse`).
 
@@ -59,19 +70,37 @@ Two of the three still share a surname, so the family-run-business shape of the 
 1. The four `Frappe Vibe Coding *.md` files (in the root and in `hrms/`) carried the same three names and were **not** in the scan's list. Leaving them would have made the rename pointless, so they were renamed too.
 2. `GRACE_USER_MANUAL.md` and `hrms/Grace_Group_Vendor_Portal_UseCase.md` **are** named by the scan but no longer contain the names — I grepped and they are already clean, most likely from the Alvoraa rename work. Nothing to do there.
 
-Final grep across the repository (excluding the untracked `.claude.backup-*` folder and the unrelated PP Jewellers demo people, who are invented): **zero** matches for any of the three real names.
+**Correction to what this document first claimed.** The first version said the final grep found **zero** matches. That was wrong: it found **two**. `New_req.md:524` and `:620` named one of the three directors as the project sponsor, in a tracked, public file that also carries the company's real shape. The code review caught it (Major 3). Both are now the invented first name.
+
+The grep now really is clean. What it still matches, correctly left alone: "Dev Malhotra" in the slice 012 design and prototype, "Manpreet Malhotra" in the slice 010 rehearsal notes, and the Malhotra / Mukesh entries in the PP Jewellers demo data and its first-name pool — all invented people who happen to share a surname.
+
+**The two review documents were redacted too.** `05-review.md` and `06-security-review.md` quoted the real names while reporting the problem. They now carry `<real director 1/2/3>` placeholders. The reviewers' findings read exactly the same; the names do not travel with them.
 
 ---
 
 ## 4. The check that keeps it fixed
 
-`scripts/check_no_demo_passwords.py` — a text check, no bench, no database. It scans `demo/`, `docs/pp_jewellers/` and `alvoraa_portal/alvoraa_portal/demo_setup.py` for a password-shaped name assigned a non-empty literal, and for a password written between backticks in a document. Test files are skipped. Findings are printed masked.
+`scripts/check_no_demo_passwords.py` — a text check, no bench, no database. It scans `demo/`, `docs/pp_jewellers/`, the two portal demo seeders and **itself**, for a password-shaped name given a literal value and for a password written between backticks in a document. Findings are printed masked.
 
-**Why a script and not a unittest.** CI copies only `hrms/`, `alvoraa_goals/` and `alvoraa_portal/` into the bench (`ci.yml`, "Install this repo's apps"). `demo/` never gets there, so a `FrappeTestCase` could not open the files it is meant to guard and would quietly skip for ever — a test that can never fail is worse than no test. The repo already uses plain lint scripts for exactly this (`check_api_paths.py`, `check_app_integrity.py`, `check_nginx_conf.py`, `check_design_system.py`), and slice 013 is adding `check_tracked_keys.py` the same way.
+**Why a script and not a unittest.** CI copies only `hrms/`, `alvoraa_goals/` and `alvoraa_portal/` into the bench (`ci.yml`, "Install this repo's apps"). `demo/` never gets there, so a `FrappeTestCase` could not open the files it is meant to guard and would quietly skip for ever — a test that can never fail is worse than no test. The repo already uses plain lint scripts for exactly this (`check_api_paths.py`, `check_app_integrity.py`, `check_nginx_conf.py`, `check_design_system.py`), and slice 013 adds `check_tracked_keys.py` the same way.
 
-**Proved both ways.** It passes on the tree as it stands. With a password literal put back into `demo/link_employee_users.py` and another into the checklist document, it exits 1 and names both, masked.
+### What the reviewers found in the first version, and what it does now
 
----
+The first version had a real problem and four real gaps. All six are fixed in `0daea42` and every one was re-proved by running the script, not by reading it.
+
+| Problem | Now |
+|---|---|
+| **The check leaked.** Its comment carried the two real values it was written to remove, and the file was not on its own scan list. | No example of the shape is written anywhere in the file — the shapes are described in prose. The file scans itself, so it cannot regress. |
+| A "contains the word password" escape in `SAFE_VALUE` waved through a literal that merely contained that word. | That alternative is deleted. An environment read is excused explicitly instead. |
+| The key pattern required a character **before** the word, so a plain `password` key was missed. | The prefix is optional, with a word-boundary guard. |
+| A dict key — the exact shape removed from `demo_setup.py` — was missed, because a quote sits between the key and the colon. | An optional quote after the key. Caught. |
+| An unquoted shell assignment, the shape that would appear in `run_all.sh` or a `docker exec` line, was missed entirely. | A second pattern for it. A quoted value is still left to the first pattern, so `-e VAR="$VAR"` does not fire. |
+| The test-file skip was a substring match on the whole path, so `demo/latest_helpers/x.py` was skipped by accident. | Matched on path parts and on the file name. |
+| Slice 016's new `alvoraa_portal/alvoraa_portal/demo_seeder.py` was not scanned. | On the list. |
+
+### The proof
+
+Probe files were written under `demo/_probe_015/` covering every shape, the real script was run over them, and the folder was deleted afterwards. **All six bad shapes were caught** (module constant, plain `password`, dict key, unquoted shell assignment, a password in a document, and a file in a folder whose name contains "test"), and **none of the four good shapes fired** (an environment read, `-e VAR="$VAR"`, an angle-bracket placeholder, and `demo_password()`). The two genuine test files were skipped, as intended. A second harness drove `scan_line()` over the same shapes line by line, with the same result. The tree itself is clean: 40 files scanned, nothing found.
 
 ## 4a. The leftover `init.sh.orig`
 
@@ -117,20 +146,41 @@ Deleted in commit `a430e33`, on its own. The lint checks were run again afterwar
 - Uncommitted work in the main checkout belonging to other sessions was left exactly as it was: `.claude/context/ux-learnings.md`, `OBJECTIVES_KPI_REQUIREMENTS.md` (deleted), `backlog/KPI_AUTOMATION_BACKLOG.md`, `docs/slices/009-ess-portal-redesign/00-assessment-and-plan.md`, `hrms/hrms/alvoraa_org_structure/.../alvoraa_position.py`, and the untracked files and folders. Only the work-board row was added in the main checkout, which is what the board is for.
 - **Two hot files were appended to**, and slice 013 appends to both on its own branch: `.gitignore` (013 adds key patterns and Android build output) and `.github/workflows/ci.yml` (013 adds a whole new `key-guard` job; slice 014 added a lint step *before* Semgrep). My step is the **last** step of the lint job, and my `.gitignore` block is at the **end** of the file. Both intentions are additive: whoever rebases second keeps both blocks.
 
+**The rebase of 2026-09-18 (review round).** `git fetch origin` again brought nothing; `origin/dev` has not moved all slice. **Local `dev` had moved on by 20 commits** and the branch was rebased onto it. What came in, all other sessions' work, read before building on it:
+
+- **Slice 014's review round** — `ac0841f`, `47fff8a`, `d40f085`, `2faedb1`, `f1bc270`, `b68ee87`, `8e86470`, `b73bea8`, `67bbbc7`: `portal_api.py`, `scheduled_jobs.py`, `deploy/nginx.conf`, the check-in redaction patch and its two test files.
+- **Slice 016 (portal API permissions)** — `a923405`, `5eaea0f`, `f7bd448`, `db8db2e`, `0e84d91`, `182d2cc`, `0daaf8c`, `77ed55c`, `b04356e`, `245e6b2`: gating 28 portal endpoints, `subscription.py`, `setup_data.py`, `hooks.py`, the two portal `www` pages, a new `test_portal_module_gate_016.py`, and a **new `alvoraa_portal/alvoraa_portal/demo_seeder.py`**.
+
+**The rebase was clean** — 14 commits replayed, no conflict. Nothing of theirs was touched: my files and theirs do not overlap. The one thing their work changed for me is that new `demo_seeder.py`, which is now on the check's scan list.
+
 ---
 
 ## 8. Commands run, and what they said
 
+### First build
+
 | Command | Result |
 |---|---|
-| `python scripts/check_no_demo_passwords.py` | `No demo or seed password literals found.` (exit 0) |
-| the same, with a password literal put back in a script and a document | exit 1, both named and masked — the check really fails |
 | `python scripts/check_app_integrity.py` | `app integrity: 580 checks — OK - all consistent` (doctype-shadowing check skipped: no bench) |
 | `python scripts/check_api_paths.py --max 2` | `OK (within tolerance): 2 unresolved, maximum allowed 2` — the known upstream debt, unchanged |
 | `python scripts/check_nginx_conf.py` | `OK … no caller-chosen addresses; Cloudflare ranges valid; all login paths limited` |
-| `yaml.safe_load` on `ci.yml` | parses; lint job now has 15 steps, mine last |
-| `ast.parse` on all six changed Python files | all parse |
+| `yaml.safe_load` on `ci.yml` | parses; lint job has 15 steps, mine last |
+| `ast.parse` on every changed Python file | all parse |
 | `ruff check --config hrms/pyproject.toml` on each changed Python file, against the same file on `dev` | **no new findings**: `setup_grace_group.py` 9 before and 9 after, `demo_setup.py` 1 before and 1 after (a pre-existing import-order warning; not reformatted, to keep other sessions' diffs clean) |
+
+### After the review round (all re-run on the rebased branch)
+
+| Command | Result |
+|---|---|
+| `python scripts/check_no_demo_passwords.py` | `No demo or seed password literals found (40 files scanned).` (exit 0) |
+| the same, over probe files covering **every** shape the reviewers named | exit 1, **all six bad shapes caught**, masked; **none of the four good shapes fired**; both genuine test files skipped. Probes deleted afterwards. |
+| a harness driving `scan_line()` over the same shapes | 8 of 8 as expected |
+| a harness driving `_is_test_path()` | 4 of 4 as expected, including `demo/latest_helpers/x.py` no longer skipped |
+| `python scripts/check_app_integrity.py` | 580 checks, OK |
+| `python scripts/check_api_paths.py --max 2` | within tolerance |
+| `python scripts/check_nginx_conf.py` | OK |
+| `yaml.safe_load` on `ci.yml` | parses, 15 lint steps |
+| `ast.parse` on `ppj_common.py` and `seed_employees.py` after the `demo_password()` move | both parse |
 
 ### What I did **not** run, and why
 
@@ -143,22 +193,24 @@ Deleted in commit `a430e33`, on its own. The lint checks were run again afterwar
 
 ## 9. Known gaps and shortcuts, declared
 
-1. **The passwords are still live on the tenants.** This slice takes them out of the code; it does not change a single login on `dev.alvoraa.co` or `ppj.dev.alvoraa.co`. Until Surbhi changes or disables those users the risk is exactly what the scan described. **This is the second half of the fix, not the whole one.**
+1. ~~The passwords are still live on the tenants.~~ **Closed.** Surbhi changed them on both dev sites on 2026-09-18; the new values are stored outside the repo. Taking them out of the code was only ever half the fix, and the other half is done. What remains is to have the new value in `HR_DEMO_PASSWORD` / `PPJ_DEMO_PASSWORD` / `PORTAL_DEMO_PASSWORD` whenever a seed script is run again.
 2. **The old values are still in git history and on GitHub**, and anything that was public should be treated as copied. A rewrite was out of scope and the scan calls it optional.
 3. **Already-seeded sites keep the old director names.** Re-running a seed script would create the invented people beside the real ones rather than renaming them. Cleaning that up means changing data on a site, which is dev-stage work and needs Surbhi's word. I deliberately did not do it.
-4. **The check is a regex.** It catches the shape of the problem that actually happened — a password-looking name with a literal value, and a password in backticks in a document. A password hidden in an ordinary sentence, or built from pieces at runtime, would slip past. The scan's own recommendation of `gitleaks` in CI still stands and is not this slice.
+4. **The check is still a regex.** It now catches every shape that has actually appeared here — module constant, plain local, dict key, unquoted shell assignment, and a password in a document — and it scans itself. It would still miss a password hidden in an ordinary sentence, or one built from pieces at runtime. The scan's own recommendation of `gitleaks` in CI still stands and is not this slice.
 5. ~~`hrms/docker/init.sh.orig`~~ — **done.** Added to the slice on 2026-09-18 with Surbhi's approval and deleted in `a430e33`. See §4a.
 6. **`.gitignore` root rule is `/*.pdf`.** A PDF dropped into a sub-folder is still committable. Narrow on purpose: `**/*.pdf` would hide legitimate documents in `docs/`.
+7. **`link_employee_users.py` still creates every employee as a System User.** That is desk access for all 400 seeded people, which is more than a demo employee needs. Out of scope here — it is a behaviour change, not a hygiene fix — but it is the obvious follow-up and belongs in a slice of its own. Raised by the review round.
 
 ---
 
 ## 10. What needs Surbhi
 
-1. **Change or disable the seeded logins** on `dev.alvoraa.co` and `ppj.dev.alvoraa.co`, and set the new values into `HR_DEMO_PASSWORD`, `PPJ_DEMO_PASSWORD` and `PORTAL_DEMO_PASSWORD` wherever the scripts get run. Dev-stage work — her word.
+1. ~~Change or disable the seeded logins on the two dev tenants.~~ **Done on 2026-09-18**, values kept outside the repo. What is left is the habit: export `HR_DEMO_PASSWORD`, `PPJ_DEMO_PASSWORD` or `PORTAL_DEMO_PASSWORD` before running a seed script, and pass it into the container with `docker exec -e`.
 2. **Confirm scan item A3:** were the secrets changed after the July–August malware window?
 3. ~~Delete the stale remote branch `claude/pp-jewellers-hr-spec-yvmi2a`~~ — **done on 2026-09-18 by the lead session**, archived locally first as `refs/archive/malware-evidence-pp-jewellers-hr-spec`.
 4. **Decide on the history rewrite** and on the counsel question about Grace Group (scan §5).
 5. **The Contabo firewall** change (scan §3) — DevOps to plan, Surbhi to approve.
-6. **Whether to push.** A push of local `dev` carries slice 014 too.
+6. **Whether to push.** The lead session is sequencing 014, 015 and 016 into one push; this branch is deliberately **not** folded into local `dev` yet.
+7. **Two more origin branches still carry the obfuscated `postcss.config.js`** (about 32 KB each): `claude/hr-app-sme-agent-h1cf1h` (6 Sep) and `fix/deploy-workflow` (3 Sep). `dev`, `main` and `fix/nginx-wildcard-cert` are clean. The lead session verified this and has put deletion to Surbhi. Recorded here, not acted on — deleting a remote branch is out of this slice's scope.
 
 **Done since the first hand-back, not by me:** the stale remote branch `claude/pp-jewellers-hr-spec-yvmi2a` (scan B1, the branch holding the 2026-09-08 copy of the malware) was **deleted from GitHub on 2026-09-18 by the lead session**, after archiving it locally as `refs/archive/malware-evidence-pp-jewellers-hr-spec`. So item 3 of the list above is closed. The local `archive/evidence/*` branches are unaffected and must still never be pushed.

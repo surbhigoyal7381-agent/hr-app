@@ -135,11 +135,57 @@ jobs:
           echo "Image       : ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$IMAGE"
           echo "Migrations  : $MIGRATE"
 
+      # ── The nginx gate: a config nginx cannot read must never reach nginx ──
+      #
+      # ONE nginx container serves production alvoraa.co AND dev.alvoraa.co, and its
+      # config is bind-mounted from deploy/nginx.conf. This job restarts that
+      # container - twice - and until slice 018 it did so without once asking nginx
+      # whether the new config was readable. One missing semicolon therefore meant
+      # nginx did not come back and EVERY site stayed down until a human logged in
+      # and fixed it. A dev deploy could take production down that way.
+      #
+      # So the exact bytes about to be deployed are tested first, in a throwaway
+      # container, and the deploy stops here if nginx refuses them.
+      #
+      # `git show` rather than the working tree, for two reasons: the tree is still
+      # at the PREVIOUS release at this point, and reading from the ref touches
+      # nothing. Both the config and the checker come out of the ref being deployed.
+      #
+      # First step in the job on purpose - it is also the cheapest. A bad config now
+      # costs twenty seconds instead of a ten-minute outage after a thirty-minute run.
+      - name: nginx config must parse
+        run: |
+          set -euo pipefail
+          cd /var/www/html/hr-app
+          BRANCH="${ENV_NAME/production/main}"
+          git fetch --quiet origin "$BRANCH"
+
+          # Where the real certificates live (TLS_CERT_DIR, /etc/letsencrypt). They
+          # are mounted read-only, so nginx checks the certificate PATHS too: a typo
+          # in one fails the test exactly like a syntax error would. That matters -
+          # slice 014 changed those paths to the wildcard certificate.
+          # Only this one key is read out of the env file; the rest holds secrets.
+          CERT_DIR=$(grep -hE '^TLS_CERT_DIR=' "deploy/envs/${ENV_NAME}.env" 2>/dev/null \
+                     | tail -1 | cut -d= -f2-) || CERT_DIR=""
+
+          TMP=$(mktemp -d)
+          trap 'rm -rf "$TMP"' EXIT
+          git show "origin/${BRANCH}:deploy/nginx.conf"             > "$TMP/nginx.conf"
+          git show "origin/${BRANCH}:scripts/check_nginx_parses.sh" > "$TMP/check.sh"
+          bash "$TMP/check.sh" "$TMP/nginx.conf" "${CERT_DIR:-/etc/letsencrypt}"
+
       # ── Pre-deploy backup: this is the rollback point ─────────────────────
       # A database dump alone is NOT restorable — site_config.json holds each
       # site's encryption_key. Both are captured here. (ARCHITECTURE.md §17)
+      #
+      # Dev is backed up too, since slice 018. It used to be skipped to save time,
+      # which was the wrong trade: releases carry data patches that rewrite rows and
+      # cannot be undone, and dev is where a patch is proven before production sees
+      # it. Without a backup a patch that eats dev data leaves nothing to compare
+      # against and nothing to restore. The cost is small and measured: the dev sites
+      # volume is 169 MB, the server has 43 GB free, and the backup adds one to two
+      # minutes to a run that takes about thirty-five.
       - name: Backup all sites
-        if: needs.plan.outputs.environment != 'dev'
         run: |
             set -euo pipefail
             cd /var/www/html/hr-app/deploy/compose
@@ -174,6 +220,18 @@ jobs:
             git checkout --detach "origin/${ENV_NAME/production/main}" 2>/dev/null \
               || git checkout --detach origin/main
             cd deploy/compose
+
+            # The nginx config is now on disk. Test THAT file, not the one the gate
+            # step read out of git, because the checkout above has a fallback to
+            # origin/main - so the file here is not always the one already proven.
+            #
+            # This sits BEFORE `trap cleanup EXIT` deliberately: the trap restarts
+            # nginx, and restarting nginx is the one thing that must not happen while
+            # the config on disk is bad. Failing here exits with no trap installed,
+            # so the running nginx keeps serving the config it read when it started.
+            CERT_DIR=$(grep -hE '^TLS_CERT_DIR=' "../envs/${ENV_NAME}.env" 2>/dev/null \
+                       | tail -1 | cut -d= -f2-) || CERT_DIR=""
+            bash ../../scripts/check_nginx_parses.sh ../nginx.conf "${CERT_DIR:-/etc/letsencrypt}"
 
             echo "KINEXUS_IMAGE=$FULL_IMAGE" > "$PIN_FILE"
             export COMPOSE_PROJECT_NAME="$PROJECT"
@@ -392,9 +450,34 @@ jobs:
           done
           # One nginx serves every environment and caches the backend address,
           # so a container swap leaves every site 502 until it is restarted.
-          docker restart compose-nginx-1 >/dev/null 2>&1 || true
-          sleep 6
-          echo 'service restored'
+          #
+          # But this step runs `if: always()`, including after a FAILED deploy - so
+          # it is the last place a bad config could still reach nginx. Check first.
+          # If the file on disk does not parse, do not restart: a running nginx is
+          # still happily serving the config it read at start-up, and restarting it
+          # would turn a failed deploy into an outage on every site, production
+          # included. Leaving dev at 502 until a human looks is the cheaper failure.
+          CERT_DIR=$(grep -hE '^TLS_CERT_DIR=' "../envs/${ENV_NAME}.env" 2>/dev/null \
+                     | tail -1 | cut -d= -f2-) || CERT_DIR=""
+          #
+          # If the checker itself is not in the tree - the Deploy step can fail at
+          # its own checkout, leaving the previous release on disk - fall back to the
+          # old behaviour. That config was parsed by the running nginx already.
+          if [ ! -f ../../scripts/check_nginx_parses.sh ]; then
+            echo "::warning::nginx checker not in this tree - restarting unchecked"
+            docker restart compose-nginx-1 >/dev/null 2>&1 || true
+            sleep 6
+            echo 'service restored'
+          elif bash ../../scripts/check_nginx_parses.sh ../nginx.conf "${CERT_DIR:-/etc/letsencrypt}"; then
+            docker restart compose-nginx-1 >/dev/null 2>&1 || true
+            sleep 6
+            echo 'service restored'
+          else
+            echo "::error::deploy/nginx.conf does not parse - nginx was NOT restarted."
+            echo "::error::The running nginx still serves the config it read at start."
+            echo "::error::Sites pointing at recreated containers will 502 until a"
+            echo "::error::human fixes deploy/nginx.conf and restarts compose-nginx-1."
+          fi
 
       - name: Smoke test
         run: |

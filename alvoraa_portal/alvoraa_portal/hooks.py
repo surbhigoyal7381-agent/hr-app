@@ -91,7 +91,7 @@ doc_events = {
     # guards opening one record by name. Both are needed - a list filter alone
     # leaves /app/employee-checkin/<name> open to anyone who guesses a name.
     "Employee Checkin": {
-        "onload": "alvoraa_portal.field_checkin.log_photo_view",
+        "onload": "alvoraa_portal.field_app_access.log_photo_view",
     },
 
     "Employee": {
@@ -173,11 +173,11 @@ doc_events = {
 
 # ── Row-level security ───────────────────────────────────────────────────────
 permission_query_conditions = {
-    "Employee Checkin": "alvoraa_portal.field_checkin.checkin_query_conditions",
+    "Employee Checkin": "alvoraa_portal.field_app_access.checkin_query_conditions",
 }
 
 has_permission = {
-    "Employee Checkin": "alvoraa_portal.field_checkin.checkin_has_permission",
+    "Employee Checkin": "alvoraa_portal.field_app_access.checkin_has_permission",
 }
 
 scheduler_events = {
@@ -192,7 +192,7 @@ scheduler_events = {
         # period the organisation set (default 90 days, 0 = keep for ever).
         # The punch, the time and the place stay - they are the record of work
         # done. Only the photo goes.
-        "alvoraa_portal.field_checkin.purge_old_checkin_photos",
+        "alvoraa_portal.field_app_photos.purge_old_checkin_photos",
         "alvoraa_portal.scheduled_jobs.send_arrival_notifications",
         "alvoraa_portal.scheduled_jobs.check_compliance_alerts",
         # Pulls each tenant's error counts and scheduler state up to the control

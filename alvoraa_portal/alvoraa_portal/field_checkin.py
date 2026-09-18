@@ -48,7 +48,6 @@ from alvoraa_portal import field_app_notice as notice
 from alvoraa_portal.alvoraa_portal.doctype.alvoraa_field_device import (
 	alvoraa_field_device as device_rules,
 )
-from alvoraa_portal.field_app_errors import refuse, requires_field_app_plan
 
 # ── the pieces that used to live in this file ────────────────────────────────
 #
@@ -57,15 +56,16 @@ from alvoraa_portal.field_app_errors import refuse, requires_field_app_plan
 # names are imported straight back, because `hooks.py`, the web page and the
 # browser all call them at `alvoraa_portal.field_checkin.<name>` and a path in
 # a hook or a browser URL is a promise. Nothing moved changed.
-from alvoraa_portal.field_app_access import (  # noqa: F401  (re-exported for hooks.py)
-	ACCESS_LOG,
+from alvoraa_portal.field_app_access import (  # re-exported: hooks.py and the web page still name these here
 	_HR_ROLES,
+	ACCESS_LOG,
 	_viewer,
 	checkin_has_permission,
 	checkin_query_conditions,
 	log_photo_view,
 )
-from alvoraa_portal.field_app_photos import (  # noqa: F401  (re-exported for hooks.py)
+from alvoraa_portal.field_app_errors import refuse, requires_field_app_plan
+from alvoraa_portal.field_app_photos import (  # re-exported: hooks.py and the web page still name these here
 	DEFAULT_RETENTION_DAYS,
 	JPEG_MAGIC,
 	MAX_PHOTO_B64_CHARS,
@@ -75,11 +75,11 @@ from alvoraa_portal.field_app_photos import (  # noqa: F401  (re-exported for ho
 	photo_retention_days,
 	purge_old_checkin_photos,
 )
-from alvoraa_portal.field_app_photos import attach_photo as _attach_photo  # noqa: F401
-from alvoraa_portal.field_app_pwa import (  # noqa: F401  (re-exported: the browser's URLs)
+from alvoraa_portal.field_app_photos import attach_photo as _attach_photo
+from alvoraa_portal.field_app_pwa import (  # re-exported: the browser's URLs still name these here
+	_SERVICE_WORKER,
 	_brand,
 	_darker,
-	_SERVICE_WORKER,
 	app_icon,
 	manifest,
 	service_worker,

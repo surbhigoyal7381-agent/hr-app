@@ -129,11 +129,22 @@ class AlvoraaFieldDevice(Document):
 			  "Invite the employee to the app instead."),
 			frappe.PermissionError)
 
+	def _changed(self, before, field):
+		"""Did this field really change?
+
+		Compared as text, which is what Frappe's own `validate_set_only_once`
+		does, and for the same reason: a form sends a Datetime back as the string
+		"2026-09-18 12:00:00" while the row holds a `datetime` object. Comparing
+		the two directly says "changed" on every ordinary save, which would have
+		refused every save of this record rather than only the forbidden ones.
+		"""
+		return str(self.get(field) or "") != str(before.get(field) or "")
+
 	def _frozen_fields_stay_frozen(self, before):
 		for field in FROZEN_AFTER_INSERT:
 			if not self.meta.has_field(field):
 				continue
-			if (self.get(field) or "") != (before.get(field) or ""):
+			if self._changed(before, field):
 				frappe.throw(
 					_("{0} cannot be changed once the phone is set up.").format(
 						_(self.meta.get_label(field))),
@@ -144,7 +155,7 @@ class AlvoraaFieldDevice(Document):
 		for field in FROZEN_UNLESS_SERVER:
 			if not self.meta.has_field(field):
 				continue
-			if (self.get(field) or "") != (before.get(field) or ""):
+			if self._changed(before, field):
 				frappe.throw(
 					_("A phone's secret cannot be changed by hand."),
 					frappe.PermissionError)

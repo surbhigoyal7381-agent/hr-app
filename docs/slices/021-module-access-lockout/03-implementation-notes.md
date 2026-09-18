@@ -16,6 +16,7 @@ tenant touched.
 | `find_unrecorded_restrictions()` — new, **read-only** | **build** | The question support asks first, with no power to delete |
 | `repair_unrecorded_restrictions()` — new, dry run by default | **build** | The deliberate fix for anything already stranded |
 | `_rows_by_doctype()` — new helper | **build** | One query per 500 doctypes instead of one per doctype |
+| `_snapshot_many()` — new helper | **build** | The snapshot step was two queries per doctype — 900 round trips on a Starter tenant. Now one per 500 names |
 
 ### `alvoraa_portal/alvoraa_portal/tests/test_module_access_lockout_021.py` — new
 
@@ -282,10 +283,10 @@ Employee Self Service and HR grants untouched.
 
 | Dimension | Before → after | Why |
 |---|---|---|
-| Performance | **neutral** | One extra locking read of one small row per `_save`, and one extra `_save` per run, on an operator-run command. `_rows_by_doctype` batches 500 names per query, so the report costs 1 query per 500 doctypes plus one `creation` lookup per stranded doctype — not one per doctype |
+| Performance | **improves** | One extra locking read of one small row per `_save`, and one extra `_save` per run, on an operator-run command — set against the snapshot step going from about 900 queries to 2 on a 450-doctype sync. The report costs 1 query per 500 doctypes plus one `creation` lookup per *stranded* doctype, not per doctype |
 | Security | **improves** | A denial nobody can lift withholds access the customer paid for and leaves permission state nobody can audit. The repair refuses to touch a row that is not ours, and the report has no power to write at all |
 | Reliability | **improves** | The failure has a defined end state: nothing written, logged with a findable title, raised to a caller that already handles it. It used to half-complete and report success |
-| Scalability | **neutral** | The locking read holds one `tabSingles` row for the rest of the transaction, serialising two concurrent syncs on the same site. That is correct for a read-modify-write of the only record of what was taken away, and syncs are per-tenant and operator-driven |
+| Scalability | **improves** | The first cut of this change made it worse and the bench proved it: the locking read plus record-first held the state record across all 450 row writes, and two overlapping syncs deadlocked. Committing the record at once shrinks the lock to a moment. Net against the old code, the snapshot step also drops from ~900 queries to ~2, so a 450-doctype sync is materially lighter than before |
 | Maintainability | **improves** | The `_save` docstring blamed a cause that was not real and a fix that did not work. It now carries the measurement |
 | Data integrity | **improves** | The point of the slice: the record and the rows can no longer disagree in the unsafe direction |
 | Compliance / privacy | **improves** | No personal data anywhere near this code, and none is logged — the repair's audit entry carries doctype names only. "What did we deny this tenant, and when" now has an answer that is always true, and support can ask it on production without being handed a delete |

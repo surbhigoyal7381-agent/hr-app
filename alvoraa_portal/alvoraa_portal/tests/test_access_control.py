@@ -38,6 +38,11 @@ class Wave4Mixin:
 		self._plane = frappe.conf.get("alvoraa_control_plane")
 		frappe.conf.pop("alvoraa_control_plane", None)
 		ma.release_permissions()          # never inherit another test's state
+		# Every test in this mixin restricts doctypes, and those writes are
+		# committed. tearDown releases them, but unittest skips tearDown when
+		# setUp raises, and the user insert below can raise - so the restore is
+		# also registered as a cleanup, which always runs.
+		self.addCleanup(ma.release_permissions)
 		if not frappe.db.exists("User", USER):
 			u = frappe.get_doc({"doctype": "User", "email": USER, "first_name": "Wave4",
 			                    "send_welcome_email": 0, "user_type": "System User",

@@ -14,6 +14,10 @@ ADMIN = "admin@tenantsetup.test"
 class TestDefaultUsers(FrappeTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
+		# Registered BEFORE the write, because unittest skips tearDown when setUp
+		# raises - and the delete_doc loop below it can raise. The tearDown call
+		# stays as well; releasing twice is a proven no-op.
+		self.addCleanup(ma.release_permissions)
 		ma.sync_site(sub.plan_features("business"))
 		for u in (HR, ADMIN):
 			if frappe.db.exists("User", u):

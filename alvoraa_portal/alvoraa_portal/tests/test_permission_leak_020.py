@@ -192,6 +192,15 @@ class TestNoSuiteDeniesPermissionsWithoutGivingThemBack(FrappeTestCase):
 class TestTheSiteIsLeftAsItWasFound(FrappeTestCase):
 	"""The round trip, measured in rows rather than assumed."""
 
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		# Read BEFORE any test in this class touches anything. The round-trip
+		# test below releases first to get a clean baseline, which would repair
+		# an earlier suite's leak and hide it from the tripwire. Capturing it
+		# here makes the two tests independent of each other's order.
+		cls.leaked_before_this_file = set(ma._recorded_restrictions())
+
 	def setUp(self):
 		frappe.set_user("Administrator")
 		self._plane = frappe.conf.get("alvoraa_control_plane")
@@ -217,6 +226,10 @@ class TestTheSiteIsLeftAsItWasFound(FrappeTestCase):
 		it. A repair that deletes every row throws the tenant's real
 		configuration away with the leak.
 		"""
+		# Start from a clean slate, so the delta measured is this test's own. If
+		# an earlier suite leaked, this releases it - and the tripwire below
+		# still reports it, because it reads the state captured in setUpClass.
+		ma.release_permissions()
 		before = self._rows()
 		ma.sync_permissions(sub.plan_features("starter"), only=WATCH)
 		self.assertNotEqual(self._rows(), before,
@@ -236,10 +249,10 @@ class TestTheSiteIsLeftAsItWasFound(FrappeTestCase):
 		promise Frappe makes. The static test above is the guard; this is a
 		tripwire.
 		"""
-		left = ma._recorded_restrictions()
+		left = self.leaked_before_this_file
 		self.assertEqual(
 			sorted(left)[:10], [],
-			f"{len(left)} doctypes are still recorded as restricted before this "
+			f"{len(left)} doctypes were still recorded as restricted before this "
 			"file ran. An earlier suite denied permissions and did not give them "
 			"back. Repair: module_access.release_permissions() - NOT a blanket "
 			"delete of Custom DocPerm, which would destroy a tenant's own rows.")

@@ -97,6 +97,109 @@ today. A caller added under another app's test folder would not be seen.
 unnecessary, and it is **left in place** on purpose: it is harmless, other
 sessions rely on it, and it is a cheap second net if a new leak ever appears.
 
+## The bigger finding: a product bug, not only a test bug
+
+**The test fix alone does not close the leak.** While proving the fix I found why
+a delete-and-clear repair kept coming undone, and why slice 010's
+`release_permissions()` workaround did not help either.
+
+`sync_permissions()` writes the denial rows first and records what it did
+**last**:
+
+```
+frappe.db.delete("Custom DocPerm", {"parent": dt})   # line 505
+_keep_exempt_row(dt, exempt)                         # line 508 - the row is written
+...
+if restricted:
+    _save(restricted=..., snapshot=snapshot)         # line 516 - the record
+frappe.db.commit()                                   # line 518 - never reached on error
+```
+
+`_save()` raises `TimestampMismatchError` on this bench. It is in the Error Log
+on `test_site` three times in four minutes on 2026-09-18, each swallowed by
+`sync_site`'s try/except:
+
+```
+module_access.py line 516, in sync_permissions -> _save(...)
+module_access.py line 313, in _save -> doc.save(ignore_permissions=True)
+frappe.exceptions.TimestampMismatchError: Alvoraa Access State has been modified
+after you have opened it (13:39:35.133205, 13:39:37.091849)
+```
+
+When that happens the rows are already written, the state record says nothing was
+restricted, and `sync_site` carries on to `apply_to_users()` — **which commits**.
+So the rows are committed and **unrecorded**, and `release_permissions()` cannot
+touch them, because by design it only releases what we recorded.
+
+Demonstrated on `test_site`, bounded to three doctypes:
+
+| Step | Rows | Recorded |
+|---|---|---|
+| start | 0 | 0 |
+| `sync_permissions` with `_save` forced to fail | **3** | **0** |
+| `release_permissions()` → `{'released': [], 'still_restricted': []}` | **3** | 0 |
+
+That is the "554 rows nobody can put back" state exactly, and it is why 322 rows
+were back within an hour of the manual delete.
+
+**This is production code (`alvoraa_portal/module_access.py`) and I did not
+change it**, per the brief. Reported for a decision. The shape of the fix looks
+like: record the intent before writing the rows, or clear the Single's document
+cache before `_save` reloads it, or let the error out of `sync_site` instead of
+swallowing it. All three change behaviour other slices depend on.
+
+## A second thing the release pass needs to know
+
+`test_access_control.py::TestReversalFirst::test_it_restores_pre_existing_customisations_exactly`
+**fails on `test_site` right now**:
+
+```
+AssertionError: [] is not true : this test needs a doctype that has custom perms
+```
+
+It is not my change and it is not a product fault. The earlier blanket repair
+deleted **every** `Custom DocPerm` row on `test_site`, including the install-time
+rows that were legitimately there, so `Salary Slip` now has none and the test's
+own precondition cannot hold. For comparison, `ppj.localhost` has 625 rows across
+351 doctypes. `test_site` is at **0**. The test will pass again once the site is
+rebuilt or reinstalled. This is the cost of the blanket sweep, and the reason the
+new guard asserts "the count does not change" rather than "the count is zero".
+
+## What I ran
+
+Bench taken only when `pgrep -af run-tests` was clear, one run at a time, and
+released afterwards. The shared bench mounts the **main checkout**, so the fixed
+code was run from a throwaway container (`hrlocal-020`) mounting this worktree
+against the same `test_site`; the container has been removed.
+
+```
+bench --site test_site run-tests --module alvoraa_portal.tests.test_access_control
+bench --site test_site run-tests --module alvoraa_portal.tests.test_module_access
+bench --site test_site run-tests --module alvoraa_portal.tests.test_tenant_setup
+bench --site test_site run-tests --module alvoraa_portal.tests.test_permission_leak_020
+bench --site test_site run-tests --module alvoraa_portal.tests.test_portal_security_010
+```
+
+| Module | Result | Rows / doctypes after |
+|---|---|---|
+| — start — | | 0 / 0 |
+| `test_access_control` | 34 tests, 1 failure (the pre-existing one above) | 0 / 0 |
+| `test_module_access` | 51 tests, OK | 0 / 0 |
+| `test_tenant_setup` | 10 tests, OK | 0 / 0 |
+| `test_permission_leak_020` | 5 tests, OK (3.2s) | 0 / 0 |
+| `test_portal_security_010` (the victim) | 45 OK + 5 OK | 0 / 0 |
+
+The victim module passes where it used to error, and every module leaves the row
+count and the doctype count exactly where it found them.
+
+**Honest limit on the fail-first proof.** I ran `test_module_access` against the
+**unfixed** main checkout first, and it left 0 rows — so I did not reproduce the
+554-row leak today. The reason is the product bug above: on this site
+`sync_permissions` currently raises before it commits, and the runner's rollback
+took the rows back. The leak is real and was measured twice by other sessions;
+what I could prove deterministically is the mechanism (the table above) and that
+the fixed suites restore what they change.
+
 ## Still open — not fixed here
 
 `Module Profile` leaks the same way and is a different doctype.

@@ -1516,8 +1516,15 @@ def _plan_label(modules):
 
     One function rather than the two copies that were here before - the copy in
     update_tenant had the same bug, which is what a second copy is for.
+
+    Opt-in keys are stripped from BOTH sides. A plan bundle is defined by its
+    non-opt-in members, and `PLANS` still lists the opt-in ones it entitles a
+    tenant to - so comparing against the raw list made a full Enterprise tick
+    come out "custom" again the moment a bundled feature became opt-in
+    (slice 016 made `vendor` opt-in and this test caught it).
     """
     from alvoraa_portal.subscription import OPT_IN, PLANS
 
-    mset = set(modules or []) - {"hrms"} - set(OPT_IN)
-    return next((p for p, feats in PLANS.items() if set(feats) == mset), "custom")
+    opt_in = set(OPT_IN)
+    mset = set(modules or []) - {"hrms"} - opt_in
+    return next((p for p, feats in PLANS.items() if set(feats) - opt_in == mset), "custom")

@@ -225,8 +225,9 @@ def _device_from_token(token: str):
 
 def _refuse_as_pending():
 	frappe.throw(
-		_("This phone is waiting for HR to approve it. You will be able to "
-		  "check in as soon as they do."),
+		_("This phone is waiting for HR to approve it. You will be able to check "
+		  "in as soon as they do. If nothing happens today, check your employee ID "
+		  "with HR and set up again."),
 		frappe.AuthenticationError)
 
 
@@ -287,8 +288,13 @@ def register_device(employee_id, device_label=None, platform=None,
 	# phone, second phone. The caller learns only that somebody will look at it.
 	answer = {
 		"status": "pending",
-		"message": _("Thanks. HR needs to approve this phone before you can "
-		             "check in. You only have to do this once."),
+		# It says "set up again" because a mistyped employee ID gets this same
+		# answer on purpose (nobody may test employee IDs against this endpoint).
+		# Without that sentence the person waits for an approval nobody was asked
+		# for, is not marked present, and attendance is pay.
+		"message": _("Thanks. HR needs to approve this phone before you can check "
+		             "in. You only have to do this once. If nothing happens today, "
+		             "check your employee ID with HR and set up again."),
 	}
 
 	# Every caller gets a secret, so the reply has the same shape for a real ID

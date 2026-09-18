@@ -359,3 +359,40 @@ class RegistrationGivesNoIdAway(CheckinLogCase):
 		self.assert_logs_clean()
 		for field in ("employee_id", "device_label", "platform"):
 			self.assertNotIn(field, frappe.local.form_dict)
+
+
+class WaitingScreenSaysWhatToDo(CheckinLogCase):
+	"""A mistyped employee ID gets the same answer as a real one, on purpose. So
+	every "waiting for HR" sentence must also say how to get out of it, or the
+	person waits for an approval nobody was asked for and is not marked present
+	(review M1)."""
+
+	WAY_OUT = "check your employee ID with HR and set up again"
+
+	def test_014_registration_reply_says_what_to_do_if_nothing_happens(self):
+		out = self.call(fc.register_device, {
+			"employee_id": "HR-EMP-DOES-NOT-EXIST-014", "consent": 1,
+			"consent_version": fc.CONSENT_VERSION,
+		})
+		self.assertIn(self.WAY_OUT, out["message"])
+
+	def test_014_waiting_refusal_says_what_to_do_if_nothing_happens(self):
+		self.call(fc.field_status, {"token": "a" * 40})
+		words = " ".join(m.get("message", "") if isinstance(m, dict) else str(m)
+		                 for m in frappe.local.message_log)
+		self.assertIn("waiting for HR", words)
+		self.assertIn(self.WAY_OUT, words)
+
+	def test_014_the_waiting_screen_says_what_to_do_if_nothing_happens(self):
+		"""The page's own PENDING copy, in both languages."""
+		import os
+
+		import alvoraa_portal
+		path = os.path.join(os.path.dirname(alvoraa_portal.__file__), "www", "field-checkin.html")
+		with open(path, encoding="utf-8") as f:
+			page = f.read()
+		start = page.index("  PENDING: {")
+		block = page[start:page.index("},", start)]
+		self.assertIn("If nothing happens today", block)
+		self.assertIn("दोबारा सेट करें", block)
+		self.assertNotIn("They have been told", block)

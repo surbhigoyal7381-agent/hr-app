@@ -22,6 +22,7 @@ Ten commits, smallest first. `demo/` changes are kept in their own commits so th
 | `5eaa487` Origin address out of the devops notes | `docs/slices/008-field-checkin/07-devops-inputs.md` | doc | Replaced with a pointer to `deploy/server.env` and the Tailscale rule. |
 | `7e827e7` Demo README | `demo/README.md` | doc | `root@<server-ip>`. |
 | `dac6817` `.gitignore` | `.gitignore` | configure | `.claude.backup-*/` and root-level `*.pdf`. A comment says in the file that `docs/product/legal/` is **not** ignored on purpose. |
+| `a430e33` Delete `hrms/docker/init.sh.orig` | deleted `hrms/docker/init.sh.orig` | delete | A stale copy of the local container start-up script, carrying local admin and database passwords. Added after the first hand-back, approved by Surbhi on 2026-09-18. See §4a. |
 | `6c21492` The check | new `scripts/check_no_demo_passwords.py`, one step at the end of the `lint` job in `.github/workflows/ci.yml` | **build** (small) | See §4. |
 
 ---
@@ -71,6 +72,14 @@ Final grep across the repository (excluding the untracked `.claude.backup-*` fol
 **Proved both ways.** It passes on the tree as it stands. With a password literal put back into `demo/link_employee_users.py` and another into the checklist document, it exits 1 and names both, masked.
 
 ---
+
+## 4a. The leftover `init.sh.orig`
+
+Scan item C: a stale copy of `hrms/docker/init.sh`, kept beside the real one. It holds a local container admin password and a database root password (masked in the scan as `admi…` and a 3-character value). They are for throwaway local containers only, but the file has no job.
+
+**Checked before deleting.** `git grep` across every tracked file, and a plain grep over the working tree, for `init.sh.orig` and for `.orig`: **nothing references it.** `hrms/docker/docker-compose.yml` runs `bash /workspace/init.sh` — the real file, which stays. No Dockerfile, compose file, script, workflow or document names the `.orig` copy. The only mentions anywhere were the two lines in this slice's own documents saying it had been left behind.
+
+Deleted in commit `a430e33`, on its own. The lint checks were run again afterwards and are unchanged (§8).
 
 ## 5. The seven dimensions, re-checked against the code that was written
 
@@ -138,7 +147,7 @@ Final grep across the repository (excluding the untracked `.claude.backup-*` fol
 2. **The old values are still in git history and on GitHub**, and anything that was public should be treated as copied. A rewrite was out of scope and the scan calls it optional.
 3. **Already-seeded sites keep the old director names.** Re-running a seed script would create the invented people beside the real ones rather than renaming them. Cleaning that up means changing data on a site, which is dev-stage work and needs Surbhi's word. I deliberately did not do it.
 4. **The check is a regex.** It catches the shape of the problem that actually happened — a password-looking name with a literal value, and a password in backticks in a document. A password hidden in an ordinary sentence, or built from pieces at runtime, would slip past. The scan's own recommendation of `gitleaks` in CI still stands and is not this slice.
-5. **`hrms/docker/init.sh.orig`** — the scan suggests deleting it as a leftover. It was not on this slice's list, so it is still there.
+5. ~~`hrms/docker/init.sh.orig`~~ — **done.** Added to the slice on 2026-09-18 with Surbhi's approval and deleted in `a430e33`. See §4a.
 6. **`.gitignore` root rule is `/*.pdf`.** A PDF dropped into a sub-folder is still committable. Narrow on purpose: `**/*.pdf` would hide legitimate documents in `docs/`.
 
 ---
@@ -147,7 +156,9 @@ Final grep across the repository (excluding the untracked `.claude.backup-*` fol
 
 1. **Change or disable the seeded logins** on `dev.alvoraa.co` and `ppj.dev.alvoraa.co`, and set the new values into `HR_DEMO_PASSWORD`, `PPJ_DEMO_PASSWORD` and `PORTAL_DEMO_PASSWORD` wherever the scripts get run. Dev-stage work — her word.
 2. **Confirm scan item A3:** were the secrets changed after the July–August malware window?
-3. **Delete the stale remote branch** `claude/pp-jewellers-hr-spec-yvmi2a` (scan B1). Out of scope here on purpose.
+3. ~~Delete the stale remote branch `claude/pp-jewellers-hr-spec-yvmi2a`~~ — **done on 2026-09-18 by the lead session**, archived locally first as `refs/archive/malware-evidence-pp-jewellers-hr-spec`.
 4. **Decide on the history rewrite** and on the counsel question about Grace Group (scan §5).
 5. **The Contabo firewall** change (scan §3) — DevOps to plan, Surbhi to approve.
 6. **Whether to push.** A push of local `dev` carries slice 014 too.
+
+**Done since the first hand-back, not by me:** the stale remote branch `claude/pp-jewellers-hr-spec-yvmi2a` (scan B1, the branch holding the 2026-09-08 copy of the malware) was **deleted from GitHub on 2026-09-18 by the lead session**, after archiving it locally as `refs/archive/malware-evidence-pp-jewellers-hr-spec`. So item 3 of the list above is closed. The local `archive/evidence/*` branches are unaffected and must still never be pushed.

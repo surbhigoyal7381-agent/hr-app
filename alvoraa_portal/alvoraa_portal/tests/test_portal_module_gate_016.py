@@ -327,7 +327,10 @@ class TelemetryDoesNotBecomeAScore(FrappeTestCase):
 		"""Belt and braces: the SQL itself is gone, not merely unused."""
 		for module in (scorecard, delivery_partner):
 			with io.open(inspect.getsourcefile(module), encoding="utf-8") as fh:
-				text = fh.read()
+				# Comment lines are dropped: both files explain in a comment what
+				# they used to read, and the explanation is the point.
+				text = "\n".join(line for line in fh.read().split("\n")
+				                 if not line.strip().startswith("#"))
 			for column in ("SUM(harsh_braking)", "SUM(harsh_acceleration)",
 			               "SUM(speeding_alert)"):
 				self.assertNotIn(column, text, "%s still reads %s" % (module.__name__, column))

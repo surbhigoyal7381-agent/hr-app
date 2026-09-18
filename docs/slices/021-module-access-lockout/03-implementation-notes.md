@@ -280,7 +280,18 @@ session's work finished and the bench was free:
 |---|---|
 | `test_module_access_lockout_021` (new) | **17 tests, OK**, 11s |
 | `test_access_state_save` (pins `_save`) | **3 tests, OK** — the existing pin still holds unchanged |
+| `test_permission_leak_020` (slice 020's leak guard) | **5 tests, OK** — see below |
 | `test_access_control` (pins sync/release) | 34 tests, **2 failures, neither mine** — see §8 |
+
+**Slice 020's static guard caught my new file, and it was right to.** Its rule is
+that a class calling `sync_site` or `sync_permissions` must also name
+`release_permissions`, and mine restored rows by hand without ever going through
+the supported route. Fixed in my own file, not theirs: `_StateRestored._restore`
+now calls `ma.release_permissions(WATCH)` before putting the rows back, bounded
+to the watched doctypes because a bare `release_permissions()` would hand back a
+restriction the site legitimately holds for somebody else and never put it back.
+`TestTheFailureIsVisible` now inherits the same base, so its stubs cannot leave
+anything behind either. Green afterwards, and a genuinely better cleanup.
 
 The new module ran in 133 seconds before the snapshot batching and 11 after, on
 the same site and the same tests.
@@ -314,9 +325,21 @@ baseline, which is the property that makes it safe to point at production.
 
 ## 8. What else moved while I worked
 
-* **Nothing came in from others on the branch.** I fetched `origin/dev` at the
-  start; local `dev` and `origin/dev` were both `28622cf` and stayed there. No
-  rebase was needed, no conflicts, nothing of anyone else's to preserve.
+* **Twelve commits came into local `dev` while I worked**, and I rebased onto
+  them. `origin/dev` never moved (still `9138251`); local `dev` went from
+  `28622cf` to `5d724bb`:
+  * slice 020 (the test-side fix for this same leak) — `427c06a`, `59ae731`,
+    `3ab4ed4`
+  * slice 017 (late minutes) — `9365caa`, `594c823`, `d18f5a4`, `68025b1`
+  * slice 019 (the deploy nginx gate) — `f54b9d6`, `1a0d93f`
+  * two CI fixes — `f7373b5`, `d4ae850`
+  * the Alvoraa login rename — `5d724bb`
+
+  **None of them touches `module_access.py`, `test_access_state_save.py` or my
+  new test file.** I checked with `git log 28622cf..dev -- <those paths>`, which
+  returned nothing. The rebase was clean, no conflicts, and I re-ran the whole
+  suite afterwards so what ships is what was tested. Slice 020's arrival is also
+  what surfaced the guard finding above — a good sign that the pin works.
 * **Another session dropped and rebuilt `test_site` mid-run**, at about 09:29
   server time: `bench --site test_site install-app erpnext hrms alvoraa_portal
   alvoraa_goals` (pid 31262 in `hrlocal-bench`), after the site directory was

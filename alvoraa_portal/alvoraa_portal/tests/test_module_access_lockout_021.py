@@ -43,6 +43,11 @@ class _StateRestored(FrappeTestCase):
         self.addCleanup(self._restore)
 
     def _restore(self):
+        # Give back anything these tests recorded, through the supported route,
+        # before putting the rows back by hand. Bounded to the watched doctypes:
+        # a bare release_permissions() would hand back a restriction this site
+        # legitimately holds for somebody else, and never put it back.
+        ma.release_permissions(WATCH)
         for dt, rows in self._rows.items():
             frappe.db.delete("Custom DocPerm", {"parent": dt})
             if rows:
@@ -179,7 +184,7 @@ class TestTheStateSaveTakesALock(_StateRestored):
         self.assertEqual(ma._recorded_restrictions(), {"Leave Type", "Holiday List"})
 
 
-class TestTheFailureIsVisible(FrappeTestCase):
+class TestTheFailureIsVisible(_StateRestored):
     """Silence is what let half-done denials reach a commit.
 
     sync_site's other steps - the two Module Profiles, the workspaces, the
@@ -193,6 +198,9 @@ class TestTheFailureIsVisible(FrappeTestCase):
     """
 
     def setUp(self):
+        # The base registers its restore FIRST, so it runs last and puts the
+        # site back whatever these stubs do.
+        super().setUp()
         self.applied = []
         self._real = {n: getattr(ma, n) for n in
                       ("sync_module_profile", "sync_workspaces", "sync_module_sidebars",

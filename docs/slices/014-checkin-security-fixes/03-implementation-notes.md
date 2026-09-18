@@ -10,6 +10,45 @@ holds the slice (see Update 2), and the tests ran on the local bench.
 
 ---
 
+## Update 3 — 2026-09-18: review fixes
+
+The reviewer's verdict was **ship with fixes** and the security review **pass with
+fixes**. What changed here, each as its own commit on top of local `dev` (which had
+moved on to slice 016's five commits, `8e86470`):
+
+| Commit | Finding | Fix |
+|---|---|---|
+| `b68ee87` | **M1 (Major, affects pay)** — a mistyped employee ID was told "HR… have been told", which was untrue, and the status call would answer "waiting" for ever | Both server sentences and the page's waiting screen (English and Hindi) now end with "If nothing happens today, check your employee ID with HR and set up again." The screen already had a "set up again" button. **The anti-enumeration answer is unchanged**: a real pending phone reads exactly the same |
+| `f1bc270` | **M2 (Major)** — `update_driver_location` still accepted a GET, so coordinates could land in nginx's access log | `@frappe.whitelist(methods=["POST"])`. The driver page already posts |
+| `2faedb1` | **m1** — the redaction patch re-scanned the whole Error Log per 500-row page, inside a migrate | Pages on `name >` instead of an offset: one pass, not forty |
+| `d40f085` | **Comments over-claim** — the nginx comment said it covered "every path Frappe answers a login on" | It now says what the location covers, and names the real brake (Frappe's own login lock, made honest by passing the true address) |
+| (this update) | **Comments over-claim** — the notes said a driver's location "can no longer be faked" | Corrected to the Vehicle Tracking trail, with `delivery_assignment.update_gps_location` named for slice 016 |
+
+**Rebase:** the branch was rebased onto local `dev` at `8e86470`. The 12 earlier commits
+were already in `dev`, so the rebase dropped them and only the new fixes remain on the
+branch. Slice 016 had meanwhile added `@requires_feature("vendor")` above the driver
+check and extended the driver test's setup; both were kept as they are.
+
+**Noted, not fixed** (agreed with the reviewer):
+- **m3** — a driver can keep posting a location after a delivery is `Delivered`,
+  `Cancelled`, `Failed` or `Returned`. The guard checks *who*, never *whether the trip is
+  still running*. Best fixed with 016's `ACTIVE_STATUSES`, so one definition of "still
+  running" exists. No test covers it today.
+- **m2** — the redaction patch can blank a deeply indented source line as if it were a
+  variable. It errs toward blanking, and costs a little debuggability.
+- **m5** — two of the 21 behaviour checks lean on Docker reusing an address between
+  short-lived containers. The load-bearing check ("no forged address reached the
+  backend") does not.
+- **m4, m6, nits** — as the review records them.
+
+**B1 and B2 stay with the user**: the server's nginx must be confirmed to have the realip
+module, and the in-place edit in `/var/www/html/hr-app/deploy/nginx.conf` must be cleared,
+or a dev deploy silently deploys `main`.
+
+**Tests after the fixes:** see the table at the end of this section.
+
+---
+
 ## Update 2 — 2026-09-17 evening: rebase, wildcard certificate, driver fix, tests run
 
 **This section replaces section 0's points 1 and 2 and section 8's "owed" list, where
@@ -98,8 +137,14 @@ code was right; the tests compared the wrong thing.
     refused.** The page ignores errors on this call on purpose (`error:` is silent), so
     the admin sees the simulated marker move as before. No Vehicle Tracking row is saved.
     This is what the scope asked for.
-- **Persona impact:** Driver (Delivery Partner user) — no change. Vendor — the location
-  they read can no longer be faked by another user. HR Manager / System Manager — cannot
+- **Persona impact:** Driver (Delivery Partner user) — no change. Vendor — the **Vehicle
+  Tracking trail** they read can no longer be faked by another user. It is not the only
+  way a position reaches a vendor: `controllers/delivery_assignment.py:181`
+  `update_gps_location` still lets any logged-in user append a GPS point to any Delivery
+  Assignment and, with an ETA of 10 minutes or less, send that vendor an "arriving soon"
+  email. It writes a different table, so this fix cannot be walked round through it, but
+  the claim "a location can no longer be faked" would be too big. Flagged for slice 016's
+  later phase. HR Manager / System Manager — cannot
   write a driver's trail through this endpoint (the desk form is unchanged). Employee — no
   change.
 - **NFR:** 2 extra single-row lookups per post (partner by email; the order's partner was

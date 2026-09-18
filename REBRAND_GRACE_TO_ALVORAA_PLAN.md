@@ -166,7 +166,7 @@ These appear in:
 
 - `hrms/hrms/grace_group/setup_grace_group.py` — customer-specific setup code
 - Demo and seed data — company names, tenant names, employee records
-- Documents — `Grace Group 2026.pdf`, `Grace_Group_Vendor_Portal_UseCase.md`, `Grace_global_logo.png`
+- Documents — `Grace_Group_Vendor_Portal_UseCase.md`, `Grace_global_logo.png` (the company brochure PDF that used to sit beside them was deleted in slice 015)
 - **Live production data** — Company records, Employee records, site names (`grace_localhost`)
 
 Renaming these does not de-brand our product; it **falsifies customer records**. `Grace Group`
@@ -231,10 +231,10 @@ built** — free today, a migration later.
 ### 4.4 Documentation and assets
 
 `GRACE_USER_MANUAL.md`, `hrms/Grace_HRMS_Design_Theme_Guide.md`, `hrms/Grace_global_logo.png`,
-`hrms/Grace_Group_Vendor_Portal_UseCase.md`, `hrms/Grace Group 2026.pdf`.
+`hrms/Grace_Group_Vendor_Portal_UseCase.md`. (The company brochure PDF was here too; slice 015 deleted it as a real third party's document.)
 
 Split by category: the *design guide* and *user manual* are product docs (rename); the *vendor
-portal use case* and the *2026 PDF* are customer documents (leave, or move to a customer folder).
+portal use case* is a customer document (leave, or move to a customer folder); the brochure is gone.
 
 ---
 

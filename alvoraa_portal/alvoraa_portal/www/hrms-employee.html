@@ -2325,7 +2325,15 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
   <!-- Sidebar (desktop) -->
   <aside class="sidebar">
     <div class="sidebar-brand">
-      <div class="sidebar-brand-logo">{{ tenant_name[0] | upper }}{% if brand_mark_url %}<img src="{{ brand_mark_url }}" alt="" onerror="this.remove()">{% endif %}</div>
+      {#- `| e` is not decoration. Frappe's Jinja environment is built without
+          autoescape (frappe/utils/jinja.py: FrappeSandboxedEnvironment takes no
+          autoescape argument), so nothing escapes this for us. The value can only
+          come from `bench set-config tenant_logo_url` - a platform operator - or
+          from a constant in brand.py, so it is not attacker-controlled today. It
+          is escaped anyway, because it lands inside an attribute and the day
+          somebody lets a tenant admin set their own logo through a form is the
+          day this line decides whether that is a stored-XSS hole. -#}
+      <div class="sidebar-brand-logo">{{ tenant_name[0] | upper }}{% if brand_mark_url %}<img src="{{ brand_mark_url | e }}" alt="" onerror="this.remove()">{% endif %}</div>
       <div class="sidebar-brand-text">
         <div class="sidebar-brand-name">{{ tenant_name }}</div>
         <div class="sidebar-brand-sub">Employee Portal</div>

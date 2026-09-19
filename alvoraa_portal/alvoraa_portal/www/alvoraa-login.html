@@ -384,7 +384,9 @@ html, body {
           staff ever see. The placeholder SVG stays as the last fallback, shown
           only if the image itself fails to load (slice 025). -#}
       <div class="kx-logo-mark{% if brand_mark_url %} has-mark{% endif %}" id="kx-logo-mark">
-        {%- if brand_mark_url %}<img src="{{ brand_mark_url }}" alt="" onerror="this.parentNode.classList.remove('has-mark');this.remove()">{% endif %}
+        {#- `| e` because Frappe's Jinja is built without autoescape - see the
+            same note in hrms-employee.html. -#}
+        {%- if brand_mark_url %}<img src="{{ brand_mark_url | e }}" alt="" onerror="this.parentNode.classList.remove('has-mark');this.remove()">{% endif %}
         <svg class="kx-logo-svg" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M4 14 L14 4 L24 14 L14 24 Z" fill="rgba(255,255,255,.15)" stroke="rgba(255,255,255,.6)" stroke-width="1.5"/>
           <path d="M9 14 L14 9 L19 14 L14 19 Z" fill="rgba(255,255,255,.7)"/>

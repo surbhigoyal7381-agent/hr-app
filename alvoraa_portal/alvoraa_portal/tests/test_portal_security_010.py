@@ -721,6 +721,15 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# Slice 013 step 2 (new file): the field app's settings. Reads only, and
 		# every count is an aggregate with no names, so none is needed.
 		("alvoraa_portal", "field_app_settings.py"): 0,
+		# Slice 013 step 3 (new files). The join module writes as the server on
+		# guest paths that have no session: the new phone, the used code, the
+		# replaced or removed phone, the acknowledgement, the cancelled code, the
+		# code HR makes (HR has no create on it by design), the withdrawal, and
+		# one read of today's punches. Each is after the caller was checked.
+		("alvoraa_portal", "field_app_join.py"): 7,
+		("alvoraa_portal", "field_app_alerts.py"): 0,
+		("alvoraa_portal", "alvoraa_portal/doctype/alvoraa_app_invite/alvoraa_app_invite.py"): 1,
+		("alvoraa_portal", "alvoraa_portal/doctype/alvoraa_notice_acknowledgement/alvoraa_notice_acknowledgement.py"): 1,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

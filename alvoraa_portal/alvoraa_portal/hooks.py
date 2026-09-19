@@ -248,4 +248,10 @@ after_install = [
     "alvoraa_portal.branch_scope.after_migrate",
     # Slice 012: indexes only - a new site has no data to check. After branch_scope.
     "alvoraa_portal.data_review.after_install",
+    # Slice 025: the Alvoraa logo, so a brand new tenant is branded before anyone
+    # logs in - no upload, no docker cp, nothing to copy at provisioning time.
+    # provision_tenant.sh already runs `install-app alvoraa_portal`, so this is the
+    # one place it needs to live. Deliberately NOT in after_migrate: see brand.py
+    # and baseline.py on why a default a tenant may change is applied once.
+    "alvoraa_portal.brand.after_install",
 ]

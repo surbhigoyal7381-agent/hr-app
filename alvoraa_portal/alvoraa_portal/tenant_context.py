@@ -14,6 +14,8 @@ actually resolved and connected to — so there is nothing to look up by hand.
 
 import frappe
 
+from alvoraa_portal import brand
+
 DEFAULTS = {
     "primary_color": "#1a7f5a",
     "accent_color": "#f59e0b",
@@ -24,12 +26,34 @@ DEFAULTS = {
 
 
 def get_branding():
-    """Branding for the site serving this request. Never touches other sites."""
+    """Branding for the site serving this request. Never touches other sites.
+
+    Two of these keys are derived, not read: `brand_mark_url` and `brand_logo_url`
+    apply the product's one branding rule -
+
+        a tenant's own logo if it has one, otherwise the Alvoraa mark.
+
+    They live here rather than in each page because every branded page already
+    calls this function, and `01b-ux-design.md` / `appendix-a-frame.md` FR-18 say
+    the redesigned rail will keep calling it too. Putting the rule here means the
+    new frame inherits it instead of reinventing it.
+
+    `tenant_logo_url` is left exactly as it was, so anything that wants to know
+    "did this tenant set a logo of its own?" can still ask.
+
+    No query. `frappe.conf` is a dict already in memory, and the asset paths are
+    constants, so this costs nothing on any request path.
+    """
     conf = frappe.conf
+    own_logo = conf.get("tenant_logo_url") or DEFAULTS["tenant_logo_url"]
     return {
         "primary_color":   conf.get("primary_color")   or DEFAULTS["primary_color"],
         "accent_color":    conf.get("accent_color")    or DEFAULTS["accent_color"],
         "tenant_name":     conf.get("tenant_name")     or DEFAULTS["tenant_name"],
-        "tenant_logo_url": conf.get("tenant_logo_url") or DEFAULTS["tenant_logo_url"],
+        "tenant_logo_url": own_logo,
         "support_email":   conf.get("support_email")   or DEFAULTS["support_email"],
+        # Small square, for a 32-42 px tile next to the tenant's name.
+        "brand_mark_url":  own_logo or brand.MARK,
+        # The full lockup, where there is room to read a wordmark.
+        "brand_logo_url":  own_logo or brand.LOGO,
     }

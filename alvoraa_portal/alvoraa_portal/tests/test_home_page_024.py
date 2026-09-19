@@ -63,7 +63,8 @@ class LandingCase(FrappeTestCase):
 		emp.company = frappe.get_value("Company", {}, "name")
 		emp.date_of_birth = frappe.utils.add_years(frappe.utils.today(), -30)
 		emp.date_of_joining = frappe.utils.add_years(frappe.utils.today(), -1)
-		emp.gender = "Female"
+		# Whatever this site actually has. A fresh test site carries only "Male".
+		emp.gender = frappe.get_value("Gender", {}, "name")
 		emp.status = "Active"
 		emp.user_id = user
 		emp.flags.ignore_mandatory = True
@@ -77,12 +78,23 @@ class LandingCase(FrappeTestCase):
 
 		This is the real path, not a call to our function: it proves the hook is
 		registered and that Frappe reaches it.
+
+		Careful with "no answer". When nothing in the chain replies, Frappe's
+		`get_home_page_via_hooks` returns the empty list it got from
+		`frappe.get_hooks("home_page")`, not None. It is falsy either way and
+		every caller tests it with `if not home_page`, but a test that asserts
+		`is None` fails for the wrong reason. Hence `assertNoOpinion` below.
 		"""
 		frappe.set_user(user)
 		try:
 			return get_home_page_via_hooks()
 		finally:
 			frappe.set_user("Administrator")
+
+	def assertNoOpinion(self, got):
+		"""Frappe was left to decide — which means the desk for a System User
+		and the login page for Guest."""
+		self.assertFalse(got, f"expected no landing page, got {got!r}")
 
 	def full_landing_for(self, user):
 		"""The whole of `get_home_page()`, cache cleared first."""
@@ -126,17 +138,18 @@ class TestWhoLandsWhere(LandingCase):
 		"""A platform operator. Sending them to an employee page every login is
 		a daily annoyance, and the back office is their workplace."""
 		user = self.make_user(roles=["System Manager"])
-		self.assertIsNone(self.landing_for(user))
+		self.assertIsNone(auth.home_page_for(user))
+		self.assertNoOpinion(self.landing_for(user))
 		self.assertNotEqual(self.full_landing_for(user), PORTAL)
 
 	def test_administrator_keeps_the_desk(self):
 		self.assertIsNone(auth.home_page_for("Administrator"))
-		self.assertIsNone(self.landing_for("Administrator"))
+		self.assertNoOpinion(self.landing_for("Administrator"))
 
 	def test_guest_still_reaches_the_login_page(self):
 		"""Nobody is bounced into a portal they cannot see."""
 		self.assertIsNone(auth.home_page_for("Guest"))
-		self.assertIsNone(self.landing_for("Guest"))
+		self.assertNoOpinion(self.landing_for("Guest"))
 		self.assertEqual(self.full_landing_for("Guest"), "login")
 
 	def test_a_user_with_no_employee_and_no_desk_role_gets_the_portal(self):

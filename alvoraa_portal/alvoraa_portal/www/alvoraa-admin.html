@@ -704,10 +704,10 @@ html, body {
       <div class="ka-field">
         <label class="ka-label">Company Logo (optional)</label>
         <div id="ka-logo-drop" onclick="document.getElementById('f-logo').click()" style="border:2px dashed var(--border);border-radius:var(--r-sm);padding:14px 18px;cursor:pointer;text-align:center;transition:border-color .18s,background .18s;min-height:68px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px">
-          <input type="file" id="f-logo" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif" style="display:none" onchange="handleLogoFile(this)">
+          <input type="file" id="f-logo" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="handleLogoFile(this)">
           <div id="ka-logo-placeholder">
             <div style="font-size:1.3rem;margin-bottom:3px"><i class=ic-image></i></div>
-            <div style="font-size:.8rem;color:var(--muted)">Click to upload &mdash; PNG, JPG, SVG (max 2 MB)</div>
+            <div style="font-size:.8rem;color:var(--muted)">Click to upload &mdash; PNG, JPG or WEBP (max 2 MB)</div>
           </div>
           <div id="ka-logo-preview" style="display:none;align-items:center;gap:10px;width:100%;flex-direction:row">
             <img id="ka-logo-img" style="max-height:42px;max-width:100px;object-fit:contain;border-radius:var(--r-sm);border:1px solid var(--border)">
@@ -798,7 +798,7 @@ html, body {
             <div id="ke-logo-state" style="font-size:.84rem;font-weight:600;color:var(--text)">No logo set</div>
             <div id="ke-logo-detail" style="font-size:.76rem;color:var(--muted);margin-top:2px">The login page shows the Alvoraa mark instead.</div>
           </div>
-          <input type="file" id="edit-logo" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif"
+          <input type="file" id="edit-logo" accept="image/png,image/jpeg,image/webp"
                  style="display:none" onchange="keChooseLogo(this)">
           <button type="button" class="ka-btn ka-btn-ghost" id="ke-logo-pick"
                   onclick="keOpenLogoPicker()">Upload a replacement</button>
@@ -807,7 +807,7 @@ html, body {
           <button type="button" class="ka-btn ka-btn-ghost" id="ke-logo-undo"
                   style="display:none" onclick="keUndoLogo()">Undo</button>
         </div>
-        <div class="ka-hint">PNG, JPG, SVG, WEBP or GIF, under 2 MB. Nothing changes until you click Save Changes.</div>
+        <div class="ka-hint">PNG, JPG or WEBP, under 2 MB. Nothing changes until you click Save Changes.</div>
       </div>
     </div>
     <div class="ka-modal-footer">
@@ -1246,7 +1246,9 @@ html, body {
   window.handleLogoFile = function(input) {
     var file = input.files[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { showFormError('Logo file must be under 2 MB.'); input.value = ''; return; }
+    // Same rule as the edit dialog, from the same one list - see keLogoProblem.
+    var problem = keLogoProblem(file);
+    if (problem) { showFormError(problem); input.value = ''; return; }
     var reader = new FileReader();
     reader.onload = function(e) {
       document.getElementById('ka-logo-img').src = e.target.result;
@@ -2071,25 +2073,36 @@ html, body {
     }
   }
 
+  // ONE list, used by the create form and the edit dialog, so the two can never
+  // drift apart. SVG and GIF were dropped on 2026-09-19: an SVG opened straight
+  // at /files/<name>.svg runs its own script on the tenant's origin, and an
+  // animated logo is a behaviour nobody asked for.
+  // This is a convenience, not the guard. `accept` only filters a file picker,
+  // and this check only runs in a browser; _stage_tenant_logo in tenant_api.py
+  // refuses the same list again on the server, where it counts.
+  var KE_LOGO_TYPES = ['.png', '.jpg', '.jpeg', '.webp'];
+
+  function keLogoProblem(file) {
+    var name  = (file.name || '').toLowerCase();
+    var okExt = KE_LOGO_TYPES.some(function(e) { return name.slice(-e.length) === e; });
+    if (!okExt || (file.type && file.type.indexOf('image/') !== 0)) {
+      return 'We accept PNG, JPG or WEBP. Save your logo as a PNG and upload it again.';
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      return 'That file is too large — logos must be under 2 MB. Save it smaller and upload it again.';
+    }
+    return '';
+  }
+
   window.keOpenLogoPicker = function() { document.getElementById('edit-logo').click(); };
 
   window.keChooseLogo = function(input) {
     var file = input.files[0];
     if (!file) return;
     var errEl = document.getElementById('ka-edit-error');
-    var name  = (file.name || '').toLowerCase();
-    var okExt = ['.png', '.jpg', '.jpeg', '.svg', '.webp', '.gif'].some(function(e) {
-      return name.slice(-e.length) === e;
-    });
-    // `accept` is a filter, not a rule - a file can still be picked past it.
-    if (!okExt || (file.type && file.type.indexOf('image/') !== 0)) {
-      errEl.textContent = 'That is not an image we can use. Upload a PNG, JPG, SVG, WEBP or GIF.';
-      errEl.style.display = 'block';
-      input.value = '';
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      errEl.textContent = 'That file is too large — logos must be under 2 MB.';
+    var problem = keLogoProblem(file);
+    if (problem) {
+      errEl.textContent = problem;
       errEl.style.display = 'block';
       input.value = '';
       return;

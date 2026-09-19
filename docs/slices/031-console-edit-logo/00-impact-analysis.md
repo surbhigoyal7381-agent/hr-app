@@ -228,3 +228,22 @@ which is precisely the input 025's fallback chain expects.
    value points at a missing file the thumbnail would break, so the modal has an
    `onerror` fallback that says "The saved logo could not be loaded" instead -
    client-side only, touching nothing 025 owns.
+
+---
+
+## Addendum, 2026-09-19, after the build
+
+Risk 2 above - "SVG logos stay accepted, that is a product decision" - **was
+decided by the user the same day: drop SVG, and GIF with it. A logo is a PNG, a
+JPG/JPEG or a WEBP.**
+
+So the "Limits on screen" table above is out of date from the moment of that
+decision: read `03-implementation-notes.md` for what was actually built. The
+list is narrower in three places at once - the server's `_LOGO_EXTENSIONS`
+(the real guard), both forms' `accept` attributes, and the one shared
+JavaScript check - and the message now says what to do next rather than only
+what went wrong.
+
+Risk 1, `shell=True` in `_bench_run`, has been taken as **slice 032** by the
+session that owns `tenant_api.py`. The absolute-URL narrowing built here stays
+as the interim guard until 032 lands; it must not be removed before then.

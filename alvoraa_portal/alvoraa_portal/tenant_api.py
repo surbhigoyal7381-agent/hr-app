@@ -982,11 +982,17 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
 # never make the copy read outside the control plane's public/files folder.
 _PUBLIC_FILE_URL = re.compile(r"^/files/([A-Za-z0-9][A-Za-z0-9._ ()-]*)$")
 
-# The picture formats a browser will actually draw in an <img>, and the same
-# list the console's upload control offers. A logo is only ever rendered as an
-# image, so anything else is a mistake or an attempt - refuse it rather than
-# store a path that will never show anything. (Slice 031.)
-_LOGO_EXTENSIONS = (".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif")
+# The picture formats we accept for a logo, and the same list both upload
+# controls in the console offer. A logo is only ever drawn in an <img>, so
+# anything else is a mistake or an attempt - refuse it rather than store a path
+# that will never show anything. (Slice 031.)
+#
+# SVG and GIF were dropped on the user's decision, 2026-09-19. An SVG opened
+# directly at /files/<name>.svg runs its own script on the tenant's own origin,
+# and an animated logo is a behaviour nobody asked for. THIS list is the guard,
+# not the browser's `accept` attribute - `accept` only filters a file picker and
+# anyone calling the endpoint directly walks straight past it.
+_LOGO_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
 
 # An absolute logo URL is stored by handing it to `bench set-config`, and
 # `_bench_run` builds its command as a STRING and runs it with shell=True. Only
@@ -998,8 +1004,8 @@ _LOGO_EXTENSIONS = (".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif")
 _SAFE_ABSOLUTE_LOGO_URL = re.compile(r"^https?://[A-Za-z0-9._~:/?#\[\]@!*+,=%()-]+$",
                                      re.IGNORECASE)
 
-_BAD_LOGO_TYPE = ("[WARN] Logo not applied: that is not an image we can show. "
-                  "Use a PNG, JPG, SVG, WEBP or GIF.")
+_BAD_LOGO_TYPE = ("[WARN] Logo not applied: we accept PNG, JPG or WEBP. "
+                  "Save your logo as a PNG and upload it again.")
 
 
 def _stage_tenant_logo(site_name, logo_url, control_site=None):

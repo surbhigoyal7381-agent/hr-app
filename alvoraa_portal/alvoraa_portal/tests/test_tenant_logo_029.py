@@ -94,7 +94,11 @@ class TestStageTenantLogo(_LogoFixture):
 		self.assertFalse(os.path.exists(self.tenant_copy()))
 
 	def test_absolute_url_is_left_alone_and_nothing_is_copied(self):
-		for url_in in ("https://cdn.example.com/logo.png", "HTTP://cdn.example.com/x.svg"):
+		# The second address was ".svg" until 2026-09-19, when the user dropped
+		# SVG as a logo format. The point of this test is that an absolute URL
+		# passes through untouched whatever the case of the scheme, so only the
+		# file type changed - the assertions are the same ones 029 wrote.
+		for url_in in ("https://cdn.example.com/logo.png", "HTTP://cdn.example.com/x.webp"):
 			url, warn = api._stage_tenant_logo(TENANT, url_in)
 			self.assertEqual(url, url_in)
 			self.assertEqual(warn, "")

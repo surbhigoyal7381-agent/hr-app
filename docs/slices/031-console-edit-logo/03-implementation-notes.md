@@ -138,20 +138,70 @@ future refactor cannot let the work happen before the guard.
 | Limit | Value | Source |
 |---|---|---|
 | Size | 2 MB | the same limit the create form already enforces in `handleLogoFile`. Frappe's own server limit is System Settings `max_file_size`, default 25 MB (`frappe/core/api/file.py:85`) - far looser, so ours is the one that bites |
-| Type | PNG, JPG, JPEG, SVG, WEBP, GIF | the list the create form's `accept` already offers. Now checked by extension **and** MIME prefix in the browser rather than trusted to `accept`, and by extension again on the server |
+| Type | **PNG, JPG/JPEG, WEBP** | the user's decision of 2026-09-19 - see "SVG and GIF, dropped" below. Checked by extension **and** MIME prefix in the browser, and by extension again on the server, where it actually counts |
 
-On screen: "That file is too large - logos must be under 2 MB." and "That is
-not an image we can use. Upload a PNG, JPG, SVG, WEBP or GIF." The hint under
-the field reads "PNG, JPG, SVG, WEBP or GIF, under 2 MB. Nothing changes until
-you click Save Changes." No tracebacks anywhere; if the server returns a
+On screen: "That file is too large - logos must be under 2 MB. Save it smaller
+and upload it again." and "We accept PNG, JPG or WEBP. Save your logo as a PNG
+and upload it again." Both say what to do next, not just what went wrong. The
+hint under each field reads "PNG, JPG or WEBP, under 2 MB." (the edit one adds
+"Nothing changes until you click Save Changes"). No tracebacks anywhere; if the server returns a
 `[WARN]` line, the dialog shows it as a plain sentence and stays open.
+
+## SVG and GIF, dropped - the user's decision, 2026-09-19
+
+I put SVG on the record rather than deciding it; the user decided to drop it,
+and GIF with it. **A logo may now be a PNG, a JPG/JPEG or a WEBP. Nothing else.**
+
+| Where | What changed |
+|---|---|
+| `tenant_api.py` | `_LOGO_EXTENSIONS` is now `(".png", ".jpg", ".jpeg", ".webp")`. **This is the guard.** The browser's `accept` attribute only filters a file picker - anyone calling `update_tenant` directly walks straight past it - so the check that matters is this one, on the server. |
+| `alvoraa-admin.html`, **both** forms | `accept="image/png,image/jpeg,image/webp"` on the create form's `f-logo` and on the edit dialog's `edit-logo`, character for character the same string. |
+| `alvoraa-admin.html`, the JavaScript | one list, `KE_LOGO_TYPES`, and one check, `keLogoProblem(file)`, called by `handleLogoFile` (create) and `keChooseLogo` (edit). The create form previously checked only the size; it now applies the same rule from the same list, so the two cannot drift. |
+| The message | "We accept PNG, JPG or WEBP. Save your logo as a PNG and upload it again." - the same words in the browser and in the server's `[WARN]` line. No MIME types, no extension list, no jargon: it says what to do next. |
+
+Why: an SVG opened directly at `/files/<name>.svg` on a tenant runs its own
+script on that tenant's origin (as an `<img src>` it cannot, but the file is
+reachable on its own URL). An animated GIF logo is a behaviour nobody asked for
+and would have to be explained. The narrower the set, the less there is to
+defend.
+
+### A tenant that already has an SVG logo
+
+**Nothing happens to it, and nothing breaks.** The new check runs only when a
+logo is being written - at provisioning, or on an edit that sends one. A value
+already sitting in `site_config.json` is never re-validated, so an existing
+`/files/brand.svg` keeps being served and the tenant's login page keeps showing
+it exactly as before. The edit dialog shows it normally too: the thumbnail is an
+ordinary `<img src>` and does not care about the type.
+
+What changes for that tenant is only what happens next. The moment someone
+uploads a replacement it must be a PNG, JPG or WEBP; and *Remove logo* still
+works, clearing the value so the Alvoraa mark is used.
+
+**I wrote no migration and no re-validation**, deliberately. Whether any tenant
+actually has an SVG logo, and what to do about it, is the user's call with the
+facts in front of her - not a silent rewrite of a live tenant's branding. To
+find out, `list_tenants()` already returns `logo_url` for every site, so the
+answer is one console page away; I did not run it, because that would mean
+touching a bench and a live tenant's config, and neither is mine today.
+`test_a_logo_already_stored_is_not_re_checked` pins that an edit which does not
+mention the logo leaves even an SVG one exactly where it is.
+
+### One test of 029's had to change
+
+`test_absolute_url_is_left_alone_and_nothing_is_copied` used
+`HTTP://cdn.example.com/x.svg` as its second address, to prove an absolute URL
+passes through whatever the case of the scheme. That address is now refused, so
+the file type in it became `.webp`. **The assertions are unchanged** - only the
+example. The comment above it says why, so nobody later reads it as a quiet
+weakening of 029's pin.
 
 ## The seven dimensions, against the code actually written
 
 | Dimension | Before → after | One line |
 |---|---|---|
 | Performance | neutral | One `os.path.isfile` and one file copy per save, and only when a logo was actually chosen. Removal is one `set-config`. No new query, no new request on any tenant page. |
-| Security | **improves** | Two real hardenings on a path this slice makes form-reachable: a file-extension allow-list, and a shape check that keeps quotes, spaces, backticks, `$`, `;`, `&` and newlines out of a value that ends up in a `shell=True` command. Six crafted URLs are pinned as refused. The permission guard is now proved rather than assumed. |
+| Security | **improves** | Three real hardenings on a path this slice makes form-reachable: a file-extension allow-list narrowed to PNG/JPG/WEBP (SVG dropped, so a logo can no longer carry script on a tenant's own origin), and a shape check that keeps quotes, spaces, backticks, `$`, `;`, `&` and newlines out of a value that ends up in a `shell=True` command. Six crafted URLs are pinned as refused. The permission guard is now proved rather than assumed. |
 | Reliability | **improves** | Removal writes an empty value, never a dangling path. The dialog never sends both actions. `_as_flag` fails closed, so an unrecognised `remove_logo` does nothing rather than deleting a logo. Saving the same thing twice is safe. |
 | Scalability | neutral | Once per tenant edit, by one operator. Nothing per-request, per-employee or per-month. |
 | Maintainability | **improves** | No second endpoint and no second upload path - a test asserts there is still exactly one call to `upload_file` in the page. One helper still owns the copy rule for both create and update. |
@@ -200,9 +250,10 @@ this worktree mounted **read-only**. `hrlocal-bench` was never used, no
 
 | Command | Result |
 |---|---|
-| `env/bin/python -m unittest alvoraa_portal.tests.test_console_edit_logo_031` | **21 tests, OK** (0.18 s) |
-| the same, plus `...test_tenant_logo_029` | **37 tests, OK** (0.16 s) - 029 still passes unchanged |
-| the 031 tests against `tenant_api.py` and `alvoraa-admin.html` from `5ae87c5` | **16 of 21 fail** (7 failures, 9 errors) - see below |
+| `env/bin/python -m unittest alvoraa_portal.tests.test_console_edit_logo_031` | **26 tests, OK** |
+| the same, plus `...test_tenant_logo_029` | **42 tests, OK** (0.18 s) - 029 still passes |
+| the 031 tests against `tenant_api.py` and `alvoraa-admin.html` from `5ae87c5` | **16 of the first 21 fail** (7 failures, 9 errors) - see below |
+| the 031 tests against `d0ff4ba`, the commit before the SVG decision | **6 fail**, including `test_an_svg_is_refused_on_the_server_even_with_the_browser_bypassed`, `test_a_gif_is_refused_too`, `test_the_message_says_what_to_do_next` and `test_both_forms_offer_exactly_the_same_types` |
 | `python scripts/check_app_integrity.py` | 593 checks, "OK - all consistent" |
 | `node scripts/check_portal_handlers.js alvoraa-admin.html` | "all reachable and callable" |
 | `node scripts/check_undefined_js.js alvoraa-admin.html` | "undefined identifiers: none" |
@@ -248,14 +299,13 @@ what the tests add is that it can no longer be quietly removed.
    through Edit Tenant on the local bench is still owed before this goes to dev.
 3. **`_bench_run` still runs `shell=True` with a built command string.** I
    narrowed the one value this slice makes form-reachable; I did not rewrite
-   `_bench_run`. Twenty call sites, reachable only by a control-plane System
-   Manager who can already run bench commands - so not an escalation, but it
-   should become an argument list in a slice of its own. **This is the thing I
-   would fix next.**
-4. **SVG logos stay accepted**, as the create form already accepts them. An SVG
-   opened directly at `/files/x.svg` on a tenant runs its own script on the
-   tenant's origin; as an `<img src>` it cannot. Removing SVG is a product
-   decision, so it is on the record rather than done quietly.
+   `_bench_run`. **This is now slice 032**, taken by the session that owns
+   `tenant_api.py`. My absolute-URL narrowing stays as the interim guard until
+   032 lands and makes it unnecessary - **it must not be removed before then.**
+4. **Any tenant that already has an SVG logo keeps it**, because existing
+   values are not re-validated and this slice writes no migration. See "SVG and
+   GIF, dropped" above - that is the user's decision to make with the facts in
+   front of her, and `list_tenants()` will tell her whether any exist.
 5. **Old logo files accumulate.** Decided, not forgotten - see above.
 6. **No `Cache-Control` change**, because the evidence said none was needed.
    The one rare stale case is written down above.

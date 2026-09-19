@@ -198,14 +198,54 @@ class TestWhatWeRefuse(_EditFixture):
 			self.put_upload(name=name, content=b"not-a-picture")
 			out, calls = self.edit(logo_url=f"/files/{name}")
 			self.assertEqual(calls, [], name)
-			self.assertIn("not an image we can show", out["message"], name)
+			self.assertIn("we accept PNG, JPG or WEBP", out["message"], name)
 			self.assertFalse(os.path.exists(self.tenant_copy(name)), name)
 
+	def test_an_svg_is_refused_on_the_server_even_with_the_browser_bypassed(self):
+		"""The user dropped SVG on 2026-09-19. The browser list is a convenience;
+		THIS is the guard. These calls go straight to the endpoint - no page, no
+		`accept` attribute, no JavaScript - which is exactly how someone would
+		get round the file picker.
+		"""
+		for name in ("brand.svg", "BRAND.SVG", "brand.sVg", "logo.png.svg"):
+			self.put_upload(name=name, content=b"<svg onload='alert(1)'/>")
+			out, calls = self.edit(logo_url=f"/files/{name}")
+			self.assertEqual(calls, [], name)
+			self.assertIn("we accept PNG, JPG or WEBP", out["message"], name)
+			self.assertFalse(os.path.exists(self.tenant_copy(name)), name)
+		# And not through an absolute URL either.
+		out, calls = self.edit(logo_url="https://cdn.example.com/brand.svg")
+		self.assertEqual(calls, [])
+		self.assertIn("we accept PNG, JPG or WEBP", out["message"])
+
+	def test_a_gif_is_refused_too(self):
+		"""Dropped with SVG: an animated logo is a behaviour nobody asked for."""
+		self.put_upload(name="spin.gif")
+		out, calls = self.edit(logo_url="/files/spin.gif")
+		self.assertEqual(calls, [])
+		self.assertIn("we accept PNG, JPG or WEBP", out["message"])
+
+	def test_the_message_says_what_to_do_next(self):
+		self.put_upload(name="brand.svg")
+		out, _ = self.edit(logo_url="/files/brand.svg")
+		self.assertIn("Save your logo as a PNG and upload it again", out["message"])
+
 	def test_every_type_the_console_offers_is_accepted(self):
-		for name in ("a.png", "b.jpg", "c.jpeg", "d.svg", "e.webp", "f.gif", "G.PNG"):
+		for name in ("a.png", "b.jpg", "c.jpeg", "d.webp", "E.PNG"):
 			self.put_upload(name=name)
 			out, calls = self.edit(logo_url=f"/files/{name}")
 			self.assertEqual(len(calls), 1, name)
+
+	def test_a_logo_already_stored_is_not_re_checked(self):
+		"""A tenant that already has an SVG logo keeps it, and keeps working.
+
+		Nothing re-validates a value that is already in site_config, and this
+		slice adds no migration - whether to change any existing SVG logo is the
+		user's call, not a silent rewrite. An edit that does not mention the logo
+		must leave it exactly where it is, even an SVG one.
+		"""
+		out, calls = self.edit(primary_color="#654321")
+		self.assertEqual(calls, [])
 
 	def test_an_absolute_url_with_shell_characters_is_refused(self):
 		"""`_bench_run` uses shell=True; this value must never carry a command."""
@@ -300,11 +340,23 @@ class TestTheConsoleActuallyCallsIt(unittest.TestCase):
 
 	def test_the_limits_are_on_screen_in_plain_words(self):
 		self.assertIn("logos must be under 2 MB", self.page)
-		self.assertIn("That is not an image we can use", self.page)
-		self.assertIn("PNG, JPG, SVG, WEBP or GIF, under 2 MB", self.page)
+		self.assertIn("We accept PNG, JPG or WEBP. Save your logo as a PNG and upload it again.", self.page)
+		self.assertIn("PNG, JPG or WEBP, under 2 MB", self.page)
 
 	def test_it_says_when_there_is_no_logo_rather_than_showing_nothing(self):
 		self.assertIn("No logo set", self.page)
+
+	def test_both_forms_offer_exactly_the_same_types(self):
+		"""Create and edit must never drift apart on what a logo may be."""
+		accepts = re.findall(r'accept="([^"]*image[^"]*)"', self.page)
+		self.assertEqual(len(accepts), 2, accepts)
+		self.assertEqual(accepts[0], accepts[1])
+		self.assertEqual(accepts[0], "image/png,image/jpeg,image/webp")
+		for gone in ("image/svg", "image/gif", "'.svg'", "'.gif'"):
+			self.assertNotIn(gone, self.page, gone)
+		# One list in the JavaScript, used by both forms.
+		self.assertEqual(len(re.findall(r"KE_LOGO_TYPES = ", self.page)), 1)
+		self.assertEqual(len(re.findall(r"var problem = keLogoProblem\(file\);", self.page)), 2)
 
 	def test_the_control_has_a_real_label(self):
 		self.assertIn('<label class="ka-label" for="edit-logo">Company Logo</label>', self.page)

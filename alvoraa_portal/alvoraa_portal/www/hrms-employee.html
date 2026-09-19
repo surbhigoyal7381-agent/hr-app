@@ -1631,7 +1631,10 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
 .psb-connector.active{background:var(--primary)}
 .psb-dot{width:28px;height:28px;border-radius:50%;border:2.5px solid var(--border2);background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:var(--fs-xs);font-weight:700;color:var(--text3);transition:all .3s;position:relative}
 .psb-dot.done{border-color:var(--green,var(--green));background:var(--green,var(--green));color:var(--surface)}
-.psb-dot.done::after{content:"<i class=ic-check></i>";font-size:var(--fs-base);font-weight:700}
+/* A CSS content: slot can only hold text. It used to hold the markup for
+   the tick icon, which printed as "<i class=ic-check></i>" inside the
+   circle on every completed step. */
+.psb-dot.done::after{content:"¹3";font-size:var(--fs-base);font-weight:700;line-height:1}
 .psb-dot.active{border-color:var(--primary);background:var(--primary);color:var(--surface);box-shadow:var(--sh1)}
 .psb-dot.pending{border-color:var(--border2);background:var(--surface2);color:var(--text3)}
 .psb-label{font-size:var(--fs-xs);font-weight:600;color:var(--text3);text-align:center;line-height:1.3;text-transform:uppercase;letter-spacing:.04em;transition:color .3s}
@@ -3753,6 +3756,10 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
           <div class="pr-slbl">Completed</div>
         </div>
       </div>
+      <!-- A review that holds objectives or KPIs but has no page to show them
+           on is a fault, not an empty review. Say so here rather than render a
+           shorter wizard and leave the items invisible. -->
+      <div id="pr-missing-pages" role="alert" style="display:none;margin:0 16px 12px"></div>
       <!-- body -->
       <div class="pr-body">
         <div class="pr-nav" id="pr-nav"></div>
@@ -11186,7 +11193,7 @@ function deleteDrawerNote(noteId, empId) {
     gpFetch("alvoraa_portal.goals_api.save_self_assessment",
             {appraisal_id: appraisalId, reflections: gpTextToHtml(text)}).then(function() {
       if (okEl) { okEl.textContent = "Self-assessment saved successfully."; okEl.style.display = "block"; }
-      if (btn)  { btn.textContent = "Saved <i class=ic-check></i>"; }
+      if (btn)  { btn.innerHTML = "Saved <i class=ic-check></i>"; }
       setTimeout(function() {
         if (btn) { btn.disabled = false; btn.textContent = "Save Self-Assessment"; }
         if (okEl) okEl.style.display = "none";
@@ -11416,6 +11423,121 @@ function deleteDrawerNote(noteId, empId) {
     });
   };
 
+/* ── Rating bands: one rule for every screen that places a rating ─────────
+   A review's overall rating is the average of its items, so for about half
+   the company it is a half-point - 4.5, 3.5 - that is not on the rating
+   scale at all. Until 2026-09-19 every screen here matched a rating against
+   the scale by exact value and dropped anything unmatched into the lowest
+   band. That put 204 of 403 people in the wrong box of the calibration
+   grid, in the worst direction, and left the middle column empty.
+
+   Nothing below matches by exact value again. There are two rules, and they
+   are deliberately different:
+
+     pfRatingBand        - where a rating sits on the scale, as a third.
+                           The 9-box grid places by this. Nothing is rounded.
+     pfRatingToBandValue - which bar a rating is drawn on in a distribution
+                           chart, where the bars are the named bands.
+
+   Every statistic is worked out from the raw ratings by pfRatingStats,
+   never from the rounded chart values. */
+
+/* The scale's values as plain numbers, ascending. */
+window.pfScaleValues = function(scale) {
+  if (!scale || !scale.items || !scale.items.length) return [];
+  return scale.items
+    .map(function(it) { return parseFloat(it.value); })
+    .filter(function(v) { return !isNaN(v); })
+    .sort(function(a, b) { return a - b; });
+};
+
+/* Where a rating sits on the scale: 0 low, 1 moderate, 2 high. By its
+   position along the scale, not its position in a list, so on a 1-5 scale
+   a 4.5 is high and a 3.5 is moderate. Returns null when there is no
+   rating to place - an unrated person is never placed anywhere. */
+window.pfRatingBand = function(value, values) {
+  if (value === null || value === undefined || value === "") return null;
+  var v = parseFloat(value);
+  if (isNaN(v) || !values || !values.length) return null;
+  var lo = values[0], hi = values[values.length - 1];
+  if (hi <= lo) return 1;
+  var norm = (v - lo) / (hi - lo);
+  if (norm < 0) norm = 0;
+  if (norm > 1) norm = 1;
+  return norm < 1 / 3 ? 0 : (norm < 2 / 3 ? 1 : 2);
+};
+
+/* The band a rating is drawn on in a distribution chart, as that band's
+   scale value.
+
+   A rating that sits exactly between two bands - a 4.5 between 4 and 5 -
+   ROUNDS UP. Where a rating is genuinely ambiguous the benefit goes to the
+   employee rather than against them. This moves a lot of people, so it is
+   said here in those words for whoever asks later.
+
+   This is for placing a mark on a chart. It is never used for an average. */
+window.pfRatingToBandValue = function(value, values) {
+  if (value === null || value === undefined || value === "") return null;
+  var v = parseFloat(value);
+  if (isNaN(v) || !values || !values.length) return null;
+  var best = values[0], bestDist = Math.abs(v - values[0]);
+  for (var i = 1; i < values.length; i++) {
+    var dist = Math.abs(v - values[i]);
+    /* "<=" with an ascending list is what makes a tie round up. */
+    if (dist <= bestDist + 1e-9) { best = values[i]; bestDist = dist; }
+  }
+  return best;
+};
+
+/* Is there a rating here at all? A rating scale starts at 1, and the field
+   holding it is a number that defaults to 0, so a stored 0 means "nobody
+   rated this" - unless the scale itself has a 0, in which case 0 is a real
+   answer and is kept. */
+window.pfHasRating = function(value, values) {
+  if (value === null || value === undefined || value === "") return false;
+  var v = parseFloat(value);
+  if (isNaN(v)) return false;
+  if (v !== 0) return true;
+  return !!(values && values.indexOf(0) >= 0);
+};
+
+/* Average, median and the share in the top two bands - all from the RAW
+   ratings. An average of rounded numbers would be a second distortion of
+   the same kind as the bug this replaced, so the rounded values never come
+   near this function. */
+window.pfRatingStats = function(rawValues, scaleValues) {
+  var nums = (rawValues || [])
+    .map(function(v) { return parseFloat(v); })
+    .filter(function(n) { return !isNaN(n); })
+    .sort(function(a, b) { return a - b; });
+  var n = nums.length;
+  if (!n) return {total: 0, avg: null, median: null, pctHigh: 0};
+  var sum = nums.reduce(function(s, v) { return s + v; }, 0);
+  var mid = Math.floor(n / 2);
+  var median = (n % 2) ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
+  /* "Above expectations" is the top two bands of the scale. */
+  var pctHigh = 0;
+  if (scaleValues && scaleValues.length > 1) {
+    var cut = scaleValues[scaleValues.length - 2];
+    var above = nums.filter(function(v) { return v >= cut; }).length;
+    pctHigh = Math.round(above / n * 100);
+  }
+  return {total: n, avg: sum / n, median: median, pctHigh: pctHigh};
+};
+
+/* A rating as a person reads it: the band's name when it is exactly that
+   band, otherwise the number itself. Never a blank. */
+window.pfRatingLabel = function(value, scale) {
+  if (value === null || value === undefined || value === "") return "";
+  var v = parseFloat(value);
+  if (isNaN(v)) return String(value);
+  var items = (scale && scale.items) || [];
+  for (var i = 0; i < items.length; i++) {
+    if (Math.abs(parseFloat(items[i].value) - v) < 1e-9) return items[i].label;
+  }
+  return String(v);
+};
+
 /* ── Performance Distribution (Bell Curve) ──────────────────────── */
 (function() {
   var _pdData         = null;
@@ -11554,11 +11676,29 @@ function deleteDrawerNote(noteId, empId) {
   };
 
   /* ── Distribution computation ─────────────────────────────── */
+  /* The ratings actually given for one field, raw and unrounded. An
+     unrated person contributes nothing rather than a zero. */
+  function _pdRawValues(rows, scale, field) {
+    var vals = pfScaleValues(scale);
+    return rows
+      .filter(function(r) { return pfHasRating(r[field], vals); })
+      .map(function(r) { return parseFloat(r[field]); });
+  }
+
+  /* Counts per bar. Every rating is drawn on its nearest band, with a
+     half-point rounding up (see pfRatingToBandValue) - so nobody is left
+     off the chart, which is what used to happen to 204 of 403 people. */
   function _pdBuildDist(rows, scale, field, clickedVal) {
     if (!scale || !scale.items) return [];
-    var total = rows.length;
-    var countMap = {};
-    rows.forEach(function(r) { var v = String(flt(r[field])); countMap[v] = (countMap[v] || 0) + 1; });
+    var vals = pfScaleValues(scale);
+    var countMap = {}, total = 0;
+    rows.forEach(function(r) {
+      if (!pfHasRating(r[field], vals)) return;
+      var band = pfRatingToBandValue(r[field], vals);
+      if (band === null) return;
+      countMap[String(band)] = (countMap[String(band)] || 0) + 1;
+      total += 1;
+    });
     return scale.items.map(function(item) {
       var cnt = countMap[String(flt(item.value))] || 0;
       return {
@@ -11572,19 +11712,18 @@ function deleteDrawerNote(noteId, empId) {
     });
   }
 
-  function _pdStats(dist) {
-    var total = dist.reduce(function(s, d) { return s + d.count; }, 0);
-    if (!total) return {total: 0, avg: "—", median: "—", pctHigh: 0};
-    var wSum = dist.reduce(function(s, d) { return s + flt(d.value) * d.count; }, 0);
-    var avg = (wSum / total).toFixed(1);
-    var cumul = 0, median = dist[dist.length - 1].label;
-    for (var i = 0; i < dist.length; i++) {
-      cumul += dist[i].count;
-      if (cumul * 2 >= total) { median = dist[i].label; break; }
-    }
-    var sorted = dist.slice().sort(function(a, b) { return flt(b.value) - flt(a.value); });
-    var topCnt = (sorted[0] ? sorted[0].count : 0) + (sorted[1] ? sorted[1].count : 0);
-    return {total: total, avg: avg, median: median, pctHigh: total ? Math.round(topCnt / total * 100) : 0};
+  /* The figures above the charts. They come from the raw ratings, never
+     from the rounded bars - rounding is for drawing, not for arithmetic. */
+  function _pdStats(rows, scale, field) {
+    var vals = pfScaleValues(scale);
+    var s = pfRatingStats(_pdRawValues(rows, scale, field), vals);
+    if (!s.total) return {total: 0, avg: "—", median: "—", pctHigh: 0};
+    return {
+      total:   s.total,
+      avg:     pfNum(s.avg, 2),
+      median:  pfRatingLabel(s.median, scale),
+      pctHigh: s.pctHigh,
+    };
   }
 
   function _pdShape(dist) {
@@ -11720,8 +11859,15 @@ function deleteDrawerNote(noteId, empId) {
   /* ── Label lookup ─────────────────────────────────────────── */
   function _pdLabel(scale, value) {
     if (!scale) return String(value);
-    var item = (scale.items || []).find(function(it) { return String(flt(it.value)) === String(flt(value)); });
-    return item ? item.label : String(value);
+    return pfRatingLabel(value, scale);
+  }
+
+  /* Clicking a bar selects everyone drawn on that bar, which is everyone
+     whose rating rounds to it - not only an exact match. */
+  function _pdOnBand(row, field, scale, bandVal) {
+    var vals = pfScaleValues(scale);
+    if (!pfHasRating(row[field], vals)) return false;
+    return String(pfRatingToBandValue(row[field], vals)) === String(flt(bandVal));
   }
 
   /* ── Core refresh ─────────────────────────────────────────── */
@@ -11730,28 +11876,29 @@ function deleteDrawerNote(noteId, empId) {
     var base = _pdFilteredRows;
 
     /* distribution for overall: if potential is clicked, narrow base */
-    var oBase = (_pdClickedPotential !== null)
-      ? base.filter(function(r) { return String(flt(r.potential_rating)) === String(flt(_pdClickedPotential)); })
-      : base;
     var oScale = _pdData.overall_scale;
+    var pScale = _pdData.potential_scale;
+
+    var oBase = (_pdClickedPotential !== null)
+      ? base.filter(function(r) { return _pdOnBand(r, "potential_rating", pScale, _pdClickedPotential); })
+      : base;
     var oDist  = _pdBuildDist(oBase, oScale, "overall_rating", _pdClickedOverall);
 
     /* distribution for potential: if overall is clicked, narrow base */
     var pBase  = (_pdClickedOverall !== null)
-      ? base.filter(function(r) { return String(flt(r.overall_rating)) === String(flt(_pdClickedOverall)); })
+      ? base.filter(function(r) { return _pdOnBand(r, "overall_rating", oScale, _pdClickedOverall); })
       : base;
-    var pScale = _pdData.potential_scale;
     var pDist  = pScale ? _pdBuildDist(pBase, pScale, "potential_rating", _pdClickedPotential) : null;
 
     /* rows shown in table: apply both click filters */
     var dispRows = base.filter(function(r) {
-      if (_pdClickedOverall !== null && String(flt(r.overall_rating)) !== String(flt(_pdClickedOverall))) return false;
-      if (_pdClickedPotential !== null && String(flt(r.potential_rating)) !== String(flt(_pdClickedPotential))) return false;
+      if (_pdClickedOverall !== null && !_pdOnBand(r, "overall_rating", oScale, _pdClickedOverall)) return false;
+      if (_pdClickedPotential !== null && !_pdOnBand(r, "potential_rating", pScale, _pdClickedPotential)) return false;
       return true;
     });
 
-    var oStats = _pdStats(oDist);
-    var pStats = pDist ? _pdStats(pDist) : null;
+    var oStats = _pdStats(oBase, oScale, "overall_rating");
+    var pStats = pDist ? _pdStats(pBase, pScale, "potential_rating") : null;
     var oShape = _pdShape(oDist);
     var pShape = pDist ? _pdShape(pDist) : null;
 
@@ -11764,6 +11911,15 @@ function deleteDrawerNote(noteId, empId) {
     html += _pdStat(oStats.pctHigh + "%", "Above Expectations");
     if (pStats) html += _pdStat(String(pStats.avg), "Avg Potential");
     html += '</div>';
+
+    /* An overall rating is an average of the items in the review, so it is
+       often a half-point that no bar is drawn at. Say which figures are
+       exact and which are rounded, rather than let the two disagree in
+       silence. */
+    html += '<div class="pd-figures-note" style="font-size:var(--fs-xs);color:var(--text3);margin:-4px 0 12px">' +
+            gpEsc("Averages and the median are worked out from the exact ratings, so they can fall between two bands. " +
+                  "On the charts each rating is drawn on its nearest band, and a half-point is drawn on the higher one.") +
+            '</div>';
 
     /* ── Charts row ────────────────────── */
     html += '<div class="pd-charts-row">';
@@ -11822,10 +11978,15 @@ function deleteDrawerNote(noteId, empId) {
     var oScale = _pdData.overall_scale;
     var pScale = _pdData.potential_scale;
 
+    /* A half-point rating keeps its own number and borrows the colour of
+       the band it is drawn on, so it reads as a rating rather than as a
+       blank or a guess. */
     function _badge(scale, value) {
-      if (!scale || value === null || value === undefined || value === 0) return '<span style="color:var(--text3)">—</span>';
-      var item = (scale.items || []).find(function(it) { return String(flt(it.value)) === String(flt(value)); });
-      var lbl  = item ? item.label : String(value);
+      var vals = pfScaleValues(scale);
+      if (!scale || !pfHasRating(value, vals)) return '<span style="color:var(--text3)">—</span>';
+      var band = pfRatingToBandValue(value, vals);
+      var item = (scale.items || []).find(function(it) { return String(flt(it.value)) === String(band); });
+      var lbl  = pfRatingLabel(value, scale);
       var col  = item ? (item.color || "var(--text3)") : "var(--text3)";
       return '<span class="pd-rating-badge" style="background:' + col + '22;color:' + col + '">' + gpEsc(lbl) + '</span>';
     }
@@ -11900,12 +12061,10 @@ function deleteDrawerNote(noteId, empId) {
     var hdrs   = ["Name","Employee ID","Department","Designation","Overall Rating","Overall Label","Potential Rating","Potential Label","Manager"];
     var lines  = [hdrs.join(",")];
     rows.forEach(function(r) {
-      var oItem = oScale ? (oScale.items || []).find(function(it) { return String(flt(it.value)) === String(flt(r.overall_rating)); }) : null;
-      var pItem = pScale ? (pScale.items || []).find(function(it) { return String(flt(it.value)) === String(flt(r.potential_rating)); }) : null;
       var vals = [
         r.employee_name, r.employee, r.department, r.designation,
-        r.overall_rating, oItem ? oItem.label : "",
-        r.potential_rating, pItem ? pItem.label : "",
+        r.overall_rating, pfRatingLabel(r.overall_rating, oScale),
+        r.potential_rating, pfRatingLabel(r.potential_rating, pScale),
         r.reports_to_name,
       ].map(function(v) {
         var s = String(v || "");
@@ -12213,19 +12372,29 @@ function deleteDrawerNote(noteId, empId) {
 
     var oCols = overall.items.slice();   /* ascending */
 
-    var summaryHtml = "<div class=\"cal-summary\">" +
-      "<span><strong>" + rows.length + "</strong> employees plotted</span>" +
-      (potential
-        ? "<span>X: <strong>" + gpEsc(overall.scale_name) + "</strong></span>" +
-          "<span>Y: <strong>" + gpEsc(potential.scale_name) + "</strong></span>"
-        : "<span>Scale: <strong>" + gpEsc(overall.scale_name) + "</strong></span>") +
-    "</div>";
+    function _calSummary(plottedCount) {
+      return "<div class=\"cal-summary\">" +
+        "<span><strong>" + plottedCount + "</strong> employees plotted</span>" +
+        (potential
+          ? "<span>X: <strong>" + gpEsc(overall.scale_name) + "</strong></span>" +
+            "<span>Y: <strong>" + gpEsc(potential.scale_name) + "</strong></span>"
+          : "<span>Scale: <strong>" + gpEsc(overall.scale_name) + "</strong></span>") +
+      "</div>";
+    }
+    var summaryHtml = _calSummary(rows.length);
 
     /* ── 1D fallback ──────────────────────────────────────────────────── */
     if (!potential) {
       var cols1d = "";
+      /* Same rule as the charts: a rating is shown in the column of the band
+         it is nearest, a half-point in the higher one. It used to need an
+         exact match, so a 4.5 appeared in no column at all. */
+      var oVals1d = pfScaleValues(overall);
       oCols.forEach(function(col, ci) {
-        var bucket  = rows.filter(function(r) { return parseFloat(r.overall_rating) === parseFloat(col.value); });
+        var bucket  = rows.filter(function(r) {
+          if (!pfHasRating(r.overall_rating, oVals1d)) return false;
+          return String(pfRatingToBandValue(r.overall_rating, oVals1d)) === String(parseFloat(col.value));
+        });
         var normPf  = oCols.length > 1 ? ci / (oCols.length - 1) : 0.5;
         var zone    = _calZone(normPf, 0.5);
         var dim1d   = zone.dark ? "var(--box-fg-dim)" : "rgba(255,255,255,.72)";
@@ -12260,21 +12429,27 @@ function deleteDrawerNote(noteId, empId) {
     var PERF_HDR = ["Low", "Moderate", "High"];
     var POT_HDR  = ["Low", "Moderate", "High"];
 
-    /* map a rating value to zone 0/1/2 using its position in the scale */
-    function _toZone(val, scale) {
-      var sorted = scale.items.map(function(i) { return parseFloat(i.value); }).sort(function(a,b){return a-b;});
-      if (!sorted.length) return 1;
-      var v = parseFloat(val), idx = sorted.indexOf(v);
-      if (idx < 0) idx = 0;
-      var norm = sorted.length > 1 ? idx / (sorted.length - 1) : 0.5;
-      return norm < 0.34 ? 0 : (norm < 0.67 ? 1 : 2);
-    }
+    /* Sorted once per render, not once per person: this used to re-sort the
+       scale for every cell lookup - 806 sorts for 403 people. */
+    var oVals = pfScaleValues(overall);
+    var pVals = pfScaleValues(potential);
 
-    /* bucket employees into 3×3 */
+    /* Bucket into 3x3. A person goes in a box only when both ratings exist:
+       a 9-box cell is a claim about someone, and an unrated potential used
+       to read as a rating of zero and put them in Risk. */
     var bkts = [[[], [], []], [[], [], []], [[], [], []]];
+    var unplotted = [];
     rows.forEach(function(r) {
-      var pz  = _toZone(r.overall_rating, overall);
-      var ptz = _toZone(r.potential_rating, potential);
+      var pz  = pfRatingBand(r.overall_rating,   oVals);
+      var ptz = pfRatingBand(r.potential_rating, pVals);
+      if (!pfHasRating(r.overall_rating, oVals) || pz === null) {
+        unplotted.push({row: r, why: "no overall rating"});
+        return;
+      }
+      if (!pfHasRating(r.potential_rating, pVals) || ptz === null) {
+        unplotted.push({row: r, why: "no potential rating"});
+        return;
+      }
       bkts[ptz][pz].push(r);
     });
 
@@ -12314,7 +12489,25 @@ function deleteDrawerNote(noteId, empId) {
       }
     }
 
-    pfSetHtml("cal-body", summaryHtml +
+    /* Somebody with a rating missing is named, not quietly dropped and not
+       placed in a box the missing rating did not earn them. */
+    var unplottedHtml = "";
+    if (unplotted.length) {
+      var byReason = {};
+      unplotted.forEach(function(u) { (byReason[u.why] = byReason[u.why] || []).push(u.row); });
+      unplottedHtml = "<div class=\"callout callout-warn\" style=\"margin-bottom:12px\">" +
+        "<strong>" + unplotted.length + "</strong> " +
+        (unplotted.length === 1 ? "person is" : "people are") + " not plotted." +
+        Object.keys(byReason).map(function(why) {
+          var names = byReason[why].map(function(r) { return gpEsc(r.employee_name || r.employee); });
+          return "<div style=\"margin-top:6px\">" + gpEsc(why.charAt(0).toUpperCase() + why.slice(1)) +
+                 ": " + names.join(", ") + "</div>";
+        }).join("") +
+        "<div style=\"margin-top:6px\">Add the missing rating on the review, then reload this tab.</div>" +
+      "</div>";
+    }
+
+    pfSetHtml("cal-body", _calSummary(rows.length - unplotted.length) + unplottedHtml +
       "<div class=\"cal-9box-outer\">" +
         "<div class=\"cal-9box-yaxis\">Potential</div>" +
         "<div class=\"cal-9box-right\">" +
@@ -12333,12 +12526,10 @@ function deleteDrawerNote(noteId, empId) {
     var hdrs = ["Name", "Employee ID", "Department", "Designation", "Overall Rating", "Overall Label", "Potential Rating", "Potential Label", "Manager"];
     var lines = [hdrs.join(",")];
     rows.forEach(function(r) {
-      var oItem = oScale ? (oScale.items || []).find(function(it) { return String(it.value) === String(r.overall_rating); }) : null;
-      var pItem = pScale ? (pScale.items || []).find(function(it) { return String(it.value) === String(r.potential_rating); }) : null;
       var vals = [
         r.employee_name, r.employee, r.department, r.designation,
-        r.overall_rating, oItem ? oItem.label : "",
-        r.potential_rating || "", pItem ? pItem.label : "",
+        r.overall_rating, pfRatingLabel(r.overall_rating, oScale),
+        r.potential_rating || "", pfRatingLabel(r.potential_rating, pScale),
         r.reports_to_name || ""
       ].map(function(v) {
         var s = String(v == null ? "" : v);
@@ -12388,7 +12579,10 @@ function deleteDrawerNote(noteId, empId) {
     var meta    = document.getElementById("cal-signoff-meta");
     var summary = document.getElementById("cal-signoff-summary");
     if (!banner) return;
-    if (meta) meta.textContent = "by " + (d.signed_by || "") + " on " + (d.signed_at ? d.signed_at.slice(0, 10) : "");
+    /* The API calls this field signed_on. Reading d.signed_at gave undefined,
+       so the line ended at "on " with no date. */
+    var signedOn = d.signed_on || d.signed_at || "";
+    if (meta) meta.textContent = "by " + (d.signed_by || "") + (signedOn ? " on " + String(signedOn).slice(0, 10) : "");
     if (summary) summary.textContent = d.summary || "";
     banner.style.display = "";
   }
@@ -14644,7 +14838,7 @@ function deleteDrawerNote(noteId, empId) {
           var conn = document.getElementById("psb-conn-" + si);
           if (!dot || !step) continue;
           dot.className  = si < activeIdx ? "psb-dot done" : si === activeIdx ? "psb-dot active" : "psb-dot pending";
-          /* clear text for done dots (they use ::after <i class=ic-check></i>) */
+          /* clear the number on a done dot; .psb-dot.done::after draws the tick */
           dot.textContent = si < activeIdx ? "" : si + 1 + "";
           step.className = si < activeIdx ? "psb-step done" : si === activeIdx ? "psb-step active" : "psb-step";
           if (conn) conn.className = "psb-connector" + (si < activeIdx ? " done" : si === activeIdx ? " active" : "");
@@ -14737,6 +14931,40 @@ function deleteDrawerNote(noteId, empId) {
     "support":                {label: "Support from Manager"},
   };
 
+  /* How many objectives and KPIs this review is carrying. */
+  function _prItemCount(d) {
+    var n = ((d && d.goals) || []).length + ((d && d.standalone_kpis) || []).length;
+    ((d && d.goals) || []).forEach(function(g) { n += (g.kpis || []).length; });
+    return n;
+  }
+
+  /* A review whose cycle has no pages configured still renders: the wizard
+     appends its own first and last steps, so it looks like a short but
+     complete review. Everything the review actually holds is then invisible,
+     with nothing on screen to say so - which is how a whole tenant went a
+     quarter without anyone seeing an objective inside a review.
+
+     A review that cannot show its items must say so. `configuredPages` is how
+     many pages the cycle contributed, before the wizard's own steps. */
+  window.prShowMissingPagesWarning = function(d, configuredPages) {
+    var el = document.getElementById("pr-missing-pages");
+    if (!el) return;
+    var items = _prItemCount(d);
+    if (!items || configuredPages > 0) {
+      el.style.display = "none";
+      el.innerHTML = "";
+      return;
+    }
+    el.innerHTML = "<div class=\"callout callout-warn\">" +
+      "<strong>" + gpEsc("This review cannot show its objectives and KPIs.") + "</strong> " +
+      gpEsc("It holds " + items + (items === 1 ? " item" : " items") +
+            ", but this appraisal cycle has no page set up to show them on. " +
+            "Nothing has been lost. Ask HR to add the objectives page to the cycle, " +
+            "then open this review again.") +
+    "</div>";
+    el.style.display = "";
+  };
+
   window.prOpenReview = function(appraisalName) {
     _pr.appraisal = appraisalName;
     _pr.data = null;
@@ -14778,6 +15006,7 @@ function deleteDrawerNote(noteId, empId) {
         var customLabel = d.page_settings && d.page_settings[key] && d.page_settings[key].page_label;
         pages.push({key: key, label: customLabel || p.label || meta.label || key});
       });
+      prShowMissingPagesWarning(d, pages.length);
       if (!pages.some(function(p) { return p.key === "employee-pre-review"; }))
         pages.push({key: "employee-pre-review", label: "Feedback for Reporting Manager"});
       if (!pages.some(function(p) { return p.key === "summary"; }))
@@ -14832,7 +15061,7 @@ function deleteDrawerNote(noteId, empId) {
       var conn = document.getElementById("pr-sc-" + i);
       if (!dot || !step) continue;
       if (i < activeIdx) {
-        dot.className = "pr-sd done"; dot.textContent = "<i class=ic-check></i>";
+        dot.className = "pr-sd done"; dot.innerHTML = "<i class=ic-check></i>";
         step.className = "pr-sst done";
       } else if (i === activeIdx) {
         dot.className = "pr-sd active"; dot.textContent = i + 1 + "";
@@ -14913,7 +15142,7 @@ function deleteDrawerNote(noteId, empId) {
       page_data_json: JSON.stringify(pageData),
     }).then(function(res) {
       _pr.saving = false;
-      if (ind) ind.textContent = "Saved <i class=ic-check></i>";
+      if (ind) ind.innerHTML = "Saved <i class=ic-check></i>";
       setTimeout(function() { if (ind) ind.textContent = ""; }, 2000);
       /* Update local completed list */
       if (res && res.pages_completed) {
@@ -16064,6 +16293,7 @@ function deleteDrawerNote(noteId, empId) {
         var customLabel = d.page_settings && d.page_settings[key] && d.page_settings[key].page_label;
         pages.push({key: key, label: customLabel || p.label || meta.label || key});
       });
+      prShowMissingPagesWarning(d, pages.length);
       pages.push({key: "employee-pre-review", label: "Feedback for Reporting Manager"});
       pages.push({key: "manager-feedback-form", label: "Manager Feedback"});
       pages.push({key: "manager-submit", label: "Rate & Submit"});
@@ -16290,7 +16520,7 @@ function deleteDrawerNote(noteId, empId) {
         _pr.data.manager_internal_notes = notes;
       }
       var el = document.getElementById("pr-save-ind");
-      if (el) { el.textContent = "Draft saved <i class=ic-check></i>"; setTimeout(function() { if (el) el.textContent = ""; }, 2000); }
+      if (el) { el.innerHTML = "Draft saved <i class=ic-check></i>"; setTimeout(function() { if (el) el.innerHTML = ""; }, 2000); }
     }).catch(function(e) { alert(e.message || "Save failed."); });
   };
 
@@ -16443,21 +16673,36 @@ function deleteDrawerNote(noteId, empId) {
     var overallHtml = "";
     /* The overall rating can be picked in Manager Review, and afterwards only
        to answer a question on it. */
-    if (overallScale && (inManagerReview || overallMode)) {
-      var scaleName = overallScale.scale_name || "Overall Rating";
-      overallHtml = "<div class=\"pr-stmt-wrap\" style=\"margin-bottom:16px\">" +
-        "<label style=\"display:block;font-size:var(--fs-sm);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px\">" + gpEsc(scaleName) + "</label>" +
-        ratingSelect("mgr-overall-rating", overallScale, d.overall_rating) +
+    /* The two pickers were both labelled with the name of the rating scale.
+       A tenant that uses one scale for both then saw the same words twice,
+       with nothing on screen to say which question each answered. The label
+       is now the question; the scale's name is a hint under it. It is also a
+       real label now - tied to the picker by `for`, so a screen reader and a
+       click on the words both reach the right box. */
+    function ratingBlock(id, question, hint, scale, currentVal) {
+      return "<div class=\"pr-stmt-wrap\" style=\"margin-bottom:16px\">" +
+        "<label for=\"" + id + "\" style=\"display:block;font-size:var(--fs-sm);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:4px\">" +
+          gpEsc(question) + "</label>" +
+        "<div style=\"font-size:var(--fs-xs);color:var(--text3);margin-bottom:8px\">" + gpEsc(hint) + "</div>" +
+        ratingSelect(id, scale, currentVal) +
       "</div>";
+    }
+
+    if (overallScale && (inManagerReview || overallMode)) {
+      overallHtml = ratingBlock(
+        "mgr-overall-rating",
+        "Overall rating",
+        "How this person performed over the cycle. Scale: " + (overallScale.scale_name || "Overall Rating"),
+        overallScale, d.overall_rating);
     }
 
     var potentialHtml = "";
     if (potentialScale && inManagerReview) {
-      var potScaleName = potentialScale.scale_name || "Potential Rating";
-      potentialHtml = "<div class=\"pr-stmt-wrap\" style=\"margin-bottom:16px\">" +
-        "<label style=\"display:block;font-size:var(--fs-sm);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px\">" + gpEsc(potScaleName) + "</label>" +
-        ratingSelect("mgr-potential-rating", potentialScale, d.potential_rating) +
-      "</div>";
+      potentialHtml = ratingBlock(
+        "mgr-potential-rating",
+        "Potential for next role",
+        "How ready this person is to take on more. Scale: " + (potentialScale.scale_name || "Potential Rating"),
+        potentialScale, d.potential_rating);
     }
 
     /* The overall rating was given on numbers that have changed since (R7,

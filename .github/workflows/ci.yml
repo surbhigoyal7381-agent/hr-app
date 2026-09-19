@@ -126,6 +126,18 @@ jobs:
       - name: No undefined identifiers in portal pages
         run: node scripts/check_undefined_js.js
 
+      # A review's overall rating is the average of its items, so for about half
+      # the company it is a half-point that is not on the rating scale. Every
+      # screen used to match a rating against the scale by exact value and drop
+      # anything unmatched into the lowest band. That put 204 of 403 people in
+      # the wrong box of the calibration grid - the grid HR uses for promotion,
+      # succession and pay banding - always downwards, and quietly removed them
+      # from both bell curves and every figure above them.
+      #
+      # This runs the user's own arithmetic from the cycle where it was found.
+      - name: Ratings land in the right band
+        run: node scripts/check_rating_bands.js
+
       # One nginx serves production and dev. Frappe trusts the first address in
       # X-Forwarded-For, so nginx must never pass on what the caller wrote there
       # (slice 014, OPS-19). A text check: no nginx needed. Parsing and behaviour

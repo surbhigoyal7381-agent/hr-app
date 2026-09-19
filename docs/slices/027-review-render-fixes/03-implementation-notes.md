@@ -420,11 +420,23 @@ functions whose payload and signature changed. All 28 pass unchanged.
 
 ## 12. Gaps, shortcuts, and what more time would buy
 
-- **The seed and the app can still drift.** Two pins now compare them, but by
-  reading the seed's text rather than by running it. A real fix is a test that
-  runs the seed against a scratch site and asserts the app can read what it
-  wrote. That is the thing that would have caught all three of this slice's
-  seed defects at once, and it is the single best use of the next half day here.
+- **The seed and the app can still drift — the most reusable finding of this
+  round.** Three of this slice's defects came from one file,
+  `demo/pp_jewellers/seed_performance.py`, and all three had the same shape: the
+  seed wrote a field the app does not read that way, and nothing compared the
+  two. None was a bug in the product, but all three looked like one, and the
+  first guess at the cause was the cycle wizard, which was innocent.
+
+  **A seed writes records the app must read. When nothing checks the two agree,
+  it keeps producing "bugs" that are not in the product.** The rule, with these
+  three as the worked example, is now written down where the next seed gets
+  written: `demo/README.md`, first section.
+
+  The two pins added here compare the seed against the app by reading the seed's
+  text, which is cheap but narrow. **The test still worth writing** runs a seed
+  against a scratch site and asserts the app can read back what it wrote. That
+  would have caught all three at once, and it is the single best use of the next
+  half day in this area.
 - **The banding pin is a node script, not a `bench run-tests` test**, because
   the maths lives in the portal page and there is no JS test harness here. It is
   wired into CI beside `check_portal_handlers.js` and `check_undefined_js.js`,

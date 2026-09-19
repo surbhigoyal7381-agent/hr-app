@@ -12417,7 +12417,15 @@ window.pfRatingLabel = function(value, scale) {
           "<div class=\"cal-1d-emps\">" + empHtml + "</div>" +
         "</div>";
       });
-      pfSetHtml("cal-body", summaryHtml + "<div class=\"cal-1d-wrap\">" + cols1d + "</div>");
+      /* Same rule as the grid: nobody disappears without being named. */
+      var noRating = rows.filter(function(r) { return !pfHasRating(r.overall_rating, oVals1d); });
+      var noRatingHtml = noRating.length
+        ? "<div class=\"callout callout-warn\" style=\"margin-bottom:12px\"><strong>" + noRating.length + "</strong> " +
+            (noRating.length === 1 ? "person is" : "people are") + " not shown - no overall rating: " +
+            noRating.map(function(r) { return gpEsc(r.employee_name || r.employee); }).join(", ") + "</div>"
+        : "";
+      pfSetHtml("cal-body", _calSummary(rows.length - noRating.length) + noRatingHtml +
+                "<div class=\"cal-1d-wrap\">" + cols1d + "</div>");
       return;
     }
 

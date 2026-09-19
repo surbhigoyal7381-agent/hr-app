@@ -59,6 +59,15 @@ app_include_js = [
     "/assets/alvoraa_portal/js/portal_switch.js",
 ]
 
+# The "Field attendance app" tab on HR Settings (slice 013 step 2): the counts
+# beside the switch, the confirm before turning it off or removing a
+# designation, and the change history. The rules themselves are on the server
+# (field_app_settings.py); this only asks before HR does something that stops
+# phones working.
+doctype_js = {
+    "HR Settings": "public/js/hr_settings_field_app.js",
+}
+
 doc_events = {
     # ── Objectives must sit under a Key Result Area, when HR requires it ───
     # Enforced on the document, not only in the portal form: the rule is about
@@ -169,6 +178,15 @@ doc_events = {
     "Leave Application": {
         "before_submit": "hrms.alvoraa_hr_core.access.refuse_own_submit",
     },
+    # ── The field app's switches on HR Settings (slice 013 step 2) ────────
+    # Turning the app off or removing a designation needs a reason in the same
+    # save, on every door (desk, REST, set_value); the reason is emptied after
+    # the Version row has kept it. alvoraa_goals validates its own three fields
+    # on the same Single; each hook looks only at its own fields.
+    "HR Settings": {
+        "validate": "alvoraa_portal.field_app_settings.validate_hr_settings",
+        "on_change": "alvoraa_portal.field_app_settings.clear_reason_after_save",
+    },
 }
 
 # ── Row-level security ───────────────────────────────────────────────────────
@@ -236,6 +254,8 @@ after_migrate = [
     # Slice 012: indexes for the scoped figures, then the first data check.
     # Must stay AFTER branch_scope - two of the indexes need its column.
     "alvoraa_portal.data_review.after_migrate",
+    # Slice 013 step 2: the field app's switches on HR Settings.
+    "alvoraa_portal.field_app_settings.after_migrate",
 ]
 
 # And on a fresh install, which never runs a migrate. Without this a brand new
@@ -254,4 +274,6 @@ after_install = [
     # one place it needs to live. Deliberately NOT in after_migrate: see brand.py
     # and baseline.py on why a default a tenant may change is applied once.
     "alvoraa_portal.brand.after_install",
+    # Slice 013 step 2: the field app's switches on HR Settings.
+    "alvoraa_portal.field_app_settings.after_migrate",
 ]

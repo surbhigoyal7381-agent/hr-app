@@ -718,6 +718,9 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# Slice 012 F1: the one Version record written when a System Manager
 		# changes who may see the org chart. Nobody has create on Version.
 		("hrms", "alvoraa_org_structure/settings.py"): 1,
+		# Slice 013 step 2 (new file): the field app's settings. Reads only, and
+		# every count is an aggregate with no names, so none is needed.
+		("alvoraa_portal", "field_app_settings.py"): 0,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

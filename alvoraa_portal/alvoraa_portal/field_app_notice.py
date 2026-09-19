@@ -70,11 +70,22 @@ def rows_for(version=None, retention_days=None):
 	out = []
 	for heading, body in entry["rows"]:
 		if body is None:
-			body = (_("Check-in photos are kept for {0} days, then deleted.").format(days)
-			        if days else
-			        _("Check-in photos are kept until your organisation removes them."))
+			body = retention_line(days)
 		out.append({"heading": _(heading), "body": body})
 	return out
+
+
+def retention_line(retention_days=None):
+	"""The one line that is not versioned: how long this tenant keeps photos.
+
+	Shared by the notice and by the HR Settings screen (AC-23), so the person
+	reading the notice and the HR manager reading the settings are told the same
+	thing in the same words.
+	"""
+	days = photo_retention_days() if retention_days is None else retention_days
+	if days:
+		return _("Check-in photos are kept for {0} days, then deleted.").format(days)
+	return _("Check-in photos are kept until your organisation removes them.")
 
 
 def agree_wording(version=None):

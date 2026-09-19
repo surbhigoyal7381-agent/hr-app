@@ -82,6 +82,12 @@ class FieldAppCase(FrappeTestCase):
 
 	@classmethod
 	def _clear_phones(cls):
+		# The readings first: they link the phones (the doctype arrived in step 3,
+		# and step 2's fixture writes one since step 4).
+		if frappe.db.exists("DocType", "Alvoraa Notice Acknowledgement"):
+			for name in frappe.get_all("Alvoraa Notice Acknowledgement",
+			                           {"employee": cls.employee}, pluck="name"):
+				_bin("Alvoraa Notice Acknowledgement", name)
 		for name in frappe.get_all("Employee Checkin", {"employee": cls.employee},
 		                           pluck="name"):
 			for f in frappe.get_all("File", {"attached_to_doctype": "Employee Checkin",

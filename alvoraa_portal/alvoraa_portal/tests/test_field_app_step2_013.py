@@ -23,6 +23,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import now
 
+from alvoraa_goals.tests.utils import ensure_company, ensure_gender
 from alvoraa_portal import field_app_errors as errors
 from alvoraa_portal import field_app_notice as notice
 from alvoraa_portal import field_app_settings as fas
@@ -31,7 +32,9 @@ from alvoraa_portal import subscription as sub
 from alvoraa_portal.alvoraa_portal.doctype.alvoraa_field_device import (
 	alvoraa_field_device as device_rules,
 )
-from alvoraa_goals.tests.utils import ensure_company, ensure_gender
+from alvoraa_portal.alvoraa_portal.doctype.alvoraa_notice_acknowledgement.alvoraa_notice_acknowledgement import (
+	record_acknowledgement,
+)
 from alvoraa_portal.tests.leave_fixtures import ensure_user
 from alvoraa_portal.tests.test_field_app_step1_013 import FieldAppCase, _bin, _new_phone
 from alvoraa_portal.tests.test_portal_security_010 import _second_company
@@ -489,9 +492,15 @@ class AnAppPhoneObeysTheSettings(FieldAppCase):
 		frappe.set_user("Guest")
 
 	def app_phone(self):
+		"""An Active app phone, the way one exists in production: with a reading
+		of the current notice. Since step 4 an app phone whose latest reading is
+		not the current version is refused NOTICE_CHANGED at E4 and E5 (AC-80),
+		so a phone made here without one would be testing that rule, not the
+		switch."""
 		phone, token = _new_phone(self.employee, "Active")
 		frappe.db.set_value(fc.DEVICE, phone.name, "join_method", "App QR code",
 		                    update_modified=False)
+		record_acknowledgement(self.employee, notice.CURRENT_VERSION, "App", device=phone.name)
 		frappe.db.commit()
 		return phone, token
 

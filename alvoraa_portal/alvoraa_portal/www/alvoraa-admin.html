@@ -788,6 +788,27 @@ html, body {
         <label class="ka-label">Support Email (optional)</label>
         <input class="ka-input" id="edit-email" type="email" placeholder="support@acmecorp.com">
       </div>
+      <!-- Slice 031: change a tenant's logo after it is created. Its own block,
+           its own `ke-`/`keLogo` name prefix. Nothing above or below is moved. -->
+      <div class="ka-field">
+        <label class="ka-label" for="edit-logo">Company Logo</label>
+        <div style="border:1px solid var(--border);border-radius:var(--r-sm);padding:12px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <img id="ke-logo-img" alt="" style="display:none;max-height:44px;max-width:110px;object-fit:contain;border-radius:var(--r-sm);border:1px solid var(--border)">
+          <div style="flex:1;min-width:150px">
+            <div id="ke-logo-state" style="font-size:.84rem;font-weight:600;color:var(--text)">No logo set</div>
+            <div id="ke-logo-detail" style="font-size:.76rem;color:var(--muted);margin-top:2px">The login page shows the Alvoraa mark instead.</div>
+          </div>
+          <input type="file" id="edit-logo" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif"
+                 style="display:none" onchange="keChooseLogo(this)">
+          <button type="button" class="ka-btn ka-btn-ghost" id="ke-logo-pick"
+                  onclick="keOpenLogoPicker()">Upload a replacement</button>
+          <button type="button" class="ka-btn ka-btn-ghost" id="ke-logo-remove"
+                  onclick="keRemoveLogo()">Remove logo</button>
+          <button type="button" class="ka-btn ka-btn-ghost" id="ke-logo-undo"
+                  style="display:none" onclick="keUndoLogo()">Undo</button>
+        </div>
+        <div class="ka-hint">PNG, JPG, SVG, WEBP or GIF, under 2 MB. Nothing changes until you click Save Changes.</div>
+      </div>
     </div>
     <div class="ka-modal-footer">
       <button class="ka-btn ka-btn-ghost" onclick="closeEditModal()">Cancel</button>
@@ -2008,9 +2029,94 @@ html, body {
     });
   };
 
+  /* ── Edit-tenant logo control (slice 031) ─────────────────
+     Three states, and the operator can always get back to the first one:
+       ''        nothing decided - the save sends no logo argument at all
+       'replace' a file is chosen - the save uploads it, then sends logo_url
+       'remove'  the save sends remove_logo, which writes an EMPTY value
+     The picture is only ever a preview until Save Changes is clicked. */
+  var keLogoAction  = '';
+  var keLogoFile    = null;
+  var keLogoCurrent = '';
+
+  function keSetLogoState(title, detail, imgSrc, showUndo) {
+    document.getElementById('ke-logo-state').textContent  = title;
+    document.getElementById('ke-logo-detail').textContent = detail;
+    var img = document.getElementById('ke-logo-img');
+    if (imgSrc) { img.src = imgSrc; img.style.display = 'block'; }
+    else { img.removeAttribute('src'); img.style.display = 'none'; }
+    document.getElementById('ke-logo-undo').style.display   = showUndo ? '' : 'none';
+    document.getElementById('ke-logo-remove').style.display = showUndo ? 'none' : '';
+    document.getElementById('ke-logo-pick').textContent =
+      (keLogoCurrent && !showUndo) ? 'Upload a replacement' : 'Upload a logo';
+  }
+
+  function keResetLogo(currentUrl) {
+    keLogoAction  = '';
+    keLogoFile    = null;
+    keLogoCurrent = currentUrl || '';
+    document.getElementById('edit-logo').value = '';
+    if (keLogoCurrent) {
+      keSetLogoState('Current logo', 'Shown on this tenant’s login page.', keLogoCurrent, false);
+      // A tenant whose stored logo points at a file that is not there would
+      // otherwise show a broken picture here. Say so in words instead.
+      document.getElementById('ke-logo-img').onerror = function() {
+        keSetLogoState('The saved logo could not be loaded',
+          'Upload it again, or remove it so the Alvoraa mark is used.', '', false);
+      };
+    } else {
+      keSetLogoState('No logo set', 'The login page shows the Alvoraa mark instead.', '', false);
+    }
+  }
+
+  window.keOpenLogoPicker = function() { document.getElementById('edit-logo').click(); };
+
+  window.keChooseLogo = function(input) {
+    var file = input.files[0];
+    if (!file) return;
+    var errEl = document.getElementById('ka-edit-error');
+    var name  = (file.name || '').toLowerCase();
+    var okExt = ['.png', '.jpg', '.jpeg', '.svg', '.webp', '.gif'].some(function(e) {
+      return name.slice(-e.length) === e;
+    });
+    // `accept` is a filter, not a rule - a file can still be picked past it.
+    if (!okExt || (file.type && file.type.indexOf('image/') !== 0)) {
+      errEl.textContent = 'That is not an image we can use. Upload a PNG, JPG, SVG, WEBP or GIF.';
+      errEl.style.display = 'block';
+      input.value = '';
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      errEl.textContent = 'That file is too large — logos must be under 2 MB.';
+      errEl.style.display = 'block';
+      input.value = '';
+      return;
+    }
+    errEl.style.display = 'none';
+    keLogoAction = 'replace';
+    keLogoFile   = file;
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      keSetLogoState('New logo ready', file.name + ' — saved when you click Save Changes.',
+        e.target.result, true);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  window.keRemoveLogo = function() {
+    keLogoAction = 'remove';
+    keLogoFile   = null;
+    document.getElementById('edit-logo').value = '';
+    keSetLogoState('The logo will be removed',
+      'Saved when you click Save Changes. The login page will show the Alvoraa mark.', '', true);
+  };
+
+  window.keUndoLogo = function() { keResetLogo(keLogoCurrent); };
+
   window.openEditModal = function(siteName) {
     var t = tenantMap[siteName];
     if (!t) return;
+    keResetLogo(t.logo_url || '');
     document.getElementById('edit-site-name').value  = siteName;
     document.getElementById('ka-edit-site-label').textContent = siteName;
     document.getElementById('edit-name').value  = t.tenant_name || '';
@@ -2052,14 +2158,34 @@ html, body {
     var label = document.getElementById('ka-edit-label');
     btn.disabled = true; label.textContent = 'Saving…';
     try {
-      var result = await api('alvoraa_portal.tenant_api.update_tenant', {
+      // Slice 031. The upload happens first and uses the SAME path the create
+      // form uses - one door, not two. When nothing was decided about the logo,
+      // neither argument is sent, so update_tenant leaves it alone.
+      var args = {
         site_name:     siteName,
         tenant_name:   tenantName,
         modules:       editSelectedModules,
         primary_color: primaryColor,
         accent_color:  (document.getElementById('edit-accent') || {}).value || '',
         support_email: supportEmail,
-      });
+      };
+      if (keLogoAction === 'replace' && keLogoFile) {
+        label.textContent = 'Uploading logo…';
+        args.logo_url = await uploadLogoFile(keLogoFile);
+      } else if (keLogoAction === 'remove') {
+        args.remove_logo = 1;
+      }
+      label.textContent = 'Saving…';
+      var result = await api('alvoraa_portal.tenant_api.update_tenant', args);
+      // The server says so plainly when it could not apply the logo. Do not
+      // close on a warning - the operator would never see it.
+      if (result && result.message && result.message.indexOf('[WARN]') !== -1) {
+        errEl.textContent = result.message.replace('[WARN] ', '').trim();
+        errEl.style.display = 'block';
+        btn.disabled = false; label.textContent = 'Save Changes';
+        loadTenants();
+        return;
+      }
       label.textContent = 'Saved <i class=ic-check></i>';
       if (result && result.status === 'installing') {
         setTimeout(function() {

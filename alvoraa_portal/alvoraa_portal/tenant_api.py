@@ -526,13 +526,23 @@ def suspend_tenant(site_name, suspend=1):
 @frappe.whitelist()
 def update_tenant(site_name, tenant_name="", plan="", modules=None,
                   primary_color="", accent_color="", support_email="",
-                  logo_url=""):
+                  logo_url="", remove_logo=0):
     """Update an existing tenant's config; queues a background app-install if new modules need it.
 
-    `logo_url` is optional and goes through the same copy step as provisioning
-    (see _stage_tenant_logo). The edit modal in the console does not send one
-    today; the parameter is here so a later console change cannot reintroduce
-    the broken-image bug by writing the path straight into site_config.
+    Three logo cases, and only three:
+
+    - neither `logo_url` nor `remove_logo` - the logo is not touched at all.
+      This is what every edit that is not about the logo does, and a test pins
+      it.
+    - `logo_url` - the new file goes through the same copy step as provisioning
+      (see `_stage_tenant_logo`), so the tenant holds the file before the path
+      is stored. A source that is missing or is not a picture is reported in
+      the returned message and nothing is written.
+    - `remove_logo` - `tenant_logo_url` is set to an EMPTY value. Not a path to
+      a file that is not there: empty, so the login page falls back to the
+      Alvoraa mark.
+
+    Sending both is a mistake, and it is refused rather than guessed at.
     """
     _require_admin()
     _validate_site_name(site_name)
@@ -593,7 +603,18 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
     # tenant before it is stored, and a missing source is reported rather
     # than stored as a broken image.
     notes = ""
-    if logo_url:
+    drop_logo = _as_flag(remove_logo)
+    if drop_logo and logo_url:
+        frappe.throw("Choose one: upload a new logo, or remove the one that is there.")
+    if drop_logo:
+        # An EMPTY value, never a path to a file that is not there. auth.py then
+        # hands the login page logo_url: "" and the page falls back to the
+        # Alvoraa mark. The old file is left on disk on purpose - see the slice
+        # notes; one control-plane upload can be referenced elsewhere.
+        r = _bench_run(f'--site {site_name} set-config tenant_logo_url ""')
+        if r.returncode != 0:
+            frappe.throw(f"Failed to remove the logo: {r.stderr}")
+    elif logo_url:
         stored_logo, logo_warn = _stage_tenant_logo(site_name, logo_url)
         if stored_logo:
             r = _bench_run(f'--site {site_name} set-config tenant_logo_url "{stored_logo}"')
@@ -961,6 +982,25 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
 # never make the copy read outside the control plane's public/files folder.
 _PUBLIC_FILE_URL = re.compile(r"^/files/([A-Za-z0-9][A-Za-z0-9._ ()-]*)$")
 
+# The picture formats a browser will actually draw in an <img>, and the same
+# list the console's upload control offers. A logo is only ever rendered as an
+# image, so anything else is a mistake or an attempt - refuse it rather than
+# store a path that will never show anything. (Slice 031.)
+_LOGO_EXTENSIONS = (".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif")
+
+# An absolute logo URL is stored by handing it to `bench set-config`, and
+# `_bench_run` builds its command as a STRING and runs it with shell=True. Only
+# a control-plane System Manager can reach this, and that account can already
+# run bench commands, so this is not an escalation - but slice 031 makes the
+# value reachable from a form, so the shape is pinned here: a plain http(s) URL
+# with no quote, space, backtick, dollar, semicolon, ampersand, pipe, newline or
+# angle bracket. Anything fancier is refused, not escaped.
+_SAFE_ABSOLUTE_LOGO_URL = re.compile(r"^https?://[A-Za-z0-9._~:/?#\[\]@!*+,=%()-]+$",
+                                     re.IGNORECASE)
+
+_BAD_LOGO_TYPE = ("[WARN] Logo not applied: that is not an image we can show. "
+                  "Use a PNG, JPG, SVG, WEBP or GIF.")
+
 
 def _stage_tenant_logo(site_name, logo_url, control_site=None):
     """Make an uploaded logo reachable from the tenant's own site.
@@ -974,11 +1014,18 @@ def _stage_tenant_logo(site_name, logo_url, control_site=None):
       sites/<tenant>/public/files and stored as the same relative path, so the
       tenant stays self-contained
     - source missing, or a name with a directory part: not stored, warned
+    - a file that is not a picture we can draw, or a web address with shell
+      characters in it: not stored, warned (slice 031)
     """
     logo_url = (logo_url or "").strip()
     if not logo_url:
         return "", ""
     if re.match(r"^https?://", logo_url, re.IGNORECASE):
+        if not _SAFE_ABSOLUTE_LOGO_URL.match(logo_url):
+            return "", ("[WARN] Logo not applied: that web address has characters we "
+                        "cannot store. Use a plain https:// link to the image file.")
+        if not logo_url.lower().rsplit("?", 1)[0].endswith(_LOGO_EXTENSIONS):
+            return "", _BAD_LOGO_TYPE
         return logo_url, ""
 
     m = _PUBLIC_FILE_URL.match(logo_url)
@@ -986,6 +1033,8 @@ def _stage_tenant_logo(site_name, logo_url, control_site=None):
     if not name or ".." in name or os.path.basename(name) != name:
         return "", ("[WARN] Logo not applied: the logo address must be a /files/<name> "
                     "path from the console upload or an http(s) URL.")
+    if not name.lower().endswith(_LOGO_EXTENSIONS):
+        return "", _BAD_LOGO_TYPE
 
     control_site = control_site or getattr(frappe.local, "site", None)
     if not control_site:
@@ -1137,6 +1186,19 @@ def _require_db_root_password():
             "be created. Add it to deploy/envs/&lt;env&gt;.env and recreate the backend."
         )
     return pw
+
+
+def _as_flag(value):
+    """Read a yes/no argument that may arrive as a bool, a number or a string.
+
+    A JSON body gives a real `True`; a form post gives the string "1", "true"
+    or "on". `cint("true")` is 0, which would silently turn a "remove the logo"
+    click into "do nothing", so the strings are named here instead of guessed
+    at. Anything unrecognised is NO - the safe answer for a destructive action.
+    """
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
 
 
 def _validate_site_name(site_name):

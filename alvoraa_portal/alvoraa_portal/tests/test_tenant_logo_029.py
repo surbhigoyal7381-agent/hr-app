@@ -245,7 +245,12 @@ class TestUpdatePath(_LogoFixture):
 		self.assertIn("https://cdn.example.com/acme.png", calls[0])
 
 	def test_no_logo_argument_changes_nothing(self):
-		"""The console's edit modal sends no logo today; that must stay a no-op."""
+		"""An edit that is not about the logo must stay a no-op.
+
+		Slice 031 gave the edit modal a logo control, so it CAN send one now.
+		What must not change: an edit that does not mention the logo leaves it
+		alone.
+		"""
 		with patch.object(api, "_bench_run", return_value=_Result()) as bench_run, \
 				patch.object(api, "_require_admin"):
 			out = api.update_tenant(TENANT, tenant_name="Acme")

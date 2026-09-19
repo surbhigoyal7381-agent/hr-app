@@ -1123,10 +1123,18 @@ class TheEnrolPageUsesNothing(FrappeTestCase):
 
 	def test_013_ac124_the_page_reads_no_code_record_and_sets_the_header(self):
 		from alvoraa_portal.www import enrol
-		frappe.local.response_headers = frappe._dict()
-		with mock.patch.object(frappe.db, "sql", side_effect=AssertionError("the page read the database")):
-			context = enrol.get_context(frappe._dict())
-		self.assertEqual(frappe.local.response_headers.get("X-Robots-Tag"), "noindex, nofollow")
+		# Replace the headers object with one of ITS OWN class, and put the
+		# original back afterwards. The first full run swapped in a plain dict
+		# and left it there; slice 012's endpoint sets its header with `.set`
+		# inside a try/except, so its test failed 900 tests later.
+		original = frappe.local.response_headers
+		frappe.local.response_headers = original.__class__()
+		try:
+			with mock.patch.object(frappe.db, "sql", side_effect=AssertionError("the page read the database")):
+				context = enrol.get_context(frappe._dict())
+			self.assertEqual(frappe.local.response_headers.get("X-Robots-Tag"), "noindex, nofollow")
+		finally:
+			frappe.local.response_headers = original
 		self.assertTrue(context.get("tenant_name"))
 		self.assertNotIn("Alvoraa App Invite", open(enrol.__file__, encoding="utf-8").read())
 

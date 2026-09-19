@@ -52,10 +52,23 @@
 		return frappe.call({
 			method: METHOD,
 			args: { designations: JSON.stringify(designations) },
-			// A refusal (not in the plan, not HR) is shown in the box, not as a
-			// dialog over a settings page the person can otherwise use.
+			// A refusal (field check-in not in this tenant's plan, or not HR) is
+			// written into the box, not popped up as a dialog over a settings
+			// page the person can otherwise use. `silent` keeps Frappe from
+			// showing the server's sentence itself; `error` keeps it from
+			// treating the 403 as a page-level failure.
+			silent: true,
 			error: () => {},
 		});
+	}
+
+	function alvfaErrorText(xhr) {
+		try {
+			const messages = JSON.parse(xhr.responseJSON._server_messages);
+			return JSON.parse(messages[0]).message;
+		} catch (e) {
+			return __("This section could not be loaded.");
+		}
 	}
 
 	// ── the box beside the fields ───────────────────────────────────────
@@ -69,9 +82,8 @@
 		}
 		alvfaFetch(frm, alvfaRows(frm))
 			.then((r) => alvfaDraw(frm, $box, r && r.message))
-			.catch((e) => {
-				const msg = (e && e.message) || __("This section could not be loaded.");
-				$box.html(`<p class="text-muted alvfa-note">${esc(String(msg))}</p>`);
+			.catch((xhr) => {
+				$box.html(`<p class="text-muted alvfa-note">${esc(String(alvfaErrorText(xhr)))}</p>`);
 			});
 	}
 

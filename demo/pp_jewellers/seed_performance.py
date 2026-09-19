@@ -109,7 +109,16 @@ def ensure_cycle(name, start, end, status):
     if not frappe.db.exists("Alvoraa Cycle Config", name):
         frappe.get_doc({"doctype": "Alvoraa Cycle Config", "appraisal_cycle": name,
                         "description": "Created by the PPJ seed (mirrors the cycle wizard).",
-                        "employee_fields": "{}", "page_config": "[]",
+                        # The page list the review wizard shows, in the shape the
+                        # wizard itself writes ({page key: true}). This used to be
+                        # "[]", so every review in the demo held its goals and KPIs
+                        # but had no page to show them on, and nobody in the tenant
+                        # ever saw an objective inside a review.
+                        "employee_fields": json.dumps({"designation": True, "department": True,
+                                                       "years_of_service": True, "reports_to": True}),
+                        "page_config": json.dumps({"past-objectives": True,
+                                                   "future-objectives": True,
+                                                   "manager-feedback": True}),
                         "page_settings": json.dumps({"manager-feedback": {"overall_rating_scale": SCALE,
                                                                           "potential_rating_scale": SCALE,
                                                                           "show_potential": True},
@@ -430,7 +439,10 @@ for i, row in enumerate(cal):
     frappe.db.set_value("Alvoraa Appraisal Extension", row.name, {"overall_rating": adj, "manager_internal_notes": f"Calibrated 2026-07-12: {row.overall_rating} -> {adj} (store benchmark)."}, update_modified=False)
 cfg = frappe.get_doc("Alvoraa Cycle Config", Q1)
 ps = json.loads(cfg.page_settings or "{}")
-ps["calibration_signoff"] = {"summary": "Q1 calibrated 2026-07-12; 6 ratings adjusted against store benchmarks.", "signed_by": HR_HEAD.user_id, "signed_on": "2026-07-12"}
+# "signed_at" is the field save_calibration_signoff writes. This said
+# "signed_on", which no screen reads, so the seeded sign-off showed the
+# signer and then stopped before the date.
+ps["calibration_signoff"] = {"summary": "Q1 calibrated 2026-07-12; 6 ratings adjusted against store benchmarks.", "signed_by": HR_HEAD.user_id, "signed_at": "2026-07-12"}
 cfg.page_settings = json.dumps(ps)
 cfg.save(ignore_permissions=True)
 frappe.db.set_value("Appraisal Cycle", Q1, "status", "Completed", update_modified=False)

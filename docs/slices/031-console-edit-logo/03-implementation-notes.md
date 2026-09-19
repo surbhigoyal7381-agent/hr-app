@@ -229,7 +229,19 @@ on a tenant see the new logo on their next page load and still cannot change it.
 
 ## What else moved while I worked
 
-`git fetch origin` at the start and again before finishing: **nothing came in.**
+**Slice 030 landed in local `dev` while I was making the SVG change**, and I
+rebased onto it. Three commits came in - `e33e986` "A store's HR person sees
+only their store in the review list, the matrix and the KPI report", `9a320f6`
+its notes, and `ae3e1ed` "The scoping test imports the access module by its
+full path". They touch `hrms/alvoraa_hr_core/access.py`,
+`attendance_analytics.py`, `performance_api.py`, `hrms-employee.html`, a
+cumulative-KPI check and a new test module. **Not one file of theirs is a file
+of mine**, so the rebase was clean with nothing to resolve and nothing of
+theirs at risk; I checked by intersecting the two file lists, and the answer
+was empty. All 42 logo tests still pass on top of their work.
+
+On `origin/dev`, `git fetch origin` at the start and again before finishing:
+**nothing came in.**
 `git log dev..origin/dev` was empty both times. Local `dev` is one commit ahead
 of `origin/dev` (029's `5ae87c5`, not pushed). No incoming diff to read, no
 conflict to resolve, nothing of anyone else's to prove survived.

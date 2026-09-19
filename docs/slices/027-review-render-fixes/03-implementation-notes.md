@@ -297,8 +297,93 @@ switch-off was done as well.
 
 ## 10. Commands run, and what they said
 
-See §11 for the collision. Final results are recorded at the end of this file
-once the suite ran cleanly.
+Everything below ran in a throwaway container, `hrlocal-027`, mounting **this
+worktree** — so nothing was merged into local `dev` to test it. After colliding
+with slice 013 (§11) the run was moved onto its own site,
+`test027.localhost`, created in that container, so it contends with nobody.
+
+### The slice's own tests
+
+```
+bench --site test027.localhost run-tests --module alvoraa_portal.tests.test_review_render_027
+  Ran 15 tests   OK
+  Ran  1 test    OK      (the calibration-matrix integration test)
+```
+
+All 16 pass. **Two of them did not, on the first run, and both were my fault:**
+
+| What failed | Why | Fixed by |
+|---|---|---|
+| `test_the_seed_signs_off_under_the_field_the_app_reads` | The pin searched the whole seed file for `"signed_on"`, and **my own comment explaining the old field name contains those words**. The test failed on its own documentation | Look for the dict key `"signed_on":` |
+| `test_launching_a_cycle_keeps_its_page_list` | `No Company exists on this site` — launching a cycle needs one, and a bare site has none | The fixture creates one if none exists |
+
+### Fail-without-fix, server half
+
+Each fix switched off in process by monkey-patch (a throwaway script on stdin;
+nothing on disk changed), then its pin re-run:
+
+```
+1. Unrated potential -> put back flt(), so 0.0 travels as a rating of zero
+  FAILS (good)  an unrated potential reaches the grid as null
+        AssertionError: 0.0 is not None : an unrated potential must arrive as null
+  FAILS (good)  a stored zero is reported as no rating
+2. Missing-argument guard -> put back the plain TypeError (a 500)
+  FAILS (good)  listing appraisals without a cycle is a clean 400
+  FAILS (good)  opening a review without an appraisal is a clean 400
+3. Seed -> point the pin at the old seed text
+  FAILS (good)  the seed does not create a cycle with no pages
+  FAILS (good)  the seed signs off under the field the app reads
+
+6 pin(s) failed with their fix switched off. Every fix is guarded.
+```
+
+### Fail-without-fix, client half
+
+`scripts/check_rating_bands.js` — 37 checks pass against the page. With the old
+exact-match logic put back inside the new helper names, **15 fail and reproduce
+her measurements exactly**:
+
+```
+the columns are 0 low / 17 moderate / 386 high
+      expected {"Low":0,"Moderate":17,"High":386}, got {"Low":204,"Moderate":0,"High":199}
+all 403 overall ratings count towards the figures   expected 403,   got 199
+the average overall is 4.303, not 4.186             expected 4.303, got 4.186
+the median overall is 4.5, not 4                    expected 4.5,   got 4
+the average potential is 3.146, not 3.287           expected 3.146, got 3.287
+```
+
+204 / 0 / 199, 199 of 403, 4.186 (shown as 4.2), median 4, 3.287 (shown as 3.3)
+— every number she reported, reproduced from the code.
+
+### Regression on the modules this slice touches
+
+```
+alvoraa_portal.tests.test_review_outside_010d     Ran 28 tests in 289.9s   OK
+alvoraa_portal.tests.test_review_screens_010d     Ran 39 tests in 447.2s   OK
+                                                  Ran  1 test  in   9.4s   OK
+alvoraa_portal.tests.test_review_page_010d        Ran 26 tests in   0.6s   OK
+alvoraa_portal.tests.test_calibration_note_010d   Ran  9 tests in 100.8s   OK
+alvoraa_portal.tests.test_calibration_signoff     Ran  7 tests in   2.1s   OK
+```
+
+**110 tests, no failures and no errors**, plus the slice's own 16.
+
+`test_review_outside_010d` is the one that matters most: it holds the existing
+assertions on `get_calibration_matrix` and `hr_list_appraisals`, the two
+functions whose payload and signature changed. All 28 pass unchanged.
+
+### Static checks, all green
+
+| Check | Result |
+|---|---|
+| `python scripts/check_app_integrity.py` | `OK - all consistent` (593 checks) |
+| `python scripts/check_design_system.py` | `OK - the visual system holds` |
+| `node scripts/check_undefined_js.js` | `undefined identifiers: none` |
+| `node scripts/check_portal_handlers.js` | `all reachable and callable` |
+| `node scripts/check_rating_bands.js` | 37 checks pass |
+| `ruff` on changed Python | 84 findings before, **84 after**; the new test file passes clean |
+| `py_compile` on changed Python | clean |
+| `ci.yml` parses after the new step | yes |
 
 ---
 
@@ -340,10 +425,13 @@ once the suite ran cleanly.
   runs the seed against a scratch site and asserts the app can read what it
   wrote. That is the thing that would have caught all three of this slice's
   seed defects at once, and it is the single best use of the next half day here.
-- **The banding pin is not in `bench run-tests`.** It is a node script beside
-  the two existing node page checks, so it needs to be wired into CI with them.
-  If CI runs only the Python suite today, this pin will not run there — **worth
-  checking before this is called done.**
+- **The banding pin is a node script, not a `bench run-tests` test**, because
+  the maths lives in the portal page and there is no JS test harness here. It is
+  wired into CI beside `check_portal_handlers.js` and `check_undefined_js.js`,
+  in its own commit. That commit touches `.github/workflows/ci.yml`, which is
+  normally not part of a feature slice — **drop that one commit if you would
+  rather wire it in separately**, but then the pin does not run anywhere but by
+  hand.
 - **A rating scale containing 0** would break the "0 means unrated" rule. The
   client helper handles it; the server helper does not, and nothing stops such a
   scale being created. §3 says what the proper fix costs.

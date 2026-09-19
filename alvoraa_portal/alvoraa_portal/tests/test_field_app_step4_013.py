@@ -11,9 +11,11 @@ Every test here names the thing it keeps alive:
     the fake-location flag and a private photo; a vague fix (worse than 50 m),
     a missing fix, a punch outside the radius and a second punch inside the
     window are refused with their own codes and write nothing. **The duplicate
-    guard has a fail-without-fix recipe**: take the `time` filter out of
-    `_refuse_duplicate` and `test_013_ac86_a_second_punch_inside_the_window_is_
-    refused` fails, because both punches then save.
+    guard has a fail-without-fix recipe**: delete the `_refuse_duplicate(device,
+    log_type)` call in `field_checkin` and `test_013_ac86_a_second_punch_inside_
+    the_window_is_refused` fails, because both punches then save. (Taking only
+    the `time` filter out does NOT make it fail - the guard then refuses on any
+    earlier punch of the same kind, which is stricter, not weaker.)
   * **Minimum radius** - a Shift Location cannot be saved with a radius under
     100 m; 0 still means "no radius".
   * **US-15** - E6 removes the phone, retires its secret, erases nothing, and
@@ -333,8 +335,9 @@ class ThePunch(DailyCase):
 		self.assertEqual(self.punch(token, accuracy="50")["status"], "ok")
 
 	def test_013_ac86_a_second_punch_inside_the_window_is_refused(self):
-		"""Fail-without-fix: take the `time` filter out of `_refuse_duplicate`
-		and both punches save, so the second answer is "ok" and this fails."""
+		"""Fail-without-fix: delete the `_refuse_duplicate(...)` call in the
+		punch and both punches save, so the second answer is "ok" and this
+		fails. Proven on 2026-09-19: rows 000054 and 000055 both saved."""
 		token = self.app_phone()
 		first = self.punch(token)
 		self.assertEqual(first["status"], "ok")
@@ -367,8 +370,13 @@ class TheGeofence(DailyCase):
 		frappe.set_user("Administrator")
 		cls._tracking = frappe.db.get_single_value("HR Settings", "allow_geolocation_tracking")
 		if not frappe.db.exists("Shift Type", SHIFT):
+			# A shift that spans the day, so the punch is always inside it.
+			# Frappe HR refuses it unless the check-in/out margins are 0: with
+			# the default 60 minutes the shift would overlap itself.
 			frappe.get_doc({"doctype": "Shift Type", "name": SHIFT,
-			                "start_time": "00:00:00", "end_time": "23:59:00"}
+			                "start_time": "00:00:00", "end_time": "23:59:00",
+			                "begin_check_in_before_shift_start_time": 0,
+			                "allow_check_out_after_shift_end_time": 0}
 			               ).insert(ignore_permissions=True)
 		cls.depot = frappe.db.get_value("Shift Location", {"location_name": DEPOT})
 		if not cls.depot:

@@ -2045,8 +2045,10 @@ html, body {
     var img = document.getElementById('ke-logo-img');
     if (imgSrc) { img.src = imgSrc; img.style.display = 'block'; }
     else { img.removeAttribute('src'); img.style.display = 'none'; }
-    document.getElementById('ke-logo-undo').style.display   = showUndo ? '' : 'none';
-    document.getElementById('ke-logo-remove').style.display = showUndo ? 'none' : '';
+    document.getElementById('ke-logo-undo').style.display = showUndo ? '' : 'none';
+    // Nothing to remove when there is no logo, so do not offer it.
+    document.getElementById('ke-logo-remove').style.display =
+      (keLogoCurrent && !showUndo) ? '' : 'none';
     document.getElementById('ke-logo-pick').textContent =
       (keLogoCurrent && !showUndo) ? 'Upload a replacement' : 'Upload a logo';
   }

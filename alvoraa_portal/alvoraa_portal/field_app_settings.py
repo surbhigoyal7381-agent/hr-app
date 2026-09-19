@@ -283,9 +283,11 @@ def _app_phones_by_designation(designations):
 
 
 def _waiting_codes():
-	"""Codes made but not yet used. The code record is built in step 3; until
-	then there are none, and this says so rather than guessing at a doctype."""
-	return 0
+	"""Codes made, not yet used, and not yet run out - the ones the switch would
+	stop (AC-17). One count, no names."""
+	from frappe.utils import now
+	return frappe.db.count("Alvoraa App Invite",
+	                       {"status": "Waiting", "expires_at": [">", now()]})
 
 
 def _active_app_phones():

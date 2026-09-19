@@ -46,8 +46,15 @@ from frappe.utils import (
 from alvoraa_portal import field_app_errors as errors
 from alvoraa_portal import field_app_notice as notice
 from alvoraa_portal import field_app_settings as settings
+from alvoraa_portal.alvoraa_portal.doctype.alvoraa_app_invite.alvoraa_app_invite import (
+	INVITE,
+	cancel_invite,
+)
 from alvoraa_portal.alvoraa_portal.doctype.alvoraa_field_device import (
 	alvoraa_field_device as device_rules,
+)
+from alvoraa_portal.alvoraa_portal.doctype.alvoraa_notice_acknowledgement.alvoraa_notice_acknowledgement import (
+	record_acknowledgement,
 )
 
 # ── the pieces that used to live in this file ────────────────────────────────
@@ -270,11 +277,16 @@ _REFUSAL_TIME_VALUE = {
 }
 
 
-def _device_from_token(token: str):
+def _device_from_token(token: str, allowed=("Active",)):
 	"""Resolve a device secret to its registration, or refuse with a named code.
 
 	Looks up by hash, so the secret is never compared in the database and never
 	appears in a query log.
+
+	`allowed` is the set of states the caller can work with. The punch and the
+	start screen take the default - Active only. The notice endpoints (step 3)
+	also accept "Consent not given", because reading the notice again is how a
+	phone in that state becomes Active.
 	"""
 	if not token or not isinstance(token, str) or len(token) < 20:
 		refuse("NOT_SET_UP",
@@ -318,7 +330,7 @@ def _device_from_token(token: str):
 	if device.status == "Pending":
 		_refuse_as_pending()
 
-	if device.status != "Active":
+	if device.status not in allowed:
 		code, sentence = _REFUSAL_FOR_STATUS.get(
 			device.status,
 			# A status nobody has taught this code about. Fail closed: refuse,
@@ -468,6 +480,12 @@ def register_device(employee_id, device_label=None, platform=None,
 	# the author, which is the only way a phone record is allowed to appear.
 	phone.flags[device_rules.SERVER_FLAG] = True
 	phone.insert(ignore_permissions=True)
+	# The history row (PRIV-3, AC-95): which words this person read, on which
+	# phone, from which screen. The two fields above stay written as well - they
+	# are what the web page and slice 014's tests read today, and stopping them
+	# is the web page's own change, not this one.
+	record_acknowledgement(emp.name, CONSENT_VERSION, "Web check-in page",
+	                       device=phone.name)
 	frappe.db.commit()
 
 	# The phone keeps this and starts working the moment HR activates it. It is
@@ -884,6 +902,18 @@ def block_devices_for_leaver(doc, method=None):
 		return
 	if not frappe.db.exists("DocType", DEVICE):
 		return
+
+	# The codes first, then the phones: the fixed lock order every writer of
+	# these rows follows (field_app_join says why). The Employee row itself is
+	# already locked by the save this hook runs inside.
+	if frappe.db.exists("DocType", INVITE):
+		for name in frappe.get_all(INVITE, filters={"employee": doc.name, "status": "Waiting"},
+		                           pluck="name"):
+			try:
+				cancel_invite(name, "Employee left")
+			except Exception:
+				frappe.log_error(f"could not cancel app invite {name} for a leaver",
+				                 "Field check-in leaver")
 
 	for name in frappe.get_all(
 		DEVICE,

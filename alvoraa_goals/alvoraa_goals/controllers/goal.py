@@ -24,7 +24,15 @@ def validate_individual_goal(doc, method=None):
     # earlier version to compare against - so without the is_new() guard this rejects any
     # goal created with progress already on it (imports, seeds, carry-overs).
     if not doc.is_new() and doc.actual_progress > 0 and doc.has_value_changed("target_value"):
-        frappe.throw(_("Cannot change target after progress has been recorded"))
+        # Slice 010 group D, decision 30: a target change agreed inside a review is
+        # written back at completion even when progress exists. Only the review's
+        # write-back sets this document flag (it cannot come from a request), and
+        # it leaves an Info entry and a Version row. Every other change still meets
+        # the rule.
+        from alvoraa_goals.review_items import WRITE_BACK_FLAG
+
+        if not doc.flags.get(WRITE_BACK_FLAG):
+            frappe.throw(_("Cannot change target after progress has been recorded"))
     _update_trajectory(doc)
 
 
@@ -82,6 +90,11 @@ def recalculate_progress(goal_name):
         goal.status = "Completed"
     goal.flags.ignore_validate = True
     goal.flags.ignore_validate_update_after_submit = True
+    # Progress is worked out from approved evidence, never typed in, so it is
+    # saved whoever triggered it. Every caller checks its own caller first:
+    # approve_evidence (the manager or HR, who may not have write on the goal),
+    # the whitelisted recalculate_progress (write), and the hourly job (slice 010).
+    goal.flags.ignore_permissions = True
     goal.save()
     frappe.db.commit()
     _append_audit_log(goal_name, "Progress Updated", old, total, frappe.session.user, "Recalculated from approved evidence")

@@ -1,0 +1,129 @@
+{
+ "actions": [],
+ "creation": "2026-09-07 17:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "policy_document",
+  "version",
+  "column_break_who",
+  "employee",
+  "employee_name",
+  "user",
+  "when_section",
+  "acknowledged_on",
+  "source"
+ ],
+ "fields": [
+  {
+   "fieldname": "policy_document",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Policy",
+   "options": "Policy Document",
+   "reqd": 1
+  },
+  {
+   "fieldname": "version",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Version",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_who",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Employee",
+   "options": "Employee",
+   "reqd": 1
+  },
+  {
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
+   "label": "Employee Name",
+   "fetch_from": "employee.employee_name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "when_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "acknowledged_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Acknowledged On",
+   "reqd": 1
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "Onboarding\nNew Version\nManual",
+   "default": "Manual"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-07 17:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Policy Library",
+ "name": "Policy Acknowledgement",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "HR User"
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Employee",
+   "if_owner": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "autoname": "hash"
+}

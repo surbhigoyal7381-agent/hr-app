@@ -262,9 +262,9 @@ def setup_leave_policy_assignments():
         # Corporate policy → KAMs & C-Suite
         {"first": "Arjun",    "last": "Sandhu",    "policy": corp_policy_id},
         {"first": "Neha",     "last": "Sharma",    "policy": corp_policy_id},
-        {"first": "D.K.",     "last": "Malhotra",  "policy": corp_policy_id},
-        {"first": "Mukesh",   "last": "Mittal",    "policy": corp_policy_id},
-        {"first": "Chaitanya","last": "Malhotra",  "policy": corp_policy_id},
+        {"first": "V.P.",     "last": "Rathore",  "policy": corp_policy_id},
+        {"first": "Naresh",   "last": "Kamath",    "policy": corp_policy_id},
+        {"first": "Aditya","last": "Rathore",  "policy": corp_policy_id},
     ]
 
     for a in assignments:
@@ -299,18 +299,18 @@ def setup_leave_policy_assignments():
 
 def setup_leave_approvers():
     gurpreet = _get_employee("Gurpreet", "Singh")     # Logistics Manager
-    mukesh = _get_employee("Mukesh", "Mittal")         # Finance Director
-    chaitanya = _get_employee("Chaitanya", "Malhotra") # Digital Director
+    naresh = _get_employee("Naresh", "Kamath")         # Finance Director
+    aditya = _get_employee("Aditya", "Rathore") # Digital Director
 
     approver_map = [
         # Drivers → Logistics Manager
         (("Harpreet", "Babbar"),    gurpreet),
         (("Rajinder", "Kumar"),     gurpreet),
         # KAMs → Respective Directors
-        (("Arjun", "Sandhu"),       mukesh),
-        (("Neha", "Sharma"),        chaitanya),
-        (("Rohit", "Verma"),        mukesh),
-        (("Priya", "Singh"),        mukesh),
+        (("Arjun", "Sandhu"),       naresh),
+        (("Neha", "Sharma"),        aditya),
+        (("Rohit", "Verma"),        naresh),
+        (("Priya", "Singh"),        naresh),
     ]
 
     for (first, last), approver_id in approver_map:

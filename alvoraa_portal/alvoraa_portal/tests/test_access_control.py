@@ -24,6 +24,10 @@ USER = "wave4.tester@access.test"
 WATCH = ["Salary Slip", "Payroll Entry", "Sales Invoice",
          "Leave Application", "Attendance", "Expense Claim"]
 
+# A role that exists only for the fixture below, so the customisation it builds
+# is recognisably ours and cannot collide with a role the site really uses.
+FIXTURE_ROLE = "Wave4 Fixture Customisation"
+
 
 class Wave4Mixin:
 	"""A plain mixin, deliberately NOT a FrappeTestCase.
@@ -38,6 +42,11 @@ class Wave4Mixin:
 		self._plane = frappe.conf.get("alvoraa_control_plane")
 		frappe.conf.pop("alvoraa_control_plane", None)
 		ma.release_permissions()          # never inherit another test's state
+		# Every test in this mixin restricts doctypes, and those writes are
+		# committed. tearDown releases them, but unittest skips tearDown when
+		# setUp raises, and the user insert below can raise - so the restore is
+		# also registered as a cleanup, which always runs.
+		self.addCleanup(ma.release_permissions)
 		if not frappe.db.exists("User", USER):
 			u = frappe.get_doc({"doctype": "User", "email": USER, "first_name": "Wave4",
 			                    "send_welcome_email": 0, "user_type": "System User",
@@ -66,6 +75,75 @@ class Wave4Mixin:
 	def _custom_roles(self, doctype):
 		return sorted({r.role for r in frappe.get_all(
 			"Custom DocPerm", filters={"parent": doctype}, fields=["role"])})
+
+	def _custom_perms(self, doctype):
+		"""Every custom permission row on a doctype, every field, in a stable order.
+
+		`_custom_roles` compares only the role names, which cannot see a changed
+		flag - and "restores the customisation EXACTLY" is a claim about the
+		flags. Comparing the whole row is what makes the word `exactly` true.
+		"""
+		rows = frappe.get_all("Custom DocPerm", filters={"parent": doctype},
+		                      fields=list(ma._SNAPSHOT_FIELDS))
+		return sorted(tuple(sorted(dict(r).items())) for r in rows)
+
+	def _give_it_a_pre_existing_customisation(self, doctype, role=FIXTURE_ROLE):
+		"""Build the precondition instead of hoping the site has it.
+
+		This test used to read whatever `Salary Slip` happened to carry. That
+		held while a bench had been through an hrms install that left rows on
+		it, and stopped holding the day `test_site` was rebuilt: on a fresh
+		site, NONE of the 322 doctypes a Starter tenant blocks carries a custom
+		permission row - measured, not assumed. So the test could not run, and
+		the snapshot-and-restore path it guards had no coverage at all.
+
+		`add_permission` and `update_permission_property` are Frappe's own API
+		and are exactly what `hrms/setup.py` calls, so what this builds is the
+		real situation rather than an imitation of it. `add_permission` copies
+		the doctype's standard rows into Custom DocPerm first, which is how a
+		doctype comes to carry a whole set of them.
+		"""
+		from frappe.permissions import add_permission, update_permission_property
+
+		self.assertIn(doctype, set(sub.blocked_doctypes(sub.plan_features("starter"))),
+		              f"{doctype} must be denied on Starter or this proves nothing")
+
+		# Put the doctype back exactly as it was found, whatever happens. The
+		# release runs first inside the cleanup rather than relying on cleanup
+		# ORDER: cleanups run last-registered-first, so the mixin's release
+		# would otherwise run after this one and restore its snapshot on top.
+		had = [dict(r) for r in frappe.get_all(
+			"Custom DocPerm", filters={"parent": doctype},
+			fields=list(ma._SNAPSHOT_FIELDS))]
+		self.addCleanup(self._put_the_doctype_back, doctype, had, role)
+
+		if not frappe.db.exists("Role", role):
+			r = frappe.get_doc({"doctype": "Role", "role_name": role,
+			                    "desk_access": 1})
+			r.flags.ignore_permissions = True
+			r.insert(ignore_permissions=True)
+
+		add_permission(doctype, role)
+		# A distinctive flag, so the assertion is about THIS customisation and
+		# not about whatever the standard rows happen to say.
+		update_permission_property(doctype, role, 0, "read", 1)
+		frappe.db.commit()
+
+	def _put_the_doctype_back(self, doctype, rows, role):
+		ma.release_permissions()          # first, whatever order cleanups run in
+		frappe.db.delete("Custom DocPerm", {"parent": doctype})
+		# Bounded to the one doctype this test customised. Never a sweep of the
+		# whole table: on a real tenant those rows are the configuration.
+		for row in rows:
+			doc = frappe.get_doc({"doctype": "Custom DocPerm", "parent": doctype,
+			                      "parenttype": "DocType",
+			                      "parentfield": "permissions", **row})
+			doc.name = frappe.generate_hash(length=10)
+			doc.db_insert()
+		if frappe.db.exists("Role", role):
+			frappe.delete_doc("Role", role, force=True, ignore_permissions=True)
+		frappe.db.commit()
+		frappe.clear_cache()
 
 
 class TestTheDoctypeListIsDerived(FrappeTestCase):
@@ -117,14 +195,43 @@ class TestReversalFirst(Wave4Mixin, FrappeTestCase):
 		self.assertEqual(self._can_read("Salary Slip"), before)
 
 	def test_it_restores_pre_existing_customisations_exactly(self):
-		"""40 of the 450 doctypes a Starter tenant blocks already carry Custom
-		DocPerm rows from hrms/setup.py. reset_perms would restore the STANDARD
-		permissions for those - which is not what was there. So we snapshot."""
-		before = self._custom_roles("Salary Slip")
-		self.assertTrue(before, "this test needs a doctype that has custom perms")
+		"""A doctype that was already customised gets its OWN rows back.
+
+		Some of the doctypes a Starter tenant blocks already carry Custom
+		DocPerm rows - `hrms/setup.py` writes them at install, and a tenant's
+		administrator can add more at any time. `reset_perms` would restore the
+		STANDARD permissions for those, which is not what was there. So we
+		snapshot the originals and put them back verbatim, and this is the test
+		that says so.
+
+		The customisation is BUILT here rather than borrowed from the site. It
+		used to read whatever `Salary Slip` happened to carry, which made the
+		test a hostage to the bench's history: when `test_site` was rebuilt the
+		row was gone, `before` was empty and the test could not run at all.
+		"""
+		dt = "Salary Slip"
+		self._give_it_a_pre_existing_customisation(dt)
+
+		before = self._custom_perms(dt)
+		self.assertTrue(before, "the fixture must leave custom rows behind")
+		self.assertIn(FIXTURE_ROLE, self._custom_roles(dt),
+		              "the fixture's own row must be among them")
+
 		ma.sync_permissions(sub.plan_features("starter"), only=WATCH)
+		# Denial really did replace them, so the restore below is undoing
+		# something. Without this the test would pass even if sync_permissions
+		# did nothing at all.
+		self.assertNotEqual(self._custom_perms(dt), before,
+		                    "the doctype was not actually denied")
+		# And the snapshot branch is the one that ran. This is the whole point
+		# of the test: a doctype with NO custom rows takes the other path and
+		# is restored by doing nothing, which proves nothing about snapshots.
+		self.assertIn(dt, ma._load("permission_snapshot"),
+		              "the original rows were never snapshotted")
+
 		ma.release_permissions()
-		self.assertEqual(self._custom_roles("Salary Slip"), before)
+		self.assertEqual(self._custom_perms(dt), before,
+		                 "every original row must come back, flags and all")
 
 	def test_releasing_twice_is_harmless(self):
 		ma.sync_permissions(sub.plan_features("starter"), only=WATCH)

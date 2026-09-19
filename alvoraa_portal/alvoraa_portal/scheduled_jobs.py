@@ -1,5 +1,14 @@
 import frappe
 
+from alvoraa_portal.subscription import has_feature
+
+# Slice 016 gated the vendor and driver endpoints by plan, but a scheduled job
+# has no session and never goes through a whitelisted endpoint, so four of these
+# kept running on a tenant that had switched the module off - two of them
+# emailing that tenant's customers and drivers. "Off" has to mean the building
+# stops posting letters too, so each job that touches the module's own data
+# checks the feature first.
+
 
 def update_delivery_tracking():
     """Called every 'all' cycle — does lightweight checks only.
@@ -12,6 +21,8 @@ def update_delivery_tracking():
 
 def calculate_driver_ratings():
     """Recalculate Driver Rating Summary for all drivers with recent ratings."""
+    if not has_feature("vendor"):
+        return
     from alvoraa_portal.controllers.rating import _recalculate_driver_rating
 
     drivers = frappe.get_all(
@@ -33,6 +44,8 @@ def calculate_driver_ratings():
 
 def send_arrival_notifications():
     """Find deliveries with ETA <= 10 min and notify vendor."""
+    if not has_feature("vendor"):
+        return
     active = frappe.get_all(
         "Delivery Assignment",
         filters={"status": "In Transit"},
@@ -55,7 +68,7 @@ def send_arrival_notifications():
                         recipients=[email],
                         subject="Your delivery is arriving soon!",
                         message=(
-                            f"<p>Your Grace Drinks order will arrive in approximately "
+                            f"<p>Your order will arrive in approximately "
                             f"{tracking[0].eta_minutes} minutes. Please be available to receive it.</p>"
                         ),
                     )
@@ -69,6 +82,8 @@ def send_arrival_notifications():
 
 def check_compliance_alerts():
     """Daily — refresh all Vehicle Maintenance Compliance records and send alerts."""
+    if not has_feature("vendor"):
+        return
     try:
         from alvoraa_portal.controllers.vehicle_compliance import check_all_compliance_alerts
         check_all_compliance_alerts()
@@ -78,6 +93,8 @@ def check_compliance_alerts():
 
 def generate_monthly_scorecards():
     """Monthly (1st of month) — generate scorecards for previous month for all active partners."""
+    if not has_feature("vendor"):
+        return
     try:
         from alvoraa_portal.controllers.scorecard import generate_monthly_scorecards as _gen
         _gen()

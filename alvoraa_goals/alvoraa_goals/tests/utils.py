@@ -10,12 +10,12 @@ def ensure_company():
 
 	The tests used to do:
 
-	    frappe.get_value("Company", {}, "name") or "Grace Drinks"
+	    frappe.get_value("Company", {}, "name") or "Demo Company"
 
 	which reads as a safe fallback but is not one: on a site with no companies it
 	hands back the name of a company that does not exist, and every insert that
 	links to it fails with LinkValidationError. It passed on developer machines
-	only because a "Grace Drinks" company happened to be seeded there, and failed
+	only because a demo company happened to be seeded there, and failed
 	on every fresh CI site.
 
 	A test should build the world it needs rather than assume someone else did.

@@ -8,10 +8,19 @@ These instructions are mandatory in every session. They override default behavio
 
 ## 1. Branch discipline
 
-- Always work on the **`dev` branch** unless explicitly told otherwise.
-- Before any git operation, confirm the working branch is `dev`.
-- If on another branch, stash changes, switch to `dev`, and reapply — do not commit to `main` without explicit instruction.
+- **Work lands on `dev`, and only `dev` is pushed.** Develop on a short-lived slice branch in your own worktree (`.claude/worktrees/<slice-id>`), then bring it into `dev` without overwriting anyone — rebase, then `git merge --ff-only`. Do not commit to `main` without explicit instruction.
+- Before any git operation, confirm which branch and which folder you are in.
+- **Several sessions share the main checkout `C:/Surbhi-Git/hr-app` and the local bench.** Never run `git stash`, `git reset --hard`, `git checkout .`, `git restore .`, `git clean`, `git add -A`, `git add .` or `git commit -a` there — they take or destroy other sessions' unsaved work. Stage by path. The full rules are in `.claude/context/parallel-work.md`. (Rule given 2026-09-14.)
 - `main` is reserved for deliberate production releases only.
+- **Work moves through three stages, and each step forward needs the user to say so explicitly.** (Rule given 2026-09-11.)
+  1. **Local** — develop and test on the local instance (the Docker bench `hrlocal-bench`). Commit locally if useful, but **do not push**.
+  2. **`dev`** — push to `dev` **only when the user explicitly says to push to dev**. Passing tests is not permission, and neither is "go ahead" said about local work. Changing a dev tenant's data or config (site config, `clear-cache`, records) is a dev-stage action too.
+  3. **`main`** — push or merge to `main` **only when the user explicitly says to push to main**, after they have tested on `dev`. This keeps `main` in step with what was proven.
+  - When local work is done, report it and stop. Batch related revisions into one considered change before asking to push. On 2026-09-10 six pushes to `dev` in an hour — four of them revisions of one label — made deploys cancel each other and left `dev` two commits behind what had been built.
+- **Never open a pull request or push against `main`** without that explicit instruction. Working branches target `dev`. (Rule given 2026-09-08 after a pull request against `main` appeared for a working branch.)
+- **Fetch `origin/dev` before you start editing, and again before every commit or push.** More than one session can be working on this repository on the same day. On 2026-09-07 two sessions edited the same file; nothing broke, but only by luck.
+- **Rebase, never merge**, when bringing in what others pushed (`git fetch origin dev && git rebase origin/dev`; on the working branch `git pull --rebase`).
+- **Say out loud when a pull or rebase brought in someone else's work.** Name the commits and files that came in. Never absorb them quietly. On 2026-09-08 a force-push rewrote a working branch and hid a 30 KB block of obfuscated JavaScript inside three `postcss.config.js` files, plus unrelated font files; it was caught only because the incoming diff was read. Read every incoming diff before building or pushing it.
 
 ---
 
@@ -116,3 +125,55 @@ codebase follow it? If not, rewrite it.
 
 If something really is complex, say so in one plain sentence, then break it into
 steps. Complexity is not a reason for complicated language.
+
+---
+
+## 7. The agent team
+
+Eight specialist agents live in `.claude/agents/`. They inherit everything above — §2's
+change process, §3's production rules, §4's Frappe-first approach and §6's plain
+language are binding on all of them. **They recommend; the user decides.** No agent
+approves work, and none deploys.
+
+| Agent | Owns |
+|---|---|
+| `hrms-product-manager` | What is worth building and in what order — current state, market demand and Kano priorities; the brief, with competitive analysis and persona enhancements |
+| `hrms-ux-designer` | The opportunities scan behind the brief, and the design with a mandatory clickable prototype for review. Learns from feedback between runs |
+| `hrms-business-analyst` | The testable spec — gap analysis, user stories, acceptance criteria, traceability |
+| `hrms-security-privacy-engineer` | Security and privacy requirements before the spec, and their verification at review; threat models, CI gates, incident readiness |
+| `hrms-devops-engineer` | Performance and security advice at every stage, based on what the change introduces; the release plan. Advises only |
+| `hrms-fullstack-engineer` | Impact analysis, strategy, then the code — on the local instance first |
+| `hrms-test-automation-engineer` | Automated proof, including permissions and every security, privacy and DevOps requirement |
+| `hrms-technofunctional-reviewer` | The senior architect review — step 5 |
+
+Shared context they all read, in `.claude/context/`:
+
+- `change-process.md` — §2 above, expanded so every agent applies it the same way
+- `frappe-conventions.md` — §1, §3, §4 and §5 above, expanded
+- `product-context.md` — who we serve, build status, competitive frame
+- `nfr-budget.md` — the numbers behind §2's non-functional dimensions
+- `security-compliance-baseline.md` — DPDP, CERT-In, ISO, SOC 2, GDPR, EU AI Act
+- `compliance-feature-map.md` — the features that make those obligations real
+- `definition-of-ready-done.md` · `handoff-contract.md` — the gates and the artifacts
+- `ux-learnings.md` — what feedback has taught the UX designer; it reads this first and
+  adds to it after every run
+- `new-frappe-app-checklist.md` — what each agent must check when a slice installs an
+  existing Frappe app, learned from the Frappe Learning walkthrough
+- `parallel-work.md` — how the engineer and the test engineer work alongside other
+  sessions and developers without clashing or losing anyone's work: own worktree, work
+  board, safe git commands, hot-file rules, conflict checks, and what to confirm before
+  a push
+
+Work runs through three skills, and **every gate is the user's**:
+
+- `/product-priorities` — current state, pending and new features, market demand and a
+  Kano priority order → **you choose what becomes a slice**
+- `/slice-start` — UX opportunities scan and DevOps first look → brief → **you approve the
+  brief** → design with a clickable prototype → **you agree the design** → security,
+  privacy and DevOps requirements → functional spec with user stories
+- `/slice-build` — impact analysis with the DevOps view → **you approve the strategy** →
+  build locally → tests → review, security review and release readiness together →
+  **you decide to push to dev**, and later **to main**
+
+Work is organised as slices in `docs/slices/<id>/`. The order and the files are set out
+in `.claude/context/handoff-contract.md`.

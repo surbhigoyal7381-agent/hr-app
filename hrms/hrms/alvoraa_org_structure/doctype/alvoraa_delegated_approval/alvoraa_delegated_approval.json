@@ -1,0 +1,50 @@
+{
+ "actions": [],
+ "creation": "2026-09-08 16:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "employee",
+  "previous_leave_approver",
+  "previous_expense_approver"
+ ],
+ "fields": [
+  {
+   "columns": 4,
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Employee",
+   "options": "Employee",
+   "read_only": 1
+  },
+  {
+   "columns": 4,
+   "description": "Kept so the delegation can be undone exactly. Without it, ending the cover would leave approvals pointing at somebody who has gone back to their own store.",
+   "fieldname": "previous_leave_approver",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Was Leave Approver",
+   "read_only": 1
+  },
+  {
+   "columns": 4,
+   "fieldname": "previous_expense_approver",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Was Expense Approver",
+   "read_only": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-08 16:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Org Structure",
+ "name": "Alvoraa Delegated Approval",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "track_changes": 0
+}

@@ -1,0 +1,87 @@
+{
+ "actions": [],
+ "creation": "2026-09-07 17:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "version",
+  "published_on",
+  "published_by",
+  "change_note",
+  "snapshot_section",
+  "summary_snapshot",
+  "attachment_snapshot",
+  "content_snapshot"
+ ],
+ "fields": [
+  {
+   "fieldname": "version",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Version",
+   "read_only": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "published_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Published On",
+   "read_only": 1,
+   "columns": 3
+  },
+  {
+   "fieldname": "published_by",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Published By",
+   "options": "User",
+   "read_only": 1,
+   "columns": 3
+  },
+  {
+   "fieldname": "change_note",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "What Changed",
+   "read_only": 1,
+   "columns": 3
+  },
+  {
+   "fieldname": "snapshot_section",
+   "fieldtype": "Section Break",
+   "label": "Snapshot"
+  },
+  {
+   "fieldname": "summary_snapshot",
+   "fieldtype": "Small Text",
+   "label": "Summary",
+   "read_only": 1
+  },
+  {
+   "fieldname": "attachment_snapshot",
+   "fieldtype": "Attach",
+   "label": "Attachment",
+   "read_only": 1
+  },
+  {
+   "fieldname": "content_snapshot",
+   "fieldtype": "Text Editor",
+   "label": "Content",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-07 17:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Policy Library",
+ "name": "Policy Document Version",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "istable": 1
+}

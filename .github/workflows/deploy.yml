@@ -110,6 +110,14 @@ jobs:
     runs-on: [self-hosted, contabo]
     timeout-minutes: 90
 
+    # `packages: read` so this job can sign in to ghcr.io and pull. Until the
+    # registry sign-in step below, it pulled ANONYMOUSLY and worked only because
+    # the image package was public - which also meant anyone could pull the image
+    # and read the whole application out of it. See that step.
+    permissions:
+      contents: read
+      packages: read
+
     # This is the approval gate for production.
     environment:
       name: ${{ needs.plan.outputs.environment }}
@@ -135,11 +143,73 @@ jobs:
           echo "Image       : ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$IMAGE"
           echo "Migrations  : $MIGRATE"
 
+      # ── The nginx gate: a config nginx cannot read must never reach nginx ──
+      #
+      # ONE nginx container serves production alvoraa.co AND dev.alvoraa.co, and its
+      # config is bind-mounted from deploy/nginx.conf. This job restarts that
+      # container - twice - and until slice 018 it did so without once asking nginx
+      # whether the new config was readable. One missing semicolon therefore meant
+      # nginx did not come back and EVERY site stayed down until a human logged in
+      # and fixed it. A dev deploy could take production down that way.
+      #
+      # So the exact bytes about to be deployed are tested first, in a throwaway
+      # container, and the deploy stops here if nginx refuses them.
+      #
+      # `git show` rather than the working tree, for two reasons: the tree is still
+      # at the PREVIOUS release at this point, and reading from the ref touches
+      # nothing. Both the config and the checker come out of the ref being deployed.
+      #
+      # First step in the job on purpose - it is also the cheapest. A bad config now
+      # costs twenty seconds instead of a ten-minute outage after a thirty-minute run.
+      # The fetch carries the job's own token in a header.
+      #
+      # The server's checkout has an HTTPS remote and NO stored credentials, and
+      # that is deliberate: nothing long-lived sits on the box, so there is nothing
+      # to leak, expire or rotate. The token here lives for the length of the job.
+      # It became necessary the moment the repository went private - on 18 Sep a
+      # deploy failed here with "could not read Username for https://github.com",
+      # exit 128, because a public repo had never needed to authenticate. Do not
+      # "fix" this by storing a credential on the server.
+      #
+      # `contents: read` on this job (above) is what the token needs; drop it and
+      # this fails with a 403 that reads nothing like an auth problem.
+      - name: nginx config must parse
+        env:
+          GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd /var/www/html/hr-app
+          BRANCH="${ENV_NAME/production/main}"
+          AUTH=$(printf 'x-access-token:%s' "$GIT_TOKEN" | base64 -w0)
+          git -c http.extraheader="AUTHORIZATION: basic $AUTH" \
+              fetch --quiet origin "$BRANCH"
+
+          # Where the real certificates live (TLS_CERT_DIR, /etc/letsencrypt). They
+          # are mounted read-only, so nginx checks the certificate PATHS too: a typo
+          # in one fails the test exactly like a syntax error would. That matters -
+          # slice 014 changed those paths to the wildcard certificate.
+          # Only this one key is read out of the env file; the rest holds secrets.
+          CERT_DIR=$(grep -hE '^TLS_CERT_DIR=' "deploy/envs/${ENV_NAME}.env" 2>/dev/null \
+                     | tail -1 | cut -d= -f2-) || CERT_DIR=""
+
+          TMP=$(mktemp -d)
+          trap 'rm -rf "$TMP"' EXIT
+          git show "origin/${BRANCH}:deploy/nginx.conf"             > "$TMP/nginx.conf"
+          git show "origin/${BRANCH}:scripts/check_nginx_parses.sh" > "$TMP/check.sh"
+          bash "$TMP/check.sh" "$TMP/nginx.conf" "${CERT_DIR:-/etc/letsencrypt}"
+
       # ── Pre-deploy backup: this is the rollback point ─────────────────────
       # A database dump alone is NOT restorable — site_config.json holds each
       # site's encryption_key. Both are captured here. (ARCHITECTURE.md §17)
+      #
+      # Dev is backed up too, since slice 018. It used to be skipped to save time,
+      # which was the wrong trade: releases carry data patches that rewrite rows and
+      # cannot be undone, and dev is where a patch is proven before production sees
+      # it. Without a backup a patch that eats dev data leaves nothing to compare
+      # against and nothing to restore. The cost is small and measured: the dev sites
+      # volume is 169 MB, the server has 43 GB free, and the backup adds one to two
+      # minutes to a run that takes about thirty-five.
       - name: Backup all sites
-        if: needs.plan.outputs.environment != 'dev'
         run: |
             set -euo pipefail
             cd /var/www/html/hr-app/deploy/compose
@@ -166,14 +236,65 @@ jobs:
               echo "::warning::BACKUP_BUCKET not set — backups exist only on the server"
             fi
 
+      # ── Sign in to the image registry before pulling ──────────────────────
+      #
+      # The pull inside "Deploy" used to be anonymous. It worked, but only because
+      # the ghcr.io package was PUBLIC - and the image contains the entire
+      # application, so a public package makes the source readable to anyone who
+      # runs `docker pull`, private repository or not.
+      #
+      # With this step the package can be private: the job's own GITHUB_TOKEN has
+      # `packages: read` and is enough to pull. No long-lived token is stored on
+      # the server, and nothing has to be rotated by hand.
+      #
+      # No matching logout. The credential lands in the runner user's
+      # ~/.docker/config.json, and the token stops working when the job ends - but
+      # dev and production deploys can run at the same time on this one runner, and
+      # a logout from either would pull the credential out from under the other
+      # mid-pull.
+      #
+      # The token travels through `env:`, not inline in the command. Inline, the
+      # expanded secret is written into the step script on the runner's disk and is
+      # visible in `ps` while docker login runs. GitHub masks it in the LOG either
+      # way, which is what makes the inline form look safe when it is not - and this
+      # is our own machine, shared with production. Same reason the git fetches below
+      # take their token this way.
+      - name: Sign in to the image registry
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+            set -euo pipefail
+            printf '%s' "$REGISTRY_TOKEN" \
+              | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+
       - name: Deploy
+        env:
+          GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
             set -euo pipefail
             cd /var/www/html/hr-app
-            git fetch --all --prune
+            # Same token header as the gate step above, and for the same reason:
+            # the repository is private and the server holds no credentials.
+            # `origin` is the only remote on this checkout, so --prune is safe here.
+            AUTH=$(printf 'x-access-token:%s' "$GIT_TOKEN" | base64 -w0)
+            git -c http.extraheader="AUTHORIZATION: basic $AUTH" \
+                fetch --prune origin
+            # The objects are local now, so the checkout itself needs no credential.
             git checkout --detach "origin/${ENV_NAME/production/main}" 2>/dev/null \
               || git checkout --detach origin/main
             cd deploy/compose
+
+            # The nginx config is now on disk. Test THAT file, not the one the gate
+            # step read out of git, because the checkout above has a fallback to
+            # origin/main - so the file here is not always the one already proven.
+            #
+            # This sits BEFORE `trap cleanup EXIT` deliberately: the trap restarts
+            # nginx, and restarting nginx is the one thing that must not happen while
+            # the config on disk is bad. Failing here exits with no trap installed,
+            # so the running nginx keeps serving the config it read when it started.
+            CERT_DIR=$(grep -hE '^TLS_CERT_DIR=' "../envs/${ENV_NAME}.env" 2>/dev/null \
+                       | tail -1 | cut -d= -f2-) || CERT_DIR=""
+            bash ../../scripts/check_nginx_parses.sh ../nginx.conf "${CERT_DIR:-/etc/letsencrypt}"
 
             echo "KINEXUS_IMAGE=$FULL_IMAGE" > "$PIN_FILE"
             export COMPOSE_PROJECT_NAME="$PROJECT"
@@ -326,7 +447,45 @@ jobs:
             docker restart compose-nginx-1 >/dev/null 2>&1 || true
             sleep 5
 
-            docker image prune -f --filter "until=168h" || true
+            # ── Keep the disk from filling up with old builds ──────────────
+            #
+            # `docker image prune -f` removes DANGLING images only - untagged
+            # leftovers. Every build here is tagged (hr-app:dev-<sha>), so this
+            # line never touched a single one of them, and the "until=168h" it
+            # carried was beside the point.
+            #
+            # They piled up: 43 images at 11.2 GB each. On 2026-09-10 that took
+            # the 193 GB disk to 100% full and three deploys in a row hung with
+            # nowhere to write the new image - each dying silently after ~27
+            # minutes, because a stalled `docker compose pull` says nothing.
+            #
+            # So the dangling sweep stays, and the tagged builds are handled
+            # too. Anything a container is running is kept - docker refuses to
+            # remove those anyway - plus the two most recent prod tags and the
+            # three most recent dev tags. That is the rollback window. Older
+            # ones still exist in the registry; rolling back to one costs a
+            # few minutes to pull rather than being impossible.
+            docker image prune -f --filter "until=48h" || true
+
+            KEEP=$(
+              {
+                docker ps --format '{{.Image}}'
+                docker images --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}' \
+                  | grep 'hr-app:prod-' | sort -r | head -2 | cut -f2-
+                docker images --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}' \
+                  | grep 'hr-app:dev-'  | sort -r | head -3 | cut -f2-
+              } | sort -u
+            )
+            # An empty KEEP would make the grep below match nothing and delete
+            # everything, including what is running. Never guess here.
+            if [ -n "$KEEP" ]; then
+              docker images --format '{{.Repository}}:{{.Tag}}' \
+                | grep 'hr-app:' | grep -v ':<none>' \
+                | grep -vxF "$KEEP" \
+                | xargs -r -n1 docker rmi >/dev/null 2>&1 || true
+            fi
+            echo "Disk after cleanup:"
+            df -h / | tail -1
 
       # Runs whatever happened above, including a failed deploy.
       #
@@ -354,9 +513,34 @@ jobs:
           done
           # One nginx serves every environment and caches the backend address,
           # so a container swap leaves every site 502 until it is restarted.
-          docker restart compose-nginx-1 >/dev/null 2>&1 || true
-          sleep 6
-          echo 'service restored'
+          #
+          # But this step runs `if: always()`, including after a FAILED deploy - so
+          # it is the last place a bad config could still reach nginx. Check first.
+          # If the file on disk does not parse, do not restart: a running nginx is
+          # still happily serving the config it read at start-up, and restarting it
+          # would turn a failed deploy into an outage on every site, production
+          # included. Leaving dev at 502 until a human looks is the cheaper failure.
+          CERT_DIR=$(grep -hE '^TLS_CERT_DIR=' "../envs/${ENV_NAME}.env" 2>/dev/null \
+                     | tail -1 | cut -d= -f2-) || CERT_DIR=""
+          #
+          # If the checker itself is not in the tree - the Deploy step can fail at
+          # its own checkout, leaving the previous release on disk - fall back to the
+          # old behaviour. That config was parsed by the running nginx already.
+          if [ ! -f ../../scripts/check_nginx_parses.sh ]; then
+            echo "::warning::nginx checker not in this tree - restarting unchecked"
+            docker restart compose-nginx-1 >/dev/null 2>&1 || true
+            sleep 6
+            echo 'service restored'
+          elif bash ../../scripts/check_nginx_parses.sh ../nginx.conf "${CERT_DIR:-/etc/letsencrypt}"; then
+            docker restart compose-nginx-1 >/dev/null 2>&1 || true
+            sleep 6
+            echo 'service restored'
+          else
+            echo "::error::deploy/nginx.conf does not parse - nginx was NOT restarted."
+            echo "::error::The running nginx still serves the config it read at start."
+            echo "::error::Sites pointing at recreated containers will 502 until a"
+            echo "::error::human fixes deploy/nginx.conf and restarts compose-nginx-1."
+          fi
 
       - name: Smoke test
         run: |

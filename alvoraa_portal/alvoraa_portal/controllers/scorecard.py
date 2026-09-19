@@ -1,6 +1,14 @@
 import frappe
 from frappe.utils import now_datetime
 
+from alvoraa_portal.subscription import requires_feature
+
+# Every whitelisted endpoint in this module belongs to ONE sellable feature,
+# so every one is gated (slice 016). Before, the panel was hidden and the door
+# still opened: a tenant that never bought the vendor and driver portal could
+# still call all 28 of these. The gate is entitlement, not ownership - who may
+# touch WHICH record is slice 016 phase 2.
+
 
 # ─── Performance tier thresholds ─────────────────────────────────────────────
 TIERS = [
@@ -139,6 +147,7 @@ def generate_monthly_scorecards():
 # ─── Whitelisted API ─────────────────────────────────────────────────────────
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def generate_scorecard_for_partner(partner, month, year):
     """
     Generate (or update) a Delivery Performance Scorecard for a partner for the given
@@ -212,25 +221,31 @@ def generate_scorecard_for_partner(partner, month, year):
         doc.damage_claims = sum(1 for f in feedbacks if f.any_damage)
         doc.missing_item_claims = sum(1 for f in feedbacks if f.items_missing)
 
-    # ── Safety data from GPS tracking ────────────────────────────────────────
-    gps_data = frappe.db.sql(
-        """
-        SELECT
-            COALESCE(SUM(harsh_braking), 0)     AS harsh,
-            COALESCE(SUM(harsh_acceleration), 0) AS accel,
-            COALESCE(SUM(speeding_alert), 0)    AS speeding
-        FROM `tabVehicle Tracking`
-        WHERE delivery_partner = %s
-          AND recorded_timestamp BETWEEN %s AND %s
-        """,
-        (partner, start_date, end_date),
-        as_dict=True,
-    )
-    if gps_data and gps_data[0]:
-        row = gps_data[0]
-        doc.harsh_driving_detected = int(row.harsh or 0) + int(row.accel or 0)
-        doc.speeding_incidents = int(row.speeding or 0)
-        doc.safety_incidents = doc.harsh_driving_detected + doc.speeding_incidents
+    # ── Safety data from GPS tracking: REMOVED in slice 016 ──────────────────
+    #
+    # This used to read harsh_braking, harsh_acceleration and speeding_alert out
+    # of Vehicle Tracking and write them onto the scorecard as
+    # harsh_driving_detected, speeding_incidents and safety_incidents, where
+    # _calculate_composite_score turned them into a safety score, an overall
+    # score, a performance level, a recommended increment and - at the bottom
+    # tier - an automatic written warning.
+    #
+    # FR-H7: no passive behavioural monitoring as a performance input. A driving
+    # style measured by a phone is an activity signal, not an outcome, and it was
+    # moving someone's pay.
+    #
+    # The raw Vehicle Tracking rows are untouched and safety_incidents still
+    # counts in the score - but only when a person has recorded an incident.
+    # Nothing here writes those three fields any more, so a scorecard generated
+    # a second time cannot silently acquire them either.
+    #
+    # On a REGENERATION the two telemetry-only fields are cleared, because
+    # nothing but telemetry ever wrote them, so anything left there is the old
+    # behaviour still showing. safety_incidents is deliberately NOT cleared: a
+    # person may have recorded a real incident on it, and wiping someone's
+    # safety record to tidy up would be its own kind of wrong.
+    doc.harsh_driving_detected = 0
+    doc.speeding_incidents = 0
 
     # ── Compliance overdue check ──────────────────────────────────────────────
     overdue_count = frappe.db.count(
@@ -259,6 +274,7 @@ def generate_scorecard_for_partner(partner, month, year):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_hub_performance_report(hub_name, month, year):
     """Return aggregated hub performance data for the monthly report."""
     month, year = int(month), int(year)

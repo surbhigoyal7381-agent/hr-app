@@ -1,0 +1,49 @@
+designation,department,employee_grade,location_type,headcount_total,sales_incentive_applies,incentive_basis
+Owner & Managing Director,Management,G6 Leadership,Head Office,1,No,
+Executive Assistant to MD,Management,G3 Senior Executive,Head Office,1,No,
+Head - Finance & Accounts,Finance & Accounts,G5 Head,Head Office,1,No,
+Accountant,Finance & Accounts,G3 Senior Executive,Head Office,3,No,
+Accounts Executive,Finance & Accounts,G2 Executive,Head Office,2,No,
+Internal Auditor,Finance & Accounts,G4 Manager,Head Office,1,No,
+Head - Human Resources,Human Resources,G5 Head,Head Office,1,No,
+HR Executive,Human Resources,G2 Executive,Head Office,2,No,
+Recruitment Executive,Human Resources,G2 Executive,Head Office,1,No,
+Payroll & Compliance Executive,Human Resources,G3 Senior Executive,Head Office,1,No,
+Training & Development Executive,Human Resources,G3 Senior Executive,Head Office,1,No,
+Head - Purchase & Sourcing,Purchase & Sourcing,G5 Head,Head Office,1,No,
+Purchase Executive,Purchase & Sourcing,G2 Executive,Head Office,2,No,
+Bullion Officer,Purchase & Sourcing,G3 Senior Executive,Head Office,1,No,
+Central Vault & Inventory Manager,Central Vault & Inventory,G4 Manager,Head Office,1,No,
+Inventory Executive,Central Vault & Inventory,G2 Executive,Head Office,2,No,
+Head - Marketing,Marketing,G5 Head,Head Office,1,No,
+Marketing Executive,Marketing,G2 Executive,Head Office,2,No,
+Graphic Designer,Marketing,G2 Executive,Head Office,1,No,
+IT Manager,Information Technology,G4 Manager,Head Office,1,No,
+IT Support Executive,Information Technology,G2 Executive,Head Office,1,No,
+Admin Manager,Administration,G4 Manager,Head Office,1,No,
+Admin Executive,Administration,G2 Executive,Head Office,1,No,
+Receptionist,Administration,G2 Executive,Head Office,1,No,
+Office Assistant,Administration,G1 Support,Head Office,2,No,
+Driver,Administration,G1 Support,Head Office,2,No,
+Head - Design & Quality,Design & Quality,G5 Head,Head Office,1,No,
+Jewellery Designer,Design & Quality,G3 Senior Executive,Head Office,2,No,
+Hallmarking & QC Officer,Design & Quality,G3 Senior Executive,Head Office,1,No,
+Legal & Compliance Officer,Legal & Compliance,G4 Manager,Head Office,1,No,
+Store In-charge,Store Management,G5 Head,Store,5,Yes,Store sales
+Assistant Store Manager,Store Management,G4 Manager,Store,5,Yes,Store sales
+Store HR & Admin Executive,Store Management,G3 Senior Executive,Store,5,No,
+Store Accountant,Cashiering & Accounts,G3 Senior Executive,Store,5,No,
+Vault & Inventory Custodian,Vault & Inventory,G3 Senior Executive,Store,10,No,
+Floor Manager - Gold,Sales,G4 Manager,Store,5,Yes,Floor sales
+Floor Manager - Diamond,Sales,G4 Manager,Store,5,Yes,Floor sales
+Floor Manager - Silver & Fashion,Sales,G4 Manager,Store,5,Yes,Floor sales
+Customer Relationship Executive,Customer Service,G2 Executive,Store,15,Yes,Store sales
+Visual Merchandiser,Store Management,G2 Executive,Store,5,No,
+Senior Sales Executive,Sales,G3 Senior Executive,Store,60,Yes,Own sales
+Sales Executive,Sales,G2 Executive,Store,120,Yes,Own sales
+Trainee Sales Executive,Sales,G2 Executive,Store,10,Yes,Own sales
+Gold Valuer,Valuation & Karigari,G3 Senior Executive,Store,10,No,
+Karigar,Valuation & Karigari,G2 Executive,Store,15,No,
+Cashier,Cashiering & Accounts,G2 Executive,Store,20,Yes,Store sales
+Security Guard,Security & Housekeeping,G1 Support,Store,40,No,
+Housekeeping Staff,Security & Housekeeping,G1 Support,Store,20,No,

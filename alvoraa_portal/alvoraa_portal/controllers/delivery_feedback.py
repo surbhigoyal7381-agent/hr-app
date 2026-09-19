@@ -1,6 +1,15 @@
 import frappe
 from frappe.utils import now_datetime
 
+from alvoraa_portal import delivery_settings
+from alvoraa_portal.subscription import requires_feature
+
+# Every whitelisted endpoint in this module belongs to ONE sellable feature,
+# so every one is gated (slice 016). Before, the panel was hidden and the door
+# still opened: a tenant that never bought the vendor and driver portal could
+# still call all 28 of these. The gate is entitlement, not ownership - who may
+# touch WHICH record is slice 016 phase 2.
+
 
 def validate(doc, method=None):
     if not doc.feedback_date:
@@ -113,9 +122,7 @@ def _check_and_escalate(doc):
 
 def _send_low_rating_alert(doc):
     try:
-        recipient = "ops@gracedrinks.in"
-        frappe.sendmail(
-            recipients=[recipient],
+        delivery_settings.send_ops_alert(
             subject=f"[LOW RATING] Delivery Feedback — {doc.delivery_order} | Rating: {doc.average_rating}/5",
             message=f"""
             <p><strong>Low Delivery Rating Alert</strong></p>
@@ -134,6 +141,7 @@ def _send_low_rating_alert(doc):
             </table>
             <p>Please review and take corrective action.</p>
             """,
+            context=doc.name,
         )
     except Exception as e:
         frappe.log_error(str(e), "Low Rating Alert Email Failed")
@@ -141,9 +149,7 @@ def _send_low_rating_alert(doc):
 
 def _send_issue_escalation_alert(doc):
     try:
-        recipient = "ops@gracedrinks.in"
-        frappe.sendmail(
-            recipients=[recipient],
+        delivery_settings.send_ops_alert(
             subject=f"[{doc.issue_severity.upper()} ISSUE] Delivery Feedback — {doc.delivery_order}",
             message=f"""
             <p><strong>Delivery Issue Escalation — Severity: {doc.issue_severity}</strong></p>
@@ -158,12 +164,14 @@ def _send_issue_escalation_alert(doc):
             </table>
             <p>Please investigate and resolve within 24 hours.</p>
             """,
+            context=doc.name,
         )
     except Exception as e:
         frappe.log_error(str(e), "Issue Escalation Email Failed")
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_partner_feedback_summary(partner_name, month=None, year=None):
     """Return feedback statistics for a partner, optionally filtered by month/year."""
     filters = {"delivery_partner": partner_name}

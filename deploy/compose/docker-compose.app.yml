@@ -116,6 +116,13 @@ services:
         bench set-config -g redis_socketio   "$$REDIS_QUEUE"
         bench set-config -gp socketio_port   9000
         bench set-config -gp developer_mode  "$$DEVELOPER_MODE"
+        # In developer mode Frappe adds webserver_port (8000) to every link it
+        # builds — including the pages wkhtmltopdf fetches, so PDFs fail with
+        # ConnectionRefused. Nginx serves the sites on 443; say so. Production
+        # (developer_mode 0) adds no port and must not get one.
+        if [ "$$DEVELOPER_MODE" = "1" ]; then
+          bench set-config -gp http_port 443
+        fi
         bench set-config -gp mute_emails     "$$MUTE_EMAILS"
         # Server Scripts are arbitrary Python execution from the UI. Off. (§20)
         bench set-config -gp server_script_enabled 0

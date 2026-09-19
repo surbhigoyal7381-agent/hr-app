@@ -154,6 +154,79 @@ FEATURES = {
         "label": "Vendor & Driver Portal",
         "app": "alvoraa_portal",
         "module_defs": ["Alvoraa Portal"],
+        # Opt-in from slice 016. The app is installed on EVERY tenant, so the
+        # routes and doctypes exist everywhere whatever the plan - and
+        # provision_tenant.sh writes `subscription_plan` but never `features`,
+        # so the fallback in enabled_features() handed this module to every
+        # site it created. Opt-in means a tenant has it only when its own
+        # config names it, which is one tick in the admin console.
+        "opt_in": True,
+    },
+    # ── Opt-in features (off everywhere until the console ticks them for a tenant) ──
+    "late_rules": {
+        "desc": "Late-coming and early-exit rule: quarter-day deductions from leave, then pay",
+        "icon": "⏰",
+        "label": "Late Coming Rules",
+        "module_defs": ["Alvoraa Late Rules"],
+        "opt_in": True,
+        "requires": ["attendance", "leaves", "payroll"],
+    },
+    "attendance_scoring": {
+        "desc": "Attendance as a weighted part of the appraisal score, set up from the cycle wizard",
+        "icon": "📅",
+        "label": "Attendance in Appraisals",
+        "module_defs": ["Alvoraa HR Core"],
+        "opt_in": True,
+        "requires": ["performance", "attendance"],
+    },
+    "field_checkin": {
+        "desc": "Attendance from a phone for staff with no desk: photo, place and time, checked against the branch radius",
+        "icon": "📍",
+        "label": "Field Check-in & Geofencing",
+        # Lives in the portal app, like the vendor and analytics features. The
+        # real gate is @requires_feature on the endpoints, not a hidden module:
+        # this one is reached from a phone that never opens the desk.
+        "app": "alvoraa_portal",
+        "module_defs": ["Alvoraa Portal"],
+        "opt_in": True,
+        # Attendance only. Deliberately NOT late_rules: a customer can buy field
+        # punches without buying deductions, and most will start that way.
+        "requires": ["attendance"],
+    },
+    "employee_documents": {
+        "desc": "Document checklist on every employee: collected, verified, expiring",
+        "icon": "🗂️",
+        "label": "Employee Documents",
+        "module_defs": ["Alvoraa Employee Documents"],
+        "opt_in": True,
+        "requires": ["tenure"],
+    },
+    "screening_forms": {
+        "desc": "Screening questions on the application form, with screen-out rules per opening",
+        "icon": "📝",
+        "label": "Application Screening",
+        "module_defs": ["Alvoraa Screening"],
+        "opt_in": True,
+        "requires": ["recruitment"],
+    },
+    "org_structure": {
+        "desc": "Positions, vacancies and weighted assignment; the chart shows seats, not just people",
+        "icon": "🏛️",
+        "label": "Org Structure & Positions",
+        "module_defs": ["Alvoraa Org Structure"],
+        "opt_in": True,
+        # The chart itself needs nothing - it falls back to drawing people, which
+        # is what Frappe HR already does. This layer is what adds seats, so it
+        # only needs the portal the chart is shown on.
+        "requires": ["portal"],
+    },
+    "policy_library": {
+        "desc": "Central policy library: department-owned, versioned, acknowledged, on the portal home page",
+        "icon": "📚",
+        "label": "Policy Library",
+        "module_defs": ["Alvoraa Policy Library"],
+        "opt_in": True,
+        "requires": ["portal"],
     },
 }
 
@@ -315,6 +388,27 @@ CONTROL_PLANE_DOCTYPES = [
     "Alvoraa Subscription", "Alvoraa Subscription Addon", "Alvoraa Subscription Pack",
     "Alvoraa Usage Record", "Alvoraa Usage Pack",
     "Alvoraa Tenant Health", "Alvoraa Tenant Error",
+]
+
+# Doctypes in the Alvoraa Portal module that belong to the TENANT, not to us.
+#
+# Kept as a list beside the one above so that every `Alvoraa %` doctype in this
+# module is deliberately classified as one or the other. Before this existed,
+# every one of them was control-plane and a test asserted exactly that - so the
+# first tenant-side doctype failed it. The answer is not to widen the
+# control-plane list, which would quietly exclude tenant data from the access
+# derivation; it is to say which kind each one is.
+TENANT_DOCTYPES = [
+    "Alvoraa Field Device",
+    # Who opened whose check-in photo. The tenant's own record about its own
+    # staff, so it belongs to the tenant, not to our control plane.
+    "Alvoraa Photo Access Log",
+    # Slice 012. Both are the tenant's own records about its own data, read and
+    # written inside the tenant by HR and its System Manager - not our billing or
+    # provisioning plumbing. So they are tenant-side, and stay inside the tenant
+    # access derivation.
+    "Alvoraa Data Review Item",
+    "Alvoraa Leader View Settings",
 ]
 
 REQUIRED = [k for k, v in FEATURES.items() if v.get("required")]

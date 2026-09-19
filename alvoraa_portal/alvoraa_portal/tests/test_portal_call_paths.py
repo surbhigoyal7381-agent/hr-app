@@ -36,6 +36,20 @@ FULL_CALL = re.compile(r'\bgpFetch\(\s*["\']([A-Za-z_][A-Za-z0-9_.]*)["\']')
 # var PF = "alvoraa_portal.performance_api.";
 PF_CONST = re.compile(r'\bPF\s*=\s*["\']([A-Za-z_][A-Za-z0-9_.]*\.)["\']')
 
+# Newer screens route through a small helper rather than naming the method at
+# the call site:
+#
+#     function acApi(fn, args) { return gpFetch("alvoraa_portal.x." + fn, args) }
+#
+# The only string literal in the page is the module prefix, so matching gpFetch
+# alone yielded a path ending in a dot and a method name of "". Skipping those
+# would leave the two newest screens - attendance analytics and attendance
+# corrections - entirely unchecked, which is the opposite of the point. So the
+# helper is followed instead: find its definition, then find its callers.
+HELPER_DEF = re.compile(
+    r'function\s+(\w+)\s*\(\s*fn\b[^)]*\)\s*\{\s*return\s+gpFetch\(\s*'
+    r'["\']([A-Za-z_][A-Za-z0-9_.]*)\.["\']\s*\+\s*fn')
+
 
 def _app_root():
     """The alvoraa_portal package directory, however the bench lays it out."""
@@ -79,7 +93,14 @@ def _called_paths():
     prefix = prefixes[0]
 
     paths = {prefix + name for name in PF_CALL.findall(html)}
-    paths |= {p for p in FULL_CALL.findall(html) if p.startswith("alvoraa_portal.")}
+    paths |= {p for p in FULL_CALL.findall(html)
+              if p.startswith("alvoraa_portal.") and not p.endswith(".")}
+
+    for helper, module in HELPER_DEF.findall(html):
+        calls = re.findall(r'\b%s\(\s*["\']([A-Za-z_]\w*)["\']' % re.escape(helper), html)
+        assert calls, "%s() is defined but never called - has it been renamed?" % helper
+        paths |= {module + "." + name for name in calls}
+
     return sorted(paths)
 
 
@@ -110,3 +131,40 @@ class TestEveryPortalCallResolves(FrappeTestCase):
                         "alvoraa_portal.hr_api.set_org_setting",
                         "alvoraa_portal.goals_api.delete_goal"):
             self.assertIn(present, html)
+
+
+class TestTheOrgChartIsWiredToThePortal(FrappeTestCase):
+	"""The employee view of the org chart. It reads two methods that live in
+	hrms rather than alvoraa_portal, so the resolver above - which only checks
+	alvoraa_portal paths - does not cover them."""
+
+	def test_the_panel_and_nav_exist(self):
+		page = _portal_html()
+		self.assertIn('id="panel-org-chart"', page)
+		self.assertIn('id="nav-org-chart"', page)
+
+	def test_it_is_gated_on_the_opt_in_feature(self):
+		"""Off for every tenant until somebody ticks it, like anything new."""
+		self.assertIn("plan_org_structure", _portal_html())
+
+	def test_it_calls_the_two_methods_it_needs(self):
+		page = _portal_html()
+		for path in ("hrms.alvoraa_org_structure.api.my_view",
+		             "hrms.alvoraa_org_structure.api.search_people"):
+			self.assertIn(path, page)
+
+	def test_those_methods_exist_and_are_whitelisted(self):
+		import ast
+		import os
+
+		import hrms
+
+		path = os.path.join(os.path.dirname(os.path.abspath(hrms.__file__)),
+		                    "alvoraa_org_structure", "api.py")
+		with open(path, encoding="utf-8") as fh:
+			tree = ast.parse(fh.read())
+		whitelisted = {n.name for n in tree.body
+		               if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+		               and any("whitelist" in ast.unparse(d) for d in n.decorator_list)}
+		for fn in ("my_view", "search_people"):
+			self.assertIn(fn, whitelisted, fn)

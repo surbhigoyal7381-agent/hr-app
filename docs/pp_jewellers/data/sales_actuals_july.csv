@@ -1,0 +1,191 @@
+employee_id,employee_name,branch,designation,category,floor_manager,july_target_inr,july_actual_inr,attainment,incentive_component,incentive_inr
+PPJ-0054,Suresh Sethi,PPJ Chandigarh Sector 17,Senior Sales Executive,Gold,PPJ-0047,2482759,2631724,106%,Gold Incentive,9200
+PPJ-0055,Meenakshi Jain,PPJ Chandigarh Sector 17,Senior Sales Executive,Diamond,PPJ-0048,1324138,1130842,85%,Diamond Incentive,0
+PPJ-0056,Suresh Sandhu,PPJ Chandigarh Sector 17,Senior Sales Executive,Silver & Fashion,PPJ-0049,342857,360357,105%,Silver & Fashion Incentive,1800
+PPJ-0057,Dinesh Verma,PPJ Chandigarh Sector 17,Senior Sales Executive,Gold,PPJ-0047,2482759,2346367,95%,Gold Incentive,4700
+PPJ-0058,Rahul Kumar,PPJ Chandigarh Sector 17,Senior Sales Executive,Diamond,PPJ-0048,1324138,1378888,104%,Diamond Incentive,12400
+PPJ-0059,Sanjay Yadav,PPJ Chandigarh Sector 17,Senior Sales Executive,Silver & Fashion,PPJ-0049,342857,418758,122%,Silver & Fashion Incentive,2900
+PPJ-0060,Simran Verma,PPJ Chandigarh Sector 17,Senior Sales Executive,Gold,PPJ-0047,2482759,2179143,88%,Gold Incentive,0
+PPJ-0061,Rohit Garg,PPJ Chandigarh Sector 17,Senior Sales Executive,Diamond,PPJ-0048,1324138,1392339,105%,Diamond Incentive,12500
+PPJ-0062,Balwinder Bedi,PPJ Chandigarh Sector 17,Senior Sales Executive,Silver & Fashion,PPJ-0049,342857,336697,98%,Silver & Fashion Incentive,1000
+PPJ-0063,Suresh Kaur,PPJ Chandigarh Sector 17,Senior Sales Executive,Gold,PPJ-0047,2482759,2915870,117%,Gold Incentive,10200
+PPJ-0064,Sunita Rana,PPJ Chandigarh Sector 17,Senior Sales Executive,Diamond,PPJ-0048,1324138,1230673,93%,Diamond Incentive,7400
+PPJ-0065,Deepak Bedi,PPJ Chandigarh Sector 17,Senior Sales Executive,Silver & Fashion,PPJ-0049,342857,353308,103%,Silver & Fashion Incentive,1800
+PPJ-0066,Nidhi Sandhu,PPJ Chandigarh Sector 17,Sales Executive,Gold,PPJ-0047,1655172,1639736,99%,Gold Incentive,3300
+PPJ-0067,Rahul Bansal,PPJ Chandigarh Sector 17,Sales Executive,Diamond,PPJ-0048,882759,1055319,120%,Diamond Incentive,9500
+PPJ-0068,Vinod Malhotra,PPJ Chandigarh Sector 17,Sales Executive,Silver & Fashion,PPJ-0049,228571,202300,89%,Silver & Fashion Incentive,0
+PPJ-0069,Manish Kaur,PPJ Chandigarh Sector 17,Sales Executive,Gold,PPJ-0047,1655172,1658184,100%,Gold Incentive,5800
+PPJ-0070,Rakesh Bansal,PPJ Chandigarh Sector 17,Sales Executive,Diamond,PPJ-0048,882759,1102177,125%,Diamond Incentive,13200
+PPJ-0071,Sahil Sandhu,PPJ Chandigarh Sector 17,Sales Executive,Silver & Fashion,PPJ-0049,228571,308306,135%,Silver & Fashion Incentive,2200
+PPJ-0072,Sumit Jain,PPJ Chandigarh Sector 17,Sales Executive,Gold,PPJ-0047,1655172,1737253,105%,Gold Incentive,6100
+PPJ-0073,Varun Gill,PPJ Chandigarh Sector 17,Sales Executive,Diamond,PPJ-0048,882759,891079,101%,Diamond Incentive,8000
+PPJ-0074,Shweta Yadav,PPJ Chandigarh Sector 17,Sales Executive,Silver & Fashion,PPJ-0049,228571,243868,107%,Silver & Fashion Incentive,1200
+PPJ-0075,Naveen Aggarwal,PPJ Chandigarh Sector 17,Sales Executive,Gold,PPJ-0047,1655172,2127555,129%,Gold Incentive,10600
+PPJ-0076,Tarun Sethi,PPJ Chandigarh Sector 17,Sales Executive,Diamond,PPJ-0048,882759,962799,109%,Diamond Incentive,8700
+PPJ-0077,Ritu Saini,PPJ Chandigarh Sector 17,Sales Executive,Silver & Fashion,PPJ-0049,228571,250565,110%,Silver & Fashion Incentive,1300
+PPJ-0078,Dinesh Saini,PPJ Chandigarh Sector 17,Sales Executive,Gold,PPJ-0047,1655172,1856970,112%,Gold Incentive,6500
+PPJ-0079,Jasleen Yadav,PPJ Chandigarh Sector 17,Sales Executive,Diamond,PPJ-0048,882759,961207,109%,Diamond Incentive,8700
+PPJ-0080,Vishal Arora,PPJ Chandigarh Sector 17,Sales Executive,Silver & Fashion,PPJ-0049,228571,229878,101%,Silver & Fashion Incentive,1100
+PPJ-0081,Rajat Jain,PPJ Chandigarh Sector 17,Sales Executive,Gold,PPJ-0047,1655172,1856872,112%,Gold Incentive,6500
+PPJ-0082,Renu Arora,PPJ Chandigarh Sector 17,Sales Executive,Diamond,PPJ-0048,882759,986040,112%,Diamond Incentive,8900
+PPJ-0083,Ankit Gupta,PPJ Chandigarh Sector 17,Sales Executive,Silver & Fashion,PPJ-0049,228571,242997,106%,Silver & Fashion Incentive,1200
+PPJ-0084,Rahul Thakur,PPJ Chandigarh Sector 17,Sales Executive,Gold,PPJ-0047,1655172,1972598,119%,Gold Incentive,6900
+PPJ-0085,Jaspreet Sethi,PPJ Chandigarh Sector 17,Sales Executive,Diamond,PPJ-0048,882759,937700,106%,Diamond Incentive,8400
+PPJ-0086,Harish Bhatia,PPJ Chandigarh Sector 17,Sales Executive,Silver & Fashion,PPJ-0049,228571,198911,87%,Silver & Fashion Incentive,0
+PPJ-0087,Deepak Arora,PPJ Chandigarh Sector 17,Sales Executive,Gold,PPJ-0047,1655172,2124601,128%,Gold Incentive,10600
+PPJ-0088,Varun Verma,PPJ Chandigarh Sector 17,Sales Executive,Diamond,PPJ-0048,882759,917144,104%,Diamond Incentive,8300
+PPJ-0089,Shweta Kaur,PPJ Chandigarh Sector 17,Sales Executive,Silver & Fashion,PPJ-0049,228571,259650,114%,Silver & Fashion Incentive,1300
+PPJ-0090,Meenakshi Sethi,PPJ Chandigarh Sector 17,Trainee Sales Executive,Gold,PPJ-0047,827586,936415,113%,Gold Incentive,3300
+PPJ-0091,Kiran Malhotra,PPJ Chandigarh Sector 17,Trainee Sales Executive,Diamond,PPJ-0048,441379,477075,108%,Diamond Incentive,4300
+PPJ-0126,Tarun Thakur,PPJ Ambala City,Senior Sales Executive,Gold,PPJ-0119,1448276,1566629,108%,Gold Incentive,5500
+PPJ-0127,Gaurav Singh,PPJ Ambala City,Senior Sales Executive,Diamond,PPJ-0120,772414,754468,98%,Diamond Incentive,4500
+PPJ-0128,Harish Bansal,PPJ Ambala City,Senior Sales Executive,Silver & Fashion,PPJ-0121,200000,188056,94%,Silver & Fashion Incentive,600
+PPJ-0129,Deepak Saini,PPJ Ambala City,Senior Sales Executive,Gold,PPJ-0119,1448276,1231757,85%,Gold Incentive,0
+PPJ-0130,Arjun Rana,PPJ Ambala City,Senior Sales Executive,Diamond,PPJ-0120,772414,553314,72%,Diamond Incentive,0
+PPJ-0131,Vinod Rana,PPJ Ambala City,Senior Sales Executive,Silver & Fashion,PPJ-0121,200000,213586,107%,Silver & Fashion Incentive,1100
+PPJ-0132,Deepak Yadav,PPJ Ambala City,Senior Sales Executive,Gold,PPJ-0119,1448276,1292221,89%,Gold Incentive,0
+PPJ-0133,Manpreet Sharma,PPJ Ambala City,Senior Sales Executive,Diamond,PPJ-0120,772414,688785,89%,Diamond Incentive,0
+PPJ-0134,Ankit Bhatia,PPJ Ambala City,Senior Sales Executive,Silver & Fashion,PPJ-0121,200000,166316,83%,Silver & Fashion Incentive,0
+PPJ-0135,Sahil Goel,PPJ Ambala City,Senior Sales Executive,Gold,PPJ-0119,1448276,1304869,90%,Gold Incentive,2600
+PPJ-0136,Harish Jain,PPJ Ambala City,Senior Sales Executive,Diamond,PPJ-0120,772414,709703,92%,Diamond Incentive,4300
+PPJ-0137,Mamta Bhatia,PPJ Ambala City,Senior Sales Executive,Silver & Fashion,PPJ-0121,200000,204666,102%,Silver & Fashion Incentive,1000
+PPJ-0138,Tanvi Thakur,PPJ Ambala City,Sales Executive,Gold,PPJ-0119,965517,845555,88%,Gold Incentive,0
+PPJ-0139,Rakesh Rana,PPJ Ambala City,Sales Executive,Diamond,PPJ-0120,514943,491263,95%,Diamond Incentive,2900
+PPJ-0140,Ankit Sethi,PPJ Ambala City,Sales Executive,Silver & Fashion,PPJ-0121,133333,103046,77%,Silver & Fashion Incentive,0
+PPJ-0141,Bhavna Kaur,PPJ Ambala City,Sales Executive,Gold,PPJ-0119,965517,965573,100%,Gold Incentive,3400
+PPJ-0142,Payal Kaur,PPJ Ambala City,Sales Executive,Diamond,PPJ-0120,514943,525155,102%,Diamond Incentive,4700
+PPJ-0143,Pooja Bedi,PPJ Ambala City,Sales Executive,Silver & Fashion,PPJ-0121,133333,151364,114%,Silver & Fashion Incentive,800
+PPJ-0144,Ankit Garg,PPJ Ambala City,Sales Executive,Gold,PPJ-0119,965517,748501,78%,Gold Incentive,0
+PPJ-0145,Sakshi Yadav,PPJ Ambala City,Sales Executive,Diamond,PPJ-0120,514943,560012,109%,Diamond Incentive,5000
+PPJ-0146,Dinesh Gill,PPJ Ambala City,Sales Executive,Silver & Fashion,PPJ-0121,133333,130221,98%,Silver & Fashion Incentive,400
+PPJ-0147,Balwinder Chauhan,PPJ Ambala City,Sales Executive,Gold,PPJ-0119,965517,848361,88%,Gold Incentive,0
+PPJ-0148,Pooja Bhatia,PPJ Ambala City,Sales Executive,Diamond,PPJ-0120,514943,449661,87%,Diamond Incentive,0
+PPJ-0149,Ashok Gill,PPJ Ambala City,Sales Executive,Silver & Fashion,PPJ-0121,133333,124923,94%,Silver & Fashion Incentive,400
+PPJ-0150,Ashok Thakur,PPJ Ambala City,Sales Executive,Gold,PPJ-0119,965517,750687,78%,Gold Incentive,0
+PPJ-0151,Nitin Sharma,PPJ Ambala City,Sales Executive,Diamond,PPJ-0120,514943,471857,92%,Diamond Incentive,2800
+PPJ-0152,Rohit Chauhan,PPJ Ambala City,Sales Executive,Silver & Fashion,PPJ-0121,133333,108024,81%,Silver & Fashion Incentive,0
+PPJ-0153,Komal Bedi,PPJ Ambala City,Sales Executive,Gold,PPJ-0119,965517,991929,103%,Gold Incentive,3500
+PPJ-0154,Naveen Kapoor,PPJ Ambala City,Sales Executive,Diamond,PPJ-0120,514943,486920,95%,Diamond Incentive,2900
+PPJ-0155,Sahil Kumar,PPJ Ambala City,Sales Executive,Silver & Fashion,PPJ-0121,133333,111672,84%,Silver & Fashion Incentive,0
+PPJ-0156,Vinod Arora,PPJ Ambala City,Sales Executive,Gold,PPJ-0119,965517,984981,102%,Gold Incentive,3400
+PPJ-0157,Sonia Verma,PPJ Ambala City,Sales Executive,Diamond,PPJ-0120,514943,462642,90%,Diamond Incentive,0
+PPJ-0158,Vinod Chauhan,PPJ Ambala City,Sales Executive,Silver & Fashion,PPJ-0121,133333,99820,75%,Silver & Fashion Incentive,0
+PPJ-0159,Sunita Sethi,PPJ Ambala City,Sales Executive,Gold,PPJ-0119,965517,856818,89%,Gold Incentive,0
+PPJ-0160,Tanvi Kapoor,PPJ Ambala City,Sales Executive,Diamond,PPJ-0120,514943,545506,106%,Diamond Incentive,4900
+PPJ-0161,Kuldeep Gill,PPJ Ambala City,Sales Executive,Silver & Fashion,PPJ-0121,133333,143309,107%,Silver & Fashion Incentive,700
+PPJ-0162,Harish Sethi,PPJ Ambala City,Trainee Sales Executive,Gold,PPJ-0119,482759,526927,109%,Gold Incentive,1800
+PPJ-0163,Jaspreet Kumar,PPJ Ambala City,Trainee Sales Executive,Diamond,PPJ-0120,257471,227424,88%,Diamond Incentive,0
+PPJ-0198,Naveen Kaur,PPJ Noida Sector 18,Senior Sales Executive,Gold,PPJ-0191,2068966,2306028,111%,Gold Incentive,8100
+PPJ-0199,Kavita Bhatia,PPJ Noida Sector 18,Senior Sales Executive,Diamond,PPJ-0192,1103448,1520743,138%,Diamond Incentive,18200
+PPJ-0200,Parveen Mehta,PPJ Noida Sector 18,Senior Sales Executive,Silver & Fashion,PPJ-0193,285714,272672,95%,Silver & Fashion Incentive,800
+PPJ-0201,Aman Sandhu,PPJ Noida Sector 18,Senior Sales Executive,Gold,PPJ-0191,2068966,2597746,126%,Gold Incentive,13000
+PPJ-0202,Arjun Bedi,PPJ Noida Sector 18,Senior Sales Executive,Diamond,PPJ-0192,1103448,1378459,125%,Diamond Incentive,16500
+PPJ-0203,Harish Mehta,PPJ Noida Sector 18,Senior Sales Executive,Silver & Fashion,PPJ-0193,285714,278454,97%,Silver & Fashion Incentive,800
+PPJ-0204,Manpreet Chopra,PPJ Noida Sector 18,Senior Sales Executive,Gold,PPJ-0191,2068966,2574267,124%,Gold Incentive,12900
+PPJ-0205,Payal Jain,PPJ Noida Sector 18,Senior Sales Executive,Diamond,PPJ-0192,1103448,991983,90%,Diamond Incentive,0
+PPJ-0206,Neha Aggarwal,PPJ Noida Sector 18,Senior Sales Executive,Silver & Fashion,PPJ-0193,285714,400586,140%,Silver & Fashion Incentive,2800
+PPJ-0207,Sumit Mehta,PPJ Noida Sector 18,Senior Sales Executive,Gold,PPJ-0191,2068966,2358793,114%,Gold Incentive,8300
+PPJ-0208,Isha Sharma,PPJ Noida Sector 18,Senior Sales Executive,Diamond,PPJ-0192,1103448,878982,80%,Diamond Incentive,0
+PPJ-0209,Vishal Jain,PPJ Noida Sector 18,Senior Sales Executive,Silver & Fashion,PPJ-0193,285714,341834,120%,Silver & Fashion Incentive,1700
+PPJ-0210,Kuldeep Aggarwal,PPJ Noida Sector 18,Sales Executive,Gold,PPJ-0191,1379310,1482684,107%,Gold Incentive,5200
+PPJ-0211,Sandeep Mittal,PPJ Noida Sector 18,Sales Executive,Diamond,PPJ-0192,735632,760098,103%,Diamond Incentive,6800
+PPJ-0212,Aarti Dhillon,PPJ Noida Sector 18,Sales Executive,Silver & Fashion,PPJ-0193,190476,230253,121%,Silver & Fashion Incentive,1600
+PPJ-0213,Manpreet Khanna,PPJ Noida Sector 18,Sales Executive,Gold,PPJ-0191,1379310,1518685,110%,Gold Incentive,5300
+PPJ-0214,Mamta Malhotra,PPJ Noida Sector 18,Sales Executive,Diamond,PPJ-0192,735632,897381,122%,Diamond Incentive,10800
+PPJ-0215,Harish Yadav,PPJ Noida Sector 18,Sales Executive,Silver & Fashion,PPJ-0193,190476,185366,97%,Silver & Fashion Incentive,600
+PPJ-0216,Neha Chauhan,PPJ Noida Sector 18,Sales Executive,Gold,PPJ-0191,1379310,1416433,103%,Gold Incentive,5000
+PPJ-0217,Manish Bansal,PPJ Noida Sector 18,Sales Executive,Diamond,PPJ-0192,735632,774924,105%,Diamond Incentive,7000
+PPJ-0218,Varun Kapoor,PPJ Noida Sector 18,Sales Executive,Silver & Fashion,PPJ-0193,190476,228456,120%,Silver & Fashion Incentive,1100
+PPJ-0219,Vinod Bhatia,PPJ Noida Sector 18,Sales Executive,Gold,PPJ-0191,1379310,1732557,126%,Gold Incentive,8700
+PPJ-0220,Harpreet Bhatia,PPJ Noida Sector 18,Sales Executive,Diamond,PPJ-0192,735632,851781,116%,Diamond Incentive,7700
+PPJ-0221,Payal Kumar,PPJ Noida Sector 18,Sales Executive,Silver & Fashion,PPJ-0193,190476,175193,92%,Silver & Fashion Incentive,500
+PPJ-0222,Jaspreet Verma,PPJ Noida Sector 18,Sales Executive,Gold,PPJ-0191,1379310,1556199,113%,Gold Incentive,5400
+PPJ-0223,Arjun Kaur,PPJ Noida Sector 18,Sales Executive,Diamond,PPJ-0192,735632,866901,118%,Diamond Incentive,7800
+PPJ-0224,Arjun Yadav,PPJ Noida Sector 18,Sales Executive,Silver & Fashion,PPJ-0193,190476,212632,112%,Silver & Fashion Incentive,1100
+PPJ-0225,Isha Chauhan,PPJ Noida Sector 18,Sales Executive,Gold,PPJ-0191,1379310,1732801,126%,Gold Incentive,8700
+PPJ-0226,Jasleen Mittal,PPJ Noida Sector 18,Sales Executive,Diamond,PPJ-0192,735632,1022921,139%,Diamond Incentive,12300
+PPJ-0227,Dinesh Malhotra,PPJ Noida Sector 18,Sales Executive,Silver & Fashion,PPJ-0193,190476,207570,109%,Silver & Fashion Incentive,1000
+PPJ-0228,Sunita Arora,PPJ Noida Sector 18,Sales Executive,Gold,PPJ-0191,1379310,1542090,112%,Gold Incentive,5400
+PPJ-0229,Naveen Chopra,PPJ Noida Sector 18,Sales Executive,Diamond,PPJ-0192,735632,615058,84%,Diamond Incentive,0
+PPJ-0230,Geeta Chopra,PPJ Noida Sector 18,Sales Executive,Silver & Fashion,PPJ-0193,190476,205487,108%,Silver & Fashion Incentive,1000
+PPJ-0231,Neha Sethi,PPJ Noida Sector 18,Sales Executive,Gold,PPJ-0191,1379310,1558804,113%,Gold Incentive,5500
+PPJ-0232,Suresh Thakur,PPJ Noida Sector 18,Sales Executive,Diamond,PPJ-0192,735632,791605,108%,Diamond Incentive,7100
+PPJ-0233,Sumit Rana,PPJ Noida Sector 18,Sales Executive,Silver & Fashion,PPJ-0193,190476,235501,124%,Silver & Fashion Incentive,1600
+PPJ-0234,Gurpreet Bansal,PPJ Noida Sector 18,Trainee Sales Executive,Gold,PPJ-0191,689655,847354,123%,Gold Incentive,4200
+PPJ-0235,Dinesh Sodhi,PPJ Noida Sector 18,Trainee Sales Executive,Diamond,PPJ-0192,367816,481780,131%,Diamond Incentive,5800
+PPJ-0270,Pooja Malhotra,PPJ Delhi Karol Bagh,Senior Sales Executive,Gold,PPJ-0263,3103448,2999438,97%,Gold Incentive,6000
+PPJ-0271,Nitin Gupta,PPJ Delhi Karol Bagh,Senior Sales Executive,Diamond,PPJ-0264,1655172,1672668,101%,Diamond Incentive,15100
+PPJ-0272,Rakesh Chopra,PPJ Delhi Karol Bagh,Senior Sales Executive,Silver & Fashion,PPJ-0265,428571,355232,83%,Silver & Fashion Incentive,0
+PPJ-0273,Rakesh Aggarwal,PPJ Delhi Karol Bagh,Senior Sales Executive,Gold,PPJ-0263,3103448,3416905,110%,Gold Incentive,12000
+PPJ-0274,Surinder Chauhan,PPJ Delhi Karol Bagh,Senior Sales Executive,Diamond,PPJ-0264,1655172,1627622,98%,Diamond Incentive,9800
+PPJ-0275,Jasleen Goel,PPJ Delhi Karol Bagh,Senior Sales Executive,Silver & Fashion,PPJ-0265,428571,314224,73%,Silver & Fashion Incentive,0
+PPJ-0276,Jasleen Mehta,PPJ Delhi Karol Bagh,Senior Sales Executive,Gold,PPJ-0263,3103448,2880437,93%,Gold Incentive,5800
+PPJ-0277,Preeti Gill,PPJ Delhi Karol Bagh,Senior Sales Executive,Diamond,PPJ-0264,1655172,1346109,81%,Diamond Incentive,0
+PPJ-0278,Ashok Sodhi,PPJ Delhi Karol Bagh,Senior Sales Executive,Silver & Fashion,PPJ-0265,428571,321187,75%,Silver & Fashion Incentive,0
+PPJ-0279,Neha Kaur,PPJ Delhi Karol Bagh,Senior Sales Executive,Gold,PPJ-0263,3103448,3212974,104%,Gold Incentive,11200
+PPJ-0280,Vikram Sharma,PPJ Delhi Karol Bagh,Senior Sales Executive,Diamond,PPJ-0264,1655172,1535814,93%,Diamond Incentive,9200
+PPJ-0281,Manpreet Thakur,PPJ Delhi Karol Bagh,Senior Sales Executive,Silver & Fashion,PPJ-0265,428571,402931,94%,Silver & Fashion Incentive,1200
+PPJ-0282,Vinod Sharma,PPJ Delhi Karol Bagh,Sales Executive,Gold,PPJ-0263,2068966,2279674,110%,Gold Incentive,8000
+PPJ-0283,Rashmi Mehta,PPJ Delhi Karol Bagh,Sales Executive,Diamond,PPJ-0264,1103448,846792,77%,Diamond Incentive,0
+PPJ-0284,Vishal Thakur,PPJ Delhi Karol Bagh,Sales Executive,Silver & Fashion,PPJ-0265,285714,235491,82%,Silver & Fashion Incentive,0
+PPJ-0285,Ravi Gill,PPJ Delhi Karol Bagh,Sales Executive,Gold,PPJ-0263,2068966,1802215,87%,Gold Incentive,0
+PPJ-0286,Sumit Aggarwal,PPJ Delhi Karol Bagh,Sales Executive,Diamond,PPJ-0264,1103448,1082522,98%,Diamond Incentive,6500
+PPJ-0287,Yogesh Dhillon,PPJ Delhi Karol Bagh,Sales Executive,Silver & Fashion,PPJ-0265,285714,325636,114%,Silver & Fashion Incentive,1600
+PPJ-0288,Kiran Yadav,PPJ Delhi Karol Bagh,Sales Executive,Gold,PPJ-0263,2068966,1625275,79%,Gold Incentive,0
+PPJ-0289,Gaurav Garg,PPJ Delhi Karol Bagh,Sales Executive,Diamond,PPJ-0264,1103448,1113026,101%,Diamond Incentive,10000
+PPJ-0290,Isha Garg,PPJ Delhi Karol Bagh,Sales Executive,Silver & Fashion,PPJ-0265,285714,200844,70%,Silver & Fashion Incentive,0
+PPJ-0291,Jasleen Bhatia,PPJ Delhi Karol Bagh,Sales Executive,Gold,PPJ-0263,2068966,2000122,97%,Gold Incentive,4000
+PPJ-0292,Mukesh Sharma,PPJ Delhi Karol Bagh,Sales Executive,Diamond,PPJ-0264,1103448,977040,89%,Diamond Incentive,0
+PPJ-0293,Kuldeep Sharma,PPJ Delhi Karol Bagh,Sales Executive,Silver & Fashion,PPJ-0265,285714,307432,108%,Silver & Fashion Incentive,1500
+PPJ-0294,Kiran Chauhan,PPJ Delhi Karol Bagh,Sales Executive,Gold,PPJ-0263,2068966,1366079,66%,Gold Incentive,0
+PPJ-0295,Nitin Bhatia,PPJ Delhi Karol Bagh,Sales Executive,Diamond,PPJ-0264,1103448,1083919,98%,Diamond Incentive,6500
+PPJ-0296,Isha Kapoor,PPJ Delhi Karol Bagh,Sales Executive,Silver & Fashion,PPJ-0265,285714,260949,91%,Silver & Fashion Incentive,800
+PPJ-0297,Sakshi Bhatia,PPJ Delhi Karol Bagh,Sales Executive,Gold,PPJ-0263,2068966,1432586,69%,Gold Incentive,0
+PPJ-0298,Gurpreet Thakur,PPJ Delhi Karol Bagh,Sales Executive,Diamond,PPJ-0264,1103448,1233400,112%,Diamond Incentive,11100
+PPJ-0299,Suresh Chopra,PPJ Delhi Karol Bagh,Sales Executive,Silver & Fashion,PPJ-0265,285714,266642,93%,Silver & Fashion Incentive,800
+PPJ-0300,Harpreet Aggarwal,PPJ Delhi Karol Bagh,Sales Executive,Gold,PPJ-0263,2068966,1601052,77%,Gold Incentive,0
+PPJ-0301,Aman Dhillon,PPJ Delhi Karol Bagh,Sales Executive,Diamond,PPJ-0264,1103448,944430,86%,Diamond Incentive,0
+PPJ-0302,Manpreet Goel,PPJ Delhi Karol Bagh,Sales Executive,Silver & Fashion,PPJ-0265,285714,271744,95%,Silver & Fashion Incentive,800
+PPJ-0303,Kuldeep Garg,PPJ Delhi Karol Bagh,Sales Executive,Gold,PPJ-0263,2068966,2144030,104%,Gold Incentive,7500
+PPJ-0304,Arjun Chauhan,PPJ Delhi Karol Bagh,Sales Executive,Diamond,PPJ-0264,1103448,995537,90%,Diamond Incentive,6000
+PPJ-0305,Ajay Kumar,PPJ Delhi Karol Bagh,Sales Executive,Silver & Fashion,PPJ-0265,285714,232378,81%,Silver & Fashion Incentive,0
+PPJ-0306,Kiran Mittal,PPJ Delhi Karol Bagh,Trainee Sales Executive,Gold,PPJ-0263,1034483,1028715,99%,Gold Incentive,2100
+PPJ-0307,Yogesh Yadav,PPJ Delhi Karol Bagh,Trainee Sales Executive,Diamond,PPJ-0264,551724,528484,96%,Diamond Incentive,3200
+PPJ-0342,Ramesh Jain,PPJ Delhi South Extension,Senior Sales Executive,Gold,PPJ-0335,2896552,3141180,108%,Gold Incentive,11000
+PPJ-0343,Isha Sodhi,PPJ Delhi South Extension,Senior Sales Executive,Diamond,PPJ-0336,1544828,1861662,121%,Diamond Incentive,22300
+PPJ-0344,Suresh Mehta,PPJ Delhi South Extension,Senior Sales Executive,Silver & Fashion,PPJ-0337,400000,529955,132%,Silver & Fashion Incentive,3700
+PPJ-0345,Sandeep Chopra,PPJ Delhi South Extension,Senior Sales Executive,Gold,PPJ-0335,2896552,3639234,126%,Gold Incentive,18200
+PPJ-0346,Rakesh Mehta,PPJ Delhi South Extension,Senior Sales Executive,Diamond,PPJ-0336,1544828,1915837,124%,Diamond Incentive,23000
+PPJ-0347,Ravi Khanna,PPJ Delhi South Extension,Senior Sales Executive,Silver & Fashion,PPJ-0337,400000,493296,123%,Silver & Fashion Incentive,3500
+PPJ-0348,Jasleen Chauhan,PPJ Delhi South Extension,Senior Sales Executive,Gold,PPJ-0335,2896552,3064508,106%,Gold Incentive,10700
+PPJ-0349,Rahul Jain,PPJ Delhi South Extension,Senior Sales Executive,Diamond,PPJ-0336,1544828,2130093,138%,Diamond Incentive,25600
+PPJ-0350,Manpreet Yadav,PPJ Delhi South Extension,Senior Sales Executive,Silver & Fashion,PPJ-0337,400000,524242,131%,Silver & Fashion Incentive,3700
+PPJ-0351,Meenakshi Garg,PPJ Delhi South Extension,Senior Sales Executive,Gold,PPJ-0335,2896552,3553084,123%,Gold Incentive,17800
+PPJ-0352,Manpreet Rana,PPJ Delhi South Extension,Senior Sales Executive,Diamond,PPJ-0336,1544828,2108993,137%,Diamond Incentive,25300
+PPJ-0353,Jaspreet Dhillon,PPJ Delhi South Extension,Senior Sales Executive,Silver & Fashion,PPJ-0337,400000,516821,129%,Silver & Fashion Incentive,3600
+PPJ-0354,Mohit Bansal,PPJ Delhi South Extension,Sales Executive,Gold,PPJ-0335,1931034,2008877,104%,Gold Incentive,7000
+PPJ-0355,Ravi Kaur,PPJ Delhi South Extension,Sales Executive,Diamond,PPJ-0336,1029885,1142747,111%,Diamond Incentive,10300
+PPJ-0356,Bhavna Garg,PPJ Delhi South Extension,Sales Executive,Silver & Fashion,PPJ-0337,266667,280202,105%,Silver & Fashion Incentive,1400
+PPJ-0357,Ramesh Thakur,PPJ Delhi South Extension,Sales Executive,Gold,PPJ-0335,1931034,1736584,90%,Gold Incentive,0
+PPJ-0358,Yogesh Aggarwal,PPJ Delhi South Extension,Sales Executive,Diamond,PPJ-0336,1029885,1221351,119%,Diamond Incentive,11000
+PPJ-0359,Suresh Bhatia,PPJ Delhi South Extension,Sales Executive,Silver & Fashion,PPJ-0337,266667,319945,120%,Silver & Fashion Incentive,1600
+PPJ-0360,Balwinder Bansal,PPJ Delhi South Extension,Sales Executive,Gold,PPJ-0335,1931034,2216315,115%,Gold Incentive,7800
+PPJ-0361,Geeta Bhatia,PPJ Delhi South Extension,Sales Executive,Diamond,PPJ-0336,1029885,1469586,143%,Diamond Incentive,17600
+PPJ-0362,Komal Gupta,PPJ Delhi South Extension,Sales Executive,Silver & Fashion,PPJ-0337,266667,397241,149%,Silver & Fashion Incentive,2800
+PPJ-0363,Arjun Mehta,PPJ Delhi South Extension,Sales Executive,Gold,PPJ-0335,1931034,2522328,131%,Gold Incentive,12600
+PPJ-0364,Mukesh Mehta,PPJ Delhi South Extension,Sales Executive,Diamond,PPJ-0336,1029885,1329862,129%,Diamond Incentive,16000
+PPJ-0365,Dinesh Dhillon,PPJ Delhi South Extension,Sales Executive,Silver & Fashion,PPJ-0337,266667,372065,140%,Silver & Fashion Incentive,2600
+PPJ-0366,Mohit Verma,PPJ Delhi South Extension,Sales Executive,Gold,PPJ-0335,1931034,1960389,102%,Gold Incentive,6900
+PPJ-0367,Isha Thakur,PPJ Delhi South Extension,Sales Executive,Diamond,PPJ-0336,1029885,1467517,142%,Diamond Incentive,17600
+PPJ-0368,Harpreet Sodhi,PPJ Delhi South Extension,Sales Executive,Silver & Fashion,PPJ-0337,266667,400597,150%,Silver & Fashion Incentive,2800
+PPJ-0369,Mukesh Khanna,PPJ Delhi South Extension,Sales Executive,Gold,PPJ-0335,1931034,2454100,127%,Gold Incentive,12300
+PPJ-0370,Mamta Mittal,PPJ Delhi South Extension,Sales Executive,Diamond,PPJ-0336,1029885,1174834,114%,Diamond Incentive,10600
+PPJ-0371,Rakesh Khanna,PPJ Delhi South Extension,Sales Executive,Silver & Fashion,PPJ-0337,266667,361016,135%,Silver & Fashion Incentive,2500
+PPJ-0372,Sonia Kapoor,PPJ Delhi South Extension,Sales Executive,Gold,PPJ-0335,1931034,2152695,111%,Gold Incentive,7500
+PPJ-0373,Kiran Verma,PPJ Delhi South Extension,Sales Executive,Diamond,PPJ-0336,1029885,1296731,126%,Diamond Incentive,15600
+PPJ-0374,Sakshi Goel,PPJ Delhi South Extension,Sales Executive,Silver & Fashion,PPJ-0337,266667,317051,119%,Silver & Fashion Incentive,1600
+PPJ-0375,Preeti Malhotra,PPJ Delhi South Extension,Sales Executive,Gold,PPJ-0335,1931034,2626232,136%,Gold Incentive,13100
+PPJ-0376,Surinder Gill,PPJ Delhi South Extension,Sales Executive,Diamond,PPJ-0336,1029885,1343258,130%,Diamond Incentive,16100
+PPJ-0377,Tanvi Mehta,PPJ Delhi South Extension,Sales Executive,Silver & Fashion,PPJ-0337,266667,349991,131%,Silver & Fashion Incentive,2400
+PPJ-0378,Vishal Verma,PPJ Delhi South Extension,Trainee Sales Executive,Gold,PPJ-0335,965517,994514,103%,Gold Incentive,3500
+PPJ-0379,Ajay Garg,PPJ Delhi South Extension,Trainee Sales Executive,Diamond,PPJ-0336,514943,606910,118%,Diamond Incentive,5500

@@ -1,0 +1,125 @@
+{
+ "actions": [],
+ "creation": "2026-09-07 15:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "document_type",
+  "status",
+  "attachment",
+  "document_number",
+  "dates_section",
+  "issue_date",
+  "expiry_date",
+  "column_break_dates",
+  "received_on",
+  "received_by",
+  "verified_on",
+  "verified_by",
+  "remarks_section",
+  "remarks"
+ ],
+ "fields": [
+  {
+   "fieldname": "document_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Document Type",
+   "options": "Employee Document Type",
+   "reqd": 1,
+   "columns": 3
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Pending\nReceived\nVerified\nRejected\nExpired",
+   "default": "Pending",
+   "reqd": 1,
+   "columns": 2
+  },
+  {
+   "fieldname": "attachment",
+   "fieldtype": "Attach",
+   "in_list_view": 1,
+   "label": "Attachment",
+   "columns": 3
+  },
+  {
+   "fieldname": "document_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Document Number",
+   "description": "Only what is needed to identify it, e.g. the last four digits of Aadhaar.",
+   "columns": 2
+  },
+  {
+   "fieldname": "dates_section",
+   "fieldtype": "Section Break",
+   "label": "Dates"
+  },
+  {
+   "fieldname": "issue_date",
+   "fieldtype": "Date",
+   "label": "Issue Date"
+  },
+  {
+   "fieldname": "expiry_date",
+   "fieldtype": "Date",
+   "label": "Expiry Date"
+  },
+  {
+   "fieldname": "column_break_dates",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "received_on",
+   "fieldtype": "Date",
+   "label": "Received On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "received_by",
+   "fieldtype": "Link",
+   "label": "Received By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "verified_on",
+   "fieldtype": "Date",
+   "label": "Verified On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "verified_by",
+   "fieldtype": "Link",
+   "label": "Verified By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remarks_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-07 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Employee Documents",
+ "name": "Employee Document",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "istable": 1
+}

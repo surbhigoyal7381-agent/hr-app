@@ -1,4 +1,10 @@
 """
+Demo data only, and the vendor names and addresses below are invented.
+
+Slice 016: this file used to carry five real businesses with their street
+addresses, in a public repository, for a demo nobody calls - nothing in the app
+imports it.
+
 demo_seeder.py — creates realistic Vendor Orders at every pipeline stage.
 Run via:  bench --site hrms.localhost execute alvoraa_portal.demo_seeder.run
 """
@@ -8,26 +14,26 @@ from frappe.utils import today, add_days, now_datetime
 
 # ── Vendor IDs (the ones with portal logins) ─────────────────────────────────
 VENDORS = {
-    "Raj Wine Shop":          "1remqvgub0",
-    "Metro Wines & Spirits":  "1rehkmb8k3",
-    "Hotel Regent (Bar)":     "248lq6ac5b",
-    "QuickStop Beverages":    "248q68666h",
-    "Celebrations Banquets":  "248didtq4e",
+    "Northside Store":     "1remqvgub0",
+    "Metro Outlet":        "1rehkmb8k3",
+    "City Hotel":          "248lq6ac5b",
+    "QuickStop Kiosk":     "248q68666h",
+    "Riverside Banquets":  "248didtq4e",
 }
 
 ADDRESSES = {
-    "Raj Wine Shop":         "Shop 4, Sector 22-C Market, Chandigarh - 160022",
-    "Metro Wines & Spirits": "Plot 12, Industrial Area Phase 1, Chandigarh - 160002",
-    "Hotel Regent (Bar)":    "Hotel Regent, Chandigarh Club Road, Chandigarh - 160001",
-    "QuickStop Beverages":   "Booth 7, Sector 35 Market, Chandigarh - 160035",
-    "Celebrations Banquets": "Celebrations Complex, Zirakpur Highway, Panchkula - 134113",
+    "Northside Store":     "Unit 4, Demo Market, Demo City - 100001",
+    "Metro Outlet":        "Plot 12, Demo Industrial Area, Demo City - 100002",
+    "City Hotel":          "Demo Club Road, Demo City - 100003",
+    "QuickStop Kiosk":     "Booth 7, Demo Market, Demo City - 100004",
+    "Riverside Banquets":  "Demo Complex, Demo Highway, Demo Town - 100005",
 }
 
 # Each order: (vendor_key, slot, items, target_status, special_instructions)
 ORDERS = [
     # Draft — freshly placed, not yet reviewed
     (
-        "Raj Wine Shop", "Tomorrow",
+        "Northside Store", "Tomorrow",
         [
             ("GD-WHI-750",  6, 1200),
             ("GD-BEE-650", 12,  180),
@@ -38,7 +44,7 @@ ORDERS = [
     ),
     # Under Review — submitted, pending admin approval
     (
-        "Metro Wines & Spirits", "Next 2 Days",
+        "Metro Outlet", "Next 2 Days",
         [
             ("GD-WHI-CS12",  1, 13500),
             ("GD-VOD-750",   4,   900),
@@ -48,7 +54,7 @@ ORDERS = [
     ),
     # Approved
     (
-        "Hotel Regent (Bar)", "Next 2 Days",
+        "City Hotel", "Next 2 Days",
         [
             ("GD-GIN-750",   3, 1100),
             ("GD-RUM-750",   3,  850),
@@ -59,7 +65,7 @@ ORDERS = [
     ),
     # Packing
     (
-        "QuickStop Beverages", "Tomorrow",
+        "QuickStop Kiosk", "Tomorrow",
         [
             ("GD-BEE-CS24",  2, 3500),
             ("GD-WAT-CS24",  3,  350),
@@ -70,7 +76,7 @@ ORDERS = [
     ),
     # Ready for Dispatch — triggers auto DO creation + manager email
     (
-        "Celebrations Banquets", "Today",
+        "Riverside Banquets", "Today",
         [
             ("GD-WHI-750",   10, 1200),
             ("GD-RUM-750",    5,  850),
@@ -82,7 +88,7 @@ ORDERS = [
     ),
     # Second Ready for Dispatch (different vendor)
     (
-        "Raj Wine Shop", "Today",
+        "Northside Store", "Today",
         [
             ("GD-WHI-CS12",  2, 13500),
             ("GD-GIN-750",   4,  1100),

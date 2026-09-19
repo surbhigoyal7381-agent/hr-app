@@ -114,3 +114,33 @@ class TestTheTenantPageIsWired(FrappeTestCase):
 		for fn in ("tdHeader", "tdHealth", "tdPlan", "tdUsage", "tdInvoices",
 		           "tdFeatures"):
 			self.assertEqual(page.count("function " + fn), 1, fn)
+
+
+class TestTheCreateFormIsWiredToThePriceList(FrappeTestCase):
+	"""The create form used to offer starter / business / enterprise as "plans".
+
+	Those were feature bundles. The priced plans are headcount bands wearing the
+	same three words, and a tenant on the "enterprise" bundle with twenty staff
+	belongs on the "Starter" band. Picking the wrong one puts a wrong number on
+	an invoice, so the form now offers the real ones.
+	"""
+
+	def test_it_reads_the_priced_plans_and_the_customers(self):
+		called = _called_paths()
+		self.assertIn("alvoraa_portal.tenant_api.get_provisioning_plans", called)
+		self.assertIn("alvoraa_portal.tenant_api.get_customers", called)
+
+	def test_it_sends_the_plan_and_customer_when_creating(self):
+		"""Without these two the tenant is born with no subscription, which is
+		the whole thing this change exists to fix."""
+		page = _page()
+		self.assertIn("alvoraa_plan: selectedPlan", page)
+		self.assertIn("customer: document.getElementById('f-customer').value", page)
+
+	def test_the_old_presets_survive_for_a_control_plane_without_billing(self):
+		"""A price list that is empty must not leave the form unusable. The
+		preset row is hidden rather than deleted, and comes back."""
+		page = _page()
+		self.assertIn('id="ka-preset-row"', page)
+		self.assertIn("window.applyPreset", page)
+		self.assertIn("billing_ready", page)

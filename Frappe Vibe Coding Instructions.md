@@ -10,9 +10,9 @@ Write the setup scripts or data import configurations to populate the following 
 
 **1\. C-Suite (Department: Management, No Reports To)**
 
-* Mr. D. K. Malhotra (Designation: Promoter & Director \- Strategy)  
-* Mr. Mukesh Mittal (Designation: Promoter & Director \- Finance)  
-* Mr. Chaitanya Malhotra (Designation: Promoter & Director \- Digital)
+* Mr. V. P. Rathore (Designation: Promoter & Director \- Strategy)  
+* Mr. Naresh Kamath (Designation: Promoter & Director \- Finance)  
+* Mr. Aditya Rathore (Designation: Promoter & Director \- Digital)
 
 **2\. Key Account Managers (Department: Sales, Reports to: Respective Directors)**
 
@@ -21,7 +21,7 @@ Write the setup scripts or data import configurations to populate the following 
 * Rohit Verma (Designation: KAM \- Processed Foods)  
 * Priya Singh (Designation: KAM \- Hardware)
 
-**3\. Warehouse Supervisors (Department: Supply Chain, Reports to: Mukesh Mittal)**
+**3\. Warehouse Supervisors (Department: Supply Chain, Reports to: Naresh Kamath)**
 
 * Vikramjeet Singh (Designation: Cold Storage Supervisor, Location: Chandigarh)  
 * Amit Patel (Designation: Warehouse Supervisor, Location: Panchkula)  
@@ -88,7 +88,7 @@ Automate the Goal and Appraisal configurations via scripting or fixture generati
 
 Write a script to insert Goal documents matching this matrix:
 
-* D.K. Malhotra \-\> Goal: "Accelerate Group Growth" (Turnover \> 180cr).  
+* V.P. Rathore \-\> Goal: "Accelerate Group Growth" (Turnover \> 180cr).  
 * Neha Sharma \-\> Goal: "Q-Comm Snack Dominance" (\< 2% penalty rate).  
 * Vikramjeet \-\> Goal: "Zero Perishable Spoilage" (Reduce wastage by 20%).  
 * Harpreet Babbar \-\> Goal: "Q-Comm SLA Protection" (Zero delivery penalties).  
@@ -128,6 +128,6 @@ Write a setup script to create an Auto Email Report.
 * **Based On:** Daily Route Log  
 * **Filters:** penalty\_logged \= 1 OR rto\_count \> 5\.  
 * **Schedule:** Daily at 09:00 AM.  
-* **Recipients:** Chaitanya Malhotra and Mukesh Mittal's emails.
+* **Recipients:** Aditya Rathore and Naresh Kamath's emails.
 
 Please provide the necessary JSON files for Custom Doctypes, Workspaces, and the Python .py hooks and setup scripts to build this application.

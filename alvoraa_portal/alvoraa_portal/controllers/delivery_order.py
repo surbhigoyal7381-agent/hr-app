@@ -1,6 +1,14 @@
 import frappe
 from frappe.utils import now_datetime, getdate
 
+from alvoraa_portal.subscription import requires_feature
+
+# Every whitelisted endpoint in this module belongs to ONE sellable feature,
+# so every one is gated (slice 016). Before, the panel was hidden and the door
+# still opened: a tenant that never bought the vendor and driver portal could
+# still call all 28 of these. The gate is entitlement, not ownership - who may
+# touch WHICH record is slice 016 phase 2.
+
 
 # Slot end-time map for on-time calculation
 _SLOT_END_HOURS = {
@@ -42,7 +50,7 @@ def _geocode_address(doc):
         import json as _json
         import re as _re
 
-        headers = {"User-Agent": "GraceVendorPortal/1.0 (ops@gracedrinks.in)"}
+        headers = {"User-Agent": "AlvoraaPortal/1.0"}
 
         def _nominatim(params):
             url = "https://nominatim.openstreetmap.org/search?" + urlencode(params)
@@ -216,6 +224,7 @@ def _handle_delivered(doc):
 # ─── Whitelisted API endpoints ────────────────────────────────────────────────
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def update_delivery_status(order_name, new_status, gps_location=None, notes=None):
     """Update the status of a Delivery Order. Called from the driver portal / app."""
     doc = frappe.get_doc("Delivery Order", order_name)
@@ -279,6 +288,7 @@ def update_delivery_status(order_name, new_status, gps_location=None, notes=None
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def assign_partner_to_order(order_name, partner_name):
     """Assign a Delivery Partner to a Delivery Order."""
     doc = frappe.get_doc("Delivery Order", order_name)
@@ -332,6 +342,7 @@ def _notify_partner_assignment(order_doc, partner_name):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def mark_proof_of_delivery(order_name, delivery_photo=None, delivery_signature=None):
     """Record proof-of-delivery assets on the order."""
     doc = frappe.get_doc("Delivery Order", order_name)
@@ -347,6 +358,7 @@ def mark_proof_of_delivery(order_name, delivery_photo=None, delivery_signature=N
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_partner_today_orders(partner_name):
     """Return today's pending/in-transit orders for a partner (driver dashboard)."""
     from frappe.utils import today as frappe_today
@@ -368,6 +380,7 @@ def get_partner_today_orders(partner_name):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def get_hub_live_summary(hub_name):
     """Return real-time delivery summary for a hub (manager dashboard)."""
     partners = frappe.get_all(

@@ -148,6 +148,9 @@ fixtures = [
 
 # ── Grace PMS — Row-level security ───────────────────────────────────────────
 permission_query_conditions = {
+	"Attendance Deduction":    "hrms.alvoraa_late_rules.permissions.attendance_deduction_query",
+	"Policy Document":         "hrms.alvoraa_policy_library.access.permission_query_conditions",
+	"Policy Acknowledgement":  "hrms.alvoraa_policy_library.access.acknowledgement_query_conditions",
 	"PMS Review Record":       "hrms.pms.permissions.review_record_query",
 	"PMS Business Goal":       "hrms.pms.permissions.business_goal_query",
 	"PMS Check In":            "hrms.pms.permissions.checkin_query",
@@ -157,6 +160,8 @@ permission_query_conditions = {
 }
 
 has_permission = {
+	"Attendance Deduction": "hrms.alvoraa_late_rules.permissions.has_attendance_deduction_permission",
+	"Policy Document":      "hrms.alvoraa_policy_library.access.has_permission",
 	"PMS Review Record":   "hrms.pms.permissions.has_review_record_permission",
 	"PMS Check In":        "hrms.pms.permissions.has_checkin_permission",
 	"PMS Upward Feedback": "hrms.pms.permissions.has_upward_feedback_permission",
@@ -191,12 +196,19 @@ doc_events = {
 		"on_trash": "hrms.utils.holiday_list.invalidate_cache",
 	},
 	"Employee": {
-		"validate": "hrms.overrides.employee_master.validate_onboarding_process",
+		"validate": [
+			"hrms.overrides.employee_master.validate_onboarding_process",
+			"hrms.alvoraa_employee_documents.employee_documents.validate_documents",
+		],
 		"on_update": [
 			"hrms.overrides.employee_master.update_approver_role",
 			"hrms.overrides.employee_master.publish_update",
+			"hrms.alvoraa_employee_documents.employee_documents.sync_onboarding_summary",
 		],
-		"after_insert": "hrms.overrides.employee_master.update_job_applicant_and_offer",
+		"after_insert": [
+			"hrms.overrides.employee_master.update_job_applicant_and_offer",
+			"hrms.alvoraa_employee_documents.employee_documents.fill_checklist",
+		],
 		"on_trash": "hrms.overrides.employee_master.update_employee_transfer",
 		"after_delete": "hrms.overrides.employee_master.publish_update",
 	},
@@ -206,8 +218,30 @@ doc_events = {
 	"Leave Application": {
 		"on_submit": "hrms.grace_group.hooks.fleet_reallocation.on_submit",
 	},
+	"Salary Structure Assignment": {
+		"before_insert": "hrms.regional.india.utils.set_esi_applicable",
+	},
 	"Appraisal": {
-		"before_save": "hrms.grace_group.hooks.appraisal_metrics.fetch_metrics",
+		"before_save": [
+			"hrms.grace_group.hooks.appraisal_metrics.fetch_metrics",
+			"hrms.alvoraa_hr_core.attendance_score.compute",
+		],
+		# Ask the dotted-line managers once the solid-line manager has scored it -
+		# after, not alongside, or the second opinion anchors on the first.
+		"on_update": "hrms.alvoraa_org_structure.dotted_line.request_dotted_line_feedback",
+		"before_submit": [
+			"hrms.alvoraa_hr_core.attendance_score.compute",
+			# A block, not a reminder. An optional second opinion never arrives
+			# in a busy quarter, which leaves somebody rated by a manager who
+			# saw half their work.
+			"hrms.alvoraa_org_structure.dotted_line.require_dotted_line_feedback",
+		],
+	},
+	"Appraisal Cycle": {
+		"validate": "hrms.alvoraa_hr_core.attendance_score.apply_cycle_settings",
+	},
+	"Job Applicant": {
+		"validate": "hrms.alvoraa_screening.screening.screen",
 	},
 	# ── Grace PMS ─────────────────────────────────────────────────────────────
 	"PMS Review Record": {
@@ -234,6 +268,11 @@ doc_events = {
 # ---------------
 
 scheduler_events = {
+	"cron": {
+		# Monday 02:00 server time: the quarter-day late rule for the week that just ended.
+		"0 2 * * 1": ["hrms.alvoraa_late_rules.late_rules.process_previous_week"],
+		"0 3 * * *": ["hrms.alvoraa_employee_documents.employee_documents.expire_documents"],
+	},
 	"all": [
 		"hrms.hr.doctype.interview.interview.send_interview_reminder",
 	],

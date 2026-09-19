@@ -1,0 +1,334 @@
+"""Who sits in a seat, and how much of them.
+
+A head of operations who also runs quality. A founder still holding finance. In
+a company of a hundred this is not an edge case, it is most of the senior team.
+
+Forbidding it was the wrong answer, because the situation is true whether the
+software admits it or not - and a chart that cannot show it is a chart people
+stop trusting. Weights let it be shown without headcount lying: Operations 70,
+Quality 30, and the company still totals what it totals.
+
+**The number is a WEIGHT, not time.** "Time allocation" sounds like a claim
+about hours, and the moment it does, somebody wants it reconciled against a
+timesheet and somebody else argues they spent forty per cent on Quality last
+week. Nobody has that data and nobody should be asked to defend it. A weight is
+a management judgement about where a person mostly sits. It divides headcount
+and it divides cost. It is not a timesheet and must never be presented as one.
+
+This deliberately does NOT touch `Employee.reports_to`. That field routes
+performance reviews - `pms_cycle.py` sets each review's primary_manager from it -
+so deriving it from the position hierarchy would reassign live appraisals as a
+side effect of somebody tidying an org chart, and nobody would connect the two.
+"""
+
+import frappe
+from frappe import _
+from frappe.model.document import Document
+from frappe.utils import date_diff, flt, nowdate
+
+from hrms.alvoraa_org_structure import settings
+
+# A three-way split is 34/33/33, so exact equality would refuse a perfectly
+# sensible arrangement. One hundredth of a person is the tolerance; letting 99.5
+# pass as "about right" is how a headcount total quietly stops adding up.
+TOLERANCE = 0.01
+
+
+class AlvoraaPositionAssignment(Document):
+	def validate(self):
+		self._check_weight()
+		self._check_dates()
+		self._check_not_before_they_join()
+		self._check_position_is_open()
+		self._check_cover_is_temporary()
+		self._check_person_adds_up()
+		self._check_load_cap()
+		self._check_one_primary()
+
+	def on_update(self):
+		self._check_position_not_overfilled()
+		self._apply_delegation()
+
+	# ── rules ────────────────────────────────────────────────────────────
+	def _check_weight(self):
+		if flt(self.weight) <= 0:
+			frappe.throw(_("A weight of zero means they are not in this position. "
+			               "Remove the row instead, or set an end date."))
+		if flt(self.weight) > 100:
+			frappe.throw(_("A weight cannot be more than 100 - a person is one person."))
+
+	@property
+	def is_cover(self):
+		"""Acting, Interim and Additional Charge are cover carried ON TOP of the
+		person's own job. Permanent is the job itself."""
+		return self.assignment_type and self.assignment_type != "Permanent"
+
+	def _check_dates(self):
+		if self.from_date and self.to_date and str(self.to_date) < str(self.from_date):
+			frappe.throw(_("This assignment ends before it starts."))
+
+	def _check_not_before_they_join(self):
+		"""A new joiner is put in a seat weeks before they arrive - the seat is
+		created, the offer is signed, the chart is planned. They must not appear
+		as though they are in it until the day they actually start.
+
+		Enforced against the Employee's own joining date rather than trusted from
+		the form, because the form is where somebody types the planned date and
+		then the start slips a fortnight.
+		"""
+		joins = frappe.db.get_value("Employee", self.employee, "date_of_joining")
+		if joins and self.from_date and str(self.from_date) < str(joins):
+			frappe.throw(
+				_("{0} joins on {1}. An assignment cannot start before that - "
+				  "they would show in the seat on a day they do not work here.")
+				.format(frappe.bold(self.employee_name or self.employee), joins))
+
+	def _check_cover_is_temporary(self):
+		"""Time-box it, always - if this organisation says so.
+
+		Cover that never ends is not cover; it is a second job nobody agreed to,
+		and it is the commonest way this goes wrong. Whether it is refused or
+		merely flagged is the organisation's call, because a company covering a
+		shop two streets away and one covering a plant three hours away should
+		not be forced into the same rule.
+		"""
+		if not self.is_cover or self.to_date:
+			return
+		if settings.get("alvoraa_cover_require_end_date"):
+			frappe.throw(
+				_("{0} cover needs an end date. Cover that never ends is a second "
+				  "job nobody agreed to - if it is not temporary, record it as a "
+				  "permanent assignment instead.").format(self.assignment_type),
+				title=_("Cover must be time-boxed"))
+		frappe.msgprint(
+			_("{0} cover with no end date.").format(self.assignment_type),
+			indicator="orange", alert=True)
+
+	def _check_load_cap(self):
+		"""The ceiling on one person, and an exception that is written down.
+
+		Allowed with a reason rather than refused outright, by default: a flat
+		refusal gets worked around by recording the cover as permanent, which
+		hides it completely and is worse than the thing the cap prevents.
+		"""
+		if self.to_date and str(self.to_date) < str(nowdate()):
+			return
+		cap = flt(settings.get("alvoraa_cover_max_load"))
+		if not cap:
+			return
+		rows = self._current_rows_for_person()
+		load = flt(self.weight) + sum(flt(r.weight) for r in rows)
+		if load <= cap + TOLERANCE:
+			return
+		if not settings.get("alvoraa_cover_allow_over_cap"):
+			frappe.throw(
+				_("{0} would be carrying {1}%, and this organisation caps it at "
+				  "{2}%. Reduce the weight, or shorten what else they hold.")
+				.format(frappe.bold(self.employee_name or self.employee),
+				        f"{load:g}", f"{cap:g}"),
+				title=_("Over the load cap"))
+		if not (self.load_exception_reason or "").strip():
+			frappe.throw(
+				_("{0} would be carrying {1}%, over the {2}% cap. That is allowed, "
+				  "but somebody has to say why - a written reason is what makes "
+				  "this a decision rather than a drift.")
+				.format(frappe.bold(self.employee_name or self.employee),
+				        f"{load:g}", f"{cap:g}"),
+				title=_("A reason is needed"))
+
+	def _check_position_is_open(self):
+		status = frappe.db.get_value("Alvoraa Position", self.position, "status")
+		if status == "Closed" and not self.to_date:
+			frappe.throw(
+				_("{0} is closed. Reopen it, or pick another position.")
+				.format(frappe.bold(self.position)))
+
+	def _current_rows_for_person(self):
+		rows = frappe.get_all(
+			"Alvoraa Position Assignment",
+			filters={"employee": self.employee, "name": ("!=", self.name or ""),
+			         "to_date": ("is", "not set")},
+			fields=["name", "position", "weight", "is_primary", "assignment_type"])
+		for r in rows:
+			r["is_cover"] = bool(r.assignment_type and r.assignment_type != "Permanent")
+		return rows
+
+	def _check_person_adds_up(self):
+		"""A person's PERMANENT weights total 100. Cover is counted separately.
+
+		The distinction matters and it is not bookkeeping. A store in-charge who
+		covers a second store still does their own job in full - the cover is
+		extra duty, not a reallocation. Squeezing it into the same 100 would
+		force somebody to pretend they had reduced their real role, and the
+		chart would then understate what the first store actually has.
+
+		So cover is allowed to push the total past 100, and the person is FLAGGED
+		rather than refused. Somebody carrying 130% is a real risk worth seeing,
+		not a data-entry error worth blocking.
+		"""
+		if self.to_date:
+			return                      # a closed assignment is history, not a claim
+		rows = self._current_rows_for_person()
+		permanent = sum(flt(r.weight) for r in rows if not r.get("is_cover"))
+		cover = sum(flt(r.weight) for r in rows if r.get("is_cover"))
+
+		if not self.is_cover:
+			total = flt(self.weight) + permanent
+			if total > 100 + TOLERANCE:
+				held = ", ".join(f"{r.position} {flt(r.weight):g}%"
+				                 for r in rows if not r.get("is_cover"))
+				frappe.throw(
+					_("{0} would be at {1}% of their own job. A person is one "
+					  "person. Already holding: {2}. If this is temporary cover, "
+					  "set the type instead.")
+					.format(frappe.bold(self.employee_name or self.employee),
+					        f"{total:g}", held or _("nothing else")),
+					title=_("Weights add up to more than one person"))
+			return
+
+		load = flt(self.weight) + permanent + cover
+		if load > 100 + TOLERANCE:
+			frappe.msgprint(
+				_("{0} will be carrying {1}% once this cover starts - their own "
+				  "role plus what they are standing in for. That is allowed, and "
+				  "worth knowing.")
+				.format(frappe.bold(self.employee_name or self.employee), f"{load:g}"),
+				indicator="orange", alert=True)
+
+	def _check_one_primary(self):
+		"""Exactly one primary per person - it decides where they appear by
+		default and which line the rest of the product follows.
+
+		Cover is never primary. Somebody standing in for a fortnight should not
+		become the person whose appraisal and approvals route through the seat
+		they are covering.
+		"""
+		# Cover first. Checking `to_date` before this skipped the rule for every
+		# temporary assignment - and temporary assignments are the only ones that
+		# have a to_date, so the rule never ran at all.
+		if self.is_cover:
+			self.is_primary = 0
+			return
+		if self.to_date:
+			return
+		others = [r for r in self._current_rows_for_person() if not r.get("is_cover")]
+		if not others:
+			self.is_primary = 1         # their only position is the primary one
+			return
+		if self.is_primary:
+			for row in others:
+				if row.is_primary:
+					frappe.db.set_value("Alvoraa Position Assignment", row.name,
+					                    "is_primary", 0, update_modified=False)
+		elif not any(r.is_primary for r in others):
+			frappe.throw(_("Somebody has to be primary. Mark one of this person's "
+			               "positions as their main one."))
+
+	def _check_position_not_overfilled(self):
+		pos = frappe.get_doc("Alvoraa Position", self.position)
+		if flt(pos.seats) and pos.filled_weight() > flt(pos.seats) + TOLERANCE:
+			frappe.throw(
+				_("{0} has {1} seat(s) and would be filled {2} times over.")
+				.format(frappe.bold(self.position), flt(pos.seats),
+				        round(pos.filled_weight(), 2)),
+				title=_("Position is over-filled"))
+
+	# ── authority, not just the title ────────────────────────────────────
+	def _people_under(self, position):
+		"""Whose approvals route through this seat.
+
+		The permanent holders of every position reporting to it. Cover is
+		excluded on both sides: a stand-in should not have another stand-in's
+		approvals moved onto them.
+		"""
+		children = frappe.get_all("Alvoraa Position",
+		                          filters={"reports_to_position": position},
+		                          pluck="name")
+		if not children:
+			return []
+		rows = frappe.get_all(
+			"Alvoraa Position Assignment",
+			filters={"position": ("in", children), "assignment_type": "Permanent",
+			         "from_date": ("<=", nowdate())},
+			fields=["employee", "to_date"])
+		return [r.employee for r in rows
+		        if not r.to_date or str(r.to_date) >= str(nowdate())]
+
+	def _apply_delegation(self):
+		"""Move approvals to whoever is standing in, and put them back after.
+
+		A title without authority is the half-measure that makes cover useless -
+		the acting manager cannot approve the leave of the people they are
+		covering, so everything still queues behind somebody who is not there.
+
+		What it changed is RECORDED before it changes anything. Without that,
+		ending the cover would leave approvals pointing at somebody who has gone
+		back to their own store, and nobody would find out until a leave request
+		sat unapproved for a week.
+		"""
+		if not self.is_cover:
+			return
+
+		user = frappe.db.get_value("Employee", self.employee, "user_id")
+		ended = self.to_date and str(self.to_date) < str(nowdate())
+
+		if self.delegate_authority and not ended:
+			if not user:
+				frappe.throw(
+					_("{0} has no login, so approvals cannot be routed to them. "
+					  "Give them a user account first, or untick the authority.")
+					.format(frappe.bold(self.employee_name or self.employee)))
+			if self.delegated_approvals:
+				return                      # already delegated; nothing to redo
+			recorded = []
+			for emp in self._people_under(self.position):
+				was = frappe.db.get_value(
+					"Employee", emp, ["leave_approver", "expense_approver"], as_dict=True)
+				recorded.append({
+					"employee": emp,
+					"previous_leave_approver": was.leave_approver or "",
+					"previous_expense_approver": was.expense_approver or "",
+				})
+				frappe.db.set_value("Employee", emp, {
+					"leave_approver": user, "expense_approver": user},
+					update_modified=False)
+			if recorded:
+				self.set("delegated_approvals", recorded)
+				self.db_update()
+				for row in self.delegated_approvals:
+					row.db_update()
+			return
+
+		# Not delegating any more, or the cover has ended: put it all back.
+		if self.delegated_approvals:
+			self.restore_delegation()
+
+	def restore_delegation(self):
+		"""Undo exactly what was changed, to exactly what it was.
+
+		Blanking the approvers instead would be tidier code and would quietly
+		break approvals for everybody who had a perfectly good approver before
+		the cover started.
+		"""
+		for row in self.delegated_approvals:
+			frappe.db.set_value("Employee", row.employee, {
+				"leave_approver": row.previous_leave_approver or None,
+				"expense_approver": row.previous_expense_approver or None},
+				update_modified=False)
+		self.set("delegated_approvals", [])
+		self.db_update()
+		frappe.db.delete("Alvoraa Delegated Approval", {"parent": self.name})
+
+	def on_trash(self):
+		# Deleting the cover must not leave approvals pointing at somebody who
+		# is no longer standing in.
+		if self.get("delegated_approvals"):
+			self.restore_delegation()
+
+	# ── how long has this been going on ──────────────────────────────────
+	def days_running(self):
+		if not self.from_date:
+			return 0
+		end = self.to_date if (self.to_date and str(self.to_date) < str(nowdate())) \
+			else nowdate()
+		return date_diff(end, self.from_date)

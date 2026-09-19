@@ -32,6 +32,12 @@ def _require_employee():
     return emp
 
 
+def _review_badges(doctype, names):
+    import alvoraa_goals.review_items as review_items
+
+    return review_items.review_badges(doctype, names)
+
+
 def _is_manager(employee_id):
     return frappe.db.count("Employee", {"reports_to": employee_id, "status": "Active"}) > 0
 
@@ -655,6 +661,9 @@ def get_goal_detail(goal_id):
         "can_edit":        int(_is_hr() or goal.owner == frappe.session.user),
         "is_mine":         int(goal.employee == emp_id),
         "is_organisational": int(not goal.parent_goal and not goal.goal_cascade),
+        # Slice 010 group D (R5, PRIV-10): only "in a review" and the day after
+        # which updates no longer change it.
+        "review_badge":    _review_badges("Individual Goal", [goal.name]).get(goal.name),
         "linked_kpis":     linked,
         "contributors":    sorted(contributors.values(), key=lambda c: c["employee_name"]),
         "child_goals":     child_goals,
@@ -681,6 +690,14 @@ def set_goal_progress(goal_id, actual_progress):
     goal = frappe.get_doc("Individual Goal", goal_id)
     if not (_is_hr() or goal.owner == frappe.session.user):
         frappe.throw("Not permitted to update this goal", frappe.PermissionError)
+    # Progress set by hand has no dated fact behind it, so while a review holds
+    # the goal it would change the review's number unseen (decision 21).
+    import alvoraa_goals.review_items as review_items
+    if review_items.holds("Individual Goal", [goal.name]):
+        from hrms.alvoraa_hr_core.access import refuse
+        refuse("This Objective is in an open review. Log progress as an update instead, "
+               "so it can be approved and dated.", "R2", "goals_api.set_goal_progress",
+               "Individual Goal", goal.name)
     val = flt(actual_progress)
     goal.actual_progress = val
     goal.progress_pct = min((val / flt(goal.target_value)) * 100, 100) if goal.target_value else 0
@@ -716,13 +733,20 @@ def get_appraisal_data():
         return {"cycle": cycle, "appraisal": None}
 
     ap = frappe.get_doc("Appraisal", ap_list[0]["name"])
+    # Slice 010 group D: no item score here, ever (R14, decision 14): those are
+    # KPI and Objective ratings, shown only inside the review. The totals follow
+    # the overall rating's release rule for the employee (decision 3, PRIV-9).
+    stage = frappe.db.get_value("Alvoraa Appraisal Extension", ap.name, "review_status") or "Not Started"
+    released = stage in ("Employee Final Review", "HR Review", "Completed")
+
+    def total(value):
+        return flt(value) if released else None
 
     kras = [
         {
             "kra":             k.kra or "",
             "per_weightage":   flt(k.per_weightage),
             "goal_completion": flt(k.goal_completion),
-            "goal_score":      flt(k.goal_score),
         }
         for k in (ap.appraisal_kra or [])
     ]
@@ -743,8 +767,6 @@ def get_appraisal_data():
         {
             "kra":           g.kra or "",
             "per_weightage": flt(g.per_weightage),
-            "score":         flt(g.score),
-            "score_earned":  flt(g.score_earned),
         }
         for g in (ap.goals or [])
     ]
@@ -754,8 +776,8 @@ def get_appraisal_data():
         "appraisal": {
             "name":        ap.name,
             "docstatus":   ap.docstatus,
-            "total_score": flt(ap.total_score),
-            "final_score": flt(ap.final_score),
+            "total_score": total(ap.total_score),
+            "final_score": total(ap.final_score),
             "self_score":  flt(ap.self_score),
             "reflections": ap.reflections or "",
             "kras":        kras,
@@ -775,8 +797,11 @@ def save_self_assessment(appraisal_id, reflections):
         frappe.throw("Not permitted.", frappe.PermissionError)
     if ap.docstatus == 1:
         frappe.throw("Appraisal is already submitted.")
-    ap.reflections = reflections
-    ap.save()
+    # The Employee role has no permission on HRMS Appraisal any more (slice 010
+    # group D, decisions 22 and 26): reads and writes go through checked
+    # endpoints like this one. The owner and draft checks above are the check,
+    # and only this one text field is written.
+    frappe.db.set_value("Appraisal", ap.name, "reflections", reflections)
     frappe.db.commit()
     return {"status": "ok", "message": "Self-assessment saved."}
 
@@ -984,6 +1009,9 @@ def submit_goal_update(goal_id, new_value, note="", evidence_url=None):
     if goal.docstatus == 2:
         frappe.throw("Goal is cancelled.")
 
+    # Private, uploaded by the caller, and attached to this goal - or refused (SEC-4).
+    from alvoraa_goals.controllers.evidence import claim_evidence_file
+    evidence_url = claim_evidence_file(evidence_url, "Individual Goal", goal.name, "goals_api.submit_goal_update")
     ev_missing = 1 if not evidence_url else 0
     val = flt(new_value)
 
@@ -1050,11 +1078,19 @@ def approve_goal_update(goal_id, row_name, action, comment=""):
         frappe.throw("action must be 'Approved' or 'Rejected'.")
 
     goal = frappe.get_doc("Individual Goal", goal_id)
+    # Nobody approves their own update, whatever roles they hold (SEC-9).
+    from hrms.alvoraa_hr_core.access import refuse_own_decision
+    refuse_own_decision(goal.employee, "Individual Goal", goal.name, "goals_api.approve_goal_update")
     goal_mgr = frappe.db.get_value("Employee", goal.employee, "reports_to")
     my_emp   = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")
     if not (_is_hr() or my_emp == goal_mgr):
         frappe.throw("Only this employee's manager or HR can approve updates.",
                      frappe.PermissionError)
+    from hrms.alvoraa_hr_core.access import permitted_companies, refuse
+    if my_emp != goal_mgr and frappe.db.get_value("Employee", goal.employee, "company") not in permitted_companies():
+        # HR approves only for the companies they look after (security review m8).
+        refuse("This employee belongs to a company you do not look after.",
+               "SEC-26", "goals_api.approve_goal_update", "Individual Goal", goal.name)
 
     for row in (goal.progress_updates or []):
         if row.name == row_name:
@@ -1090,7 +1126,8 @@ def get_goal_update_log(goal_id):
     # Seeing the log and being able to action it are different things: the
     # employee sees their own updates and cannot approve them. Drawing the
     # buttons for everyone who can READ was the bug.
-    can_action = bool(_is_hr() or (goal_mgr and emp_id == goal_mgr))
+    # Never on your own goal, even for HR - approve_goal_update refuses it.
+    can_action = bool(goal.employee != emp_id and (_is_hr() or (goal_mgr and emp_id == goal_mgr)))
 
     rows = sorted(
         goal.progress_updates or [],
@@ -1104,6 +1141,8 @@ def get_goal_update_log(goal_id):
         result.append({
             "name":             r.name,
             "log_date":         str(r.log_date)   if r.log_date   else "",
+            # When it was typed, beside the day it is for (security review m2).
+            "logged_on":        str(r.creation)   if r.creation   else "",
             "value":            flt(r.value),
             "note":             r.note             or "",
             "logged_by":        r.logged_by        or "",
@@ -1131,9 +1170,17 @@ def get_pending_approvals():
         return {"kpi_updates": [], "goal_updates": [], "total": 0}
 
     if is_hr:
-        all_employees = frappe.get_all(
-            "Employee", filters={"status": "Active"}, pluck="name"
-        )
+        # Everyone but yourself, in the companies you look after, plus your own
+        # direct reports (security review m8: HR approves only there). Your own
+        # updates are not yours to approve.
+        from hrms.alvoraa_hr_core.access import permitted_companies
+        all_employees = sorted(set(frappe.get_all(
+            "Employee",
+            filters={"status": "Active", "name": ["!=", emp_id], "company": ["in", permitted_companies() or [""]]},
+            pluck="name",
+        )) | set(frappe.get_all(
+            "Employee", filters={"reports_to": emp_id, "status": "Active"}, pluck="name"
+        ) if emp_id else []))
     else:
         all_employees = frappe.get_all(
             "Employee",
@@ -1164,6 +1211,7 @@ def get_pending_approvals():
                         "employee":         emp,
                         "employee_name":    emp_name,
                         "log_date":         str(row.log_date)  if row.log_date else "",
+                        "logged_on":        str(row.creation)  if row.creation else "",
                         "value":            flt(row.value),
                         "note":             row.note           or "",
                         "logged_by_name":   by_name,
@@ -1188,6 +1236,7 @@ def get_pending_approvals():
                         "employee":         emp,
                         "employee_name":    emp_name,
                         "log_date":         str(row.log_date)  if row.log_date else "",
+                        "logged_on":        str(row.creation)  if row.creation else "",
                         "value":            flt(row.value),
                         "note":             row.note           or "",
                         "logged_by_name":   by_name,

@@ -1,0 +1,139 @@
+{#-
+  ONE place that turns a tenant's brand colour into the palette every Alvoraa
+  surface uses: the login page, the employee portal, the driver and vendor
+  portals, and the field check-in app on a phone.
+
+  It exists because there were three implementations and they disagreed. The
+  design system clamped lightness in HSL; the login page had its own shadeHex()
+  and deepen() and fetched the colour by API *after* first paint; the field app
+  briefly had a third, in Python. One jeweller therefore saw three different
+  shades of their own purple, and a flash of the wrong one on the way in.
+
+  Include this ONCE per page, in <head>, before any stylesheet that uses the
+  tokens. It runs before first paint, so nothing repaints.
+
+  Needs `primary_color` and `accent_color` in the page context - which means
+  the page's get_context() must call alvoraa_portal.tenant_context.get_branding().
+  A page that does not is not broken: the script returns early and the built-in
+  palette stands.
+
+  The lightness clamp is the part that matters and the part not to soften. A
+  tenant may choose a pale yellow as their brand; they may not make their
+  staff's buttons unreadable. This is the only place that can be enforced for
+  every surface at once.
+-#}
+<script>
+/* Paint the tenant's own brand colour over the accent.
+
+   Set per site in site_config.json by the admin console, and served by
+   auth.get_tenant_config(). This is what lets one visual system serve a
+   jeweller in purple and a logistics firm in orange without a second palette
+   in the code - and it is why the driver and vendor portals no longer carry a
+   hardcoded orange of their own.
+
+   Runs before first paint. Linking a stylesheet instead would show the default
+   for a moment and then repaint, which reads as a bug.
+
+   The lightness is clamped. A tenant is free to choose a pale yellow as their
+   brand; they are not free to make their staff's buttons unreadable, and this
+   is the only place that can be enforced for every page at once. */
+(function () {
+  var c = "{{ primary_color or '' }}";
+  if (!c || c.length < 4) return;
+  var h = c.replace("#", "");
+  if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return;
+
+  var r = parseInt(h.slice(0,2),16)/255,
+      g = parseInt(h.slice(2,4),16)/255,
+      b = parseInt(h.slice(4,6),16)/255;
+  var mx = Math.max(r,g,b), mn = Math.min(r,g,b), hh = 0, ss = 0, ll = (mx+mn)/2;
+  if (mx !== mn) {
+    var d = mx - mn;
+    ss = ll > .5 ? d/(2-mx-mn) : d/(mx+mn);
+    switch (mx) {
+      case r: hh = (g-b)/d + (g<b?6:0); break;
+      case g: hh = (b-r)/d + 2; break;
+      default: hh = (r-g)/d + 4;
+    }
+    hh = Math.round(hh/6*360);
+  }
+  ss = Math.round(ss*100); ll = Math.round(ll*100);
+
+  var dark = document.documentElement.getAttribute("data-theme") === "dark"
+    || (!document.documentElement.getAttribute("data-theme")
+        && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+
+  /* Text sits on a near-white ground in light mode and a near-black one in
+     dark, so the same hue has to move in opposite directions to stay legible.
+     44% and 62% are where a mid-saturation hue crosses 4.5:1 on each. */
+  var L = dark ? Math.max(ll, 62) : Math.min(ll, 44);
+
+  var root = document.documentElement, S = ss + "%";
+  function set(k, v) { root.style.setProperty(k, v); }
+  set("--primary",     "hsl("+hh+","+S+","+L+"%)");
+  set("--primary-h",   "hsl("+hh+","+S+","+(dark ? Math.min(L+8,88) : Math.max(L-8,12))+"%)");
+  set("--primary-d",   "hsl("+hh+","+S+","+(dark ? Math.min(L+16,92) : Math.max(L-14,10))+"%)");
+  set("--primary-lt",  "hsl("+hh+","+Math.round(ss*.35)+"%,"+(dark ? 16 : 95)+"%)");
+  set("--primary-rgb", Math.round(r*255)+","+Math.round(g*255)+","+Math.round(b*255));
+  set("--sidebar-bg",  dark ? "hsl("+hh+",12%,12%)" : "#FFFFFF");
+  /* The hero stays dark in both themes because it carries white text. Tinted
+     with the tenant hue so it still reads as theirs. */
+  set("--hero-bg",     "hsl("+hh+","+Math.max(ss*0.5,18)+"%,"+(dark ? 16 : 24)+"%)");
+})();
+</script>
+<script>
+/* The accent, on the same terms as the primary.
+
+   Kept separate from the block above so the primary logic stays exactly as it
+   has always been. Until now `--accent` was aliased to `--primary` in the
+   token sheet, which is why accent_color could be set in config and change
+   nothing anywhere. */
+(function () {
+  var c = "{{ accent_color or '' }}";
+  if (!c || c.length < 4) return;
+  var h = c.replace("#", "");
+  if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return;
+
+  var r = parseInt(h.slice(0,2),16)/255,
+      g = parseInt(h.slice(2,4),16)/255,
+      b = parseInt(h.slice(4,6),16)/255;
+  var mx = Math.max(r,g,b), mn = Math.min(r,g,b), hh = 0, ss = 0, ll = (mx+mn)/2;
+  if (mx !== mn) {
+    var d = mx - mn;
+    ss = ll > .5 ? d/(2-mx-mn) : d/(mx+mn);
+    switch (mx) {
+      case r: hh = (g-b)/d + (g<b?6:0); break;
+      case g: hh = (b-r)/d + 2; break;
+      default: hh = (r-g)/d + 4;
+    }
+    hh = Math.round(hh/6*360);
+  }
+  ss = Math.round(ss*100); ll = Math.round(ll*100);
+
+  var dark = document.documentElement.getAttribute("data-theme") === "dark"
+    || (!document.documentElement.getAttribute("data-theme")
+        && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+
+  var L = dark ? Math.max(ll, 62) : Math.min(ll, 44);
+  var root = document.documentElement, S = ss + "%";
+  root.style.setProperty("--accent",    "hsl("+hh+","+S+","+L+"%)");
+  root.style.setProperty("--accent-h",  "hsl("+hh+","+S+","+(dark ? Math.min(L+8,88) : Math.max(L-8,12))+"%)");
+  root.style.setProperty("--accent-lt", "hsl("+hh+","+Math.round(ss*.35)+"%,"+(dark ? 16 : 95)+"%)");
+})();
+</script>
+
+<script>
+/* The phone's status bar and the installed app's title bar take the brand too.
+   Read back from the computed token so it can never disagree with the screen. */
+(function () {
+  try {
+    var v = getComputedStyle(document.documentElement).getPropertyValue("--primary-d").trim();
+    if (!v) return;
+    var m = document.querySelector('meta[name="theme-color"]');
+    if (!m) { m = document.createElement("meta"); m.name = "theme-color"; document.head.appendChild(m); }
+    m.setAttribute("content", v);
+  } catch (e) {}
+})();
+</script>

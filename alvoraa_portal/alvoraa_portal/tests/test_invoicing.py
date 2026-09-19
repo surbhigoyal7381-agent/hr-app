@@ -16,6 +16,7 @@ So the tests are about the ways that goes wrong:
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from alvoraa_goals.tests.utils import ensure_company
 from alvoraa_portal import invoicing, pricing, usage
 
 
@@ -48,12 +49,18 @@ class InvoiceCase(FrappeTestCase):
 		frappe.conf["alvoraa_control_plane"] = 1
 		_clear()
 		pricing.seed()
+		# Name the sender, as a control plane with more than one company must.
+		# Other tests leave extra companies behind on purpose, so "the only
+		# company on the site" is not something this test can count on.
+		self._sender = frappe.db.get_single_value("Alvoraa Pricing Settings", "invoice_company")
+		frappe.db.set_single_value("Alvoraa Pricing Settings", "invoice_company", ensure_company())
 		if not frappe.db.exists("Customer", self.CUSTOMER):
 			frappe.get_doc({"doctype": "Customer", "customer_name": self.CUSTOMER}
 			               ).insert(ignore_permissions=True)
 
 	def tearDown(self):
 		_clear()
+		frappe.db.set_single_value("Alvoraa Pricing Settings", "invoice_company", self._sender)
 		if self._plane is None:
 			frappe.conf.pop("alvoraa_control_plane", None)
 		else:
@@ -280,7 +287,10 @@ class TestBillingNeverWidensTenantAccess(FrappeTestCase):
 		                      filters={"module": "Alvoraa Portal",
 		                               "name": ("like", "Alvoraa %")},
 		                      pluck="name")
-		missing = [d for d in ours if d not in sub.CONTROL_PLANE_DOCTYPES]
+		known = set(sub.CONTROL_PLANE_DOCTYPES) | set(sub.TENANT_DOCTYPES)
+		missing = [d for d in ours if d not in known]
 		self.assertEqual(missing, [],
-		                 "control-plane doctypes not excluded from tenant access "
-		                 "derivation: " + ", ".join(missing))
+		                 "Alvoraa Portal doctypes classified as neither "
+		                 "control-plane nor tenant-side, so nobody has decided "
+		                 "whether they belong in the tenant access derivation: "
+		                 + ", ".join(missing))

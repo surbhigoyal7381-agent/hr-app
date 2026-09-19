@@ -1,8 +1,12 @@
-import frappe
+import re
 
+import frappe
+from frappe import _
+
+from alvoraa_portal.attendance_analytics import LATE_GRACE_KEY
 from alvoraa_portal.subscription import requires_feature
 import calendar as _calendar
-from frappe.utils import today, get_first_day, get_last_day, getdate, add_days, now
+from frappe.utils import cint, flt, today, get_first_day, get_last_day, getdate, add_days, now
 from alvoraa_goals.permissions import get_effective_manager
 
 # ── Cache invalidation helpers (called by doc_events hooks in hooks.py) ──────
@@ -101,7 +105,7 @@ def get_portal_context():
     try:
         cached = frappe.cache().get_value(cache_key)
         if cached:
-            return cached
+            return _with_review_count(cached)
     except Exception:
         pass
 
@@ -149,7 +153,21 @@ def get_portal_context():
         frappe.cache().set_value(cache_key, result, expires_in_sec=3600)
     except Exception:
         pass
-    return result
+    return _with_review_count(result)
+
+
+def _with_review_count(context):
+    """Slice 012: how many figures need review, for HR's menu badge (AC-31).
+
+    Added around the cache, not inside it, so a confirmation shows on the next
+    page load instead of up to an hour later. One permission-checked read, and
+    only for HR: everybody else gets the context untouched.
+    """
+    if not context.get("is_hr"):
+        return context
+    from alvoraa_portal.data_review import open_count_for_hr
+
+    return {**context, "review_open_count": open_count_for_hr()}
 
 
 @frappe.whitelist()
@@ -370,7 +388,10 @@ def get_manager_dashboard():
     }
 
 
-@frappe.whitelist()
+# POST only, and never stored by a browser or proxy: the answer carries the names,
+# roles and joining dates of people due confirmation and of the newest joiners (F4).
+# The portal asks through frappe.call, which posts.
+@frappe.whitelist(methods=["POST"])
 @requires_feature("analytics")
 def get_hr_analytics():
     # Role AND plan. The role says this person may see analytics; the feature
@@ -380,119 +401,145 @@ def get_hr_analytics():
     if not ({"HR Manager", "HR User", "Administrator"} & set(roles)):
         frappe.throw("Access denied", frappe.PermissionError)
 
-    td       = today()
+    # Slice 012 G1 (SEC-16): every figure and name below is limited to the
+    # caller's companies, and to their branches when they are location HR. It
+    # used to cover the whole tenant - a store's HR person saw every store's and
+    # every company's names, gender and joining dates. Attendance and leave come
+    # from the one calculation the leader view uses (org_figures.py).
+    import time as _time
+    from alvoraa_portal import data_review, org_figures as of
+
+    started = _time.monotonic()
+    try:
+        frappe.local.response_headers.set("Cache-Control", "no-store")
+    except Exception:
+        pass
+    scope = of.hr_scope()
+    if scope.not_linked:
+        # Fail closed: no company, no figures and no names (BA-Q5). The page
+        # explains how to get linked.
+        return {"not_linked": True}
+
+    td       = getdate(today())
     mo_start = get_first_day(td)
     mo_end   = get_last_day(td)
-    yr_start = _leave_year_start(td)
 
     # ── Headcount ─────────────────────────────────────────────────────────
-    total_active = frappe.db.count("Employee", {"status": "Active"})
-    total_all    = frappe.db.count("Employee")
-
-    # New joiners this month
-    new_joiners = frappe.db.count("Employee",
-        {"date_of_joining": ["between", [mo_start, mo_end]]})
+    people = of.people_figures(scope, td, mo_start, mo_end)
+    emp_where, emp_params = of.employee_condition(scope)
+    scope_filters = {"company": ["in", list(scope.companies)]}
+    if scope.branches is not None:
+        scope_filters["branch"] = ["in", list(scope.branches)]
 
     # ── Department distribution ───────────────────────────────────────────
-    dept_dist = frappe.db.sql("""
-        SELECT department, COUNT(*) AS count
-        FROM `tabEmployee` WHERE status = 'Active' AND department IS NOT NULL
-        GROUP BY department ORDER BY count DESC
-    """, as_dict=True)
+    dept_dist = frappe.db.sql(f"""
+        SELECT e.department, COUNT(*) AS count
+        FROM `tabEmployee` e WHERE e.status = 'Active' AND e.department IS NOT NULL AND {emp_where}
+        GROUP BY e.department ORDER BY count DESC
+    """, emp_params, as_dict=True)
 
     # ── Gender ratio ─────────────────────────────────────────────────────
-    gender_dist = frappe.db.sql("""
-        SELECT COALESCE(NULLIF(gender,''),'Not Specified') AS gender, COUNT(*) AS count
-        FROM `tabEmployee` WHERE status = 'Active'
+    gender_dist = frappe.db.sql(f"""
+        SELECT COALESCE(NULLIF(e.gender,''),'Not Specified') AS gender, COUNT(*) AS count
+        FROM `tabEmployee` e WHERE e.status = 'Active' AND {emp_where}
         GROUP BY gender
-    """, as_dict=True)
+    """, emp_params, as_dict=True)
 
     # ── Location / Branch ────────────────────────────────────────────────
-    loc_dist = frappe.db.sql("""
-        SELECT COALESCE(NULLIF(branch,''),'HQ') AS location, COUNT(*) AS count
-        FROM `tabEmployee` WHERE status = 'Active'
+    loc_dist = frappe.db.sql(f"""
+        SELECT COALESCE(NULLIF(e.branch,''),'HQ') AS location, COUNT(*) AS count
+        FROM `tabEmployee` e WHERE e.status = 'Active' AND {emp_where}
         GROUP BY location ORDER BY count DESC
-    """, as_dict=True)
+    """, emp_params, as_dict=True)
 
     # ── Monthly joiners (last 6 months) ──────────────────────────────────
-    six_months_ago = add_days(td, -180)
-    joiners_trend = frappe.db.sql("""
-        SELECT DATE_FORMAT(date_of_joining,'%%b %%Y') AS month,
-               DATE_FORMAT(date_of_joining,'%%Y-%%m') AS sort_key,
+    joiners_trend = frappe.db.sql(f"""
+        SELECT DATE_FORMAT(e.date_of_joining,'%%b %%Y') AS month,
+               DATE_FORMAT(e.date_of_joining,'%%Y-%%m') AS sort_key,
                COUNT(*) AS count
-        FROM `tabEmployee`
-        WHERE date_of_joining >= %s
+        FROM `tabEmployee` e
+        WHERE e.date_of_joining >= %(six_months_ago)s AND {emp_where}
         GROUP BY month, sort_key ORDER BY sort_key
-    """, six_months_ago, as_dict=True)
+    """, {**emp_params, "six_months_ago": add_days(td, -180)}, as_dict=True)
 
-    # ── Attendance KPIs this month ────────────────────────────────────────
-    att_summary = frappe.db.sql("""
-        SELECT status, COUNT(*) AS count
-        FROM `tabAttendance`
-        WHERE attendance_date >= %s AND docstatus = 1
-        GROUP BY status
-    """, mo_start, as_dict=True)
-    att_map = {r.status: r.count for r in att_summary}
-    present  = att_map.get("Present", 0) + att_map.get("Half Day", 0) * 0.5
-    absent   = att_map.get("Absent", 0)
-    att_rate = round(present / max(present + absent, 1) * 100, 1)
+    # ── Attendance: the month of the last day with data (decision D-13) ──
+    period = of.period(scope)
+    # No late arrivals, short days or people count: this screen shows none of them,
+    # and asking for them costs two joins and a distinct count over the month.
+    att = of.attendance_figures(scope, *period, detail=False) if period else dict(of.NO_ATTENDANCE)
+    att_rate = att["rate"]
+    present = att["present"] + att["wfh"] + att["half"] * 0.5
+    absent = att["absent"]
 
-    # ── Leave utilization (current year) ─────────────────────────────────
-    total_alloc = frappe.db.sql(
-        "SELECT COALESCE(SUM(total_leaves_allocated),0) FROM `tabLeave Allocation` WHERE docstatus=1"
-    )[0][0] or 0
-    total_taken = frappe.db.sql(
-        "SELECT COALESCE(SUM(total_leave_days),0) FROM `tabLeave Application` WHERE docstatus=1 AND status='Approved' AND from_date>=%s",
-        yr_start,
-    )[0][0] or 0
-    leave_util = round(float(total_taken) / max(float(total_alloc), 1) * 100, 1)
+    # ── Leave used this leave year, per company ──────────────────────────
+    leave = of.leave_figures(scope, td)
 
     # ── Pending approvals ─────────────────────────────────────────────────
-    pending_count = frappe.db.count("Leave Application", {"status": "Open", "docstatus": 0})
+    pending_filters = {"status": "Open", "docstatus": 0, "company": ["in", list(scope.companies)]}
+    if scope.branches is not None:
+        pending_filters["alvoraa_branch"] = ["in", list(scope.branches)]
+    pending_count = frappe.db.count("Leave Application", pending_filters)
 
     # ── Confirmations due this month ─────────────────────────────────────
-    confirmations = frappe.get_all(
+    # get_list: the caller's own User Permissions apply as well as the scope.
+    confirmations = frappe.get_list(
         "Employee",
         filters={
             "scheduled_confirmation_date": ["between", [mo_start, mo_end]],
             "status": "Active",
+            **scope_filters,
         },
         fields=["name", "employee_name", "designation", "department", "date_of_joining", "scheduled_confirmation_date"],
-        ignore_permissions=True,
+        limit_page_length=500,
     )
 
-    # ── Department-wise leave utilization ────────────────────────────────
-    dept_leave = frappe.db.sql("""
+    # ── Department-wise leave, each company's own leave year ─────────────
+    year_or, year_params = [], {}
+    for i, (company, figs) in enumerate(sorted(leave["by_company"].items())):
+        year_params.update({f"lc{i}": company, f"lys{i}": figs["year_start"], f"lye{i}": figs["year_end"]})
+        year_or.append(f"(la.company = %(lc{i})s AND la.from_date BETWEEN %(lys{i})s AND %(lye{i})s)")
+    dept_leave = frappe.db.sql(f"""
         SELECT e.department, COALESCE(SUM(la.total_leave_days),0) AS taken
         FROM `tabEmployee` e
         LEFT JOIN `tabLeave Application` la
-            ON la.employee = e.name AND la.docstatus=1 AND la.status='Approved' AND la.from_date>=%s
-        WHERE e.status='Active' AND e.department IS NOT NULL
+            ON la.employee = e.name AND la.docstatus=1 AND la.status='Approved'
+           AND ({' OR '.join(year_or) or '1=0'})
+        WHERE e.status='Active' AND e.department IS NOT NULL AND {emp_where}
         GROUP BY e.department ORDER BY taken DESC
-    """, yr_start, as_dict=True)
+    """, {**emp_params, **year_params}, as_dict=True)
 
     # ── Designation distribution ─────────────────────────────────────────
-    desig_dist = frappe.db.sql("""
-        SELECT COALESCE(NULLIF(designation,''),'Not Set') AS designation, COUNT(*) AS count
-        FROM `tabEmployee` WHERE status='Active'
+    desig_dist = frappe.db.sql(f"""
+        SELECT COALESCE(NULLIF(e.designation,''),'Not Set') AS designation, COUNT(*) AS count
+        FROM `tabEmployee` e WHERE e.status='Active' AND {emp_where}
         GROUP BY designation ORDER BY count DESC LIMIT 10
-    """, as_dict=True)
+    """, emp_params, as_dict=True)
 
     # ── Recent employee list (for lifecycle tab) ──────────────────────────
-    recent_employees = frappe.get_all(
+    recent_employees = frappe.get_list(
         "Employee",
-        filters={"status": "Active"},
-        fields=["name", "employee_name", "designation", "department", "date_of_joining", "gender"],
+        filters={"status": "Active", **scope_filters},
+        # No gender: the screen shows name, role, team and joining date, and nothing
+        # else reads this list. The gender ratio above is counts, not people (F3).
+        fields=["name", "employee_name", "designation", "department", "date_of_joining"],
         order_by="date_of_joining desc",
-        limit=10,
-        ignore_permissions=True,
+        limit_page_length=10,
     )
 
+    review = data_review.review_summary(scope)
+    of.log_if_slow("get_hr_analytics", scope, started)
+
     return {
+        "not_linked": False,
+        "scope": {"kind": scope.kind, "companies": len(scope.companies),
+                  "branches": len(scope.branches) if scope.branches is not None else None},
+        "data_up_to": str(period[1]) if period else None,
+        "period": {"from": str(period[0]), "to": str(period[1])} if period else None,
+        "review": review,
         "headcount": {
-            "active":      total_active,
-            "total":       total_all,
-            "new_joiners": new_joiners,
+            "active":      people["active"],
+            "total":       people["total"],
+            "new_joiners": people["joiners"],
         },
         "dept_distribution":    dept_dist,
         "gender_distribution":  gender_dist,
@@ -500,11 +547,12 @@ def get_hr_analytics():
         "joiners_trend":        joiners_trend,
         "desig_distribution":   desig_dist,
         "kpis": {
+            # None, not 0, when there is nothing to divide: "No figures yet".
             "attendance_rate":      att_rate,
-            "leave_utilization":    leave_util,
+            "leave_utilization":    leave["used_pct"],
             "pending_approvals":    pending_count,
-            "total_leave_taken":    float(total_taken),
-            "total_leave_allocated": float(total_alloc),
+            "total_leave_taken":    float(leave["taken"]),
+            "total_leave_allocated": float(leave["allocated"]),
         },
         "org_health": {
             "attendance_rate":    att_rate,
@@ -555,6 +603,11 @@ def _can_action_leave(name, doc=None):
     except Exception:
         return False
 
+    # Never your own leave, even when you are named as your own approver.
+    from hrms.alvoraa_hr_core.access import is_own_record
+    if is_own_record(doc.employee):
+        return False
+
     if frappe.session.user != _leave_approver_for(doc):
         return False
 
@@ -573,6 +626,11 @@ def action_leave(leave_id, action):
     """Approve or reject a leave application."""
     user = frappe.session.user
     doc  = frappe.get_doc("Leave Application", leave_id)
+
+    # Nobody approves or rejects their own leave, even when HR Settings would
+    # allow it (SEC-9). Checked first, so the message says why.
+    from hrms.alvoraa_hr_core.access import refuse_own_decision
+    refuse_own_decision(doc.employee, "Leave Application", doc.name, "hr_api.action_leave")
 
     # The same rule the button uses. No role bypass: holding HR Manager does not
     # make somebody the approver, and Frappe HR does not treat it as though it
@@ -687,6 +745,11 @@ def get_portal_activity(days=7):
     return {"activities": activity}
 
 
+# Review stages from which an overall rating is released to the employee, and so
+# may show on screens outside the review (slice 010 group D, decision 3).
+_REVIEW_RATING_RELEASED = ("Employee Final Review", "HR Review", "Completed")
+
+
 @frappe.whitelist()
 def get_employee_scorecard(employee_id):
     """Comprehensive scorecard for one employee — for manager view."""
@@ -697,8 +760,13 @@ def get_employee_scorecard(employee_id):
     roles = frappe.get_roles()
     is_hr = bool({"HR Manager", "HR User", "Administrator"} & set(roles))
     effective_mgr = get_effective_manager(employee_id)
-    if effective_mgr != mgr_emp.name and not is_hr:
-        frappe.throw("Access denied", frappe.PermissionError)
+    if effective_mgr != mgr_emp.name:
+        if not is_hr:
+            frappe.throw("Access denied", frappe.PermissionError)
+        # HR opens only employees of the companies they look after (slice 010
+        # group D, decision 28). It used to open any company's employee: contact
+        # details, attendance, leave and appraisal history.
+        _hr_target_employee(employee_id, "hr_api.get_employee_scorecard")
 
     emp = frappe.db.get_value(
         "Employee", employee_id,
@@ -833,11 +901,15 @@ def get_employee_scorecard(employee_id):
             LIMIT 8
         """, employee_id, as_dict=True)
         for r in rows:
+            # A rating and its score show outside the review only once released
+            # to the employee (slice 010, decision 3 / PRIV-1). Before that the
+            # scorecard says where the review is, not what it says.
+            released = r.review_status in _REVIEW_RATING_RELEASED
             appraisal_history.append({
                 "cycle_label": (r.cycle_label or "—"),
                 "review_status": r.review_status or "",
-                "overall_rating": r.overall_rating or "",
-                "score": float(r.score or 0),
+                "overall_rating": (r.overall_rating or "") if released else "",
+                "score": float(r.score or 0) if released else 0,
             })
 
     # Today's check-in status
@@ -935,7 +1007,7 @@ def get_team_scorecard():
         # .format() only inserts "%s" placeholders — no user data in the format string; safe.
         placeholders = ",".join(["%s"] * len(emp_ids))
         rows = frappe.db.sql("""
-            SELECT ae.employee, ae.overall_rating,
+            SELECT ae.employee, ae.overall_rating, ae.review_status,
                    (SELECT a2.total_score FROM `tabAppraisal` a2 WHERE a2.name = ae.name LIMIT 1) AS score
             FROM `tabAlvoraa Appraisal Extension` ae
             WHERE ae.employee IN ({})
@@ -943,6 +1015,9 @@ def get_team_scorecard():
             ORDER BY ae.creation DESC
         """.format(placeholders), emp_ids, as_dict=True)
         for r in rows:
+            # The latest review whose rating has been released (slice 010, PRIV-1).
+            if r.review_status not in _REVIEW_RATING_RELEASED:
+                continue
             if r.employee not in score_by_emp:
                 score_by_emp[r.employee] = {
                     "score": float(r.score or 0),
@@ -985,8 +1060,11 @@ def get_employee_detail_for_manager(employee_id):
     roles = frappe.get_roles()
     is_hr = bool({"HR Manager", "HR User", "Administrator"} & set(roles))
     emp_reports_to = frappe.db.get_value("Employee", employee_id, "reports_to")
-    if emp_reports_to != mgr_emp.name and not is_hr:
-        frappe.throw("Access denied", frappe.PermissionError)
+    if emp_reports_to != mgr_emp.name:
+        if not is_hr:
+            frappe.throw("Access denied", frappe.PermissionError)
+        # The same hole as get_employee_scorecard, closed the same way (decision 28).
+        _hr_target_employee(employee_id, "hr_api.get_employee_detail_for_manager")
 
     emp = frappe.db.get_value(
         "Employee", employee_id,
@@ -1179,16 +1257,21 @@ def get_available_features():
     # ── Permission flags: live per user, never cached ──────────────────────────
     features = dict(static)
 
+    # frappe.has_permission returns a bool and takes no `raise_exception`. It
+    # was called with one, which raised TypeError, which the except swallowed -
+    # so both of these were False for every user on every tenant, and the two
+    # sidebar items they gate were permanently invisible. The except is kept for
+    # a doctype an app has not installed; it no longer hides our own mistakes.
     try:
         features["attendance_request"] = bool(
-            frappe.has_permission("Attendance Request", "create", raise_exception=False)
+            frappe.has_permission("Attendance Request", "create")
         )
     except Exception:
         features["attendance_request"] = False
 
     try:
         features["advance_request"] = bool(
-            frappe.has_permission("Employee Advance", "create", raise_exception=False)
+            frappe.has_permission("Employee Advance", "create")
         )
     except Exception:
         features["advance_request"] = False
@@ -1252,16 +1335,46 @@ def get_checkin_status():
         "last_action": last,
         "todays_checkins": checkins,
         "attendance": att,
+        # Tells the page whether to ask the browser for a position before it
+        # calls do_checkin. Sent with the status so the button knows before it
+        # is ever pressed, rather than finding out from a failure.
+        "needs_location": checkin_needs_location(),
     }
 
 
+def checkin_needs_location():
+    """Whether this organisation records where a check-in happened.
+
+    Frappe HR refuses a check-in with no coordinates whenever
+    `allow_geolocation_tracking` is on, so the page has to ask the browser for
+    a position BEFORE it calls. Asked per tenant rather than always: a browser
+    location prompt is an intrusion, and there is no reason to show it to
+    somebody whose employer does not record this.
+    """
+    try:
+        return bool(frappe.db.get_single_value("HR Settings", "allow_geolocation_tracking"))
+    except Exception:
+        return False
+
+
 @frappe.whitelist()
-def do_checkin(log_type):
+def do_checkin(log_type, latitude=None, longitude=None):
     if log_type not in ("IN", "OUT"):
         frappe.throw("Invalid log_type")
     emp = _get_employee()
     if not emp:
         frappe.throw("No employee record found for this user")
+
+    # Said here, in words about this screen, rather than letting Frappe HR's
+    # "Latitude and longitude values are required for checking in." reach
+    # somebody who has no idea what a latitude is or why one is wanted.
+    if checkin_needs_location() and latitude in (None, "") and longitude in (None, ""):
+        frappe.throw(
+            "Your organisation records where check-ins happen, so this needs "
+            "your location. Allow location access for this site in your browser, "
+            "then try again."
+        )
+
     doc = frappe.get_doc({
         "doctype": "Employee Checkin",
         "employee": emp.name,
@@ -1269,6 +1382,11 @@ def do_checkin(log_type):
         "log_type": log_type,
         "time": now(),
         "device_id": "web-portal",
+        # Stored against this one moment. The portal asks the browser at the
+        # instant somebody presses the button and never between times - there
+        # is no continuous tracking anywhere in this product.
+        "latitude": flt(latitude) if latitude not in (None, "") else None,
+        "longitude": flt(longitude) if longitude not in (None, "") else None,
     })
     doc.insert(ignore_permissions=True)
     frappe.db.commit()
@@ -1351,6 +1469,103 @@ def get_payslips():
     return {"payslips": slips, "employee": emp}
 
 
+# ── One payslip, shown in the portal ─────────────────────────────────────────
+#
+# Employees used to open a payslip in the desk, at /app/salary-slip/<name>. That
+# needed the Employee role to hold READ on Salary Slip - and that permission was
+# a back door. The Employee role's read is meant to be narrowed to the person's
+# own records by a User Permission, so wherever that permission is wider or
+# missing, other people's pay showed: a floor manager, whose permission covers
+# his reporting line, could open all 18 of his team's payslips, and head-office
+# HR staff with no User Permission could open every one of 400.
+#
+# So the Employee role no longer reads payroll records at all, and the portal
+# shows the payslip itself. Ownership is therefore the WHOLE check, and it lives
+# here, on the server, before anything is returned.
+
+def _own_payslip(name):
+    """The caller's own submitted salary slip, or a refusal.
+
+    The refusal is identical whether the slip belongs to somebody else, is a
+    draft, or does not exist - so a slip name cannot be used to find out whose
+    payslips exist.
+    """
+    emp = _get_employee()
+    row = None
+    if name and isinstance(name, str):
+        row = frappe.db.get_value("Salary Slip", name, ["name", "employee", "docstatus"], as_dict=True)
+    if not emp or not row or row.docstatus != 1 or row.employee != emp.name:
+        frappe.throw(frappe._("That payslip is not available."), frappe.PermissionError)
+    return frappe.get_doc("Salary Slip", row.name)
+
+
+@frappe.whitelist()
+@requires_feature("payroll")
+def get_payslip(name):
+    """One of the caller's own payslips, for the portal to draw."""
+    slip = _own_payslip(name)
+
+    def lines(rows):
+        return [{"component": r.salary_component, "amount": flt(r.amount)}
+                for r in (rows or []) if flt(r.amount)]
+
+    return {
+        "name": slip.name,
+        "employee_name": slip.employee_name,
+        "designation": slip.designation,
+        "department": slip.department,
+        "company": slip.company,
+        "start_date": slip.start_date,
+        "end_date": slip.end_date,
+        "posting_date": slip.posting_date,
+        "currency": slip.currency,
+        "total_working_days": flt(slip.total_working_days),
+        "payment_days": flt(slip.payment_days),
+        "leave_without_pay": flt(slip.leave_without_pay),
+        "absent_days": flt(slip.get("absent_days")),
+        "gross_pay": flt(slip.gross_pay),
+        "total_deduction": flt(slip.total_deduction),
+        "net_pay": flt(slip.net_pay),
+        "rounded_total": flt(slip.rounded_total),
+        "earnings": lines(slip.earnings),
+        "deductions": lines(slip.deductions),
+    }
+
+
+@frappe.whitelist()
+@requires_feature("payroll")
+def download_payslip(name):
+    """The caller's own payslip as a PDF, in the organisation's print format.
+
+    Frappe's print pipeline checks permission again, inside
+    get_rendered_template, and employees no longer hold read on Salary Slip. It
+    honours frappe.flags.ignore_print_permissions for exactly this case, so the
+    flag is raised only after _own_payslip has proved the slip is the caller's,
+    and put back whatever happens.
+
+    NOT frappe.set_user("Administrator"). That was the first version, and it is
+    wrong in a web request: set_user overwrites the session id with the user
+    name, empties the session's stored data and clears form_dict, and switching
+    back restores only the name. An employee pressing Download could have been
+    signed out, or left with a broken session. A script test cannot see that,
+    because a script has no browser session to break.
+    """
+    slip = _own_payslip(name)
+    print_format = frappe.get_meta("Salary Slip").default_print_format or None
+
+    previous = frappe.flags.ignore_print_permissions
+    try:
+        frappe.flags.ignore_print_permissions = True
+        pdf = frappe.get_print("Salary Slip", slip.name, print_format=print_format, as_pdf=True)
+    finally:
+        frappe.flags.ignore_print_permissions = previous
+
+    period = str(slip.start_date)[:7]
+    frappe.local.response.filename = f"Payslip-{period}-{slip.employee}.pdf"
+    frappe.local.response.filecontent = pdf
+    frappe.local.response.type = "download"
+
+
 @frappe.whitelist()
 def get_expense_claims():
     emp = _get_employee()
@@ -1373,9 +1588,14 @@ def get_all_active_employees():
     roles = frappe.get_roles()
     if not ({"HR Manager", "HR User", "System Manager"} & set(roles)):
         frappe.throw("Not permitted.", frappe.PermissionError)
+    # Only the companies this HR user looks after (slice 010, SEC-13).
+    from hrms.alvoraa_hr_core.access import permitted_companies
+    companies = permitted_companies()
+    if not companies:
+        return {"employees": []}
     employees = frappe.get_all(
         "Employee",
-        filters={"status": "Active"},
+        filters={"status": "Active", "company": ["in", companies]},
         fields=["name", "employee_name", "department", "designation"],
         order_by="employee_name asc",
         ignore_permissions=True,
@@ -1383,12 +1603,31 @@ def get_all_active_employees():
     return {"employees": employees}
 
 
+def _hr_target_employee(employee_id, endpoint):
+    """The employee HR is acting for, or a refusal. Fails closed (SEC-13).
+
+    Only employees of a company in permitted_companies(). The message is the
+    same whether the employee is in another company or does not exist, so the
+    refusal does not confirm who exists elsewhere. Returns only the fields the
+    leave screens need - never the whole Employee record (PRIV-6).
+    """
+    from hrms.alvoraa_hr_core.access import permitted_companies, refuse
+
+    emp = frappe.db.get_value(
+        "Employee", employee_id, ["name", "employee_name", "company", "department"], as_dict=True
+    )
+    if not emp or emp.company not in permitted_companies():
+        refuse(_("You can only act for employees of the companies you look after."),
+               "SEC-13", endpoint, "Employee", employee_id)
+    return emp
+
+
 @frappe.whitelist()
 def get_leave_summary(employee_id=None):
     roles = frappe.get_roles()
     is_hr = bool({"HR Manager", "HR User", "System Manager"} & set(roles))
     if employee_id and is_hr:
-        emp = frappe.get_doc("Employee", employee_id)
+        emp = _hr_target_employee(employee_id, "hr_api.get_leave_summary")
     else:
         emp = _get_employee()
     if not emp:
@@ -1455,7 +1694,11 @@ def get_leave_summary(employee_id=None):
     ever_allocated = bool(frappe.db.exists("Leave Allocation",
                                            {"employee": emp.name, "docstatus": 1}))
 
-    return {"balances": balances, "applications": applications, "employee": emp,
+    # Only what the leave screen needs. This used to return the whole Employee
+    # record - salary, PAN and bank details included - to any HR User (PRIV-6).
+    employee = {"name": emp.name, "employee_name": emp.employee_name,
+                "company": emp.company, "department": emp.department}
+    return {"balances": balances, "applications": applications, "employee": employee,
             "ever_allocated": ever_allocated}
 
 
@@ -1514,7 +1757,7 @@ def apply_leave(leave_type, from_date, to_date, half_day=0, half_day_date=None, 
     is_hr = bool({"HR Manager", "HR User", "System Manager"} & set(roles))
 
     if on_behalf_of and is_hr:
-        emp = frappe.get_doc("Employee", on_behalf_of)
+        emp = _hr_target_employee(on_behalf_of, "hr_api.apply_leave")
     else:
         emp = _get_employee()
     if not emp:
@@ -1562,7 +1805,7 @@ def preview_leave_request(leave_type, from_date, to_date, half_day=0, half_day_d
 
     # same rule as apply_leave: only HR may act for someone else
     if on_behalf_of and is_hr:
-        emp = frappe.get_doc("Employee", on_behalf_of)
+        emp = _hr_target_employee(on_behalf_of, "hr_api.preview_leave_request")
     else:
         emp = _get_employee()
     if not emp:
@@ -1895,24 +2138,117 @@ def submit_goal_evidence_portal(goal_id, evidence_type="Manual Entry",
     )
 
 
+EVIDENCE_HR_ROLES = {"HR Manager", "HR User"}   # the roles can_validate_evidence accepts
+
+
 @frappe.whitelist()
 def get_pending_approvals():
-    from alvoraa_goals.api.goal_api import get_pending_approvals as _gpa
-    return _gpa()
+    """Goal evidence waiting for THIS user's decision (slice 010, decision 5).
+
+    It used to import a function that does not exist, so the Team panel's
+    progress approvals card always failed. It now lists pending evidence the
+    caller may decide, by the same rule approve_evidence enforces:
+      - a manager: their direct reports' goals;
+      - HR: goals of employees in the companies they look after;
+      - never the caller's own goals.
+    Three bounded queries whatever the headcount. KPI progress approvals are
+    listed by goals_api.get_pending_approvals, so `kpis` stays empty here.
+    """
+    empty = {"goals": [], "kpis": []}
+    if not frappe.db.exists("DocType", "Individual Goal"):
+        return empty
+    me = _get_employee()
+    my_id = me.name if me else None
+    if EVIDENCE_HR_ROLES & set(frappe.get_roles()):
+        from hrms.alvoraa_hr_core.access import permitted_companies
+        companies = permitted_companies()
+        emp_filters = {"company": ["in", companies]} if companies else None
+    elif my_id:
+        emp_filters = {"reports_to": my_id}
+    else:
+        emp_filters = None
+    if emp_filters is None:
+        return empty
+
+    pending = frappe.get_all(
+        "Goal Evidence",
+        filters={"parenttype": "Individual Goal", "validation_status": "Pending"},
+        fields=["name", "parent", "evidence_type", "value", "extracted_date", "upload_date"],
+        order_by="upload_date asc", limit=500,
+    )
+    if not pending:
+        return empty
+    goals = {g.name: g for g in frappe.get_all(
+        "Individual Goal",
+        filters={"name": ["in", list({p.parent for p in pending})], "docstatus": ["!=", 2]},
+        fields=["name", "goal_name", "employee", "employee_name", "unit"],
+    )}
+    emp_filters.update({"name": ["in", list({g.employee for g in goals.values()})]})
+    allowed = set(frappe.get_all("Employee", filters=emp_filters, pluck="name")) - {my_id}
+
+    out = []
+    for p in pending:
+        g = goals.get(p.parent)
+        if not g or g.employee not in allowed:
+            continue
+        out.append({
+            "name": g.name, "goal_name": g.goal_name, "employee": g.employee,
+            "employee_name": g.employee_name, "unit": g.unit,
+            "evidence": {"row": p.name, "type": p.evidence_type, "value": p.value,
+                         "extracted_date": str(p.extracted_date) if p.extracted_date else None},
+        })
+    return {"goals": out, "kpis": []}
 
 
 @frappe.whitelist()
 @requires_feature("goals")
-def approve_goal_evidence(goal_name, evidence_idx):
+def approve_goal_evidence(goal_name, evidence_row):
     from alvoraa_goals.controllers.evidence import approve_evidence
-    return approve_evidence(goal_name, evidence_idx)
+    return approve_evidence(goal_name, evidence_row)
 
 
 @frappe.whitelist()
 @requires_feature("goals")
-def reject_goal_evidence(goal_name, evidence_idx, reason=""):
+def reject_goal_evidence(goal_name, evidence_row, reason=""):
     from alvoraa_goals.controllers.evidence import reject_evidence
-    return reject_evidence(goal_name, evidence_idx, reason)
+    return reject_evidence(goal_name, evidence_row, reason)
+
+
+@frappe.whitelist()
+@requires_feature("goals")
+def get_self_approved_evidence(limit=200):
+    """Read-only, for HR: evidence approved with no person's sign-off.
+
+    Before slice 010 every evidence row approved itself. Those rows are left
+    as they are (decision 5); this lists the ones that need a second look -
+    approved by nobody, by "System", or by the person who uploaded them - so
+    HR can review them. It changes nothing.
+    """
+    if not EVIDENCE_HR_ROLES & set(frappe.get_roles()):
+        frappe.throw(_("Only HR can see this list."), frappe.PermissionError)
+    from hrms.alvoraa_hr_core.access import permitted_companies
+    companies = permitted_companies()
+    if not companies:
+        return []
+
+    ev = frappe.qb.DocType("Goal Evidence")
+    goal = frappe.qb.DocType("Individual Goal")
+    emp = frappe.qb.DocType("Employee")
+    no_person = (ev.approved_by.isnull() | (ev.approved_by == "") | (ev.approved_by == "System")
+                 | (ev.approved_by == ev.uploaded_by))
+    rows = (
+        frappe.qb.from_(ev)
+        .join(goal).on(goal.name == ev.parent)
+        .join(emp).on(emp.name == goal.employee)
+        .select(ev.name.as_("evidence_row"), goal.name.as_("goal"), goal.goal_name, goal.employee,
+                goal.employee_name, ev.evidence_type, ev.value, ev.upload_date, ev.uploaded_by,
+                ev.approved_by)
+        .where((ev.parenttype == "Individual Goal") & (ev.validation_status == "Approved")
+               & no_person & emp.company.isin(companies))
+        .orderby(ev.upload_date, order=frappe.qb.desc)
+        .limit(min(cint(limit) or 200, 1000))
+    ).run(as_dict=True)
+    return rows
 
 
 @frappe.whitelist()
@@ -1927,22 +2263,64 @@ def reject_kpi_progress(kpi_name, log_idx, comment=None):
     return _rkp(kpi_name, log_idx, comment)
 
 
+# Slice 012 G2 (SEC-18): the only keys these two calls may touch, with the only
+# values each may take. They read and wrote ANY Frappe default before, so one
+# call could add "Employee" to alvoraa_attendance_org_roles and show every
+# employee everybody's leave types, with no record of who did it. The portal's
+# Org Settings screen uses kra_link_mandatory and nothing else. A key that grants
+# visibility must never be added here - it needs System Manager and a change record.
+#
+# Slice 017: the late-coming grace period joins the list. It is a number rather
+# than a yes/no, so a value may also be given as a `range` - whole minutes only,
+# and still an allow-list, just an arithmetic one. It grants no visibility: it
+# moves a threshold on a screen the person can already see, and it does not
+# touch the deduction rule, which keeps its own per-organisation threshold.
+ALLOWED_ORG_SETTINGS = {
+    "kra_link_mandatory": ("0", "1"),
+    LATE_GRACE_KEY: range(0, 241),          # up to four hours; nothing sensible is longer
+}
+
+
+def _refuse_org_setting(endpoint):
+    from hrms.alvoraa_hr_core.access import refuse
+
+    # Neither the key nor the value is logged: the rule id says enough.
+    refuse(_("This setting cannot be read or changed here."), "SEC-18", endpoint)
+
+
 @frappe.whitelist()
 def get_org_setting(key):
     _require_hr()
+    if not isinstance(key, str) or key not in ALLOWED_ORG_SETTINGS:
+        _refuse_org_setting("hr_api.get_org_setting")
     return frappe.db.get_default(key)
 
 
 @frappe.whitelist()
 def set_org_setting(key, value):
     _require_hr()
+    if not isinstance(key, str) or key not in ALLOWED_ORG_SETTINGS:
+        _refuse_org_setting("hr_api.set_org_setting")
+    value = str(value) if value is not None else ""
+    allowed = ALLOWED_ORG_SETTINGS[key]
+    if isinstance(allowed, range):
+        # Whole minutes, no sign, no spaces, and inside the range. Anything else
+        # is refused rather than coerced - a silently clamped threshold is worse
+        # than an error, because nobody finds out what was actually saved.
+        if not re.fullmatch(r"[0-9]{1,3}", value) or int(value) not in allowed:
+            _refuse_org_setting("hr_api.set_org_setting")
+    elif value not in allowed:
+        _refuse_org_setting("hr_api.set_org_setting")
     frappe.db.set_default(key, value)
     frappe.db.commit()
     return {"ok": True}
 
 
 def _require_hr():
-    if not (frappe.has_role("HR Manager") or frappe.has_role("System Manager")):
+    # frappe.has_role() does not exist. It threw AttributeError instead of
+    # checking anything, which failed all five endpoints behind this guard -
+    # "Company Values" among them - for everybody including HR.
+    if not {"HR Manager", "System Manager"} & set(frappe.get_roles()):
         frappe.throw("Not permitted", frappe.PermissionError)
 
 
@@ -1958,13 +2336,18 @@ def get_goal_detail(goal_id):
     goal_employee = frappe.db.get_value("Individual Goal", goal_id, "employee")
     roles = frappe.get_roles()
     is_hr = bool({"HR Manager", "HR User", "Administrator"} & set(roles))
-    is_owner = goal_employee == emp.name
-    if not is_owner and not is_hr:
-        dr = frappe.db.get_value("Employee",
+    is_owner = bool(goal_employee) and goal_employee == emp.name
+    if not is_owner:
+        dr = goal_employee and frappe.db.get_value("Employee",
             {"name": goal_employee, "reports_to": emp.name, "status": "Active"},
             "name")
         if not dr:
-            frappe.throw("Access denied", frappe.PermissionError)
+            if not is_hr:
+                frappe.throw("Access denied", frappe.PermissionError)
+            # HR outside its own line opens goals only for the companies it looks
+            # after (slice 010 group D, decision 33). It used to open any
+            # company's goal. Same refusal for "other company" and "no such goal".
+            _hr_target_employee(goal_employee, "hr_api.get_goal_detail")
     # Query directly — include drafts (docstatus=0) as well as submitted
     goals = frappe.get_all(
         "Individual Goal",
@@ -1978,6 +2361,11 @@ def get_goal_detail(goal_id):
     goal = goals[0] if goals else None
     if not goal:
         frappe.throw("Goal not found")
+    # Slice 010 group D (R5, PRIV-10): "in a review", and the day after which
+    # updates no longer change it. Nothing else about the review.
+    import alvoraa_goals.review_items as review_items
+
+    goal["review_badge"] = review_items.review_badges("Individual Goal", [goal_id]).get(goal_id)
     try:
         evs = frappe.get_all(
             "Goal Evidence",
@@ -2257,3 +2645,537 @@ def get_employee_goals_for_manager(employee_id):
     except Exception:
         goals = []
     return {"available": True, "goals": goals}
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Late-coming rule (build B1) - portal views of Attendance Deduction
+# ══════════════════════════════════════════════════════════════════════════
+
+EMP_RULE_FIELDS = ["company", "default_shift", "grade", "date_of_joining", "status"]
+
+
+def _late_rule_for(employee, emp_row=None, cache=None):
+    """The enabled rule that would actually act on this employee, or None.
+
+    `emp_row` and `cache` exist so a manager's whole team can be answered without
+    a handful of queries per person: the caller passes the Employee row it already
+    read, and the cache holds the rule per company-and-shift. Called with neither,
+    it behaves exactly as it always did.
+    """
+    if cache is None:
+        cache = {}
+    if "_have_doctype" not in cache:
+        cache["_have_doctype"] = bool(frappe.db.exists("DocType", "Attendance Deduction Rule"))
+    if not cache["_have_doctype"]:
+        return None
+    if emp_row is None:
+        emp_row = frappe.db.get_value("Employee", employee, EMP_RULE_FIELDS, as_dict=True)
+    if not emp_row:
+        return None
+
+    key = (emp_row.get("company"), emp_row.get("default_shift"))
+    if key in cache:
+        rule = cache[key]
+    else:
+        rule = None
+        for filters in ({"company": key[0], "shift_type": key[1], "enabled": 1},
+                        {"company": key[0], "shift_type": ["in", ["", None]], "enabled": 1}):
+            name = frappe.db.get_value("Attendance Deduction Rule", filters, "name")
+            if name:
+                rule = frappe.get_cached_doc("Attendance Deduction Rule", name)
+                break
+        cache[key] = rule
+    if not rule:
+        return None
+
+    # A rule that names this person's company is not the same as a rule that
+    # would act on this person. An exempt grade meant the portal showed
+    # deductions the weekly job was never going to make.
+    from hrms.alvoraa_late_rules.late_rules import covers
+
+    return rule if covers(rule, employee, emp=emp_row) else None
+
+
+def _deduction_rows(filters, limit=20):
+    rows = frappe.get_all(
+        "Attendance Deduction",
+        filters=filters,
+        fields=["name", "employee", "employee_name", "week_start", "week_end", "total_violations",
+                "counted_violations", "deduction_days", "lwp_days", "lwp_amount", "explanation"],
+        order_by="week_start desc", limit=limit, ignore_permissions=True,
+    )
+    for r in rows:
+        r["leave_days"] = round(frappe.utils.flt(r.deduction_days) - frappe.utils.flt(r.lwp_days), 2)
+        r["violations"] = frappe.get_all(
+            "Attendance Deduction Violation", filters={"parent": r.name},
+            fields=["attendance_date", "violation_type", "expected_time", "actual_time", "minutes", "counted"],
+            order_by="attendance_date asc", ignore_permissions=True,
+        )
+        for v in r["violations"]:
+            v["attendance_date"] = str(v.attendance_date)
+            v["expected_time"] = str(v.expected_time)[:5] if v.expected_time else ""
+            v["actual_time"] = str(v.actual_time)[:5] if v.actual_time else ""
+        r["week_start"] = str(r.week_start)
+        r["week_end"] = str(r.week_end)
+    return rows
+
+
+@frappe.whitelist()
+def get_my_attendance_deductions(months=3):
+    """The employee's own late-coming deductions plus this week so far."""
+    emp = _get_employee()
+    if not emp:
+        return {"no_employee": True}
+    rule = _late_rule_for(emp.name)
+    if not rule:
+        return {"enabled": False, "rows": [], "this_week": None}
+    from hrms.alvoraa_late_rules.late_rules import current_week_projection
+    since = frappe.utils.add_months(frappe.utils.nowdate(), -int(months))
+    rows = _deduction_rows({"employee": emp.name, "docstatus": 1, "week_start": [">=", since]})
+    projection = current_week_projection(rule, emp.name)
+    for v in projection["violations"]:
+        v["attendance_date"] = str(v["attendance_date"])
+        v["expected_time"] = str(v["expected_time"])[:5]
+        v["actual_time"] = str(v["actual_time"])[:5]
+    return {
+        "enabled": True,
+        "rule": {"name": rule.name, "late_threshold_minutes": rule.late_threshold_minutes,
+                 "early_exit_threshold_minutes": rule.early_exit_threshold_minutes if rule.count_early_exit else 0,
+                 "free_violations_per_week": rule.free_violations_per_week,
+                 "deduction_per_violation_days": rule.deduction_per_violation_days,
+                 "round_up_from_days": rule.round_up_from_days, "round_up_to_days": rule.round_up_to_days},
+        "rows": rows,
+        "this_week": projection,
+    }
+
+
+@frappe.whitelist()
+def get_team_late_list(weeks=4):
+    """Manager: this week so far for every direct report, and the last few weeks' deductions."""
+    emp = _get_employee()
+    if not emp:
+        return {"no_employee": True}
+    team = frappe.get_all("Employee", filters={"reports_to": emp.name, "status": "Active"},
+                          fields=["name", "employee_name", "designation"] + EMP_RULE_FIELDS,
+                          order_by="employee_name asc")
+    if not team:
+        return {"enabled": False, "team": [], "recent": []}
+    from hrms.alvoraa_late_rules.late_rules import current_week_projection
+
+    # Each person against THEIR OWN rule. This used to look up the first team
+    # member's rule and apply it to everybody, so a team split across shifts was
+    # judged by one person's thresholds, and anyone the rule did not cover was
+    # still given a figure. The shared cache and the row we already read keep
+    # this to the same number of queries as the single-rule version.
+    out = []
+    week_start = None
+    rule_cache = {}
+    for m in team:
+        rule = _late_rule_for(m.name, emp_row=m, cache=rule_cache)
+        if not rule:
+            continue
+        p = current_week_projection(rule, m.name)
+        week_start = week_start or p["week_start"]
+        out.append({"employee": m.name, "employee_name": m.employee_name, "designation": m.designation,
+                    "violations": len(p["violations"]), "counted": p["counted"], "projected_days": p["projected_days"],
+                    "detail": [f"{str(v['attendance_date'])[5:]} {v['violation_type']} {str(v['actual_time'])[:5]}"
+                               for v in p["violations"]]})
+    if not out:
+        return {"enabled": False, "team": [], "recent": []}
+    since = frappe.utils.add_days(frappe.utils.nowdate(), -7 * int(weeks))
+    # Days only. A manager never receives a report's loss-of-pay amount, the
+    # explanation text or the per-day punch times (slice 010, PRIV-3). A fixed
+    # field list rather than _deduction_rows, which is the employee's own view.
+    recent = frappe.get_all(
+        "Attendance Deduction",
+        filters={"employee": ["in", [m.name for m in team]], "docstatus": 1, "week_start": [">=", since]},
+        fields=["name", "employee", "employee_name", "week_start", "week_end", "deduction_days", "lwp_days"],
+        order_by="week_start desc", limit=50,
+    )
+    for r in recent:
+        r["week_start"] = str(r.week_start)
+        r["week_end"] = str(r.week_end)
+    return {"enabled": True, "week_start": week_start, "team": out, "recent": recent}
+
+
+# ── Employee documents (build B4) ──────────────────────────────────────────
+@frappe.whitelist()
+def get_my_documents():
+    """The signed-in employee's document checklist, with what they can upload."""
+    emp = _get_employee()
+    if not emp or not frappe.db.exists("DocType", "Employee Document"):
+        return {"rows": [], "summary": ""}
+    types = {
+        t.name: t
+        for t in frappe.get_all(
+            "Employee Document Type",
+            fields=["name", "category", "collect_from", "mandatory_for_joining", "has_expiry"],
+        )
+    }
+    rows = frappe.get_all(
+        "Employee Document",
+        filters={"parent": emp.name, "parenttype": "Employee"},
+        fields=["name", "document_type", "status", "attachment", "document_number", "expiry_date",
+                "received_on", "verified_on", "remarks"],
+        order_by="idx",
+    )
+    out = []
+    for r in rows:
+        t = types.get(r.document_type) or frappe._dict()
+        out.append({
+            "name": r.name,
+            "document_type": r.document_type,
+            "category": t.get("category") or "",
+            "status": r.status,
+            "attachment": r.attachment or "",
+            "document_number": r.document_number or "",
+            "expiry_date": str(r.expiry_date) if r.expiry_date else "",
+            "received_on": str(r.received_on) if r.received_on else "",
+            "verified_on": str(r.verified_on) if r.verified_on else "",
+            "remarks": r.remarks or "",
+            "mandatory": int(t.get("mandatory_for_joining") or 0),
+            "collect_from": t.get("collect_from") or "",
+            "can_upload": int((t.get("collect_from") == "Employee") and r.status != "Verified"),
+        })
+    return {"employee": emp.name, "rows": out,
+            "summary": frappe.db.get_value("Employee", emp.name, "documents_summary") or ""}
+
+
+@frappe.whitelist()
+def attach_my_document(row, file_url, document_number=None):
+    """Put an uploaded file on one of the caller's own checklist rows."""
+    from hrms.alvoraa_employee_documents.employee_documents import attach_document
+
+    emp = _get_employee()
+    if not emp:
+        frappe.throw("No employee record is linked to your login.", frappe.PermissionError)
+    doc = attach_document(row, file_url, emp.name)
+    if document_number is not None:
+        frappe.db.set_value("Employee Document", doc.name, "document_number", document_number)
+    frappe.db.commit()
+    return {"name": doc.name, "status": doc.status, "message": "Uploaded. HR will verify it."}
+
+
+@frappe.whitelist()
+def hr_document_compliance(branch=None):
+    """HR: employees with a mandatory document not yet verified or any document
+    expired, grouped by branch."""
+    from hrms.alvoraa_employee_documents.employee_documents import employees_missing_mandatory
+
+    _require_hr()
+    rows = employees_missing_mandatory(branch or None)
+    by_branch = {}
+    for r in rows:
+        by_branch.setdefault(r["branch"] or "No branch", []).append(r)
+    total_active = frappe.db.count("Employee", {"status": "Active"})
+    return {
+        "employees": rows,
+        "by_branch": [{"branch": b, "count": len(v)} for b, v in sorted(by_branch.items())],
+        "affected": len(rows),
+        "active": total_active,
+    }
+
+
+# ── Policy library (build B5) ──────────────────────────────────────────────
+POLICY_FIELDS = ["name", "title", "owner_department", "category", "status", "current_version", "effective_from",
+                 "review_due", "summary", "attachment", "pinned", "acknowledge_on_joining",
+                 "acknowledge_on_new_version", "has_unpublished_changes", "modified"]
+
+
+def _policy_row(p, emp, can_write_flag):
+    from hrms.alvoraa_policy_library.doctype.policy_document.policy_document import acknowledgement_status
+
+    needed, done = acknowledgement_status(p, emp)
+    ack = "acknowledged" if (needed and done) else ("pending" if needed else "")
+    return {
+        "name": p.name, "title": p.title, "department": p.owner_department, "category": p.category,
+        "status": p.status, "version": cint(p.current_version),
+        "effective_from": str(p.effective_from) if p.effective_from else "",
+        "review_due": str(p.review_due) if p.review_due else "",
+        "summary": p.summary or "", "has_attachment": bool(p.attachment), "pinned": cint(p.pinned),
+        "ack": ack, "can_write": int(can_write_flag), "unpublished_changes": cint(p.has_unpublished_changes),
+        "modified": str(p.modified)[:10],
+    }
+
+
+@frappe.whitelist()
+def get_my_policies(limit=6):
+    """Home widget: pinned first, then newest published, only what the caller may read."""
+    if not frappe.db.exists("DocType", "Policy Document"):
+        return {"rows": [], "pending": 0}
+    from hrms.alvoraa_policy_library.access import can_write, profile
+
+    emp = (_get_employee() or {}).get("name")
+    rows = frappe.get_list("Policy Document", filters={"status": "Published"}, fields=POLICY_FIELDS,
+                           order_by="pinned desc, modified desc", limit=cint(limit) or 6)
+    out = [_policy_row(p, emp, can_write(p)) for p in rows]
+    pending = sum(1 for r in _all_readable(emp) if r["ack"] == "pending")
+    return {"rows": out, "pending": pending, "can_manage": int(bool(profile().heads) or profile().is_hr_manager or profile().is_admin)}
+
+
+def _all_readable(emp, search="", department="", category="", status="Published"):
+    from hrms.alvoraa_policy_library.access import can_write
+
+    filters = {}
+    if status:
+        filters["status"] = status
+    if department:
+        filters["owner_department"] = department
+    if category:
+        filters["category"] = category
+    or_filters = None
+    if search:
+        like = "%" + search.strip() + "%"
+        or_filters = {"title": ["like", like], "summary": ["like", like], "content": ["like", like]}
+    rows = frappe.get_list("Policy Document", filters=filters, or_filters=or_filters, fields=POLICY_FIELDS,
+                           order_by="pinned desc, title asc", limit=0)
+    return [_policy_row(p, emp, can_write(p)) for p in rows]
+
+
+@frappe.whitelist()
+def list_policies(search="", department="", category="", status="Published"):
+    """The Policies page. Writers may ask for Draft or Archived too."""
+    emp = (_get_employee() or {}).get("name")
+    rows = _all_readable(emp, search, department, category, status if status != "all" else "")
+    departments = sorted({r["department"] for r in rows})
+    categories = sorted({r["category"] for r in rows})
+    return {"rows": rows, "departments": departments, "categories": categories}
+
+
+@frappe.whitelist()
+def get_policy(name):
+    """One policy: readers get the last published snapshot, writers also get the working copy."""
+    from hrms.alvoraa_policy_library.access import can_write
+
+    doc = frappe.get_doc("Policy Document", name)
+    doc.check_permission("read")
+    emp = (_get_employee() or {}).get("name")
+    writer = can_write(doc)
+    view = doc.published_view()
+    row = _policy_row(doc, emp, writer)
+    row.update({
+        "content": view.content or "", "attachment": view.attachment or "",
+        "published_on": str(view.get("published_on") or "")[:16], "published_by": view.get("published_by") or "",
+        "versions": [{"version": v.version, "published_on": str(v.published_on)[:16], "published_by": v.published_by,
+                      "change_note": v.change_note or ""} for v in reversed(doc.versions or [])],
+    })
+    if writer:
+        row["working"] = {
+            "title": doc.title, "summary": doc.summary or "", "content": doc.content or "",
+            "attachment": doc.attachment or "", "effective_from": str(doc.effective_from or ""),
+            "review_due": str(doc.review_due or ""), "pinned": cint(doc.pinned),
+            "acknowledge_on_joining": cint(doc.acknowledge_on_joining),
+            "acknowledge_on_new_version": cint(doc.acknowledge_on_new_version),
+            "read_access": [{"access_type": r.access_type, "role": r.role, "user": r.user, "designation": r.designation,
+                             "branch": r.branch, "department": r.department} for r in doc.read_access],
+            "acknowledged_count": frappe.db.count("Policy Acknowledgement",
+                                                  {"policy_document": doc.name, "version": cint(doc.current_version)}),
+        }
+    return row
+
+
+@frappe.whitelist()
+def acknowledge_policy(name, source="Manual"):
+    """The signed-in employee confirms they have read the current version."""
+    emp = _get_employee()
+    if not emp:
+        frappe.throw("No employee record is linked to your login.", frappe.PermissionError)
+    doc = frappe.get_doc("Policy Document", name)
+    doc.check_permission("read")
+    if doc.status != "Published":
+        frappe.throw("Only a published policy can be acknowledged.")
+    if frappe.db.exists("Policy Acknowledgement", {"policy_document": name, "version": cint(doc.current_version),
+                                                   "employee": emp.name}):
+        return {"message": "Already acknowledged."}
+    ack = frappe.get_doc({"doctype": "Policy Acknowledgement", "policy_document": name,
+                          "version": cint(doc.current_version), "employee": emp.name, "user": frappe.session.user,
+                          "source": source if source in ("Onboarding", "New Version", "Manual") else "Manual"})
+    ack.insert(ignore_permissions=True)
+    frappe.db.commit()
+    return {"message": f"Thank you. Version {doc.current_version} of \"{doc.title}\" is acknowledged."}
+
+
+WHO_PRESETS = {
+    "everyone": [{"access_type": "All Employees"}],
+    "managers": [{"access_type": "Reporting Managers"}],
+    "hr": [{"access_type": "HR Only"}],
+    "department": [{"access_type": "Department Only"}],
+    "leadership": [{"access_type": "Top Leadership"}],
+}
+
+
+@frappe.whitelist()
+def save_policy(name=None, title=None, owner_department=None, category=None, summary=None, content=None,
+                effective_from=None, review_due=None, pinned=0, acknowledge_on_joining=0,
+                acknowledge_on_new_version=0, who=None, read_access=None):
+    """Create or update the working copy. Publishing is a separate step."""
+    import json
+    from hrms.alvoraa_policy_library.access import can_write
+
+    if name:
+        doc = frappe.get_doc("Policy Document", name)
+    else:
+        doc = frappe.new_doc("Policy Document")
+        doc.status = "Draft"
+    for field, value in (("title", title), ("owner_department", owner_department), ("category", category),
+                         ("summary", summary), ("content", content), ("effective_from", effective_from or None),
+                         ("review_due", review_due or None)):
+        if value is not None:
+            doc.set(field, value)
+    doc.pinned = cint(pinned)
+    doc.acknowledge_on_joining = cint(acknowledge_on_joining)
+    doc.acknowledge_on_new_version = cint(acknowledge_on_new_version)
+    if not can_write(doc):
+        frappe.throw("You cannot edit this policy. Department heads edit their own department's policies; HR Managers edit any.",
+                     frappe.PermissionError)
+    rules = None
+    if who in WHO_PRESETS:
+        rules = WHO_PRESETS[who]
+    elif read_access:
+        rules = json.loads(read_access) if isinstance(read_access, str) else read_access
+    if rules is not None:
+        doc.set("read_access", [])
+        for r in rules:
+            doc.append("read_access", r)
+    doc.flags.ignore_permissions = True     # can_write is the check that matters here
+    doc.save()
+    frappe.db.commit()
+    return {"name": doc.name, "status": doc.status, "message": "Saved." + (" Publish it when it is ready." if doc.status == "Draft" else "")}
+
+
+@frappe.whitelist()
+def publish_policy(name, change_note=""):
+    doc = frappe.get_doc("Policy Document", name)
+    result = doc.publish(change_note)
+    frappe.db.commit()
+    return {"message": f"Published as version {result['version']}.", **result}
+
+
+@frappe.whitelist()
+def get_policy_compliance(branch=None):
+    """HR: who still has to acknowledge which policy, by branch."""
+    _require_hr()
+    policies = frappe.get_all("Policy Document",
+                              filters={"status": "Published", "acknowledge_on_joining": 1},
+                              fields=["name", "title", "current_version"])
+    policies += frappe.get_all("Policy Document",
+                               filters={"status": "Published", "acknowledge_on_joining": 0, "acknowledge_on_new_version": 1},
+                               fields=["name", "title", "current_version"])
+    filters = {"status": "Active"}
+    if branch:
+        filters["branch"] = branch
+    employees = frappe.get_all("Employee", filters=filters, fields=["name", "employee_name", "branch"])
+    acks = set()
+    for a in frappe.get_all("Policy Acknowledgement", filters={"policy_document": ["in", [p.name for p in policies]]},
+                            fields=["policy_document", "version", "employee"]):
+        acks.add((a.policy_document, cint(a.version), a.employee))
+    by_branch, by_policy, rows = {}, {}, []
+    for e in employees:
+        missing = [p.title for p in policies if (p.name, cint(p.current_version), e.name) not in acks]
+        b = by_branch.setdefault(e.branch or "No branch", {"branch": e.branch or "No branch", "employees": 0, "pending": 0})
+        b["employees"] += 1
+        if missing:
+            b["pending"] += 1
+            rows.append({"employee": e.name, "employee_name": e.employee_name, "branch": e.branch or "", "missing": missing})
+        for p in policies:
+            bp = by_policy.setdefault(p.name, {"policy": p.title, "version": cint(p.current_version), "acknowledged": 0, "pending": 0})
+            if (p.name, cint(p.current_version), e.name) in acks:
+                bp["acknowledged"] += 1
+            else:
+                bp["pending"] += 1
+    review = frappe.get_all("Policy Document", filters={"status": "Published", "review_due": ["<=", frappe.utils.add_days(today(), 60)]},
+                            fields=["name", "title", "review_due", "owner_department"], order_by="review_due")
+    return {"by_branch": sorted(by_branch.values(), key=lambda r: r["branch"]),
+            "by_policy": sorted(by_policy.values(), key=lambda r: -r["pending"]),
+            "employees": sorted(rows, key=lambda r: (r["branch"], r["employee_name"]))[:200],
+            "pending_total": len(rows), "active": len(employees),
+            "review_due": [{"name": r.name, "title": r.title, "review_due": str(r.review_due), "department": r.owner_department} for r in review]}
+
+
+# ── This week, at a glance ───────────────────────────────────────────────────
+
+@frappe.whitelist()
+def get_week_presence(offset=0):
+    """Who on my team or in my department is in this week.
+
+    Presence ONLY. Never why somebody is away, never a leave type, never a
+    running absence count. Absence can reveal a pregnancy, a diagnosis or a
+    family crisis, and a colleague has no business inferring any of that from a
+    home page. A manager's analytics view may go further because they carry a
+    duty of care; a peer's must not.
+
+    That is why this returns four states and nothing else:
+        in       marked present, or working from home
+        away     not at work - approved leave and absence look identical
+        due      a working day still to come
+        off      a holiday or a non-working day
+    """
+    from frappe.utils import add_days, get_first_day_of_week, getdate, nowdate
+
+    me = _get_employee()
+    if not me:
+        return {"no_employee": True}
+
+    start = getdate(add_days(get_first_day_of_week(nowdate()), 7 * cint(offset)))
+    days = [add_days(start, i) for i in range(7)]
+    today = getdate(nowdate())
+
+    # My people if I have any, otherwise the people I sit with. A department can
+    # be large, so it is capped - this is a glance, not a report.
+    team = frappe.get_all("Employee",
+                          filters={"reports_to": me.name, "status": "Active"},
+                          fields=["name", "employee_name", "designation", "image"],
+                          order_by="employee_name asc", limit=40)
+    basis = "team"
+    if not team and me.department:
+        team = frappe.get_all("Employee",
+                              filters={"department": me.department, "status": "Active",
+                                       "name": ("!=", me.name)},
+                              fields=["name", "employee_name", "designation", "image"],
+                              order_by="employee_name asc", limit=40)
+        basis = "department"
+    if not team:
+        return {"rows": [], "basis": "none", "days": [str(d) for d in days]}
+
+    ids = [e.name for e in team]
+    marked = {}
+    for r in frappe.get_all("Attendance",
+                            filters={"employee": ("in", ids), "docstatus": 1,
+                                     "attendance_date": ("between", [days[0], days[-1]])},
+                            fields=["employee", "attendance_date", "status"]):
+        marked[(r.employee, str(r.attendance_date))] = r.status
+
+    holidays = _holiday_dates(me, days)
+
+    rows = []
+    for e in team:
+        cells = []
+        for d in days:
+            ds = str(d)
+            status = marked.get((e.name, ds))
+            if status in ("Present", "Work From Home"):
+                cells.append("in")
+            elif status:                       # On Leave, Absent, Half Day
+                cells.append("away")
+            elif ds in holidays:
+                cells.append("off")
+            else:
+                cells.append("due" if getdate(d) >= today else "away")
+        rows.append({"employee": e.name, "name": e.employee_name,
+                     "title": e.designation or "", "image": e.image, "week": cells})
+
+    return {"rows": rows, "basis": basis, "start": str(days[0]),
+            "days": [str(d) for d in days], "today": str(today)}
+
+
+def _holiday_dates(employee, days):
+    """A weekend is not an absence, and neither is Diwali."""
+    hl = frappe.db.get_value("Employee", employee.name, "holiday_list")
+    if not hl:
+        hl = frappe.db.get_value("Company", employee.company, "default_holiday_list")
+    if not hl:
+        return set()
+    return {str(h.holiday_date) for h in frappe.get_all(
+        "Holiday", filters={"parent": hl,
+                            "holiday_date": ("between", [days[0], days[-1]])},
+        fields=["holiday_date"])}

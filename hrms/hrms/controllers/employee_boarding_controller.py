@@ -35,7 +35,9 @@ class EmployeeBoardingController(Document):
 			{
 				"doctype": "Project",
 				"project_name": project_name,
-				"expected_start_date": self.date_of_joining
+				# onboarding work starts before the joining date, and a Task cannot
+				# start before its Project
+				"expected_start_date": (self.get("boarding_begins_on") or self.date_of_joining)
 				if self.doctype == "Employee Onboarding"
 				else self.resignation_letter_date,
 				"department": self.department,

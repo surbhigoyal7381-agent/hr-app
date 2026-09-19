@@ -521,7 +521,7 @@ Employee
 | **Evidence loss (file deleted)** | Low | High | File encryption + versioning. Backup Strategy: daily snapshot of Goal Evidence table. Immutable audit log tracks deletions (if anyone tries). |
 | **Permission bypass (employee sees other goals)** | Low | High | Role-based filters at DocType level. Test permission matrix (employee can read own goals only). Backend validates user_id on all API calls. |
 | **Cascade complexity (too many levels, slow to define)** | Medium | Medium | Provide pre-built templates for common structures (Sales, Ops, Finance). Drag-and-drop cascade builder. Limit to 4 levels (company → division → team → individual). |
-| **Stakeholder resistance (manual process is "simpler")** | High | Medium | Strong change management: HR workshop on benefits (fraud prevention, real-time visibility, audit trail). Early wins: run parallel for 2 weeks, show accuracy + time savings. Champion (Chaitanya) to sponsor. |
+| **Stakeholder resistance (manual process is "simpler")** | High | Medium | Strong change management: HR workshop on benefits (fraud prevention, real-time visibility, audit trail). Early wins: run parallel for 2 weeks, show accuracy + time savings. Champion (Aditya) to sponsor. |
 
 ---
 
@@ -617,7 +617,7 @@ Employee
 
 ## **NEXT STEPS**
 
-1. **HR & Chaitanya sign-off** on the blueprint (especially risk assessment, change management).
+1. **HR & Aditya sign-off** on the blueprint (especially risk assessment, change management).
 2. **Assign tech lead** to begin Phase 1 (app creation, DocType definitions).
 3. **Prepare change management** (workshop with Alvoraa HR, early-access testing).
 4. **Schedule UAT** with Alvoraa HR & Sales teams (end of Week 4).

@@ -1,0 +1,239 @@
+{
+ "actions": [],
+ "creation": "2026-09-07 17:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "owner_department",
+  "category",
+  "column_break_head",
+  "status",
+  "current_version",
+  "company",
+  "dates_section",
+  "effective_from",
+  "review_due",
+  "column_break_flags",
+  "pinned",
+  "acknowledge_on_joining",
+  "acknowledge_on_new_version",
+  "has_unpublished_changes",
+  "body_section",
+  "summary",
+  "attachment",
+  "content",
+  "access_section",
+  "read_access",
+  "write_access",
+  "versions_section",
+  "versions"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "owner_department",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Owner Department",
+   "options": "Department",
+   "reqd": 1
+  },
+  {
+   "fieldname": "category",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Category",
+   "options": "HR\nCompliance\nFinance\nOperations\nIT\nMarketing\nSafety\nOther",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_head",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nPublished\nArchived",
+   "default": "Draft",
+   "reqd": 1
+  },
+  {
+   "fieldname": "current_version",
+   "fieldtype": "Int",
+   "label": "Current Version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "description": "Blank applies to every company."
+  },
+  {
+   "fieldname": "dates_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "effective_from",
+   "fieldtype": "Date",
+   "label": "Effective From"
+  },
+  {
+   "fieldname": "review_due",
+   "fieldtype": "Date",
+   "label": "Review Due"
+  },
+  {
+   "fieldname": "column_break_flags",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "pinned",
+   "fieldtype": "Check",
+   "label": "Pinned (shows first)"
+  },
+  {
+   "fieldname": "acknowledge_on_joining",
+   "fieldtype": "Check",
+   "label": "Acknowledge on Joining"
+  },
+  {
+   "fieldname": "acknowledge_on_new_version",
+   "fieldtype": "Check",
+   "label": "Acknowledge Each New Version"
+  },
+  {
+   "fieldname": "has_unpublished_changes",
+   "fieldtype": "Check",
+   "label": "Has Unpublished Changes",
+   "read_only": 1,
+   "depends_on": "eval:doc.status=='Published'"
+  },
+  {
+   "fieldname": "body_section",
+   "fieldtype": "Section Break",
+   "label": "Policy"
+  },
+  {
+   "fieldname": "summary",
+   "fieldtype": "Small Text",
+   "label": "Summary",
+   "description": "One or two lines shown on the portal card."
+  },
+  {
+   "fieldname": "attachment",
+   "fieldtype": "Attach",
+   "label": "Attachment (PDF)"
+  },
+  {
+   "fieldname": "content",
+   "fieldtype": "Text Editor",
+   "label": "Content"
+  },
+  {
+   "fieldname": "access_section",
+   "fieldtype": "Section Break",
+   "label": "Who Can Read and Who Can Edit"
+  },
+  {
+   "fieldname": "read_access",
+   "fieldtype": "Table",
+   "label": "Read Access",
+   "options": "Policy Access Rule",
+   "description": "Any matching rule grants read. HR Managers, department heads and System Managers read everything."
+  },
+  {
+   "fieldname": "write_access",
+   "fieldtype": "Table",
+   "label": "Write Access",
+   "options": "Policy Access Rule",
+   "description": "The owner department's head, HR Managers and System Managers can always edit."
+  },
+  {
+   "fieldname": "versions_section",
+   "fieldtype": "Section Break",
+   "label": "Version History"
+  },
+  {
+   "fieldname": "versions",
+   "fieldtype": "Table",
+   "label": "Versions",
+   "options": "Policy Document Version",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-07 17:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Policy Library",
+ "name": "Policy Document",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR User",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Employee",
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "autoname": "format:POL-{#####}",
+ "title_field": "title",
+ "search_fields": "title,owner_department,category",
+ "track_changes": 1
+}

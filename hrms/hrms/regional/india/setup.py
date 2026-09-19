@@ -34,8 +34,9 @@ def get_custom_fields():
 				"insert_after": "description",
 				"options": (
 					"\nProvident Fund\nAdditional Provident Fund\nProvident Fund Loan\nProfessional Tax"
+					"\nESI\nEmployer ESI"
 				),
-				"depends_on": 'eval:doc.type == "Deduction"',
+				"depends_on": 'eval:doc.type == "Deduction" || doc.type == "Employer Contribution"',
 				"translatable": 0,
 			},
 		],
@@ -77,6 +78,41 @@ def get_custom_fields():
 				"fieldtype": "Data",
 				"insert_after": "pan_number",
 				"translatable": 0,
+			},
+			{
+				"fieldname": "esi_number",
+				"label": "ESI Number",
+				"fieldtype": "Data",
+				"insert_after": "provident_fund_account",
+				"translatable": 0,
+			},
+		],
+		"Salary Structure Assignment": [
+			{
+				"fieldname": "statutory_section",
+				"label": "Statutory Deductions",
+				"fieldtype": "Section Break",
+				"insert_after": "income_tax_slab",
+				"collapsible": 0,
+			},
+			{
+				"fieldname": "pf_applicable",
+				"label": "Provident Fund Applicable",
+				"fieldtype": "Check",
+				"insert_after": "statutory_section",
+				"default": "1",
+				"allow_on_submit": 1,
+				"description": "Untick for an employee who has opted out of PF. Salary component conditions read this.",
+			},
+			{
+				"fieldname": "esi_applicable",
+				"label": "ESI Applicable",
+				"fieldtype": "Check",
+				"insert_after": "pf_applicable",
+				"allow_on_submit": 1,
+				"description": "Set from the base pay against the ESI wage ceiling when the assignment is created. "
+				"ESI keeps covering an employee until the contribution period ends even if wages rise, "
+				"so this is a switch HR controls, not a live formula.",
 			},
 		],
 		"Company": [
@@ -247,6 +283,7 @@ def add_custom_roles_for_reports():
 	for report_name in (
 		"Professional Tax Deductions",
 		"Provident Fund Deductions",
+		"ESI Deductions",
 		"Income Tax Deductions",
 	):
 		if not frappe.db.get_value("Custom Role", dict(report=report_name)):

@@ -9,7 +9,9 @@ returns immediately with a job_id; the client polls get_provision_status().
 
 import frappe
 
-from alvoraa_portal.subscription import PLANS, REQUIRED, requirement_error
+from frappe.utils import nowdate
+
+from alvoraa_portal.subscription import OPT_IN, PLANS, REQUIRED, requirement_error
 import os
 import json
 import re
@@ -225,6 +227,7 @@ def list_tenants():
             "plan":          cfg.get("subscription_plan", "—"),
             "status":        status,
             "primary_color": cfg.get("primary_color", "#1a7f5a"),
+            "accent_color":  cfg.get("accent_color", "#f59e0b"),
             "logo_url":      cfg.get("tenant_logo_url", ""),
             "host_name":     cfg.get("host_name", f"http://{site_name}"),
             "modules":       raw_modules,
@@ -242,12 +245,26 @@ def create_tenant(subdomain, tenant_name, plan="starter",
                   hr_email="", admin_email="",
                   company_name="", company_abbr="", country="India",
                   currency="INR", timezone="Asia/Kolkata", fy_start_date="",
-                  primary_color="#1a7f5a", logo_url="", support_email="", modules=None):
-    """Validate inputs, enqueue provisioning.
+                  primary_color="#1a7f5a", accent_color="#f59e0b",
+                  logo_url="", support_email="", modules=None,
+                  alvoraa_plan=None, customer=None, packs=None,
+                  implementation_fee=0, billing_frequency="Monthly"):
+    """Validate inputs, enqueue provisioning, and record what was sold.
 
     Returns {job_id, site_name, started_at, ...} and NO credentials: they do not
     exist yet. The worker generates them, and get_provision_status returns them
     once the job reports Done.
+
+    `alvoraa_plan` is the PRICED plan from the price list - a headcount band with
+    a fee. It is not the same thing as `plan`, which is the old feature-bundle
+    label derived from the ticked modules further down. Two different ideas wore
+    the same word for a while, and a tenant provisioned on the "enterprise"
+    bundle with twenty staff belongs on the "Starter" price band. The legacy
+    label is still written so nothing that reads it breaks; nothing new reads it.
+
+    Given `alvoraa_plan`, a subscription is created alongside the tenant. Without
+    it, provisioning behaves exactly as it did - which is what keeps this safe to
+    deploy on a live control plane.
     """
     _require_admin()
 
@@ -287,8 +304,7 @@ def create_tenant(subdomain, tenant_name, plan="starter",
     # Plan is derived from the feature set, using the ONE definition in
     # subscription.py. It used to be redefined here and again in update_tenant,
     # with a third copy in the admin page's JavaScript.
-    mset = set(modules)
-    plan = next((p for p, feats in PLANS.items() if set(feats) == mset), "custom")
+    plan = _plan_label(modules)
 
     # ── Validation ────────────────────────────────────────────────────────
     if not re.match(r'^[a-z0-9][a-z0-9\-]{1,30}[a-z0-9]$', subdomain):
@@ -390,6 +406,7 @@ def create_tenant(subdomain, tenant_name, plan="starter",
             plan=plan,
             modules=",".join(modules),
             primary_color=primary_color,
+            accent_color=accent_color,
             logo_url=logo_url,
             support_email=support_email,
             base_domain=base_domain,
@@ -412,9 +429,14 @@ def create_tenant(subdomain, tenant_name, plan="starter",
         )
         raise
 
+    subscription = _create_subscription(
+        site_name, alvoraa_plan, customer, modules, packs,
+        implementation_fee, billing_frequency)
+
     return {
         "job_id":         job_id,
         "site_name":      site_name,
+        "subscription":   subscription,
         # Provisioning takes minutes and runs in a background worker. The console
         # shows this so the operator can close the dialog and come back, rather
         # than watching a spinner.
@@ -502,7 +524,7 @@ def suspend_tenant(site_name, suspend=1):
 
 @frappe.whitelist()
 def update_tenant(site_name, tenant_name="", plan="", modules=None,
-                  primary_color="", support_email=""):
+                  primary_color="", accent_color="", support_email=""):
     """Update an existing tenant's config; queues a background app-install if new modules need it."""
     _require_admin()
     _validate_site_name(site_name)
@@ -534,18 +556,24 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
         if _unmet:
             frappe.throw(_unmet)
 
-    # Derive plan label from module set
-    from alvoraa_portal.subscription import PLANS, REQUIRED
-
+    # Derive plan label from module set - the SAME function create_tenant uses.
+    # It used to be a second copy of the comparison here, which is how the two
+    # drifted: this one never stripped the `hrms` marker either.
+    #
+    # No local import. There used to be one here, and because Python makes a name
+    # local to the whole function the moment it is imported anywhere inside it,
+    # `REQUIRED` was unbound at the line forty rows ABOVE that adds the required
+    # features - so update_tenant raised UnboundLocalError for any caller that
+    # passed a module list. Both names come from the module-level import instead.
     if modules is not None:
-        mset = set(modules)
-        plan = next((p for p, feats in PLANS.items() if set(feats) == mset), "custom")
+        plan = _plan_label(modules)
 
     # Update scalar site_config values
     for key, val in [
         ("tenant_name",      tenant_name),
         ("subscription_plan", plan),
         ("primary_color",    primary_color),
+        ("accent_color",     accent_color),
         ("support_email",    support_email),
     ]:
         if val:
@@ -673,6 +701,7 @@ def get_tenant_stats(site_name):
 def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
                    primary_color, logo_url, support_email,
                    base_domain,
+                   accent_color="#f59e0b",
                    hr_email=None, admin_email=None,
                    company_name=None, company_abbr=None, country="India",
                    currency="INR", timezone="Asia/Kolkata", fy_start_date=None,
@@ -750,6 +779,7 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
         "ADMIN_PASSWORD":  admin_password,
         "DB_ROOT_PASSWORD": db_root_password,
         "PRIMARY_COLOR":   primary_color,
+        "ACCENT_COLOR":    accent_color or "#f59e0b",
         "SUPPORT_EMAIL":   support_email or "support@kinexus.in",
     }
 
@@ -1360,3 +1390,141 @@ def _tenant_invoices(site_name):
             "state": {0: "draft", 1: "sent", 2: "cancelled"}.get(inv.docstatus),
         })
     return out
+
+
+def _create_subscription(site_name, alvoraa_plan, customer, modules, packs,
+                         implementation_fee=0, billing_frequency="Monthly"):
+    """Record what this tenant was sold, at the moment it was sold.
+
+    Created eagerly, before provisioning finishes, and deliberately.
+
+    If the site never comes up, a subscription pointing at nothing is visible on
+    the billing screen as a problem to resolve - which is the right way round.
+    The alternative is a failed provision leaving no record that anybody agreed
+    to anything, and a customer who was sold something the system has forgotten.
+
+    It cannot invoice by accident either: an invoice needs a usage count, and a
+    site that does not exist never produces one.
+
+    Returns None when no priced plan was chosen, so every existing caller - and
+    the console until it is updated - behaves exactly as before.
+    """
+    if not alvoraa_plan:
+        return None
+    if not frappe.db.exists("Alvoraa Plan", alvoraa_plan):
+        frappe.throw(f"No such plan: {alvoraa_plan}.")
+
+    included = set(frappe.get_all("Alvoraa Plan Feature",
+                                  filters={"parent": alvoraa_plan},
+                                  pluck="feature_key"))
+    # Anything ticked beyond what the fee covers is an add-on. Silently, because
+    # the operator ticked features - they should not also have to know which side
+    # of the platform fee each one falls.
+    addons = []
+    for key in sorted(set(modules or []) - included):
+        price = frappe.db.get_value("Alvoraa Module Price", key,
+                                    ["rate", "is_sellable"], as_dict=True)
+        if price and price.is_sellable:
+            addons.append({"feature_key": key, "agreed_rate": price.rate})
+
+    if isinstance(packs, str):
+        packs = frappe.parse_json(packs)
+
+    doc = frappe.get_doc({
+        "doctype": "Alvoraa Subscription",
+        "site_name": site_name,
+        # Trial, not Active: nothing has been provisioned yet, let alone used.
+        "status": "Trial",
+        "customer": customer or None,
+        "plan": alvoraa_plan,
+        "billing_frequency": billing_frequency or "Monthly",
+        "implementation_fee": implementation_fee or 0,
+        "started_on": nowdate(),
+        "addons": addons,
+        "packs": packs or [],
+    })
+    doc.insert(ignore_permissions=True)
+    return {"name": doc.name, "plan": doc.plan, "addons": len(doc.addons),
+            "packs": len(doc.packs)}
+
+
+@frappe.whitelist()
+def get_provisioning_plans(customer=None):
+    """The priced plans a new tenant can be put on.
+
+    Public plans always; a private one only when the customer it was built for is
+    the customer being set up. That is what stops a one-off discount agreed with
+    one client quietly becoming an option on every future deal.
+    """
+    _require_admin()
+    if not frappe.db.exists("DocType", "Alvoraa Plan"):
+        # Billing has not been set up on this control plane yet. The console
+        # falls back to provisioning without a subscription rather than failing.
+        return {"plans": [], "billing_ready": False}
+
+    rows = frappe.get_all(
+        "Alvoraa Plan", filters={"is_active": 1},
+        order_by="sequence asc, band_from asc",
+        fields=["name", "plan_name", "band_from", "band_to", "platform_fee",
+                "annual_fee", "included_employees", "additional_pepm",
+                "is_quote_only", "is_private", "built_for"])
+
+    out = []
+    for row in rows:
+        if row.is_private and (not customer or row.built_for != customer):
+            continue
+        row["features"] = frappe.get_all(
+            "Alvoraa Plan Feature", filters={"parent": row["name"]},
+            pluck="feature_key")
+        out.append(row)
+    return {"plans": out, "billing_ready": True}
+
+
+@frappe.whitelist()
+def get_customers(search=None):
+    """ERPNext customers, for choosing who a new tenant is billed to.
+
+    Read-only and admin-only. Kept here rather than letting the console call
+    frappe.client.get_list directly, so every method the page uses stays in one
+    place and stays covered by the call-path test.
+    """
+    _require_admin()
+    if not frappe.db.exists("DocType", "Customer"):
+        return []
+    filters = {}
+    if search:
+        filters["customer_name"] = ("like", f"%{search}%")
+    return frappe.get_all("Customer", filters=filters, fields=["name", "customer_name"],
+                          order_by="customer_name asc", limit=50)
+
+
+def _plan_label(modules):
+    """The bundle name for a set of ticked features, or "custom".
+
+    Two things are stripped before comparing, and without them it can never
+    match anything.
+
+    `hrms` is a legacy marker that create_tenant prepends to every module list.
+    It is not a feature and appears in no plan, so leaving it in made the set
+    permanently one member too big - EVERY tenant ever provisioned came out
+    "custom", including a full Enterprise selection. It had been that way long
+    enough that nobody questioned the label.
+
+    Opt-in features are stripped because they are extras switched on for one
+    tenant, not part of any bundle. An Enterprise tenant that also has the
+    late-coming rule switched on is still Enterprise.
+
+    One function rather than the two copies that were here before - the copy in
+    update_tenant had the same bug, which is what a second copy is for.
+
+    Opt-in keys are stripped from BOTH sides. A plan bundle is defined by its
+    non-opt-in members, and `PLANS` still lists the opt-in ones it entitles a
+    tenant to - so comparing against the raw list made a full Enterprise tick
+    come out "custom" again the moment a bundled feature became opt-in
+    (slice 016 made `vendor` opt-in and this test caught it).
+    """
+    from alvoraa_portal.subscription import OPT_IN, PLANS
+
+    opt_in = set(OPT_IN)
+    mset = set(modules or []) - {"hrms"} - opt_in
+    return next((p for p, feats in PLANS.items() if set(feats) - opt_in == mset), "custom")

@@ -40,10 +40,13 @@ def get_cascade_tree(cascade_name):
 def run_alignment_check(cascade_name):
     cascade = frappe.get_doc("Goal Cascade", cascade_name)
     # Goals are live from creation in the portal — nothing submits them — so
-    # anything not cancelled counts toward alignment.
+    # anything not cancelled counts toward alignment. Only the top of each
+    # tree counts: a child goal is a share of its parent's target, so adding
+    # it in again would count the same number twice and every multi-level
+    # cascade would read Misaligned.
     goals = frappe.get_all(
         "Individual Goal",
-        filters={"goal_cascade": cascade_name, "docstatus": ["!=", 2]},
+        filters={"goal_cascade": cascade_name, "docstatus": ["!=", 2], "parent_goal": ["is", "not set"]},
         fields=["target_value"],
         ignore_permissions=True,
     )

@@ -210,6 +210,12 @@ class TestTenantAdminExemption(FrappeTestCase):
 
 	def test_the_control_plane_is_never_gated(self):
 		"""It is not a tenant. Its admins provision tenants and need everything."""
+		# This call writes nothing only BECAUSE the guard holds - sync_site
+		# returns early on the control plane. If that guard ever broke, this test
+		# would deny ~450 doctypes and commit the rows, and the rest of the run
+		# would fail on permissions instead of on the guard. The cleanup makes
+		# the test fail honestly rather than poison the site.
+		self.addCleanup(ma.release_permissions)
 		frappe.conf["alvoraa_control_plane"] = 1
 		try:
 			res = ma.sync_site()
@@ -232,6 +238,19 @@ class TestHrKeepsTheDesk(FrappeTestCase):
 
 	def setUp(self):
 		frappe.set_user("Administrator")
+		# sync_site() DENIES every doctype outside the plan by writing Custom
+		# DocPerm rows, and it COMMITS them - a rollback cannot undo them. A
+		# Custom DocPerm row REPLACES a doctype's shipped permissions, so leaving
+		# ~450 of them behind breaks unrelated suites that run after this one:
+		# they die in setUpClass with permission errors on doctypes this file
+		# never meant to touch. Measured on the shared test_site: 554 leftover
+		# rows across 338 doctypes, and this class was the only writer in the
+		# whole test tree with no restore.
+		#
+		# addCleanup, not tearDown: unittest SKIPS tearDown when setUp raises,
+		# and the lines below this one can raise. A cleanup registered before the
+		# write always runs.
+		self.addCleanup(ma.release_permissions)
 		ma.sync_site(sub.plan_features("starter"))
 		self.hr = "hr.desk.test@example.com"
 		if not frappe.db.exists("User", self.hr):

@@ -106,11 +106,10 @@ function _show_evidence_dialog(frm) {
                 freeze_message: __('Validating evidence...'),
                 callback: function(r) {
                     if (r.message) {
-                        var msg = r.message.status === 'Approved'
-                            ? __('Evidence approved! New progress: {0}%', [r.message.progress_pct.toFixed(1)])
-                            : r.message.status === 'Pending'
-                                ? __('Evidence submitted and pending HR review.')
-                                : __('Evidence rejected.');
+                        // Evidence always waits for the manager or HR (slice 010).
+                        var msg = r.message.status === 'Pending'
+                            ? __('Evidence sent for approval.')
+                            : __('Evidence rejected.');
                         frappe.show_alert({message: msg, indicator: r.message.status === 'Approved' ? 'green' : 'yellow'});
                         d.hide();
                         frm.reload_doc();

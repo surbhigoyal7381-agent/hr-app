@@ -140,9 +140,9 @@ def _link_reports_to(employee_id, manager_id):
 
 def setup_employees():
     # C-Suite – no reports_to
-    dk = _make_employee("D.K.", "Malhotra", "Promoter & Director - Strategy", "Management")
-    mukesh = _make_employee("Mukesh", "Mittal", "Promoter & Director - Finance", "Management")
-    chaitanya = _make_employee("Chaitanya", "Malhotra", "Promoter & Director - Digital", "Management")
+    vp = _make_employee("V.P.", "Rathore", "Promoter & Director - Strategy", "Management")
+    naresh = _make_employee("Naresh", "Kamath", "Promoter & Director - Finance", "Management")
+    aditya = _make_employee("Aditya", "Rathore", "Promoter & Director - Digital", "Management")
 
     # KAMs – reports to respective director
     arjun = _make_employee("Arjun", "Sandhu", "KAM - Dairy", "Sales")
@@ -150,7 +150,7 @@ def setup_employees():
     rohit = _make_employee("Rohit", "Verma", "KAM - Processed Foods", "Sales")
     priya = _make_employee("Priya", "Singh", "KAM - Hardware", "Sales", gender="Female")
 
-    # Warehouse Supervisors – reports to Mukesh Mittal
+    # Warehouse Supervisors – reports to Naresh Kamath
     vikramjeet = _make_employee("Vikramjeet", "Singh", "Cold Storage Supervisor", "Supply Chain", branch="Chandigarh")
     amit = _make_employee("Amit", "Patel", "Warehouse Supervisor", "Supply Chain", branch="Panchkula")
     sandeep = _make_employee("Sandeep", "Kaur", "Cold Storage Supervisor", "Supply Chain", gender="Female")
@@ -161,14 +161,14 @@ def setup_employees():
     rajinder = _make_employee("Rajinder", "Kumar", "Delivery Executive", "Logistics")
 
     # Wire hierarchy
-    _link_reports_to(arjun, dk)
-    _link_reports_to(neha, chaitanya)
-    _link_reports_to(rohit, dk)
-    _link_reports_to(priya, mukesh)
-    _link_reports_to(vikramjeet, mukesh)
-    _link_reports_to(amit, mukesh)
-    _link_reports_to(sandeep, mukesh)
-    _link_reports_to(gurpreet, chaitanya)
+    _link_reports_to(arjun, vp)
+    _link_reports_to(neha, aditya)
+    _link_reports_to(rohit, vp)
+    _link_reports_to(priya, naresh)
+    _link_reports_to(vikramjeet, naresh)
+    _link_reports_to(amit, naresh)
+    _link_reports_to(sandeep, naresh)
+    _link_reports_to(gurpreet, aditya)
     _link_reports_to(harpreet, gurpreet)
     _link_reports_to(rajinder, gurpreet)
 
@@ -353,7 +353,7 @@ def setup_appraisal_cycle():
 
 def setup_goals(kras, cycle_name):
     goal_matrix = [
-        ("D.K.", "Malhotra", "Accelerate Group Growth", "Achieve group turnover > 180 Cr in FY2026"),
+        ("V.P.", "Rathore", "Accelerate Group Growth", "Achieve group turnover > 180 Cr in FY2026"),
         ("Neha", "Sharma", "Q-Comm Snack Dominance", "Maintain SLA penalty rate < 2% on Lay's & Kurkure routes"),
         ("Vikramjeet", "Singh", "Zero Perishable Spoilage", "Reduce cold storage wastage by 20% vs prior period"),
         ("Harpreet", "Babbar", "Q-Comm SLA Protection", "Zero delivery penalties on all Q-Comm routes"),
@@ -575,10 +575,10 @@ ORDER BY
             print(f"  [!] Report creation skipped: {e}")
 
     # Fetch recipient emails
-    chaitanya = _get_employee("Chaitanya", "Malhotra")
-    mukesh = _get_employee("Mukesh", "Mittal")
+    aditya = _get_employee("Aditya", "Rathore")
+    naresh = _get_employee("Naresh", "Kamath")
     emails = []
-    for emp_id in [chaitanya, mukesh]:
+    for emp_id in [aditya, naresh]:
         if emp_id:
             email = (
                 frappe.db.get_value("Employee", emp_id, "company_email")

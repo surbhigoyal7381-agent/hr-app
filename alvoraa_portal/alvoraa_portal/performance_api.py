@@ -15,12 +15,42 @@ see alvoraa_goals.permissions for the row-level rules applied to KPI queries.
 """
 
 import frappe
-from frappe.utils import flt, today, getdate
-from alvoraa_goals.permissions import get_effective_manager
+from frappe.utils import cint, flt, today, getdate
+from alvoraa_goals.permissions import get_effective_manager, get_hr_manager_employee
 
 from alvoraa_goals.controllers.kpi import MAX_RATING, TOTAL_WEIGHTAGE, rating_from_attainment
+import alvoraa_goals.review_items as review_items
+from hrms.alvoraa_hr_core.access import (
+    permitted_companies, refuse, refuse_hr_step_in_line, refuse_own_rating, subjects_in_my_line,
+)
 
 HR_ROLES = frozenset({"HR Manager", "HR User", "System Manager"})
+
+
+class MissingArgument(Exception):
+    """A call arrived without something it cannot work without.
+
+    Frappe drops keyword arguments a method does not declare, but a method
+    called without one of its *required* arguments raises a plain TypeError,
+    which reaches the caller as a 500 - an error that reads as "the server is
+    broken" when the truth is "that request was incomplete". Frappe reads
+    http_status_code off the exception (frappe/app.py), so this says 400.
+    """
+
+    http_status_code = 400
+
+
+def _require_argument(**named):
+    """Refuse a call that is missing an argument, in plain words and as a 400.
+
+    Only ever names the argument. Never a record, a person or a value.
+    """
+    for name, value in named.items():
+        if value in (None, ""):
+            frappe.throw(
+                f"This request is missing '{name}'. Choose one and try again.",
+                MissingArgument,
+            )
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -46,19 +76,97 @@ def _is_hr(user=None):
 
 
 def _assert_hr_can_view(appraisal_name):
-    """Block HR from opening appraisals that have not yet reached HR Review stage."""
+    """Stop HR reading an appraisal that is still being written.
+
+    Only when they are acting AS HR, which is the part this got wrong. It asked
+    "do you hold an HR role?" rather than "is this somebody else's appraisal?",
+    so anybody holding HR Manager was blocked from their OWN review - and from
+    their team's. On PP Jewellers that is the Owner and Managing Director, who
+    holds HR Manager and could not open his own appraisal.
+
+    Two exemptions, and both are about WHOSE appraisal it is:
+
+      - your own is never HR snooping;
+      - one belonging to somebody below you is not either. In that moment you
+        are their manager, and the manager review stage is exactly when you are
+        supposed to be in there.
+
+    The HR Manager who stands in for an employee with no manager is NOT exempt
+    here: that would open every manager-less employee's review to them at every
+    stage. The manager-review actions allow that stand-in themselves
+    (_is_line_manager).
+
+    Acting as HR for anyone else (slice 010, group D):
+
+      - System Manager follows the same stage rule; it used to be exempt
+        (decision 15);
+      - only for the companies you look after (decision 16);
+      - a review with no record yet has not reached HR either.
+    """
     if not _is_hr():
         return
-    if frappe.has_role("System Manager"):
+
+    me = _employee_id()
+    owner = frappe.db.get_value("Appraisal", appraisal_name, "employee")
+    if me and owner and (owner == me or owner in _subordinates(me)):
         return
+    _assert_hr_rule(appraisal_name, owner)
+
+
+def _assert_hr_rule(appraisal_name, owner=None, endpoint="review"):
+    """HR's own rule for one review, with no exemption for the caller's line:
+    a company the caller looks after (decision 16), and the review at HR Review
+    or Completed (SEC-27, decision 15)."""
+    owner = owner or frappe.db.get_value("Appraisal", appraisal_name, "employee")
+    company = frappe.db.get_value("Employee", owner, "company") if owner else None
+    if not company or company not in permitted_companies():
+        refuse(
+            "This appraisal belongs to a company you do not look after.",
+            "SEC-13", endpoint, "Appraisal", appraisal_name,
+        )
+
     status = frappe.db.get_value(
         "Alvoraa Appraisal Extension", {"appraisal": appraisal_name}, "review_status"
     )
-    if status and status not in ("HR Review", "Completed"):
-        frappe.throw(
-            "This appraisal is not yet in HR Review stage.",
-            frappe.PermissionError,
+    if (status or "Not Started") not in ("HR Review", "Completed"):
+        refuse(
+            "This appraisal is still with the employee and their manager. "
+            "It reaches HR once their review is finished.",
+            "SEC-27", endpoint, "Appraisal", appraisal_name,
         )
+
+
+def _require_review_view(ap, view, endpoint):
+    """May the caller open this review in the view they chose (decision 37)?
+
+    A review is opened from one of two lists, and the list sets the view. Nothing
+    is guessed from the caller's roles:
+
+      manager  "My team's reviews": the caller is the subject's manager (the
+               reporting line, or the HR stand-in for someone with no manager);
+      hr       the HR review list: an HR role, a company the caller looks after,
+               and the review at HR Review or Completed. Being in the subject's
+               line does not open the HR view any earlier.
+
+    Never the subject, in either view (SEC-10). Any other view is refused (fails
+    closed). Each view is one of the paths that already existed before decision
+    37, so neither allows more than those rules did. Returns the viewer for
+    review_items.review_payload.
+    """
+    me = _require_employee()
+    refuse_own_rating(ap.employee, "Appraisal", ap.name, endpoint)
+    if view == "manager":
+        if not _is_line_manager(ap.employee, me):
+            refuse("Only this person's manager can open their review from My team's reviews.",
+                   "D37", endpoint, "Appraisal", ap.name)
+        return review_items.VIEWER_MANAGER
+    if view == "hr":
+        if not _is_hr():
+            refuse("Only HR can open a review from the HR review list.", "D37", endpoint, "Appraisal", ap.name)
+        _assert_hr_rule(ap.name, ap.employee, endpoint)
+        return review_items.VIEWER_HR
+    refuse("Open this review from My team's reviews or from the HR review list.",
+           "D37", endpoint, "Appraisal", ap.name)
 
 
 def _require_hr():
@@ -71,6 +179,24 @@ def _reports_of(employee_id):
     return frappe.get_all(
         "Employee",
         filters={"reports_to": employee_id, "status": "Active"},
+        pluck="name",
+    )
+
+
+def _stand_in_subjects(employee_id):
+    """Active people with no manager, for whom this employee is the HR stand-in
+    manager (get_effective_manager), in the companies the caller looks after.
+    None for anyone who is not the stand-in: two queries for an HR Manager,
+    none for anyone else."""
+    if not employee_id or not frappe.db.exists("Has Role", {"parent": frappe.session.user,
+                                                            "parenttype": "User", "role": "HR Manager"}):
+        return []
+    if get_hr_manager_employee() != employee_id:
+        return []
+    return frappe.get_all(
+        "Employee",
+        filters={"status": "Active", "reports_to": ["is", "not set"], "name": ["!=", employee_id],
+                 "company": ["in", permitted_companies() or [""]]},
         pluck="name",
     )
 
@@ -116,6 +242,47 @@ def _require_can_review(kpi_employee):
         frappe.throw(
             "You can only review KPIs for your own direct reports.", frappe.PermissionError
         )
+
+
+def _require_scoring_access(appraisal, employee, endpoint):
+    """Who may score a review through the older scoring calls (security review M1).
+
+    suggest_ratings, sync_appraisal_from_kpis and submit_appraisal used to let
+    any HR role act on any company's review at any stage. Now, in order:
+    never the subject (SEC-10); the direct manager or HR; HR acting for someone
+    outside their line follows the stage and company rule (decisions 15, 16);
+    and nobody scores a review whose self-review has not been sent (PRIV-2).
+    """
+    refuse_own_rating(employee, "Appraisal", appraisal, endpoint)
+    _require_can_review(employee)
+    if not _is_line_manager(employee, _employee_id()):
+        _assert_hr_can_view(appraisal)
+    if _review_status(appraisal) in _SELF_REVIEW_DRAFT:
+        refuse(
+            "The self-review has not been sent yet. Scores can be worked out once it is sent.",
+            "PRIV-2", endpoint, "Appraisal", appraisal,
+        )
+
+
+def _refuse_hr_step_in_line(employee, appraisal, endpoint):
+    """HR's steps on a review are never done by someone in the subject's
+    reporting line, whatever roles they hold (security review M3, decision 34).
+
+    The HR stand-in who acts as manager for someone with no manager counts as
+    in the line, as they do for the manager steps (_is_line_manager).
+    """
+    refuse_hr_step_in_line(employee, "Appraisal", appraisal, endpoint, stand_in=get_hr_manager_employee)
+
+
+def _hr_steps_elsewhere(employees):
+    """The subjects among these whose HR steps the caller may not do, because
+    the caller is in their line (decision 34). One walk for all of them, and
+    none for a caller without an HR role. For the page, which hides HR's
+    buttons on those reviews; the endpoints refuse on their own."""
+    employees = [e for e in employees if e]
+    if not employees or not _is_hr():
+        return set()
+    return subjects_in_my_line(employees, stand_in=get_hr_manager_employee)
 
 
 def _require_owns(kpi_employee):
@@ -205,6 +372,8 @@ def get_performance_context():
         "department":    emp.get("department", ""),
         "is_hr":         _is_hr(),
         "is_manager":    bool(reports),
+        # "My team's reviews" is shown to whoever has someone in it (decision 37).
+        "has_team_reviews": bool(reports) or bool(emp_id and _stand_in_subjects(emp_id)),
         "report_count":  len(reports),
         "cycles":        cycles,
         "active_cycle":  active,
@@ -217,22 +386,27 @@ def get_performance_context():
 # Employee self-service
 # ══════════════════════════════════════════════════════════════════════════
 
+# No rating or comment fields: ratings are given and shown only inside a review,
+# on its copy (slice 010 group D: R14, PRIV-9). This list feeds the tree, "My
+# KPIs" and the team's KPIs, which every employee and manager can open.
 KPI_FIELDS = [
     "name", "kpi_name", "employee", "employee_name", "appraisal_cycle", "category",
     "status", "unit", "direction", "baseline_value", "target_value", "actual_value",
     "attainment_pct", "weightage", "period_start", "period_end", "goal_cascade",
-    "individual_goal", "self_rating", "self_comment", "manager_rating",
-    "manager_comment", "potential_rating", "potential_comment",
+    "individual_goal",
     "company_value", "is_extra_initiative", "description", "owner",
 ]
 
 
 def _decorate_kpis(rows):
-    """Add the objective label and whether this caller may revise each row."""
+    """Add the objective label, whether this caller may revise each row, and the
+    plain "in review" badge (R5): one query for every row."""
     hr = _is_hr()
     user = frappe.session.user
     goal_names = {}
+    badges = review_items.review_badges("KPI", [r.get("name") for r in rows])
     for r in rows:
+        r["review_badge"] = badges.get(r.get("name"))
         r["can_edit"] = int(hr or r.get("owner") == user)
         gid = r.get("individual_goal")
         if gid and gid not in goal_names:
@@ -284,18 +458,56 @@ def get_my_kpis(cycle=None, include_team=0):
     }
 
 
+# How far back a reading may be dated when the KPI has no period of its own.
+READING_DATE_MAX_DAYS_BACK = 366
+
+
+def _reading_date(doc, log_date):
+    """The date a KPI reading is for (slice 010 group D, decision 2).
+
+    Blank means today. Otherwise it must be a real date, not after today (the
+    server's date), and not before the KPI's period start - or, for a KPI with
+    no period, not more than a year back. A date after the period end is
+    allowed: people log late, and the review counts only dates inside its own
+    period anyway (R3).
+    """
+    if not log_date:
+        return getdate(today())
+    try:
+        day = getdate(log_date)
+    except Exception:
+        frappe.throw(frappe._("Choose the date this reading is for."))
+    if day > getdate(today()):
+        frappe.throw(frappe._("A reading cannot be dated in the future. Choose today or an earlier day."))
+    earliest = getdate(doc.period_start) if doc.period_start else getdate(frappe.utils.add_days(today(), -READING_DATE_MAX_DAYS_BACK))
+    if day < earliest:
+        frappe.throw(frappe._("A reading cannot be dated before {0}. Choose {0} or a later day.").format(
+            frappe.utils.formatdate(earliest)))
+    return day
+
+
 @frappe.whitelist()
-def log_kpi_progress(kpi, value, note="", evidence_url=None):
-    """Append a dated reading, set approval pending, and notify the manager."""
+def log_kpi_progress(kpi, value, note="", evidence_url=None, log_date=None):
+    """Append a dated reading, set approval pending, and notify the manager.
+
+    The portal asks for the amount since the last update on a Cumulative KPI
+    and for the current reading on an Absolute one (decision 1), and lets the
+    person say which day the reading is for (decision 2).
+    """
     doc = frappe.get_doc("KPI", kpi)
     _require_owns(doc.employee)
 
     if doc.status in ("Cancelled",):
         frappe.throw("This KPI is cancelled and no longer accepts progress updates.")
 
+    day = _reading_date(doc, log_date)
+
+    # Private, uploaded by the caller, and attached to this KPI - or refused (SEC-4).
+    from alvoraa_goals.controllers.evidence import claim_evidence_file
+    evidence_url = claim_evidence_file(evidence_url, "KPI", doc.name, "performance_api.log_kpi_progress")
     ev_missing = 1 if not evidence_url else 0
     row = doc.append("progress_log", {
-        "log_date":        today(),
+        "log_date":        day,
         "value":           flt(value),
         "note":            note,
         "logged_by":       frappe.session.user,
@@ -303,7 +515,9 @@ def log_kpi_progress(kpi, value, note="", evidence_url=None):
         "evidence_missing": ev_missing,
         "approval_status": "Pending",
     })
-    doc.actual_value = flt(value)
+    # The live number moves only when a reading is approved (code review M2):
+    # a reading someone rejects never reaches it. The review never reads this
+    # number either: it counts approved readings by date (R3, R4).
     doc.save(ignore_permissions=True)
     frappe.db.commit()
 
@@ -353,19 +567,29 @@ def approve_kpi_update(kpi, row_name, action, comment=""):
         frappe.throw("action must be 'Approved' or 'Rejected'.")
 
     doc = frappe.get_doc("KPI", kpi)
+    # Nobody approves their own update, whatever roles they hold (SEC-9).
+    from hrms.alvoraa_hr_core.access import refuse_own_decision
+    refuse_own_decision(doc.employee, "KPI", doc.name, "performance_api.approve_kpi_update")
     # Gate: only the employee's direct manager or HR may approve.
     kpi_emp_mgr = frappe.db.get_value("Employee", doc.employee, "reports_to")
     my_emp      = frappe.db.get_value("Employee", {"user_id": frappe.session.user}, "name")
     if not (_is_hr() or my_emp == kpi_emp_mgr):
         frappe.throw("Only this employee's manager or HR can approve updates.",
                      frappe.PermissionError)
+    if my_emp != kpi_emp_mgr and frappe.db.get_value("Employee", doc.employee, "company") not in permitted_companies():
+        # HR approves only for the companies they look after (security review m8):
+        # an approved reading flows into that employee's open review.
+        refuse("This employee belongs to a company you do not look after.",
+               "SEC-26", "approve_kpi_update", "KPI", doc.name)
 
     for row in (doc.progress_log or []):
         if row.name == row_name:
+            before = row.approval_status or "Pending"
             row.approval_status  = action
             row.approval_comment = comment
             row.approved_by      = frappe.session.user
             row.approved_on      = frappe.utils.now()
+            _move_live_number(doc, row, before, action)
             break
     else:
         frappe.throw(f"Progress log row '{row_name}' not found on KPI {kpi}.")
@@ -373,6 +597,33 @@ def approve_kpi_update(kpi, row_name, action, comment=""):
     doc.save(ignore_permissions=True)
     frappe.db.commit()
     return {"message": f"Update {action.lower()}."}
+
+
+def _reading_order(row):
+    return (str(row.log_date or ""), str(row.approved_on or ""), str(row.creation or ""))
+
+
+def _move_live_number(doc, row, before, after):
+    """The live KPI number counts approved readings only (code review M2).
+
+    Cumulative: an approved amount adds to it; taking an approval back takes
+    the amount off again. Absolute: the latest approved reading by date is the
+    number; with no approved reading left it stays as it is, so a number from
+    before readings needed approval is not wiped. Deciding the same way twice
+    changes nothing. Attainment and the end-of-period status follow on save
+    (controllers.kpi.validate_kpi).
+    """
+    if before == after:
+        return
+    if (doc.progress_mode or "Cumulative") == "Cumulative":
+        if after == "Approved":
+            doc.actual_value = flt(doc.actual_value) + flt(row.value)
+        elif before == "Approved":
+            doc.actual_value = flt(doc.actual_value) - flt(row.value)
+        return
+    approved = [r for r in (doc.progress_log or []) if (r.approval_status or "") == "Approved"]
+    if approved:
+        doc.actual_value = flt(max(approved, key=_reading_order).value)
 
 
 @frappe.whitelist()
@@ -397,6 +648,8 @@ def get_kpi_update_log(kpi):
         result.append({
             "name":             r.name,
             "log_date":         str(r.log_date)   if r.log_date   else "",
+            # When it was typed, beside the day it is for (security review m2).
+            "logged_on":        str(r.creation)   if r.creation   else "",
             "value":            flt(r.value),
             "note":             r.note             or "",
             "logged_by":        r.logged_by        or "",
@@ -412,21 +665,22 @@ def get_kpi_update_log(kpi):
     return result
 
 
+def _refuse_rating_outside_review(endpoint, doctype, name):
+    """Ratings are given only inside a review, on its copy (R13, R14, SEC-1).
+
+    The live KPI no longer takes a rating from anyone, so a rating can never
+    reach it around the review's stage and stamp rules.
+    """
+    refuse(
+        "Ratings are given inside the review. Open the review to rate this item.",
+        "R13", endpoint, doctype, name,
+    )
+
+
 @frappe.whitelist()
-def save_kpi_self_review(kpi, rating, comment=""):
-    """Employee's own 0-5 rating for one of their KPIs."""
-    doc = frappe.get_doc("KPI", kpi)
-    _require_owns(doc.employee)
-
-    rating = flt(rating)
-    if rating < 0 or rating > MAX_RATING:
-        frappe.throw(f"Rating must be between 0 and {int(MAX_RATING)}.")
-
-    doc.self_rating = rating
-    doc.self_comment = comment
-    doc.save(ignore_permissions=True)
-    frappe.db.commit()
-    return {"name": doc.name, "self_rating": rating, "message": "Self review saved."}
+def save_kpi_self_review(kpi, rating=None, comment=""):
+    """Retired in slice 010 group D: rate the item inside your review instead."""
+    _refuse_rating_outside_review("save_kpi_self_review", "KPI", kpi)
 
 
 @frappe.whitelist()
@@ -438,10 +692,18 @@ def get_my_appraisal(cycle=None):
     if not cycle:
         return {"cycle": None, "appraisal": None}
 
-    return _appraisal_payload(emp_id, cycle)
+    return _appraisal_payload(emp_id, cycle, subject=True)
 
 
-def _appraisal_payload(emp_id, cycle):
+def _appraisal_payload(emp_id, cycle, subject=False):
+    """The HRMS appraisal summary, as a screen outside the review shows it.
+
+    No item score, ever: each goal row's score is a KPI or Objective rating, and
+    those are shown only inside the review (R14, decision 14). The appraisal's
+    totals follow the overall rating's release rule (decision 3): the person the
+    appraisal is about sees them from Employee Final Review on. Callers decide
+    who else may open it before calling.
+    """
     names = frappe.get_all(
         "Appraisal",
         filters={"employee": emp_id, "appraisal_cycle": cycle, "docstatus": ["!=", 2]},
@@ -455,11 +717,17 @@ def _appraisal_payload(emp_id, cycle):
     )
     if cycle_doc:
         _serialise_dates(cycle_doc, "start_date", "end_date")
+        cycle_doc["scoring"] = _cycle_scoring(cycle)
 
     if not names:
         return {"cycle": cycle_doc, "appraisal": None}
 
     ap = frappe.get_doc("Appraisal", names[0])
+    released = not subject or _review_status(ap.name) in _RATING_RELEASED
+
+    def total(value):
+        return flt(value) if released else None
+
     return {
         "cycle": cycle_doc,
         "appraisal": {
@@ -467,10 +735,15 @@ def _appraisal_payload(emp_id, cycle):
             "employee":     ap.employee,
             "employee_name": ap.employee_name,
             "docstatus":    ap.docstatus,
-            "total_score":  flt(ap.total_score),
-            "self_score":   flt(ap.self_score),
-            "avg_feedback_score": flt(ap.avg_feedback_score),
-            "final_score":  flt(ap.final_score),
+            "total_score":  total(ap.total_score),
+            "self_score":   total(ap.self_score),
+            "avg_feedback_score": total(ap.avg_feedback_score),
+            "final_score":  total(ap.final_score),
+            "attendance_score": flt(ap.get("attendance_score")),
+            "attendance_reliability_pct": ap.get("attendance_reliability_pct"),
+            "attendance_punctuality_pct": ap.get("attendance_punctuality_pct"),
+            "attendance_deduction_days": flt(ap.get("attendance_deduction_days")),
+            "attendance_summary": ap.get("attendance_summary") or "",
             "reflections":  ap.reflections or "",
             "remarks":      ap.remarks or "",
             "goals": [
@@ -478,8 +751,6 @@ def _appraisal_payload(emp_id, cycle):
                     "idx": g.idx,
                     "kra": g.kra,
                     "per_weightage": flt(g.per_weightage),
-                    "score": flt(g.score),
-                    "score_earned": flt(g.score_earned),
                 }
                 for g in (ap.goals or [])
             ],
@@ -504,14 +775,22 @@ def list_appraisals(cycle=None, status=None):
         subjects = [me, *_subordinates(me)]
 
     filters = {"docstatus": ["!=", 2]}
+    or_filters = None
     if cycle:
         filters["appraisal_cycle"] = cycle
     if not hr:
         filters["employee"] = ["in", subjects or [""]]
+    else:
+        # HR sees the companies they look after, plus their own line (decision 16).
+        or_filters = [
+            ["company", "in", permitted_companies() or [""]],
+            ["employee", "in", [me, *_subordinates(me)]],
+        ]
 
     rows = frappe.get_all(
         "Appraisal",
         filters=filters,
+        or_filters=or_filters,
         fields=["name", "employee", "employee_name", "designation", "department",
                 "appraisal_cycle", "docstatus", "total_score", "self_score",
                 "avg_feedback_score", "final_score", "start_date", "end_date"],
@@ -519,13 +798,30 @@ def list_appraisals(cycle=None, status=None):
     )
 
     my_reports = set(_reports_of(me))
+    my_line = set(_subordinates(me))
     cycle_status = {
         c["name"]: c["status"]
         for c in frappe.get_all("Appraisal Cycle", fields=["name", "status"])
     }
+    # Scores follow the overall rating's release rule (decision 3, PRIV-9): your
+    # own from Employee Final Review; your line's always; anyone else's, for HR,
+    # from HR Review. One query for every row's stage.
+    stages = dict(frappe.get_all(
+        "Alvoraa Appraisal Extension",
+        filters={"name": ["in", [r["name"] for r in rows] or [""]]},
+        fields=["name", "review_status"], as_list=True,
+    ))
 
     out = []
     for r in rows:
+        stage = stages.get(r["name"]) or "Not Started"
+        if r["employee"] == me:
+            scores_visible = stage in _RATING_RELEASED
+        else:
+            scores_visible = r["employee"] in my_line or stage in ("HR Review", "Completed")
+        if not scores_visible:
+            for field in ("total_score", "self_score", "avg_feedback_score", "final_score"):
+                r[field] = None
         _serialise_dates(r, "start_date", "end_date")
         submitted = r["docstatus"] == 1
         r["status"] = "Submitted" if submitted else "Draft"
@@ -570,7 +866,7 @@ def get_appraisal(appraisal):
         )
     _assert_hr_can_view(appraisal)
 
-    payload = _appraisal_payload(ap.employee, ap.appraisal_cycle)
+    payload = _appraisal_payload(ap.employee, ap.appraisal_cycle, subject=ap.employee == me)
     detail = payload.get("appraisal") or {}
     detail["designation"] = ap.designation or ""
     detail["department"] = ap.department or ""
@@ -578,12 +874,14 @@ def get_appraisal(appraisal):
     detail["can_review"] = int(ap.docstatus == 0 and
                                (_is_hr() or ap.employee in _reports_of(me)))
     detail["can_self_assess"] = int(ap.docstatus == 0 and ap.employee == me)
+    # A self-rating reaches anyone else only once the self-review is sent (PRIV-2).
+    self_ratings_visible = ap.employee == me or _review_status(appraisal) not in _SELF_REVIEW_DRAFT
     detail["self_ratings"] = [
         {"criteria": str(getattr(r, "criteria", "")),
          "per_weightage": flt(getattr(r, "per_weightage", 0)),
          "rating": flt(getattr(r, "rating", 0))}
         for r in (ap.self_ratings or [])
-    ]
+    ] if self_ratings_visible else []
     payload["appraisal"] = detail
     return payload
 
@@ -641,14 +939,21 @@ def save_reflections(appraisal, reflections):
 
 @frappe.whitelist()
 def get_team_reviews(cycle=None):
-    """Performance review status for the caller's direct reports (or all employees for HR)."""
-    me = _require_employee()
-    hr = _is_hr()
+    """"My team's reviews": the caller's reviews as a manager (decision 37).
 
-    if hr:
-        reports = frappe.get_all("Employee", filters={"status": "Active"}, pluck="name")
-    else:
-        reports = _reports_of(me)
+    The caller's direct reports, and, for the HR stand-in, the people with no
+    manager in the companies they look after. The same for everyone, whatever
+    roles they hold: HR's reviews are on the HR review list (hr_list_appraisals),
+    which opens them as HR.
+
+    Ratings in each row: the direct reports' as the manager; the stand-in's
+    people only from HR Review on, as before decision 37 (PRIV-1).
+    """
+    me = _require_employee()
+
+    reports = _reports_of(me)
+    line = set(reports)
+    reports = list(dict.fromkeys(reports + _stand_in_subjects(me)))
 
     if not reports:
         return {"team": [], "cycle": cycle or ""}
@@ -685,24 +990,57 @@ def get_team_reviews(cycle=None):
     for ext in frappe.get_all(
         "Alvoraa Appraisal Extension",
         filters={"appraisal": ["in", appraisal_names]},
-        fields=["appraisal", "review_status", "overall_rating", "potential_rating"],
+        fields=["appraisal", "review_status", "overall_rating", "potential_rating",
+                "overall_rating_flag", "overall_rated_by"],
     ):
         ext_map[ext["appraisal"]] = ext
 
     appraisal_by_emp = {a["employee"]: a for a in appraisals}
+    user = frappe.session.user
+    # Reviews with a flagged item manager rating that this manager answers (R7,
+    # code review minor 5): one they gave, or one given before raters were
+    # recorded. One query.
+    item_flags = {
+        f.parent for f in frappe.get_all(
+            "Alvoraa Review Item",
+            filters={"parenttype": "Alvoraa Appraisal Extension", "parent": ["in", appraisal_names],
+                     "manager_flag": 1, "removed": 0},
+            fields=["parent", "manager_rated_by"],
+        )
+        if f.manager_rated_by in (None, "", user)
+    }
+
+    def ratings(emp_id, ext):
+        status = ext.get("review_status") or "Not Started"
+        if emp_id == me:
+            return (ext.get("overall_rating") if status in _RATING_RELEASED else None), None
+        if emp_id in line or status in ("HR Review", "Completed"):
+            return ext.get("overall_rating"), ext.get("potential_rating")
+        return None, None
 
     team = []
     for emp_id in reports:
         ap = appraisal_by_emp.get(emp_id)
         if ap:
             ext = ext_map.get(ap["name"]) or {}
+            overall, potential = ratings(emp_id, ext)
             team.append({
                 "employee":       emp_id,
                 "employee_name":  emp_names.get(emp_id, emp_id),
                 "appraisal":      ap["name"],
                 "review_status":  ext.get("review_status") or "Not Started",
-                "overall_rating": ext.get("overall_rating"),
-                "potential_rating": ext.get("potential_rating"),
+                "overall_rating": overall,
+                "potential_rating": potential,
+                # The overall rating was given on numbers that changed since, and
+                # is waiting to be kept or changed (R7). Only to whoever may see
+                # the rating itself; never on the subject's own row.
+                "rating_needs_answer": (
+                    int(bool((cint(ext.get("overall_rating_flag"))
+                              and ext.get("overall_rated_by") in (None, "", user))
+                             or ap["name"] in item_flags))
+                    if (overall is not None and emp_id != me
+                        and (ext.get("review_status") or "") not in ("Completed",)) else 0
+                ),
                 "start_date":     ap.get("start_date") or "",
                 "end_date":       ap.get("end_date") or "",
             })
@@ -760,7 +1098,7 @@ def get_team_kpis(cycle=None):
             entry = {"employee": emp_id, "employee_name": name, "kpis": []}
         kpis = entry["kpis"]
         entry["total_weightage"] = flt(sum(flt(k["weightage"]) for k in kpis), 2)
-        entry["rated_count"] = sum(1 for k in kpis if flt(k["manager_rating"]) > 0)
+        # No "rated" count: ratings live in the review, not on the live KPI (R14).
         entry["avg_attainment"] = flt(
             sum(flt(k["attainment_pct"]) for k in kpis) / len(kpis), 1
         ) if kpis else 0
@@ -771,51 +1109,54 @@ def get_team_kpis(cycle=None):
 
 
 @frappe.whitelist()
-def save_kpi_manager_review(kpi, rating, comment="", potential_rating="", potential_comment=""):
-    """Manager's 0-5 rating for a report's KPI. This is what scores the appraisal."""
-    doc = frappe.get_doc("KPI", kpi)
-    _require_can_review(doc.employee)
-
-    rating = flt(rating)
-    if rating < 0 or rating > MAX_RATING:
-        frappe.throw(f"Rating must be between 0 and {int(MAX_RATING)}.")
-
-    doc.manager_rating = rating
-    doc.manager_comment = comment
-
-    if potential_rating != "":
-        pot = flt(potential_rating)
-        if pot < 0 or pot > MAX_RATING:
-            frappe.throw(f"Potential rating must be between 0 and {int(MAX_RATING)}.")
-        doc.potential_rating = pot
-        doc.potential_comment = potential_comment
-
-    doc.save(ignore_permissions=True)
-    frappe.db.commit()
-    return {"name": doc.name, "manager_rating": rating, "message": "Review saved."}
+def save_kpi_manager_review(kpi, rating=None, comment="", potential_rating="", potential_comment=""):
+    """Retired in slice 010 group D: rate the item inside the manager review instead."""
+    _refuse_rating_outside_review("save_kpi_manager_review", "KPI", kpi)
 
 
 @frappe.whitelist()
 def suggest_ratings(employee, cycle):
     """Pre-fill manager ratings from measured attainment, for review not for record."""
+    refuse_own_rating(employee, "Employee", employee, "suggest_ratings")
     _require_can_review(employee)
-    rows = _kpi_rows({"employee": employee, "appraisal_cycle": cycle})
+    appraisal = frappe.db.get_value(
+        "Appraisal", {"employee": employee, "appraisal_cycle": cycle, "docstatus": ["!=", 2]}, "name"
+    )
+    if not appraisal:
+        frappe.throw("There is no review for this employee in this cycle.")
+    _require_scoring_access(appraisal, employee, "suggest_ratings")
+    _ext, copies = _review_copies_for_scoring(appraisal)
+    # From the review's own copies, by row name (VIS-7, VIS-3).
     return [
         {
-            "kpi": r["name"],
-            "kpi_name": r["kpi_name"],
-            "attainment_pct": flt(r["attainment_pct"]),
-            "suggested_rating": flt(rating_from_attainment(r["attainment_pct"]), 2),
+            "item": r.name,
+            "kpi_name": r.title,
+            "attainment_pct": flt(r.attainment_pct),
+            "suggested_rating": flt(rating_from_attainment(r.attainment_pct), 2),
         }
-        for r in rows
+        for r in copies if r.item_type == "KPI"
     ]
 
 
 @frappe.whitelist()
 def get_team_appraisal(employee, cycle):
-    """One report's appraisal, for the manager's review screen."""
+    """One report's appraisal, for the manager's review screen.
+
+    HR acting for someone outside their own line follows the review's stage and
+    company rule (SEC-26, decision 16); it used to open any company's appraisal.
+    """
     _require_can_review(employee)
-    return _appraisal_payload(employee, cycle)
+    me = _employee_id()
+    if employee not in _reports_of(me):
+        appraisal = frappe.db.get_value(
+            "Appraisal", {"employee": employee, "appraisal_cycle": cycle, "docstatus": ["!=", 2]}, "name"
+        )
+        if appraisal:
+            _assert_hr_can_view(appraisal)
+        elif employee != me and frappe.db.get_value("Employee", employee, "company") not in permitted_companies():
+            refuse("This employee belongs to a company you do not look after.",
+                   "SEC-26", "get_team_appraisal", "Employee", employee)
+    return _appraisal_payload(employee, cycle, subject=employee == me)
 
 
 @frappe.whitelist()
@@ -827,7 +1168,7 @@ def sync_appraisal_from_kpis(appraisal):
     revised ratings through before submitting.
     """
     ap = frappe.get_doc("Appraisal", appraisal)
-    _require_can_review(ap.employee)
+    _require_scoring_access(appraisal, ap.employee, "sync_appraisal_from_kpis")
     if ap.docstatus == 1:
         frappe.throw("This appraisal is already submitted.")
 
@@ -847,20 +1188,13 @@ def sync_appraisal_from_kpis(appraisal):
 
 
 def _sync_potential_to_extension(appraisal, employee, cycle):
-    """Compute avg potential rating from KPIs and store it on the extension."""
-    rows = frappe.get_all(
-        "KPI",
-        filters={"employee": employee, "appraisal_cycle": cycle, "status": ["!=", "Cancelled"]},
-        fields=["potential_rating"],
-    )
-    rated = [flt(r["potential_rating"]) for r in rows if r.get("potential_rating")]
+    """Average the potential ratings on the review's copies onto its record (VIS-7)."""
+    ext, copies = _review_copies_for_scoring(appraisal)
+    rated = [flt(r.potential_rating) for r in copies if flt(r.potential_rating)]
     if not rated:
         return
-    avg = flt(sum(rated) / len(rated), 2)
-
-    ext = _get_or_create_extension(appraisal)
-    ext.avg_potential_rating = avg
-    ext.save(ignore_permissions=True)
+    ext.avg_potential_rating = flt(sum(rated) / len(rated), 2)
+    review_items.save_review_record(ext)
 
 
 def _cycle_window(cycle):
@@ -890,10 +1224,24 @@ def attach_ongoing_to_cycle(cycle, employee=None):
     be silently overwritten. Work whose cycle is already Completed *is* re-
     claimed, otherwise long-running goals would be stuck in a closed cycle and
     invisible to every review that follows.
+
+    HR only, and only for the companies they look after (SEC-20). An item an
+    open review still holds keeps its cycle and is listed under
+    held_by_open_review: the new cycle's review copies it instead (R16).
     """
+    _require_hr()
     start, end = _cycle_window(cycle)
     if not start or not end:
         frappe.throw(f"Cycle '{cycle}' has no period set.")
+
+    people = frappe.get_all(
+        "Employee", filters={"company": ["in", permitted_companies() or [""]]}, pluck="name"
+    )
+    if employee:
+        if employee not in people:
+            refuse("This employee belongs to a company you do not look after.",
+                   "SEC-20", "attach_ongoing_to_cycle", "Employee", employee)
+        people = [employee]
 
     closed = set(frappe.get_all(
         "Appraisal Cycle", filters={"status": "Completed"}, pluck="name"
@@ -902,37 +1250,37 @@ def attach_ongoing_to_cycle(cycle, employee=None):
     def claimable(current):
         return (not current) or current == cycle or current in closed
 
-    attached = {"goals": [], "kpis": []}
+    attached = {"goals": [], "kpis": [], "held_by_open_review": {"goals": [], "kpis": []}}
 
-    goal_filters = {"docstatus": ["!=", 2], "status": ["!=", "Cancelled"]}
-    kpi_filters = {"status": ["!=", "Cancelled"]}
-    if employee:
-        goal_filters["employee"] = employee
-        kpi_filters["employee"] = employee
+    goal_filters = {"docstatus": ["!=", 2], "status": ["!=", "Cancelled"], "employee": ["in", people or [""]]}
+    kpi_filters = {"status": ["!=", "Cancelled"], "employee": ["in", people or [""]]}
 
-    for g in frappe.get_all("Individual Goal", filters=goal_filters,
-                            fields=["name", "goal_name", "start_date", "end_date",
-                                    "appraisal_cycle"], ignore_permissions=True):
-        if not claimable(g.appraisal_cycle):
-            continue
-        if g.appraisal_cycle == cycle:
-            continue
-        if _overlaps(str(g.start_date or ""), str(g.end_date or ""), str(start), str(end)):
-            frappe.db.set_value("Individual Goal", g.name, "appraisal_cycle", cycle,
-                                update_modified=False)
-            attached["goals"].append(g.goal_name)
+    goals = [g for g in frappe.get_all("Individual Goal", filters=goal_filters,
+                                       fields=["name", "goal_name", "start_date", "end_date",
+                                               "appraisal_cycle"], ignore_permissions=True)
+             if claimable(g.appraisal_cycle) and g.appraisal_cycle != cycle
+             and _overlaps(str(g.start_date or ""), str(g.end_date or ""), str(start), str(end))]
+    kpis = [k for k in frappe.get_all("KPI", filters=kpi_filters,
+                                      fields=["name", "kpi_name", "period_start", "period_end",
+                                              "appraisal_cycle"], ignore_permissions=True)
+            if claimable(k.appraisal_cycle) and k.appraisal_cycle != cycle
+            and _overlaps(str(k.period_start or ""), str(k.period_end or ""), str(start), str(end))]
 
-    for k in frappe.get_all("KPI", filters=kpi_filters,
-                            fields=["name", "kpi_name", "period_start", "period_end",
-                                    "appraisal_cycle"], ignore_permissions=True):
-        if not claimable(k.appraisal_cycle):
+    # One lookup per kind: which of these does an open review still hold (R2)?
+    held_goals = review_items.holds("Individual Goal", [g.name for g in goals])
+    held_kpis = review_items.holds("KPI", [k.name for k in kpis])
+    for g in goals:
+        if g.name in held_goals:
+            attached["held_by_open_review"]["goals"].append(g.goal_name)
             continue
-        if k.appraisal_cycle == cycle:
+        frappe.db.set_value("Individual Goal", g.name, "appraisal_cycle", cycle, update_modified=False)
+        attached["goals"].append(g.goal_name)
+    for k in kpis:
+        if k.name in held_kpis:
+            attached["held_by_open_review"]["kpis"].append(k.kpi_name)
             continue
-        if _overlaps(str(k.period_start or ""), str(k.period_end or ""), str(start), str(end)):
-            frappe.db.set_value("KPI", k.name, "appraisal_cycle", cycle,
-                                update_modified=False)
-            attached["kpis"].append(k.kpi_name)
+        frappe.db.set_value("KPI", k.name, "appraisal_cycle", cycle, update_modified=False)
+        attached["kpis"].append(k.kpi_name)
 
     frappe.db.commit()
     return attached
@@ -954,6 +1302,11 @@ def set_cycle_membership(kind, name, cycle, include=1):
     if not owner_emp:
         frappe.throw(f"{doctype} '{name}' not found.")
     _require_manages(owner_emp)
+    # The cycle is part of the definition an open review locks (R2). This write
+    # skips the document's own lock, so it asks here.
+    if review_items.holds(doctype, [name]):
+        refuse("This item is in an open review, so its cycle cannot be changed now.",
+               "R2", "set_cycle_membership", doctype, name)
 
     if int(include or 0):
         if not frappe.db.exists("Appraisal Cycle", cycle):
@@ -976,11 +1329,26 @@ def get_cycle_items(cycle, employee=None):
 
     Returns goals and KPIs side by side with an `is_overdue` flag, which is what
     the appraisal screen highlights.
+
+    Slice 010 group D: once the employee's review for this cycle has its own
+    copies, and the caller may open that review at its stage, the list is built
+    from those copies by row name and never names a live record (VIS-3). Before
+    that, or for someone who may not open the review yet (a manager while the
+    self-review is still a draft, PRIV-2), it is the live Objectives and KPIs.
+    No rating in either (R14): `source` says which one it is.
     """
     me = _require_employee()
     emp = employee or me
     if emp != me:
         _require_manages(emp)
+        if emp not in _subordinates(me) and frappe.db.get_value("Employee", emp, "company") not in permitted_companies():
+            # HR acts only for the companies they look after (decision 16).
+            refuse("This employee belongs to a company you do not look after.",
+                   "SEC-26", "get_cycle_items", "Employee", emp)
+
+    copies = _cycle_items_from_review(emp, me, cycle)
+    if copies is not None:
+        return copies
 
     goals = frappe.get_all(
         "Individual Goal",
@@ -999,8 +1367,7 @@ def get_cycle_items(cycle, employee=None):
         "KPI",
         filters={"employee": emp, "appraisal_cycle": cycle, "status": ["!=", "Cancelled"]},
         fields=["name", "kpi_name", "target_value", "actual_value", "attainment_pct",
-                "unit", "status", "period_start", "period_end", "weightage",
-                "manager_rating"],
+                "unit", "status", "period_start", "period_end", "weightage"],
         ignore_permissions=True,
     )
     for k in kpis:
@@ -1009,10 +1376,15 @@ def get_cycle_items(cycle, employee=None):
         k["label"] = k["kpi_name"]
         k["is_overdue"] = int(_is_overdue(k["period_end"]))
 
+    return _cycle_items_result(cycle, emp, goals, kpis, "live")
+
+
+def _cycle_items_result(cycle, emp, goals, kpis, source):
     total = sum(flt(i["weightage"]) for i in goals + kpis)
     return {
         "cycle": cycle,
         "employee": emp,
+        "source": source,
         "goals": goals,
         "kpis": kpis,
         "total_weightage": flt(total, 2),
@@ -1021,12 +1393,76 @@ def get_cycle_items(cycle, employee=None):
     }
 
 
-def _scored_items(employee, cycle):
-    """Goals and KPIs carrying a weightage — the rows an appraisal scores.
+def _cycle_items_from_review(emp, me, cycle):
+    """get_cycle_items from the review's copies, or None when the live list applies."""
+    appraisal = frappe.db.get_value(
+        "Appraisal", {"employee": emp, "appraisal_cycle": cycle, "docstatus": ["!=", 2]}, "name"
+    )
+    ext = _extension(appraisal) if appraisal else None
+    if not ext or not ext.get("items_taken_on"):
+        return None
+    if emp != me and (ext.review_status or "Not Started") in _SELF_REVIEW_DRAFT:
+        return None
+    if emp != me:
+        _assert_hr_can_view(appraisal)
 
-    Zero-weightage items ride along on the cycle for context but are not part
-    of the score, so they are excluded here and listed separately on screen.
+    goals, kpis = [], []
+    for row in ext.review_items:
+        if row.removed:
+            continue
+        item = {
+            "name": row.name, "label": row.title or "", "unit": row.unit or "",
+            "target_value": flt(row.target_value), "weightage": flt(row.weightage),
+            "status": "Cancelled" if row.source_cancelled else "Active",
+            "is_overdue": int(_is_overdue(row.period_end)),
+        }
+        if row.item_type == "Objective":
+            item.update({"kind": "goal", "goal_name": item["label"], "actual_progress": flt(row.actual_value),
+                         "progress_pct": flt(row.attainment_pct),
+                         "start_date": str(row.period_start or ""), "end_date": str(row.period_end or "")})
+            goals.append(item)
+        else:
+            item.update({"kind": "kpi", "kpi_name": item["label"], "actual_value": flt(row.actual_value),
+                         "attainment_pct": flt(row.attainment_pct),
+                         "period_start": str(row.period_start or ""), "period_end": str(row.period_end or "")})
+            kpis.append(item)
+    return _cycle_items_result(cycle, emp, goals, kpis, "review")
+
+
+def _review_copies_for_scoring(appraisal):
+    """The review's live copies, or a refusal. Scores never fall back to the live
+    Objectives and KPIs (VIS-7)."""
+    ext = _extension(appraisal)
+    if not ext or not ext.get("items_taken_on"):
+        frappe.throw("This review has no items of its own yet. Open the review first: "
+                     "scores are taken from the review, not from the live Objectives and KPIs.")
+    return ext, [r for r in ext.review_items if not r.removed]
+
+
+def _scored_items(ap):
+    """Items carrying a weightage — the rows an appraisal scores.
+
+    From the review's own copies (VIS-7): a KPI scores its manager rating, an
+    Objective its attainment on the same 0-5 scale. Only an appraisal that is
+    being created, before its review record can exist, is projected from the
+    live records tagged to the cycle (hr_generate_appraisals).
+
+    Zero-weightage items ride along for context but are not part of the score.
     """
+    if not ap.is_new():
+        _ext, copies = _review_copies_for_scoring(ap.name)
+        return [
+            {"label": r.title, "weightage": flt(r.weightage),
+             "score": flt(r.manager_rating) if r.item_type == "KPI" else flt(rating_from_attainment(r.attainment_pct)),
+             "end_date": r.period_end}
+            for r in sorted(copies, key=lambda r: (r.item_type != "KPI", r.title or ""))
+            if flt(r.weightage)
+        ]
+    return _scored_live_items(ap.employee, ap.appraisal_cycle)
+
+
+def _scored_live_items(employee, cycle):
+    """The first projection of a new appraisal, before it has a review record."""
     rows = []
     for k in frappe.get_all(
         "KPI",
@@ -1064,14 +1500,17 @@ def _apply_kpis_to_appraisal(ap):
     unless the weightages total exactly 100, so an employee whose weightages are
     incomplete cannot be scored — the caller is told the number and why.
     """
-    rows = _scored_items(ap.employee, ap.appraisal_cycle)
+    rows = _scored_items(ap)
     who = ap.employee_name or ap.employee
 
     if not rows:
-        attached = frappe.db.count("KPI", {"employee": ap.employee,
-                                           "appraisal_cycle": ap.appraisal_cycle}) + \
-                   frappe.db.count("Individual Goal", {"employee": ap.employee,
-                                                       "appraisal_cycle": ap.appraisal_cycle})
+        if ap.is_new():
+            attached = frappe.db.count("KPI", {"employee": ap.employee,
+                                               "appraisal_cycle": ap.appraisal_cycle}) + \
+                       frappe.db.count("Individual Goal", {"employee": ap.employee,
+                                                           "appraisal_cycle": ap.appraisal_cycle})
+        else:
+            attached = len(_review_copies_for_scoring(ap.name)[1])
         frappe.throw(
             f"{who} has nothing weighted in this cycle. "
             + (f"{attached} item(s) are attached but all sit at 0% weightage — "
@@ -1104,7 +1543,7 @@ def _apply_kpis_to_appraisal(ap):
 def submit_appraisal(appraisal):
     """Manager submits a report's appraisal once every KPI is rated."""
     ap = frappe.get_doc("Appraisal", appraisal)
-    _require_can_review(ap.employee)
+    _require_scoring_access(appraisal, ap.employee, "submit_appraisal")
     if ap.docstatus == 1:
         frappe.throw("This appraisal is already submitted.")
 
@@ -1166,6 +1605,54 @@ def hr_get_setup():
     }
 
 
+def _build_formula(cycle):
+    """The cycle's own weights decide the formula. Until attendance is switched
+    on for a cycle this is "goal_score", which is what the portal always wrote."""
+    from hrms.alvoraa_hr_core.attendance_score import build_formula
+    return build_formula(cycle)
+
+
+def _apply_scoring(cycle, scoring):
+    """Copy the wizard's "How the score is built" step onto the Appraisal Cycle.
+    Ignored unless the tenant has the attendance-scoring feature."""
+    import json
+    if not scoring:
+        return
+    from alvoraa_portal.subscription import has_feature
+    if not has_feature("attendance_scoring"):
+        return
+    if isinstance(scoring, str):
+        scoring = json.loads(scoring or "{}")
+    cycle.include_attendance_score = cint(scoring.get("include_attendance"))
+    for src, dst in (
+        ("goal_weight", "goal_weight"),
+        ("feedback_weight", "feedback_weight"),
+        ("attendance_weight", "attendance_weight"),
+        ("reliability_weight", "attendance_reliability_weight"),
+        ("punctuality_weight", "attendance_punctuality_weight"),
+        ("deduction_penalty", "attendance_deduction_penalty"),
+    ):
+        if scoring.get(src) not in (None, ""):
+            cycle.set(dst, flt(scoring.get(src)))
+    cycle.count_paid_leave_as_absent = cint(scoring.get("count_paid_leave_as_absent"))
+    if scoring.get("when_no_data"):
+        cycle.attendance_when_no_data = scoring.get("when_no_data")
+    cycle.set("attendance_exempt_grades",
+              [{"employee_grade": g} for g in (scoring.get("exempt_grades") or []) if g])
+
+
+def _precompute_attendance(cycle, employees):
+    """One pass over attendance for every employee about to get an appraisal,
+    so the save hook does not query per employee."""
+    from hrms.alvoraa_hr_core.attendance_score import precompute
+    precompute(cycle, list(employees))
+
+
+def _cycle_scoring(cycle):
+    from hrms.alvoraa_hr_core.attendance_score import cycle_scoring
+    return cycle_scoring(cycle)
+
+
 @frappe.whitelist()
 def hr_create_cycle(cycle_name, start_date, end_date, description=""):
     """Create a review cycle set up for KPI-based manual scoring."""
@@ -1192,7 +1679,7 @@ def hr_create_cycle(cycle_name, start_date, end_date, description=""):
     # behind the other two terms, so averaging in two structural zeros would cut
     # every final score to a third of what was actually awarded.
     cycle.calculate_final_score_based_on_formula = 1
-    cycle.final_score_formula = "goal_score"
+    cycle.final_score_formula = _build_formula(cycle)
     cycle.status = "Not Started"
     cycle.insert(ignore_permissions=True)
     frappe.db.commit()
@@ -1214,7 +1701,9 @@ def get_wizard_filter_options():
         "AND e.status='Active' ORDER BY e.employee_name",
         as_dict=True,
     )
-    return {"departments": departments, "designations": designations, "managers": managers}
+    grades = frappe.get_all("Employee Grade", pluck="name", order_by="name")
+    return {"departments": departments, "designations": designations, "managers": managers,
+            "grades": grades}
 
 
 @frappe.whitelist()
@@ -1250,7 +1739,8 @@ def get_filterable_employees(department=None, manager=None, designation=None,
 @frappe.whitelist()
 def save_cycle_wizard(cycle_name, start_date, end_date,
                       description="", employee_fields=None, page_config=None,
-                      page_settings=None, selected_employees=None, existing_cycle=None):
+                      page_settings=None, selected_employees=None, existing_cycle=None,
+                      scoring=None):
     """Create a new Appraisal Cycle via the setup wizard and persist its configuration."""
     import json
     _require_hr()
@@ -1265,6 +1755,7 @@ def save_cycle_wizard(cycle_name, start_date, end_date,
         cycle.start_date = start_date
         cycle.end_date = end_date
         cycle.description = description
+        _apply_scoring(cycle, scoring)
         cycle.save(ignore_permissions=True)
     else:
         if frappe.db.exists("Appraisal Cycle", cycle_name):
@@ -1277,7 +1768,8 @@ def save_cycle_wizard(cycle_name, start_date, end_date,
         cycle.description = description
         cycle.kra_evaluation_method = "Manual Rating"
         cycle.calculate_final_score_based_on_formula = 1
-        cycle.final_score_formula = "goal_score"
+        _apply_scoring(cycle, scoring)
+        cycle.final_score_formula = _build_formula(cycle)
         cycle.status = "Not Started"
         cycle.insert(ignore_permissions=True)
 
@@ -1314,6 +1806,7 @@ def save_cycle_wizard(cycle_name, start_date, end_date,
     # Create Appraisal + Alvoraa Appraisal Extension for each selected employee
     created = 0
     skipped = 0
+    _precompute_attendance(cycle, emp_list)
 
     for emp_id in emp_list:
         existing = frappe.db.get_value(
@@ -1354,8 +1847,10 @@ def get_cycle_config(cycle):
     """Return the wizard configuration for a cycle."""
     import json
     _require_hr()
+    scoring = _cycle_scoring(cycle) if frappe.db.exists("Appraisal Cycle", cycle) else {}
     if not frappe.db.exists("Alvoraa Cycle Config", cycle):
-        return {"employee_fields": {}, "page_config": {}, "page_settings": {}, "description": ""}
+        return {"employee_fields": {}, "page_config": {}, "page_settings": {}, "description": "",
+                "scoring": scoring}
     cfg = frappe.get_doc("Alvoraa Cycle Config", cycle)
     def _parse(val):
         try:
@@ -1367,38 +1862,88 @@ def get_cycle_config(cycle):
         "employee_fields": _parse(cfg.employee_fields),
         "page_config":    _parse(cfg.page_config),
         "page_settings":  _parse(cfg.page_settings),
+        "scoring":        scoring,
     }
 
 
 @frappe.whitelist()
-def search_employees(query=""):
-    """Search active employees by name or ID — open to any logged-in user."""
+def search_employees(query="", appraisal=None):
+    """Find people to invite as reviewers, by name or employee ID.
+
+    It used to return up to 100 active employees of every company to anyone
+    logged in (slice 010 group D, commit 9).
+
+    With `appraisal` (the reviewer picker): only someone who may invite
+    reviewers for that review - its manager line, or HR under the review's stage
+    and company rule, never the person reviewed (SEC-7, SEC-10). Results are
+    active employees of the reviewed person's company, not limited to the
+    manager's line (decision 2), never the reviewed person.
+
+    Without it (the page does not send it yet): a manager searches their own
+    company, HR the companies they look after, anyone else finds nobody.
+    At most 50 people, and only for a search of at least 2 letters: the picker
+    asks the server as the person types (code review M4), so nobody pages
+    through a company's staff list with an empty search.
+    """
     if frappe.session.user == "Guest":
         frappe.throw("Please log in.", frappe.PermissionError)
-    query = (query or "").strip()
-    filters = {"status": "Active"}
+    query = (query if isinstance(query, str) else "").strip()
+    me = _employee_id()
+    subject = None
+    if appraisal:
+        if not isinstance(appraisal, str):
+            frappe.throw("Choose the review you are finding reviewers for.")
+        subject = frappe.db.get_value("Appraisal", appraisal, "employee")
+        if not subject:
+            frappe.throw("Appraisal not found.")
+        refuse_own_rating(subject, "Appraisal", appraisal, "search_employees")
+        if not _is_line_manager(subject, me):
+            if not _is_hr():
+                refuse("You can only find reviewers for a review you manage.",
+                       "SEC-7", "search_employees", "Appraisal", appraisal)
+            _assert_hr_can_view(appraisal)
+        companies = [frappe.db.get_value("Employee", subject, "company")]
+    elif _is_hr():
+        companies = permitted_companies()
+    elif me and _reports_of(me):
+        companies = [frappe.db.get_value("Employee", me, "company")]
+    else:
+        return []
+
+    companies = [c for c in companies if c]
+    if not companies or len(query) < 2:
+        return []
+    filters = {"status": "Active", "company": ["in", companies]}
+    if subject:
+        filters["name"] = ["!=", subject]
+    or_filters = None
     if query:
-        filters["employee_name"] = ["like", "%" + query + "%"]
-    rows = frappe.get_all(
+        or_filters = [["employee_name", "like", f"%{query}%"], ["name", "like", f"%{query}%"]]
+    return frappe.get_all(
         "Employee",
         filters=filters,
+        or_filters=or_filters,
         fields=["name", "employee_name", "designation", "department"],
         order_by="employee_name asc",
-        limit=80,
+        limit=50,
     )
-    # Also search by employee ID if query looks like one
-    if query:
-        by_id = frappe.get_all(
-            "Employee",
-            filters={"name": ["like", "%" + query + "%"], "status": "Active"},
-            fields=["name", "employee_name", "designation", "department"],
-            limit=20,
-        )
-        seen = {r["name"] for r in rows}
-        for r in by_id:
-            if r["name"] not in seen:
-                rows.append(r)
-    return rows
+
+
+def _check_invitees(ap, employees, endpoint):
+    """Invited reviewers are active employees of the reviewed person's company,
+    and never the reviewed person (SEC-7). One refusal stops the whole call, so
+    nothing is invited and nobody is emailed."""
+    wanted = sorted({e for e in employees if e})
+    company = frappe.db.get_value("Employee", ap.employee, "company")
+    allowed = set(frappe.get_all(
+        "Employee",
+        filters={"name": ["in", wanted or [""]], "status": "Active", "company": company},
+        pluck="name",
+    ))
+    for employee in wanted:
+        if employee == ap.employee or employee not in allowed:
+            refuse("Reviewers must be active employees of the same company as the person reviewed, "
+                   "and not that person.", "SEC-7", endpoint, "Appraisal", ap.name)
 
 
 @frappe.whitelist()
@@ -1472,37 +2017,83 @@ def delete_rating_scale(name):
 
 
 @frappe.whitelist()
-def hr_list_appraisals(cycle, show_archived=0):
-    """Return all appraisals in a cycle with employee info and review_status from Alvoraa Appraisal Extension."""
-    _require_hr()
-    appraisals = frappe.get_all(
-        "Appraisal",
-        filters={"appraisal_cycle": cycle},
-        fields=["name", "employee", "employee_name", "department", "designation"],
-        order_by="employee_name asc",
-    )
-    if not appraisals:
+def hr_list_appraisals(cycle=None, show_archived=0):
+    """Return all appraisals in a cycle with employee info and review_status from Alvoraa Appraisal Extension.
+
+    Only reviews the caller may list (SEC-26): the companies they look after and
+    their own line. The overall rating follows the review's stage (decision 3).
+    """
+    _require_argument(cycle=cycle)
+    reviews = _hr_cycle_reviews(cycle, include_cancelled=True)
+    if not reviews:
         return []
-    # Bulk-fetch extensions to avoid N+1 queries
-    ext_map = {}
-    for ext in frappe.get_all(
-        "Alvoraa Appraisal Extension",
-        filters={"appraisal_cycle": cycle},
-        fields=["appraisal", "review_status", "overall_rating", "archived"],
-    ):
-        ext_map[ext["appraisal"]] = ext
+    emails = _responsible_emails(reviews)
+    elsewhere = _hr_steps_elsewhere([a.employee for a in reviews if a.status == "HR Review"])
     result = []
-    for ap in appraisals:
-        ext = ext_map.get(ap["name"]) or {}
-        ap["review_status"]  = ext.get("review_status") or "Not Started"
-        ap["overall_rating"] = ext.get("overall_rating")
-        ap["archived"]       = int(ext.get("archived") or 0)
-        if ap["archived"] and not int(show_archived):
+    for a in reviews:
+        archived = int(a.extension.get("archived") or 0)
+        if archived and not int(show_archived):
             continue
-        # Fetch the email of whoever is responsible at the current stage
-        ap["responsible_email"] = _get_responsible_email(ap["employee"], ap["review_status"])
-        result.append(ap)
+        result.append({
+            "name": a.name,
+            "employee": a.employee,
+            "employee_name": a.employee_name,
+            "department": a.department,
+            "designation": a.designation,
+            "review_status": a.status,
+            "overall_rating": a.extension.get("overall_rating")
+                              if review_items.overall_rating_visible(a.viewer, a.status) else None,
+            "archived": archived,
+            "responsible_email": emails.get(a.name, ""),
+            "hr_steps_elsewhere": int(a.status == "HR Review" and a.employee in elsewhere),
+        })
     return result
+
+
+def _responsible_emails(reviews):
+    """Whoever should act at each review's stage, by email: the employee, or the
+    manager in Manager Review. Two queries, plus one for the stand-in HR manager
+    when someone has no manager (it used to be three queries per row)."""
+    def email(person):
+        return (person.company_email or person.prefered_email or person.personal_email or "") if person else ""
+
+    fields = ["name", "company_email", "prefered_email", "personal_email", "reports_to"]
+    people = {e.name: e for e in frappe.get_all(
+        "Employee", filters={"name": ["in", sorted({a.employee for a in reviews}) or [""]]}, fields=fields)}
+    manager_of = {}
+    for a in reviews:
+        if a.status == "Manager Review":
+            person = people.get(a.employee)
+            manager_of[a.name] = (person.reports_to if person and person.reports_to
+                                  else get_effective_manager(a.employee))
+    managers = {e.name: e for e in frappe.get_all(
+        "Employee", filters={"name": ["in", sorted({m for m in manager_of.values() if m}) or [""]]}, fields=fields)}
+
+    out = {}
+    for a in reviews:
+        if a.status in ("Not Started", "Employee Review", "Employee Final Review"):
+            out[a.name] = email(people.get(a.employee))
+        elif a.status == "Manager Review":
+            out[a.name] = email(managers.get(manager_of.get(a.name)))
+        else:
+            out[a.name] = ""
+    return out
+
+
+def _require_hr_for(appraisal, endpoint):
+    """HR acting on one review: only for the companies they look after, or their
+    own line (SEC-26, decision 16). Returns the review's employee."""
+    _require_hr()
+    owner = frappe.db.get_value("Appraisal", appraisal, "employee")
+    if not owner:
+        frappe.throw("Appraisal not found.")
+    me = _employee_id()
+    if me and (owner == me or owner in _subordinates(me)):
+        return owner
+    if frappe.db.get_value("Employee", owner, "company") not in permitted_companies():
+        refuse("This appraisal belongs to a company you do not look after.",
+               "SEC-26", endpoint, "Appraisal", appraisal)
+    return owner
 
 
 def _get_responsible_email(employee_id, review_status):
@@ -1524,11 +2115,14 @@ def _get_responsible_email(employee_id, review_status):
 
 @frappe.whitelist()
 def send_review_reminder(appraisal):
-    """Send an email reminder to whoever is responsible at the current review stage."""
-    _require_hr()
+    """Send an email reminder to whoever is responsible at the current review stage.
+
+    For the companies the caller looks after (SEC-26). Reads the stage without
+    creating a review record (SEC-6).
+    """
+    _require_hr_for(appraisal, "send_review_reminder")
     ap = frappe.get_doc("Appraisal", appraisal)
-    ext = _get_or_create_extension(appraisal)
-    status = ext.review_status or "Not Started"
+    status = _review_status(appraisal)
 
     recipient = _get_responsible_email(ap.employee, status)
     if not recipient:
@@ -1565,10 +2159,13 @@ in the <strong>{cycle_name}</strong> cycle.</p>
 
 @frappe.whitelist()
 def archive_review(appraisal):
-    """HR-only: mark a completed review as archived (hidden from default list)."""
-    _require_hr()
-    ext = _get_or_create_extension(appraisal)
-    if ext.review_status != "Completed":
+    """HR-only: mark a completed review as archived (hidden from default list).
+
+    For the companies the caller looks after (SEC-26); never creates a record.
+    """
+    _require_hr_for(appraisal, "archive_review")
+    ext = _extension(appraisal)
+    if not ext or ext.review_status != "Completed":
         frappe.throw("Only completed reviews can be archived.")
     ext.archived = 1
     ext.save(ignore_permissions=True)
@@ -1578,9 +2175,14 @@ def archive_review(appraisal):
 
 @frappe.whitelist()
 def unarchive_review(appraisal):
-    """HR-only: restore an archived review to the active list."""
-    _require_hr()
-    ext = _get_or_create_extension(appraisal)
+    """HR-only: restore an archived review to the active list.
+
+    For the companies the caller looks after (SEC-26); never creates a record.
+    """
+    _require_hr_for(appraisal, "unarchive_review")
+    ext = _extension(appraisal)
+    if not ext:
+        frappe.throw("This review has not started yet.")
     ext.archived = 0
     ext.save(ignore_permissions=True)
     frappe.db.commit()
@@ -1870,16 +2472,23 @@ def get_performance_tree(cycle=None, show="all", date_from=None, date_to=None,
         g["is_organisational"] = int(not g["parent_goal"] and not g["goal_cascade"])
         g["context"] = int(g["name"] in context_ids)
         g["is_overdue"] = int(_is_overdue(g["end_date"]))
-        g["in_cycle"] = g.get("appraisal_cycle") or ""
         g["children"] = []
         g["kpis"] = []
+    # The tree's "in review" tag means an open review holds the record, not just
+    # that it is tagged to a cycle (R5). One query per kind; the badge says only
+    # that, and from which day updates no longer change the review (PRIV-10).
+    goal_badges = review_items.review_badges("Individual Goal", [g["name"] for g in goals])
+    for g in goals:
+        g["review_badge"] = goal_badges.get(g["name"])
+        g["in_cycle"] = (g.get("appraisal_cycle") or "") if g["review_badge"] else ""
     for k in kpis:
         k["type"] = "kpi"
         k["trajectory"] = _kpi_trajectory(k)
         _serialise_dates(k, "period_start", "period_end")
         k["is_overdue"] = int(_is_overdue(k["period_end"]))
-        k["in_cycle"] = k.get("appraisal_cycle") or ""
     _decorate_kpis(kpis)
+    for k in kpis:
+        k["in_cycle"] = (k.get("appraisal_cycle") or "") if k["review_badge"] else ""
 
     by_id = {g["name"]: g for g in goals}
 
@@ -2008,16 +2617,145 @@ def hr_cancel_kpi(kpi):
     return {"name": kpi, "message": "KPI cancelled."}
 
 
-@frappe.whitelist()
-def hr_list_kpis(cycle=None, employee=None):
-    """All KPIs in the tenant, optionally narrowed. HR sees everyone."""
+# ── HR cycle screens read the review record (slice 010 group D: R8, SEC-26) ──
+#
+# Calibration, the cycle summary, the HR KPI list, the appraisals table and the
+# CSV export show each review's own copies, never the live Objectives and KPIs,
+# and only for the reviews the caller may list. A row's ratings follow the same
+# rule as the review screens (review_items.rating_fields_for).
+
+_COPY_FIELDS = [
+    "name", "parent", "idx", "item_type", "source_doctype", "source_name", "title", "unit", "direction",
+    "category", "baseline_value", "target_value", "weightage", "period_start", "period_end",
+    "actual_value", "attainment_pct", "facts_count", "source_cancelled", "removed",
+    "self_rating", "self_comment", "manager_rating", "manager_comment", "potential_rating", "potential_comment",
+]
+
+
+def _hr_cycle_reviews(cycle, employee=None, include_cancelled=False):
+    """The reviews in one cycle this HR person may list, and what each row may show.
+
+    Scope (SEC-26, decision 16): subjects of the companies the caller looks
+    after, plus the caller's own line and their own review. Each row gets
+    `status`, `extension` and `viewer`, which review_items.rating_fields_for reads:
+      subject  the caller's own review
+      manager  someone in the caller's line
+      hr       anyone else, once the review has reached HR Review
+      none     anyone else before that: status and counts, no rating (fail closed)
+    A fixed number of queries whatever the size of the cycle.
+    """
     _require_hr()
-    filters = {}
-    if cycle:
-        filters["appraisal_cycle"] = cycle
+    me = _employee_id()
+    line = set(_subordinates(me)) if me else set()
+    filters = {"appraisal_cycle": cycle}
+    if not include_cancelled:
+        filters["docstatus"] = ["!=", 2]
     if employee:
         filters["employee"] = employee
-    return _kpi_rows(filters)
+    appraisals = frappe.get_all(
+        "Appraisal",
+        filters=filters,
+        or_filters=[
+            ["company", "in", permitted_companies() or [""]],
+            ["employee", "in", sorted(line | {me}) if me else [""]],
+        ],
+        fields=["name", "employee", "employee_name", "department", "designation", "company", "docstatus",
+                "total_score", "final_score", "attendance_score", "attendance_summary"],
+        order_by="employee_name asc",
+    )
+    extensions = {
+        e.name: e for e in frappe.get_all(
+            "Alvoraa Appraisal Extension",
+            filters={"name": ["in", [a.name for a in appraisals] or [""]]},
+            fields=["name", "review_status", "overall_rating", "potential_rating", "avg_potential_rating",
+                    "potential_category", "archived", "frozen", "frozen_on", "review_window_start",
+                    "review_window_end", "items_taken_on"],
+        )
+    }
+    for a in appraisals:
+        a.extension = extensions.get(a.name) or frappe._dict()
+        a.status = a.extension.get("review_status") or "Not Started"
+        if me and a.employee == me:
+            a.viewer = review_items.VIEWER_SUBJECT
+        elif a.employee in line:
+            a.viewer = review_items.VIEWER_MANAGER
+        elif a.status in ("HR Review", "Completed"):
+            a.viewer = review_items.VIEWER_HR
+        else:
+            a.viewer = review_items.VIEWER_NONE
+    return appraisals
+
+
+def _copies_of(reviews):
+    """Every copy of these reviews, by review name, in their order. One query."""
+    names = [a.name for a in reviews if a.extension.get("items_taken_on")]
+    out = {}
+    if not names:
+        return out
+    for row in frappe.get_all(
+        "Alvoraa Review Item",
+        filters={"parenttype": "Alvoraa Appraisal Extension", "parent": ["in", names]},
+        fields=_COPY_FIELDS,
+        order_by="parent asc, idx asc",
+    ):
+        out.setdefault(row.parent, []).append(row)
+    return out
+
+
+def _draft_hidden(review):
+    """Which items a person chose for a self-review they have not sent is theirs
+    alone (PRIV-2). HR screens list no items of such a review for anyone else,
+    including an HR person who is also in the subject's line (security review m7)."""
+    return review.status in _SELF_REVIEW_DRAFT and review.viewer != review_items.VIEWER_SUBJECT
+
+
+def _visible_ratings(row, review):
+    """The rating and comment fields of one copy this row's viewer may see; absent otherwise."""
+    return {
+        field: flt(row.get(field)) if field.endswith("_rating") else (row.get(field) or "")
+        for field in review_items.rating_fields_for(review.viewer, review.status)
+    }
+
+
+def _copy_numbers(row):
+    return {
+        "unit": row.unit or "", "direction": row.direction or "", "category": row.category or "",
+        "baseline_value": flt(row.baseline_value), "target_value": flt(row.target_value),
+        "actual_value": flt(row.actual_value), "attainment_pct": flt(row.attainment_pct),
+        "weightage": flt(row.weightage),
+        "period_start": str(row.period_start or ""), "period_end": str(row.period_end or ""),
+    }
+
+
+@frappe.whitelist()
+def hr_list_kpis(cycle=None, employee=None):
+    """One cycle's KPIs as its reviews hold them, for HR (R8).
+
+    From each review's own copies, by row name; only reviews the caller may
+    list, with ratings only where the stage allows (SEC-26). A cycle is needed:
+    without one this used to return every KPI in the tenant.
+    """
+    _require_hr()
+    if not cycle:
+        frappe.throw("Choose a cycle. This list shows the KPIs each review in that cycle holds.")
+    reviews = _hr_cycle_reviews(cycle, employee)
+    copies = _copies_of(reviews)
+    out = []
+    for a in reviews:
+        if _draft_hidden(a):
+            continue
+        for row in copies.get(a.name, []):
+            if row.removed or row.item_type != "KPI":
+                continue
+            item = {
+                "name": row.name, "kpi_name": row.title or "", "employee": a.employee,
+                "employee_name": a.employee_name, "appraisal": a.name, "appraisal_cycle": cycle,
+                "review_status": a.status, "status": "Cancelled" if row.source_cancelled else "Active",
+            }
+            item.update(_copy_numbers(row))
+            item.update(_visible_ratings(row, a))
+            out.append(item)
+    return out
 
 
 @frappe.whitelist()
@@ -2055,6 +2793,7 @@ def hr_generate_appraisals(cycle, attach_ongoing=1):
 
     created, skipped, existing = [], [], []
     company = _default_company()
+    _precompute_attendance(cycle_doc, employees)
 
     for idx, emp_id in enumerate(sorted(employees)):
         emp_name = frappe.db.get_value("Employee", emp_id, "employee_name") or emp_id
@@ -2116,56 +2855,83 @@ def hr_generate_appraisals(cycle, attach_ongoing=1):
 
 @frappe.whitelist()
 def hr_cycle_summary(cycle):
-    """Progress board for one cycle: who is assigned, rated, and submitted."""
-    _require_hr()
+    """Progress board for one cycle: who is assigned, rated, and submitted.
 
-    kpis = frappe.get_all(
-        "KPI",
-        filters={"appraisal_cycle": cycle, "status": ["!=", "Cancelled"]},
-        fields=["employee", "employee_name", "weightage", "manager_rating", "attainment_pct"],
-    )
-    appraisals = {
-        a["employee"]: a
-        for a in frappe.get_all(
-            "Appraisal",
-            filters={"appraisal_cycle": cycle, "docstatus": ["!=", 2]},
-            fields=["name", "employee", "docstatus", "total_score", "final_score"],
-        )
-    }
-
-    by_emp = {}
-    for k in kpis:
-        e = by_emp.setdefault(k["employee"], {
-            "employee": k["employee"],
-            "employee_name": k["employee_name"],
-            "kpi_count": 0, "total_weightage": 0, "rated": 0, "attainment": 0,
-        })
-        e["kpi_count"] += 1
-        e["total_weightage"] += flt(k["weightage"])
-        e["attainment"] += flt(k["attainment_pct"])
-        if flt(k["manager_rating"]) > 0:
-            e["rated"] += 1
+    From each review's own copies (R8), for the reviews the caller may list
+    (SEC-26). A row before HR Review, for someone outside the caller's line,
+    carries counts and weightage but no rating, rated count or final score.
+    """
+    reviews = _hr_cycle_reviews(cycle)
+    copies = _copies_of(reviews)
 
     rows = []
-    for e in by_emp.values():
-        ap = appraisals.get(e["employee"])
-        e["total_weightage"] = flt(e["total_weightage"], 2)
-        e["weightage_ok"] = e["total_weightage"] == TOTAL_WEIGHTAGE
-        e["avg_attainment"] = flt(e["attainment"] / e["kpi_count"], 1) if e["kpi_count"] else 0
-        e.pop("attainment")
-        e["appraisal"] = ap["name"] if ap else ""
-        e["submitted"] = bool(ap and ap["docstatus"] == 1)
-        e["final_score"] = flt(ap["final_score"]) if ap else 0
-        rows.append(e)
+    appraisals = {}
+    for a in reviews:
+        live = [c for c in copies.get(a.name, []) if not c.removed]
+        kpis = [c for c in live if c.item_type == "KPI"]
+        total_weightage = flt(sum(flt(c.weightage) for c in live), 2)
+        row = {
+            "employee": a.employee,
+            "employee_name": a.employee_name,
+            "appraisal": a.name,
+            "review_status": a.status,
+            "item_count": len(live),
+            "kpi_count": len(kpis),
+            "total_weightage": total_weightage,
+            "weightage_ok": total_weightage == TOTAL_WEIGHTAGE,
+            "avg_attainment": flt(sum(flt(c.attainment_pct) for c in kpis) / len(kpis), 1) if kpis else 0,
+            "submitted": a.docstatus == 1,
+            "attendance_score": flt(a.attendance_score) if a.attendance_summary else None,
+        }
+        if "manager_rating" in review_items.rating_fields_for(a.viewer, a.status):
+            row["rated"] = sum(1 for c in kpis if flt(c.manager_rating) > 0)
+        final_visible = review_items.overall_rating_visible(a.viewer, a.status)
+        if final_visible:
+            row["final_score"] = flt(a.final_score)
+        rows.append(row)
+        appraisals[a.employee] = {"attendance_score": a.attendance_score, "attendance_summary": a.attendance_summary,
+                                  "final_score": a.final_score if final_visible else None}
 
     rows.sort(key=lambda r: r["employee_name"] or "")
+    scoring = _cycle_scoring(cycle)
     return {
         "cycle": cycle,
         "rows": rows,
+        "scoring": scoring,
+        "attendance_by_branch": _attendance_by_branch(appraisals) if scoring.get("include_attendance") else [],
         "assigned": len(rows),
         "with_appraisal": sum(1 for r in rows if r["appraisal"]),
         "submitted": sum(1 for r in rows if r["submitted"]),
     }
+
+
+def _attendance_by_branch(appraisals):
+    """Average attendance and final score per branch, for the HR cycle board.
+
+    A final score the caller may not see yet (final_score None) counts for the
+    attendance average only (slice 010 group D, SEC-26).
+    """
+    scored = {emp: ap for emp, ap in appraisals.items() if ap.get("attendance_summary")}
+    if not scored:
+        return []
+    branch_of = dict(frappe.get_all("Employee", filters={"name": ["in", list(scored)]},
+                                    fields=["name", "branch"], as_list=True))
+    groups = {}
+    for emp, ap in scored.items():
+        g = groups.setdefault(branch_of.get(emp) or "No branch",
+                              {"count": 0, "attendance": 0.0, "final": 0.0, "final_count": 0})
+        g["count"] += 1
+        g["attendance"] += flt(ap["attendance_score"])
+        if ap.get("final_score") is not None:
+            g["final"] += flt(ap["final_score"])
+            g["final_count"] += 1
+    return sorted(
+        [{"branch": b, "count": g["count"],
+          "avg_attendance": flt(g["attendance"] / g["count"], 2),
+          "avg_final": flt(g["final"] / g["final_count"], 2) if g["final_count"] else None}
+         for b, g in groups.items()],
+        key=lambda r: r["branch"],
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -2182,27 +2948,144 @@ _REVIEW_STATUS_FLOW = {
 
 
 def _get_or_create_extension(appraisal):
-    """Return the GraceAppraisalExtension for this appraisal, creating it if absent."""
+    """Return the review record for this appraisal, creating it if absent.
+
+    Call this only once the caller is allowed to start the record: the subject,
+    or HR setting up a cycle. Everyone else uses _extension(), which never
+    creates one (SEC-6).
+    """
     if frappe.db.exists("Alvoraa Appraisal Extension", appraisal):
         return frappe.get_doc("Alvoraa Appraisal Extension", appraisal)
+    ap = frappe.db.get_value("Appraisal", appraisal, ["employee", "appraisal_cycle"], as_dict=True) or {}
     ext = frappe.new_doc("Alvoraa Appraisal Extension")
     ext.appraisal = appraisal
+    # The desk and HR scorecards find reviews by employee and cycle.
+    ext.employee = ap.get("employee")
+    ext.appraisal_cycle = ap.get("appraisal_cycle")
     ext.review_status = "Not Started"
     ext.insert(ignore_permissions=True)
     frappe.db.commit()
     return ext
 
 
+# Stages in which only the subject may see the review (PRIV-2), and from which
+# the subject may see the overall rating (decision 3).
+_SELF_REVIEW_DRAFT = ("Not Started", "Employee Review")
+_RATING_RELEASED = ("Employee Final Review", "HR Review", "Completed")
+
+
+def _extension(appraisal):
+    """The review record, or None. Never creates one (SEC-6)."""
+    if frappe.db.exists("Alvoraa Appraisal Extension", appraisal):
+        return frappe.get_doc("Alvoraa Appraisal Extension", appraisal)
+    return None
+
+
+def _review_status(appraisal):
+    """The review's stage without loading or creating the record."""
+    return frappe.db.get_value(
+        "Alvoraa Appraisal Extension", appraisal, "review_status"
+    ) or "Not Started"
+
+
+def _is_line_manager(employee, me, direct_only=False):
+    """Is `me` this employee's manager for a manager review?
+
+    The reporting line (direct reports only where an endpoint always was), or,
+    for an employee with no manager at all, the HR Manager the portal treats as
+    their manager (get_effective_manager). That stand-in is limited to the
+    manager-review actions; it does not open the review anywhere else.
+    """
+    if not me or not employee:
+        return False
+    if direct_only:
+        if employee in _reports_of(me):
+            return True
+    elif _is_manager_of(employee):
+        return True
+    return (
+        not frappe.db.get_value("Employee", employee, "reports_to")
+        and get_effective_manager(employee) == me
+    )
+
+
+def _manager_review_record(appraisal, endpoint, direct_only=False,
+                           stage_message="Review is not in Manager Review stage."):
+    """Everything a manager-review write checks, in order, before it reads or writes (SEC-6).
+
+    1. never the subject, whatever roles they hold (SEC-10);
+    2. the manager line (direct reports only where the endpoint always was), or HR;
+    3. HR acting for someone else: the stage and company rule;
+    4. the review must exist and be in Manager Review.
+
+    Then the review's copies are brought up to date, so a rating stamped next is
+    stamped on current numbers.
+    """
+    me = _require_employee()
+    ap = frappe.get_doc("Appraisal", appraisal)
+    refuse_own_rating(ap.employee, "Appraisal", appraisal, endpoint)
+    if not _is_line_manager(ap.employee, me, direct_only):
+        if not _is_hr():
+            frappe.throw("Not permitted.", frappe.PermissionError)
+        _assert_hr_can_view(appraisal)
+    ext = _extension(appraisal)
+    if not ext or ext.review_status != "Manager Review":
+        frappe.throw(stage_message)
+    review_items.open_review(ext)
+    return ap, ext
+
+
+def _sent_rating(value):
+    """A rating the page really sent, or None when it sent nothing.
+
+    The page's "Save draft" sends 0 for a rating the manager did not touch on
+    this visit, so 0 and blank mean "leave it as it is".
+    """
+    if value in (None, ""):
+        return None
+    rating = flt(value)
+    if rating <= 0:
+        return None
+    if rating > MAX_RATING:
+        frappe.throw(f"Rating must be between 0 and {int(MAX_RATING)}.")
+    return rating
+
+
+def _set_manager_ratings(ext, overall_rating, potential_rating):
+    """Change only the ratings that were sent; stamp the overall rating (R7)."""
+    overall = _sent_rating(overall_rating)
+    if overall is not None and flt(ext.overall_rating) != overall:
+        ext.overall_rating = overall
+        review_items.stamp_overall_rating(ext)
+    potential = _sent_rating(potential_rating)
+    if potential is not None:
+        ext.potential_rating = potential
+
+
 @frappe.whitelist()
 def get_appraisal_extension(appraisal):
-    """Return the full Alvoraa Appraisal Extension for the given appraisal."""
+    """The review record for this appraisal, cut to what this viewer may see.
+
+    - The subject never receives the potential rating or its category (PRIV-1),
+      and sees the overall rating from Employee Final Review on (decision 3).
+    - Anyone else sees the self-review narrative only once it has been sent
+      (PRIV-2).
+    - Only the subject's own visit may start the record (SEC-6).
+    """
     me = _require_employee()
     ap = frappe.get_doc("Appraisal", appraisal)
     if not _is_hr() and ap.employee != me and ap.employee not in _subordinates(me):
         frappe.throw("Not permitted.", frappe.PermissionError)
     _assert_hr_can_view(appraisal)
 
-    ext = _get_or_create_extension(appraisal)
+    is_employee_self = (ap.employee == me)
+    ext = _get_or_create_extension(appraisal) if is_employee_self else _extension(appraisal)
+    status = (ext.review_status if ext else None) or "Not Started"
+    draft_hidden = not is_employee_self and status in _SELF_REVIEW_DRAFT
+
+    def text(field):
+        return "" if (not ext or draft_hidden) else (ext.get(field) or "")
+
     action_items = [
         {
             "name": row.name,
@@ -2212,26 +3095,26 @@ def get_appraisal_extension(appraisal):
             "due_date": str(row.due_date) if row.due_date else "",
             "status": row.status or "Open",
         }
-        for row in (ext.action_items or [])
+        for row in ((ext.action_items or []) if ext else [])
     ]
-    is_employee_self = (ap.employee == me)
-    return {
+    out = {
         "appraisal": appraisal,
-        "review_status": ext.review_status or "Not Started",
-        "avg_potential_rating": flt(ext.avg_potential_rating),
-        "potential_category": ext.potential_category or "",
-        "achievements_text": ext.achievements_text or "",
-        "challenges_text": ext.challenges_text or "",
-        "development_needs_text": ext.development_needs_text or "",
-        "support_needed": ext.support_needed or "",
-        # Overall rating: shown to employee only after they submit (Completed status)
-        "overall_rating": flt(ext.overall_rating) if (
-            not is_employee_self or ext.review_status == "Completed"
+        "review_status": status,
+        "achievements_text": text("achievements_text"),
+        "challenges_text": text("challenges_text"),
+        "development_needs_text": text("development_needs_text"),
+        "support_needed": text("support_needed"),
+        "overall_rating": flt(ext.overall_rating) if ext and (
+            not is_employee_self or status in _RATING_RELEASED
         ) else None,
-        "next_period_goals_text": ext.next_period_goals_text or "",
-        "return_reason": ext.return_reason or "",
+        "next_period_goals_text": text("next_period_goals_text"),
+        "return_reason": (ext.return_reason or "") if ext else "",
         "action_items": action_items,
     }
+    if not is_employee_self:
+        out["avg_potential_rating"] = flt(ext.avg_potential_rating) if ext else 0
+        out["potential_category"] = (ext.potential_category or "") if ext else ""
+    return out
 
 
 @frappe.whitelist()
@@ -2287,8 +3170,9 @@ def advance_review_status(appraisal):
     me = _require_employee()
     ap = frappe.get_doc("Appraisal", appraisal)
 
-    ext = _get_or_create_extension(appraisal)
-    current = ext.review_status or "Not Started"
+    # Stage from the record without creating it; nothing is created before the
+    # caller is known to be allowed (SEC-6).
+    current = _review_status(appraisal)
     nxt = _REVIEW_STATUS_FLOW.get(current)
     if not nxt:
         frappe.throw("Review is already Completed.")
@@ -2298,23 +3182,44 @@ def advance_review_status(appraisal):
         if ap.employee != me:
             frappe.throw("Only the employee can advance from this stage.", frappe.PermissionError)
     elif current == "Manager Review":
-        if not _is_hr() and ap.employee not in _reports_of(me):
-            frappe.throw("Only the direct manager or HR can advance from Manager Review.",
-                         frappe.PermissionError)
-        open_items = [r for r in (ext.action_items or []) if r.status != "Completed"]
-        if not ext.action_items:
-            frappe.throw("At least one action item must be added before advancing the review. "
-                         "Use the 'Add Action Item' button in the team review card.")
+        refuse_own_rating(ap.employee, "Appraisal", appraisal, "advance_review_status")
+        if not _is_line_manager(ap.employee, me, direct_only=True):
+            if not _is_hr():
+                frappe.throw("Only the direct manager or HR can advance from Manager Review.",
+                             frappe.PermissionError)
+            _assert_hr_can_view(appraisal)
     elif current == "Employee Final Review":
         if ap.employee != me:
             frappe.throw("Only the subject employee can acknowledge the final review.",
                          frappe.PermissionError)
     elif current == "HR Review":
         _require_hr()
+        # Nobody completes their own review, whatever roles they hold (SEC-10).
+        refuse_own_rating(ap.employee, "Appraisal", appraisal, "advance_review_status")
+        _refuse_hr_step_in_line(ap.employee, appraisal, "advance_review_status")
+        _assert_hr_can_view(appraisal)
+
+    ext = _get_or_create_extension(appraisal)
+    if current == "Manager Review":
+        if not ext.action_items:
+            frappe.throw("At least one action item must be added before advancing the review. "
+                         "Use the 'Add Action Item' button in the team review card.")
+
+    write_back_notes = 0
+    if nxt == "Completed":
+        # Numbers are brought up to date first, so a rating question raised by
+        # the last facts is seen now rather than after the review closes (R7).
+        review_items.open_review(ext)
+        _refuse_open_rating_questions(ext, appraisal)
 
     ext.review_status = nxt
     ext.return_reason = ""
-    ext.save(ignore_permissions=True)
+    review_items.apply_stage(ext)
+    if nxt == "Completed":
+        _refuse_open_rating_questions(ext, appraisal)
+        ext.completed_on = frappe.utils.now_datetime()
+        write_back_notes = review_items.write_back(ext)
+    review_items.save_review_record(ext)
     frappe.db.commit()
 
     emp_user = _employee_user(ap.employee)
@@ -2336,30 +3241,55 @@ def advance_review_status(appraisal):
             f"<p>Your performance review has been completed. Log in to view your final assessment.</p>",
         )
 
-    return {"review_status": nxt, "message": f"Review moved to '{nxt}'."}
+    out = {"review_status": nxt, "message": f"Review moved to '{nxt}'."}
+    if nxt == "Completed":
+        # How many items carry a note about handing their changes back (R15).
+        out["write_back_notes"] = write_back_notes
+    return out
+
+
+def _refuse_open_rating_questions(ext, appraisal):
+    """HR cannot complete a review while a manager or overall rating waits for an
+    answer (R7, SEC-23). Self-rating questions are information only (decision 13)."""
+    waiting = review_items.open_blocking_flags(ext)
+    if waiting:
+        refuse(
+            f"{waiting} rating(s) were given on numbers that changed since. The person who gave "
+            "them must keep or change them before this review can be completed.",
+            "SEC-23", "advance_review_status", "Appraisal", appraisal,
+        )
 
 
 @frappe.whitelist()
 def return_for_revision(appraisal, reason=""):
-    """Manager or HR sends a review back to Employee Review with a reason."""
+    """Manager or HR sends a review back to Employee Review with a reason.
+
+    Once it is back with the employee, the self-review is hidden from everyone
+    else again until it is re-sent (PRIV-2 follows the stage).
+    """
     me = _require_employee()
     ap = frappe.get_doc("Appraisal", appraisal)
-
-    ext = _get_or_create_extension(appraisal)
-    current = ext.review_status or "Not Started"
-    if current not in ("Manager Review", "HR Review"):
-        frappe.throw("Can only return reviews that are in Manager Review or HR Review stage.")
-
-    if current == "Manager Review":
-        if not _is_hr() and ap.employee not in _reports_of(me):
+    refuse_own_rating(ap.employee, "Appraisal", appraisal, "return_for_revision")
+    if not (_is_line_manager(ap.employee, me, direct_only=True)
+            and _review_status(appraisal) == "Manager Review"):
+        if not _is_hr():
             frappe.throw("Only the direct manager or HR can return a review.",
                          frappe.PermissionError)
-    else:
+        _assert_hr_can_view(appraisal)
+
+    ext = _extension(appraisal)
+    current = (ext.review_status if ext else None) or "Not Started"
+    if current not in ("Manager Review", "HR Review"):
+        frappe.throw("Can only return reviews that are in Manager Review or HR Review stage.")
+    if current == "HR Review":
         _require_hr()
+        _refuse_hr_step_in_line(ap.employee, appraisal, "return_for_revision")
 
     ext.review_status = "Employee Review"
     ext.return_reason = reason
-    ext.save(ignore_permissions=True)
+    # Back before the freeze point: the numbers take facts again (decision 18).
+    review_items.apply_stage(ext)
+    review_items.save_review_record(ext)
     frappe.db.commit()
 
     emp_user = _employee_user(ap.employee)
@@ -2385,13 +3315,14 @@ def return_to_manager(appraisal, reason=""):
         frappe.throw("Only the employee can return their own review to the manager.",
                      frappe.PermissionError)
 
-    ext = _get_or_create_extension(appraisal)
-    if (ext.review_status or "") != "Employee Final Review":
+    ext = _extension(appraisal)
+    if not ext or (ext.review_status or "") != "Employee Final Review":
         frappe.throw("This action is only available in the Employee Final Review stage.")
 
     ext.review_status = "Manager Review"
     ext.return_reason = reason
-    ext.save(ignore_permissions=True)
+    review_items.apply_stage(ext)
+    review_items.save_review_record(ext)
     frappe.db.commit()
 
     # Notify the manager
@@ -2417,11 +3348,14 @@ def add_action_item(appraisal, description, assigned_to="", due_date=""):
     ap = frappe.get_doc("Appraisal", appraisal)
     if not _is_hr() and ap.employee not in _reports_of(me):
         frappe.throw("Not permitted.", frappe.PermissionError)
+    _assert_hr_can_view(appraisal)
 
     if not description:
         frappe.throw("Action item description is required.")
 
-    ext = _get_or_create_extension(appraisal)
+    ext = _extension(appraisal)
+    if not ext:
+        frappe.throw("This review has not started yet.")
     row = ext.append("action_items", {
         "description": description,
         "assigned_to": assigned_to or None,
@@ -2441,18 +3375,18 @@ def update_action_item_status(appraisal, row_name, status):
 
     me = _require_employee()
     ap = frappe.get_doc("Appraisal", appraisal)
-    ext = _get_or_create_extension(appraisal)
+    ext = _extension(appraisal)
 
-    row = next((r for r in ext.action_items if r.name == row_name), None)
+    row = next((r for r in (ext.action_items if ext else []) if r.name == row_name), None)
+    is_assignee = bool(row and row.assigned_to and row.assigned_to == me)
+    is_manager = ap.employee in _reports_of(me)
+
+    if not (_is_hr() or is_manager or is_assignee):
+        frappe.throw("Not permitted.", frappe.PermissionError)
+    if not (is_manager or is_assignee):
+        _assert_hr_can_view(appraisal)
     if not row:
         frappe.throw("Action item not found.")
-
-    is_assignee = row.assigned_to and frappe.db.get_value(
-        "Employee", {"user_id": frappe.session.user}, "name"
-    ) == row.assigned_to
-
-    if not (_is_hr() or ap.employee in _reports_of(me) or is_assignee):
-        frappe.throw("Not permitted.", frappe.PermissionError)
 
     row.status = status
     ext.save(ignore_permissions=True)
@@ -2464,63 +3398,26 @@ def update_action_item_status(appraisal, row_name, status):
 # Additional reviewers (dotted-line managers / secondary raters)
 # ══════════════════════════════════════════════════════════════════════════
 
-def _require_can_review_or_additional(kpi_doc):
-    """Caller must be the direct manager, an additional reviewer, or HR."""
-    if _is_hr():
-        return
-    me = _require_employee()
-    if kpi_doc.employee in _reports_of(me):
-        return
-    reviewer_ids = [r.reviewer for r in (kpi_doc.additional_reviewers or [])]
-    if me in reviewer_ids:
-        return
-    frappe.throw("You are not authorised to review this KPI.", frappe.PermissionError)
+def _refuse_additional_reviewer(endpoint, kpi):
+    # Per-KPI additional reviewers rated the live KPI, outside any review, and let
+    # one reviewer overwrite another (R13, SEC-29). Invited reviewers comment
+    # inside the review instead.
+    refuse(
+        "Ratings are given inside the review. Invite a reviewer from the review instead.",
+        "R13", endpoint, "KPI", kpi,
+    )
 
 
 @frappe.whitelist()
-def add_additional_reviewer(kpi, reviewer, reviewer_role=""):
-    """Add a secondary reviewer (dotted-line manager) to a KPI. Manager or HR only."""
-    doc = frappe.get_doc("KPI", kpi)
-    _require_can_review(doc.employee)
-
-    if frappe.db.get_value("Employee", reviewer, "name") is None:
-        frappe.throw(f"Employee '{reviewer}' not found.")
-
-    existing = [r.reviewer for r in (doc.additional_reviewers or [])]
-    if reviewer in existing:
-        frappe.throw("This reviewer is already on the KPI.")
-
-    doc.append("additional_reviewers", {
-        "reviewer": reviewer,
-        "reviewer_role": reviewer_role,
-        "reviewed_on": None,
-    })
-    doc.save(ignore_permissions=True)
-    frappe.db.commit()
-    return {"message": "Additional reviewer added."}
+def add_additional_reviewer(kpi, reviewer=None, reviewer_role=""):
+    """Retired in slice 010 group D."""
+    _refuse_additional_reviewer("add_additional_reviewer", kpi)
 
 
 @frappe.whitelist()
-def save_additional_reviewer_rating(kpi, row_name, rating, comment=""):
-    """An additional reviewer saves their rating on a KPI row."""
-    from frappe.utils import now_datetime
-    doc = frappe.get_doc("KPI", kpi)
-    _require_can_review_or_additional(doc)
-
-    rating = flt(rating)
-    if rating < 0 or rating > MAX_RATING:
-        frappe.throw(f"Rating must be between 0 and {int(MAX_RATING)}.")
-
-    row = next((r for r in doc.additional_reviewers if r.name == row_name), None)
-    if not row:
-        frappe.throw("Reviewer row not found.")
-
-    row.rating = rating
-    row.comment = comment
-    row.reviewed_on = now_datetime()
-    doc.save(ignore_permissions=True)
-    frappe.db.commit()
-    return {"message": "Rating saved."}
+def save_additional_reviewer_rating(kpi, row_name=None, rating=None, comment=""):
+    """Retired in slice 010 group D."""
+    _refuse_additional_reviewer("save_additional_reviewer_rating", kpi)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -2583,27 +3480,35 @@ def delete_company_value(name):
 
 @frappe.whitelist()
 def export_cycle_kpis_csv(cycle):
-    """Return all KPIs for a cycle as a CSV string. HR only."""
-    _require_hr()
+    """Return a cycle's reviewed Objectives and KPIs as a CSV string. HR only.
 
-    kpis = frappe.get_all(
-        "KPI",
-        filters={"appraisal_cycle": cycle, "status": ["!=", "Cancelled"]},
-        fields=[
-            "name", "kpi_name", "employee", "employee_name",
-            "category", "unit", "direction", "target_value", "actual_value",
-            "attainment_pct", "weightage",
-            "self_rating", "self_comment",
-            "manager_rating", "manager_comment",
-            "potential_rating", "potential_comment",
-            "company_value", "is_extra_initiative",
-            "status",
-        ],
-        order_by="employee_name asc, kpi_name asc",
-        ignore_permissions=True,
+    Slice 010 group D: from each review's own copies (R8), for the reviews the
+    caller may list, with ratings and comments only where the review's stage
+    allows (SEC-26). The first columns keep their order; "KPI ID" is now the
+    review's row id, never the live record's (VIS-3). Added at the end: item
+    type, review, stage, removed, and facts approved after the numbers froze
+    (R10, HR in HR Review and Completed only). One security log line per export,
+    with counts only.
+    """
+    import csv, io, json
+
+    reviews = _hr_cycle_reviews(cycle)
+    copies = _copies_of(reviews)
+    by_name = {a.name: a for a in reviews}
+    late = review_items.late_fact_counts(
+        [dict(a.extension, name=a.name) for a in reviews if a.viewer == review_items.VIEWER_HR],
+        {name: rows for name, rows in copies.items() if by_name[name].viewer == review_items.VIEWER_HR},
     )
+    # Tags kept on the live KPI. Looked up here and never written out by name.
+    tags = {
+        k.name: k for k in frappe.get_all(
+            "KPI",
+            filters={"name": ["in", sorted({c.source_name for rows in copies.values() for c in rows
+                                            if c.source_doctype == "KPI" and c.source_name}) or [""]]},
+            fields=["name", "company_value", "is_extra_initiative"],
+        )
+    }
 
-    import csv, io
     buf = io.StringIO()
     headers = [
         "KPI ID", "KPI Name", "Employee ID", "Employee Name",
@@ -2614,24 +3519,53 @@ def export_cycle_kpis_csv(cycle):
         "Potential Rating", "Potential Comment",
         "Company Value", "Stretch/Extra Initiative",
         "Status",
+        "Item Type", "Review", "Review Stage", "Removed", "Facts Approved After Close",
     ]
     writer = csv.writer(buf)
     writer.writerow(headers)
-    for k in kpis:
-        writer.writerow([
-            k.get("name", ""), k.get("kpi_name", ""),
-            k.get("employee", ""), k.get("employee_name", ""),
-            k.get("category", ""), k.get("unit", ""), k.get("direction", ""),
-            flt(k.get("target_value")), flt(k.get("actual_value")),
-            flt(k.get("attainment_pct")), flt(k.get("weightage")),
-            flt(k.get("self_rating")), k.get("self_comment", ""),
-            flt(k.get("manager_rating")), k.get("manager_comment", ""),
-            flt(k.get("potential_rating")), k.get("potential_comment", ""),
-            k.get("company_value", ""), int(k.get("is_extra_initiative") or 0),
-            k.get("status", ""),
-        ])
+    written = 0
+    for a in reviews:
+        if _draft_hidden(a):
+            continue
+        deciders = a.viewer in (review_items.VIEWER_MANAGER, review_items.VIEWER_HR)
+        for row in copies.get(a.name, []):
+            if row.removed and not deciders:
+                continue
+            shown = _visible_ratings(row, a)
+            tag = tags.get(row.source_name) if row.source_doctype == "KPI" else None
+            status = "Removed" if row.removed else ("Cancelled" if row.source_cancelled else "Active")
+            writer.writerow([_csv_cell(v) for v in (
+                row.name, row.title or "",
+                a.employee, a.employee_name or "",
+                row.category or "", row.unit or "", row.direction or "",
+                flt(row.target_value), flt(row.actual_value),
+                flt(row.attainment_pct), flt(row.weightage),
+                shown.get("self_rating", ""), shown.get("self_comment", ""),
+                shown.get("manager_rating", ""), shown.get("manager_comment", ""),
+                shown.get("potential_rating", ""), shown.get("potential_comment", ""),
+                (tag.company_value or "") if tag else "", int(tag.is_extra_initiative or 0) if tag else 0,
+                status,
+                row.item_type or "", a.name, a.status, int(row.removed or 0), late.get(row.name, 0),
+            )])
+            written += 1
 
+    try:
+        frappe.logger("security").info(json.dumps({
+            "event": "export", "at": str(frappe.utils.now_datetime()), "user": frappe.session.user,
+            "endpoint": "export_cycle_kpis_csv", "doctype": "Appraisal Cycle", "name": cycle,
+            "reviews": len(reviews), "rows": written,
+        }))
+    except Exception:
+        pass
     return {"csv": buf.getvalue(), "cycle": cycle}
+
+
+def _csv_cell(value):
+    """A cell a spreadsheet will not run as a formula: text typed by people
+    (titles, comments) is written as text."""
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + value
+    return value
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -2742,16 +3676,18 @@ def save_support_needed(appraisal, support_needed=""):
 
 @frappe.whitelist()
 def save_overall_rating(appraisal, overall_rating):
-    """Manager records the overall rating. Hidden from employee until their final submission."""
-    me = _require_employee()
-    ap = frappe.get_doc("Appraisal", appraisal)
-    if not _is_hr() and ap.employee not in _reports_of(me):
-        frappe.throw("Not permitted.", frappe.PermissionError)
+    """Manager records the overall rating, during Manager Review, never on their own review.
+
+    Hidden from the employee until Employee Final Review.
+    """
     rating = flt(overall_rating)
-    if rating < 0 or rating > MAX_RATING:
-        frappe.throw(f"Rating must be between 0 and {int(MAX_RATING)}.")
-    ext = _get_or_create_extension(appraisal)
+    if rating <= 0 or rating > MAX_RATING:
+        # 0 is "no rating" everywhere else (code review minor 9), so it is not
+        # stamped as one here either.
+        frappe.throw(f"Choose an overall rating between 1 and {int(MAX_RATING)}.")
+    ap, ext = _manager_review_record(appraisal, "save_overall_rating", direct_only=True)
     ext.overall_rating = rating
+    review_items.stamp_overall_rating(ext)
     ext.save(ignore_permissions=True)
     frappe.db.commit()
     return {"message": "Overall rating saved."}
@@ -2763,91 +3699,127 @@ def save_overall_rating(appraisal, overall_rating):
 
 @frappe.whitelist()
 def get_calibration_overview(cycle):
-    """Return all employees in a cycle with KPI summary and potential data. HR only."""
-    _require_hr()
+    """Return all employees in a cycle with KPI summary and potential data. HR only.
 
-    kpis = frappe.get_all(
-        "KPI",
-        filters={"appraisal_cycle": cycle, "status": ["!=", "Cancelled"]},
-        fields=["employee", "employee_name", "manager_rating", "potential_rating",
-                "attainment_pct", "weightage"],
-        ignore_permissions=True,
-    )
+    From each review's own copies (R8), for the reviews the caller may list.
+    Keys a row's viewer may not see are left out, not blanked (SEC-26): before
+    HR Review, for someone outside the caller's line, only status and counts;
+    the caller's own row never has potential (PRIV-1). Four queries in all; it
+    used to load every review record one by one.
+    """
+    from collections import Counter
 
-    appraisals = {
-        a["employee"]: a
-        for a in frappe.get_all(
-            "Appraisal",
-            filters={"appraisal_cycle": cycle, "docstatus": ["!=", 2]},
-            fields=["name", "employee", "total_score", "final_score"],
-            ignore_permissions=True,
-        )
-    }
+    reviews = _hr_cycle_reviews(cycle)
+    copies = _copies_of(reviews)
+    actions = Counter(frappe.get_all(
+        "Appraisal Action Item",
+        filters={"parenttype": "Alvoraa Appraisal Extension", "parent": ["in", [a.name for a in reviews] or [""]]},
+        pluck="parent",
+    ))
 
-    extensions = {}
-    for ap in appraisals.values():
-        if frappe.db.exists("Alvoraa Appraisal Extension", ap["name"]):
-            ext = frappe.get_doc("Alvoraa Appraisal Extension", ap["name"])
-            extensions[ap["employee"]] = {
-                "review_status": ext.review_status or "Not Started",
-                "avg_potential_rating": flt(ext.avg_potential_rating),
-                "potential_category": ext.potential_category or "",
-                "overall_rating": flt(ext.overall_rating),
-                "action_items_count": len(ext.action_items or []),
-            }
-
-    by_emp = {}
-    for k in kpis:
-        emp = k["employee"]
-        e = by_emp.setdefault(emp, {
-            "employee": emp,
-            "employee_name": k["employee_name"] or emp,
-            "kpi_count": 0, "rated_count": 0,
-            "total_attainment": 0.0, "total_potential": 0.0, "potential_count": 0,
-        })
-        e["kpi_count"] += 1
-        e["total_attainment"] += flt(k["attainment_pct"])
-        if flt(k["manager_rating"]) > 0:
-            e["rated_count"] += 1
-        if flt(k["potential_rating"]) > 0:
-            e["total_potential"] += flt(k["potential_rating"])
-            e["potential_count"] += 1
-
+    elsewhere = _hr_steps_elsewhere([a.employee for a in reviews if a.status == "HR Review"])
     rows = []
-    for emp, e in by_emp.items():
-        e["avg_attainment"] = flt(e["total_attainment"] / e["kpi_count"], 1) if e["kpi_count"] else 0
-        e["avg_potential"] = flt(e["total_potential"] / e["potential_count"], 2) if e["potential_count"] else 0
-        e.pop("total_attainment"); e.pop("total_potential"); e.pop("potential_count")
-        ap = appraisals.get(emp)
-        e["appraisal"] = ap["name"] if ap else ""
-        ext = extensions.get(emp, {})
-        e.update(ext)
-        rows.append(e)
+    for a in reviews:
+        kpis = [c for c in copies.get(a.name, []) if not c.removed and c.item_type == "KPI"]
+        allowed = review_items.rating_fields_for(a.viewer, a.status)
+        row = {
+            "employee": a.employee,
+            "employee_name": a.employee_name or a.employee,
+            "appraisal": a.name,
+            "review_status": a.status,
+            "kpi_count": len(kpis),
+            "avg_attainment": flt(sum(flt(c.attainment_pct) for c in kpis) / len(kpis), 1) if kpis else 0,
+            "action_items_count": actions.get(a.name, 0),
+            "hr_steps_elsewhere": int(a.status == "HR Review" and a.employee in elsewhere),
+        }
+        if "manager_rating" in allowed:
+            row["rated_count"] = sum(1 for c in kpis if flt(c.manager_rating) > 0)
+        if "potential_rating" in allowed:
+            rated = [flt(c.potential_rating) for c in kpis if flt(c.potential_rating) > 0]
+            row["avg_potential"] = flt(sum(rated) / len(rated), 2) if rated else 0
+            row["avg_potential_rating"] = flt(a.extension.get("avg_potential_rating"))
+            row["potential_category"] = a.extension.get("potential_category") or ""
+        if review_items.overall_rating_visible(a.viewer, a.status):
+            row["overall_rating"] = flt(a.extension.get("overall_rating"))
+        rows.append(row)
 
     rows.sort(key=lambda r: r["employee_name"] or "")
     return {"cycle": cycle, "rows": rows}
 
 
-@frappe.whitelist()
-def save_calibration_note(appraisal, calibration_notes, calibrated_rating=None):
-    """HR saves calibration notes and optional adjusted rating on an appraisal extension."""
+def _calibration_record(appraisal, endpoint):
+    """The review record for HR's calibration step, after its checks: an HR role,
+    never their own review (SEC-10), never someone in the subject's line
+    (decision 34), a company they look after (decision 16), and only during HR
+    Review (VIS-10)."""
     _require_hr()
     if not appraisal:
         frappe.throw("Appraisal is required.")
-    ext = _get_or_create_extension(appraisal)
-    if not hasattr(ext, "calibration_notes"):
-        frappe.db.set_value("Alvoraa Appraisal Extension", ext.name,
-                            "calibration_notes", calibration_notes)
-        if calibrated_rating is not None:
-            frappe.db.set_value("Alvoraa Appraisal Extension", ext.name,
-                                "overall_rating", flt(calibrated_rating))
-    else:
-        ext.calibration_notes = calibration_notes
-        if calibrated_rating is not None:
-            ext.overall_rating = flt(calibrated_rating)
-        ext.save(ignore_permissions=True)
+    owner = frappe.db.get_value("Appraisal", appraisal, "employee")
+    if not owner:
+        frappe.throw("Appraisal not found.")
+    refuse_own_rating(owner, "Appraisal", appraisal, endpoint)
+    _refuse_hr_step_in_line(owner, appraisal, endpoint)
+    _assert_hr_can_view(appraisal)
+    ext = _extension(appraisal)
+    if not ext or ext.review_status != "HR Review":
+        frappe.throw("Calibration can be changed only while the review is in HR Review.")
+    return ext
+
+
+@frappe.whitelist()
+def get_calibration_note(appraisal):
+    """The calibration note already saved, for the HR person about to change it
+    (rehearsal F3). The same people, at the same stage, as save_calibration_note.
+    Those people already read the note in the desk from HR Review on (decision
+    35), so this opens it to nobody new. The note only: no rating, no names."""
+    ext = _calibration_record(appraisal, "get_calibration_note")
+    return {"calibration_notes": ext.calibration_notes or ""}
+
+
+@frappe.whitelist()
+def save_calibration_note(appraisal, calibration_notes, calibrated_rating=None):
+    """HR saves calibration notes and an optional adjusted rating, during HR Review.
+
+    Never on their own review (SEC-10), never in the subject's line (decision
+    34), only for companies they look after (decision 16), and never on a
+    completed review (VIS-10).
+    """
+    ext = _calibration_record(appraisal, "save_calibration_note")
+    if calibrated_rating not in (None, ""):
+        rating = flt(calibrated_rating)
+        if rating < 0 or rating > MAX_RATING:
+            frappe.throw(f"Rating must be between 0 and {int(MAX_RATING)}.")
+    review_items.open_review(ext)
+    # HR-stage content (decision 35): no list or review screen returns it; only
+    # get_calibration_note, to the people who may save it, and the desk.
+    if calibration_notes is not None and not isinstance(calibration_notes, str):
+        frappe.throw("Calibration notes must be plain text.")
+    ext.calibration_notes = calibration_notes or ""
+    if calibrated_rating not in (None, ""):
+        ext.overall_rating = flt(calibrated_rating)
+        review_items.stamp_overall_rating(ext)
+    ext.save(ignore_permissions=True)
     frappe.db.commit()
     return {"message": "Calibration note saved."}
+
+
+def _rating_or_none(value):
+    """A rating, or None when nobody gave one.
+
+    The rating fields on Alvoraa Appraisal Extension are Floats, so a review
+    nobody rated holds 0.0 and not NULL. Every rating scale in the product
+    starts at 1, so a stored 0 means "not rated". Sending 0.0 instead used to
+    put an unrated person in the bottom-left box of the calibration grid,
+    which reads as a judgement nobody made.
+
+    If a scale is ever configured with a real 0, this needs to change with it:
+    see docs/slices/027-review-render-fixes/03-implementation-notes.md.
+    """
+    if value in (None, ""):
+        return None
+    rating = flt(value)
+    return None if rating <= 0 else rating
 
 
 @frappe.whitelist()
@@ -2899,50 +3871,42 @@ def get_calibration_matrix(cycle):
         "end_date":   str(ci.get("end_date") or ""),
     }
 
-    # ── All appraisals in cycle ──────────────────────────────────────────
-    appraisals = frappe.get_all(
-        "Appraisal",
-        filters={"appraisal_cycle": cycle, "docstatus": ["!=", 2]},
-        fields=["name", "employee"],
-        ignore_permissions=True,
-    )
+    # ── The reviews this HR person may list (slice 010 group D, SEC-26) ──
+    appraisals = _hr_cycle_reviews(cycle)
 
     rows = []
     stage_counts = {}
     filter_depts, filter_desig, filter_genders, filter_emp_types = set(), set(), set(), set()
     filter_managers = {}  # emp_id -> employee_name
 
+    plotted = [a for a in appraisals if a.status in ("HR Review", "Completed")]
+    people = {e.name: e for e in frappe.get_all(
+        "Employee", filters={"name": ["in", [a.employee for a in plotted] or [""]]},
+        fields=["name", "employee_name", "department", "designation", "gender", "employment_type", "reports_to"],
+    )}
+    manager_names = dict(frappe.get_all(
+        "Employee", filters={"name": ["in", sorted({p.reports_to for p in people.values() if p.reports_to}) or [""]]},
+        fields=["name", "employee_name"], as_list=True,
+    ))
+
     for ap in appraisals:
-        ap_name = ap["name"]
-        emp_id  = ap["employee"]
+        ap_name = ap.name
+        emp_id  = ap.employee
+        ext = ap.extension
 
-        # Fetch extension (one call covers both exists-check and field values)
-        ext = {}
-        if frappe.db.exists("Alvoraa Appraisal Extension", ap_name):
-            ext = frappe.db.get_value(
-                "Alvoraa Appraisal Extension", ap_name,
-                ["review_status", "overall_rating", "potential_rating"],
-                as_dict=True,
-            ) or {}
-
-        status = (ext.get("review_status") or "").strip() or "Not Started"
+        status = ap.status
         stage_counts[status] = stage_counts.get(status, 0) + 1
 
         # Plot reviews that are at HR Review or Completed stage
         if status not in ("HR Review", "Completed"):
             continue
 
-        emp = frappe.db.get_value(
-            "Employee", emp_id,
-            ["employee_name", "department", "designation", "gender",
-             "employment_type", "reports_to"],
-            as_dict=True,
-        ) or {}
+        emp = people.get(emp_id) or {}
 
         reports_to      = emp.get("reports_to") or ""
         reports_to_name = ""
         if reports_to:
-            reports_to_name = frappe.db.get_value("Employee", reports_to, "employee_name") or reports_to
+            reports_to_name = manager_names.get(reports_to) or reports_to
             filter_managers[reports_to] = reports_to_name
 
         dept     = emp.get("department")     or ""
@@ -2955,19 +3919,22 @@ def get_calibration_matrix(cycle):
         if gender:   filter_genders.add(gender)
         if emp_type: filter_emp_types.add(emp_type)
 
-        rows.append({
+        row = {
             "employee":        emp_id,
             "employee_name":   emp.get("employee_name", emp_id),
             "appraisal":       ap_name,
-            "overall_rating":  flt(ext.get("overall_rating")),
-            "potential_rating": flt(ext.get("potential_rating")),
+            "overall_rating":  _rating_or_none(ext.get("overall_rating")),
             "department":      dept,
             "designation":     desig,
             "gender":          gender,
             "employment_type": emp_type,
             "reports_to":      reports_to,
             "reports_to_name": reports_to_name,
-        })
+        }
+        # Never your own potential rating (PRIV-1).
+        if ap.viewer != review_items.VIEWER_SUBJECT:
+            row["potential_rating"] = _rating_or_none(ext.get("potential_rating"))
+        rows.append(row)
 
     rows.sort(key=lambda r: r["employee_name"])
 
@@ -2998,20 +3965,22 @@ def get_calibration_matrix(cycle):
 # ══════════════════════════════════════════════════════════════════════════
 
 def _send_notification(to_user, subject, message):
-    """Send an in-app + email notification. Silently skips if user not found."""
+    """Send the review email. A failure never blocks the review step.
+
+    The server never pushes script to a browser (slice 010, SEC-12): this used
+    to publish a realtime event carrying a script after every email. A failure is logged with
+    the traceback only - no recipient, subject or names.
+    """
     try:
         frappe.sendmail(
             recipients=[to_user],
             subject=subject,
             message=message,
         )
-        frappe.publish_realtime(
-            "eval_js",
-            {"script": "console.log('notification sent');"},
-            user=to_user,
-        )
     except Exception:
-        pass
+        # The plain traceback, passed in: log_error's own default captures the
+        # local variables, which here are the recipient, subject and message.
+        frappe.log_error(title="Review notification failed", message=frappe.get_traceback())
 
 
 def _employee_user(employee_id):
@@ -3079,7 +4048,10 @@ def get_my_appraisals():
             "start_date":      str(ap["start_date"] or ""),
             "end_date":        str(ap["end_date"] or ""),
             "review_status":   ext.get("review_status") or "Not Started",
-            "overall_rating":  ext.get("overall_rating"),
+            # The overall rating is released to the employee at Employee Final
+            # Review, never before (decision 3, PRIV-1).
+            "overall_rating":  ext.get("overall_rating")
+                               if ext.get("review_status") in _RATING_RELEASED else None,
             "return_reason":   ext.get("return_reason") or "",
         })
 
@@ -3147,6 +4119,13 @@ def get_my_review(appraisal):
     if ap.employee != me and not _is_hr():
         frappe.throw("Not permitted.", frappe.PermissionError)
     _assert_hr_can_view(appraisal)
+    if ap.employee != me and _review_status(appraisal) in _SELF_REVIEW_DRAFT:
+        # Nobody but the subject sees a self-review before it is sent - not even
+        # an HR person who is also in the subject's line (PRIV-2).
+        refuse(
+            "The self-review has not been sent yet. You can open it once it is sent.",
+            "PRIV-2", "get_my_review", "Appraisal", appraisal,
+        )
 
     cycle_name = ap.appraisal_cycle
     page_config, page_settings = [], {}
@@ -3157,37 +4136,24 @@ def get_my_review(appraisal):
         try: page_settings = json.loads(cfg.page_settings or "{}")
         except: pass
 
-    ext = _get_or_create_extension(appraisal)
+    ext = _get_or_create_extension(appraisal) if ap.employee == me else _extension(appraisal)
+    # The first open takes the review's own copies of its items (decision 4).
+    if review_items.open_review(ext):
+        frappe.db.commit()
     try: page_data = json.loads(ext.page_data or "{}")
     except: page_data = {}
     try: pages_completed = json.loads(ext.pages_completed or "[]")
     except: pages_completed = []
 
-    # Goals hierarchy: Individual Goal → KPIs
-    goals = frappe.get_all(
-        "Individual Goal",
-        filters={"employee": ap.employee, "appraisal_cycle": cycle_name, "docstatus": ["!=", 2]},
-        fields=["name", "goal_name", "parent_goal", "is_extra_initiative",
-                "target_value", "actual_progress", "progress_pct",
-                "unit", "status", "start_date", "end_date", "weightage", "employee", "owner"],
-        ignore_permissions=True, order_by="creation asc",
-    )
-    # Batch-resolve creator names (owner is a User email)
-    owner_emails = list({g["owner"] for g in goals if g.get("owner")})
-    user_full_names = {}
-    if owner_emails:
-        for u in frappe.get_all("User", filters={"name": ["in", owner_emails]},
-                                fields=["name", "full_name"], ignore_permissions=True):
-            user_full_names[u["name"]] = u["full_name"]
-    # Resolve employee display name for the review subject
-    assignee_name = frappe.db.get_value("Employee", ap.employee, "employee_name") or ap.employee_name or ""
-    for g in goals:
-        g["creator_name"] = user_full_names.get(g.get("owner", ""), "")
-        g["assignee_name"] = assignee_name
-        _serialise_dates(g, "start_date", "end_date")
-        g["kpis"] = _goal_kpis(g["name"], ap.employee)
+    # The review shows its own copies, never the live records (commit 4, VIS-3).
+    viewer = review_items.VIEWER_SUBJECT if ap.employee == me else review_items.VIEWER_HR
+    items = review_items.review_payload(ext, viewer, ap.employee, ap.employee_name)
 
-    # Incomplete goals from previous cycles — shown on Future Objectives page
+    # Incomplete goals from other cycles, for the Future Objectives page. These
+    # are next-period plans, not this review's items (VIS-15), so they stay live
+    # records - except any this review already holds a copy of, which would tie
+    # a copy to its live record (VIS-3).
+    copied = review_items.copied_sources(ext)
     past_incomplete = frappe.get_all(
         "Individual Goal",
         filters={
@@ -3195,36 +4161,23 @@ def get_my_review(appraisal):
             "appraisal_cycle": ["not in", [cycle_name, ""]],
             "docstatus": ["!=", 2],
             "status": ["not in", ["Completed", "Cancelled"]],
+            "name": ["not in", sorted(copied) or [""]],
         },
-        fields=["name", "goal_name", "parent_goal", "is_extra_initiative",
+        fields=["name", "goal_name", "is_extra_initiative",
                 "target_value", "actual_progress", "progress_pct",
-                "unit", "status", "start_date", "end_date", "appraisal_cycle", "owner"],
+                "unit", "status", "start_date", "end_date", "appraisal_cycle"],
         ignore_permissions=True, order_by="creation desc",
         limit=50,
     )
+    # One query for every label (it used to be one per goal).
+    cycle_labels = dict(frappe.get_all(
+        "Appraisal Cycle",
+        filters={"name": ["in", sorted({g["appraisal_cycle"] for g in past_incomplete}) or [""]]},
+        fields=["name", "cycle_name"], as_list=True,
+    ))
     for g in past_incomplete:
-        g["creator_name"] = user_full_names.get(g.get("owner", ""), "")
         _serialise_dates(g, "start_date", "end_date")
-        cycle_label = frappe.db.get_value("Appraisal Cycle", g.get("appraisal_cycle"), "cycle_name") or g.get("appraisal_cycle", "")
-        g["cycle_label"] = cycle_label
-
-    # Standalone KPIs (not linked to any goal)
-    standalone = frappe.get_all(
-        "KPI",
-        filters={"employee": ap.employee, "appraisal_cycle": cycle_name,
-                 "individual_goal": ("is", "not set"), "docstatus": ["!=", 2]},
-        fields=["name", "kpi_name", "target_value", "actual_value", "attainment_pct",
-                "unit", "weightage", "period_start", "period_end", "self_rating", "self_comment", "owner"],
-        ignore_permissions=True, order_by="kpi_name asc",
-    )
-    kpi_owners = list({k["owner"] for k in standalone if k.get("owner") and k["owner"] not in user_full_names})
-    if kpi_owners:
-        for u in frappe.get_all("User", filters={"name": ["in", kpi_owners]},
-                                fields=["name", "full_name"], ignore_permissions=True):
-            user_full_names[u["name"]] = u["full_name"]
-    for k in standalone:
-        k["creator_name"] = user_full_names.get(k.get("owner", ""), "")
-        _serialise_dates(k, "period_start", "period_end")
+        g["cycle_label"] = cycle_labels.get(g.get("appraisal_cycle")) or g.get("appraisal_cycle", "")
 
     cycle_info = frappe.db.get_value(
         "Appraisal Cycle", cycle_name,
@@ -3248,48 +4201,65 @@ def get_my_review(appraisal):
         "page_data":       page_data,
         "pages_completed": pages_completed,
         "overall_comment": ext.overall_comment or "",
-        "goals":                goals,
-        "standalone_kpis":      standalone,
+        "goals":                items["goals"],
+        "standalone_kpis":      items["standalone_kpis"],
+        "removed_items":        items["removed_items"],
+        "numbers_frozen":       items["numbers_frozen"],
         "past_incomplete_goals": past_incomplete,
+        # The subject's own items tagged to this cycle that the review does not
+        # hold (00d section 2.4). Only to the subject, only before sending.
+        "not_in_review_count":  (review_items.not_in_review_count(ext)
+                                 if ap.employee == me and (ext.review_status or "Not Started") in _SELF_REVIEW_DRAFT
+                                 else 0),
     }
 
 
-def _goal_kpis(goal_name, employee):
-    """KPIs attached to one Individual Goal."""
-    rows = frappe.get_all(
-        "KPI",
-        filters={"individual_goal": goal_name, "employee": employee, "docstatus": ["!=", 2]},
-        fields=["name", "kpi_name", "target_value", "actual_value", "attainment_pct",
-                "unit", "weightage", "period_start", "period_end", "self_rating", "self_comment",
-                "baseline_value", "direction", "category", "owner"],
-        ignore_permissions=True, order_by="kpi_name asc",
-    )
-    for r in rows:
-        _serialise_dates(r, "period_start", "period_end")
-    return rows
+def _selection_record(appraisal, endpoint):
+    """The subject's own review, in Employee Review, with its copies taken (VIS-5).
+
+    Only the subject chooses what their review covers, and only before sending
+    it. Nobody adds items later (decision 7); a manager or HR removes an item
+    with remove_review_item and a reason.
+    """
+    me = _require_employee()
+    ap = frappe.get_doc("Appraisal", appraisal)
+    if ap.employee != me:
+        refuse("Only the employee chooses what their review covers.", "VIS-5", endpoint, "Appraisal", appraisal)
+    if _review_status(appraisal) not in _SELF_REVIEW_DRAFT:
+        refuse("Your review has been sent, so its items can no longer be changed.",
+               "VIS-5", endpoint, "Appraisal", appraisal)
+    ext = _get_or_create_extension(appraisal)
+    if review_items.open_review(ext):
+        frappe.db.commit()
+    return ap, ext
 
 
 @frappe.whitelist()
 def get_available_for_review(appraisal):
-    """Return date-eligible objectives and standalone KPIs for the past-objectives selector dialog."""
-    import json
-    me = _require_employee()
-    ap = frappe.get_doc("Appraisal", appraisal)
-    if ap.employee != me and not _is_hr() and not _is_manager_of(ap.employee):
-        frappe.throw("Not permitted.", frappe.PermissionError)
+    """The subject's live Objectives and standalone KPIs that meet the review period,
+    for the add/remove dialog. `selected` means the review holds a copy of it."""
+    ap, ext = _selection_record(appraisal, "get_available_for_review")
+    return _selectable_items(ap, ext)
 
-    cycle_name = ap.appraisal_cycle
-    page_settings = {}
-    if frappe.db.exists("Alvoraa Cycle Config", cycle_name):
-        cfg = frappe.get_doc("Alvoraa Cycle Config", cycle_name)
-        try:
-            page_settings = json.loads(cfg.page_settings or "{}")
-        except Exception:
-            pass
 
-    po = page_settings.get("past-objectives", {})
-    period_from = po.get("period_from") or frappe.db.get_value("Appraisal Cycle", cycle_name, "start_date")
-    period_to   = po.get("period_to")   or frappe.db.get_value("Appraisal Cycle", cycle_name, "end_date")
+def _selectable_items(ap, ext):
+    """What the add/remove dialog lists. set_review_selection removes only from
+    this list, so nothing the person was never shown is taken out (code review M1).
+
+    Objectives meeting the review period, and KPIs meeting it that do not come
+    with an Objective already in the review. That includes a KPI linked to
+    someone else's Objective (a cascaded KPI) or to one of the person's own
+    Objectives that is not in this review: it is listed on its own.
+    """
+    # The period stamped on the review when it opened, so a later change to the
+    # cycle's page settings cannot move it (SEC-21).
+    period_from = ext.review_window_start
+    period_to = ext.review_window_end
+    if not (period_from and period_to):
+        return {"goals": [], "kpis": [], "period_from": "", "period_to": ""}
+    held = {r.source_name for r in ext.review_items if not r.removed}
+    held_goals = sorted({r.source_name for r in ext.review_items
+                         if not r.removed and r.source_doctype == "Individual Goal"})
 
     goals = frappe.get_all(
         "Individual Goal",
@@ -3305,26 +4275,30 @@ def get_available_for_review(appraisal):
         order_by="start_date asc",
     )
     for g in goals:
-        g["selected"] = g.get("appraisal_cycle") == cycle_name
+        g["selected"] = g["name"] in held
         _serialise_dates(g, "start_date", "end_date")
 
-    # Only standalone KPIs (goal-linked KPIs are included automatically with their parent goal)
+    # KPIs under an Objective the review holds come with it; every other KPI is
+    # listed on its own.
     kpis = frappe.get_all(
         "KPI",
         filters={
             "employee": ap.employee,
-            "individual_goal": ("is", "not set"),
             "docstatus": ["!=", 2],
             "period_start": ["<=", period_to],
             "period_end":   [">=", period_from],
         },
+        or_filters=[
+            ["individual_goal", "is", "not set"],
+            ["individual_goal", "not in", held_goals or [""]],
+        ],
         fields=["name", "kpi_name", "period_start", "period_end", "status",
                 "target_value", "unit", "category", "appraisal_cycle"],
         ignore_permissions=True,
         order_by="kpi_name asc",
     )
     for k in kpis:
-        k["selected"] = k.get("appraisal_cycle") == cycle_name
+        k["selected"] = k["name"] in held
         _serialise_dates(k, "period_start", "period_end")
 
     return {
@@ -3336,72 +4310,60 @@ def get_available_for_review(appraisal):
 
 
 @frappe.whitelist()
-def set_review_selection(appraisal, selected_goals_json=None, selected_kpis_json=None):
-    """Assign or clear appraisal_cycle on objectives/KPIs to control what appears on the past-objectives page."""
+def set_review_selection(appraisal, selected_goals_json=None, selected_kpis_json=None, acknowledge_removal=0):
+    """The subject chooses what their review covers, before sending it (VIS-5).
+
+    Ticking adds a copy; unticking takes the copy out under the review's
+    removal setting (R12). Nothing here changes a live record's cycle any more.
+    Removing needs acknowledge_removal=1: whatever was changed for that item
+    inside the review is lost.
+    """
     import json
-    me = _require_employee()
-    ap = frappe.get_doc("Appraisal", appraisal)
-    if ap.employee != me and not _is_hr() and not _is_manager_of(ap.employee):
-        frappe.throw("Not permitted.", frappe.PermissionError)
+    ap, ext = _selection_record(appraisal, "set_review_selection")
 
-    cycle_name = ap.appraisal_cycle
-    page_settings = {}
-    if frappe.db.exists("Alvoraa Cycle Config", cycle_name):
-        cfg = frappe.get_doc("Alvoraa Cycle Config", cycle_name)
+    def names(raw):
+        if raw is None:
+            return None
         try:
-            page_settings = json.loads(cfg.page_settings or "{}")
-        except Exception:
-            pass
+            value = json.loads(raw) if isinstance(raw, str) else raw
+        except ValueError:
+            value = None
+        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+            frappe.throw("The selection could not be read. Reload the page and try again.")
+        return set(value)
 
-    po = page_settings.get("past-objectives", {})
-    period_from = po.get("period_from") or frappe.db.get_value("Appraisal Cycle", cycle_name, "start_date")
-    period_to   = po.get("period_to")   or frappe.db.get_value("Appraisal Cycle", cycle_name, "end_date")
+    goals, kpis = names(selected_goals_json), names(selected_kpis_json)
+    live = [r for r in ext.review_items if not r.removed]
+    listed = _selectable_items(ap, ext)
+    listed_goals = {g["name"] for g in listed["goals"]}
+    listed_kpis = {k["name"] for k in listed["kpis"]}
+    live_names = {r.name for r in live}
+    # Only what the dialog listed can be taken out by unticking it (code review
+    # M1). A KPI under a live Objective comes and goes with that Objective.
+    live_goals = {r.source_name: r for r in live
+                  if r.source_doctype == "Individual Goal" and r.source_name in listed_goals}
+    live_kpis = {r.source_name: r for r in live
+                 if r.source_doctype == "KPI" and r.parent_item not in live_names and r.source_name in listed_kpis}
+    held_names = {r.source_name for r in live}
 
-    if selected_goals_json is not None:
-        selected_goals = set(json.loads(selected_goals_json) if isinstance(selected_goals_json, str) else selected_goals_json)
-        eligible = frappe.get_all(
-            "Individual Goal",
-            filters={
-                "employee": ap.employee,
-                "docstatus": ["!=", 2],
-                "start_date": ["<=", period_to],
-                "end_date":   [">=", period_from],
-            },
-            fields=["name", "appraisal_cycle"],
-            ignore_permissions=True,
-        )
-        for g in eligible:
-            in_cycle = g.get("appraisal_cycle") == cycle_name
-            want_in  = g["name"] in selected_goals
-            if want_in and not in_cycle:
-                frappe.db.set_value("Individual Goal", g["name"], "appraisal_cycle", cycle_name)
-            elif not want_in and in_cycle:
-                frappe.db.set_value("Individual Goal", g["name"], "appraisal_cycle", "")
+    add_goals = sorted(goals - held_names) if goals is not None else []
+    add_kpis = sorted(kpis - held_names) if kpis is not None else []
+    remove = ([live_goals[n] for n in sorted(set(live_goals) - goals)] if goals is not None else []) + \
+             ([live_kpis[n] for n in sorted(set(live_kpis) - kpis)] if kpis is not None else [])
+    if remove and not cint(acknowledge_removal):
+        frappe.throw("Removing an item loses what was changed for it inside this review. "
+                     "Confirm the removal to go on.")
 
-    if selected_kpis_json is not None:
-        selected_kpis = set(json.loads(selected_kpis_json) if isinstance(selected_kpis_json, str) else selected_kpis_json)
-        eligible = frappe.get_all(
-            "KPI",
-            filters={
-                "employee": ap.employee,
-                "individual_goal": ("is", "not set"),
-                "docstatus": ["!=", 2],
-                "period_start": ["<=", period_to],
-                "period_end":   [">=", period_from],
-            },
-            fields=["name", "appraisal_cycle"],
-            ignore_permissions=True,
-        )
-        for k in eligible:
-            in_cycle = k.get("appraisal_cycle") == cycle_name
-            want_in  = k["name"] in selected_kpis
-            if want_in and not in_cycle:
-                frappe.db.set_value("KPI", k["name"], "appraisal_cycle", cycle_name)
-            elif not want_in and in_cycle:
-                frappe.db.set_value("KPI", k["name"], "appraisal_cycle", "")
-
-    frappe.db.commit()
-    return {"ok": True}
+    added = review_items.add_items(ext, ap.employee, add_goals, add_kpis)
+    outcomes = []
+    for row in remove:
+        outcomes.append(review_items.remove_item(ext, row, "", ext.review_status or "Not Started"))
+        review_items.audit(ext, f"Review item {row.name} removed by {frappe.session.user} "
+                                f"({outcomes[-1]}) in {ext.review_status or 'Not Started'}.")
+    if added or remove:
+        review_items.save_review_record(ext)
+        frappe.db.commit()
+    return {"ok": True, "added": added, "removed": len(remove)}
 
 
 @frappe.whitelist()
@@ -3421,6 +4383,11 @@ def save_review_page(appraisal, page_key, page_data_json):
     except: all_pd = {}
     try: new_pd = json.loads(page_data_json) if isinstance(page_data_json, str) else page_data_json
     except: new_pd = {}
+    if page_key in ("past-objectives", "past_objectives"):
+        # Ratings are keyed by this review's copies only; anything else refuses
+        # the save before it is stored (SEC-1).
+        review_items.open_review(ext)
+        review_items.apply_self_review(ext, new_pd, "save_review_page", write=False)
     all_pd[page_key] = new_pd
 
     try: done = json.loads(ext.pages_completed or "[]")
@@ -3432,14 +4399,20 @@ def save_review_page(appraisal, page_key, page_data_json):
     ext.pages_completed = json.dumps(done)
     if ext.review_status == "Not Started":
         ext.review_status = "Employee Review"
-    ext.save(ignore_permissions=True)
+    review_items.save_review_record(ext)
     frappe.db.commit()
     return {"pages_completed": done}
 
 
 @frappe.whitelist()
 def submit_employee_review(appraisal, overall_comment=""):
-    """Employee finalises self-review and applies page data to actual records."""
+    """Employee sends their self-review to the manager.
+
+    Self-ratings and comments go onto this review's copies only; no Objective
+    or KPI is written, and progress typed in the review is not applied anywhere
+    (SEC-1, decision 4). One item that is not in this review, or one future
+    objective that cannot be created, stops the whole submission (VIS-15).
+    """
     import json
     me = _require_employee()
     ap = frappe.get_doc("Appraisal", appraisal)
@@ -3449,39 +4422,18 @@ def submit_employee_review(appraisal, overall_comment=""):
     ext = _get_or_create_extension(appraisal)
     if ext.review_status not in ("Not Started", "Employee Review"):
         frappe.throw("Review has already been submitted.")
+    review_items.open_review(ext)
 
     try:
         all_pd = json.loads(ext.page_data or "{}")
     except Exception:
         all_pd = {}
+    if not isinstance(all_pd, dict):
+        all_pd = {}
 
-    # ── Past Objectives: apply KPI self-ratings/comments and objective progress ──
+    # ── Past Objectives: self-ratings and comments onto the copies ──
     past = all_pd.get("past-objectives") or all_pd.get("past_objectives") or {}
-    kpi_data = past.get("kpis") or {}
-    obj_data = past.get("objectives") or {}
-    for kpi_name, vals in kpi_data.items():
-        try:
-            if not frappe.db.exists("KPI", kpi_name):
-                continue
-            update = {}
-            if vals.get("self_rating") not in (None, ""):
-                update["self_rating"] = frappe.utils.flt(vals["self_rating"])
-            if vals.get("self_comment") is not None:
-                update["self_comment"] = vals["self_comment"]
-            if update:
-                frappe.db.set_value("KPI", kpi_name, update)
-        except Exception:
-            pass
-
-    for obj_name, vals in obj_data.items():
-        try:
-            if not frappe.db.exists("Individual Goal", obj_name):
-                continue
-            if vals.get("actual_progress") not in (None, ""):
-                frappe.db.set_value("Individual Goal", obj_name, "actual_progress",
-                                    frappe.utils.flt(vals["actual_progress"]))
-        except Exception:
-            pass
+    review_items.apply_self_review(ext, past)
 
     # ── Past Development: copy textarea fields to extension named fields ──
     past_dev = all_pd.get("past-dev") or {}
@@ -3503,28 +4455,334 @@ def submit_employee_review(appraisal, overall_comment=""):
     if goals_text:
         ext.next_period_goals_text = goals_text
 
-    # ── Future Objectives: create draft goals as Individual Goal records ──
+    # ── Future Objectives: new live Objectives for the next period ──
+    # Live records, not copies, and tagged to no cycle (VIS-15, decision 19).
     future_obj = all_pd.get("future-objectives") or all_pd.get("future_goals") or {}
     new_goals = future_obj.get("new_goals") or []
+    if not isinstance(new_goals, list):
+        frappe.throw("The future objectives could not be read. Reload the page and try again.")
     for g in new_goals:
-        try:
-            ig = frappe.new_doc("Individual Goal")
-            ig.goal_name      = g.get("name", "New Goal")
-            ig.description    = g.get("description", "")
-            ig.target_value   = frappe.utils.flt(g.get("target_value") or 0)
-            ig.unit            = g.get("unit", "")
-            ig.employee        = me
-            ig.appraisal_cycle = ap.appraisal_cycle
-            ig.status          = "Not Started"
-            ig.insert(ignore_permissions=True)
-        except Exception:
-            pass
+        if not isinstance(g, dict):
+            frappe.throw("The future objectives could not be read. Reload the page and try again.")
+        ig = frappe.new_doc("Individual Goal")
+        ig.goal_name      = (g.get("name") or "").strip() or "New Goal"
+        ig.description    = g.get("description", "")
+        ig.target_value   = flt(g.get("target_value") or 0)
+        ig.unit           = g.get("unit", "")
+        ig.start_date     = g.get("start_date")
+        ig.end_date       = g.get("end_date")
+        ig.employee       = me
+        ig.status         = "Active"
+        ig.is_future_plan = 1
+        ig.insert(ignore_permissions=True)
 
     ext.overall_comment = overall_comment
     ext.review_status   = "Manager Review"
-    ext.save(ignore_permissions=True)
+    review_items.apply_stage(ext)
+    review_items.save_review_record(ext)
     frappe.db.commit()
     return {"review_status": "Manager Review"}
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Changes to a review's items, made on its copies (slice 010 group D, commit 5)
+# ══════════════════════════════════════════════════════════════════════════
+
+# Who changes which items when. The subject before sending the self-review; the
+# manager during Manager Review; HR during HR Review (removal only).
+_ITEM_STAGES = {
+    "subject": _SELF_REVIEW_DRAFT,
+    "manager": ("Manager Review",),
+    "hr": ("HR Review",),
+}
+
+
+def _review_actor(appraisal, endpoint, roles):
+    """Who is changing this review's items, checked before anything is read or written.
+
+    Returns (ap, ext, role). The subject, the manager line, or HR
+    under the stage and company rule; anyone else is refused. The record is
+    never created here (SEC-6). The stage must be the one this role acts in:
+    nobody changes an item after their own step (SEC-1, SEC-24, VIS-10).
+    """
+    me = _require_employee()
+    ap = frappe.get_doc("Appraisal", appraisal)
+    if ap.employee == me:
+        role = "subject"
+    elif _is_line_manager(ap.employee, me):
+        role = "manager"
+    elif _is_hr():
+        _assert_hr_can_view(appraisal)
+        role = "hr"
+    else:
+        frappe.throw("Not permitted.", frappe.PermissionError)
+    if role not in roles:
+        refuse("You cannot make this change in this review.", "SEC-6", endpoint, "Appraisal", appraisal)
+    ext = _extension(appraisal)
+    status = (ext.review_status if ext else None) or "Not Started"
+    if role == "manager" and "hr" in roles and status in _ITEM_STAGES["hr"] and _is_hr():
+        # Someone in the line who also holds an HR role, at HR's stage: this is
+        # HR's change, and not theirs to make (decision 34).
+        _refuse_hr_step_in_line(ap.employee, appraisal, endpoint)
+    if not ext or status not in _ITEM_STAGES[role]:
+        refuse(
+            "This review is not at a stage where you can change its items.",
+            "SEC-24" if role != "subject" else "SEC-1", endpoint, "Appraisal", appraisal,
+        )
+    review_items.open_review(ext)
+    return ap, ext, role
+
+
+def _review_row(ext, row, endpoint):
+    """This review's live copy, or a refusal. Live record names are never accepted (VIS-3)."""
+    found = review_items.live_row(ext, row)
+    if not found:
+        refuse("That item is not in this review.", "VIS-3", endpoint, "Alvoraa Appraisal Extension", ext.name)
+    return found
+
+
+@frappe.whitelist()
+def save_review_item_rating(appraisal, row, rating=None, comment=None,
+                            potential_rating=None, potential_comment=None):
+    """Rate one item of a review, on its copy (VIS-6, R13).
+
+    The subject gives the self-rating before sending the self-review; the
+    manager gives the manager rating and potential during Manager Review. The
+    numbers it was given on are stamped (R7). No live record is written.
+    """
+    ap, ext, role = _review_actor(appraisal, "save_review_item_rating", ("subject", "manager"))
+    item = _review_row(ext, row, "save_review_item_rating")
+    if role == "subject":
+        if potential_rating not in (None, "") or potential_comment not in (None, ""):
+            refuse("You cannot rate your own potential.", "SEC-10", "save_review_item_rating", "Appraisal", appraisal)
+        review_items.set_item_rating(item, "self", rating, comment)
+    else:
+        review_items.set_item_rating(item, "manager", rating, comment, potential_rating, potential_comment)
+    review_items.save_review_record(ext)
+    frappe.db.commit()
+    return {"ok": True}
+
+
+@frappe.whitelist()
+def remove_review_item(appraisal, row, reason="", acknowledge=0):
+    """Take one item out of a review (R12, SEC-24).
+
+    The subject may do it before sending the self-review; the manager during
+    Manager Review and HR during HR Review, always with a reason. The caller
+    must confirm that whatever was changed for the item inside the review is
+    lost. A rated copy is always kept, marked Removed (decision 9).
+    """
+    ap, ext, role = _review_actor(appraisal, "remove_review_item", ("subject", "manager", "hr"))
+    item = _review_row(ext, row, "remove_review_item")
+    reason = (reason or "").strip()
+    if role != "subject" and not reason:
+        frappe.throw("Say why this item is being removed. The employee will see the reason.")
+    if not cint(acknowledge):
+        frappe.throw("Removing an item loses what was changed for it inside this review. "
+                     "Confirm the removal to go on.")
+    rated = review_items.is_rated(item)
+    outcome = review_items.remove_item(ext, item, reason, ext.review_status)
+    review_items.audit(
+        ext,
+        f"Review item {item.name} removed by {frappe.session.user} in {ext.review_status}; "
+        f"rated: {'yes' if rated else 'no'}; {outcome}. Reason: {reason or '(none given)'}",
+    )
+    review_items.save_review_record(ext)
+    frappe.db.commit()
+    return {"ok": True, "outcome": outcome}
+
+
+@frappe.whitelist()
+def delete_review_item(appraisal, row, acknowledge=0):
+    """Delete an item that was created and added inside this review (R11).
+
+    Only an item whose live record was created after the review opened, that
+    nobody has rated and that has no progress or evidence of its own. Anything
+    else can only be removed. Same people and stages as removal.
+    """
+    ap, ext, role = _review_actor(appraisal, "delete_review_item", ("subject", "manager", "hr"))
+    item = _review_row(ext, row, "delete_review_item")
+    if not cint(acknowledge):
+        frappe.throw("Deleting removes the Objective or KPI itself. Confirm to go on.")
+    doctype, source = item.source_doctype, item.source_name
+    created = frappe.db.get_value(doctype, source, "creation") if doctype in ("KPI", "Individual Goal") else None
+    fact_tables = {"KPI": ("KPI Progress Log",), "Individual Goal": ("Goal Evidence", "Goal Progress Update")}
+    has_facts = created and any(
+        frappe.db.exists(t, {"parenttype": doctype, "parent": source}) for t in fact_tables[doctype]
+    )
+    if (not cint(item.added_in_review) or not created or not ext.items_taken_on
+            or frappe.utils.get_datetime(created) <= frappe.utils.get_datetime(ext.items_taken_on)):
+        refuse("Only an item created during this review can be deleted. Remove it from the review instead.",
+               "R11", "delete_review_item", "Alvoraa Appraisal Extension", ext.name)
+    if has_facts or review_items.is_rated(item):
+        refuse("This item has progress, evidence or a rating, so it can only be removed from the review.",
+               "R11", "delete_review_item", "Alvoraa Appraisal Extension", ext.name)
+
+    review_items.remove_item(ext, item, "", ext.review_status)
+    review_items.audit(ext, f"Review item {item.name} deleted with its live record by {frappe.session.user} "
+                            f"in {ext.review_status}.")
+    review_items.save_review_record(ext)
+    # No longer held by this review, so the live record may go (R11). One
+    # transaction: if the delete is refused, the copy comes back too.
+    frappe.delete_doc(doctype, source, ignore_permissions=True)
+    frappe.db.commit()
+    return {"ok": True}
+
+
+@frappe.whitelist()
+def save_review_item_definition(appraisal, row, title=None, target_value=None, weightage=None,
+                                period_start=None, period_end=None):
+    """Change an item's name, target, weight or period inside the review (R2, decision 6).
+
+    The employee during Employee Review; the manager during Manager Review. The
+    manager's submit counts as agreeing, and completion writes agreed changes
+    back to the live record once (R15).
+    """
+    ap, ext, role = _review_actor(appraisal, "save_review_item_definition", ("subject", "manager"))
+    item = _review_row(ext, row, "save_review_item_definition")
+    changed = review_items.change_definition(ext, item, {
+        "title": title, "target_value": target_value, "weightage": weightage,
+        "period_start": period_start, "period_end": period_end,
+    })
+    if changed:
+        review_items.audit(ext, f"Review item {item.name}: {', '.join(changed)} changed by "
+                                f"{frappe.session.user} in {ext.review_status}.")
+        review_items.save_review_record(ext)
+        frappe.db.commit()
+    return {"ok": True, "changed": changed}
+
+
+def _rater_still_acts(rater_user, subject):
+    """Is the person who gave a rating still in a position to answer for it?
+
+    Active, with a working login, and still the subject's manager - or, for a
+    rating given by HR, still HR for the subject's company.
+    """
+    if not rater_user:
+        return False
+    emp = frappe.db.get_value("Employee", {"user_id": rater_user}, ["name", "status"], as_dict=True)
+    if not emp or emp.status != "Active" or not cint(frappe.db.get_value("User", rater_user, "enabled")):
+        return False
+    manager, depth = frappe.db.get_value("Employee", subject, "reports_to"), 0
+    while manager and depth < 50:
+        if manager == emp.name:
+            return True
+        manager, depth = frappe.db.get_value("Employee", manager, "reports_to"), depth + 1
+    if not frappe.db.get_value("Employee", subject, "reports_to") and get_effective_manager(subject) == emp.name:
+        return True
+    if HR_ROLES.intersection(frappe.get_roles(rater_user)):
+        company = frappe.db.get_value("Employee", subject, "company")
+        return company in permitted_companies(rater_user)
+    return False
+
+
+def _flag_answer_mode(ap, ext, rater, view, in_line, acts=None):
+    """How the caller answers one rating question in the view they opened the
+    review in (decisions 12, 34, 37). The view itself is already checked.
+
+      "rater"  the rating is theirs: the manager view for the rating's giver, or
+               for any manager when the rating was stamped before raters were
+               recorded; the HR view for HR who gave it (a calibrated rating)
+      "hr"     HR answers for a giver who has left or no longer acts, during
+               HR Review, with a reason
+      ""       not theirs to answer in this view. In the HR view that includes
+               everyone in the subject's line (decision 34): they answer their
+               own ratings from the manager view.
+
+    `acts` caches _rater_still_acts by user for a screen with many questions.
+    """
+    status = (ext.review_status if ext else None) or "Not Started"
+    if status in _SELF_REVIEW_DRAFT or status == "Completed":
+        return ""
+    user = frappe.session.user
+    acts = {} if acts is None else acts
+
+    def still(person):
+        if person not in acts:
+            acts[person] = _rater_still_acts(person, ap.employee)
+        return acts[person]
+
+    if view == "manager":
+        return "rater" if (not rater or (rater == user and still(user))) else ""
+    if view != "hr" or in_line:
+        return ""
+    if rater == user and still(user):
+        return "rater"
+    if status == "HR Review" and (not rater or not still(rater)):
+        return "hr"
+    return ""
+
+
+def _in_line_for_hr_view(ap, view):
+    """In the HR view: is the caller in the subject's line (decision 34)? One walk."""
+    return view == "hr" and bool(_hr_steps_elsewhere([ap.employee]))
+
+
+@frappe.whitelist()
+def answer_rating_flag(appraisal, target, keep=1, rating=None, reason="", view=None):
+    """Keep or change a rating whose numbers changed after it was given (R7, decision 12).
+
+    target is "overall" or the row name of a copy with a manager rating. `view`
+    is the list the review was opened from, "manager" or "hr" (decision 37), and
+    is checked first. The person who gave the rating answers, from the view they
+    gave it in: the manager from the manager view, in any stage up to
+    completion; HR who calibrated from the HR view. If the giver has left or no
+    longer manages the employee, HR answers from the HR view, during HR Review,
+    with a reason, and never someone in the subject's line (decision 34). The
+    answerer is recorded. The employee is emailed if a released overall rating
+    changes. Self-rating flags are information only (decision 13).
+    """
+    ap = frappe.get_doc("Appraisal", appraisal)
+    _require_review_view(ap, view, "answer_rating_flag")
+    ext = _extension(appraisal)
+    status = (ext.review_status if ext else None) or "Not Started"
+    if not ext or status in _SELF_REVIEW_DRAFT or status == "Completed":
+        refuse("This review has no rating question you can answer now.",
+               "SEC-23", "answer_rating_flag", "Appraisal", appraisal)
+    review_items.open_review(ext)
+
+    if target == "overall":
+        rater = ext.overall_rated_by
+    else:
+        rater = (_review_row(ext, target, "answer_rating_flag").manager_rated_by)
+
+    user = frappe.session.user
+    in_line = _in_line_for_hr_view(ap, view)
+    mode = _flag_answer_mode(ap, ext, rater, view, in_line)
+    if not mode:
+        if in_line:
+            _refuse_hr_step_in_line(ap.employee, appraisal, "answer_rating_flag")
+        refuse("Only the person who gave this rating can answer for it.",
+               "SEC-23", "answer_rating_flag", "Appraisal", appraisal)
+    as_rater = mode == "rater"
+    if not as_rater and not (reason or "").strip():
+        frappe.throw("Say why HR is answering for this rating.")
+
+    keep = cint(keep)
+    new_rating = None
+    if not keep:
+        new_rating = _sent_rating(rating)
+        if new_rating is None:
+            frappe.throw(f"Choose a rating between 1 and {int(MAX_RATING)}.")
+    changed = review_items.answer_flag(ext, target, keep, new_rating)
+    review_items.audit(
+        ext,
+        f"Rating question on {target} answered by {user} ({'kept' if keep else 'changed'})"
+        + ("" if as_rater else f" for {rater or 'a former rater'}. Reason: {(reason or '').strip()}"),
+    )
+    review_items.save_review_record(ext)
+    frappe.db.commit()
+
+    if changed and target == "overall" and status in _RATING_RELEASED:
+        emp_user = _employee_user(ap.employee)
+        if emp_user:
+            _send_notification(
+                emp_user,
+                "Your review rating was updated",
+                "<p>The overall rating in your performance review was updated. "
+                "Log in to the portal to see it.</p>",
+            )
+    return {"ok": True, "rating_changed": int(changed)}
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -3533,19 +4791,37 @@ def submit_employee_review(appraisal, overall_comment=""):
 # ══════════════════════════════════════════════════════════════════════════
 
 @frappe.whitelist()
-def get_manager_review(appraisal):
-    """Manager or HR views the full review — employee self-assessment + manager fields."""
-    import json
-    me = _require_employee()
-    ap = frappe.get_doc("Appraisal", appraisal)
-    # Must be the employee's manager or an HR user
-    is_hr = _is_hr()
-    is_manager = _is_manager_of(ap.employee) if not is_hr else False
-    if not is_hr and not is_manager:
-        frappe.throw("Only the employee's manager or HR can open this review.", frappe.PermissionError)
+def get_manager_review(appraisal=None, view=None):
+    """The full review for its manager or for HR: the self-review and the manager's fields.
 
-    ext = _get_or_create_extension(appraisal)
+    `view` is the list the review was opened from (decision 37): "manager" from
+    My team's reviews, "hr" from the HR review list. The screen and its buttons
+    follow the view, never a guess from the caller's roles.
+    """
+    import json
+    _require_argument(appraisal=appraisal)
+    ap = frappe.get_doc("Appraisal", appraisal)
+    # In order, before anything is read or created (SEC-6): never the subject
+    # (SEC-10); the right for the view asked for; and only once the self-review
+    # has been sent (PRIV-2).
+    viewer = _require_review_view(ap, view, "get_manager_review")
+    if _review_status(appraisal) in _SELF_REVIEW_DRAFT:
+        refuse(
+            "The self-review has not been sent yet. You can open it once it is sent.",
+            "PRIV-2", "get_manager_review", "Appraisal", appraisal,
+        )
+
+    ext = _extension(appraisal)
+    if review_items.open_review(ext):
+        frappe.db.commit()
     cycle_name = ap.appraisal_cycle
+    # Someone in the subject's line who opens the review as HR sees the HR
+    # screen without HR's buttons (decision 34), and the data the line saw
+    # before decision 37: the manager's, without the late facts HR gets (R10).
+    in_line = _in_line_for_hr_view(ap, view)
+    if in_line:
+        viewer = review_items.VIEWER_MANAGER
+    hr_steps_elsewhere = in_line and ext.review_status == "HR Review"
 
     try: page_data = json.loads(ext.page_data or "{}")
     except: page_data = {}
@@ -3578,16 +4854,17 @@ def get_manager_review(appraisal):
                 order_by="value desc")
             rating_scales[sname] = {"scale_name": sinfo.get("scale_name", sname), "items": sitems}
 
-    goals = frappe.get_all(
-        "Individual Goal",
-        filters={"employee": ap.employee, "appraisal_cycle": cycle_name, "docstatus": ["!=", 2]},
-        fields=["name", "goal_name", "target_value", "actual_progress", "progress_pct",
-                "unit", "status", "start_date", "end_date", "weightage", "employee", "owner"],
-        ignore_permissions=True, order_by="creation asc",
-    )
-    for g in goals:
-        _serialise_dates(g, "start_date", "end_date")
-        g["kpis"] = _goal_kpis(g["name"], ap.employee)
+    # The review's own copies (commit 4, VIS-3). HR in the HR view also sees facts
+    # that arrived after the numbers froze (R10); the manager view does not.
+    items =review_items.review_payload(ext, viewer, ap.employee, ap.employee_name)
+    # Which rating questions this person answers in this view, so the page shows
+    # buttons only where the answer will be taken (decisions 12, 34, 37).
+    acts = {}
+    for item in items["goals"] + items["standalone_kpis"] + [k for g in items["goals"] for k in g.get("kpis", [])]:
+        item["flag_answer"] = (_flag_answer_mode(ap, ext, item.get("manager_rated_by") or None, view, in_line, acts)
+                               if cint(item.get("manager_flag")) else "")
+    overall_flag_answer = (_flag_answer_mode(ap, ext, ext.overall_rated_by or None, view, in_line, acts)
+                           if cint(ext.overall_rating_flag) else "")
 
     cycle_info = frappe.db.get_value("Appraisal Cycle", cycle_name,
         ["cycle_name", "start_date", "end_date"], as_dict=True) or {}
@@ -3609,8 +4886,12 @@ def get_manager_review(appraisal):
         "page_data":       page_data,
         "pages_completed": pages_completed,
         "overall_comment": ext.overall_comment or "",
-        "goals":           goals,
-        "standalone_kpis": [],
+        "goals":           items["goals"],
+        "standalone_kpis": items["standalone_kpis"],
+        "removed_items":   items["removed_items"],
+        "numbers_frozen":  items["numbers_frozen"],
+        "overall_rating_flag": items["overall_rating_flag"],
+        "open_blocking_flags": items["open_blocking_flags"],
         # Manager fields (visible because caller is manager/HR)
         "manager_feedback":      ext.manager_feedback or "",
         "manager_internal_notes": ext.manager_internal_notes or "",
@@ -3618,7 +4899,10 @@ def get_manager_review(appraisal):
         "potential_rating":      ext.potential_rating or 0,
         "reviewer_comments_visible": ext.reviewer_comments_visible or 0,
         "invited_reviewers":     invited,
-        "viewer_role":           "hr" if is_hr else "manager",
+        # The view the review was opened in (decision 37).
+        "viewer_role":           view,
+        "hr_steps_elsewhere":    int(hr_steps_elsewhere),
+        "overall_flag_answer":   overall_flag_answer,
         "rating_scales":         rating_scales,
     }
 
@@ -3639,19 +4923,17 @@ def _is_manager_of(employee_id):
 
 @frappe.whitelist()
 def save_manager_review(appraisal, manager_feedback="", manager_internal_notes="",
-                        overall_rating=0, potential_rating=0):
-    """Manager saves draft of their review (does not change status)."""
-    me = _require_employee()
-    ap = frappe.get_doc("Appraisal", appraisal)
-    if not _is_hr() and not _is_manager_of(ap.employee):
-        frappe.throw("Not permitted.", frappe.PermissionError)
-    ext = _get_or_create_extension(appraisal)
-    if ext.review_status not in ("Manager Review",):
-        frappe.throw("Review is not in Manager Review stage.")
+                        overall_rating=None, potential_rating=None):
+    """Manager saves a draft of their review (does not change status).
+
+    A rating changes only when one is sent. "Save draft" in the page sends 0 for
+    ratings the manager did not touch on that visit, and that used to wipe the
+    ratings already saved.
+    """
+    ap, ext = _manager_review_record(appraisal, "save_manager_review")
     ext.manager_feedback       = manager_feedback
     ext.manager_internal_notes = manager_internal_notes
-    ext.overall_rating         = flt(overall_rating)
-    ext.potential_rating       = flt(potential_rating)
+    _set_manager_ratings(ext, overall_rating, potential_rating)
     ext.save(ignore_permissions=True)
     frappe.db.commit()
     return {"ok": True}
@@ -3661,15 +4943,15 @@ def save_manager_review(appraisal, manager_feedback="", manager_internal_notes="
 def invite_reviewer(appraisal, reviewer_employee, allowed_pages=None):
     """Manager invites an additional reviewer."""
     import json
-    me = _require_employee()
-    ap = frappe.get_doc("Appraisal", appraisal)
-    if not _is_hr() and not _is_manager_of(ap.employee):
-        frappe.throw("Not permitted.", frappe.PermissionError)
+    ap, ext = _manager_review_record(
+        appraisal, "invite_reviewer",
+        stage_message="Reviewers can only be invited during Manager Review stage.",
+    )
     if reviewer_employee == ap.employee:
         frappe.throw("Cannot invite the subject employee as a reviewer.")
-    ext = _get_or_create_extension(appraisal)
-    if ext.review_status != "Manager Review":
-        frappe.throw("Reviewers can only be invited during Manager Review stage.")
+    if not isinstance(reviewer_employee, str):
+        frappe.throw("Choose one employee to invite.")
+    _check_invitees(ap, [reviewer_employee], "invite_reviewer")
     try: invited = json.loads(ext.invited_reviewers or "[]")
     except: invited = []
     if any(r["employee"] == reviewer_employee for r in invited):
@@ -3713,16 +4995,21 @@ def invite_reviewer(appraisal, reviewer_employee, allowed_pages=None):
 def invite_reviewers_batch(appraisal, reviewers):
     """Invite multiple reviewers at once. reviewers is a JSON array of {employee, allowed_pages}."""
     import json
-    me = _require_employee()
-    ap = frappe.get_doc("Appraisal", appraisal)
-    if not _is_hr() and not _is_manager_of(ap.employee):
-        frappe.throw("Not permitted.", frappe.PermissionError)
-    ext = _get_or_create_extension(appraisal)
-    if ext.review_status != "Manager Review":
-        frappe.throw("Reviewers can only be invited during Manager Review stage.")
+    ap, ext = _manager_review_record(
+        appraisal, "invite_reviewers_batch",
+        stage_message="Reviewers can only be invited during Manager Review stage.",
+    )
     if isinstance(reviewers, str):
         try: reviewers = json.loads(reviewers)
         except: frappe.throw("Invalid reviewers format.")
+    if not isinstance(reviewers, list) or not all(isinstance(r, dict) for r in reviewers):
+        frappe.throw("Invalid reviewers format.")
+    _check_invitees(
+        ap,
+        [r.get("employee") for r in reviewers
+         if isinstance(r.get("employee"), str) and r.get("employee") != ap.employee],
+        "invite_reviewers_batch",
+    )
     try: invited = json.loads(ext.invited_reviewers or "[]")
     except: invited = []
     existing = {r["employee"] for r in invited}
@@ -3773,23 +5060,38 @@ def get_reviewer_view(appraisal):
     me_emp = frappe.db.get_value("Employee", {"user_id": me_user}, "name")
     if not me_emp:
         frappe.throw("Only employees can access reviewer views.", frappe.PermissionError)
-    ext = _get_or_create_extension(appraisal)
+    # An invitation lives on the record, so no record means no invitation (SEC-6).
+    ext = _extension(appraisal)
+    if not ext:
+        frappe.throw("You are not an invited reviewer for this appraisal.", frappe.PermissionError)
     try: invited = json.loads(ext.invited_reviewers or "[]")
     except: invited = []
     entry = next((r for r in invited if r.get("employee") == me_emp), None)
     if not entry:
         frappe.throw("You are not an invited reviewer for this appraisal.", frappe.PermissionError)
+    # An invitation is for the manager review only: not before the self-review
+    # is sent, and not after the manager has finished (SEC-7, decision 17).
+    if (ext.review_status or "") != "Manager Review":
+        refuse(
+            "This review is not open for reviewer feedback now.",
+            "SEC-7", "get_reviewer_view", "Appraisal", appraisal,
+        )
+    allowed_pages = entry.get("allowed_pages", [])
+    if not isinstance(allowed_pages, list):
+        allowed_pages = []
+    allowed_pages = [p for p in allowed_pages if isinstance(p, str)]
     try: page_data = json.loads(ext.page_data or "{}")
     except: page_data = {}
+    # Only the pages this reviewer was invited to read; none means nothing.
+    page_data = {k: v for k, v in (page_data if isinstance(page_data, dict) else {}).items()
+                 if k in allowed_pages}
     ap = frappe.get_doc("Appraisal", appraisal)
-    goals = frappe.get_all(
-        "Individual Goal",
-        filters={"employee": ap.employee, "appraisal_cycle": ap.appraisal_cycle, "docstatus": ["!=", 2]},
-        fields=["name", "goal_name", "parent_goal", "is_extra_initiative",
-                "status", "actual_progress", "progress_pct", "unit"],
-        ignore_permissions=True,
-    )
-    allowed_pages = entry.get("allowed_pages", [])
+    goals, standalone = [], []
+    if "past-objectives" in allowed_pages:
+        if review_items.open_review(ext):
+            frappe.db.commit()
+        items = review_items.review_payload(ext, review_items.VIEWER_REVIEWER, ap.employee, ap.employee_name)
+        goals, standalone = items["goals"], items["standalone_kpis"]
     page_comments = entry.get("page_comments", {})
     if isinstance(page_comments, str):
         try: page_comments = json.loads(page_comments)
@@ -3813,6 +5115,7 @@ def get_reviewer_view(appraisal):
         "allowed_pages":    allowed_page_objs,
         "page_data":        page_data,
         "goals":            goals,
+        "standalone_kpis":  standalone,
         "my_comments":      entry.get("comments", ""),
         "my_page_comments": page_comments,
         "my_status":        entry.get("status", "Invited"),
@@ -3830,11 +5133,13 @@ def submit_reviewer_comments(appraisal, comments, page_comments=None):
     me_emp = frappe.db.get_value("Employee", {"user_id": me_user}, "name")
     if not me_emp:
         frappe.throw("Only employees can submit reviewer comments.", frappe.PermissionError)
-    ext = _get_or_create_extension(appraisal)
+    ext = _extension(appraisal)
+    try: invited = json.loads((ext.invited_reviewers if ext else None) or "[]")
+    except: invited = []
+    if not any(r.get("employee") == me_emp for r in invited):
+        frappe.throw("You are not an invited reviewer for this appraisal.", frappe.PermissionError)
     if ext.review_status != "Manager Review":
         frappe.throw("Review is not in Manager Review stage.")
-    try: invited = json.loads(ext.invited_reviewers or "[]")
-    except: invited = []
     pc = {}
     if page_comments:
         if isinstance(page_comments, str):
@@ -3861,15 +5166,9 @@ def submit_reviewer_comments(appraisal, comments, page_comments=None):
 
 @frappe.whitelist()
 def submit_manager_review(appraisal, manager_feedback="", manager_internal_notes="",
-                          overall_rating=0, potential_rating=0, reviewer_comments_visible=0):
+                          overall_rating=None, potential_rating=None, reviewer_comments_visible=0):
     """Manager finalises their review → Employee Final Review stage."""
-    me = _require_employee()
-    ap = frappe.get_doc("Appraisal", appraisal)
-    if not _is_hr() and not _is_manager_of(ap.employee):
-        frappe.throw("Not permitted.", frappe.PermissionError)
-    ext = _get_or_create_extension(appraisal)
-    if ext.review_status != "Manager Review":
-        frappe.throw("Review is not in Manager Review stage.")
+    ap, ext = _manager_review_record(appraisal, "submit_manager_review")
     if not manager_feedback:
         frappe.throw("Manager feedback is required before submitting.")
     # Only require overall_rating when the cycle was configured with a rating scale
@@ -3882,15 +5181,15 @@ def submit_manager_review(appraisal, manager_feedback="", manager_internal_notes
             _overall_required = bool((_ps.get("manager-feedback") or {}).get("overall_rating_scale"))
         except Exception:
             pass
-    if _overall_required and not flt(overall_rating):
+    _set_manager_ratings(ext, overall_rating, potential_rating)
+    if _overall_required and not flt(ext.overall_rating):
         frappe.throw("Overall rating is required before submitting.")
     ext.manager_feedback            = manager_feedback
     ext.manager_internal_notes      = manager_internal_notes
-    ext.overall_rating              = flt(overall_rating)
-    ext.potential_rating            = flt(potential_rating)
     ext.reviewer_comments_visible   = int(reviewer_comments_visible or 0)
     ext.review_status               = "Employee Final Review"
-    ext.save(ignore_permissions=True)
+    review_items.apply_stage(ext)
+    review_items.save_review_record(ext)
     frappe.db.commit()
     # Notify employee
     emp_user = frappe.db.get_value("Employee", ap.employee, "user_id")
@@ -3913,11 +5212,12 @@ def acknowledge_final_review(appraisal):
     ap = frappe.get_doc("Appraisal", appraisal)
     if ap.employee != me:
         frappe.throw("Only the subject employee can acknowledge.", frappe.PermissionError)
-    ext = _get_or_create_extension(appraisal)
-    if ext.review_status != "Employee Final Review":
+    ext = _extension(appraisal)
+    if not ext or ext.review_status != "Employee Final Review":
         frappe.throw("Review is not in Employee Final Review stage.")
     ext.review_status = "HR Review"
-    ext.save(ignore_permissions=True)
+    review_items.apply_stage(ext)
+    review_items.save_review_record(ext)
     frappe.db.commit()
     return {"review_status": "HR Review"}
 
@@ -3930,8 +5230,8 @@ def get_employee_final_review(appraisal):
     ap = frappe.get_doc("Appraisal", appraisal)
     if ap.employee != me:
         frappe.throw("Not permitted.", frappe.PermissionError)
-    ext = _get_or_create_extension(appraisal)
-    if ext.review_status not in ("Employee Final Review",):
+    ext = _extension(appraisal)
+    if not ext or ext.review_status not in ("Employee Final Review",):
         frappe.throw("Final review is not yet available.")
     try: invited = json.loads(ext.invited_reviewers or "[]")
     except: invited = []
@@ -3970,8 +5270,7 @@ def get_employee_final_review(appraisal):
         "review_status":   ext.review_status,
         "manager_feedback": ext.manager_feedback or "",
         "overall_rating":  ext.overall_rating or 0,
-        "potential_rating": ext.potential_rating or 0,
-        "potential_category": ext.potential_category or "",
+        # No potential rating or category: the employee never receives them (PRIV-1).
         "reviewer_comments_visible": ext.reviewer_comments_visible or 0,
         "invited_reviewer_comments": visible_reviewers,
         "page_settings":   page_settings,
@@ -4055,8 +5354,13 @@ def save_calibration_signoff(cycle, summary):
 
 @frappe.whitelist()
 def get_calibration_signoff(cycle):
-    """Retrieve the calibration sign-off for a cycle, or None if not signed off."""
+    """Retrieve the calibration sign-off for a cycle, or None if not signed off.
+
+    HR only (slice 010 group D, SEC-30): the summary is HR's calibration text,
+    and any logged-in employee could read it.
+    """
     import json as _json
+    _require_hr()
     if not cycle:
         return None
     if not frappe.db.exists("Alvoraa Cycle Config", cycle):
@@ -4067,3 +5371,64 @@ def get_calibration_signoff(cycle):
     except Exception:
         return None
     return settings.get("calibration_signoff")
+
+
+# ── Review settings on the portal's Org Settings screen (slice 010 group D, decision 23) ──
+#
+# The three settings live on HR Settings (SEC-28): typed, validated by
+# review_items.validate_hr_settings, and every change keeps a Version row. These
+# two calls only show and save those same fields. Not hr_api.set_org_setting,
+# which writes Global Defaults with no history and allows one listed key.
+
+
+def _review_settings_payload():
+    settings = review_items.review_settings()
+    return {
+        "freeze_point": settings["freeze_point"],
+        "lock_release_days": settings["lock_release_days"],
+        "removal_mode": settings["removal_mode"],
+        "freeze_points": list(review_items.FREEZE_POINTS),
+        "removal_modes": list(review_items.REMOVAL_MODES),
+        "can_edit": "HR Manager" in frappe.get_roles(),
+    }
+
+
+@frappe.whitelist()
+def get_review_settings():
+    """The three review settings, for HR. Anyone else is refused."""
+    if not _is_hr():
+        refuse(frappe._("Only HR can see the review settings."), "SEC-28", "performance_api.get_review_settings")
+    return _review_settings_payload()
+
+
+@frappe.whitelist(methods=["POST"])
+def save_review_settings(freeze_point, lock_release_days, removal_mode):
+    """Save the three review settings. HR Manager only, as in the desk (SEC-28).
+
+    Values are checked here and again by HR Settings' own validation; the save
+    goes through the document with the caller's own permission, so HR Settings'
+    change history records who changed what.
+    """
+    if "HR Manager" not in frappe.get_roles():
+        refuse(frappe._("Only an HR Manager can change the review settings."), "SEC-28",
+               "performance_api.save_review_settings")
+    if freeze_point not in review_items.FREEZE_POINTS:
+        frappe.throw(frappe._("Choose when review numbers freeze from the list."))
+    if removal_mode not in review_items.REMOVAL_MODES:
+        frappe.throw(frappe._("Choose what happens to a removed review item from the list."))
+    days = frappe.utils.cstr(lock_release_days).strip()
+    if not days.isdigit() or int(days) > 3650:
+        frappe.throw(frappe._("Enter the number of days as a whole number from 0 to 3650. Use 0 for never."))
+
+    doc = frappe.get_doc("HR Settings")
+    doc.set(review_items.SETTING_FIELDS["freeze_point"], freeze_point)
+    doc.set(review_items.SETTING_FIELDS["lock_release_days"], int(days))
+    doc.set(review_items.SETTING_FIELDS["removal_mode"], removal_mode)
+    doc.save()
+    frappe.db.commit()
+    import json
+
+    frappe.logger("security").info(json.dumps({
+        "event": "review_settings_saved", "at": str(frappe.utils.now_datetime()), "user": frappe.session.user,
+        "endpoint": "performance_api.save_review_settings", "doctype": "HR Settings"}))
+    return _review_settings_payload()

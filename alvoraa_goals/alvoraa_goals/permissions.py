@@ -171,3 +171,265 @@ def individual_goal_query(user=None):
 
 def kpi_query(user=None):
     return employee_query_conditions(user, "KPI")
+
+
+# ── The review record: Alvoraa Appraisal Extension (slice 010, SEC-5, SEC-27) ─
+#
+# Employees and managers have no role on it at all; every portal read and write
+# goes through the review endpoints and their stage rules. HR Manager, HR User
+# and System Manager keep a desk role, but the desk now follows the SAME rule as
+# the portal (decision 15):
+#
+#   read   a review in HR Review or Completed, for a company they look after;
+#          or a review in their own line once the self-review has been sent.
+#          Never their own review (it holds their potential rating, PRIV-1).
+#   write  nobody below Administrator. Desk edits would skip every stage and
+#          stamp rule the portal enforces.
+#
+# The copies (Alvoraa Review Item) are child rows, read through this record.
+# A tenant's Custom DocPerm that re-grants Employee does not reopen it either:
+# these hooks deny anyone without an HR role.
+
+REVIEW_DRAFT_STAGES = ("", "Not Started", "Employee Review")
+REVIEW_HR_STAGES = ("HR Review", "Completed")
+
+
+def appraisal_extension_query(user=None):
+    user = user or frappe.session.user
+    if user == "Administrator":
+        return ""
+    if not _has_full_access(user):
+        return "1=0"
+
+    from hrms.alvoraa_hr_core.access import permitted_companies
+
+    table = "`tabAlvoraa Appraisal Extension`"
+    clauses = []
+    companies = permitted_companies(user)
+    if companies:
+        joined = ", ".join(frappe.db.escape(c) for c in companies)
+        clauses.append(
+            f"({table}.review_status in ('HR Review', 'Completed') and {table}.employee in "
+            f"(select `name` from `tabEmployee` where `company` in ({joined})))"
+        )
+    own = employee_for(user)
+    if own:
+        line = frappe.db.get_value("Employee", own, ["lft", "rgt"], as_dict=True)
+        if line and line.lft and line.rgt:
+            clauses.append(
+                f"(ifnull({table}.review_status, '') not in ('', 'Not Started', 'Employee Review') "
+                f"and {table}.employee in (select `name` from `tabEmployee` "
+                f"where `lft` > {int(line.lft)} and `rgt` < {int(line.rgt)}))"
+            )
+    if not clauses:
+        return "1=0"
+    condition = "(" + " or ".join(clauses) + ")"
+    if own:
+        condition += f" and ifnull({table}.employee, '') != {frappe.db.escape(own)}"
+    return condition
+
+
+def has_appraisal_extension_permission(doc, ptype=None, user=None):
+    user = user or frappe.session.user
+    if user == "Administrator":
+        return True
+    if ptype not in ("read", "select"):
+        return False
+    if not _has_full_access(user):
+        return False
+
+    employee = doc.get("employee") if hasattr(doc, "get") else None
+    if not employee:
+        return False
+    own = employee_for(user)
+    if own and employee == own:
+        return False
+
+    status = doc.get("review_status") or ""
+    if status in REVIEW_HR_STAGES:
+        from hrms.alvoraa_hr_core.access import permitted_companies
+
+        if frappe.db.get_value("Employee", employee, "company") in permitted_companies(user):
+            return True
+    if own and status not in REVIEW_DRAFT_STAGES and employee in descendants(own):
+        return True
+    return False
+
+
+# ── A review's change history and notes: Version and Comment (security review B1) ─
+#
+# Frappe keeps a Version row for every save of the review record (track_changes),
+# and group D writes its audit notes (removal reasons, answers for a former rater)
+# as Comment rows. Both core doctypes let every System Manager, and for Comment
+# every Website Manager, list all rows over REST. A Version row holds whole copy
+# rows: ratings, potential, self-review drafts.
+#
+# So a Version or Comment about a review record, one of its copies, or an HRMS
+# Appraisal is readable only by someone who may read that record itself, under
+# the same stage, company and "never your own" rule. Rows about every other
+# doctype are untouched. Audit notes on the review record are never edited or
+# deleted below Administrator.
+
+REVIEW_HISTORY_DOCTYPES = ("Alvoraa Appraisal Extension", "Alvoraa Review Item", "Appraisal")
+_HISTORY_FIELDS = {"Version": ("ref_doctype", "docname"), "Comment": ("reference_doctype", "reference_name")}
+_READ_PTYPES = ("read", "select", "report", "export", "print", "email", "share")
+
+
+def _readable_names_sql(doctype, user):
+    """A SELECT of the names of `doctype` this user may read under the review rule."""
+    if doctype == "Alvoraa Appraisal Extension":
+        return (f"select `name` from `tabAlvoraa Appraisal Extension` "
+                f"where {appraisal_extension_query(user) or '1=1'}")
+    if doctype == "Alvoraa Review Item":
+        return ("select `name` from `tabAlvoraa Review Item` "
+                "where `parenttype` = 'Alvoraa Appraisal Extension' and `parent` in ("
+                + _readable_names_sql("Alvoraa Appraisal Extension", user) + ")")
+    return f"select `name` from `tabAppraisal` where {appraisal_query(user) or '1=1'}"
+
+
+def _history_query(table, user):
+    user = user or frappe.session.user
+    if user == "Administrator":
+        return ""
+    dt_field, name_field = _HISTORY_FIELDS[table]
+    t = f"`tab{table}`"
+    guarded = ", ".join(frappe.db.escape(dt) for dt in REVIEW_HISTORY_DOCTYPES)
+    condition = f"ifnull({t}.`{dt_field}`, '') not in ({guarded})"
+    if _has_full_access(user):
+        for dt in REVIEW_HISTORY_DOCTYPES:
+            condition += (f" or ({t}.`{dt_field}` = {frappe.db.escape(dt)} "
+                          f"and {t}.`{name_field}` in ({_readable_names_sql(dt, user)}))")
+    return f"({condition})"
+
+
+def version_query(user=None, doctype=None):
+    return _history_query("Version", user)
+
+
+def comment_query(user=None, doctype=None):
+    return _history_query("Comment", user)
+
+
+def _may_read_review_record(doctype, name, user):
+    """Can this user read that review record, copy or appraisal? Fails closed."""
+    if not name:
+        return False
+    if doctype == "Alvoraa Review Item":
+        parent = frappe.db.get_value(
+            "Alvoraa Review Item", {"name": name, "parenttype": "Alvoraa Appraisal Extension"}, "parent"
+        )
+        return _may_read_review_record("Alvoraa Appraisal Extension", parent, user)
+    if doctype == "Alvoraa Appraisal Extension":
+        row = frappe.db.get_value(doctype, name, ["employee", "review_status"], as_dict=True)
+        return bool(row) and has_appraisal_extension_permission(row, "read", user)
+    row = frappe.db.get_value("Appraisal", name, ["name", "employee", "docstatus"], as_dict=True)
+    return bool(row) and has_appraisal_permission(row, "read", user)
+
+
+def has_review_history_permission(doc, ptype=None, user=None):
+    """has_permission for Version and Comment: the rule of the record the row is about."""
+    user = user or frappe.session.user
+    if user == "Administrator":
+        return True
+    dt_field, name_field = _HISTORY_FIELDS.get(doc.get("doctype"), (None, None))
+    ref_doctype = doc.get(dt_field) if dt_field else None
+    if ref_doctype not in REVIEW_HISTORY_DOCTYPES:
+        return True
+    if ptype not in _READ_PTYPES and ref_doctype != "Appraisal":
+        # The review record's history and audit notes are a record: nobody
+        # below Administrator adds to, edits or deletes them by hand.
+        return False
+    return _may_read_review_record(ref_doctype, doc.get(name_field), user)
+
+
+# ── HRMS Appraisal in the desk (security review M4) ─────────────────────────
+#
+# The Appraisal holds the scores the review's manager ratings produce. HR's desk
+# reads of it follow the review record's rule (decisions 15, 16, 27):
+#
+#   read / write  the review is in HR Review or Completed, for a subject in a
+#                 company the caller looks after; or the review is in the
+#                 caller's own line once the self-review has been sent. A
+#                 submitted appraisal with no review record at all is history
+#                 and counts as completed.
+#   create        for a subject in a company the caller looks after.
+#   never         the caller's own appraisal, and nobody without an HR role;
+#                 and no change from HR Review on by someone in the subject's
+#                 reporting line (decision 34).
+
+
+def appraisal_query(user=None, doctype=None):
+    user = user or frappe.session.user
+    if user == "Administrator":
+        return ""
+    if not _has_full_access(user):
+        return "1=0"
+
+    from hrms.alvoraa_hr_core.access import permitted_companies
+
+    t = "`tabAppraisal`"
+    ext = "`tabAlvoraa Appraisal Extension`"
+    clauses = []
+    companies = permitted_companies(user)
+    if companies:
+        joined = ", ".join(frappe.db.escape(c) for c in companies)
+        clauses.append(
+            f"({t}.employee in (select `name` from `tabEmployee` where `company` in ({joined})) and ("
+            f"exists (select 1 from {ext} where {ext}.appraisal = {t}.name "
+            f"and {ext}.review_status in ('HR Review', 'Completed')) "
+            f"or ({t}.docstatus = 1 and not exists (select 1 from {ext} where {ext}.appraisal = {t}.name))))"
+        )
+    own = employee_for(user)
+    if own:
+        line = frappe.db.get_value("Employee", own, ["lft", "rgt"], as_dict=True)
+        if line and line.lft and line.rgt:
+            clauses.append(
+                f"(exists (select 1 from {ext} where {ext}.appraisal = {t}.name "
+                f"and ifnull({ext}.review_status, '') not in ('', 'Not Started', 'Employee Review')) "
+                f"and {t}.employee in (select `name` from `tabEmployee` "
+                f"where `lft` > {int(line.lft)} and `rgt` < {int(line.rgt)}))"
+            )
+    if not clauses:
+        return "1=0"
+    condition = "(" + " or ".join(clauses) + ")"
+    if own:
+        condition += f" and ifnull({t}.employee, '') != {frappe.db.escape(own)}"
+    return condition
+
+
+def has_appraisal_permission(doc, ptype=None, user=None):
+    user = user or frappe.session.user
+    if user == "Administrator":
+        return True
+    if not _has_full_access(user):
+        return False
+    employee = doc.get("employee") if hasattr(doc, "get") else None
+    if not employee:
+        # An appraisal being built in the desk before its employee is chosen.
+        return ptype == "create" and not doc.get("name")
+    own = employee_for(user)
+    if own and employee == own:
+        return False
+
+    from hrms.alvoraa_hr_core.access import permitted_companies
+
+    in_company = frappe.db.get_value("Employee", employee, "company") in permitted_companies(user)
+    name = doc.get("name")
+    if ptype == "create" or not name or not frappe.db.exists("Appraisal", name):
+        return in_company
+
+    status = frappe.db.get_value("Alvoraa Appraisal Extension", {"appraisal": name}, "review_status")
+    if status is None:
+        # No review record: only a submitted appraisal (history) is readable.
+        return in_company and frappe.db.get_value("Appraisal", name, "docstatus") == 1
+    if status in REVIEW_HR_STAGES and ptype not in _READ_PTYPES:
+        # From HR Review on, a change here is HR's, and never by someone in the
+        # subject's reporting line, whatever roles they hold (decision 34).
+        # Not logged: Frappe asks this for display as well as for a save.
+        from hrms.alvoraa_hr_core.access import subjects_in_my_line
+
+        if employee in subjects_in_my_line([employee], user, stand_in=get_hr_manager_employee):
+            return False
+    if in_company and status in REVIEW_HR_STAGES:
+        return True
+    return bool(own and (status or "") not in REVIEW_DRAFT_STAGES and employee in descendants(own))

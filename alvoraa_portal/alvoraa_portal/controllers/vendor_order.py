@@ -2,6 +2,15 @@ import frappe
 from frappe import _
 from frappe.utils import now_datetime, today, add_days
 
+from alvoraa_portal import delivery_settings
+from alvoraa_portal.subscription import requires_feature
+
+# Every whitelisted endpoint in this module belongs to ONE sellable feature,
+# so every one is gated (slice 016). Before, the panel was hidden and the door
+# still opened: a tenant that never bought the vendor and driver portal could
+# still call all 28 of these. The gate is entitlement, not ownership - who may
+# touch WHICH record is slice 016 phase 2.
+
 VALID_TRANSITIONS = {
     "Draft": ["Under Review", "Cancelled"],
     "Under Review": ["Approved", "Cancelled"],
@@ -52,7 +61,7 @@ def on_update(doc, method=None):
                 f"<p>Dear {doc.vendor_name},</p>"
                 f"<p>Your order <strong>{doc.name}</strong> status has been updated to: "
                 f"<strong>{doc.order_status}</strong>.</p>"
-                f"<p>Grace Drinks Operations</p>"
+                f"<p>{delivery_settings.ops_name()}</p>"
             ),
         )
 
@@ -79,6 +88,7 @@ def on_update(doc, method=None):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def change_order_status(order_name, new_status, reason=None):
     # Validate permission
     if frappe.session.user == "Guest":
@@ -103,9 +113,8 @@ def change_order_status(order_name, new_status, reason=None):
     # Ops email when a new order enters review
     if current_status == "Draft" and new_status == "Under Review":
         try:
-            frappe.sendmail(
-                recipients=["ops@gracedrinks.in"],
-                subject=f"[Grace Vendor Portal] New Order {order_name} Under Review",
+            delivery_settings.send_ops_alert(
+                subject=f"[Vendor Portal] New Order {order_name} Under Review",
                 message=(
                     f"<p>A vendor order requires review.</p>"
                     f"<p><strong>Order:</strong> {order_name}<br>"
@@ -114,6 +123,7 @@ def change_order_status(order_name, new_status, reason=None):
                     f"<strong>Slot:</strong> {order.delivery_slot}<br>"
                     f"<strong>Total:</strong> ₹{order.total_amount:,.2f}</p>"
                 ),
+                context=order_name,
             )
         except Exception:
             frappe.log_error(frappe.get_traceback(), "Vendor Order ops notification failed")
@@ -142,7 +152,7 @@ def change_order_status(order_name, new_status, reason=None):
             f"<p>Your order <strong>{order_name}</strong> status is now: "
             f"<strong>{new_status}</strong>.</p>"
             + (f"<p>Reason: {reason}</p>" if reason else "")
-            + "<p>Grace Drinks Operations</p>"
+            + f"<p>{delivery_settings.ops_name()}</p>"
         ),
     )
 
@@ -150,6 +160,7 @@ def change_order_status(order_name, new_status, reason=None):
 
 
 @frappe.whitelist()
+@requires_feature("vendor")
 def assign_delivery(order_name, driver_id, vehicle_reg, eta_time=None):
     order = frappe.get_doc("Vendor Order", order_name)
 
@@ -177,7 +188,7 @@ def assign_delivery(order_name, driver_id, vehicle_reg, eta_time=None):
             f"<p>Your order <strong>{order_name}</strong> has been dispatched.</p>"
             f"<p><strong>Driver:</strong> {driver_name}<br>"
             f"<strong>Vehicle:</strong> {vehicle_reg}</p>"
-            f"<p>Grace Drinks Operations</p>"
+            f"<p>{delivery_settings.ops_name()}</p>"
         ),
     )
 
@@ -215,7 +226,7 @@ def _get_warehouse_manager_emails():
         )
         if emp_email:
             emails = [emp_email]
-    return emails or ["ops@gracedrinks.in"]
+    return emails or delivery_settings.ops_recipients()
 
 
 def _prepare_delivery_pipeline(order_name, vo=None):
@@ -276,6 +287,19 @@ def _prepare_delivery_pipeline(order_name, vo=None):
     base_url = frappe.utils.get_url()
     da_new_url = f"{base_url}/app/delivery-assignment/new-delivery-assignment-1"
 
+    # Nobody holds the Logistics Manager role and no ops mailbox is configured,
+    # so there is nobody safe to send this to - it names the vendor and the
+    # order value (slice 016). The Delivery Order is still created; it waits for
+    # somebody to pick it up, and the log line says so.
+    if not manager_emails:
+        frappe.log_error(
+            f"DO {do.name} (Pending) created for VO {order_name}, but no "
+            f"Logistics Manager and no portal_ops_email - nobody was told to "
+            f"assign a driver.",
+            "Ready for Dispatch: nobody to notify",
+        )
+        return do.name
+
     try:
         frappe.sendmail(
             recipients=manager_emails,
@@ -303,15 +327,17 @@ def _prepare_delivery_pipeline(order_name, vo=None):
                 f"<p style='color:#666;font-size:12px;'>"
                 f"Set Vendor Order to <em>{order_name}</em>, select a driver and vehicle, "
                 f"then save — the driver portal will update automatically.</p>"
-                f"<p>Grace Operations System</p>"
+                f"<p>{delivery_settings.ops_name()}</p>"
             ),
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), f"Warehouse manager notification failed for {order_name}")
 
+    # The count, not the addresses: a log line should be enough for a person to
+    # open the record, and no more than that (slice 016).
     frappe.log_error(
         f"DO {do.name} (Pending) created for VO {order_name}. "
-        f"Notified managers: {manager_emails}",
+        f"Managers notified: {len(manager_emails)}",
         "Ready for Dispatch: Pipeline Ready",
     )
     return do.name

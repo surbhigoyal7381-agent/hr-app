@@ -88,6 +88,18 @@ jobs:
       - name: App integrity
         run: python scripts/check_app_integrity.py
 
+      # The visual system, counted rather than judged. The employee portal
+      # reached 120 hand-picked colours, 29 font sizes and 43 shadows because
+      # every individual change was reasonable - only a counter notices the
+      # aggregate. It also fails on any text colour that cannot meet WCAG AA
+      # contrast on the theme it appears in.
+      #
+      # BLOCKING. All five portal pages pass, and the point of the check is to
+      # keep it that way - the page reached 120 colours one reasonable change at
+      # a time, and only a counter notices the aggregate.
+      - name: Design system
+        run: python scripts/check_design_system.py
+
       # Node, for the portal handler check below.
       - uses: actions/setup-node@v4
         with:
@@ -114,12 +126,39 @@ jobs:
       - name: No undefined identifiers in portal pages
         run: node scripts/check_undefined_js.js
 
+      # A review's overall rating is the average of its items, so for about half
+      # the company it is a half-point that is not on the rating scale. Every
+      # screen used to match a rating against the scale by exact value and drop
+      # anything unmatched into the lowest band. That put 204 of 403 people in
+      # the wrong box of the calibration grid - the grid HR uses for promotion,
+      # succession and pay banding - always downwards, and quietly removed them
+      # from both bell curves and every figure above them.
+      #
+      # This runs the user's own arithmetic from the cycle where it was found.
+      - name: Ratings land in the right band
+        run: node scripts/check_rating_bands.js
+
+      # One nginx serves production and dev. Frappe trusts the first address in
+      # X-Forwarded-For, so nginx must never pass on what the caller wrote there
+      # (slice 014, OPS-19). A text check: no nginx needed. Parsing and behaviour
+      # are checked locally by scripts/check_nginx_forwarded.sh before a push.
+      - name: nginx never trusts a caller's address
+        run: python scripts/check_nginx_conf.py
+
       - name: Semgrep (Frappe security rules)
         continue-on-error: true
         run: |
           pip install semgrep
           semgrep --config hrms/semgrep --error --skip-unknown-extensions \
             alvoraa_goals alvoraa_portal hrms/hrms
+
+      # Slice 015. The 2026-09-17 history scan found three shared demo passwords
+      # in public code, for sites anyone can reach. The seed scripts now read the
+      # password from an environment variable and stop if it is not set. This keeps
+      # it that way. Text only - demo/ never reaches the bench, so a unittest could
+      # not guard it.
+      - name: No demo passwords in the repository
+        run: python scripts/check_no_demo_passwords.py
 
   # ── Python / Frappe tests ─────────────────────────────────────────────────
   test-python:
@@ -181,6 +220,13 @@ jobs:
 
       - name: System dependencies
         run: |
+          # GitHub's runner image ships Google's Chrome repository. We install
+          # nothing from it, but `apt-get update` still reads it - and on
+          # 2026-09-09 it served a bad index ("Hash Sum mismatch"), which
+          # returns exit 100 and failed the whole job twice before a single
+          # test ran. Dropping a source we do not use makes this job depend on
+          # Ubuntu's archive alone.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list                      /etc/apt/sources.list.d/google-chrome.sources
           sudo apt-get update
           sudo apt-get install -y libcups2-dev redis-tools mariadb-client libmariadb-dev
           pip install frappe-bench
@@ -232,6 +278,12 @@ jobs:
           bench --site test_site install-app alvoraa_portal
           bench --site test_site install-app alvoraa_goals
           bench --site test_site set-config allow_tests true
+          # Frappe refuses to create more than 60 users an hour on a site (the
+          # "Throttled" error). The suite creates a few hundred test users in one
+          # run on this brand-new site, so CI hit it (run 35222132118). Raised for
+          # this throwaway test site only - the local test_site has the same key -
+          # never for a tenant or the control plane.
+          bench --site test_site set-config -p throttle_user_limit 1000
 
       # This step is also the smoke test for the PMS module: `install-app hrms`
       # creates its 37 doctypes. If they are malformed, this fails here rather

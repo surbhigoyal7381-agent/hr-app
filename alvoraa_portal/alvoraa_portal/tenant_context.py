@@ -55,5 +55,11 @@ def get_branding():
         # Small square, for a 32-42 px tile next to the tenant's name.
         "brand_mark_url":  own_logo or brand.MARK,
         # The full lockup, where there is room to read a wordmark.
+        #
+        # NOTHING RENDERS THIS YET, ON PURPOSE. The Alvoraa half of it is built
+        # from placeholder artwork whose wordmark reads ALVORAA, and the chosen
+        # spelling is ALVORA. A tenant that set `tenant_logo_url` gets its own
+        # logo here and is safe. Before putting this on a screen, check that
+        # `alvoraa_portal/brand/alvoraa-logo-master.*` is the real artwork.
         "brand_logo_url":  own_logo or brand.LOGO,
     }

@@ -80,12 +80,24 @@ FAVICON = ASSET_DIR + "alvoraa-favicon.png"  # 32px, on white
 #
 # We write the second, the lowest rung, so a tenant can still override us from
 # either the Website Settings form or the Navbar Settings form.
+#
+# WHY banner_image AND splash_image POINT AT THE MARK, NOT THE LOCKUP
+#
+# They should use LOGO - they are the two places with room to read a wordmark.
+# They use MARK for now because the master artwork is a PLACEHOLDER whose
+# wordmark reads ALVORAA, and the chosen spelling is ALVORA. The monogram has no
+# lettering in it, so it is correct either way; the lockup is visibly wrong.
+#
+# Showing a customer the wrong spelling of our own name is worse than showing
+# them nothing, so nothing that carries type is displayed until the real artwork
+# lands. `alvoraa-logo.png` is built and ready, and this is the one-line change:
+# put LOGO back in these two rows. Nothing else moves.
 SLOTS = (
     # (doctype, fieldname, what we put there if the slot is free)
     ("Website Settings", "favicon", FAVICON),
     ("Website Settings", "app_logo", MARK),
-    ("Website Settings", "banner_image", LOGO),
-    ("Website Settings", "splash_image", LOGO),
+    ("Website Settings", "banner_image", MARK),   # LOGO once the wordmark is right
+    ("Website Settings", "splash_image", MARK),   # LOGO once the wordmark is right
     ("Navbar Settings", "app_logo", MARK),
 )
 

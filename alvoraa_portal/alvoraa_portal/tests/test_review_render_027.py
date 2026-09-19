@@ -98,11 +98,25 @@ class TestCycleKeepsItsPages(FrappeTestCase):
 
 	def setUp(self):
 		frappe.set_user("Administrator")
+		self._ensure_company()
 		self._cleanup()
 
 	def tearDown(self):
 		self._cleanup()
 		frappe.set_user("Administrator")
+
+	def _ensure_company(self):
+		"""A cycle belongs to a company. A bare site has none."""
+		if frappe.db.exists("Company", {"name": ["is", "set"]}):
+			return
+		frappe.get_doc({
+			"doctype": "Company",
+			"company_name": "Slice 027 Test Co",
+			"abbr": "S027",
+			"default_currency": "INR",
+			"country": "India",
+		}).insert(ignore_permissions=True)
+		frappe.db.commit()
 
 	def _cleanup(self):
 		frappe.db.delete("Alvoraa Cycle Config", {"appraisal_cycle": self.CYCLE})
@@ -162,9 +176,11 @@ class TestDemoSeedWritesWhatTheAppReads(FrappeTestCase):
 		self.assertIn("manager-feedback", text)
 
 	def test_the_seed_signs_off_under_the_field_the_app_reads(self):
+		# The key it writes, not the word anywhere in the file - the comment
+		# explaining the old name mentions it too.
 		text = self._seed_text()
-		self.assertNotIn('"signed_on"', text)
-		self.assertIn('"signed_at"', text)
+		self.assertNotIn('"signed_on":', text)
+		self.assertIn('"signed_at":', text)
 
 	def test_the_app_writes_signed_at(self):
 		"""If the app ever renames this, the seed pin above must move with it."""

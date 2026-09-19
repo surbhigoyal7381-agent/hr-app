@@ -41,6 +41,16 @@ x-app: &app
     # The stateful part. In a multi-node deployment this MUST be a shared RWX
     # volume (EFS / Azure Files / Filestore) — see ARCHITECTURE.md §6.3.
     - sites:/home/frappe/frappe-bench/sites
+  # Container logs had no size limit at all. They were NOT what filled the disk
+  # on 2026-09-10 - the images were, 43 of them - but they are the other
+  # unbounded thing writing to the same partition, and the worker's own log was
+  # already 67 MB. Capped at 150 MB per container (3 files of 50 MB).
+  # The cost: `docker logs --since` reaches back less far on a chatty container.
+  logging:
+    driver: json-file
+    options:
+      max-size: "50m"
+      max-file: "3"
   depends_on:
     configurator:
       condition: service_completed_successfully
@@ -48,6 +58,82 @@ x-app: &app
       condition: service_healthy
     redis:
       condition: service_healthy
+
+# ── Why the two blocks below exist: 2026-09-10, nine silent days ────────────
+#
+# Both production workers stopped at 06:32 server time on 2026-09-10 and nobody
+# found out until 2026-09-19. 700 jobs piled up on the `default` queue - every
+# scheduled job alvoraa.co runs, plus the tidy-up work from provisioning two new
+# tenants. The whole chain is proven from the docker daemon's own journal:
+#
+#   1. The 193 GB disk hit 100%. 43 tagged images at about 11 GB each. (The image
+#      cleanup at the end of .github/workflows/deploy.yml was written for this.)
+#   2. redis here runs `--appendonly yes`, so a full disk stops it accepting
+#      WRITES. Every command came back:
+#        MISCONF Errors writing to the AOF file: No space left on device
+#   3. rq writes a heartbeat on every job and does not retry it. The error came
+#      out of set_current_job_working_time -> connection.hset, rq logged
+#      "found an unhandled exception, quitting", and both worker processes
+#      exited - three seconds apart.
+#   4. `restart: unless-stopped` on x-app above DID fire. The journal says:
+#        restarting container ... restartCount=1 restartPolicy="{unless-stopped 0}"
+#      and then, immediately:
+#        restartmanger wait error: failed to mount : mkdir
+#        /var/lib/docker/rootfs/overlayfs/...: no space left on device
+#      A restart needs disk to mount a root filesystem. There was none. The
+#      restart manager gave up and never tried again.
+#   5. dockerd could not even record the failure:
+#        failed saving state on start failure: write .../.tmp-config.v2.json:
+#        no space left on device
+#      so the container's saved state still said Running. THAT is why `docker ps`
+#      reported "Up 12 days" for nine days while `docker top` on the same
+#      container answered "container is not running".
+#
+# The lesson: a restart policy is necessary and was never sufficient. The
+# container has to be able to SAY it is not working, and something outside
+# docker has to look. So:
+#
+#   • the probes below make `docker ps` honest. They fail in all three shapes of
+#     the 10 Sep failure - the exec cannot run at all (zombie container), redis
+#     is unreachable or refusing writes, or the process is up but has no live
+#     registration.
+#   • scripts/check_workers.sh is the part that tells a human. The deploy runs it
+#     as a gate, and .github/workflows/worker-health.yml runs it every 15 minutes
+#     in between, which is the gap that let 10 Sep run for nine days.
+#
+# Docker does NOT restart a container for being unhealthy. These probes report;
+# they never act. Anything that acts is a decision for a human, not for a
+# healthcheck - see docs/slices/026-worker-health/07-devops-inputs.md.
+
+# A worker is healthy when redis says THIS container has an rq worker with a
+# heartbeat in the last 10 minutes. rq's own heartbeat TTL is about 7 minutes,
+# so 10 leaves room for a slow job without going soft on a real death.
+# Measured on production on 2026-09-19: 0.77 s per run including docker exec.
+x-worker-healthcheck: &worker-healthcheck
+  test:
+    - CMD-SHELL
+    - >-
+      /home/frappe/frappe-bench/env/bin/python -c 'import os,socket,sys,time; from redis import Redis; from rq import Worker; me=socket.gethostname(); ok=any(w.hostname==me and w.last_heartbeat and time.time()-w.last_heartbeat.timestamp()<600 for w in Worker.all(connection=Redis.from_url(os.environ["REDIS_QUEUE"]))); sys.exit(0 if ok else 1)'
+  interval: 60s
+  timeout: 20s
+  retries: 3
+  start_period: 120s
+
+# The scheduler only ENQUEUES; it registers no rq worker, so there is no
+# heartbeat to read. This probe proves two narrower things, and says so plainly:
+# the container can still run a process at all (the 10 Sep zombie could not), and
+# redis is reachable and accepting commands from it (the 10 Sep MISCONF was not).
+# It does NOT prove cron jobs are firing. Nothing cheap does; `bench doctor` in
+# the deploy and the queue-depth check in scripts/check_workers.sh cover that.
+x-scheduler-healthcheck: &scheduler-healthcheck
+  test:
+    - CMD-SHELL
+    - >-
+      /home/frappe/frappe-bench/env/bin/python -c 'import os,sys; from redis import Redis; sys.exit(0 if Redis.from_url(os.environ["REDIS_QUEUE"]).ping() else 1)'
+  interval: 60s
+  timeout: 20s
+  retries: 3
+  start_period: 120s
 
 services:
 
@@ -173,17 +259,20 @@ services:
     deploy:
       replicas: 1
       mode: replicated
+    healthcheck: *scheduler-healthcheck
 
   # ── Workers ──────────────────────────────────────────────────────────────
   worker-default:
     <<: *app
     command: bench worker --queue default,short
+    healthcheck: *worker-healthcheck
 
   # `long` carries recalculate_all_progress, which iterates every goal across
   # every tenant. Give it its own worker so it cannot starve interactive jobs.
   worker-long:
     <<: *app
     command: bench worker --queue long
+    healthcheck: *worker-healthcheck
 
   # ── Ingress ──────────────────────────────────────────────────────────────
   # Terminate TLS here only if there is no cloud load balancer in front.

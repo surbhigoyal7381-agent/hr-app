@@ -198,6 +198,43 @@ jobs:
           git show "origin/${BRANCH}:scripts/check_nginx_parses.sh" > "$TMP/check.sh"
           bash "$TMP/check.sh" "$TMP/nginx.conf" "${CERT_DIR:-/etc/letsencrypt}"
 
+      # ── Disk headroom gate: the cause of the 2026-09-10 outage ────────────
+      #
+      # A full disk is not just "the deploy fails". On 2026-09-10 the 193 GB disk
+      # hit 100%, and every one of these followed from it:
+      #   • redis runs with an append-only file, so it stopped accepting WRITES
+      #     and answered every command "MISCONF Errors writing to the AOF file";
+      #   • rq does not retry its heartbeat, so both workers quit within three
+      #     seconds of each other;
+      #   • `restart: unless-stopped` fired and FAILED - docker could not mkdir a
+      #     root filesystem to restart into - and the restart manager gave up;
+      #   • docker could not even save the failed state, so `docker ps` reported
+      #     "Up 12 days" for the next nine days while the containers were shells.
+      # 700 jobs queued up behind that, unnoticed, until 2026-09-19.
+      #
+      # Recovery needs the disk the failure just ate. So stop BEFORE the pull,
+      # while there is still room to fix it: one image is about 11 GB, and the
+      # backup below writes a full copy of every site.
+      #
+      # This step only looks. The tagged-image cleanup at the end of Deploy is
+      # what normally keeps this from ever tripping; if it trips anyway, that
+      # cleanup stopped working and a human should see why.
+      - name: Disk headroom
+        run: |
+          set -euo pipefail
+          AVAIL=$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
+          echo "Free on / : ${AVAIL} GB"
+          if [ "$AVAIL" -lt 25 ]; then
+            echo "::error::Only ${AVAIL} GB free on /. A deploy needs ~25 GB (image + backup),"
+            echo "::error::and below ~20 GB docker cannot restart a container at all."
+            docker system df
+            docker images --format '{{.Size}}	{{.Repository}}:{{.Tag}}' | sort -hr | head -15
+            exit 1
+          fi
+          if [ "$AVAIL" -lt 45 ]; then
+            echo "::warning::${AVAIL} GB free on /. Getting tight - check the image cleanup."
+          fi
+
       # ── Pre-deploy backup: this is the rollback point ─────────────────────
       # A database dump alone is NOT restorable — site_config.json holds each
       # site's encryption_key. Both are captured here. (ARCHITECTURE.md §17)
@@ -555,14 +592,50 @@ jobs:
           echo "::error::Smoke test failed — /api/method/ping never returned 200"
           exit 1
 
-      - name: Stack and scheduler health
-        continue-on-error: true
+      # ── Are the background workers actually working? ──────────────────────
+      #
+      # This step used to be `continue-on-error: true` with `|| true` on the only
+      # command that checked anything, so it could not fail and nobody read it.
+      # Meanwhile, between 2026-09-10 and 2026-09-19, both production workers were
+      # dead and 700 jobs sat on the `default` queue with nothing to run them.
+      # `docker ps` said "Up 12 days" the whole time - see scripts/check_workers.sh.
+      #
+      # So it is a gate now. A deploy that leaves a queue with no live worker is a
+      # failed deploy, and it says so here rather than in nine days' time.
+      #
+      # It runs AFTER the smoke test on purpose: the site being up is the more
+      # urgent fact, and a worker that is still registering after a container swap
+      # gets those extra seconds to appear.
+      - name: Background workers must be working
         run: |
+            set -uo pipefail
             cd /var/www/html/hr-app/deploy/compose
             export COMPOSE_PROJECT_NAME="$PROJECT"
             DC="docker compose -f docker-compose.app.yml -f $OVERLAY --env-file ../envs/${ENV_NAME}.env --env-file $PIN_FILE"
             $DC ps
+            # Context, not a gate: `doctor` counts workers but cannot say which
+            # queues they cover, and it needs a site to talk to.
             $DC exec -T backend bench --site ${{ needs.plan.outputs.smoke_site }} doctor || true
+
+            # The Deploy step can fail at its own checkout and leave the previous
+            # release on disk, so the checker is not always here. Say so rather
+            # than failing a deploy over a missing file.
+            if [ ! -f ../../scripts/check_workers.sh ]; then
+              echo "::warning::scripts/check_workers.sh is not in this tree - workers NOT verified"
+              exit 0
+            fi
+
+            # Workers register with redis a few seconds after the container starts.
+            # Give them a minute before calling it a failure.
+            for attempt in 1 2 3 4 5 6; do
+              if bash ../../scripts/check_workers.sh "$PROJECT"; then exit 0; fi
+              echo "attempt $attempt: workers not all healthy yet, waiting 10s"
+              sleep 10
+            done
+            echo "::error::A queue has no live worker after this deploy. Background jobs"
+            echo "::error::- scheduled jobs, emails, tenant provisioning - are NOT running."
+            echo "::error::See the FAIL lines above. Nothing has been changed automatically."
+            exit 1
 
       - name: Rollback instructions
         if: failure()

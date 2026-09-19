@@ -35,6 +35,7 @@ import secrets
 
 import frappe
 from frappe import _
+from frappe.permissions import has_permission
 from frappe.rate_limiter import rate_limit
 from frappe.utils import add_to_date, cint, get_datetime, get_url, now, today
 
@@ -101,15 +102,33 @@ def _limited(field, source, limit):
 				value = frappe.session.user
 			if not value:
 				refuse("INVALID_REQUEST", _("We could not read that request."))
-			frappe.form_dict[field] = _hash(value)
+			hashed = _hash(value)
+			frappe.form_dict[field] = hashed
 			try:
 				return limited(*args, **kwargs)
+			except frappe.RateLimitExceededError:
+				# Frappe's decorator says how many, not how long. The app needs
+				# the wait (section 7.1), which is what is left of the window.
+				frappe.clear_messages()
+				refuse("TOO_MANY_TRIES",
+				       _("Too many tries. Please wait a while and try again."),
+				       retry_after_s=_seconds_left(field, hashed, 60 * 60))
 			finally:
 				frappe.form_dict.pop(field, None)
 
 		return wrapper
 
 	return decorator
+
+
+def _seconds_left(field, hashed, window):
+	"""How long until Frappe's window for this key opens again. The key is the
+	one `rate_limit` builds (rl:<cmd>:<identity>:<seconds>); step 1 saw it."""
+	try:
+		ttl = frappe.cache.ttl(frappe.cache.make_key(f"rl:{frappe.form_dict.cmd}:{hashed}:{window}"))
+		return int(ttl) if ttl and int(ttl) > 0 else window
+	except Exception:
+		return window
 
 
 def _refuse_bad_code(code):
@@ -201,17 +220,21 @@ def _refuse_if_dead(row):
 		       expired_at=str(row.expires_at or ""))
 
 
-def _live_invite(code, token=None):
+def _live_invite(code, token=None, alert_if_used=False):
 	"""The waiting code and its Active employee, or a refusal. Writes nothing -
 	except the one case the spec names (AC-60): a waiting code for somebody who
 	has left is cancelled here, so it cannot be used after the leaver hook was
-	skipped by an import."""
+	skipped by an import.
+
+	`alert_if_used` is E1's alone: a used code scanned again is worth telling HR
+	about (N3). E2 on a dead code answers as E1 would and sends nothing (AC-62) -
+	the first run sent N3 from E2 too, to every HR Manager on the site."""
 	_refuse_bad_code(code)
 	row = _invite_by_code(code)
 	if not row:
 		refuse("QR_NOT_RECOGNISED", _("This code is not recognised. Ask HR for a new one."))
 
-	if row.status == "Used":
+	if row.status == "Used" and alert_if_used:
 		_alert_if_scanned_from_another_phone(row, token)
 
 	_refuse_if_dead(row)
@@ -277,7 +300,7 @@ def check_code(code, token=None):
 	no email, no phone number, no date of birth, no workplace.
 	"""
 	errors.check_app_version()
-	row, emp = _live_invite(code, token)
+	row, emp = _live_invite(code, token, alert_if_used=True)
 	settings.refuse_unless_eligible(emp.designation)
 	return {
 		"first_name": emp.first_name,
@@ -516,7 +539,7 @@ def _hr_who_may_invite(employee):
 		frappe.throw(_("Only HR can invite an employee to the app."), frappe.PermissionError)
 	if not employee or not isinstance(employee, str) or not frappe.db.exists("Employee", employee):
 		frappe.throw(_("Choose an employee."), frappe.ValidationError)
-	if not frappe.has_permission("Employee", "read", doc=employee, user=user, print_logs=False):
+	if not has_permission("Employee", "read", doc=employee, user=user, print_logs=False):
 		frappe.throw(_("You cannot invite this employee."), frappe.PermissionError)
 	return user
 

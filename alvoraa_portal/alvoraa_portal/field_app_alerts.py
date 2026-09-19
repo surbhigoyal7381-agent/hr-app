@@ -27,6 +27,7 @@ Three rules, each with a test:
 
 import frappe
 from frappe import _
+from frappe.permissions import has_permission
 from frappe.utils import add_to_date, format_datetime, formatdate, get_fullname, now
 
 INVITE = "Alvoraa App Invite"
@@ -58,7 +59,7 @@ def hr_managers_who_can_read(*employees):
 	for user in users:
 		if user in ("Administrator", "Guest"):
 			continue
-		if all(frappe.has_permission("Employee", "read", doc=e, user=user, print_logs=False)
+		if all(has_permission("Employee", "read", doc=e, user=user, print_logs=False)
 		       for e in employees):
 			email = _email_of(user)
 			if email:
@@ -180,7 +181,10 @@ def _send(emails, subject, body, doctype, name):
 			now=frappe.in_test,
 			enqueue_after_commit=not frappe.in_test,
 		)
-	except Exception:
-		# The row this is about is named; nobody's name or secret goes in.
-		frappe.log_error(f"could not queue a field app alert for {doctype} {name}",
-		                 "Field app alerts")
+	except Exception as exc:
+		# The row this is about is named, and the place in the code; nobody's
+		# name or secret goes in (`_code_places` carries no values).
+		from alvoraa_portal.field_checkin import _code_places
+		place = _code_places(exc)
+		frappe.log_error("Field app alerts",
+		                 f"could not queue a field app alert for {doctype} {name}: {place}")

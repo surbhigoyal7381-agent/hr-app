@@ -119,11 +119,38 @@ the bench to run them.
    `--ff-only` makes no merge commit and refuses if `dev` moved in the meantime; rebase
    again and repeat. It can never discard someone's commit.
 4. Mark "Bench in use" on the board, test, then clear it.
-5. **One test run at a time** on the bench. Check first:
-   `docker exec hrlocal-bench pgrep -af run-tests`.
-6. Anything that restarts the bench, changes its sites or data, or runs `bench use` affects
+5. **One test run at a time** on the bench, across every session, whichever container it
+   runs in. Check both, because neither check alone is enough:
+
+   ```bash
+   docker exec hrlocal-bench pgrep -af run-tests   # a run started inside the shared bench
+   docker ps                                       # another session's own container
+   ```
+
+   `pgrep` inside `hrlocal-bench` **cannot see a session running in its own container**
+   against the same `test_site`. Two sessions walked into this on 2026-09-19, one from
+   each side.
+
+6. **Claim the board before every run, including a single module.** The rule is not
+   courtesy, it is what keeps the results honest:
+
+   - **The Redis hook cache is shared by every container**, and it is rebuilt by whichever
+     code ran last. A run started from `hrlocal-bench` runs the main checkout, so it
+     silently strips another branch's hooks out of the cache that the other session's
+     throwaway container is using. Their tests then fail for a reason that is not in their
+     code — on 2026-09-19 three of slice 013's tests failed "ValidationError not raised"
+     and passed alone straight afterwards.
+   - **The database is shared too.** Concurrent runs deadlock each other's `tearDown`; one
+     collision left a run dead on a lock timeout having executed nothing, and another
+     deadlocked three teardowns.
+   - **Both runs become untrustworthy, not just the other one.** A pass inside a disturbed
+     window proves nothing. Re-run it properly rather than relying on it.
+
+   Anything longer than one module: use a throwaway container with its own site, so it
+   contends with nobody.
+7. Anything that restarts the bench, changes its sites or data, or runs `bench use` affects
    every session. Say so on the board first, and ask the user if in doubt.
-7. A fix found while testing is made in the worktree, committed, and brought in the same
+8. A fix found while testing is made in the worktree, committed, and brought in the same
    way. Never edit the main checkout directly to "just try something".
 
 ## 5. When a rebase or merge conflicts

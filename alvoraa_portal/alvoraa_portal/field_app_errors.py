@@ -112,7 +112,13 @@ def refuse(code, message, **values):
 	# public body - anything that leaks does so here.
 	body = {k: v for k, v in values.items() if k in allowed}
 
-	raise FieldAppRefusal(message, code, status, body)
+	# Through frappe.throw, not a bare raise: throw is what queues the sentence
+	# in `_server_messages`, and the web check-in page matches on that sentence.
+	# The first run of slice 014's tests against this file caught a bare raise
+	# here - every refusal came back with an empty message log. Frappe accepts
+	# an exception INSTANCE as `exc` (utils/messages.py, `_raise_exception`),
+	# so the code and values still travel on the exception the wrapper catches.
+	frappe.throw(message, FieldAppRefusal(message, code, status, body))
 
 
 # Frappe names an error class in `exc_type`, and that name is part of what every

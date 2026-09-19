@@ -174,6 +174,10 @@ class OnlyAnActivePhonePunches(FieldAppCase):
 
 		self.assertEqual(pending[0], unknown[0], "the bodies differ")
 		self.assertEqual(pending[1], unknown[1], "the sentences differ")
+		# Two empty sentences are also "the same". The first run passed this
+		# way while the web page's sentence was missing altogether, so the pin
+		# now insists the sentence is there.
+		self.assertIn("waiting for HR", pending[1], "the refusal carried no sentence")
 		self.assertEqual(pending[0].get("http_status_code"), 401)
 		self.assertEqual(pending[0].get("code"), "DEVICE_PENDING")
 
@@ -378,6 +382,7 @@ class ThePhoneRecordCannotBeForged(FieldAppCase):
 
 	def test_013_ac11_a_block_has_to_say_why(self):
 		phone, _t = _new_phone(self.employee, "Active")
+		frappe.db.commit()  # the rollback below must not take the phone with it
 		doc = frappe.get_doc(fc.DEVICE, phone.name)
 		doc.status = "Blocked"
 		with self.assertRaises(frappe.ValidationError):

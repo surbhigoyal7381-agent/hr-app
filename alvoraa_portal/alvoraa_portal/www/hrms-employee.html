@@ -11926,7 +11926,8 @@ window.pfRatingLabel = function(value, scale) {
 
     html += '<div class="pd-chart-card">';
     html += '<div class="pd-chart-title">Overall Performance</div>';
-    html += '<div class="pd-chart-sub">' + gpEsc((oScale || {}).scale_name || "Rating") + ' · ' + base.length + ' reviewed</div>';
+    /* Count the ratings the chart is actually drawn from, not the rows. */
+    html += '<div class="pd-chart-sub">' + gpEsc((oScale || {}).scale_name || "Rating") + ' · ' + oStats.total + ' rated</div>';
     html += '<div id="pd-chart-overall"></div>';
     if (oShape.label) html += '<div class="pd-health-label ' + oShape.cls + '">' + oShape.label + '</div>';
     if (_pdClickedOverall !== null) {
@@ -11938,7 +11939,7 @@ window.pfRatingLabel = function(value, scale) {
     if (pScale) {
       html += '<div class="pd-chart-card">';
       html += '<div class="pd-chart-title">Potential for Next Role</div>';
-      html += '<div class="pd-chart-sub">' + gpEsc(pScale.scale_name) + ' · ' + pBase.length + ' in view</div>';
+      html += '<div class="pd-chart-sub">' + gpEsc(pScale.scale_name) + ' · ' + pStats.total + ' rated</div>';
       html += '<div id="pd-chart-potential"></div>';
       if (pShape && pShape.label) html += '<div class="pd-health-label ' + pShape.cls + '">' + pShape.label + '</div>';
       if (_pdClickedPotential !== null) {

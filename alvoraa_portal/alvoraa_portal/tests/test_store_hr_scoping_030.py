@@ -28,7 +28,7 @@ from alvoraa_portal import attendance_analytics as aa
 from alvoraa_portal import performance_api as papi
 from alvoraa_portal.tests.test_portal_security_010 import _employee, _user
 from alvoraa_portal.tests.test_review_copies_010d import _day, _Team
-from hrms.alvoraa_hr_core import access
+import hrms.alvoraa_hr_core.access as access
 
 STORE_A = "S030 Store A"
 STORE_B = "S030 Store B"

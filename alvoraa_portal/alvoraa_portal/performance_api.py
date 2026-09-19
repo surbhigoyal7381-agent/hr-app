@@ -27,6 +27,32 @@ from hrms.alvoraa_hr_core.access import (
 HR_ROLES = frozenset({"HR Manager", "HR User", "System Manager"})
 
 
+class MissingArgument(Exception):
+    """A call arrived without something it cannot work without.
+
+    Frappe drops keyword arguments a method does not declare, but a method
+    called without one of its *required* arguments raises a plain TypeError,
+    which reaches the caller as a 500 - an error that reads as "the server is
+    broken" when the truth is "that request was incomplete". Frappe reads
+    http_status_code off the exception (frappe/app.py), so this says 400.
+    """
+
+    http_status_code = 400
+
+
+def _require_argument(**named):
+    """Refuse a call that is missing an argument, in plain words and as a 400.
+
+    Only ever names the argument. Never a record, a person or a value.
+    """
+    for name, value in named.items():
+        if value in (None, ""):
+            frappe.throw(
+                f"This request is missing '{name}'. Choose one and try again.",
+                MissingArgument,
+            )
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # Guards
 # ══════════════════════════════════════════════════════════════════════════
@@ -1991,12 +2017,13 @@ def delete_rating_scale(name):
 
 
 @frappe.whitelist()
-def hr_list_appraisals(cycle, show_archived=0):
+def hr_list_appraisals(cycle=None, show_archived=0):
     """Return all appraisals in a cycle with employee info and review_status from Alvoraa Appraisal Extension.
 
     Only reviews the caller may list (SEC-26): the companies they look after and
     their own line. The overall rating follows the review's stage (decision 3).
     """
+    _require_argument(cycle=cycle)
     reviews = _hr_cycle_reviews(cycle, include_cancelled=True)
     if not reviews:
         return []
@@ -3777,6 +3804,24 @@ def save_calibration_note(appraisal, calibration_notes, calibrated_rating=None):
     return {"message": "Calibration note saved."}
 
 
+def _rating_or_none(value):
+    """A rating, or None when nobody gave one.
+
+    The rating fields on Alvoraa Appraisal Extension are Floats, so a review
+    nobody rated holds 0.0 and not NULL. Every rating scale in the product
+    starts at 1, so a stored 0 means "not rated". Sending 0.0 instead used to
+    put an unrated person in the bottom-left box of the calibration grid,
+    which reads as a judgement nobody made.
+
+    If a scale is ever configured with a real 0, this needs to change with it:
+    see docs/slices/027-review-render-fixes/03-implementation-notes.md.
+    """
+    if value in (None, ""):
+        return None
+    rating = flt(value)
+    return None if rating <= 0 else rating
+
+
 @frappe.whitelist()
 def get_calibration_matrix(cycle):
     """Return completed appraisals for the 2D calibration matrix. HR only."""
@@ -3878,7 +3923,7 @@ def get_calibration_matrix(cycle):
             "employee":        emp_id,
             "employee_name":   emp.get("employee_name", emp_id),
             "appraisal":       ap_name,
-            "overall_rating":  flt(ext.get("overall_rating")),
+            "overall_rating":  _rating_or_none(ext.get("overall_rating")),
             "department":      dept,
             "designation":     desig,
             "gender":          gender,
@@ -3888,7 +3933,7 @@ def get_calibration_matrix(cycle):
         }
         # Never your own potential rating (PRIV-1).
         if ap.viewer != review_items.VIEWER_SUBJECT:
-            row["potential_rating"] = flt(ext.get("potential_rating"))
+            row["potential_rating"] = _rating_or_none(ext.get("potential_rating"))
         rows.append(row)
 
     rows.sort(key=lambda r: r["employee_name"])
@@ -4746,7 +4791,7 @@ def answer_rating_flag(appraisal, target, keep=1, rating=None, reason="", view=N
 # ══════════════════════════════════════════════════════════════════════════
 
 @frappe.whitelist()
-def get_manager_review(appraisal, view=None):
+def get_manager_review(appraisal=None, view=None):
     """The full review for its manager or for HR: the self-review and the manager's fields.
 
     `view` is the list the review was opened from (decision 37): "manager" from
@@ -4754,6 +4799,7 @@ def get_manager_review(appraisal, view=None):
     follow the view, never a guess from the caller's roles.
     """
     import json
+    _require_argument(appraisal=appraisal)
     ap = frappe.get_doc("Appraisal", appraisal)
     # In order, before anything is read or created (SEC-6): never the subject
     # (SEC-10); the right for the view asked for; and only once the self-review

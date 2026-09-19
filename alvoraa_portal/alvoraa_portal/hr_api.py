@@ -2299,6 +2299,7 @@ def get_org_setting(key):
 @frappe.whitelist()
 def set_org_setting(key, value):
     _require_hr()
+    _refuse_store_hr("hr_api.set_org_setting")
     if not isinstance(key, str) or key not in ALLOWED_ORG_SETTINGS:
         _refuse_org_setting("hr_api.set_org_setting")
     value = str(value) if value is not None else ""
@@ -2322,6 +2323,24 @@ def _require_hr():
     # "Company Values" among them - for everybody including HR.
     if not {"HR Manager", "System Manager"} & set(frappe.get_roles()):
         frappe.throw("Not permitted", frappe.PermissionError)
+
+
+def _refuse_store_hr(endpoint):
+    """An organisation-wide setting is changed by HR with company-wide reach,
+    never by a store's HR person (slice 030, decision 4).
+
+    A store's HR Manager holds a Branch User Permission. The same read that
+    limits what they see (access.permitted_employees, through
+    permitted_branches) decides here, so "limited to a store" has one
+    definition. Reads are not guarded by this; System Manager is not limited.
+    """
+    from hrms.alvoraa_hr_core.access import permitted_branches, refuse
+
+    if "System Manager" in frappe.get_roles():
+        return
+    if permitted_branches() is not None:
+        refuse(_("Organisation-wide settings are changed by HR with company-wide permission, "
+                 "not by a store's HR."), "030-D4", endpoint)
 
 
 @frappe.whitelist()

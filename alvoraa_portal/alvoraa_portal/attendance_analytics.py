@@ -556,12 +556,15 @@ def _linked_branches(user=None):
 	head office - were therefore openable by a store's HR person, while HR
 	Analytics leaves the same people out of their figures (decision D-8). The
 	two screens now agree, and this one fails closed (DEF-6, 2026-09-16).
-	"""
-	from frappe.core.doctype.user_permission.user_permission import get_user_permissions
 
-	branches = sorted({p.get("doc") for p in get_user_permissions(user).get("Branch", [])
-	                   if p.get("doc") and p.get("applicable_for") in (None, "", "Employee")})
-	return branches or None
+	Slice 030: the definition moved to hrms.alvoraa_hr_core.access so the review
+	list, the calibration matrix and the KPI report answer "who may this HR
+	person see" the same way as these screens. This name stays for the callers
+	above; there is one definition.
+	"""
+	from hrms.alvoraa_hr_core.access import permitted_branches
+
+	return permitted_branches(user)
 
 
 def _org_read():

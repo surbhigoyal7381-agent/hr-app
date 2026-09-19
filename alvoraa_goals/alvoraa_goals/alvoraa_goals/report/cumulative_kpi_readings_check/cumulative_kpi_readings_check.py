@@ -11,8 +11,9 @@ the same work more than once. This lists every Cumulative KPI whose approved
 readings never go down (each one at least the one before), so HR can check and
 correct them in the desk before relying on the reviews that count them.
 
-It changes nothing. It lists only KPIs of people in the companies the caller
-looks after as HR, and shows no rating. Two queries, plus one per 500 KPIs.
+It changes nothing. It lists only KPIs of the people the caller looks after as
+HR - their companies, narrowed to their store when they hold a Branch User
+Permission (slice 030) - and shows no rating. Three queries, plus one per 500 KPIs.
 """
 
 import frappe
@@ -21,16 +22,13 @@ from frappe.utils import flt
 
 
 def execute(filters=None):
-	from hrms.alvoraa_hr_core.access import permitted_companies
+	from hrms.alvoraa_hr_core.access import permitted_employees
 
 	filters = frappe._dict(filters or {})
 	if not {"HR Manager", "HR User", "System Manager"} & set(frappe.get_roles()):
 		frappe.throw(_("Only HR can run this report."), frappe.PermissionError)
 
-	companies = permitted_companies()
-	if filters.get("company"):
-		companies = [c for c in companies if c == filters.company]
-	return _columns(), _rows(companies, filters.get("appraisal_cycle"))
+	return _columns(), _rows(permitted_employees(), filters.get("appraisal_cycle"), filters.get("company"))
 
 
 def _columns():
@@ -50,13 +48,17 @@ def _columns():
 	]
 
 
-def _rows(companies, cycle=None):
-	if not companies:
+def _rows(employees, cycle=None, company=None):
+	"""`employees` is the set the caller may see; the company filter only narrows it."""
+	if not employees:
 		return []
+	emp_filters = {"name": ["in", sorted(employees)]}
+	if company:
+		emp_filters["company"] = company
 	kpi_filters = {
 		"progress_mode": "Cumulative",
 		"status": ["!=", "Cancelled"],
-		"employee": ["in", frappe.get_all("Employee", filters={"company": ["in", companies]}, pluck="name") or [""]],
+		"employee": ["in", frappe.get_all("Employee", filters=emp_filters, pluck="name") or [""]],
 	}
 	if cycle:
 		kpi_filters["appraisal_cycle"] = cycle

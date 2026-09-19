@@ -21,7 +21,8 @@ from alvoraa_goals.permissions import get_effective_manager, get_hr_manager_empl
 from alvoraa_goals.controllers.kpi import MAX_RATING, TOTAL_WEIGHTAGE, rating_from_attainment
 import alvoraa_goals.review_items as review_items
 from hrms.alvoraa_hr_core.access import (
-    permitted_companies, refuse, refuse_hr_step_in_line, refuse_own_rating, subjects_in_my_line,
+    permitted_companies, permitted_employees, refuse, refuse_hr_step_in_line, refuse_own_rating,
+    subjects_in_my_line,
 )
 
 HR_ROLES = frozenset({"HR Manager", "HR User", "System Manager"})
@@ -2635,8 +2636,10 @@ _COPY_FIELDS = [
 def _hr_cycle_reviews(cycle, employee=None, include_cancelled=False):
     """The reviews in one cycle this HR person may list, and what each row may show.
 
-    Scope (SEC-26, decision 16): subjects of the companies the caller looks
-    after, plus the caller's own line and their own review. Each row gets
+    Scope (SEC-26, decision 16; slice 030): the people the caller looks after as
+    HR - their companies, narrowed to their store when they hold a Branch User
+    Permission (access.permitted_employees) - plus the caller's own line and
+    their own review. Each row gets
     `status`, `extension` and `viewer`, which review_items.rating_fields_for reads:
       subject  the caller's own review
       manager  someone in the caller's line
@@ -2656,7 +2659,7 @@ def _hr_cycle_reviews(cycle, employee=None, include_cancelled=False):
         "Appraisal",
         filters=filters,
         or_filters=[
-            ["company", "in", permitted_companies() or [""]],
+            ["employee", "in", sorted(permitted_employees()) or [""]],
             ["employee", "in", sorted(line | {me}) if me else [""]],
         ],
         fields=["name", "employee", "employee_name", "department", "designation", "company", "docstatus",
@@ -3824,7 +3827,12 @@ def _rating_or_none(value):
 
 @frappe.whitelist()
 def get_calibration_matrix(cycle):
-    """Return completed appraisals for the 2D calibration matrix. HR only."""
+    """Return completed appraisals for the 2D calibration matrix. HR only.
+
+    Scoped the same way as the review list: a store's HR person gets their
+    store's reviews only (slice 030). Nobody's gender leaves the server: the
+    matrix has no gender filter any more (decision 3).
+    """
     import json as _json
     _require_hr()
 
@@ -3871,18 +3879,20 @@ def get_calibration_matrix(cycle):
         "end_date":   str(ci.get("end_date") or ""),
     }
 
-    # ── The reviews this HR person may list (slice 010 group D, SEC-26) ──
+    # ── The reviews this HR person may list (slice 010 group D, SEC-26; slice 030 branch scope) ──
     appraisals = _hr_cycle_reviews(cycle)
 
     rows = []
     stage_counts = {}
-    filter_depts, filter_desig, filter_genders, filter_emp_types = set(), set(), set(), set()
+    filter_depts, filter_desig, filter_emp_types = set(), set(), set()
     filter_managers = {}  # emp_id -> employee_name
 
     plotted = [a for a in appraisals if a.status in ("HR Review", "Completed")]
+    # The Employee read takes its names from the scoped list above, so it cannot
+    # reach a person the caller may not list.
     people = {e.name: e for e in frappe.get_all(
         "Employee", filters={"name": ["in", [a.employee for a in plotted] or [""]]},
-        fields=["name", "employee_name", "department", "designation", "gender", "employment_type", "reports_to"],
+        fields=["name", "employee_name", "department", "designation", "employment_type", "reports_to"],
     )}
     manager_names = dict(frappe.get_all(
         "Employee", filters={"name": ["in", sorted({p.reports_to for p in people.values() if p.reports_to}) or [""]]},
@@ -3911,12 +3921,10 @@ def get_calibration_matrix(cycle):
 
         dept     = emp.get("department")     or ""
         desig    = emp.get("designation")    or ""
-        gender   = emp.get("gender")         or ""
         emp_type = emp.get("employment_type") or ""
 
         if dept:     filter_depts.add(dept)
         if desig:    filter_desig.add(desig)
-        if gender:   filter_genders.add(gender)
         if emp_type: filter_emp_types.add(emp_type)
 
         row = {
@@ -3926,7 +3934,6 @@ def get_calibration_matrix(cycle):
             "overall_rating":  _rating_or_none(ext.get("overall_rating")),
             "department":      dept,
             "designation":     desig,
-            "gender":          gender,
             "employment_type": emp_type,
             "reports_to":      reports_to,
             "reports_to_name": reports_to_name,
@@ -3950,7 +3957,6 @@ def get_calibration_matrix(cycle):
         "filter_options": {
             "departments":      sorted(filter_depts),
             "designations":     sorted(filter_desig),
-            "genders":          sorted(filter_genders),
             "employment_types": sorted(filter_emp_types),
             "managers": [
                 {"id": k, "name": v}

@@ -3486,10 +3486,6 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
               <select class="cal-filter-sel" id="cal-f-desig" multiple onchange="calApplyFilters()"></select>
             </div>
             <div class="cal-filter-group">
-              <label class="cal-filter-label">Gender</label>
-              <select class="cal-filter-sel" id="cal-f-gender" multiple onchange="calApplyFilters()"></select>
-            </div>
-            <div class="cal-filter-group">
               <label class="cal-filter-label">Employment Type</label>
               <select class="cal-filter-sel" id="cal-f-emptype" multiple onchange="calApplyFilters()"></select>
             </div>
@@ -3549,10 +3545,6 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
             <div class="cal-filter-group">
               <label class="cal-filter-label">Designation</label>
               <select class="cal-filter-sel" id="pd-f-desig" multiple onchange="pdApplyFilters()"></select>
-            </div>
-            <div class="cal-filter-group">
-              <label class="cal-filter-label">Gender</label>
-              <select class="cal-filter-sel" id="pd-f-gender" multiple onchange="pdApplyFilters()"></select>
             </div>
             <div class="cal-filter-group">
               <label class="cal-filter-label">Employment Type</label>
@@ -11618,7 +11610,6 @@ window.pfRatingLabel = function(value, scale) {
     }
     _fillSel("pd-f-dept",    opts.departments    || []);
     _fillSel("pd-f-desig",   opts.designations   || []);
-    _fillSel("pd-f-gender",  opts.genders        || []);
     _fillSel("pd-f-emptype", opts.employment_types || []);
     _fillSel("pd-f-mgr",     opts.managers       || []);
     var hasOpts = (opts.departments && opts.departments.length) || (opts.managers && opts.managers.length);
@@ -11644,17 +11635,16 @@ window.pfRatingLabel = function(value, scale) {
   window.pdApplyFilters = function() {
     if (!_pdData) return;
     var fD = _pdGetSelected("pd-f-dept"),   fDes = _pdGetSelected("pd-f-desig");
-    var fG = _pdGetSelected("pd-f-gender"), fE   = _pdGetSelected("pd-f-emptype");
+    var fE = _pdGetSelected("pd-f-emptype");
     var fM = _pdGetSelected("pd-f-mgr");
     _pdFilteredRows = (_pdData.rows || []).filter(function(r) {
       if (fD.length   && !fD.includes(r.department))       return false;
       if (fDes.length && !fDes.includes(r.designation))    return false;
-      if (fG.length   && !fG.includes(r.gender))           return false;
       if (fE.length   && !fE.includes(r.employment_type))  return false;
       if (fM.length   && !fM.includes(r.reports_to))       return false;
       return true;
     });
-    var activeCount = fD.length + fDes.length + fG.length + fE.length + fM.length;
+    var activeCount = fD.length + fDes.length + fE.length + fM.length;
     var badge = document.getElementById("pd-filter-badge");
     if (badge) { badge.hidden = !activeCount; badge.textContent = activeCount; }
     _pdClickedOverall = null;
@@ -11663,7 +11653,7 @@ window.pfRatingLabel = function(value, scale) {
   };
 
   window.pdClearFilters = function() {
-    ["pd-f-dept","pd-f-desig","pd-f-gender","pd-f-emptype","pd-f-mgr"].forEach(function(id) {
+    ["pd-f-dept","pd-f-desig","pd-f-emptype","pd-f-mgr"].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) Array.from(el.options).forEach(function(o) { o.selected = false; });
     });
@@ -12207,7 +12197,6 @@ window.pfRatingLabel = function(value, scale) {
     }
     _fillSel("cal-f-dept",    opts.departments   || []);
     _fillSel("cal-f-desig",   opts.designations  || []);
-    _fillSel("cal-f-gender",  opts.genders       || []);
     _fillSel("cal-f-emptype", opts.employment_types || []);
     /* managers are objects {id, name} */
     var mgrEl = document.getElementById("cal-f-mgr");
@@ -12237,14 +12226,12 @@ window.pfRatingLabel = function(value, scale) {
     if (!_calData) return;
     var fDept    = _calGetSelectedValues("cal-f-dept");
     var fDesig   = _calGetSelectedValues("cal-f-desig");
-    var fGender  = _calGetSelectedValues("cal-f-gender");
     var fEmptype = _calGetSelectedValues("cal-f-emptype");
     var fMgr     = _calGetSelectedValues("cal-f-mgr");
 
     var rows = (_calData.rows || []).filter(function(r) {
       if (fDept.length    && fDept.indexOf(r.department)     === -1) return false;
       if (fDesig.length   && fDesig.indexOf(r.designation)   === -1) return false;
-      if (fGender.length  && fGender.indexOf(r.gender)       === -1) return false;
       if (fEmptype.length && fEmptype.indexOf(r.employment_type) === -1) return false;
       if (fMgr.length     && fMgr.indexOf(r.reports_to)      === -1) return false;
       return true;
@@ -12253,7 +12240,7 @@ window.pfRatingLabel = function(value, scale) {
     /* summary */
     var sumEl = document.getElementById("cal-filter-summary");
     var total  = (_calData.rows || []).length;
-    var activeCount = fDept.length + fDesig.length + fGender.length + fEmptype.length + fMgr.length;
+    var activeCount = fDept.length + fDesig.length + fEmptype.length + fMgr.length;
     if (sumEl) {
       sumEl.style.display = activeCount ? "" : "none";
       sumEl.textContent = "Showing " + rows.length + " of " + total + " employees";
@@ -12275,7 +12262,7 @@ window.pfRatingLabel = function(value, scale) {
   };
 
   window.calClearFilters = function() {
-    ["cal-f-dept","cal-f-desig","cal-f-gender","cal-f-emptype","cal-f-mgr"].forEach(function(id) {
+    ["cal-f-dept","cal-f-desig","cal-f-emptype","cal-f-mgr"].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) Array.from(el.options).forEach(function(o) { o.selected = false; });
     });

@@ -6,6 +6,8 @@ Kept in one place so they cannot drift apart:
   refuse_own_rating(employee)    nobody rates or closes their own review
   refuse_hr_step_in_line(employee)  nobody above the subject does HR's steps
   permitted_companies(user)      which companies an HR user acts for
+  permitted_branches(user)       which branches a store's HR person is limited to
+  permitted_employees(user)      which Employee records an HR user may see
 
 It lives in hrms because every one of our apps can import hrms, and hrms must
 not import them.
@@ -210,3 +212,56 @@ def permitted_companies(user=None):
 		return companies
 	own = frappe.db.get_value("Employee", {"user_id": user, "status": "Active"}, "company")
 	return [own] if own else []
+
+
+def permitted_branches(user=None):
+	"""The branches a location HR person is limited to, or None for everyone else.
+
+	Read from the user's User Permissions on Branch (the ones that apply to every
+	record type, or to Employee). One definition for every screen (slice 030):
+	attendance_analytics._linked_branches is a wrapper around this.
+
+	Frappe's User Permissions are not strict on this site, so a record with an
+	EMPTY branch passes a Branch permission in a desk list. Every reader of this
+	list therefore treats an employee with no branch as outside it - head office
+	is not a store's business (DEF-6, 2026-09-16). No role is exempt here; the
+	role rules live in permitted_employees.
+	"""
+	from frappe.core.doctype.user_permission.user_permission import get_user_permissions
+
+	branches = sorted({p.get("doc") for p in get_user_permissions(user or frappe.session.user).get("Branch", [])
+	                   if p.get("doc") and p.get("applicable_for") in (None, "", "Employee")})
+	return branches or None
+
+
+def permitted_employees(user=None):
+	"""The Employee records this user may see as HR, as a set of names. Fails closed.
+
+	The companies from permitted_companies, narrowed to the branches from
+	permitted_branches when the user holds a Branch User Permission:
+
+	- System Manager (treated as CXO for now) and Administrator: everyone.
+	- HR Manager / HR User with no Branch permission: everyone in their companies.
+	- HR Manager / HR User with one (a store's HR person): everyone in their
+	  companies who is in one of those branches. An employee with no branch is
+	  outside it. A store's HR person sees only their store's reviews and
+	  calibration; company-wide calibration is for HR with company-wide
+	  permission (decision 2, slice 030).
+	- Anyone else: nobody.
+
+	Every status, not only Active: a leaver's reviews and KPIs still belong to
+	the store that had them. One query; the caller filters with
+	["employee", "in", sorted(names) or [""]].
+	"""
+	user = user or frappe.session.user
+	roles = set(frappe.get_roles(user))
+	if user == "Administrator" or "System Manager" in roles:
+		return set(frappe.get_all("Employee", pluck="name"))
+	companies = permitted_companies(user)
+	if not companies:
+		return set()
+	filters = {"company": ["in", companies]}
+	branches = permitted_branches(user)
+	if branches is not None:
+		filters["branch"] = ["in", branches]
+	return set(frappe.get_all("Employee", filters=filters, pluck="name"))

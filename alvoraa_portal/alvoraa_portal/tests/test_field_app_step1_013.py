@@ -323,6 +323,11 @@ class ThePhoneRecordCannotBeForged(FieldAppCase):
 		for perm in meta.permissions:
 			self.assertFalse(perm.get("create"), f"{perm.role} can create a phone record")
 			self.assertFalse(perm.get("delete"), f"{perm.role} can delete a phone record")
+			# C-7 (user decision, 2026-09-19): a phone record says who carries
+			# which phone. Nobody emails, prints or shares one.
+			for action in ("email", "print", "share"):
+				self.assertFalse(perm.get(action),
+				                 f"{perm.role} can {action} a phone record")
 
 		# and the controller says so too, for Administrator and for a script
 		doc = frappe.get_doc({"doctype": fc.DEVICE, "employee": self.employee,

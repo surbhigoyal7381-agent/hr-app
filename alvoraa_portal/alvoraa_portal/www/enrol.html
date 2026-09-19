@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>{{ tenant_name or "Alvoraa" }} · Open the app</title>
+<!--
+  The page behind HR's joining code (slice 013, US-20).
+
+  A code is a link to this page with the code in the fragment (#t=...). The Alvoraa
+  app reads the code from the QR itself and never opens this page. This page
+  is only what somebody sees when they scan the QR with the phone's camera app
+  instead. It must therefore:
+    * never read the code (nothing here looks at the fragment),
+    * never send it anywhere (no script, font, image or style from any other
+      host - everything is inline; the browser never sends a fragment to a
+      server anyway),
+    * take it out of the address bar without reading it (history.replaceState
+      with the path alone),
+    * and tell search engines to stay away (the meta tag above and the
+      X-Robots-Tag header the page's Python sets).
+-->
+<style>
+  :root{--bg:#F8F6F3;--surface:#FFFFFF;--border:#E4E0D9;--text:#2D2622;--text2:#5A544E;--brand:{{ primary_color or "#3D3461" }};}
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:32rem;margin:0 auto;padding:24px 16px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px 20px}
+  h1{font-size:1.4rem;line-height:1.3;margin:0 0 12px}
+  p{margin:0 0 12px;color:var(--text2)}
+  ol{padding-left:1.2rem;margin:0 0 16px;color:var(--text2)}
+  li{margin-bottom:6px}
+  .brand{display:block;width:44px;height:6px;border-radius:3px;background:var(--brand);margin-bottom:20px}
+  .org{font-size:.9rem;color:var(--text2);margin-bottom:4px}
+  a:focus-visible,button:focus-visible{outline:3px solid var(--brand);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+  <div class="card" role="main">
+    <span class="brand" aria-hidden="true"></span>
+    <p class="org">{{ tenant_name or "Alvoraa" }}</p>
+    <h1>Open the Alvoraa app to use this code</h1>
+    <p>This code sets up the Alvoraa attendance app. Open the app, press
+      &ldquo;Scan the QR code from HR&rdquo;, and scan it again. If you do not
+      have the app, ask HR.</p>
+    <ol>
+      <li>Open the Alvoraa app on this phone.</li>
+      <li>Press <strong>Scan the QR code from HR</strong>.</li>
+      <li>Point the camera at the code again.</li>
+    </ol>
+    <p>Nothing on this page reads or sends the code.</p>
+  </div>
+</main>
+<script>
+  // Take the fragment out of the address bar without ever reading it. The
+  // path alone is kept, so a bookmark or a screenshot of the bar shows no code.
+  try {
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  } catch (e) {}
+</script>
+</body>
+</html>

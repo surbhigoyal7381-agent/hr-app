@@ -726,10 +726,17 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# replaced or removed phone, the acknowledgement, the cancelled code, the
 		# code HR makes (HR has no create on it by design), the withdrawal, and
 		# one read of today's punches. Each is after the caller was checked.
-		("alvoraa_portal", "field_app_join.py"): 7,
+		# 7 at step 3; 6 at step 4, when the read of today's punches moved to
+		# field_checkin.py so the punch and the start screen share it.
+		("alvoraa_portal", "field_app_join.py"): 6,
 		("alvoraa_portal", "field_app_alerts.py"): 0,
 		("alvoraa_portal", "alvoraa_portal/doctype/alvoraa_app_invite/alvoraa_app_invite.py"): 1,
 		("alvoraa_portal", "alvoraa_portal/doctype/alvoraa_notice_acknowledgement/alvoraa_notice_acknowledgement.py"): 1,
+		# Slice 013 step 4 (new files). The phone removing itself is one save as
+		# the server on a guest path with no session, after the secret was
+		# checked; the limiter writes nothing.
+		("alvoraa_portal", "field_app_device.py"): 1,
+		("alvoraa_portal", "field_app_limits.py"): 0,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

@@ -92,7 +92,19 @@ html, body {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  padding: 3px;
+  box-sizing: border-box;
 }
+/* A real logo needs a neutral ground. The tile is var(--primary) - the tenant's
+   brand colour - and the Alvoraa mark is itself purple and blue, so on the
+   default brand it would have been a purple shape on a purple square. With a
+   mark present the tile goes to the neutral surface token, which is white in the
+   light theme and near-black in the dark one - the transparent mark reads on
+   both - and the placeholder SVG is hidden. If the image fails to load, its
+   onerror takes the class off again and the SVG and the coloured tile come
+   back. (Slice 025.) */
+.kx-logo-mark.has-mark { background: var(--surface); }
+.kx-logo-mark.has-mark .kx-logo-svg { display: none; }
 .kx-logo-svg {
   width: 26px; height: 26px;
 }
@@ -365,8 +377,14 @@ html, body {
   <!-- ── Left: brand panel ──────────────────────────────────── -->
   <aside id="kx-brand">
     <div class="kx-logo">
-      <div class="kx-logo-mark" id="kx-logo-mark">
-        <!-- Logo loaded from tenant config; falls back to default SVG -->
+      {#- The mark is rendered SERVER side from get_branding(): the tenant's own
+          logo if it set one, otherwise the Alvoraa mark. It used to be a generic
+          diamond SVG that the JavaScript swapped for the real logo after the page
+          had drawn - on the sign-in page, which is the first screen a customer's
+          staff ever see. The placeholder SVG stays as the last fallback, shown
+          only if the image itself fails to load (slice 025). -#}
+      <div class="kx-logo-mark{% if brand_mark_url %} has-mark{% endif %}" id="kx-logo-mark">
+        {%- if brand_mark_url %}<img src="{{ brand_mark_url }}" alt="" onerror="this.parentNode.classList.remove('has-mark');this.remove()">{% endif %}
         <svg class="kx-logo-svg" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M4 14 L14 4 L24 14 L14 24 Z" fill="rgba(255,255,255,.15)" stroke="rgba(255,255,255,.6)" stroke-width="1.5"/>
           <path d="M9 14 L14 9 L19 14 L14 19 Z" fill="rgba(255,255,255,.7)"/>
@@ -520,10 +538,20 @@ html, body {
         document.title = 'Sign In – ' + cfg.tenant_name;
       }
 
-      // Logo
-      if (cfg.logo_url) {
-        const mark = $('kx-logo-mark');
-        mark.innerHTML = '<img src="' + cfg.logo_url + '" alt="' + (cfg.tenant_name || 'Logo') + '">';
+      // Logo. The server already rendered the right mark from get_branding() -
+      // the tenant's own logo if it set one, otherwise the Alvoraa mark - so this
+      // only has to cover the case where it rendered none at all. It used to run
+      // unconditionally, which replaced the whole tile: that threw away the
+      // fallback SVG and the has-mark class, and put the tenant's name in the
+      // img alt text, making a screen reader read the name twice. (Slice 025.)
+      const mark = $('kx-logo-mark');
+      if (cfg.logo_url && mark && !mark.querySelector('img')) {
+        const img = document.createElement('img');
+        img.src = cfg.logo_url;
+        img.alt = '';                       // decorative; the name is text beside it
+        img.onerror = function () { mark.classList.remove('has-mark'); img.remove(); };
+        mark.classList.add('has-mark');
+        mark.appendChild(img);
       }
 
       // Colours are NOT set here any more. They come from the server through

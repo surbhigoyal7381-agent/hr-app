@@ -13,6 +13,7 @@ from frappe.utils import nowdate
 
 from alvoraa_portal.subscription import OPT_IN, PLANS, REQUIRED, requirement_error
 import os
+import shutil
 import json
 import re
 import uuid
@@ -524,8 +525,15 @@ def suspend_tenant(site_name, suspend=1):
 
 @frappe.whitelist()
 def update_tenant(site_name, tenant_name="", plan="", modules=None,
-                  primary_color="", accent_color="", support_email=""):
-    """Update an existing tenant's config; queues a background app-install if new modules need it."""
+                  primary_color="", accent_color="", support_email="",
+                  logo_url=""):
+    """Update an existing tenant's config; queues a background app-install if new modules need it.
+
+    `logo_url` is optional and goes through the same copy step as provisioning
+    (see _stage_tenant_logo). The edit modal in the console does not send one
+    today; the parameter is here so a later console change cannot reintroduce
+    the broken-image bug by writing the path straight into site_config.
+    """
     _require_admin()
     _validate_site_name(site_name)
 
@@ -580,6 +588,19 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
             r = _bench_run(f'--site {site_name} set-config {key} "{val}"')
             if r.returncode != 0:
                 frappe.throw(f"Failed to update {key}: {r.stderr}")
+
+    # Same rule as provisioning: a relative /files/ path is copied to the
+    # tenant before it is stored, and a missing source is reported rather
+    # than stored as a broken image.
+    notes = ""
+    if logo_url:
+        stored_logo, logo_warn = _stage_tenant_logo(site_name, logo_url)
+        if stored_logo:
+            r = _bench_run(f'--site {site_name} set-config tenant_logo_url "{stored_logo}"')
+            if r.returncode != 0:
+                frappe.throw(f"Failed to update tenant_logo_url: {r.stderr}")
+        if logo_warn:
+            notes = " " + logo_warn
 
     # Update modules_enabled list
     if modules is not None:
@@ -666,10 +687,10 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
             return {
                 "status": "installing",
                 "job_id": job_id,
-                "message": "Configuration saved. Installing new module apps in the background.",
+                "message": "Configuration saved. Installing new module apps in the background." + notes,
             }
 
-    return {"status": "ok", "message": "Tenant configuration updated."}
+    return {"status": "ok", "message": "Tenant configuration updated." + notes}
 
 
 @frappe.whitelist()
@@ -907,8 +928,17 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
             else:
                 log += "\n" + (rb.stdout or "").strip() + "\n"
 
-            if logo_url:
-                _bench_run(f"--site {site_name} set-config tenant_logo_url \"{logo_url}\"")
+            # The console uploads the logo to the CONTROL PLANE's public files
+            # and hands over a relative /files/<name> path. Frappe keeps public
+            # files per site, so the tenant never had the file: every tenant
+            # page showed a broken image, while the console's own tenant list
+            # rendered the same path against the control plane and looked
+            # fine - which is why nobody noticed. Copy the file across first.
+            stored_logo, logo_warn = _stage_tenant_logo(site_name, logo_url)
+            if logo_warn:
+                log += "\n" + logo_warn + "\n"
+            if stored_logo:
+                _bench_run(f"--site {site_name} set-config tenant_logo_url \"{stored_logo}\"")
 
             # Update host_name in jobs file
             jobs = _read_jobs()
@@ -924,6 +954,52 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
         _update("Failed", f"\n[{now_datetime()}] ❌ Timed out after 15 minutes.\n", finished=True)
     except Exception as exc:
         _update("Failed", f"\n[{now_datetime()}] ❌ Exception: {exc}\n", finished=True)
+
+
+# A public file name as upload_file produces it: no directory part, no leading
+# dot. Anything else is refused before a path is built, so a crafted value can
+# never make the copy read outside the control plane's public/files folder.
+_PUBLIC_FILE_URL = re.compile(r"^/files/([A-Za-z0-9][A-Za-z0-9._ ()-]*)$")
+
+
+def _stage_tenant_logo(site_name, logo_url, control_site=None):
+    """Make an uploaded logo reachable from the tenant's own site.
+
+    Returns (url_to_store, warning). `url_to_store` is empty when nothing
+    should be written to site_config; `warning` is a "[WARN] ..." line for the
+    job log or the API message when the logo could not be applied.
+
+    - absolute http(s) URL: stored as-is, nothing copied
+    - /files/<name>: copied from sites/<control site>/public/files to
+      sites/<tenant>/public/files and stored as the same relative path, so the
+      tenant stays self-contained
+    - source missing, or a name with a directory part: not stored, warned
+    """
+    logo_url = (logo_url or "").strip()
+    if not logo_url:
+        return "", ""
+    if re.match(r"^https?://", logo_url, re.IGNORECASE):
+        return logo_url, ""
+
+    m = _PUBLIC_FILE_URL.match(logo_url)
+    name = m.group(1) if m else ""
+    if not name or ".." in name or os.path.basename(name) != name:
+        return "", ("[WARN] Logo not applied: the logo address must be a /files/<name> "
+                    "path from the console upload or an http(s) URL.")
+
+    control_site = control_site or getattr(frappe.local, "site", None)
+    if not control_site:
+        return "", "[WARN] Logo not applied: could not tell which site holds the upload."
+
+    src = os.path.join(SITES_DIR, control_site, "public", "files", name)
+    if not os.path.isfile(src):
+        return "", (f"[WARN] Logo not applied: {name} was not found on the control plane. "
+                    "Upload it again from the console.")
+
+    dst_dir = os.path.join(SITES_DIR, site_name, "public", "files")
+    os.makedirs(dst_dir, exist_ok=True)
+    shutil.copy2(src, os.path.join(dst_dir, name))
+    return f"/files/{name}", ""
 
 
 def _get_installed_apps(site_name):

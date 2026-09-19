@@ -29,7 +29,12 @@ from frappe.tests.utils import FrappeTestCase
 from alvoraa_portal import brand
 from alvoraa_portal.tenant_context import get_branding
 
-APP_PUBLIC = frappe.get_app_path("alvoraa_portal", "public", "images")
+
+# Built from __file__ rather than frappe.get_app_path(), which scrubs its
+# arguments and so turns "hrms-employee.html" into "hrms_employee.html".
+APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+APP_PUBLIC = os.path.join(APP_ROOT, "public", "images")
+WWW = os.path.join(APP_ROOT, "www")
 
 # Every asset brand.py promises, and the URL each must be served at.
 EXPECTED = {
@@ -223,8 +228,8 @@ class BrandRepairCase(FrappeTestCase):
 class PortalRenderCase(FrappeTestCase):
     """The rendered page: a real mark, a real fallback, no private path."""
 
-    PAGE = frappe.get_app_path("alvoraa_portal", "www", "hrms-employee.html")
-    LOGIN = frappe.get_app_path("alvoraa_portal", "www", "alvoraa-login.html")
+    PAGE = os.path.join(WWW, "hrms-employee.html")
+    LOGIN = os.path.join(WWW, "alvoraa-login.html")
 
     def _read(self, path):
         with open(path, encoding="utf-8") as fh:
@@ -239,7 +244,17 @@ class PortalRenderCase(FrappeTestCase):
 
         # 1. it draws the resolved mark, not a hard-coded path and not a site file
         self.assertIn("brand_mark_url", block)
-        self.assertNotIn("/private/files/", html)
+        self.assertNotIn("/private/files/", block)
+        self.assertNotIn("/files/", block)
+        #
+        # Scoped to the tile, NOT to the whole page, and that is deliberate. The
+        # page legitimately contains the string "/private/files/" in
+        # `_safeFileUrl`, which is slice 010's allowlist for goal evidence links
+        # (SEC-11): it draws a link ONLY when the URL starts with our own private
+        # files prefix, and nothing otherwise. A file-wide assertion here would
+        # fail on that correct security code, and the first version of this test
+        # did exactly that. What this slice cares about is that the BRAND tile
+        # never points at a site file, because a browser cannot read one.
 
         # 2. the tenant's initial is still there underneath, as the last resort
         self.assertIn("tenant_name[0] | upper", block)
@@ -256,7 +271,11 @@ class PortalRenderCase(FrappeTestCase):
         html = self._read(self.PAGE)
         rule = re.search(r"\.sidebar-brand-logo\{(.*?)\}", html, re.S)
         self.assertIsNotNone(rule, "the .sidebar-brand-logo rule has moved")
-        body = rule.group(1)
+        # Strip CSS comments first. The rule carries a comment quoting the old
+        # broken declaration so nobody reintroduces it, and without this the
+        # regex below reads that comment as the live value. The first version of
+        # this test did exactly that and failed on correct code.
+        body = re.sub(r"/\*.*?\*/", "", rule.group(1), flags=re.S)
         bg = re.search(r"background:\s*var\((--[a-z0-9-]+)\)", body)
         fg = re.search(r"color:\s*var\((--[a-z0-9-]+)\)", body)
         self.assertIsNotNone(bg)
@@ -282,6 +301,6 @@ class PortalRenderCase(FrappeTestCase):
         """get_branding() is the one door, so every page walks through it."""
         for page in ("hrms_employee", "alvoraa_login", "goals_portal",
                      "vendor_portal", "driver_portal"):
-            path = frappe.get_app_path("alvoraa_portal", "www", page + ".py")
+            path = os.path.join(WWW, page + ".py")
             with self.subTest(page=page):
                 self.assertIn("get_branding", self._read(path))

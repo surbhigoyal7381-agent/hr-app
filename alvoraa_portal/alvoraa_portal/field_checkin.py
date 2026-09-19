@@ -45,6 +45,7 @@ from frappe.utils import (
 
 from alvoraa_portal import field_app_errors as errors
 from alvoraa_portal import field_app_notice as notice
+from alvoraa_portal import field_app_settings as settings
 from alvoraa_portal.alvoraa_portal.doctype.alvoraa_field_device import (
 	alvoraa_field_device as device_rules,
 )
@@ -334,6 +335,25 @@ def _device_from_token(token: str):
 	return device
 
 
+def _refuse_unless_app_phone_is_eligible(device, designation=None):
+	"""An APP phone works only while the organisation's settings allow it.
+
+	The switch in HR Settings and the designation list are read on every call
+	(US-3, AC-22, AC-78), so HR can stop the app in a minute without a deploy.
+	A phone set up on the web check-in page is not touched by those settings
+	(section 3.5 of the spec: "web-page phones keep working"), which is why the
+	check is keyed on how the phone joined and not on the phone existing.
+
+	The secret is kept and the phone's status is not changed: when HR restores
+	the setting, the same phone works again with no new code (AC-78, AC-211).
+	"""
+	if device.join_method != "App QR code":
+		return
+	if designation is None:
+		designation = frappe.db.get_value("Employee", device.employee, "designation")
+	settings.refuse_unless_eligible(designation)
+
+
 def _refuse_as_pending():
 	"""One answer for a phone waiting for HR and for a secret nobody holds.
 
@@ -478,6 +498,7 @@ def field_checkin(token, log_type, latitude=None, longitude=None,
 	"""
 	errors.check_app_version()
 	device = _device_from_token(token)
+	_refuse_unless_app_phone_is_eligible(device)
 
 	if log_type not in ("IN", "OUT"):
 		refuse("INVALID_REQUEST", _("Invalid check-in type."))
@@ -709,6 +730,7 @@ def field_status(token):
 	emp = frappe.db.get_value(
 		"Employee", device.employee,
 		["name", "employee_name", "designation"], as_dict=True)
+	_refuse_unless_app_phone_is_eligible(device, emp.designation if emp else None)
 
 	rows = frappe.get_all(
 		"Employee Checkin",

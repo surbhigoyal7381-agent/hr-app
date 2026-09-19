@@ -27,17 +27,16 @@ is used. Take the locks out and it fails.
 **The code is never stored.** Only its SHA-256 hash, while the code is waiting;
 after that the hash is moved aside (the code record says why). The rate limits
 are keyed on that hash, never on the code: Frappe writes a rate-limit key into
-Redis in clear, and the step-1 probe confirmed it.
+Redis in clear, and the step-1 probe confirmed it. The limiter itself lives in
+`field_app_limits` since step 4, because the punch uses it too.
 """
 
-import functools
 import secrets
 
 import frappe
 from frappe import _
 from frappe.permissions import has_permission
-from frappe.rate_limiter import rate_limit
-from frappe.utils import add_to_date, cint, get_datetime, get_url, now, today
+from frappe.utils import add_to_date, cint, get_datetime, get_url, now
 
 from alvoraa_portal import field_app_alerts as alerts
 from alvoraa_portal import field_app_errors as errors
@@ -53,82 +52,33 @@ from alvoraa_portal.alvoraa_portal.doctype.alvoraa_notice_acknowledgement.alvora
 	record_acknowledgement,
 )
 from alvoraa_portal.field_app_errors import refuse, requires_field_app_plan
+from alvoraa_portal.field_app_limits import (  # re-exported: the step-3 tests name the keys here
+	CODE_KEY,
+	HR_KEY,
+	PHONE_KEY,
+	_hash,
+	_limited,
+)
 from alvoraa_portal.field_checkin import (
 	DEVICE,
 	MAX_TOKEN_CHARS,
 	_device_from_token,
-	_hash,
 	_private_request,
 	_refuse_unless_app_phone_is_eligible,
 	_shift_location_for,
+	_todays_punches,
 )
+from alvoraa_portal.field_checkin import _workplace as workplace
 from alvoraa_portal.tenant_context import get_branding
 
 # `secrets.token_urlsafe(32)` is 43 characters. A code shorter than this was not
 # made here; one longer than the device-secret ceiling is not a code at all.
 MIN_CODE_CHARS = 43
 
-# The form fields the rate limiter reads. Their NAMES contain "key", so Frappe's
-# own Error Log redaction masks their values (utils/logger.py sanitized_dict);
-# the values are hashes, never the code or the secret.
-CODE_KEY = "code_hash_key"
-PHONE_KEY = "phone_hash_key"
-HR_KEY = "hr_user_key"
-
 HR_ROLES = {"HR Manager", "HR User", "System Manager"}
 
 # The states an app phone can be in and still talk to the notice endpoints.
 _NOTICE_STATES = ("Active", "Consent not given")
-
-
-# ── rate limits keyed on a hash, never on the secret ─────────────────────────
-
-def _limited(field, source, limit):
-	"""Rate limit an endpoint on one of its arguments, hashed.
-
-	Frappe's limiter reads `form_dict[key]` and writes it into the Redis key in
-	clear (C-11a, proven in step 1). So the argument is hashed into a field of
-	its own first, and that field is taken out again afterwards. `ip_based` is
-	off: one phone behind a changing mobile IP is still one phone.
-	"""
-	def decorator(fn):
-		limited = rate_limit(key=field, limit=limit, seconds=60 * 60, methods=["POST"],
-		                     ip_based=False)(fn)
-
-		@functools.wraps(fn)
-		def wrapper(*args, **kwargs):
-			value = kwargs.get(source)
-			if source == "user":
-				value = frappe.session.user
-			if not value:
-				refuse("INVALID_REQUEST", _("We could not read that request."))
-			hashed = _hash(value)
-			frappe.form_dict[field] = hashed
-			try:
-				return limited(*args, **kwargs)
-			except frappe.RateLimitExceededError:
-				# Frappe's decorator says how many, not how long. The app needs
-				# the wait (section 7.1), which is what is left of the window.
-				frappe.clear_messages()
-				refuse("TOO_MANY_TRIES",
-				       _("Too many tries. Please wait a while and try again."),
-				       retry_after_s=_seconds_left(field, hashed, 60 * 60))
-			finally:
-				frappe.form_dict.pop(field, None)
-
-		return wrapper
-
-	return decorator
-
-
-def _seconds_left(field, hashed, window):
-	"""How long until Frappe's window for this key opens again. The key is the
-	one `rate_limit` builds (rl:<cmd>:<identity>:<seconds>); step 1 saw it."""
-	try:
-		ttl = frappe.cache.ttl(frappe.cache.make_key(f"rl:{frappe.form_dict.cmd}:{hashed}:{window}"))
-		return int(ttl) if ttl and int(ttl) > 0 else window
-	except Exception:
-		return window
 
 
 def _refuse_bad_code(code):
@@ -263,27 +213,11 @@ def _alert_if_scanned_from_another_phone(row, token):
 
 
 def _app_version():
-	try:
-		raw = frappe.get_request_header(errors.VERSION_HEADER)
-	except Exception:
-		return None
-	return (raw or "").strip()[:20] or None
-
-
-def _todays_punches(employee):
-	return frappe.get_all(
-		"Employee Checkin",
-		filters={"employee": employee, "time": [">=", today() + " 00:00:00"]},
-		fields=["name", "log_type", "time", "device_id"],
-		order_by="time asc",
-		ignore_permissions=True,
-	)
+	return errors.sent_app_version()
 
 
 def _workplace(employee):
-	site = _shift_location_for(employee)
-	# Name and radius only. Never the coordinates (PRIV-6).
-	return {"name": site.location_name, "radius_m": cint(site.checkin_radius)} if site else None
+	return workplace(_shift_location_for(employee))
 
 
 # ── E1 · check the code, using nothing ───────────────────────────────────────

@@ -213,6 +213,16 @@ def parse_version(raw):
 	return numbers
 
 
+def sent_app_version():
+	"""The build number the phone sent, trimmed to what the phone record holds,
+	or None for the web page and for a call with no request."""
+	try:
+		raw = frappe.get_request_header(VERSION_HEADER)
+	except Exception:
+		return None
+	return (raw or "").strip()[:20] or None
+
+
 def check_app_version():
 	"""Refuse a build too old to be trusted. Called by every device endpoint.
 

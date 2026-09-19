@@ -71,6 +71,61 @@ def checkin_has_permission(doc, user=None, permission_type=None):
 		"name": doc.employee, "reports_to": emp, "status": "Active"}))
 
 
+# ── who may see a phone record (slice 013 step 2, C-11c) ─────────────────────
+#
+# `Alvoraa Field Device` links Employee and nothing else - no Company. Frappe's
+# User Permissions only follow link fields that are ON the doctype, so an HR
+# user restricted to one company could list every company's phones: employee
+# name, device model, last punch, check-in count. The step-1 probe found it;
+# it had been open since slice 008. These two hooks close it the way the punch
+# is closed above: the query condition filters lists and reports, has_permission
+# guards opening one record by name.
+#
+# The scope is the shared one every HR endpoint already uses,
+# `hrms.alvoraa_hr_core.access.permitted_companies`: a System Manager sees every
+# company; an HR Manager or HR User sees the companies in their Company User
+# Permissions, or failing that their own employee record's company, or failing
+# that nothing. Nobody else has a role on this doctype, and if one ever appears
+# the fallback here is "nothing", not "everything".
+
+DEVICE = "Alvoraa Field Device"
+
+
+def _device_companies(user):
+	"""The companies whose phones this user may see, or None for every company."""
+	user = user or frappe.session.user
+	roles = set(frappe.get_roles(user))
+	if user == "Administrator" or "System Manager" in roles:
+		return None
+	if not (_HR_ROLES & roles):
+		return []
+	from hrms.alvoraa_hr_core.access import permitted_companies
+	return permitted_companies(user)
+
+
+def device_query_conditions(user=None):
+	"""Row filter for the phone list and every report on it."""
+	companies = _device_companies(user)
+	if companies is None:
+		return ""
+	if not companies:
+		return "1=0"
+	allowed = ", ".join(frappe.db.escape(c) for c in companies)
+	return ("`tabAlvoraa Field Device`.employee in (select name from `tabEmployee` "
+	        f"where company in ({allowed}))")
+
+
+def device_has_permission(doc, user=None, permission_type=None):
+	"""Guards ONE phone record, opened by name or through the API."""
+	companies = _device_companies(user)
+	if companies is None:
+		return True
+	if not companies or not doc.get("employee"):
+		return False
+	company = frappe.db.get_value("Employee", doc.employee, "company")
+	return bool(company) and company in companies
+
+
 def log_photo_view(doc, method=None):
 	"""Record that somebody opened a check-in carrying a photo.
 

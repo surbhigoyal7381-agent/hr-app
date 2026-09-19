@@ -14990,6 +14990,10 @@ window.pfRatingLabel = function(value, scale) {
     document.getElementById("pr-content").innerHTML =
       "<div style=\"color:var(--text3);font-size:var(--fs-base);padding-top:40px;text-align:center\">Loading your review...</div>";
     document.getElementById("pr-nav").innerHTML = "";
+    /* The warning belongs to one review. Clear it before loading the next,
+       so a review that fails to load cannot show the last one's banner. */
+    var _mp = document.getElementById("pr-missing-pages");
+    if (_mp) { _mp.innerHTML = ""; _mp.style.display = "none"; }
     pf("get_my_review", {appraisal: appraisalName}).then(function(d) {
       _pr.data = d;
       /* Normalize page_config — stored as {key:true} object or [{key,label}] array */
@@ -16269,6 +16273,10 @@ window.pfRatingLabel = function(value, scale) {
     var content = document.getElementById("pr-content");
     if (content) content.innerHTML = "<div style=\"text-align:center;padding:40px;color:var(--text3)\">Loading review...</div>";
     document.getElementById("pr-nav").innerHTML = "";
+    /* The warning belongs to one review. Clear it before loading the next,
+       so a review that fails to load cannot show the last one's banner. */
+    var _mp = document.getElementById("pr-missing-pages");
+    if (_mp) { _mp.innerHTML = ""; _mp.style.display = "none"; }
     /* A picker answer belongs to one review only (code review M4). */
     _prEmpCache = null;
     pf("get_manager_review", {appraisal: appraisalName, view: view}).then(function(d) {

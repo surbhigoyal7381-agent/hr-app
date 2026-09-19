@@ -130,7 +130,13 @@ class JoinCase(FieldAppCase):
 		frappe.clear_messages()
 		frappe.local.form_dict = frappe._dict(
 			args, cmd=f"alvoraa_portal.field_app_join.{endpoint.__name__}")
-		return endpoint(**args)
+		out = endpoint(**args)
+		# What Frappe's request handler does after a successful call. In a test
+		# run the alerts are written at once, inside the open transaction; the
+		# next refusal's rollback would otherwise take them away (the first run
+		# lost N2 that way).
+		frappe.db.commit()
+		return out
 
 	def make(self, employee=None, hours=None, user=None):
 		"""E7, as the HR maker. Returns the answer; the code is in the link."""
@@ -166,12 +172,12 @@ class JoinCase(FieldAppCase):
 			 "cancelled_at", "owner"], as_dict=True)
 
 	def app_phones(self, employee=None):
-		return frappe.get_all(fc.DEVICE, {"employee": employee or self.employee,
-		                                  "join_method": "App QR code"},
+		return frappe.get_all(fc.DEVICE, filters={"employee": employee or self.employee,
+		                                          "join_method": "App QR code"},
 		                      fields=["name", "status", "token_hash", "invite"])
 
 	def acks(self, employee=None):
-		return frappe.get_all(ACKNOWLEDGEMENT, {"employee": employee or self.employee},
+		return frappe.get_all(ACKNOWLEDGEMENT, filters={"employee": employee or self.employee},
 		                      fields=["name", "device", "notice_version", "channel", "language",
 		                              "acknowledged_at"], order_by="creation asc")
 
@@ -753,10 +759,20 @@ class WhoReadWhichWords(JoinCase):
 			for action in ("create", "write", "delete", "email", "print", "share", "export"):
 				self.assertFalse(perm.get(action), f"{perm.role} can {action} an acknowledgement")
 
-		frappe.set_user(self.maker)
-		self.assertTrue(frappe.has_permission(ACKNOWLEDGEMENT, "read", doc=name))
-		self.assertFalse(frappe.has_permission(ACKNOWLEDGEMENT, "write", doc=name))
-		self.assertFalse(frappe.has_permission(ACKNOWLEDGEMENT, "delete", doc=name))
+		# The maker has no company of their own, so C-11c (step 2) shows them
+		# nothing; for this check they are limited to the employee's company.
+		company = frappe.db.get_value("Employee", self.employee, "company")
+		perm = _company_permission(self.maker, company)
+		try:
+			frappe.set_user(self.maker)
+			self.assertTrue(frappe.has_permission(ACKNOWLEDGEMENT, "read", doc=name))
+			self.assertFalse(frappe.has_permission(ACKNOWLEDGEMENT, "write", doc=name))
+			self.assertFalse(frappe.has_permission(ACKNOWLEDGEMENT, "delete", doc=name))
+		finally:
+			frappe.set_user("Administrator")
+			frappe.delete_doc("User Permission", perm, force=True, ignore_permissions=True)
+			frappe.clear_cache(user=self.maker)
+			frappe.db.commit()
 
 		# and the controller, for Administrator and for a script
 		frappe.set_user("Administrator")
@@ -935,6 +951,9 @@ class ALeaversCodeStops(JoinCase):
 
 class _FakeRequest:
 	method = "POST"
+	host = "test_site"
+	scheme = "http"
+	url = "http://test_site/api/method/x"
 	headers: ClassVar[dict] = {}
 
 
@@ -987,8 +1006,10 @@ class TheLimitsAreKeyedOnTheHash(JoinCase):
 	def test_013_ac44_the_31st_code_by_one_hr_user_in_an_hour_is_too_many(self):
 		for _ in range(30):
 			self.make()
-		with self.assertRaises(frappe.RateLimitExceededError):
+		with self.assertRaises(errors.FieldAppRefusal) as caught:
 			self.make()
+		self.assertEqual(caught.exception.alvoraa_code, "TOO_MANY_TRIES")
+		self.assertGreater(caught.exception.alvoraa_values.get("retry_after_s", 0), 0)
 		frappe.db.rollback()
 		keys = [k.decode() if isinstance(k, bytes) else str(k)
 		        for k in frappe.cache.get_keys(self.PREFIX)]

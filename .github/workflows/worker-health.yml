@@ -36,7 +36,12 @@ name: Worker health
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    # Hourly, the user's choice on 2026-09-19. Every 15 minutes was offered; she
+    # picked hourly, and it is enough: the failure this exists for lasted nine
+    # days, so an hourly check would have reported it 215 times before anyone
+    # noticed. An hour of a dead queue is also cheap - the jobs wait, they are
+    # not lost.
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 # A health run must never queue up behind another health run. If one is somehow

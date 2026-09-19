@@ -187,6 +187,14 @@ doc_events = {
         "validate": "alvoraa_portal.field_app_settings.validate_hr_settings",
         "on_change": "alvoraa_portal.field_app_settings.clear_reason_after_save",
     },
+    # ── A check-in radius a phone can honestly check (slice 013 step 4) ───
+    # Under 100 m a phone's own position error refuses people standing at the
+    # door. Refused when the Shift Location is saved, on every door; never at
+    # punch time. 0 keeps Frappe HR's meaning, "no radius". A hook here, not
+    # an edit to hrms, so `bench update` stays safe.
+    "Shift Location": {
+        "validate": "alvoraa_portal.field_checkin.refuse_small_radius",
+    },
 }
 
 # ── Row-level security ───────────────────────────────────────────────────────

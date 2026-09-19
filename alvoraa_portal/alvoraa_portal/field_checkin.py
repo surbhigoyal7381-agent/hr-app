@@ -26,7 +26,6 @@ driver can act on, with the real distance in it. The rule stays Frappe's.
 """
 
 import functools
-import hashlib
 import secrets
 import traceback
 
@@ -54,6 +53,7 @@ from alvoraa_portal.alvoraa_portal.doctype.alvoraa_field_device import (
 	alvoraa_field_device as device_rules,
 )
 from alvoraa_portal.alvoraa_portal.doctype.alvoraa_notice_acknowledgement.alvoraa_notice_acknowledgement import (
+	latest_version_for,
 	record_acknowledgement,
 )
 
@@ -73,6 +73,11 @@ from alvoraa_portal.field_app_access import (  # re-exported: hooks.py and the w
 	log_photo_view,
 )
 from alvoraa_portal.field_app_errors import refuse, requires_field_app_plan
+from alvoraa_portal.field_app_limits import (  # re-exported: _hash is named here by the join and the tests
+	PHONE_KEY,
+	_hash,
+	_limited,
+)
 from alvoraa_portal.field_app_photos import (  # re-exported: hooks.py and the web page still name these here
 	DEFAULT_RETENTION_DAYS,
 	JPEG_MAGIC,
@@ -105,22 +110,27 @@ DEVICE = "Alvoraa Field Device"
 CONSENT_VERSION = notice.CURRENT_VERSION
 
 # A phone that cannot place itself better than this cannot be used to answer
-# "were you at the branch". Roughly the accuracy of a decent fix outdoors; a
-# reading worse than this usually means the phone fell back to the mobile
-# network rather than GPS.
-MAX_ACCURACY_METRES = 100.0
+# "were you at the branch". 50 m is a decent fix outdoors (user decision, step
+# 4; it was 100); a reading worse than this usually means the phone fell back
+# to the mobile network rather than GPS. Applies to every phone, web page
+# included - the physics is the same. The sentence the web page matches on is
+# unchanged; only the number moved.
+MAX_ACCURACY_METRES = 50.0
 
 # Two punches of the same kind inside this window are one punch, retried.
+# Measured on server time. The query behind it filters on `employee` (indexed)
+# and then `log_type` and `time` (`time` is NOT indexed in Frappe HR - see the
+# impact analysis, Finding D); at ~52 rows per person per month that is fine,
+# and no index is added to a standard hrms doctype.
 DUPLICATE_WINDOW_SECONDS = 60
 
-# Frappe HR treats a radius of 0 or less as "no geofence", so 1 metre is the
-# smallest real boundary the framework has. It is offered, but it is not
-# sensible - see ADVISED_MIN_RADIUS_M.
-FRAPPE_MIN_RADIUS_M = 1
-
-# Below this, a phone will refuse people who are genuinely standing at the door.
-# The Org Settings screen warns under this number; it does not block it.
-ADVISED_MIN_RADIUS_M = 50
+# The smallest check-in radius a Shift Location may be saved with. Twice the
+# accuracy a phone is trusted to (above): a 30 m fence checked with a 50 m fix
+# refuses people who are genuinely standing at the door, and attendance is pay.
+# Refused when the radius is SAVED, never at punch time (user decision, step 4),
+# so an existing smaller radius keeps working until HR next edits it. 0 still
+# means "no radius" - Frappe HR's own rule - and is allowed.
+MIN_RADIUS_M = 100
 
 DEFAULT_RADIUS_M = 100
 
@@ -238,14 +248,9 @@ def _log_server_error(endpoint, exc):
 
 
 # ── the device secret ────────────────────────────────────────────────────────
-
-def _hash(token: str) -> str:
-	"""Store only the hash, the way an API secret should be kept.
-
-	If this table ever leaks, the secrets in it cannot be replayed.
-	"""
-	return hashlib.sha256(token.encode("utf-8")).hexdigest()
-
+#
+# `_hash` lives in `field_app_limits` since step 4 (the limiter needs it and
+# this file imports the limiter). It is imported above under its old name.
 
 # The longest a device secret can honestly be. `secrets.token_urlsafe(32)` is 43
 # characters; anything past this is not one of ours and is refused before it is
@@ -499,10 +504,10 @@ def register_device(employee_id, device_label=None, platform=None,
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_private_request("photo", "latitude", "longitude", "accuracy", "captured_at")
 @requires_field_app_plan
-@rate_limit(limit=60, seconds=60 * 60)
+@_limited(PHONE_KEY, "token", limit=30)
 def field_checkin(token, log_type, latitude=None, longitude=None,
-                  accuracy=None, photo=None, captured_at=None):
-	"""Record a punch from the field app.
+                  accuracy=None, photo=None, captured_at=None, mock_location=0):
+	"""Record a punch from the field app (E5).
 
 	`captured_at` is what the phone believed the time was when the photo was
 	taken. The time written to the record is always the SERVER's, because a
@@ -510,27 +515,34 @@ def field_checkin(token, log_type, latitude=None, longitude=None,
 	beside it, because the gap between the two is the only thing that would
 	expose a punch that was stored and replayed later.
 
-	Rate limited per caller, and not keyed on the token: Frappe puts a rate
-	limit key into the Redis key in clear, which would write every device
-	secret into Redis and into any error about it.
+	`mock_location` is the app saying its own operating system reported a fake
+	position (SEC-21). It is recorded on the punch and nothing else: the punch
+	is still saved, because a false positive on a cheap phone would mean
+	somebody is not marked present (user decision Q-15, flag only).
+
+	Rate limited **per phone**, 30 an hour, keyed on the hash of the secret
+	(section 6). It used to be 60 an hour per IP address, which would have
+	refused a depot where 400 phones share one Wi-Fi (AC-140).
 	"""
 	errors.check_app_version()
 	device = _device_from_token(token)
-	_refuse_unless_app_phone_is_eligible(device)
-
-	if log_type not in ("IN", "OUT"):
-		refuse("INVALID_REQUEST", _("Invalid check-in type."))
-
-	lat, lon = _require_position(latitude, longitude, accuracy)
-	claimed = _validated_captured_at(captured_at)
 
 	emp = frappe.db.get_value(
 		"Employee", device.employee,
-		["name", "employee_name", "status"], as_dict=True)
+		["name", "employee_name", "status", "designation"], as_dict=True)
 	if not emp or emp.status != "Active":
 		refuse("EMPLOYEE_NOT_ACTIVE",
 		       _("This employee record is no longer active. Please speak "
 		         "to HR."))
+	_refuse_unless_app_phone_is_eligible(device, emp.designation)
+	_refuse_unless_notice_is_current(device)
+
+	if log_type not in ("IN", "OUT"):
+		refuse("INVALID_REQUEST", _("Invalid check-in type."))
+
+	lat, lon = _require_position(latitude, longitude, accuracy,
+	                             accuracy_required=device.join_method == "App QR code")
+	claimed = _validated_captured_at(captured_at)
 
 	_refuse_duplicate(device, log_type)
 
@@ -548,6 +560,7 @@ def field_checkin(token, log_type, latitude=None, longitude=None,
 		"alvoraa_gps_accuracy": flt(accuracy) if accuracy not in (None, "") else None,
 		"alvoraa_checkin_offline": 1 if claimed else 0,
 		"alvoraa_captured_at": claimed,
+		"alvoraa_mock_location": _flag(mock_location),
 		# Which phone. Without this, "who punched for Ramesh on 3 March" has no
 		# answer, so an incident cannot be scoped and a deduction cannot be
 		# defended in a grievance.
@@ -579,10 +592,16 @@ def field_checkin(token, log_type, latitude=None, longitude=None,
 	# Deliberately no position here. The punch already holds where somebody was;
 	# a second copy on a doctype with different permissions and no retention
 	# rule would be personal data kept for no reason.
-	device.db_set({
+	activity = {
 		"last_seen": now(),
 		"checkin_count": cint(device.checkin_count) + 1,
-	}, update_modified=False)
+	}
+	# The build that sent this punch, for support. Written on a saved punch and
+	# never on an app open (section 4.1), so opening the app moves nothing.
+	sent_version = errors.sent_app_version()
+	if sent_version and sent_version != device.app_version:
+		activity["app_version"] = sent_version
+	device.db_set(activity, update_modified=False)
 
 	frappe.db.commit()
 
@@ -592,16 +611,67 @@ def field_checkin(token, log_type, latitude=None, longitude=None,
 		"time": str(doc.time),
 		"name": doc.name,
 		"employee_name": emp.employee_name,
+		# So the app can redraw home from this answer with no extra E4 (AC-199).
+		"todays_checkins": _todays_punches(emp.name),
 	}
 
 
-def _require_position(latitude, longitude, accuracy):
+def _flag(value):
+	"""A yes/no the phone sent, as 1 or 0. JSON true, "1" and 1 are yes;
+	anything else, including nothing, is no."""
+	if isinstance(value, bool):
+		return 1 if value else 0
+	return 1 if str(value or "").strip().lower() in ("1", "true") else 0
+
+
+def _refuse_unless_notice_is_current(device):
+	"""An APP phone whose owner has not read the current notice may not punch
+	or see home until they do (AC-80, AC-91, D19). Web phones are never asked
+	again (AC-96): they registered under the words the page showed them.
+
+	One indexed read on the acknowledgement table (by device).
+	"""
+	if device.join_method != "App QR code":
+		return
+	if latest_version_for(device.name) == notice.CURRENT_VERSION:
+		return
+	facts = notice.facts()
+	refuse("NOTICE_CHANGED",
+	       _("The notice has changed. Please read it again."),
+	       version=facts["version"], rows=facts["rows"],
+	       retention_days=facts["retention_days"], what_changed=facts["what_changed"])
+
+
+def _todays_punches(employee):
+	"""Today's punches for one employee, oldest first. Uses the `employee`
+	index; `time` is not indexed in Frappe HR and does not need to be at this
+	volume (Finding D)."""
+	return frappe.get_all(
+		"Employee Checkin",
+		filters={"employee": employee, "time": [">=", today() + " 00:00:00"]},
+		fields=["name", "log_type", "time", "device_id"],
+		order_by="time asc",
+		ignore_permissions=True,
+	)
+
+
+def _workplace(site):
+	"""Name and radius only. Never the coordinates (PRIV-6)."""
+	return {"name": site.location_name, "radius_m": cint(site.checkin_radius)} if site else None
+
+
+def _require_position(latitude, longitude, accuracy, accuracy_required=False):
 	"""A punch without a trustworthy position is not recorded.
 
 	Two separate refusals, because they need different words: no fix at all
 	usually means location is switched off, while a vague fix means the phone is
 	indoors or has not settled yet. Telling somebody to "enable location" when
 	it is already on sends them round in circles.
+
+	`accuracy_required` is on for app phones: the app always has the accuracy,
+	so a reading that arrives without one is not a reading we can judge, and
+	the decision (step 4) is that every stored app reading carries it. The web
+	page is left as it was (AC-35).
 	"""
 	if latitude in (None, "") or longitude in (None, ""):
 		refuse("LOCATION_MISSING",
@@ -609,6 +679,10 @@ def _require_position(latitude, longitude, accuracy):
 		         "this app and try again."))
 
 	acc = flt(accuracy) if accuracy not in (None, "") else None
+	if accuracy_required and acc is None:
+		refuse("LOCATION_MISSING",
+		       _("We could not get your location. Turn on location for "
+		         "this app and try again."))
 	if acc is not None and acc > MAX_ACCURACY_METRES:
 		refuse("GPS_NOT_EXACT",
 		       _("Your location is only accurate to about {0} m, which is not "
@@ -735,48 +809,68 @@ def _shift_location_for(employee):
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_private_request()
 @requires_field_app_plan
-@rate_limit(limit=120, seconds=60 * 60)
+@_limited(PHONE_KEY, "token", limit=60)
 def field_status(token):
-	"""Today's punches for this phone, and whether they are currently in.
+	"""Today's punches for this phone, and whether they are currently in (E4).
 
 	Deliberately narrow: this endpoint answers for one employee, on one
 	registered phone, for one day. It is not a way to read anybody else.
+
+	It reads and never writes: opening the app five times moves nothing on the
+	phone record (AC-77), so "last seen" stays the last PUNCH and nobody can
+	watch when a person opens their phone (PRIV-9).
+
+	The workplace is sent as a name and a radius. An APP phone never receives
+	the branch's coordinates (PRIV-6). The web check-in page still gets its
+	`work_location` block, coordinates included, because that page reads it
+	today and step 4 may not change that page (AC-35); the block is simply not
+	built for app phones.
+
+	Rate limited per phone, 60 an hour, keyed on the hash of the secret.
 	"""
 	errors.check_app_version()
 	device = _device_from_token(token)
 
 	emp = frappe.db.get_value(
 		"Employee", device.employee,
-		["name", "employee_name", "designation"], as_dict=True)
-	_refuse_unless_app_phone_is_eligible(device, emp.designation if emp else None)
+		["name", "first_name", "employee_name", "status", "designation", "company"],
+		as_dict=True)
+	if not emp or emp.status != "Active":
+		# A leaver whose phone the hook has not blocked yet (AC-83): the same
+		# answer the punch gives, so the app shows one screen for it.
+		refuse("EMPLOYEE_NOT_ACTIVE",
+		       _("This employee record is no longer active. Please speak "
+		         "to HR."))
+	_refuse_unless_app_phone_is_eligible(device, emp.designation)
+	_refuse_unless_notice_is_current(device)
 
-	rows = frappe.get_all(
-		"Employee Checkin",
-		filters={"employee": device.employee, "time": [">=", today() + " 00:00:00"]},
-		fields=["name", "log_type", "time", "device_id"],
-		order_by="time asc",
-		ignore_permissions=True,
-	)
-
+	rows = _todays_punches(device.employee)
 	last = rows[-1] if rows else None
 	site = _shift_location_for(device.employee)
 
-	return {
+	answer = {
 		"employee": device.employee,
-		"employee_name": emp.employee_name if emp else device.employee_name,
-		"designation": emp.designation if emp else None,
+		"employee_name": emp.employee_name,
+		"first_name": emp.first_name,
+		"designation": emp.designation,
+		"company": emp.company,
 		"checked_in": bool(last and last.log_type == "IN"),
 		"todays_checkins": rows,
 		"server_time": now(),
-		# Sent so the phone can show "You need to be within 100 m of PPJ Noida"
-		# before somebody walks somewhere, rather than after they are refused.
-		"work_location": {
+		"workplace": _workplace(site),
+		"min_version": errors.MIN_APP_VERSION,
+		"notice_version": notice.CURRENT_VERSION,
+		"joined_on": str(device.registered_on or ""),
+	}
+	if device.join_method != "App QR code":
+		# The web page's block, byte for byte what it was before slice 013.
+		answer["work_location"] = {
 			"name": site.location_name,
 			"radius": cint(site.checkin_radius),
 			"latitude": site.latitude,
 			"longitude": site.longitude,
-		} if site else None,
-	}
+		} if site else None
+	return answer
 
 
 # ── what the setup notice has to say ─────────────────────────────────────────
@@ -859,6 +953,17 @@ def after_migrate():
 				"description": "What the phone said the time was. The punch time beside it is the server's. A wide gap is worth a look.",
 			},
 			{
+				"fieldname": "alvoraa_mock_location",
+				"label": "Phone reported a fake location",
+				"fieldtype": "Check",
+				"insert_after": "alvoraa_captured_at",
+				"read_only": 1,
+				"no_copy": 1,
+				"in_standard_filter": 1,
+				"default": "0",
+				"description": "The phone's own operating system said the position was faked (a mock-location app). The punch is saved; look before you trust it.",
+			},
+			{
 				"fieldname": "alvoraa_legal_hold",
 				"label": "Hold (do not delete photo)",
 				"fieldtype": "Check",
@@ -871,7 +976,7 @@ def after_migrate():
 				"label": "Field Device",
 				"fieldtype": "Link",
 				"options": "Alvoraa Field Device",
-				"insert_after": "alvoraa_captured_at",
+				"insert_after": "alvoraa_mock_location",
 				"read_only": 1,
 				"no_copy": 1,
 				"description": "Which registered phone sent this punch.",
@@ -880,6 +985,26 @@ def after_migrate():
 	}, ignore_validate=True)
 
 	return True
+
+
+def refuse_small_radius(doc, method=None):
+	"""doc_events Shift Location validate: a radius under MIN_RADIUS_M cannot be
+	honestly checked by a phone, so it cannot be saved (user decision, step 4).
+
+	A hook in our app, not an edit to Frappe HR's Shift Location: that keeps
+	`bench update` safe. It fires on every door - form, import, REST. 0 keeps
+	Frappe HR's meaning, "no radius", and is allowed. Rows already saved with a
+	smaller radius are untouched until HR next edits them; the punch never
+	refuses on the radius setting itself.
+	"""
+	radius = cint(doc.get("checkin_radius"))
+	if 0 < radius < MIN_RADIUS_M:
+		frappe.throw(
+			_("A check-in radius under {0} m cannot be checked by a phone. Phone "
+			  "location is only trusted to about {1} m, so people standing at the "
+			  "door would be refused. Use {0} m or more, or 0 for no radius.").format(
+				MIN_RADIUS_M, int(MAX_ACCURACY_METRES)),
+			frappe.ValidationError)
 
 
 def block_devices_for_leaver(doc, method=None):

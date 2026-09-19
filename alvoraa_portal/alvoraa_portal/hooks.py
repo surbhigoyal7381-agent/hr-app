@@ -9,6 +9,14 @@ required_apps = ["frappe/erpnext"]
 # ── Post-login redirect: portal users → their portal; admins → /app ───────
 on_login = "alvoraa_portal.auth.on_login"
 
+# ── The bare address "/" lands where login does (slice 024) ───────────────
+# Frappe resolves "/" through get_home_page(), which asks this hook. Without
+# it, typing https://<tenant>/ dropped a signed-in employee into the desk,
+# and every tenant had to be configured by hand to avoid that. The function
+# returns None for a platform operator and for Guest, so /app and the sign-in
+# page keep working untouched.
+get_website_user_home_page = "alvoraa_portal.auth.home_page_for"
+
 # ── Redirect /login to the branded login page ─────────────────────────────
 website_redirects = [
     # Was r"^/login$", which NEVER matched: Frappe strips slashes off `source`

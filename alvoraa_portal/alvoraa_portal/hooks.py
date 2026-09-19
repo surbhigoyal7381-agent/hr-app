@@ -196,11 +196,17 @@ permission_query_conditions = {
     # never reached it and an HR user limited to one company could list every
     # company's phones (slice 013 step 2, C-11c).
     "Alvoraa Field Device": "alvoraa_portal.field_app_access.device_query_conditions",
+    # The code record and the acknowledgement record (slice 013 step 3) link
+    # only Employee too, so they are scoped the same way.
+    "Alvoraa App Invite": "alvoraa_portal.field_app_access.invite_query_conditions",
+    "Alvoraa Notice Acknowledgement": "alvoraa_portal.field_app_access.acknowledgement_query_conditions",
 }
 
 has_permission = {
     "Employee Checkin": "alvoraa_portal.field_app_access.checkin_has_permission",
     "Alvoraa Field Device": "alvoraa_portal.field_app_access.device_has_permission",
+    "Alvoraa App Invite": "alvoraa_portal.field_app_access.invite_has_permission",
+    "Alvoraa Notice Acknowledgement": "alvoraa_portal.field_app_access.acknowledgement_has_permission",
 }
 
 scheduler_events = {

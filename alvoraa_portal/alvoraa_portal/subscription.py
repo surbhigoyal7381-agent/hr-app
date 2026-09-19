@@ -412,6 +412,10 @@ TENANT_DOCTYPES = [
     # Slice 013 step 2: the field-worker designation list on HR Settings. A
     # child table of the tenant's own HR Settings, so tenant-side.
     "Alvoraa Field Worker Designation",
+    # Slice 013 step 3: a joining code for one of the tenant's employees, and
+    # the record of which notice they read. Both the tenant's own.
+    "Alvoraa App Invite",
+    "Alvoraa Notice Acknowledgement",
 ]
 
 REQUIRED = [k for k, v in FEATURES.items() if v.get("required")]

@@ -89,6 +89,8 @@ def checkin_has_permission(doc, user=None, permission_type=None):
 # the fallback here is "nothing", not "everything".
 
 DEVICE = "Alvoraa Field Device"
+INVITE = "Alvoraa App Invite"
+ACKNOWLEDGEMENT = "Alvoraa Notice Acknowledgement"
 
 
 def _device_companies(user):
@@ -103,20 +105,20 @@ def _device_companies(user):
 	return permitted_companies(user)
 
 
-def device_query_conditions(user=None):
-	"""Row filter for the phone list and every report on it."""
+def _scoped_by_employee_company(doctype, user):
+	"""Row filter for a doctype that links Employee and nothing else."""
 	companies = _device_companies(user)
 	if companies is None:
 		return ""
 	if not companies:
 		return "1=0"
 	allowed = ", ".join(frappe.db.escape(c) for c in companies)
-	return ("`tabAlvoraa Field Device`.employee in (select name from `tabEmployee` "
+	return (f"`tab{doctype}`.employee in (select name from `tabEmployee` "
 	        f"where company in ({allowed}))")
 
 
-def device_has_permission(doc, user=None, permission_type=None):
-	"""Guards ONE phone record, opened by name or through the API."""
+def _one_row_by_employee_company(doc, user):
+	"""Guards ONE record of such a doctype, opened by name or through the API."""
 	companies = _device_companies(user)
 	if companies is None:
 		return True
@@ -124,6 +126,35 @@ def device_has_permission(doc, user=None, permission_type=None):
 		return False
 	company = frappe.db.get_value("Employee", doc.employee, "company")
 	return bool(company) and company in companies
+
+
+def device_query_conditions(user=None):
+	"""Row filter for the phone list and every report on it."""
+	return _scoped_by_employee_company(DEVICE, user)
+
+
+def device_has_permission(doc, user=None, permission_type=None):
+	"""Guards ONE phone record, opened by name or through the API."""
+	return _one_row_by_employee_company(doc, user)
+
+
+# The code record and the acknowledgement record (slice 013 step 3) link only
+# Employee too, so they get the same pair, for the same reason.
+
+def invite_query_conditions(user=None):
+	return _scoped_by_employee_company(INVITE, user)
+
+
+def invite_has_permission(doc, user=None, permission_type=None):
+	return _one_row_by_employee_company(doc, user)
+
+
+def acknowledgement_query_conditions(user=None):
+	return _scoped_by_employee_company(ACKNOWLEDGEMENT, user)
+
+
+def acknowledgement_has_permission(doc, user=None, permission_type=None):
+	return _one_row_by_employee_company(doc, user)
 
 
 def log_photo_view(doc, method=None):

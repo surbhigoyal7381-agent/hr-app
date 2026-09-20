@@ -8,19 +8,34 @@ For every active Employee that has no user_id:
   4. Set Employee.user_id = email
 
 Run via:
-  scp demo/link_employee_users.py root@alvoraa.co:/tmp/link_employee_users.py
-  ssh root@alvoraa.co "docker cp /tmp/link_employee_users.py compose-backend-1:/tmp/ && \
-    docker exec compose-backend-1 \
+  scp demo/link_employee_users.py root@<server-ip>:/tmp/link_employee_users.py
+  ssh root@<server-ip> "docker cp /tmp/link_employee_users.py compose-backend-1:/tmp/ && \
+    docker exec -e HR_DEMO_PASSWORD='<a new, strong password>' compose-backend-1 \
       /home/frappe/frappe-bench/env/bin/python /tmp/link_employee_users.py"
 
-Demo password for all newly created users: Hr@2026
+Set the password for the new users before you run this:
+
+  export HR_DEMO_PASSWORD='<a new, strong password>'
+
+There is no built-in password. If the variable is not set, the script stops
+before it writes anything.
 """
+import os
+import sys
+
 import frappe
+
+DEMO_PASSWORD = os.environ.get("HR_DEMO_PASSWORD", "").strip()
+if not DEMO_PASSWORD:
+    sys.exit(
+        "HR_DEMO_PASSWORD is not set. Choose a new password and export it "
+        "before running this script:\n"
+        "  export HR_DEMO_PASSWORD='<a new, strong password>'\n"
+        "Nothing was changed."
+    )
 
 frappe.init(site="dev.alvoraa.co")
 frappe.connect()
-
-DEMO_PASSWORD = "Hr@2026"
 BATCH = 50  # commit every N records
 
 employees = frappe.db.get_all(

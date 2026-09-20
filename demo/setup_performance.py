@@ -123,14 +123,14 @@ def setup_designations():
 
 EMPLOYEE_DEFS = [
     # (full_name, first_name, last_name, designation, department, reports_to_name)
-    ("D. K. Malhotra",       "D. K.",       "Malhotra",  "Director - Strategy",      "Management", None),
-    ("Mukesh Mittal",        "Mukesh",      "Mittal",    "Director - Finance",       "Finance",    "D. K. Malhotra"),
-    ("Chaitanya Malhotra",   "Chaitanya",   "Malhotra",  "Director - Digital",       "Technology", "D. K. Malhotra"),
-    ("Gurpreet Singh",       "Gurpreet",    "Singh",     "Logistics Manager",        "Operations", "D. K. Malhotra"),
-    ("Arjun Sandhu",         "Arjun",       "Sandhu",    "KAM - Dairy",              "Sales",      "D. K. Malhotra"),
-    ("Neha Sharma",          "Neha",        "Sharma",    "KAM - Snacks",             "Sales",      "D. K. Malhotra"),
-    ("Rohit Verma",          "Rohit",       "Verma",     "KAM - Processed Foods",    "Sales",      "D. K. Malhotra"),
-    ("Priya Singh",          "Priya",       "Singh",     "KAM - Hardware",           "Sales",      "D. K. Malhotra"),
+    ("V. P. Rathore",       "V. P.",       "Rathore",  "Director - Strategy",      "Management", None),
+    ("Naresh Kamath",        "Naresh",      "Kamath",    "Director - Finance",       "Finance",    "V. P. Rathore"),
+    ("Aditya Rathore",   "Aditya",   "Rathore",  "Director - Digital",       "Technology", "V. P. Rathore"),
+    ("Gurpreet Singh",       "Gurpreet",    "Singh",     "Logistics Manager",        "Operations", "V. P. Rathore"),
+    ("Arjun Sandhu",         "Arjun",       "Sandhu",    "KAM - Dairy",              "Sales",      "V. P. Rathore"),
+    ("Neha Sharma",          "Neha",        "Sharma",    "KAM - Snacks",             "Sales",      "V. P. Rathore"),
+    ("Rohit Verma",          "Rohit",       "Verma",     "KAM - Processed Foods",    "Sales",      "V. P. Rathore"),
+    ("Priya Singh",          "Priya",       "Singh",     "KAM - Hardware",           "Sales",      "V. P. Rathore"),
     ("Vikramjeet Singh",     "Vikramjeet",  "Singh",     "Cold Storage Supervisor",  "Operations", "Gurpreet Singh"),
     ("Amit Patel",           "Amit",        "Patel",     "Warehouse Supervisor",     "Operations", "Gurpreet Singh"),
     ("Sandeep Kaur",         "Sandeep",     "Kaur",      "Cold Storage Supervisor",  "Operations", "Gurpreet Singh"),
@@ -293,35 +293,35 @@ def _calc_progress(actual, target, lower_is_better=False, zero_target_miss=False
 # goal_data: list of (employee_full_name, kra_key, goal_name, progress_pct, description)
 def _goal_rows(emp_map, kra_map):
     return [
-        # ── CEO – D. K. Malhotra ────────────────────────────────
-        ("D. K. Malhotra", "CEO",
+        # ── CEO – V. P. Rathore ────────────────────────────────
+        ("V. P. Rathore", "CEO",
          "Secure new national multinational brand partnerships",
          _calc_progress(4, 3),          # actual=4, target=3 → 100 %
          "Target: 3 new MNC partnerships | Actual: 4 secured (UPWARD +33 %)"),
 
-        ("D. K. Malhotra", "CEO",
+        ("V. P. Rathore", "CEO",
          "Group Strategic Revenue Target Realization – Q1",
          _calc_progress(48, 45),        # actual=48 Cr, target=45 Cr → 100 %
          "Q1 Revenue Target: ₹45 Cr | Actual: ₹48 Cr (UPWARD +6.7 %)"),
 
-        # ── Director Finance – Mukesh Mittal ────────────────────
-        ("Mukesh Mittal", "Finance",
+        # ── Director Finance – Naresh Kamath ────────────────────
+        ("Naresh Kamath", "Finance",
          "Reduce Accounts Receivable turnaround across Modern Trade",
          _calc_progress(44, 30, lower_is_better=True),   # 30/44 → 68.18 %
          "Target: ≤30 days AR | Actual: 44 days (DOWNWARD – collection lag)"),
 
-        ("Mukesh Mittal", "Finance",
+        ("Naresh Kamath", "Finance",
          "Group OpEx control and compliance mapping",
          _calc_progress(102, 100),      # 102 % efficiency → 100 %
          "Target: 100 % OpEx efficiency | Actual: 102 % (UPWARD)"),
 
-        # ── Director Digital – Chaitanya Malhotra ───────────────
-        ("Chaitanya Malhotra", "Digital",
+        # ── Director Digital – Aditya Rathore ───────────────
+        ("Aditya Rathore", "Digital",
          "Deploy automated systems to cut manual operations burden",
          _calc_progress(100, 100),      # 100 %
          "Target: 100 % automation deployment | Actual: 100 % (MET)"),
 
-        ("Chaitanya Malhotra", "Digital",
+        ("Aditya Rathore", "Digital",
          "Integrate partner-specific automated billing portals",
          _calc_progress(2, 5),          # 2/5 → 40 %
          "Target: 5 billing portals | Actual: 2 (DOWNWARD – legacy ERP constraints)"),
@@ -625,7 +625,7 @@ def execute():
 
     # ── Step 5: CEO Macro Goal ───────────────────────────────────
     print("\n[7/11] CEO Macro Parent Goal …")
-    ceo_id = emp_map["D. K. Malhotra"]
+    ceo_id = emp_map["V. P. Rathore"]
     macro_goal_id = create_macro_goal(ceo_id)
 
     # ── Step 6: Employee Goals ───────────────────────────────────

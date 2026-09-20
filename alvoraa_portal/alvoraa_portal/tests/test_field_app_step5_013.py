@@ -8,9 +8,11 @@ Every test here names the thing it keeps alive:
     an HR user limited to another company are refused. **Fail-without-fix
     recipe:** delete the `if not has_permission(...)` two lines in
     `field_app_desk.hr_who_may_act` and `test_013_ac109_..._limited_to_another_
-    company_is_refused` fails (so do step 3's AC-43 and the AC-52 / AC-111
-    permission tests below), because the role check alone lets a store HR
-    user read, cancel and block for every company.
+    company_is_refused` fails, as do step 3's AC-43 and the AC-52 cancel test
+    below, because the role check alone lets a store HR user read and cancel
+    for every company. (Proven on the bench 2026-09-20: 3 of the 4 fail. The
+    AC-111 block test still holds, because E11 saves through Frappe's own
+    write permission and the company hook - the second gate.)
   * **US-16 / AC-103** - one state word per situation, worked out on the
     server: not joined, code waiting, joined, not agreed, blocked, not a
     field worker, app switched off, plan without field check-in, left.

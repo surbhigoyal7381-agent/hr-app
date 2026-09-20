@@ -117,8 +117,12 @@ class TestStageTenantLogo(_LogoFixture):
 
 	def test_unknown_control_site_refuses_rather_than_guessing(self):
 		self.put_upload()
+		# Delete it for this one test only. tearDown restores whatever was there
+		# before setUp, so do NOT touch _had_site: setting it False here told the
+		# clean-up there was nothing to put back, and every module that ran after
+		# this one in a full suite inherited a frappe.local with no site - 21
+		# AttributeErrors in test_usage, which sorts next. (2026-09-20)
 		del frappe.local.site
-		self._had_site = False
 		url, warn = api._stage_tenant_logo(TENANT, f"/files/{LOGO}")
 		self.assertEqual(url, "")
 		self.assertIn("[WARN]", warn)

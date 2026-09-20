@@ -253,19 +253,20 @@ class HrMakesACode(JoinCase):
 			"NOT_FIELD_ROLE": lambda: self.configure(1, [self.driver], self.clerk),
 			"APP_OFF_FOR_FIELD": lambda: self.configure(0, [self.driver], self.driver),
 		}
+		# Since step 5 E7 answers its own refusals with the code in the body
+		# (desk_request), as the phone endpoints do, so the form script can
+		# read it. Frappe's own PermissionError and ValidationError still raise.
 		for code, arrange in cases.items():
 			with self.subTest(code=code):
 				arrange()
-				with self.assertRaises(errors.FieldAppRefusal) as caught:
-					self.make()
-				self.assertEqual(caught.exception.alvoraa_code, code)
+				self.assertIsNone(self.make())
+				self.assertEqual(self.answer()[1], code)
 				frappe.db.rollback()
 		self.configure(1, [self.driver], self.driver)
 
 		frappe.conf["features"] = [f for f in sub.FEATURES if f != "field_checkin"]
-		with self.assertRaises(errors.FieldAppRefusal) as caught:
-			self.make()
-		self.assertEqual(caught.exception.alvoraa_code, "FEATURE_OFF")
+		self.assertIsNone(self.make())
+		self.assertEqual(self.answer()[:2], (403, "FEATURE_OFF"))
 		frappe.conf["features"] = list(sub.FEATURES)
 		frappe.db.rollback()
 
@@ -1006,10 +1007,12 @@ class TheLimitsAreKeyedOnTheHash(JoinCase):
 	def test_013_ac44_the_31st_code_by_one_hr_user_in_an_hour_is_too_many(self):
 		for _ in range(30):
 			self.make()
-		with self.assertRaises(errors.FieldAppRefusal) as caught:
-			self.make()
-		self.assertEqual(caught.exception.alvoraa_code, "TOO_MANY_TRIES")
-		self.assertGreater(caught.exception.alvoraa_values.get("retry_after_s", 0), 0)
+		# Since step 5 the desk endpoints answer a refusal the way the phone
+		# endpoints do - the code in the body - so the form script can read it.
+		self.assertIsNone(self.make())
+		status, code, values = self.answer()
+		self.assertEqual((status, code), (429, "TOO_MANY_TRIES"))
+		self.assertGreater((values or {}).get("retry_after_s", 0), 0)
 		frappe.db.rollback()
 		keys = [k.decode() if isinstance(k, bytes) else str(k)
 		        for k in frappe.cache.get_keys(self.PREFIX)]

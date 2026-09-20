@@ -737,6 +737,11 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# checked; the limiter writes nothing.
 		("alvoraa_portal", "field_app_device.py"): 1,
 		("alvoraa_portal", "field_app_limits.py"): 0,
+		# Slice 013 step 5 (new file): the Employee form's section reads for one
+		# employee after Frappe's own read check on that employee; nothing here
+		# writes. HR blocks a phone (field_app_device) as the signed-in user,
+		# through Frappe's write permission and the company hook - no bypass.
+		("alvoraa_portal", "field_app_desk.py"): 0,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

@@ -35,7 +35,6 @@ import secrets
 
 import frappe
 from frappe import _
-from frappe.permissions import has_permission
 from frappe.utils import add_to_date, cint, get_datetime, get_url, now
 
 from alvoraa_portal import field_app_alerts as alerts
@@ -51,6 +50,7 @@ from alvoraa_portal.alvoraa_portal.doctype.alvoraa_notice_acknowledgement.alvora
 	latest_version_for,
 	record_acknowledgement,
 )
+from alvoraa_portal.field_app_desk import desk_request, hr_who_may_act
 from alvoraa_portal.field_app_errors import refuse, requires_field_app_plan
 from alvoraa_portal.field_app_limits import (  # re-exported: the step-3 tests name the keys here
 	CODE_KEY,
@@ -465,17 +465,10 @@ def withdraw_agreement(token):
 # ── E7 · HR makes a code (desk) ──────────────────────────────────────────────
 
 def _hr_who_may_invite(employee):
-	"""An HR user whom Frappe lets read THIS employee. Server side, every time."""
-	user = frappe.session.user
-	if user == "Guest":
-		frappe.throw(_("Please sign in."), frappe.PermissionError)
-	if user != "Administrator" and not (HR_ROLES & set(frappe.get_roles(user))):
-		frappe.throw(_("Only HR can invite an employee to the app."), frappe.PermissionError)
-	if not employee or not isinstance(employee, str) or not frappe.db.exists("Employee", employee):
-		frappe.throw(_("Choose an employee."), frappe.ValidationError)
-	if not has_permission("Employee", "read", doc=employee, user=user, print_logs=False):
-		frappe.throw(_("You cannot invite this employee."), frappe.PermissionError)
-	return user
+	"""An HR user whom Frappe lets read THIS employee. Server side, every time.
+	The check itself lives in `field_app_desk.hr_who_may_act` since step 5, so
+	E7, E10, E11 and E12 ask the same question the same way."""
+	return hr_who_may_act(employee, _("Only HR can invite an employee to the app."))
 
 
 def _lifetime(lifetime_hours):
@@ -497,6 +490,7 @@ def _lifetime(lifetime_hours):
 
 
 @frappe.whitelist(methods=["POST"])
+@desk_request
 @requires_field_app_plan
 @_limited(HR_KEY, "user", limit=30)
 def make_code(employee, lifetime_hours=None):
@@ -540,4 +534,37 @@ def make_code(employee, lifetime_hours=None):
 		"link": f"{get_url('/enrol')}#t={code}",
 		"expires_at": str(inv.expires_at),
 		"lifetime_hours": hours,
+		"made_at": str(inv.creation),
 	}
+
+
+# ── E10 · HR cancels a waiting code (desk) ───────────────────────────────────
+
+@frappe.whitelist(methods=["POST"])
+@desk_request
+@requires_field_app_plan
+@_limited(HR_KEY, "user", limit=30)
+def cancel_code(invite):
+	"""Cancel one waiting code from the Employee record (US-7, SEC-7).
+
+	The code goes to Cancelled "By HR", with who and when, and its hash is
+	retired in the same save (the code record's rules). E1 with that code then
+	answers `QR_CANCELLED`. Safe to call twice: a code that is no longer
+	waiting is left exactly as it is.
+
+	The same lock order as every other writer of these rows: the employee,
+	then the code. The HR user must be able to read the employee the code
+	belongs to; a code that does not exist gets the same sentence, so the
+	endpoint cannot be used to find out which code names exist.
+	"""
+	row = None
+	if invite and isinstance(invite, str) and len(invite) <= 140:
+		row = frappe.db.get_value(INVITE, invite, ["name", "employee", "status"], as_dict=True)
+	if not row:
+		frappe.throw(_("You cannot cancel this code."), frappe.PermissionError)
+	user = hr_who_may_act(row.employee, _("Only HR can cancel an app code."))
+
+	_employee(row.employee, lock=True)
+	cancel_invite(row.name, "By HR", cancelled_by=user)
+	frappe.db.commit()
+	return {}

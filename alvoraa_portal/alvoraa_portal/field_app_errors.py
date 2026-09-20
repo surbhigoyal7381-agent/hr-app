@@ -273,3 +273,44 @@ def requires_field_app_plan(fn):
 
 	wrapper.__alvoraa_feature__ = "field_checkin"
 	return wrapper
+
+
+# ── the desk's own wrapper: a code in the body, nothing swallowed ────────────
+
+def desk_request(fn):
+	"""For the HR desk endpoints (E10, E11, E12; slice 013 step 5).
+
+	The Employee form script picks what to show from the `code` in a refusal's
+	body - `FEATURE_OFF` becomes "Field check-in is not part of your plan."
+	rather than a popup on every refresh (step 2 found that a plain 403 does
+	exactly that). So a refusal raised through `refuse()` - the plan gate, the
+	per-user limit - is answered the way `_private_request` answers the phone:
+	its status, its code and its values in the body, the sentence still in
+	`_server_messages`.
+
+	Deliberately narrower than `_private_request`: it catches ONLY our own
+	refusals. A `PermissionError` or `ValidationError` from a desk endpoint
+	passes through to Frappe untouched and is shown as Frappe shows it, so
+	nothing about a signed-in user's request is hidden, and no gap is logged
+	for a refusal that never claimed to carry a code. Nothing is popped from
+	`form_dict` either: a desk call names an employee or a record, never a
+	secret or a code.
+	"""
+	import functools
+
+	@functools.wraps(fn)
+	def wrapper(*args, **kwargs):
+		try:
+			return fn(*args, **kwargs)
+		except FieldAppRefusal as exc:
+			status = exc.http_status_code
+			frappe.db.rollback()
+			code, values = code_and_values(exc, status)
+			frappe.local.response["http_status_code"] = status
+			frappe.local.response["exc_type"] = exc_type_for(exc, status)
+			frappe.local.response["code"] = code
+			frappe.local.response["values"] = values
+			return None
+
+	wrapper.__alvoraa_desk_request__ = True    # so tests can see it
+	return wrapper

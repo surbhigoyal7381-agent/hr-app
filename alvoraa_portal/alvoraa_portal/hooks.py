@@ -66,6 +66,18 @@ app_include_js = [
 # phones working.
 doctype_js = {
     "HR Settings": "public/js/hr_settings_field_app.js",
+    # The "Field attendance app" section on the Employee form (slice 013 step
+    # 5): the state line, the invite and block dialogs, the phones and the code
+    # history. The QR encoder loads first; the section draws the code from E7's
+    # answer in the browser, so no other request ever carries it (AC-47).
+    "Employee": ["public/js/alvoraa_qr.js", "public/js/employee_field_app.js"],
+}
+
+# The phone list (slice 013 step 5, US-18): default "joined in the last 7
+# days", status with its reason or date, and the note that there is no "last
+# seen" column on purpose.
+doctype_list_js = {
+    "Alvoraa Field Device": "public/js/alvoraa_field_device_list.js",
 }
 
 doc_events = {
@@ -275,6 +287,8 @@ after_migrate = [
     "alvoraa_portal.data_review.after_migrate",
     # Slice 013 step 2: the field app's switches on HR Settings.
     "alvoraa_portal.field_app_settings.after_migrate",
+    # Slice 013 step 5: the field app section on the Employee form.
+    "alvoraa_portal.field_app_desk.after_migrate",
 ]
 
 # And on a fresh install, which never runs a migrate. Without this a brand new
@@ -295,4 +309,6 @@ after_install = [
     "alvoraa_portal.brand.after_install",
     # Slice 013 step 2: the field app's switches on HR Settings.
     "alvoraa_portal.field_app_settings.after_migrate",
+    # Slice 013 step 5: the field app section on the Employee form.
+    "alvoraa_portal.field_app_desk.after_migrate",
 ]

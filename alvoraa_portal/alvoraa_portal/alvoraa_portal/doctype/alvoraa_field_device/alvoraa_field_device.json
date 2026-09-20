@@ -73,8 +73,9 @@
   {
    "fieldname": "registered_on",
    "fieldtype": "Datetime",
-   "label": "Registered On",
-   "read_only": 1
+   "label": "Joined",
+   "read_only": 1,
+   "in_list_view": 1
   },
   {
    "fieldname": "activated_by",
@@ -93,7 +94,8 @@
    "fieldtype": "Data",
    "label": "Device",
    "read_only": 1,
-   "description": "What the phone reported about itself at registration. A hint for HR, never trusted as proof."
+   "description": "What the phone reported about itself at registration. A hint for HR, never trusted as proof.",
+   "in_list_view": 1
   },
   {
    "fieldname": "platform",
@@ -108,7 +110,8 @@
    "options": "\nWeb check-in page\nApp QR code",
    "read_only": 1,
    "no_copy": 1,
-   "description": "Set by the server when the phone joined. Empty means it joined on the web check-in page before this was recorded."
+   "description": "Set by the server when the phone joined. Empty means it joined on the web check-in page before this was recorded.",
+   "in_list_view": 1
   },
   {
    "fieldname": "invite",
@@ -244,7 +247,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-09-19 09:00:00.000000",
+ "modified": "2026-09-20 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Portal",
  "name": "Alvoraa Field Device",

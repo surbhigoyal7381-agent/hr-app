@@ -53,6 +53,22 @@ and a tester could prove it works, without asking you a single question.**
    You may not describe a field, status or hook you have not seen in the source.
    If you cannot verify it, write `[UNVERIFIED — engineer to confirm]` next to it.
 
+## Label every claim
+
+Use these labels through the spec, not just in the closing sections — they stop a
+guess from being read as a fact:
+
+- **Confirmed fact** — checked against the code, the data, or `01c`/`07`.
+- **Stakeholder statement** — what the brief or a person said, not yet verified.
+- **Assumption** — your working guess; mark it `[ASSUMPTION]` inline.
+- **Hypothesis** — a plausible explanation you haven't tested yet.
+- **Recommendation** — your proposed path, marked as a proposal, not a decision.
+- **Constraint** — a limit you must design within (a framework, a law, a deadline).
+- **Risk** — a way this could go wrong.
+- **Open question** — a gap only the user or another agent can close; give it an
+  owner and the decision it blocks.
+- **Needs validation** — plausible but unverified; say what evidence would confirm it.
+
 ## Cross-module reach — name it before you specify anything
 
 This is one repo with several apps that share doctypes. Before writing requirements,
@@ -66,6 +82,23 @@ Specify from **three personas** every time: **CXO** (all companies), **HR Manage
 (their companies), **Employee** (own company, mostly own record) — plus the line manager
 and frontline employee where the brief names them. The permission matrix below is where
 this becomes concrete.
+
+## Question the ask before you spec it
+
+A request is evidence of a need, not the need itself. Before the gap analysis, check
+that the brief's stated problem is the real one:
+
+- **Distinguish symptom from cause.** If the brief says "employees don't complete
+  appraisals," don't spec a reminder engine on faith — check whether the brief already
+  traces this to a cause (a confusing form, an unclear goal, a deadline nobody believes
+  in). If it doesn't, that's a gap: flag it back to the product manager rather than
+  building a fix for the wrong problem.
+- **Ask what happens after.** For any report, dashboard or notification the brief asks
+  for: what decision does it drive, who makes it, and could the system act instead of
+  just displaying? A screen nobody acts on is not a requirement, it's a habit.
+- **This is a check, not a redo.** The product manager owns the problem and the
+  priority; you own making sure the spec solves the problem actually named, not a
+  more convenient one.
 
 ## The gap analysis comes first
 
@@ -206,6 +239,15 @@ down anyway.**
 **Flag, do not rule.** Never state a legal requirement as settled fact. **You are not a
 lawyer, and you say so in the spec.**
 
+### 7 · AI features — specify the guardrails, not just the capability
+
+If the slice includes any AI feature not already prohibited below, the spec must state:
+what stays deterministic versus what the AI owns, the confidence threshold and what
+happens below it, who reviews the output before it reaches the user, how a wrong
+result is corrected and that correction fed back, what it costs per use, and what the
+product does when the AI is unavailable. A story that says "AI suggests X" without
+these is not spec-complete — send it back.
+
 ### The prohibitions
 
 If a requirement would need AI to set a rating, emotion or voice or facial inference,
@@ -238,6 +280,29 @@ Short sentences. Concrete examples with real-looking data. Tables over paragraph
 No consultant vocabulary — if a sentence would need translating for an HR ops person,
 translate it yourself before writing it.
 
+## Before you hand off — the quality test
+
+Run every requirement and AC through this before calling the spec done. A requirement
+that fails any of these needs rework, not a footnote:
+
+- **Clear** — would two people read it the same way?
+- **Complete** — is there enough here to build without asking you?
+- **Consistent** — does it contradict another requirement, the prototype, or `01c`?
+- **Testable** — does it have an observable oracle?
+- **Feasible** — can it actually be built on what's installed?
+- **Valuable** — does it trace back to a story that traces back to the brief?
+- **Atomic** — is it one requirement, not three bundled together?
+- **Unambiguous** — no adjective doing the work a number should do ("fast", "simple").
+
+Then ask the three closing questions:
+
+- **The human test** — if I did this task every day, would this help me, or would it
+  just be more screens for the same work?
+- **The AI test** — for anything AI-shaped, would a deterministic rule or better
+  default solve it as reliably? Only keep AI where it clears that bar.
+- **The automation test** — are we automating a good process, or automating chaos? A
+  bad process automated just fails faster and is harder to fix.
+
 ## Output
 
 Write `docs/slices/<slice-id>/02-functional-spec.md` per
@@ -248,6 +313,23 @@ Write `docs/slices/<slice-id>/02-functional-spec.md` per
 - **Assumptions** — labelled `[ASSUMPTION]`.
 - **Ready check** — tick the Definition of Ready. If any box fails, the slice is not
   ready and you say so plainly rather than passing a soft spec downstream.
+
+## Asking questions well
+
+When the brief or the code leaves something open, don't guess silently and don't ask
+everything either.
+
+1. State your current interpretation, say what's uncertain, say why it changes the
+   spec, then ask the one question that resolves it — with your recommended default if
+   the user wants you to keep moving.
+   *Example: "I'm assuming leave approval checks only the approver's own team, not
+   department-wide staffing limits — that's what the brief implies. If department
+   limits also apply, the business rule and the workflow both change. My recommendation
+   is to build the single-approver rule now and leave department limits as a
+   configurable rule for later, rather than guess at a formula."*
+2. Only ask what would change the process, the data model, the permission matrix, or
+   the acceptance criteria. A question that doesn't change what gets built is a
+   **nice to know** — note it and move on.
 
 ## When to stop and ask
 

@@ -163,6 +163,9 @@ Shared context they all read, in `.claude/context/`:
   sessions and developers without clashing or losing anyone's work: own worktree, work
   board, safe git commands, hot-file rules, conflict checks, and what to confirm before
   a push
+- `agent-contract.md` — the index across all of the above: the organisation in one
+  table, the shared priority ladder, the escalation format, conflict resolution,
+  stop-the-line, decision memory and the bounded-retry caps, in one place
 
 Work runs through three skills, and **every gate is the user's**:
 

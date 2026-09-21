@@ -12864,8 +12864,17 @@ window.pfRatingLabel = function(value, scale) {
     }).catch(function() { /* not a manager or API not ready — silently ignore */ });
   }
 
-  /* Boot: load notification count */
-  setTimeout(function() { loadNotifPanel(); }, 1500);
+  /* Boot: just the bell badge, from a cheap count — not the full list
+     (loadNotifPanel's get_pending_approvals took 11.6-16.4s for HR; P1). The
+     full list still loads when the panel is actually opened. */
+  function loadNotifBadge() {
+    gpFetch("alvoraa_portal.goals_api.get_pending_approvals_count", {}).then(function(data) {
+      var badge = document.getElementById("notif-badge");
+      var total = (data && data.total) || 0;
+      if (badge) { badge.textContent = total > 9 ? "9+" : total; badge.style.display = total > 0 ? "flex" : "none"; }
+    }).catch(function() { /* not a manager or API not ready — silently ignore */ });
+  }
+  setTimeout(function() { loadNotifBadge(); }, 1500);
 
   /* Rating a KPI outside the review is gone (slice 010 group D, R14). Ratings
      are given on the review's own copy, inside the review, so a rating can

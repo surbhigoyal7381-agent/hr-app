@@ -112,9 +112,14 @@ def block_phone(device, reason=None):
 				_(doc.status)),
 			frappe.ValidationError)
 
+	# Read under the same lock as the BLOCKABLE check above, not the pre-lock
+	# `row` — a phone the employee moved to "Consent not given" a moment ago
+	# (withdrawing agreement) must still get the server-flag path, or its
+	# block fails against the person-only transition table for no good reason.
+	was_not_agreed = doc.status == "Consent not given"
 	doc.status = "Blocked"
 	doc.block_reason = reason
-	if row.status == "Consent not given":
+	if was_not_agreed:
 		# The record's rules let a person move Active or Pending to Blocked. A
 		# phone that joined but never agreed still holds a live secret, and a
 		# lost one must be stoppable too, so this one move is made as the

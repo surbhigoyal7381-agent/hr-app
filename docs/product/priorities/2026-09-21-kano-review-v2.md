@@ -274,6 +274,33 @@ quote on file.
 
 ---
 
+## Tracked in YouTrack
+
+All candidates from §6, plus the Wave 0 sub-batches and the Waves 1–4 / C10 splits, are
+now tracked as issues in YouTrack project `ALV` (`https://alvoraa.youtrack.cloud`),
+created 2026-09-21. `Ideal days` didn't accept a value on a few issues — permission,
+not data loss; the estimate is still in each issue's description.
+
+| Rank | Candidate | YouTrack |
+|---|---|---|
+| 1 | C11 — ship slice 010 | `ALV-1` |
+| 2 | C7 — PMS decision | `ALV-2` (⚠ decision), `ALV-14` (live-status check), `ALV-15`/`ALV-16` (the two paths, both blocked on `ALV-14`) |
+| 3 | C1 — KPI weightage UI | `ALV-3` |
+| 4 | Wave 0 remaining | `ALV-4` epic → `ALV-17` (P1 perf), `ALV-18` (wrong numbers), `ALV-19` (broken calls) |
+| 5 | C2 — Goal/KPI Library | `ALV-5` epic (depends on `ALV-3`) → `ALV-20` (library), `ALV-21` (lookup tables) |
+| 6 | C3 — Rating Derivation | `ALV-6` |
+| 7 | 009 Waves 1–4 | `ALV-7` epic → `ALV-22`/`ALV-23`/`ALV-24`/`ALV-25` (Waves 1–4; Wave 3 depends on `ALV-18`, Wave 4 depends on `ALV-1`) |
+| 8 | C4 — leniency/severity | `ALV-8` |
+| 9 | C5 — frontline review | `ALV-9` (depends on `ALV-10`) |
+| — | gzip fix (C5 prerequisite) | `ALV-10` |
+| 10 | C6 — pulse/eNPS | `ALV-11` |
+| 11 | C10 — adapters | `ALV-12` epic → `ALV-26` (foundation), `ALV-27`/`ALV-28`/`ALV-29` (Tally/Zoho/CRM, each depends on `ALV-26`) |
+| — | Kano survey kit | `ALV-13` |
+
+**Deliberately not created:** build issues for C8 (learning) and C9 (talent/succession) —
+both are on the do-not-build list; `ALV-13` (the survey) is the path to changing that,
+not a build task.
+
 ## Open questions
 
 | Question | Owner | Blocks |

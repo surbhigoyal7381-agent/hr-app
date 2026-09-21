@@ -403,3 +403,29 @@ that pin them. Do not fold them into the redesign.
 
 To everyone: approvals, "today" status and the person sheet are each shared by several
 screens. Build each one once.
+
+---
+
+## Wave 1 decisions (Surbhi, 2026-09-17)
+
+- **Q1** Owner and HR screens go in **one "Company" group** (no separate Admin group).
+- **Q2** Bottom-bar buttons: **the most relevant ones for each role** — HR, and an employee with no payroll. The designer proposes the exact set per role; Surbhi confirms at the design check.
+- **Q3** The language and light/dark switches live in the **signed-in user's profile menu**.
+- **Q4** "People" is a **staff directory** (as in the prototype), not today's org chart.
+- **Q5** The Inbox count includes **everything**: approvals, policies to acknowledge, and the person's own open requests.
+
+Context: the mobile app (slice 013) adds its "My HR" tab only after Wave 1 is on dev — see `docs/slices/013-mobile-app/00-sequencing-recommendation.md`.
+
+---
+
+## Note for Wave 1 from slice 013, the mobile app (2026-09-17)
+
+The mobile app is built on a separate work line that never edits `hrms-employee.html`. Its **My HR tab loads this portal**, and waits until Wave 1 is on dev. So that no rework is needed later, Wave 1 should allow for:
+
+1. **Running inside the app:** when the portal is opened inside the app, hide its own bottom bar (and any top bar the app replaces), so the user does not see two menus.
+2. **One way to check in:** inside the app, the portal's Check In opens the app's Attendance tab (photo check-in) instead of the portal's own check-in.
+3. **App QR issuing in Org Settings:** leave a place for HR to issue, cancel and see enrolment QRs for field workers (today this is done in the desk).
+
+Also: fold the page-speed change OPS-31 (moving inline JS/CSS into cached files, slice 012 `07-devops-inputs.md`) into Wave 1's "split into includes" step, so the page is not restructured twice.
+
+Sequencing on `hrms-employee.html`: one session at a time. The redesign goes first; slice 012 push 2 (leader screen) and any slice 010 follow-ups wait their turn. Details: `docs/slices/013-mobile-app/00-sequencing-recommendation.md`.

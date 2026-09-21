@@ -1,0 +1,1127 @@
+<title>013 Mobile app, step 1 — prototype v1 (sample data)</title>
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Noto+Sans+Devanagari:wght@400;600;700&display=swap");
+/* Tokens copied from alvoraa_portal/templates/includes/design_system.html. Nothing invented. */
+:root{
+  --bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;--text:#2D2622;--text2:#5A544E;--text3:#736D65;
+  --primary:#5B4B8A;--primary-h:#4A3D73;--primary-d:#3D3461;--primary-lt:#EDEAF4;
+  --green:#1B7F5A;--green-lt:#E8F4EF;--green-h:#166B4C;--red:#B3261E;--red-lt:#FBEAE8;--amber:#9A6510;--amber-lt:#FBF1E0;
+  --sh1:0 1px 2px rgba(0,0,0,.05);--sh2:0 4px 12px rgba(0,0,0,.10);--sh3:0 12px 32px rgba(0,0,0,.16);
+  --font:"Inter","Noto Sans Devanagari",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --r:10px;--r-sm:6px;--r-lg:16px;--r-full:999px;
+  --t:.18s cubic-bezier(.4,0,.2,1);
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;--text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;
+  --primary:#A99AD4;--primary-h:#BBAEE0;--primary-d:#7A6BA8;--primary-lt:#2A2438;
+  --green:#5DBF97;--green-lt:#12332A;--green-h:#7BD0AC;--red:#F08A82;--red-lt:#3A1C1A;--amber:#E0A94A;--amber-lt:#33280F;
+  --sh1:0 1px 2px rgba(0,0,0,.30);--sh2:0 4px 12px rgba(0,0,0,.45);--sh3:0 12px 32px rgba(0,0,0,.60);
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;--text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;
+  --primary:#A99AD4;--primary-h:#BBAEE0;--primary-d:#7A6BA8;--primary-lt:#2A2438;
+  --green:#5DBF97;--green-lt:#12332A;--green-h:#7BD0AC;--red:#F08A82;--red-lt:#3A1C1A;--amber:#E0A94A;--amber-lt:#33280F;
+  --sh1:0 1px 2px rgba(0,0,0,.30);--sh2:0 4px 12px rgba(0,0,0,.45);--sh3:0 12px 32px rgba(0,0,0,.60);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:15px;line-height:1.45;overflow-x:hidden}
+button,input,select{font-family:inherit;font-size:inherit}
+:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+.sronly{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ── Review controls (not part of the product) ─────────────────────────── */
+.ctl{position:relative;z-index:40;background:var(--surface);border-bottom:1px solid var(--border);padding:10px 16px;box-shadow:var(--sh1)}
+.ctl-top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
+.ctl h1{margin:0;font-size:17px;font-weight:700;flex:1 1 260px}
+.ctl h1 small{display:block;font-size:13px;font-weight:400;color:var(--text3)}
+.tag-sample{display:inline-block;background:var(--amber-lt);color:var(--amber);border:1px solid var(--amber);border-radius:var(--r-full);font-size:12px;font-weight:700;padding:1px 8px;vertical-align:middle}
+.seg{display:inline-flex;flex-wrap:wrap;max-width:100%;border:1px solid var(--border2);border-radius:12px;overflow:hidden;flex:0 1 auto}
+.seg button{min-height:44px;min-width:44px;padding:0 12px;border:0;background:var(--surface);color:var(--text2);font-size:13px;font-weight:600;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--primary-d);color:#fff}
+:root[data-theme="dark"] .seg button[aria-pressed="true"]{color:#1A1815}
+.ctl-row{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin-top:8px}
+.ctl-row label{font-size:13px;color:var(--text2);display:flex;align-items:center;gap:6px}
+.ctl-row .lbl{font-size:13px;color:var(--text3)}
+.states{padding:8px 16px 10px;border-bottom:1px solid var(--border);background:var(--bg)}
+.sgroup{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0}
+.sgroup .gname{font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;min-width:118px}
+.sgroup button{min-height:44px;padding:0 10px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:8px;font-size:13px;cursor:pointer}
+.sgroup button[aria-current="true"]{border-color:var(--primary);background:var(--primary-lt);color:var(--primary-d);font-weight:700}
+:root[data-theme="dark"] .sgroup button[aria-current="true"]{color:var(--text)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sgroup button[aria-current="true"]{color:var(--text)}}
+
+/* ── Stage ─────────────────────────────────────────────────────────────── */
+.stage{display:flex;flex-wrap:wrap;gap:20px;justify-content:center;align-items:flex-start;padding:20px 16px 40px}
+.note{flex:1 1 260px;max-width:420px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;font-size:14px;color:var(--text2)}
+.note h2{margin:0 0 6px;font-size:16px;color:var(--text)}
+.note p{margin:0 0 8px}
+.note .dec{display:block;margin-top:6px;padding:8px 10px;border-left:3px solid var(--amber);background:var(--amber-lt);color:var(--text);border-radius:4px}
+
+/* Phone frame */
+.phone{--pw:390px;width:var(--pw);max-width:100%;height:800px;flex:none;border-radius:34px;border:10px solid #1d1b19;background:#1d1b19;box-shadow:var(--sh3);overflow:hidden;position:relative;display:flex;flex-direction:column}
+.phone.w360{--pw:360px;height:720px}
+/* The app pins the light theme by default (slice 008, D1: read in sunlight). */
+.phone:not(.follow-dark){
+  --bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;--text:#2D2622;--text2:#5A544E;--text3:#736D65;
+  --primary:#5B4B8A;--primary-h:#4A3D73;--primary-d:#3D3461;--primary-lt:#EDEAF4;
+  --green:#1B7F5A;--green-lt:#E8F4EF;--green-h:#166B4C;--red:#B3261E;--red-lt:#FBEAE8;--amber:#9A6510;--amber-lt:#FBF1E0;
+  --sh2:0 4px 12px rgba(0,0,0,.10);--sh3:0 12px 32px rgba(0,0,0,.16);color-scheme:light;
+}
+.osbar{height:26px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 16px;font-size:12px;font-weight:600;color:#fff;background:var(--primary-d)}
+.app{flex:1;min-height:0;position:relative;background:var(--bg);color:var(--text);
+  --fs-sm:15px;--fs-base:17px;--fs-md:19px;--fs-lg:22px;--fs-xl:26px;--fs-2xl:32px;font-size:var(--fs-base);display:flex;flex-direction:column}
+.navbar-os{height:18px;flex:none;background:#1d1b19;display:flex;justify-content:center;align-items:center}
+.navbar-os span{width:110px;height:4px;border-radius:4px;background:#8a8580}
+
+.scr{flex:1;min-height:0;display:flex;flex-direction:column}
+.bar{display:flex;align-items:center;gap:8px;min-height:56px;padding:6px 8px 6px 16px;background:var(--primary-d);color:#fff;flex:none}
+.follow-dark .bar{background:var(--surface2);color:var(--text)}
+.bar .t{flex:1;min-width:0}
+.bar .t b{display:block;font-size:var(--fs-md);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar .t span{display:block;font-size:var(--fs-sm);opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar .ib{min-height:48px;min-width:48px;border:0;background:transparent;color:inherit;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;font-weight:600;gap:1px;cursor:pointer;padding:0 6px}
+.bar .ib svg{width:22px;height:22px}
+.bar .ib.row{flex-direction:row;font-size:var(--fs-sm);gap:6px}
+.lang{display:flex;border:2px solid rgba(255,255,255,.55);border-radius:var(--r-full);overflow:hidden;flex:none}
+.follow-dark .lang{border-color:var(--border2)}
+.lang button{min-height:44px;min-width:50px;border:0;background:transparent;color:inherit;font-size:var(--fs-sm);font-weight:700;padding:0 10px;cursor:pointer}
+.lang button[aria-pressed="true"]{background:#fff;color:var(--primary-d)}
+.scroll{flex:1;min-height:0;overflow-y:auto;padding:16px}
+.footer{flex:none;padding:10px 16px 12px;background:var(--bg);border-top:1px solid var(--border)}
+.footer.plain{border-top:0}
+.stack>*+*{margin-top:10px}
+.app h2{margin:0 0 8px;font-size:var(--fs-xl);font-weight:700;line-height:1.25}
+.app h3{margin:0 0 6px;font-size:var(--fs-md);font-weight:650}
+.app p{margin:0 0 14px;color:var(--text2)}
+.app p.lead{color:var(--text);font-size:var(--fs-md)}
+.muted{color:var(--text3);font-size:var(--fs-sm)}
+.app .sample{display:inline-block;font-size:12px;font-weight:700;color:var(--amber);background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r-full);padding:0 6px;vertical-align:middle;line-height:18px}
+
+.btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:60px;padding:12px 18px;border:0;border-radius:var(--r-lg);font-size:var(--fs-md);font-weight:700;color:#fff;background:var(--primary-d);box-shadow:var(--sh2);cursor:pointer;text-align:center}
+.follow-dark .btn{color:#1A1815}
+.btn svg{width:26px;height:26px;flex:none}
+.btn.ghost{background:var(--surface);color:var(--primary-d);border:2px solid var(--border2);box-shadow:none;font-weight:650}
+.follow-dark .btn.ghost{color:var(--text)}
+.btn.link{background:none;color:var(--primary);box-shadow:none;min-height:48px;font-weight:650;text-decoration:underline;font-size:var(--fs-base)}
+.btn.danger{background:var(--red)}
+.btn.green{background:var(--green)}
+.btn-punch{min-height:96px;border-radius:20px;font-size:var(--fs-2xl);font-weight:800;box-shadow:var(--sh3)}
+.btn-punch.in{background:var(--green)}
+.btn-punch.out{background:var(--primary-d)}
+.btn-punch svg{width:36px;height:36px}
+.btn-punch.out svg{transform:scaleX(-1)}
+
+.chip{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:var(--r-full);font-size:var(--fs-sm);font-weight:650;border:1px solid;margin:8px 16px 0;flex:none}
+.chip .dot{width:10px;height:10px;border-radius:50%;flex:none}
+.chip.yes{background:var(--green-lt);color:var(--green-h);border-color:var(--green)}
+.chip.yes .dot{background:var(--green)}
+.chip.no{background:var(--surface2);color:var(--text2);border-color:var(--border2)}
+.chip.no .dot{background:var(--text3)}
+.cam{position:relative;flex:1 1 auto;min-height:170px;margin:8px 16px 0;border-radius:var(--r-lg);overflow:hidden;background:#2a2622;display:flex;align-items:center;justify-content:center;color:#fff}
+.cam .person{width:46%;max-width:160px;opacity:.55}
+.cam .tagc{position:absolute;left:10px;bottom:10px;right:10px;background:rgba(0,0,0,.62);color:#fff;font-size:var(--fs-sm);font-weight:650;padding:5px 10px;border-radius:12px}
+.cam .off{text-align:center;padding:18px;font-size:var(--fs-base)}
+.cam .off .btn{margin-top:12px}
+.punches{margin:8px 16px 0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;flex:none;max-height:124px;overflow-y:auto}
+.punches .hd{padding:5px 14px;font-size:13px;font-weight:650;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border);display:flex;justify-content:space-between}
+.punch{display:flex;align-items:center;gap:10px;padding:7px 14px;min-height:44px;border-bottom:1px solid var(--border)}
+.punch:last-child{border-bottom:0}
+.punch .k{font-weight:700;min-width:104px}
+.punch .k.in{color:var(--green-h)}
+.punch .k.out{color:var(--primary-d)}
+.follow-dark .punch .k.out{color:var(--primary)}
+.punch .tm{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:700;font-size:var(--fs-md)}
+.punch .src{font-size:var(--fs-sm);color:var(--text3)}
+.punches .none{padding:10px 14px;color:var(--text3);font-size:var(--fs-sm)}
+.place{margin:0 0 8px;text-align:center}
+
+.big{display:flex;flex-direction:column;align-items:center;text-align:center;padding:14px 8px 4px}
+.big .circle{width:88px;height:88px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:12px;flex:none}
+.big .circle svg{width:48px;height:48px}
+.big.ok .circle{background:var(--green-lt);color:var(--green)}
+.big.warn .circle{background:var(--amber-lt);color:var(--amber)}
+.big.stop .circle{background:var(--red-lt);color:var(--red)}
+.big.info .circle{background:var(--primary-lt);color:var(--primary-d)}
+.follow-dark .big.info .circle{color:var(--primary)}
+.big .time{font-size:48px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums;margin:2px 0 4px}
+.big p{font-size:var(--fs-md)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;margin:0 0 14px;text-align:left}
+.card.green{background:var(--green-lt);border-color:var(--green)}
+.card.amber{background:var(--amber-lt);border-color:var(--amber)}
+.rowline{display:flex;gap:10px;align-items:flex-start;padding:6px 0}
+.rowline .n{flex:none;width:28px;height:28px;border-radius:50%;background:var(--primary-d);color:#fff;font-weight:700;font-size:var(--fs-sm);display:flex;align-items:center;justify-content:center}
+.follow-dark .rowline .n{color:#1A1815}
+.kv{display:flex;justify-content:space-between;gap:12px;padding:6px 0}
+.kv .k{color:var(--text2)}
+.kv .v{font-weight:650;text-align:right}
+.code{font-size:var(--fs-sm);color:var(--text3);text-align:center;margin:4px 0 0}
+.shot{position:relative;width:132px;height:132px;margin:0 auto 12px;flex:none;border-radius:var(--r-lg);border:3px solid var(--green);background:#d9d2c8;display:flex;align-items:flex-end;justify-content:center;overflow:visible}
+.shot svg.person{width:80%;color:#8c8378}
+.shot .tick{position:absolute;right:-8px;bottom:-8px;width:44px;height:44px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;border:3px solid var(--bg)}
+.shot .tick svg{width:22px;height:22px}
+
+/* Join */
+.brandmark{display:flex;align-items:center;gap:10px;margin:6px 0 18px}
+.brandmark .logo{width:48px;height:48px;border-radius:14px;background:var(--primary-d);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:24px}
+.brandmark b{font-size:var(--fs-lg)}
+.hero-ill{display:flex;justify-content:center;margin:4px 0 16px;color:var(--primary-d)}
+.hero-ill svg{width:120px;height:120px}
+.follow-dark .hero-ill{color:var(--primary)}
+.who-card{background:var(--surface);border:2px solid var(--primary);border-radius:var(--r-lg);padding:18px 16px;text-align:center;margin:8px 0 16px}
+.who-card .av{width:72px;height:72px;border-radius:50%;background:var(--primary-lt);color:var(--primary-d);font-weight:800;font-size:28px;display:flex;align-items:center;justify-content:center;margin:0 auto 10px}
+.follow-dark .who-card .av{color:var(--primary)}
+.who-card .nm{font-size:var(--fs-xl);font-weight:800;color:var(--text)}
+.who-card .ds{font-size:var(--fs-md);color:var(--text2)}
+.who-card .co{font-size:var(--fs-md);font-weight:650;color:var(--text);margin-top:4px}
+.notice{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:10px 14px;margin:6px 0 4px}
+.notice ul{margin:0;padding:0;list-style:none}
+.notice li{padding:7px 0;border-bottom:1px solid var(--border);font-size:var(--fs-sm);color:var(--text2)}
+.notice li:last-child{border-bottom:0}
+.notice li strong{display:block;color:var(--text);font-size:var(--fs-sm)}
+.agree{display:flex;align-items:center;gap:12px;margin:12px 0 2px;min-height:48px;font-weight:650;cursor:pointer}
+.agree input{width:28px;height:28px;flex:none;accent-color:var(--primary)}
+.inline-err{color:var(--red);font-weight:650;font-size:var(--fs-sm);margin:6px 0 0}
+
+/* Scanner */
+.scanner{flex:1;min-height:0;background:#0f0e0d;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;gap:16px;position:relative}
+.scanner .vf{width:72%;max-width:250px;aspect-ratio:1;border-radius:18px;position:relative;background:repeating-linear-gradient(45deg,#1d1b19 0 10px,#24211e 10px 20px);border:0;cursor:pointer;color:#fff;font-size:15px}
+.scanner .vf::before{content:"";position:absolute;inset:-4px;border:4px solid #fff;border-radius:22px;clip-path:polygon(0 0,30% 0,30% 4px,4px 4px,4px 30%,0 30%,0 70%,4px 70%,4px calc(100% - 4px),30% calc(100% - 4px),30% 100%,70% 100%,70% calc(100% - 4px),calc(100% - 4px) calc(100% - 4px),calc(100% - 4px) 70%,100% 70%,100% 30%,calc(100% - 4px) 30%,calc(100% - 4px) 4px,70% 4px,70% 0,100% 0,100% 100%,0 100%)}
+.scanner p{color:#fff;font-size:var(--fs-md);text-align:center;margin:0}
+.scanner .btn.ghost{background:transparent;color:#fff;border-color:rgba(255,255,255,.6)}
+
+/* Android system dialog (mock) */
+.os-dim{position:absolute;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:20px;z-index:20}
+.os-dlg{background:#EEF0F4;color:#1B1B1F;border-radius:28px;padding:22px 20px 14px;width:100%;max-width:320px;font-family:Roboto,"Noto Sans Devanagari",Arial,sans-serif}
+.os-dlg .ico{display:flex;justify-content:center;color:#3A5BA0;margin-bottom:10px}
+.os-dlg .ico svg{width:28px;height:28px}
+.os-dlg .q{font-size:18px;text-align:center;margin:0 0 14px;line-height:1.35}
+.os-dlg .opts{display:flex;justify-content:center;gap:24px;margin:0 0 12px}
+.os-dlg .opt{display:flex;flex-direction:column;align-items:center;font-size:13px;gap:4px}
+.os-dlg .opt i{width:64px;height:64px;border-radius:50%;background:#D8E2FF;display:block;border:2px solid #3A5BA0}
+.os-dlg .opt.off i{background:#E1E2EC;border-color:transparent}
+.os-dlg button{display:block;width:100%;min-height:48px;margin:4px 0;border:0;border-radius:24px;background:#D8E2FF;color:#1B1B1F;font-size:15px;font-weight:500;cursor:pointer}
+.os-note{position:absolute;top:8px;left:8px;right:8px;background:#241F1B;color:#fff;font-size:12px;padding:4px 8px;border-radius:6px;text-align:center;z-index:21}
+
+/* Busy overlay */
+.busy{position:absolute;inset:0;background:rgba(26,24,21,.78);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;gap:18px;padding:24px;z-index:15}
+.busy .sp{width:56px;height:56px;border:6px solid rgba(255,255,255,.28);border-top-color:#fff;border-radius:50%;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.busy .msg{font-size:var(--fs-md);font-weight:650;text-align:center}
+@media (prefers-reduced-motion:reduce){.busy .sp{animation-duration:2.4s}}
+
+/* Tab bars (shell options B and C) */
+.tabbar{flex:none;display:flex;border-top:1px solid var(--border);background:var(--surface)}
+.tabbar button{flex:1;min-height:60px;border:0;background:transparent;color:var(--text2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:14px;font-weight:650;cursor:pointer}
+.tabbar button svg{width:24px;height:24px}
+.tabbar button[aria-current="page"]{color:var(--primary-d)}
+.follow-dark .tabbar button[aria-current="page"]{color:var(--primary)}
+.tabbar button[aria-current="page"]::after{content:"";display:block;width:32px;height:3px;border-radius:3px;background:currentColor;margin-top:2px}
+.tabbar button.greyed{opacity:.45;cursor:not-allowed}
+
+/* Settings list */
+.sgrp{margin:0 0 16px}
+.sgrp h3{font-size:var(--fs-sm);text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin:0 0 6px}
+.slist{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.srow{display:flex;align-items:center;gap:12px;min-height:56px;padding:8px 14px;border-bottom:1px solid var(--border);width:100%;background:none;border-left:0;border-right:0;border-top:0;text-align:left;color:var(--text);font-size:var(--fs-base)}
+.srow:last-child{border-bottom:0}
+button.srow{cursor:pointer}
+.srow .l{flex:1;min-width:0}
+.srow .l small{display:block;color:var(--text3);font-size:var(--fs-sm)}
+.srow .r{color:var(--text2);text-align:right;font-weight:600}
+.srow svg{width:20px;height:20px;color:var(--text3);flex:none}
+.radio-row{display:flex;align-items:center;gap:12px;min-height:56px;padding:8px 14px;border-bottom:1px solid var(--border);cursor:pointer}
+.radio-row:last-child{border-bottom:0}
+.radio-row input{width:24px;height:24px;accent-color:var(--primary)}
+.sheet-dim{position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;z-index:18}
+.sheet{background:var(--bg);width:100%;border-radius:20px 20px 0 0;padding:18px 16px 16px;max-height:92%;overflow-y:auto}
+.sheet ul{padding-left:20px;margin:0 0 14px;color:var(--text2)}
+.sheet li{margin:0 0 6px}
+.toast{margin:0 0 14px;background:var(--green-lt);border:1px solid var(--green);color:var(--green-h);border-radius:var(--r);padding:10px 12px;font-weight:650;font-size:var(--fs-sm)}
+.draft-hi{position:absolute;right:8px;top:8px;z-index:12;background:var(--amber);color:#fff;font-size:12px;font-weight:700;padding:2px 8px;border-radius:var(--r-full);pointer-events:none}
+</style>
+<style>
+/* ── HR desk mock (a sketch of a Frappe desk form, drawn with Alvoraa tokens) ── */
+.desk{width:100%;max-width:1180px;min-height:720px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh2);overflow:hidden;position:relative;font-size:14px}
+.dk-nav{display:flex;align-items:center;gap:12px;min-height:52px;padding:6px 16px;border-bottom:1px solid var(--border);background:var(--surface)}
+.dk-nav .logo{width:30px;height:30px;border-radius:8px;background:var(--primary-d);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;flex:none}
+.dk-nav .crumb{font-size:14px;color:var(--text3);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dk-nav .crumb b{color:var(--text)}
+.dk-nav .mocktag{font-size:12px;color:var(--text3);border:1px dashed var(--border2);border-radius:6px;padding:2px 8px;flex:none}
+.dk-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:14px 20px;border-bottom:1px solid var(--border)}
+.dk-head h2{margin:0;font-size:22px;flex:1 1 240px}
+.dk-head h2 small{display:block;font-size:13px;font-weight:400;color:var(--text3)}
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:var(--r-full);padding:2px 10px;font-size:13px;font-weight:650;border:1px solid}
+.pill .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+.pill.green{background:var(--green-lt);color:var(--green-h);border-color:var(--green)}
+.pill.grey{background:var(--surface2);color:var(--text2);border-color:var(--border2)}
+.pill.amber{background:var(--amber-lt);color:var(--amber);border-color:var(--amber)}
+.pill.red{background:var(--red-lt);color:var(--red);border-color:var(--red)}
+.pill.purple{background:var(--primary-lt);color:var(--primary-d);border-color:var(--primary)}
+:root[data-theme="dark"] .pill.purple{color:var(--text)}
+.dbtn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 14px;border-radius:8px;border:1px solid var(--border2);background:var(--surface);color:var(--text);font-weight:600;font-size:14px;cursor:pointer;text-decoration:none}
+.dbtn.pri{background:var(--primary-d);border-color:var(--primary-d);color:#fff}
+:root[data-theme="dark"] .dbtn.pri{color:#1A1815}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .dbtn.pri{color:#1A1815}}
+.dbtn.dng{background:var(--red);border-color:var(--red);color:#fff}
+.dbtn.lnk{border-color:transparent;background:none;color:var(--primary);text-decoration:underline;padding:0 6px}
+.dbtn svg{width:18px;height:18px}
+.dk-tabs{display:flex;gap:4px;padding:0 20px;border-bottom:1px solid var(--border);overflow-x:auto}
+.dk-tabs span{padding:12px 10px;font-size:14px;color:var(--text3);white-space:nowrap;border-bottom:2px solid transparent}
+.dk-tabs span.on{color:var(--text);border-bottom-color:var(--primary);font-weight:650}
+.dk-body{padding:16px 20px 24px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+.dk-sec{border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;background:var(--surface)}
+.dk-sec h3{margin:0 0 4px;font-size:16px}
+.dk-sec .sub{margin:0 0 12px;color:var(--text3);font-size:13px}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 20px}
+.fld .fl{font-size:12px;color:var(--text3)}
+.fld .fv{font-size:14px;font-weight:600;min-height:20px}
+.status-line{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:10px 12px;border-radius:8px;background:var(--surface2);margin:0 0 12px}
+.status-line.good{background:var(--green-lt)}
+.status-line.warn{background:var(--amber-lt)}
+.status-line .sl{font-size:15px;font-weight:650}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:8px}
+table.dt{border-collapse:collapse;width:100%;min-width:720px;font-size:14px}
+table.dt th{text-align:left;font-size:12px;font-weight:650;color:var(--text3);background:var(--surface2);padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+table.dt td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+table.dt tr:last-child td{border-bottom:0}
+table.dt td small{display:block;color:var(--text3);font-size:12px}
+.hist{margin:0;padding:0;list-style:none}
+.hist li{padding:8px 0;border-bottom:1px dashed var(--border);display:flex;flex-wrap:wrap;gap:4px 10px}
+.hist li:last-child{border-bottom:0}
+.hist .when{color:var(--text3);font-size:13px;min-width:150px}
+.dk-dim{position:absolute;inset:0;background:rgba(20,18,16,.5);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:10;overflow-y:auto}
+.dk-dlg{background:var(--surface);color:var(--text);border-radius:12px;box-shadow:var(--sh3);width:100%;max-width:560px}
+.dk-dlg header{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border)}
+.dk-dlg header h3{margin:0;font-size:17px;flex:1}
+.dk-dlg .bd{padding:16px 18px}
+.dk-dlg footer{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--border)}
+.dk-dlg label.fl2{display:block;font-size:13px;font-weight:650;margin:0 0 4px}
+.dk-dlg select,.dk-sec select,.dk-sec input[type=text]{min-height:44px;border:1px solid var(--border2);border-radius:8px;background:var(--surface);color:var(--text);padding:0 10px;font-size:14px;width:100%;max-width:320px}
+.hint{font-size:13px;color:var(--text3);margin:4px 0 0}
+.qrbox{display:flex;flex-wrap:wrap;gap:16px;align-items:center}
+.qrbox .qr{width:196px;height:196px;flex:none;background:#fff;border:1px solid var(--border);border-radius:8px;padding:8px;position:relative}
+.qrbox .qr svg{width:100%;height:100%;display:block}
+.qrbox .qr .notreal{position:absolute;left:0;right:0;bottom:-20px;text-align:center;font-size:12px;color:var(--text3)}
+.qrbox .facts{flex:1 1 220px}
+.warnbox{background:var(--amber-lt);border:1px solid var(--amber);border-radius:8px;padding:10px 12px;margin:14px 0 0;font-size:14px}
+.infobox{background:var(--surface2);border-radius:8px;padding:10px 12px;margin:12px 0 0;font-size:14px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chips .c{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--border2);border-radius:var(--r-full);padding:0 4px 0 10px;min-height:36px;background:var(--surface2);font-size:14px}
+.chips .c button{min-width:32px;min-height:32px;border:0;background:none;color:var(--text2);cursor:pointer;border-radius:50%;font-size:16px}
+.switch{display:flex;align-items:center;gap:10px;min-height:44px;cursor:pointer}
+.switch input{width:22px;height:22px;accent-color:var(--primary)}
+.print{background:#fff;color:#1b1b1b;max-width:560px;margin:0 auto;border:1px solid #ccc;padding:28px;font-size:15px;box-shadow:var(--sh2)}
+.print h3{margin:0 0 4px;font-size:20px}
+.print .row{display:flex;flex-wrap:wrap;gap:20px;align-items:center;margin:16px 0}
+.print ol{margin:0;padding-left:20px}
+.print ol li{margin:0 0 6px}
+.print .hi{color:#444;font-size:14px}
+.print .foot{border-top:1px dashed #999;margin-top:16px;padding-top:10px;font-size:13px;color:#555}
+.viewer{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 20px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:13px;color:var(--text2)}
+@media (max-width:640px){
+  .dk-body{padding:12px}
+  .dk-head{padding:12px}
+  .dk-dim{padding:12px 8px}
+}
+</style>
+
+<div class="ctl" id="ctl">
+  <div class="ctl-top">
+    <h1>Alvoraa app, step 1 &mdash; prototype v1
+      <small>Slice 013 &middot; a field worker on a low-end Android phone, and HR in the desk &middot; <span class="tag-sample">Sample data only</span> &middot; this grey panel is for review, not part of the product</small></h1>
+    <div class="seg" role="group" aria-label="What to show" id="c-view">
+      <button type="button" data-view="phone">Phone app</button><button type="button" data-view="desk">HR desk</button>
+    </div>
+  </div>
+  <div class="ctl-row">
+    <span class="lbl">Language</span>
+    <div class="seg" role="group" aria-label="Language" id="c-lang"><button type="button" data-lang="en">English</button><button type="button" data-lang="hi" lang="hi">हिंदी (draft)</button></div>
+    <span class="lbl">Page theme</span>
+    <div class="seg" role="group" aria-label="Page theme" id="c-theme"><button type="button" data-th="auto">Device</button><button type="button" data-th="light">Light</button><button type="button" data-th="dark">Dark</button></div>
+    <span class="lbl phone-only">Phone width</span>
+    <div class="seg phone-only" role="group" aria-label="Phone width" id="c-width"><button type="button" data-w="390">390 px</button><button type="button" data-w="360">360 px</button></div>
+    <label class="phone-only"><input type="checkbox" id="c-appdark"> App follows dark mode (D9)</label>
+  </div>
+  <div class="ctl-row phone-only">
+    <span class="lbl">App frame (&#9888; D1)</span>
+    <div class="seg" role="group" aria-label="App frame option" id="c-shell"><button type="button" data-shell="A">A: no bottom bar &middot; recommended</button><button type="button" data-shell="B">B: Attendance + Settings bar</button><button type="button" data-shell="C">C: greyed My HR tab</button></div>
+  </div>
+  <div class="ctl-row desk-only" hidden>
+    <span class="lbl">HR person looking</span>
+    <div class="seg" role="group" aria-label="HR person looking" id="c-viewer"><button type="button" data-viewer="anita">Anita Rao (made the code)</button><button type="button" data-viewer="vikram">Vikram Singh (other HR)</button></div>
+  </div>
+</div>
+<nav class="states" id="states" aria-label="Jump to a screen"></nav>
+<main class="stage" id="stage">
+  <div class="phone" id="phone">
+    <div class="osbar" aria-hidden="true"><span>9:01</span><span>4G &#9679;&#9679;&#9679;&#9675; 62%</span></div>
+    <div class="app" id="app"></div>
+    <div class="navbar-os" aria-hidden="true"><span></span></div>
+  </div>
+  <div class="desk" id="desk" hidden></div>
+  <aside class="note" id="note" aria-live="polite"></aside>
+</main>
+
+<script>
+(function(){
+"use strict";
+
+/* ── Sample facts. All invented. ─────────────────────────────────────────── */
+var P = { first:"Suresh", short:"Suresh Y.", full:"Suresh Yadav", initials:"SY", job:"Driver", co:"Kaveri Transport",
+  site:"Okhla Depot", radius:100, host:"kaveri.alvoraa.co", phone:"Redmi 12", ver:"1.2.0", need:"1.3.0", keep:90 };
+var TIMES = ["9:02 am","6:14 pm","6:20 pm","6:31 pm"];
+var LIFE = { "1h":["1 hour","Thu 17 Sep 2026, 11:05 am","in 1 hour"], "4h":["4 hours","Thu 17 Sep 2026, 2:05 pm","in 4 hours"],
+  "1d":["1 day","Fri 18 Sep 2026, 10:05 am","tomorrow"], "3d":["3 days","Sun 20 Sep 2026, 10:05 am","in 3 days"],
+  "7d":["7 days","Thu 24 Sep 2026, 10:05 am","in 7 days"] };
+
+var S = { view:"phone", lang:"en", th:"auto", w:"390", shell:"A", appDark:false, viewer:"anita",
+  state:"first", desk:"empField", agreed:false, agreeErr:false, rows:[], camOn:true, firstPunch:true,
+  busyI:0, next:"confirm", toast:"", life:"7d", copied:"", blockReason:"", blockErr:false, cancelled:false, from:"settings" };
+var timers = [];
+function clearTimers(){ for (var i=0;i<timers.length;i++) clearTimeout(timers[i]); timers = []; }
+function later(ms, fn){ timers.push(setTimeout(fn, ms)); }
+function L(en, hi){ return (S.lang === "hi" && hi) ? hi : en; }
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]; }); }
+function $(id){ return document.getElementById(id); }
+
+/* ── Icons (words always sit beside them) ────────────────────────────────── */
+var sv = function(d, w){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="'+(w||2.2)+'" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>'; };
+var I = {
+  qr: sv('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/>'),
+  photo: sv('<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/>'),
+  cam: sv('<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>'),
+  check: sv('<path d="M20 6 9 17l-5-5"/>', 2.8),
+  pin: sv('<path d="M12 21s7-6.4 7-11a7 7 0 1 0-14 0c0 4.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/>'),
+  pinoff: sv('<path d="M12 21s7-6.4 7-11a7 7 0 1 0-14 0c0 4.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/><path d="M3 3l18 18"/>'),
+  aim: sv('<circle cx="12" cy="12" r="8.5" stroke-dasharray="4 3"/><circle cx="12" cy="12" r="2.4"/>'),
+  walk: sv('<circle cx="13" cy="4.2" r="2"/><path d="M8 21l3-6 1-4-3 2-2 3"/><path d="M12 11l3 2 1 3 2 3"/>'),
+  wifi: sv('<path d="M2 8.5a15 15 0 0 1 20 0"/><path d="M5.5 12.3a10 10 0 0 1 13 0"/><path d="M9 16a5 5 0 0 1 6 0"/><circle cx="12" cy="19.6" r="1.1" fill="currentColor"/><path d="M3 3l18 18"/>'),
+  time: sv('<circle cx="12" cy="12" r="9"/><path d="M12 7v5.5l3.5 2"/>'),
+  phone: sv('<rect x="6" y="2.5" width="12" height="19" rx="2.4"/><path d="M10.5 18.2h3"/>'),
+  stop: sv('<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><path d="M12 16.4h.01"/>'),
+  gear: sv('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>', 1.8),
+  back: sv('<path d="M15 18l-6-6 6-6"/>', 2.6),
+  chev: sv('<path d="M9 18l6-6-6-6"/>'),
+  update: sv('<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/>'),
+  inArrow: sv('<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/>', 2.4),
+  doc: sv('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>'),
+  person: '<svg class="person" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="36" r="20" fill="currentColor"/><path d="M12 100c4-22 20-34 38-34s34 12 38 34z" fill="currentColor"/></svg>',
+  print: sv('<path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/>', 2),
+  copy: sv('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>', 2),
+  link: sv('<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>', 2)
+};
+
+function qrSvg(seed){
+  var s = seed || 11, cells = "";
+  function rnd(){ s = (s * 9301 + 49297) % 233280; return s / 233280; }
+  function finder(x, y){ return '<rect x="'+x+'" y="'+y+'" width="7" height="7" fill="#000"/><rect x="'+(x+1)+'" y="'+(y+1)+'" width="5" height="5" fill="#fff"/><rect x="'+(x+2)+'" y="'+(y+2)+'" width="3" height="3" fill="#000"/>'; }
+  for (var y = 0; y < 25; y++) for (var x = 0; x < 25; x++) {
+    if ((x < 8 && y < 8) || (x > 16 && y < 8) || (x < 8 && y > 16)) continue;
+    if (rnd() > .52) cells += '<rect x="'+x+'" y="'+y+'" width="1" height="1"/>';
+  }
+  return '<svg viewBox="-2 -2 29 29" role="img" aria-label="Sample QR picture, not a real code"><rect x="-2" y="-2" width="29" height="29" fill="#fff"/><g fill="#000">'+cells+'</g>'+finder(0,0)+finder(18,0)+finder(0,18)+'</svg>';
+}
+
+/* ── Phone app building blocks ───────────────────────────────────────────── */
+function langSw(){
+  return '<div class="lang" role="group" aria-label="Language"><button type="button" data-lang="en" aria-pressed="'+(S.lang==="en")+'">EN</button><button type="button" data-lang="hi" lang="hi" aria-pressed="'+(S.lang==="hi")+'">हिं</button></div>';
+}
+function bar(o){
+  o = o || {};
+  var h = '<div class="bar">';
+  if (o.back) h += '<button type="button" class="ib row" data-go="'+o.back+'">'+I.back+'<span>'+L("Back","वापस")+'</span></button>';
+  h += '<div class="t"><b>'+esc(o.title || P.co)+'</b>'+(o.sub ? '<span>'+esc(o.sub)+'</span>' : '')+'</div>';
+  if (o.lang) h += langSw();
+  if (o.settings && S.shell !== "B") h += '<button type="button" class="ib" data-go="settings">'+I.gear+'<span>'+L("Settings","सेटिंग")+'</span></button>';
+  return h + '</div>';
+}
+function tabbar(active){
+  if (S.shell === "A") return "";
+  var h = '<nav class="tabbar" aria-label="'+L("App sections","ऐप के हिस्से")+'">';
+  h += '<button type="button" data-go="home"'+(active==="home"?' aria-current="page"':'')+'>'+I.inArrow+'<span>'+L("Attendance","हाज़िरी")+'</span></button>';
+  if (S.shell === "B") h += '<button type="button" data-go="settings"'+(active==="settings"?' aria-current="page"':'')+'>'+I.gear+'<span>'+L("Settings","सेटिंग")+'</span></button>';
+  else h += '<button type="button" class="greyed" aria-disabled="true">'+I.doc+'<span>'+L("My HR · soon","My HR · जल्द")+'</span></button>';
+  return h + '</nav>';
+}
+function scr(o){
+  var h = '<div class="scr">' + (o.bar === false ? "" : (o.bar || bar({}))) + (o.body || "");
+  if (o.foot) h += '<div class="footer stack">'+o.foot+'</div>';
+  if (o.tabs) h += tabbar(o.tabs);
+  return h + '</div>' + (o.overlay || "");
+}
+function sc(inner){ return '<div class="scroll">'+inner+'</div>'; }
+function btn(b){
+  return '<button type="button" class="btn '+(b.cls||"")+'"'+(b.go?' data-go="'+b.go+'"':'')+(b.act?' data-act="'+b.act+'"':'')+'>'+(b.icon?I[b.icon]:'')+'<span>'+b.t+'</span></button>';
+}
+function steps(list){
+  var h = '<div class="card">';
+  for (var i=0;i<list.length;i++) h += '<div class="rowline"><span class="n">'+(i+1)+'</span><span>'+list[i]+'</span></div>';
+  return h + '</div>';
+}
+function codeLine(c){ return '<p class="code">'+L("Code for HR: ","HR के लिए कोड: ")+'<b>'+c+'</b></p>'; }
+var who = function(){ return P.full + " · " + L(P.job, "ड्राइवर"); };
+function prob(o){
+  var body = '<div class="big '+o.tone+'"><div class="circle" aria-hidden="true">'+I[o.icon]+'</div><h2>'+o.h+'</h2><p>'+o.p+'</p>'+(o.p2?'<p>'+o.p2+'</p>':'')+'</div>';
+  if (o.steps) body += steps(o.steps);
+  if (o.card) body += o.card;
+  if (o.code) body += codeLine(o.code);
+  var foot = (o.b1 ? btn(o.b1) : "") + (o.b2 ? btn(o.b2) : "");
+  return scr({ bar:o.bar, body:sc(body), foot:foot, tabs:o.tabs });
+}
+function joinBar(back){ return bar({ title:"Alvoraa", back:back, lang:!back }); }
+function workBar(){ return bar({ sub:P.full, settings:true }); }
+
+function osDialog(o){
+  return '<div class="os-dim"><div class="os-note">'+L("Android’s own question. Alvoraa does not draw this.","यह Android का अपना सवाल है।")+'</div><div class="os-dlg" role="dialog" aria-label="Android permission">'
+    +'<div class="ico">'+I[o.icon]+'</div><p class="q">'+o.q+'</p>'+(o.opts||'')
+    +'<button type="button" data-'+o.a1[0]+'="'+o.a1[1]+'">While using the app</button>'
+    +'<button type="button" data-'+o.a1[0]+'="'+o.a1[1]+'">Only this time</button>'
+    +'<button type="button" data-go="'+o.deny+'">Don’t allow</button></div></div>';
+}
+function busyOver(msg){ return '<div class="busy" role="status"><div class="sp" aria-hidden="true"></div><div class="msg">'+msg+'</div></div>'; }
+
+function noticeRows(){
+  var keep = L("Photos are deleted after "+P.keep+" days. Your attendance record is kept. (This is "+P.co+"’s setting.)",
+               "फ़ोटो "+P.keep+" दिन बाद हटा दी जाती है। हाज़िरी का रिकॉर्ड रखा जाता है। (यह "+P.co+" की सेटिंग है।)");
+  var r = [
+    [L("What we record","हम क्या दर्ज करते हैं"), L("A photo of you, where you are, and the time — only when you press Check In or Check Out. When you set up: this phone’s model name.","आपकी फ़ोटो, आपकी जगह और समय — केवल जब आप चेक इन या चेक आउट दबाते हैं। सेटअप के समय: इस फ़ोन के मॉडल का नाम।")],
+    [L("What we do not record","हम क्या दर्ज नहीं करते"), L("Nothing between punches. You are not tracked while you work.","बीच के समय में कुछ नहीं। काम करते समय आप पर नज़र नहीं रखी जाती।")],
+    [L("Why","क्यों"), L("To mark your attendance, and to confirm you were at your workplace.","आपकी हाज़िरी लगाने, और यह पुष्टि करने के लिए कि आप काम की जगह पर थे।")],
+    [L("Who can see it","इसे कौन देख सकता है"), L("HR and your manager. Not your colleagues.","HR और आपके मैनेजर। आपके साथी नहीं।")],
+    [L("How long","कितने समय तक"), keep],
+    [L("Your rights","आपके अधिकार"), L("Ask HR to see what was recorded about you, or to correct it.","HR से पूछें कि आपके बारे में क्या दर्ज है, या उसे ठीक करवाएँ।")]
+  ];
+  var h = '<ul>';
+  for (var i=0;i<r.length;i++) h += '<li><strong>'+r[i][0]+'</strong>'+r[i][1]+'</li>';
+  return h + '</ul>';
+}
+function punchRows(){
+  var d = '<div class="punches"><div class="hd"><span>'+L("Today","आज")+'</span><span>17 Sep</span></div>';
+  if (!S.rows.length) return d + '<div class="none">'+L("No punches yet today.","आज अभी कोई हाज़िरी नहीं।")+'</div></div>';
+  for (var i=0;i<S.rows.length;i++){
+    var isIn = S.rows[i] === "IN";
+    d += '<div class="punch"><span class="k '+(isIn?"in":"out")+'">'+(isIn?L("Checked in","चेक इन"):L("Checked out","चेक आउट"))+'</span><span class="src">'+L("This phone","यह फ़ोन")+'</span><span class="tm">'+TIMES[i]+'</span></div>';
+  }
+  return d + '</div>';
+}
+function lastRow(){ return S.rows.length ? S.rows[S.rows.length-1] : ""; }
+function homeScreen(overlay){
+  var last = lastRow(), t = TIMES[S.rows.length-1];
+  var chip = last === "IN"
+    ? '<div class="chip yes" role="status"><span class="dot" aria-hidden="true"></span>'+L("Checked in since "+t,"आप "+t+" से चेक इन हैं")+'</div>'
+    : last === "OUT"
+      ? '<div class="chip no" role="status"><span class="dot" aria-hidden="true"></span>'+L("Checked out at "+t,t+" पर चेक आउट हुआ")+'</div>'
+      : '<div class="chip no" role="status"><span class="dot" aria-hidden="true"></span>'+L("Not checked in yet today","आज अभी चेक इन नहीं हुआ")+'</div>';
+  var cam = '<div class="cam">' + (S.camOn
+    ? I.person + '<span class="tagc">'+L("Your photo is taken when you press the button","बटन दबाते ही फ़ोटो ली जाएगी")+' <span class="sample">Sample</span></span>'
+    : '<div class="off">'+L("The camera is off. You can still check in, but there will be no photo.","कैमरा बंद है। आप फिर भी चेक इन कर सकते हैं, पर फ़ोटो नहीं होगी।")+btn({t:L("Turn on the camera","कैमरा चालू करें"), cls:"ghost", act:"camOn"})+'</div>') + '</div>';
+  var out = last === "IN";
+  var foot = '<p class="muted place">'+L("You need to be within "+P.radius+" m of "+P.site,"आपको "+P.site+" से "+P.radius+" मीटर के अंदर होना चाहिए")+'</p>'
+    + '<button type="button" class="btn btn-punch '+(out?"out":"in")+'" data-act="punch">'+I.inArrow+'<span>'+(out?L("Check Out","चेक आउट"):L("Check In","चेक इन"))+'</span></button>';
+  return scr({ bar:workBar(), body: chip + cam + punchRows(), foot:foot, tabs:"home", overlay:overlay });
+}
+function resultScreen(){
+  var isIn = lastRow() === "IN", t = TIMES[S.rows.length-1];
+  var pic = S.camOn
+    ? '<div class="shot">'+I.person+'<span class="tick" aria-hidden="true">'+I.check+'</span></div>'
+    : '<div class="circle" aria-hidden="true">'+I.check+'</div>';
+  var body = '<div class="big ok">'+pic+'<h2>'+(isIn?L("Checked in","चेक इन हो गया"):L("Checked out","चेक आउट हो गया"))+'</h2><div class="time">'+t+'</div><p class="muted">'+L("Thursday, 17 September","गुरुवार, 17 सितंबर")+'</p></div>'
+    + '<div class="card"><div class="kv"><span class="k">'+L("Where you were","आप कहाँ थे")+'</span><span class="v">'+L("At "+P.site, P.site+" पर")+'</span></div>'
+    + '<div class="kv"><span class="k">'+L("Photo","फ़ोटो")+'</span><span class="v">'+(S.camOn?L("Taken","ली गई"):L("Not taken","नहीं ली गई"))+'</span></div>'
+    + (S.camOn ? '' : '<p class="muted" style="margin:0">'+L("The camera was not on. Your attendance still counts.","कैमरा चालू नहीं था। आपकी हाज़िरी फिर भी गिनी जाएगी।")+'</p>')
+    + '<div class="kv"><span class="k">'+L("Saved","सेव हुई")+'</span><span class="v">'+L("In your HR record","आपके HR रिकॉर्ड में")+'</span></div></div>'
+    + '<p class="muted">'+L("Only HR and your manager can see this.","यह केवल HR और आपके मैनेजर को दिखता है।")+'</p>';
+  return scr({ bar:workBar(), body:sc(body), foot:btn({t:L("Done","ठीक है"), go:"home"}), tabs:"home" });
+}
+function firstScreen(){
+  var body = (S.toast ? '<div class="toast" role="status">'+S.toast+'</div>' : '')
+    + '<div class="hero-ill">'+I.qr+'</div>'
+    + '<h2>'+L("Mark your attendance with this phone","इस फ़ोन से अपनी हाज़िरी लगाएँ")+'</h2>'
+    + '<p class="lead">'+L("Your HR team gives you a QR code. Scan it once to join your company.","आपकी HR टीम आपको एक QR कोड देगी। कंपनी से जुड़ने के लिए उसे एक बार स्कैन करें।")+'</p>'
+    + '<p>'+L("You do not need an email address or a password.","ईमेल या पासवर्ड की ज़रूरत नहीं है।")+'</p>'
+    + '<p class="muted">'+L("No QR code yet? Ask HR to invite you to the Alvoraa app.","अभी QR कोड नहीं है? HR से कहें कि आपको Alvoraa ऐप में बुलाएँ।")+'</p>';
+  return scr({ bar:joinBar(), body:sc(body),
+    foot: btn({t:L("Scan the QR code from HR","HR का QR कोड स्कैन करें"), icon:"qr", go:"camExplain"})
+        + btn({t:L("Choose the QR picture from my photos","फ़ोटो में से QR की तस्वीर चुनें"), icon:"photo", cls:"ghost", act:"pick"}) });
+}
+function camExplain(overlay){
+  return scr({ bar:joinBar("first"), overlay:overlay,
+    body: sc('<div class="big info"><div class="circle" aria-hidden="true">'+I.cam+'</div><h2>'+L("The app needs your camera to scan the code","कोड स्कैन करने के लिए ऐप को कैमरा चाहिए")+'</h2><p>'+L("Next, your phone will ask if Alvoraa may take pictures. Press “While using the app”.","अब आपका फ़ोन पूछेगा कि क्या Alvoraa फ़ोटो ले सकता है। “While using the app” दबाएँ।")+'</p></div>'
+      + '<div class="card">'+L("The camera is used only when you scan a code, or when you press Check In or Check Out.","कैमरा केवल तब चलता है जब आप कोड स्कैन करते हैं, या चेक इन या चेक आउट दबाते हैं।")+'</div>'),
+    foot: btn({t:L("Continue","आगे बढ़ें"), go:"osCam"}) + btn({t:L("Choose a picture instead","इसके बजाय तस्वीर चुनें"), cls:"ghost", act:"pick"}) });
+}
+function scanScreen(overlay){
+  return '<div class="scr"><div class="scanner"><p>'+L("Point the camera at the QR code","कैमरा QR कोड की ओर रखें")+'</p>'
+    + '<button type="button" class="vf" data-act="scanOk"><span class="sronly">Sample: press to pretend a code was scanned</span></button>'
+    + '<p style="font-size:15px;color:#d8d2ca">Sample: press the square to scan</p></div>'
+    + '<div class="footer stack" style="background:#0f0e0d;border-color:#2c2926">'
+    + '<button type="button" class="btn ghost" data-act="pick" style="background:transparent;color:#fff;border-color:rgba(255,255,255,.6)">'+I.photo+'<span>'+L("Choose a picture instead","इसके बजाय तस्वीर चुनें")+'</span></button>'
+    + '<button type="button" class="btn link" data-go="first" style="color:#fff">'+L("Cancel","रद्द करें")+'</button></div></div>' + (overlay||"");
+}
+function confirmScreen(overlay){
+  var body = '<h2>'+L("Is this you?","क्या यह आप हैं?")+'</h2>'
+    + '<div class="who-card"><div class="av" aria-hidden="true">'+P.initials+'</div><div class="nm">'+P.short+'</div><div class="ds">'+L(P.job,"ड्राइवर")+'</div><div class="co">'+P.co+'</div><span class="sample">Sample</span></div>'
+    + '<p class="muted">'+L("HR made this code for one person only.","HR ने यह कोड सिर्फ़ एक व्यक्ति के लिए बनाया है।")+'</p>';
+  return scr({ bar:joinBar(), body:sc(body), overlay:overlay,
+    foot: btn({t:L("Yes, this is me","हाँ, यह मैं हूँ"), cls:"green", go:"notice"}) + btn({t:L("This is not me","यह मैं नहीं हूँ"), cls:"ghost", go:"notMe"}) });
+}
+function noticeScreen(overlay, again){
+  var body = (again
+      ? '<h2>'+L("The notice has changed","सूचना बदल गई है")+'</h2><p>'+L("Please read it again before your next check-in. What is new: the “How long” row.","अगले चेक इन से पहले इसे फिर से पढ़ें। नया क्या है: “कितने समय तक” वाली पंक्ति।")+' <span class="sample">Sample</span></p>'
+      : '<h2>'+L("Before you start","शुरू करने से पहले")+'</h2>'
+        + '<p>'+L(P.co+" asks you to read this. It says what the app records about you.",P.co+" आपसे इसे पढ़ने को कहता है। इसमें लिखा है कि ऐप आपके बारे में क्या दर्ज करता है।")+'</p>')
+    + '<div class="notice">'+noticeRows()
+    + '<label class="agree"><input type="checkbox" id="agree"'+(S.agreed?' checked':'')+(S.agreeErr?' aria-invalid="true" aria-describedby="agree-err"':'')+'> <span>'+L("I have read this and I understand.","मैंने इसे पढ़ लिया है और समझ गया/गई हूँ।")+'</span></label>'
+    + (S.agreeErr ? '<p class="inline-err" id="agree-err" role="alert">'+L("Please tick the box to show you have read the notice.","कृपया बॉक्स टिक करें कि आपने सूचना पढ़ ली है।")+'</p>' : '')
+    + '</div>';
+  return scr({ bar:bar({ title:P.co, sub:(again ? P.full : P.short+" · "+L(P.job,"ड्राइवर")), back:(again ? null : "confirm") }), body:sc(body), overlay:overlay,
+    foot: btn(again ? {t:L("Agree and continue","सहमत हूँ, आगे बढ़ें"), act:"agreeAgain"} : {t:L("Agree and finish","सहमत हूँ, पूरा करें"), act:"agree"}) });
+}
+function settingsScreen(overlay){
+  function row(l, r, small){ return '<div class="srow"><span class="l">'+l+(small?'<small>'+small+'</small>':'')+'</span><span class="r">'+r+'</span></div>'; }
+  var body =
+      '<div class="sgrp"><h3>'+L("You","आप")+'</h3><div class="slist">'
+    + row(P.full+' <span class="sample">Sample</span>', "", L(P.job,"ड्राइवर"))
+    + row(L("Company","कंपनी"), P.co) + row(L("Workplace","काम की जगह"), P.site, L("Check in within "+P.radius+" m",P.radius+" मीटर के अंदर चेक इन")) + '</div></div>'
+    + '<div class="sgrp"><h3>'+L("Language","भाषा")+'</h3><div class="slist" role="radiogroup" aria-label="'+L("Language","भाषा")+'">'
+    + '<label class="radio-row"><input type="radio" name="applang" value="en"'+(S.lang==="en"?" checked":"")+'> English</label>'
+    + '<label class="radio-row" lang="hi"><input type="radio" name="applang" value="hi"'+(S.lang==="hi"?" checked":"")+'> हिंदी</label></div></div>'
+    + '<div class="sgrp"><h3>'+L("Privacy","निजता")+'</h3><div class="slist"><button type="button" class="srow" data-go="records"><span class="l">'+L("What this app records","यह ऐप क्या दर्ज करता है")+'<small>'+L("You agreed on 17 Sep 2026","आपने 17 सितंबर 2026 को सहमति दी")+'</small></span>'+I.chev+'</button></div></div>'
+    + '<div class="sgrp"><h3>'+L("This phone","यह फ़ोन")+'</h3><div class="slist"><button type="button" class="srow" data-go="leaveConfirm"><span class="l">'+L("Remove this phone from "+P.co,"इस फ़ोन को "+P.co+" से हटाएँ")+'<small>'+L("Attendance on this phone stops","इस फ़ोन से हाज़िरी बंद हो जाएगी")+'</small></span>'+I.chev+'</button></div></div>'
+    + '<div class="sgrp"><h3>'+L("About","ऐप के बारे में")+'</h3><div class="slist">'
+    + row(L("App version","ऐप वर्ज़न"), P.ver+" (34)") + row(L("Connected to","जुड़ा है"), P.host) + row(L("Joined","जुड़े"), "17 Sep 2026, 9:01 am")
+    + '<div class="srow"><span class="l">'+L("Help","मदद")+'<small>'+L("For any problem, speak to HR. Tell them the app version above.","किसी भी दिक्कत के लिए HR से बात करें। उन्हें ऊपर लिखा ऐप वर्ज़न बताएँ।")+'</small></span></div></div></div>';
+  return scr({ bar:bar({ title:L("Settings","सेटिंग"), back:S.shell==="B"?null:"home" }), body:sc(body), tabs:"settings", overlay:overlay });
+}
+function codeDead(reason, code){
+  return prob({ bar:joinBar(), tone:"warn", icon:"qr",
+    h:L("This code cannot be used any more","यह कोड अब काम नहीं करेगा"), p:reason,
+    steps:[L("Ask HR for a new code.","HR से नया कोड माँगें।"), L("Scan the new code with this app.","नया कोड इसी ऐप से स्कैन करें।")],
+    code:code, b1:{t:L("Scan a new code","नया कोड स्कैन करें"), cls:"ghost", go:"scan"}, b2:{t:L("Done","ठीक है"), cls:"link", go:"first"} });
+}
+function stopFoot(){ return {t:L("Remove "+P.co+" from this phone","इस फ़ोन से "+P.co+" हटाएँ"), cls:"ghost", go:"leaveConfirm"}; }
+function retryBack(){ return [{t:L("Try again","फिर से कोशिश करें"), act:"retryPunch"}, {t:L("Go back","वापस जाएँ"), cls:"ghost", go:"home"}]; }
+var photoKept = function(){ return '<p class="muted" style="text-align:center">'+L("Your photo is kept. You will not need to take it again.","आपकी फ़ोटो रखी हुई है। दोबारा लेने की ज़रूरत नहीं।")+'</p>'; };
+
+var APP = {
+  first: firstScreen,
+  removed: firstScreen,
+  camExplain: function(){ return camExplain(); },
+  osCam: function(){ return camExplain(osDialog({ icon:"cam", q:"Allow <b>Alvoraa</b> to take pictures and record video?", a1:["go","scan"], deny:"camDenied" })); },
+  scan: function(){ return scanScreen(); },
+  checking: function(){ return scanScreen(busyOver(L("Checking the code","कोड जाँचा जा रहा है"))); },
+  confirm: function(){ return confirmScreen(); },
+  notMe: function(){
+    return confirmScreen('<div class="sheet-dim"><div class="sheet" role="dialog" aria-labelledby="nm-h"><h2 id="nm-h">'+L("This code is for someone else","यह कोड किसी और के लिए है")+'</h2><ul>'
+      + '<li>'+L("Nothing has been set up on this phone.","इस फ़ोन पर कुछ भी सेट नहीं हुआ है।")+'</li>'
+      + '<li>'+L("If you cancel the code, it stops working. HR will see that it was cancelled on a phone, and can make a new one.","अगर आप कोड रद्द करते हैं, तो वह काम करना बंद कर देगा। HR देखेगा कि इसे फ़ोन पर रद्द किया गया, और नया बना सकता है।")+'</li>'
+      + '<li>'+L("Please tell HR the code came to you by mistake.","कृपया HR को बताएँ कि कोड गलती से आपके पास आया।")+'</li></ul>'
+      + '<div class="stack">'+btn({t:L("Cancel this code","यह कोड रद्द करें"), go:"notMeDone"})+btn({t:L("Go back. It is me.","वापस जाएँ। यह मैं ही हूँ।"), cls:"ghost", go:"confirm"})+'</div></div></div>');
+  },
+  notMeDone: function(){ return prob({ bar:joinBar(), tone:"info", icon:"check", h:L("The code is cancelled","कोड रद्द हो गया"),
+    p:L("Nothing was set up on this phone. If you are waiting for your own code, ask HR.","इस फ़ोन पर कुछ सेट नहीं हुआ। अगर आपको अपना कोड चाहिए, तो HR से माँगें।"),
+    b1:{t:L("Done","ठीक है"), go:"first"} }); },
+  notice: function(){ return noticeScreen(); },
+  noticeAgain: function(){ return noticeScreen("", true); },
+  joining: function(){ return noticeScreen(busyOver(L("Setting up this phone","फ़ोन सेट हो रहा है"))); },
+  welcome: function(){
+    var body = '<div class="big ok"><div class="circle" aria-hidden="true">'+I.check+'</div><h2>'+L("Welcome, "+P.first+". This phone is set up.","स्वागत है, "+P.first+"। यह फ़ोन सेट हो गया है।")+'</h2>'
+      + '<p class="lead" style="color:var(--text)">'+L("You do not need to wait for HR. You can mark attendance now.","HR का इंतज़ार नहीं करना है। आप अभी हाज़िरी लगा सकते हैं।")+'</p></div>'
+      + '<div class="card green"><div class="kv"><span class="k">'+L("Company","कंपनी")+'</span><span class="v">'+P.co+'</span></div><div class="kv"><span class="k">'+L("Your workplace","आपकी काम की जगह")+'</span><span class="v">'+P.site+'</span></div><div class="kv"><span class="k">'+L("Check in within","चेक इन की दूरी")+'</span><span class="v">'+P.radius+' m</span></div></div>';
+    return scr({ bar:workBar(), body:sc(body),
+      foot:'<button type="button" class="btn btn-punch in" data-act="punch">'+I.inArrow+'<span>'+L("Check In","चेक इन")+'</span></button>'+btn({t:L("Not now","अभी नहीं"), cls:"link", go:"home"}) });
+  },
+  home: function(){ return homeScreen(); },
+  homeIn: function(){ return homeScreen(); },
+  homeOut: function(){ return homeScreen(); },
+  camOff: function(){ return homeScreen(); },
+  locExplain: function(overlay){
+    return scr({ bar:bar({ back:"home", sub:P.full }), overlay:(typeof overlay === "string" ? overlay : ""),
+      body: sc('<div class="big info"><div class="circle" aria-hidden="true">'+I.pin+'</div><h2>'+L("The app needs your location to check you in","चेक इन के लिए ऐप को आपकी जगह चाहिए")+'</h2><p>'+L("Next, your phone will ask about location. Press “While using the app”, and keep “Precise” on.","अब फ़ोन जगह के बारे में पूछेगा। “While using the app” दबाएँ, और “Precise” चालू रखें।")+'</p></div>'
+        + '<div class="card">'+L("Your location is read only at the moment you press Check In or Check Out. Never in between.","आपकी जगह केवल उसी पल देखी जाती है जब आप चेक इन या चेक आउट दबाते हैं। बीच में कभी नहीं।")+'</div>'),
+      foot: btn({t:L("Continue","आगे बढ़ें"), go:"osLoc"}) });
+  },
+  osLoc: function(){
+    return APP.locExplain(osDialog({ icon:"pin", q:"Allow <b>Alvoraa</b> to access this device’s location?",
+      opts:'<div class="opts"><span class="opt"><i></i>Precise</span><span class="opt off"><i></i>Approximate</span></div>', a1:["act","locOk"], deny:"locDenied" }));
+  },
+  punching: function(){
+    var m = [L("Taking your photo","फ़ोटो ली जा रही है"), L("Finding where you are","आपकी जगह देखी जा रही है"), L("Saving your attendance","हाज़िरी सेव हो रही है")];
+    return homeScreen(busyOver(m[Math.min(S.busyI,2)]));
+  },
+  resultIn: resultScreen,
+  resultOut: resultScreen,
+
+  qrExpired: function(){ return codeDead(L("It ran out on Tuesday 16 September at 4:12 pm. HR’s codes work for a limited time.","यह मंगलवार 16 सितंबर को शाम 4:12 बजे ख़त्म हो गया। HR के कोड कुछ समय तक ही चलते हैं।"), "QR_EXPIRED"); },
+  qrUsed: function(){ return codeDead(L("It was already used today at 9:01 am. Each code works once. If that was not you, tell HR today.","यह आज सुबह 9:01 बजे इस्तेमाल हो चुका है। हर कोड एक ही बार चलता है। अगर वह आप नहीं थे, तो आज ही HR को बताएँ।"), "QR_USED"); },
+  qrCancelled: function(){ return codeDead(L("HR cancelled it. They may have made a newer one for you.","HR ने इसे रद्द कर दिया है। हो सकता है उन्होंने आपके लिए नया कोड बनाया हो।"), "QR_CANCELLED"); },
+  notAlvoraa: function(){ return prob({ bar:joinBar(), tone:"warn", icon:"qr", h:L("This is not an Alvoraa code","यह Alvoraa का कोड नहीं है"),
+    p:L("It may be a payment code or a website link. Scan the code HR gave you for this app.","यह पेमेंट का कोड या किसी वेबसाइट का लिंक हो सकता है। HR ने इस ऐप के लिए जो कोड दिया है, वही स्कैन करें।"),
+    p2:L("Nothing was sent anywhere.","कुछ भी कहीं नहीं भेजा गया।"), code:"QR_NOT_ALVORAA",
+    b1:{t:L("Scan again","फिर से स्कैन करें"), go:"scan"}, b2:{t:L("Choose a picture instead","इसके बजाय तस्वीर चुनें"), cls:"ghost", act:"pick"} }); },
+  appOff: function(){ return prob({ bar:joinBar(), tone:"info", icon:"phone", h:L("The app is not switched on for field staff","फ़ील्ड स्टाफ़ के लिए ऐप चालू नहीं है"),
+    p:L(P.co+" has not turned on the app for field staff. Nothing was set up on this phone.",P.co+" ने फ़ील्ड स्टाफ़ के लिए ऐप चालू नहीं किया है। इस फ़ोन पर कुछ सेट नहीं हुआ।"),
+    p2:L("Keep marking attendance the way you do now. HR can tell you more.","हाज़िरी वैसे ही लगाते रहें जैसे अभी लगाते हैं। HR आपको और बता सकता है।"),
+    code:"APP_OFF_FOR_FIELD", b1:{t:L("Done","ठीक है"), cls:"ghost", go:"first"} }); },
+  notField: function(){ return prob({ bar:joinBar(), tone:"info", icon:"phone", h:L("This app is not for your job yet","यह ऐप अभी आपके काम के लिए नहीं है"),
+    p:L("In HR’s records your job is Store Assistant. For now the app is only for field staff, such as drivers and guards.","HR के रिकॉर्ड में आपका काम Store Assistant है। अभी यह ऐप सिर्फ़ फ़ील्ड स्टाफ़ के लिए है, जैसे ड्राइवर और गार्ड।"),
+    p2:L("Keep marking attendance the usual way. If your job is wrong in the records, tell HR.","हाज़िरी हमेशा की तरह लगाते रहें। अगर रिकॉर्ड में आपका काम गलत है, तो HR को बताएँ।"),
+    code:"NOT_FIELD_ROLE", b1:{t:L("Done","ठीक है"), cls:"ghost", go:"first"} }); },
+  noSignalJoin: function(){ return prob({ bar:joinBar(), tone:"warn", icon:"wifi", h:L("No internet","इंटरनेट नहीं है"),
+    p:L("The app needs the internet to check your code and finish setting up. Nothing has been saved yet.","कोड जाँचने और सेटअप पूरा करने के लिए इंटरनेट चाहिए। अभी कुछ सेव नहीं हुआ है।"),
+    p2:L("Move to a place with signal and press Try again.","जहाँ सिग्नल हो वहाँ जाकर “फिर से कोशिश करें” दबाएँ।"),
+    code:"NO_INTERNET", b1:{t:L("Try again","फिर से कोशिश करें"), act:"retryJoin"}, b2:{t:L("Go back","वापस जाएँ"), cls:"ghost", go:"first"} }); },
+  camDenied: function(){ return prob({ bar:joinBar(), tone:"warn", icon:"cam", h:L("The camera is off for this app","इस ऐप के लिए कैमरा बंद है"),
+    p:L("You said no to the camera. You can still join: choose the QR picture from your photos. Or turn the camera on.","आपने कैमरे को मना किया था। आप फिर भी जुड़ सकते हैं: फ़ोटो में से QR की तस्वीर चुनें। या कैमरा चालू करें।"),
+    steps:[L("Press Open phone settings.","“फ़ोन सेटिंग खोलें” दबाएँ।"), L("Press Permissions, then Camera.","Permissions दबाएँ, फिर Camera।"), L("Press “Allow only while using the app”, then come back.","“Allow only while using the app” दबाएँ, फिर वापस आएँ।")],
+    code:"CAMERA_DENIED", b1:{t:L("Choose a picture instead","इसके बजाय तस्वीर चुनें"), icon:"photo", act:"pick"}, b2:{t:L("Open phone settings","फ़ोन सेटिंग खोलें"), cls:"ghost", go:"scan"} }); },
+  pickNoQr: function(){ return prob({ bar:joinBar(), tone:"warn", icon:"photo", h:L("No QR code found in that picture","उस तस्वीर में कोई QR कोड नहीं मिला"),
+    p:L("Choose the picture HR sent you. A small code is fine, but it must not be cut off.","HR की भेजी तस्वीर चुनें। कोड छोटा हो तो चलेगा, पर कटा हुआ नहीं होना चाहिए।"),
+    code:"QR_NOT_FOUND", b1:{t:L("Choose another picture","दूसरी तस्वीर चुनें"), act:"pick"}, b2:{t:L("Scan with the camera","कैमरे से स्कैन करें"), cls:"ghost", go:"scan"} }); },
+
+  locDenied: function(){ return prob({ bar:workBar(), tone:"warn", icon:"pinoff", h:L("This app cannot see your location","यह ऐप आपकी जगह नहीं देख पा रहा"),
+    p:L("You said no to location. Attendance needs it. Allow location for Alvoraa, then press Check In again.","आपने लोकेशन को मना किया था। हाज़िरी के लिए यह ज़रूरी है। Alvoraa को लोकेशन की इजाज़त दें, फिर दोबारा चेक इन दबाएँ।"),
+    steps:[L("Press Open phone settings.","“फ़ोन सेटिंग खोलें” दबाएँ।"), L("Press Permissions, then Location.","Permissions दबाएँ, फिर Location।"), L("Press “Allow only while using the app”. Keep “Use precise location” on.","“Allow only while using the app” दबाएँ। “Use precise location” चालू रखें।")],
+    code:"LOCATION_DENIED", b1:{t:L("Open phone settings","फ़ोन सेटिंग खोलें"), act:"locOk"}, b2:{t:L("Go back","वापस जाएँ"), cls:"ghost", go:"home"}, tabs:"home" }); },
+  locOff: function(){ var r = retryBack(); return prob({ bar:workBar(), tone:"warn", icon:"pinoff", h:L("Location is off","लोकेशन बंद है"),
+    p:L("We need to know where you are to mark your attendance. Turn on location, then try again.","हाज़िरी लगाने के लिए आपकी जगह चाहिए। लोकेशन चालू करके फिर कोशिश करें।"),
+    steps:[L("Swipe down from the top of your phone.","फ़ोन के ऊपर से नीचे स्वाइप करें।"), L("Press Location so it turns on.","Location दबाएँ ताकि वह चालू हो जाए।"), L("Come back here and press Try again.","यहाँ आकर “फिर से कोशिश करें” दबाएँ।")],
+    code:"LOCATION_OFF", b1:r[0], b2:r[1], tabs:"home" }); },
+  gpsVague: function(){ var r = retryBack(); return prob({ bar:workBar(), tone:"warn", icon:"aim", h:L("Your location is not exact enough","आपकी जगह ठीक से पता नहीं चल रही"),
+    p:L("Your phone can only place you within about 380 m. It needs to be within 100 m.","आपका फ़ोन आपकी जगह केवल लगभग 380 मीटर तक बता पा रहा है। 100 मीटर के अंदर होना चाहिए।"),
+    p2:L("Step outside or away from buildings, wait a few seconds, and press Try again.","बाहर या इमारतों से दूर जाएँ, कुछ सेकंड रुकें, और “फिर से कोशिश करें” दबाएँ।"),
+    card:photoKept(), code:"GPS_NOT_EXACT", b1:r[0], b2:r[1], tabs:"home" }); },
+  outside: function(){ var r = retryBack(); return prob({ bar:workBar(), tone:"warn", icon:"walk", h:L("You are too far from work","आप काम की जगह से दूर हैं"),
+    p:L("You are about 140 m from "+P.site+". You need to be within "+P.radius+" m to check in.","आप "+P.site+" से लगभग 140 मीटर दूर हैं। चेक इन के लिए "+P.radius+" मीटर के अंदर होना चाहिए।"),
+    p2:L("Walk closer and press Try again. Nothing has been saved.","पास जाएँ और “फिर से कोशिश करें” दबाएँ। अभी कुछ सेव नहीं हुआ है।"),
+    card:photoKept(), code:"OUTSIDE_WORKPLACE", b1:r[0], b2:r[1], tabs:"home" }); },
+  noSignal: function(){ var r = retryBack(); return prob({ bar:workBar(), tone:"warn", icon:"wifi", h:L("No internet","इंटरनेट नहीं है"),
+    p:L("Your attendance has not been saved yet. Move to a place with signal and press Try again.","आपकी हाज़िरी अभी सेव नहीं हुई है। जहाँ सिग्नल हो वहाँ जाकर “फिर से कोशिश करें” दबाएँ।"),
+    card:photoKept(), code:"NO_INTERNET", b1:r[0], b2:r[1], tabs:"home" }); },
+  duplicate: function(){ return prob({ bar:workBar(), tone:"ok", icon:"time", h:L("That is already recorded","यह पहले से दर्ज है"),
+    p:L("You pressed the button twice. Your check-in at 9:02 am is saved. There is nothing more to do.","बटन दो बार दब गया। सुबह 9:02 का चेक इन सेव है। और कुछ करने की ज़रूरत नहीं।"),
+    code:"ALREADY_RECORDED", b1:{t:L("Done","ठीक है"), go:"home"}, tabs:"home" }); },
+  tooMany: function(){ var r = retryBack(); return prob({ bar:workBar(), tone:"warn", icon:"time", h:L("Too many tries","बहुत बार कोशिश हुई"),
+    p:L("This phone tried many times in a short time. Wait one minute, then press Try again.","इस फ़ोन से थोड़े समय में बहुत बार कोशिश हुई। एक मिनट रुकें, फिर “फिर से कोशिश करें” दबाएँ।"),
+    card:photoKept(), code:"TOO_MANY_TRIES", b1:r[0], b2:r[1], tabs:"home" }); },
+
+  update: function(){ return prob({ bar:bar({}), tone:"info", icon:"update", h:L("Update the app to keep marking attendance","हाज़िरी लगाते रहने के लिए ऐप अपडेट करें"),
+    p:L("This version of Alvoraa is too old to work with "+P.co+" any more. Updating takes about a minute on Wi-Fi.","Alvoraa का यह वर्ज़न अब "+P.co+" के साथ काम नहीं करेगा। Wi-Fi पर अपडेट में लगभग एक मिनट लगता है।"),
+    card:'<div class="card"><div class="kv"><span class="k">'+L("On this phone","इस फ़ोन पर")+'</span><span class="v">'+P.ver+'</span></div><div class="kv"><span class="k">'+L("Needed","ज़रूरी")+'</span><span class="v">'+P.need+' '+L("or newer","या नया")+'</span></div></div>'
+      + '<div class="card green">'+L("You stay set up. You will not need a new code. Attendance you marked before is safe.","आपका सेटअप बना रहेगा। नया कोड नहीं चाहिए। पहले लगाई हाज़िरी सुरक्षित है।")+'</div>',
+    code:"APP_TOO_OLD", b1:{t:L("Update in Play Store","Play Store में अपडेट करें"), icon:"update", act:"store"} }); },
+  blocked: function(){ return prob({ bar:workBar(), tone:"stop", icon:"stop", h:L("This phone has been stopped","यह फ़ोन रोक दिया गया है"),
+    p:L("HR has stopped this phone. It cannot mark attendance for you any more. Please speak to HR.","HR ने यह फ़ोन रोक दिया है। इससे अब आपकी हाज़िरी नहीं लगेगी। कृपया HR से बात करें।"),
+    card:'<div class="card">'+L("Attendance you already marked is safe in your HR record. If you have a new phone, HR can give you a new code.","जो हाज़िरी आप लगा चुके हैं, वह आपके HR रिकॉर्ड में सुरक्षित है। नया फ़ोन हो, तो HR नया कोड दे सकता है।")+'</div>',
+    code:"DEVICE_BLOCKED", b1:stopFoot() }); },
+  replaced: function(){ return prob({ bar:workBar(), tone:"info", icon:"phone", h:L("You joined on another phone","आप दूसरे फ़ोन पर जुड़ चुके हैं"),
+    p:L("Today at 11:20 am you joined "+P.co+" on another phone. Use that phone to mark attendance.","आज सुबह 11:20 बजे आप दूसरे फ़ोन पर "+P.co+" से जुड़े। हाज़िरी उसी फ़ोन से लगाएँ।"),
+    p2:L("If that was not you, tell HR today.","अगर वह आप नहीं थे, तो आज ही HR को बताएँ।"),
+    code:"DEVICE_REPLACED", b1:stopFoot() }); },
+  left: function(){ return prob({ bar:workBar(), tone:"stop", icon:"stop", h:L("You cannot mark attendance here","यहाँ हाज़िरी नहीं लग सकती"),
+    p:L("Your employee record at "+P.co+" is not active any more. If that is wrong, please speak to HR.",P.co+" में आपका कर्मचारी रिकॉर्ड अब चालू नहीं है। अगर यह गलत है तो HR से बात करें।"),
+    code:"EMPLOYEE_NOT_ACTIVE", b1:stopFoot() }); },
+  serverError: function(){ var r = retryBack(); return prob({ bar:workBar(), tone:"stop", icon:"stop", h:L("Something went wrong","कुछ गलत हो गया"),
+    p:L("Your attendance was not saved. Press Try again. If it keeps happening, show this screen to HR.","आपकी हाज़िरी सेव नहीं हुई। “फिर से कोशिश करें” दबाएँ। बार-बार हो तो यह स्क्रीन HR को दिखाएँ।"),
+    card:'<div class="card"><div class="kv"><span class="k">'+L("For HR","HR के लिए")+'</span><span class="v">SERVER_ERROR</span></div><div class="kv"><span class="k">'+L("When","कब")+'</span><span class="v">17 Sep, 9:02 am</span></div><div class="kv"><span class="k">'+L("App","ऐप")+'</span><span class="v">'+P.ver+' · Android</span></div></div>',
+    b1:r[0], b2:r[1], tabs:"home" }); },
+  unknownCode: function(){ return prob({ bar:workBar(), tone:"stop", icon:"stop", h:L("Something went wrong","कुछ गलत हो गया"),
+    p:L("Your attendance was not saved. This app may be out of date. Check for an update, then try again.","आपकी हाज़िरी सेव नहीं हुई। हो सकता है ऐप पुराना हो। अपडेट देखें, फिर कोशिश करें।"),
+    card:'<div class="card"><div class="kv"><span class="k">'+L("For HR","HR के लिए")+'</span><span class="v">SHIFT_NOT_STARTED</span></div><p class="muted" style="margin:0">'+L("This version does not know this code yet.","यह वर्ज़न इस कोड को अभी नहीं पहचानता।")+'</p><div class="kv"><span class="k">'+L("App","ऐप")+'</span><span class="v">'+P.ver+' · Android</span></div></div>',
+    b1:{t:L("Check for an update","अपडेट देखें"), icon:"update", act:"store"}, b2:{t:L("Try again","फिर से कोशिश करें"), cls:"ghost", act:"retryPunch"}, tabs:"home" }); },
+
+  settings: function(){ return settingsScreen(); },
+  records: function(){
+    var body = '<p>'+L("This is the notice you agreed to when you set up this phone.","यह वही सूचना है जिस पर आपने फ़ोन सेट करते समय सहमति दी थी।")+'</p><div class="notice">'+noticeRows()+'</div>'
+      + '<div class="card" style="margin-top:12px">'+L("You agreed on Thursday 17 September 2026 at 9:01 am. Notice version 2026-09-13.","आपने गुरुवार 17 सितंबर 2026 को सुबह 9:01 बजे सहमति दी। सूचना वर्ज़न 2026-09-13।")+'</div>'
+      + '<p class="muted">'+L("If this notice changes, the app asks you to read it again before your next check-in.","अगर यह सूचना बदलती है, तो अगले चेक इन से पहले ऐप आपको इसे फिर से पढ़ने को कहेगा।")+'</p>';
+    return scr({ bar:bar({ title:L("What this app records","यह ऐप क्या दर्ज करता है"), back:"settings" }), body:sc(body), tabs:"settings" });
+  },
+  leaveConfirm: function(){
+    return settingsScreen('<div class="sheet-dim"><div class="sheet" role="dialog" aria-labelledby="lv-h"><h2 id="lv-h">'+L("Remove this phone from "+P.co+"?","क्या इस फ़ोन को "+P.co+" से हटाना है?")+'</h2><ul>'
+      + '<li>'+L("This phone stops marking attendance for you.","इस फ़ोन से आपकी हाज़िरी लगनी बंद हो जाएगी।")+'</li>'
+      + '<li>'+L("Attendance you already marked stays in your HR record.","जो हाज़िरी लग चुकी है, वह आपके HR रिकॉर्ड में रहेगी।")+'</li>'
+      + '<li>'+L("Photos already taken are deleted after "+P.keep+" days, as the notice says.","ली गई फ़ोटो सूचना के अनुसार "+P.keep+" दिन बाद हटा दी जाएँगी।")+'</li>'
+      + '<li>'+L("HR will see that you removed this phone.","HR देखेगा कि आपने यह फ़ोन हटाया।")+'</li>'
+      + '<li>'+L("To use the app again, you need a new code from HR.","ऐप फिर से इस्तेमाल करने के लिए HR से नया कोड चाहिए।")+'</li></ul>'
+      + '<p class="muted">'+L("You need the internet for this.","इसके लिए इंटरनेट चाहिए।")+'</p>'
+      + '<div class="stack">'+btn({t:L("Remove this phone","यह फ़ोन हटाएँ"), cls:"danger", act:"remove"})+btn({t:L("Keep it","रहने दें"), cls:"ghost", go:"settings"})+'</div></div></div>');
+  }
+};
+
+/* ── HR desk ─────────────────────────────────────────────────────────────── */
+function isMe(){ return S.viewer === "anita"; }
+function maker(cap){ return isMe() ? (cap ? "You" : "you") : "Anita Rao"; }
+function pill(cls, text){ return '<span class="pill '+cls+'"><span class="dot" aria-hidden="true"></span>'+text+'</span>'; }
+function dbtn(t, o){ o = o || {}; return '<button type="button" class="dbtn '+(o.cls||"")+'"'+(o.go?' data-dgo="'+o.go+'"':'')+(o.act?' data-dact="'+o.act+'"':'')+'>'+(o.icon?I[o.icon]:'')+t+'</button>'; }
+function deskFrame(o){
+  var h = '<div class="dk-nav"><span class="logo" aria-hidden="true">A</span><span class="crumb">'+o.crumb+'</span><span class="mocktag">Sketch of the Frappe desk &middot; <span class="tag-sample">Sample</span></span></div>'
+    + '<div class="dk-head"><h2>'+o.title+(o.sub?'<small>'+o.sub+'</small>':'')+'</h2>'+(o.pill||'')+(o.head||'')+'</div>';
+  if (o.tabs) h += '<div class="dk-tabs" aria-hidden="true"><span>Overview</span><span>Joining</span><span>Address &amp; Contacts</span><span class="on">Attendance &amp; Leaves</span><span>Salary</span><span>Exit</span></div>';
+  h += '<div class="dk-body">'+o.body+'</div>';
+  if (o.dialog) h += '<div class="dk-dim">'+o.dialog+'</div>';
+  return h;
+}
+function empFacts(job){
+  return '<div class="dk-sec"><h3>Attendance</h3><div class="fgrid">'
+    + '<div class="fld"><div class="fl">Designation</div><div class="fv">'+job+'</div></div>'
+    + '<div class="fld"><div class="fl">Branch</div><div class="fv">'+P.site+'</div></div>'
+    + '<div class="fld"><div class="fl">Default shift</div><div class="fv">Day shift, 9:00 am to 6:00 pm</div></div>'
+    + '<div class="fld"><div class="fl">Check-in place</div><div class="fv">'+P.site+' &middot; within 100 m</div></div></div></div>';
+}
+function appSection(inner){
+  return '<section class="dk-sec" aria-labelledby="fa-h"><h3 id="fa-h">Field attendance app</h3><p class="sub">The Alvoraa phone app for field workers: photo check-in with place and time.</p>'+inner+'</section>';
+}
+function phonesTable(rows){
+  if (!rows) return '<h4 style="margin:16px 0 6px">Phones</h4><p class="hint">No phones yet.</p>';
+  return '<h4 style="margin:16px 0 6px">Phones</h4><div class="tbl-wrap" tabindex="0" role="region" aria-label="Phones"><table class="dt"><thead><tr><th>Phone</th><th>How it joined</th><th>Joined</th><th>Last check-in</th><th>Status</th><th><span class="sronly">Action</span></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+function codesList(items){
+  return '<h4 style="margin:16px 0 6px">App codes</h4>' + (items ? '<ul class="hist">'+items+'</ul>' : '<p class="hint">No codes made yet.</p>');
+}
+var redmiRow = function(status, action){
+  return '<tr><td><b>'+P.phone+'</b><small>Android &middot; app '+P.ver+'</small></td><td>QR code made by '+maker()+'<small>16 Sep 2026, 4:12 pm</small></td><td>17 Sep 2026, 9:01 am</td><td>17 Sep, 9:02 am<small>'+P.site+'</small></td><td>'+status+'</td><td>'+(action||'')+'</td></tr>';
+};
+var usedCode = function(){ return '<li><span class="when">16 Sep 2026, 4:12 pm</span><span>Made by '+maker()+' &middot; works 7 days</span>'+pill("green","Used 17 Sep, 9:01 am on "+P.phone)+'</li>'; };
+var refusedCode = '<li><span class="when">15 Sep 2026, 11:30 am</span><span>Made by Anita Rao &middot; works 7 days</span>'+pill("amber","Cancelled on a phone: “This is not me”, 15 Sep, 6:05 pm")+'</li>';
+function waitingCode(){ var l = LIFE[S.life]; return '<li><span class="when">17 Sep 2026, 10:05 am</span><span>Made by '+maker()+' &middot; works '+l[0]+'</span>'+pill("purple","Waiting to be used &middot; until "+l[1])+'</li>'; }
+
+function inviteCreateDlg(){
+  var opts = ["1h","4h","1d","3d","7d"].map(function(k){ return '<option value="'+k+'"'+(S.life===k?' selected':'')+'>'+LIFE[k][0]+(k==="7d"?" (your organisation’s setting)":"")+'</option>'; }).join("");
+  var hasLive = S.desk === "inviteCreate" && S.fromDesk === "empInvited", hasPhone = S.fromDesk === "empJoined" || S.fromDesk === "empBlocked";
+  return '<div class="dk-dlg" role="dialog" aria-labelledby="ic-h"><header><h3 id="ic-h">Invite '+P.full+' to the app</h3>'+dbtn("Close",{go:S.fromDesk||"empField"})+'</header><div class="bd">'
+    + '<p style="margin-top:0">This makes a QR code that only '+P.first+' can use, once. When '+P.first+' scans it with the Alvoraa app and confirms the name, the phone is set up straight away. <b>You do not need to approve it.</b></p>'
+    + '<label class="fl2" for="life">The code works for</label><select id="life">'+opts+'</select>'
+    + '<p class="hint">You can choose a shorter time than your organisation’s setting, not a longer one. Shorter is safer.</p>'
+    + (hasLive ? '<div class="warnbox">'+P.first+' already has a code waiting to be used. Making a new code cancels it.</div>' : '')
+    + (hasPhone ? '<div class="infobox">Use this when '+P.first+' changes phone. When the new phone joins, '+P.phone+' stops working.</div>' : '')
+    + '</div><footer>'+dbtn("Cancel",{go:S.fromDesk||"empField"})+dbtn("Make the code",{cls:"pri", go:"inviteShow"})+'</footer></div>';
+}
+function inviteShowDlg(){
+  var l = LIFE[S.life];
+  var copied = S.copied === "picture" ? '<p role="status" class="pill green" style="margin:10px 0 0">Picture copied. Paste it in WhatsApp to '+P.first+'.</p>'
+    : S.copied === "link" ? '<p role="status" class="pill green" style="margin:10px 0 0">Link copied. Send it only to '+P.first+'.</p>' : '';
+  return '<div class="dk-dlg" role="dialog" aria-labelledby="is-h"><header><h3 id="is-h">App code for '+P.full+'</h3></header><div class="bd">'
+    + '<div class="qrbox"><div class="qr">'+qrSvg(11)+'<span class="notreal">Sample picture, not a real code</span></div><div class="facts">'
+    + pill("purple","Waiting to be used")
+    + '<p style="margin:10px 0 2px"><b>Works once.</b></p><p style="margin:0 0 2px">Works until <b>'+l[1]+'</b> ('+l[2]+').</p><p class="hint" style="margin:0">Made by '+maker()+' today at 10:05 am.</p></div></div>'
+    + '<h4 style="margin:26px 0 6px">Tell '+P.first+'</h4><ol style="margin:0;padding-left:20px"><li>Install <b>Alvoraa</b> from the Play Store.</li><li>Open it and press <b>Scan the QR code from HR</b>.</li><li>Check the name and press <b>Yes, this is me</b>.</li></ol>'
+    + '<div class="warnbox"><b>Anyone who has this code or link can join as '+P.first+' until it is used.</b> Give it only to '+P.first+'. If it goes to the wrong person, cancel it.</div>'
+    + '<div class="infobox">You can see this code only now. If it is lost, make a new one.</div>' + copied
+    + '</div><footer>'+dbtn("Print",{icon:"print", go:"printSheet"})+dbtn("Copy picture",{icon:"copy", act:"copyPic"})+dbtn("Copy link",{icon:"link", act:"copyLink"})+dbtn("Done",{cls:"pri", go:"empInvited"})+'</footer></div>';
+}
+function empPage(o){
+  return deskFrame({ crumb:'HR &rsaquo; Employee &rsaquo; <b>'+(o.name||P.full)+'</b>', title:(o.name||P.full), sub:(o.id||"HR-EMP-00118")+' &middot; '+(o.job||P.job)+' &middot; '+P.co,
+    pill:pill("green","Active"), tabs:true, body: empFacts(o.job||P.job) + appSection(o.section), dialog:o.dialog });
+}
+function sectionField(){
+  return '<div class="status-line"><span class="sl">Not joined yet.</span><span>'+P.first+' can use the app: <b>Driver</b> is a field worker designation.</span></div>'
+    + '<div class="actions">'+dbtn("Invite to the app",{cls:"pri", icon:"phone", act:"invite"})+'</div>'
+    + phonesTable(null) + codesList(S.cancelled ? '<li><span class="when">17 Sep 2026, 10:05 am</span><span>Made by '+maker()+'</span>'+pill("grey","Cancelled by "+maker()+", 17 Sep, 10:40 am")+'</li>' : null);
+}
+function sectionInvited(){
+  var l = LIFE[S.life];
+  return '<div class="status-line"><span class="sl">'+pill("purple","Code waiting")+'</span><span>Made by '+maker()+' today at 10:05 am. Works until <b>'+l[1]+'</b> ('+l[2]+').</span></div>'
+    + '<p class="hint">This code cannot be shown again. If '+P.first+' lost it, make a new one. That cancels this one.</p>'
+    + '<div class="actions">'+dbtn("Make a new code",{act:"invite"})+dbtn("Cancel this code",{go:"cancelConfirm"})+'</div>'
+    + phonesTable(null) + codesList(waitingCode());
+}
+function joinedLine(){ return "Joined 9:01 am today · "+P.phone+" · by the QR code "+(isMe() ? "you" : "Anita Rao")+" made yesterday"; }
+function sectionJoined(){
+  return '<div class="status-line good"><span class="sl">'+pill("green","Joined")+'</span><span class="sl">'+joinedLine()+'</span><span class="hint" style="margin:0">Last check-in 9:02 am today at '+P.site+'.</span></div>'
+    + '<div class="actions">'+dbtn("Invite to the app again",{act:"invite"})+'</div>'
+    + phonesTable(redmiRow(pill("green","Active"), dbtn("Block this phone",{go:"blockConfirm"}))) + codesList(usedCode() + refusedCode);
+}
+function sectionBlocked(){
+  var r = S.blockReason || "Phone lost or stolen";
+  return '<div class="status-line warn"><span class="sl">'+pill("red","No working phone")+'</span><span>'+P.phone+' was blocked today at 11:40 am by '+maker()+' &middot; '+esc(r)+'.</span></div>'
+    + '<div class="actions">'+dbtn("Invite to the app",{cls:"pri", icon:"phone", act:"invite"})+'</div>'
+    + phonesTable(redmiRow(pill("red","Blocked")+'<small>17 Sep, 11:40 am</small>', '')) + codesList(usedCode() + refusedCode);
+}
+
+var DESK = {
+  empField: function(){ return empPage({ section:sectionField() }); },
+  inviteCreate: function(){ return empPage({ section:(S.fromDesk==="empInvited"?sectionInvited():S.fromDesk==="empJoined"?sectionJoined():S.fromDesk==="empBlocked"?sectionBlocked():sectionField()), dialog:inviteCreateDlg() }); },
+  inviteShow: function(){ return empPage({ section:sectionInvited(), dialog:inviteShowDlg() }); },
+  printSheet: function(){
+    var l = LIFE[S.life];
+    var sheet = '<div class="print"><div style="font-size:13px;color:#555">'+P.co+'</div><h3>Your Alvoraa app code</h3><div>For <b>'+P.full+'</b> &middot; '+P.job+'</div>'
+      + '<div class="row"><div style="width:180px;height:180px">'+qrSvg(11)+'</div><div style="flex:1 1 220px"><ol><li>Install <b>Alvoraa</b> from the Play Store.</li><li>Open it and press <b>Scan the QR code from HR</b>.</li><li>Check your name and press <b>Yes, this is me</b>.</li></ol>'
+      + '<ol class="hi" lang="hi"><li>Play Store से <b>Alvoraa</b> इंस्टॉल करें।</li><li>उसे खोलें और <b>HR का QR कोड स्कैन करें</b> दबाएँ।</li><li>अपना नाम देखें और <b>हाँ, यह मैं हूँ</b> दबाएँ।</li></ol></div></div>'
+      + '<div class="foot">This code works <b>once</b>, until <b>'+l[1]+'</b>. Do not share it. If this sheet is lost, tell HR.<br><span lang="hi">यह कोड एक ही बार चलेगा। इसे किसी और को न दें। (Hindi: machine draft)</span></div></div>';
+    return deskFrame({ crumb:'HR &rsaquo; Employee &rsaquo; '+P.full+' &rsaquo; <b>Print</b>', title:"Print preview", sub:"One A4 page. Name and designation only; no employee ID.",
+      head: dbtn("Back to the code",{go:"inviteShow"}) + dbtn("Print",{cls:"pri", icon:"print", act:"noop"}), body: sheet });
+  },
+  empInvited: function(){ return empPage({ section:sectionInvited() }); },
+  cancelConfirm: function(){ return empPage({ section:sectionInvited(), dialog:'<div class="dk-dlg" role="dialog" aria-labelledby="cc-h"><header><h3 id="cc-h">Cancel this code?</h3></header><div class="bd"><p style="margin:0">'+P.first+' will not be able to use it. Nothing else changes. You can make a new code at any time.</p></div><footer>'+dbtn("Keep it",{go:"empInvited"})+dbtn("Cancel the code",{cls:"dng", act:"cancelCode"})+'</footer></div>' }); },
+  empJoined: function(){ return empPage({ section:sectionJoined() }); },
+  blockConfirm: function(){
+    var reasons = ["Phone lost or stolen","Has a new phone","Someone else was using it","Left the company","Other"];
+    var opts = '<option value="">Choose a reason</option>' + reasons.map(function(r){ return '<option'+(S.blockReason===r?' selected':'')+'>'+r+'</option>'; }).join("");
+    return empPage({ section:sectionJoined(), dialog:'<div class="dk-dlg" role="dialog" aria-labelledby="bc-h"><header><h3 id="bc-h">Block '+P.phone+'?</h3></header><div class="bd"><ul style="margin:0 0 12px;padding-left:20px">'
+      + '<li>'+P.first+' cannot mark attendance on this phone from now on.</li><li>Attendance already marked stays.</li><li>The phone will say: “This phone has been stopped. Please speak to HR.”</li><li><b>This cannot be undone.</b> If '+P.first+' gets the phone back, make a new code.</li></ul>'
+      + '<label class="fl2" for="breason">Why are you blocking it?</label><select id="breason"'+(S.blockErr?' aria-invalid="true" aria-describedby="berr"':'')+'>'+opts+'</select>'
+      + (S.blockErr ? '<p class="hint" id="berr" role="alert" style="color:var(--red);font-weight:650">Choose a reason. It is kept in the record.</p>' : '<p class="hint">Kept in the record. '+P.first+' does not see the reason.</p>')
+      + '</div><footer>'+dbtn("Keep it working",{go:"empJoined"})+dbtn("Block this phone",{cls:"dng", act:"block"})+'</footer></div>' });
+  },
+  empBlocked: function(){ return empPage({ section:sectionBlocked() }); },
+  empNotField: function(){
+    var sec = '<div class="status-line"><span class="sl">The app is not available for Priya Sharma.</span><span>Designation <b>Store Assistant</b> is not a field worker designation.</span></div>'
+      + '<p style="margin:0 0 6px">Priya marks attendance at the reception machine, or with Check In in the portal.</p>'
+      + '<div class="actions">'+dbtn("Change field worker designations",{cls:"lnk", go:"fieldSettings"})+'</div>'
+      + phonesTable('<tr><td><b>Galaxy M14</b><small>Android &middot; web page</small></td><td>Web check-in page, approved by Anita Rao<small>2 Sep 2026</small></td><td>2 Sep 2026, 9:40 am</td><td>16 Sep, 9:31 am</td><td>'+pill("green","Active")+'<small style="margin-top:4px">'+pill("amber","Not a field worker")+'</small><small>Joined before this rule. Keeps working.</small></td><td>'+dbtn("Block this phone",{act:"noop"})+'</td></tr>')
+      + codesList(null);
+    return empPage({ name:"Priya Sharma", id:"HR-EMP-00131", job:"Store Assistant", section:sec });
+  },
+  empAppOff: function(){
+    var sec = '<div class="status-line warn"><span class="sl">'+pill("amber","App switched off")+'</span><span>Field workers cannot use the app at the moment. You cannot make codes.</span></div>'
+      + '<p style="margin:0 0 6px">'+P.first+' can still use the web check-in page at <b>'+P.host+'/checkin</b>.</p>'
+      + '<div class="actions">'+dbtn("Open Field App Settings",{cls:"lnk", go:"fieldSettings"})+'</div>'
+      + phonesTable(redmiRow(pill("grey","Stopped")+'<small>App switched off, 17 Sep, 2:00 pm</small>', '')) + codesList(usedCode());
+    return empPage({ section:sec });
+  },
+  fieldSettings: function(o){
+    o = o || {};
+    var chips = ["Driver","Security Guard","Delivery Associate"].map(function(d){ return '<span class="c">'+d+'<button type="button" aria-label="Remove '+d+'" data-dact="noop">&times;</button></span>'; }).join("");
+    var lifeOpts = [["1h","1 hour"],["4h","4 hours"],["12h","12 hours"],["1d","1 day"],["3d","3 days"],["7d","7 days (default)"]].map(function(x){ return '<option'+(x[0]==="7d"?' selected':'')+'>'+x[1]+'</option>'; }).join("");
+    var body = '<section class="dk-sec"><h3>Who is a field worker</h3><p class="sub">Only people with these designations can get the app and check in with a photo.</p>'
+      + '<label class="fl2" for="adddes" style="font-size:13px;font-weight:650">Field worker designations</label><div class="chips">'+chips+'<input type="text" id="adddes" placeholder="Add a designation" style="max-width:220px"></div>'
+      + '<p class="hint">42 active employees have these designations. <span class="tag-sample">Sample</span></p></section>'
+      + '<section class="dk-sec"><h3>The app</h3>'
+      + '<label class="switch"><input type="checkbox" id="appon"'+(o.off?'':' checked')+'> <span><b>Field workers can use the app</b></span></label>'
+      + '<p class="hint">When this is off, you cannot make codes, and phones that joined stop marking attendance. Field workers can still use the web check-in page.</p>'
+      + '<label class="fl2" for="lifeset" style="margin-top:14px">App codes work for</label><select id="lifeset">'+lifeOpts+'</select>'
+      + '<p class="hint">From 1 hour to 7 days. Shorter is safer. Longer is easier when you hand out printed codes before a joining day. HR can choose a shorter time for one code.</p></section>'
+      + '<section class="dk-sec"><h3>Photos</h3><p style="margin:0">Check-in photos are kept for <b>90 days</b>, then deleted. Change this in Org Settings &rsaquo; Field check-in.</p></section>'
+      + '<section class="dk-sec"><h3>Change history</h3><ul class="hist"><li><span class="when">16 Sep 2026, 2:00 pm</span><span>Anita Rao &middot; App codes work for: 3 days &rarr; 7 days</span></li><li><span class="when">10 Sep 2026, 11:15 am</span><span>Vikram Singh &middot; Added designation: Delivery Associate</span></li></ul><p class="hint">HR cannot change this list. Only the Administrator account can delete from it.</p></section>';
+    return deskFrame({ crumb:'HR &rsaquo; Settings &rsaquo; <b>Field App Settings</b>', title:"Field App Settings", sub:"For "+P.co, head:dbtn("Save",{cls:"pri", act:"noop"}), body:body, dialog:o.dialog });
+  },
+  settingsOffConfirm: function(){
+    return DESK.fieldSettings({ off:true, dialog:'<div class="dk-dlg" role="dialog" aria-labelledby="so-h"><header><h3 id="so-h">Turn off the app for field workers?</h3></header><div class="bd"><ul style="margin:0 0 12px;padding-left:20px">'
+      + '<li>You will not be able to make new codes.</li><li><b>3 codes</b> waiting to be used will stop working.</li><li><b>31 phones</b> that joined will stop marking attendance. They will say: “The app is not switched on for field staff.”</li><li>Field workers can still use the web check-in page.</li></ul>'
+      + '<p class="hint" style="margin:0 0 10px"><span class="tag-sample">Sample</span> counts.</p>'
+      + '<label class="fl2" for="offwhy">Why? (kept in the change history)</label><select id="offwhy"><option>Choose a reason</option><option>Pausing the pilot</option><option>Field workers use the reception machine again</option><option>Other</option></select>'
+      + '</div><footer>'+dbtn("Keep it on",{go:"fieldSettings"})+dbtn("Turn off",{cls:"dng", go:"empAppOff"})+'</footer></div>' });
+  },
+  deviceList: function(){
+    var rows = [
+      ["Suresh Yadav","Redmi 12","QR code made by Anita Rao","17 Sep, 9:01 am",pill("green","Active")],
+      ["Mohan Lal","Galaxy A05","QR code made by Vikram Singh","16 Sep, 8:47 am",pill("green","Active")],
+      ["Imran Qureshi","Moto G34","QR code made by Anita Rao","15 Sep, 7:58 am",pill("grey","Replaced")+'<small>by a new phone, 16 Sep</small>'],
+      ["Imran Qureshi","Redmi 13C","QR code made by Anita Rao","16 Sep, 8:02 am",pill("green","Active")],
+      ["Deepak Singh","Galaxy M14","Web check-in page, approved by Anita Rao","2 Sep, 9:40 am",pill("red","Blocked")+'<small>Phone lost or stolen</small>'],
+      ["Rakesh Kumar","Realme C53","Web check-in page","17 Sep, 8:30 am",pill("amber","Waiting for HR")+'<small>'+dbtn("Approve",{act:"noop"})+'</small>'],
+      ["Ajay Verma","Galaxy A15","Removed by the employee","12 Sep, 9:10 am",pill("grey","Removed")+'<small>17 Sep, 7:15 am</small>']
+    ].map(function(r){ return '<tr><td><b>'+r[0]+'</b></td><td>'+r[1]+'</td><td>'+r[2]+'</td><td>'+r[3]+'</td><td>'+r[4]+'</td></tr>'; }).join("");
+    var body = '<div class="chips" style="gap:8px"><span class="pill purple">Joined in the last 7 days</span><span class="pill grey">Status: any</span><span class="hint" style="margin:0">7 phones <span class="tag-sample">Sample</span></span></div>'
+      + '<div class="tbl-wrap" tabindex="0" role="region" aria-label="Field app phones"><table class="dt"><thead><tr><th>Employee</th><th>Phone</th><th>How it joined</th><th>Joined</th><th>Status</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+      + '<p class="hint">There is no “last seen” or “online now” column, on purpose. This list is about phones, not about watching people.</p>';
+    return deskFrame({ crumb:'HR &rsaquo; <b>Field app phones</b>', title:"Field app phones", sub:"Every phone that joined, how, and whether it still works", body:body });
+  }
+};
+
+/* ── Notes beside the screen (for the reviewer) ──────────────────────────── */
+var NOTE = {
+  first:["First launch","One job on the first screen: scan HR’s code. “Choose the QR picture” is for codes sent on WhatsApp — a phone cannot scan its own screen. No employee-ID box and no company code: the web page keeps the employee-ID path.","D18"],
+  removed:["After removing the phone","Back to first launch, with one line saying what happened.",""],
+  camExplain:["Camera, explained first","We say why before Android asks, so the system question does not come out of nowhere. Asked at the first scan, not at launch.",""],
+  osCam:["Android asks","Drawn roughly. Wording and look change by phone maker. “Don’t allow” goes to the camera-refused screen, which still lets the person join from a picture.",""],
+  scan:["Scanner","Full-screen camera with a frame. “Choose a picture” stays one tap away.",""],
+  checking:["Checking the code","The server checks the code is live and the person can use the app before showing any name. Nothing is used up yet.",""],
+  confirm:["Is this you?","First name, surname initial, designation, company. Nothing else. The green button is the only big one.",""],
+  notMe:["This is not me","A confirm sheet, because cancelling cannot be undone.","D2"],
+  notMeDone:["Code cancelled","HR sees “Cancelled on a phone: This is not me” in the code history.",""],
+  notice:["The notice","Same six rows as the web page. The “How long” row comes from the organisation’s setting. The code is used up only when the person presses Agree and finish.",""],
+  joining:["Setting up","The code is used here, with the notice version agreed. No Pending step.",""],
+  welcome:["The WOW moment","“You do not need to wait for HR.” Check In is right here. From scan to this screen is about six taps.",""],
+  home:["Attendance: not checked in","Same layout as the web page today: status line, camera, today’s punches, one big button, the distance rule before walking.","D1"],
+  homeIn:["Checked in","The button turns into Check Out, with the arrow flipped.",""],
+  homeOut:["Checked out","Fix from the web page: it says “Not checked in yet today” after a check-out. Here it says “Checked out at 6:14 pm”.",""],
+  camOff:["Camera off","Degrade, do not block: the punch still counts, and the result says “Photo: Not taken”.",""],
+  locExplain:["Location, explained first","Asked at the first Check In, not at launch. Only “while using the app” is ever asked for in step 1.",""],
+  osLoc:["Android asks","If a person picks Approximate, the fix is often worse than 100 m and they will meet the “not exact enough” screen. That screen’s steps say to keep precise location on.",""],
+  punching:["Saving","Three plain messages, one at a time, as on the web page.",""],
+  resultIn:["Checked in","The photo that was saved, the time, the place, and who can see it.",""],
+  resultOut:["Checked out","Same screen, other word.",""],
+  qrExpired:["Code ran out","One screen for ran out, used and cancelled; only the reason line changes. No Try again, because trying again cannot work.",""],
+  qrUsed:["Code already used","Says when it was used, and to tell HR if it was not them. This helps the real owner notice a stolen code.","D8"],
+  qrCancelled:["Code cancelled by HR","Same screen, different reason.",""],
+  notAlvoraa:["Not an Alvoraa code","Common in India: a UPI payment QR sits on every counter. A code for a server that is not *.alvoraa.co ends here too, and nothing is sent.",""],
+  appOff:["App switched off","HR could not make a code while the setting is off, so this appears only when HR switched it off after making the code.","D5"],
+  notField:["Not a field job","Only when the designation changed after the code was made. It names the person’s own job, which they already saw on “Is this you?”.",""],
+  noSignalJoin:["No internet while joining","Nothing is used up. The notice is never shown with a blank “How long” row.",""],
+  camDenied:["Camera refused while joining","The picture route still works, so it leads.",""],
+  pickNoQr:["No code in the picture","",""],
+  locDenied:["Location refused","In the app, “Open phone settings” goes straight to Alvoraa’s permission page. The web page could only describe the lock icon.",""],
+  locOff:["Location switched off","From the web page, unchanged.",""],
+  gpsVague:["GPS too weak","The server’s real numbers go into the sentence. With error codes, the numbers travel as values, not as English words.",""],
+  outside:["Outside the site","Real distance, real place, real limit. The photo is kept for the retry.",""],
+  noSignal:["No internet at check-in","No offline queue in step 1. The honest downside: a driver in a basement cannot punch.",""],
+  duplicate:["Pressed twice","Green, because nothing is wrong.",""],
+  tooMany:["Too many tries","Limits are counted per phone as well as per network (OPS-10).",""],
+  update:["Update the app","Shown on opening when this version is below the server’s minimum. The only button goes to the store. In pilot test builds it opens the tester download link instead.",""],
+  blocked:["Blocked by HR","Everything stops. No Check In anywhere. The one action that works is removing the company from the phone.","D4"],
+  replaced:["Joined on another phone","What the old phone shows once a new phone joins.","D3"],
+  left:["Left the company","From the web page, with the remove action added.",""],
+  serverError:["Server error","A short code, the time and the app version, so HR can report it.","D11"],
+  unknownCode:["Unknown code","The server sent a code this version does not know yet. So we suggest an update first.",""],
+  settings:["Settings","Who you are, language, what this app records, remove this phone, version and server. No sign-out: there is no password to sign out of.","D1"],
+  noticeAgain:["Notice changed","Replaces the server sentence “This screen is out of date. Close the app, open it again”, which loops in an installed app. The server sends NOTICE_CHANGED with the new facts; the person reads and agrees once, then carries on.","D19"],
+  records:["What this app records","The notice, any time, with the date agreed and the version.",""],
+  leaveConfirm:["Remove this phone?","Says exactly what happens, including what stays. Needs the internet.","D10"],
+  empField:["Employee record: field worker","A section on the Employee record, in the Attendance tab. HR does everything for one person here.",""],
+  inviteCreate:["Invite: choose the time","Default is the organisation’s setting. HR can pick shorter for one code, not longer.","D6"],
+  inviteShow:["Invite: the code","Show, print, copy the picture for WhatsApp, or copy the link. The warning is in bold because a photographed code is the main risk. The code cannot be shown again: only a scrambled copy is stored.","D17"],
+  printSheet:["Printed sheet","Name and designation only, steps in English and Hindi.","D14"],
+  empInvited:["Code waiting","Says who made it and when it runs out, in words.",""],
+  cancelConfirm:["Cancel the code","",""],
+  empJoined:["Joined","The line from the brief. Switch “HR person looking” at the top: “you” is only true for the person who made the code.","D13"],
+  blockConfirm:["Block this phone","Says what happens, that it cannot be undone, and asks for a reason.","D4 D7"],
+  empBlocked:["Blocked","The next step is right there: invite again.",""],
+  empNotField:["Not a field worker","No greyed button. A plain reason and a link to the setting that decides it. A phone set up on the web page before this rule keeps working and is flagged.","D5"],
+  empAppOff:["App switched off","What HR sees on a field worker when the setting is off.","D5"],
+  fieldSettings:["Field App Settings","Three settings. Turning the app off asks first.",""],
+  settingsOffConfirm:["Turn the app off?","Names the effect in numbers before it happens. The reason goes into the change history.","D5"],
+  deviceList:["All app phones","One list for rollout and lost phones. No “last seen” column, on purpose.",""]
+};
+
+/* ── Switcher groups ─────────────────────────────────────────────────────── */
+var GP = [
+  ["Join", [["first","First launch"],["camExplain","Camera, explained"],["osCam","Android asks: camera"],["scan","Scanner"],["checking","Checking code"],["confirm","Is this you?"],["notMe","This is not me"],["notMeDone","Code cancelled"],["notice","Notice"],["joining","Setting up"],["welcome","Welcome (WOW)"]]],
+  ["Attendance", [["home","Not checked in"],["locExplain","Location, explained"],["osLoc","Android asks: location"],["punching","Saving"],["resultIn","Checked in"],["homeIn","Home: in"],["resultOut","Checked out"],["homeOut","Home: out"],["camOff","Camera off"]]],
+  ["Join problems", [["qrExpired","Code ran out"],["qrUsed","Code already used"],["qrCancelled","Cancelled by HR"],["notAlvoraa","Not an Alvoraa code"],["appOff","App switched off"],["notField","Not a field job"],["noSignalJoin","No internet"],["camDenied","Camera refused"],["pickNoQr","No code in picture"]]],
+  ["Check-in problems", [["locDenied","Location refused"],["locOff","Location off"],["gpsVague","GPS too weak"],["outside","Outside the site"],["noSignal","No internet"],["duplicate","Pressed twice"],["tooMany","Too many tries"]]],
+  ["Phone stopped", [["update","Update the app"],["blocked","Blocked by HR"],["replaced","New phone joined"],["left","Left the company"],["serverError","Server error"],["unknownCode","Unknown code"]]],
+  ["Settings", [["settings","Settings"],["records","What this app records"],["noticeAgain","Notice changed"],["leaveConfirm","Remove this phone?"],["removed","Removed"]]]
+];
+var GD = [
+  ["Employee record", [["empField","Not invited yet"],["inviteCreate","Invite: time"],["inviteShow","Invite: the code"],["printSheet","Printed sheet"],["empInvited","Code waiting"],["cancelConfirm","Cancel code?"],["empJoined","Joined"],["blockConfirm","Block phone?"],["empBlocked","Blocked"]]],
+  ["Not available", [["empNotField","Not a field worker"],["empAppOff","App switched off"]]],
+  ["Settings, lists", [["fieldSettings","Field App Settings"],["settingsOffConfirm","Turn app off?"],["deviceList","All app phones"]]]
+];
+
+/* ── Render ──────────────────────────────────────────────────────────────── */
+function renderStates(){
+  var groups = S.view === "phone" ? GP : GD, cur = S.view === "phone" ? S.state : S.desk, h = "";
+  for (var g=0; g<groups.length; g++){
+    h += '<div class="sgroup" role="group" aria-label="'+groups[g][0]+'"><span class="gname">'+groups[g][0]+'</span>';
+    for (var i=0;i<groups[g][1].length;i++){ var it = groups[g][1][i]; h += '<button type="button" data-jump="'+it[0]+'"'+(it[0]===cur?' aria-current="true"':'')+'>'+it[1]+'</button>'; }
+    h += '</div>';
+  }
+  $("states").innerHTML = h;
+}
+function renderNote(){
+  var key = S.view === "phone" ? S.state : S.desk, n = NOTE[key] || [key,"",""];
+  var h = '<h2>'+n[0]+'</h2>'+(n[1]?'<p>'+n[1]+'</p>':'');
+  if (n[2]) h += '<span class="dec">&#9888; Decision '+n[2]+' in 01b &sect;11</span>';
+  if (S.view === "phone" && S.lang === "hi") h += '<p class="dec" style="margin-top:8px">Hindi on the phone is a machine draft. A native speaker must check it before anyone sees it.</p>';
+  if (S.view === "phone") h += '<p style="margin-top:10px;font-size:13px">Every name, company, time and number here is invented.</p>';
+  $("note").innerHTML = h;
+}
+function render(){
+  var phone = S.view === "phone";
+  $("phone").hidden = !phone; $("desk").hidden = phone;
+  var po = document.querySelectorAll(".phone-only"), dO = document.querySelectorAll(".desk-only");
+  for (var i=0;i<po.length;i++) po[i].hidden = !phone;
+  for (var j=0;j<dO.length;j++) dO[j].hidden = phone;
+  $("phone").className = "phone" + (S.w === "360" ? " w360" : "") + (S.appDark ? " follow-dark" : "");
+  $("app").setAttribute("lang", S.lang);
+  if (phone) { $("app").innerHTML = (APP[S.state] || APP.first)(); var sc0 = $("app").querySelector(".scroll"); if (sc0) sc0.scrollTop = 0; }
+  else $("desk").innerHTML = (DESK[S.desk] || DESK.empField)();
+  var segs = [["c-view","view"],["c-lang","lang"],["c-theme","th"],["c-width","w"],["c-shell","shell"],["c-viewer","viewer"]];
+  for (var k=0;k<segs.length;k++){
+    var bs = $(segs[k][0]).querySelectorAll("button");
+    for (var m=0;m<bs.length;m++){
+      var attr = bs[m].getAttribute("data-"+segs[k][1]) || bs[m].getAttribute("data-"+(segs[k][1]==="th"?"th":segs[k][1]));
+      bs[m].setAttribute("aria-pressed", String(attr === S[segs[k][1]]));
+    }
+  }
+  $("c-appdark").checked = S.appDark;
+  if (S.th === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", S.th);
+  renderStates(); renderNote();
+}
+
+/* Presets for jumping straight to a screen. Clicking through the app keeps its own state. */
+function preset(st){
+  S.toast = ""; S.agreeErr = false;
+  if (st === "home" || st === "welcome" || st === "locExplain" || st === "osLoc") { S.rows = []; S.camOn = true; }
+  if (st === "homeIn" || st === "resultIn") { S.rows = ["IN"]; S.camOn = true; }
+  if (st === "homeOut" || st === "resultOut") { S.rows = ["IN","OUT"]; S.camOn = true; }
+  if (st === "camOff") { S.rows = []; S.camOn = false; }
+  if (st === "punching") { S.rows = []; S.camOn = true; }
+  if (st === "notice" || st === "noticeAgain") { S.agreed = false; S.rows = []; }
+  if (st === "joining") S.agreed = true;
+  if (st === "removed") S.toast = L("This phone is no longer linked to "+P.co+".","यह फ़ोन अब "+P.co+" से जुड़ा नहीं है।");
+}
+function go(st){
+  clearTimers(); S.state = st;
+  if (st === "checking") later(1200, function(){ S.agreed = false; go(S.next || "confirm"); S.next = "confirm"; });
+  if (st === "joining") later(1200, function(){ S.rows = []; go("welcome"); });
+  if (st === "punching") {
+    S.busyI = 0;
+    later(700, function(){ S.busyI = 1; render(); });
+    later(1400, function(){ S.busyI = 2; render(); });
+    later(2100, function(){ var nextType = lastRow() === "IN" ? "OUT" : "IN"; if (S.rows.length < TIMES.length) S.rows.push(nextType); S.firstPunch = false; go(nextType === "IN" ? "resultIn" : "resultOut"); });
+  }
+  render();
+}
+function dgo(st){ S.desk = st; render(); var d = $("desk").querySelector(".dk-dlg"); if (d) { var f = d.querySelector("select,button"); if (f) f.focus(); } }
+
+document.addEventListener("click", function(e){
+  var t = e.target.closest ? e.target.closest("[data-go],[data-act],[data-jump],[data-view],[data-lang],[data-th],[data-w],[data-shell],[data-viewer],[data-dgo],[data-dact]") : null;
+  if (!t) return;
+  if (t.hasAttribute("data-view")) { S.view = t.getAttribute("data-view"); clearTimers(); render(); return; }
+  if (t.hasAttribute("data-lang")) { S.lang = t.getAttribute("data-lang"); if (S.state === "removed") preset("removed"); render(); return; }
+  if (t.hasAttribute("data-th")) { S.th = t.getAttribute("data-th"); render(); return; }
+  if (t.hasAttribute("data-w")) { S.w = t.getAttribute("data-w"); render(); return; }
+  if (t.hasAttribute("data-shell")) { S.shell = t.getAttribute("data-shell"); render(); return; }
+  if (t.hasAttribute("data-viewer")) { S.viewer = t.getAttribute("data-viewer"); render(); return; }
+  if (t.hasAttribute("data-jump")) {
+    var j = t.getAttribute("data-jump");
+    if (S.view === "phone") { preset(j); go(j); }
+    else { S.copied = ""; S.blockErr = false; if (j === "inviteCreate") S.fromDesk = "empField"; if (j === "empField") S.cancelled = false; dgo(j); }
+    return;
+  }
+  if (t.hasAttribute("data-go")) { var g = t.getAttribute("data-go"); if (g === "first") S.toast = ""; if (g === "notice") S.agreeErr = false; go(g); return; }
+  if (t.hasAttribute("data-act")) {
+    var a = t.getAttribute("data-act");
+    if (a === "pick" || a === "scanOk" || a === "retryJoin") { S.next = "confirm"; go("checking"); }
+    else if (a === "agree") { if (S.agreed) go("joining"); else { S.agreeErr = true; render(); var cb = $("agree"); if (cb) cb.focus(); } }
+    else if (a === "agreeAgain") { if (S.agreed) { go("home"); } else { S.agreeErr = true; render(); var cb2 = $("agree"); if (cb2) cb2.focus(); } }
+    else if (a === "punch") { go(S.firstPunch ? "locExplain" : "punching"); }
+    else if (a === "locOk") { S.firstPunch = false; go("punching"); }
+    else if (a === "retryPunch") { go("punching"); }
+    else if (a === "camOn") { S.camOn = true; render(); }
+    else if (a === "store") { $("note").insertAdjacentHTML("beforeend", "<p class=\"dec\">Sample: this button would open Alvoraa in the Play Store, or the tester download link in a pilot build.</p>"); }
+    else if (a === "remove") { S.rows = []; S.firstPunch = true; S.toast = L("This phone is no longer linked to "+P.co+".","यह फ़ोन अब "+P.co+" से जुड़ा नहीं है।"); S.state = "removed"; go("removed"); }
+    return;
+  }
+  if (t.hasAttribute("data-dgo")) { var dg = t.getAttribute("data-dgo"); if (dg !== "inviteShow") S.copied = ""; if (dg === "blockConfirm") { S.blockErr = false; S.blockReason = ""; } if (dg === "inviteShow") S.copied = ""; dgo(dg); return; }
+  if (t.hasAttribute("data-dact")) {
+    var da = t.getAttribute("data-dact");
+    if (da === "invite") { S.fromDesk = S.desk; dgo("inviteCreate"); }
+    else if (da === "copyPic") { S.copied = "picture"; render(); }
+    else if (da === "copyLink") { S.copied = "link"; render(); }
+    else if (da === "cancelCode") { S.cancelled = true; dgo("empField"); }
+    else if (da === "block") { if (!S.blockReason) { S.blockErr = true; dgo("blockConfirm"); } else { S.blockErr = false; dgo("empBlocked"); } }
+    return;
+  }
+});
+document.addEventListener("change", function(e){
+  var t = e.target;
+  if (t.id === "agree") { S.agreed = t.checked; if (t.checked && S.agreeErr) { S.agreeErr = false; var er = $("agree-err"); if (er) er.remove(); t.removeAttribute("aria-invalid"); } }
+  else if (t.name === "applang") { S.lang = t.value; render(); }
+  else if (t.id === "life") { S.life = t.value; }
+  else if (t.id === "breason") { S.blockReason = t.value; if (t.value) { S.blockErr = false; } }
+  else if (t.id === "appon" && !t.checked) { dgo("settingsOffConfirm"); }
+  else if (t.id === "c-appdark") { S.appDark = t.checked; render(); }
+});
+
+render();
+})();
+</script>

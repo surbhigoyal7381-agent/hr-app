@@ -1,16 +1,18 @@
 // App checks that need no Android SDK. Slice 013: SEC-16, SEC-17, SEC-20, OPS-22,
-// OPS-41, OPS-55, OPS-74, OPS-79, PRIV-8.
+// OPS-38, OPS-41, OPS-55, OPS-74, OPS-79, PRIV-8.
 //
 // Each check turns a promise ("no background location", "no outside content",
-// "no analytics") into a build failure. Run from mobile/field-app:
+// "no analytics", "debug, pilot and release can never collide") into a build
+// failure. Run from mobile/field-app:
 //
 //     node scripts/check_app.mjs            exit 0 = pass
 //
 // What this does NOT cover yet, and why: the checks on the BUILT package
-// (merged manifest read with apkanalyzer, debuggable flag, network rules, size
-// <= 10 MB) need the Android SDK and a generated android/ project. They arrive
-// before the first pilot build (DevOps §4 gate 5). Until android/ exists, the
-// source-manifest check below says SKIPPED instead of passing silently.
+// (merged manifest read with apkanalyzer, debuggable flag, actual network
+// rules once merged, size <= 10 MB) need a real Android SDK build, which this
+// sandbox does not have. They arrive before the first pilot build (DevOps §4
+// gate 5). Until android/ exists at all, the source-level checks below say
+// SKIPPED instead of passing silently.
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, extname } from "node:path";
@@ -127,6 +129,92 @@ export function checkManifest(xml) {
   return problems;
 }
 
+// Finds a top-level `name { ... }` block by matching braces, starting at the
+// first "name {" in the text. Good enough for our own small, hand-written
+// build.gradle - not a real Groovy parser, the same trade-off checkManifest
+// already makes with regex instead of a real XML parser.
+function namedBlock(text, name) {
+  const start = text.indexOf(`${name} {`);
+  if (start === -1) return null;
+  let depth = 0;
+  for (let i = text.indexOf("{", start); i < text.length; i++) {
+    if (text[i] === "{") depth++;
+    else if (text[i] === "}") {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+// OPS-38, AC-165: debug, pilot and release must each end up with a different
+// app ID, so all three install side by side and a test build can never
+// replace the real one. Also SEC-20/gate decision 6: no Firebase plugin, since
+// this app has no push notifications and no crash-reporting tool.
+export function checkBuildTypes(gradleText) {
+  const problems = [];
+  const SUFFIXED = { debug: ".debug", pilot: ".pilot" };
+
+  for (const [type, suffix] of Object.entries(SUFFIXED)) {
+    const block = namedBlock(gradleText, type);
+    if (!block) {
+      problems.push(`android/app/build.gradle has no "${type}" build type (OPS-38, AC-165).`);
+      continue;
+    }
+    const wanted = new RegExp(`applicationIdSuffix\\s*["']${suffix.replace(".", "\\.")}["']`);
+    if (!wanted.test(block)) {
+      problems.push(`The "${type}" build type must set applicationIdSuffix "${suffix}" (OPS-38, AC-165), so it never collides with the other two on one phone.`);
+    }
+    if (/\bdebuggable\s+true\b/.test(block) && type !== "debug") {
+      problems.push(`The "${type}" build type must not set debuggable true (AC-173).`);
+    }
+  }
+
+  const release = namedBlock(gradleText, "release");
+  if (release && /applicationIdSuffix/.test(release)) {
+    problems.push('The "release" build type must have no applicationIdSuffix - it is the store app ID (AC-165).');
+  }
+  if (release && /\bdebuggable\s+true\b/.test(release)) {
+    problems.push('The "release" build type must not set debuggable true (AC-173).');
+  }
+
+  if (/classpath\s+['"]com\.google\.gms:google-services/.test(gradleText)
+      || /apply\s+plugin:\s*['"]com\.google\.gms\.google-services['"]/.test(gradleText)) {
+    problems.push("A Google Services / Firebase Gradle plugin reference was found. This app has no Firebase feature in scope (push, crash reporting) - remove it (SEC-20, gate decision 6).");
+  }
+
+  return problems;
+}
+
+// AC-166: a debug build may reach plain HTTP only at the developer's own
+// machine (localhost, or 10.0.2.2 for an emulator) - never a tenant, and never
+// through a config that applies cleartext to every domain.
+export function checkDebugNetworkConfig(xml) {
+  const problems = [];
+  const baseConfigOpen = /<base-config[^>]*cleartextTrafficPermitted\s*=\s*"true"/.test(xml);
+  if (baseConfigOpen) {
+    problems.push("network_security_config.xml allows cleartext at the base-config level, which reaches every domain including a tenant (AC-166, SEC-16). Scope it to a named domain-config instead.");
+  }
+  const domainConfig = /<domain-config[^>]*cleartextTrafficPermitted\s*=\s*"true"[\s\S]*?<\/domain-config>/g;
+  const allowed = new Set(["localhost", "10.0.2.2"]);
+  let sawAny = false;
+  for (const match of xml.matchAll(domainConfig)) {
+    sawAny = true;
+    for (const d of match[0].matchAll(/<domain[^>]*>([^<]+)<\/domain>/g)) {
+      if (!allowed.has(d[1].trim())) {
+        problems.push(`network_security_config.xml allows cleartext to "${d[1].trim()}". Only localhost and 10.0.2.2 may - never a tenant host (AC-166, OPS-7).`);
+      }
+    }
+  }
+  // Only worth saying when nothing at all grants cleartext yet - if the
+  // base-config already grants it too broadly, that is the problem to fix,
+  // not a missing domain-config as well.
+  if (!sawAny && !baseConfigOpen) {
+    problems.push("network_security_config.xml has no cleartext domain-config at all - the debug build cannot reach the local bench over plain HTTP (AC-166).");
+  }
+  return problems;
+}
+
 // ── running them ────────────────────────────────────────────────────────────
 
 function walk(dir) {
@@ -159,14 +247,28 @@ export function runAll(appDir = APP_DIR) {
   }
 
   const manifest = join(appDir, "android", "app", "src", "main", "AndroidManifest.xml");
+  const gradlePath = join(appDir, "android", "app", "build.gradle");
+  const debugNetConfigPath = join(appDir, "android", "app", "src", "debug", "res", "xml", "network_security_config.xml");
   if (existsSync(manifest)) {
     problems.push(...checkManifest(readFileSync(manifest, "utf8")));
+
+    if (existsSync(gradlePath)) {
+      problems.push(...checkBuildTypes(readFileSync(gradlePath, "utf8")));
+    } else {
+      problems.push("android/app/build.gradle is missing.");
+    }
+
+    if (existsSync(debugNetConfigPath)) {
+      problems.push(...checkDebugNetworkConfig(readFileSync(debugNetConfigPath, "utf8")));
+    } else {
+      problems.push("android/app/src/debug/res/xml/network_security_config.xml is missing (AC-166).");
+    }
   } else if (existsSync(join(appDir, "android"))) {
     problems.push("android/ exists but android/app/src/main/AndroidManifest.xml does not.");
   } else {
-    notes.push("SKIPPED: Android manifest check - android/ is not generated yet (needs Android Studio and the SDK).");
+    notes.push("SKIPPED: Android manifest, build-type and network-config checks - android/ is not generated yet (needs Android Studio and the SDK).");
   }
-  notes.push("NOT YET: built-package checks (merged manifest, debuggable, network rules, size) - before the first pilot build.");
+  notes.push("NOT YET: checks on the BUILT package (merged manifest via apkanalyzer, debuggable flag, package size <= 10 MB) - these need a real Android SDK build, which this run does not have. Before the first pilot build (DevOps 07 §4 gate 5).");
 
   return { problems, notes };
 }

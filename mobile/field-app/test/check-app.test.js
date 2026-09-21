@@ -78,6 +78,67 @@ test("dependencies: tracking libraries and loose versions fail", async () => {
   assert.equal(checkDependencies(pkg, { packages: { "node_modules/@sentry/capacitor": {} } }).length, 1);
 });
 
+const GOOD_GRADLE = `
+android {
+    buildTypes {
+        debug {
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+        }
+        pilot {
+            applicationIdSuffix ".pilot"
+            versionNameSuffix "-pilot"
+        }
+        release {
+            minifyEnabled false
+        }
+    }
+}
+`;
+
+test("build types: debug and pilot need their own applicationIdSuffix; release needs none", async () => {
+  const { checkBuildTypes } = await load();
+  assert.deepEqual(checkBuildTypes(GOOD_GRADLE), []);
+  assert.equal(checkBuildTypes(GOOD_GRADLE.replace('applicationIdSuffix ".pilot"', "")).length, 1);
+  assert.equal(checkBuildTypes(GOOD_GRADLE.replace(/pilot \{[\s\S]*?\}\n/, "")).length, 1);
+  assert.equal(
+    checkBuildTypes(GOOD_GRADLE.replace("release {\n            minifyEnabled false",
+      'release {\n            applicationIdSuffix ".x"\n            minifyEnabled false')).length,
+    1);
+  assert.equal(
+    checkBuildTypes(GOOD_GRADLE.replace('applicationIdSuffix ".pilot"',
+      'applicationIdSuffix ".pilot"\n            debuggable true')).length,
+    1);
+});
+
+test("build types: a Google Services / Firebase plugin reference fails", async () => {
+  const { checkBuildTypes } = await load();
+  assert.equal(checkBuildTypes(GOOD_GRADLE + "\napply plugin: 'com.google.gms.google-services'\n").length, 1);
+  assert.equal(checkBuildTypes("classpath 'com.google.gms:google-services:4.4.4'\n" + GOOD_GRADLE).length, 1);
+});
+
+const GOOD_NETWORK_CONFIG = `<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>`;
+
+test("debug network config: only localhost and the emulator alias may use cleartext", async () => {
+  const { checkDebugNetworkConfig } = await load();
+  assert.deepEqual(checkDebugNetworkConfig(GOOD_NETWORK_CONFIG), []);
+  assert.equal(
+    checkDebugNetworkConfig(GOOD_NETWORK_CONFIG.replace(">localhost<", ">ppj.alvoraa.co<")).length,
+    1);
+  assert.equal(
+    checkDebugNetworkConfig('<network-security-config><base-config cleartextTrafficPermitted="true"/></network-security-config>').length,
+    1);
+  assert.equal(
+    checkDebugNetworkConfig("<network-security-config></network-security-config>").length,
+    1);
+});
+
 test("bundled files: outside URLs, CDNs, local addresses and HTML sinks fail", async () => {
   const { checkWebFile } = await load();
   assert.deepEqual(checkWebFile("a.html",

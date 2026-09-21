@@ -9,8 +9,9 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // OPS-40: versionName is MAJOR.MINOR.PATCH; versionCode is
         // MAJOR x 1,000,000 + MINOR x 10,000 + PATCH x 100 + build number.
-        // 0.1.0, build 0.
-        versionCode 10000
+        // 0.1.0, build 1 (stage 1: build types, host/CSP and permission
+        // lockdown). scripts/check_versions.mjs enforces this on every push.
+        versionCode 10001
         versionName "0.1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -20,13 +21,35 @@ android {
         }
     }
     buildTypes {
-        // OPS-38: debug, pilot and release each have their own app ID, so all
-        // three can sit on one phone and a test build can never replace the real
-        // one. Debug is signed with Android's own debug key - this project never
-        // holds a signing key of ours.
+        // OPS-38, AC-165: debug, pilot and release each have their own app ID
+        // suffix, so all three can sit on one phone side by side and a test
+        // build can never replace the real one. Only "release" has no suffix -
+        // it is the store app ID. None of the three holds a signing key in this
+        // file; pilot and release are signed only at build time, from a key
+        // that only exists once US-31's guard and OPS-38's two key holders are
+        // in place.
+        //
+        // Cleartext HTTP: debug alone may reach a bench over plain HTTP, and
+        // only the bench - never a tenant. That allow-list lives in
+        // src/debug/res/xml/network_security_config.xml, wired in by
+        // src/debug/AndroidManifest.xml. Android's own source-set rules mean
+        // neither file is ever merged into a pilot or release build, so this
+        // block does not have to repeat the restriction: pilot and release get
+        // Android's secure default (HTTPS only, system CAs only) by simply not
+        // setting `usesCleartextTraffic` or a network security config at all.
         debug {
             applicationIdSuffix ".debug"
             versionNameSuffix "-debug"
+        }
+        // AC-165, AC-167: built only by hand, from a commit on `dev`, through
+        // the protected `mobile-pilot` environment (07 §4 gate 8) - never a
+        // push trigger. Not debuggable and not minified, the same as release:
+        // a tester's phone must behave like a real one, not a dev one.
+        pilot {
+            applicationIdSuffix ".pilot"
+            versionNameSuffix "-pilot"
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
         release {
             minifyEnabled false
@@ -55,11 +78,12 @@ dependencies {
 
 apply from: 'capacitor.build.gradle'
 
-try {
-    def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
-        apply plugin: 'com.google.gms.google-services'
-    }
-} catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
-}
+// No Firebase / Google Services plugin here on purpose. This app has no push
+// notifications and no crash-reporting tool (brief "out"; gate decision 6;
+// SEC-20, OPS-14): the Capacitor template's usual conditional google-services
+// block was removed rather than left dormant, so a google-services.json
+// dropped into this folder by accident (from another project, a copy-paste)
+// cannot silently switch a Firebase SDK on. Pilot testers are still invited
+// through Firebase App Distribution (US-48) - that uses the Firebase CLI
+// against the built APK, not this Gradle plugin, and adds nothing to the app
+// itself.

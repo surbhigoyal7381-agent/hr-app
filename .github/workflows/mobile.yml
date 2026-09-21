@@ -6,8 +6,10 @@ name: Mobile app
 #
 # Still to add, in this order (DevOps 07 §4): the server codes table vs the app's
 # table (when the server codes file exists), the drift check on the copied camera,
-# photo and GPS code (when the copy exists), Gradle wrapper validation (when
-# android/ is generated), and the built-package checks before the first pilot build.
+# photo and GPS code (when the copy exists), and the built-package checks (an
+# unsigned release APK read with apkanalyzer: merged manifest, debuggable flag,
+# network rules, size <= 10 MB) before the first pilot build (gate 5) - these
+# need a runner with the Android SDK, which this job does not have yet.
 
 on:
   pull_request:
@@ -39,10 +41,21 @@ jobs:
         working-directory: mobile/field-app
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Needed so "versionCode must rise" below can read the base ref's
+          # copy of build.gradle with `git show`, the same way ci.yml's key
+          # guard reads history for its secret scan.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version-file: mobile/field-app/.nvmrc
+
+      # The wrapper jar is the real one Gradle published, not a swapped copy -
+      # checked against Gradle's own published checksums (DevOps 07 §4 gate 4).
+      # Needs no Android SDK; this is just the wrapper script and jar.
+      - name: Gradle wrapper is the real one
+        uses: gradle/actions/wrapper-validation@v4
 
       # Exact versions from the committed lock file. No install scripts: nothing
       # a dependency ships gets to run on the runner.
@@ -55,6 +68,32 @@ jobs:
 
       # Config (no server.url, no debugging, native HTTP off globally), exact
       # pins, no tracking libraries, no outside URLs or HTML-from-strings in the
-      # bundle, and the Android permission allow-list once android/ exists.
-      - name: App config, dependencies, bundle and permissions
+      # bundle, the Android permission allow-list, build-type app IDs and the
+      # debug-only network allow-list (AC-165, AC-166, AC-173, AC-177, AC-178).
+      - name: App config, dependencies, bundle, permissions and build types
         run: npm run check
+
+      # AC-168: versionCode must rise and versionName must be MAJOR.MINOR.PATCH,
+      # under the formula written in build.gradle's own comment. Compared
+      # against the base branch's copy so two builds can never share a number.
+      - name: Version must rise, and be well-formed
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            base="$PR_BASE"
+          elif [ -n "${PUSH_BEFORE:-}" ] && [ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+            base="$PUSH_BEFORE"
+          else
+            base=""
+          fi
+          if [ -n "$base" ] && git cat-file -e "${base}:mobile/field-app/android/app/build.gradle" 2>/dev/null; then
+            git show "${base}:mobile/field-app/android/app/build.gradle" > "$RUNNER_TEMP/old-build.gradle"
+            node scripts/check_versions.mjs "$RUNNER_TEMP/old-build.gradle"
+          else
+            echo "No previous build.gradle to compare against (first commit to add it) - format check only."
+            node scripts/check_versions.mjs
+          fi

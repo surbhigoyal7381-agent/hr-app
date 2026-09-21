@@ -1159,6 +1159,32 @@ def get_goal_update_log(goal_id):
     return result
 
 
+def _pending_approvals_scope(emp_id, is_hr):
+    """Employees whose KPI/goal updates this caller may approve.
+
+    Shared by get_pending_approvals and get_pending_approvals_count so the two
+    can never disagree on scope — a future change to who HR or a manager may
+    approve for (e.g. another company-scoping fix) only has one place to land.
+    """
+    if is_hr:
+        # Everyone but yourself, in the companies you look after, plus your own
+        # direct reports (security review m8: HR approves only there). Your own
+        # updates are not yours to approve.
+        from hrms.alvoraa_hr_core.access import permitted_companies
+        return sorted(set(frappe.get_all(
+            "Employee",
+            filters={"status": "Active", "name": ["!=", emp_id], "company": ["in", permitted_companies() or [""]]},
+            pluck="name",
+        )) | set(frappe.get_all(
+            "Employee", filters={"reports_to": emp_id, "status": "Active"}, pluck="name"
+        ) if emp_id else []))
+    return frappe.get_all(
+        "Employee",
+        filters={"reports_to": emp_id, "status": "Active"},
+        pluck="name",
+    )
+
+
 @frappe.whitelist()
 def get_pending_approvals():
     """Return all pending-approval updates across the manager's direct reports."""
@@ -1169,24 +1195,7 @@ def get_pending_approvals():
     if not is_mgr and not is_hr:
         return {"kpi_updates": [], "goal_updates": [], "total": 0}
 
-    if is_hr:
-        # Everyone but yourself, in the companies you look after, plus your own
-        # direct reports (security review m8: HR approves only there). Your own
-        # updates are not yours to approve.
-        from hrms.alvoraa_hr_core.access import permitted_companies
-        all_employees = sorted(set(frappe.get_all(
-            "Employee",
-            filters={"status": "Active", "name": ["!=", emp_id], "company": ["in", permitted_companies() or [""]]},
-            pluck="name",
-        )) | set(frappe.get_all(
-            "Employee", filters={"reports_to": emp_id, "status": "Active"}, pluck="name"
-        ) if emp_id else []))
-    else:
-        all_employees = frappe.get_all(
-            "Employee",
-            filters={"reports_to": emp_id, "status": "Active"},
-            pluck="name",
-        )
+    all_employees = _pending_approvals_scope(emp_id, is_hr)
 
     kpi_updates  = []
     goal_updates = []
@@ -1265,23 +1274,7 @@ def get_pending_approvals_count():
     if not is_mgr and not is_hr:
         return {"total": 0}
 
-    if is_hr:
-        # Same set as get_pending_approvals: everyone but yourself in the companies you
-        # look after (security review m8), plus your own direct reports.
-        from hrms.alvoraa_hr_core.access import permitted_companies
-        all_employees = sorted(set(frappe.get_all(
-            "Employee",
-            filters={"status": "Active", "name": ["!=", emp_id], "company": ["in", permitted_companies() or [""]]},
-            pluck="name",
-        )) | set(frappe.get_all(
-            "Employee", filters={"reports_to": emp_id, "status": "Active"}, pluck="name"
-        ) if emp_id else []))
-    else:
-        all_employees = frappe.get_all(
-            "Employee",
-            filters={"reports_to": emp_id, "status": "Active"},
-            pluck="name",
-        )
+    all_employees = _pending_approvals_scope(emp_id, is_hr)
 
     if not all_employees:
         return {"total": 0}

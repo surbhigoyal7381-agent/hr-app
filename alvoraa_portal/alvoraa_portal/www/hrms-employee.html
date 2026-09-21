@@ -12717,7 +12717,7 @@ window.pfRatingLabel = function(value, scale) {
 
   /* ── Update history & approval JS ──────────────────── */
 
-  var _pfIsManager = false; // set on boot from get_pending_approvals
+  var _pfIsManager = false; // set when the notif panel opens, from get_pending_approvals
 
   function pfFmtDate(dt) {
     if (!dt) return "";

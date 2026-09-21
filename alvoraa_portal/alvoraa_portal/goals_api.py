@@ -1249,3 +1249,64 @@ def get_pending_approvals():
         "goal_updates": goal_updates,
         "total":        len(kpi_updates) + len(goal_updates),
     }
+
+
+@frappe.whitelist()
+def get_pending_approvals_count():
+    """Cheap total for the bell badge — same scope as get_pending_approvals, without its
+    per-employee frappe.get_doc loop (706 queries for a manager, ~15,000 projected for a
+    403-employee HR tenant; P1 in the Wave 0 assessment). Two joined counts instead."""
+    from frappe.query_builder.functions import Count
+
+    emp_id = _require_employee()
+    is_mgr = _is_manager(emp_id)
+    is_hr  = _is_hr()
+
+    if not is_mgr and not is_hr:
+        return {"total": 0}
+
+    if is_hr:
+        # Same set as get_pending_approvals: everyone but yourself in the companies you
+        # look after (security review m8), plus your own direct reports.
+        from hrms.alvoraa_hr_core.access import permitted_companies
+        all_employees = sorted(set(frappe.get_all(
+            "Employee",
+            filters={"status": "Active", "name": ["!=", emp_id], "company": ["in", permitted_companies() or [""]]},
+            pluck="name",
+        )) | set(frappe.get_all(
+            "Employee", filters={"reports_to": emp_id, "status": "Active"}, pluck="name"
+        ) if emp_id else []))
+    else:
+        all_employees = frappe.get_all(
+            "Employee",
+            filters={"reports_to": emp_id, "status": "Active"},
+            pluck="name",
+        )
+
+    if not all_employees:
+        return {"total": 0}
+
+    def _pending(field):
+        return (field == "Pending") | (field == "") | field.isnull()
+
+    KPI    = frappe.qb.DocType("KPI")
+    KPILog = frappe.qb.DocType("KPI Progress Log")
+    kpi_total = (
+        frappe.qb.from_(KPILog)
+        .join(KPI).on(KPILog.parent == KPI.name)
+        .where(KPI.employee.isin(all_employees) & (KPI.status != "Cancelled"))
+        .where(_pending(KPILog.approval_status))
+        .select(Count("*"))
+    ).run()[0][0]
+
+    Goal    = frappe.qb.DocType("Individual Goal")
+    GoalUpd = frappe.qb.DocType("Goal Progress Update")
+    goal_total = (
+        frappe.qb.from_(GoalUpd)
+        .join(Goal).on(GoalUpd.parent == Goal.name)
+        .where(Goal.employee.isin(all_employees) & (Goal.status != "Cancelled") & (Goal.docstatus != 2))
+        .where(_pending(GoalUpd.approval_status))
+        .select(Count("*"))
+    ).run()[0][0]
+
+    return {"total": int(kpi_total) + int(goal_total)}

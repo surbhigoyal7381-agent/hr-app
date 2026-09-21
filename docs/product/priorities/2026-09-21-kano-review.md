@@ -3,7 +3,17 @@ artifact: kano-review
 scope: whole product (first priorities review — no earlier review exists)
 author: hrms-product-manager
 date: 2026-09-21
-status: draft
+status: superseded
+superseded_by: docs/product/priorities/2026-09-21-kano-review-v2.md
+superseded_reason: >
+  This draft's §1/§3/§5/§6 claim that alvoraa_goals/alvoraa_goals/doctype/kpi/kpi.py
+  is "an empty pass controller" with the weightage rule "enforced nowhere" checked the
+  wrong file — that file is normal Frappe doctype boilerplate. The real controller,
+  alvoraa_goals/alvoraa_goals/controllers/kpi.py (212 lines), already enforces the
+  100%-weightage rule and is already wired as the KPI doctype's validate hook, already
+  on origin/dev. Found by hrms-devops-engineer, independently verified by
+  hrms-product-manager. This changes C1's actual remaining scope and its priority
+  table entry. See the v2 file for the corrected review.
 inputs: [.claude/context/product-context.md, .claude/context/security-compliance-baseline.md,
   .claude/context/definition-of-ready-done.md, .claude/context/handoff-contract.md,
   .claude/context/ux-learnings.md, KNOWN_ISSUES.md, ARCHITECTURE.md,

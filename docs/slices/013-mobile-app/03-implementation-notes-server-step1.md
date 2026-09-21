@@ -6,16 +6,21 @@ date: 2026-09-18
 scope: STEP 1 of the server work only - US-1, US-2, US-4 (the part step 1 needs), US-23, and the file split
 branch: slice/013-mobile-app in .claude/worktrees/013-mobile-app, rebased on local dev d1fd9c6
 status: built locally on a branch. NOT in local dev. NOT pushed. Database-backed tests UNRUN.
+update-2026-09-21: PUSHED. Now on origin/dev (confirmed at commit 146fa59). GitHub
+Actions' "Python tests" job (a real MariaDB-backed test site) ran at that commit and
+passed. See ALV-40 and ALV-32 on YouTrack for the check. The line above describes this
+step's state at the time it was written, not its state today.
 ---
 
 # 013 step 1 — what I built, and what I could not prove
 
-**Read this first.** Everything is on the branch. Nothing is in `dev`, nothing is
-pushed, no bench command ran, no site changed, no server was touched. The tests
-that need a database are **written but have not been run** — the shared bench
-belongs to another session's deploy and my change needs a migrate on the shared
-test site, which is not mine to run. Section 5 says exactly what did and did not
-run.
+**Read this first — and see the update note above the frontmatter's `status`
+line.** At the time this was written, everything below was true: nothing was in
+`dev`, nothing was pushed, no bench command had run, no site had changed. That
+is no longer the case — this step's code is on `origin/dev`, and the
+database-backed tests it describes as unrun have since run for real, in CI, and
+passed. What follows is left as-written, as the historical record of what was
+built and how it was checked before that push.
 
 ---
 

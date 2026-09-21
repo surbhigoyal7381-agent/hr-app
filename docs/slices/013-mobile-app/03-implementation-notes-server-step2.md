@@ -6,14 +6,19 @@ date: 2026-09-19
 scope: STEP 2 of the server work - US-3 (the settings), the two codes step 1 declared, C-11c (company scoping of phone records), C-7 (email/print/share off)
 branch: slice/013-mobile-app in .claude/worktrees/013-mobile-app, six commits on top of step 1's 3a45261
 status: built and proven on test_site from a throwaway container. NOT in local dev. NOT pushed. No server touched.
+update-2026-09-21: PUSHED. Now on origin/dev (confirmed at commit 146fa59), covered by
+the same green CI "Python tests" run as steps 1, 3 and 4. See ALV-40 and ALV-33 on
+YouTrack. The line above describes this step's state at the time it was written, not
+its state today.
 ---
 
 # 013 step 2 — what I built, what I proved, what is left
 
-**Read this first.** Everything is on the branch. Nothing is in `dev`, nothing is
-pushed, no dev tenant was touched, no server command ran. The shared `test_site` was
-migrated once from the throwaway container (it now carries the step-2 schema as well as
-step 1's). Section 6 says exactly what ran and what the numbers were.
+**Read this first — and see the update note above the frontmatter's `status`
+line.** At the time this was written, nothing was in `dev` and nothing was
+pushed. That is no longer the case — this step's code is on `origin/dev` and
+has passed CI's database-backed test run. What follows is left as-written, as
+the historical record of what was proven on `test_site` before that push.
 
 ---
 

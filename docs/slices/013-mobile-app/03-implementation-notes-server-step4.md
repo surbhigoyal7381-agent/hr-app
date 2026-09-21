@@ -6,15 +6,20 @@ date: 2026-09-19
 scope: STEP 4 of the server work - daily use. US-12 (E4 app start), US-13 (E5 the punch), US-15 (E6 remove my phone), the section-6 limits for E4/E5/E6, the minimum radius, the fake-location field
 branch: slice/013-mobile-app in .claude/worktrees/013-mobile-app, three commits on top of step 3's 37d9b21
 status: BUILT AND STATICALLY CHECKED. NOT run against a database - another agent held the bench for a release-blocking fix for the whole build. NOT in local dev. NOT pushed. No server touched.
+update-2026-09-21: PUSHED, and the database runs this document called the gate have
+happened. Now on origin/dev (confirmed at commit 146fa59). CI's "Python tests" job
+passed at that commit. See ALV-40 and ALV-35 on YouTrack. The line above describes
+this step's state at the time it was written, not its state today.
 ---
 
 # 013 step 4 — what I built, and what is still owed
 
-**Read this first.** The code and the tests are on the branch. **Nothing has run
-against a database.** The bench was held by another session for a
-release-blocking fix, on the user's instruction, so this step stops before the
-first `bench` command. Section 6 says exactly what did run, and section 7 what
-is owed. As in step 3, the database runs are the gate, not this document.
+**Read this first — and see the update note above the frontmatter's `status`
+line.** At the time this was written, the bench was unavailable and nothing had
+run against a database. That is no longer the case — this step's code is on
+`origin/dev` and CI's database-backed test run passed. What follows is left
+as-written, as the historical record of what static checking alone could show
+before that.
 
 ---
 

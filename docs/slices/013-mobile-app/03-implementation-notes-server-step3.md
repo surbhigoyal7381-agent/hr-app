@@ -6,16 +6,22 @@ date: 2026-09-19
 scope: STEP 3 of the server work - the join. US-5, 8, 9, 10, 11, 14, 20, the leaver's codes (US-23 second half), the alerts those stories name (US-19 N1-N4), company scoping of the two new doctypes (C-11c), the withdrawal (C-3), the real waiting-codes count, the per-code and per-phone rate limits
 branch: slice/013-mobile-app in .claude/worktrees/013-mobile-app, four commits on top of step 2's 5ef47cd
 status: BUILT AND STATICALLY CHECKED. NOT run against a database - Docker was down for the whole build. NOT in local dev. NOT pushed. No server touched.
+update-2026-09-21: PUSHED, and the database runs this document called the gate have
+happened. Now on origin/dev (confirmed at commit 146fa59). The commit history shows a
+real fail-then-fix cycle ("Tests that pin step 3" -> "What the first run of the step-3
+tests showed, fixed") and CI's "Python tests" job passed at that commit. See ALV-40 and
+ALV-34 on YouTrack. The line above describes this step's state at the time it was
+written, not its state today.
 ---
 
 # 013 step 3 — what I built, and what is still owed
 
-**Read this first.** Everything is on the branch (`6f282c7`, `26377d4`, `2d51717`,
-`821d3df`). Docker Desktop was not running for the whole of this build, so **no
-test ran against a database** - not the 50 new tests, not the fail-without-fix
-proof for the lock order, not the full suites. Section 6 says exactly what did run.
-The database runs happen when the bench is back and free; they are the gate, not
-this document.
+**Read this first — and see the update note above the frontmatter's `status`
+line.** At the time this was written, Docker was down and no test had run
+against a database. That is no longer the case — this step's code is on
+`origin/dev`, the 50 new tests and the fail-without-fix proof this section owed
+have since run for real, and CI is green. What follows is left as-written, as
+the historical record of what static checking alone could show before that.
 
 ---
 

@@ -105,16 +105,16 @@ for name, group in [
     ("Coastal Ingot Suppliers Pvt Ltd", "Raw Material"),
     ("Southern Alloys Trading Co", "Raw Material"),
 ]:
-    ensure("Supplier", name, {"supplier_name": name, "supplier_group": "All Supplier Groups",
+    ensure("Supplier", name, {"supplier_name": name, "supplier_group": group,
            "country": "India"})
 commit()
 
 # ── Customers ────────────────────────────────────────────────────────────────
 log("Customers (fictional demo placeholders)")
 ensure("Customer", "Coastal Shipyard Ltd", {"customer_name": "Coastal Shipyard Ltd",
-       "customer_group": "All Customer Groups", "territory": "India", "default_currency": "INR"})
+       "customer_group": "Commercial", "territory": "India", "default_currency": "INR"})
 ensure("Customer", "Straits Marine Offshore Pte Ltd", {"customer_name": "Straits Marine Offshore Pte Ltd",
-       "customer_group": "All Customer Groups", "territory": "Rest Of The World", "default_currency": "USD"})
+       "customer_group": "Commercial", "territory": "Rest Of The World", "default_currency": "USD"})
 commit()
 
 counts("Company", "Warehouse", "Item Group", "Item", "Supplier", "Customer")

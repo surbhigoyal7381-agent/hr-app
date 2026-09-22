@@ -293,3 +293,35 @@ Sources, checked 2026-09-22:
 [Chrome DevTools network reference](https://developer.chrome.com/docs/devtools/network/reference/),
 [Chrome DevTools throttling](https://developer.chrome.com/docs/devtools/settings/throttling),
 [Lighthouse throttling notes](https://github.com/GoogleChrome/lighthouse/blob/main/docs/throttling.md).
+
+---
+
+## §3b · 2026-09-22 (later the same day) · Decisions recorded · hrms-fullstack-engineer
+
+Earlier sections are not rewritten (handoff contract rule 6). This section records what
+the user decided after reading §4, and what each decision does to the items above.
+
+| Item | Decision, 22 Sep 2026 | Effect |
+|---|---|---|
+| **OPS-1** compression first | **Taken as its own slice** (slice 036), because it speeds up the live site today. 034 does not build it | Unchanged as a release gate: compression is live on dev before the swap goes to dev, and live on production before the swap goes to production |
+| **OPS-3** rollback by revert | **Superseded by OPS-14** | Read OPS-3 as history. The rollback is OPS-14's two steps |
+| **OPS-14** two-step rollback | **Accepted.** Rollback is redeploying the previous image (about 10 minutes), not revert-and-deploy (30–75 minutes). The `git revert` follows afterwards, so `main` matches what production runs | The previous production image tag is written down before the swap goes out, and it goes in the release-readiness note |
+| **OPS-16** the swap travels alone | **Accepted.** The swap ships in a release of its own | It does not travel with 033's or 026's first production run |
+| **OPS-4** "after go-live settles" | **Accepted, with the meaning now fixed:** at least **10 working days** after DTC goes live; **no client-blocking issue for 5 days**; **outside payroll close**; **compression live**; and **the frame on dev for 5 days** | Closes open question 2. These five become release-readiness checks |
+| **OPS-17** which phone profile | **Accepted:** a mid-range phone on **Chrome "Slow 4G" with 4× CPU slow-down**. The undefined "3G" is not used | Every speed number in this slice is measured on that profile. `nfr-budget.md` is the DevOps engineer's to correct, not this slice's |
+| **OPS-12** `no_cache` on the preview page | **Accepted** — it is also security requirement SEC-1 | A test pins it |
+| **OPS-13** time the page on the server before and after the split | **Adopted by the engineer.** It costs one `curl` loop | If the split makes the page more than 10 % slower on the server, the include files are merged into about 15, or OPS-31 is brought forward |
+| **OPS-19** no pushes to dev in the hour after the production swap | **Adopted by the engineer** | Written into the release note |
+| **OPS-15** the wasted ~7-minute wait on `bench version` | **Still the user's** — a DevOps fix outside 034 | If it is not fixed, the rollback stays about 10 minutes instead of about 3 |
+| **OPS-18** CI guard on the swap commit | **Still the user's** — it edits a workflow file, which is not part of a feature slice | Without it, a later edit could make the swap need a migration, and the fast rollback would stop being safe |
+
+### One thing this changes in the spec
+
+The speed acceptance checks now read "Chrome Slow 4G, 4× CPU slow-down, on the local
+copy, cache off", and the 2.5 s target is stated as depending on slice 036 being live.
+`02-functional-spec.md` carries that wording.
+
+### Still open for the DevOps engineer
+
+- OPS-15 and OPS-18, if the user takes them.
+- §5 (release readiness) is written when the build is done.

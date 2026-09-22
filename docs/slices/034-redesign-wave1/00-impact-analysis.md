@@ -539,3 +539,25 @@ say so; she decides.
 **To the security engineer (`01c`):** the three things to look at are the store-HR scope
 on counts and search, the preview page's exposure on production, and the search result
 fields.
+
+---
+
+## Revision note · 2026-09-22 (later the same day)
+
+The strategy above was approved, but three reviews and the user's decisions changed
+details in it. **Where this document and the revised `01c`, `02` and `07` disagree, they
+win.** The differences, so nobody builds from the older text:
+
+| Where above | Now |
+|---|---|
+| §4 step 3: `get_frame` "calls those same functions" | It still does, but it returns a **fixed field list** and role booleans only — never the caller's date of birth, gender, phone, joining date, manager or branch (`01c` SEC-12) |
+| §4 step 3: Pay needs `plan_payroll` | The **Pay group stays** without payroll, with Expenses, Leave encashment and Request advance. Only the salary parts are hidden (decision 1) |
+| §4 step 3: bottom-bar sets by role | Decided by **`has_reports`** (somebody is recorded as reporting to this person) and `is_hr`, with a precedence order — `02` §2 (decision 2) |
+| §4 step 5: counts | Each part names the scope helper it reuses, and a test proves the count equals the list it links to. `attendance_correction.to_review` is store-scoped in this slice (decision 5) |
+| §4 step 6: search | Store HR finds their store **plus their own reports** (decision 7); the caller must be Active (leaver fix, decision 6); wildcards escaped; one shared filter helper in `access.py` |
+| §4 step 7: language | **`set_my_language` is not built in Wave 1** (decision 4). A language is offered only when it is enabled *and* the portal ships a translation |
+| §3: rollback is `git revert` and a deploy | Rollback is **redeploying the previous image, about 10 minutes** (OPS-14, decision 10). The revert follows afterwards |
+| §6 Performance: "2.5 s on 3G" | Measured on **Chrome "Slow 4G" with 4× CPU** (OPS-17, decision 9) |
+| §5.2 claims | Add `hrms/hrms/alvoraa_hr_core/access.py` (new `permitted_employee_filters`), `alvoraa_portal/attendance_correction.py` (`to_review`'s filter) and the Org settings panel's Save controls (decision 3) |
+| §7 not doing | Also not doing: `set_my_language`; the org-chart company scope (**ALV-86**, Critical, before DTC go-live); the wider leaver fix (**ALV-87**) |
+| §8 size, about 11 days | Unchanged in shape, but the added work (store-scoped corrections queue, leaver fix, count-matches-list fixtures, the read-only Org settings line, Hindi fixtures) is **about 1.5 days more**: call it **11–13 days** |

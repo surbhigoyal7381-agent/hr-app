@@ -742,6 +742,13 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# writes. HR blocks a phone (field_app_device) as the signed-in user,
 		# through Frappe's write permission and the company hook - no bypass.
 		("alvoraa_portal", "field_app_desk.py"): 0,
+		# Slice 013 step 6 (new files). The clean-up job runs with no session:
+		# it saves a code as "Ran out", deletes an old code, and writes a day's
+		# count row - three writes as the server, none about a request. The
+		# access-request endpoint reads the caller's own rows and needs none.
+		("alvoraa_portal", "field_app_housekeeping.py"): 3,
+		("alvoraa_portal", "field_app_records.py"): 0,
+		("alvoraa_portal", "alvoraa_portal/doctype/alvoraa_field_app_daily_count/alvoraa_field_app_daily_count.py"): 0,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

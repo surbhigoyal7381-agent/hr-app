@@ -1,0 +1,237 @@
+{
+ "actions": [],
+ "autoname": "format:FA-{on_date}",
+ "creation": "2026-09-23 09:00:00.000000",
+ "description": "One row per day: how the field attendance app was used, as numbers only. Written by the daily clean-up job. Holds no name, employee ID, phone model, code or secret.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "on_date",
+  "job_ran_at",
+  "column_break_when",
+  "live_hashes_found",
+  "codes_expired_by_job",
+  "codes_deleted_by_job",
+  "codes_section",
+  "codes_made",
+  "codes_used",
+  "codes_cancelled",
+  "codes_ran_out",
+  "column_break_codes",
+  "code_checks_refused",
+  "not_me",
+  "phones_section",
+  "app_starts",
+  "punches_saved",
+  "punches_refused",
+  "phones_removed",
+  "column_break_phones",
+  "app_too_old",
+  "rate_limited",
+  "server_errors",
+  "detail_section",
+  "detail"
+ ],
+ "fields": [
+  {
+   "fieldname": "on_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Date",
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "job_ran_at",
+   "fieldtype": "Datetime",
+   "label": "Written At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_when",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "A code or phone that has stopped but still holds a live secret. Should be 0; anything else is a technical alert.",
+   "fieldname": "live_hashes_found",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Live Secrets on Stopped Records",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "codes_expired_by_job",
+   "fieldtype": "Int",
+   "label": "Codes Marked Ran Out",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "codes_deleted_by_job",
+   "fieldtype": "Int",
+   "label": "Old Codes Deleted",
+   "read_only": 1
+  },
+  {
+   "fieldname": "codes_section",
+   "fieldtype": "Section Break",
+   "label": "Codes"
+  },
+  {
+   "default": "0",
+   "fieldname": "codes_made",
+   "fieldtype": "Int",
+   "label": "Codes Made",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "codes_used",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Joins Completed",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "codes_cancelled",
+   "fieldtype": "Int",
+   "label": "Codes Cancelled",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "codes_ran_out",
+   "fieldtype": "Int",
+   "label": "Codes Ran Out",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_codes",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Code checks and joins refused because the code was not recognised, had run out, was used, or was cancelled.",
+   "fieldname": "code_checks_refused",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Code Checks Refused",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "not_me",
+   "fieldtype": "Int",
+   "label": "\"This Is Not Me\" Presses",
+   "read_only": 1
+  },
+  {
+   "fieldname": "phones_section",
+   "fieldtype": "Section Break",
+   "label": "Phones"
+  },
+  {
+   "default": "0",
+   "fieldname": "app_starts",
+   "fieldtype": "Int",
+   "label": "App Starts",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "punches_saved",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Punches Saved",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "punches_refused",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Punches Refused",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "phones_removed",
+   "fieldtype": "Int",
+   "label": "Phones Removed by the Employee",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_phones",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "app_too_old",
+   "fieldtype": "Int",
+   "label": "\"Update the App\" Answers",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "rate_limited",
+   "fieldtype": "Int",
+   "label": "Too-Many-Tries Answers",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "server_errors",
+   "fieldtype": "Int",
+   "label": "Server Errors",
+   "read_only": 1
+  },
+  {
+   "fieldname": "detail_section",
+   "fieldtype": "Section Break",
+   "label": "By endpoint and outcome"
+  },
+  {
+   "description": "Every request outcome counted, by endpoint and by code. Outcome codes only; never a name, a phone, a code or a secret.",
+   "fieldname": "detail",
+   "fieldtype": "Code",
+   "label": "Detail (JSON)",
+   "options": "JSON",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-23 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa Field App Daily Count",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  },
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "HR User"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "on_date",
+ "sort_order": "DESC",
+ "states": []
+}

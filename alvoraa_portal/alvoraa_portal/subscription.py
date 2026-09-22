@@ -416,6 +416,9 @@ TENANT_DOCTYPES = [
     # the record of which notice they read. Both the tenant's own.
     "Alvoraa App Invite",
     "Alvoraa Notice Acknowledgement",
+    # Slice 013 step 6: one row a day of how the tenant's field app was used,
+    # numbers only. The tenant's own, read by its HR.
+    "Alvoraa Field App Daily Count",
 ]
 
 REQUIRED = [k for k, v in FEATURES.items() if v.get("required")]

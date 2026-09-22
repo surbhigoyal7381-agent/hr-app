@@ -28,7 +28,7 @@ Three rules, each with a test:
 import frappe
 from frappe import _
 from frappe.permissions import has_permission
-from frappe.utils import add_to_date, format_datetime, formatdate, get_fullname, now
+from frappe.utils import add_to_date, cint, format_datetime, formatdate, get_fullname, now
 
 INVITE = "Alvoraa App Invite"
 DEVICE = "Alvoraa Field Device"
@@ -149,6 +149,29 @@ def one_phone_two_people(old_device_name, new_device_name):
 		_("A phone set up for {0} was just set up for {1}. {0}'s phone has been "
 		  "removed. Check with both of them.").format(old.employee_name, new.employee_name),
 		DEVICE, new_device_name,
+	)
+
+
+def too_many_bad_codes(n):
+	"""N5 (step 6) - to every HR Manager of the tenant, at most once an hour.
+
+	`n` is how many code checks were refused in the last clock hour. The
+	threshold and the counting are in `field_app_housekeeping`; this only says
+	it. No code, no address, no name: nothing in a refused code check is about
+	a person, and the message must not make it so (AC-121).
+	"""
+	subject = _("Many app codes that do not work were tried")
+	if frappe.db.exists("Notification Log", {
+		"document_type": "HR Settings", "document_name": "HR Settings", "subject": subject,
+		"creation": [">", add_to_date(now(), hours=-1)],
+	}):
+		return
+	_send(
+		hr_managers_who_can_read(),
+		subject,
+		_("{0} app codes that do not work were tried in the last hour. This may be "
+		  "someone guessing codes. No phone was set up with them.").format(cint(n)),
+		"HR Settings", "HR Settings",
 	)
 
 

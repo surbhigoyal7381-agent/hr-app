@@ -249,6 +249,13 @@ scheduler_events = {
         # a tenant site. Titles and counts only, never tracebacks - health.py
         # explains why that line matters.
         "alvoraa_portal.health.collect_scheduled",
+        # Slice 013 step 6 (US-21, US-22): the field app's clean-up. Marks
+        # codes that ran out and retires their hash; deletes codes that never
+        # set up a phone twelve months after they ended; checks that no stopped
+        # record still holds a live secret; writes the day's counts, with no
+        # names in them. Separate from the photo purge above on purpose - the
+        # two answer different questions and one failing must not stop the other.
+        "alvoraa_portal.field_app_housekeeping.daily",
     ],
     "monthly": [
         "alvoraa_portal.scheduled_jobs.generate_monthly_scorecards",

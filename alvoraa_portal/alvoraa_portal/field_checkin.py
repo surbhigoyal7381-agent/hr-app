@@ -43,6 +43,7 @@ from frappe.utils import (
 )
 
 from alvoraa_portal import field_app_errors as errors
+from alvoraa_portal import field_app_housekeeping as housekeeping
 from alvoraa_portal import field_app_notice as notice
 from alvoraa_portal import field_app_settings as settings
 from alvoraa_portal.alvoraa_portal.doctype.alvoraa_app_invite.alvoraa_app_invite import (
@@ -190,7 +191,12 @@ def _private_request(*fields):
 				frappe.form_dict.pop(field, None)
 			_never_cache()
 			try:
-				return fn(*args, **kwargs)
+				out = fn(*args, **kwargs)
+				# The day's numbers (step 6, US-22): endpoint, outcome, app
+				# version - never a value from the request. Counting never
+				# raises and never changes the answer.
+				housekeeping.record_outcome(fn.__name__, "ok", errors.sent_app_version())
+				return out
 			except Exception as exc:
 				status = getattr(exc, "http_status_code", None) or 500
 				frappe.db.rollback()
@@ -203,8 +209,10 @@ def _private_request(*fields):
 					frappe.local.response["exc_type"] = errors.exc_type_for(exc, status)
 					frappe.local.response["code"] = code
 					frappe.local.response["values"] = values
+					housekeeping.record_outcome(fn.__name__, code, errors.sent_app_version())
 					return None
 				_log_server_error(fn.__name__, exc)
+				housekeeping.record_outcome(fn.__name__, "SERVER_ERROR", errors.sent_app_version())
 				frappe.clear_messages()
 				frappe.msgprint(_("Something went wrong on our side. Please try again "
 				                  "in a minute."))

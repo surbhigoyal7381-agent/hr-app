@@ -30,6 +30,8 @@ from alvoraa_portal.field_app_errors import refuse
 CODE_KEY = "code_hash_key"
 PHONE_KEY = "phone_hash_key"
 HR_KEY = "hr_user_key"
+# A signed-in employee asking about their own records (step 6, US-28).
+SELF_KEY = "self_user_key"
 
 WINDOW_SECONDS = 60 * 60
 
@@ -71,6 +73,9 @@ def _limited(field, source, limit):
 			finally:
 				frappe.form_dict.pop(field, None)
 
+		# So a test can read every endpoint's limit off the function itself and
+		# pin the whole table (step 6, US-25): what it is keyed on, and how many.
+		wrapper.__alvoraa_limit__ = (field, source, limit, WINDOW_SECONDS)
 		return wrapper
 
 	return decorator

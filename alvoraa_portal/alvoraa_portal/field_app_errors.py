@@ -176,10 +176,14 @@ def code_and_values(exc, status):
 #
 # Raising MIN_APP_VERSION locks out every phone below it, so it is raised only
 # for a security reason and only after the replacement has been available for
-# 90 days (OPS-48). The pilot is before the first store release, so the rule is
-# written down here and enforced by CI later, in step 6.
+# 90 days (OPS-48). The rule is enforced by CI (scripts/check_min_app_version.py,
+# against mobile/field-app/releases.json) since step 6.
+#
+# 0.1.0 is the first pilot build - the number the real app sends. It was "1.0.0"
+# until 2026-09-23, which refused every call from the app as APP_TOO_OLD before
+# any phone had joined (user decision, 2026-09-23).
 
-MIN_APP_VERSION = "1.0.0"
+MIN_APP_VERSION = "0.1.0"
 
 # Builds that must never be served again whatever their number - a build that
 # shipped with a mistake we cannot fix from the server.

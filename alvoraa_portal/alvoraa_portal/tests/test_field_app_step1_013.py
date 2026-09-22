@@ -559,14 +559,16 @@ class TheCodeTableIsTheContract(FrappeTestCase):
 
 	def test_013_ac29_the_app_version_header(self):
 		cases = {
-			"1.0.0": None,           # exactly the minimum: allowed
+			"0.1.0": None,           # exactly the minimum: allowed
 			"1.10.0": None,          # newer than 1.9.0, which a string compare gets wrong
-			"0.9.9": "APP_TOO_OLD",
+			"0.0.9": "APP_TOO_OLD",
 			"abc": "APP_TOO_OLD",
 			"1.2": "APP_TOO_OLD",
 			"a" * 25: "APP_TOO_OLD",
 		}
-		self.assertEqual(errors.MIN_APP_VERSION, "1.0.0")
+		# 0.1.0 is the first pilot build, the number the real app sends (user
+		# decision 2026-09-23; it was 1.0.0, which refused every real call).
+		self.assertEqual(errors.MIN_APP_VERSION, "0.1.0")
 		for sent, expected in cases.items():
 			with self.subTest(sent=sent):
 				self.assertEqual(

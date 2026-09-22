@@ -121,7 +121,7 @@ template.
 | AC-69 (SEC-2) | **met** | Registry test; a whitelisted function with no entry fails |
 | AC-70 (SEC-15) | **met** | No `global`, no module-level dict/list/set |
 | AC-71 (SEC-6) | **met** | No `ignore_permissions`, checked on code with prose stripped out |
-| AC-40, AC-74, AC-65 (SEC-1) | **met at `get_context`; owed over HTTP** | See §6 |
+| AC-40, AC-74, AC-65 (SEC-1) | **met, and confirmed over real HTTP** | See §6 |
 | AC-7, AC-13–AC-19, AC-30–AC-42, AC-48, AC-60–AC-62, AC-64, AC-66 | **not started** | Client side, behind the page split |
 | AC-72 (SEC-13), AC-76 (SEC-16), AC-43, AC-20–AC-29, AC-49–AC-52 | **not started** | Held files, or `inbox_api` / the staff list |
 
@@ -195,10 +195,26 @@ why AC-73 asks for that assertion rather than for an empty result.
    so the flag would have reached production by the shortest route available. Marker list
    cut to `dev` and `test`; all four cases now proven.
 
-**Also checked over HTTP: no.** The 404/403/redirect decisions are asserted at
-`get_context`, which is where both are made, and the status codes are asserted from
-Frappe's own exception classes. A real `curl` pass on the bench with `portal_preview` set
-and unset is **owed** before this slice is called done.
+**Checked over real HTTP as well.** `bench serve` on my own site, real sessions, real
+status codes — because AC-40 and AC-74 are written as HTTP checks and an exception class
+is not an HTTP response.
+
+| | Guest | System Manager | HR Manager | Employee |
+|---|---|---|---|---|
+| `portal_preview: 1` | **301** to login | **200** | **403** | **403** |
+| flag absent | **404** | **404** | **404** | **404** |
+
+Two sanity checks ran in the same breath, so the 404 row cannot be a broken server or a
+dropped session: `/hrms-employee` still returned **200** for the same cookie, and
+`frappe.auth.get_logged_user` still named the System Manager. The 404 is the page not
+existing, not the person being refused.
+
+**Worth recording, because it nearly produced a false pass.** The first flag-off run
+reported 200 for the System Manager. The flag had not actually been removed: my `pkill`
+pattern matched its own shell and killed the command before the edit ran. Frappe also
+caches site config per request, so a genuine flag change needs the server restarted. Both
+are test-harness facts, not defects — but a 200 read as "the lock failed", or the earlier
+green read as "the lock held", would both have been wrong.
 
 ## 7. What else moved while I worked
 
@@ -214,8 +230,6 @@ movement.
   has a server but no frame. Nothing calls `get_frame` yet.
 - **The preview page is nearly empty** — *acceptable simplification*, forced by the same
   block. It exercises the locks, which is the part SEC-1 is about.
-- **AC-40/AC-74 not exercised over real HTTP** — *temporary debt*. Removed by one curl pass
-  on the bench with the flag set and unset.
 - **The `deploy/` test skips on a mounted bench** — *intentional trade-off*, and the reason
   `scripts/check_preview_flag.py` exists. The script should be wired into CI next to
   `check_app_integrity.py`; until it is, it only runs when somebody runs it.

@@ -9,9 +9,10 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // OPS-40: versionName is MAJOR.MINOR.PATCH; versionCode is
         // MAJOR x 1,000,000 + MINOR x 10,000 + PATCH x 100 + build number.
-        // 0.1.0, build 2 (stage-2 spike, then the real join screens:
-        // US-35-38). scripts/check_versions.mjs enforces this on every push.
-        versionCode 10002
+        // 0.1.0, build 3: daily use (US-39-46) - the Attendance screen and
+        // punch, Settings, the debug-only language gate. scripts/check_versions.mjs
+        // enforces this on every push.
+        versionCode 10003
         versionName "0.1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

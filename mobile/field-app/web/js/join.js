@@ -320,13 +320,32 @@
         });
         return;
       }
-      window.AlvoraaDeviceSecret.save(result.data.token).then(function () {
-        renderWelcome(result.data);
-      }).catch(function () {
-        // The server has already joined this phone; the secret failed to
-        // save. Nothing safe to do but say so plainly - this is exactly the
-        // device-round-trip question the spike could not answer without a
-        // real phone (03-implementation-notes.md §7.4/§7.5).
+      window.AlvoraaDeviceSecret.save(result.data.token)
+        // US-39/43 (daily-use build): the secret alone is not enough to run
+        // the app after a restart - E4/E5/E6/E9 also need to know WHICH
+        // tenant to call, and Settings' "What this app records" (AC-215)
+        // needs the notice's own words saved somewhere it can read them with
+        // no call. Both are written here, in the same order as the secret
+        // (server confirmed first, write after) - see
+        // 00-impact-analysis-daily-use.md §4.1/§4.4.1.
+        .then(function () { return window.AlvoraaDeviceSecret.saveOrigin(state.origin); })
+        .then(function () {
+          window.AlvoraaNoticeCache.save({
+            version: notice.version,
+            rows: notice.rows || [],
+            agree: notice.agree,
+            retentionDays: notice.retention_days,
+            // The phone's own clock, for display only (Settings shows "You
+            // agreed on..."). The record that actually matters for a rights
+            // request is server-side (record_acknowledgement); this is not it.
+            agreedAt: new Date().toISOString().replace("T", " ").slice(0, 19),
+          });
+          renderWelcome(result.data);
+        }).catch(function () {
+        // The server has already joined this phone; the secret or the origin
+        // failed to save. Nothing safe to do but say so plainly - this is
+        // exactly the device-round-trip question the spike could not answer
+        // without a real phone (03-implementation-notes.md §7.4/§7.5).
         showProblem("SERVER_ERROR", {});
       });
     });
@@ -369,8 +388,13 @@
     "done-to-first": function () { resetJoinState(); show("first"); },
     "notice-back": function () { show("confirm"); },
     "agree-and-finish": agreeAndFinish,
-    "welcome-check-in": function () { el("welcome-not-built").hidden = false; },
-    "welcome-not-now": function () { /* nothing to do yet - there is no home screen (US-39) */ },
+    // US-39: the Attendance screen is checkin.js's, not this file's. Both
+    // buttons hand off to it - "Check In" starts the punch straight away,
+    // "Not now" just shows the Attendance screen unchecked-in (checkin.js's
+    // own loadStatus() decides which, from the server's actual state, so
+    // this file does not need to guess).
+    "welcome-check-in": function () { window.AlvoraaCheckin.start({ autoPunch: true }); },
+    "welcome-not-now": function () { window.AlvoraaCheckin.start(); },
     "scan-again": function () { resetJoinState(); openScanner(); },
     "retry-last": retryLast,
     // No vetted plugin yet opens Android's own per-app settings page (that
@@ -398,5 +422,11 @@
   // detect an already-granted permission.
   ACTIONS["scan-pressed"] = function () { show("camExplain"); };
 
-  show("first");
+  // US-39/43 (daily-use build): this file no longer decides on its own that
+  // a fresh page load means "show first launch" - a joined phone opening the
+  // app should go straight to the Attendance screen instead. That single
+  // decision (does this phone already have a secret?) now lives in main.js,
+  // which calls this exported start() only when it decides the join flow is
+  // the right one to show. Nothing else in this file changed.
+  window.AlvoraaJoin = { start: function () { resetJoinState(); show("first"); } };
 })();

@@ -40,3 +40,24 @@ button.primary-green { background: #1a7f37; }
 .person .name { font-size: 20px; font-weight: 700; margin: 4px 0 0; }
 #problem-buttons button { margin-top: 10px; }
 #photo-picker { display: none; }
+
+/* Daily use (slice 013, US-39-43) */
+.top-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.top-bar h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.link.settings-btn { width: auto; min-height: 44px; margin: 0; }
+.status-line { display: flex; align-items: center; gap: 8px; font-size: 19px;
+               font-weight: 700; margin: 10px 0; color: var(--muted); }
+.status-line.in { color: #1a7f37; }
+.status-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--muted); flex: none; }
+.status-line.in .status-dot { background: #1a7f37; }
+button.primary-purple { background: #6d28d9; }
+.punch-row { display: flex; justify-content: space-between; font-size: 15px;
+             color: var(--muted); padding: 4px 0; border-top: 1px solid var(--line); }
+.settings-group { margin: 16px 0; padding-top: 12px; border-top: 1px solid var(--line); }
+.settings-group:first-of-type { border-top: 0; padding-top: 0; }
+.settings-group h3 { font-size: 15px; color: var(--muted); margin: 0 0 8px; text-transform: uppercase; }
+.radio-row { display: flex; align-items: center; gap: 10px; min-height: 56px; }
+.radio-row input { width: 22px; height: 22px; flex: none; }
+button.row-link { background: #fff; color: var(--ink); border: 2px solid var(--line); text-align: left; }
+button.row-link.danger-text { color: #9f1c1c; border-color: #f0c8c8; }
+button.danger { background: #9f1c1c; }

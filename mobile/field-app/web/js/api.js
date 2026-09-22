@@ -125,11 +125,37 @@
       Object.assign({}, params, { agreed: 1 }), opts);
   }
 
+  // ── daily use (US-39/43): E4, E5, E6, E9 - all guest POST, device-secret
+  //    proven, same {ok,data}/{code,values} contract as the join calls above.
+
+  function fieldStatus(origin, token, opts) {
+    return callMethod(origin, "alvoraa_portal.field_checkin.field_status", { token: token }, opts);
+  }
+
+  function punch(origin, params, opts) {
+    // params: { token, log_type, latitude, longitude, accuracy, photo,
+    //           captured_at, mock_location }
+    return callMethod(origin, "alvoraa_portal.field_checkin.field_checkin", params, opts);
+  }
+
+  function removeMyPhone(origin, token, opts) {
+    return callMethod(origin, "alvoraa_portal.field_app_device.remove_my_phone", { token: token }, opts);
+  }
+
+  function acknowledgeNotice(origin, token, noticeVersion, opts) {
+    return callMethod(origin, "alvoraa_portal.field_app_join.acknowledge_notice",
+      { token: token, notice_version: noticeVersion }, opts);
+  }
+
   var api = {
     callMethod: callMethod,
     checkCode: checkCode,
     refuseCode: refuseCode,
     joinWithCode: joinWithCode,
+    fieldStatus: fieldStatus,
+    punch: punch,
+    removeMyPhone: removeMyPhone,
+    acknowledgeNotice: acknowledgeNotice,
   };
 
   if (typeof module !== "undefined" && module.exports) {

@@ -7,7 +7,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 
-const { callMethod, checkCode, refuseCode, joinWithCode } = require(
+const { callMethod, checkCode, refuseCode, joinWithCode,
+        fieldStatus, punch, removeMyPhone, acknowledgeNotice } = require(
   path.join(__dirname, "..", "web", "js", "api.js"));
 
 function fakeFetch(status, bodyObj, { ok } = {}) {
@@ -82,4 +83,49 @@ test("checkCode, refuseCode and joinWithCode call the right dotted paths", async
   const sentBody = JSON.parse(fakeFetch.lastInit.body);
   assert.equal(sentBody.agreed, 1); // D18/01b: the tick is required; this call never skips it
   assert.equal(sentBody.code, "CODE123");
+});
+
+// ── daily use (US-39/43): E4, E5, E6, E9 - same wrapper, real dotted paths ──
+
+test("fieldStatus (E4) calls field_checkin.field_status with the secret only", async () => {
+  const fetchImpl = fakeFetch(200, { message: { checked_in: false } });
+  await fieldStatus("https://x", "the-secret", { fetchImpl });
+  assert.equal(fakeFetch.lastUrl, "https://x/api/method/alvoraa_portal.field_checkin.field_status");
+  assert.deepEqual(JSON.parse(fakeFetch.lastInit.body), { token: "the-secret" });
+});
+
+test("punch (E5) calls field_checkin.field_checkin and sends exactly what it was given, no defaults added", async () => {
+  const fetchImpl = fakeFetch(200, { message: { status: "ok" } });
+  const params = {
+    token: "the-secret", log_type: "IN", latitude: 12.9, longitude: 77.6,
+    accuracy: 12, photo: "data:image/jpeg;base64,x", captured_at: "2026-09-22 09:02:00",
+    mock_location: 0,
+  };
+  await punch("https://x", params, { fetchImpl });
+  assert.equal(fakeFetch.lastUrl, "https://x/api/method/alvoraa_portal.field_checkin.field_checkin");
+  assert.deepEqual(JSON.parse(fakeFetch.lastInit.body), params);
+});
+
+test("removeMyPhone (E6) calls field_app_device.remove_my_phone with the secret only", async () => {
+  const fetchImpl = fakeFetch(200, { message: {} });
+  await removeMyPhone("https://x", "the-secret", { fetchImpl });
+  assert.equal(fakeFetch.lastUrl, "https://x/api/method/alvoraa_portal.field_app_device.remove_my_phone");
+  assert.deepEqual(JSON.parse(fakeFetch.lastInit.body), { token: "the-secret" });
+});
+
+test("acknowledgeNotice (E9) calls field_app_join.acknowledge_notice with the secret and the version", async () => {
+  const fetchImpl = fakeFetch(200, { message: {} });
+  await acknowledgeNotice("https://x", "the-secret", "2026-09-22", { fetchImpl });
+  assert.equal(fakeFetch.lastUrl, "https://x/api/method/alvoraa_portal.field_app_join.acknowledge_notice");
+  assert.deepEqual(JSON.parse(fakeFetch.lastInit.body), { token: "the-secret", notice_version: "2026-09-22" });
+});
+
+test("a NOTICE_CHANGED refusal from any of the four daily-use calls reads the same as a join-flow refusal", async () => {
+  const fetchImpl = fakeFetch(409, {
+    exc_type: "ValidationError", code: "NOTICE_CHANGED",
+    values: { version: "2026-09-22", rows: [], retention_days: 90, what_changed: "x" },
+  }, { ok: false });
+  const result = await fieldStatus("https://x", "the-secret", { fetchImpl });
+  assert.equal(result.code, "NOTICE_CHANGED");
+  assert.equal(result.values.version, "2026-09-22");
 });

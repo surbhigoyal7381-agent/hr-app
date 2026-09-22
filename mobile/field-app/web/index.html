@@ -113,18 +113,129 @@
     <div class="card" id="welcome-card"></div>
     <button type="button" class="primary-green" data-action="welcome-check-in">Check In</button>
     <button type="button" class="link" data-action="welcome-not-now">Not now</button>
-    <p class="small" id="welcome-not-built" hidden>
-      The Attendance screen is not built yet in this increment (US-39).
-    </p>
   </section>
 
-  <!-- ============================== one generic problem screen (01b §7.12, D11) ============================== -->
+  <!-- ============================== one generic problem screen (01b §7.12, D11) ==============================
+       Shared by both join.js's own dead-code/permission screens and
+       checkin.js's daily-use ones (US-39-42) - only one of the two flows is
+       ever active at a time, so there is no collision. #problem-card is new
+       in the daily-use build; join.js's screens never set `card`, so it stays
+       empty and hidden for them. -->
   <section class="screen" data-screen="problem">
     <h2 id="problem-heading"></h2>
     <p id="problem-body"></p>
+    <div class="card" id="problem-card" hidden></div>
     <ol id="problem-steps" hidden></ol>
     <div id="problem-buttons"></div>
     <p class="small" id="problem-footer"></p>
+  </section>
+
+  <!-- ============================== the Attendance screen (US-39, 01b §7.9) ============================== -->
+  <section class="screen" data-screen="home">
+    <div class="top-bar">
+      <h1 id="home-company"></h1>
+      <button type="button" class="link settings-btn" data-action="checkin-open-settings">Settings</button>
+    </div>
+    <p class="small" id="home-person"></p>
+    <p class="status-line" id="home-status"><span class="status-dot" aria-hidden="true"></span><span id="home-status-text"></span></p>
+    <div class="card" id="home-camera-off" hidden>
+      <p>The camera is off. You can still check in, but there will be no photo.</p>
+      <button type="button" class="link" data-action="checkin-camera-retry">Turn on the camera</button>
+    </div>
+    <p class="small" id="home-rule" hidden></p>
+    <button type="button" id="home-punch-button" class="primary-green" data-action="checkin-punch">Check In</button>
+    <div id="home-punch-list"></div>
+  </section>
+
+  <!-- ============================== location, explained (01b §7.10, first Check In only) ============================== -->
+  <section class="screen" data-screen="locExplain">
+    <h2>The app needs your location to check you in</h2>
+    <p>Next, your phone will ask about location. Press &quot;While using the app&quot;, and keep &quot;Precise&quot; on.</p>
+    <p class="card">Your location is read only at the moment you press Check In or Check Out. Never in between.</p>
+    <button type="button" data-action="checkin-loc-continue">Continue</button>
+  </section>
+
+  <!-- ============================== saving the punch (01b §7.11) ============================== -->
+  <section class="screen" data-screen="punching">
+    <p class="busy" id="punching-status">Taking your photo</p>
+  </section>
+
+  <!-- ============================== the punch result (01b §7.11) ============================== -->
+  <section class="screen" data-screen="result">
+    <h2 id="result-heading"></h2>
+    <p id="result-time"></p>
+    <div class="card" id="result-card"></div>
+    <p class="small">Only HR and your manager can see this.</p>
+    <button type="button" data-action="checkin-result-done">Done</button>
+  </section>
+
+  <!-- ============================== the notice changed, mid-daily-use (US-42, 01b §7.12 noticeAgain) ============================== -->
+  <section class="screen" data-screen="noticeAgain">
+    <h2>The notice has changed</h2>
+    <p>Please read it again before your next check-in.</p>
+    <p id="notice-again-changed"></p>
+    <div id="notice-again-rows"></div>
+    <p class="error" id="notice-again-tick-error" role="alert" hidden>Please tick the box to show you have read the notice.</p>
+    <label class="tick-row">
+      <input type="checkbox" id="notice-again-tick">
+      <span id="notice-again-agree-words"></span>
+    </label>
+    <button type="button" data-action="checkin-notice-agree">Agree and continue</button>
+  </section>
+
+  <!-- ============================== Settings (US-43, 01b §7.13) ============================== -->
+  <section class="screen" data-screen="settings">
+    <div class="top-bar">
+      <button type="button" class="link" data-action="checkin-settings-back">Back</button>
+      <h2>Settings</h2>
+    </div>
+    <div class="settings-group">
+      <h3>You</h3>
+      <p id="settings-you"></p>
+    </div>
+    <!-- D15/AC-224: populated by checkin.js only in a debug build - not
+         merely hidden by CSS, so pilot and release never put it in the DOM. -->
+    <div class="settings-group" id="settings-language"></div>
+    <div class="settings-group">
+      <h3>Privacy</h3>
+      <button type="button" class="row-link" data-action="checkin-open-records">What this app records</button>
+      <p class="small" id="settings-agreed-on"></p>
+    </div>
+    <div class="settings-group">
+      <h3>This phone</h3>
+      <button type="button" class="row-link danger-text" data-action="checkin-open-leave-confirm">Remove this phone from <span id="settings-company-a"></span></button>
+      <p class="small">Attendance on this phone stops.</p>
+    </div>
+    <div class="settings-group">
+      <h3>About</h3>
+      <p class="small" id="settings-about"></p>
+      <p class="small">For any problem, speak to HR. Tell them the app version above.</p>
+    </div>
+  </section>
+
+  <!-- ============================== what this app records (US-43, AC-215) ============================== -->
+  <section class="screen" data-screen="records">
+    <div class="top-bar">
+      <button type="button" class="link" data-action="checkin-records-back">Back</button>
+      <h2>What this app records</h2>
+    </div>
+    <div id="records-rows"></div>
+    <p class="small" id="records-agreed"></p>
+    <p class="small">If this notice changes, the app asks you to read it again before your next check-in.</p>
+  </section>
+
+  <!-- ============================== remove this phone (US-43, D10) ============================== -->
+  <section class="screen" data-screen="leaveConfirm">
+    <h2>Remove this phone from <span id="leave-company"></span>?</h2>
+    <p>This phone stops marking attendance for you.</p>
+    <p>Attendance you already marked stays in your HR record.</p>
+    <p>Photos already taken are deleted as the notice says.</p>
+    <p>HR will see that you removed this phone.</p>
+    <p>To use the app again, you need a new code from HR.</p>
+    <p class="small">You need the internet for this.</p>
+    <p class="error" id="leave-error" role="alert" hidden></p>
+    <button type="button" class="danger" data-action="checkin-remove-confirm">Remove this phone</button>
+    <button type="button" class="secondary" data-action="checkin-remove-keep">Keep it</button>
   </section>
 
 </main>
@@ -142,8 +253,15 @@
 <script src="js/photo.js"></script>
 <script src="js/qr-decode.js"></script>
 <script src="js/device-secret.js"></script>
+<script src="js/notice-cache.js"></script>
 <script src="js/api.js"></script>
 <script src="js/join-screens.js"></script>
+<!-- checkin-screens.js reuses join-screens.js's date helpers (window.AlvoraaJoinScreens),
+     so it must load after it. -->
+<script src="js/checkin-screens.js"></script>
 <script src="js/join.js"></script>
+<script src="js/checkin.js"></script>
+<!-- main.js decides which of the two flows above actually runs; it must load last. -->
+<script src="js/main.js"></script>
 </body>
 </html>

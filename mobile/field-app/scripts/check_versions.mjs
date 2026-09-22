@@ -116,8 +116,15 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
 
   const oldPath = process.argv[2];
   if (oldPath) {
-    const old = readVersion(oldPath);
-    problems.push(...checkVersionBump(old.versionCode, current.versionCode));
+    // Only a build.gradle that actually changed represents a new build. A
+    // commit that leaves it untouched (a script or test fix elsewhere under
+    // mobile/**) has nothing new to compare, so it must not be forced to
+    // bump the version just to pass this check.
+    const gradleChanged = readFileSync(oldPath, "utf8") !== readFileSync(gradlePath, "utf8");
+    if (gradleChanged) {
+      const old = readVersion(oldPath);
+      problems.push(...checkVersionBump(old.versionCode, current.versionCode));
+    }
   } else {
     console.log("NOT YET: comparing against the previous build's versionCode - pass the base branch's build.gradle as an argument (CI does this).");
   }

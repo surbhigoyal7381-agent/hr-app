@@ -138,7 +138,9 @@ log("Quality Inspection")
 if manufacture_se_name and not frappe.db.exists("Quality Inspection",
         {"reference_type": "Stock Entry", "reference_name": manufacture_se_name}):
     qi = frappe.new_doc("Quality Inspection")
-    qi.inspection_type = "Final"
+    # ERPNext has no "Final" type. An inspection referenced to the Manufacture
+    # stock entry is "In Process" (Incoming = purchases, Outgoing = deliveries).
+    qi.inspection_type = "In Process"
     qi.reference_type = "Stock Entry"
     qi.reference_name = manufacture_se_name
     qi.item_code = FG_ITEM

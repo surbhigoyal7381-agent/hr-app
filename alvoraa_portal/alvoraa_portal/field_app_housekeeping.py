@@ -348,11 +348,11 @@ def _numbers_for(day):
 
 def _count_between(doctype, field, start, end, **equals):
 	Table = frappe.qb.DocType(doctype)
-	column = Table[field]
+	column = getattr(Table, field)
 	query = (frappe.qb.from_(Table).select(Count("*"))
 	         .where(column >= start).where(column < end))
 	for name, value in equals.items():
-		query = query.where(Table[name] == value)
+		query = query.where(getattr(Table, name) == value)
 	return cint(query.run()[0][0])
 
 

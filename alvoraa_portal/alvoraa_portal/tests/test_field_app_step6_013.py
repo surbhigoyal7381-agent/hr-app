@@ -652,8 +652,11 @@ class NothingPersonalReachesALog(Step6Case):
 		photo = "data:image/jpeg;base64," + PHOTO_MARKER
 		refusals = [
 			(join.check_code, {"code": dead_code, "token": dead_token}),
-			(join.refuse_code, {"code": code}),                      # cancels it; N2 goes to HR
-			(join.join_with_code, self.join_args(code, device_label=LABEL_MARKER)),
+			(join.refuse_code, {"code": dead_code}),
+			# A live code with an old notice version: NOTICE_CHANGED, whose
+			# values carry the notice's rows - words, never a value of ours.
+			(join.join_with_code, self.join_args(code, notice_version="1999-01-01",
+			                                     device_label=LABEL_MARKER)),
 			(join.acknowledge_notice, {"token": dead_token, "notice_version": "x"}),
 			(join.withdraw_agreement, {"token": dead_token}),
 			(fc.field_status, {"token": dead_token}),
@@ -698,7 +701,7 @@ class NothingPersonalReachesALog(Step6Case):
 				self.assertIsNone(out)
 				self.assertEqual(self.answer()[:2], (500, "SERVER_ERROR"))
 				rows = [r for r in frappe.get_all("Error Log", filters={"creation": [">=", self.started]},
-				                                  fields=["method", "error"])
+				                                  fields=["method", "error"], order_by="creation asc")
 				        if (r.method or "").startswith(fc._SERVER_ERROR_TITLE)]
 				self.assertTrue(rows, "the crash should be logged, as a place")
 				self.assertIn("RuntimeError", rows[-1].error)

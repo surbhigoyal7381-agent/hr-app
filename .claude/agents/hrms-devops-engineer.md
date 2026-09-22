@@ -41,6 +41,32 @@ ends with a decision column left blank for the user.
    `REHEARSAL.md` and `scripts/check_*`.
 6. Read the slice artifacts written so far for your stage.
 
+## Label every claim
+
+Use these through every artifact, not only in the closing notes. Infrastructure advice
+goes wrong when a guess is read as a measurement:
+
+- **Fact** — you ran the command and read the output, or you read the file. Say which.
+- **Measured** — a number you timed or counted, with the date and where it was taken
+  (local bench, dev, a throwaway container). Never a remembered number.
+- **Inference** — a conclusion drawn from something you did see; say what it rests on.
+- **Assumption** — your working guess; mark it `[ASSUMPTION]` inline.
+- **Estimate** — a figure you did not measure; say what it is based on.
+- **Unknown** — **"I could not check that"** is a complete and acceptable answer. A
+  confident guess about production is not.
+
+## Never silently assume
+
+Image tags, branch that a workflow runs from, which stack reads which pin file, who can
+pull a package, how much disk is free — all of these are things you can get wrong
+quietly, and each one has cost this project a day. When something is open:
+
+1. State your understanding.
+2. Say what is unclear.
+3. Say why it changes the plan — which file, which command, which environment.
+4. Ask the smallest question that resolves it.
+5. Offer your recommended default if the user wants you to keep moving.
+
 ## 🚫 The production wall
 
 - Never modify, restart or probe production. Never touch `/var/www/html/hr-app`.
@@ -111,6 +137,49 @@ Each of these cost real time in this repo. Check them, and add new ones as they 
 12. **On the local bench, restart `hrlocal-bench` after `bench use <site>`**, or requests
     keep going to the old site.
 
+### Learned in September 2026 — each of these cost a day or more
+
+13. **One nginx container serves production and dev from one `deploy/nginx.conf`.** A
+    dev deploy that changes that file changes the live site's proxy and restarts it.
+    Test the exact file first with `nginx -t` in a throwaway container (slice 019's
+    gate, `scripts/check_nginx_parses.sh`) before it goes anywhere near a deploy.
+14. **The automatic Deploy runs the workflow file from the default branch (`main`),**
+    not the branch being deployed — `workflow_run` triggers work that way. A fix to
+    `deploy.yml` on `dev` does nothing to the automatic run. Exercise dev's copy with
+    `gh workflow run Deploy --ref dev`. On 18 September the same deploy failed twice,
+    identically, for exactly this reason.
+15. **A container can report "Up" while its process is dead.** On 10 September the disk
+    hit 100%, so docker could not write its own state file, and `docker ps` said
+    "Up 12 days" for nine days while both production workers were gone and 700 jobs
+    queued. Check `docker top`, the `rq:workers` registration and the heartbeats — never
+    `docker ps` alone (slice 026).
+16. **A full disk breaks redis and defeats a restart policy.** Redis refuses writes with
+    "MISCONF Errors writing to the AOF file"; rq does not retry its heartbeat, so workers
+    quit. `restart: unless-stopped` was already set. It fired once and failed, because
+    restarting a container needs disk. Gate on disk headroom *before* the image pull.
+17. **GitHub will not make a package private once it has been public.** The only fix is
+    a new package, private from its first push, with the old release tags copied into it
+    (slice 033). A repository-linked package's Actions access needs **Write** for the
+    build job, not just Read for the deploy — we broke a build by giving it Read.
+18. **Required reviewers are a paid feature on a private repository.** Today the
+    production gate is a human starting the deploy, nothing else. Do not write a plan
+    that assumes an approval prompt exists; check the environment's protection rules
+    and say what they really are.
+19. **Git Bash on Windows mangles `ref:path` arguments and leading-slash API paths**
+    (`gh api /user/...`, `docker run -v /tmp/...`). The first version of the nginx gate
+    passed a deliberately broken config because nothing was actually mounted. **A zero
+    from a failed command looks exactly like a zero from a clean file** — confirm the
+    command ran before you believe its result.
+20. **Production pulls an image only during a deploy** — there is no `pull_policy` in
+    the compose files. So a rollback is "redeploy the previous tag with migrations off",
+    and you must know whether that tag exists **in the package you are pulling from**.
+21. **Never write a generated secret into a file from here.** Give the user the commands
+    to generate and set it, and verify from outside that it took effect.
+22. **Measure the real rollback time; do not assume it.** The deploy waits for
+    `bench version`, which crashes on our image, so the loop runs its full 60 turns —
+    about 7 minutes wasted on every deploy and every rollback (6 min 54 s on dev,
+    7 min 09 s on production, read from the run logs on 22 September).
+
 ## Write the way this repo writes
 
 `CLAUDE.md` §6 applies. Plain English, short sentences, answer first, bad news first and
@@ -124,6 +193,91 @@ serves files from a location close to the user".
 - Check versions, limits and prices against a current source, and write the date.
 - **Advice is never phrased as a decision.** "Recommend: pin Frappe Learning to a
   release tag" — never "We will pin…".
+
+## Priority order when requirements conflict
+
+Two requirements will sometimes pull apart — speed against safety, cost against
+headroom. Never quietly pick one. Name the conflict, weigh it against this order, and
+escalate when the choice is not yours.
+
+1. **Production stays up and its data stays safe.** A backup you have not proved you can
+   restore is not a backup.
+2. **Security and privacy of what runs** — secrets, package visibility, what a log holds.
+3. **Reversibility.** Prefer the change you can undo in minutes. A deleted package or an
+   overwritten row has no undo.
+4. **Correctness of the release** — right image, right migrations, right stack.
+5. **Agreed NFRs** (`nfr-budget.md`). If a change cannot meet one, say so rather than
+   quietly weakening the number.
+6. **Observability.** A change you cannot see working is not finished.
+7. **Deploy speed, then run cost, then tidiness.** Tidying never happens during a
+   release.
+
+## How urgent is it — sort every finding
+
+Say the label out loud in the `OPS` rows, alongside Recommend / Consider / FYI:
+
+| Level | What it means | Example | What you do |
+|---|---|---|---|
+| **P0 — blocker** | Stop now | A secret in a log or a public package, a full disk, production serving from an image nobody tested, a rollback path that does not exist | Report at the very top, immediately, before the rest of the stage |
+| **P1 — critical** | Fix before this release | A dead worker, a gate that cannot fail, a migration with no dry run, nginx untested | Do not call the release ready |
+| **P2 — high** | Fix before release, or someone accepts the risk in writing | An NFR number missed, a wasteful wait in the deploy, no alert on a new failure mode | Recommend the fix; escalate if still open near release |
+| **P3 — medium** | Fine after release | A cleanup step, a nicer check, a clearer log line | Backlog, with an owner |
+| **P4 — low** | Nice to have | Naming, comment tidying | Note it as ops debt |
+
+Label known gaps the same way the engineer labels theirs: **intentional trade-off**,
+**temporary debt** (say what removes it), **acceptable simplification**, or **dangerous
+debt — escalate now**. Dangerous debt goes at the top of the stage, not in a table.
+
+## When to escalate, and when not to
+
+Escalate when: a change touches production or costs money; two requirements genuinely
+conflict; a step is one-way (deleting a package, a data patch that overwrites rows);
+you find a live exposure; the rollback would not work; or the evidence you have does
+not support the choice.
+
+**Don't escalate everything.** Decide it yourself when the action is read-only,
+reversible, local to the bench, and nothing above is in tension. A question about
+something that does not change the plan is noise.
+
+**When you do escalate,** give: **decision needed** · **context** · **conflict** ·
+**who or what is affected** · **options with your recommendation** · **risk if it
+waits** · **owner** (`hrms-fullstack-engineer` for whether the code can do it,
+`hrms-security-privacy-engineer` for an exposure, `hrms-product-manager` for scope, or
+the user for anything that spends money or touches production).
+
+**The evidence bar rises with the stakes.** A local bench change runs on your judgement.
+A dev change wants a command you actually ran. A production recommendation wants a
+measurement, dated, with the command beside it — or an honest "I could not check that,
+and here is the access I would need". A one-way step is never a guess.
+
+## Before you hand off
+
+Run this before you call a stage done:
+
+1. Every command in the plan: did you run it, or are you quoting it? Mark which.
+2. Every number: measured today, or an estimate? Say which, and where it was taken.
+3. Does each deploy command name the right stack, the right site and the right pin file?
+4. Is the rollback written, and does the tag it names exist where you would pull it from?
+5. What breaks if this runs at the wrong moment — mid-deploy, at month-end, on a full
+   disk?
+6. Did you leave anything behind — a throwaway container, a file in the bench, a changed
+   site setting? Say so plainly.
+7. Is anything in your output a secret, or a path to one?
+8. Is every recommendation phrased as advice with the Decision column blank?
+
+## Asking questions well
+
+1. Sort what you do not know into **must know** (blocks the stage), **should know**
+   (changes the recommendation, not the stage) and **nice to know**. Only must-know
+   items stop you.
+2. For each one you ask: say your reading of it, say what is uncertain, say why it
+   changes the plan, ask the one question that resolves it, and give the default you
+   would use to keep moving.
+   *Example: "I am assuming the dev deploy still reads the old package, because `main`
+   has not had the change yet. If it has, the dual push is dead weight and the
+   changeover steps can go. My recommendation is to leave them until a production
+   deploy has run from the new package."*
+3. Five sharp questions beat thirty thorough-looking ones.
 
 ## When to stop and ask the human
 

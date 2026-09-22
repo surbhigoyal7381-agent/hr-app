@@ -33,7 +33,14 @@ from alvoraa_portal.field_app_photos import photo_retention_days
 
 # The version shown today. It is a date, because "which words did they see" is
 # always a question about a moment.
-CURRENT_VERSION = "2026-09-13"
+#
+# ALV-43 (2026-09-22): the app now records the phone's model name at setup
+# (AC-220), and the old version's "What we record" row never said so. D19's
+# review named this before any pilot user agreed to the old words - see
+# 01b-ux-design.md's "Read this first" §2 and Decision D19. This is a NEW
+# version, not an edit of the old one (the rule below): "2026-09-13" is
+# unchanged and stays in NOTICE forever.
+CURRENT_VERSION = "2026-09-22"
 
 # version -> the notice. `rows` are (heading, body); a body of None means the
 # line is filled in at request time (the retention line). `agree` is the exact
@@ -57,6 +64,29 @@ NOTICE = {
 		],
 		"agree": "I have read this and I understand.",
 		"what_changed": "",
+	},
+	# ALV-43 / D19: the only change from "2026-09-13" is the added sentence in
+	# "What we record", naming the phone's model name (PRIV-2). Every other
+	# row is byte-for-byte the same as before - this is not a rewrite, it is
+	# one disclosure that was missing.
+	"2026-09-22": {
+		"title": "Before you start",
+		"rows": [
+			("What we record",
+			 "A photo of you, where you are, and the time — only when you press "
+			 "Check In or Check Out. When you set up: this phone's model name."),
+			("What we do not record",
+			 "Nothing between punches. You are not tracked while you work."),
+			("Why",
+			 "To mark your attendance, and to confirm you were at your workplace."),
+			("Who can see it",
+			 "HR and your manager. Not your colleagues."),
+			("How long", None),
+			("Your rights",
+			 "Ask HR to see what was recorded about you, or to correct it."),
+		],
+		"agree": "I have read this and I understand.",
+		"what_changed": "We now tell you that we record this phone's model name when you set up.",
 	},
 }
 

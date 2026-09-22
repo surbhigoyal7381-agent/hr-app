@@ -600,11 +600,36 @@ class TheCodeTableIsTheContract(FrappeTestCase):
 class TheNoticeSaysWhatItSaid(FrappeTestCase):
 	"""A pin on the exact words of the current version, not a ban on particular
 	vocabulary. Which words are right is the user's decision and counsel's; this
-	test only stops them changing quietly."""
+	test only stops them changing quietly.
 
-	VERSION = "2026-09-13"
+	ALV-43 (2026-09-22) moved CURRENT_VERSION on, adding the phone-model-name
+	disclosure D19 asked for. The OLD version's words are pinned separately
+	below (OLD_VERSION/OLD_ROWS) because the module's own rule is that a
+	published version is never edited - "2026-09-13" must still read exactly
+	as it always did, forever, even though it is no longer current."""
+
+	VERSION = "2026-09-22"
 
 	ROWS: ClassVar[list] = [
+		("What we record",
+		 "A photo of you, where you are, and the time — only when you press "
+		 "Check In or Check Out. When you set up: this phone's model name."),
+		("What we do not record",
+		 "Nothing between punches. You are not tracked while you work."),
+		("Why",
+		 "To mark your attendance, and to confirm you were at your workplace."),
+		("Who can see it",
+		 "HR and your manager. Not your colleagues."),
+		("How long", None),
+		("Your rights",
+		 "Ask HR to see what was recorded about you, or to correct it."),
+	]
+
+	AGREE = "I have read this and I understand."
+
+	OLD_VERSION = "2026-09-13"
+
+	OLD_ROWS: ClassVar[list] = [
 		("What we record",
 		 "A photo of you, where you are, and the time — only when you press "
 		 "Check In or Check Out."),
@@ -619,8 +644,6 @@ class TheNoticeSaysWhatItSaid(FrappeTestCase):
 		 "Ask HR to see what was recorded about you, or to correct it."),
 	]
 
-	AGREE = "I have read this and I understand."
-
 	def test_013_the_current_notice_reads_exactly_this(self):
 		self.assertEqual(notice.CURRENT_VERSION, self.VERSION)
 		self.assertEqual(notice.NOTICE[self.VERSION]["rows"], self.ROWS)
@@ -629,13 +652,23 @@ class TheNoticeSaysWhatItSaid(FrappeTestCase):
 	def test_013_a_published_version_is_never_edited(self):
 		"""If the words change, add a version. Somebody who agreed on Monday
 		agreed to Monday's words, and a record naming a version whose text has
-		been rewritten answers nothing."""
+		been rewritten answers nothing. The OLD version must still be there,
+		byte for byte, now that it is no longer current."""
 		self.assertIn(self.VERSION, notice.NOTICE)
+		self.assertIn(self.OLD_VERSION, notice.NOTICE)
+		self.assertEqual(notice.NOTICE[self.OLD_VERSION]["rows"], self.OLD_ROWS)
 
-	def test_013_the_web_page_and_the_store_say_the_same_thing(self):
-		"""Step 1 leaves the web page exactly as it was (AC-35), so for now the
-		page holds its own copy of these words. This test stops the two drifting
-		before step 3 makes the page read the store."""
+	def test_013_the_web_page_still_shows_the_pre_review_wording(self):
+		"""AC-35 protects `www/field-checkin.html` from this slice's client-app
+		work, and `field_checkin.notice_facts()`'s own comment says the page
+		reading the store "belongs with the page's own work" - not yet done. So
+		the page still shows the OLD version's words, missing the phone-model
+		disclosure ALV-43 added. This is a NAMED, DECLARED gap (see
+		00-impact-analysis-daily-use.md §4.5), not a silent one: this test used
+		to guard against the store and the page drifting apart by accident: now
+		that ALV-43 has deliberately moved the store on, it guards the other
+		direction - that the page really is still on the old words, not some
+		third, undocumented version, until somebody does that page's migration."""
 		import os
 
 		import alvoraa_portal
@@ -644,11 +677,14 @@ class TheNoticeSaysWhatItSaid(FrappeTestCase):
 		with open(path, encoding="utf-8") as f:
 			page = f.read()
 
-		for heading, body in self.ROWS:
+		for heading, body in self.OLD_ROWS:
 			self.assertIn(heading, page, f"the page lost the heading {heading!r}")
 			if body:
-				self.assertIn(body, page, f"the page and the store differ on {heading!r}")
+				self.assertIn(body, page, f"the page no longer matches the old version on {heading!r}")
 		self.assertIn(self.AGREE, page)
+		# And the new disclosure must NOT be there yet - if it is, someone did
+		# the page's migration and this test (and its docstring) are stale.
+		self.assertNotIn("this phone's model name", page)
 
 	def test_013_the_retention_line_is_not_versioned(self):
 		"""It quotes the tenant's own setting, which the tenant may change

@@ -307,14 +307,18 @@
    * opts     { now: Date, company: string } - both optional
    *
    * NOTICE_CHANGED, CONSENT_REQUIRED, NOT_SET_UP, DEVICE_PENDING and
-   * DEVICE_REMOVED are deliberately NOT in this table - checkin.js handles
-   * the first because it needs the full six-row notice shape, not this
-   * generic one; the rest because they mean "clear local state and go back
-   * to first launch," not "show a problem screen." CONSENT_REQUIRED falls
-   * through to the honest unknown-code fallback below: it is not reachable
-   * from any UI this app builds (join always sends agreed=1; nothing calls
-   * withdraw_agreement), and it never went through the design-check gate, so
-   * this file does not invent a screen for it.
+   * DEVICE_REMOVED are deliberately NOT in this table - `gate-refusal.js`
+   * (checkin.js's own dispatcher) intercepts all five before they ever reach
+   * `screenFor()`: NOTICE_CHANGED and CONSENT_REQUIRED (05-review-daily-use.md,
+   * M2) both need the full six-row notice shape, not this generic one -
+   * CONSENT_REQUIRED's own values carry only `version`, so it is recovered by
+   * fetching the full text via a deliberately-mismatched `acknowledge_notice`
+   * call first; the other three mean "clear local state and go back to first
+   * launch," not "show a problem screen." Calling `screenFor()` directly with
+   * `CONSENT_REQUIRED` (as a caller outside the normal gate flow might) still
+   * falls through to the honest unknown-code fallback below, never a blank
+   * screen or a crash - this table's own safety net, not its design for the
+   * code.
    */
   function screenFor(code, values, opts) {
     opts = opts || {};

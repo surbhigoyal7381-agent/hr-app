@@ -15,9 +15,11 @@ const { screenFor, friendlyWait } = require(
 
 test("every code field_app_errors.CODES can send to a device endpoint has a named screen or an honest fallback", () => {
   // The frozen server table (field_app_errors.py), minus the four join-only
-  // QR_* codes and the three this file deliberately special-cases elsewhere
-  // (NOTICE_CHANGED, NOT_SET_UP/DEVICE_PENDING/DEVICE_REMOVED - checkin.js's
-  // job, not this table's) and CONSENT_REQUIRED (unreachable, no design).
+  // QR_* codes and the five this file deliberately special-cases elsewhere -
+  // gate-refusal.js intercepts NOTICE_CHANGED, CONSENT_REQUIRED,
+  // NOT_SET_UP, DEVICE_PENDING and DEVICE_REMOVED before they ever reach
+  // this table (see checkin-screens.js's own comment on screenFor, and
+  // gate-refusal.test.js for CONSENT_REQUIRED's real recovery path, M2).
   const deviceCodes = [
     "APP_OFF_FOR_FIELD", "NOT_FIELD_ROLE", "FEATURE_OFF", "APP_TOO_OLD",
     "DEVICE_BLOCKED", "DEVICE_REPLACED", "EMPLOYEE_NOT_ACTIVE",
@@ -31,11 +33,17 @@ test("every code field_app_errors.CODES can send to a device endpoint has a name
   }
 });
 
-test("an unknown or not-yet-designed code (e.g. CONSENT_REQUIRED) falls back honestly, never a blank screen", () => {
+test("this table's own safety net: calling screenFor() directly with CONSENT_REQUIRED (bypassing gate-refusal.js) still falls back honestly, never a blank screen", () => {
   const s = screenFor("CONSENT_REQUIRED", { version: "2026-09-22" }, {});
   assert.equal(s.screen, "unknownCode");
   assert.equal(s.footerCode, "CONSENT_REQUIRED"); // the REAL code, so HR support still has something to search for
   assert.ok(s.heading && s.body);
+});
+
+test("a genuinely unknown code (this table has never heard of it, and gate-refusal.js has no special case for it either) falls back the same way", () => {
+  const s = screenFor("SOMETHING_NO_ONE_HAS_INVENTED_YET", {}, {});
+  assert.equal(s.screen, "unknownCode");
+  assert.equal(s.footerCode, "SOMETHING_NO_ONE_HAS_INVENTED_YET");
 });
 
 test("TOO_MANY_TRIES reads the server's real retry_after_s, unlike the join flow's own bug", () => {

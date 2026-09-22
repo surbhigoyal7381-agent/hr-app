@@ -102,6 +102,11 @@
     var info = window.AlvoraaJoinScreens.screenFor(code, values, opts || {});
     el("problem-heading").textContent = info.heading;
     el("problem-body").textContent = info.body;
+    // 05-review-daily-use.md, M1: this file's own screens never set `card`,
+    // but checkin.js's do, and the two share this one element - without this
+    // line a card checkin.js showed earlier (e.g. "Your photo is kept.")
+    // could still be sitting there under a brand new dead-code screen.
+    window.AlvoraaProblemCard.render(el("problem-card"), textEl, info.card);
 
     var stepsList = el("problem-steps");
     clearChildren(stepsList);

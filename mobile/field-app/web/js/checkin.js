@@ -106,21 +106,23 @@
     update: [], // its one button is built dynamically below, by build type
   };
 
+  // 05-review-daily-use.md, M1: the card is rendered through the SAME shared
+  // helper join.js uses (problem-card.js), so there is one place, not two,
+  // that decides what #problem-card shows - and every call clears it first,
+  // so a card this file showed earlier can never survive into a screen the
+  // OTHER file (join.js) shows next. `appVersion`/`when` are filled in here
+  // (not inside the shared helper) because those come from this file's own
+  // globals/clock, and the helper stays a pure function of its arguments.
   function renderCard(info) {
-    var card = el("problem-card");
-    clearChildren(card);
-    if (!info.card) { card.hidden = true; return; }
-    card.hidden = false;
-    if (info.card.note) card.appendChild(textEl("p", info.card.note));
-    if (info.card.onThisPhone !== undefined) {
-      card.appendChild(textEl("p", "On this phone " + (window.AlvoraaVersion ? window.AlvoraaVersion.APP_VERSION : "")));
-      card.appendChild(textEl("p", "Needed " + info.card.needed + " or newer"));
+    var card = Object.assign({}, info.card);
+    if (info.card && info.card.onThisPhone !== undefined) {
+      card.appVersion = window.AlvoraaVersion ? window.AlvoraaVersion.APP_VERSION : "";
     }
-    if (info.card.forHr) {
-      card.appendChild(textEl("p", "For HR · " + info.card.forHr));
-      card.appendChild(textEl("p", "When · " + new Date().toString()));
-      card.appendChild(textEl("p", "App · " + (window.AlvoraaVersion ? window.AlvoraaVersion.APP_VERSION : "") + " · Android"));
+    if (info.card && info.card.forHr) {
+      card.when = new Date().toString();
+      card.appVersion = window.AlvoraaVersion ? window.AlvoraaVersion.APP_VERSION : "";
     }
+    window.AlvoraaProblemCard.render(el("problem-card"), textEl, info.card ? card : undefined);
   }
 
   function showProblem(code, values, opts) {
@@ -232,26 +234,45 @@
   }
 
   function handleGateRefusal(code, values) {
-    if (code === "NOT_SET_UP" || code === "DEVICE_PENDING") {
-      forgetPhoneLocally().then(function () { window.AlvoraaJoin.start(); });
-      return;
-    }
-    if (code === "DEVICE_REMOVED") {
+    var plan = window.AlvoraaGateRefusal.planForGateRefusal(code, values);
+    if (plan.action === "forgetAndFirst") {
       forgetPhoneLocally().then(function () {
         window.AlvoraaJoin.start();
-        // The one line 01b asks for ("This phone is no longer linked to
+        // DEVICE_REMOVED's own line ("This phone is no longer linked to
         // {company}.") needs a place on the first-launch screen to sit; that
         // markup is join.js's, so the exact line is left for whoever adds it
         // there (see 03-implementation-notes.md's declared gaps).
       });
       return;
     }
-    if (code === "NOTICE_CHANGED") {
-      state.noticeAgainValues = values;
-      renderNoticeAgain(values);
+    if (plan.action === "noticeAgain") {
+      state.noticeAgainValues = plan.values;
+      renderNoticeAgain(plan.values);
       return;
     }
-    showProblem(code, values);
+    if (plan.action === "probeConsentRequired") {
+      // 05-review-daily-use.md, M2: CONSENT_REQUIRED's own values carry only
+      // `version`, not the six rows (field_app_errors.CODES), so the full
+      // text is fetched the same way a stale notice_version already is: send
+      // acknowledge_notice a version it cannot possibly match, which makes
+      // the server refuse with NOTICE_CHANGED and the full rows attached -
+      // no new server endpoint, no client-side guess at the words. See
+      // gate-refusal.js for exactly why this state needs recovering at all.
+      state.lastAction = "status";
+      window.AlvoraaApi.acknowledgeNotice(state.origin, state.secret, "").then(function (result) {
+        var probePlan = window.AlvoraaGateRefusal.planForConsentRequiredProbe(result);
+        if (probePlan.action === "noticeAgain") {
+          state.noticeAgainValues = probePlan.values;
+          renderNoticeAgain(probePlan.values);
+        } else if (probePlan.action === "reloadStatus") {
+          loadStatus();
+        } else {
+          showProblem(probePlan.code, probePlan.values);
+        }
+      });
+      return;
+    }
+    showProblem(plan.code, plan.values);
   }
 
   // ── the Attendance screen (US-39, AC-197) ────────────────────────────────

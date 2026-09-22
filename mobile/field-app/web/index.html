@@ -259,6 +259,10 @@
 <!-- checkin-screens.js reuses join-screens.js's date helpers (window.AlvoraaJoinScreens),
      so it must load after it. -->
 <script src="js/checkin-screens.js"></script>
+<!-- problem-card.js is the one shared owner of #problem-card - both join.js and
+     checkin.js call it, so it must load before either (05-review-daily-use.md, M1). -->
+<script src="js/problem-card.js"></script>
+<script src="js/gate-refusal.js"></script>
 <script src="js/join.js"></script>
 <script src="js/checkin.js"></script>
 <!-- main.js decides which of the two flows above actually runs; it must load last. -->

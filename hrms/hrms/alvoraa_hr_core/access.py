@@ -8,6 +8,7 @@ Kept in one place so they cannot drift apart:
   permitted_companies(user)      which companies an HR user acts for
   permitted_branches(user)       which branches a store's HR person is limited to
   permitted_employees(user)      which Employee records an HR user may see
+  permitted_employee_filters(user)  the same rule as query filters, never {}
 
 It lives in hrms because every one of our apps can import hrms, and hrms must
 not import them.
@@ -234,6 +235,57 @@ def permitted_branches(user=None):
 	return branches or None
 
 
+# The refusal. Frappe reads an EMPTY filter dict as "no conditions", which means
+# EVERY record - so a filter-shaped helper that returned {} would fail OPEN,
+# the exact opposite of permitted_employees(), which fails closed by returning
+# an empty set. This dict matches nothing, in every Frappe query builder, and
+# it is never {} (SEC-4, security note N1, AC-73).
+NO_EMPLOYEES = {"name": ["in", []]}
+
+# "Everyone", written as a real condition rather than as no condition at all.
+# Employee is named, so `name` is never empty; "!=" is the plainest operator
+# that is true for every row. Written this way so that NOTHING this helper
+# returns can ever be an empty dict.
+ALL_EMPLOYEES = {"name": ["!=", ""]}
+
+
+def permitted_employee_filters(user=None):
+	"""permitted_employees(), as Frappe filters instead of a set of names.
+
+	One definition, two shapes: permitted_employees() is built on this, and a
+	caller that wants to filter a query in the database - rather than read every
+	permitted name into Python first - uses these filters directly (SEC-4).
+
+	It NEVER returns an empty or partial dict. A caller with no HR entitlement
+	gets NO_EMPLOYEES, which matches nothing. See NO_EMPLOYEES above for why
+	that matters: {} would mean everybody.
+
+	The rules are permitted_employees()' rules, unchanged:
+
+	- System Manager and Administrator: everyone.
+	- HR Manager / HR User with no Branch permission: their companies.
+	- HR Manager / HR User with one (a store's HR person): their companies,
+	  narrowed to those branches. An employee with no branch is outside it.
+	- Anyone else - a plain employee, a plain manager, a Vendor User: refused.
+
+	Every status, not only Active. A caller that needs Active people adds
+	"status": "Active" itself, so that nobody loses a leaver's history by
+	accident.
+	"""
+	user = user or frappe.session.user
+	roles = set(frappe.get_roles(user))
+	if user == "Administrator" or "System Manager" in roles:
+		return dict(ALL_EMPLOYEES)
+	companies = permitted_companies(user)
+	if not companies:
+		return dict(NO_EMPLOYEES)
+	filters = {"company": ["in", companies]}
+	branches = permitted_branches(user)
+	if branches is not None:
+		filters["branch"] = ["in", branches]
+	return filters
+
+
 def permitted_employees(user=None):
 	"""The Employee records this user may see as HR, as a set of names. Fails closed.
 
@@ -253,15 +305,4 @@ def permitted_employees(user=None):
 	the store that had them. One query; the caller filters with
 	["employee", "in", sorted(names) or [""]].
 	"""
-	user = user or frappe.session.user
-	roles = set(frappe.get_roles(user))
-	if user == "Administrator" or "System Manager" in roles:
-		return set(frappe.get_all("Employee", pluck="name"))
-	companies = permitted_companies(user)
-	if not companies:
-		return set()
-	filters = {"company": ["in", companies]}
-	branches = permitted_branches(user)
-	if branches is not None:
-		filters["branch"] = ["in", branches]
-	return set(frappe.get_all("Employee", filters=filters, pluck="name"))
+	return set(frappe.get_all("Employee", filters=permitted_employee_filters(user), pluck="name"))

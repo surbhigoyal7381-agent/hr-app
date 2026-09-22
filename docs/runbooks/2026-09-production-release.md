@@ -597,3 +597,15 @@ your **local** four commits, not in this release.
   (a merge driver is invoked only for files changed on both sides) plus the measured fact
   that those three files changed on `dev` only. I did not perform a trial merge. Step 5's
   `git checkout HEAD -- demo/` makes the question moot either way.
+
+---
+
+## 9. Follow-up, 2026-09-22 — the image package moves
+
+Go/no-go row 5 and decision D-4 assumed the `hr-app` package could be made private after
+this release. **It cannot** — GitHub does not let a public package go private again. The
+image moves to a new private package, `alvoraa-app`, carried by the next release to
+`main`. §3.1's rollback command still works until then; after it, rollbacks to
+`prod-65878e8` and `prod-d99ba99` use copies inside the new package. Everything —
+order, rollback before/during/after, and the checks before the old package is deleted —
+is in `2026-09-private-image-package.md`.

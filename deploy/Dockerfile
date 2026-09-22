@@ -6,7 +6,7 @@
 #
 # Build:
 #   docker buildx build --platform linux/amd64,linux/arm64 \
-#     -f deploy/Dockerfile -t ghcr.io/<org>/hr-app:sha-abc1234 .
+#     -f deploy/Dockerfile -t ghcr.io/<org>/alvoraa-app:sha-abc1234 .
 #
 # The build context is the REPO ROOT (not deploy/), because the three
 # first-party apps are copied out of this repo — that is what closes gap G4,

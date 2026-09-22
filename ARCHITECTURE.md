@@ -632,7 +632,7 @@ docker buildx build --platform linux/arm64 -f deploy/Dockerfile -t kinexus:local
 
 # Bring up an environment
 cd deploy/compose
-echo "KINEXUS_IMAGE=ghcr.io/<org>/hr-app:dev-abc1234" > .image.env
+echo "KINEXUS_IMAGE=ghcr.io/<org>/alvoraa-app:dev-abc1234" > .image.env
 docker compose -f docker-compose.app.yml --env-file ../envs/dev.env --env-file .image.env up -d
 
 # Provision a tenant with everything enabled

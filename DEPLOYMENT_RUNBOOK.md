@@ -117,7 +117,7 @@ the image swap changes all four sites at once. Plan it as a production change, b
 timing is under our control — which is what makes this safe.
 
 **The image is built by CI.** `.github/workflows/build-image.yml` fires on push to `dev`, `test`
-or `main`, publishing `ghcr.io/<repo>/hr-app:dev-<sha>`. The image for this deploy therefore
+or `main`, publishing `ghcr.io/surbhigoyal7381-agent/alvoraa-app:dev-<sha>` (private package since 2026-09-22). The image for this deploy therefore
 already exists, or will as soon as `dev` is pushed.
 
 ---

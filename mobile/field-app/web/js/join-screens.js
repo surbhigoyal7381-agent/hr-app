@@ -63,6 +63,19 @@
     return isSameDay(d, now) ? "today at " + formatTime(d) : onDateAt(value);
   }
 
+  // "one minute", "12 minutes", "about an hour" - field_app_limits.py's real
+  // window is one hour, not the minute this screen used to hardcode. Rounds
+  // up so "wait N, then try again" is never a lie by a few seconds.
+  function waitPhrase(seconds) {
+    var s = Number(seconds);
+    if (!(s > 0)) return "a little while";
+    var minutes = Math.ceil(s / 60);
+    if (minutes <= 1) return "one minute";
+    if (minutes < 60) return minutes + " minutes";
+    var hours = Math.round(minutes / 60);
+    return hours <= 1 ? "about an hour" : hours + " hours";
+  }
+
   // ── the table ────────────────────────────────────────────────────────────
   //
   // Each entry is a function of (values, now) so the two date-shaped ones can
@@ -139,12 +152,12 @@
     },
     FEATURE_OFF: function () {
       return {
-        // Wording carried over from the 008 web check-in page (01b §7.12 cites
-        // "(008 wording)" without repeating it here) - confirm byte-for-byte
-        // against that page before this ships past a debug build.
+        // Confirmed byte-for-byte against the real 008 web check-in page
+        // (alvoraa_portal/www/field-checkin.html, FEATURE_OFF.p) - the
+        // wording here previously did not match it.
         screen: "featureOff",
         heading: "This app is not switched on for your company",
-        body: "Ask HR about the Alvoraa app for your company.",
+        body: "Field check-in is not part of your company's plan yet. Please tell HR.",
         steps: [],
         buttons: ["Done"],
         retry: false,
@@ -171,11 +184,13 @@
         retry: true,
       };
     },
-    TOO_MANY_TRIES: function () {
+    TOO_MANY_TRIES: function (v) {
+      v = v || {};
       return {
         screen: "tooMany",
         heading: "Too many tries",
-        body: "This phone tried many times in a short time. Wait one minute, then press Try again.",
+        body: "This phone tried many times in a short time. Wait " + waitPhrase(v.retry_after_s)
+          + ", then press Try again.",
         steps: [],
         buttons: ["Try again", "Go back"],
         retry: true,

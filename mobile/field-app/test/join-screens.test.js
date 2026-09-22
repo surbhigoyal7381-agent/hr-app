@@ -78,6 +78,27 @@ test("TOO_MANY_TRIES and SERVER_ERROR allow Try again; dead codes never do", () 
   assert.equal(screenFor("QR_CANCELLED", {}).retry, false);
 });
 
+// ALV-39 review finding (Major): the wait time was hardcoded at "one minute"
+// no matter what the server's real rate-limit window (one hour, field_app_
+// limits.py's WINDOW_SECONDS) actually left. The server always sends the
+// real number back as values.retry_after_s - the screen must use it.
+test("TOO_MANY_TRIES tells the real wait time the server sent, not a hardcoded one", () => {
+  assert.match(screenFor("TOO_MANY_TRIES", { retry_after_s: 45 }).body, /Wait one minute,/);
+  assert.match(screenFor("TOO_MANY_TRIES", { retry_after_s: 300 }).body, /Wait 5 minutes,/);
+  assert.match(screenFor("TOO_MANY_TRIES", { retry_after_s: 3600 }).body, /Wait about an hour,/);
+  // No value at all (a client-made fallback with empty values, e.g. api.js's
+  // nginx-level 429) must still say something true, never "NaN" or "0 minutes".
+  assert.match(screenFor("TOO_MANY_TRIES", {}).body, /Wait a little while,/);
+});
+
+// ALV-39 review finding (Minor): this wording was flagged in its own code
+// comment as "unconfirmed against the 008 page" and did not actually match
+// it (alvoraa_portal/www/field-checkin.html, FEATURE_OFF.p).
+test("FEATURE_OFF matches the real 008 web check-in page byte-for-byte", () => {
+  const r = screenFor("FEATURE_OFF", {});
+  assert.equal(r.body, "Field check-in is not part of your company's plan yet. Please tell HR.");
+});
+
 test("a code this app has never heard of still gets a real screen, with itself as the footer code", () => {
   const r = screenFor("SOME_FUTURE_CODE_2027", { anything: "here" });
   assert.equal(r.screen, "unknownCode");

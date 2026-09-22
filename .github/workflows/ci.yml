@@ -160,6 +160,15 @@ jobs:
       - name: No demo passwords in the repository
         run: python scripts/check_no_demo_passwords.py
 
+      # Slice 013 step 6 (AC-37, OPS-48). Raising the server's MIN_APP_VERSION
+      # locks out every phone below it. The floor may only rise to a version
+      # that has been in the store for 90 days (mobile/field-app/releases.json
+      # holds the dates). Text only: reads one constant and one JSON file.
+      - name: App-version floor honours the 90-day rule
+        run: |
+          python scripts/check_min_app_version.py --self-test
+          python scripts/check_min_app_version.py
+
   # ── Key guard (slice 013, OPS-37, OPS-71, SEC-23) ─────────────────────────
   # A signing key is handed out the moment it is pushed: the image is built from
   # this repo, and everything published while it was public is already copied.

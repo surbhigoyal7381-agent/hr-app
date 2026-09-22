@@ -1,0 +1,4 @@
+{
+  "_what": "Store releases of the Alvoraa field app: the date each build first appeared in a store. Read by scripts/check_min_app_version.py (CI, lint job) to hold the 90-day rule: the server's MIN_APP_VERSION may only rise to a version listed here with a date at least 90 days old (slice 013, AC-37, OPS-48). Add a line when a build is released. Never edit a date afterwards. Test and pilot builds that never reached a store are not listed.",
+  "releases": []
+}

@@ -11,8 +11,11 @@ android {
         // MAJOR x 1,000,000 + MINOR x 10,000 + PATCH x 100 + build number.
         // 0.1.0, build 4: review fixes on the daily-use build (M1 the shared
         // #problem-card owner, M2 the CONSENT_REQUIRED recovery path).
+        // 0.1.0, build 5: added the missing com.google.android.material
+        // dependency - the first real Android build of this branch failed
+        // AAPT2 resource linking without it.
         // scripts/check_versions.mjs enforces this on every push.
-        versionCode 10004
+        versionCode 10005
         versionName "0.1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -69,6 +72,13 @@ dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    // Not used by this app's own theme (styles.xml stays on plain AppCompat) - but
+    // @capacitor/android's own resources reference Material Components theme
+    // attributes (colorPrimaryVariant etc.) and expect the consuming app to supply
+    // this library. Missing entirely until now; surfaced only once a real Android
+    // build ran (AAPT2 resource linking: "resource attr/colorPrimaryVariant... not
+    // found"), which nothing in this sandbox or CI can do.
+    implementation "com.google.android.material:material:$materialVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"

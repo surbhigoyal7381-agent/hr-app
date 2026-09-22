@@ -1,0 +1,62 @@
+{% extends "templates/web.html" %}
+{# no-sitemap #}
+{% block title %}Portal preview{% endblock %}
+
+{# Frappe's base template renders a "Standard Footer" web block that prints
+   "Powered by ERPNext" from Website Settings. Overriding the block is the only
+   thing that suppresses it - context.no_footer is a dead flag in v16. #}
+{% block footer %}{% endblock %}
+
+{% block head_include %}
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+{% include "templates/includes/design_system.html" %}
+<style>
+  .pv-wrap { max-width: 44rem; margin: 0 auto; padding: 2rem 1rem 4rem; }
+  .pv-mark { display: flex; align-items: center; gap: .75rem; margin-bottom: 1.5rem; }
+  .pv-mark img { width: 40px; height: 40px; border-radius: 8px; object-fit: contain; }
+  .pv-tenant { font-size: var(--fs-sm, .875rem); color: var(--text-muted, #667085); }
+  .pv-title { font-size: 1.5rem; line-height: 1.3; margin: 0 0 .75rem; }
+  .pv-note { border: 1px solid var(--border, #e4e7ec); border-radius: 12px;
+             padding: 1rem 1.25rem; margin: 1.5rem 0; }
+  .pv-note h2 { font-size: 1rem; margin: 0 0 .5rem; }
+  .pv-note ul { margin: 0; padding-left: 1.25rem; }
+  .pv-note li { margin: .35rem 0; }
+  .pv-back { display: inline-block; min-height: 44px; line-height: 44px; }
+  @media (max-width: 760px) { .pv-wrap { padding: 1.5rem 1rem 3rem; } }
+</style>
+{% endblock %}
+
+{% block page_content %}
+<main class="pv-wrap">
+  <div class="pv-mark">
+    <img src="{{ brand_mark_url }}" alt="" onerror="this.remove()">
+    <span class="pv-tenant">{{ tenant_name }}</span>
+  </div>
+
+  <h1 class="pv-title">Portal preview</h1>
+
+  <p>
+    This address is where the redesigned portal frame is looked at before it
+    replaces the live one. It exists only on the local bench and on dev, and
+    only for Alvoraa engineers.
+  </p>
+
+  <div class="pv-note">
+    <h2>What is here so far</h2>
+    <ul>
+      <li>The page's two locks: the site flag, then the role.</li>
+      <li>
+        The frame itself is not here yet. It is built from includes split out of
+        the live portal page, and that split has not been done.
+      </li>
+    </ul>
+  </div>
+
+  <p>
+    Nothing on this page reads or shows anyone's data.
+  </p>
+
+  <p><a class="pv-back" href="/hrms-employee">Back to the portal</a></p>
+</main>
+{% endblock %}

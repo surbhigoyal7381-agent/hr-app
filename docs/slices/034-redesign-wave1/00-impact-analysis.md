@@ -583,3 +583,17 @@ differ from anything above, **they win**.
 | §4 step 6: the shared filter helper | It must **never return an empty filter dict** — in Frappe that means every record. An explicit refusal, with a test that the return value is never `{}` (security note N1, `02` AC-73) |
 | §8 size, 11–13 days | **13–15 build days.** The added work is +0.5 for the Team-panel query, +0.75 for the Inbox counts (capped count plus the two caller paths), +0.25 for the filter helper's refusal and +0.25 for the preview-page flag. `02` §20 has the breakdown. Day 1 is still the page split and the critical path is unchanged |
 | §6 Compliance | `01c` PRIV-7's visibility table is now written — 18 rows, **six narrower than today, none wider** |
+
+## Third revision note — 23 September 2026, later the same day
+
+Surbhi took **three more decisions**, recorded as **W1D-19, W1D-20 and W1D-21** in
+`00g-decision-register.md`. `01c` and `02` are now at **revision 4**; where they differ
+from anything above, **they win**.
+
+| Where above | Now |
+|---|---|
+| The desk link | **HR and System Manager only; a plain manager gets none**, with the server's labels "Switch to HR Core" and "Switch to Admin" (W1D-19). **No code change** — the code was already right and the prototype was wrong. `02` AC-75, `01c` SEC-7 |
+| The second revision note's §5.2 row — "`hr_api.py`, the no-manager list narrowed" | **Replaced.** W1D-20 supersedes W1D-13: for an HR caller `get_manager_dashboard` is **rebuilt** on `access.permitted_employees()` and the no-manager block is **deleted**. Same file, same hot-file rules, bigger change — still its own early commit. `01c` SEC-13, `02` AC-72 |
+| §5.2 claims | **Add `alvoraa_portal/alvoraa_portal/subscription.py`** (one new `opt_in` key in `FEATURES`) and the plan gate in `alvoraa_portal/alvoraa_portal/www/hrms-employee.html:7813`, which splits into two flags (W1D-21, `01c` SEC-16, `02` AC-76). The staff-list screen is new work inside the frame files this slice already claims |
+| §8 size, 13–15 days | **15–18 build days.** W1D-20 replaces W1D-13's +0.5 with +1.0 to +1.25; W1D-21 adds +1.5 to +2.0 for the switch and the list screen; W1D-19 adds +0.25 for its test. `02` §20 has the breakdown **and the note that the quarter-day Surbhi was quoted for W1D-20 is too low — it is about half a day more than W1D-13, not a quarter** |
+| §6 Compliance, "none wider" | **One row is now wider** — a tenant System Manager's Team screen becomes the whole tenant, because `is_hr` includes System Manager and `permitted_employees()` gives them everyone. No new data (the desk already lists everyone for them), but a wider screen. It is `02` open question 6 and `01c` open question 6, raised rather than assumed |

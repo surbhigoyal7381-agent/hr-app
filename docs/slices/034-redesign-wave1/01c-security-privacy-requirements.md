@@ -3,16 +3,22 @@ slice: 034-redesign-wave1
 artifact: 01c-security-privacy-requirements
 author: hrms-fullstack-engineer, revised after the security re-review (06b-security-rereview.md)
 date: 2026-09-23
-revision: 3 (N1–N9 applied; Surbhi's decisions of 23 Sep, W1D-13 to W1D-18, written in)
+revision: 4 (Surbhi's three further decisions of 23 Sep, W1D-19 to W1D-21, written in; SEC-13 rewritten, SEC-16 added)
 status: draft, revised — ready for build once the strategy gate is passed
 inputs: [06b-security-rereview.md, 02c-ba-rereview.md, 06-security-review-of-requirements.md, 02b-ba-review.md, 00-impact-analysis.md, 00g-decision-register.md, ../030-store-hr-scoping/00-impact-and-fix.md, .claude/context/security-compliance-baseline.md]
 ---
 
 # Wave 1 frame — security and privacy requirements
 
+**Revision 4.** Surbhi's three further decisions of 23 September — **W1D-19** (the desk
+link), **W1D-20** (the Team screen follows HR scope) and **W1D-21** (the staff list gets
+its own switch) — are written in. **SEC-13 is rewritten**: W1D-20 replaces W1D-13, so the
+Team panel's no-manager list is not narrowed, it is gone. **SEC-16 is new** for the staff
+list. Revision 4's changes are listed at the end.
+
 **Revision 3.** The security re-review's three must-fixes (N1, N2, N4) and its five smaller
 notes (N3, N5, N6, N7, N8) are applied, and Surbhi's six decisions of 23 September are
-written in. Nothing was declined. What changed is listed at the end.
+written in. Nothing was declined.
 
 **Decisions are cited as `W1D-nn`** and live in `00g-decision-register.md`. Bare
 "decision 5" numbers are gone from this document; the two sets in
@@ -62,7 +68,7 @@ decision n" and "009 strategy decision n".
 |---|---|
 | Employee | Anyone outside their own line downwards in search (009 strategy decision 5, and Q-c of 14 Sep). Counts about other people's work |
 | Manager | People outside their line downwards. Counts for items that are not theirs to act on |
-| Store HR | Anyone outside **their store plus their own reporting line** (W1D-07) — in search, counts, the bell list, the corrections queue **and the Team panel's no-manager list** (SEC-13, W1D-13). An employee with no branch is outside the store (slice 030, DEF-6) |
+| Store HR | Anyone outside **their store plus their own reporting line** (W1D-07) — in search, counts, the bell list, the corrections queue, **the Team screen** (SEC-13, W1D-20) **and the staff list** (SEC-16, W1D-21). An employee with no branch is outside the store (slice 030, DEF-6) |
 | Company-wide HR | People and items outside their permitted companies |
 | A leaver (Employee not Active) with an enabled login | Any colleague in search, any approval count or bell item (SEC-14) |
 | A tenant's own System Manager | The Alvoraa control plane (`/alvoraa-admin`) — not offered. **The preview page on production** — it does not exist there (SEC-1, W1D-15) |
@@ -95,8 +101,11 @@ frame stores nothing and decides nothing (security review §6, unchanged at re-r
 | A8 | Someone who may create a Designation names one `<img src=x onerror=alert(1)>` | It appears as text in search, the rail and the profile menu; no element is created (SEC-10) |
 | A9 | A manager resigns; HR sets his Employee to Left; his login stays enabled and his reports are not yet moved. That evening he searches for people and asks for his approvals | Empty search, zero approvals, empty bell list (SEC-14) |
 | **A10** *(corrected, W1D-18)* | **A tenant's own System Manager opens the preview page** | On production there is nothing to open (A4). On dev they see unfinished screens with their own tenant's data, under their own permissions — which they already see in the desk. **Alvoraa's own staff are not System Managers on client tenants**; our access is the shared `Administrator` account (W1D-18). That shared account is its own problem — a read cannot be traced to a person — and it is `ALV-93`, outside Wave 1 |
-| **A11** *(new, W1D-13)* | **A store's HR person with one direct report opens the Team panel**, which is built by `get_manager_dashboard` | They see their own reports plus employees with no manager **from their own company and store only** — never head office (SEC-13). Before this change they saw every employee in the tenant who had no manager set |
+| **A11** *(rewritten, W1D-20 — was W1D-13)* | **A store's HR person opens the Team screen**, which is built by `get_manager_dashboard` | They see **their store, and nothing else** — the screen is built from `permitted_employees()`, so head office and the other store are not in it, whether or not those people have a manager. Their own direct reports are inside that scope, so the screen is **not empty**. Before this change the same person saw every employee in the tenant who had no manager set |
 | **A12** *(new, W1D-14)* | **A Shift Supervisor who holds submit permission on Attendance Request opens the corrections queue** | Their queue still works, scoped by Frappe's own permissions exactly as today. The `permitted_employees()` narrowing applies to HR callers only (SEC-5). A failure here would be fail-closed, not a leak — but a dead flow gets repaired under pressure by loosening the filter, which is how the leak comes back |
+| **A13** *(new, W1D-20)* | **A manager who is not HR opens the Team screen** | Their own direct reports and the L2 rows below them — **exactly as today**. The orphan list was never reachable for them: the block tests `{"HR Manager", "HR User"}` against the caller's roles (`hr_api.py:296`). The block is deleted rather than left behind a condition, so it cannot be re-enabled by a later debugging change |
+| **A14** *(new, W1D-21)* | **An HR user on a tenant where the staff-list switch is OFF calls the staff-list endpoint by hand** | Refused on the server. The feature flag is checked in the endpoint, not only in the browser — hiding a menu entry is not a permission (SEC-16). The refusal is logged through `access.log_refusal` with no personal content |
+| **A15** *(new, W1D-21)* | **A store's HR person searches the staff list for a head-office name** | No result. The staff list uses the same `permitted_employees()` scope as everything else in this slice, and an employee with no branch is outside every store (slice 030, DEF-6) |
 
 ## Requirements
 
@@ -115,14 +124,15 @@ frame stores nothing and decides nothing (security review §6, unchanged at re-r
 | | · My own open requests — the caller's own **Active** Employee only | |
 | | **Capped lists** (N3): `to_review(limit=50)` reads at most 50 rows by creation date **and then** drops the non-waiting ones in Python, so a naive count and the screen disagree above the cap. The count must use **the same definition of "waiting" the list uses**, expressed so the database applies it — `docstatus = 0` and `alvoraa_review_status` not in `Declined`, `Withdrawn`, **including rows where it is NULL or empty** `[UNVERIFIED — whether Frappe's "not in" wraps the column in ifnull(); confirmed on the bench before step 4. If it does not, the count reads the ids and applies the same Python filter]`. **The count is not capped**; where it exceeds the list's cap the screen says "showing the first 50 of 60" rather than quietly showing fewer. *(The security review offered the alternative — cap the count and show it as `50+`. I did not take it: a "50+" cannot be added into the one honest Inbox total that AC-20 requires.)* | **Boundary test:** a fixture with one more waiting correction than the cap — the count reads 51, the screen lists 50 and says so |
 | | **Every fixture item is created through the endpoint a real user uses** (apply for leave through the portal, log a goal update through the portal), never inserted in its final state. **Real-data check once before the swap:** on the local PP Jewellers copy, as slice 030's store HR user, the counts and search are compared with that user's Employee list in the desk; the result goes in the implementation notes | |
-| **SEC-6** | The new endpoints refuse Guest, take no doctype, field or method name from the caller, and are POST where they write. `frame_api.py` and `inbox_api.py` contain **no** `ignore_permissions`, and the bodies of `_pending_approvals_scope`, `_search_scope` and the new `permitted_employee_filters` gain none. `get_manager_dashboard`'s existing `ignore_permissions=True` is not removed by this slice — SEC-13 narrows what it reads instead, and removing it is `ALV-86` territory | A test that reads `frame_api.py` and `inbox_api.py` and counts `ignore_permissions`. **The repo-wide counter does not exist**; it is the security engineer's item (feature map B4) and this slice does not claim it — residual risk R4, now owned and dated. No count of today's uses is quoted here: the two figures that have been quoted in these reviews disagreed, and the baseline is whatever the B4 script measures on the day it runs (N7) |
-| **SEC-7** | "Switch to the full desk" shows only when `get_switch_target` returns a target (admins → `/app`, HR → `/app/hr`, nobody else), and the label comes from the server | Test per role on `get_frame`'s payload |
+| **SEC-6** | The new endpoints refuse Guest, take no doctype, field or method name from the caller, and are POST where they write. `frame_api.py` and `inbox_api.py` contain **no** `ignore_permissions`, and the bodies of `_pending_approvals_scope`, `_search_scope` and the new `permitted_employee_filters` gain none. `get_manager_dashboard`'s existing `ignore_permissions=True` is not removed by this slice — SEC-13 changes **what it is allowed to read** instead (the HR branch is rebuilt on `permitted_employees()`), and removing the flag is `ALV-86` territory | A test that reads `frame_api.py` and `inbox_api.py` and counts `ignore_permissions`. **The repo-wide counter does not exist**; it is the security engineer's item (feature map B4) and this slice does not claim it — residual risk R4, now owned and dated. No count of today's uses is quoted here: the two figures that have been quoted in these reviews disagreed, and the baseline is whatever the B4 script measures on the day it runs (N7) |
+| **SEC-7** *(settled by W1D-19)* | The desk link shows **only when `get_switch_target` returns a target** — System Manager → `/app`, HR → `/app/hr`, **nobody else**. **A plain manager gets no link at all**, even with direct reports. The **label is the server's**: "Switch to Admin" or "Switch to HR Core", never the prototype's generic "Switch to the full desk". Somebody who is both gets "Switch to Admin", because `ADMIN_ROLES` is tested first (`module_access.py:1108-1114`). **No code change** — `get_switch_target` (`module_access.py:1099-1115`) already does this; the prototype was wrong, not the code (W1D-19) | Test per role on `get_frame`'s payload, **including a plain manager with reports who holds neither an HR role nor System Manager: no target, and no link rendered in the profile sheet**. The label strings are asserted exactly |
 | **SEC-8** | "Tenant admin" shows only when the caller is a System Manager **and** the site is the control plane (`alvoraa_control_plane`). `/alvoraa-admin`'s own check is unchanged | Test on both site types, setting `frappe.conf` in the test |
 | **SEC-9** | **`set_my_language` is not built in Wave 1** (W1D-04). No frame code writes a `User` record. A language is *offered* only when it is enabled on the site **and** `alvoraa_portal` ships a translation for it; in Wave 1 that is English only, so the row is hidden everywhere. When the endpoint is built in a later wave it must be POST only, take no user argument, accept only an offered language, save through the document (so change history and date formats are kept), and carry the single declared `ignore_permissions` with its justification beside it — never `frappe.db.set_value` | A test that no frame module writes to `User`, and that no language row is rendered on a site with the Frappe default 17 enabled languages |
 | **SEC-10** | Everything the frame puts on the page from data is escaped — in Jinja (`\| e`, as the rail's logo does) **and in the browser**. Frame include files never assign API data to `innerHTML`; they use `textContent` or one shared escape helper | A check script scans `templates/includes/ess/frame/` for `innerHTML` with API data. **DOM test:** a designation of `<img src=x onerror=alert(1)>` appears as text in a search result, the rail and the profile menu, and creates no element. `test_brand_logo_025` repointed |
 | **SEC-11** | Page search offers only pages from the menu list, after the same visibility rules | Test per persona on the searchable page list |
 | **SEC-12** | `get_frame` returns **only named keys**. The caller's own block holds `employee`, `employee_name`, `designation`, `department`, `image`, `company` — never `date_of_birth`, `gender`, `cell_number`, `date_of_joining`, `reports_to` or `branch`. Roles go out as the booleans the menu needs (`is_hr`, `is_manager`, `is_system_manager`, `is_control_plane`), not the whole role list. The cached context may decide what the menu shows; it never decides what data an endpoint returns — every data endpoint reads roles live. `get_portal_context` itself is not changed in this slice (follow-up: its other callers) | The payload's keys are exactly this set, per persona |
-| **SEC-13** *(new, W1D-13)* | **The Team panel's "employees with no manager" list is narrowed to the caller's own people.** `get_manager_dashboard` (`alvoraa_portal/alvoraa_portal/hr_api.py:291-307`) today adds **every** Active employee with `reports_to` not set, with `ignore_permissions=True` and no company or branch filter, for anyone holding HR Manager or HR User. It must instead add only those also inside `access.permitted_employees()` for the caller — so a store's HR person sees their store's unassigned people and never head office. The caller's own record stays excluded, as today. The direct-report block and the L2 block are unchanged; the L2 query narrows on its own because it reads from the narrowed list. **This is a narrowing of a live screen and takes effect the moment it is released, not at the swap** | Two-store fixture with an unassigned employee in store A, one in store B and one at head office with no branch: store A's HR sees their own reports plus store A's unassigned person only; company-wide HR sees all three; a manager who is not HR sees no unassigned people at all, as today. Also a test that the panel does not become empty for a store HR person who has one direct report |
+| **SEC-13** *(rewritten, W1D-20 — replaces the W1D-13 version)* | **For an HR caller the Team screen is built from `access.permitted_employees()`** (`hrms/hrms/alvoraa_hr_core/access.py:237-267`), not from who reports to them. In `get_manager_dashboard` (`alvoraa_portal/alvoraa_portal/hr_api.py:291-307`) the "employees with no manager" block is **deleted**, not filtered: it added every Active employee in the tenant with `reports_to` empty, with `ignore_permissions=True` and no company or branch filter, whenever the caller held HR Manager or HR User. People with no manager still appear for an HR caller — they are inside that HR person's scope — and nobody outside the scope does. **A caller who is not HR is untouched**: their Team screen stays their own direct reports plus the L2 rows read from them, which is what the deleted block already left them (it tested `{"HR Manager", "HR User"}` at line 296, so it never ran for them — **no leak remains on that path**). Three rules the rebuild must keep: (1) **`status = "Active"` stays on the Team query** — `permitted_employees()` returns every status on purpose, and without this the screen would start listing leavers, which is *wider* than today; (2) **the caller's own record stays excluded**, as today; (3) **the list is capped** at the same 50 the Inbox uses, with the true total shown ("showing the first 50 of 412"), because company-wide HR on a 1,000-person tenant would otherwise draw a thousand cards and push a thousand ids into the attendance query. The L2 block is unchanged and narrows on its own. **This changes a live screen the moment it is released, not at the swap** | Two-store fixture, a head-office employee with no branch, and one employee in each place whose `reports_to` is empty. **(a)** Store A's HR, who has one direct report: the screen holds store A only — **not** store B and **not** head office. **(b) The same person's screen is not EMPTY** — their direct report and store A's other people are on it. This test must fail if the rebuild returns nothing for a store HR person. **(c)** Company-wide HR: everyone in their companies, capped, with the true total shown. **(d)** A manager who is not HR: their own reports only, unchanged. **(e)** A leaver in store A does **not** appear on store A's HR screen. **(f)** A static check that no "employees with no manager" query survives in `hr_api.py` |
+| **SEC-16** *(new, W1D-21)* | **The staff list is a separate feature and is scoped like everything else.** The org chart keeps `plan_org_structure`; the plain searchable staff list gets its **own key** in `subscription.FEATURES`, `opt_in`, surfaced as `plan_<key>` by `get_available_features` the way every other plan flag is — **no parallel mechanism**. Two rules: (1) **the switch is enforced on the server**, in the endpoint that returns the list, not only in the browser that draws the entry — a tenant without the feature gets a refusal, not a hidden button; (2) **the list is scoped by `permitted_employees()`**, so a store HR person's list is their store, it returns **Active employees only**, and its fields are exactly PRIV-2's set — `employee`, `name`, `title`, `department`, `image`, nothing else. It is capped and paged like search (12 asked for, 50 maximum). **It is a list of people, not a new source of data**: everything on it is already in today's org-chart search for the same person | Flag **on**: a store HR person's list is their store; company-wide HR gets their companies; a plain employee is refused. Flag **off**: the endpoint refuses an HR caller who calls it by hand (A14), and the frame renders no entry. Payload-key test as PRIV-2. A Left employee does not appear |
 | **SEC-14** | The frame's endpoints, `_search_scope` and `_pending_approvals_scope` find the caller's Employee **with status Active only**. A caller whose record is not Active and who holds no HR role finds nobody and has nothing to approve; they may still see their own open requests. `_me()` is not changed globally (the org chart uses it widely) — the Active lookup goes inside the two helpers this slice already claims (W1D-06). The wider fix across `goals_api` is **ALV-87**. **This changes today's live bell and org-chart search on release, not at the swap** | A Left manager with an enabled login and unmoved reports: empty search, zero approvals, empty bell list |
 | **SEC-15** | The new modules keep no module-level cache and no mutable global, because a worker can serve several sites. Any cache uses `frappe.cache()` (per site) or `frappe.local` (one request), keyed by user | A static check on `frame_api.py` and `inbox_api.py`: no `global`, no module-level dict, list or set changed at run time |
 | **PRIV-1** | People search keeps 009 strategy decision 5 and Q-c of 14 Sep: an employee or manager finds themselves and people below them; HR finds their permitted people (store HR: their store plus their own line); nobody finds anyone else | Tests per persona |
@@ -135,8 +145,9 @@ frame stores nothing and decides nothing (security review §6, unchanged at re-r
 
 ### There is no SEC-13 gap any more
 
-Revision 2 skipped SEC-13 by accident (N8). The number is now used by the Team-panel
-requirement above, so the series runs SEC-1 to SEC-15 with nothing missing.
+Revision 2 skipped SEC-13 by accident (N8). The number is used by the Team-screen
+requirement above — rewritten in revision 4, but still SEC-13 — so the series runs SEC-1 to
+SEC-16 with nothing missing.
 
 ## PRIV-7 — the visibility table
 
@@ -152,8 +163,10 @@ narrower.**
 | Colleague name, job title, department, photo | Store HR | Today's org-chart search, **company-wide** | **Narrower** (SEC-4, W1D-07) |
 | Colleague name, job title, department, photo | Company-wide HR | Today's org-chart search, permitted companies | Same |
 | Colleague name, job title, department, photo | A leaver with an enabled login | Today's org-chart search — it still works for them | **Narrower** (SEC-14: nothing) |
-| Team panel: own direct and L2 reports | Manager, HR with reports | Today's Team panel | Same |
-| Team panel: employees with no manager | HR Manager / HR User | Today's Team panel, **every one of them in the tenant** | **Narrower** (SEC-13, W1D-13) |
+| Team screen: own direct and L2 reports | Manager who is not HR | Today's Team panel | Same |
+| Team screen: the caller's HR scope — their companies, or their branch | HR Manager / HR User | Today's Team panel, which already shows them **every** employee in the tenant with no manager, head office included | **Narrower** for store HR (their store only). For company-wide HR it is a **different list of the same people** — their own companies, which is what `permitted_employees()` has always allowed them (SEC-13, W1D-20) |
+| Team screen: everyone in the tenant | A tenant **System Manager** who has an Employee record | The desk's Employee list, which already shows them everyone | **Wider on this screen** — today their Team panel is their own direct reports. **No new data**: `permitted_employees()` gives a System Manager everyone, and so does the desk. This is the one wider row in this table and it is deliberate; **open question 6** offers the alternative |
+| Staff list: name, job title, department, photo | HR, where the tenant has the staff-list switch on | Today's org-chart People screen, for the same person, on a tenant with `plan_org_structure` | **Same data, same scope** (SEC-16, W1D-21). Narrower for store HR, as everywhere else in this slice |
 | Count: leave to approve | Whoever is named approver | Today's leave list | Same |
 | Count: goal and KPI updates | Manager, HR | Today's Growth approvals list | Same for managers; **narrower** for store HR (SEC-3) |
 | Count and list: attendance corrections | HR reviewer | Today's `to_review` queue, company-wide | **Narrower** for store HR (SEC-5, W1D-05) |
@@ -161,7 +174,7 @@ narrower.**
 | Count: shift requests | Named approvers | Today's shift panel | Same |
 | Count: policies to acknowledge | Everyone | Today's Policies panel | Same |
 | Count: my own open requests | Everyone with an Active Employee record | Today's own panels | Same |
-| "Switch to the full desk" | HR and admins, when the server returns a target | Today's switch control | Same |
+| The desk link ("Switch to Admin" / "Switch to HR Core") | HR and System Managers only — **not a plain manager** | Today's switch control, which already behaves this way | Same (W1D-19) |
 | "Tenant admin" | Control-plane operators | Today's admin console | Same |
 | The preview page | System Manager, on dev and local only | — (new) | New page, **no new data**: own permitted data only, and it does not exist on production (SEC-1, W1D-15) |
 
@@ -174,8 +187,10 @@ problem becomes one click from every page. **The user did not accept this: it is
 around it and does not depend on it being fixed first; release readiness records its
 state on the day of the swap.
 
-Note that SEC-13 narrows the **Team panel**, not the org chart. They are different screens
-with different queries, and ALV-86 still stands.
+Note that SEC-13 changes the **Team screen**, not the org chart. They are different screens
+with different queries, and ALV-86 still stands. **W1D-21 does not touch it either**: the
+org chart keeps its own flag and its own company-wide problem, and the new staff list is
+scoped by `permitted_employees()` from its first line, so it does not inherit that defect.
 
 ## Residual risk — every one now has an owner and a date
 
@@ -198,6 +213,7 @@ with different queries, and ALV-86 still stands.
 | 3 | *Closed:* whether a tenant System Manager may see unfinished screens with real data → **moot; the page does not exist on production** (W1D-15) | — | — |
 | 4 | *Closed:* re-check of revision 2 → `06b-security-rereview.md`, closed with notes; those notes are applied here | — | — |
 | 5 | **Open:** `ALV-93` — named logins in place of the shared `Administrator`, and the access log on `dtc` and `aahr` | Surbhi, with the security engineer | Nothing in Wave 1 |
+| 6 | **Open, new (a consequence of W1D-20, raised rather than assumed).** `is_hr` includes **System Manager**, and `permitted_employees()` gives a System Manager everyone — so a tenant System Manager with an Employee record gets a Team screen listing the whole tenant, where today they get their own direct reports. No new data (the desk already shows them everyone), but a wider screen. Leave it, or restrict the Team screen's HR scope to `HR Manager` / `HR User`? **Recommendation: leave it** | Surbhi | One line in the rebuild; needed before that commit, not before day 1 |
 
 ## Assumptions
 
@@ -215,6 +231,15 @@ with different queries, and ALV-86 still stands.
   `alvoraa_control_plane` check already assumes. Confirmed by that check existing; still to
   be run once.
 
+## What changed in revision 4
+
+| Decision | Change |
+|---|---|
+| **W1D-19** | SEC-7 rewritten: the desk link is HR and System Manager only, **a plain manager gets none**, and the labels are the server's. The test gains the plain-manager case and asserts the exact label strings. PRIV-7's switch row rewritten |
+| **W1D-20** | **SEC-13 rewritten** — for an HR caller the Team screen is built from `permitted_employees()`; the orphan block is **deleted**, not filtered; `status = Active`, the caller's own exclusion and a 50-cap with the true total are named as the three things the rebuild must keep. Six test cases, including "not empty" and "no leaver appears". A11 rewritten, A13 added (a non-HR manager is untouched, and why that path never leaked). SEC-6's note on `get_manager_dashboard` reworded. PRIV-7 gains three rows, one of them the **only wider row in the table**, with open question 6 beside it |
+| **W1D-21** | **New SEC-16**: the staff list is its own `opt_in` key in the existing registry, enforced **on the server**, scoped by `permitted_employees()`, Active only, PRIV-2's field set, capped. New abuse cases A14 (flag off, endpoint called by hand) and A15 (store HR searching for head office). PRIV-7 gains the staff-list row |
+| Both | The "who must not see what" row for store HR now names the Team screen and the staff list |
+
 ## What changed in revision 3
 
 | Review item | Change |
@@ -227,7 +252,7 @@ with different queries, and ALV-86 still stands.
 | **N6** | (in `02` §17) The SEC-2 traceability row now points at AC-69 alone |
 | **N7** | SEC-6 no longer quotes a number of `ignore_permissions` uses, and says why |
 | **N8** | SEC-13 exists — the numbering gap is filled by a real requirement, not a note |
-| **W1D-13** | New SEC-13: the Team panel's no-manager list is narrowed to `permitted_employees()`. New abuse case A11. Added to SEC-2's "changes the live portal on release" list and to SEC-6's `ignore_permissions` note |
+| **W1D-13** | New SEC-13: the Team panel's no-manager list is narrowed to `permitted_employees()`. New abuse case A11. Added to SEC-2's "changes the live portal on release" list and to SEC-6's `ignore_permissions` note. **Superseded by W1D-20 in revision 4** — the list is not narrowed, it is gone |
 | **W1D-15** | SEC-1 gains the `portal_preview` site flag as the first lock, the flag-off 404, and a check that no production config sets it. Threat-model point 4, A4, A10 and R5 rewritten |
 | **W1D-16, W1D-17** | The residual-risk table gains an owner and a date on every row |
 | **W1D-18** | A10 corrected: our staff are not tenant System Managers. New R7 for the shared `Administrator`, `ALV-93` |
@@ -237,9 +262,16 @@ with different queries, and ALV-86 still stands.
 To the security engineer, for the review at the end: the three things I would check first
 are **SEC-4's refusal** (the one place where a fail-closed control could turn fail-open),
 **SEC-5's split by caller** (the non-HR reviewer must still have a working queue — a dead
-flow is how the filter gets loosened later), and **SEC-13**, which like SEC-14 narrows a
+flow is how the filter gets loosened later), and **SEC-13**, which like SEC-14 changes a
 live screen the moment it is released rather than at the swap. Both of those go in the
 release note.
+
+Revision 4 adds two more worth your time. **SEC-13's rebuild** is now a bigger change than
+a filter: check that `status = "Active"` survived (`permitted_employees()` deliberately
+returns leavers too), that a store HR person's screen is **not empty**, and that the orphan
+block was deleted rather than left behind a condition. **SEC-16** is the one place a new
+feature flag could become a permission by accident: the check must be in the endpoint, not
+only in the page.
 
 R5 is gone rather than accepted: the preview page no longer exists on production. R3, R4,
 R6 and the new R7 are accepted with owners and dates, in Surbhi's words, not mine.

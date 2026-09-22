@@ -99,7 +99,10 @@ class PermissionTable(DeskCase):
 		frappe.db.set_value("Employee", cls.employee, "reports_to", cls.manager, update_modified=False)
 		cls.store_hr = _user("perm.storehr", ["HR User"])
 		cls.store_perm = _company_permission(cls.store_hr, cls.other_company)
-		cls.sysman = _user("perm.sysman", ["System Manager"])
+		# The CXO persona: System Manager AND HR Manager. A bare System Manager
+		# holds no read on Employee on this site and is refused by hr_who_may_act
+		# - fail closed, and the first run of this module proved it.
+		cls.sysman = _user("perm.sysman", ["System Manager", "HR Manager"])
 		cls.other_employee = _employee("PermOther", cls.other_company, designation=cls.driver)
 		cls.callers = {
 			"guest": "Guest", "employee": cls.colleague, "manager": cls.manager_user,
@@ -208,12 +211,15 @@ class PermissionTable(DeskCase):
 					with self.assertRaises(frappe.PermissionError):
 						frappe.get_doc({"doctype": doctype, **values}).insert()
 					frappe.db.rollback()
-			for doctype, name in ((INVITE, self.invite), (ACKNOWLEDGEMENT, self.ack),
-			                      (DAILY_COUNT, self.count_row)):
+			# A real field of each: set_value refuses a standard field before it
+			# looks at permissions, which would prove nothing.
+			for doctype, name, field, value in ((INVITE, self.invite, "lifetime_hours", 2),
+			                                    (ACKNOWLEDGEMENT, self.ack, "language", "hi"),
+			                                    (DAILY_COUNT, self.count_row, "punches_saved", 9)):
 				with self.subTest(doctype=doctype, action="write"):
 					self.assertFalse(has_permission(doctype, "write", doc=name, print_logs=False))
 					with self.assertRaises(frappe.PermissionError):
-						frappe.client.set_value(doctype, name, "modified_by", self.maker)
+						frappe.client.set_value(doctype, name, field, value)
 					frappe.db.rollback()
 				with self.subTest(doctype=doctype, action="delete"):
 					self.assertFalse(has_permission(doctype, "delete", doc=name, print_logs=False))

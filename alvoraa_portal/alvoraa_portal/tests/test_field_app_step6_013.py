@@ -81,6 +81,7 @@ LON_MARKER = "76.5432101"
 LABEL_MARKER = "Zqxphone Model Six"
 
 COUNTER_PREFIXES = ("alvoraa_fa", "rl:alvoraa_portal.field_")
+N5_SUBJECT = "Many app codes that do not work were tried"
 
 
 def _clear_counters():
@@ -115,6 +116,9 @@ class Step6Case(DailyCase):
 		frappe.set_user("Administrator")
 		_clear_counters()
 		frappe.db.delete(DAILY_COUNT, {"on_date": [">=", add_days(today(), -2)]})
+		# N5 is sent at most once an hour, and the check is on Notification Log:
+		# an earlier test in the same run would otherwise silence this one.
+		frappe.db.delete("Notification Log", {"subject": N5_SUBJECT})
 		frappe.db.commit()
 		frappe.set_user("Guest")
 
@@ -477,8 +481,10 @@ class WhatTheAppHoldsAboutMe(Step6Case):
 		text = json.dumps(mine, default=str)
 		for secret in (code, token, fc._hash(code), fc._hash(token), "token_hash", "block_reason"):
 			self.assertNotIn(secret, text)
-		# never the workplace's coordinates, never the photo itself
-		self.assertNotIn("workplace", text)
+		# never the workplace's coordinates (the notice's own words may say
+		# "workplace"; the KEY must not exist), never the photo itself
+		self.assertNotIn('"workplace"', text)
+		self.assertNotIn("radius", text)
 		self.assertNotIn("alvoraa_checkin_photo", text)
 
 	def test_013_ac153_nobody_else_and_no_way_to_name_anyone_else(self):

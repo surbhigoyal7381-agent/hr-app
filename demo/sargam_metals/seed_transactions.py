@@ -110,7 +110,7 @@ already_manufactured = frappe.db.exists("Stock Entry", {"work_order": wo_name, "
     if wo_name else None
 if wo_name and not already_manufactured:
     from erpnext.manufacturing.doctype.work_order.work_order import make_stock_entry
-    se = make_stock_entry(work_order_id=wo_name, purpose="Manufacture", qty=100)
+    se = frappe.get_doc(make_stock_entry(work_order_id=wo_name, purpose="Manufacture", qty=100))
     se.flags.ignore_permissions = True
     se.insert(ignore_permissions=True)
     se.submit()

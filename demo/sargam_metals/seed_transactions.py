@@ -106,6 +106,19 @@ if not wo_name:
     wo_name = wo.name
     log(f"  [created] Work Order: {wo_name}")
 
+# ERPNext manufactures from the Work-In-Progress warehouse, so the raw material
+# has to be moved there first. Without this transfer the Manufacture entry
+# stops with "Insufficient Stock" - found on the third real run, 2026-09-22.
+already_transferred = frappe.db.exists("Stock Entry",
+    {"work_order": wo_name, "purpose": "Material Transfer for Manufacture", "docstatus": 1})     if wo_name else None
+if wo_name and not already_transferred:
+    from erpnext.manufacturing.doctype.work_order.work_order import make_stock_entry
+    tr = frappe.get_doc(make_stock_entry(work_order_id=wo_name, purpose="Material Transfer for Manufacture", qty=100))
+    tr.flags.ignore_permissions = True
+    tr.insert(ignore_permissions=True)
+    tr.submit()
+    log(f"  [created] Stock Entry (Material Transfer for Manufacture): {tr.name}")
+
 already_manufactured = frappe.db.exists("Stock Entry", {"work_order": wo_name, "purpose": "Manufacture"}) \
     if wo_name else None
 if wo_name and not already_manufactured:

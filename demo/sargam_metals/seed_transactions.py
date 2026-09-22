@@ -171,7 +171,9 @@ if not so_name:
     so_name = so.name
     log(f"  [created] Sales Order: {so_name}")
 
-si_name = frappe.db.get_value("Sales Invoice", {"sales_order": so_name}, "name") if so_name else None
+# The order link lives on the invoice ITEMS, not the invoice - looking it up on the
+# parent would miss an existing invoice and a re-run would raise a second one.
+si_name = frappe.db.get_value("Sales Invoice Item", {"sales_order": so_name, "docstatus": 1}, "parent") if so_name else None
 # Sales Invoice does not carry a direct sales_order field at the parent level
 # in every ERPNext version - this line needs the verification pass in
 # docs/sargam_metals/00-demo-instance-and-plan.md §4 to confirm on the real

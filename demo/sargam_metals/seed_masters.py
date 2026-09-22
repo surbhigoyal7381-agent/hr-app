@@ -117,5 +117,22 @@ ensure("Customer", "Straits Marine Offshore Pte Ltd", {"customer_name": "Straits
        "customer_group": "Commercial", "territory": "Rest Of The World", "default_currency": "USD"})
 commit()
 
+# ── Receivables in USD for the export customer ──────────────────────────────
+# ERPNext books a USD invoice only to a USD receivable account; the default
+# "Debtors - SML" is INR, so the export invoice stopped with "Party Account
+# currency (INR) and document currency (USD) should be same". Found on the
+# fifth real run, 2026-09-22.
+log("USD receivable account for the export customer")
+usd_ar = ensure("Account", f"Debtors USD - {ABBR_IN}", {
+    "account_name": "Debtors USD", "parent_account": f"Accounts Receivable - {ABBR_IN}",
+    "company": COMPANY_IN, "account_type": "Receivable", "account_currency": "USD", "is_group": 0})
+export_customer = frappe.get_doc("Customer", "Straits Marine Offshore Pte Ltd")
+if not any(a.company == COMPANY_IN for a in export_customer.accounts):
+    export_customer.append("accounts", {"company": COMPANY_IN, "account": usd_ar})
+    export_customer.flags.ignore_permissions = True
+    export_customer.save(ignore_permissions=True)
+    log(f"  [linked] {export_customer.name} -> {usd_ar}")
+commit()
+
 counts("Company", "Warehouse", "Item Group", "Item", "Supplier", "Customer")
 log("seed_masters.py done")

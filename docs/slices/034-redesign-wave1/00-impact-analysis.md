@@ -561,3 +561,25 @@ win.** The differences, so nobody builds from the older text:
 | §5.2 claims | Add `hrms/hrms/alvoraa_hr_core/access.py` (new `permitted_employee_filters`), `alvoraa_portal/attendance_correction.py` (`to_review`'s filter) and the Org settings panel's Save controls (decision 3) |
 | §7 not doing | Also not doing: `set_my_language`; the org-chart company scope (**ALV-86**, Critical, before DTC go-live); the wider leaver fix (**ALV-87**) |
 | §8 size, about 11 days | Unchanged in shape, but the added work (store-scoped corrections queue, leaver fix, count-matches-list fixtures, the read-only Org settings line, Hindi fixtures) is **about 1.5 days more**: call it **11–13 days** |
+
+---
+
+## Second revision note — 23 September 2026 (after the two re-reviews)
+
+The analyst's re-review (`02c-ba-rereview.md`) and the security re-review
+(`06b-security-rereview.md`) both closed with notes, and Surbhi took six decisions on them
+the same day. They are recorded in **`00g-decision-register.md`** as **W1D-13 to W1D-18**,
+together with the twelve decisions of 22 September (**W1D-01 to W1D-12**) that these
+documents had been citing as bare numbers with no file behind them. **Cite decisions as
+`W1D-nn` from now on.** `01c` is at revision 3 and `02` is at revision 3; where they
+differ from anything above, **they win**.
+
+| Where above | Now |
+|---|---|
+| Every bare "decision n" in the table above | Read as `W1D-nn` — decision 1 is W1D-01, decision 10 is W1D-10, and so on. The two sets in `00f` are "009 design decision n" and "009 strategy decision n" |
+| §5.2 claims | **Add `alvoraa_portal/alvoraa_portal/hr_api.py`** — `get_manager_dashboard`'s no-manager list is narrowed to `permitted_employees()` (W1D-13, `01c` SEC-13, `02` AC-72). This is a **hot file**; claim it on the work board before the first edit and make the change as its own early commit |
+| §4 the preview page | It is gated on **`frappe.conf` `portal_preview: 1`** as well as the role, so it **does not exist on production** (W1D-15, `01c` SEC-1, `02` AC-74). The flag is set on the local bench and dev only. Residual risk R5 is removed rather than accepted |
+| §4 step 5: `to_review` is store-scoped | Only **when the caller is HR** (W1D-14). A reviewer who is not HR but holds submit permission on Attendance Request keeps today's queue — `_may_review()` tests the permission, not a role |
+| §4 step 6: the shared filter helper | It must **never return an empty filter dict** — in Frappe that means every record. An explicit refusal, with a test that the return value is never `{}` (security note N1, `02` AC-73) |
+| §8 size, 11–13 days | **13–15 build days.** The added work is +0.5 for the Team-panel query, +0.75 for the Inbox counts (capped count plus the two caller paths), +0.25 for the filter helper's refusal and +0.25 for the preview-page flag. `02` §20 has the breakdown. Day 1 is still the page split and the critical path is unchanged |
+| §6 Compliance | `01c` PRIV-7's visibility table is now written — 18 rows, **six narrower than today, none wider** |

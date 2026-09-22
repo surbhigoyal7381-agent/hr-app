@@ -534,9 +534,21 @@ jobs:
               # are invisible while the site still believes the old name. Hence a plain
               # execute, here, first.
               #
-              # Idempotent: prints "nothing to do" on an already-renamed site, so it is
-              # harmless on every ordinary release.
-              $DC exec -T backend bench --site all execute alvoraa_goals.deploy_utils.premigrate_rename
+              # Idempotent: prints "nothing to do" on an already-renamed site. But
+              # "--site all execute <dotted path into an app>" is not like "--site
+              # all migrate" - it needs that app importable on EVERY site, and fails
+              # the whole deploy the moment one site never had it (sargam.dev.alvoraa.co,
+              # 2026-09-22: hard failure, safe rollback, nothing lost, but every
+              # deploy would repeat it). So: run it per site, and only on a site
+              # that actually has some form of the goals app installed.
+              for site in $(list_sites); do
+                if $DC exec -T backend bench --site "$site" list-apps 2>/dev/null \
+                     | grep -qxE 'alvoraa_goals|grace_goals|alvox_goals'; then
+                  $DC exec -T backend bench --site "$site" execute alvoraa_goals.deploy_utils.premigrate_rename
+                else
+                  echo "premigrate_rename: skipping $site (no goals app installed under any name)"
+                fi
+              done
 
               $DC exec -T backend bench --site all migrate
               $DC exec -T backend bench --site all clear-cache

@@ -292,12 +292,20 @@ export function runAll(appDir = APP_DIR) {
 
   const manifest = join(appDir, "android", "app", "src", "main", "AndroidManifest.xml");
   const gradlePath = join(appDir, "android", "app", "build.gradle");
+  const rootGradlePath = join(appDir, "android", "build.gradle");
   const debugNetConfigPath = join(appDir, "android", "app", "src", "debug", "res", "xml", "network_security_config.xml");
   if (existsSync(manifest)) {
     problems.push(...checkManifest(readFileSync(manifest, "utf8")));
 
     if (existsSync(gradlePath)) {
-      problems.push(...checkBuildTypes(readFileSync(gradlePath, "utf8")));
+      // The Firebase/Google-Services classpath this scans for is declared in
+      // the ROOT build.gradle, not this one - scanning only this file let a
+      // restored classpath line in the root file sail through unnoticed.
+      let gradleText = readFileSync(gradlePath, "utf8");
+      if (existsSync(rootGradlePath)) {
+        gradleText += "\n" + readFileSync(rootGradlePath, "utf8");
+      }
+      problems.push(...checkBuildTypes(gradleText));
     } else {
       problems.push("android/app/build.gradle is missing.");
     }

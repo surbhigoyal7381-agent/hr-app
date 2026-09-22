@@ -44,6 +44,30 @@ test("checkVersionBump: versionCode must strictly rise", async () => {
   assert.equal(checkVersionBump(10001, 10000).length, 1);
 });
 
+test("the committed app-version.js matches the committed build.gradle", async () => {
+  const { extractVersion, extractAppVersionConstant, checkAppVersionMatchesGradle } = await load();
+  const fs = require("node:fs");
+  const gradleText = fs.readFileSync(path.join(__dirname, "..", "android", "app", "build.gradle"), "utf8");
+  const jsText = fs.readFileSync(path.join(__dirname, "..", "web", "js", "app-version.js"), "utf8");
+  const gradleVersion = extractVersion(gradleText);
+  const jsVersion = extractAppVersionConstant(jsText);
+  assert.equal(jsVersion, "0.1.0");
+  assert.deepEqual(checkAppVersionMatchesGradle(jsVersion, gradleVersion.versionName), []);
+});
+
+test("extractAppVersionConstant reads APP_VERSION out of plain JS text", async () => {
+  const { extractAppVersionConstant } = await load();
+  assert.equal(extractAppVersionConstant('var APP_VERSION = "1.2.3";'), "1.2.3");
+  assert.equal(extractAppVersionConstant("nothing here"), null);
+});
+
+test("checkAppVersionMatchesGradle: a mismatch fails, a match and a missing constant are handled", async () => {
+  const { checkAppVersionMatchesGradle } = await load();
+  assert.deepEqual(checkAppVersionMatchesGradle("0.1.0", "0.1.0"), []);
+  assert.equal(checkAppVersionMatchesGradle("0.1.0", "0.2.0").length, 1);
+  assert.equal(checkAppVersionMatchesGradle(null, "0.1.0").length, 1);
+});
+
 test("extractVersion reads both fields out of a Gradle file's text", async () => {
   const { extractVersion } = await load();
   const text = 'versionCode 10000\n        versionName "0.1.0"\n';

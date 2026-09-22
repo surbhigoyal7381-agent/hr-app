@@ -2,8 +2,8 @@
 slice: 013-mobile-app
 artifact: 03-implementation-notes
 author: hrms-fullstack-engineer
-date: 2026-09-17, continued 2026-09-22
-status: in progress — part 2 added (stage 1 build, stage-2 spike). Local only. Nothing pushed.
+date: 2026-09-17, continued 2026-09-22 (twice)
+status: in progress — part 3 added (US-35-38, the real join screens). Local only. Nothing pushed.
 branch: slice/013-mobile-app in .claude/worktrees/013-mobile-app (2026-09-17 entries) and
   .claude/worktrees/agent-a4e078558e4079082 (2026-09-22 entries), rebased onto origin/dev
   3ab09f1 (today's fetch - all five server steps are on dev now)
@@ -377,3 +377,109 @@ actually exercised on the bench.
    dependency for stage 2 (US-35–38) is Android Studio/SDK access for anything past
    what plain Node can check, which is confirmed available on the bench (not in this
    sandbox).
+
+---
+
+## 8. The real join screens: US-35, US-36, US-37, US-38 (2026-09-22, same day)
+
+Written straight after the spike, on the user's decision to skip a separate throwaway
+storage-test screen and go straight to the real join flow - the join flow writing a
+real secret through the chosen plugin **is** the on-device proof, once someone can run
+it. Same sandbox, same limits as §7: no Android SDK, no emulator, no device.
+
+### 8.1 What was built, file by file
+
+| File | Mechanism | Why |
+|---|---|---|
+| `web/js/app-version.js` (new) | **Build**: one constant, `APP_VERSION`, sent as `X-Alvoraa-App-Version` on every call (AC-203) | The version header the server's `check_app_version()` reads has to come from somewhere; one small file, pinned against `build.gradle` (below), beats a string duplicated wherever a call is made |
+| `web/js/api.js` (new) | **Build**: `checkCode`/`refuseCode`/`joinWithCode` over `fetch`, reading `code`/`values` at the top level of the body per `field_app_errors.py`'s real, shipped contract - never Frappe's `message` envelope for a refusal, never the English sentence (MA-30) | This is the one place the wire format is parsed; every screen downstream trusts it once, instead of re-deriving it |
+| `web/js/join-screens.js` (new) | **Build**: a pure `screenFor(code, values, opts)` table, one entry per code in scope, returning heading/body/steps/buttons/footer exactly as 01b §7.12 writes them | Mirrors `field_app_errors.py`'s own shape (one table, one place) - and is the one part of this whole build that could be proven the same way `host-check.js` already was |
+| `web/js/device-secret.js` (new) | **Build**: `save`/`load`/`clear` wrapping `capacitor-secure-storage-plugin`, refusing to read or write through anything but a real native platform (the spike's own flagged risk, now enforced in code, not just written down) | AC-217: the secret may never sit in `localStorage`, `Preferences`, or WebView storage - including the plugin's OWN web fallback, which is exactly that |
+| `web/js/build-type.js` (new) + two per-build-type overrides under `android/app/src/{debug,pilot}/assets/public/js/` | **Build**: `host-check.js`'s `checkEnrolLink(text, buildType)` needs to know its own build type at runtime; nothing wired this before. Uses Android's own source-set asset merging - the same mechanism `network_security_config.xml` (stage 1) already relies on - so `cap sync`/`cap copy` never touch the debug/pilot copies | The alternative (a runtime guess, or trusting a value from the server) would have been exactly the kind of thing OPS-7/SEC-14 exist to prevent |
+| `web/js/vendor/capacitor-core.js`, `web/js/vendor/secure-storage-plugin.js` (new, vendored + hash-pinned, same pattern as `jsqr.js`) | **Configure**: Capacitor's public JS API (`registerPlugin`, `Capacitor.Plugins`, `isNativePlatform`) is not auto-injected by the native side the way the low-level bridge is - it has to be loaded from web assets, same as any other script here | See §8.3 - this is the least proven part of the whole build |
+| `web/index.html`, `web/js/join.js`, `web/css/app.css` (rewritten / new) | **Build**: the real screens - `first`, `camExplain`, `scan`, `checking`, `confirm`, `notMe`/`notMeDone`, `notice`, `joining`, `welcome`, and one generic `problem` screen driven by `join-screens.js` | Replaces the throwaway camera/GPS test page entirely - it served its purpose (§6) and is gone, not extended |
+
+Every value the server sends is rendered with `textContent`, never `innerHTML`
+(SEC-17, US-45) - `scripts/check_app.mjs`'s own lint rule stayed green through the whole
+build, which is the cheapest proof available that this held.
+
+### 8.2 What is genuinely proven (real test output, not claimed)
+
+`npm test`: **63 passing**, `0` failing, including 25 new tests across `api.test.js`,
+`join-screens.test.js`, `device-secret.test.js` and `build-type.test.js`. `npm run check`
+(now `check_app.mjs` **and** `check_versions.mjs`): clean.
+`python3 scripts/check_tracked_keys.py`: clean, 2,630 tracked files.
+
+What that actually proves: the network layer reads a refusal's `code`/`values` correctly
+and never trusts Frappe's `message` key for one; every in-scope server code (and every
+client-made one) lands on a real screen with real words, including the two date-shaped
+sentences (`QR_EXPIRED`'s always-dated form, `QR_USED`'s today/on-date branch);
+`device-secret.js` never writes or reads through anything but a real native platform,
+proven with a fake plugin that WOULD have quietly worked if the safety check were
+missing; and the vendored files have not drifted from what was actually installed.
+
+### 8.3 What is NOT proven, and cannot be proven in this sandbox
+
+This is the boundary the user asked to be explicit about, restated plainly:
+
+1. **The Capacitor JS bridge wiring itself.** `capacitor-core.js` must load before
+   `secure-storage-plugin.js` (the second expects a global, `capacitorExports`, that the
+   first defines) - this is read from the packages' own structure and Capacitor's
+   documented "no bundler" pattern, not proven against a running app. **If this is wrong,
+   the visible symptom on a real device would be a console error like
+   `capacitorExports is not defined`, and every screen after `welcome` would fail to save
+   the secret.** This is the single most important thing to check first on a real build.
+2. **The actual Keystore round trip** - encrypt, store, restart the app, decrypt - on a
+   real phone, still unproven exactly as the spike (§7.4/§7.5) already said, and now the
+   real code path (`agreeAndFinish` → `device-secret.js.save()`) depends on it working.
+3. **The camera scan loop and the file-picker decode path**, both written against
+   standard web APIs (`getUserMedia`, `<input type=file>`) with no Capacitor plugin, the
+   same way the retired test page already proved the camera itself works in this
+   WebView (§6) - but reading a live, moving QR code fast enough is a different question
+   from opening the camera, and only a real phone answers it.
+4. **Permission-prompt timing** (`camExplain` before the OS prompt, `AC-182`): this build
+   always shows `camExplain` on first launch rather than detecting an already-granted
+   permission, because the Permissions API's camera support is inconsistent across
+   WebViews and untestable here - a small, deliberate simplification, not a forgotten
+   requirement.
+5. **`CAMERA_DENIED`'s "Open phone settings" button** does not actually open Android's
+   per-app settings page - no vetted plugin does that yet (that would be a third native
+   plugin decision, not made in this increment). It re-attempts the camera prompt instead,
+   which some WebViews do re-show unless the person chose "don't ask again"; "Choose a
+   picture instead" is the button that reliably works today.
+6. **The phone's model name** (`device_label`, AC-220) is sent as an empty string, not the
+   real model - reading it needs `Capacitor.Device` or a `navigator.userAgent` guess,
+   neither of which was part of the two building blocks this stage-2 spike was scoped to.
+   Small, declared, and worth a quick decision before this ships past a debug build.
+7. **`CONSENT_REQUIRED` / "Consent not given"** (the drift the impact analysis flagged,
+   and the user already approved reusing `noticeAgain` for): it cannot actually occur
+   anywhere in this build. `join_with_code` is always called with `agreed=1` (`api.js`),
+   so the server never has a reason to create a phone in that state from this flow, and
+   none of E1/E2/E3 (the only endpoints this build calls) return that code at all - only
+   E4/E5/E9 do, none of which are called before a phone is joined. `join-screens.js`
+   still falls back safely (the generic `unknownCode` screen, never a blank one) if that
+   ever changes, but no dedicated handling was needed or built.
+8. **`NOTICE_CHANGED` during `join_with_code`** is handled minimally: the same `notice`
+   screen is re-shown with the server's new rows in place, not the full `noticeAgain`
+   screen `01b` describes for US-42 (not built this increment). One known gap: that
+   refusal's `values` do not carry the tick-box's own wording, so the fallback English
+   text is used - correct today (there is only one notice version), would need a small
+   server-side addition if a future version ever changed those exact words.
+
+### 8.4 What I did not build, on purpose
+
+- No `Check In` screen (US-39) - `welcome`'s **Check In** button shows a plain
+  "not built yet" line rather than pretending to work or failing silently.
+- No settings screen, no "what this app records", no remove-phone flow (US-43).
+- No Hindi strings, no language switch on `first` - `01b`'s design shows one, but with
+  Hindi text still machine-drafted and unchecked (D15), and no build-type-aware way yet
+  to hide it in pilot/release (AC-224), leaving it out entirely is more honest than a
+  toggle that does nothing.
+
+### 8.5 What the user's own real-device build (running in parallel) will actually settle
+
+In order of how much this build depends on each answer: (1) does the app even load
+without a console error from the Capacitor bridge wiring; (2) does a join actually save
+a secret through the Keystore plugin and survive an app restart; (3) does the camera
+scan loop read a real, moving QR code fast enough to feel like "one scan"; (4) everything
+in §7's own still-open list (the 32-bit round trip, the network/build-type changes).

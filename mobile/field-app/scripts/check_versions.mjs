@@ -66,6 +66,33 @@ export function checkVersionBump(oldCode, newCode) {
   return problems;
 }
 
+// AC-203: every server call carries X-Alvoraa-App-Version, read from
+// web/js/app-version.js's one constant. If that constant ever drifted from
+// build.gradle's versionName, the app would send a number the server never
+// actually shipped with - APP_TOO_OLD/APP_VERSION checks on the server side
+// would then be comparing against a fiction. Extracted the same crude way as
+// build.gradle's own fields - this file is JS, not Groovy, but a small
+// hand-written app has exactly one of these constants to find.
+export function extractAppVersionConstant(jsText) {
+  const match = /APP_VERSION\s*=\s*["']([^"']+)["']/.exec(jsText);
+  return match ? match[1] : null;
+}
+
+export function checkAppVersionMatchesGradle(jsVersion, gradleVersionName) {
+  const problems = [];
+  if (!jsVersion) {
+    problems.push("Could not find APP_VERSION in web/js/app-version.js.");
+    return problems;
+  }
+  if (jsVersion !== gradleVersionName) {
+    problems.push(
+      `web/js/app-version.js's APP_VERSION ("${jsVersion}") does not match ` +
+      `android/app/build.gradle's versionName ("${gradleVersionName}"). The app would send a ` +
+      `version number on every call (AC-203) that the build it ships in does not actually have.`);
+  }
+  return problems;
+}
+
 // ── CLI ──────────────────────────────────────────────────────────────────────
 
 function readVersion(path) {
@@ -82,6 +109,10 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const gradlePath = join(APP_DIR, "android", "app", "build.gradle");
   const current = readVersion(gradlePath);
   const problems = checkVersionFormat(current);
+
+  const versionJsPath = join(APP_DIR, "web", "js", "app-version.js");
+  const jsVersion = extractAppVersionConstant(readFileSync(versionJsPath, "utf8"));
+  problems.push(...checkAppVersionMatchesGradle(jsVersion, current.versionName));
 
   const oldPath = process.argv[2];
   if (oldPath) {

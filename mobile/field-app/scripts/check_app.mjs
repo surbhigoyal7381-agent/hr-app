@@ -58,6 +58,10 @@ const WEB_EXTENSIONS = new Set([".html", ".js", ".mjs", ".css", ".json", ".svg"]
 export const VENDORED_FILES = {
   "web/js/vendor/jsqr.js":
     "bc40c8a15196236b2314db0856f72ca0b49980cd5413b8c852a7349f5fee0859", // jsqr 1.4.0, dist/jsQR.js
+  "web/js/vendor/capacitor-core.js":
+    "3333389c8cccd266c26399aaf7fc2a695c110684dd6340aea47935416be86a0c", // @capacitor/core 8.5.2, dist/capacitor.js
+  "web/js/vendor/secure-storage-plugin.js":
+    "aca8dcc86ceed62b299b566d3f9f796bc409f7a3909cf9e6510c866db95d8d6b", // capacitor-secure-storage-plugin 0.13.0, dist/plugin.js
 };
 
 // ── the checks, each returning a list of problems ───────────────────────────

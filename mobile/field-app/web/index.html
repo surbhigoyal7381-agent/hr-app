@@ -16,54 +16,134 @@
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-<header>
-  <h1>Alvoraa Attendance</h1>
-  <p class="build" id="build-line">Debug build</p>
-</header>
-
 <main id="app">
-  <!--
-    First phone test. The attendance screens arrive with US-35 onwards, and the
-    server endpoints with slice 014 and the 013 server stories. Until then this
-    page checks the two things the phone itself has to get right: the camera and
-    the position. It talks to no server, so nothing is sent or saved anywhere.
-  -->
-  <p class="banner" role="status">
-    This build is not connected to any server yet. Nothing on this screen is sent
-    or saved anywhere. It only checks that this phone's camera and location work.
-  </p>
 
-  <section aria-labelledby="cam-h">
-    <h2 id="cam-h">Camera</h2>
-    <p id="cam-state">Not tested yet.</p>
-    <video id="cam-view" playsinline muted hidden></video>
-    <img id="cam-shot" alt="The photo just taken on this phone" hidden>
-    <p id="cam-facts"></p>
-    <button id="b-cam" type="button">Turn the camera on</button>
-    <button id="b-shot" type="button" hidden>Take the photo</button>
-    <p class="small">The photo is kept in memory only, never saved as a file.</p>
+  <!-- ============================== first launch (US-35, 01b §7.1) ============================== -->
+  <section class="screen" data-screen="first">
+    <h1>Alvoraa</h1>
+    <h2>Mark your attendance with this phone</h2>
+    <p>Your HR team gives you a QR code. Scan it once to join your company.</p>
+    <p>You do not need an email address or a password.</p>
+    <p class="small">No QR code yet? Ask HR to invite you to the Alvoraa app.</p>
+    <button type="button" data-action="scan-pressed">Scan the QR code from HR</button>
+    <button type="button" class="secondary" data-action="choose-picture">Choose the QR picture from my photos</button>
   </section>
 
-  <section aria-labelledby="loc-h">
-    <h2 id="loc-h">Location</h2>
-    <p id="loc-state">Not tested yet.</p>
-    <p id="loc-facts"></p>
-    <button id="b-loc" type="button">Find where I am</button>
-    <p class="small">Asked for only while the app is open. No map, no tracking.</p>
+  <!-- ============================== camera explained (01b §7.2) - shown only if the camera has never been asked for ============================== -->
+  <section class="screen" data-screen="camExplain">
+    <h2>The app needs your camera to scan the code</h2>
+    <p>Next, your phone will ask if Alvoraa may take pictures. Press &quot;While using the app&quot;.</p>
+    <p class="card">The camera is used only when you scan a code, or when you press Check In or Check Out.</p>
+    <button type="button" data-action="open-scanner">Continue</button>
+    <button type="button" class="secondary" data-action="choose-picture">Choose a picture instead</button>
   </section>
 
-  <section aria-labelledby="next-h">
-    <h2 id="next-h">Not built yet</h2>
-    <ul>
-      <li>Scanning HR's QR code, and joining.</li>
-      <li>Check In and Check Out, and the notice you agree to.</li>
-      <li>Anything that talks to your company's Alvoraa site.</li>
-    </ul>
+  <!-- ============================== scanner (01b §7.3) ============================== -->
+  <section class="screen" data-screen="scan">
+    <p>Point the camera at the QR code</p>
+    <video id="scan-video" playsinline muted></video>
+    <canvas id="scan-canvas" hidden></canvas>
+    <button type="button" class="secondary" data-action="choose-picture">Choose a picture instead</button>
+    <button type="button" class="secondary" data-action="cancel-scan">Cancel</button>
   </section>
+
+  <!-- Hidden file input for "choose a picture" - the system photo/gallery picker,
+       a plain web control, needs no Capacitor plugin and no storage permission
+       (AC-184). Never has `capture`, which would open the camera instead. -->
+  <input type="file" id="photo-picker" accept="image/*" hidden>
+
+  <!-- ============================== checking the code (01b §7.4) ============================== -->
+  <section class="screen" data-screen="checking">
+    <p class="busy">Checking the code</p>
+  </section>
+
+  <!-- ============================== is this you? (01b §7.5, WOW part 1) ============================== -->
+  <section class="screen" data-screen="confirm">
+    <h2>Is this you?</h2>
+    <div class="card person">
+      <div class="initials" id="confirm-initials" aria-hidden="true"></div>
+      <p class="name" id="confirm-name"></p>
+      <p id="confirm-designation"></p>
+      <p class="company" id="confirm-company"></p>
+    </div>
+    <p class="small">HR made this code for one person only.</p>
+    <button type="button" class="primary-green" data-action="confirm-yes">Yes, this is me</button>
+    <button type="button" class="secondary" data-action="confirm-not-me">This is not me</button>
+  </section>
+
+  <!-- ============================== this is not me (01b §7.6) ============================== -->
+  <section class="screen" data-screen="notMe">
+    <h2>This code is for someone else</h2>
+    <p>Nothing has been set up on this phone.</p>
+    <p>If you cancel the code, it stops working. HR will see that it was cancelled on a phone, and can make a new one.</p>
+    <p>Please tell HR the code came to you by mistake.</p>
+    <button type="button" data-action="cancel-code">Cancel this code</button>
+    <button type="button" class="secondary" data-action="not-me-go-back">Go back. It is me.</button>
+  </section>
+
+  <section class="screen" data-screen="notMeDone">
+    <h2>The code is cancelled</h2>
+    <p>Nothing was set up on this phone. If you are waiting for your own code, ask HR.</p>
+    <button type="button" data-action="done-to-first">Done</button>
+  </section>
+
+  <!-- ============================== the notice (01b §7.7) - rendered from the server's own words, never hardcoded ============================== -->
+  <section class="screen" data-screen="notice">
+    <p class="topbar" id="notice-topbar"></p>
+    <button type="button" class="link" data-action="notice-back">Back</button>
+    <h2>Before you start</h2>
+    <p id="notice-intro"></p>
+    <div id="notice-rows"></div>
+    <p class="error" id="notice-tick-error" role="alert" hidden>Please tick the box to show you have read the notice.</p>
+    <label class="tick-row">
+      <input type="checkbox" id="notice-tick">
+      <span id="notice-agree-words"></span>
+    </label>
+    <button type="button" data-action="agree-and-finish">Agree and finish</button>
+  </section>
+
+  <section class="screen" data-screen="joining">
+    <p class="busy">Setting up this phone</p>
+  </section>
+
+  <!-- ============================== welcome (01b §7.8, WOW part 2) ============================== -->
+  <section class="screen" data-screen="welcome">
+    <h2 id="welcome-heading"></h2>
+    <p>You do not need to wait for HR. You can mark attendance now.</p>
+    <div class="card" id="welcome-card"></div>
+    <button type="button" class="primary-green" data-action="welcome-check-in">Check In</button>
+    <button type="button" class="link" data-action="welcome-not-now">Not now</button>
+    <p class="small" id="welcome-not-built" hidden>
+      The Attendance screen is not built yet in this increment (US-39).
+    </p>
+  </section>
+
+  <!-- ============================== one generic problem screen (01b §7.12, D11) ============================== -->
+  <section class="screen" data-screen="problem">
+    <h2 id="problem-heading"></h2>
+    <p id="problem-body"></p>
+    <ol id="problem-steps" hidden></ol>
+    <div id="problem-buttons"></div>
+    <p class="small" id="problem-footer"></p>
+  </section>
+
 </main>
 
+<!-- Vendored third-party code (web/js/vendor/README.md): capacitor-core.js
+     must load before secure-storage-plugin.js. jsqr.js has no such ordering
+     requirement. -->
+<script src="js/vendor/capacitor-core.js"></script>
+<script src="js/vendor/secure-storage-plugin.js"></script>
+<script src="js/vendor/jsqr.js"></script>
+
+<script src="js/build-type.js"></script>
+<script src="js/app-version.js"></script>
 <script src="js/host-check.js"></script>
 <script src="js/photo.js"></script>
-<script src="js/app.js"></script>
+<script src="js/qr-decode.js"></script>
+<script src="js/device-secret.js"></script>
+<script src="js/api.js"></script>
+<script src="js/join-screens.js"></script>
+<script src="js/join.js"></script>
 </body>
 </html>

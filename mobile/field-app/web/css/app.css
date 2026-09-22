@@ -19,4 +19,24 @@ button { display: block; width: 100%; min-height: 60px; margin-top: 10px;
 button:focus-visible { outline: 3px solid #111; outline-offset: 2px; }
 video, img { width: 100%; max-height: 40vh; object-fit: contain;
              background: #000; border-radius: 10px; margin-top: 10px; }
-ul { margin: 6px 0; padding-left: 20px; }
+ul, ol { margin: 6px 0; padding-left: 20px; }
+
+/* Join flow (slice 013, US-35-38) */
+.screen[hidden] { display: none; }
+.card { background: var(--ground); border: 1px solid var(--line); border-radius: 10px;
+        padding: 12px; margin: 10px 0; }
+.busy { text-align: center; font-size: 19px; padding: 40px 0; color: var(--muted); }
+button.secondary { background: #fff; color: var(--blue); border: 2px solid var(--blue); }
+button.link { background: none; color: var(--blue); font-weight: 600; min-height: 44px;
+              width: auto; padding: 0; text-align: left; }
+button.primary-green { background: #1a7f37; }
+.error { color: #9f1c1c; font-weight: 600; }
+.tick-row { display: flex; align-items: flex-start; gap: 10px; margin: 12px 0; }
+.tick-row input { width: 24px; height: 24px; margin-top: 2px; flex: none; }
+.topbar { color: var(--muted); font-size: 15px; margin-bottom: 2px; }
+.person .initials { width: 56px; height: 56px; border-radius: 50%; background: var(--blue);
+                     color: #fff; display: flex; align-items: center; justify-content: center;
+                     font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+.person .name { font-size: 20px; font-weight: 700; margin: 4px 0 0; }
+#problem-buttons button { margin-top: 10px; }
+#photo-picker { display: none; }

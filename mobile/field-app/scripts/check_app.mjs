@@ -17,6 +17,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, extname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 
 const APP_DIR = fileURLToPath(new URL("..", import.meta.url));
 
@@ -46,6 +47,18 @@ const OUTSIDE_HOST = /jsdelivr|unpkg\.com|cdnjs|googleapis|gstatic|cloudflare|lo
 const HTML_SINK = /\.(?:innerHTML|outerHTML)\s*[+]?=|insertAdjacentHTML\s*\(|document\.write(?:ln)?\s*\(/;
 
 const WEB_EXTENSIONS = new Set([".html", ".js", ".mjs", ".css", ".json", ".svg"]);
+
+// web/js/vendor/*: third-party code copied byte-for-byte from an npm
+// package's published dist output (see web/js/vendor/README.md), never
+// hand-edited. It is pinned by hash here instead of being scanned line by
+// line like our own code - a vendored bundle legitimately mentions an outside
+// URL in a comment (jsQR's does, an algorithm reference, not a network call),
+// and the hash pin is the stronger check anyway: it catches ANY change, not
+// only the ones our own line-based rules know to look for.
+export const VENDORED_FILES = {
+  "web/js/vendor/jsqr.js":
+    "bc40c8a15196236b2314db0856f72ca0b49980cd5413b8c852a7349f5fee0859", // jsqr 1.4.0, dist/jsQR.js
+};
 
 // ── the checks, each returning a list of problems ───────────────────────────
 
@@ -109,6 +122,25 @@ export function checkWebFile(path, text) {
       problems.push(`${path}:${i + 1}: writes HTML from a string. Use textContent, or mark the line "// safe-html: <reason>" after review (SEC-17).`);
     }
   });
+  return problems;
+}
+
+// A vendored file's actual content must match the SHA-256 pinned above -
+// exactly, every byte. `files` is { "web/js/vendor/x.js": "<bytes>", ... },
+// so this stays pure and testable without touching a real filesystem.
+export function checkVendoredFiles(files) {
+  const problems = [];
+  for (const [path, expected] of Object.entries(VENDORED_FILES)) {
+    const content = files[path];
+    if (content === undefined) {
+      problems.push(`${path} is missing but is listed as a vendored file in VENDORED_FILES.`);
+      continue;
+    }
+    const actual = createHash("sha256").update(content).digest("hex");
+    if (actual !== expected) {
+      problems.push(`${path} does not match its pinned SHA-256 (expected ${expected}, got ${actual}). A vendored file must never be hand-edited - update the pin deliberately if the version really changed (web/js/vendor/README.md).`);
+    }
+  }
   return problems;
 }
 
@@ -241,10 +273,18 @@ export function runAll(appDir = APP_DIR) {
   problems.push(...checkDependencies(pkg, lock));
 
   const webDir = join(appDir, config.webDir || "web");
+  const vendoredContent = {};
   for (const file of walk(webDir)) {
     if (!WEB_EXTENSIONS.has(extname(file).toLowerCase())) continue;
-    problems.push(...checkWebFile(relative(appDir, file).replace(/\\/g, "/"), readFileSync(file, "utf8")));
+    const relPath = relative(appDir, file).replace(/\\/g, "/");
+    if (relPath in VENDORED_FILES) {
+      // Pinned by hash instead of scanned line by line - see VENDORED_FILES.
+      vendoredContent[relPath] = readFileSync(file, "utf8");
+      continue;
+    }
+    problems.push(...checkWebFile(relPath, readFileSync(file, "utf8")));
   }
+  problems.push(...checkVendoredFiles(vendoredContent));
 
   const manifest = join(appDir, "android", "app", "src", "main", "AndroidManifest.xml");
   const gradlePath = join(appDir, "android", "app", "build.gradle");

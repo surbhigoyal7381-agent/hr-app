@@ -2,9 +2,11 @@
 slice: 013-mobile-app
 artifact: 03-implementation-notes
 author: hrms-fullstack-engineer
-date: 2026-09-17
-status: in progress — part 1 of many (app guard and skeleton). Local only. Nothing pushed.
-branch: slice/013-mobile-app in .claude/worktrees/013-mobile-app, from origin/dev 9138251
+date: 2026-09-17, continued 2026-09-22
+status: in progress — part 2 added (stage 1 build, stage-2 spike). Local only. Nothing pushed.
+branch: slice/013-mobile-app in .claude/worktrees/013-mobile-app (2026-09-17 entries) and
+  .claude/worktrees/agent-a4e078558e4079082 (2026-09-22 entries), rebased onto origin/dev
+  3ab09f1 (today's fetch - all five server steps are on dev now)
 ---
 
 # 013 — implementation notes (written as the work goes)
@@ -214,3 +216,164 @@ Three consequences for the design:
 Everything that touches the server: consent gate, enrolment, field-worker
 designations, photo check-in, device register. It waits for slice 014 to land, because
 it edits the same check-in files.
+
+---
+
+## 7. Stage 1 (US-31–34) and the stage-2 spike (2026-09-22)
+
+Written after `00-impact-analysis-app-client.md` was approved. All five server steps
+(013's own) are on `origin/dev` now, and slice 014 is long since merged - the blocker
+this file's part 1 recorded above no longer applies to anything server-side. This
+session's sandbox has **no Android SDK at all** (no `ANDROID_HOME`, no SDK directory,
+only a bare `gradle` binary) - every claim below says plainly whether it was actually
+run, or only reviewed by reading source.
+
+### 7.1 Correction to my own earlier analysis
+
+The impact analysis (and this file's part 1) said `android/` was not generated yet,
+going by the 2026-09-17/18 dates on the notes. That was wrong: `android/` was already
+generated and committed, with a manifest already holding exactly the five allowed
+permissions. I found this by actually looking at the checked-out tree before building,
+not by trusting the older notes - which is the whole reason to check rather than
+assume. `README.md` said the same wrong thing and is fixed in this commit.
+
+### 7.2 Stage 1: US-31 verified, US-32/33/34 built
+
+| Story | What | Mechanism | Proven how |
+|---|---|---|---|
+| US-31 | Key guard | Verified, unchanged | `python3 scripts/check_tracked_keys.py` → clean; `ci.yml`'s `key-guard` job read, intact |
+| US-32 | Three build types, version rule | **Build**: added a `pilot` build type (`.pilot` suffix) beside the existing `debug`/`release`; **Build**: `scripts/check_versions.mjs`, pure and tested, enforcing OPS-40's formula and that versionCode always rises | `node --test` (new tests pass); ran the script by hand against `origin/dev`'s real `build.gradle` - failed before I bumped the version, passed after |
+| US-33 | Debug-only cleartext allow-list | **Build**: `android/app/src/debug/res/xml/network_security_config.xml` + a debug-only manifest fragment, permitting HTTP only to `localhost`/`10.0.2.2` (via `adb reverse` or the emulator), never a tenant. Android's own source-set rules keep both files out of pilot/release | `check_app.mjs` extended to read and check this file's actual content; `npm run check` clean |
+| US-34 | No hidden powers | **Configure**: removed the Capacitor template's dormant Google-Services/Firebase Gradle hook (both `build.gradle` files) - dead code today, but a `google-services.json` copied in from elsewhere would have silently switched it on | `check_app.mjs` now fails if either file reappears; confirmed by re-running `npm run check` |
+
+Also added Gradle wrapper validation to `mobile.yml` (checks the wrapper jar against
+Gradle's own published checksum - no SDK needed for this one).
+
+**What was not, and could not be, run here:** any real `./gradlew` build, an installed
+APK, or the new CI steps on an actual GitHub Actions runner. The manifest-merger
+behaviour of the debug-only files in particular still needs proving on a machine with
+the real SDK.
+
+### 7.3 Stage-2 spike 1: QR reading — chose jsQR 1.4.0
+
+Compared against `zxing-wasm` 3.1.4 (the other option DevOps named in `07` §5, "after
+the spike"). Checked with `npm view` before installing either:
+
+| | jsQR 1.4.0 | zxing-wasm 3.1.4 |
+|---|---|---|
+| Unpacked size | 280 KB (mostly `.d.ts` files; the real bundle is one 257 KB file) | 3.68 MB |
+| Form | Plain JS (webpack UMD bundle) | WebAssembly binary + JS glue |
+| Auditable by our own CI | Yes - `check_app.mjs`'s text scanners can read every line | No - a compiled `.wasm` file is opaque to a text scan |
+| Needs Google Play services | No | No (not a differentiator here) |
+
+Chose **jsQR 1.4.0** for the size, the plain-JS auditability (matches how
+`scripts/check_app.mjs` already works - it scans source text, not binaries), and
+because reading pixels needs nothing beyond the `CAMERA` permission the app already
+holds for the punch photo, where a native ML-Kit-backed scanner plugin would have
+brought its own permission surface to re-audit and would not run on a pilot phone
+with no Google Play services (the pilot phone table, AC-231, tracks this per phone).
+
+**Vendored, not resolved at build time** (there is no bundler step; `web/*.js` files
+are loaded as plain `<script>` tags, same as `host-check.js` and `photo.js` already
+are): `node_modules/jsqr/dist/jsQR.js` copied byte-for-byte to
+`web/js/vendor/jsqr.js`, its licence alongside, its SHA-256 pinned in
+`scripts/check_app.mjs` (`VENDORED_FILES`) the same way `ci.yml` already pins
+gitleaks's checksum. `checkWebFile`'s line-by-line scan (built for our own code) is
+skipped for anything under `vendor/` and replaced by the hash pin, because that scan
+otherwise flags a real, harmless URL in jsQR's own comments (an algorithm reference,
+not a network call) as if it were ours.
+
+Wrote `web/js/qr-decode.js` - a thin, pure wrapper (`decode(imageData, jsQRFn)`) around
+the vendored decoder, taking the decoder function as an argument the same way
+`photo.js` takes `makeCanvas` as one, so it needs no browser and no DOM to test.
+
+**Proven, for real, in `test/qr-decode.test.js`:** a genuine 33×33 QR module matrix
+(computed once with the `qrcode` npm package - never added to this project, since a QR
+*reader* has no business depending on a QR *writer* - for the exact link shape
+`host-check.js` expects: `https://ppj.alvoraa.co/enrol#t=<43-char code>`) is rendered
+into a raw RGBA buffer with a quiet zone, the way a real camera frame would look, and
+decoded back with the real vendored `jsqr.js`. It reads back byte-for-byte the same
+link that went in, and that decoded text then passes `host-check.js`'s own rule
+end-to-end. Also proven: a blank frame finds nothing (no false positive); a malformed
+frame returns `null` rather than throwing; a missing decoder throws rather than
+silently reporting "no code here" (fail closed). Six tests, all passing -
+`node --test test/qr-decode.test.js`.
+
+**What this does NOT prove:** that the camera-frame loop itself - grabbing frames fast
+enough, at a size jsQR can actually read, from a real phone's camera - works well
+enough in practice. That is a device question for when the scan screen (US-35) is
+built, not a decoding-logic question, and the pilot's own timing measures (AC-191,
+AC-232) are where it gets settled.
+
+### 7.4 Stage-2 spike 2: device secret storage — chose `capacitor-secure-storage-plugin` 0.13.0
+
+Compared two candidates found on npm:
+
+| | `capacitor-secure-storage-plugin` 0.13.0 | `@aparajita/capacitor-secure-storage` 8.0.0 |
+|---|---|---|
+| Capacitor 8 support | `peerDependencies: "@capacitor/core": ">=8.0.0"` | ships its OWN copies of `@capacitor/core`, `/android`, `/ios`, `/app`, `/keyboard` as regular dependencies |
+| Extra native surface | None beyond the storage itself | Pulls in the `App` and `Keyboard` plugins too, unasked |
+| Extra Android permissions | None (`AndroidManifest.xml` is empty) | Not checked - ruled out before going further |
+| Licence | MIT | MIT |
+| Last published | 2026-01-10 (recent) | 2026-02-10 |
+
+Ruled the second one out without installing it: pulling in three unrelated native
+plugins (`App`, `Keyboard`, and a second copy of `core`/`android`/`ios`) to get one
+storage call is exactly the "abstraction beyond what the task requires" `CLAUDE.md` §4
+warns against, and each of those is its own permission and dependency surface to
+re-justify for no reason this app has.
+
+**Installed and reviewed `capacitor-secure-storage-plugin@0.13.0`** (`npm install
+--save-exact`, then `npx cap sync android`):
+
+- **Installs cleanly** against `@capacitor/core` 8.5.2 - no peer-dependency conflicts.
+- **`cap sync` wires it in correctly with no manual edits**: `android/capacitor.settings.gradle`
+  gained an `include` and a `projectDir` line, `android/app/capacitor.build.gradle`
+  gained one `implementation project(...)` line. Both diffs are small and reviewed.
+- **No extra Android permission**: its own `AndroidManifest.xml` is empty.
+- **Its `android/build.gradle` matches our project's SDK levels exactly** (compileSdk,
+  targetSdk 36, minSdk 24, AGP 8.13.0), and reads them from `rootProject.ext.*` the same
+  way our own module does, rather than forcing its own - it will not drag the project
+  onto a different SDK level.
+- **Read its Java source** (`PasswordStorageHelper.java`): it genuinely uses
+  `android.security.keystore.KeyGenParameterSpec` and the `AndroidKeyStore` provider
+  with a `Cipher`, storing only the encrypted bytes in `SharedPreferences` - not the
+  plugin's `Preferences`, and not plaintext. This is a structural read of the imports
+  and class shape, not a full line-by-line security audit; I recommend the security
+  engineer or test-automation engineer give it a closer read before the join flow ships
+  against it.
+- **Its API is exactly what US-44 needs and no more**: `get`/`set`/`remove` (plus
+  `clear`, `keys`, `getPlatform`, unused for now) - one key, one string value.
+- **Found and flagged a real risk to design around, not a defect in the plugin**: its
+  *web* fallback (`SecureStoragePluginWeb`, used only if the app somehow ran in a plain
+  browser instead of the native Android runtime) is plain `localStorage` plus base64 -
+  no encryption at all. This path should never execute in the shipped app, but the
+  stage-2 build should check `getPlatform()` (or `Capacitor.isNativePlatform()`) before
+  trusting a read or write, and fail closed rather than silently accept the web
+  fallback's answer. Noted here so it is not forgotten when the wrapper is actually
+  written.
+
+**What this does NOT prove, and cannot prove in this sandbox:** whether the Keystore
+round-trip actually works at runtime - encrypt, store, restart the app, decrypt - on a
+real device, and specifically on a **32-bit low-end phone**, which is exactly the
+question DevOps's `07 §5` asked the spike to answer before pinning the version for
+real. AndroidKeyStore's hardware-backed behaviour varies by chipset and OEM, and this
+is a JS-bridge-driven native plugin: it cannot be exercised by a Node test the way
+`jsqr` could, because there is no Capacitor runtime bridge outside a real (or emulated)
+Android WebView. No wrapper module was written for it this time (unlike
+`qr-decode.js`), on purpose - a wrapper around code nobody has run once yet would be
+untested code pretending otherwise, and stage 2 proper is where it gets written and
+actually exercised on the bench.
+
+### 7.5 What is still open before stage 2 writes real screens
+
+1. **Run the secure-storage spike's actual round-trip on the local bench**, ideally on
+   one 32-bit or otherwise low-end pilot phone, before any join-flow code stores a real
+   secret through it.
+2. **Decide the runtime safeguard** for the web-fallback risk above (check
+   `getPlatform()`/`isNativePlatform()`, fail closed) as part of writing the storage
+   wrapper in stage 2, not left implicit.
+3. Everything server-side is now on `dev` and unblocked - the only remaining
+   dependency for stage 2 (US-35–38) is Android Studio/SDK access for anything past
+   what plain Node can check, which is confirmed available on the bench (not in this
+   sandbox).

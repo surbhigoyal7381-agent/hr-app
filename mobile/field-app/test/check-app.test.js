@@ -78,6 +78,20 @@ test("dependencies: tracking libraries and loose versions fail", async () => {
   assert.equal(checkDependencies(pkg, { packages: { "node_modules/@sentry/capacitor": {} } }).length, 1);
 });
 
+test("vendored files: content must match the pinned SHA-256 exactly", async () => {
+  const { checkVendoredFiles, VENDORED_FILES } = await load();
+  const fs = require("node:fs");
+  const [relPath] = Object.entries(VENDORED_FILES)[0];
+  const realContent = fs.readFileSync(path.join(__dirname, "..", relPath), "utf8");
+
+  // The real, unmodified file matches its pin.
+  assert.deepEqual(checkVendoredFiles({ [relPath]: realContent }), []);
+  // One byte different, and the pin catches it.
+  assert.equal(checkVendoredFiles({ [relPath]: realContent + "x" }).length, 1);
+  // Missing entirely is also a failure, not a silent skip.
+  assert.equal(checkVendoredFiles({}).length, Object.keys(VENDORED_FILES).length);
+});
+
 const GOOD_GRADLE = `
 android {
     buildTypes {

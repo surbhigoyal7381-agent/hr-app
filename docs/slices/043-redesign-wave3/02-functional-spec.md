@@ -3,26 +3,49 @@ slice: 043-redesign-wave3
 artifact: 02-functional-spec
 author: hrms-business-analyst
 date: 2026-09-24
-revision: 1
-status: draft — written ahead of the build so Wave 1 does not stall. Needs the five decisions in §20 before the strategy gate
-inputs: [../009-ess-portal-redesign/00-assessment-and-plan.md §4 Wave 3 and Appendix C, ../009-ess-portal-redesign/appendix-c-time-pay.md, ../009-ess-portal-redesign/01b-ux-design.md, ../009-ess-portal-redesign/00f-decisions-2026-09-22.md, ../034-redesign-wave1/00g-decision-register.md (W1D-01 to W1D-21), ../034-redesign-wave1/02-functional-spec.md revision 4, ../034-redesign-wave1/01c-security-privacy-requirements.md revision 4, ../034-redesign-wave1/03-implementation-notes.md §4, ../035-wrong-numbers/03-implementation-notes.md, prototype-v2.html]
+revision: 2
+status: draft, revised 2026-09-24 after this slice's `01c` and `07` landed. **Revision 2 corrects two things revision 1 got wrong** — see "What changed in revision 2" below
+inputs: [../009-ess-portal-redesign/00-assessment-and-plan.md §4 Wave 3 and Appendix C, ../009-ess-portal-redesign/appendix-c-time-pay.md, ../009-ess-portal-redesign/01b-ux-design.md, ../009-ess-portal-redesign/00f-decisions-2026-09-22.md, ../034-redesign-wave1/00g-decision-register.md (W1D-01 to W1D-21), ../034-redesign-wave1/02-functional-spec.md revision 4, ../034-redesign-wave1/01c-security-privacy-requirements.md revision 4, ../034-redesign-wave1/03-implementation-notes.md §4, ../035-wrong-numbers/03-implementation-notes.md, prototype-v2.html, 01c-security-privacy-requirements.md (043, revision 1), 07-devops-inputs.md (043), ../034-redesign-wave1/03-implementation-notes.md stretch 4 (OPS-31, measured 2026-09-23)]
 brief: there is no `01` for this slice. The approved brief is `../009-ess-portal-redesign/00-assessment-and-plan.md` (Wave 3), the design is `../009-ess-portal-redesign/01b-ux-design.md`, and the decisions are in `00f-decisions-2026-09-22.md` and `../034-redesign-wave1/00g-decision-register.md`
 ---
 
 # Wave 3 — Time and Pay: functional spec
+
+## What changed in revision 2
+
+**Two things in revision 1 were wrong, and both would have shipped.** They are corrected
+in place; this list is so nobody works from a printout of revision 1.
+
+| # | Revision 1 said | The truth, verified in code | Where it is fixed | Ticket |
+|---|---|---|---|---|
+| **1** | The Why? sheet should end with *"If a day here is wrong, fix the day first — the rule follows the attendance record."* | **False.** `hrms/hrms/alvoraa_late_rules/late_rules.py:208-215` skips any Attendance Deduction that is already submitted, in the weekly run **and** in HR's catch-up `run_for_range:251`. Correcting 4 August in September leaves the deduction, and the lost pay, exactly where they are. The only remedy is a person cancelling the deduction by hand, and that only helps while the Salary Slip is unsubmitted | §18.4, AC-58, AC-59 | **ALV-115** |
+| **2** | The manager's deduction email carries the **rupee amount** | **False.** `attendance_deduction.build_explanation:37-59` uses `lwp_days` and never `lwp_amount` — there is no currency figure in it. What it does carry is the **leave type**: "Taken: 0.5 from Sick Leave, 0.5 as loss of pay", sent as one identical body to the employee and the manager (`notify:182-205`). So a manager learns their report used **Sick Leave**, which this product hides on every screen | Bad news 1, §11 F-3b, AC-17 | **ALV-113** |
+
+**Why the second one matters beyond the fix:** AC-17 as revision 1 wrote it ("carries the
+days and not the rupee amount") would have **passed on the day it was written**, because
+the amount was never there. A green test, and the leak still going out by email. That is
+the shape of mistake this spec exists to prevent, and I made it.
+
+Everything else in revision 2 is the five spec changes the security review requires, the
+five Wave 3 `01c` verdict items, and two DevOps corrections. Nothing else was touched.
+
+---
 
 ## Bad news first
 
 **Four things, and the first one is a live privacy leak that Wave 3 will make worse if it
 is not fixed in the same slice.**
 
-1. **A manager's deduction email still carries a report's loss of pay in money.**
-   `hrms/alvoraa_late_rules/.../attendance_deduction.py` sends the stored `explanation`
-   to the manager when `notify_manager` is on, and that text names the rupee amount.
-   Q-b (14 Sep) ruled **days at most, never the amount**. The API payload was fixed
-   (`hr_api.get_team_late_list:2806` now returns days only — **confirmed fact**, read at
-   line 2839). **The email was not.** Wave 3 puts the same rule on a bigger screen, so it
-   must fix the email too. §20 D-1.
+1. **A manager's deduction email tells him which leave type his report used.**
+   *Corrected in revision 2 — the leak is real, but it is not the one revision 1 named.*
+   `attendance_deduction.notify:182-205` puts the employee's and the manager's `user_id`
+   in one `recipients` list and sends both the identical stored `explanation`. That text
+   carries **days, not rupees** (`build_explanation:37-59` uses `lwp_days`; there is no
+   currency figure anywhere in it) — so Q-b of 14 Sep is met on the amount. It is
+   breached on something plainer: **"a colleague's leave type"**, which §5 forbids on
+   every screen. A manager whose report had half a day taken from Sick Leave reads
+   "Taken: 0.5 from Sick Leave, 0.5 as loss of pay" in his inbox. **Severity Major,
+   P2** (043 `01c`). Fixed here: AC-17, §20 D-1, ticket **ALV-113**.
 2. **The payslip list endpoint is not behind the payroll feature.**
    `hr_api.get_payslips:1515` carries `@frappe.whitelist()` and nothing else, while
    `get_payslip:1563` and `download_payslip:1596` both carry
@@ -50,7 +73,7 @@ true numbers, which is exactly what the plan asked for.
 ## 0. How to read the numbers in this file
 
 **Story and check numbers are per slice.** This slice runs `US-1` to `US-13` and `AC-1`
-to `AC-56`. Cite them as "043 AC-12" so they are not confused with Wave 1's or Wave 2's.
+to `AC-61` (revision 2 added AC-57 to AC-61). Cite them as "043 AC-12" so they are not confused with Wave 1's or Wave 2's.
 
 Claims carry a label: **Confirmed fact** (read in the source, file and line),
 **Stakeholder statement**, `[ASSUMPTION]`, **Recommendation**, **Risk**,
@@ -123,7 +146,7 @@ Line numbers from `origin/dev` at `8718f27`, read in
 | Apply leave with preview | `hr_api.apply_leave:1789`, `preview_leave_request:1818` (already reads the ledger) | **Reuse** | S |
 | Fix from a tapped day | `attendance_correction.raise_correction:659`, `reasons:336`, `withdraw:700`, `my_requests:650` | **Reuse**; `raise_correction` already takes `to_date`, so multi-day works with a client change | S |
 | "I was on leave" for a past day | — | **Extend** — route it to `apply_leave` rather than to a correction | S |
-| Change of shift | `hr_api.submit_shift_request:1917`; `get_shift_types:1880` returns **every company's** shift types with `ignore_permissions=True` (confirmed, line 1880) | **Extend** — scope to the caller's company | S |
+| Change of shift | `hr_api.submit_shift_request:1917`; `get_shift_types:1880` returns **every** shift type with `ignore_permissions=True`, no feature gate and no caller check (confirmed, lines 1879-1885) | **Extend** — require an Active Employee record, drop `ignore_permissions`, and scope the list. **Correction from 043 `01c` SEC-7: Shift Type has no `company` field** (verified in `hrms/hrms/hr/doctype/shift_type/shift_type.json`), so "the caller's company's" cannot be built as revision 1 wrote it. The scope must be by something that exists — §20 D-6 | S |
 | Late rule explained | `hr_api.get_my_attendance_deductions:2777` returns thresholds, free count, per-violation days and rounding, but **not** `count_early_exit` as a flag, `week_start_day`, `deduct_from_leave_first`, `leave_types` or `daily_wage_basis` (confirmed, lines 2795–2801) | **Extend** — return those fields and build the words from them. **No hard-coded number and no hard-coded day of the week** | M |
 | "Who is away next two weeks" | `get_week_presence:3151` is presence only and backward-looking | **Drop** — 009 design decision 3. §21 row (c) | — |
 
@@ -131,7 +154,7 @@ Line numbers from `origin/dev` at `8718f27`, read in
 
 | Requirement | What exists today | Verdict | Cost |
 |---|---|---|---|
-| Payslip list | `hr_api.get_payslips:1515` — **no `@requires_feature("payroll")`** | **Extend** — add the gate (§20 note, AC-30) | S |
+| Payslip list | `hr_api.get_payslips:1515` — **no `@requires_feature("payroll")`**, reads with `ignore_permissions=True` (`:1526`), and returns `{"payslips": ..., "employee": emp}` where `emp` is `_get_employee()`'s whole row — `date_of_birth`, `gender`, `cell_number`, `branch`, `reports_to` and the rest (`hr_api.py:152-160`, confirmed) | **Extend** — add the gate **and** cut the payload to the six-key `me` block. Wave 1's biggest finding, live today, on the screen people attach to a support ticket (043 `01c` SEC-3). AC-30, AC-6 | S |
 | One payslip | `get_payslip:1563` — gated, own-only through `_own_payslip:1545`; drops zero rows; **does not return `additional_salary` on a line** | **Extend** — return the link so "Why?" can follow it | S |
 | Payslip PDF | `download_payslip:1596` — own-only, uses `frappe.get_meta("Salary Slip").default_print_format`, which is unset on PP Jewellers | **Configure** — set the tenant's own print format. No code change; a per-tenant action (release gate 3) | S |
 | "Why was this deducted?" | The chain exists in data: Salary Detail `additional_salary` → Additional Salary `ref_docname` → Attendance Deduction → its Violation child rows | **Build** an own-only read of one Attendance Deduction, ownership checked the way `_own_payslip` does | M |
@@ -393,9 +416,13 @@ The `me` block is the same six fields and never more.
   Type's own `late_entry_grace_period` where set, otherwise the organisation default
   `alvoraa_attendance_late_grace_mins`, otherwise "no grace". A static check finds **no
   numeric grace literal** in the Time include files.
-- **AC-6** `get_time`'s and `get_pay`'s payload keys are exactly §8's lists per persona,
-  and the `me` block never carries `date_of_birth`, `gender`, `cell_number`,
-  `date_of_joining`, `reports_to` or `branch`.
+- **AC-6** `get_time`'s, `get_pay`'s **and `get_payslips`'s** payload keys are exactly
+  §8's lists per persona, and the `me` block is exactly `employee`, `employee_name`,
+  `designation`, `department`, `image`, `company` — never `date_of_birth`, `gender`,
+  `cell_number`, `date_of_joining`, `reports_to` or `branch`. **`get_payslips` is the
+  third one on purpose** (043 `01c` SEC-3): it returns the whole Employee row today. A
+  static check also fails if any Wave 3 module passes a `_get_employee()` result straight
+  into a payload.
 
 ### US-3 · fixing a day
 
@@ -448,10 +475,21 @@ The `me` block is the same six fields and never more.
 - **AC-16** *Given* Sandeep opens the team late list, *then* the payload carries
   `deduction_days` and `lwp_days` and **not** `lwp_amount` and **not** `explanation`
   (today's behaviour, pinned so Wave 3 cannot regress it).
-- **AC-17 (D-1)** *Given* a tenant with `notify_manager` on, *when* an Attendance
-  Deduction is submitted, *then* the manager's email carries the **days** and **not** the
-  rupee amount and **not** the stored `explanation`. The employee's own email is
-  unchanged. A fixture asserts the rendered email body.
+- **AC-17 (D-1) — rewritten in revision 2; the version in revision 1 would have passed
+  while the leak survived.** The fixture is a week where `deduct_from_leave_first` is on
+  and the days came from **Sick Leave**. *Given* a tenant with `notify_manager` on,
+  *when* an Attendance Deduction is submitted, *then* all four of these hold, asserted on
+  the **rendered body per recipient**:
+
+  | # | Rule | Oracle |
+  |---|---|---|
+  | 1 | **Separate bodies.** The employee's body is byte-identical to today's; the manager's is composed for a manager | two rendered strings, compared |
+  | 2 | **Days only in the manager's body** — no `lwp_amount`, no currency symbol, no stored `explanation` text, no minute figure, no per-day violation list | the manager's body contains no `₹`, no digit followed by "min", and none of the `explanation` string |
+  | 3 | **No leave type in the manager's body** — the real leak. "Sick Leave" (and every other Leave Type name on the fixture) appears nowhere in it | substring assertion against the tenant's Leave Type list |
+  | 4 | **Separate `sendmail` calls**, one recipient each, so a later change to one body cannot reach the other person | the mail-capture shows two sends, each with one recipient |
+
+  The subject line carries the employee's name and the week and nothing else. Ticket
+  **ALV-113**; 043 `01c` SEC-8.
 
 ### US-13 · retiring the duplicates
 
@@ -492,14 +530,77 @@ The `me` block is the same six fields and never more.
 - **AC-29** *Given* a deduction line with no Attendance Deduction behind it, *then* the
   sheet says so in the §9 wording and shows no week.
 
+### US-8 · the Why? sheet tells the truth about an automatic decision
+
+**New in revision 2.** These five carry 043 `01c` PRIV-6 to PRIV-10, and AC-58 is the
+correction to my own §18.4. They are numbered from 57 so nothing already written moves.
+
+- **AC-57 (PRIV-6) · it says it was automatic, when, and under which rule.** *Given* the
+  Why? sheet for Rahul's ₹548.39 line, *then* it carries **all seven** of these, and a
+  content test asserts each one against **two different rule fixtures** so none of them
+  can be a hard-coded sentence:
+  1. that the figure was worked out **automatically by a rule, with nobody looking at his
+     week by hand**;
+  2. **when** the rule ran, and **which** rule (the `rule_name` from the record);
+  3. the inputs — the violation days, the true minutes, which ones were free;
+  4. the arithmetic (per §20 D-3, which may hold the last line back);
+  5. where the days came from — leave, pay, or both;
+  6. **what to do if it is wrong, truthfully** (AC-58);
+  7. **who to contact**, with a working route (AC-60).
+- **AC-58 (PRIV-8, ticket ALV-115) · the remedy on the screen is the remedy that exists.**
+  **Confirmed fact:** `late_rules.py:208-215` skips any Attendance Deduction with
+  `docstatus == 1`, in the weekly run and in `run_for_range:251`. The test is driven from
+  a fixture where a correction for 4 August is **approved in September, after** the
+  deduction was submitted. *Then*:
+  (a) the deduction's `docstatus` is still **1** and the Leave Ledger Entry and the
+      Additional Salary are **unchanged** — asserted on the documents, not on the screen;
+  (b) the sheet's remedy text **agrees with that**, and
+  (c) a **static check finds the sentence "the rule follows the attendance record"
+      nowhere in the built page** — it was in revision 1 of this spec and it is false.
+  **Wave 3 does not add automatic recomputation.** That would let one approval move money
+  with nobody involved at all, which is more automation applied to a decision that already
+  has too little.
+- **AC-59 · the exact words**, translatable, one message each (no sentence built from
+  fragments):
+
+  | Block | Exact words |
+  |---|---|
+  | How it was decided | "This was worked out automatically by the <rule name> rule on <date>. Nobody looked at your week by hand." |
+  | If a day is wrong | "If a day in this week is wrong, get it corrected. That puts your attendance record right and it counts for the weeks after it." |
+  | What a correction does not do | "**It does not undo this deduction.** Once the rule has worked a week out, it does not work it out again." |
+  | Getting it put back | "Only <accountable contact> can cancel a deduction, and only before that month's payslip is finalised. After that it has to be put right in a later payroll run." |
+  | Who to go to | "If you think this is wrong, contact <accountable contact>." |
+
+- **AC-60 (PRIV-7) · a person, not a function.** *Given* a rule with a named accountable
+  owner, *then* the Late rule tab and the Why? sheet both show that person. *Given* a rule
+  with none, *then* they show the fail-closed fallback from §20 D-7 — **never a blank, and
+  never a sentence that implies a person reviewed the case.** A static check fails on any
+  wording in the sheet that asserts human review of the individual week.
+- **AC-61 (PRIV-10) · showing the decision creates no new record about the person.** No
+  Wave 3 endpoint writes on a read path; nothing records that the sheet was opened, read
+  or closed; no "acknowledged" flag is inferred from a close. Asserted as a static check
+  plus a write-count assertion around a full Why? call.
+
 ### US-11 · Pay is own-only and gated
 
-- **AC-30** *Given* a tenant **without** `plan_payroll`, *then* `get_payslips`,
-  `get_payslip` and `download_payslip` all refuse when called by hand. **This is new for
-  `get_payslips`**, which carries no feature gate today.
-- **AC-31** *Given* Sandeep and a report's slip name, *then* every one of the three
-  endpoints refuses with the identical "That payslip is not available." message,
-  regardless of whether the slip exists, is a draft, or belongs to somebody else.
+- **AC-30 (extended in revision 2)** *Given* a tenant whose `features` list **genuinely
+  lacks** `payroll` — not a patched gate — *then* `get_payslips`, `get_payslip` and
+  `download_payslip` all refuse when called by hand. Three parts, and the second and third
+  are the ones 043 `01c` SEC-2 added:
+  (a) the refusal comes from the real `subscription.has_feature`;
+  (b) **a static check fails the build if any test in this slice patches `has_feature`,
+  `requires_feature` or `enabled_features`** — a patched gate makes every entitlement test
+  green while proving nothing, and it has happened in this repository before;
+  (c) a **decorator-order** check: `@requires_feature("payroll")` sits **above**
+  `@frappe.whitelist()` on all three, matching `get_payslip:1561` and
+  `download_payslip:1594`.
+- **AC-31 (extended in revision 2)** **Four causes, one message, asserted together in one
+  test** so that changing one of them fails: a slip that belongs to somebody else, a slip
+  that does not exist, a slip that is still a draft, and **a tenant that did not buy
+  payroll**. All four return the byte-identical "That payslip is not available." and the
+  same status code, from all three payslip endpoints **and from the Why? endpoint**. A
+  refusal that varies tells the caller what the tenant has, or what exists (043 `01c`
+  SEC-4).
 
 ### US-12 · states
 
@@ -532,8 +633,23 @@ The `me` block is the same six fields and never more.
   and no module-level mutable state (Wave 1 SEC-6, SEC-15). Where the existing code uses
   `ignore_permissions` after an ownership check — `_own_payslip:1545`, `_deduction_rows`
   — the check is **before** the flag and a test proves the order.
-- **AC-44** Time and Pay add **no new include file**, unless OPS-31 has landed first
-  (§20 D-5). The same constant Wave 2 uses.
+- **AC-44 — rewritten in revision 2; OPS-31 has landed and the old rule is stale.**
+  **Confirmed fact**, read in Wave 1's worktree today: OPS-31 shipped as commit `a2439e3`
+  on `slice/034-redesign-wave1`, the portal's style and script are now static files under
+  `public/css/ess/` and `public/js/ess/`, and markup is pasted in by `ess_part()` — a
+  Jinja **global function** registered through Frappe's own `jinja` hook
+  (`hooks.py:59`), which reads a file holding no Jinja and **takes no template cache
+  slot**. Measured: 12 markup parts render *faster* than one include file (0.1541 s
+  against 0.1600 s, 034 notes stretch 4). So **Time and Pay each get their own file in
+  `templates/includes/ess/parts/`, and they cost nothing.** What the check must now
+  assert:
+  (a) Wave 3 adds **no new Jinja include template** — the pinned set stays at the three
+  in `test_only_the_pieces_that_need_jinja_are_templates` (`frame.html`,
+  `growth-modals.html`, `next/frame.html`), and a fourth fails the test;
+  (b) every new part file contains **no `{{` and no `{%`**, or `ess_part()` refuses it at
+  run time;
+  (c) Wave 3's style and script go into new static files under `public/`, each loaded
+  with a `?v=` stamp, which cost no template slot at all.
 
 ### The edge cases that bite
 
@@ -552,9 +668,19 @@ The `me` block is the same six fields and never more.
   lists; neither sees the other's.
 - **AC-51** *Time zone and DST.* "Today" is the site's date. A test with the browser in a
   different time zone still highlights the site's today.
-- **AC-52** *Multi-company.* Shift types offered in the change-shift sheet are the
-  caller's company's only — today `get_shift_types:1880` returns every company's with
-  `ignore_permissions=True`.
+- **AC-52 — rewritten in revision 2, because the version in revision 1 could not be
+  built.** **Confirmed fact:** `Shift Type` has **no `company` field**
+  (`hrms/hrms/hr/doctype/shift_type/shift_type.json`), so "the caller's company's only"
+  has nothing to filter on. An engineer meeting that sentence at 11pm would invent a
+  custom field or quietly drop the check. Three things hold whatever §20 D-6 chooses:
+  (a) the caller must have an **Active** Employee record, or the call is refused;
+  (b) the read carries **no `ignore_permissions`**;
+  (c) the list is **not** every Shift Type in the tenant, and a test proves a shift type
+  outside the chosen scope is absent.
+  **My recommendation for the scope (D-6):** the Shift Types in use in the caller's own
+  company through Shift Assignment, plus the caller's own `Employee.default_shift`. A
+  fixture with two companies proves company B's night shift does not appear for company
+  A's employee. 043 `01c` SEC-7.
 - **AC-53** *Cancelled and amended.* A cancelled Salary Slip (`docstatus = 2`) is not
   listed and cannot be downloaded; an amended one is listed once, under its current name.
 - **AC-54** *A deduction dated in an already-paid month.* The Why? sheet shows the
@@ -577,7 +703,7 @@ The `me` block is the same six fields and never more.
 | F-1 | Late minutes from the wrong shift start | **Fixed** (slice 017, `_shift_row:233`) | Renders it, and AC-4 guards the regression |
 | F-2 | Leave balance ignores the late rule | **Fixed** (slice 035, `_ledger_leave_balances:88`) | Renders it; AC-14 guards it |
 | F-3 | Loss-of-pay amount sent to managers (payload) | **Fixed** (`get_team_late_list:2806`, days only) | AC-16 pins it |
-| F-3b | The same amount in the **manager's email** | **NOT fixed** | **D-1** — Wave 3 fixes it |
+| F-3b | **Corrected in revision 2.** Not the amount — the **leave type**. `build_explanation:37-59` carries days, never `lwp_amount`; `notify:182-205` sends one identical body to the employee and the manager, and that body names the Leave Type the days came from | **NOT fixed** | **D-1** — Wave 3 fixes it, as four rules in AC-17, not as "remove the number". Ticket **ALV-113** |
 | F-4 | Payslip PDF uses the generic layout | Unchanged — `default_print_format` unset | Configuration per tenant; release gate 3 |
 | F-5 | Leave encashment likely always fails | Unchanged — `leave_period` and `currency` never set (`:1982`) | Fixed; AC-55 |
 | F-6 | Old Attendance Request panel still live | Unchanged (`:1943`) | Retired; AC-18, AC-19 |
@@ -606,7 +732,8 @@ The `me` block is the same six fields and never more.
 | Is base ÷ calendar days the right daily wage? | **Not ruled on here** — D-3. Wave 3 shows the method; it does not change it |
 | HR's own attendance and payroll screens | Stay in their current look inside the new frame until they are designed (plan §4, "Later") |
 | Hindi and Punjabi for users | **Wave 5**; Wave 3 wraps strings and measures in Hindi fixtures only |
-| Compression (slice 036), cached script files (OPS-31) | Their own slices; D-5 decides the order |
+| Compression (slice 036) | Its own slice |
+| Cached script files (OPS-31) | **Done** — landed in Wave 1 (`a2439e3`). Not a Wave 3 concern any more; AC-44 says what replaces the old rule |
 
 ---
 
@@ -621,7 +748,9 @@ Measured on "Slow 4G" with a 4× CPU slow-down, cache off (W1D-09).
 | Calls on Pay | **1** (`get_pay`), plus the PDF on demand |
 | `get_pay` | ≤ **15** queries, ≤ 500 ms p95 |
 | The "why" sheet | ≤ **4** queries, ≤ 400 ms p95 |
-| Payslip PDF | wkhtmltopdf costs roughly 1–3 s of CPU in the web worker. **It stays on demand.** No pre-generation and no "download all" — a 400-person tenant would take the worker down |
+| Payslip PDF | wkhtmltopdf costs roughly 1–3 s of CPU in the web worker. **It stays on demand.** No pre-generation and no "download all" — a 400-person tenant would take the worker down. **Measured before the production release** (OPS-W3-6), because production answers **8 requests at a time** (gunicorn, 4 workers × 2 threads, one replica) and payday is the same hour for everyone |
+| **Payload size** *(new in revision 2, from OPS-W3-12 — `nfr-budget.md` carries no payload number)* | `get_time` ≤ **40 KB**, `get_pay` ≤ **20 KB**, the Why? sheet ≤ **8 KB**, asserted **in bytes** in the same test as the query count. A 2.5 s phone budget is mostly bytes, and a query count stays honest while a payload quietly grows |
+| Query counts asserted, not only times | At **1,000 employees**, for the month calendar, the year table and the payslip lines (OPS-W3-11). 31 days × 5 doctypes is 155 queries if a loop creeps in |
 | Skeleton painted | ≤ 300 ms, median of 5 |
 | Time usable | ≤ 2.5 s p95 of 20 loads, with slice 036's compression live |
 | Every list | capped, with the true total shown; the year table is bounded by the financial year |
@@ -635,7 +764,17 @@ Measured on "Slow 4G" with a 4× CPU slow-down, cache off (W1D-09).
 
 ## 14. Data migration and backfill
 
-**Nothing.** No schema change, no data change, no patch, no `bench migrate`.
+**Nothing, with one decision that could change it.** No data change, no patch, no
+backfill.
+
+**The one thing that could:** §20 D-7. If Surbhi chooses to name the accountable human on
+the rule itself, that is **one new field** on `Attendance Deduction Rule` — our own
+doctype in the hrms fork, so a JSON field and one `bench migrate`, with **no data
+backfill** (existing rules get an empty owner and the fallback wording applies until a
+tenant fills it in). If she chooses the tenant-configuration route instead, this section
+stays "nothing". Either way, 043 `01c` PRIV-11's check — that Wave 3 stores no new
+**personal** record — still holds: a rule owner is a configuration value, not a record
+about the employee.
 
 **Two things that are not migrations and must still happen:**
 
@@ -659,7 +798,7 @@ Wave 3 sends no new notification. It **changes one existing one**.
 | Message | Trigger | Recipient | Change | Must never carry |
 |---|---|---|---|---|
 | Attendance Deduction notification | the weekly job submits a deduction | the employee | none | — (the employee may see their own amount) |
-| Attendance Deduction notification | the same | **the manager**, when `notify_manager` is on | **D-1: days only.** The rupee amount and the stored `explanation` come out | the amount, the explanation text, the punch times |
+| Attendance Deduction notification | the same | **the manager**, when `notify_manager` is on | **D-1, corrected in revision 2: its own body, its own send.** Today one `sendmail` puts the employee and the manager in one `recipients` list with one body. The manager's body is rebuilt: **days only** | **the leave type** — the real leak, and the one revision 1 missed. Also: no rupee amount, no stored `explanation` text, no punch times, no per-day list. Ticket **ALV-113**; AC-17 |
 | "Your payslip is ready" (Wave 2's Inbox row) | a slip is submitted | the employee only | none | **the take-home figure must not appear in any email or push preview** |
 | Correction decided | `attendance_correction.decide:743` | the requester | none | another person's reason |
 
@@ -752,13 +891,25 @@ employee finally sees it.** The weekly late-coming job decides that a person los
 quarter of a day, then half a day of pay. That decision is made by code, on a schedule,
 without a human in the loop.
 
+**Revision 2 corrects this section.** Revision 1 recommended telling the employee *"If a
+day here is wrong, fix the day first — the rule follows the attendance record."*
+**That sentence is false and it is struck.** Verified in
+`hrms/hrms/alvoraa_late_rules/late_rules.py:208-215`: a submitted Attendance Deduction is
+skipped by every later run, including HR's catch-up `run_for_range:251`. Correcting the
+day in September leaves the deduction, and the lost pay, exactly where they are. I would
+have had 400 people read a promise the product does not keep. Ticket **ALV-115**; the
+replacement wording is AC-59 and the proof is AC-58.
+
 | Question | Answer |
 |---|---|
-| Accountable human | The tenant's HR, who configures the Attendance Deduction Rule and can run or re-run it (`run_for_range`) |
-| Where they intervene | Before it happens: the rule's settings, exempt grades and leave types. After it happens: HR can cancel the Attendance Deduction, which reverses the ledger entry and the Additional Salary |
-| What the employee is told | **This is what Wave 3 adds.** Today the employee gets a technical email. Wave 3 shows: the days, the minutes, which were free, the arithmetic, where the day came from, and the settings that produced it |
-| How they contest it | The correction flow, for a wrong attendance record; and a named route to HR from the rule explanation. **Recommendation:** the Why? sheet ends with a plain line — "If a day here is wrong, fix the day first — the rule follows the attendance record." — because correcting the day is the real remedy |
-| Is the system deciding alone? | Yes, and it did before this slice. **Wave 3 does not make it worse; it makes it visible and contestable, which is what the baseline asks for.** If Surbhi wants a human gate before a deduction reaches pay, that is a separate slice and I would recommend it |
+| Accountable human | **Not settled, and "HR" is not an answer.** A function cannot be contacted, held to an answer, or named in a grievance file. **Confirmed fact:** `Attendance Deduction Rule` has no owner field — its fields are `rule_name`, `company`, `shift_type`, `enabled`, the week and violation settings, `deduct_from_leave_first`, `leave_types`, `lwp_salary_component`, `daily_wage_basis`, `exempt_grades`, `notify_employee`, `notify_manager`. §20 D-7 decides where the name lives; AC-60 tests both the named case and the fallback |
+| Where they intervene — **before** | Real and genuine: the rule's thresholds, free allowance, exempt grades, leave types and `process_from`. But that is control over **the rule**, not over **this decision about this person** |
+| Where they intervene — **during** | **Nowhere.** There is no step between the calculation and the submitted Additional Salary (`_process_week:201-238`, `attendance_deduction.on_submit:63-73`). Whether to add one is Surbhi's call, not mine; §20 D-8. What its absence costs: every contest is after the fact and every remedy is a reversal |
+| Where they intervene — **after** | A person can cancel the Attendance Deduction, which cancels the linked Additional Salary (`attendance_deduction.py:175-180`) — **but only while the Salary Slip is unsubmitted.** After the slip is submitted the product has no route back, and it must say so (AC-59) |
+| What the employee is told | **This is what Wave 3 adds, and it is the best thing in the slice.** The days, the minutes, which were free, the arithmetic, where the days came from, the settings — **plus** the three things revision 1 left out: that it was automatic, when and under which rule, and who is accountable (AC-57) |
+| How they contest it | Correcting a wrong day, **which fixes the record and future weeks and does not undo this deduction**; and a named contact who can cancel it while the slip is open (AC-58, AC-59, AC-60). **There is no recorded, clocked grievance route in the product** — counsel's note of 18 Sep 2026 records it as "not built, handled by hand". Wave 3 must not draw a "contest this" control that leads nowhere |
+| Is the system deciding alone? | **Yes, and it was before this slice.** Wave 3 does not make it worse; it makes it visible and, within the limits above, contestable. **It deliberately adds no automation:** no automatic recomputation, no automatic reversal (AC-58) |
+| Is it lawful with no human in the loop? | **I do not know, and I am not a lawyer.** Counsel's question 13 of 18 September asked this about the driver scorecard, which is not live. It applies word for word to this rule, which **is** live on a client tenant. §18.6 and 043 `01c` Q5 |
 
 **No AI in this slice.** No rating, no inference, no emotion, voice or facial analysis,
 no passive behavioural monitoring, no individual-level surveillance. §18.7 is empty by
@@ -772,18 +923,32 @@ it needs the baseline read first, not a spec.
 
 ### 18.5 Retention and deletion
 
-**Nothing changes.** No new record. Attendance, Attendance Deduction, Leave Ledger Entry
-and Salary Slip keep the retention they have — they are statutory payroll records and are
-decision-bearing, so they survive an erasure request. That is the existing position, not
-a new one, and it is written down here because "nothing changes" still has to be said.
+**Nothing changes, and one gap is now named rather than inherited.** No new record.
+Attendance, Attendance Deduction, Leave Ledger Entry and Salary Slip keep the retention
+they have — they are statutory payroll records and are decision-bearing, so they survive
+an erasure request. That is the existing position, not a new one.
+
+**The gap, stated because revision 1 let it pass silently** (043 `01c` PRIV-11):
+counsel's note of 18 Sep 2026 sets periods for performance records and driver location.
+**Attendance Deduction is in neither table.** It is decision-bearing about a person's pay,
+so it must survive an erasure request under legal hold — and "kept for ever" is what Wave
+1 already learned is not a lawful long-term answer. Wave 3 changes nothing here and adds
+no second copy of the data. The question goes to counsel with a date (§18.6). **I am not
+a lawyer.**
+
+**And nothing records that the employee saw the explanation** (AC-61). "They were shown
+it" is a tempting thing to store and it would be a new personal record with no purpose
+tag and no retention period.
 
 ### 18.6 Open compliance questions
 
 | Question | Who must decide | What it blocks |
 |---|---|---|
 | Is base pay ÷ calendar days the right daily wage for loss of pay (Q18, D-3)? | Surbhi, with a payroll or legal advisor | Not the build — Wave 3 shows the method either way. It blocks **how confidently the sentence is worded**, and a wrong method shown to 400 people is worse than one shown to nobody |
-| Does showing a per-person lateness record to the employee create a record we must retain or disclose differently? | Surbhi, with the security engineer | Nothing; the record already exists |
-| Must a deduction from pay have a human confirmation before it reaches a payslip? | Surbhi, with an advisor | Nothing in Wave 3; it would be its own slice (§18.4) |
+| Does showing a per-person lateness record to the employee create a record we must retain or disclose differently? | Surbhi, with the security engineer | Nothing; the record already exists, and AC-61 keeps Wave 3 from creating a second one |
+| Must a deduction from pay have a human confirmation before it reaches a payslip? | Surbhi, with an advisor | Nothing in Wave 3's build; it would be its own slice. §20 D-8 |
+| **What must a worker be told, and able to do, before an automatic deduction reaches their pay under Indian law?** Counsel's question 13 of 18 Sep was asked about the driver scorecard, which is not live. **This rule is live on a client tenant today.** | **Counsel, commissioned by Surbhi** (043 `01c` Q5) | Nothing in the build. It blocks any claim that this feature is compliant, and it is why AC-59's wording is written to be truthful rather than reassuring |
+| **What retention period applies to an Attendance Deduction record?** It is in neither of counsel's two tables (§18.5) | **Counsel, commissioned by Surbhi** | Nothing here. It is recorded debt, not a silent assumption |
 
 ### 18.7 AI features
 
@@ -828,29 +993,53 @@ a new one, and it is written down here because "nothing changes" still has to be
 | W1D-09 | the measurement rig | — | AC-32, §13 | covered |
 | Wave 1 SEC-2, SEC-6, SEC-15 | endpoints safe on their own | — | AC-42, AC-43 | covered |
 | Wave 1 SEC-12 | fixed payload key list | US-12 | AC-6 | covered |
-| DevOps OPS-31 | cached script files | — | AC-44, **D-5** | **open — it decides the build order** |
+| DevOps OPS-31 | cached script files | — | AC-44 | **closed** — landed in Wave 1 (`a2439e3`); AC-44 rewritten to the `ess_part()` rule |
+| 043 `01c` SEC-2 | the real feature gate, no patched gate, decorator order | US-11 | AC-30 | covered |
+| 043 `01c` SEC-3 | fixed key list extended to `get_payslips` | US-12 | AC-6 | covered |
+| 043 `01c` SEC-4 | four refusal causes, one message, incl. the Why? endpoint | US-11 | AC-31 | covered |
+| 043 `01c` SEC-7 | `get_shift_types`: Active Employee, no `ignore_permissions`, real scope | — | AC-52, **D-6** | covered; the scope half needs D-6 |
+| 043 `01c` SEC-8 | the email: separate bodies, separate sends, days only, no leave type | US-10 | AC-17 | covered — **ALV-113** |
+| 043 `01c` SEC-5 | `_deduction_rows` stops taking a raw filters dict | US-8 | AC-43 (ordering), and the handoff note | covered |
+| 043 `01c` SEC-11 | the two retired endpoints leave the whitelist, with a call-by-hand test | US-13 | AC-18, AC-19 | covered |
+| 043 `01c` PRIV-6 | the sheet says it was automatic, when, which rule, who | US-8 | AC-57 | covered |
+| 043 `01c` PRIV-7 | a named human, with a fail-closed fallback | US-8 | AC-60, **D-7** | covered; the source of the name needs D-7 |
+| 043 `01c` PRIV-8 | the remedy on screen is the remedy that exists | US-8 | AC-58, AC-59 | covered — **ALV-115** |
+| 043 `01c` PRIV-9 | a contest has a route and a recipient, or no control claims one | US-8 | AC-59, AC-60 | covered |
+| 043 `01c` PRIV-10 | showing the decision creates no new record | US-8 | AC-61 | covered |
+| 043 `01c` PRIV-11 | Attendance Deduction retention is a named gap, not an inherited answer | — | §18.5, §18.6 | **recorded, open with counsel** |
+| DevOps OPS-W3-6 | the payslip PDF is measured before production | — | §13, release gates | **open — a release gate, not an AC** |
 | Prototype | Days, Leave, Late rule tabs; Pay hero, explain strip, YTD, payslip list | US-1 to US-9 | as above | covered, with §21's differences |
 
 **Gaps, listed rather than hidden:** the take-home figure (D-2); the daily-wage method
-(D-3); the build order (D-5); AC-54 and AC-55 are `[UNVERIFIED]` and need one bench run.
+(D-3); the shift-type scope (D-6); where the accountable human's name lives (D-7);
+AC-54 and AC-55 are `[UNVERIFIED]` and need one bench run; counsel's two questions
+(§18.6) are open and neither blocks the build.
 
 ---
 
 ## 20. Needs a decision
 
-Five. Each changes what gets built.
+**Eight, and only two of them stop a commit.** The Blocks column says which. Everything
+not marked "blocks" can be answered while the build runs, because each has a fail-closed
+default written into an acceptance check.
 
-| # | Question | My recommendation |
-|---|---|---|
-| **D-1** | **The manager's deduction email still names the rupee amount** (§11 F-3b). Q-b said days at most. Fix the email in Wave 3, or turn `notify_manager` off on both client tenants until a later slice? | **Fix the email in Wave 3.** It is a small change in one template and it closes a decided rule that is still open in the one place nobody looked. Turning the setting off loses a manager a signal they legitimately need — a report is having a problem — to avoid sending a number they should never have had |
-| **D-2** | **"Take-home" — net pay (₹44,051.61) or the rounded amount paid (₹44,052)?** (Q17) | **The rounded amount**, because it is what reaches the bank, with the exact net shown in the breakdown below. One number on the hero, and it is the one the employee can check against their account. The same choice must then be used in Wave 2's "your payslip is ready" row, or the two screens disagree by a rupee |
-| **D-3** | **Is base pay ÷ calendar days the right daily wage for loss of pay?** (Q18) **I am not qualified to answer this and neither is any agent on this team.** | **Get a payroll or legal view before the Pay screen ships**, because Wave 3 puts the method in front of 400 people in plain words. If the answer is slow, my recommendation is to ship the Why? sheet **without** the arithmetic line ("₹34,000 base ÷ 31 days ÷ 2") and with the outcome only, then add the line when the method is confirmed. Showing a wrong method carefully is worse than showing a right number quietly |
-| **D-4** | **"More than July · +₹11,851.61"** reads as a raise; it was a one-off Diamond Incentive (appendix C P-02). Name the one-off, or drop the comparison? | **Drop the comparison for v1.** Naming a one-off correctly needs a rule for what counts as one-off, and there is no field that says so. A wrong "you earned more" line on a payslip is the kind of thing people screenshot |
-| **D-5** | **Build order against the Jinja template cliff** — the same question Wave 2 asks (042 D-6). Wave 3 adds two more panels to the same four include files. | **OPS-31 before Wave 3, and before Wave 2.** If Waves 2 and 3 both land inside Wave 1's four files, two sessions edit one script file for four weeks, which is exactly what the split was meant to prevent |
+| # | Question | My recommendation | Blocks? |
+|---|---|---|---|
+| **D-1** | **The manager's deduction email.** Corrected in revision 2: it leaks the **leave type**, not the amount (§11 F-3b). Fix it in Wave 3 — and is `notify_manager` left on, on the two client tenants, until the fix ships? | **Fix it in Wave 3, in its own commit, before the panels**, as AC-17's four rules. It is one function and independent of every screen. **And turn `notify_manager` off on both client tenants in the meantime** — a one-tick mitigation available today, for a leak that cannot be un-sent. Ticket **ALV-113** | No — it is a defect fix. The interim tick is a same-day action |
+| **D-2** | **"Take-home" — net pay (₹44,051.61) or the rounded amount paid (₹44,052)?** (Q17) | **The rounded amount**, with the exact net in the breakdown below. It is the figure the employee can check against their bank. Wave 2's "your payslip is ready" row must use the same choice, or the two screens disagree by a rupee | While building |
+| **D-3** | **Is base pay ÷ calendar days the right daily wage?** (Q18) **No agent on this team is qualified to answer it.** | **Get a payroll or legal view before the Pay screen ships.** If the answer is slow, ship the Why? sheet **without** the arithmetic line and with the outcome only, then add the line when the method is confirmed. AC-57 element 4 is written so the sheet is complete without it | Blocks **one line** of the Why? sheet, not the sheet |
+| **D-4** | **"More than July · +₹11,851.61"** reads as a raise; it was a one-off Diamond Incentive | **Drop the comparison for v1.** There is no field that says what is one-off, and a wrong "you earned more" line on a payslip is what people screenshot | While building |
+| **D-5** | ~~OPS-31 before Wave 3~~ | **Closed by Wave 1.** OPS-31 landed as `a2439e3`; markup parts cost no template slot, so Time and Pay each get their own file for free. See AC-44. **What replaces it is not a decision but a condition:** Wave 3's panels sit on Wave 1 reaching `dev`, and OPS-31 must not reach **production** until ALV-112's asset refresh is on `main` (OPS-W3-2) | Closed |
+| **D-6** | **How is `get_shift_types` scoped, given Shift Type has no `company` field?** (043 `01c` Q3) | **The Shift Types in use in the caller's own company through Shift Assignment, plus the caller's own `default_shift`.** Until it is answered, build the two parts that need no ruling — require an Active Employee record and drop `ignore_permissions` — which removes the worst of it | Blocks the **scope half** of AC-52, not the endpoint fix |
+| **D-7** | **Where does the accountable human's name live?** **Confirmed fact:** `Attendance Deduction Rule` has no owner field. "HR" is a function and cannot be contacted or held to an answer (043 `01c` PRIV-7) | **One new field on the rule** — `Attendance Deduction Rule` is our own doctype, so it is a JSON field and one `bench migrate`, no backfill (§14). The alternative, a tenant-wide setting, is cheaper but names one person for every rule in the tenant. **Until answered: AC-60's fallback** — say plainly that it was automatic and give the tenant's HR contact, never a blank and never a hint that someone reviewed the case. `[UNVERIFIED — I found no per-site "HR contact" setting; the engineer must confirm what the fallback reads]` | Blocks the **last block** of the Why? sheet |
+| **D-8** | **Should a deduction need a person's confirmation before it reaches a payslip?** Today there is no step at all between the calculation and the submitted Additional Salary | **Not in Wave 3.** It is a product and payroll change with a real cost, and the transparency this slice ships is worth having either way. **I recommend it as its own slice**, and I would rank it above a new feature. Related: should a correction approved *after* a submitted deduction raise a flag for a person to look at (option B in 043 `01c` Q1)? My recommendation is **yes, in Wave 4** — it closes the loop without letting an approval move money by itself | No |
 
-**Not a decision, stated so it is not mistaken for one:** `get_payslips:1515`'s missing
-feature gate and `get_shift_types:1880`'s missing company scope are **defects**. They are
-fixed in this slice with AC-30 and AC-52 and need no ruling.
+**Not decisions, stated so they are not mistaken for one:** `get_payslips:1515`'s missing
+feature gate (**P1** — it makes W1D-01's entitlement claim false), its full-Employee-row
+payload, `get_shift_types:1880`'s `ignore_permissions` and missing caller check (**P3**),
+and the manager's email body (**P2**) are **defects**. They are fixed in this slice by
+AC-30, AC-6, AC-52 and AC-17 and need no ruling. **The order 043 `01c` ranks them in:**
+the payroll gate first, the email second, the shift types third.
 
 ---
 
@@ -879,8 +1068,8 @@ The prototype is a review artifact and **is not changed**; this is the record.
 |---|---|
 | Brief approved | ✓ — the 009 plan (Wave 3) and the decisions stand in for `01` |
 | Clickable prototype reviewed | ✓ 22 Sep, with §21's ten differences recorded |
-| `01c` security and privacy written | **✗ — not written for this slice.** Pay is the most sensitive screen in the product and it needs its own `01c` before the build |
-| `07` DevOps inputs written | **✗ — not written for this slice.** D-5 and the PDF's CPU cost are the two that matter |
+| `01c` security and privacy written | ✓ — revision 1, 2026-09-24. Its five spec changes and two check extensions are applied in this revision |
+| `07` DevOps inputs written | ✓ — 2026-09-24, `OPS-W3-1` to `OPS-W3-19`. Its Jinja-cliff item is now moot (OPS-31 landed); the PDF measurement (OPS-W3-6) is a release gate |
 | Every state designed and specified per persona | ✓ §9 |
 | Gap analysis verified in source | ✓ §3, with file and line |
 | Stories: personas, sized, "must not" stories | ✓ §7 — US-10, US-11 and US-12 are the "must not" stories |
@@ -892,25 +1081,34 @@ The prototype is a review artifact and **is not changed**; this is the record.
 | Migration stated | ✓ none (§14), with two configuration actions named |
 | Compliance sub-analysis | ✓ §18 — including the one place this product already automates a decision about a person |
 | No prohibited capability | ✓ nothing AI-shaped; the one prohibition approached (a lateness ranking) is refused in writing in §18.4 |
-| Open questions owned, none blocks day 1 | **✗ — D-5 blocks the first commit and D-3 blocks the Why? sheet's last line** |
-| Frappe details verified in source | **Partly** — AC-54 and AC-55 are `[UNVERIFIED]` and need one bench run before the Pay commit |
+| Open questions owned, none blocks day 1 | **Partly** — nothing blocks the **first** commit any more. D-6 blocks half of one endpoint's check and D-7 blocks the last block of the Why? sheet; both have fail-closed defaults so the build starts without them |
+| Frappe details verified in source | **Partly** — AC-54 and AC-55 are `[UNVERIFIED]` and need one bench run before the Pay commit; AC-60's fallback source is `[UNVERIFIED]` |
+| The remedy told to the employee is true | ✓ — **fixed in revision 2.** AC-58 pins it to the code's behaviour; the false sentence is struck and a static check keeps it out (ALV-115) |
 
-**Verdict, plainly: this slice is NOT ready to build.** Its `01c` and `07` are missing,
-D-5 blocks the build order, and D-1 is a live privacy defect that must be scheduled rather
-than noticed. The spec is ready; the slice is not.
+**Verdict, plainly: ready to start, not ready to finish.** Revision 2 closes the two
+blockers revision 1 had. What is left is real but small: **D-6** and **D-7** each have a
+fail-closed default, so the engineer can build past them; **D-3** holds one line of the
+Why? sheet; and two questions belong to counsel and block no code.
+
+**The order I would build in:** the payroll gate on `get_payslips` (P1, one line), then
+the email fix (ALV-113, one function, its own commit), then the server side, then the
+panels once Wave 1 is on `dev`.
 
 ---
 
 ## Open questions
 
-| # | Question | Owner | Blocks |
-|---|---|---|---|
-| 1 | D-1 — fix the manager's deduction email, or turn the notification off | Surbhi | A live privacy defect; one template |
-| 2 | D-2 — take-home: net or rounded | Surbhi | One number on Pay, and Wave 2's Inbox row must match |
-| 3 | D-3 — base ÷ calendar days | Surbhi, **with a payroll or legal advisor** | The last line of the Why? sheet |
-| 4 | D-4 — the "more than July" comparison | Surbhi | One card |
-| 5 | D-5 — OPS-31 before Wave 3 | Surbhi, with DevOps | The build order and where the code lives |
-| 6 | Should a deduction from pay need a human confirmation before it reaches a payslip? (§18.4) | Surbhi, with an advisor | Nothing here; it would be its own slice |
+| # | Question | Owner | Blocks | Can the build start without it? |
+|---|---|---|---|---|
+| 1 | D-1 — ship the email fix (ALV-113), and turn `notify_manager` off meanwhile | Surbhi | A live leak; one function | Yes — it is its own commit |
+| 2 | D-5/Q1 — the remedy wording (ALV-115). My recommendation is written into AC-59 | Surbhi | The last section of the Why? sheet | Yes — AC-59 is the fail-closed default |
+| 3 | D-6 — how `get_shift_types` is scoped | Surbhi, with the engineer | The scope half of AC-52 | Yes |
+| 4 | D-7 — where the accountable human's name lives | Surbhi | The last block of the Why? sheet | Yes — AC-60's fallback |
+| 5 | D-3 — base ÷ calendar days | Surbhi, **with a payroll or legal advisor** | One line of the Why? sheet | Yes |
+| 6 | D-2 — take-home: net or rounded | Surbhi | One number on Pay, and Wave 2's row must match | Yes |
+| 7 | D-4 — the "more than July" comparison | Surbhi | One card | Yes |
+| 8 | D-8 — a human step before a deduction reaches pay | Surbhi, with an advisor | Nothing here; its own slice | Yes |
+| 9 | Counsel's two: lawfulness of an automatic wage deduction, and Attendance Deduction retention | **Counsel, commissioned by Surbhi** | No code. It blocks any compliance claim | Yes |
 
 ## Assumptions
 
@@ -927,6 +1125,18 @@ than noticed. The spec is ready; the slice is not.
   breaks no external caller. **Checked:** the only references in the repository are
   `hrms-employee.html:7128` and `:7965`. Re-check on the day, because the mobile app
   (slice 013) is on a separate work line.
+- `[ASSUMPTION — replaces revision 1's stale one]` **The Jinja template cliff no longer
+  constrains this slice.** OPS-31 landed in Wave 1 (`a2439e3`), markup moved to
+  `ess_part()` files that take no template slot, and 12 parts measured faster than one
+  include file. So Time and Pay each get their own markup, style and script file for
+  free, and revision 1's "no new include file before OPS-31" is withdrawn (AC-44).
+  **What remains true and is a condition, not an assumption:** Wave 1 must reach `dev`
+  first — `a2439e3` is on `slice/034-redesign-wave1`, **not** on `origin/dev` — and
+  OPS-31 must not reach production before ALV-112's asset refresh is on `main`
+  (OPS-W3-2).
+- `[ASSUMPTION]` The fallback contact in AC-60 can be read from existing tenant
+  configuration. **I could not verify this** — I found no per-site "HR contact" setting.
+  `[UNVERIFIED — engineer to confirm]`, and D-7 may make it moot.
 - **Confirmed fact, not an assumption:** slices 017 and 035 are on `origin/dev` at
   `8718f27` — `attendance_analytics._shift_row` and `hr_api._ledger_leave_balances` both
   present. Wave 3's numbers depend on it.
@@ -940,8 +1150,21 @@ than noticed. The spec is ready; the slice is not.
 3. **Each tenant's Salary Slip print format is set** before the Pay screen is shown to
    that tenant's people (F-4). A tenant configuration change, on Surbhi's word on the day.
 4. **D-1's email change and the release note go together.** A manager who has been
-   receiving amounts for months stops receiving them; that is a narrowing and HR should be
-   told, not surprised.
+   receiving one body stops receiving it; that is a narrowing and HR should be told, not
+   surprised. **Two DevOps points belong with it:** prove the fix on dev with one
+   deliberate send, because production email is muted until go-live (OPS-W3-10); and say
+   on release day that **an image rollback restores the old email** — check the template
+   after any rollback (OPS-W3-9).
+6. **Measure the payslip PDF before the production release** (OPS-W3-6): 20 warm calls
+   for p95, and 10 concurrent downloads. Production's web tier answers **8 requests at a
+   time**, and payday is the same hour for a whole tenant. If p95 is over 3 s, or an
+   ordinary request misses its 500 ms budget under that load, the PDF moves to the
+   `short` queue with a notification. **No pre-generation and no "download all"**, now or
+   later (OPS-W3-7).
+7. **Wave 3's panels wait for Wave 1 to reach `dev`**, and OPS-31 must not reach
+   **production** until ALV-112's asset refresh is on `main` and one deploy has proved it
+   (OPS-W3-2). Otherwise production runs the new HTML against August's script and nothing
+   on screen says so.
 5. Demo data seeded on the local copy before the test run (§14), or every Pay test passes
    for the wrong reason.
 
@@ -955,14 +1178,26 @@ must prove the order, not the presence. **§18.4** — the late-coming rule is a
 decision about a person, and Wave 3 is the first time the employee sees how it was made;
 please read that section as a requirement, not as background.
 
-**To the DevOps engineer:** D-5 is yours, and the payslip PDF is the other one — 1–3 s of
-wkhtmltopdf CPU in the web worker, on demand only, no pre-generation, no bulk download.
+**To the DevOps engineer:** your `07` landed and is applied. D-5 is closed by OPS-31. The
+payslip PDF is the live one — 1–3 s of wkhtmltopdf in the web worker against 8 request
+slots, measured before the production release (OPS-W3-6), on demand only, no
+pre-generation, no bulk download. The other two that reach you: proving the deployed
+assets are the ones just built, and that a rollback restores the old deduction email.
 
 **To the fullstack engineer:** the two most likely things to be quietly lost are the two
 `01b` called out: **no hard-coded grace anywhere** (AC-5 and AC-12 both have static
 checks, because this is easy to build the old way) and **the year-to-date figure must
 never be a sum of slips** (AC-25 fails if it is). Build the "one total, one list" rule in
 §6 before any card, not after.
+
+**To the test engineer — four tests here are easy to write so that they prove nothing,
+and one of them already was.** `AC-17` must assert on the **rendered body per
+recipient**, with a Sick Leave fixture: the revision 1 version tested for a rupee amount
+that was never there, so it would have gone green while the leak carried on. `AC-30`'s
+gate test must call the real `has_feature` and must not patch it. `AC-31` must compare
+**all four** refusal causes in one assertion. And `AC-58` must be driven from a
+correction approved **after** the deduction was submitted, asserting on the deduction's
+`docstatus` — written the other way round it passes and proves the opposite.
 
 **To the test engineer:** AC-4's four punches are the regression guard for slice 017's
 fix and are the single most valuable test in this slice — a 09:25 punch on a 09:30 shift

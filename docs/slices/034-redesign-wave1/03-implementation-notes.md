@@ -1159,3 +1159,111 @@ path**:
 - **What I would do with more time:** put a `get_performance_tree` fixture in the
   repository so the three Growth DOM tests run, and give `driver-portal.html` its one
   copy of the design system.
+
+---
+
+# Wave 1, stretch 5 — SEC-13 / AC-72, the Team screen
+
+*2026-09-24. Local only. Commit `507fb74`.*
+
+**This changes a live screen the moment it is released, not at the swap.**
+
+## 1. What was wrong
+
+`get_manager_dashboard` (`hr_api.py`) added, for anyone holding HR Manager or HR User:
+
+> every Active employee in the tenant whose `reports_to` is empty — with
+> `ignore_permissions=True` and **no company and no branch filter at all**.
+
+So a store's HR person in Ludhiana had head office and every other store's unassigned
+people on their own team screen. It is deleted, not narrowed: *"who has no manager"* is a
+different question from *"who may I see"*, and a narrowed version of the wrong question is
+still the wrong question.
+
+## 2. What it is now
+
+For an HR caller the Team list is `access.permitted_employee_filters(user)` — their
+companies, narrowed to their branches — **plus their own direct reports**, capped at 50,
+with the true total beside it.
+
+| Kept | Why it would be a regression to drop |
+|---|---|
+| `status = "Active"` on the query | `permitted_employee_filters` returns **every** status on purpose. Without this the screen starts listing leavers — **wider** than before, not narrower |
+| The caller is not on their own screen | As before |
+| Their own direct reports stay, even outside their HR scope | An HR person for one company who manages somebody in another must not lose them. Asked of the database **with the same scope filter** rather than worked out in Python, so the rule keeps one definition (SEC-4) |
+| A caller who is not HR is untouched | Their direct reports and the L2 rows read from them, byte for byte as before. The deleted block never ran for them |
+
+The cap is the Inbox's 50. Company-wide HR on a thousand-person tenant would otherwise
+draw a thousand cards and push a thousand ids into the attendance and leave queries below
+it. `team_total`, `team_capped`, `team_cap` and `is_hr_scope` go out with the list, and
+the screen now says *"Showing the first 50 of 412"* instead of calling fifty rows the
+whole team. **A count that does not match the list beside it is worse than no count.**
+
+An HR person who manages nobody now has a Team screen where before they had an empty one
+(W1D-20).
+
+## 3. The tests, and the hole one of them had
+
+`test_team_scope_034`, **15 tests, all passing.** Every row of AC-72's table, plus the
+static check that the orphan query is gone.
+
+**Broken on purpose, and which test went red:**
+
+| what I broke | tests that failed |
+|---|---|
+| the scope loses its branch narrowing | 5 |
+| `status = "Active"` falls off | 2 |
+| the caller is no longer excluded | 1 |
+| **`limit` taken off the query** | **none — at first** |
+
+That last one is worth reading twice. Removing the limit turned **nothing** red, because
+the Python truncation below it still cut the list to fifty: the screen looked right while
+the database was handing back a thousand rows — the exact cost the cap exists to avoid.
+`test_the_scoped_query_asks_the_database_for_a_bounded_list` now spies on the query itself
+and fails when the limit goes. **Breaking the code is what found it; reading it did not.**
+
+**The static check had to be scoped, and the reason is written into the test.** AC-72 asks
+that no "employees with no manager" query survive in `hr_api.py`. There is a second one,
+in `get_portal_context`, that decides the `is_manager` **flag**. It is a count, not a list
+of people, and the spec says in as many words that `get_portal_context` is not changed by
+this slice (SEC-12). So the check is against `get_manager_dashboard`, and a second test
+pins the other one as a count so it cannot grow into a list unnoticed.
+
+## 4. Two mistakes of mine, recorded
+
+1. **The first version of these tests put its people in slice 030's stores**, which broke
+   `test_store_hr_may_see_their_store_only_and_nobody_with_an_empty_branch` — an
+   exact-equality assertion next door. Test data is shared state on one site. The fixture
+   has its own stores now, and the rows the first version left behind were cleared off my
+   throwaway site.
+2. **I ran two `bench run-tests` against the same site at once**, and got four modules
+   reporting failures that were fixture races, not defects. Re-run one at a time they are
+   all green. `parallel-work.md` says one test run at a time and it is right.
+
+## 5. The non-functional dimensions
+
+| Dimension | Verdict | Why |
+|---|---|---|
+| **Performance** | **Improves** | The screen was unbounded for HR — every unassigned employee in the tenant, then their attendance and leave. It is now 50 rows at most, and the limit is on the query, not applied after the rows arrive. 4 queries for the HR branch, all on indexed columns |
+| **Scalability** | **Improves** | This was the one screen that grew with headcount without a ceiling. At 1,000 employees it now draws 50 cards and passes 50 ids to the queries below |
+| **Security / permissions** | **Improves** | The leak this slice exists to close. A store's HR person no longer sees head office or another store |
+| **Multi-tenancy** | **Improves** | The query gained a company filter it never had. It was tenant-wide by construction |
+| **Privacy** | **Improves** | Fewer people's name, job title, department and photo reach each caller. Nothing new is shown to anyone; nothing personal is logged |
+| **Reliability** | **Neutral** | No new external call and no new failure mode. The cap is a hard limit, not a fallback |
+| **Observability** | **Neutral** | No logging changed. The refusal path is unchanged |
+| **Maintainability** | **Improves** | One scope rule instead of a private query. The reason the block was deleted rather than filtered is in the code, where the next person will read it |
+| **Data integrity** | **Neutral** | Nothing is written |
+| **Accessibility** | **Neutral** | One line of text changes on the screen; no markup, no colour, no focus order |
+| **Upgrade-safety** | **Neutral** | Our own app only |
+| **Internationalisation** | **Degrades very slightly, and it is pre-existing** | The new "Showing the first 50 of 412" line is built in JavaScript from English words, like every other string on this page. The page has no client-side translation yet; §14 of the spec puts Hindi and Punjabi out of Wave 1. Worth naming rather than claiming neutral |
+
+## 6. Gaps
+
+- **The Team gate is still in the browser.** `get_manager_dashboard` refuses nobody at the
+  door; it returns each caller their own scope. The BA accepted that for Wave 1 (note n4),
+  and the spec says a tester should not file it. It is still worth a ticket.
+- **The "Showing the first 50 of N" wording is not translated.** See above.
+- **Not measured at 1,000 employees.** The spec's budget is ≤ 8 queries and ≤ 700 ms p95
+  at that size. The query count is 4 and every filter is on an indexed column, but my
+  throwaway site has about a hundred people, so the p95 figure is not measured and I am
+  not quoting one.

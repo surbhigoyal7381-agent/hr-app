@@ -220,6 +220,46 @@ FEATURES = {
         # only needs the portal the chart is shown on.
         "requires": ["portal"],
     },
+    "staff_list": {
+        "desc": "A plain searchable list of the people this HR person looks after: name, job title, department, photo",
+        "icon": "📇",
+        "label": "Staff List",
+        # No module_defs, no roles, no app. There is no desk workspace behind
+        # this - it is one portal screen - and the registry already allows that
+        # (`spec.get("workspaces") or []`). The gate that matters is the one in
+        # staff_api.get_staff_list, on the server.
+        "opt_in": True,
+        # A portal screen and nothing else. `portal` is required on every plan,
+        # so this dependency never refuses anyone; it is here to say what the
+        # feature actually sits on.
+        "requires": ["portal"],
+        # ── Why this key exists at all, and why it is in NO plan bundle ──
+        #
+        # Until slice 034 one flag, `plan_org_structure`, gated two different
+        # things: the org chart (positions, vacancies, seats - the paid layer)
+        # and the plain People screen. An HR person on a tenant that had not
+        # bought the org-structure layer therefore had no way to look someone
+        # up at all.
+        #
+        # Surbhi's decision of 23 September 2026 (W1D-21) splits them. The org
+        # chart STAYS behind `plan_org_structure` as a paid feature. The plain
+        # staff list gets this switch of its own.
+        #
+        # It is deliberately in no plan bundle. `plan_features()` strips opt-in
+        # keys from every bundle and `enabled_features()`'s fallback excludes
+        # them, so shipping this key hands the feature to NOBODY - it arrives
+        # only when somebody ticks it for a named tenant, which writes the key
+        # into that tenant's own `features` list.
+        #
+        # That is the point, not an oversight. The commercial question - free or
+        # paid, and on which plans - is left open on purpose, so it can be
+        # settled by configuration later instead of by another code change.
+        # When the answer comes it is either added to the bundles and loses
+        # `opt_in`, or it stays an add-on. Either way, no redesign.
+        #
+        # Do not add this key to PLANS to "fix" a tenant that cannot see the
+        # screen. Tick it on for that tenant.
+    },
     "policy_library": {
         "desc": "Central policy library: department-owned, versioned, acknowledged, on the portal home page",
         "icon": "📚",

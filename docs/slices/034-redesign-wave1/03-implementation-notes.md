@@ -452,3 +452,40 @@ twice in a row and leaves nothing behind.
 - **Release gate 8 stands**: the key must be ticked on for `dtc` and `aahr`, and on the
   local PP Jewellers copy. That is a tenant configuration action and needs Surbhi's word
   on the day.
+
+## 10. The whole-app run, and the one thing it needs before it is clean
+
+`bench --site test034 run-tests --app alvoraa_portal` on the committed state
+(`37c632e`, rebased on `origin/dev` `5640ab8`): **994 tests, 0 failures, 36 errors,
+2 skipped.**
+
+**All 36 errors are one thing, and it is not this slice.** Every one is
+`Table '...tabAlvoraa Field App Daily Count' doesn't exist`. That doctype arrived with
+slice 013 step 6 in the commits I rebased onto, and **`test034` has never been migrated
+since**: `frappe.db.exists("DocType", "Alvoraa Field App Daily Count")` is `None` and the
+table is absent. Proved by running the two modules that use it on their own —
+`test_field_app_step6_013` 27 errors and `test_field_app_permissions_013` 9, which is
+exactly 36. The same cause produces one extra failure in `test_field_app_step6_013`'s
+migration check when that module is run alone.
+
+**`bench migrate` would clear it, and I did not run it** — it is on the list of commands
+that need Surbhi's word first. So the honest statement is: **every test that can run on
+this site passes, and 36 cannot run until that site is migrated.** Nothing in this stretch
+needs a migration; slice 013's does.
+
+For the record, the modules nearest this change were also run on their own and are green:
+`test_staff_list_034` **31**, `test_opt_in_features` 19, `test_frame_api_034` 33,
+`test_frame_endpoint_registry_034` 7, `test_preview_page_034` 14,
+`test_permitted_employee_filters_034` 10, `test_subscription` 32,
+`test_subscription_access` 56, `test_endpoint_entitlement` 13, `test_pricing` 36,
+`test_portal_module_gate_016` 17, `test_module_access` 51, `test_review_fixround_010d` 44.
+
+**One earlier full run is not quoted as a result**, deliberately: I edited files while it
+was running and started a second run against the same database, which deadlocked. It is
+worth naming because it is what found the weakness in my own `has_feature` guard — in a
+whole-app run other modules patch the same function, patchers stack, and stopping the
+innermost one restores the *next* mock rather than the real function. The guard now
+patches the real function back explicitly and asserts it is not a `Mock`. One of my own
+tests was also fragile and is fixed: it read the first page of the whole company and
+assumed the fixture people were on it, which stops being true above 50 Active employees —
+the cap doing its job.

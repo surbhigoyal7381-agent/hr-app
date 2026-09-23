@@ -6563,13 +6563,13 @@ function loadHomeLeave(balances) {
   if (!list) return;
   var rows = (balances || []).filter(function (b) {
     // A type with nothing allocated is not a balance, it is noise.
-    return (parseFloat(b.total_leaves || 0) > 0) || (parseFloat(b.balance || 0) > 0);
+    return (parseFloat(b.total || 0) > 0) || (parseFloat(b.balance || 0) > 0);
   });
   homeBlock("home-leave-card", rows.length);
   if (!rows.length) return;
   list.innerHTML = rows.map(function (b) {
     var left = parseFloat(b.balance || 0);
-    var tot = parseFloat(b.total_leaves || 0);
+    var tot = parseFloat(b.total || 0);
     return '<div class="lv-row"><span class="lv-name">' + esc(b.leave_type || "") + "</span>"
       + '<span class="lv-val">' + (Math.round(left * 10) / 10)
       + (tot ? "<small>of " + (Math.round(tot * 10) / 10) + "</small>" : "")
@@ -6708,7 +6708,7 @@ function loadHome() {
       }
     }
 
-    renderHolidays(data.holidays || []);
+    renderHolidays(data.holidays || [], data.holiday_note);
   }, function() { renderHolidays([]); });
 }
 
@@ -6955,7 +6955,7 @@ var _holYear = 0;
 var _holMonth = 0;          // 0-indexed month currently displayed
 var _holViewAll = false;    // true = show all year
 
-function renderHolidays(holidays) {
+function renderHolidays(holidays, note) {
   _holAll = holidays;
   var now = new Date();
   _holYear  = now.getFullYear();
@@ -6967,6 +6967,13 @@ function renderHolidays(holidays) {
   var btn = document.getElementById("hol-view-all-btn");
   if (btn) btn.style.display = holidays.length ? "" : "none";
 
+  // Slice 035: payroll finds no holiday list for this person. Say so, rather
+  // than show an empty month that reads as "no holidays".
+  if (note) {
+    var el = document.getElementById("holidays-list");
+    if (el) el.innerHTML = '<div class="empty-state"><div class="empty-state-text">' + esc(note) + '</div></div>';
+    return;
+  }
   _renderHolMonth();
 }
 

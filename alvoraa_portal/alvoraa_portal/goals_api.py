@@ -76,21 +76,66 @@ def _get_active_cycle():
     return c
 
 
+# ── Goal percentages: one cycle at a time (slice 035) ────────────────────────
+#
+# Goal averages used to take every goal an employee ever had. At PP Jewellers
+# that blended a finished Q1 (goals averaging 97%) with the live Q2 (71%): 210
+# of 213 people showed a figure 13 points high on average, up to 50 - on the
+# chart managers look at while they rate. The appraisal's own goal score was
+# always per cycle; now the screens are too.
+
+def current_cycle_name(company):
+    """The cycle a goal percentage is about, for one company (decision Q-G1).
+
+    In Progress, else the newest not Completed - the rule get_performance_context
+    uses, but per company, since every Appraisal Cycle belongs to one. Between
+    cycles, when all are Completed, the newest one, so the figure still speaks
+    about a single cycle rather than falling back to all of them. None when the
+    company has no cycle at all: then there is nothing to separate.
+    """
+    if not company:
+        return None
+    for status in ("In Progress", ["!=", "Completed"], ["is", "set"]):
+        name = frappe.db.get_value("Appraisal Cycle", {"company": company, "status": status},
+                                   "name", order_by="start_date desc")
+        if name:
+            return name
+    return None
+
+
+def goal_average(goals):
+    """Weighted by weightage when the goals carry weights, a plain average when none do (Q-G2).
+
+    As in the appraisal's goal score, a goal with no weight counts for nothing
+    once any goal in the set has one. Cancelled goals are the caller's to drop.
+    """
+    if not goals:
+        return 0.0
+    weights = [flt(g.get("weightage")) for g in goals]
+    if sum(weights) > 0:
+        return sum(flt(g.get("progress_pct")) * w for g, w in zip(goals, weights)) / sum(weights)
+    return sum(flt(g.get("progress_pct")) for g in goals) / len(goals)
+
+
 def _dashboard_stats(emp_id):
     if not _goals_installed():
         return {"total": 0, "active": 0, "completed": 0, "at_risk": 0,
                 "avg_progress": 0, "upcoming_deadlines": 0}
 
+    filters = {"employee": emp_id, "docstatus": ["!=", 2]}
+    cycle = current_cycle_name(frappe.db.get_value("Employee", emp_id, "company"))
+    if cycle:
+        filters["appraisal_cycle"] = cycle
     goals = frappe.get_all(
         "Individual Goal",
-        filters={"employee": emp_id, "docstatus": ["!=", 2]},
-        fields=["status", "progress_pct", "trajectory", "end_date"],
+        filters=filters,
+        fields=["status", "progress_pct", "trajectory", "end_date", "weightage"],
     )
     total     = len(goals)
     active    = sum(1 for g in goals if g["status"] == "Active")
     completed = sum(1 for g in goals if g["status"] == "Completed")
     at_risk   = sum(1 for g in goals if g.get("trajectory") in ("At Risk", "Off Track"))
-    avg_pct   = round(sum(flt(g["progress_pct"]) for g in goals) / total, 1) if total else 0
+    avg_pct   = round(goal_average([g for g in goals if g["status"] != "Cancelled"]), 1)
     deadline30 = str(add_days(today(), 30))
     upcoming  = sum(
         1 for g in goals
@@ -816,22 +861,31 @@ def get_team_goals():
     reportees = frappe.get_all(
         "Employee",
         filters={"reports_to": emp_id, "status": "Active"},
-        fields=["name", "employee_name", "designation", "image"],
+        fields=["name", "employee_name", "designation", "image", "company"],
     )
+    # Each report's goals for their company's current cycle (slice 035). A Q1
+    # goal left "Active" after Q1 closed no longer counts in Q2. One goal query
+    # for the whole team, one cycle lookup per company.
+    cycles = {c: current_cycle_name(c) for c in {e["company"] for e in reportees}}
+    goals_by_emp = {}
+    if reportees and _goals_installed():
+        for g in frappe.get_all(
+            "Individual Goal",
+            filters={"employee": ["in", [e["name"] for e in reportees]],
+                     "status": "Active", "docstatus": ["!=", 2]},
+            fields=["employee", "appraisal_cycle", "progress_pct", "trajectory", "weightage"],
+        ):
+            goals_by_emp.setdefault(g["employee"], []).append(g)
+
     result = []
     for emp in reportees:
-        if _goals_installed():
-            g_list = frappe.get_all(
-                "Individual Goal",
-                filters={"employee": emp["name"], "status": "Active", "docstatus": ["!=", 2]},
-                fields=["name", "goal_name", "progress_pct", "trajectory"],
-            )
-        else:
-            g_list = []
+        cycle = cycles.get(emp["company"])
+        g_list = [g for g in goals_by_emp.get(emp["name"], [])
+                  if not cycle or g["appraisal_cycle"] == cycle]
 
         on_track = sum(1 for g in g_list if g.get("trajectory") == "On Track")
         at_risk  = sum(1 for g in g_list if g.get("trajectory") in ("At Risk", "Off Track"))
-        avg_pct  = round(sum(flt(g.get("progress_pct") or 0) for g in g_list) / len(g_list), 1) if g_list else 0
+        avg_pct  = round(goal_average(g_list), 1)
 
         result.append({
             "employee_id":   emp["name"],

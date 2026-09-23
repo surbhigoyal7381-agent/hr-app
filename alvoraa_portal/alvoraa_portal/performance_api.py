@@ -970,10 +970,15 @@ def get_team_reviews(cycle=None):
     if cycle:
         appraisal_filters["appraisal_cycle"] = cycle
 
+    # Oldest first, so the newest review wins in appraisal_by_emp below when no
+    # cycle is given (slice 035). Unordered, the oldest won: between cycles, when
+    # every cycle is Completed and the page's picker is blank, managers saw last
+    # quarter's rating as if it were current.
     appraisals = frappe.get_all(
         "Appraisal",
         filters=appraisal_filters,
         fields=["name", "employee", "appraisal_cycle", "start_date", "end_date"],
+        order_by="start_date asc, creation asc",
     )
 
     if not appraisals:

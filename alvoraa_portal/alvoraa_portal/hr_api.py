@@ -4,6 +4,7 @@ import frappe
 from frappe import _
 
 from alvoraa_portal.attendance_analytics import LATE_GRACE_KEY
+from alvoraa_portal.goals_api import current_cycle_name, goal_average
 from alvoraa_portal.subscription import requires_feature
 import calendar as _calendar
 from frappe.utils import cint, flt, today, get_first_day, get_last_day, getdate, add_days, now
@@ -82,6 +83,59 @@ def _leave_year_start(date_=None, company=None):
         # No Fiscal Year for this date/company, or erpnext unavailable.
         pass
     return frappe.utils.get_year_start(date_)
+
+
+def _ledger_leave_balances(employee, date_=None):
+    """Leave per type from Frappe HR's leave ledger (slice 035, decision Q-e).
+
+    The portal used to work leave out for itself: allocated minus approved Leave
+    Applications. That missed every other kind of ledger entry - days the
+    late-coming rule took, encashments, expiries - so on PP Jewellers 97 people
+    were shown 76 days of Casual Leave they did not have, while the apply form's
+    preview, the leave check and the late rule all read the ledger and said less.
+
+    This is the figure Frappe HR's own screens show (get_leave_details), worked
+    out the same way: get_leave_balance_on with
+    consider_all_leaves_in_the_allocation_period, so leave already approved for
+    later in the period counts as used.
+
+    It calls Frappe HR's lower functions rather than get_leave_details or
+    get_leave_balance_on, because those begin with validate_leave_access. That
+    refuses a manager who is the reporting manager but not the named leave
+    approver, and a store HR person whose desk read is branch-scoped - people the
+    portal already lets see this figure. So EVERY CALLER MUST CHECK WHO MAY SEE
+    THIS EMPLOYEE FIRST. test_leave_ledger_035 compares this with
+    get_leave_balance_on, so an upstream change to that shape fails a test.
+
+    Returns [{leave_type, total, taken, pending, balance}], sorted by leave type.
+    """
+    from hrms.hr.doctype.leave_application.leave_application import (
+        get_allocation_expiry_for_cf_leaves,
+        get_leave_allocation_records,
+        get_leaves_for_period,
+        get_leaves_pending_approval_for_period,
+        get_manually_expired_leaves,
+        get_remaining_leaves,
+    )
+
+    date_ = getdate(date_ or today())
+    precision = cint(frappe.db.get_single_value("System Settings", "float_precision")) or 2
+    rows = []
+    for leave_type, alloc in sorted(get_leave_allocation_records(employee, date_).items()):
+        start, end = alloc.from_date, alloc.to_date
+        cf_expiry = get_allocation_expiry_for_cf_leaves(employee, leave_type, end, start)
+        used = get_leaves_for_period(employee, leave_type, start, end)  # negative
+        expired = get_manually_expired_leaves(employee, leave_type, start, end)
+        balance = get_remaining_leaves(alloc, used, date_, cf_expiry, expired).leave_balance
+        rows.append({
+            "leave_type": leave_type,
+            "total": flt(alloc.total_leaves_allocated, precision),
+            "taken": flt(-used, precision),
+            "pending": flt(get_leaves_pending_approval_for_period(employee, leave_type, start, end),
+                           precision),
+            "balance": flt(balance, precision),
+        })
+    return rows
 
 
 def _get_employee(user=None):
@@ -178,43 +232,19 @@ def get_employee_dashboard():
         return {"no_employee": True}
 
     td       = today()
-    yr_start = _leave_year_start(td, emp.company)
     mo_start = get_first_day(td)
 
-    # ── Leave balances ────────────────────────────────────────────────────
-    allocations = frappe.get_all(
-        "Leave Allocation",
-        filters={
-            "employee": emp.name, "docstatus": 1,
-            "from_date": ["<=", td], "to_date": [">=", td],
-        },
-        fields=["leave_type", "total_leaves_allocated"],
-        ignore_permissions=True,
-    )
-
-    taken_map = {}
-    if allocations:
-        apps = frappe.get_all(
-            "Leave Application",
-            filters={"employee": emp.name, "docstatus": 1, "status": "Approved",
-                     "from_date": [">=", yr_start]},
-            fields=["leave_type", "total_leave_days"],
-            ignore_permissions=True,
-        )
-        for a in apps:
-            taken_map[a.leave_type] = taken_map.get(a.leave_type, 0) + a.total_leave_days
-
+    # ── Leave balances: Frappe HR's ledger (slice 035) ───────────────────
+    # The caller's own record, so no one else's figure can be reached here.
     leave_balances = []
-    for al in allocations:
-        lt    = al.leave_type
-        total = float(al.total_leaves_allocated)
-        taken = float(taken_map.get(lt, 0))
+    for b in _ledger_leave_balances(emp.name, td):
+        total, taken = b["total"], b["taken"]
         leave_balances.append({
-            "leave_type": lt,
+            "leave_type": b["leave_type"],
             "total":      total,
             "taken":      taken,
-            "balance":    max(total - taken, 0),
-            "color":      LEAVE_COLORS.get(lt, "#64748b"),
+            "balance":    max(b["balance"], 0),
+            "color":      LEAVE_COLORS.get(b["leave_type"], "#64748b"),
             "pct_used":   round(taken / total * 100) if total else 0,
         })
 
@@ -249,26 +279,7 @@ def get_employee_dashboard():
         ignore_permissions=True,
     )
 
-    # ── Upcoming holidays (full year, no Sundays, deduped across lists) ──
-    _mo_start  = get_first_day(td)
-    _year_end  = "{0}-12-31".format(getdate(td).year)
-    _raw_hols  = frappe.get_all(
-        "Holiday",
-        filters={
-            "holiday_date": ["between", [_mo_start, _year_end]],
-            "weekly_off":   0,
-        },
-        fields=["holiday_date", "description"],
-        order_by="holiday_date asc",
-        limit=200,
-        ignore_permissions=True,
-    )
-    _seen = set()
-    holidays = []
-    for _h in _raw_hols:
-        if _h.holiday_date not in _seen:
-            _seen.add(_h.holiday_date)
-            holidays.append(_h)
+    holidays, holiday_note = _own_upcoming_holidays(emp.name, td)
 
     return {
         "employee":        emp,
@@ -277,8 +288,48 @@ def get_employee_dashboard():
         "recent_leaves":   recent_leaves,
         "pending_approvals": pending,
         "holidays":        holidays,
+        "holiday_note":    holiday_note,
         "month_days":      len(att_rows),
     }
+
+
+def _own_upcoming_holidays(employee, date_):
+    """The employee's own named holidays, this month to the end of their list.
+
+    Slice 035. Home used to read EVERY holiday list on the site, so store staff
+    at PP Jewellers were told Diwali, Dussehra, Guru Nanak Jayanti and Christmas
+    were holidays - Head Office's, not theirs. It also stopped at 31 December,
+    hiding January to March of an April-March list.
+
+    The list is found exactly as payroll and leave find it: ERPNext's
+    get_holiday_list_for_employee, which Frappe HR takes over through its
+    employee_holiday_list hook and answers from Holiday List Assignment only
+    (never Employee.holiday_list or the company default). So this card can
+    never show a calendar that payroll ignores. When payroll has no list for
+    this person, the card says so plainly - on a new tenant that is a setup gap
+    HR must close, and a quiet empty card would hide it.
+
+    Returns (holidays, note). note is None when a list was found.
+    """
+    from erpnext.setup.doctype.employee.employee import get_holiday_list_for_employee
+
+    holiday_list = get_holiday_list_for_employee(employee, raise_exception=False, as_on=date_)
+    if not holiday_list:
+        return [], _("No holiday list is assigned to you yet. Ask HR to set one up.")
+
+    list_end = frappe.db.get_value("Holiday List", holiday_list, "to_date")
+    holidays = frappe.get_all(
+        "Holiday",
+        filters={
+            "parent": holiday_list,
+            "weekly_off": 0,
+            "holiday_date": ["between", [get_first_day(date_), list_end]],
+        },
+        fields=["holiday_date", "description"],
+        order_by="holiday_date asc",
+        limit=200,
+    )
+    return holidays, None
 
 
 @frappe.whitelist()
@@ -833,35 +884,13 @@ def get_employee_scorecard(employee_id):
             hrs.append(float(a.working_hours))
     avg_hours = round(sum(hrs) / len(hrs), 1) if hrs else 0
 
-    # Leave balances
-    alloc_rows = frappe.db.sql("""
-        SELECT leave_type, SUM(total_leaves_allocated) as allocated
-        FROM `tabLeave Allocation`
-        WHERE employee = %s AND docstatus = 1
-          AND from_date <= %s AND to_date >= %s
-        GROUP BY leave_type ORDER BY leave_type
-    """, (employee_id, td, td), as_dict=True)
-    yr_start = _leave_year_start(td)
-    taken_rows = frappe.get_all(
-        "Leave Application",
-        filters={"employee": employee_id, "docstatus": 1, "status": "Approved",
-                 "from_date": [">=", yr_start]},
-        fields=["leave_type", "total_leave_days"],
-        ignore_permissions=True,
-    )
-    taken_map = {}
-    for r in taken_rows:
-        taken_map[r.leave_type] = taken_map.get(r.leave_type, 0) + float(r.total_leave_days or 0)
-    leave_balances = []
-    for a in alloc_rows:
-        alloc = float(a.allocated or 0)
-        taken = taken_map.get(a.leave_type, 0)
-        leave_balances.append({
-            "leave_type": a.leave_type,
-            "allocated": alloc,
-            "taken": round(taken, 1),
-            "balance": max(alloc - taken, 0),
-        })
+    # Leave balances: Frappe HR's ledger (slice 035). Access to this employee
+    # was checked at the top of this function.
+    leave_balances = [
+        {"leave_type": b["leave_type"], "allocated": b["total"],
+         "taken": round(b["taken"], 1), "balance": max(b["balance"], 0)}
+        for b in _ledger_leave_balances(employee_id, td)
+    ]
 
     # Pending leave requests
     pending_leaves = frappe.get_all(
@@ -881,10 +910,16 @@ def get_employee_scorecard(employee_id):
         goals = frappe.get_all(
             "Individual Goal",
             filters={"employee": employee_id, "docstatus": ["!=", 2]},
-            fields=["name", "goal_name", "progress_pct", "status", "trajectory"],
-            order_by="creation desc", limit=15,
+            fields=["name", "goal_name", "progress_pct", "status", "trajectory", "appraisal_cycle"],
+            order_by="creation desc", limit=30,
             ignore_permissions=True,
         )
+        # The current cycle's goals first (slice 035), so a finished quarter's
+        # 100% does not sit at the top of this quarter's list. Newest first
+        # within each group, as before; still 15 at most.
+        cycle = current_cycle_name(frappe.db.get_value("Employee", employee_id, "company"))
+        goals.sort(key=lambda g: g.pop("appraisal_cycle") != cycle)
+        goals = goals[:15]
 
     # Appraisal history
     appraisal_history = []
@@ -957,7 +992,7 @@ def get_team_scorecard():
     team = frappe.get_all(
         "Employee",
         filters={"reports_to": mgr_emp.name, "status": "Active"},
-        fields=["name", "employee_name", "designation"],
+        fields=["name", "employee_name", "designation", "company"],
         ignore_permissions=True,
     )
     if not team:
@@ -981,25 +1016,31 @@ def get_team_scorecard():
         if r.working_hours:
             att_by_emp[e]["hrs"].append(float(r.working_hours))
 
-    # Goals per team member
+    # Goals per team member: their company's current cycle only (slice 035).
+    # This used to average every goal the person ever had, so the comparison
+    # chart managers rate beside blended last quarter into this one.
     goals_by_emp = {}
     if frappe.db.exists("DocType", "Individual Goal"):
+        cycles = {c: current_cycle_name(c) for c in {m.company for m in team}}
+        cycle_of = {m.name: cycles.get(m.company) for m in team}
         goal_rows = frappe.get_all(
             "Individual Goal",
             filters={"employee": ["in", emp_ids], "docstatus": ["!=", 2]},
-            fields=["employee", "progress_pct", "status"],
+            fields=["employee", "appraisal_cycle", "progress_pct", "status", "weightage"],
             ignore_permissions=True,
         )
+        rows_by_emp = {}
         for g in goal_rows:
-            e = g.employee
-            if e not in goals_by_emp:
-                goals_by_emp[e] = {"total": 0, "pct_sum": 0, "completed": 0}
-            goals_by_emp[e]["total"] += 1
-            goals_by_emp[e]["pct_sum"] += float(g.progress_pct or 0)
-            if g.status == "Completed":
-                goals_by_emp[e]["completed"] += 1
-        for e, gd in goals_by_emp.items():
-            gd["avg"] = round(gd["pct_sum"] / gd["total"]) if gd["total"] else 0
+            cycle = cycle_of.get(g.employee)
+            if cycle and g.appraisal_cycle != cycle:
+                continue
+            rows_by_emp.setdefault(g.employee, []).append(g)
+        for e, rows in rows_by_emp.items():
+            goals_by_emp[e] = {
+                "total": len(rows),
+                "completed": sum(1 for g in rows if g.status == "Completed"),
+                "avg": round(goal_average([g for g in rows if g.status != "Cancelled"])),
+            }
 
     # Latest appraisal score per team member
     score_by_emp = {}
@@ -1109,30 +1150,12 @@ def get_employee_detail_for_manager(employee_id):
     for a in month_att:
         att_summary[a.status] = att_summary.get(a.status, 0) + 1
 
-    # Leave balances — allocations minus approved applications (leaves_taken column removed in newer HRMS)
-    alloc_rows = frappe.db.sql("""
-        SELECT leave_type, SUM(total_leaves_allocated) as allocated
-        FROM `tabLeave Allocation`
-        WHERE employee = %s AND docstatus = 1
-          AND from_date <= %s AND to_date >= %s
-        GROUP BY leave_type ORDER BY leave_type
-    """, (employee_id, td, td), as_dict=True)
-    yr_start = _leave_year_start(td)
-    taken_rows = frappe.get_all(
-        "Leave Application",
-        filters={"employee": employee_id, "docstatus": 1, "status": "Approved",
-                 "from_date": [">=", yr_start]},
-        fields=["leave_type", "total_leave_days"],
-        ignore_permissions=True,
-    )
-    taken_map = {}
-    for r in taken_rows:
-        taken_map[r.leave_type] = taken_map.get(r.leave_type, 0) + float(r.total_leave_days or 0)
+    # Leave balances: Frappe HR's ledger (slice 035). Access to this employee
+    # was checked at the top of this function.
     leave_balances = [
-        {"leave_type": a.leave_type,
-         "allocated": float(a.allocated or 0),
-         "balance": max(float(a.allocated or 0) - taken_map.get(a.leave_type, 0), 0)}
-        for a in alloc_rows
+        {"leave_type": b["leave_type"], "allocated": b["total"],
+         "balance": max(b["balance"], 0)}
+        for b in _ledger_leave_balances(employee_id, td)
     ]
 
     # Pending leave requests from this employee
@@ -1633,46 +1656,19 @@ def get_leave_summary(employee_id=None):
     if not emp:
         return {"no_employee": True}
     td = today()
-    yr_start = _leave_year_start(td, emp.company)
 
-    allocations = frappe.get_all(
-        "Leave Allocation",
-        filters={
-            "employee": emp.name, "docstatus": 1,
-            "from_date": ["<=", td], "to_date": [">=", td],
-        },
-        fields=["leave_type", "total_leaves_allocated", "from_date", "to_date"],
-        ignore_permissions=True,
-    )
-
-    taken_map = {}
-    pending_map = {}
-    if allocations:
-        apps = frappe.get_all(
-            "Leave Application",
-            filters={"employee": emp.name, "from_date": [">=", yr_start]},
-            fields=["leave_type", "total_leave_days", "status", "docstatus"],
-            ignore_permissions=True,
-        )
-        for a in apps:
-            if a.docstatus == 1 and a.status == "Approved":
-                taken_map[a.leave_type] = taken_map.get(a.leave_type, 0) + a.total_leave_days
-            elif a.status == "Open":
-                pending_map[a.leave_type] = pending_map.get(a.leave_type, 0) + a.total_leave_days
-
+    # Frappe HR's ledger (slice 035). emp is the caller, or someone HR may act
+    # for - _hr_target_employee refused anyone else above.
     balances = []
-    for al in allocations:
-        lt = al.leave_type
-        total = float(al.total_leaves_allocated)
-        taken = float(taken_map.get(lt, 0))
-        pending = float(pending_map.get(lt, 0))
+    for b in _ledger_leave_balances(emp.name, td):
+        total, taken = b["total"], b["taken"]
         balances.append({
-            "leave_type": lt,
+            "leave_type": b["leave_type"],
             "total": total,
             "taken": taken,
-            "pending": pending,
-            "balance": max(total - taken, 0),
-            "color": LEAVE_COLORS.get(lt, "#64748b"),
+            "pending": b["pending"],
+            "balance": max(b["balance"], 0),
+            "color": LEAVE_COLORS.get(b["leave_type"], "#64748b"),
             "pct_used": round(taken / total * 100) if total else 0,
         })
 

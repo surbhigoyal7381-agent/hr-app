@@ -68,8 +68,34 @@ JS = """() => {
 # (design_system.html); since slice 034 US-10 it carries several more, and the
 # blanket "strip every {% %}" below would have deleted them - leaving this check
 # measuring an empty page and passing. Expanding them all is the whole guard.
+# OPS-31. The portal's styles left the Jinja includes and became static files
+# under public/, loaded with <link href="/assets/...">. Stripping those, as the
+# blanket Jinja strip below once did to the include tags, would leave this check
+# measuring an unstyled page - every colour would come out 1.00:1 and the check
+# would report a disaster that is not real, or a healthy page as broken. So the
+# asset tags are pasted back in as <style> blocks, the same way the shared
+# expander does it for the tests.
+ASSET_LINK_RE = re.compile(
+	r'<link[^>]*href="/assets/alvoraa_portal/(css/ess/[^"?]+)(?:\?[^"]*)?"[^>]*>')
+ASSET_SCRIPT_RE = re.compile(
+	r'<script[^>]*src="/assets/alvoraa_portal/(js/ess/[^"?]+)(?:\?[^"]*)?"[^>]*>\s*</script>')
+
+
+def _expand_assets(src):
+	def swap(m, tag):
+		path = os.path.join(ROOT, "public", *m.group(1).split("/"))
+		with open(path, encoding="utf-8") as fh:
+			return "<%s>%s</%s>" % (tag, fh.read(), tag)
+
+	src = ASSET_LINK_RE.sub(lambda m: swap(m, "style"), src)
+	return ASSET_SCRIPT_RE.sub(lambda m: swap(m, "script"), src)
+
+
+# Thirty, not eight: driver-portal.html includes design_system.html four times
+# and each copy pulls in brand_color.html, which is eight substitutions on its
+# own - the old limit fired on a healthy page.
 def _expand_includes(src):
-	for _ in range(8):
+	for _ in range(30):
 		m = re.search(r'\{%\s*include\s*"([^"]+)"\s*%\}', src)
 		if not m:
 			return src
@@ -81,7 +107,7 @@ def _expand_includes(src):
 
 def prep(page):
 	src = open(os.path.join(ROOT, "www", page + ".html"), encoding="utf-8").read()
-	src = _expand_includes(src)
+	src = _expand_assets(_expand_includes(src))
 	src = re.sub(r"\{%\s*extends[^%]*%\}|\{%\s*block\s+\w+\s*%\}|\{%\s*endblock[^%]*%\}", "", src)
 	src = re.sub(r"\{#[\s\S]*?#\}", "", src)
 	V = {"tenant_name": "PP Jewellers", "primary_color": "#5B4B8A",

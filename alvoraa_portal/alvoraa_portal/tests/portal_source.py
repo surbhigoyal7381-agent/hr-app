@@ -27,16 +27,70 @@ WWW = os.path.join(APP_ROOT, "www")
 PORTAL_PAGE = os.path.join(WWW, "hrms-employee.html")
 ESS_DIR = os.path.join(APP_ROOT, "templates", "includes", "ess")
 
+# OPS-31. The frame's styles and the portal script are no longer Jinja includes.
+# They are ordinary static files under public/, pulled in by <link> and <script
+# src>. A check that only expanded include tags would now be reading a page with
+# no CSS and no JavaScript in it - the exact silent failure this helper exists to
+# stop - so the asset tags are expanded too, back into <style> and <script>
+# blocks, which is what every caller already knows how to read.
+ASSET_DIRS = (
+	os.path.join(APP_ROOT, "public", "css", "ess"),
+	os.path.join(APP_ROOT, "public", "js", "ess"),
+)
+
 # Only our own include files are expanded. design_system.html and brand_color.html
 # are shared with five other pages and were never part of this page's source.
 ESS_PREFIX = "templates/includes/ess/"
 INCLUDE_RE = re.compile(rb'\{%\s*include\s+"(templates/includes/ess/[^"]+)"\s*%\}')
+
+# <link rel="stylesheet" href="/assets/alvoraa_portal/css/ess/frame.css?v=123">
+LINK_RE = re.compile(
+	rb'<link[^>]*href="/assets/alvoraa_portal/(css/ess/[^"?]+)(?:\?[^"]*)?"[^>]*>')
+# <script src="/assets/alvoraa_portal/js/ess/portal.js?v=123" defer></script>
+SCRIPT_RE = re.compile(
+	rb'<script[^>]*src="/assets/alvoraa_portal/(js/ess/[^"?]+)(?:\?[^"]*)?"[^>]*>\s*</script>')
 
 MAX_DEPTH = 5
 
 
 class PortalSourceError(RuntimeError):
 	"""The page and its include files no longer agree. Never pass quietly."""
+
+
+def ess_assets_on_disk(dirs=ASSET_DIRS):
+	"""Every static frame file that exists, as app-relative public/ paths."""
+	found = set()
+	for d in dirs:
+		if not os.path.isdir(d):
+			continue
+		for base, _dirs, names in os.walk(d):
+			for n in names:
+				full = os.path.join(base, n)
+				rel = os.path.relpath(full, os.path.join(APP_ROOT, "public"))
+				found.add(rel.replace(os.sep, "/"))
+	return found
+
+
+def expand_assets(raw, used, app_root=APP_ROOT):
+	"""Paste each static frame file back where its tag sits.
+
+	A stylesheet comes back inside <style>, a script inside <script>, so callers
+	that scan for CSS rules or for JavaScript keep finding both where they were.
+	"""
+
+	def swap(m, tag):
+		rel = m.group(1).decode("utf-8")
+		path = os.path.join(app_root, "public", *rel.split("/"))
+		if not os.path.exists(path):
+			raise PortalSourceError("the page loads %s, which does not exist" % rel)
+		used.add(rel)
+		with open(path, "rb") as fh:
+			body = fh.read()
+		nl = b"\r\n"
+		return b"<" + tag + b">" + nl + body + nl + b"</" + tag + b">"
+
+	out = LINK_RE.sub(lambda m: swap(m, b"style"), raw)
+	return SCRIPT_RE.sub(lambda m: swap(m, b"script"), out)
 
 
 def ess_files_on_disk(ess_dir=ESS_DIR):
@@ -83,12 +137,26 @@ def page_bytes(path=PORTAL_PAGE, check=True):
 		raw = fh.read()
 	used = set()
 	out = expand_bytes(raw, used)
+	assets = set()
+	out = expand_assets(out, assets)
 	if check and os.path.abspath(path) == os.path.abspath(PORTAL_PAGE):
-		_assert_nothing_went_quiet(used)
+		_assert_nothing_went_quiet(used, assets)
 	return out
 
 
-def _assert_nothing_went_quiet(used):
+def _assert_nothing_went_quiet(used, assets=None):
+	if assets is not None:
+		if not assets:
+			raise PortalSourceError(
+				"hrms-employee.html loads no /assets/alvoraa_portal frame files. "
+				"Either the page lost its <link> and <script src> tags or this "
+				"helper is reading the wrong file - either way every check calling "
+				"it would now be reading a page with no styles and no script.")
+		stranded = ess_assets_on_disk() - assets
+		if stranded:
+			raise PortalSourceError(
+				"these frame asset files exist but the page never loads them, so "
+				"their contents are checked by nobody: " + ", ".join(sorted(stranded)))
 	if not used:
 		raise PortalSourceError(
 			"hrms-employee.html has no ess include tags. Either the page was "

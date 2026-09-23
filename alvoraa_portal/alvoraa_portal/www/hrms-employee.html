@@ -9,10 +9,22 @@
 {% block head_include %}
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 {% include "templates/includes/design_system.html" %}
-<style>
-{% include "templates/includes/ess/frame.css.html" %}
-{% include "templates/includes/ess/panels.css.html" %}
-</style>
+{# OPS-31 / decision 12. The frame's styles and the portal's script are ordinary
+   static files under the app's public/ folder, served from /assets/ and cached by
+   the browser. Two reasons, in order of size:
+
+   1. Frappe compiles at most 32 Jinja templates per worker (utils/jinja.py, the
+      Environment's cache_size). This page's chain already uses about 27, so every
+      extra include file was a cache slot. Measured over HTTP: four include files
+      cost +1.1 %, five cost +97 %, twenty-four cost +565 %. A static file takes no
+      slot at all, which is what makes the fine-grained split affordable.
+   2. The script is about half a megabyte. As an include it was re-sent inside the
+      HTML on every single visit. As a file it is downloaded once per release.
+
+   The address carries ?v=<build version> (OPS-34) so a phone cannot keep last
+   release's code. asset_version comes from hrms_employee.py. #}
+<link rel="stylesheet" href="/assets/alvoraa_portal/css/ess/frame.css?v={{ asset_version | e }}">
+<link rel="stylesheet" href="/assets/alvoraa_portal/css/ess/panels.css?v={{ asset_version | e }}">
 {% endblock %}
 
 {% block page_content %}
@@ -23,9 +35,10 @@ window._SUPPORT_EMAIL = {{ support_email | tojson }};
 
 </script>
 {% include "templates/includes/ess/markup.html" %}
-<script>
-{% include "templates/includes/ess/script.js.html" %}
-</script>
+{# defer, not inline: the file is parsed while the page is, and runs after the
+   markup exists. The only readyState test in it has an else branch, and the markup
+   carries no inline script tag, so nothing depended on running mid-parse. #}
+<script src="/assets/alvoraa_portal/js/ess/portal.js?v={{ asset_version | e }}" defer></script>
 <footer style="text-align:center;padding:10px 0 14px;font-size:var(--fs-xs);color:var(--text3,var(--border2))">
   Powered by <a href="https://allabouthr.co" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;opacity:.7">AllAboutHR.co</a>
 </footer>

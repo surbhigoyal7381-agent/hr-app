@@ -11,9 +11,9 @@ forever is the structure that made it safe, and it is pinned here:
   * the page is a list of includes, not a flattened file again;
   * every include file on disk is pulled in, and pulled in once;
   * the shared expander refuses to hand back a shell;
-  * the CSS and JS include files hold no Jinja, so moving them to cached
-    static files later (OPS-31) stays a rename rather than another
-    restructure.
+  * the styles and the script are static files under public/, loaded from
+    /assets/ with a version stamp (OPS-31, OPS-34), and the page still loads
+    every one of them.
 
 A merge that flattens the page, drops an include tag or strands an include
 file fails here rather than in front of an employee.
@@ -89,15 +89,65 @@ class TestThePageIsStillSplit(FrappeTestCase):
 		finally:
 			shutil.rmtree(work, ignore_errors=True)
 
-	def test_the_css_and_js_include_files_hold_no_jinja(self):
-		"""So OPS-31 (move them to cached files) stays a rename, not a rewrite."""
+	def test_the_styles_and_script_are_static_files_not_templates(self):
+		"""OPS-31. A Jinja template takes one of Frappe's 32 compiled-template
+		slots per worker; a static file takes none. That is the whole reason the
+		page can be split as finely as it likes from here on, so a style or
+		script file creeping back into templates/includes/ess/ fails here."""
+		strays = [rel for rel in PS.ess_files_on_disk()
+		          if rel.endswith((".css", ".js")) or ".css." in rel or ".js." in rel]
+		self.assertEqual(strays, [],
+		                 "styles and scripts belong in public/, not in the Jinja "
+		                 "includes: " + ", ".join(sorted(strays)))
+		self.assertEqual(
+			PS.ess_assets_on_disk(),
+			{"css/ess/frame.css", "css/ess/panels.css", "js/ess/portal.js"})
+
+	def test_the_static_files_hold_no_jinja(self):
+		"""They are served raw by nginx. A Jinja tag in one would reach the
+		browser as text, so it would never be rendered and never be noticed."""
 		offenders = []
-		for rel in sorted(PS.ess_files_on_disk()):
-			if ".css." not in rel and ".js." not in rel:
-				continue
-			with open(os.path.join(PS.APP_ROOT, *rel.split("/")), encoding="utf-8") as fh:
+		for rel in sorted(PS.ess_assets_on_disk()):
+			path = os.path.join(PS.APP_ROOT, "public", *rel.split("/"))
+			with open(path, encoding="utf-8") as fh:
 				text = fh.read()
 			for token in ("{{", "{%", "{#"):
 				if token in text:
 					offenders.append("%s holds %s" % (rel, token))
 		self.assertEqual(offenders, [], "; ".join(offenders))
+
+	def test_the_page_loads_every_static_file_with_a_version(self):
+		"""OPS-34. Without ?v= a phone keeps last release's script for ever."""
+		with open(PS.PORTAL_PAGE, "rb") as fh:
+			raw = fh.read()
+		loaded = set()
+		for rx in (PS.LINK_RE, PS.SCRIPT_RE):
+			for m in rx.finditer(raw):
+				loaded.add(m.group(1).decode("utf-8"))
+		self.assertEqual(loaded, PS.ess_assets_on_disk(),
+		                 "the page and public/ disagree about the frame's files")
+		for rel in sorted(loaded):
+			self.assertIn(("/assets/alvoraa_portal/%s?v=" % rel).encode("utf-8"), raw,
+			              rel + " is loaded without a version stamp")
+
+	def test_the_helper_refuses_a_page_that_loads_no_static_files(self):
+		"""The other half of AC-37. A page with its <link> and <script src> tags
+		removed still has markup in it, so the include guard would pass it - and
+		every check would then be reading a page with no CSS and no JavaScript."""
+		work = tempfile.mkdtemp()
+		try:
+			with open(PS.PORTAL_PAGE, "rb") as fh:
+				raw = fh.read()
+			stripped = PS.SCRIPT_RE.sub(b"", PS.LINK_RE.sub(b"", raw))
+			page = os.path.join(work, "hrms-employee.html")
+			with open(page, "wb") as fh:
+				fh.write(stripped)
+			real = PS.PORTAL_PAGE
+			PS.PORTAL_PAGE = page
+			try:
+				with self.assertRaises(PS.PortalSourceError):
+					PS.page_bytes(page)
+			finally:
+				PS.PORTAL_PAGE = real
+		finally:
+			shutil.rmtree(work, ignore_errors=True)

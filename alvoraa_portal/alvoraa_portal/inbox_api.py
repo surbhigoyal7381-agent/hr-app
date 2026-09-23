@@ -74,6 +74,23 @@ CORRECTIONS_CAP = 50
 
 
 
+def _has_doctype(name):
+	"""Is this doctype on the site, asked once per site per release?
+
+	Three parts of this call are guarded by "does this doctype exist" - KPI,
+	Shift Request and Policy Document - because a bench without the goals app
+	or the policy library must not throw. Asked directly that is three database
+	queries on a call whose whole job is to be cheap, and the answer changes
+	only at a migration, which clears this cache.
+	"""
+	key = "inbox_api:doctype:" + name
+	seen = frappe.cache().get_value(key)
+	if seen is None:
+		seen = 1 if frappe.db.exists("DocType", name) else 0
+		frappe.cache().set_value(key, seen, expires_in_sec=24 * 60 * 60)
+	return bool(seen)
+
+
 def _zero():
 	"""Every part at zero. What a person with no Employee record gets (AC-63)."""
 	return {key: 0 for key, _route in PARTS}
@@ -116,7 +133,7 @@ def _goal_updates():
 	here. Nothing else is caught: a real fault must reach the caller as the
 	card-error state, not be quietly rendered as "nothing waiting".
 	"""
-	if not frappe.db.exists("DocType", "KPI"):
+	if not _has_doctype("KPI"):
 		return 0
 	from alvoraa_portal.goals_api import get_pending_approvals_count
 
@@ -172,7 +189,7 @@ def _attendance_fixes(user, employee):
 
 def _shift_requests(user):
 	"""Shift changes waiting on this person as the named approver."""
-	if not frappe.db.exists("DocType", "Shift Request"):
+	if not _has_doctype("Shift Request"):
 		return 0
 	return frappe.db.count("Shift Request", {"approver": user, "docstatus": 0})
 
@@ -188,7 +205,7 @@ def _policies(employee):
 	`test_inbox_counts_034` asserts this number equals `get_my_policies`'s, so
 	the faster shape cannot quietly mean something else.
 	"""
-	if not employee or not frappe.db.exists("DocType", "Policy Document"):
+	if not employee or not _has_doctype("Policy Document"):
 		return 0
 	# `get_list`, so this is what the caller may READ - the same set
 	# `readable_policy_names` returns, through the same permission path.
@@ -243,7 +260,7 @@ def _my_requests(employee):
 			"alvoraa_review_status": ["not in", list(DONE_STATES)],
 		},
 	)
-	if frappe.db.exists("DocType", "Shift Request"):
+	if _has_doctype("Shift Request"):
 		total += frappe.db.count("Shift Request", {"employee": employee, "docstatus": 0})
 	return total
 

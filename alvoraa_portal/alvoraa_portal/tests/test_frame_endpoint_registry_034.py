@@ -38,7 +38,7 @@ from frappe.tests.utils import FrappeTestCase
 
 import alvoraa_portal
 
-MODULES = ("frame_api.py", "inbox_api.py", "staff_api.py")
+MODULES = ("frame_api.py", "inbox_api.py", "staff_api.py", "home_api.py")
 
 # AC-69. One row per whitelisted function. `guest`, `persona` and `scope` each
 # name a test method that must exist in the test file named by `tests`.
@@ -71,6 +71,14 @@ ENDPOINT_REGISTRY = {
 		"guest": "TestWhoMayCallTheInbox.test_guest_is_refused",
 		"persona": "TestWhoMayCallTheInbox.test_a_plain_employee_gets_an_inbox_with_no_approvals_in_it",
 		"scope": "TestStoreHrSeesTheirStore.test_priya_counts_her_store_and_nobody_elses",
+	},
+	# Wave 2's Home (042 AC-41). Its "scope" case is the team card, because that
+	# is the one part of Home that describes anybody but the caller.
+	"home_api.get_home": {
+		"tests": "alvoraa_portal.tests.test_home_api_042",
+		"guest": "TestThePayloadIsTheControl.test_guest_is_refused",
+		"persona": "TestACallerWithNoEmployeeRecord.test_asha_gets_a_working_page_and_no_scoped_query_runs",
+		"scope": "TestTheTeamCardIsCountsOnly.test_a_person_with_no_manager_gets_no_peer_card",
 	},
 	# The staff list (W1D-21, SEC-16). Its "persona" case is the one that
 	# matters most for this endpoint: the feature switch is checked on the

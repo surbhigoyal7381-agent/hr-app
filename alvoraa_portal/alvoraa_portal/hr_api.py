@@ -431,9 +431,31 @@ def get_manager_dashboard():
             team = team[:TEAM_LIST_CAP]
         team_capped = team_total > len(team)
 
-    # Indirect reports (L2 only) — single query instead of one per manager
+    # Indirect reports (L2 only) - single query instead of one per manager.
+    #
+    # NOT for an HR caller (review finding F5, decided 2026-09-24).
+    #
+    # For a manager, "L2" means their own indirect reports and the word means
+    # something. For an HR caller `team` is the first 50 people of their HR
+    # scope in alphabetical order, so "the reports of those 50" is an arbitrary
+    # set of people nobody asked for. It did three unhelpful things:
+    #
+    #   * it was the one UNCAPPED query on this screen. The notes claimed the
+    #     cap "passes 50 ids to the queries below"; it did not - it passed 50
+    #     plus all of their reports, and that list went into the attendance
+    #     query, the raw-SQL IN (...) and the month-leaves query.
+    #   * it put people who are NOT on the screen into the "Present" tile, the
+    #     "on leave today" list and the month table. A number that does not
+    #     match the list beside it is the exact fault AC-20 and AC-51 exist to
+    #     stop.
+    #   * nothing reads what it returns. `l2_reports` and `l2_size` have no
+    #     consumer anywhere in this repository - not the portal, not the frame,
+    #     not the mobile app.
+    #
+    # A manager's Team screen is untouched, which is where L2 earns its place.
+    # For HR the screen now answers about exactly the people it is showing.
     l2 = []
-    if team:
+    if team and not is_hr_scope:
         team_names = [t.name for t in team]
         mgr_name_map = {t.name: t.employee_name for t in team}
         all_l2 = frappe.get_all(

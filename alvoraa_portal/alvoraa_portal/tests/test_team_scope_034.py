@@ -282,3 +282,96 @@ class TestTheTeamScreenFollowsTheHrScope(_TeamFixture):
 		src = inspect.getsource(hr_api.get_manager_dashboard)
 		self.assertIn("permitted_employee_filters(user)", src)
 		self.assertIn('["status", "=", "Active"]', src)
+
+
+class TestTheCapCapsEveryQueryBehindIt(_TeamFixture):
+	"""Review finding F5, 2026-09-24.
+
+	The notes claimed the cap meant the screen "passes 50 ids to the queries
+	below". It did not. `team_ids` was the 50 PLUS every Active person reporting
+	to any of them, with no limit, and that list went into the attendance query,
+	the raw-SQL `IN (...)` for who is on leave today, and the month-leaves query.
+
+	For a manager those indirect reports are their own and the word means
+	something. For an HR caller `team` is the first 50 of their scope in
+	alphabetical order, so "the reports of those 50" is an arbitrary set - and
+	it put people who are NOT on the screen into the Present tile and the
+	"on leave today" list. So the L2 block no longer runs for an HR caller.
+
+	The fixture person below reports to somebody inside the store HR person's
+	scope but stands in the OTHER store, so under the old code they reached a
+	store HR person's queries from outside that person's store. That is what
+	makes these tests go red without the fix rather than passing by luck.
+	"""
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		cls.f5_l2 = _employee("S034F5L2", company=cls.company_a)
+		frappe.db.set_value("Employee", cls.f5_l2, "branch", ST_B,
+		                    update_modified=False)
+		frappe.db.set_value("Employee", cls.f5_l2, "reports_to", cls.in_a,
+		                    update_modified=False)
+		frappe.db.commit()
+
+	def _ids_behind_the_screen(self, user):
+		"""What the screen shows, and what the attendance query was asked
+		about. They should be the same people."""
+		asked = []
+		l2_queries = []
+		real_get_all = frappe.get_all
+
+		def spy(doctype, *args, **kwargs):
+			filters = kwargs.get("filters")
+			if doctype == "Attendance" and isinstance(filters, dict):
+				employee = filters.get("employee")
+				if isinstance(employee, (list, tuple)) and len(employee) == 2:
+					asked.extend(employee[1])
+			if doctype == "Employee" and isinstance(filters, dict):
+				reports_to = filters.get("reports_to")
+				if isinstance(reports_to, (list, tuple)) and reports_to[0] == "in":
+					l2_queries.append(list(reports_to[1]))
+			return real_get_all(doctype, *args, **kwargs)
+
+		frappe.get_all = spy
+		try:
+			d, names = self._team(user)
+		finally:
+			frappe.get_all = real_get_all
+		return d, names, asked, l2_queries
+
+	def test_an_hr_caller_asks_only_about_the_people_on_the_screen(self):
+		d, names, asked, l2_queries = self._ids_behind_the_screen(self.s_hr_user)
+		self.assertTrue(d["is_hr_scope"])
+		self.assertEqual(l2_queries, [],
+		                 "the indirect-reports query still runs for an HR caller")
+		self.assertEqual(set(asked) - names, set(),
+		                 "the attendance query was asked about people who are not "
+		                 "on the screen - the cap is capping the list and not the "
+		                 "queries behind it (F5)")
+		self.assertLessEqual(len(asked), hr_api.TEAM_LIST_CAP,
+		                     "more ids went into the queries than the cap allows")
+
+	def test_the_person_from_the_other_store_never_reaches_those_queries(self):
+		"""Named rather than counted, because this is the one that would have
+		been wrong: S034F5L2 stands in store B and reports to somebody in store
+		A, so the old code carried them into a store-A HR person's queries."""
+		_d, names, asked, _q = self._ids_behind_the_screen(self.s_hr_user)
+		self.assertNotIn(self.f5_l2, names, "they are not on the screen")
+		self.assertNotIn(self.f5_l2, asked,
+		                 "somebody from the other store reached the attendance "
+		                 "query behind a store HR person's Team screen")
+
+	def test_an_hr_caller_is_sent_no_indirect_reports(self):
+		d, _names = self._team(self.s_hr_user)
+		self.assertEqual(d["l2_reports"], [])
+		self.assertEqual(d["l2_size"], 0)
+
+	def test_a_manager_still_gets_their_indirect_reports(self):
+		"""The other half. Deleting the block outright would have quietly
+		changed every manager's screen, and for a manager L2 is exactly what
+		the word says."""
+		_d, _names, _asked, l2_queries = self._ids_behind_the_screen(self.manager_user)
+		self.assertTrue(l2_queries,
+		                "the indirect-reports query no longer runs for a manager - "
+		                "the fix is too broad")

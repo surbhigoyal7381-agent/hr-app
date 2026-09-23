@@ -20,6 +20,14 @@
  *
  * Every call times out at 30 s and is retried only when the person taps Try
  * again (AC-203) - nothing here retries on its own.
+ *
+ * On the phone these calls leave through Capacitor's native HTTP
+ * (plugins.CapacitorHttp.enabled in capacitor.config.json, slice 038), which
+ * replaces the global `fetch` before this file runs. That is what lets a
+ * bundled page POST to https://<tenant>.alvoraa.co at all: from the WebView it
+ * is a cross-origin request, and the server sends no CORS headers on purpose
+ * (OPS-1, OPS-2, OPS-47). `fetchImpl` defaults to whatever `fetch` is at call
+ * time, so nothing here needs to know which one it got.
  */
 (function (root) {
   "use strict";
@@ -75,10 +83,22 @@
       return Promise.resolve({ code: "NO_INTERNET", values: {} });
     }
 
+    // The timer answers NO_INTERNET by itself, and only additionally aborts a
+    // fetch that listens. Since slice 038 the app's calls go through Capacitor's
+    // native HTTP, whose replacement `fetch` ignores `signal` and whose Android
+    // side sets no timeout of its own (read in @capacitor/android 8.5.2,
+    // native-bridge.js and HttpRequestHandler.java) - aborting alone would let
+    // a hung call hold a worker at the gate for ever (OPS-79: 30 s in code).
     var controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
-    var timer = controller ? setTimeout(function () { controller.abort(); }, timeoutMs) : null;
+    var timer = null;
+    var timedOut = new Promise(function (resolve) {
+      timer = setTimeout(function () {
+        if (controller) controller.abort();
+        resolve({ code: "NO_INTERNET", values: {} });
+      }, timeoutMs);
+    });
 
-    return fetchImpl(origin + "/api/method/" + method, {
+    var call = fetchImpl(origin + "/api/method/" + method, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -87,7 +107,6 @@
       body: JSON.stringify(params || {}),
       signal: controller ? controller.signal : undefined,
     }).then(function (res) {
-      if (timer) clearTimeout(timer);
       return res.text().then(function (text) {
         var body = parseJson(text);
         if (body && typeof body.code === "string" && body.code) {
@@ -103,8 +122,12 @@
       // fetch rejected: aborted (timeout) or a real network failure. Both are
       // "the phone could not reach the server" from the person's point of
       // view - the app has one screen for that, before joining (noSignalJoin).
-      if (timer) clearTimeout(timer);
       return { code: "NO_INTERNET", values: {} };
+    });
+
+    return Promise.race([call, timedOut]).then(function (result) {
+      clearTimeout(timer);
+      return result;
     });
   }
 

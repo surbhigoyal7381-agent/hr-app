@@ -129,3 +129,22 @@ test("a NOTICE_CHANGED refusal from any of the four daily-use calls reads the sa
   assert.equal(result.code, "NOTICE_CHANGED");
   assert.equal(result.values.version, "2026-09-22");
 });
+
+// Slice 038: on the phone, Capacitor's native HTTP replaces `fetch` with one
+// that ignores `signal`, and its Android side sets no timeout. The 30 s rule
+// (AC-203, OPS-79) must therefore hold even for a fetch that never answers and
+// never listens to abort.
+test("times out as NO_INTERNET even when the fetch ignores abort and never answers", async () => {
+  let sawSignal = null;
+  const fetchImpl = (url, init) => { sawSignal = init.signal; return new Promise(() => {}); };
+  const started = Date.now();
+  const result = await callMethod("https://x", "m", {}, { fetchImpl, timeoutMs: 30 });
+  assert.deepEqual(result, { code: "NO_INTERNET", values: {} });
+  assert.ok(Date.now() - started < 5000, "answered by the timer, not by the fetch");
+  assert.ok(sawSignal === undefined || (sawSignal && sawSignal.aborted), "a fetch that does listen was still told to stop");
+});
+
+test("a fetch that answers in time is not overtaken by the timer", async () => {
+  const result = await callMethod("https://x", "m", {}, { fetchImpl: fakeFetch(200, { message: { fine: 1 } }), timeoutMs: 30 });
+  assert.deepEqual(result, { ok: true, data: { fine: 1 } });
+});

@@ -77,9 +77,13 @@ export function checkCapacitorConfig(config) {
   if (config.android?.allowMixedContent === true) {
     problems.push("allowMixedContent is on in capacitor.config.json (SEC-16).");
   }
-  // Native HTTP only for the calls we write on purpose; nothing patched globally (OPS-79).
-  if (config.plugins?.CapacitorHttp?.enabled !== false) {
-    problems.push("CapacitorHttp must be switched off globally (plugins.CapacitorHttp.enabled = false) (OPS-79).");
+  // Native HTTP must be ON: the bundled page's POSTs to https://<tenant>.alvoraa.co
+  // are cross-origin from the WebView, the server sends no CORS headers on purpose
+  // (OPS-1, OPS-47), and only Capacitor's native layer is outside CORS (OPS-2).
+  // Decided 2026-09-23 (slice 038), which reverses OPS-79's "global switch off".
+  // Off again would mean the phone itself blocks the app's first call.
+  if (config.plugins?.CapacitorHttp?.enabled !== true) {
+    problems.push("CapacitorHttp must be on (plugins.CapacitorHttp.enabled = true), or the WebView blocks every call to the tenant as cross-origin (OPS-2, slice 038).");
   }
   if (config.plugins?.CapacitorCookies?.enabled !== false) {
     problems.push("CapacitorCookies must be off (plugins.CapacitorCookies.enabled = false) (OPS-79).");

@@ -14,7 +14,7 @@ const GOOD_CONFIG = {
   appId: "co.alvoraa.app",
   webDir: "web",
   android: { allowMixedContent: false, webContentsDebuggingEnabled: false },
-  plugins: { CapacitorHttp: { enabled: false }, CapacitorCookies: { enabled: false } },
+  plugins: { CapacitorHttp: { enabled: true }, CapacitorCookies: { enabled: false } },
 };
 
 const GOOD_MANIFEST = `<manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -30,7 +30,7 @@ test("the committed app passes its own checks", async () => {
   assert.deepEqual(problems, []);
 });
 
-test("config: a server block, debugging, mixed content or global native HTTP fail", async () => {
+test("config: a server block, debugging, mixed content, cookies on or native HTTP off fail", async () => {
   const { checkCapacitorConfig } = await load();
   assert.deepEqual(checkCapacitorConfig(GOOD_CONFIG), []);
   const bad = [
@@ -39,7 +39,10 @@ test("config: a server block, debugging, mixed content or global native HTTP fai
     { ...GOOD_CONFIG, android: { webContentsDebuggingEnabled: true } },
     { ...GOOD_CONFIG, android: { allowMixedContent: true } },
     { ...GOOD_CONFIG, plugins: { CapacitorCookies: { enabled: false } } },
-    { ...GOOD_CONFIG, plugins: { CapacitorHttp: { enabled: false }, CapacitorCookies: { enabled: true } } },
+    { ...GOOD_CONFIG, plugins: { CapacitorHttp: { enabled: true }, CapacitorCookies: { enabled: true } } },
+    // Native HTTP off again: the WebView would block every tenant call as cross-origin (slice 038).
+    { ...GOOD_CONFIG, plugins: { CapacitorHttp: { enabled: false }, CapacitorCookies: { enabled: false } } },
+    { ...GOOD_CONFIG, plugins: { CapacitorCookies: { enabled: false } } },
   ];
   for (const config of bad) {
     assert.ok(checkCapacitorConfig(config).length > 0, JSON.stringify(config));

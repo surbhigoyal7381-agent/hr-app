@@ -1,0 +1,114 @@
+      <!-- ══ SHIFT REQUEST ═══════════════════════════════ -->
+      <div id="panel-shift-req" class="panel">
+        <div class="page-header">
+          <div class="page-title">Shift Request</div>
+          <div class="page-sub">Request a change to your shift schedule</div>
+        </div>
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header"><span><i class=ic-refresh></i></span><span class="card-title">New Shift Request</span></div>
+          <div class="card-body">
+            <div class="form-group">
+              <label class="form-label">Shift Type *</label>
+              <select class="form-control" id="sr-shift-type">
+                <option value="">Select shift...</option>
+              </select>
+              <div class="form-err" id="sr-shift-err">Please select a shift type.</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">From Date *</label>
+                <input type="date" class="form-control" id="sr-from-date">
+                <div class="form-err" id="sr-date-err">Please enter a valid date range.</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">To Date *</label>
+                <input type="date" class="form-control" id="sr-to-date">
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" onclick="submitShiftRequest()">Submit Request</button>
+              <button class="btn btn-outline" onclick="switchPanel('home',null)">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <div class="sec-divider">Previous Requests</div>
+        <div id="sr-history"></div>
+      </div>
+
+      <!-- ══ ATTENDANCE REQUEST ══════════════════════════ -->
+      <div id="panel-att-req" class="panel">
+        <div class="page-header">
+          <div class="page-title">Attendance Request</div>
+          <div class="page-sub">Regularise your attendance for missed punches or field duty</div>
+        </div>
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header"><span><i class=ic-clipboard></i></span><span class="card-title">New Attendance Request</span></div>
+          <div class="card-body">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">From Date *</label>
+                <input type="date" class="form-control" id="ar-from-date">
+                <div class="form-err" id="ar-date-err">Please enter a valid date range.</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">To Date *</label>
+                <input type="date" class="form-control" id="ar-to-date">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Reason *</label>
+              <select class="form-control" id="ar-reason">
+                <option value="">Select reason...</option>
+                <option value="Work From Home">Work From Home</option>
+                <option value="On Duty">On Duty</option>
+                <option value="Field Work">Field Work</option>
+                <option value="Training">Training</option>
+                <option value="Outdoor Work">Outdoor Work</option>
+                <option value="Other">Other</option>
+              </select>
+              <div class="form-err" id="ar-reason-err">Please select a reason.</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Explanation</label>
+              <textarea class="form-control" id="ar-explanation" placeholder="Add any details that help HR process this request..."></textarea>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" onclick="submitAttendanceRequest()">Submit Request</button>
+              <button class="btn btn-outline" onclick="switchPanel('home',null)">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <div class="sec-divider">Previous Requests</div>
+        <div id="ar-history"></div>
+      </div>
+
+
+      <!-- ══ REQUEST ADVANCE ════════════════════════════ -->
+      <div id="panel-adv-req" class="panel">
+        <div class="page-header">
+          <div class="page-title">Request Advance</div>
+          <div class="page-sub">Request an employee advance against your salary</div>
+        </div>
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header"><span><i class=ic-cash-out></i></span><span class="card-title">New Advance Request</span></div>
+          <div class="card-body">
+            <div class="callout callout-warn">Advances are subject to management approval and company policy. Processing may take 3–5 working days.</div>
+            <div class="form-group">
+              <label class="form-label">Purpose *</label>
+              <textarea class="form-control" id="adv-purpose" placeholder="Describe the reason for this advance request..."></textarea>
+              <div class="form-err" id="adv-purpose-err">Please provide the purpose.</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Amount Requested (₹) *</label>
+              <input type="number" class="form-control" id="adv-amount" placeholder="0" min="1" step="1">
+              <div class="form-err" id="adv-amount-err">Please enter a valid amount greater than zero.</div>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" onclick="submitAdvanceRequest()">Submit Request</button>
+              <button class="btn btn-outline" onclick="switchPanel('home',null)">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <div class="sec-divider">Previous Advances</div>
+        <div id="adv-history"></div>
+      </div>

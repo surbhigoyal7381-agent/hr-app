@@ -32,6 +32,25 @@ const MAX_DEPTH = 5;
 // no CSS and no JavaScript in it, so the asset tags are expanded too - back into
 // <style> and <script> blocks, which is what every caller already reads.
 const PUBLIC_DIR = path.join(APP_ROOT, "public");
+// {{ ess_part("home") }} pastes a piece of markup that holds no Jinja and is
+// therefore never compiled (alvoraa_portal/ess_parts.py). It is how the page is
+// split by area without spending Frappe's 32 template cache slots.
+const PARTS_DIR = path.join(ESS_DIR, "parts");
+const PART_RE = /\{\{\s*ess_part\(\s*"([a-z0-9-]+)"\s*\)\s*\}\}/g;
+
+function essPartsOnDisk(dir = PARTS_DIR) {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir).filter((n) => n.endsWith(".html")).map((n) => n.slice(0, -5));
+}
+
+function expandParts(text, used) {
+  return text.replace(PART_RE, (_m, name) => {
+    const file = path.join(PARTS_DIR, name + ".html");
+    if (!fs.existsSync(file)) throw new Error("the page asks for part " + name + ", which does not exist");
+    used.add(name);
+    return fs.readFileSync(file, "utf8");
+  });
+}
 const ASSET_DIRS = [path.join(PUBLIC_DIR, "css", "ess"), path.join(PUBLIC_DIR, "js", "ess")];
 const LINK_RE = /<link[^>]*href="\/assets\/alvoraa_portal\/(css\/ess\/[^"?]+)(?:\?[^"]*)?"[^>]*>/g;
 const SCRIPT_RE = /<script[^>]*src="\/assets\/alvoraa_portal\/(js\/ess\/[^"?]+)(?:\?[^"]*)?"[^>]*>\s*<\/script>/g;
@@ -90,9 +109,24 @@ function readPortalSource(file = PORTAL_PAGE) {
   const raw = fs.readFileSync(file, "utf8").replace(/^﻿/, "");
   const used = new Set();
   const assets = new Set();
-  const out = expandAssets(expand(raw, used), assets);
+  const parts = new Set();
+  const out = expandParts(expandAssets(expand(raw, used), assets), parts);
 
   if (path.resolve(file) === path.resolve(PORTAL_PAGE)) {
+    if (parts.size === 0) {
+      throw new Error(
+        "hrms-employee.html asks for no markup parts. Either the page lost its " +
+        "ess_part() tags or this helper is reading the wrong file - either way " +
+        "every check calling it is reading a page with almost no markup in it."
+      );
+    }
+    const lostParts = essPartsOnDisk().filter((p) => !parts.has(p));
+    if (lostParts.length) {
+      throw new Error(
+        "these markup parts exist but the page never asks for them, so their " +
+        "contents are checked by nobody: " + lostParts.sort().join(", ")
+      );
+    }
     if (assets.size === 0) {
       throw new Error(
         "hrms-employee.html loads no /assets/alvoraa_portal frame files. Either the " +
@@ -115,7 +149,9 @@ function readPortalSource(file = PORTAL_PAGE) {
         "it would now be checking a shell."
       );
     }
-    const orphans = essFilesOnDisk().filter((f) => !used.has(f));
+    const orphans = essFilesOnDisk()
+      .filter((f) => !f.includes("/parts/"))
+      .filter((f) => !used.has(f));
     if (orphans.length) {
       throw new Error(
         "these include files exist but nothing includes them, so their contents " +
@@ -126,4 +162,4 @@ function readPortalSource(file = PORTAL_PAGE) {
   return out.split("\r\n").join("\n");
 }
 
-module.exports = { readPortalSource, essFilesOnDisk, essAssetsOnDisk, PORTAL_PAGE, WWW, APP_ROOT };
+module.exports = { readPortalSource, essFilesOnDisk, essAssetsOnDisk, essPartsOnDisk, PORTAL_PAGE, WWW, APP_ROOT };

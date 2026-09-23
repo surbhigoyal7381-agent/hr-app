@@ -50,8 +50,52 @@ class TestThePageIsStillSplit(FrappeTestCase):
 		tags = [t.decode("utf-8") for t in PS.INCLUDE_RE.findall(raw)]
 		self.assertEqual(sorted(tags), sorted(set(tags)),
 		                 "the same include file is pulled in twice")
-		self.assertEqual(set(tags), PS.ess_files_on_disk(),
+		on_disk = {f for f in PS.ess_files_on_disk() if "/parts/" not in f}
+		self.assertEqual(set(tags), on_disk,
 		                 "the page's include list and the files on disk disagree")
+
+	def test_only_the_pieces_that_need_jinja_are_templates(self):
+		"""The whole point of the parts. Frappe compiles at most 32 templates
+		per worker and this page's chain already uses about 25, so every piece
+		of markup kept as an include file is a slot a later wave cannot have.
+		Two pieces genuinely need Jinja - the tenant's brand and one modal's
+		placeholder. A third appearing here is a mistake worth catching."""
+		templates = {f for f in PS.ess_files_on_disk() if "/parts/" not in f}
+		self.assertEqual(
+			templates,
+			{"templates/includes/ess/frame.html",
+			 "templates/includes/ess/growth-modals.html"},
+			"a piece of markup became a Jinja template. If it really needs a "
+			"Jinja tag, say so here; if it does not, it belongs in parts/.")
+		for rel in sorted(templates):
+			with open(os.path.join(PS.APP_ROOT, *rel.split("/")), encoding="utf-8") as fh:
+				text = fh.read()
+			self.assertTrue(any(t in text for t in ("{{", "{%")),
+			                rel + " has no Jinja in it, so it belongs in parts/")
+
+	def test_the_page_is_split_by_area(self):
+		"""One file per area is what stops two sessions meeting in one file."""
+		self.assertGreaterEqual(len(PS.ess_parts_on_disk()), 10)
+		for name in ("home", "attendance", "pay", "team", "growth"):
+			self.assertIn(name, PS.ess_parts_on_disk())
+
+	def test_the_helper_refuses_a_page_that_asks_for_no_parts(self):
+		work = tempfile.mkdtemp()
+		try:
+			with open(PS.PORTAL_PAGE, "rb") as fh:
+				raw = fh.read()
+			page = os.path.join(work, "hrms-employee.html")
+			with open(page, "wb") as fh:
+				fh.write(PS.PART_RE.sub(b"", raw))
+			real = PS.PORTAL_PAGE
+			PS.PORTAL_PAGE = page
+			try:
+				with self.assertRaises(PS.PortalSourceError):
+					PS.page_bytes(page)
+			finally:
+				PS.PORTAL_PAGE = real
+		finally:
+			shutil.rmtree(work, ignore_errors=True)
 
 	def test_the_expanded_page_is_the_whole_page(self):
 		"""A shell would be a few thousand characters, not a million."""

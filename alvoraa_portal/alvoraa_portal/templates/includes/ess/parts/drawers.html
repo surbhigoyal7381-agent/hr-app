@@ -1,0 +1,136 @@
+    <!-- ── Goal Detail Side Panel ─────────────────────── -->
+    <div id="gp-detail-panel">
+      <div class="gp-panel-hdr">
+        <div style="flex:1;min-width:0">
+          <div id="gp-dp-name" style="font-weight:700;font-size:var(--fs-md);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+          <div id="gp-dp-description" style="font-size:var(--fs-sm);color:var(--text2);margin-bottom:3px;line-height:1.4;display:none"></div>
+          <div id="gp-dp-cascade" style="font-size:var(--fs-xs);color:var(--text3)"></div>
+        </div>
+        <button class="gp-panel-close" onclick="gpCloseDetail()">&times;</button>
+      </div>
+      <div class="gp-panel-body">
+        <!-- Progress block -->
+        <div class="gp-panel-section">
+          <div style="display:flex;align-items:center;gap:16px;margin-bottom:14px">
+            <div id="gp-dp-ring"></div>
+            <div>
+              <div style="font-size:var(--fs-xs);font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Progress</div>
+              <div id="gp-dp-progress-line" style="font-size:var(--fs-lg);font-weight:800;margin-top:2px"></div>
+              <div id="gp-dp-trajectory" style="margin-top:4px"></div>
+            </div>
+            <div style="flex:1"></div>
+            <div id="gp-dp-status"></div>
+          </div>
+          <!-- Info grid: dates + people -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:var(--fs-sm)">
+            <div><div style="color:var(--text3);font-size:var(--fs-xs);margin-bottom:2px">START</div><div id="gp-dp-start" style="font-weight:600"></div></div>
+            <div><div style="color:var(--text3);font-size:var(--fs-xs);margin-bottom:2px">END</div><div id="gp-dp-end" style="font-weight:600"></div></div>
+            <div><div style="color:var(--text3);font-size:var(--fs-xs);margin-bottom:2px">TARGET</div><div id="gp-dp-target" style="font-weight:600"></div></div>
+            <div><div style="color:var(--text3);font-size:var(--fs-xs);margin-bottom:2px">ACTUAL</div><div id="gp-dp-actual" style="font-weight:600"></div></div>
+            <div><div style="color:var(--text3);font-size:var(--fs-xs);margin-bottom:2px">ASSIGNEE</div><div id="gp-dp-assignee" style="font-weight:600"></div></div>
+            <div><div style="color:var(--text3);font-size:var(--fs-xs);margin-bottom:2px">CREATED BY</div><div id="gp-dp-owner" style="font-weight:600"></div></div>
+            <div id="gp-dp-cv-row" style="display:none"><div style="color:var(--text3);font-size:var(--fs-xs);margin-bottom:2px">COMPANY VALUE</div><div id="gp-dp-cv" style="font-weight:600"></div></div>
+            <div id="gp-dp-gt-row" style="display:none"><div style="color:var(--text3);font-size:var(--fs-xs);margin-bottom:2px">GOAL TYPE</div><div id="gp-dp-gt" style="font-weight:600"></div></div>
+          </div>
+        </div>
+        <!-- Editable progress (managers / HR only) -->
+        <div class="gp-panel-section" id="gp-dp-edit-section" style="display:none">
+          <div class="gp-panel-section-title">Update Progress</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="number" class="form-control" id="gp-dp-prog-inp" min="0" step="any" style="max-width:120px" placeholder="Actual value">
+            <span id="gp-dp-prog-unit" style="font-size:var(--fs-sm);color:var(--text3)"></span>
+            <button class="btn btn-primary btn-sm" onclick="gpSaveProgress()">Save</button>
+          </div>
+        </div>
+        <!-- Evidence submit (own goal) -->
+        <div class="gp-panel-section" id="gp-dp-ev-section" style="display:none">
+          <div class="gp-panel-section-title">Submit Evidence</div>
+          <div id="gp-dp-ev-form"></div>
+        </div>
+        <!-- KPIs -->
+        <div class="gp-panel-section">
+          <div class="gp-panel-section-title">KPIs Feeding This Objective</div>
+          <div id="gp-dp-contributors"></div>
+        </div>
+        <!-- Evidence list -->
+        <div class="gp-panel-section">
+          <div class="gp-panel-section-title">Evidence Submitted</div>
+          <div class="gp-evidence-list" id="gp-dp-evidence"></div>
+        </div>
+      </div>
+    </div>
+    <div id="gp-detail-overlay" onclick="gpCloseDetail()" style="display:none;position:fixed;inset:0;z-index:1149;background:rgba(0,0,0,.3)"></div>
+
+  </div><!-- /flex column -->
+
+  <!-- Bottom nav (mobile) -->
+  <nav class="bottom-nav">
+    <div class="bottom-nav-inner">
+      <div class="bnav-item active" data-panel="home" onclick="switchPanel('home',null)">
+        <div class="bnav-icon"><i class=ic-home></i></div>
+        <div>Home</div>
+      </div>
+      <div class="bnav-item" data-panel="attendance" onclick="switchPanel('attendance',null)">
+        <div class="bnav-icon"><i class=ic-calendar></i></div>
+        <div>Attendance</div>
+      </div>
+      <div class="bnav-item" data-panel="finances" onclick="switchPanel('finances',null)">
+        <div class="bnav-icon"><i class=ic-card></i></div>
+        <div>Finances</div>
+      </div>
+    </div>
+  </nav>
+
+</div><!-- /emp-app -->
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loading-overlay"><div class="spinner"></div></div>
+<!-- Toast container -->
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<!-- Employee detail drawer -->
+<!-- One payslip. Drawn from alvoraa_portal.hr_api.get_payslip, which checks the
+     slip is the caller's own. It used to open in the desk, which needed the
+     Employee role to read Salary Slip - the permission that let managers open
+     their team's pay. -->
+<div class="emp-drawer-overlay" id="payslip-drawer-overlay" onclick="closePayslip()"></div>
+<div class="emp-drawer" id="payslip-drawer" role="dialog" aria-modal="true" aria-labelledby="ps-title">
+  <div class="emp-drawer-head">
+    <div class="emp-drawer-av"><i class=ic-money></i></div>
+    <div class="emp-drawer-meta">
+      <div class="emp-drawer-name" id="ps-title">Payslip</div>
+      <div class="emp-drawer-role" id="ps-sub"></div>
+    </div>
+    <button class="emp-drawer-close" onclick="closePayslip()" aria-label="Close"><i class=ic-x></i></button>
+  </div>
+  <div class="emp-drawer-body" id="ps-body"></div>
+</div>
+
+<div class="emp-drawer-overlay" id="emp-drawer-overlay" onclick="closeEmpDrawer()"></div>
+<div class="emp-drawer" id="emp-drawer">
+  <div class="emp-drawer-head">
+    <div class="emp-drawer-av" id="ed-av"></div>
+    <div class="emp-drawer-meta">
+      <div class="emp-drawer-name" id="ed-name"></div>
+      <div class="emp-drawer-role" id="ed-role"></div>
+    </div>
+    <button class="emp-drawer-close" onclick="closeEmpDrawer()"><i class=ic-x></i></button>
+  </div>
+  <div class="emp-drawer-body" id="ed-body">
+    <div style="padding:40px;text-align:center;color:var(--text3)">Select an employee to view details.</div>
+  </div>
+</div>
+
+<!-- Goal detail drawer -->
+<div class="emp-drawer-overlay" id="goal-drawer-overlay" onclick="closeGoalDrawer()"></div>
+<div class="emp-drawer" id="goal-drawer">
+  <div class="emp-drawer-head" id="gd-head" style="background:var(--primary)">
+    <div style="flex:1;min-width:0">
+      <div style="font-size:var(--fs-lg);font-weight:700;color:var(--surface)">Goal Details</div>
+    </div>
+    <button class="emp-drawer-close" onclick="closeGoalDrawer()"><i class=ic-x></i></button>
+  </div>
+  <div class="emp-drawer-body" id="gd-body">
+    <div style="padding:40px;text-align:center;color:var(--text3)">Loading...</div>
+  </div>
+</div>

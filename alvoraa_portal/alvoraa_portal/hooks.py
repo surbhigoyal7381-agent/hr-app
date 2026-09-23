@@ -49,6 +49,15 @@ website_route_rules = [
     {"from_route": "/checkin",         "to_route": "field-checkin"},
 ]
 
+# ── Page parts for the employee portal (slice 034, OPS-31) ──────────
+# `{{ ess_part("home") }}` pastes one piece of the portal's markup into the page.
+# It exists because Frappe compiles at most 32 Jinja templates per worker, and
+# the portal page's chain already uses about 25 - so splitting its markup into
+# one file per area with `{% include %}` runs into the cache and costs +33 %.
+# A part holds no Jinja, so it is read and pasted rather than compiled, and the
+# number of parts stops mattering. See ess_parts.py for the rules it keeps.
+jinja = {"methods": ["alvoraa_portal.ess_parts.ess_part"]}
+
 # ── Doctype event hooks ────────────────────────────────────────────────────
 # Desk-side JavaScript.
 #

@@ -81,6 +81,28 @@ ASSET_SCRIPT_RE = re.compile(
 	r'<script[^>]*src="/assets/alvoraa_portal/(js/ess/[^"?]+)(?:\?[^"]*)?"[^>]*>\s*</script>')
 
 
+# The markup is split by area into parts that hold no Jinja and are pasted in by
+# {{ ess_part("home") }} rather than compiled (alvoraa_portal/ess_parts.py). The
+# blanket "{{ ... }} becomes empty" substitution below would delete every one of
+# them and leave this check measuring a page with no content - which is exactly
+# what it did for one run: it reported nought unreadable elements on a page that
+# was not there. The parts are pasted back in first.
+PART_RE = re.compile(r'\{\{\s*ess_part\(\s*"([a-z0-9-]+)"\s*\)\s*\}\}')
+
+
+def _expand_parts(src):
+	def swap(m):
+		path = os.path.join(ROOT, "templates", "includes", "ess", "parts",
+		                    m.group(1) + ".html")
+		with open(path, encoding="utf-8") as fh:
+			return fh.read()
+
+	out = PART_RE.sub(swap, src)
+	if "hrms-employee" in src and out == src and "ess_part(" in src:
+		raise RuntimeError("markup parts were not expanded")
+	return out
+
+
 def _expand_assets(src):
 	def swap(m, tag):
 		path = os.path.join(ROOT, "public", *m.group(1).split("/"))
@@ -107,7 +129,7 @@ def _expand_includes(src):
 
 def prep(page):
 	src = open(os.path.join(ROOT, "www", page + ".html"), encoding="utf-8").read()
-	src = _expand_assets(_expand_includes(src))
+	src = _expand_parts(_expand_assets(_expand_includes(src)))
 	src = re.sub(r"\{%\s*extends[^%]*%\}|\{%\s*block\s+\w+\s*%\}|\{%\s*endblock[^%]*%\}", "", src)
 	src = re.sub(r"\{#[\s\S]*?#\}", "", src)
 	V = {"tenant_name": "PP Jewellers", "primary_color": "#5B4B8A",

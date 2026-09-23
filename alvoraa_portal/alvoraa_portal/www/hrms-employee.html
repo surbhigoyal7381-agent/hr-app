@@ -34,7 +34,20 @@ window._EMP_USER  = "{{ frappe.session.user }}";
 window._SUPPORT_EMAIL = {{ support_email | tojson }};
 
 </script>
-{% include "templates/includes/ess/markup.html" %}
+{% include "templates/includes/ess/frame.html" %}
+{{ ess_part("home") }}
+{{ ess_part("attendance") }}
+{{ ess_part("policies") }}
+{{ ess_part("pay") }}
+{{ ess_part("team") }}
+{{ ess_part("data-review") }}
+{{ ess_part("requests") }}
+{{ ess_part("growth") }}
+{{ ess_part("org-settings") }}
+{{ ess_part("appraisals") }}
+{% include "templates/includes/ess/growth-modals.html" %}
+{{ ess_part("request-modals") }}
+{{ ess_part("drawers") }}
 {# defer, not inline: the file is parsed while the page is, and runs after the
    markup exists. The only readyState test in it has an else branch, and the markup
    carries no inline script tag, so nothing depended on running mid-parse. #}

@@ -1,0 +1,88 @@
+      <!-- ── Org Settings Panel ──────────────────────── -->
+      <div id="panel-org-settings" class="panel">
+        <div class="pf-toolbar" style="margin-bottom:24px">
+          <div>
+            <div class="pf-h">Organisation Settings</div>
+            <div class="pf-sub">Company values and leadership principles that apply across the organisation.</div>
+          </div>
+        </div>
+
+        <!-- Document Compliance (build B4) -->
+        <div class="pf-card" style="margin-bottom:24px;display:none" id="org-docs-card">
+          <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div>
+              <div style="font-weight:600;font-size:var(--fs-md)">Document Compliance</div>
+              <div class="pf-card-meta" id="org-docs-meta">Employees with a mandatory document not yet verified, or a document that has expired</div>
+            </div>
+            <select class="gp-input" id="org-docs-branch" style="height:32px;padding:4px 8px;width:auto" onchange="orgLoadDocuments()"><option value="">All branches</option></select>
+          </div>
+          <div id="org-docs-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
+        </div>
+
+        <!-- Company Values -->
+        <div class="pf-card" style="margin-bottom:24px">
+          <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div style="font-weight:600;font-size:var(--fs-md)">Company Values</div>
+            <button class="btn btn-primary btn-sm" onclick="orgOpenValueModal(null)">+ Add Value</button>
+          </div>
+          <div id="org-values-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
+        </div>
+
+        <!-- Leadership Principles -->
+        <div class="pf-card" style="margin-bottom:24px">
+          <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div style="font-weight:600;font-size:var(--fs-md)">Leadership Principles</div>
+            <button class="btn btn-primary btn-sm" onclick="pfOpenPrincipleModal(null)">+ Add Principle</button>
+          </div>
+          <div id="org-principles-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
+        </div>
+
+        <!-- Rating Scales -->
+        <div class="pf-card" style="margin-bottom:24px">
+          <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div>
+              <div style="font-weight:600;font-size:var(--fs-md)">Rating Scales</div>
+              <div style="font-size:var(--fs-sm);color:var(--text3);margin-top:2px">Define numerical scales used for appraisal ratings across cycles.</div>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="rsOpenModal(null)">+ Add Scale</button>
+          </div>
+          <div id="org-scales-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
+        </div>
+
+        <!-- Review settings (slice 010 group D, decision 23) -->
+        <div class="pf-card" style="margin-bottom:24px" id="org-review-card">
+          <div style="font-weight:600;font-size:var(--fs-md);margin-bottom:4px">Performance reviews</div>
+          <div style="font-size:var(--fs-sm);color:var(--text3);margin-bottom:16px">A review takes its own copy of each objective and KPI, so the numbers it was decided on stay put. These three settings say when those numbers close, how long the originals stay locked, and what happens to an item taken out of a review.</div>
+          <div id="org-review-msg" style="font-size:var(--fs-sm);margin-bottom:10px"></div>
+          <div class="gp-field">
+            <label class="gp-label" for="org-review-freeze">When do a review's numbers close?</label>
+            <select class="gp-input" id="org-review-freeze"></select>
+            <div class="gp-hint">After this point, later progress and evidence no longer change the review.</div>
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="org-review-lock">Days after the cycle ends before the originals unlock</label>
+            <input class="gp-input" id="org-review-lock" type="number" min="0" max="3650" step="1">
+            <div class="gp-hint">While a review holds an objective or KPI, its name, target, weight and period cannot change. Use 0 to keep it locked until the review is finished.</div>
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="org-review-removal">When an item is taken out of a review</label>
+            <select class="gp-input" id="org-review-removal"></select>
+            <div class="gp-hint">An item that already has a rating is always kept and marked removed, whichever setting is chosen.</div>
+          </div>
+          <div style="text-align:right">
+            <button class="btn btn-primary btn-sm" id="org-review-save" onclick="riSaveSettings()">Save review settings</button>
+          </div>
+        </div>
+
+        <!-- Key Result Areas -->
+        <div class="pf-card">
+          <div style="font-weight:600;font-size:var(--fs-md);margin-bottom:4px">Key Result Areas</div>
+          <div style="font-size:var(--fs-sm);color:var(--text3);margin-bottom:16px">KRAs are the areas of responsibility that belong to a role. They come from the employee's appraisal template, so every objective can be traced back to what the job is for.</div>
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+            <input type="checkbox" id="org-kra-mandatory" style="width:16px;height:16px;accent-color:var(--primary)" onchange="orgSaveKraMandatory(this.checked)">
+            <span style="font-size:var(--fs-base)">Every objective must be linked to a Key Result Area</span>
+          </label>
+          <div style="font-size:var(--fs-xs);color:var(--text3);margin-top:8px">When on, an objective cannot be activated without a KRA. Drafts are still allowed, so nobody is blocked while HR assigns an appraisal template.</div>
+        </div>
+      </div>
+

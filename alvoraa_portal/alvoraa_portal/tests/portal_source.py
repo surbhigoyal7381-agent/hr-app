@@ -50,11 +50,44 @@ LINK_RE = re.compile(
 SCRIPT_RE = re.compile(
 	rb'<script[^>]*src="/assets/alvoraa_portal/(js/ess/[^"?]+)(?:\?[^"]*)?"[^>]*>\s*</script>')
 
+# {{ ess_part("home") }} pastes a piece of the page's markup that holds no Jinja
+# and is therefore never compiled (see alvoraa_portal/ess_parts.py). It is how
+# the page is split by area without spending Frappe's 32 template cache slots.
+PART_RE = re.compile(rb'\{\{\s*ess_part\(\s*"([a-z0-9-]+)"\s*\)\s*\}\}')
+PARTS_DIR = os.path.join(ESS_DIR, "parts")
+
 MAX_DEPTH = 5
 
 
 class PortalSourceError(RuntimeError):
 	"""The page and its include files no longer agree. Never pass quietly."""
+
+
+def ess_parts_on_disk(parts_dir=PARTS_DIR):
+	"""Every markup part that exists, by name."""
+	if not os.path.isdir(parts_dir):
+		return set()
+	return {n[:-5] for n in os.listdir(parts_dir) if n.endswith(".html")}
+
+
+def expand_parts(raw, used, parts_dir=PARTS_DIR):
+	"""Paste each markup part where its tag sits, exactly as the server does.
+
+	ess_part() returns the file's bytes unchanged and Jinja keeps the newline
+	after the tag, so replacing 'tag + newline' with 'bytes + newline' is what
+	the page really becomes.
+	"""
+
+	def swap(m):
+		name = m.group(1).decode("utf-8")
+		path = os.path.join(parts_dir, name + ".html")
+		if not os.path.exists(path):
+			raise PortalSourceError("the page asks for part %s, which does not exist" % name)
+		used.add(name)
+		with open(path, "rb") as fh:
+			return fh.read()
+
+	return PART_RE.sub(swap, raw)
 
 
 def ess_assets_on_disk(dirs=ASSET_DIRS):
@@ -139,12 +172,26 @@ def page_bytes(path=PORTAL_PAGE, check=True):
 	out = expand_bytes(raw, used)
 	assets = set()
 	out = expand_assets(out, assets)
+	parts = set()
+	out = expand_parts(out, parts)
 	if check and os.path.abspath(path) == os.path.abspath(PORTAL_PAGE):
-		_assert_nothing_went_quiet(used, assets)
+		_assert_nothing_went_quiet(used, assets, parts)
 	return out
 
 
-def _assert_nothing_went_quiet(used, assets=None):
+def _assert_nothing_went_quiet(used, assets=None, parts=None):
+	if parts is not None:
+		if not parts:
+			raise PortalSourceError(
+				"hrms-employee.html asks for no markup parts. Either the page "
+				"lost its ess_part() tags or this helper is reading the wrong "
+				"file - either way every check calling it is reading a page with "
+				"almost no markup in it.")
+		stranded = ess_parts_on_disk() - parts
+		if stranded:
+			raise PortalSourceError(
+				"these markup parts exist but the page never asks for them, so "
+				"their contents are checked by nobody: " + ", ".join(sorted(stranded)))
 	if assets is not None:
 		if not assets:
 			raise PortalSourceError(
@@ -163,7 +210,7 @@ def _assert_nothing_went_quiet(used, assets=None):
 			"flattened or this helper is reading the wrong file - either way "
 			"every check calling it would now be checking a shell."
 		)
-	on_disk = ess_files_on_disk()
+	on_disk = {f for f in ess_files_on_disk() if "/parts/" not in f}
 	orphans = on_disk - used
 	if orphans:
 		raise PortalSourceError(

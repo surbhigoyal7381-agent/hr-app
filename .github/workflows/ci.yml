@@ -160,6 +160,32 @@ jobs:
       - name: No demo passwords in the repository
         run: python scripts/check_no_demo_passwords.py
 
+      # Slice 034 US-11 (SEC-1, AC-74, ALV-100). /hrms-employee-next exists only
+      # where frappe.conf carries portal_preview, and the page checks that flag
+      # before it checks the caller's role - so the flag is the first of two
+      # locks. What makes it safe to rely on is that nothing in this repository
+      # sets it for production, and this is what keeps that true. It was written
+      # with the preview page and then not wired in, which is how a guard quietly
+      # stops guarding. Text only: no bench, no database, no site.
+      - name: No production file turns the portal preview on
+        run: |
+          python scripts/check_preview_flag.py --self-test
+          python scripts/check_preview_flag.py
+
+      # Slice 034 (ALV-111). Five tests load the real rendered page in jsdom and
+      # click it. None had ever run - jsdom was installed nowhere, so each one
+      # stopped at "Cannot find module 'jsdom'" and nobody saw it. It is now a
+      # pinned devDependency. The runner says which tests it ran and which it
+      # could not, and fails if the list and the files on disk disagree.
+      #
+      # This matters more since OPS-31: the page's script is a separate file
+      # now, so losing the <script src> tag would leave a page that still looks
+      # complete and does nothing. These two tests go red when that happens.
+      - name: Portal DOM tests (jsdom)
+        run: |
+          npm ci
+          node scripts/run_dom_tests.js
+
       # Slice 013 step 6 (AC-37, OPS-48). Raising the server's MIN_APP_VERSION
       # locks out every phone below it. The floor may only rise to a version
       # that has been in the store for 90 days (mobile/field-app/releases.json

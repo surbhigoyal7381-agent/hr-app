@@ -1603,8 +1603,55 @@ def get_attendance_calendar(year, month):
     }
 
 
+# ── The one sentence every payslip refusal gives ─────────────────────────────
+#
+# 043 AC-31. Four different causes, one sentence, byte for byte:
+#
+#   1. the slip belongs to somebody else
+#   2. the slip does not exist
+#   3. the slip is still a draft
+#   4. the tenant never bought payroll
+#
+# A refusal that varies is an oracle. "Payroll is not included in your plan."
+# tells the caller what the tenant bought; "That payslip is not available."
+# told for cause 1 and a different sentence for cause 4 lets somebody walk a
+# list of slip names and learn which tenants run payroll and whose slips exist.
+#
+# It is a module constant rather than four copies of the literal so that
+# changing one of them is impossible. There is no translation catalogue in this
+# app yet (Hindi and Punjabi are Wave 5), so nothing is lost by the extractor
+# not seeing a literal here; when the catalogue arrives this string goes into it
+# by hand, once, which is the point of there being one of it.
+PAYSLIP_UNAVAILABLE = "That payslip is not available."
+
+
 @frappe.whitelist()
+@requires_feature("payroll", message=PAYSLIP_UNAVAILABLE)
 def get_payslips():
+    """The caller's own submitted payslips.
+
+    The gate is 043 AC-30 / ALV-114. This endpoint carried `@frappe.whitelist()`
+    and nothing else while `get_payslip` and `download_payslip` beside it both
+    carried `@requires_feature("payroll")`. W1D-01 hides the salary parts of the
+    menu on a tenant without payroll, and a hidden menu is not a permission: the
+    list behind it answered anyone who called it by hand, so the entitlement
+    claim was false for as long as it shipped.
+
+    ORDER, and a correction to the spec. 043 AC-30(c) asks for
+    `@requires_feature` to sit textually ABOVE `@frappe.whitelist()`. Written
+    that way the endpoint stops working altogether, for everybody, on every
+    tenant. `frappe.whitelist()` does `whitelisted.add(fn)` on the object it is
+    handed (frappe/__init__.py:465) and `is_whitelisted` tests the object the
+    module name resolves to (:483). Put the gate outermost and the module name
+    resolves to the gate's wrapper, which was never added, so every call is
+    refused with "You are not permitted to access this resource."
+
+    So the order here is `@frappe.whitelist()` then `@requires_feature(...)` -
+    byte for byte the order `get_payslip` and `download_payslip` already use.
+    The gate still runs before the body, which is what the requirement is
+    actually about. The check that enforces it asserts SAMENESS with the two
+    endpoints beside it rather than a fixed line order.
+    """
     emp = _get_employee()
     if not emp:
         return {"no_employee": True}
@@ -1646,12 +1693,12 @@ def _own_payslip(name):
     if name and isinstance(name, str):
         row = frappe.db.get_value("Salary Slip", name, ["name", "employee", "docstatus"], as_dict=True)
     if not emp or not row or row.docstatus != 1 or row.employee != emp.name:
-        frappe.throw(frappe._("That payslip is not available."), frappe.PermissionError)
+        frappe.throw(frappe._(PAYSLIP_UNAVAILABLE), frappe.PermissionError)
     return frappe.get_doc("Salary Slip", row.name)
 
 
 @frappe.whitelist()
-@requires_feature("payroll")
+@requires_feature("payroll", message=PAYSLIP_UNAVAILABLE)
 def get_payslip(name):
     """One of the caller's own payslips, for the portal to draw."""
     slip = _own_payslip(name)
@@ -1684,7 +1731,7 @@ def get_payslip(name):
 
 
 @frappe.whitelist()
-@requires_feature("payroll")
+@requires_feature("payroll", message=PAYSLIP_UNAVAILABLE)
 def download_payslip(name):
     """The caller's own payslip as a PDF, in the organisation's print format.
 

@@ -742,7 +742,7 @@ def blocked_module_defs(features, existing=None):
     return sorted(blocked - set(FRAPPE_ALWAYS_VISIBLE))
 
 
-def requires_feature(name):
+def requires_feature(name, message=None):
     """Refuse an endpoint the tenant's plan does not include.
 
     Wave 6 hid the portal's Goals, Analytics and Vendor panels, and hiding was
@@ -758,11 +758,21 @@ def requires_feature(name):
     Required features never refuse: has_feature() short-circuits on them, so a
     misconfigured `features` list cannot lock a tenant out of its own leave
     screen.
+
+    `message` replaces the default "<Label> is not included in your plan." for
+    the endpoints where the default would itself be a leak. The payslip
+    endpoints are the case it was added for (043 AC-31): "Payroll is not
+    included in your plan." and "That payslip is not available." are different
+    sentences, so a caller who tries a slip name can tell a tenant that never
+    bought payroll from a slip that belongs to somebody else. Four causes, one
+    sentence - which is only worth anything if it is the SAME sentence.
     """
     def decorator(fn):
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
             if not has_feature(name):
+                if message:
+                    frappe.throw(_(message), frappe.PermissionError)
                 # feature_spec, not FEATURES: a gated ERPNext-side feature (the CRM
                 # add-ons) must be named by its own label, not its key.
                 label = feature_spec(name).get("label", name)

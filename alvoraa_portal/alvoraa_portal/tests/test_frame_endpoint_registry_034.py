@@ -247,10 +247,45 @@ class TestNoModuleLevelStateAndNoIgnorePermissions(FrappeTestCase):
 			# frame_api: one count of a person's own reports, to decide whether
 			# they see a Team entry. No rows, no fields, one boolean.
 			"frame_api.py": ("frappe.db.count",),
-			# inbox_api: five counts and one read of approver rows. Deliberately
-			# mixed with frappe.get_list, which does honour permissions - the
-			# file says which is which and why at each call.
-			"inbox_api.py": ("frappe.db.count",) * 5 + ("frappe.get_all",),
+			# inbox_api, after slice 042 reshaped it into parts. THREE now, down
+			# from six: the five counts became `frappe.get_list` through
+			# `_count_rows`, because a count and its list must be the same
+			# query and the list was already a get_list. What is left:
+			#
+			#   `_leave_contexts`   - the "2 other people are away on those
+			#     days" aggregate. Under get_list a plain employee who happens
+			#     to be a named approver would read 0, because they may not see
+			#     a colleague's leave row, and a wrong number is worse than no
+			#     number. Only the COUNT leaves the function; no name, no leave
+			#     type, no row.
+			#   `_part_goal_updates` - one Employee name lookup for ids that are
+			#     already inside `goals_api._pending_approvals_scope`. The scope
+			#     decided who; this only turns ids into names.
+			#   `_part_policies`    - the caller's OWN Policy Acknowledgement
+			#     rows, filtered to their own employee id. The readable policies
+			#     beside it are a get_list, which is where the permission
+			#     question actually is.
+			"inbox_api.py": ("frappe.get_all",) * 3,
+			# home_api (slice 042). Ten reads and one count, and all but three
+			# are the CALLER'S OWN record:
+			#
+			#   own: Shift Assignment, Employee Checkin, Holiday, Attendance,
+			#     Leave Application, Attendance Request, Individual Goal - every
+			#     one filtered to `employee = the caller's own Active record`,
+			#     which `_me` resolved. get_list would add nothing: a tenant
+			#     cannot narrow a person out of their own attendance.
+			#   `_peers` / `_reports` - Employee ids by `reports_to`, used only
+			#     to build a group to COUNT. No name and no field leaves them.
+			#   `_presence_counts` - today's Attendance status for that group,
+			#     collapsed to in / away / due before it leaves the function, so
+			#     a leave type cannot reach a caller even by accident. This is
+			#     the one that is deliberately an aggregate rather than a list.
+			#   the `frappe.db.count` - the team goal summary, one integer over
+			#     a scope `permitted_employees()` already decided.
+			#
+			# The HR scope itself is never read here: it comes from
+			# `permitted_employees()`, which is the shared definition.
+			"home_api.py": ("frappe.get_all",) * 10 + ("frappe.db.count",),
 			# staff_api: the staff list itself and its total. Both take the same
 			# filters dict, built by the shared scope helper.
 			"staff_api.py": ("frappe.db.count", "frappe.get_all"),

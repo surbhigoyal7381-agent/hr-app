@@ -52,7 +52,7 @@ asserts it stays empty rather than being filled by a query nobody reviewed.
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, get_first_day, get_last_day, getdate, today
+from frappe.utils import add_days, get_first_day, getdate, today
 
 from alvoraa_portal.frame_api import ME_FIELDS
 

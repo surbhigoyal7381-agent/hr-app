@@ -276,6 +276,22 @@ async function run() {
   is(el(dom, "nf-home-hero") !== null, true,
      "with a shift the hero IS drawn, so the assertion above can fail");
 
+  /* AC-4's fourth case: already checked in. The button reads Check out and the
+     line says when, as a whole phrase with the time in it. */
+  dom = await load(makeFrame(), makeCounts(), {
+    "alvoraa_portal.home_api.get_home": makeHome({
+      today: { date: "2026-09-24",
+               shift: { name: "Morning", start: "09:30:00", end: "18:30:00" },
+               checkin: { time: "2026-09-24 09:24:11", type: "IN" },
+               needs_location: false } }),
+  });
+  is(el(dom, "nf-home-checkin-btn").textContent.trim(), "Check out",
+     "already checked in, so the button reads Check out");
+  is(el(dom, "nf-home-checkin-btn").getAttribute("data-action"), "OUT",
+     "and it would send OUT");
+  is(/Checked in at 09:24/.test(text(dom)), true,
+     "the line says when, with the seconds cut off: " + text(dom).slice(0, 80));
+
   /* AC-29: a small group shows the sentence and no numbers. */
   dom = await load(makeFrame(), makeCounts(), {
     "alvoraa_portal.home_api.get_home": makeHome({

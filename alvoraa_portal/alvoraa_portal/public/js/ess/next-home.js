@@ -64,7 +64,10 @@
       goals: __("Your goals"),
       fix: __("Fix"),
       checkIn: __("Check in"),
-      checkOut: __("Check out")
+      checkOut: __("Check out"),
+      /* A whole phrase with a placeholder, never "Checked in at " + time:
+         Hindi and Punjabi put the two in a different order (AC-26). */
+      checkedInAt: function (t) { return __("Checked in at {0}", [t]); }
     };
 
     skeleton(true);
@@ -92,6 +95,14 @@
     return '<p class="nf-card-note">' + esc(SAY.cardFailed) + "</p>";
   }
 
+  /* "2026-09-24 09:24:31" -> "09:24". The site's clock, not the browser's -
+     the server already decided which day this is (AC-53), and this only cuts
+     the seconds off. */
+  function shortTime(stamp) {
+    var m = String(stamp).match(/(\d{1,2}:\d{2})/);
+    return m ? m[1] : String(stamp);
+  }
+
   function isError(value) {
     return !!(value && typeof value === "object" && value.error);
   }
@@ -106,7 +117,7 @@
     var checkin = today.checkin;
     var inNow = !!(checkin && checkin.type === "IN");
     var line = inNow && checkin.time
-      ? esc(SAY.checkedInAt || "") + esc(checkin.time)
+      ? esc(SAY.checkedInAt(shortTime(checkin.time)))
       : "";
     return '<section class="nf-card nf-hero" id="nf-home-hero">'
       + '<p class="nf-hero-shift">' + esc(shift.start || "") + " – " + esc(shift.end || "") + "</p>"

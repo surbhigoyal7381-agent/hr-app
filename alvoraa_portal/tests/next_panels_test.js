@@ -13,7 +13,7 @@
  * Run through scripts/run_dom_tests.js, which is what CI runs.
  */
 
-const { JSDOM } = require("jsdom");
+const { JSDOM, VirtualConsole } = require("jsdom");
 const { readPreviewSource } = require("../../scripts/lib/portal_source");
 
 let pass = 0, fail = 0;
@@ -100,42 +100,82 @@ function makeInbox(over) {
   }, over || {});
 }
 
+/* Frappe's own reply shape, and the shape of a refusal. Wave 1's frame moved
+   from `frappe.call` to `fetch` with a CSRF header when it learned to mend a
+   stale token (034 F4), so this harness mirrors `next_frame_test.js`'s rather
+   than keeping a second, older one - two harnesses would drift and this file
+   would go on testing a page the frame no longer is. */
+function reply(status, payload) {
+  return Promise.resolve({
+    ok: status >= 200 && status < 300,
+    status: status,
+    statusText: String(status),
+    text: () => Promise.resolve(JSON.stringify(payload)),
+  });
+}
+
+function said(sentence) {
+  return JSON.stringify([JSON.stringify({ message: sentence })]);
+}
+
 function load(frame, counts, answers) {
   answers = answers || {};
+  const vc = new VirtualConsole();
+  vc.on("jsdomError", (e) => {
+    if (!/Not implemented: navigation/.test(e.message)) { console.error(e.message); }
+  });
   const dom = new JSDOM(
     "<!doctype html><html><head></head><body>" + SRC + "</body></html>",
     {
       runScripts: "dangerously",
       pretendToBeVisual: true,
+      virtualConsole: vc,
       url: "http://test.localhost/hrms-employee-next",
       beforeParse(w) {
         w.calls = [];
-        /* If the hostile string ever becomes a real <img>, jsdom will try to
-           load `x` and the onerror handler will run. This records that. */
+        w.frappe = { _: (s) => s, csrf_token: "token-the-page-was-built-with" };
+        w.document.cookie = "user_id=rahul@example.com";
+        /* If the hostile string ever becomes a real <img>, jsdom tries to load
+           `x` and the onerror handler runs. This records that. */
         w.alert = () => { w.__alerted = true; };
         w.__alerted = false;
-        w.frappe = {
-          _: (s) => s,
-          call: (opts) => {
-            w.calls.push(opts.method);
-            const custom = answers[opts.method];
-            if (custom === "fail") {
-              return Promise.resolve().then(() => {
-                if (opts.error) { opts.error({ exc_type: "ValidationError" }); }
-              });
-            }
-            let message = null;
-            if (opts.method.endsWith("get_frame")) { message = frame; }
-            else if (opts.method.endsWith("get_nav_counts")) { message = counts; }
-            else if (typeof custom === "function") { message = custom(opts.args); }
-            else { message = custom === undefined ? { rows: [] } : custom; }
-            return Promise.resolve().then(() => opts.callback({ message: message }));
-          },
+        w.prompt = () => "a reason";
+
+        w.fetch = (url, opts) => {
+          url = String(url);
+          if (url.indexOf("/api/method/") !== 0) {
+            return Promise.resolve({
+              ok: true, status: 200, statusText: "OK",
+              text: () => Promise.resolve(
+                '<script>frappe.csrf_token = "a-fresh-token"</script>'),
+            });
+          }
+          const method = url.slice("/api/method/".length);
+          w.calls.push(method);
+          const args = opts && opts.body ? JSON.parse(opts.body) : {};
+          const custom = answers[method];
+          if (custom === "fail") {
+            return reply(417, { exc_type: "ValidationError",
+                                _server_messages: said("It did not work.") });
+          }
+          if (typeof custom === "function") {
+            const out = custom(args);
+            if (out && out.status) { return reply(out.status, out.body || {}); }
+            return reply(200, { message: out });
+          }
+          let message = null;
+          if (method.endsWith("get_frame")) { message = frame; }
+          else if (method.endsWith("get_nav_counts")) { message = counts; }
+          else { message = custom === undefined ? { rows: [] } : custom; }
+          return reply(200, { message: message });
         };
       },
     });
   return new Promise((resolve) => {
-    setTimeout(() => setTimeout(() => setTimeout(() => resolve(dom), 0), 0), 0);
+    /* Four turns, the same as next_frame_test.js: get_frame, get_nav_counts,
+       get_home, and room for the retry behind a stale token. */
+    setTimeout(() => setTimeout(() => setTimeout(() => setTimeout(
+      () => resolve(dom), 0), 0), 0), 0);
   });
 }
 

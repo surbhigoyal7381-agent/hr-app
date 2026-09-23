@@ -63,6 +63,15 @@ ENDPOINT_REGISTRY = {
 		"persona": "TestAPlainEmployeeCountsNothingThatIsNotTheirs.test_a_plain_employee_approves_nothing",
 		"scope": "TestTheCorrectionsCountEqualsItsScreen.test_store_hr_counts_their_store_and_nobody_elses",
 	},
+	# Wave 2's Inbox screen (042 AC-41). Same three cases as the count it sits
+	# beside, because the rows are where a scope mistake becomes something a
+	# person can read rather than a number they can only wonder about.
+	"inbox_api.get_inbox": {
+		"tests": "alvoraa_portal.tests.test_inbox_parts_042",
+		"guest": "TestWhoMayCallTheInbox.test_guest_is_refused",
+		"persona": "TestWhoMayCallTheInbox.test_a_plain_employee_gets_an_inbox_with_no_approvals_in_it",
+		"scope": "TestStoreHrSeesTheirStore.test_priya_counts_her_store_and_nobody_elses",
+	},
 	# The staff list (W1D-21, SEC-16). Its "persona" case is the one that
 	# matters most for this endpoint: the feature switch is checked on the
 	# SERVER, so an HR user on a tenant that was never given the feature is

@@ -1,34 +1,41 @@
-"""Slice 034, Wave 1: one honest number for what is waiting on this person.
+"""Slice 034 Wave 1, extended by slice 042 Wave 2: one honest number, and the
+list it links to.
 
-The frame draws a bell, an Inbox menu entry and (for some personas) an Inbox
-button on the bottom bar. All three show the same total, and that total is this
-module's whole job. **Counts only.** The Inbox *list* - the rows a person can
-act on - is Wave 2 (spec section 12), and this file is deliberately written so
-that Wave 2 extends it rather than replaces it.
+Wave 1 built this file with the **counts only** and said in this docstring that
+Wave 2 would extend it rather than replace it. Wave 2 has, and the extension is
+one idea:
 
-Section 5 of the spec sets the six parts and one rule above all others:
+    **A part has one filter expression and two uses of it.**
 
-    **Count only what the portal can act on today.**
+        part.count()          -> int        the same filters, counted
+        part.rows(limit=n)    -> [rows]     the same filters, ordered, limited
 
-Expense claims to approve and salary advances are not counted, because the
-portal has no screen on which to approve one. A number that sends somebody
-looking for a button that does not exist is worse than no number.
+`get_nav_counts` (the bell, the menu entry, the bottom-bar button) and
+`get_inbox` (the screen) both call `parts()`. Neither writes a filter of its
+own. The day somebody writes a second filter "just for the badge" is the day the
+number stops matching the list, so there is nowhere to put one.
 
-Three rules govern this module, each with a test that fails if it is broken.
+Four rules govern this module, each with a test that fails if it is broken.
 
-**A count must equal the list it links to (AC-51).** Not "about equal". Every
-part below is counted with the *same definition* the screen uses, and where a
-screen is capped the count is not - it is the true total, and the screen says
-"showing the first 50 of 60" rather than quietly showing fewer. Where a
-definition lives somewhere else, this module calls that code rather than
-copying it, so the two cannot drift apart. The one place that could not be
-reused is named in `_attendance_fixes`, with the reason.
+**A count must equal the list it links to (034 AC-51, 042 AC-8).** Not "about
+equal". Where a screen is capped the count is not - it is the true total, and
+the screen says "Showing the first 50 of 60" rather than quietly showing fewer.
+No part ever shows "50+", because a "50+" cannot be added into one honest total.
 
-**Nobody gets an error instead of a count (AC-63).** A platform operator with
-no Employee record, and a leaver whose login still works, get their own empty
-parts and a total of zero. Today's helpers throw "No Employee record found";
-the frame would then show the page-error state to somebody who has done nothing
-wrong.
+**Every part declares its scope as data, and no filter helper returns `{}`
+(042 SEC-3, SEC-4, AC-8).** A `Part` built without a non-empty `scope` string
+raises at import, so a part added later with no scope is a test failure rather
+than a runtime default meaning "everybody". And in Frappe an empty filter dict
+means **every record**, so a caller entitled to nobody gets `no_rows()` -
+filters that match nothing - never "no condition". The assertion is on the
+**return value**, not on the rows: an unscoped query that happened to return
+nothing looks identical from the outside, and that is the fail-open shape.
+
+**Nobody gets an error instead of a count (034 AC-63, 042 AC-37).** A platform
+operator with no Employee record, and a leaver whose login still works, get
+every part at zero and a total of zero - and the scoped queries **do not run at
+all**. The refusal is an explicit early return, not a filter that happened to be
+skipped.
 
 **No `ignore_permissions`, and no module-level state that changes at run time**
 (SEC-6 / AC-71, SEC-15 / AC-70). Every constant here is a tuple. One worker
@@ -38,21 +45,32 @@ Guest is refused, and the refusal is the decorator plus an explicit line, the
 same belt-and-braces as `frame_api.get_frame` (SEC-2). Every function here is
 live on production from the release that carries it, whatever page calls it, so
 the Guest, wrong-persona and scope tests ship in the same commit.
+
+## What Wave 2 deliberately did NOT build
+
+**D-2 - who may decide an attendance correction, and from when.** The approved
+design says the manager decides and HR steps in after two working days. The code
+sends every correction to whoever holds the **submit permission** on Attendance
+Request (`attendance_correction._may_review`) - a permission, not a role. That
+is a permission change wearing a routing change's clothes, and it is with the
+product owner. **The fail-closed default is built here: no new decider.** The
+corrections part reads `review_queue_filters` exactly as Wave 1 left it. There
+is no two-working-day rule and no "visible but not actionable" state, because
+the code has no such state and inventing one quietly would be the worst of the
+three options.
 """
 
 import frappe
 from frappe import _
 from frappe.utils import get_build_version
 
-# The parts, in the order the Inbox page lists them. Section 5's table, and the
-# routes are section 4's. A tuple of tuples: nothing here is appended to at run
-# time (SEC-15).
+# The parts, in the order the Inbox page lists them. Wave 1's section 5 table,
+# and the routes are its section 4's. A tuple of tuples: nothing here is
+# appended to at run time (SEC-15).
 #
-# `my_requests` is the one route that is not a single screen in section 5 - it
-# says "the screen each came from", which is per item and is the Wave 2 Inbox
-# list's job. Wave 1 sends it to `#time`, where all three kinds (leave,
-# attendance fixes and shift changes) are listed today. Named here rather than
-# left to be discovered.
+# `my_requests` is the one route that is not a single screen - Wave 2's Inbox
+# shows all three kinds (leave, attendance fixes and shift changes) in one tab,
+# so the route is the Inbox's own "my requests" tab.
 PARTS = (
 	("leave_approvals", "#team"),
 	("goal_updates", "#growth"),
@@ -62,17 +80,80 @@ PARTS = (
 	("my_requests", "#time"),
 )
 
-# Which parts add up to "approvals waiting". AC-20's total is
-# approvals + policies + my own open requests, so the three groups are named
-# rather than left as an arithmetic accident in one line.
+# Which parts add up to "approvals waiting". The total is
+# approvals + policies + my own open requests (Wave 1 AC-20, Wave 2 section 6.2),
+# so the three groups are named rather than left as an arithmetic accident.
 APPROVAL_PARTS = ("leave_approvals", "goal_updates", "attendance_fixes", "shift_requests")
 
 # The attendance corrections screen reads at most this many rows
-# (`attendance_correction.to_review`'s default). The COUNT is not capped - see
-# `_attendance_fixes` - but the screen needs to know the cap so it can say
-# "showing the first 50 of 60" (section 5, security note N3).
+# (`attendance_correction.to_review`'s default). The COUNT is not capped, so the
+# bell can say 60 while the screen shows 50 and says so (Wave 1 section 5, N3).
 CORRECTIONS_CAP = 50
 
+# Every list in the Inbox is capped at the same number, for the same reason
+# (Wave 2 section 6.1 rule 2, section 13).
+LIST_CAP = 50
+
+# The keys a row may carry, per part. Enforced on the way out of `rows()`, the
+# same discipline as `frame_api.FRAME_KEYS`: a field cannot reach a browser by
+# accident, and adding one is a deliberate act somebody reviews.
+#
+# What is NOT here matters more than what is. No absence reason, anywhere. No
+# decision note belonging to somebody else. No document id in any count.
+# A tuple of tuples, not a dict: one worker serves several sites, and SEC-15
+# forbids any module-level mutable here. `row_keys()` below is the lookup.
+ROW_KEYS = (
+	# The named approver is deciding this document, so they see whose it is and
+	# what kind of leave it is - it is on the page they would open anyway. The
+	# CONTEXT LINE is the thing that carries no colleague name and no leave
+	# type (042 AC-28), and it is built in `_leave_context`, not here.
+	("leave_approvals", ("name", "employee_name", "from_date", "to_date",
+	                     "leave_type", "total_days", "context", "action")),
+	# No colleague name for a goal or KPI update? There is one, and there has to
+	# be: an approver cannot approve "somebody's" progress. What is absent is the
+	# number's provenance and any note about the person.
+	("goal_updates", ("name", "kind", "employee_name", "subject", "logged_on",
+	                  "value", "action")),
+	("attendance_fixes", ("name", "employee_name", "from_date", "to_date",
+	                      "reason", "context", "action")),
+	("shift_requests", ("name", "employee_name", "from_date", "to_date",
+	                    "shift_type", "action")),
+	# A policy is a document, not a person. No employee field at all.
+	("policies", ("name", "title", "version", "action")),
+	# My own requests are mine, so the state sentence and the reason I was given
+	# are mine to read. No approver's name beyond the one the state sentence
+	# already says, and never anybody else's row (042 AC-20).
+	("my_requests", ("name", "kind", "from_date", "to_date", "state", "says",
+	                 "note", "can_withdraw", "action")),
+)
+
+
+def row_keys(key):
+	"""The keys a row of this part may carry. Raises for an unknown part, so a
+	new part cannot quietly ship with no key list at all."""
+	for name, fields in ROW_KEYS:
+		if name == key:
+			return fields
+	raise PartDefinitionError("no row key list for part %r" % (key,))
+
+
+class PartDefinitionError(frappe.ValidationError):
+	"""A part was built without a scope, or with an empty filter dict.
+
+	Raised when the part is constructed, not when it is read, so a mistake is a
+	failure in every test that touches `parts()` rather than a silent "everybody"
+	on one tenant at month end.
+	"""
+
+
+def no_rows():
+	"""Filters that match nothing (SEC-4).
+
+	`{}` in Frappe means **every record**. A caller entitled to nobody must get
+	a filter that matches nothing, and it must be visible in the return value -
+	the test asserts on what this returns, not on how many rows came back.
+	"""
+	return {"name": ["in", []]}
 
 
 def _has_doctype(name):
@@ -100,209 +181,638 @@ def _has_doctype(name):
 	return bool(seen)
 
 
-def _zero():
-	"""Every part at zero. What a person with no Employee record gets (AC-63)."""
-	return {key: 0 for key, _route in PARTS}
-
-
 def _my_employee(user):
 	"""The caller's own ACTIVE Employee record id, or None.
 
 	The same "who am I" question `frame_api._me` asks, and the same answer, so
 	the bell and the menu cannot describe two different people. None is a real
 	answer here, not a failure: a platform operator never had an Employee
-	record, and a leaver's is no longer Active (SEC-14).
+	record, and a leaver's is no longer Active (SEC-14). A rehire with two rows,
+	one Left and one Active, gets the Active one - one helper, one answer
+	(042 AC-47).
 	"""
 	return frappe.db.get_value("Employee", {"user_id": user, "status": "Active"}, "name")
 
 
-def _leave_approvals(user):
+# ── The part ─────────────────────────────────────────────────────────────────
+
+
+class Part:
+	"""One row of the Inbox: one filter expression, counted and listed.
+
+	`count_fn` and `rows_fn` are both handed `self.filters`. They cannot be
+	handed anything else, which is the whole mechanism: there is no seam where a
+	second filter could be written for the badge.
+
+	`available` is False for a part this caller does not have at all - no
+	Employee record, no review permission, the doctype is not installed. An
+	unavailable part counts 0 and lists nothing **without running a query**
+	(042 AC-37). That is an explicit early return, not a filter that matched
+	nothing.
+	"""
+
+	__slots__ = ("key", "route", "scope", "cap", "filters", "_count_fn", "_rows_fn",
+	             "available", "label_one", "label_many")
+
+	def __init__(self, key, route, scope, filters, count_fn, rows_fn,
+	             cap=LIST_CAP, available=True, label_one="", label_many=""):
+		if not isinstance(scope, str) or not scope.strip():
+			raise PartDefinitionError(
+				"Part %r was built with no scope declaration. Every part says, as "
+				"data and not as a comment, whose records it may read." % (key,))
+		if isinstance(filters, dict) and not filters:
+			raise PartDefinitionError(
+				"Part %r was built with an empty filter dict. In Frappe that means "
+				"every record. Use no_rows() to match nothing." % (key,))
+		self.key = key
+		self.route = route
+		self.scope = scope
+		self.cap = cap
+		self.filters = filters
+		self._count_fn = count_fn
+		self._rows_fn = rows_fn
+		self.available = bool(available)
+		self.label_one = label_one
+		self.label_many = label_many
+
+	def count(self):
+		"""The true total. Never capped - see the module docstring."""
+		if not self.available:
+			return 0
+		return int(self._count_fn(self.filters) or 0)
+
+	def rows(self, limit=LIST_CAP):
+		"""The same filters, ordered, and cut to `limit`. `None` means all of them.
+
+		The returned rows are cut to `row_keys(self.key)` here rather than in
+		each `rows_fn`, so the key list is one list in one place.
+		"""
+		if not self.available:
+			return []
+		allowed = row_keys(self.key)
+		out = []
+		for row in self._rows_fn(self.filters, limit):
+			out.append({k: row.get(k) for k in allowed})
+		return out
+
+	def label(self, n):
+		"""The row's wording, as a whole phrase with a placeholder (042 AC-26).
+
+		Never a sentence built by joining fragments: Hindi and Punjabi put the
+		number and the noun in a different order.
+		"""
+		return (self.label_one if n == 1 else self.label_many).format(n=n)
+
+
+# ── The six parts ────────────────────────────────────────────────────────────
+#
+# Each builder returns ONE Part. Each is handed the same context, computed once
+# per call, so `parts()` asks "who am I" once rather than six times.
+
+
+class _Who:
+	"""Who is asking, worked out once. Not module state - one per call.
+
+	There is deliberately no `is_hr` here. "HR" means two different things in
+	this codebase - `goals_api._is_hr` reads the goals app's role set, and the
+	corrections queue reads `permitted_companies()` - and a single flag would
+	quietly pick one of them for both. Each part asks the question its own
+	source asks, through that source's own helper.
+	"""
+
+	__slots__ = ("user", "employee")
+
+	def __init__(self, user):
+		self.user = user
+		self.employee = _my_employee(user)
+
+
+def _count_rows(doctype):
+	"""A counter that asks the database, under the caller's own permissions.
+
+	`get_list`, not `get_all`: a tenant that has scoped a doctype by department
+	gets that scoping in the count as well as on the screen. `pluck` with no
+	page length is a single query returning one column.
+	"""
+
+	def counter(filters):
+		return len(frappe.get_list(doctype, filters=filters, pluck="name",
+		                           limit_page_length=0))
+
+	return counter
+
+
+def _leave_context(row):
+	"""How many other people in this team are away on those days - a NUMBER.
+
+	042 AC-28. The payload carries no colleague name and no leave type: an
+	approver deciding Tuesday off needs to know two other people are already
+	away, and nothing whatever about who they are or why.
+
+	Returns None when there is nobody else, so the screen draws no line rather
+	than "0 other people".
+	"""
+	if not row.get("department"):
+		return None
+	others = frappe.db.count(
+		"Leave Application",
+		{
+			"department": row["department"],
+			"employee": ["!=", row["employee"]],
+			"status": ["in", ["Open", "Approved"]],
+			"docstatus": ["<", 2],
+			"from_date": ["<=", row["to_date"]],
+			"to_date": [">=", row["from_date"]],
+		},
+	)
+	if not others:
+		return None
+	return _("{n} other people in this team are away on those days").format(n=others)
+
+
+def _part_leave_approvals(who):
 	"""Leave applications waiting on this person as the named approver.
 
-	The same filter `hr_api.get_manager_dashboard` uses for the list it shows,
-	minus the fields - a count needs no names. Anybody can be named as a leave
-	approver, so there is no role test here and there should not be one.
+	Anybody can be named a leave approver, so there is no role test here and
+	there should not be one.
+
+	`employee != my own` is the rule that keeps 042 AC-9 true: a person who is
+	their own leave approver is counted **once**, under "my requests", never
+	here. Without it one open application would add two to one total.
 	"""
-	return frappe.db.count(
-		"Leave Application",
-		{"leave_approver": user, "status": "Open", "docstatus": 0},
+	filters = no_rows()
+	if who.employee:
+		filters = {
+			"leave_approver": who.user,
+			"status": "Open",
+			"docstatus": 0,
+			"employee": ["!=", who.employee],
+		}
+
+	def rows_fn(filters, limit):
+		rows = frappe.get_list(
+			"Leave Application", filters=filters,
+			fields=["name", "employee", "employee_name", "department", "leave_type",
+			        "from_date", "to_date", "total_leave_days"],
+			order_by="from_date asc", limit_page_length=limit or 0)
+		out = []
+		for r in rows:
+			out.append({
+				"name": r.name,
+				"employee_name": r.employee_name,
+				"from_date": str(r.from_date) if r.from_date else None,
+				"to_date": str(r.to_date) if r.to_date else None,
+				"leave_type": r.leave_type,
+				"total_days": r.total_leave_days,
+				"context": _leave_context(r),
+				"action": "leave",
+			})
+		return out
+
+	return Part(
+		"leave_approvals", "#team",
+		scope="leave applications where this caller is the named leave_approver, "
+		      "minus their own",
+		filters=filters,
+		count_fn=_count_rows("Leave Application"),
+		rows_fn=rows_fn,
+		available=bool(who.employee),
+		label_one=_("{n} leave request to approve"),
+		label_many=_("{n} leave requests to approve"),
 	)
 
 
-def _goal_updates():
+def _part_goal_updates(who):
 	"""KPI and goal progress updates this caller may approve.
 
-	`goals_api.get_pending_approvals_count` is called rather than copied: it
-	already holds `_pending_approvals_scope`, which is the definition of who a
-	manager or an HR person may approve for, and PRIV-4 forbids the boot path
-	from calling the heavy `get_pending_approvals` instead.
+	The filter expression here is the **employee scope** -
+	`goals_api._pending_approvals_scope`, which is the definition of who a
+	manager or an HR person may approve for. It is called, never copied: a
+	future change to that rule has one place to land.
 
-	It throws for a caller with no Employee record, which is correct for the
-	screen and wrong for a count (AC-63), so that one case is turned into zero
-	here. Nothing else is caught: a real fault must reach the caller as the
-	card-error state, not be quietly rendered as "nothing waiting".
+	Both the count and the rows walk that one list, set-based. Neither calls
+	`goals_api.get_pending_approvals`, which walks one employee at a time and
+	took 16.4 seconds for an HR caller (042 AC-16).
 	"""
-	if not _has_doctype("KPI"):
-		return 0
-	from alvoraa_portal.goals_api import get_pending_approvals_count
+	scope_names = []
+	available = bool(who.employee) and _has_doctype("KPI")
+	if available:
+		# `_is_hr` is imported rather than re-derived: it is the definition
+		# `get_pending_approvals_count` uses, and the scope helper is built for
+		# that definition. Asking the question a second way is how two screens
+		# come to disagree about who HR is.
+		from alvoraa_portal.goals_api import _is_hr, _pending_approvals_scope
 
-	try:
-		return int((get_pending_approvals_count() or {}).get("total") or 0)
-	except frappe.PermissionError:
-		# `_require_employee` raises this when the caller has no Employee
-		# record. Rule 6's personas have nobody to approve for by definition.
-		return 0
+		scope_names = _pending_approvals_scope(who.employee, _is_hr(who.user)) or []
+		# Belt as well as braces: the helper already removes the caller, and this
+		# line is what still removes them if it ever stops (042 AC-25).
+		scope_names = [n for n in scope_names if n != who.employee]
+
+	# The one filter expression. `no_rows()` rather than `{}` for a caller
+	# entitled to nobody (SEC-4) - and the test reads this value, not the rows.
+	filters = {"employee": ["in", scope_names]} if scope_names else no_rows()
+
+	def _pending(field):
+		return (field == "Pending") | (field == "") | field.isnull()
+
+	def _names(filters):
+		got = filters.get("employee")
+		return list(got[1]) if isinstance(got, (list, tuple)) and got[0] == "in" else []
+
+	def count_fn(filters):
+		from frappe.query_builder.functions import Count
+
+		names = _names(filters)
+		if not names:
+			return 0
+		KPI = frappe.qb.DocType("KPI")
+		KPILog = frappe.qb.DocType("KPI Progress Log")
+		kpi_total = (
+			frappe.qb.from_(KPILog)
+			.join(KPI).on(KPILog.parent == KPI.name)
+			.where(KPI.employee.isin(names) & (KPI.status != "Cancelled"))
+			.where(_pending(KPILog.approval_status))
+			.select(Count("*"))
+		).run()[0][0]
+		Goal = frappe.qb.DocType("Individual Goal")
+		GoalUpd = frappe.qb.DocType("Goal Progress Update")
+		goal_total = (
+			frappe.qb.from_(GoalUpd)
+			.join(Goal).on(GoalUpd.parent == Goal.name)
+			.where(Goal.employee.isin(names) & (Goal.status != "Cancelled")
+			       & (Goal.docstatus != 2))
+			.where(_pending(GoalUpd.approval_status))
+			.select(Count("*"))
+		).run()[0][0]
+		return int(kpi_total) + int(goal_total)
+
+	def rows_fn(filters, limit):
+		names = _names(filters)
+		if not names:
+			return []
+		out = []
+		KPI = frappe.qb.DocType("KPI")
+		KPILog = frappe.qb.DocType("KPI Progress Log")
+		kpi_rows = (
+			frappe.qb.from_(KPILog)
+			.join(KPI).on(KPILog.parent == KPI.name)
+			.where(KPI.employee.isin(names) & (KPI.status != "Cancelled"))
+			.where(_pending(KPILog.approval_status))
+			.select(KPILog.name, KPI.kpi_name, KPI.employee, KPILog.value,
+			        KPILog.creation)
+			.orderby(KPILog.creation)
+		).run(as_dict=True)
+		Goal = frappe.qb.DocType("Individual Goal")
+		GoalUpd = frappe.qb.DocType("Goal Progress Update")
+		goal_rows = (
+			frappe.qb.from_(GoalUpd)
+			.join(Goal).on(GoalUpd.parent == Goal.name)
+			.where(Goal.employee.isin(names) & (Goal.status != "Cancelled")
+			       & (Goal.docstatus != 2))
+			.where(_pending(GoalUpd.approval_status))
+			.select(GoalUpd.name, Goal.goal_name, Goal.employee, GoalUpd.value,
+			        GoalUpd.creation)
+			.orderby(GoalUpd.creation)
+		).run(as_dict=True)
+		merged = ([("kpi", r, r.get("kpi_name")) for r in kpi_rows]
+		          + [("goal", r, r.get("goal_name")) for r in goal_rows])
+		merged.sort(key=lambda t: t[1].get("creation") or "")
+		if limit:
+			merged = merged[:limit]
+		# One name lookup for every employee on the page, not one per row.
+		emp_ids = sorted({r.get("employee") for _k, r, _s in merged if r.get("employee")})
+		names_by_id = {}
+		if emp_ids:
+			names_by_id = {
+				e.name: e.employee_name
+				for e in frappe.get_all("Employee", filters={"name": ["in", emp_ids]},
+				                        fields=["name", "employee_name"])
+			}
+		for kind, r, subject in merged:
+			out.append({
+				"name": r.get("name"),
+				"kind": kind,
+				"employee_name": names_by_id.get(r.get("employee")),
+				"subject": subject,
+				"logged_on": str(r.get("creation")) if r.get("creation") else None,
+				"value": r.get("value"),
+				"action": "goal_update",
+			})
+		return out
+
+	return Part(
+		"goal_updates", "#growth",
+		scope="employees inside goals_api._pending_approvals_scope for this caller, "
+		      "minus themselves",
+		filters=filters,
+		count_fn=count_fn,
+		rows_fn=rows_fn,
+		available=available,
+		label_one=_("{n} goal or KPI update to approve"),
+		label_many=_("{n} goal or KPI updates to approve"),
+	)
 
 
-def _attendance_fixes(user, employee):
+def _part_attendance_fixes(who):
 	"""Attendance corrections waiting for this caller to decide.
 
-	Two things make this the most delicate count in the file.
-
-	**Who may see it is not a role.** `attendance_correction._may_review` tests
-	the submit permission on Attendance Request, so a tenant can hand this queue
-	to a Shift Supervisor. That function is called, not re-implemented (W1D-14,
-	AC-52's fourth row).
-
-	**The scope differs by caller, on purpose.** For an HR caller the queue is
-	`permitted_employees()` minus themselves (W1D-05), so a store's HR person
-	counts their store. For a reviewer who is not HR the scope is exactly what
-	they see today - no narrowing at all - because applying an HR filter to
-	somebody who holds no HR entitlement returns the empty set and kills a
-	working flow silently (W1D-14).
+	**D-2 is not built here.** Who may see this queue is not a role -
+	`attendance_correction._may_review` tests the submit permission on
+	Attendance Request, so a tenant can hand the queue to a Shift Supervisor.
+	That function is called, not re-implemented, and `review_queue_filters` is
+	read exactly as Wave 1 left it. The approved design's "the manager decides,
+	HR after two working days" is a **permission change** and is with the
+	product owner; until it is answered the queue stays as it is today.
 
 	**The count is not capped, and the screen is.** `to_review` reads 50 rows.
 	This counts every waiting row in the caller's scope, so the bell can say 60
-	while the screen shows 50 and says so. A count that stopped at 50 could not
-	be added into AC-20's single honest total.
-
-	Returns (count, is_hr_scope) - the second so the Inbox page knows which
-	sentence to draw when the count is above the cap.
+	while the screen shows 50 and says so.
 	"""
-	from alvoraa_portal.attendance_correction import REQUEST, _may_review, review_queue_filters
+	from alvoraa_portal.attendance_correction import (
+		REQUEST, _may_review, review_queue_filters,
+	)
 
-	if not _may_review():
-		return 0, False
+	available = bool(who.employee) and bool(_may_review())
+	filters, is_hr_scope = (review_queue_filters(who.user) if available
+	                        else (no_rows(), False))
 
-	# The queue's own filters, not a copy of them. `to_review` builds its list
-	# from this exact dict; the only difference here is that no cap is applied,
-	# so the number is the true total (section 5, N3).
-	filters, is_hr_scope = review_queue_filters(user)
+	def rows_fn(filters, limit):
+		rows = frappe.get_list(
+			REQUEST, filters=filters,
+			fields=["name", "employee_name", "from_date", "to_date", "reason",
+			        "half_day"],
+			order_by="creation asc", limit_page_length=limit or 0)
+		out = []
+		for r in rows:
+			out.append({
+				"name": r.name,
+				"employee_name": r.employee_name,
+				"from_date": str(r.from_date) if r.from_date else None,
+				"to_date": str(r.to_date) if r.to_date else None,
+				"reason": r.reason,
+				# A correction's own "reason" is the category the employee picked
+				# ("I was at work", "the machine did not read my card"), not a
+				# reason for an absence. It is the thing being decided.
+				"context": _("Half day") if r.half_day else None,
+				"action": "attendance_fix",
+			})
+		return out
 
-	# `get_list`, not `get_all`: the caller's own permissions apply, exactly as
-	# they do on the screen. A tenant that has scoped Attendance Request by
-	# department gets that scoping in the count too.
-	rows = frappe.get_list(REQUEST, filters=filters, pluck="name", limit_page_length=0)
-	return len(rows), is_hr_scope
+	part = Part(
+		"attendance_fixes", "#time/fix",
+		scope=("attendance_correction.review_queue_filters for this caller - "
+		       "HR: permitted_employees() minus self; a non-HR reviewer: their "
+		       "whole queue, unchanged (W1D-14). D-2 not built"),
+		filters=filters,
+		count_fn=_count_rows(REQUEST),
+		rows_fn=rows_fn,
+		cap=CORRECTIONS_CAP,
+		available=available,
+		label_one=_("{n} attendance fix to decide"),
+		label_many=_("{n} attendance fixes to decide"),
+	)
+	# The Inbox page's wording for a capped corrections list differs for an HR
+	# caller and a non-HR reviewer, because their scopes differ (W1D-14).
+	return part, is_hr_scope
 
 
-def _shift_requests(user):
-	"""Shift changes waiting on this person as the named approver."""
-	if not _has_doctype("Shift Request"):
-		return 0
-	return frappe.db.count("Shift Request", {"approver": user, "docstatus": 0})
+def _part_shift_requests(who):
+	"""Shift changes waiting on this person as the named approver.
+
+	`employee != my own` for the same reason as leave: a person who approves
+	their own shift changes is counted once, under "my requests" (042 AC-9's
+	rule, applied to part 4 as section 6.2 asks).
+	"""
+	available = bool(who.employee) and _has_doctype("Shift Request")
+	filters = no_rows()
+	if available:
+		filters = {
+			"approver": who.user,
+			"docstatus": 0,
+			"employee": ["!=", who.employee],
+		}
+
+	def rows_fn(filters, limit):
+		rows = frappe.get_list(
+			"Shift Request", filters=filters,
+			fields=["name", "employee_name", "from_date", "to_date", "shift_type"],
+			order_by="from_date asc", limit_page_length=limit or 0)
+		return [{
+			"name": r.name,
+			"employee_name": r.employee_name,
+			"from_date": str(r.from_date) if r.from_date else None,
+			"to_date": str(r.to_date) if r.to_date else None,
+			"shift_type": r.shift_type,
+			"action": "shift_request",
+		} for r in rows]
+
+	return Part(
+		"shift_requests", "#time/shift",
+		scope="shift requests where this caller is the named approver, minus their own",
+		filters=filters,
+		count_fn=_count_rows("Shift Request"),
+		rows_fn=rows_fn,
+		available=available,
+		label_one=_("{n} shift change to approve"),
+		label_many=_("{n} shift changes to approve"),
+	)
 
 
-def _policies(employee):
+def _part_policies(who):
 	"""Policies this person may read and has not acknowledged for its version.
 
 	The same answer `hr_api.get_my_policies()["pending"]` gives, in two queries
-	instead of one per policy. The definition is
+	rather than one per policy. The definition is
 	`policy_document.acknowledgement_status`: a policy needs acknowledging when
 	it is set to be acknowledged on joining or on a new version, and it is done
 	when there is an acknowledgement for the policy AND its current version.
-	`test_inbox_counts_034` asserts this number equals `get_my_policies`'s, so
-	the faster shape cannot quietly mean something else.
+
+	The filter expression is the list of (policy, version) pairs still needed.
+	Both uses read that one list, so the count and the screen cannot drift.
 	"""
-	if not employee or not _has_doctype("Policy Document"):
-		return 0
-	# `get_list`, so this is what the caller may READ - the same set
-	# `readable_policy_names` returns, through the same permission path.
-	policies = frappe.get_list(
-		"Policy Document",
-		filters={"status": "Published"},
-		fields=["name", "current_version", "acknowledge_on_joining", "acknowledge_on_new_version"],
-		limit_page_length=0,
+	available = bool(who.employee) and _has_doctype("Policy Document")
+	needed = []
+	if available:
+		# `get_list`, so this is what the caller may READ - the same set
+		# `readable_policy_names` returns, through the same permission path.
+		policies = frappe.get_list(
+			"Policy Document", filters={"status": "Published"},
+			fields=["name", "title", "current_version", "acknowledge_on_joining",
+			        "acknowledge_on_new_version"],
+			order_by="title asc", limit_page_length=0)
+		wanted = [p for p in policies
+		          if p.acknowledge_on_joining or p.acknowledge_on_new_version]
+		if wanted:
+			done = {
+				(a.policy_document, int(a.version or 0))
+				for a in frappe.get_all(
+					"Policy Acknowledgement",
+					filters={"employee": who.employee,
+					         "policy_document": ["in", [p.name for p in wanted]]},
+					fields=["policy_document", "version"], limit_page_length=0)
+			}
+			needed = [
+				{"name": p.name, "title": p.title,
+				 "version": int(p.current_version or 0), "action": "policy"}
+				for p in wanted
+				if (p.name, int(p.current_version or 0)) not in done
+			]
+
+	# A list, not a dict: the "filter expression" for this part really is the
+	# set of outstanding pairs. `no_rows()` is not used here because an empty
+	# list already matches nothing, and the Part guard only refuses an empty
+	# **dict** - which is the shape that means "everything".
+	filters = tuple(needed)
+
+	return Part(
+		"policies", "#company/policies",
+		scope="published policies this caller may READ (get_list), minus the ones "
+		      "they have acknowledged at the current version",
+		filters=filters,
+		count_fn=lambda f: len(f),
+		rows_fn=lambda f, limit: list(f[:limit] if limit else f),
+		available=available,
+		label_one=_("{n} policy to read and accept"),
+		label_many=_("{n} policies to read and accept"),
 	)
-	needed = [
-		(p.name, int(p.current_version or 0))
-		for p in policies
-		if p.acknowledge_on_joining or p.acknowledge_on_new_version
-	]
-	if not needed:
-		return 0
-	done = {
-		(a.policy_document, int(a.version or 0))
-		for a in frappe.get_all(
-			"Policy Acknowledgement",
-			filters={"employee": employee, "policy_document": ["in", [n for n, _v in needed]]},
-			fields=["policy_document", "version"],
-			limit_page_length=0,
-		)
-	}
-	return sum(1 for pair in needed if pair not in done)
 
 
-def _my_requests(employee):
+def _part_my_requests(who):
 	"""This person's own requests that are still waiting on somebody else.
 
-	Leave, attendance corrections and shift changes. AC-22: a person who is
-	their own leave approver sees their request here and NOT under approvals -
-	which is why this is counted from the employee and the approvals are
-	counted from the approver, and why the Inbox page shows them as separate
-	rows.
+	Leave, attendance corrections and shift changes, their own **Active**
+	Employee record only (042 AC-20). A person who is their own leave approver
+	sees their request here and NOT under approvals, which is why this is
+	counted from the employee and the approvals are counted from the approver.
 	"""
-	if not employee:
-		return 0
-	total = frappe.db.count(
-		"Leave Application", {"employee": employee, "status": "Open", "docstatus": 0}
-	)
-	# `DONE_STATES` is imported rather than retyped, so "still waiting" has one
-	# definition in the codebase.
 	from alvoraa_portal.attendance_correction import DONE_STATES, REQUEST
 
-	total += frappe.db.count(
-		REQUEST,
-		{
-			"employee": employee,
-			"docstatus": 0,
-			"alvoraa_review_status": ["not in", list(DONE_STATES)],
-		},
+	available = bool(who.employee)
+	filters = {"employee": who.employee} if available else no_rows()
+	has_shift = _has_doctype("Shift Request")
+
+	def _collect(filters, limit):
+		"""All three kinds, newest first. One query each, never one per row."""
+		employee = filters.get("employee")
+		if not employee:
+			return []
+		out = []
+		for r in frappe.get_list(
+			"Leave Application",
+			filters={"employee": employee, "status": "Open", "docstatus": 0},
+			fields=["name", "from_date", "to_date", "creation"],
+			order_by="creation desc", limit_page_length=0,
+		):
+			out.append({
+				"name": r.name, "kind": "leave",
+				"from_date": str(r.from_date) if r.from_date else None,
+				"to_date": str(r.to_date) if r.to_date else None,
+				"state": "waiting", "says": _("Waiting for your approver"),
+				"note": None, "can_withdraw": False, "action": "my_leave",
+				"creation": r.creation,
+			})
+		for r in frappe.get_list(
+			REQUEST,
+			filters={"employee": employee, "docstatus": 0,
+			         "alvoraa_review_status": ["not in", list(DONE_STATES)]},
+			fields=["name", "from_date", "to_date", "alvoraa_review_note", "creation"],
+			order_by="creation desc", limit_page_length=0,
+		):
+			out.append({
+				"name": r.name, "kind": "attendance_fix",
+				"from_date": str(r.from_date) if r.from_date else None,
+				"to_date": str(r.to_date) if r.to_date else None,
+				"state": "waiting", "says": _("Waiting to be decided"),
+				"note": r.alvoraa_review_note,
+				# `attendance_correction.withdraw` allows it exactly while the
+				# document is still a draft. Same condition, named once.
+				"can_withdraw": True, "action": "my_attendance_fix",
+				"creation": r.creation,
+			})
+		if has_shift:
+			for r in frappe.get_list(
+				"Shift Request",
+				filters={"employee": employee, "docstatus": 0},
+				fields=["name", "from_date", "to_date", "creation"],
+				order_by="creation desc", limit_page_length=0,
+			):
+				out.append({
+					"name": r.name, "kind": "shift_request",
+					"from_date": str(r.from_date) if r.from_date else None,
+					"to_date": str(r.to_date) if r.to_date else None,
+					"state": "waiting", "says": _("Waiting for your approver"),
+					"note": None, "can_withdraw": False, "action": "my_shift_request",
+					"creation": r.creation,
+				})
+		out.sort(key=lambda r: r.get("creation") or "", reverse=True)
+		return out[:limit] if limit else out
+
+	return Part(
+		"my_requests", "#time",
+		scope="this caller's own Active Employee record, and nobody else's",
+		filters=filters,
+		count_fn=lambda f: len(_collect(f, None)),
+		rows_fn=_collect,
+		available=available,
+		label_one=_("{n} of your requests is waiting"),
+		label_many=_("{n} of your requests are waiting"),
 	)
-	if _has_doctype("Shift Request"):
-		total += frappe.db.count("Shift Request", {"employee": employee, "docstatus": 0})
-	return total
+
+
+def parts(user=None):
+	"""The six parts, in order, for this caller (042 section 6.1).
+
+	The one helper. `get_nav_counts` and `get_inbox` both call it and neither
+	writes a filter of its own.
+
+	Returns (parts, corrections_hr_scope).
+	"""
+	who = _Who(user or frappe.session.user)
+	fixes, corrections_hr_scope = _part_attendance_fixes(who)
+	built = (
+		_part_leave_approvals(who),
+		_part_goal_updates(who),
+		fixes,
+		_part_shift_requests(who),
+		_part_policies(who),
+		_part_my_requests(who),
+	)
+	# The order and the membership of PARTS is the contract; this proves the
+	# builders above still match it rather than assuming they do.
+	if tuple(p.key for p in built) != tuple(k for k, _route in PARTS):
+		raise PartDefinitionError(
+			"parts() built %r but PARTS names %r"
+			% ([p.key for p in built], [k for k, _r in PARTS]))
+	return built, corrections_hr_scope
+
+
+# ── The two calls ────────────────────────────────────────────────────────────
+
+
+def _refuse_guest():
+	"""Guest is refused by `frappe.whitelist()` without `allow_guest`. This line
+	is what still refuses if somebody ever adds it (SEC-2)."""
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Please sign in."), frappe.PermissionError)
 
 
 @frappe.whitelist()
 def get_nav_counts():
-	"""The second and last start-up call (US-6, AC-7, AC-20, AC-24).
+	"""The frame's second and last start-up call (Wave 1 US-6, AC-7, AC-20, AC-24).
 
 	Returns counts and nothing else - no names, no reasons, no document ids
-	(AC-23, PRIV-4). A number tells somebody to go and look; the screen they go
-	to is where the permission checks that matter live.
+	(PRIV-4). A number tells somebody to go and look; the screen they go to is
+	where the permission checks that matter live.
 
-	Guest is refused by `frappe.whitelist()` without `allow_guest`. The explicit
-	line below is what still refuses if somebody ever adds it.
+	**The six parts are computed here and only here** (042 AC-38, DevOps
+	OPS-W2-6). `get_home` deliberately carries no `counts` key: the frame calls
+	this on every load, so a panel supplying its own badge number would be a
+	second source of the one number this slice exists to make single.
 	"""
-	user = frappe.session.user
-	if user == "Guest":
-		frappe.throw(_("Please sign in."), frappe.PermissionError)
+	_refuse_guest()
 
-	employee = _my_employee(user)
-	counts = _zero()
-	corrections_hr_scope = False
-
-	if employee:
-		counts["leave_approvals"] = _leave_approvals(user)
-		counts["goal_updates"] = _goal_updates()
-		counts["attendance_fixes"], corrections_hr_scope = _attendance_fixes(user, employee)
-		counts["shift_requests"] = _shift_requests(user)
-		counts["policies"] = _policies(employee)
-		counts["my_requests"] = _my_requests(employee)
-	# Rule 6 - no Active Employee record - keeps every part at zero. Not an
-	# error, and not an empty payload either: the Inbox page draws "All clear"
-	# from the same shape everybody else gets (AC-63).
+	built, corrections_hr_scope = parts()
+	counts = {p.key: p.count() for p in built}
 
 	approvals = sum(counts[key] for key in APPROVAL_PARTS)
 	total = approvals + counts["policies"] + counts["my_requests"]
@@ -310,22 +820,65 @@ def get_nav_counts():
 	return {
 		"total": total,
 		"approvals_total": approvals,
-		"has_employee": bool(employee),
+		"has_employee": bool(_my_employee(frappe.session.user)),
 		"parts": [
 			{
-				"key": key,
-				"count": counts[key],
-				"route": route,
-				# The screen this row links to shows at most `cap` rows. None
-				# where the screen shows everything. The Inbox page uses it to
-				# say "showing the first 50 of 60" instead of showing 50 and
-				# calling it the whole list (section 5, N3).
-				"cap": CORRECTIONS_CAP if key == "attendance_fixes" else None,
-				"capped": bool(key == "attendance_fixes" and counts[key] > CORRECTIONS_CAP),
+				"key": p.key,
+				"count": counts[p.key],
+				"route": p.route,
+				# The screen this row links to shows at most `cap` rows. The
+				# Inbox page uses it to say "Showing the first 50 of 60" instead
+				# of showing 50 and calling it the whole list (N3).
+				"cap": CORRECTIONS_CAP if p.key == "attendance_fixes" else None,
+				"capped": bool(p.key == "attendance_fixes"
+				               and counts[p.key] > CORRECTIONS_CAP),
 			}
-			for key, route in PARTS
+			for p in built
 		],
-		# The Inbox page's wording for a capped corrections list differs for an
-		# HR caller and a non-HR reviewer, because their scopes differ (W1D-14).
+		"corrections_hr_scope": corrections_hr_scope,
+	}
+
+
+@frappe.whitelist()
+def get_inbox():
+	"""The Inbox screen: the same six parts, with their rows (042 US-4, AC-8 to AC-16).
+
+	Every number here comes from `part.count()` and every row from
+	`part.rows()`, on the same filter expression. `shown` is what the screen
+	draws and `count` is the truth, so a capped part can say
+	"Showing the first 50 of 60" rather than quietly showing fewer.
+
+	A part with nothing in it carries `count: 0` and no rows; the screen draws
+	no row for it and, when every part is empty, says "All clear." A part is
+	never hidden by throwing.
+	"""
+	_refuse_guest()
+
+	built, corrections_hr_scope = parts()
+	out = []
+	total = 0
+	approvals = 0
+	for p in built:
+		n = p.count()
+		rows = p.rows(limit=p.cap) if n else []
+		total += n
+		if p.key in APPROVAL_PARTS:
+			approvals += n
+		out.append({
+			"key": p.key,
+			"route": p.route,
+			"count": n,
+			"shown": len(rows),
+			"cap": p.cap,
+			"capped": n > len(rows),
+			"label": p.label(n),
+			"rows": rows,
+		})
+
+	return {
+		"total": total,
+		"approvals_total": approvals,
+		"has_employee": bool(_my_employee(frappe.session.user)),
+		"parts": out,
 		"corrections_hr_scope": corrections_hr_scope,
 	}

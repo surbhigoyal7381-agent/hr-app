@@ -32,6 +32,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 import alvoraa_portal
+from alvoraa_portal.tests import portal_source as PS
 from alvoraa_portal.tests.leave_fixtures import ensure_user
 from alvoraa_portal.www import hrms_employee_next as page
 
@@ -228,3 +229,52 @@ class TestNoProductionConfigTurnsThePreviewOn(_PreviewBase):
 			f"portal_preview is set in a production deployment file: {offenders}. "
 			f"The preview page would then exist on production (SEC-1).",
 		)
+
+
+class TestTheDeployGateChecksTheFilesThePageActuallyLoads(_PreviewBase):
+	"""Review finding F1, 2026-09-24.
+
+	The whole portal's styles and script now come from `/assets/`, served with
+	`try_files $uri =404`. A 404 on the script is the entire portal gone and
+	nothing in any log, because nothing reaches the backend. The deploy workflow
+	fetches all three after the smoke test and goes red if any one of them is
+	missing or empty.
+
+	This test is the other half of that gate. A gate that names the wrong files
+	is decorative, and a page file is renamed far more often than a workflow is
+	read - so if the page ever loads an asset the workflow does not check, or
+	the step is deleted, somebody hears about it here.
+	"""
+
+	def _deploy_workflow(self):
+		app_pkg = os.path.dirname(os.path.abspath(alvoraa_portal.__file__))
+		repo = os.path.dirname(os.path.dirname(app_pkg))
+		return os.path.join(repo, ".github", "workflows", "deploy.yml")
+
+	def test_the_step_still_exists(self):
+		path = self._deploy_workflow()
+		if not os.path.isfile(path):
+			self.skipTest("deploy.yml not reachable from the installed app "
+			              "(mounted bench); scripts/check_app_integrity.py covers CI")
+		text = io.open(path, encoding="utf-8").read()
+		self.assertIn("Portal assets must be served", text,
+		              "the deploy step that proves the portal's files arrived is gone. "
+		              "Without it a 404 on portal.js is a silently dead portal (F1).")
+
+	def test_every_asset_the_page_loads_is_checked_by_the_deploy(self):
+		path = self._deploy_workflow()
+		if not os.path.isfile(path):
+			self.skipTest("deploy.yml not reachable from the installed app")
+		text = io.open(path, encoding="utf-8").read()
+
+		raw = PS.read_page()
+		loaded = ([m.group(1).decode("utf-8") for m in PS.LINK_RE.finditer(raw)]
+		          + [m.group(1).decode("utf-8") for m in PS.SCRIPT_RE.finditer(raw)])
+		self.assertTrue(loaded, "the portal page loads no /assets/ files at all")
+
+		for name in loaded:
+			self.assertIn(
+				"/assets/alvoraa_portal/" + name, text,
+				f"hrms-employee.html loads /assets/alvoraa_portal/{name}, and the "
+				f"deploy workflow does not check that it arrived. A 404 on it is a "
+				f"portal that renders and does nothing, with nothing in any log (F1).")

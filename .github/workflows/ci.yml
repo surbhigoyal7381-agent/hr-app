@@ -178,6 +178,20 @@ jobs:
           python scripts/check_preview_flag.py --self-test
           python scripts/check_preview_flag.py
 
+      # Slice 034, review finding F1. The portal's styles and script are static
+      # files under /assets/ now, served with `try_files $uri =404`. A 404 on
+      # portal.js is the whole portal gone and nothing in any log, because
+      # nothing reaches the backend - so the deploy workflow fetches all three
+      # after its smoke test and goes red if one is missing or empty.
+      #
+      # This keeps that gate pointing at the right files: a page file is renamed
+      # far more often than a workflow is read. The first line is its positive
+      # control. Text only: no bench, no database, no site.
+      - name: The deploy checks every file the portal loads
+        run: |
+          python scripts/check_portal_assets_gate.py --self-test
+          python scripts/check_portal_assets_gate.py
+
       # Slice 034 (ALV-111). Five tests load the real rendered page in jsdom and
       # click it. None had ever run - jsdom was installed nowhere, so each one
       # stopped at "Cannot find module 'jsdom'" and nobody saw it. It is now a

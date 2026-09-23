@@ -693,6 +693,60 @@ jobs:
           echo "::error::Smoke test failed — /api/method/ping never returned 200"
           exit 1
 
+      # ── The portal's three static files must actually be served ───────────
+      #
+      # Slice 034, OPS-35 and OPS-36, review finding F1. The employee portal's
+      # styles and script are no longer inside the page; they are three files
+      # under /assets/, served by nginx with `try_files $uri =404` and told to
+      # cache for 30 days.
+      #
+      # So a 404 on portal.js is the WHOLE PORTAL GONE, silently. The page still
+      # renders its shell, nothing runs, nothing reaches the backend, and so
+      # nothing appears in any log. The smoke test above would not catch it - it
+      # asks the API, not the assets. Until now the only thing between that and
+      # a client's employees was a person remembering to check afterwards.
+      #
+      # It runs here on purpose: after Restore service, so nginx has been
+      # restarted and is serving the new containers, and after the smoke test,
+      # so the site is known to be up and a 404 means the assets rather than the
+      # server.
+      - name: Portal assets must be served
+        run: |
+          set -uo pipefail
+          SITE="${{ needs.plan.outputs.smoke_site }}"
+          FAILED=0
+          for path in \
+            /assets/alvoraa_portal/css/ess/frame.css \
+            /assets/alvoraa_portal/css/ess/panels.css \
+            /assets/alvoraa_portal/js/ess/portal.js
+          do
+            # `|| echo "000 0"` is not swallowing anything: a curl that cannot
+            # connect becomes a status of 000, which fails the check below. The
+            # length is checked too, because a zero-length portal.js answers 200
+            # and is just as dead as a 404.
+            out=$(curl -sk -o /dev/null -w '%{http_code} %{size_download}' \
+                  -H "Host: $SITE" "https://$SITE$path" || echo "000 0")
+            code=${out%% *}
+            len=${out##* }
+            case "$len" in ''|*[!0-9]*) len=0 ;; esac
+            if [ "$code" = "200" ] && [ "$len" -gt 0 ]; then
+              echo "OK   $path  (HTTP $code, $len bytes)"
+            else
+              echo "::error::$path is not served: HTTP $code, $len bytes"
+              FAILED=1
+            fi
+          done
+          if [ "$FAILED" != "0" ]; then
+            echo "::error::The employee portal's static files are missing or empty."
+            echo "::error::The portal page will render and then do NOTHING, and no"
+            echo "::error::error will appear in the backend logs, because nothing"
+            echo "::error::reaches the backend. Check that refresh_bench_files.sh ran"
+            echo "::error::against the right sites volume, then deploy again. Do not"
+            echo "::error::announce this release."
+            exit 1
+          fi
+          echo "all three portal asset files are served"
+
       # ── Are the background workers actually working? ──────────────────────
       #
       # This step used to be `continue-on-error: true` with `|| true` on the only

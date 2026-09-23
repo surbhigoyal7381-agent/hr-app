@@ -134,3 +134,38 @@ instead of the other:
 **Every gate is the user's.** Slices chosen, brief approved, design agreed, strategy
 approved, and deploy approved — separately for dev and for main. Agents recommend; they
 never approve.
+
+---
+
+## Learning: continuous, but never unchecked
+
+Every agent here is expected to get better at its job over time. An agent that never
+changes its own instructions is wasting what the last run cost. The UX designer already
+does this through `ux-learnings.md`; the rest should too.
+
+**But a lesson written down from one bad afternoon becomes a permanent rule nobody
+questions.** That is how a wrong belief outlives the incident that produced it. Rule
+given by the user on 2026-09-23: *"Make sure that the agents are confirming all their
+learnings before they upgrade themselves, while definitely they should be continuously
+learning."*
+
+So before an agent writes a lesson into its own instructions or into a shared context
+file:
+
+1. **Name the evidence.** Which run, which file, which error, which commit. A lesson with
+   no evidence is an opinion.
+2. **Check the cause is the cause.** The obvious culprit is often the last thing that
+   changed, not the thing that broke it. On 2026-09-22 three tests "failed" because
+   another container shared one Redis — the tests were fine. A lesson written that
+   afternoon would have blamed the tests for ever.
+3. **Say what it would have prevented, and what it costs.** A rule that would not have
+   caught the thing that happened is not worth carrying. A rule that makes every future
+   run slower needs to earn that.
+4. **Write it where it belongs.** Something true for one role goes in that agent's file.
+   Something true for everyone goes in a shared context file, so all eight get it rather
+   than the four that happened to be edited.
+5. **Date it, and say who confirmed it.** A lesson whose evidence has since been fixed
+   should be removable by the next person without archaeology.
+
+A lesson that fails any of these is still worth recording — as a note with its evidence,
+not as a rule. The difference matters: a note informs judgement, a rule replaces it.

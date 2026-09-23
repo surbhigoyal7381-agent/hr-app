@@ -22,7 +22,11 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 # worktree it was actually run from (slice 034 US-10).
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
                     "alvoraa_portal", "alvoraa_portal")
-PAGES = ["hrms-employee", "driver-portal", "vendor-portal", "alvoraa-admin", "alvoraa-login"]
+# The preview page is in the list because it is where Wave 1's new frame
+# lives until the swap. A frame whose colours are only checked after it
+# becomes the live page is checked too late.
+PAGES = ["hrms-employee", "hrms-employee-next", "driver-portal", "vendor-portal",
+         "alvoraa-admin", "alvoraa-login"]
 
 JS = """() => {
   const lum = (r,g,b) => {

@@ -67,8 +67,10 @@ LIMITS = {
 }
 
 # Pages that carry their own visual language. goals-portal is a 15-line stub.
-PAGES = ["hrms-employee.html", "driver-portal.html", "vendor-portal.html",
-         "alvoraa-admin.html", "alvoraa-login.html"]
+# hrms-employee-next.html carries Wave 1's new frame until the swap, so its
+# colours and tokens are checked now rather than after it goes live.
+PAGES = ["hrms-employee.html", "hrms-employee-next.html", "driver-portal.html",
+         "vendor-portal.html", "alvoraa-admin.html", "alvoraa-login.html"]
 
 INCLUDE = os.path.join("alvoraa_portal", "alvoraa_portal", "templates",
                        "includes", "design_system.html")

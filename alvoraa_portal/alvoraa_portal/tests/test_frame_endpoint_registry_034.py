@@ -91,6 +91,21 @@ def _source(path):
 	return io.open(path, encoding="utf-8").read()
 
 
+def _dotted_name(node):
+	"""`frappe.db.count` for the node behind that call, or "" for anything that
+	is not a plain dotted name. An AST walk rather than a text search, because
+	`_code_only` puts spaces around every dot and a dotted name would never
+	match."""
+	parts = []
+	while isinstance(node, ast.Attribute):
+		parts.append(node.attr)
+		node = node.value
+	if not isinstance(node, ast.Name):
+		return ""
+	parts.append(node.id)
+	return ".".join(reversed(parts))
+
+
 def _code_only(path):
 	"""The file with every comment and every string literal removed.
 
@@ -186,7 +201,57 @@ class TestNoModuleLevelStateAndNoIgnorePermissions(FrappeTestCase):
 					          f"Use a tuple, or build it inside the function.")
 
 	def test_no_ignore_permissions_anywhere_in_these_files(self):
-		"""AC-71 / SEC-6. Not "few". None."""
+		"""AC-71 / SEC-6, first half. Not "few". None."""
 		for name, path in _module_files():
 			self.assertNotIn("ignore_permissions", _code_only(path),
 			                 f"{name} uses ignore_permissions")
+
+	def test_every_other_way_past_the_permission_layer_is_declared(self):
+		"""AC-71 / SEC-6, second half (F7).
+
+		The check above is a string search for one flag, and the claim on it used
+		to be the much larger "these files do not bypass permissions". They do.
+		`frappe.get_all`, `frappe.db.count` and `frappe.db.sql` all skip Frappe's
+		own permission layer by definition, and a search for `ignore_permissions`
+		walks straight past every one of them.
+
+		Nothing leaks today: every call below sits inside the shared scope filter,
+		which is explicit and fails closed. What IS lost is any extra narrowing a
+		tenant has configured - a User Permission on Employee by department would
+		be honoured by `frappe.get_list` and is ignored by these. That is a real
+		difference and it should be a decision, not an accident.
+
+		So the ban stays absolute for the flag, and every other route past the
+		permission layer is COUNTED here. Add one and this test goes red until
+		somebody writes it down. What the check proves is "no UNDECLARED bypass",
+		which is what it has always actually been able to prove.
+		"""
+		declared = {
+			# frame_api: one count of a person's own reports, to decide whether
+			# they see a Team entry. No rows, no fields, one boolean.
+			"frame_api.py": ("frappe.db.count",),
+			# inbox_api: five counts and one read of approver rows. Deliberately
+			# mixed with frappe.get_list, which does honour permissions - the
+			# file says which is which and why at each call.
+			"inbox_api.py": ("frappe.db.count",) * 5 + ("frappe.get_all",),
+			# staff_api: the staff list itself and its total. Both take the same
+			# filters dict, built by the shared scope helper.
+			"staff_api.py": ("frappe.db.count", "frappe.get_all"),
+		}
+		watched = ("frappe.get_all", "frappe.db.get_all", "frappe.db.count",
+		           "frappe.db.sql", "frappe.db.sql_list", "frappe.db.multisql")
+
+		for name, path in _module_files():
+			found = []
+			for node in ast.walk(ast.parse(_source(path))):
+				if not isinstance(node, ast.Call):
+					continue
+				dotted = _dotted_name(node.func)
+				if dotted in watched:
+					found.append(dotted)
+			self.assertEqual(
+				sorted(found), sorted(declared.get(name, ())),
+				f"{name}: the calls that get past Frappe's permission layer are not the "
+				f"ones declared in this test. Found {sorted(found)}. If you added one, "
+				f"say here why the scope filter around it is enough - or use "
+				f"frappe.get_list, which honours a tenant's own User Permissions.")

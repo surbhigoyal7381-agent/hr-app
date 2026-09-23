@@ -120,7 +120,7 @@ template.
 | AC-75 (W1D-19) | **met** | All four cases, labels asserted word for word |
 | AC-69 (SEC-2) | **met** | Registry test; a whitelisted function with no entry fails |
 | AC-70 (SEC-15) | **met** | No `global`, no module-level dict/list/set |
-| AC-71 (SEC-6) | **met** | No `ignore_permissions`, checked on code with prose stripped out |
+| AC-71 (SEC-6) | **met** | Two checks. No `ignore_permissions`, on code with prose stripped out; **and** every other call that gets past the permission layer (`get_all`, `db.count`, `db.sql`) named and counted, so the claim is "no undeclared bypass" rather than "no bypass" (F7, 2026-09-24) |
 | AC-40, AC-74, AC-65 (SEC-1) | **met, and confirmed over real HTTP** | See §6 |
 | AC-7, AC-13–AC-19, AC-30–AC-42, AC-48, AC-60–AC-62, AC-64, AC-66 | **not started** | Client side, behind the page split |
 | AC-72 (SEC-13), AC-76 (SEC-16), AC-43, AC-20–AC-29, AC-49–AC-52 | **not started** | Held files, or `inbox_api` / the staff list |

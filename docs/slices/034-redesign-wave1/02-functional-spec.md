@@ -592,9 +592,18 @@ reads across. New checks start at AC-44.
   function with no entry fails the test.
 - **AC-70 (SEC-15)** A static check finds no `global`, and no module-level dict, list or set
   changed at run time, in `frame_api.py` and `inbox_api.py`.
-- **AC-71 (SEC-6)** `frame_api.py` and `inbox_api.py` contain no `ignore_permissions`, and
-  the edited bodies of `_pending_approvals_scope`, `_search_scope` and the new
+- **AC-71 (SEC-6 — reworded after review finding F7, 2026-09-24)** Two halves, because
+  the first one alone was claiming more than it proved.
+  (a) `frame_api.py`, `inbox_api.py` and `staff_api.py` contain no `ignore_permissions`,
+  and the edited bodies of `_pending_approvals_scope`, `_search_scope` and the new
   `permitted_employee_filters` gain none.
+  (b) Every **other** call in those files that gets past Frappe's permission layer —
+  `frappe.get_all`, `frappe.db.count`, `frappe.db.sql` and their relatives — is named
+  and counted in the check, with the reason it is safe. Adding one turns the check red
+  until somebody writes it down. **What this proves is "no undeclared bypass", not "no
+  bypass".** The calls that exist are safe because the scope filter around them is the
+  shared one and fails closed; what they do not honour is any extra narrowing a tenant
+  has configured through User Permissions.
 - **AC-72 (US-14, SEC-13, W1D-20 — rewritten in revision 4; it was W1D-13's narrowed
   orphan query)** **For an HR caller the Team screen is built from `permitted_employees()`.**
   Fixture: two stores and a head office; in each place one Active employee whose

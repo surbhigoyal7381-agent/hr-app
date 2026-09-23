@@ -140,21 +140,26 @@ def _me(user):
 def _shift_today(employee, default_shift, date_):
 	"""The shift this person is on today, or None.
 
-	Frappe HR's own precedence: a Shift Assignment for today beats
+	Frappe HR's own precedence: a Shift Assignment covering today beats
 	`Employee.default_shift`. None is a real answer - 009 design decision 6 says
 	somebody with no shift gets **no hero at all**, not an empty one.
+
+	"Covering today" is asked in ONE query, with the open-ended case
+	(`end_date` not set) in it. The first version read the newest assignment by
+	start date and then checked whether it had ended, which meant an assignment
+	that finished last week hid one that is still running.
 	"""
-	name = frappe.db.get_value(
+	rows = frappe.get_all(
 		"Shift Assignment",
-		{"employee": employee, "docstatus": 1, "start_date": ["<=", date_]},
-		"shift_type", order_by="start_date desc")
-	if name:
-		row = frappe.db.get_value(
-			"Shift Assignment",
-			{"employee": employee, "docstatus": 1, "start_date": ["<=", date_]},
-			["shift_type", "end_date"], as_dict=True, order_by="start_date desc")
-		if row and row.get("end_date") and getdate(row["end_date"]) < getdate(date_):
-			name = None
+		filters={"employee": employee, "docstatus": 1,
+		         "start_date": ["<=", date_]},
+		fields=["shift_type", "start_date", "end_date"],
+		order_by="start_date desc", limit_page_length=0)
+	name = None
+	for row in rows:
+		if not row.end_date or getdate(row.end_date) >= getdate(date_):
+			name = row.shift_type
+			break
 	if not name:
 		name = default_shift
 	if not name:
@@ -376,7 +381,14 @@ def _suppress(counts, group):
 	if group < MIN_GROUP:
 		return {"in": None, "away": None, "due": None, "suppressed": True}
 	hidden = {k for k, v in counts.items() if 0 < v < MIN_GROUP}
-	if hidden:
+	# The complement is added only when exactly ONE of the three is hidden.
+	# With three categories and a total the reader can guess, publishing two
+	# pins the third by subtraction - so at most one may be published once
+	# anything is hidden. Two already hidden means one published, which pins
+	# neither, and adding a third would suppress a nineteen-person team's
+	# numbers for no gain. Worked through rather than "hide one more to be
+	# safe".
+	if len(hidden) == 1:
 		rest = sorted(((v, k) for k, v in counts.items() if k not in hidden))
 		if rest:
 			hidden.add(rest[0][1])

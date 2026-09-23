@@ -106,7 +106,7 @@ ROW_KEYS = (
 	# The named approver is deciding this document, so they see whose it is and
 	# what kind of leave it is - it is on the page they would open anyway. The
 	# CONTEXT LINE is the thing that carries no colleague name and no leave
-	# type (042 AC-28), and it is built in `_leave_context`, not here.
+	# type (042 AC-28), and it is built in `_leave_contexts`, not here.
 	("leave_approvals", ("name", "employee_name", "from_date", "to_date",
 	                     "leave_type", "total_days", "context", "action")),
 	# No colleague name for a goal or KPI update? There is one, and there has to
@@ -302,32 +302,67 @@ def _count_rows(doctype):
 	return counter
 
 
-def _leave_context(row):
-	"""How many other people in this team are away on those days - a NUMBER.
+def _leave_contexts(rows):
+	"""How many OTHER people in the same team are away on those days - numbers.
 
 	042 AC-28. The payload carries no colleague name and no leave type: an
 	approver deciding Tuesday off needs to know two other people are already
 	away, and nothing whatever about who they are or why.
 
-	Returns None when there is nobody else, so the screen draws no line rather
-	than "0 other people".
+	**One query for the whole page, not one per row.** The first version asked
+	the database once per drawn row, which is fifty queries at the list cap and
+	breaks AC-15's budget of twenty-five for the whole call. This reads every
+	overlapping leave in the departments on the page, once, and counts in Python
+	- and the count it produces is identical, because the filter is the same.
+
+	Returns {leave application name: sentence or None}.
 	"""
-	if not row.get("department"):
-		return None
-	others = frappe.db.count(
+	from frappe.utils import getdate
+
+	wanted = [r for r in rows if r.get("department") and r.get("from_date")
+	          and r.get("to_date")]
+	if not wanted:
+		return {}
+	departments = sorted({r["department"] for r in wanted})
+	start = min(getdate(r["from_date"]) for r in wanted)
+	end = max(getdate(r["to_date"]) for r in wanted)
+	others = frappe.get_all(
 		"Leave Application",
-		{
-			"department": row["department"],
-			"employee": ["!=", row["employee"]],
+		filters={
+			"department": ["in", departments],
 			"status": ["in", ["Open", "Approved"]],
 			"docstatus": ["<", 2],
-			"from_date": ["<=", row["to_date"]],
-			"to_date": [">=", row["from_date"]],
+			"from_date": ["<=", end],
+			"to_date": [">=", start],
 		},
-	)
-	if not others:
-		return None
-	return _("{n} other people in this team are away on those days").format(n=others)
+		# `employee` is read to exclude the row's own subject and to count
+		# PEOPLE rather than applications; it never leaves this function, and
+		# no name and no leave type is read at all.
+		fields=["name", "employee", "department", "from_date", "to_date"],
+		limit_page_length=0)
+	# `get_all` rather than `get_list`, and deliberately. What the approver
+	# receives is an AGGREGATE they are entitled to - "2 other people are away
+	# on those days" - and under `get_list` a plain employee who happens to be a
+	# named approver would read 0 because they may not see a colleague's leave
+	# row. A wrong number is worse than no number, and the number is the only
+	# thing that leaves this function.
+
+	out = {}
+	for row in wanted:
+		row_from = getdate(row["from_date"])
+		row_to = getdate(row["to_date"])
+		people = {
+			other.employee for other in others
+			if other.department == row["department"]
+			and other.employee != row["employee"]
+			and getdate(other.from_date) <= row_to
+			and getdate(other.to_date) >= row_from
+		}
+		out[row["name"]] = (
+			_("{n} other people in this team are away on those days").format(
+				n=len(people))
+			if people else None)
+	return out
 
 
 def _part_leave_approvals(who):
@@ -355,6 +390,8 @@ def _part_leave_approvals(who):
 			fields=["name", "employee", "employee_name", "department", "leave_type",
 			        "from_date", "to_date", "total_leave_days"],
 			order_by="from_date asc", limit_page_length=limit or 0)
+		# One query for every context line on the page, not one per row.
+		contexts = _leave_contexts(rows)
 		out = []
 		for r in rows:
 			out.append({
@@ -364,7 +401,7 @@ def _part_leave_approvals(who):
 				"to_date": str(r.to_date) if r.to_date else None,
 				"leave_type": r.leave_type,
 				"total_days": r.total_leave_days,
-				"context": _leave_context(r),
+				"context": contexts.get(r.name),
 				"action": "leave",
 			})
 		return out

@@ -396,6 +396,97 @@ class TestTheCapSaysSo(_WaveTwo):
 		self.assertTrue(part["capped"])
 
 
+# ── AC-15: the query count, and the N+1 it caught ───────────────────────────
+
+
+class TestTheQueryCountIsBounded(_WaveTwo):
+	"""042 AC-15. Not the 1,000-employee measurement the spec asks for - that
+	fixture does not exist yet and the notes say so. What this DOES prove is the
+	shape that makes the measurement fail: **a query inside a loop.**
+
+	It earned its place immediately. The context line on a leave approval row
+	was asked for one row at a time, which is fifty queries at the list cap and
+	breaks the budget of twenty-five for the whole call. This test is what found
+	it; `_leave_contexts` now reads the whole page in one query.
+	"""
+
+	BUDGET = 25
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		# Only ever this slice's own people. A delete with a loose filter here is
+		# another file's fixture gone, and that has cost this slice time before.
+		mine = list(self.peers) + [self.rahul, self.in_b]
+		frappe.db.delete("Leave Application", {"employee": ["in", mine]})
+		frappe.db.commit()
+		super().tearDown()
+
+	def _leave(self, employee, day):
+		from alvoraa_portal.tests.leave_fixtures import ensure_leave_type
+
+		doc = frappe.get_doc({
+			"doctype": "Leave Application",
+			"employee": employee,
+			"leave_type": ensure_leave_type("S042 Casual"),
+			"from_date": day,
+			"to_date": day,
+			"leave_approver": self.sandeep_login,
+			"status": "Open",
+		})
+		doc.flags.ignore_permissions = True
+		doc.flags.ignore_validate = True
+		doc.insert(ignore_permissions=True, ignore_mandatory=True)
+		return doc.name
+
+	def test_more_rows_do_not_mean_more_queries(self):
+		"""The assertion that catches an N+1 without needing a big fixture:
+		the query count must not GROW with the number of rows."""
+		day = add_days(nowdate(), 20)
+		self._leave(self.peers[0], day)
+		frappe.db.commit()
+		self._as(self.sandeep_login)
+		inbox_api.get_inbox()                     # warm the caches
+		with _Recorder() as one_row:
+			inbox_api.get_inbox()
+		frappe.set_user("Administrator")
+
+		for peer in self.peers[1:]:
+			self._leave(peer, day)
+		self._leave(self.rahul, day)
+		frappe.db.commit()
+		self._as(self.sandeep_login)
+		with _Recorder() as many_rows:
+			box = inbox_api.get_inbox()
+		frappe.set_user("Administrator")
+
+		drawn = [p for p in box["parts"] if p["key"] == "leave_approvals"][0]
+		self.assertGreaterEqual(
+			drawn["shown"], 4,
+			"only %d rows were drawn, so going from one row to many proved "
+			"nothing" % drawn["shown"])
+		self.assertLessEqual(
+			len(many_rows.statements), len(one_row.statements) + 1,
+			"the query count grew from %d to %d when the rows went from 1 to %d "
+			"- that is a query inside a loop"
+			% (len(one_row.statements), len(many_rows.statements), drawn["shown"]))
+
+	def test_get_inbox_stays_inside_its_budget(self):
+		day = add_days(nowdate(), 21)
+		for peer in self.peers:
+			self._leave(peer, day)
+		self._correction(self.in_b, add_days(nowdate(), -11))
+		frappe.db.commit()
+		self._as(self.sandeep_login)
+		inbox_api.get_inbox()                     # warm the caches
+		with _Recorder() as rec:
+			inbox_api.get_inbox()
+		frappe.set_user("Administrator")
+		self.assertLessEqual(
+			len(rec.statements), self.BUDGET,
+			"get_inbox ran %d queries; the budget is %d"
+			% (len(rec.statements), self.BUDGET))
+
+
 # ── AC-12 and PRIV-4: the counts payload carries numbers ─────────────────────
 
 

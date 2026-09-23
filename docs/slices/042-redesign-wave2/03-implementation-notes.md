@@ -76,7 +76,7 @@ eye before this goes anywhere.
 | AC-12 | Empty part not drawn; all empty → "All clear."; counts payload keys pinned; no name, no reason | **met** |
 | AC-13 | Counts re-read from the server after a decision; the browser holds no number | **met** in code and in the panel's structure; not yet driven end to end in jsdom (§6) |
 | AC-14 | The bell, the menu, the bottom bar and the Team badge all read `get_nav_counts` — Wave 1's mechanism, unchanged | **met by inheritance** |
-| AC-15 | `get_nav_counts` ≤ 15 queries at 1,000 employees | **not proved** — no 1,000-employee fixture (§6) |
+| AC-15 | `get_inbox` ≤ 25 queries, asserted on the S042 fixture; **and** a test that the query count does not GROW when the rows go from one to five. `get_nav_counts` ≤ 15 at 1,000 employees is **not proved** — no such fixture (§6) | **partly met, and it found a real N+1** — see §4 |
 | AC-16 | No portal boot path calls the old heavy approvals call; the AST check keeps `get_nav_counts`/`get_inbox` from querying directly | **partly met** — the direct-query check is in; a repo-wide "no boot path calls it" check is not |
 | AC-17 (a) | Every drawn correction driven through its own action | **met** |
 | AC-17 (b) | An **undrawn** document called by hand is refused, and nothing is written | **met** — the half that matters |
@@ -140,6 +140,28 @@ eye before this goes anywhere.
 
 ## 4. NFR notes
 
+**The N+1 I shipped and then caught.** The leave approval row's context line -
+"2 other people in this team are away on those days" - was asked for one row at
+a time. At the fifty-row list cap that is fifty extra queries and it breaks
+AC-15's budget of twenty-five for the whole call. I had written it into the notes
+as an "acceptable simplification" before checking the arithmetic against the
+budget, which is exactly the shortcut the NFR rules exist to stop.
+
+**What fixed it, and what keeps it fixed.** `_leave_contexts` reads every
+overlapping leave in the departments on the page in **one** query and counts in
+Python; the number is identical because the filter is the same.
+`TestTheQueryCountIsBounded` now asserts two things: that `get_inbox` stays
+inside twenty-five queries, and - the one that generalises - that **the query
+count does not grow when the rows go from one to five.** That second assertion
+catches a query-in-a-loop without needing the 1,000-employee fixture at all, and
+it carries a guard that at least four rows were drawn, so it cannot pass on an
+empty list.
+
+**A second thing found the same way.** `_shift_today` read the newest Shift
+Assignment by start date and then checked whether it had ended, so an assignment
+that finished last week hid one that is still running. It is one query with the
+open-ended case in it now.
+
 **Query counts.** Not measured against a 1,000-employee fixture, which does not
 exist. What is asserted:
 
@@ -149,6 +171,8 @@ exist. What is asserted:
 - `get_home` for a caller with no Employee record likewise.
 - `get_nav_counts` and `get_inbox` are proved by AST not to query the database
   directly — every number comes out of `parts()`.
+- `get_inbox` stays inside **25** queries on the S042 fixture, and its query
+  count does not grow with the number of rows.
 
 **Indexes.** None added. Every filter is on a column Frappe already indexes
 (`employee`, `docstatus`, `status`, `attendance_date`, `from_date`) or on a Link.
@@ -218,7 +242,7 @@ nobody sourced.
 | 7 | AC-25 is fixtured for corrections only; the other four paths reuse `refuse_own_decision` | **acceptable simplification** | One fixture per path; the test engineer's dedicated coverage |
 | 8 | AC-28's two-overlapping-leaves fixture, AC-10's KPI fixture, AC-48's half-day fixture, AC-4's Shift Assignment fixture | **temporary debt** | Fixtures. The rules are in the code and reviewed; the checks are thinner than the ACs ask |
 | 9 | AC-16's repo-wide "no boot path calls the old approvals call" check | **temporary debt** | A static check over the portal's boot paths |
-| 10 | `_leave_context` runs one count per drawn leave row (bounded at 50) | **acceptable simplification** | One grouped query if the row cap ever rises |
+| 10 | ~~`_leave_context` runs one count per drawn leave row~~ | **fixed** | It was fifty queries at the list cap and broke AC-15's budget of twenty-five. `_leave_contexts` now reads the whole page in one query. §4 |
 | 11 | The Fix button routes to `#time/fix?from=…&to=…`; the Time screen that reads those parameters is **Wave 3** | **intentional trade-off** | Wave 3 (043) builds the sheet that consumes them. Today the route opens Wave 1's placeholder |
 | 12 | The Inbox's decide buttons cover leave and corrections; goal/KPI and shift requests are listed with no buttons | **acceptable simplification** | The spec's own §3 says a shift-request decide action must be **built**; it is not in this wave's commits |
 | 13 | `npm install` was run in the worktree to get `jsdom`, which the DOM tests need | note, not debt | Nothing. `package.json` is unchanged |

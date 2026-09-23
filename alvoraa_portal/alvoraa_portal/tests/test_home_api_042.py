@@ -385,6 +385,35 @@ class TestTheTeamCardIsCountsOnly(_HomeFixture):
 			"only one category was suppressed, so the total and the remaining "
 			"numbers recover it")
 
+	def test_the_suppression_rule_written_out_as_a_table(self):
+		"""Every case the rule has to get right, in one place.
+
+		The second row is why the rule changed. "Hide one more to be safe" meant
+		a nineteen-person team - Sandeep's, the spec's own manager persona -
+		published no numbers at all, which is a card nobody reads. Two already
+		hidden of three means one published, and one published pins neither, so
+		the complement is added only when exactly ONE is hidden.
+		"""
+		cases = (
+			# counts, group, what must be published
+			({"in": 5, "away": 1, "due": 0}, 6, {"in"}),
+			({"in": 15, "away": 2, "due": 2}, 19, {"in"}),
+			({"in": 3, "away": 1, "due": 0}, 4, set()),
+			({"in": 12, "away": 5, "due": 3}, 20, {"in"}),
+			({"in": 10, "away": 0, "due": 0}, 10, {"in", "away", "due"}),
+		)
+		for counts, group, publishable in cases:
+			out = home_api._suppress(dict(counts), group)
+			shown = {k for k in ("in", "away", "due") if out[k] is not None}
+			self.assertEqual(
+				shown, publishable,
+				"group %d with %r published %r, wanted %r"
+				% (group, counts, sorted(shown), sorted(publishable)))
+			# Where anything is hidden, at most ONE number is published - two of
+			# three plus a total the reader can guess pins the third.
+			if shown != {"in", "away", "due"}:
+				self.assertLessEqual(len(shown), 1)
+
 	def test_a_person_with_no_manager_gets_no_peer_card(self):
 		"""042 AC-55 and D-3: no department fallback, ever."""
 		payload = self._home(self.lone_login)

@@ -13,7 +13,7 @@
  * Run through scripts/run_dom_tests.js, which is what CI runs.
  */
 
-const { JSDOM } = require("jsdom");
+const { JSDOM, VirtualConsole } = require("jsdom");
 const { readPreviewSource } = require("../../scripts/lib/portal_source");
 
 let pass = 0, fail = 0;
@@ -86,42 +86,123 @@ function makeCounts(over) {
 
 const SRC = fillTemplate(readPreviewSource());
 
+/* The stub is `fetch`, not `frappe.call`, because `fetch` is what the frame
+   really uses.
+
+   It used to stub `frappe.call`, and that stub was MORE capable than the real
+   thing: it called `opts.error` on a failure. Website pages load website.js's
+   `frappe.call`, which never calls `opts.error` at all - so every error test in
+   this file was passing against behaviour no browser has. Proved in a real
+   browser on 2026-09-24. A stub may be simpler than the real thing; it may not
+   be kinder. */
+function reply(status, payload) {
+  return Promise.resolve({
+    ok: status >= 200 && status < 300,
+    status: status,
+    statusText: String(status),
+    text: () => Promise.resolve(JSON.stringify(payload)),
+  });
+}
+
+/* Frappe's shape for a refusal: the sentence arrives inside _server_messages. */
+function said(sentence) {
+  return JSON.stringify([JSON.stringify({ message: sentence })]);
+}
+
 /* One page, one fixture, one promise that resolves when the frame has finished
    booting. `answers` lets a test make a call fail, which is the only way to
-   reach the error states. */
+   reach the error states. An answer may be:
+     "fail"        - 417, the way a server error arrives
+     "expired"     - 403 AND the user_id cookie rewritten to Guest, which is
+                     exactly what Frappe does when a session has ended
+     "refused"     - 403 with the person still signed in
+     "stale-once"  - 400 CSRFTokenError first, then the real answer
+     a function    - (args, attempt) => message, or {status, body}
+*/
 function load(frame, counts, answers) {
   answers = answers || {};
+  /* jsdom cannot follow a link, so it reports one instead. That report is how
+     we prove the signed-out redirect happened without a browser: the frame
+     setting window.location.href is the only thing here that tries to leave
+     the page. */
+  const navTried = [];
+  const vc = new VirtualConsole();
+  vc.on("jsdomError", (e) => {
+    if (/Not implemented: navigation/.test(e.message)) { navTried.push(e.message); }
+    else { console.error(e.message); }
+  });
   const dom = new JSDOM(
     "<!doctype html><html><head></head><body>" + SRC + "</body></html>",
     {
       runScripts: "dangerously",
       pretendToBeVisual: true,
+      virtualConsole: vc,
       url: "http://test.localhost/hrms-employee-next",
       beforeParse(w) {
         w.calls = [];
-        w.frappe = {
-          _: (s) => s,
-          call: (opts) => {
-            w.calls.push(opts.method);
-            const custom = answers[opts.method];
-            if (custom === "fail") {
-              return Promise.resolve().then(() => {
-                if (opts.error) { opts.error({ exc_type: "ValidationError" }); }
-              });
-            }
-            let message = null;
-            if (opts.method.endsWith("get_frame")) { message = frame; }
-            else if (opts.method.endsWith("get_nav_counts")) { message = counts; }
-            else if (typeof custom === "function") { message = custom(opts.args); }
-            else { message = custom === undefined ? { rows: [] } : custom; }
-            return Promise.resolve().then(() => opts.callback({ message: message }));
-          },
+        w.sent = [];          /* {method, token} for every POST that went out */
+        w.pageReads = 0;      /* how many times the token was re-read */
+        w.frappe = { _: (s) => s, csrf_token: "token-the-page-was-built-with" };
+        w.document.cookie = "user_id=rahul@example.com";
+        const attempts = {};
+
+        w.fetch = (url, opts) => {
+          url = String(url);
+          /* The frame re-reads its own page to mend a stale token. */
+          if (url.indexOf("/api/method/") !== 0) {
+            w.pageReads += 1;
+            return Promise.resolve({
+              ok: true, status: 200, statusText: "OK",
+              text: () => Promise.resolve(
+                '<script>frappe.csrf_token = "a-fresh-token"</script>'),
+            });
+          }
+
+          const method = url.slice("/api/method/".length);
+          const token = opts && opts.headers && opts.headers["X-Frappe-CSRF-Token"];
+          w.calls.push(method);
+          w.sent.push({ method: method, token: token });
+          attempts[method] = (attempts[method] || 0) + 1;
+          const args = opts && opts.body ? JSON.parse(opts.body) : {};
+          const custom = answers[method];
+
+          if (custom === "fail") {
+            return reply(417, { exc_type: "ValidationError",
+                                _server_messages: said("It did not work.") });
+          }
+          if (custom === "expired") {
+            /* Frappe turns the caller into Guest and says so in the cookie. */
+            w.document.cookie = "user_id=Guest";
+            return reply(403, { exc_type: "PermissionError",
+                                _server_messages: said("Not permitted") });
+          }
+          if (custom === "refused") {
+            return reply(403, { exc_type: "PermissionError",
+                                _server_messages: said("Not permitted") });
+          }
+          if (custom === "stale-once" && attempts[method] === 1) {
+            return reply(400, { exc_type: "CSRFTokenError", message: "Invalid Request" });
+          }
+          if (typeof custom === "function") {
+            const out = custom(args, attempts[method]);
+            if (out && out.status) { return reply(out.status, out.body || {}); }
+            return reply(200, { message: out });
+          }
+
+          let message = null;
+          if (method.endsWith("get_frame")) { message = frame; }
+          else if (method.endsWith("get_nav_counts")) { message = counts; }
+          else if (custom === undefined || custom === "stale-once") { message = { rows: [] }; }
+          else { message = custom; }
+          return reply(200, { message: message });
         };
       },
     });
   return new Promise((resolve) => {
-    /* Two microtask turns: one for get_frame, one for get_nav_counts. */
-    setTimeout(() => setTimeout(() => resolve(dom), 0), 0);
+    /* A few turns of the loop: get_frame, get_nav_counts, and - where a token
+       was stale - the page re-read and the one retry behind it. */
+    setTimeout(() => setTimeout(() => setTimeout(() => setTimeout(
+      () => { dom.navTried = navTried; resolve(dom); }, 0), 0), 0), 0);
   });
 }
 
@@ -305,6 +386,65 @@ async function run() {
   const code = say(dom);
   is(/rahul|Sharma|example\.com/i.test(code), false,
      "and a code that holds no personal data");
+
+  /* ---- a stale CSRF token (F4) -------------------------------------------
+
+     The live portal has carried this cure since a desk page opening in another
+     tab started breaking every open portal tab: the token a page was built
+     with goes stale, the server answers 400, and the page mends itself once
+     rather than telling a person the portal is broken. The frame had lost it.
+
+     Without the retry this test fails on all three lines: the frame never
+     boots, the page is never re-read, and nothing goes out a second time. */
+
+  dom = await load(makeFrame(), makeCounts(),
+                   { "alvoraa_portal.frame_api.get_frame": "stale-once" });
+  is(kind(dom), null, "a stale token does not put the portal in the error state (F4)");
+  is(menuRoutes(dom).length > 0, true, "the frame boots anyway, on a token read fresh");
+  is(dom.window.pageReads, 1, "the page was re-read exactly once to mend the token");
+  const frameSends = dom.window.sent.filter((s) => s.method.endsWith("get_frame"));
+  is(frameSends.length, 2, "get_frame went out twice: the stale one and the retry");
+  is(frameSends[1].token, "a-fresh-token", "and the retry carried the NEW token");
+
+  /* One retry, not a loop. A server that keeps refusing must end as a refusal,
+     or a broken session becomes a request every few milliseconds. */
+  dom = await load(makeFrame(), makeCounts(), {
+    "alvoraa_portal.frame_api.get_frame": () =>
+      ({ status: 400, body: { exc_type: "CSRFTokenError", message: "Invalid Request" } }),
+  });
+  is(dom.window.sent.filter((s) => s.method.endsWith("get_frame")).length, 2,
+     "a token that stays bad is tried twice and then given up on, not retried for ever");
+  is(kind(dom), "error", "and the person gets the page-error state, not a spinner");
+
+  /* ---- signed out, or simply refused (AC-62, F4) --------------------------
+
+     Proved in a real browser on 2026-09-24: a session that has ended is
+     answered 403 PermissionError, not 401, and the same response rewrites the
+     user_id cookie to Guest. So 403 alone can mean either thing, and the
+     cookie is what separates them. Treating every 403 as "signed out" bounces
+     a signed-IN person between /login and this page for ever. */
+
+  dom = await load(makeFrame(), makeCounts());
+  const signedOut = dom.window.NextFrame.isSignedOut;
+  is(signedOut({ status: 401 }), true, "401 is a session that has ended");
+  is(signedOut({ exc_type: "AuthenticationError" }), true, "so is AuthenticationError");
+  is(signedOut({ exc_type: "SessionExpired", status: 401 }), true, "so is SessionExpired");
+  is(signedOut({ status: 417, exc_type: "ValidationError" }), false,
+     "a server error is not a session that has ended");
+  is(signedOut({ status: 403, exc_type: "PermissionError" }), false,
+     "a 403 while still signed in is a refusal, not a sign-out - this is the bounce loop");
+
+  dom = await load(makeFrame(), makeCounts(),
+                   { "alvoraa_portal.frame_api.get_frame": "refused" });
+  is(kind(dom), "error", "a refused signed-in caller sees the page-error state");
+  is(dom.navTried.length, 0, "and is NOT sent to the login page (F4: no bounce loop)");
+
+  dom = await load(makeFrame(), makeCounts(),
+                   { "alvoraa_portal.frame_api.get_frame": "expired" });
+  is(dom.navTried.length > 0, true,
+     "a session that has ended sends the person to the login page (AC-62)");
+  is(kind(dom), "loading",
+     "and is not told the portal is broken on the way out");
 
   /* ── the sheet (US-9) ──────────────────────────────────────────────────── */
 

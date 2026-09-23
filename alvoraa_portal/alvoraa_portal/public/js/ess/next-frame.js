@@ -199,16 +199,119 @@
     return out;
   }
 
+  /* --- one door for every call this frame makes ---------------------------
+
+     It deliberately does NOT use frappe.call.
+
+     A website page loads `frappe-web.bundle.js`, and the `frappe.call` in that
+     bundle is website.js's own version, not the desk one. That version never
+     calls `opts.error` - its `process_response` knows only `callback`,
+     `success` and `always`. Proved in a real browser against a real session on
+     2026-09-24: with a stale CSRF token only `always` fired, never `callback`
+     and never `error`. A promise built on it would never settle, so the frame
+     would sit on "Loading" for ever, with nothing in any log.
+
+     A plain POST to /api/method/ hands us the status code and the exception
+     type, which is what the two things below both need:
+
+       - the stale-token retry the live portal has carried since a desk page
+         opening in another tab started breaking every open portal tab. It is
+         the same fault `hrms_employee.py` mints a token for, and the frame had
+         only half the cure.
+       - an honest signed-out test, so a real refusal is not read as a dead
+         session and a dead session is not read as a broken page.
+
+     POST rather than GET because a search term is somebody's name and does not
+     belong in a URL or a proxy log (PRIV-5). */
+
+  function csrfToken() {
+    var c = (window.frappe && window.frappe.csrf_token) || "";
+    /* Frappe prints Python's None into the page as the string "None", which is
+       truthy here. Sending nothing is better than sending that: Frappe skips
+       the check for a session with no token, and refuses a wrong one. */
+    return (c === "None" || c === "null" || c === "undefined") ? "" : c;
+  }
+
+  /* The token is fixed when the page is built, so a tab left open across a
+     session change holds the old one for as long as it stays open and nothing
+     would ever correct it. Re-reading this page is how we find out what it is
+     now. It is set globally, so anything else on the page is mended by the
+     same round trip. */
+  function refreshCsrf() {
+    return fetch(window.location.pathname, { credentials: "same-origin" })
+      .then(function (r) { return r.text(); })
+      .then(function (html) {
+        var m = html.match(/<script>frappe\.csrf_token\s*=\s*"([^"]*)"/);
+        var tok = m ? m[1] : "";
+        if (!tok || tok === "None") { return ""; }
+        if (!window.frappe) { window.frappe = {}; }
+        window.frappe.csrf_token = tok;
+        return tok;
+      })
+      .catch(function () { return ""; });
+  }
+
+  /* The server's own sentence where there is one, so a refusal reads the same
+     here as it does everywhere else. The status and the exception type travel
+     with it, because `isSignedOut` needs them. */
+  function apiError(data, res) {
+    var msg = "";
+    try { msg = JSON.parse(JSON.parse(data._server_messages)[0]).message; } catch (e) {}
+    if (!msg && data && typeof data.exc === "string") {
+      try { msg = JSON.parse(data.exc)[0].trim().split("\n").pop(); } catch (e) {}
+    }
+    var err = new Error(msg || (res && res.statusText) || "Request failed");
+    err.status = res ? res.status : 0;
+    err.exc_type = data ? data.exc_type : undefined;
+    return err;
+  }
+
+  function send(method, args) {
+    var headers = { "Content-Type": "application/json" };
+    var token = csrfToken();
+    if (token) { headers["X-Frappe-CSRF-Token"] = token; }
+    return fetch("/api/method/" + method, {
+      method: "POST",
+      headers: headers,
+      credentials: "same-origin",
+      body: JSON.stringify(args || {})
+    }).then(function (res) {
+      return res.text().then(function (text) {
+        var data = {};
+        try { data = JSON.parse(text); } catch (e) { data = {}; }
+        return { res: res, data: data };
+      });
+    });
+  }
+
+  /* A token the server no longer recognises. Frappe answers 400 with
+     CSRFTokenError and the sentence "Invalid Request". Both are checked: the
+     sentence alone also matches other bad requests, and the type alone is not
+     carried through every proxy. */
+  function isStaleToken(res, data) {
+    if (data && data.exc_type === "CSRFTokenError") { return true; }
+    var said = String((data && (data.message || data._server_messages)) || "");
+    return res.status === 400 && /invalid request/i.test(said);
+  }
+
   function api(method, args) {
     return new Promise(function (resolve, reject) {
-      /* frappe.call POSTs, which is what PRIV-5 asks for: a search term is
-         somebody's name and does not belong in a URL or a proxy log. */
-      frappe.call({
-        method: method,
-        args: args || {},
-        callback: function (r) { r.exc ? reject(r) : resolve(r.message); },
-        error: reject
-      });
+      send(method, args).then(function (out) {
+        if (out.res.ok && !out.data.exc_type) { resolve(out.data.message); return; }
+        if (!isStaleToken(out.res, out.data)) {
+          reject(apiError(out.data, out.res));
+          return;
+        }
+        /* One retry, with a token read fresh from the server. If that one
+           fails too, the answer is a real refusal and not a stale token. */
+        refreshCsrf().then(function (tok) {
+          if (!tok) { reject(apiError(out.data, out.res)); return; }
+          send(method, args).then(function (again) {
+            if (again.res.ok && !again.data.exc_type) { resolve(again.data.message); }
+            else { reject(apiError(again.data, again.res)); }
+          }).catch(reject);
+        }).catch(reject);
+      }).catch(reject);
     });
   }
 
@@ -924,10 +1027,35 @@
     return started;
   }
 
+  /* The browser's own idea of who it is. Frappe sets this cookie on every
+     response, so it is rewritten to "Guest" by the very response that refused
+     the call. Reading it AFTER a failure is what makes the test below safe. */
+  function userCookie() {
+    var m = document.cookie.match(/(?:^|;\s*)user_id=([^;]*)/);
+    if (!m) { return ""; }
+    try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; }
+  }
+
+  /* Has the SESSION ended, or was this person simply refused?
+
+     Being told the portal is broken when you are only signed out sends you to
+     the wrong place (AC-62) - and bouncing a signed-IN person to /login, which
+     redirects them back here, which bounces them again, is worse than either.
+
+     The status alone cannot tell the two apart. Proved in a browser on
+     2026-09-24: a session that has ended is answered 403 PermissionError, not
+     401, because Frappe has already turned the caller into Guest by then. What
+     DOES tell them apart is the `user_id` cookie that same response sets -
+     "Guest" for an ended session, the person's own address for a refusal. */
   function isSignedOut(err) {
-    var type = err && (err.exc_type || (err.responseJSON && err.responseJSON.exc_type));
-    var status = err && (err.status || (err.xhr && err.xhr.status));
-    return type === "AuthenticationError" || status === 401 || status === 403;
+    var type = err && err.exc_type;
+    var status = err && err.status;
+    if (type === "AuthenticationError" || type === "SessionExpired" || status === 401) {
+      return true;
+    }
+    if (status !== 403) { return false; }
+    var who = userCookie();
+    return who === "Guest" || who === "";
   }
 
   function paintAvatar() {
@@ -1016,6 +1144,10 @@
     emptySearchSentence: emptySearchSentence,
     defaultRouteFor: defaultRouteFor,
     matchingPages: matchingPages,
+    /* AC-62's rule, exposed because it is the one place a refusal and an ended
+       session are told apart, and getting it wrong either strands a person on
+       an error page or bounces them between /login and here for ever. */
+    isSignedOut: isSignedOut,
     SAY: SAY,
     MENU: MENU,
     _set: function (f, c) { frame = f; counts = c; }   /* tests only */

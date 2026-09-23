@@ -186,6 +186,20 @@ def _allowed_pages(has_employee, is_hr, has_reports, features):
 		or features.get("plan_policy_library")   # Policies
 		or features.get("plan_org_structure")    # People, the org chart
 	)
+	# `plan_staff_list` is deliberately NOT in that list (W1D-21, SEC-16).
+	#
+	# The staff list is an HR screen - `staff_api.get_staff_list` refuses a
+	# caller who is entitled to nobody - so the tenant having the feature is not
+	# a reason to open the Company group for somebody who is not HR. It would
+	# open a group whose only new entry then refuses them.
+	#
+	# For an HR caller `is_hr` already opens the group above, so the staff list
+	# needs nothing here. What decides whether the ENTRY is drawn is
+	# `is_hr and features.plan_staff_list`, and both of those are already in
+	# this payload - the entry list itself is the page's job, not the frame's.
+	# Absent must behave as hidden, because the key is opt-in: a tenant that was
+	# never given it, and an entitlement read that failed, must look the same
+	# (AC-45).
 	return allowed
 
 

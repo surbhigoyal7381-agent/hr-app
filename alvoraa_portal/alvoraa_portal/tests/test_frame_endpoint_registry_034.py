@@ -22,7 +22,9 @@ repository-wide counter is a separate piece of work (residual risk R4); this
 holds the two new files until it exists.
 
 `inbox_api.py` is named here before it is written, on purpose: the day it
-appears, these three checks already apply to it.
+appears, these three checks already apply to it. `staff_api.py` was added the
+same way, by one line in MODULES - which is the whole point of listing the files
+rather than the functions.
 """
 
 import ast
@@ -35,7 +37,7 @@ from frappe.tests.utils import FrappeTestCase
 
 import alvoraa_portal
 
-MODULES = ("frame_api.py", "inbox_api.py")
+MODULES = ("frame_api.py", "inbox_api.py", "staff_api.py")
 
 # AC-69. One row per whitelisted function. `guest`, `persona` and `scope` each
 # name a test method that must exist in the test file named by `tests`.
@@ -49,6 +51,16 @@ ENDPOINT_REGISTRY = {
 		"guest": "TestWhoMayCallIt.test_guest_is_refused",
 		"persona": "TestThePersonaRules.test_rule_six_needs_no_active_employee_record",
 		"scope": "TestWhatEachPersonaMayOpen.test_time_pay_and_growth_need_an_employee_record",
+	},
+	# The staff list (W1D-21, SEC-16). Its "persona" case is the one that
+	# matters most for this endpoint: the feature switch is checked on the
+	# SERVER, so an HR user on a tenant that was never given the feature is
+	# refused when they call it by hand (abuse case A14).
+	"staff_api.get_staff_list": {
+		"tests": "alvoraa_portal.tests.test_staff_list_034",
+		"guest": "TestWhoMayCallTheStaffList.test_guest_is_refused",
+		"persona": "TestWhoMayCallTheStaffList.test_a_plain_employee_is_refused",
+		"scope": "TestWhatTheStaffListShows.test_store_hr_gets_their_store_and_nobody_else",
 	},
 }
 

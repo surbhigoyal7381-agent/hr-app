@@ -286,7 +286,27 @@ employee lands on, using the helper that produced the 16.4-second bell.
 
 ---
 
-## 8. Commands run, and what they said
+## 8. The final run, after the second rebase
+
+Every number below is from **one** `bench run-tests` at a time against the
+rebased tree, on my own container and site.
+
+| Module | Result |
+|---|---|
+| `test_inbox_parts_042` | **24 ran, OK** |
+| `test_home_api_042` | **23 ran, OK** |
+| `test_week_presence_retired_042` | **2 ran, OK** |
+| `test_panel_source_042` | **7 ran, OK** |
+| `test_inbox_counts_034` (Wave 1's, unedited) | **17 ran, OK**, plus their 2 new F8 tests OK |
+| `test_frame_endpoint_registry_034` | **8 ran, OK** (1 failure first — Wave 1's new F7 check; every bypass in both new files is now declared) |
+| `test_portal_split_034` | **12 ran, OK** |
+| `test_ess_parts_034` | **8 ran, OK** |
+| `test_team_scope_034` (Wave 1's new one) | **19 ran, OK** |
+| `test_preview_page_034` | **16 ran, OK** (4 skipped) |
+| `node scripts/run_dom_tests.js` | **129 passed, 0 failed** — 8 + 12 + 82 + 27 |
+| `python scripts/check_app_integrity.py` | 636 checks, OK — before every commit |
+
+## 9. Commands run, and what they said
 
 | Command | Result |
 |---|---|
@@ -325,7 +345,7 @@ not bought before it looks for the row.
 
 ---
 
-## 9. What Surbhi decides next
+## 10. What Surbhi decides next
 
 | # | Decision | Effect |
 |---|---|---|

@@ -1267,3 +1267,353 @@ pins the other one as a count so it cannot grow into a list unnoticed.
   at that size. The query count is 4 and every filter is on an indexed column, but my
   throwaway site has about a hundred people, so the p95 figure is not measured and I am
   not quoting one.
+
+---
+
+# Wave 1, stretch 6 — the browser side: the frame a person actually sees
+
+*2026-09-24. Local only: nothing pushed, nothing merged into `dev`, no server, no
+tenant. Built and measured on my own container `hrlocal-034` and my own site
+`test034`. The shared bench `hrlocal-bench` was not touched. `docker cp` was not used
+once — every file that had to go into the container went in through `docker exec -i`
+with a heredoc.*
+
+**Headline: the frame exists and works.** A person opening `/hrms-employee-next` now
+gets a rail, a top bar, a bottom bar, routes with real titles and focus, a shared
+sheet, toasts, a bell with an honest number, scoped search, a theme switch, the five
+states, and a working staff list. Seventy-three browser tests drive it in a real DOM.
+
+**One budget is missed and I am not hiding it: `get_nav_counts` takes 19–20 queries for
+an HR caller against AC-24's 15.** The breakdown and the fix are in §6.
+
+## 1. What was built, file by file
+
+| File | New? | Mechanism | Why |
+|---|---|---|---|
+| `inbox_api.py` | **new** | **Build** | US-6. The count-only call the bell, the Inbox entry and the Inbox button all read. Counts, nothing else |
+| `attendance_correction.py` | edited | **Extend** | One shared `review_queue_filters()` so the corrections queue and the count ask the database the same question |
+| `hrms/alvoraa_org_structure/api.py` | edited | **Extend** | `search_people` and `_search_scope`: store narrowing, Active-only caller, escaped wildcards, POST only |
+| `frame_api.py` | edited | **Extend** | One new key, `scope_is_store`, so the empty-search sentence names the real scope |
+| `templates/includes/ess/next/frame.html` | **new** | **Build** | The frame's markup. A Jinja include, not an `ess_part`, because two lines need Jinja — the tenant's name and its brand mark |
+| `public/css/ess/next-frame.css` | **new** | **Build** | The frame's styles, static under `/assets/`, cached a month by the nginx block that already exists |
+| `public/js/ess/next-frame.js` | **new** | **Build** | The frame's behaviour |
+| `www/hrms-employee-next.html`, `hrms_employee_next.py` | edited | — | The preview page stops being a holding page and renders the frame. Both its locks are untouched |
+| `tests/portal_source.py`, `scripts/lib/portal_source.js` | edited | — | Both expanders learn there are **two** portal pages |
+| `tests/test_portal_split_034.py`, `test_preview_page_034.py`, `test_frame_endpoint_registry_034.py` | edited | — | The same lesson, plus the new endpoint's registry row |
+| `tests/test_inbox_counts_034.py` | **new** | — | 17 tests |
+| `tests/test_search_scope_034.py` | **new** | — | 11 tests |
+| `alvoraa_portal/tests/next_frame_test.js` | **new** | — | 73 browser assertions |
+| `scripts/run_dom_tests.js` | edited | — | The new browser test is registered and runs in CI |
+| `scripts/check_contrast_rendered.py`, `check_design_system.py` | edited | — | Both now read the preview page as well |
+| `docs/…/02-functional-spec.md`, `07-devops-inputs.md` | edited | — | §12 corrected, release gate 9, OPS-35 and OPS-36 |
+
+Seven commits, each standing on its own.
+
+## 2. The decisions worth reading
+
+**The count and the queue now share one definition.** `to_review` used to read 50 rows
+by creation date and *then* drop the declined and withdrawn ones in Python, so the
+screen could show 41 rows and call them the first 50. The state filter is in the query
+now, below the cap where it belongs, and the count uses the same filter dict without a
+cap — so with 51 waiting the bell says 51 and the screen says it is showing the first
+50. **A count that matched a shorter list would be the one thing worse than no count.**
+
+**Two scopes for the corrections queue, on purpose.** An HR caller gets their permitted
+employees minus themselves. A reviewer who is *not* HR — a tenant may hand this queue to
+a shift supervisor, because `_may_review` tests the submit permission and not a role —
+gets exactly what they see today. Narrowing them returns the empty set: fail-closed, so
+not a leak, and a working flow killed in silence. A test fails if their queue comes back
+empty.
+
+**Store HR's search follows the store.** They searched their whole company. That is the
+same leak W1D-20 closed on the Team screen, and search is the faster way to find a name,
+so closing one and leaving the other would have been worse than either. Company-wide HR
+still gets one company filter and no list of names, because a company can be thousands
+of people; a store is a few dozen, so naming those costs one small query. **The shape
+follows the size, and both answers are the same answer.**
+
+**`scope_is_store` was added to a deliberately fixed key list.** `FRAME_KEYS` exists so
+that adding a key is an act somebody reviews, so here is the review: it is a boolean
+about the caller, it carries nothing about anybody else, and without it a store's HR
+person is told their search covers "the companies you look after" when it covers one
+store. That is not a leak; it sends somebody away believing a colleague does not exist.
+
+**A refusal reads the same either way.** "Your tenant has not bought this" and "you are
+not allowed this" are one sentence. Two would be a map of what to go after.
+
+**Both source expanders learned there are two pages.** Adding the frame under `ess/`
+made the live page's orphan guard call every new file an orphan. The tempting fix was to
+loosen the guard; the right one was to teach it that a file must belong to **one** of
+the two pages — and that a file pulled in by **both** also fails, because at the swap
+that would be the frame twice on one page. Checked by dropping a stray file under
+`ess/` and watching both guards bite.
+
+## 3. What a person can now see on screen
+
+Opening `/hrms-employee-next` as a System Manager on a preview site:
+
+- A **rail** with only the entries that person can use — grouped Me, Time, Pay, Growth,
+  Team, Company. Nothing greyed out.
+- A **top bar** with menu, back (on deep pages only), group and page title in words,
+  search, a bell and an avatar.
+- A **bottom bar** on a phone with the persona's four buttons and More last.
+- **Routes** that work: `#time/days` opens My days with "Time" above it; `#nonsense`
+  opens Home and leaves no error; `#pay` on a tenant without payroll shows the
+  no-permission sentence rather than an empty salary tab.
+- The **Inbox**, with one row per part that has something, in the spec's words, and
+  "Showing the first 50 of 60" where the screen behind it is capped. "All clear." when
+  nothing is waiting.
+- A **bell** with the same number as the Inbox menu entry and the Inbox button, no badge
+  at zero, and "Inbox, nothing waiting" for a screen reader.
+- A **search sheet** on Ctrl K, listing pages under two letters and people above, with
+  the empty sentence that names the caller's real scope.
+- A **profile sheet** with the person's name and designation, My account, the desk link
+  **only when the server returns one** and with the server's own label, the theme
+  choice, and Log out. No language row.
+- A **staff list** at `#company/staff` that searches, where the tenant has the switch.
+- The **five states**, all reachable and all tested.
+
+The screens Wave 1 does not own say so in one line rather than pretending.
+
+## 4. The acceptance checks
+
+Satisfied and tested here: AC-1, AC-6, AC-7, AC-10 (rules 2 and 6), AC-11 (three of its
+named rows), AC-13, AC-14, AC-15 (focus and Escape), AC-17, AC-18, AC-19, AC-20, AC-22,
+AC-23, AC-25, AC-26, AC-27 (initials fallback), AC-28 (two letters, the 50 cap), AC-29,
+AC-30, AC-31, AC-32, AC-33, AC-34, AC-35, AC-40, AC-44, AC-45, AC-51 (including the cap
+boundary), AC-52 (all four rows), AC-56, AC-57, AC-58, AC-60, AC-61, AC-63, AC-65,
+AC-68, AC-69, AC-74, AC-75, AC-76 (four of its rows), and §12's OPS-31 correction.
+
+**Not satisfied:**
+
+- **AC-24** — the query budget. §6.
+- **AC-12 and AC-48** — the 390 px measurement in light and dark, and with Hindi test
+  strings. The stylesheet is written to it (44 px targets, 12 px floor, no `--fs-xs`, a
+  16 px input so iOS does not zoom) and the design-system and contrast checks pass on
+  the page in both themes, but **I have not measured a rendered page at 390 px**, so I
+  am not claiming it.
+- **AC-9a/9b/9c, AC-16, AC-21, AC-50, AC-53, AC-54, AC-62, AC-67** — reachable only with
+  a real session or a screen Wave 1 does not own yet. AC-62's signed-out redirect is
+  written and not proven against a real expired session.
+- **AC-36, AC-37, AC-38, AC-39, AC-41, AC-64, AC-66** — the split and the swap. Stretch 4
+  did the split; the swap is not this stretch's work.
+- **AC-2, AC-3, AC-4, AC-5, AC-8, AC-42, AC-43, AC-46, AC-47, AC-49, AC-55, AC-59,
+  AC-70, AC-71, AC-72, AC-73** — already covered by earlier stretches' tests, still
+  passing.
+
+## 5. The seven non-functional dimensions, against the code actually written
+
+| Dimension | Verdict | Why |
+|---|---|---|
+| **Performance** | **Mixed, and named** | Better: the frame's styles and script are static files, gzipped and cached for a month; the menu is drawn once from one answer instead of three racing calls; the corrections queue filters in the database instead of in Python. Worse: `get_nav_counts` is 19–20 queries for HR against a budget of 15 (§6). `get_frame` is 3–5 queries and 6 ms |
+| **Scalability** | **Improves** | Every count is an aggregate query, so the call is flat in headcount: 20 queries for a store's HR and 19 for company-wide HR on the same site. The corrections list is capped at the query, not after the rows arrive. The staff list and search are capped at 50 by the server |
+| **Security / permissions** | **Improves** | Store HR's search narrows to their store. A leaver finds nobody. `%` and `_` stop being wildcards. The staff-list switch fails closed — absent hides — and the endpoint refuses on the server, so a hidden menu entry is never the control. Every new endpoint ships its Guest, wrong-persona and scope tests in the same commit, and the registry test fails if one does not |
+| **Multi-tenancy** | **Improves** | Two queries gained a scope they did not have: the corrections count and queue for an HR caller, and people search for a store's HR person. No new cross-tenant surface — the frame's static files hold no tenant data, which is why they can be cached at all |
+| **Privacy** | **Improves** | The count payload carries numbers only: a test serialises it and fails if a document id, a person's name or a fixture string appears. Search is POST, so a colleague's name stays out of URLs and proxy logs. Search returns PRIV-2's five keys and Active people only. Nothing personal is logged; the page-error code is a time and four characters |
+| **Reliability** | **Improves** | Five states, all reachable and all tested: a failed count leaves the rest of the page working and the bell blank rather than wrong; a failed `get_frame` gives a sentence, a Try again and a code; a signed-out session goes to the login page rather than to an error. A stale search answer that lands after a newer one is thrown away |
+| **Observability** | **Neutral** | No logging changed. The refusal paths already log through `access.log_refusal` with no personal content |
+| **Maintainability** | **Improves** | One definition of "waiting" instead of two. One menu table instead of gating scattered through 13,000 lines of `portal.js`. The frame's whole behaviour is about 700 lines in one file with the reason beside each rule |
+| **Data integrity** | **Neutral** | Nothing is written. The one cache added holds "does this doctype exist", keyed per site and cleared by a migration |
+| **Accessibility** | **Improves, not yet measured** | A skip link, a real `<h1>` that takes focus on every page change, `aria-current` on exactly one entry, Escape everywhere, a focus trap in the sheet, focus handed back to the control that opened it, `role="status"` on toasts and on the two live regions, 44 px targets, a 12 px floor, colour never the only signal, `prefers-reduced-motion`. **Not measured at 390 px or 200 % zoom** — see §4 |
+| **Upgrade-safety** | **Neutral** | Everything in our own apps. `hrms/alvoraa_org_structure/api.py` is our own module inside the hrms app, not upstream Frappe HR code. Nothing under `apps/frappe` or `apps/erpnext` touched |
+| **Internationalisation** | **Improves** | Every user-facing string in the frame goes through one `__()` door with `{0}` placeholders, so no sentence is built by gluing words together and shipping a translation later is a build step, not a rewrite. Website pages ship an empty message table, so it is English today either way |
+
+## 6. AC-24, the one budget missed
+
+Measured on my own container, best of five warm calls after three warm-ups:
+
+| Caller | `get_frame` | `get_nav_counts` |
+|---|---|---|
+| Company-wide HR | 5 queries, 6 ms | **19 queries**, 35 ms |
+| Store HR | 5 queries, 6 ms | **20 queries**, 41 ms |
+| Plain employee | 3 queries, 3 ms | 11 queries, 14 ms |
+
+Where the HR queries go, measured per part:
+
+| Part | Queries |
+|---|---|
+| Goal and KPI updates (`goals_api.get_pending_approvals_count`) | 8 |
+| Attendance fixes (`review_queue_filters` and the list) | 5 |
+| My own requests | 4 |
+| Policies | 2 |
+| Leave to approve | 1 |
+| Shift requests | 1 |
+
+It was 24 before this stretch's last commit: three of those were the database being asked
+whether the KPI, Shift Request and Policy Document doctypes exist, on every single call.
+That answer changes at a migration, so it is asked once per site per release now.
+
+**What would close the remaining gap, in order of how safe it is:**
+
+1. **Let `get_pending_approvals_count` accept a scope that has already been worked out.**
+   It computes `permitted_companies` and the approvals scope itself, and the corrections
+   part computes the same thing again a moment later. Passing it in would save about
+   four. It is a small change to `goals_api` with an existing test suite around it.
+2. **Memoise `permitted_companies` and `permitted_employees` for the life of a request.**
+   Worth about three more. **Not done today on purpose:** `access.py` is read by most of
+   the product, and a memo that outlived a request would hand a background job a stale
+   scope. That deserves its own slice and its own thinking, not a line slipped into this
+   one.
+3. The rest is Frappe's own per-`get_list` overhead and is not ours to remove.
+
+**The property that matters most is already true: the call is flat in headcount.** Every
+count is an aggregate; none of them walks a list of people. Company-wide HR and store HR
+differ by one query on the same site. The 500 ms p95 side of the budget is met with room
+to spare at 35–41 ms — **but on a site of about 120 people, not the 1,000 the budget
+names**, so I am not quoting a p95 at 1,000.
+
+## 7. What went wrong, and what found it
+
+**My fixture broke a neighbouring test file.** The first version created one company-wide
+Holiday List Assignment, which is cheaper than one per person and covers everybody.
+Frappe HR refuses a second overlapping company-wide assignment, so every one of
+`test_attendance_correction`'s 42 tests failed — not because of my code, but because my
+fixture had taken the company. It is six per-employee rows now, and the reason is written
+into the fixture. **This is the third time in this slice that test data being shared state
+on one site has cost time**, and it is the same lesson stretch 5 recorded.
+
+**Two of my own browser assertions were fake.** `ok("the Inbox lists the row: " + cond)`
+passes whatever `cond` is, because a string is always truthy. Two of them were printing
+`false` and reporting PASS. They are real assertions now. **A test that cannot fail is
+worse than no test**, and it is exactly the shape of the masked guard stretch 5 was warned
+about — only this time the mask was in the test, not the code.
+
+**The page lagged one click behind.** `go()` set `window.location.hash` and waited for
+the `hashchange` event, which is asynchronous. Every route driven by something other than
+a link — the bell, the More button — drew the *previous* page. Found by the browser test,
+not by reading.
+
+**A closing sheet handed focus to the wrong element.** It read `document.activeElement`
+when it opened, and a click does not always leave focus on the button it hit. The opening
+control is passed in now.
+
+**The integrity check caught an import CI would have rejected.** `from
+hrms.alvoraa_org_structure import api as org` passes `bench run-tests` and fails
+`scripts/check_app_integrity.py`. Found by running the check, which is the whole argument
+for running it before every commit rather than after.
+
+## 8. Every guard broken on purpose, and which test went red
+
+| What I broke | Tests that failed |
+|---|---|
+| The corrections queue loses its HR scope narrowing | `test_store_hr_counts_their_store_and_nobody_elses` |
+| "Still waiting" stops being asked in the database | `test_a_declined_or_withdrawn_draft_is_not_waiting`, `test_at_the_cap_the_count_is_the_true_total_and_says_so` |
+| The non-HR reviewer's exemption is removed | `test_a_reviewer_who_is_not_hr_keeps_their_whole_queue` |
+| Search loses the store narrowing | `test_store_hr_finds_their_store_and_their_own_line` |
+| The Active-only caller lookup goes back to any status | `test_a_leaver_with_a_live_login_finds_nobody` |
+| `%` and `_` stop being escaped | `test_a_bare_percent_finds_nobody`, `test_an_underscore_matches_an_underscore` |
+| The staff-list key's absent-means-hidden becomes absent-means-shown | three browser tests |
+| `esc()` stops escaping | two browser tests (the `<img onerror>` case) |
+| A badge of zero shows a number again | "a badge of zero shows no number (AC-61)" |
+| Focus stops moving to the heading | "focus moves to the page heading after a page change (AC-15)" |
+| A stray file is left under `ess/` | both source expanders, in Node and in Python |
+
+**One result worth reading twice.** Breaking the HR scope did **not** turn
+`test_the_count_equals_the_list_the_row_links_to` red — because the count and the queue
+now share one definition, so a wrong scope is wrong *consistently* and the two still
+agree. The equality test cannot catch a wrong-but-consistent scope; the scope test can.
+That is not a fault in either test, but it is worth knowing which one is load-bearing for
+what, and it is why both exist.
+
+## 9. NFR notes
+
+- **Query counts:** §6.
+- **Indexes added:** none. Every filter is on an indexed column — `leave_approver`,
+  `approver`, `employee`, `docstatus`, `company`, `branch`, `status`.
+- **Background jobs:** none.
+- **Permission enforcement points:** `get_nav_counts` (Guest refused by the decorator and
+  again by an explicit line); `review_queue_filters` (HR scope, or today's scope for a
+  non-HR reviewer); `_search_scope` (five cases, fails closed); `get_staff_list`
+  (unchanged, the switch checked on the server); `get_frame` (unchanged). **No
+  `ignore_permissions` in any new file**, pinned by the registry test.
+- **Sensitive fields touched:** names, job titles, departments and photos, in search and
+  the staff list. No phone, email, employee number, branch, manager, date of birth or
+  salary anywhere in the frame. The count payload carries numbers only, with a test.
+- **Fallbacks:** a failed count leaves the page working and the bell blank; a failed
+  search still lists pages; a failed `get_frame` gives a sentence, a code and Try again;
+  a signed-out session goes to `/login`; a missing or broken photo falls back to initials;
+  `localStorage` throwing in a private window does not stop the page.
+- **Migration:** none. No schema change, no patch.
+
+## 10. What else moved while I worked
+
+- **Nothing.** `git fetch origin dev` at the start, before commits and again at the end:
+  `origin/dev` is still `8718f27`, which my branch already contains. No incoming commits,
+  no conflicts, nothing to absorb.
+- **One clash found and headed off.** Slice **042**'s work board row says its spec plans
+  to create `alvoraa_portal/alvoraa_portal/inbox_api.py`. Wave 1 needs the counts now
+  (AC-7, AC-20, AC-24, AC-51, AC-55), so **Wave 1 creates the file with the counts only,
+  and Wave 2 must extend it, not create it.** The file says so in its first paragraph and
+  the work board row says so in capitals. 042 is docs-only today and has touched no source
+  file, so there is nothing to merge — but if that is not read, two sessions will write
+  the same path.
+- Slice **043** plans `time_api.py` and `pay_api.py` and touches none of my files.
+- Files claimed by path on `.claude/work-in-progress.md` before the first edit.
+
+## 11. Commands run, and what they said
+
+| Command | Result |
+|---|---|
+| `python scripts/check_app_integrity.py` | **OK — 634 checks, all consistent.** Run before every commit; it caught one bad import |
+| `python scripts/check_design_system.py` | **OK — the visual system holds**, six pages including the preview page, which scores zero on every column |
+| `python scripts/check_contrast_rendered.py` | **2 unreadable, both pre-existing** (`div.emp-drawer-name`, "Payslip", on the live page). The preview page is **ok in light and dark** |
+| `python scripts/check_preview_flag.py` | **OK — no production file sets `portal_preview`**, 11 deployment files |
+| `node scripts/check_undefined_js.js` | **undefined identifiers: none** |
+| `node scripts/check_portal_handlers.js` | **all reachable and callable**, 9 pages |
+| `node scripts/run_dom_tests.js` | **3 run, 0 failed; 3 not run** (the three Growth ones, unchanged) |
+| `node alvoraa_portal/tests/next_frame_test.js` | **73 passed, 0 failed** |
+| `bench run-tests --module …test_inbox_counts_034` | **17 tests, OK** (171 s) |
+| `…test_search_scope_034` | **11 tests, OK** (87 s) |
+| `…test_attendance_correction` | **42 + 9 tests, OK** — after my fixture broke all 42 and was fixed |
+| `…test_portal_security_010` | **45 + 5 tests, OK** |
+| `…test_frame_api_034` | **33 tests, OK** (221 s) |
+| `…test_portal_split_034` | **12 tests, OK** |
+| `…test_preview_page_034` | **14 tests, OK** (2 skipped — they need the app checked out inside the repo, not mounted) |
+| `…test_ess_parts_034` | **8 tests, OK** |
+| `…test_frame_endpoint_registry_034` | **7 tests, OK** |
+| `…test_staff_list_034` | **9 + 22 tests, OK** |
+| `…test_team_scope_034` | **15 tests, OK** |
+| `…test_store_hr_scoping_030` | **14 tests, OK** |
+| `…test_portal_call_paths` | **7 tests, OK** |
+| `…test_opt_in_features` | **8 + 11 tests, OK** |
+| `…test_portal_layout` | **3 tests, OK** |
+| `curl` against my own container | the preview page answers **200, 52,114 bytes**, carries all 26 frame ids, and loads both asset files with a version stamp; the stylesheet answers **200, 15,979 bytes** |
+
+**One test run at a time, every time.** Stretch 5 ran two against one site and got four
+modules of phantom failures; that did not happen here.
+
+## 12. Known gaps and shortcuts
+
+- **AC-24's query budget is missed for an HR caller: 19–20 against 15.** *Dangerous debt
+  — escalating now, not noting it.* It is not dangerous because 19 queries are slow; they
+  are 35 ms. It is dangerous because a missed budget nobody decides about becomes a number
+  nobody believes. §6 has the two changes that close it and why I did not make the riskier
+  one today. **Surbhi's call: take the `goals_api` change now, or accept 19 and move the
+  budget.**
+- **Not measured at 390 px, at 200 % zoom, or with Hindi strings (AC-12, AC-48).**
+  *Temporary debt.* The stylesheet is written to the rules and the two visual checks pass,
+  but a rendered measurement needs a browser I have not driven. It should be done before
+  the swap, on a real phone viewport.
+- **No p95 at 1,000 employees.** *Acceptable simplification.* My throwaway site has about
+  120 people. The call is flat in headcount by construction and I have shown it, but the
+  number the budget names is not measured and I am not quoting one.
+- **The frame's screens are the frame's own.** *Intentional trade-off, and it is what the
+  spec asks for.* Wave 1 is the frame; the Time, Pay, Growth and org-chart screens are
+  §12's out-of-scope list. Each route the frame does not own says so in one line. The swap
+  (US-11, AC-41) is what marries the frame to the real panels, and it is one commit that
+  is not this stretch's.
+- **`my_requests` links to `#time`, not to "the screen each came from".** *Acceptable
+  simplification, named in the code.* §5 wants a per-item link, which is the Wave 2 Inbox
+  list's job. `#time` is where all three kinds are listed today, so the link is honest,
+  just coarse.
+- **AC-62 is written and not proven.** *Temporary debt.* The signed-out redirect needs a
+  real expired session; a unit test can only prove the branch exists.
+- **The live page still loads the old frame.** Deliberate. Nothing a customer sees changed
+  in this stretch **except** the two live behaviours that change on release and are
+  already on the spec's release gate 7: store HR's people search narrows, and a leaver
+  stops finding people. The corrections queue's state filter also moves into the query,
+  which makes today's "first 50" honest where it was not.
+- **What I would do with more time:** close AC-24 through `goals_api`; measure the frame
+  at 390 px in both themes and at 200 % zoom; and build a 1,000-employee fixture, because
+  three acceptance checks in this spec name that number and none of them can be answered
+  without it.

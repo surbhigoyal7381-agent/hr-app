@@ -25,6 +25,14 @@ import re
 APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WWW = os.path.join(APP_ROOT, "www")
 PORTAL_PAGE = os.path.join(WWW, "hrms-employee.html")
+# Slice 034 Wave 1. There are TWO portal pages now, not one: the live page and
+# the preview page that carries the new frame until the swap. Every file under
+# templates/includes/ess/ and public/*/ess/ must be reached by ONE of them - so
+# the orphan check below asks both, and a file belonging to neither still fails
+# loudly. Without this, adding the frame to the preview page would have made the
+# live page's guard call every new file an orphan, and the honest fix would have
+# looked like loosening the guard.
+PREVIEW_PAGE = os.path.join(WWW, "hrms-employee-next.html")
 ESS_DIR = os.path.join(APP_ROOT, "templates", "includes", "ess")
 
 # OPS-31. The frame's styles and the portal script are no longer Jinja includes.
@@ -57,6 +65,12 @@ PART_RE = re.compile(rb'\{\{\s*ess_part\(\s*"([a-z0-9-]+)"\s*\)\s*\}\}')
 PARTS_DIR = os.path.join(ESS_DIR, "parts")
 
 MAX_DEPTH = 5
+
+# Written with chr() rather than escape sequences, because this file is edited
+# by scripts often enough that a mangled backslash has already cost an hour.
+CR_ONLY = chr(13)
+LF_ONLY = chr(10)
+CRLF = CR_ONLY + LF_ONLY
 
 
 class PortalSourceError(RuntimeError):
@@ -164,6 +178,24 @@ def expand_bytes(raw, used, app_root=APP_ROOT, _depth=0):
 	return INCLUDE_RE.sub(swap, out)
 
 
+def _reached_by(path):
+	"""Every include file, asset and part one page pulls in. No guards."""
+	with open(path, "rb") as fh:
+		raw = fh.read()
+	used, assets, parts = set(), set(), set()
+	out = expand_bytes(raw, used)
+	out = expand_assets(out, assets)
+	expand_parts(out, parts)
+	return used, assets, parts
+
+
+def preview_reach():
+	"""What the preview page reaches. Empty when the page is not there yet."""
+	if not os.path.exists(PREVIEW_PAGE):
+		return set(), set(), set()
+	return _reached_by(PREVIEW_PAGE)
+
+
 def page_bytes(path=PORTAL_PAGE, check=True):
 	"""The page with its includes expanded, as raw bytes (CRLF, BOM and all)."""
 	with open(path, "rb") as fh:
@@ -177,6 +209,39 @@ def page_bytes(path=PORTAL_PAGE, check=True):
 	if check and os.path.abspath(path) == os.path.abspath(PORTAL_PAGE):
 		_assert_nothing_went_quiet(used, assets, parts)
 	return out
+
+
+def preview_bytes():
+	"""The preview page with its include, stylesheet and script expanded.
+
+	The same treatment the live page gets, so a check can read the new frame's
+	markup, styles and script as one document. It has its own guard: the frame
+	include and both asset files must be reached, or the preview page has been
+	emptied and every check reading it would be reading a shell.
+	"""
+	with open(PREVIEW_PAGE, "rb") as fh:
+		raw = fh.read()
+	used, assets = set(), set()
+	out = expand_assets(expand_bytes(raw, used), assets)
+	if not used:
+		raise PortalSourceError(
+			"hrms-employee-next.html includes no ess file - the frame markup is "
+			"gone, or this helper is reading the wrong file.")
+	if not assets:
+		raise PortalSourceError(
+			"hrms-employee-next.html loads no /assets/alvoraa_portal frame files "
+			"- the preview page has no styles and no script.")
+	return out
+
+
+def _universal(text):
+	"""CRLF and CR both become LF, the way open() in text mode does."""
+	return text.replace(CRLF, LF_ONLY).replace(CR_ONLY, LF_ONLY)
+
+
+def read_preview():
+	"""The expanded preview page as text, with universal newlines."""
+	return _universal(preview_bytes().decode("utf-8"))
 
 
 def _assert_nothing_went_quiet(used, assets=None, parts=None):
@@ -199,7 +264,7 @@ def _assert_nothing_went_quiet(used, assets=None, parts=None):
 				"Either the page lost its <link> and <script src> tags or this "
 				"helper is reading the wrong file - either way every check calling "
 				"it would now be reading a page with no styles and no script.")
-		stranded = ess_assets_on_disk() - assets
+		stranded = ess_assets_on_disk() - assets - preview_reach()[1]
 		if stranded:
 			raise PortalSourceError(
 				"these frame asset files exist but the page never loads them, so "
@@ -211,7 +276,7 @@ def _assert_nothing_went_quiet(used, assets=None, parts=None):
 			"every check calling it would now be checking a shell."
 		)
 	on_disk = {f for f in ess_files_on_disk() if "/parts/" not in f}
-	orphans = on_disk - used
+	orphans = on_disk - used - preview_reach()[0]
 	if orphans:
 		raise PortalSourceError(
 			"these include files exist but nothing includes them, so their "

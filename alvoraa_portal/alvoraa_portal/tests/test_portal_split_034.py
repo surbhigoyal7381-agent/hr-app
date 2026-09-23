@@ -50,9 +50,17 @@ class TestThePageIsStillSplit(FrappeTestCase):
 		tags = [t.decode("utf-8") for t in PS.INCLUDE_RE.findall(raw)]
 		self.assertEqual(sorted(tags), sorted(set(tags)),
 		                 "the same include file is pulled in twice")
+		# Two pages now, not one (slice 034 Wave 1): the live page and the
+		# preview page carrying the new frame until the swap. Every include
+		# file must belong to ONE of them. A file belonging to neither is still
+		# an orphan and still fails here.
 		on_disk = {f for f in PS.ess_files_on_disk() if "/parts/" not in f}
-		self.assertEqual(set(tags), on_disk,
-		                 "the page's include list and the files on disk disagree")
+		preview = PS.preview_reach()[0]
+		self.assertEqual(set(tags) | preview, on_disk,
+		                 "an include file belongs to neither portal page")
+		self.assertFalse(set(tags) & preview,
+		                 "an include file is pulled in by both pages - at the "
+		                 "swap that would be the frame twice on one page")
 
 	def test_only_the_pieces_that_need_jinja_are_templates(self):
 		"""The whole point of the parts. Frappe compiles at most 32 templates
@@ -64,7 +72,12 @@ class TestThePageIsStillSplit(FrappeTestCase):
 		self.assertEqual(
 			templates,
 			{"templates/includes/ess/frame.html",
-			 "templates/includes/ess/growth-modals.html"},
+			 "templates/includes/ess/growth-modals.html",
+			 # The new frame. Two lines in it need Jinja - the tenant's name
+			 # and its brand mark - so it cannot be an ess_part, which refuses
+			 # a file holding a template tag. It is the only template Wave 1
+			 # adds, and OPS-31 freed three slots.
+			 "templates/includes/ess/next/frame.html"},
 			"a piece of markup became a Jinja template. If it really needs a "
 			"Jinja tag, say so here; if it does not, it belongs in parts/.")
 		for rel in sorted(templates):
@@ -145,7 +158,9 @@ class TestThePageIsStillSplit(FrappeTestCase):
 		                 "includes: " + ", ".join(sorted(strays)))
 		self.assertEqual(
 			PS.ess_assets_on_disk(),
-			{"css/ess/frame.css", "css/ess/panels.css", "js/ess/portal.js"})
+			{"css/ess/frame.css", "css/ess/panels.css", "js/ess/portal.js",
+			 # The new frame's own two, loaded by the preview page.
+			 "css/ess/next-frame.css", "js/ess/next-frame.js"})
 
 	def test_the_static_files_hold_no_jinja(self):
 		"""They are served raw by nginx. A Jinja tag in one would reach the
@@ -168,11 +183,22 @@ class TestThePageIsStillSplit(FrappeTestCase):
 		for rx in (PS.LINK_RE, PS.SCRIPT_RE):
 			for m in rx.finditer(raw):
 				loaded.add(m.group(1).decode("utf-8"))
-		self.assertEqual(loaded, PS.ess_assets_on_disk(),
-		                 "the page and public/ disagree about the frame's files")
+		preview = PS.preview_reach()[1]
+		self.assertEqual(loaded | preview, PS.ess_assets_on_disk(),
+		                 "a frame asset file is loaded by neither portal page")
+		self.assertFalse(loaded & preview,
+		                 "a frame asset file is loaded by both pages")
 		for rel in sorted(loaded):
 			self.assertIn(("/assets/alvoraa_portal/%s?v=" % rel).encode("utf-8"), raw,
 			              rel + " is loaded without a version stamp")
+		# The preview page needs the stamp just as much: it is served from
+		# /assets/ with a month's cache, so an address that never changes means
+		# a phone keeps last release's frame (OPS-34).
+		with open(PS.PREVIEW_PAGE, "rb") as fh:
+			preview_raw = fh.read()
+		for rel in sorted(preview):
+			self.assertIn(("/assets/alvoraa_portal/%s?v=" % rel).encode("utf-8"), preview_raw,
+			              rel + " is loaded without a version stamp on the preview page")
 
 	def test_the_helper_refuses_a_page_that_loads_no_static_files(self):
 		"""The other half of AC-37. A page with its <link> and <script src> tags

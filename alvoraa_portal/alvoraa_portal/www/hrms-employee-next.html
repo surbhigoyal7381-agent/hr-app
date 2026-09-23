@@ -1,6 +1,6 @@
 {% extends "templates/web.html" %}
 {# no-sitemap #}
-{% block title %}Portal preview{% endblock %}
+{% block title %}{{ tenant_name }} — {{ _("Employee portal") }}{% endblock %}
 
 {# Frappe's base template renders a "Standard Footer" web block that prints
    "Powered by ERPNext" from Website Settings. Overriding the block is the only
@@ -10,53 +10,44 @@
 {% block head_include %}
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
+
+{# AC-19. This runs BEFORE the design system's stylesheet, so the very first
+   paint is already the right colour. With it after, a person who chose dark
+   sees a white page flash first, every single time. It is inline and tiny for
+   the same reason: a separate file would be a second round trip before the
+   first paint.
+
+   It is wrapped in try/catch because localStorage throws rather than returning
+   null in a private window and where site data is blocked, and a theme
+   preference is not worth a blank page. #}
+<script>
+(function () {
+  try {
+    var t = window.localStorage.getItem("alvoraa-theme");
+    if (t === "light" || t === "dark") {
+      document.documentElement.setAttribute("data-theme", t);
+    }
+  } catch (e) { /* no stored choice: "match my phone" is the right default */ }
+})();
+</script>
 {% include "templates/includes/design_system.html" %}
-<style>
-  .pv-wrap { max-width: 44rem; margin: 0 auto; padding: 2rem 1rem 4rem; }
-  .pv-mark { display: flex; align-items: center; gap: .75rem; margin-bottom: 1.5rem; }
-  .pv-mark img { width: 40px; height: 40px; border-radius: 8px; object-fit: contain; }
-  .pv-tenant { font-size: var(--fs-sm, .875rem); color: var(--text-muted, #667085); }
-  .pv-title { font-size: 1.5rem; line-height: 1.3; margin: 0 0 .75rem; }
-  .pv-note { border: 1px solid var(--border, #e4e7ec); border-radius: 12px;
-             padding: 1rem 1.25rem; margin: 1.5rem 0; }
-  .pv-note h2 { font-size: 1rem; margin: 0 0 .5rem; }
-  .pv-note ul { margin: 0; padding-left: 1.25rem; }
-  .pv-note li { margin: .35rem 0; }
-  .pv-back { display: inline-block; min-height: 44px; line-height: 44px; }
-  @media (max-width: 760px) { .pv-wrap { padding: 1.5rem 1rem 3rem; } }
-</style>
+
+{# The frame's styles are a static file, served from /assets/ and cached for a
+   month by nginx's existing `location ^~ /assets/` block. The `?v=` is the
+   build version (OPS-34), so a phone cannot keep last release's stylesheet.
+   Release gates OPS-35 and OPS-36 are what prove this address answers. #}
+<link rel="stylesheet" href="/assets/alvoraa_portal/css/ess/next-frame.css?v={{ asset_version | e }}">
 {% endblock %}
 
 {% block page_content %}
-<main class="pv-wrap">
-  <div class="pv-mark">
-    <img src="{{ brand_mark_url }}" alt="" onerror="this.remove()">
-    <span class="pv-tenant">{{ tenant_name }}</span>
-  </div>
+{# The tenant's name reaches the frame through an attribute rather than a
+   script tag, so the page carries no inline JavaScript holding data. #}
+<script>document.body.setAttribute("data-tenant-name", {{ tenant_name | tojson }});</script>
 
-  <h1 class="pv-title">Portal preview</h1>
+{% include "templates/includes/ess/next/frame.html" %}
 
-  <p>
-    This address is where the redesigned portal frame is looked at before it
-    replaces the live one. It exists only on the local bench and on dev, and
-    only for Alvoraa engineers.
-  </p>
-
-  <div class="pv-note">
-    <h2>What is here so far</h2>
-    <ul>
-      <li>The page's two locks: the site flag, then the role.</li>
-      <li>
-        The frame itself is not here yet. It is built from includes split out of
-        the live portal page, and that split has not been done.
-      </li>
-    </ul>
-  </div>
-
-  <p>
-    Nothing on this page reads or shows anyone's data.
-  </p>
-
-  <p><a class="pv-back" href="/hrms-employee">Back to the portal</a></p>
-</main>
+{# `defer`: parsed while the page is, run once the markup exists. The frame
+   asks for `get_frame` and `get_nav_counts` the moment it runs - two calls, no
+   timers (AC-7). #}
+<script src="/assets/alvoraa_portal/js/ess/next-frame.js?v={{ asset_version | e }}" defer></script>
 {% endblock %}

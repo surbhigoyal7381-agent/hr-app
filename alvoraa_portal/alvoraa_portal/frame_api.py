@@ -56,6 +56,7 @@ FRAME_KEYS = (
 	"is_system_manager",
 	"is_control_plane",
 	"has_reports",         # somebody is recorded as reporting to this person
+	"scope_is_store",      # AC-29: which empty-search sentence is the true one
 	"may_save_settings",   # AC-67: the Org settings panel reads this
 	"review_open_count",   # AC-9c: HR's "Data to review" badge; None for everybody else
 	"features",            # get_available_features(), unchanged
@@ -131,6 +132,32 @@ def _has_reports(employee):
 	if not employee:
 		return False
 	return frappe.db.count("Employee", {"reports_to": employee, "status": "Active"}) > 0
+
+
+def _scope_is_store(is_hr):
+	"""Is this an HR caller whose reach is one store rather than a company?
+
+	The frame needs this for exactly one thing: the sentence shown when a
+	search finds nothing. Section 6 gives three, and the right one is the one
+	that names the scope the SERVER actually enforces - "people in your store
+	and anyone who reports to you" for a store's HR person, "people in the
+	companies you look after" for a company-wide one (AC-29). Getting it wrong
+	is not a leak, but it tells somebody their search covers more than it does,
+	which sends them away believing a colleague does not exist.
+
+	It is a boolean about the CALLER, not about anybody else, so it carries no
+	information about another person and does not widen SEC-12's payload in the
+	way a field would. Added deliberately, with this paragraph, because
+	FRAME_KEYS exists so that adding a key is an act somebody reviews.
+
+	A Branch User Permission is what makes an HR person a store's HR person -
+	the same test `permitted_employee_filters` applies.
+	"""
+	if not is_hr:
+		return False
+	from hrms.alvoraa_hr_core.access import permitted_branches
+
+	return permitted_branches() is not None
 
 
 def _may_save_settings(roles):
@@ -275,6 +302,7 @@ def get_frame():
 		"is_system_manager": bool(context.get("is_system_manager")),
 		"is_control_plane": bool(context.get("is_control_plane")),
 		"has_reports": has_reports,
+		"scope_is_store": _scope_is_store(is_hr),
 		"may_save_settings": _may_save_settings(roles),
 		"review_open_count": context.get("review_open_count") if is_hr else None,
 		"features": features,

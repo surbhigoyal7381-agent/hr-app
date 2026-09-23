@@ -26,7 +26,9 @@ on a tenant site.
 """
 
 import frappe
+from frappe import _
 from frappe.sessions import get_csrf_token
+from frappe.utils import get_build_version
 
 from alvoraa_portal.tenant_context import get_branding
 
@@ -72,5 +74,12 @@ def get_context(context):
     context.no_cache = 1
     context.no_header = 1
     context.no_sidebar = 1
-    context.title = "Portal preview"
+    context.title = _("Employee portal")
+    # OPS-31 / OPS-34. The frame's stylesheet and script are static files under
+    # /assets/, so a browser is told to keep them for a month. This stamp is
+    # what makes that safe: get_build_version() is the modified time of
+    # sites/assets/assets.json, which every deploy rewrites last (ALV-112).
+    # New release, new address, so no phone keeps last release's frame. One
+    # os.stat, and it carries no personal data.
+    context.asset_version = get_build_version()
     context.update(get_branding())

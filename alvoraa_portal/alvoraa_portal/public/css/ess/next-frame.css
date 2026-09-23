@@ -1,0 +1,356 @@
+/* Slice 034, Wave 1: the portal frame's styles.
+
+   A static file under public/, served from /assets/ and cached for a month by
+   nginx's existing `location ^~ /assets/` block. Not a template: Frappe
+   compiles at most 32 Jinja templates per worker and this page's chain already
+   uses most of them (OPS-31).
+
+   Rules this file keeps, each of them an acceptance check:
+
+   * No text below 12px anywhere (AC-12, AC-43). `--fs-xs` is still 11px in the
+     design system and changing it is its own commit (OPS-11), so nothing here
+     uses it. `--fs-sm` is 12px and is the floor.
+   * Every tap target is at least 44px (AC-12).
+   * @media, never container queries (AC-39). The layout test bans
+     `container-type` on the wrapper elements.
+   * Colour is never the only signal.
+   * `prefers-reduced-motion` is respected.
+   * Both themes come from the design system's tokens, so the tenant's colour
+     and the dark theme work without this file knowing about either.
+*/
+
+/* ── the skeleton, visible before any JavaScript runs ─────────────────────── */
+
+.nf-skip {
+  position: absolute; left: -9999px; top: 0; z-index: 100;
+  background: var(--surface); color: var(--text); padding: 12px 16px;
+  border: 2px solid var(--primary); border-radius: var(--r-sm);
+  font-size: var(--fs-base);
+}
+.nf-skip:focus { left: 8px; top: 8px; }
+
+.nf-sr {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+
+.nf {
+  --nf-rail-w: 248px;
+  --nf-top-h: 56px;
+  --nf-bottom-h: 64px;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--fs-base);
+}
+
+/* ── the rail ─────────────────────────────────────────────────────────────── */
+
+.nf-rail {
+  position: fixed; inset: 0 auto 0 0; width: var(--nf-rail-w);
+  background: var(--sidebar-bg); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow-y: auto;
+  z-index: 40;
+}
+
+.nf-brand {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; border-bottom: 1px solid var(--border);
+  min-height: var(--nf-top-h); box-sizing: border-box;
+}
+.nf-brand-mark {
+  position: relative; flex: 0 0 auto; width: 32px; height: 32px;
+  border-radius: var(--r-sm); background: var(--primary-lt); color: var(--primary);
+  display: grid; place-items: center; font-weight: 700; font-size: var(--fs-md);
+  overflow: hidden;
+}
+/* AC-42: the letter is behind the image, so a broken image shows the letter
+   rather than a torn-picture icon. The image removes itself on error. */
+.nf-brand-mark img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+  background: var(--surface);
+}
+.nf-brand-text { min-width: 0; display: flex; flex-direction: column; }
+/* A very long tenant name is cut with an ellipsis on ONE line and never
+   scrolls the page sideways (section 10's edge cases). */
+.nf-brand-name {
+  font-weight: 600; font-size: var(--fs-base);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nf-brand-sub { font-size: var(--fs-sm); color: var(--text3); }
+
+.nf-menu { padding: 8px 0 24px; }
+.nf-group-head {
+  padding: 14px 16px 6px; font-size: var(--fs-sm); font-weight: 600;
+  color: var(--text3); text-transform: uppercase; letter-spacing: .04em;
+}
+.nf-item {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 44px; padding: 0 16px; box-sizing: border-box;
+  color: var(--text2); text-decoration: none; font-size: var(--fs-base);
+  border-left: 3px solid transparent; background: none; border-top: 0;
+  border-right: 0; border-bottom: 0; width: 100%; text-align: left;
+  cursor: pointer;
+}
+.nf-item:hover { background: var(--hover); color: var(--text); }
+/* The current page is marked three ways: colour, weight and a bar on the left.
+   Colour on its own would be the only signal, which is the thing not to do. */
+.nf-item[aria-current="page"] {
+  color: var(--primary); font-weight: 600;
+  background: var(--primary-lt); border-left-color: var(--primary);
+}
+.nf-item-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nf-count {
+  flex: 0 0 auto; min-width: 20px; height: 20px; padding: 0 6px;
+  border-radius: var(--r-full); background: var(--primary); color: #fff;
+  font-size: var(--fs-sm); line-height: 20px; text-align: center; font-weight: 600;
+}
+
+/* ── the top bar ──────────────────────────────────────────────────────────── */
+
+.nf-top {
+  position: sticky; top: 0; z-index: 30;
+  margin-left: var(--nf-rail-w);
+  display: flex; align-items: center; gap: 4px;
+  min-height: var(--nf-top-h); padding: 0 8px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.nf-menu-btn { display: none; }
+.nf-where { flex: 1; min-width: 0; padding: 0 6px; }
+.nf-group {
+  display: block; font-size: var(--fs-sm); color: var(--text3);
+  text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nf-group:empty { display: none; }
+.nf-group:hover { text-decoration: underline; }
+.nf-page {
+  margin: 0; font-size: var(--fs-md); font-weight: 600; line-height: 1.25;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nf-page:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+
+.nf-icon-btn, .nf-avatar-btn {
+  flex: 0 0 auto; display: grid; place-items: center;
+  width: 44px; height: 44px; padding: 0;
+  background: none; border: 0; border-radius: var(--r-sm);
+  color: var(--text2); cursor: pointer; position: relative;
+}
+.nf-icon-btn:hover, .nf-avatar-btn:hover { background: var(--hover); color: var(--text); }
+
+.nf-badge {
+  position: absolute; top: 5px; right: 4px;
+  min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box;
+  border-radius: var(--r-full); background: var(--red); color: #fff;
+  font-size: var(--fs-sm); line-height: 18px; text-align: center; font-weight: 700;
+}
+
+.nf-avatar {
+  width: 32px; height: 32px; border-radius: var(--r-full);
+  background: var(--primary-lt); color: var(--primary);
+  display: grid; place-items: center; font-size: var(--fs-sm); font-weight: 700;
+  overflow: hidden;
+}
+.nf-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+/* ── the page area and the five states ────────────────────────────────────── */
+
+.nf-main {
+  margin-left: var(--nf-rail-w);
+  padding: 16px;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+}
+
+.nf-state {
+  max-width: 44rem; margin: 24px auto; padding: 20px;
+  border: 1px solid var(--border); border-radius: var(--r);
+  background: var(--surface); text-align: center;
+}
+.nf-state-say { margin: 0 0 12px; font-size: var(--fs-base); color: var(--text2); }
+.nf-state[data-kind="loading"] .nf-state-say::before {
+  content: ""; display: block; width: 22px; height: 22px; margin: 0 auto 12px;
+  border: 2px solid var(--border2); border-top-color: var(--primary);
+  border-radius: var(--r-full); animation: nf-spin .8s linear infinite;
+}
+@keyframes nf-spin { to { transform: rotate(360deg); } }
+/* An error is not signalled by colour alone: it carries a word, and the box
+   gains a left bar as well as a tint. */
+.nf-state[data-kind="error"] { border-left: 4px solid var(--red); text-align: left; }
+.nf-state[data-kind="refused"] { border-left: 4px solid var(--amber); text-align: left; }
+
+.nf-btn {
+  min-height: 44px; padding: 0 18px;
+  border: 1px solid var(--primary); border-radius: var(--r-sm);
+  background: var(--primary); color: #fff;
+  font-size: var(--fs-base); font-weight: 600; cursor: pointer;
+}
+.nf-btn--plain { background: var(--surface); color: var(--text); border-color: var(--border2); }
+
+.nf-screen { max-width: 60rem; }
+.nf-screen-note {
+  margin: 0 0 16px; padding: 14px 16px;
+  border: 1px dashed var(--border2); border-radius: var(--r);
+  color: var(--text2); font-size: var(--fs-base); background: var(--surface);
+}
+
+/* ── the staff list (W1D-21) ──────────────────────────────────────────────── */
+
+.nf-search-row { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.nf-input {
+  flex: 1 1 14rem; min-height: 44px; padding: 0 12px;
+  /* 16px, so that iOS does not zoom the page when the field is focused. */
+  font-size: 16px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border2); border-radius: var(--r-sm);
+}
+.nf-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+.nf-people { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.nf-person {
+  display: flex; align-items: center; gap: 12px;
+  min-height: 56px; padding: 8px 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+}
+.nf-person-name { font-weight: 600; font-size: var(--fs-base); }
+.nf-person-sub { font-size: var(--fs-sm); color: var(--text3); }
+.nf-more { margin-top: 12px; font-size: var(--fs-sm); color: var(--text3); }
+
+/* ── the bottom bar ───────────────────────────────────────────────────────── */
+
+.nf-bottom { display: none; }
+
+/* ── the shared sheet ─────────────────────────────────────────────────────── */
+
+.nf-sheet-wrap { position: fixed; inset: 0; z-index: 60; display: flex; }
+.nf-sheet-scrim {
+  position: absolute; inset: 0; border: 0; padding: 0;
+  background: rgba(0, 0, 0, .45); cursor: pointer;
+}
+.nf-sheet {
+  position: relative; margin: auto auto 0; width: 100%; max-width: 32rem;
+  max-height: 86vh; display: flex; flex-direction: column;
+  background: var(--surface); color: var(--text);
+  border-radius: var(--r) var(--r) 0 0;
+  border: 1px solid var(--border); border-bottom: 0;
+  box-shadow: var(--sh3, 0 -8px 32px rgba(0, 0, 0, .22));
+  animation: nf-rise .18s cubic-bezier(.4, 0, .2, 1);
+}
+@keyframes nf-rise { from { transform: translateY(16px); opacity: 0; } }
+@media (min-width: 761px) {
+  .nf-sheet { margin: auto; border-radius: var(--r); border-bottom: 1px solid var(--border); }
+}
+.nf-sheet-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--border);
+}
+.nf-sheet-title { flex: 1; margin: 0; font-size: var(--fs-md); font-weight: 600; }
+.nf-sheet-title:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.nf-sheet-body { padding: 12px 16px 20px; overflow-y: auto; }
+
+.nf-sheet-row {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  min-height: 48px; padding: 0 8px; box-sizing: border-box;
+  background: none; border: 0; border-radius: var(--r-sm);
+  color: var(--text); font-size: var(--fs-base); text-align: left;
+  text-decoration: none; cursor: pointer;
+}
+.nf-sheet-row:hover { background: var(--hover); }
+.nf-sheet-head-sm {
+  padding: 14px 8px 4px; font-size: var(--fs-sm); font-weight: 600; color: var(--text3);
+}
+.nf-sheet-say { margin: 12px 8px; font-size: var(--fs-base); color: var(--text2); }
+.nf-who { padding: 4px 8px 12px; }
+.nf-who-name { font-weight: 600; font-size: var(--fs-md); }
+.nf-who-role { font-size: var(--fs-sm); color: var(--text3); }
+
+/* The theme choice is a real radio group, so a screen reader hears which of
+   the three is on and the arrow keys move between them (AC-19). */
+.nf-themes { display: flex; gap: 8px; padding: 4px 8px 8px; flex-wrap: wrap; }
+.nf-theme { flex: 1 1 6rem; }
+.nf-theme input { position: absolute; opacity: 0; pointer-events: none; }
+.nf-theme span {
+  display: grid; place-items: center; min-height: 44px; padding: 0 10px;
+  border: 1px solid var(--border2); border-radius: var(--r-sm);
+  font-size: var(--fs-sm); cursor: pointer;
+}
+.nf-theme input:checked + span {
+  border-color: var(--primary); color: var(--primary);
+  background: var(--primary-lt); font-weight: 600;
+}
+.nf-theme input:focus-visible + span { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ── toasts ───────────────────────────────────────────────────────────────── */
+
+.nf-toasts {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 70; display: grid; gap: 8px; width: min(28rem, calc(100% - 32px));
+}
+.nf-toast {
+  padding: 12px 14px; border-radius: var(--r-sm);
+  background: var(--text); color: var(--bg);
+  font-size: var(--fs-base); box-shadow: var(--sh2, 0 4px 16px rgba(0, 0, 0, .2));
+}
+.nf-toast[data-kind="error"] { background: var(--red); color: #fff; }
+.nf-toast[data-kind="ok"] { background: var(--green); color: #fff; }
+
+/* ── the phone layout ─────────────────────────────────────────────────────── */
+
+@media (max-width: 760px) {
+  .nf-menu-btn { display: grid; }
+  .nf-top, .nf-main { margin-left: 0; }
+
+  /* Off-canvas AND `visibility: hidden` when closed, not only moved off-screen.
+     Moving it alone leaves every link in the tab order, so a keyboard user
+     tabs into a menu that is not on the screen and cannot see where they are.
+     `visibility` takes it out of the tab order; it is transitioned as well, so
+     the panel still slides rather than blinking. */
+  .nf-rail {
+    visibility: hidden;
+    transform: translateX(-100%);
+    transition: transform var(--t, .18s), visibility var(--t, .18s);
+    width: min(84vw, 300px); box-shadow: var(--sh3, 0 0 40px rgba(0, 0, 0, .3));
+  }
+  .nf[data-nf-rail="open"] .nf-rail { visibility: visible; transform: none; }
+  .nf-scrim {
+    position: fixed; inset: 0; z-index: 35;
+    background: rgba(0, 0, 0, .45); border: 0; padding: 0;
+  }
+
+  .nf-main { padding-bottom: calc(var(--nf-bottom-h) + 24px + env(safe-area-inset-bottom, 0px)); }
+
+  .nf-bottom {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
+    display: flex; align-items: stretch;
+    min-height: var(--nf-bottom-h);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: var(--surface); border-top: 1px solid var(--border);
+  }
+  .nf-tab {
+    flex: 1 1 0; min-width: 0; min-height: var(--nf-bottom-h);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; padding: 6px 2px; box-sizing: border-box;
+    background: none; border: 0; color: var(--text3);
+    font-size: var(--fs-sm); text-decoration: none; cursor: pointer; position: relative;
+  }
+  /* Again three signals, not one: colour, weight and the bar along the top. */
+  .nf-tab[aria-current="page"] { color: var(--primary); font-weight: 600; }
+  .nf-tab[aria-current="page"]::before {
+    content: ""; position: absolute; top: 0; left: 18%; right: 18%; height: 3px;
+    background: var(--primary); border-radius: 0 0 3px 3px;
+  }
+  .nf-tab-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nf-tab .nf-badge { top: 4px; right: 50%; margin-right: -22px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nf-rail, .nf-sheet { transition: none; animation: none; }
+  .nf-state[data-kind="loading"] .nf-state-say::before { animation: none; }
+}
+
+/* A visible focus ring everywhere, in both themes. Removing it is how a
+   keyboard user loses their place. */
+.nf a:focus-visible,
+.nf button:focus-visible,
+.nf input:focus-visible {
+  outline: 2px solid var(--primary); outline-offset: 2px;
+}

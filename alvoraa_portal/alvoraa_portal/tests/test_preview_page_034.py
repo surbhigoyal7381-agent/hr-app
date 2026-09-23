@@ -123,7 +123,13 @@ class TestLockTwoTheRole(_PreviewBase):
 		context = frappe._dict()
 		page.get_context(context)
 		self.assertEqual(context.no_cache, 1)
-		self.assertEqual(context.title, "Portal preview")
+		# The page stopped being a holding page when the frame landed on it: it
+		# now shows the real portal frame, so it carries the portal's title.
+		self.assertEqual(context.title, "Employee portal")
+		# OPS-34. The frame's stylesheet and script are cached for a month, so
+		# the page has to carry a version stamp or a phone keeps the old ones.
+		self.assertTrue(context.asset_version,
+		                "the preview page carries no asset version stamp")
 		self.assertTrue(context.get("tenant_name"))
 
 	def test_every_other_signed_in_persona_gets_403(self):

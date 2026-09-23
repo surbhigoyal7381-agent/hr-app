@@ -19,6 +19,13 @@ const path = require("path");
 const APP_ROOT = path.join(__dirname, "..", "..", "alvoraa_portal", "alvoraa_portal");
 const WWW = path.join(APP_ROOT, "www");
 const PORTAL_PAGE = path.join(WWW, "hrms-employee.html");
+// Slice 034 Wave 1. There are TWO portal pages now: the live one and the
+// preview page carrying the new frame until the swap. Every file under
+// templates/includes/ess/ and public/*/ess/ must be reached by ONE of them, so
+// the orphan checks below ask both. Without this, adding the frame to the
+// preview page would make the live page's guard call every new file an orphan -
+// and the tempting fix would have been to loosen the guard.
+const PREVIEW_PAGE = path.join(WWW, "hrms-employee-next.html");
 const ESS_DIR = path.join(APP_ROOT, "templates", "includes", "ess");
 
 // Only our own include files. design_system.html and brand_color.html are shared
@@ -105,6 +112,44 @@ function expand(text, used, depth = 0) {
  * The page's full source, includes expanded, BOM removed and newlines normalised -
  * exactly what the old `fs.readFileSync(page, "utf8")` calls used to hand back.
  */
+/** What one page reaches, with no guards. Used to answer \"is this file an
+ *  orphan, or does the OTHER page own it?\" */
+function reachedBy(file) {
+  const raw = fs.readFileSync(file, "utf8").replace(/^\ufeff/, "");
+  const used = new Set();
+  const assets = new Set();
+  const parts = new Set();
+  expandParts(expandAssets(expand(raw, used), assets), parts);
+  return { used, assets, parts };
+}
+
+function previewReach() {
+  if (!fs.existsSync(PREVIEW_PAGE)) {
+    return { used: new Set(), assets: new Set(), parts: new Set() };
+  }
+  return reachedBy(PREVIEW_PAGE);
+}
+
+/**
+ * The preview page's full source - the frame's markup, styles and script as
+ * one document, which is what the browser tests load. Its own guard: the
+ * frame include and both asset files must be reached, or it is a shell.
+ */
+function readPreviewSource() {
+  const raw = fs.readFileSync(PREVIEW_PAGE, "utf8").replace(/^\ufeff/, "");
+  const used = new Set();
+  const assets = new Set();
+  const out = expandAssets(expand(raw, used), assets);
+  if (!used.size) {
+    throw new Error("hrms-employee-next.html includes no ess file - the frame markup is gone.");
+  }
+  if (!assets.size) {
+    throw new Error("hrms-employee-next.html loads no /assets/alvoraa_portal frame files.");
+  }
+  return out.split("\r\n").join("\n");
+}
+
+
 function readPortalSource(file = PORTAL_PAGE) {
   const raw = fs.readFileSync(file, "utf8").replace(/^﻿/, "");
   const used = new Set();
@@ -135,7 +180,9 @@ function readPortalSource(file = PORTAL_PAGE) {
         "with no styles and no script."
       );
     }
-    const stranded = essAssetsOnDisk().filter((f) => !assets.has(f));
+    const byPreview = previewReach();
+    const stranded = essAssetsOnDisk()
+      .filter((f) => !assets.has(f) && !byPreview.assets.has(f));
     if (stranded.length) {
       throw new Error(
         "these frame asset files exist but the page never loads them, so their " +
@@ -151,7 +198,7 @@ function readPortalSource(file = PORTAL_PAGE) {
     }
     const orphans = essFilesOnDisk()
       .filter((f) => !f.includes("/parts/"))
-      .filter((f) => !used.has(f));
+      .filter((f) => !used.has(f) && !byPreview.used.has(f));
     if (orphans.length) {
       throw new Error(
         "these include files exist but nothing includes them, so their contents " +
@@ -162,4 +209,4 @@ function readPortalSource(file = PORTAL_PAGE) {
   return out.split("\r\n").join("\n");
 }
 
-module.exports = { readPortalSource, essFilesOnDisk, essAssetsOnDisk, essPartsOnDisk, PORTAL_PAGE, WWW, APP_ROOT };
+module.exports = { readPortalSource, readPreviewSource, previewReach, PREVIEW_PAGE, essFilesOnDisk, essAssetsOnDisk, essPartsOnDisk, PORTAL_PAGE, WWW, APP_ROOT };

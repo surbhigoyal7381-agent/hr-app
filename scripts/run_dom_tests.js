@@ -8,6 +8,10 @@
  * "Cannot find module 'jsdom'" and nobody saw it. jsdom is now a pinned
  * devDependency in the repository's package.json and these run in CI.
  *
+ * Slice 034 Wave 1 adds a fourth that runs, next_frame_test.js: the new frame,
+ * loaded from the preview page's own source and clicked. Three of the original
+ * five still do not run.
+ *
  * Two of the five run. Three do not, and the reasons are recorded here rather
  * than in a comment nobody reads:
  *
@@ -31,7 +35,7 @@ const path = require("path");
 
 const DIR = path.join(__dirname, "..", "alvoraa_portal", "tests");
 
-const RUN = ["portal_dom_test.js", "portal_notes_test.js"];
+const RUN = ["portal_dom_test.js", "portal_notes_test.js", "next_frame_test.js"];
 const SKIP = {
   "portal_tree_test.js": "needs a get_performance_tree fixture that is not in the repository (ALV-111, Wave 3)",
   "portal_redesign_test.js": "needs a get_performance_tree fixture that is not in the repository (ALV-111, Wave 3)",

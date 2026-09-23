@@ -25,6 +25,7 @@ Synthetic people only, tagged S010 by the shared helpers plus S034I of our own.
 """
 
 import frappe
+from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, nowdate
 
 from alvoraa_portal import attendance_correction, hr_api, inbox_api
@@ -372,3 +373,32 @@ class TestAPlainEmployeeCountsNothingThatIsNotTheirs(_InboxFixture):
 		payload = self._counts(self.plain_user)
 		self.assertEqual(self._part(payload, "attendance_fixes")["count"], 0)
 		self.assertEqual(payload["approvals_total"], 0)
+
+
+class TestTheDoctypeCacheMovesWithTheRelease(FrappeTestCase):
+	"""Review finding F8, 2026-09-24.
+
+	`_has_doctype` remembers "is this doctype on the site" for a day. The answer
+	changes at a migration, and a migration clears the cache, so the normal path
+	was already safe. The trap is the path that skips it: copying a file onto a
+	running container is a deploy command this project uses, and it changes
+	nothing a person sees for up to twenty-four hours.
+
+	Putting the build version in the key closes that, the same way `ess_part`
+	does. Take it out again and this test goes red.
+	"""
+
+	def test_the_key_carries_the_build_version(self):
+		from frappe.utils import get_build_version
+
+		key = "inbox_api:doctype:%s:Employee" % get_build_version()
+		frappe.cache().delete_value(key)
+		inbox_api._has_doctype("Employee")
+		self.assertIsNotNone(
+			frappe.cache().get_value(key),
+			"the doctype cache is not keyed to the build version, so a new build "
+			"reads the last one's answer for up to a day (F8)")
+
+	def test_the_answer_is_still_right_either_way(self):
+		self.assertTrue(inbox_api._has_doctype("Employee"))
+		self.assertFalse(inbox_api._has_doctype("No Such Doctype S034"))

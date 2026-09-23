@@ -211,6 +211,26 @@ The care points:
    normal deploy runs `clear-cache`, which empties this list. A Path A rollback does not.
    On the local bench `developer_mode` is off, so this applies there too.
 
+3. **Two things are now remembered for 24 hours, and a hand-copied file will not
+   change either of them.** Added after review finding F8 (2026-09-24), because the
+   impact analysis said there were no new caches and there are two.
+
+   | What | Where | Keyed to the build? | What goes wrong without a cache clear |
+   |---|---|---|---|
+   | The portal's ~25 markup parts | `ess_parts.py` | **Yes** | A new build cannot serve the old markup: a new build means a new key |
+   | "Is this doctype on this site" (KPI, Shift Request, Policy Document) | `inbox_api.py` | **Yes, since 2026-09-24** | It was not. If the goals app were installed on a live tenant and the cache were not cleared, the Inbox would count KPI approvals as **zero for up to a day** |
+
+   Both are correct on the normal path: a deploy runs `bench --site all clear-cache`
+   (`deploy.yml`), and `bench migrate` clears it too.
+
+   **The path that skips it is the one to watch, and this project uses it.** Copying a
+   file onto a running container — `docker cp`, or any hand edit inside the container —
+   clears nothing. A hotfix delivered that way **changes nothing a person sees for up to
+   24 hours**, and what is served is the previous build's markup. If you hotfix a part
+   file or the Inbox by hand, clear the cache in the same breath, with approval:
+   `bench --site <site> clear-cache`. Both caches are keyed to the build version, so a
+   real deploy needs no extra step.
+
 **Answer to open question 3:** no `clear-cache` is needed on the local bench to pick up
 new or changed include files — Jinja checks the file's date and reloads by itself. Only
 a remembered "not found" needs clearing, and the narrow command for that is

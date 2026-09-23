@@ -42,6 +42,7 @@ the Guest, wrong-persona and scope tests ship in the same commit.
 
 import frappe
 from frappe import _
+from frappe.utils import get_build_version
 
 # The parts, in the order the Inbox page lists them. Section 5's table, and the
 # routes are section 4's. A tuple of tuples: nothing here is appended to at run
@@ -82,8 +83,16 @@ def _has_doctype(name):
 	or the policy library must not throw. Asked directly that is three database
 	queries on a call whose whole job is to be cheap, and the answer changes
 	only at a migration, which clears this cache.
+
+	The build version is in the key (review finding F8, 2026-09-24). A migration
+	clears the cache and so does a deploy, so the normal path was already safe -
+	but the path that skips both is one this project uses: copying a file onto a
+	running container changes nothing for up to a day. With the version in the
+	key, a new build cannot read the last build's answer. If the goals app is
+	installed on a live tenant and nothing clears the cache, the Inbox would
+	otherwise count KPI approvals as zero until tomorrow.
 	"""
-	key = "inbox_api:doctype:" + name
+	key = "inbox_api:doctype:%s:%s" % (get_build_version(), name)
 	seen = frappe.cache().get_value(key)
 	if seen is None:
 		seen = 1 if frappe.db.exists("DocType", name) else 0

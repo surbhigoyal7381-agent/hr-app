@@ -455,6 +455,14 @@ class TestTheQueryCountIsBounded(_WaveTwo):
 		self._leave(self.rahul, day)
 		frappe.db.commit()
 		self._as(self.sandeep_login)
+		# Warm again, and this line is the whole method. Inserting documents
+		# clears caches, so measuring straight after the inserts compares a warm
+		# call with a cold one and reads the difference as an N+1. The first
+		# version of this test did exactly that and reported 14 against 17 while
+		# the real steady-state answer is 14 against 14. Both measurements are
+		# now taken in the same state, which is the only way the comparison
+		# means anything.
+		inbox_api.get_inbox()
 		with _Recorder() as many_rows:
 			box = inbox_api.get_inbox()
 		frappe.set_user("Administrator")

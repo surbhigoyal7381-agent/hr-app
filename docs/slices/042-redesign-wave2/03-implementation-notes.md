@@ -162,6 +162,19 @@ Assignment by start date and then checked whether it had ended, so an assignment
 that finished last week hid one that is still running. It is one query with the
 open-ended case in it now.
 
+**Wave 1's own budget decision, which arrived while I was building and which
+this follows.** W1D-23, Surbhi's decision of 24 September: `get_nav_counts`
+takes 19-20 queries for an HR caller against AC-24's 15, and **the number moved
+rather than the code** - because the property the budget existed to protect is
+that the call is **flat in headcount**, and that is true and proven. Every part
+is an aggregate; none walks a list of people.
+
+That is the right principle and it is the one my query test asserts: not a
+magic number, but that **the query count does not grow with the rows**. Where
+`get_inbox`'s own number lands is a measurement, and if it is above 25 the
+honest move is W1D-23's - show the number, prove the flatness, and let Surbhi
+move the budget - not to loosen the test quietly.
+
 **Query counts.** Not measured against a 1,000-employee fixture, which does not
 exist. What is asserted:
 
@@ -258,9 +271,14 @@ employee lands on, using the helper that produced the 16.4-second bell.
 
 | Question | Answer |
 |---|---|
-| Commits that came in from others | **None.** `git fetch origin dev` found nothing past `8718f27`, before and after the work |
-| The rebase | `slice/042-redesign-wave2`'s four docs-only commits replayed onto `slice/034-redesign-wave1` (`1f3ffdd`) with **no conflict** |
-| Conflicts | **None** |
+| Commits that came in from `origin/dev` | **None.** `git fetch origin dev` found nothing past `8718f27`, before and after the work |
+| **Commits that came in from Wave 1 — and this is the part worth reading** | **Nine.** I rebased onto `1f3ffdd` at the start; by the time I checked again, `slice/034-redesign-wave1` was nine commits ahead. Named, because absorbing them quietly is the thing `CLAUDE.md` §1 forbids: `c2a4bad` F4 (the frame mends a stale token and knows a refusal from a sign-out), `d4b8ef0` F6, `18ac8c4` F7, `2357285` F5 (the Team cap now caps the queries behind it, for an HR caller), `0acf9e8` F8 (the Inbox doctype cache moves with the build), `de4945d` F1, `220206b` W1D-22, `8dbd29d` W1D-23 (the query budget moves to 20 for HR), `e8c0a83` (the frame proved to boot in a real browser). I read the incoming diff for every file I touch before rebasing again |
+| The second rebase | Onto the new tip. **Two conflicts**, both resolved by keeping both intentions |
+| Conflict 1 — `inbox_api.py` | Their F8 docstring against my reshaped one, in `_has_doctype`. **Theirs kept whole** — it is the newer and the better explanation — and the code line below it already carried their build-version key. Proved: `review finding F8` is in the file, and so is `def parts(user=None)` |
+| Conflict 2 — `next_frame_test.js` | Their four-turn `load()` with `navTried` against my three-turn one. **Theirs kept**, because four covers three, with my reason carried into the comment so the next person knows why three is the floor |
+| What the rebase then broke, and how it showed | **`next_panels_test.js` went from 24 passing to 5 failing.** Wave 1's F4 moved the frame off `frappe.call` and onto `fetch` with a CSRF header; my file was still stubbing the old one, so `get_home` was never answered and five checks read a loading page and called it the answer. The harness now mirrors `next_frame_test.js`'s instead of being a second, older copy of it |
+| How I proved nothing of **this** incoming work was lost | Asserted file by file after the rebase: their F4 stale-token handling still in `next-frame.js`, their F5 `not is_hr_scope` still in `hr_api.get_manager_dashboard`, their F8 build-version key still in `inbox_api._has_doctype` — **and** my panel seam, my `parts()` and the week-presence deletion all still there. `git merge-base --is-ancestor` confirms 034's tip is an ancestor of mine, so nothing of theirs is behind me |
+| A phantom failure I caused and caught | The whole-suite sweep was running against the bind-mounted worktree while the rebase left a conflicted file in it, and reported a failure that meant nothing. I stopped the sweep and re-ran from the resolved tree. Wave 1's lesson about running two things at one site, arrived at from the other direction |
 | How I proved nothing of Wave 1's was lost | **Wave 1's `test_inbox_counts_034.py` was not edited and all 17 of its tests pass** against the reshaped `inbox_api`. That is the regression proof for the one collision this slice was warned about. Its `test_frame_endpoint_registry_034` caught a module-level dict I had added, and `test_portal_split_034` caught three unpinned asset files — both were Wave 1's guards doing their job, and both are fixed rather than loosened |
 | Wave 1 files I did change, and why | `next-frame.js` (a panel seam), `next_frame_test.js` (a third turn, and the Inbox **screen**'s assertions moved to the file that owns the screen now), `portal_source.py` / `portal_source.js` (they never expanded parts for the preview page), `test_ess_parts_034.py` and `test_portal_split_034.py` (their pinned sets now allow a preview-page part or asset; belonging to **neither** page still fails) |
 | Board | Claimed by path in `.claude/work-in-progress.md` before the first edit |

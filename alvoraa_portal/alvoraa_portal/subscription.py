@@ -333,6 +333,34 @@ ERPNEXT_FEATURES["india_compliance"] = {
     "requires": ["erp_accounts"],
 }
 
+# Frappe CRM - the standalone CRM app (frappe/crm), not ERPNext's Lead and
+# Opportunity. Same catalogue as india_compliance for the same reason: it is not
+# an Alvoraa HR feature, and `enterprise` is defined as all of those.
+#
+# `app` is what makes it install only where it is sold - and the install is the
+# real gate. Deliberately NO `roles`: it reuses ERPNext's Sales User and Sales
+# Manager, and withholding those from tenants without the CRM would break
+# ERPNext Selling for them. Its two modules are claimed here so that
+# deny-by-default stops blocking them the day a tenant buys it; without this
+# entry the CRM's own page check (crm.api.check_app_permission) refuses every
+# user but Administrator, because FCRM sits in their blocked modules.
+#
+# No `requires`: it runs without any ERPNext module. Its ERPNext link (deal ->
+# Customer) is a setting on the tenant, off by default. (Slice 040.)
+ERPNEXT_FEATURES["crm"] = {
+    "desc": "Leads, deals, tenders, email — the standalone CRM",
+    "icon": "🤝",
+    "label": "Frappe CRM",
+    "app": "crm",
+    "module_defs": ["FCRM", "Lead Syncing"],
+    "erpnext": True,
+}
+
+# Two things called "CRM" in one catalogue would be confusing, so ERPNext's own
+# Lead/Opportunity module says which one it is. The KEY stays `erp_crm`: tenants
+# already hold it in their `features` list, and renaming it would lock them out.
+ERPNEXT_FEATURES["erp_crm"]["label"] = "CRM (classic ERPNext)"
+
 # ── Frappe's own framework modules ───────────────────────────────────────────
 # Clutter for an HR tenant: Website, Integrations, Automation and the rest are
 # not part of the product. Hidden from ordinary users, but NOT from the tenant's

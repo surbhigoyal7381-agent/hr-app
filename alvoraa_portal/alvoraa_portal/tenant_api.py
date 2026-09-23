@@ -673,8 +673,9 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
         needs_goals  = "goals"  in modules and "alvoraa_goals"          not in installed
         needs_india  = ("india_compliance" in modules
                         and "india_compliance" not in installed)
+        needs_crm    = "crm" in modules and "crm" not in installed
 
-        if needs_vendor or needs_goals or needs_india:
+        if needs_vendor or needs_goals or needs_india or needs_crm:
             job_id = uuid.uuid4().hex[:12]
             cfg = _read_site_config(site_name)
             jobs = _read_jobs()
@@ -704,6 +705,7 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
                 install_vendor=needs_vendor,
                 install_goals=needs_goals,
                 install_india_compliance=needs_india,
+                install_crm=needs_crm,
             )
             return {
                 "status": "installing",
@@ -864,6 +866,17 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
                 log += ("\n[WARN] company setup did not complete."
                         "\n--- stderr ---\n" + (rs.stderr or "(empty)") +
                         "\n--- stdout ---\n" + (rs.stdout or "(empty)") + "\n")
+
+            # Frappe CRM, when sold - HERE, after the wizard, and nowhere earlier.
+            # provision_tenant.sh deliberately skips it: the CRM's
+            # setup_wizard_complete hook seeds fake users and leads on a site
+            # where it is installed before the wizard finishes. The helper
+            # re-checks the wizard state on the site itself rather than trusting
+            # the return code above. (Slice 040.)
+            if "crm" in [m.strip() for m in (modules or "").split(",")]:
+                _installed, crm_msg = _install_crm_after_wizard(site_name)
+                log += "\n" + crm_msg + "\n"
+
             # Every tenant starts with two real logins. A fresh Frappe site has
             # only `Administrator`, which is shared and unattributable - not
             # something to hand a customer.
@@ -1075,8 +1088,53 @@ def _get_installed_apps(site_name):
     return apps
 
 
+def _setup_wizard_complete(site_name):
+    """Whether the site's setup wizard has finished, asked of the site itself.
+
+    Frappe's own answer (frappe.is_setup_complete: frappe AND erpnext marked
+    complete in Installed Applications), not a guess from a return code.
+    `bench execute` prints the return value as JSON, so the last line is `true`
+    or `false` - checked on the bench (Frappe 16.33.1), not assumed; the Python
+    spelling `True` is accepted too in case that ever changes. Anything else -
+    a failed command, an empty answer - counts as NOT complete, because the cost
+    of a wrong "yes" is fake users with logins on a customer's site, and the
+    cost of a wrong "no" is one install to run by hand.
+    """
+    r = _bench_run(f"--site {site_name} execute frappe.is_setup_complete", timeout=60)
+    if r.returncode != 0:
+        return False
+    lines = [ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()]
+    return bool(lines) and lines[-1] in ("true", "True")
+
+
+def _install_crm_after_wizard(site_name):
+    """Install Frappe CRM on a site, but only once its setup wizard is done.
+
+    Returns (installed, message). Both install paths - a new tenant and a plan
+    change on an existing one - go through here, so the guard cannot be
+    forgotten on one of them. The CRM's setup_wizard_complete hook
+    (crm.demo.api.create_demo_data) seeds three fake @example.com System Users
+    with Sales roles and fake leads on any site where the app is present when
+    the wizard finishes. Installing after the wizard is the only reliable way to
+    keep that off a customer's tenant. (Slice 040.)
+    """
+    if not _setup_wizard_complete(site_name):
+        return False, ("[WARN] crm NOT installed: the setup wizard has not completed on "
+                       "this site, and the CRM seeds demo users if installed before it. "
+                       "Finish the wizard, then run: bench --site "
+                       f"{site_name} install-app crm")
+    # Long: 44 doctypes, 32 patches, default records and custom fields on
+    # Contact, Email Account and Web Form.
+    r = _bench_run(f"--site {site_name} install-app crm", timeout=900)
+    if r.returncode != 0:
+        return False, ("[WARN] crm install failed."
+                       "\n--- stderr ---\n" + (r.stderr or "(empty)") +
+                       "\n--- stdout ---\n" + (r.stdout or "(empty)"))
+    return True, (r.stdout or "").strip()
+
+
 def _run_install_modules(pjob_id, site_name, install_vendor=False, install_goals=False,
-                         install_india_compliance=False):
+                         install_india_compliance=False, install_crm=False):
     """Background job: install additional Frappe apps on an existing site."""
     def _update(status, log_append="", finished=False):
         jobs = _read_jobs()
@@ -1130,6 +1188,15 @@ def _run_install_modules(pjob_id, site_name, install_vendor=False, install_goals
                     f"[{now_datetime()}] Audit trail "
                     + ("enabled.\n" if ra.returncode == 0
                        else "could NOT be enabled - switch it on in Accounts Settings.\n"))
+
+        if install_crm:
+            _update("Provisioning", f"[{now_datetime()}] Installing crm…\n")
+            ok, crm_msg = _install_crm_after_wizard(site_name)
+            if not ok:
+                # Not fatal for the other apps in this job, but the operator
+                # must see it: the feature is ticked and the app is not there.
+                raise RuntimeError(crm_msg)
+            _update("Provisioning", crm_msg + "\n")
 
         _bench_run(f"--site {site_name} clear-cache")
         _update("Done", f"[{now_datetime()}] ✅ Module installation complete.\n", finished=True)

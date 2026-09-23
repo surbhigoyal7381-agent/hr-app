@@ -300,7 +300,11 @@ docker exec compose-backend-1 bash -lc \
 ```python
 frappe.get_installed_apps()
 # expect exactly: ['frappe', 'erpnext', 'hrms', 'alvoraa_portal', 'alvoraa_goals']
-# no duplicates
+# no duplicates. Since slice 040 the list depends on the SITE: a tenant that
+# bought Indian Compliance also lists 'india_compliance', and one that bought
+# Frappe CRM also lists 'crm'. Both are in the image for every site; neither
+# runs anything on a site that did not install it. Compare against the site's
+# `features` in site_config.json, not against a fixed five.
 
 [m.name for m in frappe.get_all("Module Def", filters={"app_name": ["like", "alvoraa%"]}, fields=["name"])]
 # expect: ['Alvoraa Goals', 'Alvoraa Portal']

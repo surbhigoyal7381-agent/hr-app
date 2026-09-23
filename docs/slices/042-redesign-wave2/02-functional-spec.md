@@ -3,13 +3,26 @@ slice: 042-redesign-wave2
 artifact: 02-functional-spec
 author: hrms-business-analyst
 date: 2026-09-24
-revision: 1
-status: draft — written ahead of the build so Wave 1 does not stall. Needs the six decisions in §20 before the strategy gate
-inputs: [../009-ess-portal-redesign/00-assessment-and-plan.md §4 Wave 2 and Appendix A, ../009-ess-portal-redesign/appendix-b-home-inbox.md, ../009-ess-portal-redesign/01b-ux-design.md, ../009-ess-portal-redesign/00f-decisions-2026-09-22.md, ../034-redesign-wave1/00g-decision-register.md (W1D-01 to W1D-21), ../034-redesign-wave1/02-functional-spec.md revision 4, ../034-redesign-wave1/01c-security-privacy-requirements.md revision 4, ../034-redesign-wave1/03-implementation-notes.md §4, prototype-v2.html]
+revision: 2
+status: draft, revised 2026-09-24 after this slice's `01c` and `07` landed. Two facts changed under it — `inbox_api.py` now exists and OPS-31 has landed — and both are corrected here
+inputs: [../009-ess-portal-redesign/00-assessment-and-plan.md §4 Wave 2 and Appendix A, ../009-ess-portal-redesign/appendix-b-home-inbox.md, ../009-ess-portal-redesign/01b-ux-design.md, ../009-ess-portal-redesign/00f-decisions-2026-09-22.md, ../034-redesign-wave1/00g-decision-register.md (W1D-01 to W1D-21), ../034-redesign-wave1/02-functional-spec.md revision 4, ../034-redesign-wave1/01c-security-privacy-requirements.md revision 4, ../034-redesign-wave1/03-implementation-notes.md §4, prototype-v2.html, 01c-security-privacy-requirements.md (042, revision 1), 07-devops-inputs.md (042), ../034-redesign-wave1/03-implementation-notes.md stretch 4 (OPS-31, measured 2026-09-23)]
 brief: there is no `01` for this slice. The approved brief is `../009-ess-portal-redesign/00-assessment-and-plan.md` (Wave 2), the design is `../009-ess-portal-redesign/01b-ux-design.md`, and the decisions are in `00f-decisions-2026-09-22.md` and `../034-redesign-wave1/00g-decision-register.md`
 ---
 
 # Wave 2 — Home and Inbox: functional spec
+
+## What changed in revision 2
+
+| # | Revision 1 assumed | What is true now | Where |
+|---|---|---|---|
+| 1 | `alvoraa_portal/inbox_api.py` **does not exist**, so Wave 2's first commit builds it | **It exists.** Wave 1 built it with the counts only — `PARTS`, `APPROVAL_PARTS`, `CORRECTIONS_CAP` and `get_nav_counts` (read in the Wave 1 worktree today). Its own docstring says it is written so **Wave 2 extends it rather than replaces it**. Wave 2's first commit is an **extension**, and about a day smaller | §1, §3, Assumptions |
+| 2 | Wave 2 may add **no new include file** until OPS-31 lands | **OPS-31 landed** (Wave 1, `a2439e3`). Markup is now pasted in by `ess_part()`, a Jinja global that reads a file holding no Jinja and **takes no template cache slot**. Home and Inbox each get their own markup, style and script file, for free | AC-44, §20 D-6 |
+| 3 | `get_home` carries `counts` "so Home need not make a fourth call" | The frame **already** calls `get_nav_counts`, so that counted the six parts **twice** on every Home load — the most expensive queries on the page (DevOps OPS-W2-6). **Decided in this revision:** `get_home` does **not** carry `counts` | §8, §13, AC-38 |
+
+Plus the four spec changes and two check extensions the security review requires
+(042 `01c` verdict): SEC-9, SEC-12, PRIV-2's minimum-n rule and PRIV-4's joiners card.
+
+---
 
 ## Bad news first
 
@@ -28,12 +41,17 @@ the build will pick one of them at 11pm unless somebody decides now.**
    submit permission on Attendance Request, not a role). Wave 1 deliberately counted them
    **where they sit today** (034 AC-53). Wave 2 is where that changes, and it changes who
    sees what. §20 D-2.
-3. **Wave 2 cannot add include files until OPS-31 is done.** Wave 1 measured a cliff in
-   Frappe's Jinja template cache: 4 include files cost +7.4 %, 5 cost +97 %
-   (`../034-redesign-wave1/03-implementation-notes.md` §4). Home and Inbox are two new
-   panels. **This spec assumes Wave 2 adds no new include file** and that its markup,
-   style and script go into the four files Wave 1 created — which means panel-versus-panel
-   collisions are real until OPS-31 moves style and script into static assets. §20 D-6.
+3. **~~Wave 2 cannot add include files until OPS-31 is done.~~ Closed, and this is the
+   good news among the bad.** OPS-31 landed in Wave 1 as commit `a2439e3`: the portal's
+   style and script are static files, and markup is pasted in by `ess_part()`, a Jinja
+   **global function** registered through Frappe's own `jinja` hook — it reads a file
+   holding no Jinja and **takes no template cache slot**. Measured: 12 markup parts
+   rendered *faster* than one include file (0.1541 s against 0.1600 s). **So Home and
+   Inbox each get their own file and the panel-versus-panel collision goes away.** Two
+   conditions remain, and they are conditions rather than decisions: Wave 1 must reach
+   `dev` first (`a2439e3` is on `slice/034-redesign-wave1`, **not** on `origin/dev`), and
+   OPS-31 must not reach **production** until ALV-112's asset refresh is on `main`
+   (DevOps OPS-W2-2, **P0**). §20 D-6, AC-44.
 
 Everything else in this spec is buildable on what is installed today.
 
@@ -42,7 +60,7 @@ Everything else in this spec is buildable on what is installed today.
 ## 0. How to read the numbers in this file
 
 **Story and check numbers are per slice.** This slice runs `US-1` to `US-14` and `AC-1`
-to `AC-58`. Wave 1 has its own `US-1` and `AC-1` and they are different things. Cite them
+to `AC-62` (revision 2 added AC-59 to AC-62). Wave 1 has its own `US-1` and `AC-1` and they are different things. Cite them
 as "042 AC-12" and "034 AC-12" so nobody confuses the two.
 
 Claims carry a label: **Confirmed fact** (read in the source, with file and line),
@@ -54,7 +72,7 @@ Claims carry a label: **Confirmed fact** (read in the source, with file and line
 
 | App | Touched how |
 |---|---|
-| `alvoraa_portal` | **Most of the work.** New `inbox_api.py` and `home_api.py`; edits to `hr_api.py`, `goals_api.py`, `attendance_correction.py`; the Home and Inbox markup, style and script inside Wave 1's four include files |
+| `alvoraa_portal` | **Most of the work.** **Extends** Wave 1's `inbox_api.py` (it exists, counts only) and adds `home_api.py`; edits to `hr_api.py` (including **retiring `get_week_presence`** — SEC-9), `goals_api.py`, `attendance_correction.py`; Home and Inbox markup as **new files in `templates/includes/ess/parts/`**, with their style and script as new static files under `public/` (OPS-31 landed — AC-44) |
 | `hrms` (our fork) | Read only, except `alvoraa_policy_library/access.py` (`readable_policy_names`, line 163) and `alvoraa_hr_core/access.py` (`permitted_employees`, `refuse_own_decision`) — both **reused, not changed** |
 | `erpnext` | Read only — Employee, Holiday List, Expense Claim |
 | `frappe` | Read only — `frappe.get_all`, `frappe.db.count`, permissions, `__()` |
@@ -125,9 +143,9 @@ Line numbers are from `origin/dev` at `8718f27`, read in
 | Nobody approves their own request | `access.refuse_own_decision`, already called in `attendance_correction.decide:743` | **Reuse** — extend the same call to leave, shift and goal/KPI | S |
 | Policies to acknowledge | `hrms/alvoraa_policy_library/access.readable_policy_names:163`; `hr_api.get_my_policies:2955` | **Reuse** | S |
 | My own open requests | `hr_api.get_requests_history:2000`; `attendance_correction.my_requests:650` | **Extend** — one list, one shape | M |
-| The count itself | Wave 1 builds `inbox_api.get_nav_counts` (034 §5). **It does not exist yet** — `alvoraa_portal/inbox_api.py` is absent on this branch | **Build**, if Wave 1 has not; **Extend** if it has | M |
+| The count itself | **`alvoraa_portal/inbox_api.py` exists.** Wave 1 built it with the counts only: `PARTS` (six, as a tuple of tuples), `APPROVAL_PARTS`, `CORRECTIONS_CAP = 50`, `_leave_approvals`, `_goal_updates`, `_attendance_fixes`, `_shift_requests`, `_policies`, `_my_requests` and one whitelisted `get_nav_counts`. Its docstring says the rows are Wave 2's job and that it is written to be **extended, not replaced** — read in the Wave 1 worktree today | **Extend** — §6.1's `parts()` reshapes the six existing private helpers so each carries **one** filter expression with a `count()` and a `rows()` on it. **Not a rewrite, and not a second module** | M |
 | The old bell call | `goals_api.get_pending_approvals:1335` (16.4 s for HR) and `get_pending_approvals_count:1410` | **Drop** from the portal. Left in place for any other caller; a test pins that no boot path calls either | S |
-| Peer "team today" | `hr_api.get_week_presence:3151` — falls back to **department** at line 3183 when the person has no reports, capped at 40 | **Extend** — peers are people with the same manager; no department fallback (§20 D-3) |  M |
+| Peer "team today" | `hr_api.get_week_presence:3151` is whitelisted, returns **named** rows (`employee_name`, `designation`, `image`) with a per-day in/away/due/off state, and **falls back to the caller's whole department, capped at 40, when the caller has no direct reports** (`:3179-3186`) | **Build the new counts card, and retire `get_week_presence` in the same commit** (042 `01c` SEC-9). Revision 1 said "Extend" and that was wrong: replacing the card while leaving the endpoint whitelisted narrows the screen and nothing else — anyone can still call it by hand. §20 D-3, AC-59 | M |
 | Manager "your team today" | `hr_api.get_manager_dashboard:354` | **Extend** — reuse, and keep W1D-20's HR-scope rule | S |
 | Celebrations | nothing | **Build** — own work anniversary and new joiners (§20 D-4) | S |
 | Birthdays | `Employee.date_of_birth` exists on every record | **Drop** for v1 (`01b` §9; Q8 needs a DPDP advisor) | — |
@@ -397,8 +415,24 @@ holidays      [{date, description, weekly_off}] , holiday_note
 goals         the caller's own, and for a manager/HR the team summary (counts, no names below 5 — see §17)
 team_today    {in, away, due, basis}                               counts only, never names or reasons
 celebrations  {own_anniversary_years or None, joiners:[{name, designation, joined}]}
-counts        the six part counts, so Home need not make a fourth call
 ```
+
+**`counts` is NOT in `get_home`. Decided in revision 2, and this is the answer to DevOps
+OPS-W2-6.** Revision 1 put the six part counts inside `get_home` "so Home need not make a
+fourth call" — but the frame already calls `get_nav_counts` on every panel, so every Home
+load counted the six parts **twice**, and those are the most expensive queries on the
+page.
+
+**The choice, and why this one:** DevOps offered two ways to count once — drop `counts`
+from `get_home`, or let Home skip `get_nav_counts` and take the badge's number from
+`get_home`. **I pick dropping `counts` from `get_home`.** The frame is one code path on
+every panel; a panel that supplies its own count is a second source of the badge's number,
+and a second source is what §3 says the whole slice exists to remove. It also keeps AC-8's
+"the count equals the list" test with one subject instead of two. The cost is one extra
+HTTP call that runs beside the others, carrying under a kilobyte.
+**DevOps recommended the other way** (`get_home` keeps `counts`, two calls not three). If
+the 1,000-employee measurement shows the extra round trip matters on a phone, that is the
+fallback, and it is recorded here so nobody has to re-derive it.
 
 Nothing else leaves the module. AC-5 asserts the key set per persona.
 
@@ -500,6 +534,15 @@ Given / When / Then. Each one has an observable oracle.
 - **AC-8** For every part in §6.2 and every persona in §6.3, `part.count()` equals
   `len(part.rows(limit=None))`. The test enumerates parts from `parts()` itself, so a new
   part with no matching row fails the test.
+  **Two structural checks added in revision 2** (042 `01c` SEC-3, SEC-4):
+  (a) **every part exposes a non-empty scope declaration as data, not as a comment**, and
+  a part constructed without one raises at import — a part added later with no scope is a
+  test failure, never a runtime default that means "everybody";
+  (b) **no filter helper ever returns `{}` or a dict with no keys.** In Frappe an empty
+  filter dict means **every record**. For a caller with no entitlement the helper returns
+  filters matching nothing (`{"name": ["in", []]}`) or a sentinel the caller must handle.
+  The assertion is on the **return value**, not on the rows — as a plain employee, a
+  manager, a Vendor User and a caller with no Employee record.
 - **AC-9** *Given* a person who is their own `leave_approver` with one open leave
   application of their own, *then* the total is **1**, it sits under "my requests", and
   part 1 (leave to approve) is **0**.
@@ -527,9 +570,15 @@ Given / When / Then. Each one has an observable oracle.
 
 ### US-5 · deciding
 
-- **AC-17** *Given* a row is drawn in the Inbox, *when* its Approve is pressed, *then* it
-  never returns a permission refusal — the list and the action share one scope function.
-  The test drives every row of every persona fixture through its own action.
+- **AC-17 (extended in revision 2 — 042 `01c` SEC-7)** **Both directions, and the second
+  is the one that matters.**
+  (a) *Given* a row is drawn in the Inbox, *when* its Approve is pressed, *then* it never
+  returns a permission refusal — the list and the action share one scope function. The
+  test drives **every** row of every persona fixture through its own action.
+  (b) **New:** *Given* a document that is **not** in a persona's list, *when* its decide
+  action is called by hand with that document's name, *then* it is **refused**, the
+  refusal is logged with no personal content, and **no document is written.** Direction
+  (a) alone only proves the screen is tidy.
 - **AC-18** *Given* two approvers, *when* the second one approves after the first, *then*
   the answer is "This one has already been decided.", the row disappears, the counts
   refresh, and **no second decision is written** (asserted on the document's
@@ -571,9 +620,54 @@ Given / When / Then. Each one has an observable oracle.
 
 ### US-9 · the peer card
 
-- **AC-29** *Given* Rahul's peer card, *then* it shows three numbers — In, Away, Still to
-  come — the sentence "Who is in, and who is still to come. Nothing about why anyone is
-  away.", and **no names, no leave types and no absence reasons** anywhere in the payload.
+- **AC-29 (extended in revision 2 — 042 `01c` PRIV-2)** Three parts, **all asserted on
+  the payload, not on the screen**:
+  (a) the card shows three numbers — In, Away, Still to come — the sentence "Who is in,
+  and who is still to come. Nothing about why anyone is away.", and **no names, no
+  photos, no per-person state, no leave types and no absence reasons** anywhere in the
+  payload;
+  (b) **minimum group size.** A peer group **below five** returns the sentence and **no
+  numbers at all** — a four-person team's payload carries no counts; a six-person team
+  with one away and five in carries both;
+  (c) **complementary suppression.** Where one category is suppressed, the next smallest
+  is suppressed with it, so the remaining numbers and the total cannot be used to recover
+  the hidden one. A six-person fixture built so that suppressing one category would leave
+  the other recoverable must suppress **both**.
+  §20 D-7 confirms the number five. It is a `[ASSUMPTION]` from `01b` §9; no source names
+  a figure. Until it is confirmed, five with complementary suppression is the fail-closed
+  default and the test is written against it.
+- **AC-59 (042 `01c` SEC-9) · retiring the card is not retiring the endpoint.**
+  **Confirmed fact:** `hr_api.get_week_presence:3151` is whitelisted, returns **named**
+  rows with `employee_name`, `designation` and `image` plus a per-day in/away/due/off
+  state, and **falls back to the caller's whole department, capped at 40, when the caller
+  has no direct reports** (`:3179-3186`). *Then* in the **same commit** that stops calling
+  it: (a) a static check finds the name `get_week_presence` in **no** tracked file, and
+  (b) a call-by-hand test gets a missing method (or, if §20 D-3 keeps it instead, a
+  refusal — and then AC-29's three parts run against it too). Revision 1 called this
+  "Extend" and claimed in §18.3 that the visibility was narrower; that was true of the
+  card and false of the endpoint.
+- **AC-60 (042 `01c` SEC-12) · everything drawn from data is escaped.** Wave 2's markup
+  never assigns API data to `innerHTML`; it uses `textContent` or one shared escape
+  helper. Two checks: a scan of Home's and Inbox's files for `innerHTML` taking API data,
+  **and** a DOM test where a Designation named `<img src=x onerror=alert(1)>` appears as
+  **text** in a queue row, in an approval context line and on the team card, and creates
+  no element. 034 SEC-10 covered Wave 1's files; this extends the same check rather than
+  assuming it.
+- **AC-61 (042 `01c` PRIV-4) · the joiners card is profiling of named people, so its
+  scope is a check, not an intention.** *Then*: (a) the list is the viewer's **own
+  branch**, **last 30 days**, **Active employees only** — a Left employee never appears, a
+  joiner outside the window never appears, another branch's joiner never appears, asserted
+  per persona; (b) an employee with **no branch** is in nobody's list; (c) **if §20 D-8
+  agrees an opt-out**, a declining employee is absent from **every** viewer's payload.
+  **Until D-8 is answered the fail-closed default is the caller's own work anniversary
+  only, and no joiners list at all.**
+- **AC-62 (042 `01c` SEC-5) · the entitlement tests call the real gate.** The "your
+  payslip is ready" row and every other plan-gated part are refused **on the server** on a
+  tenant whose `features` list genuinely lacks the key — hiding a row is not a permission.
+  **A static check fails the build if any test in this slice patches
+  `subscription.has_feature`, `requires_feature` or `enabled_features`.** A patched gate
+  turns every entitlement test green while proving nothing, and it has happened in this
+  repository before (`subscription.py:672-692`'s own docstring records it).
 - **AC-30** The phrase "Nobody is on leave today" and any equivalent appears nowhere in
   the built page (static check on the include files).
 
@@ -597,15 +691,23 @@ Given / When / Then. Each one has an observable oracle.
 
 ### US-13 · no Employee record
 
-- **AC-37** *Given* Asha, *then* Home shows one plain line and no cards, Inbox shows
-  "All clear." with total 0, **no endpoint throws**, and no console error is raised. The
-  same holds for a leaver whose login is still enabled, except that his own still-open
-  requests are counted (Wave 1 SEC-14).
+- **AC-37 (strengthened in revision 2 — 042 `01c` SEC-14)** *Given* Asha, *then* Home
+  shows one plain line and no cards, Inbox shows "All clear." with total 0, **no endpoint
+  throws**, and no console error is raised. The same holds for a leaver whose login is
+  still enabled, except that his own still-open requests are counted (Wave 1 SEC-14).
+  **And the test asserts two things, not one:** the result is empty **and the scoped query
+  did not run at all** — a query count of zero. A refusal must be an explicit early
+  return, never a filter that was skipped because there was no employee to filter on. An
+  unscoped query that happened to return nothing looks identical from the outside, and
+  that is the fail-open shape.
 
 ### US-14 · speed
 
-- **AC-38** Home makes exactly **three** calls: `get_frame`, `get_nav_counts`, `get_home`.
-  None waits on a timer.
+- **AC-38** Home makes exactly **three** calls — `get_frame`, `get_nav_counts`,
+  `get_home` — none waiting on a timer, **and the six count parts are computed exactly
+  once per page load.** The second half is the assertion that matters: a query-count test
+  shows `parts()` running once, not twice, and a payload test shows `get_home` carrying no
+  `counts` key (§8, DevOps OPS-W2-6).
 - **AC-39** `get_home` answers within **500 ms at p95** over 20 warm calls as a manager
   with 19 reports, and no query runs inside a loop (asserted, not eyeballed).
 - **AC-40** Home is usable within **2.5 s at p95** of 20 loads on the W1D-09 rig, with
@@ -629,9 +731,20 @@ Given / When / Then. Each one has an observable oracle.
 - **AC-43** Every write from Home and Inbox is a POST with its arguments in the body; a
   log-capture test shows endpoint, user id, outcome and time, and **no name and no
   reason**, on a normal call and on a refused one.
-- **AC-44** Home and Inbox add **no new include file** (static check counting the files
-  under `templates/includes/ess/`), unless OPS-31 has landed first — see D-6. The check
-  reads the count from one constant so it moves in one place when OPS-31 does.
+- **AC-44 — rewritten in revision 2; OPS-31 has landed and the old rule is stale.**
+  **Confirmed fact**, read in Wave 1's worktree today: `a2439e3` moved the portal's style
+  and script into `public/css/ess/` and `public/js/ess/`, and markup is now pasted in by
+  `ess_part()` — a Jinja global registered at `hooks.py:59` that reads a file containing
+  no Jinja and **takes no template cache slot**. What the check must assert now:
+  (a) Wave 2 adds **no new Jinja include template** — the pinned set in
+  `test_only_the_pieces_that_need_jinja_are_templates` stays at three (`frame.html`,
+  `growth-modals.html`, `next/frame.html`), and a fourth fails;
+  (b) Home's and Inbox's markup are **new files in `parts/`**, each holding no `{{` and no
+  `{%` (`ess_part()` refuses one that does);
+  (c) their style and script are **new static files** under `public/`, each loaded with a
+  `?v=` stamp, costing no template slot at all.
+  **The panel-versus-panel collision this AC used to guard against is gone**: Home, Inbox,
+  Time and Pay are now four separate files.
 
 ### The edge cases that bite (each is a check)
 
@@ -711,7 +824,7 @@ turns a screen into a year's homework, and the correction flow is for recent day
 | The Activity feed | **Dropped from Home.** The existing panel is untouched |
 | "Suggest a September target" for a new joiner (H-25) | **Wave 4** — it edits a goal |
 | Hindi and Punjabi for users | **Wave 5.** Wave 2 wraps strings and measures in Hindi fixtures only (W1D-12) |
-| Moving existing drawers into the shared sheet | **After OPS-31** |
+| Moving existing drawers into the shared sheet | **Still out of scope for Wave 2**, but the reason has changed: OPS-31 landed, so it is no longer blocked — it is simply not this wave's work |
 | The org-chart company scope (`ALV-86`), the wider leaver fix (`ALV-87`), named logins (`ALV-93`) | Their own tickets; Wave 2 neither waits for them nor works around them |
 
 ---
@@ -722,7 +835,11 @@ Measured on "Slow 4G" with a 4× CPU slow-down, cache off (W1D-09).
 
 | What | Number |
 |---|---|
-| Calls on Home | **3** (`get_frame`, `get_nav_counts`, `get_home`), no timer |
+| Calls on Home | **3** (`get_frame`, `get_nav_counts`, `get_home`), no timer — but the six count parts are computed **once**, in `get_nav_counts` only (§8) |
+| **Payload size** *(new in revision 2, from DevOps OPS-W2-7 — `nfr-budget.md` carries no payload number)* | `get_nav_counts` ≤ **1 KB**, `get_home` ≤ **30 KB**, `get_inbox` ≤ **60 KB** at the 50-row cap, asserted **in bytes** in the same test as the query count |
+| Query counts asserted, not only times | At **1,000 employees** and 4 companies, per persona — especially `_pending_approvals_scope`, the gap rule and the team summary (OPS-W2-9). The old bell took 16.4 s for HR because it walked one employee at a time, and that helper is being reused |
+| Calls per page, against the rate limit | nginx allows **120 requests a minute per IP address**, burst 30 (`deploy/nginx.conf`). **A 20-person store is one address**: twenty people opening Home at the shift bell is about 60 requests in a few seconds. Count the API calls one Home load and one five-minute session make, and compare (OPS-W2-10). **Wave 2 does not touch `deploy/nginx.conf`** — one nginx serves dev and production from that file (OPS-W2-11) |
+| Fixtures | A **1,000-employee, 4-company** fixture and a **20-person store** fixture, built once and shared with Wave 3 (OPS-W2-8). Neither exists today, so every budget in this table is a target nobody has tested |
 | `get_nav_counts` | ≤ **15** queries, ≤ 500 ms p95 over 20 warm calls as company-wide HR at 1,000 employees — **Wave 1's budget; Wave 2 must not regress it** |
 | `get_inbox` | ≤ **25** queries whatever the team size, ≤ 500 ms p95 |
 | `get_home` | ≤ **20** queries, ≤ 500 ms p95 for a manager with 19 reports |
@@ -749,7 +866,19 @@ passes for the wrong reason.
 
 **Rollback:** the Home and Inbox panels are new routes behind Wave 1's frame. Reverting
 the Wave 2 commits restores Wave 1's small counted-row Inbox and today's Home. About ten
-minutes, the same as Wave 1's rollback (W1D-10).
+minutes, the same as Wave 1's rollback (W1D-10). **Wave 2 ships to production in a release
+of its own**, with the previous image tag written down and confirmed present in
+`alvoraa-app` — a rollback rolls back the whole image, not one commit (OPS-W2-14).
+
+**Two release gates from DevOps, which are not acceptance checks:**
+
+1. **P0 — OPS-31 must not reach production until ALV-112's asset refresh is on `main`**
+   and one deploy has been proved to run it. `main`'s `deploy.yml` mentions
+   `refresh_bench_files.sh` zero times today. Without it, production serves the new HTML
+   against August's stylesheet and script, nothing errors, and nothing on screen says so
+   (OPS-W2-2, OPS-W2-3).
+2. **Build the 1,000-employee and the 20-person fixtures and record the numbers** before
+   the production release (OPS-W2-8). Every budget in §13 is a target nobody has measured.
 
 ---
 
@@ -767,10 +896,13 @@ already fills. The messages it shows on screen are in §9's wording table.
 | The page-error code | anything personal — it is a time plus a short reference matching an Error Log entry |
 | Any refusal logged by `access.log_refusal` | names, search terms, per-person counts (Wave 1 PRIV-5) |
 
-**One existing message worth naming:** `attendance_deduction.py`'s manager email carries
-the explanation including loss of pay when `notify_manager` is on. **Wave 2 does not touch
-it** — it is Wave 3's question (043 §20) — but nothing in Wave 2 may quote that
-explanation on screen.
+**One existing message worth naming, and revision 2 corrects what it says.**
+`attendance_deduction.notify:182-205` sends the stored `explanation` to the employee
+**and** the manager in one `sendmail`, when `notify_manager` is on. It carries **days, not
+rupees** — what it leaks is the **leave type** ("Taken: 0.5 from Sick Leave, 0.5 as loss
+of pay"). **Wave 2 does not touch it** — it is Wave 3's fix, ticket **ALV-113** — but
+nothing in Wave 2 may quote that explanation on screen, and nothing in Wave 2 may put a
+colleague's leave type anywhere near it.
 
 ---
 
@@ -801,7 +933,7 @@ explanation on screen.
 | Who approved or declined what, and when | The source doctypes already record it: Leave Application's workflow fields, Attendance Request's `alvoraa_reviewed_by` / `alvoraa_reviewed_on` / `alvoraa_review_note`, Shift Request's own fields, the goal and KPI approval rows. **Wave 2 writes through the existing actions so this keeps working** — it never sets a status with `db_set` of its own |
 | Why a decline happened | The reason is mandatory on a decline and is stored on the document (`decide:743` already enforces it); Wave 2 keeps that for every decide path |
 | Who read a queue | **Not recorded today.** Wave 1's residual risk R3 owns this (logging first step by 2026-10-15). Wave 2 adds no new signal and does not pretend to |
-| Small groups | Any aggregate on Home that describes a group (the team goal summary, the peer counts) follows `01b` §9: suppressed under five, and the next smallest group suppressed with it. For the peer card that means: **under five peers, show the sentence and no numbers.** AC-29's fixture includes a four-person team |
+| Small groups | Any aggregate on Home that describes a group (the team goal summary, the peer counts) follows `01b` §9: suppressed under five, and the next smallest group suppressed with it. For the peer card that means: **under five peers, show the sentence and no numbers.** **Revision 2: this is a control, not a design intention, so it is asserted on the payload** — AC-29 (b) and (c), with a four-person fixture and a six-person fixture built so that suppressing one category would leave the other recoverable |
 
 ---
 
@@ -842,7 +974,8 @@ the small-group suppression rule already exist and are **reused**, not respecifi
 | Who | Can now see | Could they before? |
 |---|---|---|
 | Rahul | his own attendance gaps as a list | Yes — in the month calendar, less clearly |
-| Rahul | peer counts: in / away / still to come | **Narrower than today.** `get_week_presence:3151` today falls back to the whole department, 40 of 207, and shows the viewer's own weekly offs for everybody. Wave 2 replaces it with the caller's own peers |
+| Rahul | peer counts: in / away / still to come | **Narrower than today — but only if the old endpoint goes with the old card** (AC-59). `get_week_presence:3151` today returns **named** rows for up to 40 department colleagues with a per-day state. Wave 2 replaces the card with peer-scoped counts under a minimum group size. Revision 1 claimed the narrowing outright; that was true of the card and false of the whitelisted endpoint, which anyone can still call by hand until it is deleted |
+| Colleagues in the viewer's branch | **new joiners, by name, job title and joining date** | **Nowhere today — this is the one new disclosure in the slice.** It is profiling of the newest and least powerful people in the building. Scoped, time-boxed and Active-only by AC-61; off entirely until §20 D-8 |
 | Sandeep | one queue instead of three broken ones | Same data, reachable today, mostly failing |
 | Priya (store HR) | her store's queue | **Narrower** — Wave 1 already narrows counts and search; Wave 2 keeps the same scope for the lists |
 | A leaver | nothing | **Narrower** (Wave 1 SEC-14) |
@@ -879,7 +1012,9 @@ Counsel's binding periods (GPS 30 days, performance records employment + 6 month
 | Question | Who must decide | What it blocks |
 |---|---|---|
 | Are birthdays shown at all, and on what basis (Q8)? | Surbhi, with a DPDP advisor | Nothing in Wave 2 — birthdays are out of scope until that answer exists |
-| Does the peer card's "away" count, in a team of four, let a colleague infer who is away? | Surbhi, with the security engineer | The small-group rule in §17 is my recommendation (show the sentence, hide the numbers under five); AC-29 tests it |
+| Does the peer card's "away" count, in a team of four, let a colleague infer who is away? | Surbhi, with the security engineer | **D-7.** Five with complementary suppression is the fail-closed default; AC-29 (b) and (c) test it on the payload. The security engineer records this as residual risk **R6** — minimum-n bounds the inference, it does not remove it, and in a six-person team "1 away" plus a look around the floor names the person. Proposed for acceptance at the strategy gate, **not yet accepted** |
+| Should a new joiner be able to decline being listed by name on 400 colleagues' Home screens? | Surbhi | **D-8.** It is the one new disclosure in the slice, and it is about the newest and least powerful person in the building. Until it is answered, no joiners list is built |
+| Does decide-in-place make a decision about a person too cheap to take? | Surbhi | Nothing in the build. A decline still requires a reason on every one of the five paths (§17), which is the mitigation. Residual risk **R7**, proposed for acceptance, reviewed after 30 days on dev |
 
 ### 18.7 AI features
 
@@ -925,27 +1060,52 @@ nothing to refuse.
 | Wave 1 SEC-14 | leaver finds nobody | US-13 | AC-37, AC-46 | covered |
 | Wave 1 PRIV-4 | counts are numbers only | US-4 | AC-12, AC-16 | covered |
 | Wave 1 PRIV-5 | POST bodies, clean logs | — | AC-43 | covered |
-| DevOps OPS-31 / 009 strategy decision 12 | cached script files | — | AC-44, **D-6** | **open — it decides Wave 2's build order** |
+| DevOps OPS-31 / 009 strategy decision 12 | cached script files | — | AC-44 | **closed** — landed in Wave 1 (`a2439e3`); AC-44 rewritten to the `ess_part()` rule |
+| 042 `01c` SEC-9 | `get_week_presence` retired, not just unused | US-9 | AC-59, **D-3** | covered |
+| 042 `01c` SEC-12 | output escaping in Wave 2's panels | — | AC-60 | covered |
+| 042 `01c` SEC-7 | an **undrawn** row is not actionable by hand | US-5 | AC-17 (b) | covered |
+| 042 `01c` SEC-5 | the real feature gate, and no test may patch it | US-1 | AC-62 | covered |
+| 042 `01c` SEC-3, SEC-4 | every part declares its scope; no empty filter dict | US-8 | AC-8, AC-10, AC-23 | covered — and the engineer builds `parts()` with the scope declaration first |
+| 042 `01c` SEC-8 | D-2 is a permission change | US-4, US-8 | AC-23, **D-2** | **open — D-2 blocks the corrections part** |
+| 042 `01c` SEC-14 | a caller with no Employee record is refused, not filtered | US-13 | AC-37 | covered — the test must assert **zero scoped queries**, not just an empty list |
+| 042 `01c` PRIV-2 | minimum group size **and** complementary suppression, on the payload | US-9 | AC-29, **D-7** | covered |
+| 042 `01c` PRIV-4 | the joiners card's scope, Active filter and opt-out | US-1 | AC-61, **D-8** | covered |
+| 042 `01c` PRIV-7 | decide-in-place still needs a reason on a decline | US-5 | AC-19, §17 | covered |
+| DevOps OPS-W2-6 | the six parts are counted once per page load | US-14 | AC-38 | covered — §8 decides which call keeps them |
+| DevOps OPS-W2-7, OPS-W2-8, OPS-W2-9 | payload budgets; two fixtures; query counts at 1,000 employees | US-14 | §13, AC-15, AC-39 | covered |
+| DevOps OPS-W2-2 | OPS-31 must not reach production before ALV-112 is on `main` | — | §14 rollback, release gates | **open — a release gate, P0, not an AC** |
 | DevOps OPS-17 / W1D-09 | measurement rig | US-14 | AC-31, AC-40 | covered |
 | Prototype | Home hero, Needs you, Coming up, Leave left, Celebrations, Inbox tabs | US-1 to US-6 | as above | covered, with §21's differences |
 
-**Gaps, listed rather than hidden:** the celebrations row (needs D-4); the corrections
-routing (needs D-2); the Home number (needs D-1); the build order (needs D-6).
+**Gaps, listed rather than hidden:** the corrections routing (D-2, the one blocker); the
+joiners card (D-8); the Home number (D-1); the minimum group size (D-7). The build order
+(old D-6) is closed.
 
 ---
 
 ## 20. Needs a decision
 
-Six. Each would change what gets built; nothing here is a nice-to-know.
+**Eight, and only one of them stops a commit.** Each has a fail-closed default written
+into an acceptance check, so the build can start and keep moving.
 
-| # | Question | My recommendation |
-|---|---|---|
-| **D-1** | **Home's "Needs you" heading shows a number that is not the Inbox number** (§6.4). Which is it? | **No number on Home.** The bell and the menu are the one number. Home shows the items; the badge shows the total. One number in the product is the whole point of Q5 |
-| **D-2** | **009 design decision 1 says the manager decides an attendance fix and HR steps in after two working days.** The code sends every correction to whoever holds submit permission on Attendance Request — HR in practice (`_may_review:240`). Does HR see a manager's corrections **from day one** (visible, not actionable, until day 3) or **only after two working days**? And is "two working days" counted on the employee's own holiday list or the company's? | **HR sees every correction from day one and may act on any of them from day three**, with the row labelled "with <manager> until <date>". A backstop nobody can see is not a backstop. Count **two working days on the requester's own holiday list**, because that is the list the rest of the product already uses. The manager's count includes his own from day one; HR's count includes only the ones past day two, so no correction is counted twice |
-| **D-3** | **Peer "team today": who are the peers?** Today the code falls back to the whole department (40 of 207) when the viewer has no reports (`get_week_presence:3183`). | **People with the same manager, and no fallback.** Someone with no manager sees no peer card at all (AC-55). A department is not a team, and a 207-person "team" card is worse than no card |
-| **D-4** | **Celebrations: whose anniversaries and which new joiners?** (Q9) | **Own work anniversary only, plus new joiners in the viewer's own branch in the last 30 days.** Branch is the unit a shop-floor worker recognises. Company-wide would put 403 people's joinings on one card |
-| **D-5** | **The attendance-gap rule** (§11): does a day the auto-attendance job marked Absent count as a gap, and is a two-month window right? | **Yes, it counts** — that day is unpaid and it is exactly the case Rahul has. **Two months** — current and previous. Anything older belongs on the Time screen (Wave 3), not on Home |
-| **D-6** | **Build order against the Jinja template cliff.** Wave 1 could fit only four include files; a fifth costs +97 %. Wave 2 adds two panels. Does OPS-31 (move style and script into static files) come **before** Wave 2's build? | **Yes — bring OPS-31 forward, ahead of Wave 2.** The engineer recommended the same in `034/03-implementation-notes.md` §4 and it is the same answer for both waves. Without it, Wave 2's markup, CSS and JavaScript all land inside Wave 1's four files, and Wave 3 then edits the same four files — two sessions in one file, which is what the split was for |
+| # | Question | My recommendation | Blocks? |
+|---|---|---|---|
+| **D-1** | **Home's "Needs you" heading shows a number that is not the Inbox number** (§6.4). Which is it? | **No number on Home.** The bell and the menu are the one number; Home shows the items. One number in the product is the whole point of Q5 | One line of markup and AC-2's wording. While building |
+| **D-2** | **Who may decide an attendance correction, and from when?** 009 design decision 1 says the manager decides and HR steps in after two working days; the code sends every correction to whoever holds **submit permission on Attendance Request** (`_may_review:240` — a permission, not a role). **This is a permission change dressed as a routing change** (042 `01c` SEC-8) | **HR sees every correction from day one and may act from day three**, with the row labelled "with <manager> until <date>". A backstop nobody can see is not a backstop. Count two working days on the **requester's own** holiday list. The manager's count holds his own from day one; HR's holds only those past day two, so nothing is counted twice. **Until Surbhi answers, the fail-closed default is: no new decider** — the queue stays as it is today. Note "visible but not actionable" is a third state the code does not have, so whichever way it goes it must be written down before the corrections part is built | **Yes — blocks the corrections part** of the count and the list |
+| **D-3** | **Peer "team today": who are the peers, and is `get_week_presence` deleted or kept and scoped?** (042 `01c` Q3) | **Peers are people with the same manager, with no department fallback** — someone with no manager sees no peer card (AC-55). **And delete `get_week_presence` in the same commit** (AC-59). Keeping a whitelisted endpoint that returns named per-day absence for a whole department, purely because a card stopped calling it, is "a hidden menu is not a permission" in a different hat. If it is kept for some other caller, that caller must be named | While building — but the deletion ships **with** the card, not after it |
+| **D-4** | **Celebrations: whose anniversaries and which new joiners?** | **Own work anniversary, plus new joiners in the viewer's own branch in the last 30 days, Active only** (AC-61). Branch is the unit a shop-floor worker recognises; company-wide would put 403 people's joinings on one card | While building; D-8 is the part that gates the joiners list |
+| **D-5** | **The attendance-gap rule** (§11): does an auto-marked Absent day count, and is a two-month window right? | **Yes it counts** — that day is unpaid and it is exactly Rahul's case. **Two months**, current and previous. Anything older belongs on the Time screen (Wave 3) | While building |
+| **D-6** | ~~OPS-31 before Wave 2~~ | **Closed by Wave 1.** `a2439e3` landed it; markup parts cost no template slot, so Home and Inbox each get their own file (AC-44). **What remains is a condition, not a decision:** Wave 2's panels sit on Wave 1 reaching `dev`, and OPS-31 must not reach **production** until ALV-112's asset refresh is on `main` and one deploy has proved it (OPS-W2-2, **P0**) | Closed |
+| **D-7** *(new)* | **Is five the right minimum group size for the peer card, and does complementary suppression apply?** (042 `01c` Q2) | **Five, with complementary suppression.** Five is `01b` §9's figure and I have no better one — `[ASSUMPTION]`, no source names a number. Complementary suppression is not optional arithmetic: with three categories and a known total, suppressing one recovers it. AC-29 is written against this as the fail-closed default | While building |
+| **D-8** *(new)* | **May a person decline to be listed as a new joiner?** (042 `01c` Q4) | **I genuinely do not know what is right here** — it is a small kindness with a real cost in code, and the person it protects is the one least able to ask. My recommendation is to ship **own anniversary only** in Wave 2 and put the joiners card behind this answer, rather than list 400 people's new colleagues by name and add an opt-out later. **Until answered: no joiners list** | Gates the joiners card only |
+
+**Two things that are conditions rather than decisions, so nobody waits on Surbhi for
+them:** `R2` — Wave 1 recorded that a repo-wide `ignore_permissions` CI gate "must exist
+before Wave 2 adds endpoints", and **Wave 2 is here and the gate is not** (baseline script
+due 2026-10-31). Either the date holds and Wave 2 waits, or the date moves with Surbhi's
+name against it. And **R6 and R7** — the peer card as an inference channel, and
+decide-in-place making a decision about a person cheaper to take — are **proposed for
+acceptance at the strategy gate**, not yet accepted.
 
 ---
 
@@ -975,8 +1135,8 @@ same way Wave 1 recorded its five.
 |---|---|
 | Brief approved | ✓ — the 009 plan (Wave 2) and the decisions stand in for `01` |
 | Clickable prototype reviewed | ✓ 22 Sep, with §21's differences recorded |
-| `01c` security and privacy written | **✗ — not written for this slice.** Wave 1's `01c` covers the shared helpers; Wave 2 adds new endpoints and needs its **own** `01c` before the build. This spec names what it expects (§5's negatives, §18) but does not replace it |
-| `07` DevOps inputs written | **✗ — not written for this slice.** D-6 is the one that matters and is raised here |
+| `01c` security and privacy written | ✓ — revision 1, 2026-09-24. Its four spec changes (SEC-9, SEC-12, PRIV-2, PRIV-4) and two check extensions (SEC-7 on AC-17, SEC-5 on the gate tests) are applied in this revision |
+| `07` DevOps inputs written | ✓ — 2026-09-24, `OPS-W2-1` to `OPS-W2-18`. Its Jinja-cliff item is now moot; OPS-W2-6 (count once) is decided in §8; the payload and fixture items are in §13 |
 | Every state designed and specified per persona | ✓ §9 |
 | Gap analysis verified in source | ✓ §3, with file and line |
 | Stories: personas, sized, "must not" stories | ✓ §7 — US-9, US-10, US-11, US-13 are the "must not" stories |
@@ -988,32 +1148,56 @@ same way Wave 1 recorded its five.
 | Migration stated | ✓ none (§14) |
 | Compliance sub-analysis | ✓ §18 |
 | No prohibited capability | ✓ nothing AI-shaped, no monitoring |
-| Open questions owned, none blocks day 1 | **✗ — D-2 and D-6 block the build.** D-6 blocks the first commit; D-2 blocks the corrections part |
+| Open questions owned, none blocks day 1 | **Partly — D-2 blocks the corrections part of the count and the list.** Nothing else blocks a commit; every other decision has a fail-closed default in an acceptance check |
 
-**Verdict, plainly: this slice is NOT ready to build.** Three things are missing — its own
-`01c`, its own `07`, and answers to D-2 and D-6. The spec is ready; the slice is not. I am
+**Verdict, plainly: ready to start, with one thing to settle and one thing to check.**
+Revision 2 closes the build-order blocker (OPS-31 landed) and the missing `01c` and `07`.
+What is left:
+
+- **D-2 must be answered before the corrections part is built.** It changes who may
+  decide something about a person, and the code has no "visible but not actionable" state.
+- **R2 is the one to look at first.** Wave 1 recorded that a repo-wide
+  `ignore_permissions` CI gate must exist *before* Wave 2 adds endpoints. Wave 2 is here
+  and the gate is not.
+- **The demo copy must be seeded before any of this is tested** (§14). Until it is, "0
+  findings" on the scope tests means nothing.
+
+**The order I would build in:** extend `inbox_api`'s six parts with their scope
+declaration and the count-equals-list test, then `home_api`, then the panels once Wave 1
+is on `dev`. I am
 saying so rather than passing a soft spec downstream.
 
 ---
 
 ## Open questions
 
-| # | Question | Owner | Blocks |
-|---|---|---|---|
-| 1 | D-1 — the Home number | Surbhi | AC-2, and one line of Home's markup |
-| 2 | D-2 — who decides an attendance fix, and when HR sees it | Surbhi | The corrections part of the count and the list; a permission change |
-| 3 | D-3 — who counts as a peer | Surbhi | The peer card, and whether `get_week_presence` is rewritten or retired |
-| 4 | D-4 — celebrations scope | Surbhi | One query and one card |
-| 5 | D-5 — the gap rule's boundaries | Surbhi | The gap query, and the number on Home |
-| 6 | D-6 — OPS-31 before Wave 2 | Surbhi, with DevOps | The build order and where Wave 2's code lives |
-| 7 | Peer counts in a team under five (§18.6) | Surbhi, with the security engineer | AC-29's fixture, not the build |
+| # | Question | Owner | Blocks | Can the build start without it? |
+|---|---|---|---|---|
+| 1 | **D-2 — who decides an attendance fix, and when HR sees it** | Surbhi | The corrections part of the count and the list. **It is a permission change** | **No** — this is the one blocker |
+| 2 | D-3 — who counts as a peer, and is `get_week_presence` deleted | Surbhi, with the engineer | The peer card and AC-59 | Yes |
+| 3 | D-8 — may a person decline to be listed as a new joiner | Surbhi | The joiners card only | Yes — default is no joiners list |
+| 4 | D-7 — is five the right minimum group size | Surbhi, with the security engineer | AC-29's fixture | Yes |
+| 5 | D-1 — the Home number | Surbhi | AC-2 and one line of markup | Yes |
+| 6 | D-4 — celebrations scope | Surbhi | One query and one card | Yes |
+| 7 | D-5 — the gap rule's boundaries | Surbhi | The gap query and the number on Home | Yes |
+| 8 | **R2 — the `ignore_permissions` CI gate was due before Wave 2 added endpoints, and it does not exist** | Surbhi, with the security engineer | Nothing technically. It is a commitment either kept or moved in writing | Yes |
+| 9 | Accept or decline **R6** (the peer card as an inference channel) and **R7** (decide-in-place) at the strategy gate | Surbhi | Nothing in the build | Yes |
 
 ## Assumptions
 
-- `[ASSUMPTION]` Wave 1 ships `inbox_api.get_nav_counts` and the six parts. **It has not
-  been built yet** — `alvoraa_portal/inbox_api.py` does not exist on `origin/dev` at
-  `8718f27`. If Wave 1 ships without it, §6.1's helper is Wave 2's first commit and the
-  build grows by about a day.
+- **Confirmed fact, replacing revision 1's assumption:** `alvoraa_portal/inbox_api.py`
+  **exists.** Wave 1 built it with `PARTS`, `APPROVAL_PARTS`, `CORRECTIONS_CAP` and
+  `get_nav_counts` — counts only, and its docstring says it is written so **Wave 2 extends
+  it rather than replaces it**. §6.1's helper is an extension of six private functions
+  that are already there, not a new module, and the build is about a day smaller than
+  revision 1 said. **Condition:** it is on `slice/034-redesign-wave1`, not yet on
+  `origin/dev`.
+- `[ASSUMPTION — replaces revision 1's stale one]` **The Jinja template cliff no longer
+  constrains this slice.** OPS-31 landed in Wave 1 (`a2439e3`): style and script are
+  static files, markup is pasted in by `ess_part()`, and 12 parts measured faster than one
+  include file. Home and Inbox each get their own markup, style and script file for free
+  (AC-44). **What remains true:** OPS-31 must not reach production before ALV-112's asset
+  refresh is on `main` (OPS-W2-2, P0), and a deploy must be proved to run it.
 - `[ASSUMPTION]` Frappe's `"not in"` filter wraps the column in `ifnull()`, so a NULL
   `alvoraa_review_status` counts as waiting. Confirm on the bench before the count is
   written; §6.1 rule 3 carries the fallback.
@@ -1028,20 +1212,34 @@ saying so rather than passing a soft spec downstream.
 
 ## Handoff note
 
-**To the security and privacy engineer:** this slice needs its own `01c` and three things
-deserve your eye first. **The count helper** (§6.1) is where a scope mistake becomes a
+**To the security and privacy engineer:** your `01c` landed and all four spec changes and
+both check extensions are applied — SEC-9 as AC-59, SEC-12 as AC-60, PRIV-2 as AC-29 (b)
+and (c), PRIV-4 as AC-61, SEC-7 as AC-17 (b), SEC-5 as AC-62. Three things still deserve
+your eye first at review. **The count helper** (§6.1) is where a scope mistake becomes a
 number a manager trusts. **The peer card** (§5, AC-29) is the one place an absence reason
 could leak by inference rather than by disclosure. **`get_home`'s key list** (AC-5) is
 Wave 1's own lesson repeated — the payload, not the screen, is the control.
 
-**To the DevOps engineer:** D-6 is yours. Wave 2 cannot be shaped until OPS-31's place in
-the order is settled, and the answer serves Wave 3 too.
+**To the DevOps engineer:** your `07` landed and is applied. D-6 is closed by OPS-31.
+OPS-W2-6 is answered in §8 — `get_home` drops `counts`, and I have recorded that you
+recommended the other way round. The two that stay with you: **OPS-W2-2** (OPS-31 must not
+reach production before ALV-112 is on `main`) and **OPS-W2-8** (neither tenant shape
+exists as a fixture, so every budget in §13 is untested).
 
 **To the fullstack engineer:** build the count helper first and the screens second. Every
 number on both screens comes out of `parts()`, and the day somebody writes a second filter
 "just for the badge" is the day the number stops matching the list.
 
-**To the test engineer:** three checks are easy to get wrong. **AC-8** must enumerate the
-parts from `parts()` itself, or a new part ships untested. **AC-11** must put the declined
-and withdrawn rows *inside* the first 50 by creation date, or it proves nothing. **AC-17**
-must drive every drawn row through its own action, not a sample.
+**To the test engineer:** six checks are easy to write so that they prove nothing.
+**AC-8** must enumerate the parts from `parts()` itself, or a new part ships untested, and
+its "never `{}`" half must assert on the **return value**, not on the rows. **AC-11** must
+put the declined and withdrawn rows *inside* the first 50 by creation date. **AC-17** must
+drive every drawn row through its own action **and** an undrawn row through it expecting a
+refusal — the second half is the one that matters. **AC-37** must assert **zero scoped
+queries**, not just an empty list. **AC-62** must not patch the feature gate. **AC-29**
+must assert on the payload, not on the screen.
+
+**And the data comes before the tests.** §14's seeding is not a nicety: with no check-ins
+after 6 Sep, no open request that is not the owner's own, and no policy awaiting
+acknowledgement, every scope test passes for the wrong reason and "0 findings" means
+nothing.

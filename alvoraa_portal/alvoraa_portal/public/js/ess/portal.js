@@ -3528,7 +3528,17 @@ function renderTeamData(d) {
   document.getElementById("t-present").textContent      = Object.values(todayAtt).filter(s => s === "Present" || s === "Half Day").length;
   document.getElementById("t-on-leave").textContent     = onLeave.length;
   document.getElementById("t-pending-count").textContent = pending.length;
-  document.getElementById("team-sub").textContent       = team.length + " direct report" + (team.length !== 1 ? "s" : "");
+  // AC-72. For an HR caller this list is their HR scope, not their direct
+  // reports, and it is capped. Say which, and say plainly when there are more
+  // than the screen is showing - a count that does not match the list beside it
+  // is worse than no count at all.
+  const total  = (typeof d.team_total === "number") ? d.team_total : team.length;
+  const capped = !!d.team_capped;
+  const noun   = d.is_hr_scope ? "person" : "direct report";
+  const plural = d.is_hr_scope ? "people" : "direct reports";
+  document.getElementById("team-sub").textContent = capped
+    ? "Showing the first " + team.length + " of " + total + " " + plural
+    : total + " " + (total === 1 ? noun : plural);
 
   // Update sidebar pending badge
   const badge = document.getElementById("sb-team-badge");

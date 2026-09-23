@@ -9,6 +9,12 @@ from alvoraa_portal.subscription import requires_feature
 import calendar as _calendar
 from frappe.utils import cint, flt, today, get_first_day, get_last_day, getdate, add_days, now
 from alvoraa_goals.permissions import get_effective_manager
+from hrms.alvoraa_hr_core.access import permitted_employee_filters
+
+# The Team screen's ceiling. Company-wide HR on a thousand-person tenant would
+# otherwise draw a thousand cards and push a thousand ids into the attendance
+# and leave queries below. The same 50 the Inbox uses (SEC-13, AC-72).
+TEAM_LIST_CAP = 50
 
 # ── Cache invalidation helpers (called by doc_events hooks in hooks.py) ──────
 
@@ -357,24 +363,73 @@ def get_manager_dashboard():
     if not emp:
         return {"no_employee": True}
 
-    # Direct reports
+    fields = ["name", "employee_name", "designation", "department", "user_id", "image"]
+
+    # Their own direct reports. Theirs whatever else they are.
     team = frappe.get_all(
         "Employee",
         filters={"reports_to": emp.name, "status": "Active"},
-        fields=["name", "employee_name", "designation", "department", "user_id", "image"],
+        fields=fields,
         ignore_permissions=True,
     )
-    # HR managers also own employees who have no reporting manager set
+    team_total = len(team)
+    team_capped = False
+    is_hr_scope = False
+
+    # SEC-13 / AC-72 / W1D-20. For an HR caller the Team screen is their HR
+    # SCOPE, not "everybody in the tenant who has no manager".
+    #
+    # What was here before added every Active employee in the tenant whose
+    # reports_to was empty, with ignore_permissions and NO company or branch
+    # filter, to anyone holding HR Manager or HR User. A store's HR person in
+    # Ludhiana therefore saw head office and every other store's unassigned
+    # people. That block is deleted, not filtered - the replacement is a scope,
+    # which is a different question with a different answer.
+    #
+    # Three things this keeps, each of which would be a regression if dropped:
+    #   * status = "Active" stays. permitted_employee_filters returns every
+    #     status on purpose, so without this the screen would start listing
+    #     leavers - WIDER than before, not narrower.
+    #   * the caller's own record stays out, as it always was.
+    #   * their direct reports stay in even when they fall outside their HR
+    #     scope - an HR person for one company who manages somebody in another
+    #     must not lose them off their own team screen.
+    # And the list is capped, because company-wide HR on a thousand-person
+    # tenant would otherwise draw a thousand cards and push a thousand ids into
+    # the attendance query below. The true total goes with it, so the screen can
+    # say what it is not showing (AC-72).
     roles = frappe.get_roles()
     if {"HR Manager", "HR User"} & set(roles):
-        orphans = frappe.get_all(
-            "Employee",
-            filters={"reports_to": ("is", "not set"), "status": "Active", "name": ["!=", emp.name]},
-            fields=["name", "employee_name", "designation", "department", "user_id", "image"],
+        is_hr_scope = True
+        scope = [[f, c[0], c[1]]
+                 for f, c in permitted_employee_filters(user).items()]
+        scope += [["status", "=", "Active"], ["name", "!=", emp.name]]
+
+        scoped = frappe.get_all(
+            "Employee", filters=scope, fields=fields,
+            order_by="employee_name asc", limit=TEAM_LIST_CAP,
             ignore_permissions=True,
         )
-        existing = {t.name for t in team}
-        team.extend(o for o in orphans if o.name not in existing)
+        scoped_total = frappe.db.count("Employee", filters=scope)
+
+        # The direct reports that the scope does not already cover. Asked of the
+        # database rather than worked out here, so the scope rule has exactly one
+        # definition (SEC-4).
+        outside = []
+        if team:
+            covered = set(frappe.get_all(
+                "Employee",
+                filters=scope + [["name", "in", [t.name for t in team]]],
+                pluck="name", ignore_permissions=True,
+            ))
+            outside = [t for t in team if t.name not in covered]
+
+        team_total = scoped_total + len(outside)
+        seen = {s.name for s in scoped}
+        team = scoped + [t for t in outside if t.name not in seen]
+        if len(team) > TEAM_LIST_CAP:
+            team = team[:TEAM_LIST_CAP]
+        team_capped = team_total > len(team)
 
     # Indirect reports (L2 only) — single query instead of one per manager
     l2 = []
@@ -453,6 +508,16 @@ def get_manager_dashboard():
         "pending_approvals": pending,
         "month_leaves":    month_leaves,
         "team_size":       len(team),
+        # What the list really holds, and what it would hold uncapped. The
+        # screen must say so when they differ: a count that does not match the
+        # list beside it is worse than no count.
+        "team_total":      team_total,
+        "team_capped":     team_capped,
+        # Whether this list is an HR scope or a manager's own reports, so the
+        # screen can name what it is showing instead of calling every row a
+        # "direct report" when most of them are not.
+        "is_hr_scope":     is_hr_scope,
+        "team_cap":        TEAM_LIST_CAP,
         "l2_size":         len(l2),
     }
 

@@ -3,7 +3,7 @@ slice: 034-redesign-wave1
 artifact: 02-functional-spec
 author: hrms-fullstack-engineer, revised after the analyst and security re-reviews
 date: 2026-09-23
-revision: 4 (Surbhi's three further decisions of 23 Sep, W1D-19 to W1D-21, written in; open questions 1 and 5 closed; AC-72 rewritten; AC-75 and AC-76 new)
+revision: 5 (2026-09-24: §12 corrected — OPS-31 was built before the swap, not after; release gate 9 added for the assets it created. No acceptance check changed.)
 status: draft, revised — ready to build once the strategy gate is passed
 inputs: [02c-ba-rereview.md, 06b-security-rereview.md, 02b-ba-review.md, 06-security-review-of-requirements.md, 07-devops-inputs.md §4 and §3b, 01c-security-privacy-requirements.md (revision 3), 00-impact-analysis.md, 00g-decision-register.md, ../009-ess-portal-redesign/01b-ux-design.md, ../009-ess-portal-redesign/appendix-a-frame.md, prototype-v2.html]
 brief: there is no `01` for slice 034. The approved brief is `../009-ess-portal-redesign/00-assessment-and-plan.md` (Wave 1) plus the decisions in `00g-decision-register.md`.
@@ -704,13 +704,14 @@ for the owner (009 design decision 6); the Time, Pay, Growth and org-chart scree
 amounts, the reporting-line note on HR review steps, absence reasons, small-group
 suppression, "Needs review" and data dates (01b §14 items 5–12); moving the existing
 drawers into the shared sheet; Hindi and Punjabi for users; compression (slice 036);
-cached script files (OPS-31, after the swap); the owner/HR screen redesign; the CXO
+the owner/HR screen redesign; the CXO
 multi-company view; the mobile app's in-app mode; `set_my_language`; the org-chart
 company scope (ALV-86); the wider leaver fix (ALV-87); named logins in place of the shared
 `Administrator` and the tenant access log (ALV-93, W1D-18); `approve_kpi_update` and the
 other company-scoped performance endpoints.
 
-**Two things moved *into* scope, restated for revision 4.**
+**Three things moved *into* scope. Two were restated for revision 4; the third is
+recorded here in revision 5.**
 
 **1. The Team screen's query** (SEC-13, AC-72, W1D-20 — this replaces revision 3's W1D-13
 wording). The Team **screen's look** stays out of Wave 1; **what it is allowed to read does
@@ -728,6 +729,27 @@ it. What Wave 1 builds is a searchable list of people — name, job title, depar
 — scoped by `permitted_employees()` from its first line, behind its own `opt_in` key in the
 existing registry. The **person sheet** is still out of scope: a row opens what it opens
 today.
+
+**3. Cached style and script files** (OPS-31). **Amended 2026-09-24 — this line used to
+say the opposite.** Revision 4's list put OPS-31 out of Wave 1, "after the swap". It was
+built *before* the swap instead, on the instruction given on 24 September and on the
+recommendation the engineer made after measuring the template-cache cliff. The spec and
+the code disagreed until this amendment; they agree now.
+
+Why it had to come first, in one line: Frappe compiles at most 32 Jinja templates per
+worker, this page's chain already used about 28 of them, and the styles and script were
+three of those. Splitting the markup into one file per area — US-10, the thing Waves 2
+to 5 depend on — was unaffordable until they stopped being templates. Moving them out
+also cut the HTML sent on every visit from 1,071,272 bytes to 209,574 (−80 %) and the
+server render by about 22 %.
+
+What this changes elsewhere in this document: nothing in §8 — AC-64 was always the check
+on the split, and it passes at −4 %. §16's release gate 1 (compression, slice 036) is
+**not** replaced by this: gzip on `/assets/` is already on in nginx, so the script now
+arrives compressed, but the remaining HTML and the 2.5 s "Home usable" budget still need
+036. §13's own line is unchanged. The one new obligation is §16's gate 9 below, because
+the portal's styles and script are now fetched from `/assets/` rather than carried in the
+page.
 
 ---
 
@@ -820,6 +842,20 @@ The analyst is not a lawyer, and neither is the engineer: nothing here is a lega
    it, and on the local PP Jewellers copy for testing (W1D-21). Until it is ticked the
    screen is invisible, which is safe but is not what was decided. It is a tenant
    configuration change, so it waits for Surbhi's word on the day.
+9. **The portal's styles and script are fetched and checked after every deploy**
+   (OPS-35, OPS-36; new in revision 5, because OPS-31 moved into scope — §12 item 3).
+   The page no longer carries its own CSS and JavaScript; it loads three files from
+   `/assets/`. If that path serves the wrong thing the portal is a blank page that does
+   nothing, which is a worse failure than the old inline copy. Two checks, both about a
+   minute's work, and both **before anyone looks at the page**:
+   - Fetch `/assets/alvoraa_portal/css/ess/frame.css`, `/assets/alvoraa_portal/css/ess/panels.css`
+     and `/assets/alvoraa_portal/js/ess/portal.js`. Each must answer **200** with a
+     **non-zero content length**. A 404 on the script is the whole portal gone.
+   - Confirm **`sites/assets/assets.json`'s modified time moved** with the deploy. That
+     file is the version stamp; if it did not move, browsers keep the previous release's
+     script and the deploy has not really landed.
+   These run on dev and again on production. They are release gates, not acceptance
+   checks: they test the delivery, not the code.
 
 
 ---

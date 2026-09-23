@@ -321,7 +321,49 @@ The speed acceptance checks now read "Chrome Slow 4G, 4× CPU slow-down, on the 
 copy, cache off", and the 2.5 s target is stated as depending on slice 036 being live.
 `02-functional-spec.md` carries that wording.
 
+## §4.6 · 2026-09-24 · Two delivery gates the engineer recommends · hrms-fullstack-engineer
+
+**Why these exist now and did not before.** OPS-31 was built before the swap rather than
+after it (the spec's §12 is corrected to match). The portal's styles and script are no
+longer inside the page; they are three static files served from `/assets/`:
+
+- `/assets/alvoraa_portal/css/ess/frame.css`
+- `/assets/alvoraa_portal/css/ess/panels.css`
+- `/assets/alvoraa_portal/js/ess/portal.js`
+
+That bought a lot — 80 % less HTML per visit, about 22 % faster server render, and the
+script now arrives gzipped and cached for 30 days because nginx's `location ^~ /assets/`
+block already does both. It also moved a failure: **if `/assets/` ever serves the wrong
+thing, the portal is a blank page that does nothing.** With the script inline that could
+not happen. So the delivery now needs checking, and these two checks are how.
+
+This is not theoretical. Before ALV-112 landed on 23 September (`8718f27`), the sites
+volume hid the image's assets: dev was serving a build from 27 August and production one
+from 19 August, and a newly installed app had no assets folder at all. On that platform
+this change would have broken the portal outright. ALV-112 fixes it; these gates are what
+proves it stayed fixed on the day.
+
+| ID | Recommendation | Why | Cost of ignoring it | Level | Decision |
+|---|---|---|---|---|---|
+| **OPS-35** | **After every deploy — dev first, then production — fetch the three asset files above and confirm each answers 200 with a non-zero content length, before anyone opens the portal.** One `curl -sI` per file from an ordinary signed-out client; `/assets/` needs no session. Record the three status codes and lengths in the release note | A 404 or a zero-length file on `portal.js` is the entire portal gone — the page renders, nothing works, and no error appears in the backend logs because nothing reached the backend | The first person to notice is a user on a dead portal, and the cause looks like a code fault rather than a delivery fault, so the first hour is spent in the wrong place | Recommend | |
+| **OPS-36** | **After every deploy, confirm `sites/assets/assets.json`'s modified time moved.** It is the build stamp the `?v=` on every asset address is derived from. Compare it against the deploy's start time | If the manifest did not move, the sites volume still holds the previous release's assets — the exact ALV-112 failure. Browsers then keep the old script, and the deploy looks green while having changed nothing a user can see | A deploy is believed to have landed when it has not. Every later investigation starts from a false premise, which is what made the 23 September asset problem take as long as it did | Recommend | |
+
+**Both are checks on the release, not acceptance checks on the code.** They prove the
+delivery, and no test in the suite can: a test runs against a bench that reads the files
+from disk, while these two failures happen in the volume and the proxy in front of it.
+
+They are cheap — four fetches and one timestamp, about a minute — and they are needed on
+**every** deploy from the release that carries OPS-31 onwards, not only the swap.
+
+**Not proposed:** automating them inside the Deploy workflow. That is a change to a
+workflow file, which is outside a feature slice (the same line OPS-18 sits on). If they
+prove useful by hand they are worth automating, and that is the DevOps engineer's call.
+
+---
+
 ### Still open for the DevOps engineer
 
 - OPS-15 and OPS-18, if the user takes them.
+- **OPS-35 and OPS-36 — the engineer's view on both is above; §4 of this document is
+  where the DevOps engineer's own view belongs, and it is not written yet.**
 - §5 (release readiness) is written when the build is done.

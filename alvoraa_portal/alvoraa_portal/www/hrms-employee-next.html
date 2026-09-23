@@ -37,6 +37,10 @@
    build version (OPS-34), so a phone cannot keep last release's stylesheet.
    Release gates OPS-35 and OPS-36 are what prove this address answers. #}
 <link rel="stylesheet" href="/assets/alvoraa_portal/css/ess/next-frame.css?v={{ asset_version | e }}">
+{# Slice 042: the panels' own stylesheet. A second static file, cached for a
+   month by the same nginx rule, stamped by the same build version. OPS-31 made
+   this free - it is not a template and costs no cache slot. #}
+<link rel="stylesheet" href="/assets/alvoraa_portal/css/ess/next-panels.css?v={{ asset_version | e }}">
 {% endblock %}
 
 {% block page_content %}
@@ -50,4 +54,10 @@
    asks for `get_frame` and `get_nav_counts` the moment it runs - two calls, no
    timers (AC-7). #}
 <script src="/assets/alvoraa_portal/js/ess/next-frame.js?v={{ asset_version | e }}" defer></script>
+{# Slice 042: one file per panel. `defer` keeps them in order, so the frame has
+   registered its panel seam before these ask for it. Home and Inbox are
+   separate files on purpose - two sessions building two panels should not meet
+   in one file, and OPS-31 made the split cost nothing. #}
+<script src="/assets/alvoraa_portal/js/ess/next-home.js?v={{ asset_version | e }}" defer></script>
+<script src="/assets/alvoraa_portal/js/ess/next-inbox.js?v={{ asset_version | e }}" defer></script>
 {% endblock %}

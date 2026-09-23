@@ -160,7 +160,13 @@ class TestThePageIsStillSplit(FrappeTestCase):
 			PS.ess_assets_on_disk(),
 			{"css/ess/frame.css", "css/ess/panels.css", "js/ess/portal.js",
 			 # The new frame's own two, loaded by the preview page.
-			 "css/ess/next-frame.css", "js/ess/next-frame.js"})
+			 "css/ess/next-frame.css", "js/ess/next-frame.js",
+			 # Slice 042, Wave 2: one file per panel, plus their stylesheet.
+			 # Home and the Inbox are separate files on purpose - two sessions
+			 # building two panels should not meet in one - and OPS-31 made the
+			 # split cost nothing, because none of these is a template.
+			 "css/ess/next-panels.css", "js/ess/next-home.js",
+			 "js/ess/next-inbox.js"})
 
 	def test_the_static_files_hold_no_jinja(self):
 		"""They are served raw by nginx. A Jinja tag in one would reach the

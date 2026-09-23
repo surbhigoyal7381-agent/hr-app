@@ -77,9 +77,15 @@ class TestThePartsAndThePageAgree(FrappeTestCase):
 		asked = [m.group(1).decode("utf-8") for m in PS.PART_RE.finditer(raw)]
 		self.assertTrue(asked, "the page asks for no markup parts")
 		self.assertEqual(sorted(asked), sorted(set(asked)), "a part is asked for twice")
-		self.assertEqual(set(asked), PS.ess_parts_on_disk(),
-		                 "the page and parts/ disagree about which parts exist")
-		self.assertEqual(set(asked), ess_parts.parts_on_disk(),
+		# Slice 042: the preview page's frame asks for Home's and the Inbox's
+		# skeletons. A part belongs to ONE of the two pages; belonging to
+		# neither is still a failure here.
+		preview = PS.preview_reach()[2]
+		self.assertEqual(set(asked) | preview, PS.ess_parts_on_disk(),
+		                 "a markup part belongs to neither portal page")
+		self.assertFalse(set(asked) & preview,
+		                 "a markup part is pasted into both pages")
+		self.assertEqual(set(asked) | preview, ess_parts.parts_on_disk(),
 		                 "the helper and the test helper disagree about the parts")
 
 	def test_no_part_holds_a_template_tag(self):

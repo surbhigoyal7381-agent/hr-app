@@ -139,7 +139,16 @@ function readPreviewSource() {
   const raw = fs.readFileSync(PREVIEW_PAGE, "utf8").replace(/^\ufeff/, "");
   const used = new Set();
   const assets = new Set();
-  const out = expandAssets(expand(raw, used), assets);
+  const parts = new Set();
+  // Slice 042. The preview page's frame pastes markup parts in too - Home's and
+  // the Inbox's skeletons. Without expanding them this helper handed the browser
+  // tests a page with `{{ ess_part("next-home") }}` still in it as text, and
+  // every skeleton check would have been asserting against a page the server
+  // never sends.
+  const out = expandParts(expandAssets(expand(raw, used), assets), parts);
+  if (!parts.size) {
+    throw new Error("hrms-employee-next.html asks for no markup parts - the skeletons are gone.");
+  }
   if (!used.size) {
     throw new Error("hrms-employee-next.html includes no ess file - the frame markup is gone.");
   }
@@ -165,7 +174,12 @@ function readPortalSource(file = PORTAL_PAGE) {
         "every check calling it is reading a page with almost no markup in it."
       );
     }
-    const lostParts = essPartsOnDisk().filter((p) => !parts.has(p));
+    // Slice 042: TWO pages ask for parts now. A part the preview page pastes
+    // in is not an orphan just because the live page does not - exactly as the
+    // asset check below already allows.
+    const partsByPreview = previewReach().parts;
+    const lostParts = essPartsOnDisk()
+      .filter((p) => !parts.has(p) && !partsByPreview.has(p));
     if (lostParts.length) {
       throw new Error(
         "these markup parts exist but the page never asks for them, so their " +

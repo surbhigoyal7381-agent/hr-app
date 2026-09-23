@@ -582,12 +582,54 @@
 
   /* ── the screens the frame itself owns ───────────────────────────────────── */
 
+  /* Slice 042 (Wave 2) added the seam below. Home and Inbox are their own
+     static files - `next-home.js` and `next-inbox.js` - because OPS-31 made
+     splitting free and because two sessions building two panels should not meet
+     in one file. A panel registers itself here; the frame keeps the routing,
+     the states, the toasts and the counts.
+
+     `panels` is written at load time by a file the page itself pulls in, never
+     by anything a caller sends, and every panel still draws into the same
+     `showScreen`, so the escaping and the state box stay in one place. */
+  var panels = {};
+
   function drawScreen(found) {
+    /* Home for somebody with no Employee record is answered HERE, before any
+       panel is asked. Two reasons: the answer is already known, so asking the
+       server for a page of empty cards is a call nobody needs; and a person who
+       has done nothing wrong gets their one plain line immediately rather than
+       a loading state first (AC-63, 042 AC-37). */
+    if (found.route === "home" && !frame.has_employee) { return drawHome(); }
+    if (panels[found.route]) { return panels[found.route](panelContext(found)); }
     if (found.route === "inbox") { return drawInbox(); }
     if (found.route === "company/staff") { return drawStaffList(); }
     if (found.route === "home") { return drawHome(); }
     if (found.route === "company/settings") { return drawOrgSettingsNote(); }
     return drawPlaceholder(found);
+  }
+
+  /* Everything a panel is allowed to use, handed to it rather than reached for.
+     A panel gets no way to write a filter, decide a permission or change the
+     counts - it asks the server and draws the answer. */
+  function panelContext(found) {
+    return {
+      route: found,
+      frame: frame,
+      showScreen: showScreen,
+      showState: showState,
+      esc: esc,
+      __: __,
+      api: api,
+      toast: toast,
+      initials: initials,
+      errorCode: errorCode,
+      SAY: SAY,
+      /* AC-13. After a decision the counts are RE-READ from the server. The
+         browser never decrements a number it is holding: a number worked out in
+         two places is how the badge and the list come to disagree. */
+      reloadCounts: function () { return loadCounts(true); },
+      go: go
+    };
   }
 
   function drawHome() {
@@ -1150,6 +1192,12 @@
     isSignedOut: isSignedOut,
     SAY: SAY,
     MENU: MENU,
-    _set: function (f, c) { frame = f; counts = c; }   /* tests only */
+    _set: function (f, c) { frame = f; counts = c; },  /* tests only */
+
+    /* Slice 042: how a panel file joins the page. Called at load time by
+       next-home.js and next-inbox.js, which the page pulls in after this one.
+       A route with no panel keeps the behaviour it had. */
+    panel: function (route, draw) { panels[route] = draw; },
+    hasPanel: function (route) { return !!panels[route]; }
   };
 })();

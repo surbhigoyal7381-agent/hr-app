@@ -200,7 +200,11 @@ function load(frame, counts, answers) {
     });
   return new Promise((resolve) => {
     /* A few turns of the loop: get_frame, get_nav_counts, and - where a token
-       was stale - the page re-read and the one retry behind it. */
+       was stale - the page re-read and the one retry behind it.
+       Slice 042 needs at least three for a different reason: Home is its own
+       panel with its own call now, so `get_home` lands on a third turn, and
+       without waiting for it this file reads the loading state and calls it the
+       answer. Four covers both. */
     setTimeout(() => setTimeout(() => setTimeout(() => setTimeout(
       () => { dom.navTried = navTried; resolve(dom); }, 0), 0), 0), 0);
   });
@@ -349,26 +353,16 @@ async function run() {
   is(inboxTab.querySelector(".nf-badge").textContent, "3",
      "and so does the Inbox button on the bottom bar (AC-20)");
 
-  dom.window.NextFrame.go("inbox");
-  is(el(dom, "nf-screens").textContent.includes("3 leave requests to approve"), true,
-     "the Inbox lists the one part that has something");
-  is(el(dom, "nf-screens").textContent.includes("goal or KPI"), false,
-     "a part with nothing in it is not shown (AC-23)");
+  /* The INBOX SCREEN's own assertions moved to next_panels_test.js in slice 042,
+     because the screen moved: Wave 1 drew the Inbox from the counts, Wave 2
+     draws it from `get_inbox`, which carries the rows as well as the numbers.
+     Every intention is still checked, in that file - "a part with nothing is not
+     shown", "a capped list says how many of how many", "nothing at all is All
+     clear" and the error state. What stays HERE is what the FRAME does with the
+     number, which is the three assertions above.
 
-  /* Where the screen behind a row is capped and the count is above the cap,
-     the row says so rather than letting 50 stand for 60 (N3). */
-  const capped = makeCounts().parts.map((p) =>
-    p.key === "attendance_fixes" ? Object.assign({}, p, { count: 60, capped: true }) : p);
-  dom = await load(makeFrame(Object.assign({}, hrBase, { features: { goals: 1 } })),
-                   makeCounts({ total: 60, approvals_total: 60, parts: capped }));
-  dom.window.NextFrame.go("inbox");
-  is(el(dom, "nf-screens").textContent.includes("Showing the first 50 of 60"), true,
-     "a capped row says how many the screen will show (N3)");
-
-  dom = await load(makeFrame(), makeCounts());
-  dom.window.NextFrame.go("inbox");
-  is(kind(dom), "empty", "with nothing at all the Inbox is the empty state");
-  is(say(dom), "All clear.", "and it reads 'All clear.'");
+     What is NOT lost: the bell, the menu entry and the bottom-bar button all
+     reading the same total, from one call. */
 
   /* ── the states (US-8) ─────────────────────────────────────────────────── */
 
@@ -376,9 +370,9 @@ async function run() {
   is(el(dom, "nf-bell-badge").hidden, true,
      "when the counts fail the bell shows no number (AC-32)");
   is(menuRoutes(dom).length > 0, true, "and the rest of the page still works");
-  dom.window.NextFrame.go("inbox");
-  is(kind(dom), "error", "the Inbox itself shows the card-error state");
-  is(say(dom), "The waiting list could not load. Try again.", "in section 6's words");
+  /* The Inbox screen's own error state is next_panels_test.js's, for the same
+     reason as above. What is checked here is the frame's half: when the counts
+     fail the bell shows NO number and the rest of the page still works. */
 
   dom = await load(makeFrame(), makeCounts(), { "alvoraa_portal.frame_api.get_frame": "fail" });
   is(kind(dom), "error", "when get_frame fails the page shows the page-error state (AC-33)");

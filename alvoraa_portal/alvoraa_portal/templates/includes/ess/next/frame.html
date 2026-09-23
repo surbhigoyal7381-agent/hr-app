@@ -102,6 +102,15 @@
       <button type="button" class="nf-btn" id="nf-state-retry" hidden>{{ _("Try again") }}</button>
     </div>
 
+    {#- Slice 042: Home's and the Inbox's skeletons, server-rendered so the
+        shape of the page is on screen before `get_home` answers (AC-31). They
+        are `ess_part`s - files holding no Jinja at all - so they are pasted in
+        rather than compiled and take none of Frappe's 32 template cache slots
+        (AC-44). The frame shows the right one while it is booting and the
+        panel replaces it. -#}
+    {{ ess_part("next-home") }}
+    {{ ess_part("next-inbox") }}
+
     <div class="nf-screens" id="nf-screens" hidden></div>
   </main>
 

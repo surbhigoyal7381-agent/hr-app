@@ -1,0 +1,24 @@
+<!-- Slice 042, Wave 2: Home's skeleton.
+
+     Server-rendered, so a person on a slow phone sees the shape of the page
+     while `get_home` is still in the air (042 AC-31). It is a skeleton, never a
+     spinner on a blank screen, and never a card with a number in it that
+     JavaScript then corrects.
+
+     This is an `ess_part`, not a Jinja include: it holds no template tag at all,
+     so it is pasted in rather than compiled and it takes none of Frappe's 32
+     template cache slots (AC-44). `ess_part()` REFUSES a file containing a
+     template tag of any kind - which is why this comment describes them rather
+     than spelling them out. Writing one here, even inside a comment, would stop
+     the part loading at all.
+
+     Every box here is decorative and is hidden from a screen reader: the state
+     box above it is what announces "Loading…". Two voices saying the same thing
+     is worse than one. -->
+<div class="nf-skeleton" id="nf-skeleton-home" aria-hidden="true" hidden>
+  <div class="nf-sk nf-sk-hero"></div>
+  <div class="nf-sk nf-sk-card"></div>
+  <div class="nf-sk nf-sk-card"></div>
+  <div class="nf-sk nf-sk-row"></div>
+  <div class="nf-sk nf-sk-row"></div>
+</div>

@@ -221,8 +221,15 @@ def preview_bytes():
 	"""
 	with open(PREVIEW_PAGE, "rb") as fh:
 		raw = fh.read()
-	used, assets = set(), set()
-	out = expand_assets(expand_bytes(raw, used), assets)
+	used, assets, parts = set(), set(), set()
+	# Slice 042: the preview page's frame pastes markup parts in too - Home's
+	# and the Inbox's skeletons. Without expanding them this helper hands every
+	# check a page with an unexpanded ess_part() tag in it as text.
+	out = expand_parts(expand_assets(expand_bytes(raw, used), assets), parts)
+	if not parts:
+		raise PortalSourceError(
+			"hrms-employee-next.html asks for no markup parts - the skeletons "
+			"are gone, or this helper is reading the wrong file.")
 	if not used:
 		raise PortalSourceError(
 			"hrms-employee-next.html includes no ess file - the frame markup is "
@@ -252,7 +259,11 @@ def _assert_nothing_went_quiet(used, assets=None, parts=None):
 				"lost its ess_part() tags or this helper is reading the wrong "
 				"file - either way every check calling it is reading a page with "
 				"almost no markup in it.")
-		stranded = ess_parts_on_disk() - parts
+		# Slice 042: TWO pages ask for parts now. A part the PREVIEW page pastes
+		# in - Home's and the Inbox's skeletons - is not an orphan just because
+		# the live page does not ask for it. Exactly the allowance the asset
+		# check below already makes.
+		stranded = ess_parts_on_disk() - parts - preview_reach()[2]
 		if stranded:
 			raise PortalSourceError(
 				"these markup parts exist but the page never asks for them, so "

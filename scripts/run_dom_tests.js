@@ -35,7 +35,8 @@ const path = require("path");
 
 const DIR = path.join(__dirname, "..", "alvoraa_portal", "tests");
 
-const RUN = ["portal_dom_test.js", "portal_notes_test.js", "next_frame_test.js"];
+const RUN = ["portal_dom_test.js", "portal_notes_test.js", "next_frame_test.js",
+             "next_panels_test.js"];
 const SKIP = {
   "portal_tree_test.js": "needs a get_performance_tree fixture that is not in the repository (ALV-111, Wave 3)",
   "portal_redesign_test.js": "needs a get_performance_tree fixture that is not in the repository (ALV-111, Wave 3)",

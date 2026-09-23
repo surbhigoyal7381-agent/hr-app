@@ -1640,8 +1640,10 @@ modules of phantom failures; that did not happen here.
   simplification, named in the code.* §5 wants a per-item link, which is the Wave 2 Inbox
   list's job. `#time` is where all three kinds are listed today, so the link is honest,
   just coarse.
-- **AC-62 is written and not proven.** *Temporary debt.* The signed-out redirect needs a
-  real expired session; a unit test can only prove the branch exists.
+- **AC-62 is written and now PROVEN.** *Closed 24 Sep.* It was temporary debt; the
+  signed-out redirect needed a real expired session, and it has had one. A real Chromium,
+  a real session, the `sid` cookie dropped, and the browser lands on `/alvoraa-login`.
+  `scripts/browser_check_frame.js` is the check; §9 below records what it found.
 - **The live page still loads the old frame.** Deliberate. Nothing a customer sees changed
   in this stretch **except** the two live behaviours that change on release and are
   already on the spec's release gate 7: store HR's people search narrows, and a leaver
@@ -1651,3 +1653,37 @@ modules of phantom failures; that did not happen here.
   at 390 px in both themes and at 200 % zoom; and build a 1,000-employee fixture, because
   three acceptance checks in this spec name that number and none of them can be answered
   without it.
+
+## 9. The one assumption nobody had checked, checked (24 Sep 2026)
+
+**The question.** Every browser test in this slice ran in jsdom, where `frappe.call` was
+the test's own stub, and every server check ran through `curl`, which runs no JavaScript.
+So nothing had ever shown that **`frappe.call` is even available on a Frappe website
+page**, or that the frame boots in a real browser. The whole browser-side stretch rested
+on it.
+
+**How it was proved, locally.** Chromium 153 installed in my own throwaway container
+(never the shared bench), driven by puppeteer-core against `bench serve` on my own site,
+signed in as a real user with a real password. The check is committed as
+`scripts/browser_check_frame.js`, with how to run it in its header. It is **not** in CI:
+it needs a running site, a real login and a browser. It should be re-run before the swap.
+
+**Result: 14 checks, 14 pass.** The frame boots: 18 menu entries, 5 bottom tabs, the
+avatar drawn, no error state, no uncaught JavaScript.
+
+**And it found something the reviewer's F4 had understated.**
+
+| What was assumed | What a real browser says |
+|---|---|
+| `frappe.call` is there on a website page | **True.** It is there and the frame boots |
+| ...and it is the `frappe.call` we know | **False.** A website page loads `frappe-web.bundle.js`, whose `frappe.call` is website.js's own version - a different function from the desk one |
+| A failed call rejects, so the frame shows the page-error state | **False.** website.js's `process_response` knows `callback`, `success` and `always` - **it never calls `opts.error`.** With a stale CSRF token only `always` fired. The promise never settled, so the frame would have sat on "Loading" for ever, with nothing in any log because nothing reached the backend |
+| A session that has ended answers 401 | **False.** It answers **403 PermissionError**, because Frappe has already turned the caller into Guest by then - and the same response rewrites the `user_id` cookie to `Guest`. That cookie is what separates a dead session from a plain refusal |
+| The jsdom harness models the real thing | **False, and this is the lesson.** The stub called `opts.error`, so it was **kinder than any real browser**, and every error test in the file was passing against behaviour that does not exist. The harness stubs `fetch` now, which is what the frame really uses |
+
+All five are written into `next-frame.js` beside the code they explain, so the next person
+does not have to rediscover them.
+
+**What it did not measure.** Nothing about layout. AC-12 and AC-48 - 390 px, 200 % zoom,
+Hindi - are still unmeasured and still owed before the swap. This check answers "does it
+run", not "does it read well".

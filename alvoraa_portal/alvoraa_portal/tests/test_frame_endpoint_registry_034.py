@@ -21,10 +21,11 @@ in another site's request. Every constant in these modules is a tuple.
 repository-wide counter is a separate piece of work (residual risk R4); this
 holds the two new files until it exists.
 
-`inbox_api.py` is named here before it is written, on purpose: the day it
-appears, these three checks already apply to it. `staff_api.py` was added the
-same way, by one line in MODULES - which is the whole point of listing the files
-rather than the functions.
+`inbox_api.py` was named here before it was written, on purpose: the day it
+appeared, these three checks already applied to it, and its registry row was
+part of the commit that created it. `staff_api.py` was added the same way, by
+one line in MODULES - which is the whole point of listing the files rather than
+the functions.
 """
 
 import ast
@@ -51,6 +52,16 @@ ENDPOINT_REGISTRY = {
 		"guest": "TestWhoMayCallIt.test_guest_is_refused",
 		"persona": "TestThePersonaRules.test_rule_six_needs_no_active_employee_record",
 		"scope": "TestWhatEachPersonaMayOpen.test_time_pay_and_growth_need_an_employee_record",
+	},
+	# The frame's second and last start-up call (US-6). Its "scope" case is the
+	# corrections queue, because that is the one part of the count whose scope
+	# differs by caller - a store's HR person counts their store, and a reviewer
+	# who is not HR keeps their whole queue (W1D-05, W1D-14).
+	"inbox_api.get_nav_counts": {
+		"tests": "alvoraa_portal.tests.test_inbox_counts_034",
+		"guest": "TestTheShapeOfThePayload.test_guest_is_refused",
+		"persona": "TestAPlainEmployeeCountsNothingThatIsNotTheirs.test_a_plain_employee_approves_nothing",
+		"scope": "TestTheCorrectionsCountEqualsItsScreen.test_store_hr_counts_their_store_and_nobody_elses",
 	},
 	# The staff list (W1D-21, SEC-16). Its "persona" case is the one that
 	# matters most for this endpoint: the feature switch is checked on the

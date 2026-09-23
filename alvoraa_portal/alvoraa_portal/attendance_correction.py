@@ -718,25 +718,86 @@ def withdraw(name):
 
 # ── HR's side ────────────────────────────────────────────────────────────────
 
+# The states that mean a correction has stopped waiting. `_state` reads them
+# too; they are named here so a query can ask the same question the screen asks
+# without re-deriving it row by row.
+DONE_STATES = ("Declined", "Withdrawn")
+
+
+def review_queue_filters(user=None):
+	"""The filters for "corrections waiting on this caller" (W1D-05, SEC-5).
+
+	One definition, used by the queue itself and by the frame's count, so the
+	bell and the screen can never disagree (AC-51, AC-52).
+
+	Two things it gets right that a hand-written filter dict would not:
+
+	**Waiting is asked in the database, not in Python.** `to_review` used to
+	read 50 rows by creation date and then drop the ones that were declined or
+	withdrawn, so the screen could show 41 of a "50". Asking for
+	`alvoraa_review_status not in (Declined, Withdrawn)` puts the state filter
+	below the cap, where it belongs. A row that was never labelled - NULL or
+	empty, on a site migrated before that field existed - is still waiting;
+	Frappe coalesces the column for a `not in`, and a test pins it.
+
+	**The scope depends on the caller, on purpose.** For an HR caller the queue
+	is `permitted_employees()` minus themselves, so a store's HR person gets
+	their store and not head office. For a reviewer who is NOT HR - a Shift
+	Supervisor a tenant has given the submit permission to - nothing is
+	narrowed, because they hold no HR entitlement, so an HR filter would return
+	the empty set and silently kill a working flow (W1D-14, AC-52 row 4).
+
+	Returns (filters, is_hr_scope). `filters` is never empty of conditions.
+	"""
+	user = user or frappe.session.user
+	filters = {"docstatus": 0, "alvoraa_review_status": ["not in", list(DONE_STATES)]}
+	me = _employee_for(user)
+	my_name = me.name if me else None
+	if my_name:
+		# Your own request is not yours to decide, so it is not in your queue.
+		filters["employee"] = ["!=", my_name]
+
+	from hrms.alvoraa_hr_core.access import permitted_companies, permitted_employees
+
+	if not permitted_companies(user):
+		# Not an HR caller. Today's scope, unchanged.
+		return filters, False
+
+	names = permitted_employees(user)
+	if my_name:
+		names = names - {my_name}
+	if not names:
+		# Entitled to nobody. An empty `in` list matches nothing, which is the
+		# fail-closed answer; it is NEVER left as "no condition" (SEC-4).
+		filters["employee"] = ["in", []]
+		return filters, True
+	filters["employee"] = ["in", sorted(names)]
+	return filters, True
+
+
 @frappe.whitelist()
 def to_review(limit=50):
-	"""What is waiting on HR.
+	"""What is waiting on this caller to decide.
 
 	`get_list` under the caller's own permissions, so an organisation that has
-	scoped Attendance Request by department gets that scoping here for free.
+	scoped Attendance Request by department gets that scoping here for free,
+	on top of the scope in `review_queue_filters`.
+
+	The return shape is unchanged - a plain list - because today's page reads it
+	as one. The frame's bell counts the SAME filters without the cap, so when
+	there are more waiting than the cap, the bell's number is the true total and
+	the new Inbox page says "showing the first 50 of 60" beside it (N3).
 	"""
 	if not _may_review():
 		frappe.throw(_("You do not review attendance corrections."), frappe.PermissionError)
-	filters = {"docstatus": 0}
-	# Your own requests are not yours to decide, so they are not in your queue.
-	me = _employee_for(frappe.session.user)
-	if me:
-		filters["employee"] = ["!=", me.name]
+	filters, _is_hr = review_queue_filters()
 	rows = frappe.get_list(
 		REQUEST, filters=filters, fields=REQUEST_FIELDS,
 		order_by="creation asc", limit_page_length=cint(limit) or 50)
-	out = [_shape(r) for r in rows]
-	return [r for r in out if r["state"] == "waiting"]
+	# The state filter is in the query now, so nothing should fall out here.
+	# The line stays as a second lock: `_state` is the screen's own definition
+	# of waiting, and if the two ever disagree the screen must win.
+	return [r for r in (_shape(x) for x in rows) if r["state"] == "waiting"]
 
 
 @frappe.whitelist()

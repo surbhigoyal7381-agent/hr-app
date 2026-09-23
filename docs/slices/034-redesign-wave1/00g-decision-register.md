@@ -30,6 +30,7 @@ bare number.
 | `W1D-01` … `W1D-12` | The review decisions of **22 September 2026** — the ones taken on the analyst, security and DevOps reviews of revision 1 | this file |
 | `W1D-13` … `W1D-18` | Surbhi's decisions of **23 September 2026** — taken on the analyst and security **re-**reviews of revision 2 | this file |
 | `W1D-19` … `W1D-21` | Surbhi's three further decisions of **23 September 2026**, later the same day — the desk link, the Team screen's scope, and the staff-list switch | this file |
+| `W1D-22` | Surbhi's decision of **24 September 2026**, taken on the senior architect review — the tenant System Manager's Team screen | this file |
 | 009 design decision 1–7 | The design run's seven decisions, 22 Sep | `00f-decisions-2026-09-22.md`, first table |
 | 009 strategy decision 1–14 | The Wave 1 strategy's fourteen, 22 Sep | `00f-decisions-2026-09-22.md`, second table |
 
@@ -176,6 +177,31 @@ one line of code either way:
 **Recommendation: leave it as decided.** The owner-CXO seeing their own company on their
 own Team screen is what Kamal asks for, and the helper is the single rule we do not want
 two versions of. Flagged rather than assumed.
+
+## Surbhi's decision of 24 September 2026
+
+Taken on the senior architect review (`05-review.md`, finding F3). **Recorded on the day
+it was given.**
+
+| # | Decision | Closes |
+|---|---|---|
+| **W1D-22** | **Yes — leave it as decided. A tenant System Manager who has an Employee record sees the whole tenant on the Team screen.** `is_hr` keeps System Manager in it, and `access.permitted_employee_filters()` keeps returning `ALL_EMPLOYEES` for them. No second version of `permitted_employees()` is written. It is what Kamal the owner wants from his own Team screen, and no data crosses a tenant boundary — that person's desk already lists every employee in the tenant. **It stays recorded as a widening, not quietly accepted**: `01c` PRIV-7 keeps its row naming this as the one screen that gets wider on release, so nobody has to rediscover it in six months | `02` **open question 6**; `05-review.md` F3; ALV-102 |
+
+### W1D-22 — what was decided, and what was deliberately not
+
+**Decided.** The screen gets wider for exactly one kind of person: a tenant System
+Manager who also has an Employee record. Today they see their own direct reports. On
+release they see their whole tenant, capped at 50 with the true total beside it.
+
+**Not decided, and not changed.** Nothing about who may *read* an employee record. The
+Team screen shows what `permitted_employee_filters()` already allows, which for a System
+Manager is everyone in their own tenant and nobody outside it. A support engineer is not
+a System Manager on a client tenant (W1D-18), so this does not touch Alvoraa staff.
+
+**Why it is worth a line rather than a shrug.** The alternative — HR scope on the Team
+screen meaning `HR Manager` / `HR User` only — would have meant two rules for "who may
+this person see", and the three readers in slice 030 drifted apart for exactly that
+reason. One rule, one helper, and the one screen that widens is written down.
 
 ### W1D-21 — how the switch is built, and what it costs
 

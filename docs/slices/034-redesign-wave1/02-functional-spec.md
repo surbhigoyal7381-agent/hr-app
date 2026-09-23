@@ -106,7 +106,7 @@ today's `is_manager` stand-in rule is still not used for anything.
 an Employee record gets a Team screen listing the whole tenant, where today they get their
 own direct reports. No new data (the desk already lists every employee for them), but it is
 a wider screen, and this slice's rule is that nothing widens by accident. It is
-**open question 6**, one line either way, with a recommendation to leave it as decided.
+**open question 6**, and it is now **closed as decided (W1D-22, 24 Sep)**: it stays, and `01c` PRIV-7 keeps the row that records it as the one screen that widens.
 
 **How the leak is actually closed (W1D-20, replacing W1D-13).** Hiding a menu entry was
 never a data control, and neither is a filter on a list that should not be built that way.
@@ -148,7 +148,7 @@ When fewer than four are allowed, the bar has fewer buttons. **More is always la
 | Growth | ✓ where `goals` (app installed **and** plan) | same | same | same | same | same | same | hidden |
 | Pay group | ✓ (Expenses always — a required feature; Request advance where `advance_request`; Leave encashment where `leave_encashment`) | same | same | same | same | same | same | hidden |
 | Pay › My pay (salary slips), payslip search result | ✓ where `plan_payroll` | same | same | same | same | same | same | hidden |
-| Team | — | ✓ own reports | ✓ **their HR scope** — their permitted companies, with or without direct reports (SEC-13, W1D-20) | ✓ **their store only** (SEC-13, W1D-20) | ✓ HR scope | ✓ everyone in the tenant — see open question 6 | — (no Employee record) | — |
+| Team | — | ✓ own reports | ✓ **their HR scope** — their permitted companies, with or without direct reports (SEC-13, W1D-20) | ✓ **their store only** (SEC-13, W1D-20) | ✓ HR scope | ✓ everyone in the tenant — **decided, W1D-22**; the one row that gets wider on release | — (no Employee record) | — |
 | Company › People (the **org chart**) | ✓ where `plan_org_structure` | same | same | same | same | same | same | ✓ where the plan allows |
 | Company › Staff list (**new**, W1D-21) | — | — | ✓ where the staff-list switch is on, scoped to their permitted companies | ✓ where it is on, **their store only** | ✓ | ✓ | ✓ | — |
 | Company › HR analytics, Data to review | — | — | ✓ where `plan_analytics` is not `false` | same | same | ✓ (a System Manager is `is_hr`) | ✓ | ✓ |
@@ -677,7 +677,7 @@ reads across. New checks start at AC-44.
 | One user, two Employee records | The frame uses **one** "who am I" helper — the Active record, as `hr_api._get_employee` does — in `get_frame` and `get_nav_counts`, so the two cannot describe different people `[UNVERIFIED — whether Employee allows the same `user_id` on two records; confirmed before step 3]` |
 | Store HR who also holds System Manager | Not narrowed — System Manager sees everyone, on the Team screen and the staff list alike. Intended; stated so a tester does not file it |
 | HR user with no direct reports | Team screen present, showing their HR scope (AC-72). Their own name is not on it |
-| Tenant System Manager with an Employee record | Team screen is the whole tenant. No new data — the desk already lists everyone for them — but wider than today's screen. Open question 6 |
+| Tenant System Manager with an Employee record | Team screen is the whole tenant. No new data — the desk already lists everyone for them — but wider than today's screen. **Decided: it stays (W1D-22, 24 Sep)**, and PRIV-7 keeps the row |
 | Tenant where **both** `plan_org_structure` and the staff-list switch are off | HR has no org chart and no staff list, but still has the Team screen. No dead menu entry, and a typed address shows the no-permission line (AC-76) |
 | A plain manager looking for the desk link | There is none, and there never was one for them in the code (AC-75, W1D-19). Stated so a tester does not file it against the prototype |
 | HR User (not HR Manager) | Same read-only Org settings as store HR (AC-67) |
@@ -939,7 +939,7 @@ The analyst is not a lawyer, and neither is the engineer: nothing here is a lega
 | Migration stated | ✓ none |
 | Compliance sub-analysis | ✓ §15 |
 | No prohibited capability | ✓ nothing AI-shaped, no monitoring |
-| Open questions owned, none blocks day 1 | ✓ **the two from revision 3 are closed** (W1D-19; W1D-20 with W1D-21). **One new one** — question 6, a tenant System Manager's Team screen — is owned by Surbhi and blocks only the SEC-13 commit, not day 1. Day 1 is still the split (US-10) |
+| Open questions owned, none blocks day 1 | ✓ **all closed.** The two from revision 3 by W1D-19 and by W1D-20 with W1D-21; question 6 — a tenant System Manager's Team screen — by **W1D-22 on 24 Sep**, as decided |
 | Frappe details verified in source | **Partly** — three items marked `[UNVERIFIED]` here and four in `00` §9, each checked before the step that needs it |
 ---
 
@@ -1070,7 +1070,7 @@ key first, the screen after it.
 | 3 | *Closed 23 Sep:* the preview page with real data — **moot, the page does not exist on production** (W1D-15) | — | — |
 | 4 | *Closed 22 Sep:* re-review of revision 2 — `02c-ba-rereview.md`, closed with notes, all applied here | — | — |
 | 5 | *Closed 23 Sep (W1D-20 with W1D-21):* an HR person with no direct reports **keeps a Team screen**, built from their HR scope, and **gets a searchable staff list** where the tenant's new switch is on. They are never left with no way to see their people. AC-72, AC-76 | — | — |
-| 6 | **Open, new (a consequence of W1D-20, raised not assumed).** `is_hr` includes **System Manager**, and `permitted_employees()` gives a System Manager everyone — so a tenant System Manager with an Employee record gets a Team screen listing the whole tenant, where today they get their own direct reports. No new data (their desk already lists everyone), but a wider screen, and this slice's rule is that nothing widens by accident. Leave it, or restrict the Team screen's HR scope to `HR Manager` / `HR User`? **My recommendation: leave it** — it is what Kamal the owner wants, and `permitted_employees()` is a rule we should not have two versions of | Surbhi | One line in the SEC-13 commit. Not day 1 |
+| 6 | *Closed 24 Sep (W1D-22):* **yes, leave it as decided.** A tenant System Manager who has an Employee record sees the whole tenant on the Team screen; `is_hr` keeps System Manager in it and no second version of `permitted_employees()` is written. No data crosses a tenant boundary — that person's desk already lists every employee. **It stays on the record as a widening**: `01c` PRIV-7 keeps the row naming this as the one screen that gets wider on release. ALV-102 | — | — |
 
 ## Assumptions
 

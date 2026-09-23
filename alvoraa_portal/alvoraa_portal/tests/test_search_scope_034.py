@@ -23,9 +23,13 @@ Synthetic people only, tagged by the shared helpers plus S034S of our own.
 
 import frappe
 
+# `import x.y.z as name`, not `from x.y import z`. The integrity check rejects
+# the second form - it is the shape that silently shadows a package attribute -
+# and `run-tests` does not catch it, so it would fail in CI instead.
+import hrms.alvoraa_org_structure.api as org
+
 from alvoraa_portal.tests.test_portal_security_010 import _employee, _user
 from alvoraa_portal.tests.test_store_hr_scoping_030 import _Stores
-from hrms.alvoraa_org_structure import api as org
 
 S_A = "S034S Store A"
 S_B = "S034S Store B"

@@ -7489,7 +7489,12 @@ function renderLeaveRings(balances) {
   el.innerHTML = balances.map(function(b) {
     const pct = Math.min(b.pct_used / 100, 1);
     const offset = C * (1 - pct);
-    return '<div class="leave-ring-card"><div class="ring-wrap"><svg width="72" height="72" viewBox="0 0 72 72"><circle class="ring-bg" cx="36" cy="36" r="' + R + '"/><circle class="ring-fill" cx="36" cy="36" r="' + R + '" stroke="' + b.color + '" stroke-dasharray="' + C.toFixed(2) + '" stroke-dashoffset="' + offset.toFixed(2) + '"/></svg><div class="ring-center"><div class="ring-val" style="color:' + b.color + '">' + b.balance + '</div><div class="ring-sub">left</div></div></div><div class="leave-ring-name">' + esc(b.leave_type) + '</div><div class="leave-ring-taken">' + b.taken + ' / ' + b.total + ' used</div></div>';
+    return '<div class="leave-ring-card"><div class="ring-wrap"><svg width="72" height="72" viewBox="0 0 72 72"><circle class="ring-bg" cx="36" cy="36" r="' + R + '"/><circle class="ring-fill" cx="36" cy="36" r="' + R + '" stroke="' + b.color + '" stroke-dasharray="' + C.toFixed(2) + '" stroke-dashoffset="' + offset.toFixed(2) + '"/></svg><div class="ring-center"><div class="ring-val" style="color:' + b.color + '">' + b.balance + '</div><div class="ring-sub">left</div></div></div><div class="leave-ring-name">' + esc(b.leave_type) + '</div><div class="leave-ring-taken">' + b.taken + ' / ' + b.total + ' used'
+      // Slice 035: days that were allocated, not taken, and are gone anyway -
+      // carry forward that lapsed. Without this, taken + left does not add up
+      // to the total and the person reading the card cannot check it.
+      + (parseFloat(b.expired || 0) > 0 ? ', ' + b.expired + ' expired' : '')
+      + '</div></div>';
   }).join("");
 }
 

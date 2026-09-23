@@ -4,7 +4,7 @@ import frappe
 from frappe import _
 
 from alvoraa_portal.attendance_analytics import LATE_GRACE_KEY
-from alvoraa_portal.goals_api import current_cycle_name, goal_average
+from alvoraa_portal.goals_api import current_cycle_name, goal_average, in_cycle
 from alvoraa_portal.subscription import requires_feature
 import calendar as _calendar
 from frappe.utils import cint, flt, today, get_first_day, get_last_day, getdate, add_days, now
@@ -127,10 +127,21 @@ def _ledger_leave_balances(employee, date_=None):
         used = get_leaves_for_period(employee, leave_type, start, end)  # negative
         expired = get_manually_expired_leaves(employee, leave_type, start, end)
         balance = get_remaining_leaves(alloc, used, date_, cf_expiry, expired).leave_balance
+        total = flt(alloc.total_leaves_allocated)
+        taken = flt(-used)
+        # Days that were allocated, not taken, and are gone anyway: carry
+        # forward that lapsed, or an allocation expired by hand. Frappe HR's own
+        # screen works it out the same way (get_leave_details). Without it
+        # total - taken does not equal the balance, so a screen would say
+        # "3 of 8 used" and "3 left" and leave the employee to wonder about the
+        # other 2. Nothing on PP Jewellers expires today; a tenant that carries
+        # leave forward will.
+        lapsed = total - (balance + taken)
         rows.append({
             "leave_type": leave_type,
-            "total": flt(alloc.total_leaves_allocated, precision),
-            "taken": flt(-used, precision),
+            "total": flt(total, precision),
+            "taken": flt(taken, precision),
+            "expired": flt(lapsed, precision) if lapsed > 0 else 0.0,
             "pending": flt(get_leaves_pending_approval_for_period(employee, leave_type, start, end),
                            precision),
             "balance": flt(balance, precision),
@@ -243,7 +254,12 @@ def get_employee_dashboard():
             "leave_type": b["leave_type"],
             "total":      total,
             "taken":      taken,
-            "balance":    max(b["balance"], 0),
+            "expired":    b["expired"],
+            # The ledger's own figure, negative and all. A leave type set to
+            # allow a negative balance can genuinely be below zero; clamping it
+            # to 0 told the employee they had none left when they were two in
+            # debt, and the leave gate would have said otherwise.
+            "balance":    b["balance"],
             "color":      LEAVE_COLORS.get(b["leave_type"], "#64748b"),
             "pct_used":   round(taken / total * 100) if total else 0,
         })
@@ -327,7 +343,9 @@ def _own_upcoming_holidays(employee, date_):
         },
         fields=["holiday_date", "description"],
         order_by="holiday_date asc",
-        limit=200,
+        # No cap. This is one list's own named holidays now, not every list on
+        # the site, so it is already small - and a cap here would silently drop
+        # a real holiday off the end of the card. get_all is unlimited by default.
     )
     return holidays, None
 
@@ -888,7 +906,8 @@ def get_employee_scorecard(employee_id):
     # was checked at the top of this function.
     leave_balances = [
         {"leave_type": b["leave_type"], "allocated": b["total"],
-         "taken": round(b["taken"], 1), "balance": max(b["balance"], 0)}
+         "taken": round(b["taken"], 1), "expired": b["expired"],
+         "balance": b["balance"]}
         for b in _ledger_leave_balances(employee_id, td)
     ]
 
@@ -918,7 +937,11 @@ def get_employee_scorecard(employee_id):
         # 100% does not sit at the top of this quarter's list. Newest first
         # within each group, as before; still 15 at most.
         cycle = current_cycle_name(frappe.db.get_value("Employee", employee_id, "company"))
-        goals.sort(key=lambda g: g.pop("appraisal_cycle") != cycle)
+        # This quarter's goals, and undated ones, before older quarters'.
+        goals.sort(key=lambda g: bool(cycle) and bool(g.get("appraisal_cycle"))
+                   and g["appraisal_cycle"] != cycle)
+        for g in goals:
+            g.pop("appraisal_cycle", None)   # ordering only; not sent to the page
         goals = goals[:15]
 
     # Appraisal history
@@ -1030,16 +1053,25 @@ def get_team_scorecard():
             ignore_permissions=True,
         )
         rows_by_emp = {}
-        for g in goal_rows:
-            cycle = cycle_of.get(g.employee)
-            if cycle and g.appraisal_cycle != cycle:
+        # in_cycle is goals_api's one rule - this quarter's goals plus goals
+        # that belong to no quarter. A second copy of it here is how the team
+        # list and this chart came to disagree in the first place.
+        for g in in_cycle(goal_rows, cycle_of):
+            if g.status == "Cancelled":
+                # Dropped here rather than only from the average: counted in
+                # "total" but not in "avg", the two numbers on one card
+                # described different sets of goals.
                 continue
             rows_by_emp.setdefault(g.employee, []).append(g)
         for e, rows in rows_by_emp.items():
             goals_by_emp[e] = {
                 "total": len(rows),
                 "completed": sum(1 for g in rows if g.status == "Completed"),
-                "avg": round(goal_average([g for g in rows if g.status != "Cancelled"])),
+                # One decimal, the same as the team goals list (slice 035,
+                # takeover review). Rounded to whole numbers here and to one
+                # decimal there, two manager screens printed 67 and 66.7 for
+                # one person's goals.
+                "avg": round(goal_average(rows), 1),
             }
 
     # Latest appraisal score per team member
@@ -1153,8 +1185,12 @@ def get_employee_detail_for_manager(employee_id):
     # Leave balances: Frappe HR's ledger (slice 035). Access to this employee
     # was checked at the top of this function.
     leave_balances = [
+        # No "expired" here: this screen shows allocated and balance only, so
+        # the figure has nothing to reconcile and a manager does not need it.
+        # Adding a field to a screen the slice did not ask for is a visibility
+        # change, even when the field is harmless.
         {"leave_type": b["leave_type"], "allocated": b["total"],
-         "balance": max(b["balance"], 0)}
+         "balance": b["balance"]}
         for b in _ledger_leave_balances(employee_id, td)
     ]
 
@@ -1667,7 +1703,9 @@ def get_leave_summary(employee_id=None):
             "total": total,
             "taken": taken,
             "pending": b["pending"],
-            "balance": max(b["balance"], 0),
+            "expired": b["expired"],
+            # The ledger's figure, negative included - see get_employee_dashboard.
+            "balance": b["balance"],
             "color": LEAVE_COLORS.get(b["leave_type"], "#64748b"),
             "pct_used": round(taken / total * 100) if total else 0,
         })

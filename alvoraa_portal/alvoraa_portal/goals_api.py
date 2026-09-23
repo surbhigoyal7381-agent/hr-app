@@ -50,7 +50,32 @@ def _goals_installed():
         return False
 
 
-def _get_active_cycle():
+def _get_active_cycle(company=None):
+    """The cycle the Goals page is about.
+
+    Slice 035, takeover review: with a company this returns the SAME cycle the
+    stat chips count and the goal list shows (current_cycle_name). Without one
+    it keeps the old site-wide answer. The banner used to name a site-wide
+    cycle while the numbers under it counted the employee's company cycle - on
+    a tenant with more than one company those are different cycles, so the
+    screen named one quarter and counted another.
+    """
+    if company:
+        name = current_cycle_name(company)
+        if not name:
+            return None
+        c = frappe.db.get_value(
+            "Appraisal Cycle", name,
+            ["name", "cycle_name", "start_date", "end_date",
+             "kra_evaluation_method", "status"],
+            as_dict=True,
+        )
+        if not c:
+            return None
+        c["start_date"] = str(c["start_date"]) if c["start_date"] else ""
+        c["end_date"]   = str(c["end_date"])   if c["end_date"]   else ""
+        return c
+
     cycles = frappe.get_all(
         "Appraisal Cycle",
         filters={"status": "In Progress"},
@@ -117,34 +142,85 @@ def goal_average(goals):
     return sum(flt(g.get("progress_pct")) for g in goals) / len(goals)
 
 
+def cycle_by_employee(emp_ids):
+    """{employee: the cycle their goals are counted in}, one lookup per company.
+
+    Slice 035, takeover review. Every screen that counts, averages or lists
+    goals must use THIS, so a chip's number always equals the list it links to.
+    """
+    emp_ids = [e for e in emp_ids if e]
+    if not emp_ids:
+        return {}
+    companies = frappe.get_all("Employee", filters={"name": ["in", emp_ids]},
+                               fields=["name", "company"])
+    cycles = {c: current_cycle_name(c) for c in {e["company"] for e in companies}}
+    return {e["name"]: cycles.get(e["company"]) for e in companies}
+
+
+def in_cycle(goals, cycle_of):
+    """Keep this quarter's goals, and goals that belong to no quarter at all.
+
+    Three cases, and the middle one is the one that matters:
+
+      * the company has no cycle      -> nothing to separate, keep everything
+      * the goal has no cycle         -> KEEP IT. It has no quarter that ended,
+                                         so it is still someone's live goal.
+                                         Dropping it would take a real goal off
+                                         the owner's own screen - PP Jewellers
+                                         has one such goal today.
+      * the goal names another cycle  -> drop it. This is the original defect:
+                                         a finished Q1 left "Active" blending
+                                         into Q2's figures.
+
+    Every screen that counts, averages or lists goals uses THIS, so a chip's
+    number always equals the list it links to.
+    """
+    out = []
+    for g in goals:
+        cycle = cycle_of.get(g.get("employee"))
+        if not cycle or not g.get("appraisal_cycle") or g.get("appraisal_cycle") == cycle:
+            out.append(g)
+    return out
+
+
 def _dashboard_stats(emp_id):
     if not _goals_installed():
         return {"total": 0, "active": 0, "completed": 0, "at_risk": 0,
-                "avg_progress": 0, "upcoming_deadlines": 0}
+                "avg_progress": 0, "upcoming_deadlines": 0, "cycle": None}
 
-    filters = {"employee": emp_id, "docstatus": ["!=", 2]}
     cycle = current_cycle_name(frappe.db.get_value("Employee", emp_id, "company"))
-    if cycle:
-        filters["appraisal_cycle"] = cycle
-    goals = frappe.get_all(
-        "Individual Goal",
-        filters=filters,
-        fields=["status", "progress_pct", "trajectory", "end_date", "weightage"],
+    goals = in_cycle(
+        frappe.get_all(
+            "Individual Goal",
+            filters={"employee": emp_id, "docstatus": ["!=", 2]},
+            fields=["employee", "appraisal_cycle", "status", "progress_pct",
+                    "trajectory", "end_date", "weightage"],
+        ),
+        {emp_id: cycle},
     )
     total     = len(goals)
     active    = sum(1 for g in goals if g["status"] == "Active")
     completed = sum(1 for g in goals if g["status"] == "Completed")
     at_risk   = sum(1 for g in goals if g.get("trajectory") in ("At Risk", "Off Track"))
     avg_pct   = round(goal_average([g for g in goals if g["status"] != "Cancelled"]), 1)
+    # "Due in 30 Days" is the count of the list the chip opens. That list
+    # (gpRenderDeadlines) takes Active goals ending between today and today+30.
+    # This count had no lower bound, so a goal whose date had already gone by
+    # was counted as "due" and then did not appear in the list beneath it.
     deadline30 = str(add_days(today(), 30))
+    td = str(today())
     upcoming  = sum(
         1 for g in goals
-        if g.get("end_date") and str(g["end_date"]) <= deadline30 and g["status"] == "Active"
+        if g.get("end_date") and td <= str(g["end_date"]) <= deadline30
+        and g["status"] == "Active"
     )
     return {
         "total": total, "active": active, "completed": completed,
         "at_risk": at_risk, "avg_progress": avg_pct,
         "upcoming_deadlines": upcoming,
+        # Which cycle every number above is about, so the page can name it and
+        # the goal list can show exactly the same goals.
+        "cycle": cycle,
     }
 
 
@@ -183,7 +259,8 @@ def get_portal_context():
         "is_manager":     _is_manager(emp_id) if emp_id else False,
         "goals_installed": _goals_installed(),
         "dashboard":      _dashboard_stats(emp_id) if emp_id else {},
-        "cycle":          _get_active_cycle(),
+        "cycle":          _get_active_cycle(
+            frappe.db.get_value("Employee", emp_id, "company") if emp_id else None),
     }
 
 
@@ -210,9 +287,16 @@ def get_my_goals(include_team=0):
             "name", "goal_name", "goal_cascade", "parent_goal", "target_value", "unit",
             "actual_progress", "progress_pct", "trajectory", "status",
             "start_date", "end_date", "docstatus", "owner", "employee", "employee_name",
+            "appraisal_cycle",
         ],
         order_by="trajectory asc, end_date asc",
     )
+    # This cycle only (slice 035, takeover review). The stat chips above this
+    # list already count one cycle; while the list showed every cycle, "Active
+    # Goals 1" sat on top of two goals and "Due in 30 Days" opened a list with
+    # a different number of rows in it. One cycle, named on the banner,
+    # counted in the chips, shown in the list.
+    goals = in_cycle(goals, cycle_by_employee(subjects))
     hr = _is_hr()
     for g in goals:
         # Editing follows the creator, not the subject — see alvoraa_goals.permissions.
@@ -866,22 +950,30 @@ def get_team_goals():
     # Each report's goals for their company's current cycle (slice 035). A Q1
     # goal left "Active" after Q1 closed no longer counts in Q2. One goal query
     # for the whole team, one cycle lookup per company.
-    cycles = {c: current_cycle_name(c) for c in {e["company"] for e in reportees}}
+    # Every goal of this cycle, not only the ones still marked Active (slice
+    # 035, takeover review). get_team_scorecard averages every non-cancelled
+    # goal in the cycle; this list averaged Active ones only. So one manager
+    # had two screens giving two different "average progress" figures for the
+    # same person, and a report who had finished all their goals showed as
+    # "0 goals, 0%" here and "100%" there.
+    cycle_of = {e["name"]: None for e in reportees}
+    if reportees:
+        cycles = {c: current_cycle_name(c) for c in {e["company"] for e in reportees}}
+        cycle_of = {e["name"]: cycles.get(e["company"]) for e in reportees}
     goals_by_emp = {}
     if reportees and _goals_installed():
-        for g in frappe.get_all(
+        for g in in_cycle(frappe.get_all(
             "Individual Goal",
             filters={"employee": ["in", [e["name"] for e in reportees]],
-                     "status": "Active", "docstatus": ["!=", 2]},
-            fields=["employee", "appraisal_cycle", "progress_pct", "trajectory", "weightage"],
-        ):
+                     "status": ["!=", "Cancelled"], "docstatus": ["!=", 2]},
+            fields=["employee", "appraisal_cycle", "progress_pct", "trajectory",
+                    "weightage", "status"],
+        ), cycle_of):
             goals_by_emp.setdefault(g["employee"], []).append(g)
 
     result = []
     for emp in reportees:
-        cycle = cycles.get(emp["company"])
-        g_list = [g for g in goals_by_emp.get(emp["name"], [])
-                  if not cycle or g["appraisal_cycle"] == cycle]
+        g_list = goals_by_emp.get(emp["name"], [])
 
         on_track = sum(1 for g in g_list if g.get("trajectory") == "On Track")
         at_risk  = sum(1 for g in g_list if g.get("trajectory") in ("At Risk", "Off Track"))

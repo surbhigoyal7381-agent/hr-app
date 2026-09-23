@@ -483,9 +483,20 @@ reads across. New checks start at AC-44.
 - **AC-53 (009 design decision 1)** Attendance corrections are counted where they sit today —
   HR's queue. A manager's count does not include them in Wave 1.
 - **AC-54** After a decision is taken in a panel, the counts refresh without a page reload.
-- **AC-24** `get_nav_counts` makes no more than 15 queries whatever the team size, and
-  answers within 500 ms at p95 — 20 warm calls, none dropped, as company-wide HR on a
-  1,000-employee fixture.
+- **AC-24 (number moved 24 Sep 2026 — W1D-23, on the review's recommendation, F2)**
+  `get_nav_counts` makes **no more than 20 queries for an HR caller and no more than 15
+  for everyone else**, whatever the team size, and answers within 500 ms at p95 — 20 warm
+  calls, none dropped, as company-wide HR on a 1,000-employee fixture.
+  **Why the number moved rather than the code.** The thing the budget was protecting is
+  true and is proven: the call is **flat in headcount**. Every part is an aggregate and
+  none walks a list of people — store HR takes 20 queries and company-wide HR 19 on the
+  same site, which is the property that decides whether this survives a thousand people.
+  Measured: 19 queries / 35 ms company-wide HR, 20 / 41 ms store HR, 11 / 14 ms for a
+  plain employee, against a 500 ms p95 on the same line of this budget. Editing
+  `goals_api` — a module this slice does not otherwise touch — in the week before go-live
+  to save four queries that cost about 6 ms is a worse trade than the number. The tidy-up
+  is **ALV-113**, after go-live; see `03-implementation-notes.md` §6 for the four options
+  and why memoising `permitted_companies` is not one of them.
 - **AC-55 (PRIV-4)** No boot path calls `get_pending_approvals`.
 
 ### US-7 · search
@@ -771,7 +782,7 @@ Measured on the local copy in Chrome with **"Slow 4G" and 4× CPU slow-down**, c
 |---|---|
 | Shell and skeleton painted | ≤ 300 ms, median of 5 loads |
 | Home usable | ≤ 2.5 s at p95 of 20 loads — **only reachable once slice 036's compression is live**; recorded before and after |
-| `get_frame`, `get_nav_counts` | ≤ 15 queries; ≤ 500 ms p95 over 20 warm calls, as company-wide HR at 1,000 employees |
+| `get_frame`, `get_nav_counts` | `get_frame` ≤ 15 queries. `get_nav_counts` **≤ 20 for an HR caller, ≤ 15 for everyone else** (W1D-23, 24 Sep — the call is flat in headcount, which is the property this budget exists to protect; ALV-113 tidies `goals_api` after go-live). Both ≤ 500 ms p95 over 20 warm calls, as company-wide HR at 1,000 employees |
 | Team screen for company-wide HR at 1,000 employees (W1D-20) | **capped at 50 rows**, true total shown; ≤ 8 queries; ≤ 700 ms p95 over 20 warm calls. Measured before and after the rebuild — today's version returns direct reports plus every unassigned employee, so the cap is what keeps this bounded |
 | Staff list, first page (W1D-21) | 12 asked for, 50 maximum, ≤ 4 queries, ≤ 400 ms p95 — the same budget as people search |
 | Start-up calls | 2, with no timer |

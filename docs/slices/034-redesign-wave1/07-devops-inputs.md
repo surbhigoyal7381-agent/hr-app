@@ -28,7 +28,7 @@ frame is measured against (nfr-budget §2):
 | Something on screen (the shell and a page skeleton) | ≤ 300 ms after the HTML starts arriving | Throttled "Slow 3G / low-end phone" profile, local copy, before and after |
 | Home usable on a 3G phone, p95 | ≤ 2.5 s | Same profile |
 | `frame_api.get_frame` | ≤ 500 ms p95, ≤ 15 queries warm | Timed test with query count, at the "Typical" 250-employee tenant and a 1,000-employee fixture |
-| `inbox_api.get_nav_counts` | ≤ 500 ms p95, ≤ 15 queries whatever the team size | Same |
+| `inbox_api.get_nav_counts` | ≤ 500 ms p95; **≤ 20 queries for an HR caller, ≤ 15 for everyone else**, whatever the team size (number moved 24 Sep, W1D-23) | Same |
 | Start-up calls | 2 (`get_frame`, `get_nav_counts`), down from 4, with no 1.5 s delay | Count in the browser's network log |
 
 ### Where the page stands today
@@ -266,7 +266,7 @@ test proves the output is the same. It does not prove the time is the same.
 | Skeleton on screen | Local copy, with the same compression as the target (none until 036; gzip after) | Chrome DevTools, the profile chosen in OPS-17, 4× CPU slow-down, cache off. Time from the first byte of HTML to the first paint of the shell | ≤ 300 ms, median of 5 loads. Also record the bytes that come **before** the shell's markup — that is what decides this number |
 | Home usable | Same | Same, 20 loads, with a `performance.mark` when `get_frame` has answered and Home's first card has drawn | ≤ 2.5 s at p95 (the 19th of 20 loads) |
 | Server time for the page | Local copy, logged in, 20 warm requests | `curl` with `time_starttransfer` | After the split, no more than 10 % slower than before (OPS-13) |
-| `get_frame`, `get_nav_counts` | Test fixtures at 250 and 1,000 employees | The existing query-count test pattern (as in `test_hr_analytics_scope_012`), plus a timer over 20 calls | ≤ 15 queries; ≤ 500 ms p95 |
+| `get_frame`, `get_nav_counts` | Test fixtures at 250 and 1,000 employees | The existing query-count test pattern (as in `test_hr_analytics_scope_012`), plus a timer over 20 calls | `get_frame` ≤ 15; `get_nav_counts` ≤ 20 HR / ≤ 15 otherwise (W1D-23); ≤ 500 ms p95 |
 | Start-up calls | Local copy | DevTools network log | 2 calls, no 1.5 s delay |
 | Bytes on the wire | Local copy, then dev | DevTools "transferred" size | Record only |
 

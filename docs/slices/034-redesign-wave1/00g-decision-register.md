@@ -30,7 +30,7 @@ bare number.
 | `W1D-01` … `W1D-12` | The review decisions of **22 September 2026** — the ones taken on the analyst, security and DevOps reviews of revision 1 | this file |
 | `W1D-13` … `W1D-18` | Surbhi's decisions of **23 September 2026** — taken on the analyst and security **re-**reviews of revision 2 | this file |
 | `W1D-19` … `W1D-21` | Surbhi's three further decisions of **23 September 2026**, later the same day — the desk link, the Team screen's scope, and the staff-list switch | this file |
-| `W1D-22` | Surbhi's decision of **24 September 2026**, taken on the senior architect review — the tenant System Manager's Team screen | this file |
+| `W1D-22` … `W1D-23` | Surbhi's decisions of **24 September 2026**, taken on the senior architect review — the tenant System Manager's Team screen, and the query budget | this file |
 | 009 design decision 1–7 | The design run's seven decisions, 22 Sep | `00f-decisions-2026-09-22.md`, first table |
 | 009 strategy decision 1–14 | The Wave 1 strategy's fourteen, 22 Sep | `00f-decisions-2026-09-22.md`, second table |
 
@@ -185,6 +185,7 @@ it was given.**
 
 | # | Decision | Closes |
 |---|---|---|
+| **W1D-23** | **The query budget moves; `goals_api` is not edited now.** AC-24 becomes **20 queries for an HR caller and 15 for everyone else**, and the `goals_api` tidy-up is raised as **ALV-113** for after go-live. The reason is the property the budget existed to protect, which is true and proven: `get_nav_counts` is **flat in headcount** — every part is an aggregate, none walks a list of people, and store HR (20 queries) and company-wide HR (19) differ by one on the same site. 35–41 ms against a 500 ms p95 on the same line of the budget is not a performance problem. Editing a module this slice does not otherwise touch, in the week before go-live, to save four queries worth about 6 ms is the worse trade. **Memoising `permitted_companies` is explicitly NOT the answer** — a memo that outlives a request hands a background job a stale scope | `05-review.md` F2; `02` AC-24 and §13; `03-implementation-notes.md` §6; ALV-113 |
 | **W1D-22** | **Yes — leave it as decided. A tenant System Manager who has an Employee record sees the whole tenant on the Team screen.** `is_hr` keeps System Manager in it, and `access.permitted_employee_filters()` keeps returning `ALL_EMPLOYEES` for them. No second version of `permitted_employees()` is written. It is what Kamal the owner wants from his own Team screen, and no data crosses a tenant boundary — that person's desk already lists every employee in the tenant. **It stays recorded as a widening, not quietly accepted**: `01c` PRIV-7 keeps its row naming this as the one screen that gets wider on release, so nobody has to rediscover it in six months | `02` **open question 6**; `05-review.md` F3; ALV-102 |
 
 ### W1D-22 — what was decided, and what was deliberately not

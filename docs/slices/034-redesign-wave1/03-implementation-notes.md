@@ -1283,8 +1283,13 @@ gets a rail, a top bar, a bottom bar, routes with real titles and focus, a share
 sheet, toasts, a bell with an honest number, scoped search, a theme switch, the five
 states, and a working staff list. Seventy-three browser tests drive it in a real DOM.
 
-**One budget is missed and I am not hiding it: `get_nav_counts` takes 19–20 queries for
-an HR caller against AC-24's 15.** The breakdown and the fix are in §6.
+**One budget was missed and is now decided, not hidden: `get_nav_counts` takes 19–20
+queries for an HR caller against AC-24's old 15.** Surbhi's decision of 24 September
+(**W1D-23**, on the review's recommendation): **accept the number and move the budget**,
+because the property the budget protects — the call is flat in headcount — is true and
+proven, and 35–41 ms sits well inside the 500 ms p95 on the same line. AC-24 now reads 20
+for an HR caller and 15 for everyone else. The `goals_api` tidy-up is **ALV-113**, after
+go-live. The breakdown is in §6.
 
 ## 1. What was built, file by file
 
@@ -1462,6 +1467,35 @@ differ by one query on the same site. The 500 ms p95 side of the budget is met w
 to spare at 35–41 ms — **but on a site of about 120 people, not the 1,000 the budget
 names**, so I am not quoting a p95 at 1,000.
 
+### The decision, and the ticket it leaves behind (24 Sep 2026)
+
+**W1D-23: accept 19–20 and move the budget.** AC-24 now reads 20 queries for an HR caller
+and 15 for everyone else, in `02-functional-spec.md` and in its §13 table, in
+`07-devops-inputs.md`, and as a correction on the impact analysis's performance row.
+
+**ALV-113 — tidy `goals_api.get_pending_approvals_count`, after go-live.** Raise it in
+YouTrack as:
+
+> **Title:** `get_pending_approvals_count` should accept a scope that has already been
+> worked out
+>
+> **Why:** it is 8 of the 19–20 queries in `inbox_api.get_nav_counts`. It computes
+> `permitted_companies` and the approvals scope itself, and the attendance-corrections
+> part computes the same thing again a moment later. Passing the scope in saves about
+> four queries, worth about 6 ms.
+>
+> **Why not now:** it edits a module slice 034 does not otherwise touch, in the week
+> before go-live, and `goals_api` has its own test suite and its own callers. The saving
+> is real and small; the risk of touching a neighbouring module in go-live week is not.
+>
+> **What must NOT be done as part of it:** memoising `permitted_companies` or
+> `permitted_employees` for longer than a request. `access.py` is read by most of the
+> product, and a memo that outlives a request hands a background job a stale scope. That
+> is its own slice, with its own thinking.
+>
+> **Done when:** `get_nav_counts` is at or below 15 queries for an HR caller with no
+> behaviour change, the count still equals the list, and AC-24 goes back to one number.
+
 ## 7. What went wrong, and what found it
 
 **My fixture broke a neighbouring test file.** The first version created one company-wide
@@ -1584,12 +1618,12 @@ modules of phantom failures; that did not happen here.
 
 ## 12. Known gaps and shortcuts
 
-- **AC-24's query budget is missed for an HR caller: 19–20 against 15.** *Dangerous debt
-  — escalating now, not noting it.* It is not dangerous because 19 queries are slow; they
-  are 35 ms. It is dangerous because a missed budget nobody decides about becomes a number
-  nobody believes. §6 has the two changes that close it and why I did not make the riskier
-  one today. **Surbhi's call: take the `goals_api` change now, or accept 19 and move the
-  budget.**
+- **AC-24's query budget was missed for an HR caller: 19–20 against 15.** *Closed on
+  24 September — decided, not carried.* It was never dangerous because 19 queries are
+  slow; they are 35 ms. It was dangerous because a missed budget nobody decides about
+  becomes a number nobody believes. **W1D-23: accept 19–20 and move the budget to 20 for
+  an HR caller, 15 for everyone else.** The `goals_api` change is **ALV-113** for after
+  go-live, and memoising `permitted_companies` is explicitly not the answer — see §6.
 - **Not measured at 390 px, at 200 % zoom, or with Hindi strings (AC-12, AC-48).**
   *Temporary debt.* The stylesheet is written to the rules and the two visual checks pass,
   but a rendered measurement needs a browser I have not driven. It should be done before

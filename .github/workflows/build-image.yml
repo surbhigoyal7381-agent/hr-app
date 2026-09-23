@@ -16,11 +16,45 @@ on:
   push:
     branches: [dev, test, main]
     tags: ["v*"]
+    # App-only pushes are not in the image (deploy/Dockerfile copies only hrms,
+    # alvoraa_goals and alvoraa_portal). Building and deploying for them would
+    # restart the nginx that also serves production for nothing (slice 013,
+    # OPS-72). A push that mixes app and server files still builds. ci.yml has
+    # NO such filter on purpose: its key guard must run on app pushes.
+    paths-ignore:
+      - "mobile/**"
+      - ".github/workflows/mobile.yml"
   workflow_dispatch:
 
+# ── Why the image is called alvoraa-app and not hr-app ────────────────────────
+#
+# Until 2026-09 the image went to ghcr.io/<owner>/hr-app, named after the
+# repository (IMAGE_NAME was `github.repository`). That package was PUBLIC: anyone
+# could pull the image and read the whole application out of it, even after the
+# repository went private on 18 Sep.
+#
+# GitHub will not make a public package private again. The documentation says
+# "Once you make a package public, you cannot make it private again", and the
+# visibility switch was tried twice on 22 Sep and stayed public. So the image
+# moves to a NEW package. A package first pushed by a workflow "inherits the
+# visibility and permissions model of the repository where the workflow is run"
+# (GitHub docs, checked 2026-09-22), and this repository is private - so
+# alvoraa-app is private from its first push, and linked to this repository.
+# The old public package is deleted by hand once production runs from the new one
+# (docs/runbooks/2026-09-private-image-package.md).
+#
+# Do NOT set IMAGE_NAME back to `github.repository`: that is the old public package.
+# The same name is written in deploy.yml. Change both together.
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: surbhigoyal7381-agent/alvoraa-app
+  # The old public package. Only the changeover step below uses it.
+  OLD_IMAGE_NAME: surbhigoyal7381-agent/hr-app
+  # Production releases built before the move, copied into the new package so a
+  # rollback to them works from alvoraa-app like any other tag. prod-65878e8 is
+  # what production ran on 22 Sep; prod-d99ba99 is the rollback tag kept on the
+  # server. The release main points at is added to this list automatically.
+  CARRY_TAGS: prod-65878e8 prod-d99ba99
 
 jobs:
   build:
@@ -64,11 +98,46 @@ jobs:
           echo "tag=${PREFIX}-${SHORT}" >> $GITHUB_OUTPUT
           echo "prefix=${PREFIX}"       >> $GITHUB_OUTPUT
 
+      # ── The changeover: which package does the DEPLOY read today? ─────────
+      #
+      # The automatic deploy runs `main`'s copy of deploy.yml, whatever branch is
+      # being deployed - GitHub always runs a workflow_run trigger from the
+      # default branch (docs/runbooks/making-the-repo-private.md, "The trap").
+      # So after this change reaches dev, and until it reaches main, every
+      # automatic DEV deploy still pulls from the old hr-app package. If this
+      # build pushed only to alvoraa-app, those deploys would fail at the pull.
+      #
+      # So, while main's deploy.yml still reads the old name, this build ALSO
+      # pushes to hr-app, and copies main's release images into alvoraa-app for
+      # rollback. The moment main's deploy.yml names alvoraa-app, both stop by
+      # themselves and nothing new ever reaches the public package again. No
+      # flag to remember to switch off.
+      #
+      # A failed fetch fails the build on purpose. Guessing "old" would keep
+      # publishing to the public package; guessing "new" would break dev deploys.
+      - name: Which package does main's deploy read?
+        id: changeover
+        run: |
+          set -euo pipefail
+          git fetch --quiet --depth=1 origin main
+          NEW="${REGISTRY}/${IMAGE_NAME}"
+          if git show FETCH_HEAD:.github/workflows/deploy.yml \
+               | grep -qE "^[[:space:]]*IMAGE_NAME:[[:space:]]*${IMAGE_NAME}[[:space:]]*$"; then
+            echo "main's deploy reads ${IMAGE_NAME} - pushing there only."
+            echo "also_old=false" >> "$GITHUB_OUTPUT"
+            echo "images=${NEW}"  >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::main's deploy still reads ${OLD_IMAGE_NAME} - pushing to BOTH packages until the release that carries this change reaches main."
+            echo "also_old=true"                                 >> "$GITHUB_OUTPUT"
+            echo "images=${NEW},${REGISTRY}/${OLD_IMAGE_NAME}"   >> "$GITHUB_OUTPUT"
+            echo "main_tag=prod-$(git rev-parse FETCH_HEAD | cut -c1-7)" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ steps.changeover.outputs.images }}
           tags: |
             type=raw,value=${{ steps.name.outputs.tag }}
             type=raw,value=${{ steps.name.outputs.prefix }}-latest
@@ -97,6 +166,39 @@ jobs:
             FRAPPE_BRANCH=version-16
             ERPNEXT_BRANCH=version-16
 
+      # ── Copy the old releases into the new package, for rollback ─────────
+      #
+      # Without this, a rollback to prod-65878e8 after the change would look for
+      # that tag in alvoraa-app, where it was never built, and fail at the pull.
+      # Copied here, a rollback to an old release is the same one-line dispatch
+      # as any other rollback, before AND after the old package is deleted.
+      #
+      # `imagetools create` copies inside the registry: same manifest, same
+      # digest, no rebuild, nothing downloaded to this runner. It runs only
+      # during the changeover (see the step above), skips a tag that is already
+      # there, and only warns about one it cannot find - a missing rollback copy
+      # must not block a dev build. The runbook checks the copies by hand
+      # before the old package is deleted.
+      - name: Copy old releases into the new package
+        if: steps.changeover.outputs.also_old == 'true'
+        env:
+          MAIN_TAG: ${{ steps.changeover.outputs.main_tag }}
+        run: |
+          set -uo pipefail
+          NEW="${REGISTRY}/${IMAGE_NAME}"
+          OLD="${REGISTRY}/${OLD_IMAGE_NAME}"
+          for tag in $(printf '%s\n' $CARRY_TAGS "$MAIN_TAG" | sort -u); do
+            if docker buildx imagetools inspect "${NEW}:${tag}" >/dev/null 2>&1; then
+              echo "${tag}: already in ${IMAGE_NAME}"
+            elif ! docker buildx imagetools inspect "${OLD}:${tag}" >/dev/null 2>&1; then
+              echo "::warning::${tag}: not found in ${OLD_IMAGE_NAME} either - NOT copied. A rollback to it will not work from ${IMAGE_NAME}."
+            elif docker buildx imagetools create --tag "${NEW}:${tag}" "${OLD}:${tag}"; then
+              echo "${tag}: copied from ${OLD_IMAGE_NAME}"
+            else
+              echo "::warning::${tag}: copy FAILED - a rollback to it will not work from ${IMAGE_NAME}."
+            fi
+          done
+
       - name: Summary
         run: |
           {
@@ -104,6 +206,7 @@ jobs:
             echo "- Branch: \`${GITHUB_REF_NAME}\`"
             echo "- Tag:    \`${{ steps.name.outputs.tag }}\`"
             echo "- Digest: \`${{ steps.build.outputs.digest }}\`"
+            echo "- Pushed to: \`${{ steps.changeover.outputs.images }}\`"
           } >> $GITHUB_STEP_SUMMARY
 
   scan:
@@ -116,10 +219,17 @@ jobs:
       packages: read
       security-events: write
     steps:
+      # The package is private now, so the scanner has to sign in to read it.
+      # While it was public this worked anonymously, which is why there was no
+      # sign-in here. Trivy reads these two variables for registry access; the
+      # job's own token with `packages: read` is enough.
       - name: Trivy scan
         # v0.36.0, not 0.24.0. The action moved to v-prefixed tags, so the old
         # unprefixed tag no longer resolves at all - the job fails before it runs.
         uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
           format: sarif
@@ -132,6 +242,9 @@ jobs:
       # - and a vulnerability report nobody can read is not a report.
       - name: Show findings in the log
         uses: aquasecurity/trivy-action@v0.36.0
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build.outputs.digest }}
           format: table

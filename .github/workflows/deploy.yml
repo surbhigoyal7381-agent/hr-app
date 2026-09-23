@@ -30,15 +30,46 @@ on:
         description: "Image tag to deploy (e.g. prod-a1b2c3d). Use this to roll back."
         required: true
         type: string
+      # Which registry package the tag lives in. Leave it on alvoraa-app.
+      #
+      # hr-app is the OLD, PUBLIC package. It is here for one reason: a rollback to
+      # a release that was never copied into the new package, in the days before
+      # the old package is deleted. Once it is deleted this option cannot work -
+      # the pull fails and the deploy stops before it touches any container. See
+      # docs/runbooks/2026-09-private-image-package.md.
+      image_package:
+        description: "Package the tag lives in. Keep alvoraa-app unless the runbook says otherwise."
+        required: false
+        type: choice
+        options: [alvoraa-app, hr-app]
+        default: alvoraa-app
       run_migrations:
         description: Run `bench --site all migrate`
         required: true
         type: boolean
         default: true
 
+# The image lives in its OWN package name, not the repository's name.
+#
+# Until 2026-09 the package was ghcr.io/<owner>/hr-app, named after the repository
+# (IMAGE_NAME was `github.repository`). That package was PUBLIC, so anyone could
+# pull the image and read the whole application out of it - even after the
+# repository itself went private on 18 Sep.
+#
+# GitHub will not make a public package private again. Its documentation says so
+# ("Once you make a package public, you cannot make it private again"), and the
+# visibility switch was tried twice on 22 Sep and stayed public. The only way out
+# is a NEW package that is private from its first push - a package first pushed by
+# a workflow "inherits the visibility and permissions model of the repository where
+# the workflow is run", and this repository is private - and then deleting the old
+# one. That new package is alvoraa-app.
+#
+# Do NOT set this back to `github.repository`: that is the old public package.
+# The same name is written in build-image.yml and in the plan job below (a job's
+# own `env:` cannot read this block). Change all three together.
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: surbhigoyal7381-agent/alvoraa-app
 
 jobs:
 
@@ -56,6 +87,9 @@ jobs:
       project:     ${{ steps.p.outputs.project }}
       overlay:     ${{ steps.p.outputs.overlay }}
       pin_file:    ${{ steps.p.outputs.pin_file }}
+      # The full image reference to pull and pin. Built here, once, so the
+      # rollback choice and the automatic path cannot disagree about the package.
+      full_image:  ${{ steps.p.outputs.full_image }}
       # vars.SMOKE_SITE and vars.BASE_DOMAIN were never configured on this repo,
       # so the smoke test requested https:///api/method/ping and returned HTTP 000
       # thirty times. Derived here instead - one less piece of out-of-band config
@@ -63,6 +97,9 @@ jobs:
       smoke_site:  ${{ steps.p.outputs.smoke_site }}
     steps:
       - id: p
+        env:
+          INPUT_IMAGE_TAG:     ${{ inputs.image_tag }}
+          INPUT_IMAGE_PACKAGE: ${{ inputs.image_package }}
         run: |
           set -euo pipefail
           # Maps an environment to the compose project, overlay and image-pin file
@@ -83,9 +120,26 @@ jobs:
             esac
           }
 
+          # Same name as IMAGE_NAME at the top of this file.
+          OWNER="surbhigoyal7381-agent"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Through env:, not pasted into the script - a typed input must not be
+            # able to become shell code on the way in.
+            TAG="$INPUT_IMAGE_TAG"
+            PACKAGE="$INPUT_IMAGE_PACKAGE"
+            # The UI only offers the two choices, but the API accepts any string.
+            # Never pull from a package that is not named here.
+            case "${PACKAGE:-alvoraa-app}" in
+              alvoraa-app) PACKAGE=alvoraa-app ;;
+              hr-app)      echo "::warning::Pulling from the OLD PUBLIC package hr-app - only for a release that was never copied into alvoraa-app." ;;
+              *)           echo "::error::Unknown image_package '$PACKAGE'"; exit 1 ;;
+            esac
+            case "$TAG" in
+              ''|*[!A-Za-z0-9._-]*) echo "::error::image_tag '$TAG' is not a plain tag"; exit 1 ;;
+            esac
             echo "environment=${{ inputs.environment }}"    >> $GITHUB_OUTPUT
-            echo "image_tag=${{ inputs.image_tag }}"        >> $GITHUB_OUTPUT
+            echo "image_tag=$TAG"                           >> $GITHUB_OUTPUT
+            echo "full_image=ghcr.io/$OWNER/$PACKAGE:$TAG"  >> $GITHUB_OUTPUT
             echo "migrate=${{ inputs.run_migrations }}"     >> $GITHUB_OUTPUT
             emit_stack "${{ inputs.environment }}"
             exit 0
@@ -101,6 +155,7 @@ jobs:
           esac
           echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
           echo "image_tag=$TAG"           >> $GITHUB_OUTPUT
+          echo "full_image=ghcr.io/$OWNER/alvoraa-app:$TAG" >> $GITHUB_OUTPUT
           echo "migrate=true"             >> $GITHUB_OUTPUT
           emit_stack "$ENVIRONMENT"
 
@@ -129,7 +184,7 @@ jobs:
 
     env:
       IMAGE:    ${{ needs.plan.outputs.image_tag }}
-      FULL_IMAGE: ghcr.io/${{ github.repository }}:${{ needs.plan.outputs.image_tag }}
+      FULL_IMAGE: ${{ needs.plan.outputs.full_image }}
       ENV_NAME: ${{ needs.plan.outputs.environment }}
       PROJECT:  ${{ needs.plan.outputs.project }}
       OVERLAY:  ${{ needs.plan.outputs.overlay }}
@@ -140,7 +195,7 @@ jobs:
       - name: Parameters
         run: |
           echo "Environment : $ENV_NAME"
-          echo "Image       : ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$IMAGE"
+          echo "Image       : $FULL_IMAGE"
           echo "Migrations  : $MIGRATE"
 
       # ── The nginx gate: a config nginx cannot read must never reach nginx ──
@@ -198,6 +253,43 @@ jobs:
           git show "origin/${BRANCH}:scripts/check_nginx_parses.sh" > "$TMP/check.sh"
           bash "$TMP/check.sh" "$TMP/nginx.conf" "${CERT_DIR:-/etc/letsencrypt}"
 
+      # ── Disk headroom gate: the cause of the 2026-09-10 outage ────────────
+      #
+      # A full disk is not just "the deploy fails". On 2026-09-10 the 193 GB disk
+      # hit 100%, and every one of these followed from it:
+      #   • redis runs with an append-only file, so it stopped accepting WRITES
+      #     and answered every command "MISCONF Errors writing to the AOF file";
+      #   • rq does not retry its heartbeat, so both workers quit within three
+      #     seconds of each other;
+      #   • `restart: unless-stopped` fired and FAILED - docker could not mkdir a
+      #     root filesystem to restart into - and the restart manager gave up;
+      #   • docker could not even save the failed state, so `docker ps` reported
+      #     "Up 12 days" for the next nine days while the containers were shells.
+      # 700 jobs queued up behind that, unnoticed, until 2026-09-19.
+      #
+      # Recovery needs the disk the failure just ate. So stop BEFORE the pull,
+      # while there is still room to fix it: one image is about 11 GB, and the
+      # backup below writes a full copy of every site.
+      #
+      # This step only looks. The tagged-image cleanup at the end of Deploy is
+      # what normally keeps this from ever tripping; if it trips anyway, that
+      # cleanup stopped working and a human should see why.
+      - name: Disk headroom
+        run: |
+          set -euo pipefail
+          AVAIL=$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
+          echo "Free on / : ${AVAIL} GB"
+          if [ "$AVAIL" -lt 25 ]; then
+            echo "::error::Only ${AVAIL} GB free on /. A deploy needs ~25 GB (image + backup),"
+            echo "::error::and below ~20 GB docker cannot restart a container at all."
+            docker system df
+            docker images --format '{{.Size}}	{{.Repository}}:{{.Tag}}' | sort -hr | head -15
+            exit 1
+          fi
+          if [ "$AVAIL" -lt 45 ]; then
+            echo "::warning::${AVAIL} GB free on /. Getting tight - check the image cleanup."
+          fi
+
       # ── Pre-deploy backup: this is the rollback point ─────────────────────
       # A database dump alone is NOT restorable — site_config.json holds each
       # site's encryption_key. Both are captured here. (ARCHITECTURE.md §17)
@@ -223,14 +315,18 @@ jobs:
             # tar exits 2 - which failed the backup and correctly skipped the whole
             # deploy. bench is unaffected because it locates the bench root itself,
             # which is why every other command in this job worked.
+            # NOT into sites/ itself: every bench command that loops over the sites
+            # folder saw each tarball as a site and asked bench about it ("404 Not
+            # Found: site-configs-2026-09-18-1901.tgz does not exist"), once per
+            # tarball per loop, fifteen of them by 23 Sep. Own folder, next to the dumps.
             $DC exec -T backend bash -c \
-              "cd /home/frappe/frappe-bench && tar czf sites/site-configs-${STAMP}.tgz \
+              "cd /home/frappe/frappe-bench && mkdir -p sites/.config-backups && tar czf sites/.config-backups/site-configs-${STAMP}.tgz \
                  sites/*/site_config.json sites/common_site_config.json"
 
             if [ -n "${{ secrets.BACKUP_BUCKET }}" ]; then
               $DC exec -T backend bash -c \
                 "cd /home/frappe/frappe-bench && aws s3 sync sites/ s3://${{ secrets.BACKUP_BUCKET }}/pre-deploy/${STAMP}/ \
-                   --exclude '*' --include '*/private/backups/*' --include 'site-configs-*.tgz'" \
+                   --exclude '*' --include '*/private/backups/*' --include '.config-backups/site-configs-*.tgz'" \
                 || echo "::warning::Offsite backup sync failed — verify before continuing"
             else
               echo "::warning::BACKUP_BUCKET not set — backups exist only on the server"
@@ -245,7 +341,9 @@ jobs:
       #
       # With this step the package can be private: the job's own GITHUB_TOKEN has
       # `packages: read` and is enough to pull. No long-lived token is stored on
-      # the server, and nothing has to be rotated by hand.
+      # the server, and nothing has to be rotated by hand. The private package is
+      # alvoraa-app (IMAGE_NAME at the top). This token can read it because a
+      # package first pushed by this repository's workflow is linked to it.
       #
       # No matching logout. The credential lands in the runner user's
       # ~/.docker/config.json, and the token stops working when the job ends - but
@@ -296,6 +394,14 @@ jobs:
                        | tail -1 | cut -d= -f2-) || CERT_DIR=""
             bash ../../scripts/check_nginx_parses.sh ../nginx.conf "${CERT_DIR:-/etc/letsencrypt}"
 
+            # Keep the previous pin. `compose pull` reads the pin file to know what
+            # to fetch, so it has to be written first - but if the pull then fails
+            # (a tag that is not in the package, or the old package after it has
+            # been deleted), the pin would be left naming an image this server
+            # does not have. The next `up -d` - or nginx being recreated, which
+            # reads production's pin - would then fail. The pull loop below puts
+            # the previous pin back instead.
+            cp -p "$PIN_FILE" "$PIN_FILE.before-deploy" 2>/dev/null || true
             echo "KINEXUS_IMAGE=$FULL_IMAGE" > "$PIN_FILE"
             export COMPOSE_PROJECT_NAME="$PROJECT"
             DC="docker compose -f docker-compose.app.yml -f $OVERLAY --env-file ../envs/${ENV_NAME}.env --env-file $PIN_FILE"
@@ -335,10 +441,14 @@ jobs:
               fi
             }
 
+            # A site is a directory holding site_config.json - nothing else. The old
+            # exclusion list named the files it knew about and missed the
+            # site-configs-*.tgz tarballs the backup step used to leave here; bench
+            # was then asked about each one and printed a 404 for it.
             list_sites() {
-              $DC exec -T backend bash -c 'ls -1 /home/frappe/frappe-bench/sites' \
-                | tr -d '\r' \
-                | grep -vE '^(assets|apps[.]txt|apps[.]json|.*[.]json|currentsite[.]txt)$'
+              $DC exec -T backend bash -c \
+                'cd /home/frappe/frappe-bench/sites && for d in */; do [ -f "$d/site_config.json" ] && echo "${d%/}"; done' \
+                | tr -d '\r'
             }
 
             # Whatever happens below, the site must not be left in maintenance and
@@ -375,7 +485,15 @@ jobs:
               echo "::warning::pull attempt $attempt failed, retrying in $((attempt * 20))s"
               sleep $((attempt * 20))
             done
-            [ "$pulled" = "1" ] || { echo "::error::image pull failed six times over five minutes"; exit 1; }
+            if [ "$pulled" != "1" ]; then
+              echo "::error::image pull failed six times over five minutes: $FULL_IMAGE"
+              if [ -f "$PIN_FILE.before-deploy" ]; then
+                mv -f "$PIN_FILE.before-deploy" "$PIN_FILE"
+                echo "::error::No container was changed. $PIN_FILE is back to: $(cat "$PIN_FILE")"
+              fi
+              exit 1
+            fi
+            rm -f "$PIN_FILE.before-deploy"
 
             # Containers first, maintenance mode second. The other order deadlocks:
             # the backend's healthcheck curls /api/method/ping on HEALTH_HOST, and
@@ -424,9 +542,21 @@ jobs:
               # are invisible while the site still believes the old name. Hence a plain
               # execute, here, first.
               #
-              # Idempotent: prints "nothing to do" on an already-renamed site, so it is
-              # harmless on every ordinary release.
-              $DC exec -T backend bench --site all execute alvoraa_goals.deploy_utils.premigrate_rename
+              # Idempotent: prints "nothing to do" on an already-renamed site. But
+              # "--site all execute <dotted path into an app>" is not like "--site
+              # all migrate" - it needs that app importable on EVERY site, and fails
+              # the whole deploy the moment one site never had it (sargam.dev.alvoraa.co,
+              # 2026-09-22: hard failure, safe rollback, nothing lost, but every
+              # deploy would repeat it). So: run it per site, and only on a site
+              # that actually has some form of the goals app installed.
+              for site in $(list_sites); do
+                if $DC exec -T backend bench --site "$site" list-apps 2>/dev/null \
+                     | grep -qxE 'alvoraa_goals|grace_goals|alvox_goals'; then
+                  $DC exec -T backend bench --site "$site" execute alvoraa_goals.deploy_utils.premigrate_rename
+                else
+                  echo "premigrate_rename: skipping $site (no goals app installed under any name)"
+                fi
+              done
 
               $DC exec -T backend bench --site all migrate
               $DC exec -T backend bench --site all clear-cache
@@ -450,7 +580,7 @@ jobs:
             # ── Keep the disk from filling up with old builds ──────────────
             #
             # `docker image prune -f` removes DANGLING images only - untagged
-            # leftovers. Every build here is tagged (hr-app:dev-<sha>), so this
+            # leftovers. Every build here is tagged (alvoraa-app:dev-<sha>), so this
             # line never touched a single one of them, and the "until=168h" it
             # carried was beside the point.
             #
@@ -467,20 +597,27 @@ jobs:
             # few minutes to pull rather than being impossible.
             docker image prune -f --filter "until=48h" || true
 
+            # BOTH package names, old and new. Matching only the new one would
+            # leave the old builds on disk for ever; matching only the old one
+            # (as this did before 2026-09-22) would never clean up a new build,
+            # and the disk would fill exactly as it did on 2026-09-10. The old
+            # name can leave this pattern once the old package is deleted and no
+            # hr-app image is left on the server.
+            APP_IMAGES='/(alvoraa-app|hr-app):'
             KEEP=$(
               {
                 docker ps --format '{{.Image}}'
                 docker images --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}' \
-                  | grep 'hr-app:prod-' | sort -r | head -2 | cut -f2-
+                  | grep -E "${APP_IMAGES}prod-" | sort -r | head -2 | cut -f2-
                 docker images --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}' \
-                  | grep 'hr-app:dev-'  | sort -r | head -3 | cut -f2-
+                  | grep -E "${APP_IMAGES}dev-"  | sort -r | head -3 | cut -f2-
               } | sort -u
             )
             # An empty KEEP would make the grep below match nothing and delete
             # everything, including what is running. Never guess here.
             if [ -n "$KEEP" ]; then
               docker images --format '{{.Repository}}:{{.Tag}}' \
-                | grep 'hr-app:' | grep -v ':<none>' \
+                | grep -E "$APP_IMAGES" | grep -v ':<none>' \
                 | grep -vxF "$KEEP" \
                 | xargs -r -n1 docker rmi >/dev/null 2>&1 || true
             fi
@@ -555,14 +692,50 @@ jobs:
           echo "::error::Smoke test failed — /api/method/ping never returned 200"
           exit 1
 
-      - name: Stack and scheduler health
-        continue-on-error: true
+      # ── Are the background workers actually working? ──────────────────────
+      #
+      # This step used to be `continue-on-error: true` with `|| true` on the only
+      # command that checked anything, so it could not fail and nobody read it.
+      # Meanwhile, between 2026-09-10 and 2026-09-19, both production workers were
+      # dead and 700 jobs sat on the `default` queue with nothing to run them.
+      # `docker ps` said "Up 12 days" the whole time - see scripts/check_workers.sh.
+      #
+      # So it is a gate now. A deploy that leaves a queue with no live worker is a
+      # failed deploy, and it says so here rather than in nine days' time.
+      #
+      # It runs AFTER the smoke test on purpose: the site being up is the more
+      # urgent fact, and a worker that is still registering after a container swap
+      # gets those extra seconds to appear.
+      - name: Background workers must be working
         run: |
+            set -uo pipefail
             cd /var/www/html/hr-app/deploy/compose
             export COMPOSE_PROJECT_NAME="$PROJECT"
             DC="docker compose -f docker-compose.app.yml -f $OVERLAY --env-file ../envs/${ENV_NAME}.env --env-file $PIN_FILE"
             $DC ps
+            # Context, not a gate: `doctor` counts workers but cannot say which
+            # queues they cover, and it needs a site to talk to.
             $DC exec -T backend bench --site ${{ needs.plan.outputs.smoke_site }} doctor || true
+
+            # The Deploy step can fail at its own checkout and leave the previous
+            # release on disk, so the checker is not always here. Say so rather
+            # than failing a deploy over a missing file.
+            if [ ! -f ../../scripts/check_workers.sh ]; then
+              echo "::warning::scripts/check_workers.sh is not in this tree - workers NOT verified"
+              exit 0
+            fi
+
+            # Workers register with redis a few seconds after the container starts.
+            # Give them a minute before calling it a failure.
+            for attempt in 1 2 3 4 5 6; do
+              if bash ../../scripts/check_workers.sh "$PROJECT"; then exit 0; fi
+              echo "attempt $attempt: workers not all healthy yet, waiting 10s"
+              sleep 10
+            done
+            echo "::error::A queue has no live worker after this deploy. Background jobs"
+            echo "::error::- scheduled jobs, emails, tenant provisioning - are NOT running."
+            echo "::error::See the FAIL lines above. Nothing has been changed automatically."
+            exit 1
 
       - name: Rollback instructions
         if: failure()
@@ -575,7 +748,13 @@ jobs:
 
           Actions → Deploy → Run workflow →
           `environment: ${{ needs.plan.outputs.environment }}`,
-          `image_tag: <previous tag>`, `run_migrations: false`
+          `image_tag: <previous tag>`, `run_migrations: false`,
+          `image_package: alvoraa-app`
+
+          Releases from before the move to the private package were copied into
+          alvoraa-app, so their tags work there too. Only if a tag is missing
+          from alvoraa-app, and the old public package still exists, use
+          `image_package: hr-app`. See docs/runbooks/2026-09-private-image-package.md.
 
           **A migration ran:** redeploy the previous tag **and** restore the
           pre-deploy backup for each affected site. Frappe patches are not

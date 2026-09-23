@@ -555,44 +555,129 @@ def _my_view_by_person(employee):
 	}
 
 
-@frappe.whitelist()
+# A search term shorter than this matches most of a company, so it is not a
+# search.
+MIN_TERM = 2
+
+# The screen asks for 12; the server never returns more than this however large
+# a number is sent (AC-28).
+MAX_RESULTS = 50
+
+
+def _escape_like(term):
+	"""Make `%` and `_` mean themselves (PRIV-3, AC-57).
+
+	Without this a single `%` returns everybody the caller may see in one call,
+	and `a_b` quietly matches `axb`. The backslash goes first, or the escapes
+	would then be escaped themselves. MariaDB's LIKE uses backslash as its
+	escape character by default, which is what makes this work.
+	"""
+	return (term.replace("\\", "\\\\")
+	            .replace("%", "\\%")
+	            .replace("_", "\\_"))
+
+
+@frappe.whitelist(methods=["POST"])
 def search_people(q, limit=12):
 	"""Type a name, land on their card. That is how an org chart is actually
-	used - somebody is looking for one person, not browsing a company."""
+	used - somebody is looking for one person, not browsing a company.
+
+	POST, not GET (PRIV-5): a search term is somebody's name, and a name does
+	not belong in a URL, a proxy log or a browser history.
+	"""
 	q = (q or "").strip()
-	if len(q) < 2:
+	if len(q) < MIN_TERM:
 		return []
 	filters = _search_scope()
 	if filters is None:
 		return []
-	filters.update({"status": "Active", "employee_name": ("like", f"%{q}%")})
+	filters.update({"status": "Active",
+	                "employee_name": ("like", "%" + _escape_like(q) + "%")})
+	# PRIV-2's five keys exactly. `employee` is a link key the page never shows.
 	return frappe.get_all(
 		"Employee",
 		filters=filters,
 		fields=["name as employee", "employee_name as name", "designation as title",
 		        "department", "image"],
-		order_by="employee_name asc", limit=min(cint(limit) or 12, 50))
+		order_by="employee_name asc", limit=min(cint(limit) or 12, MAX_RESULTS))
+
+
+def _me_active():
+	"""The caller's ACTIVE Employee record, or None (SEC-14).
+
+	Deliberately NOT `_me()`, which finds a record whatever its status. A
+	manager who has left, whose login is still enabled and whose reports have
+	not moved, would otherwise keep finding his whole team by name. Here he
+	finds nobody.
+
+	`_me()` is left alone on purpose: it is read by the position and assignment
+	screens as well, and making every one of them Active-only is the wider
+	leaver fix, ALV-87, which this slice's spec puts out of scope. This is the
+	search path and only the search path.
+	"""
+	return frappe.db.get_value(
+		"Employee", {"user_id": frappe.session.user, "status": "Active"}, "name")
+
+
+def _own_line(employee):
+	"""This person and everybody below them, at any depth.
+
+	Read from Employee's nested set in one query, which is what makes "at any
+	depth" cost the same as "one level".
+	"""
+	if not employee:
+		return set()
+	lft, rgt = frappe.db.get_value("Employee", employee, ["lft", "rgt"]) or (None, None)
+	if not (lft and rgt):
+		return {employee}
+	return set(frappe.get_all(
+		"Employee", filters={"lft": (">=", lft), "rgt": ("<=", rgt)}, pluck="name"))
 
 
 def _search_scope():
 	"""Who this caller may find, as Employee filters. None means nobody.
 
-	Decision of 2026-09-14 (slice 010, PRIV-5). Fails closed:
-	  - System Manager (treated as CXO) and HR: employees of the companies they
-	    are permitted, from hrms.alvoraa_hr_core.access.permitted_companies;
-	  - everyone else: themselves and everyone below them in reports_to, at any
-	    depth, read from Employee's nested set in one query. Somebody with no
-	    reports finds only themselves;
-	  - no Employee record and no HR role: nobody.
+	Fails closed. The rules, and where each comes from:
+
+	  - **System Manager** (treated as CXO) and **Administrator**: their
+	    permitted companies, which is every company.
+	  - **Company-wide HR**: their permitted companies. One filter, so the
+	    database does the narrowing and no list of names is read into Python.
+	  - **Store HR** - an HR person who holds a Branch User Permission: their
+	    store, **plus their own reporting line** (SEC-3, AC-26). A head-office
+	    employee with no branch is outside every store (DEF-6). This is the case
+	    slice 034 adds: before it, a store's HR person searched their whole
+	    company, which is the leak W1D-20 and SEC-13 close on the Team screen.
+	  - **Everyone else**: themselves and everyone below them in `reports_to`,
+	    at any depth. Somebody with no reports finds only themselves.
+	  - **No ACTIVE Employee record and no HR role**: nobody (SEC-14).
+
+	Why store HR is a list of names and company-wide HR is not: a store is a few
+	dozen people, so naming them costs one small query; a company can be
+	thousands, and naming those would move the whole company into Python for
+	every keystroke. The shape follows the size, and both answers are the same
+	answer.
 	"""
-	from hrms.alvoraa_hr_core.access import HR_ROLES, permitted_companies
+	from hrms.alvoraa_hr_core.access import HR_ROLES, permitted_branches, permitted_companies
 
 	roles = set(frappe.get_roles())
 	if frappe.session.user == "Administrator" or roles & (HR_ROLES | {"System Manager"}):
 		companies = permitted_companies()
-		return {"company": ("in", companies)} if companies else None
+		if not companies:
+			return None
+		branches = permitted_branches()
+		if branches is None:
+			# Company-wide. A System Manager lands here too, with every company.
+			return {"company": ("in", companies)}
+		names = set(frappe.get_all(
+			"Employee",
+			filters={"company": ("in", companies), "branch": ("in", branches)},
+			pluck="name"))
+		names |= _own_line(_me_active())
+		# Never an empty filter dict: in Frappe that means every record.
+		return {"name": ("in", sorted(names))} if names else None
 
-	me = _me()
+	me = _me_active()
 	if not me:
 		return None
 	lft, rgt = frappe.db.get_value("Employee", me, ["lft", "rgt"]) or (None, None)

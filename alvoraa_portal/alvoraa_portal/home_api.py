@@ -294,8 +294,8 @@ def _peers(me_row):
 
 	**People with the same manager, and no department fallback** (D-3, AC-55).
 	Somebody with no manager sees no peer card at all, rather than the whole
-	department - which is what `get_week_presence` did, and is why that endpoint
-	is deleted in the commit that replaces this card.
+	department - which is what the old week-presence endpoint did, and is why it
+	is deleted in the commit that replaces this card (SEC-9 / AC-59).
 	"""
 	if not me_row.get("reports_to"):
 		return []

@@ -1582,43 +1582,13 @@ function loadHomeLeave(balances) {
   }).join("");
 }
 
-/* Presence, and nothing but presence. See the note on .wk in the styles. */
-var WK_DAYS = ["S", "M", "T", "W", "T", "F", "S"];
+/* The "this week" grid was removed by slice 042 (SEC-9 / AC-59).
 
-function loadHomeWeek() {
-  api("get_week_presence", {}, function (d) {
-    var body = document.getElementById("home-week-body");
-    if (!body) return;
-    var rows = (d && d.rows) || [];
-    homeBlock("home-week-card", rows.length);
-    if (!rows.length) return;
+   It listed up to forty colleagues by name with a per-day away state, and the
+   endpoint behind it was whitelisted, so anybody could ask for it by hand. The
+   new portal's Home shows presence as three numbers with a minimum group size
+   instead. The endpoint is deleted, not merely unused. */
 
-    document.getElementById("home-week-title").textContent =
-      d.basis === "team" ? "Your team this week" : "Your department this week";
-    var basisEl = document.getElementById("home-week-basis");
-    if (basisEl) basisEl.textContent = rows.length + (rows.length === 1 ? " person" : " people");
-
-    var todayIdx = (d.days || []).indexOf(d.today);
-    var head = '<div class="wk"><div></div>'
-      + (d.days || []).map(function (ds, i) {
-          return '<div class="wk-hd' + (i === todayIdx ? " is-today" : "") + '">'
-            + WK_DAYS[new Date(ds + "T00:00:00").getDay()] + "</div>";
-        }).join("");
-
-    var grid = rows.map(function (r) {
-      return '<div class="wk-who"><span class="wk-av">' + esc(initials(r.name))
-        + "</span><span>" + esc(r.name) + "</span></div>"
-        + r.week.map(function (c) { return '<div class="wk-c ' + c + '"></div>'; }).join("");
-    }).join("");
-
-    body.innerHTML = head + grid + "</div>"
-      + '<div class="wk-key">'
-      + '<span><i style="background:var(--green)"></i>In</span>'
-      + '<span><i style="background:var(--border2)"></i>Away</span>'
-      + '<span><i style="border:1px dashed var(--border2)"></i>To come</span>'
-      + "<span>Presence only &mdash; never the reason.</span></div>";
-  }, function () { homeBlock("home-week-card", false); });
-}
 
 function loadHome() {
   const ciBtn = document.getElementById("ci-btn");
@@ -1656,7 +1626,6 @@ function loadHome() {
     updateCheckinUI(data.checked_in, data.last_action);
     loadMyDocuments();
     loadHomePolicies();
-    loadHomeWeek();
   }, function() {
     document.getElementById("ci-status-txt").textContent = "Could not load status";
     ciBtn.textContent = "Check In";

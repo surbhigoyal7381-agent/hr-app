@@ -45,21 +45,31 @@ WORKDIR /home/frappe
 
 ENV PATH="/home/frappe/.local/bin:${PATH}"
 
+# ── yarn's download cache stays OUT of the image ──────────────────────────────
+# Five of the steps below run `yarn install` (bench init, three get-apps and
+# setup requirements --node). Each one left its downloads in
+# /home/frappe/.cache/yarn, inside its own layer: 2.6 GB across the four layers of
+# the pre-CRM image, more with the CRM. A `yarn cache clean` at the end would not
+# help - a file deleted in a later layer still costs its bytes in the earlier one.
+# A BuildKit cache mount is the right tool: the directory exists only while the
+# step runs, is reused between builds on the same machine, and is never written to
+# a layer. uid/gid 1000 is the `frappe` user, or yarn cannot write to it.
+# (ALV-109. On 23 Sep 2026 the CRM build filled the GitHub runner's disk.)
 # ── 1. Bench + upstream apps, pinned by branch (pin by commit for prod) ─────
-RUN bench init --skip-redis-config-generation \
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench init --skip-redis-config-generation \
                --frappe-branch "${FRAPPE_BRANCH}" \
                frappe-bench
 
 WORKDIR /home/frappe/frappe-bench
 
-RUN bench get-app --branch "${ERPNEXT_BRANCH}" erpnext
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch "${ERPNEXT_BRANCH}" erpnext
 
 # Declares required_apps = ["frappe/erpnext"], so it must follow erpnext.
-RUN bench get-app --branch "${INDIA_COMPLIANCE_BRANCH}" https://github.com/resilient-tech/india-compliance
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch "${INDIA_COMPLIANCE_BRANCH}" https://github.com/resilient-tech/india-compliance
 
 # No required_apps of its own. get-app runs its pip install (adds twilio) and the
 # frontend's yarn install; the Vite build itself happens in step 4 below.
-RUN bench get-app --branch "${CRM_TAG}" https://github.com/frappe/crm
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch "${CRM_TAG}" https://github.com/frappe/crm
 
 # ── 2. First-party apps, copied from THIS commit ────────────────────────────
 COPY --chown=frappe:frappe hrms                 apps/hrms
@@ -81,7 +91,7 @@ RUN ./env/bin/pip install --no-cache-dir \
 # hrms/public/js/hierarchy_chart/hierarchy_chart_desktop.js - it was simply never
 # installed. `bench setup requirements --node` covers every app in apps.txt, so this
 # stays correct if a first-party app gains JS dependencies later.
-RUN bench setup requirements --node
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench setup requirements --node
 
 # ── 4. Bake assets: sites/assets + employee PWA + roster SPA ────────────────
 # Built one app at a time, deliberately.

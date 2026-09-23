@@ -133,6 +133,21 @@ jobs:
             echo "main_tag=prod-$(git rev-parse FETCH_HEAD | cut -c1-7)" >> "$GITHUB_OUTPUT"
           fi
 
+      # ── Room to build ─────────────────────────────────────────────────────
+      # The hosted runner has about 14 GB free on its root disk, and the builder
+      # keeps every layer of this image plus its export to the GitHub cache
+      # there. The pre-CRM image fitted; the CRM build (23 Sep 2026) died with
+      # "ResourceExhausted ... failed to write compressed diff". The runner also
+      # ships toolchains this build never touches - .NET, Android, Haskell,
+      # CodeQL - which is the space we take back. Runner-only: nothing here
+      # changes what goes into the image.
+      - name: Free disk on the runner
+        run: |
+          df -h / | tail -1 | awk '{print "free before: " $4}'
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc                       /usr/local/share/boost /opt/hostedtoolcache/CodeQL                       /usr/local/.ghcup 2>/dev/null || true
+          docker image prune -af >/dev/null 2>&1 || true
+          df -h / | tail -1 | awk '{print "free after:  " $4}'
+
       - name: Image metadata
         id: meta
         uses: docker/metadata-action@v5

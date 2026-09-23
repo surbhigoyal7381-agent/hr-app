@@ -1,6 +1,7 @@
 # ── Kinexus HRMS – immutable application image ──────────────────────────────
 #
-# Builds the complete Frappe bench with all five apps and pre-built assets.
+# Builds the complete Frappe bench with all seven apps and pre-built assets
+# (frappe, erpnext, india_compliance, crm, hrms, alvoraa_goals, alvoraa_portal).
 # ONE image, run with five different commands (web / socketio / scheduler /
 # worker / provisioner). See ARCHITECTURE.md §5 and §12.1.
 #
@@ -12,8 +13,8 @@
 # first-party apps are copied out of this repo — that is what closes gap G4,
 # where production silently ran upstream frappe/hrms instead of this fork.
 #
-# NOTE: `hrms/frappe-ui` is a git submodule. Clone with --recurse-submodules
-# or the PWA build fails.
+# NOTE: `hrms/frappe-ui` was once a git submodule. It is not any more (there is
+# no .gitmodules), so a plain clone builds. Corrected in slice 040.
 #
 # Optimisation left on the table: a two-stage build using frappe_docker's
 # `frappe/base` as the runtime layer produces a much smaller image. It requires
@@ -29,6 +30,15 @@ ARG ERPNEXT_BRANCH=version-16
 # subscription.py - so it is present in the image but installed on a site only
 # when the plan includes it.
 ARG INDIA_COMPLIANCE_BRANCH=version-16
+# Frappe CRM (frappe/crm): leads, deals, email, telephony - the standalone CRM,
+# sold as the `crm` feature in subscription.py. Present in the image, installed on
+# a site only when sold, and only AFTER that site's setup wizard has finished
+# (its setup_wizard_complete hook seeds fake users and leads otherwise).
+#
+# Pinned to a release TAG, not a branch. Its Vue frontend links @framework/ui to
+# apps/frappe/ui, so a moving branch could break every future image build with
+# no change on our side. Bump the tag on purpose, in one place (slice 040).
+ARG CRM_TAG=v1.84.0
 
 USER frappe
 WORKDIR /home/frappe
@@ -47,6 +57,10 @@ RUN bench get-app --branch "${ERPNEXT_BRANCH}" erpnext
 # Declares required_apps = ["frappe/erpnext"], so it must follow erpnext.
 RUN bench get-app --branch "${INDIA_COMPLIANCE_BRANCH}" https://github.com/resilient-tech/india-compliance
 
+# No required_apps of its own. get-app runs its pip install (adds twilio) and the
+# frontend's yarn install; the Vite build itself happens in step 4 below.
+RUN bench get-app --branch "${CRM_TAG}" https://github.com/frappe/crm
+
 # ── 2. First-party apps, copied from THIS commit ────────────────────────────
 COPY --chown=frappe:frappe hrms                 apps/hrms
 COPY --chown=frappe:frappe alvoraa_goals          apps/alvoraa_goals
@@ -57,7 +71,7 @@ RUN ./env/bin/pip install --no-cache-dir \
         -e apps/hrms \
         -e apps/alvoraa_goals \
         -e apps/alvoraa_portal \
- && printf 'frappe\nerpnext\nindia_compliance\nhrms\nalvoraa_goals\nalvoraa_portal\n' > sites/apps.txt
+ && printf 'frappe\nerpnext\nindia_compliance\ncrm\nhrms\nalvoraa_goals\nalvoraa_portal\n' > sites/apps.txt
 
 # ── 3b. Node dependencies for the copied apps ───────────────────────────────
 # `bench get-app` runs yarn install for the app it fetches. COPY does not, so the
@@ -89,6 +103,7 @@ RUN bench setup requirements --node
 RUN bench build --production --app frappe
 RUN bench build --production --app erpnext
 RUN bench build --production --app india_compliance
+RUN bench build --production --app crm
 RUN bench build --production --app hrms
 RUN bench build --production --app alvoraa_goals
 RUN bench build --production --app alvoraa_portal

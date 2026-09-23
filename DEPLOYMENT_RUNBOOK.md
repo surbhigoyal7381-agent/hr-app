@@ -245,10 +245,16 @@ No module named 'frappe.core.doctype.background_task'
 ```
 
 `Background Task` exists in Frappe `develop` but not `version-16`, so the doctype was correctly
-removed while the old bundle kept calling it. Rebuild assets into the volume after the swap:
+removed while the old bundle kept calling it.
+
+**Since 23 Sep 2026 the deploy does this itself** (ALV-112): right after the image pull,
+`scripts/refresh_bench_files.sh` copies the image's `apps.txt`, `apps.json` and built
+`sites/assets` into the sites volume. Before that step existed, nothing did, and dev was
+serving the JS/CSS built on 27 Aug while production served 19 Aug's. If a deploy was done
+by hand, run the same script by hand - never `bench build` on the server:
 
 ```bash
-docker exec compose-backend-1 bench build --production
+bash scripts/refresh_bench_files.sh ghcr.io/surbhigoyal7381-agent/alvoraa-app:<tag> compose_sites   # or devstack_sites
 ```
 
 ### Symlinked assets that nginx cannot follow

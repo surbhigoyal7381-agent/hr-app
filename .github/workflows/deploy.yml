@@ -487,6 +487,15 @@ jobs:
             fi
             rm -f "$PIN_FILE.before-deploy"
 
+            # The image is on disk. Before any container swaps, give the sites
+            # volume the bench-level files this image carries - apps.txt, apps.json
+            # and the built assets. Nothing did this until 23 Sep 2026, so dev was
+            # serving the JS/CSS built on 27 Aug and production the build of 19 Aug,
+            # and a newly added app had no assets folder at all (ALV-112). The old
+            # containers keep working during the copy: bundles land first, the
+            # manifest last, and old bundles are not removed.
+            bash ../../scripts/refresh_bench_files.sh "$FULL_IMAGE" "${PROJECT}_sites"
+
             # Containers first, maintenance mode second. The other order deadlocks:
             # the backend's healthcheck curls /api/method/ping on HEALTH_HOST, and
             # maintenance mode makes that return 503, so `curl -fsS` fails, so the

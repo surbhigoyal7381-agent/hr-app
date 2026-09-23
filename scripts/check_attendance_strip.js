@@ -13,11 +13,14 @@
        node scripts/check_attendance_strip.js             alvoraa_portal/alvoraa_portal/www/hrms-employee.html
 */
 const fs = require("fs");
+const { readPortalSource } = require("./lib/portal_source");
 const target = process.argv[2];
 
 // Line endings are normalised first: the page is stored with CRLF, and the
 // blank-line boundary the extractor below relies on is a bare newline.
-const raw = fs.readFileSync(target, "utf8").split("\r\n").join("\n");
+// Follows the page's Jinja includes (slice 034 US-10, AC-37). The helper
+// also normalises CRLF, which the blank-line boundary below relies on.
+const raw = readPortalSource(target);
 
 const blocks = [...raw.matchAll(/<script(?![^>]*src=)[^>]*>([\s\S]*?)<\/script>/g)]
   .map((m) => m[1]).join("\n;\n")

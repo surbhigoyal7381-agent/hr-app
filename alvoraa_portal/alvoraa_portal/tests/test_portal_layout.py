@@ -23,19 +23,21 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 # Properties that create a containing block for fixed descendants.
-TRAPS = ("will-change", "transform", "filter", "perspective", "contain", "backdrop-filter")
+# "container-type" is here as well as "contain" (slice 034 AC-39): it creates a
+# containing block the same way, and the check below matches whole property
+# names, so "contain" does not cover it.
+TRAPS = ("will-change", "transform", "filter", "perspective", "contain",
+         "container-type", "backdrop-filter")
 
 # Ancestors of the portal's fixed dialogs.
 WRAPPERS = ("main-content", "emp-app", "panel")
 
 
 def _page():
-	import alvoraa_portal
+	"""The page, with its Jinja includes expanded (slice 034 US-10, AC-37)."""
+	from alvoraa_portal.tests import portal_source
 
-	path = os.path.join(os.path.dirname(os.path.abspath(alvoraa_portal.__file__)),
-	                    "www", "hrms-employee.html")
-	with open(path, encoding="utf-8", errors="replace") as fh:
-		return fh.read()
+	return portal_source.read_page(encoding="utf-8", errors="replace")
 
 
 def _rule_body(css, selector):

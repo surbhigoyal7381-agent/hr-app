@@ -19,6 +19,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
+const { readPortalSource } = require("./lib/portal_source");
 
 // Pinned, for the same reason ruff is pinned in CI: a different version reports
 // a different set, and a check that changes under you gets ignored.
@@ -70,7 +71,8 @@ const configs = [];
 const pages = [];
 
 for (const file of files) {
-  const html = fs.readFileSync(file, "utf8").replace(/^﻿/, "");
+  // Follows the page's Jinja includes (slice 034 US-10, AC-37).
+  const html = readPortalSource(file);
   const js = extractJs(html);
   if (!js.trim()) {
     console.log("skip " + path.basename(file) + " (no inline script)");

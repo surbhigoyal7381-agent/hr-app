@@ -232,6 +232,11 @@ class PortalRenderCase(FrappeTestCase):
     LOGIN = os.path.join(WWW, "alvoraa-login.html")
 
     def _read(self, path):
+        """The portal page arrives with its Jinja includes expanded (US-10, AC-37)."""
+        from alvoraa_portal.tests import portal_source
+
+        if os.path.abspath(path) == os.path.abspath(portal_source.PORTAL_PAGE):
+            return portal_source.read_page(encoding="utf-8")
         with open(path, encoding="utf-8") as fh:
             return fh.read()
 

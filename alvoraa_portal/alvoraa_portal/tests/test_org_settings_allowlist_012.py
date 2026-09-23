@@ -89,9 +89,10 @@ class TestSetOrgSettingAllowList(G2Case):
 		import os
 		import re
 
-		path = os.path.join(os.path.dirname(hr_api.__file__), "www", "hrms-employee.html")
-		with open(path, encoding="utf-8-sig") as f:
-			page = f.read()
+		from alvoraa_portal.tests import portal_source
+		
+		# Follows the page's Jinja includes (slice 034 US-10, AC-37).
+		page = portal_source.read_page(encoding="utf-8-sig")
 		keys = set(re.findall(r'_org_setting",\s*\{key:\s*"([^"]+)"', page))
 		self.assertTrue(keys)
 		self.assertLessEqual(keys, set(hr_api.ALLOWED_ORG_SETTINGS))

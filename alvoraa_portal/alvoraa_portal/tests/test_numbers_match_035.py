@@ -310,11 +310,12 @@ class TestTheLeaveCardAddsUp(FrappeTestCase):
 		not add up."""
 		import os
 
-		import alvoraa_portal
+		from alvoraa_portal.tests import portal_source
 
-		path = os.path.join(os.path.dirname(alvoraa_portal.__file__), "www", "hrms-employee.html")
-		with open(path, encoding="utf-8") as f:
-			page = f.read()
+		# Follows the page's Jinja includes (slice 034 US-10, AC-37). These three
+		# slice 035 checks read the page too; without this they would look at a
+		# short shell and pass while proving nothing.
+		page = portal_source.read_page(encoding="utf-8")
 		self.assertIn("b.expired", page)
 		# The figure must be rendered next to "N / M used" on the ring itself,
 		# not merely present somewhere in a 20,000-line page.

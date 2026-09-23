@@ -157,11 +157,10 @@ def _all_keys(value):
 
 
 def _portal_page():
-	import alvoraa_portal
+	"""The page, with its Jinja includes expanded (slice 034 US-10, AC-37)."""
+	from alvoraa_portal.tests import portal_source
 
-	path = os.path.join(os.path.dirname(alvoraa_portal.__file__), "www", "hrms-employee.html")
-	with open(path, encoding="utf-8") as f:
-		return f.read()
+	return portal_source.read_page(encoding="utf-8")
 
 
 class _Base(FrappeTestCase):

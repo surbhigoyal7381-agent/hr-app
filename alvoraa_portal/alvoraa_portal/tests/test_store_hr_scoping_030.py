@@ -174,10 +174,10 @@ class TestCalibrationMatrixIsStoreScoped(_Stores):
 			self.assertNotIn("gender", row)
 		self.assertNotIn("genders", matrix["filter_options"])
 
-		page = os.path.join(os.path.dirname(importlib.import_module("alvoraa_portal").__file__),
-		                    "www", "hrms-employee.html")
-		with open(page, encoding="utf-8-sig") as f:
-			html = f.read()
+		from alvoraa_portal.tests import portal_source
+
+		# Follows the page's Jinja includes (slice 034 US-10, AC-37).
+		html = portal_source.read_page(encoding="utf-8-sig")
 		for marker in ("cal-f-gender", "pd-f-gender", "opts.genders", "r.gender"):
 			self.assertNotIn(marker, html, marker)
 

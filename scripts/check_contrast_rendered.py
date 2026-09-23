@@ -18,7 +18,10 @@ by hand after any change to colour or background:
 import io, os, re, sys
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-ROOT = r"c:\Surbhi-Git\hr-app\alvoraa_portal\alvoraa_portal"
+# Resolved from this file, not hard-coded, so the check reads the checkout or
+# worktree it was actually run from (slice 034 US-10).
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                    "alvoraa_portal", "alvoraa_portal")
 PAGES = ["hrms-employee", "driver-portal", "vendor-portal", "alvoraa-admin", "alvoraa-login"]
 
 JS = """() => {
@@ -61,12 +64,24 @@ JS = """() => {
 }"""
 
 
+# Every include, not just the first. The page used to carry one include tag
+# (design_system.html); since slice 034 US-10 it carries several more, and the
+# blanket "strip every {% %}" below would have deleted them - leaving this check
+# measuring an empty page and passing. Expanding them all is the whole guard.
+def _expand_includes(src):
+	for _ in range(8):
+		m = re.search(r'\{%\s*include\s*"([^"]+)"\s*%\}', src)
+		if not m:
+			return src
+		path = os.path.join(ROOT, *m.group(1).split("/"))
+		with open(path, encoding="utf-8") as fh:
+			src = src[:m.start()] + fh.read() + src[m.end():]
+	raise RuntimeError("include files are nested too deep")
+
+
 def prep(page):
 	src = open(os.path.join(ROOT, "www", page + ".html"), encoding="utf-8").read()
-	m = re.search(r'\{%\s*include\s*"([^"]+)"\s*%\}', src)
-	if m:
-		src = src[:m.start()] + open(os.path.join(ROOT, *m.group(1).split("/")),
-		                             encoding="utf-8").read() + src[m.end():]
+	src = _expand_includes(src)
 	src = re.sub(r"\{%\s*extends[^%]*%\}|\{%\s*block\s+\w+\s*%\}|\{%\s*endblock[^%]*%\}", "", src)
 	src = re.sub(r"\{#[\s\S]*?#\}", "", src)
 	V = {"tenant_name": "PP Jewellers", "primary_color": "#5B4B8A",

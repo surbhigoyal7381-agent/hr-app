@@ -36,8 +36,10 @@ def _www(name):
 
 
 def _portal_html():
-    with open(_www("hrms-employee.html"), encoding="utf-8", errors="replace") as fh:
-        return fh.read()
+    """The page, with its Jinja includes expanded (slice 034 US-10, AC-37)."""
+    from alvoraa_portal.tests import portal_source
+
+    return portal_source.read_page(encoding="utf-8", errors="replace")
 
 
 def _page_module():

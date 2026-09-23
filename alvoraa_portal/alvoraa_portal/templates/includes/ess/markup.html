@@ -1,0 +1,2677 @@
+
+<!-- Sidebar backdrop (mobile) -->
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+<!-- App shell -->
+<div class="emp-app">
+
+  <!-- Sidebar (desktop) -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      {#- `| e` is not decoration. Frappe's Jinja environment is built without
+          autoescape (frappe/utils/jinja.py: FrappeSandboxedEnvironment takes no
+          autoescape argument), so nothing escapes this for us. The value can only
+          come from `bench set-config tenant_logo_url` - a platform operator - or
+          from a constant in brand.py, so it is not attacker-controlled today. It
+          is escaped anyway, because it lands inside an attribute and the day
+          somebody lets a tenant admin set their own logo through a form is the
+          day this line decides whether that is a stored-XSS hole. -#}
+      <div class="sidebar-brand-logo">{{ tenant_name[0] | upper }}{% if brand_mark_url %}<img src="{{ brand_mark_url | e }}" alt="" onerror="this.remove()">{% endif %}</div>
+      <div class="sidebar-brand-text">
+        <div class="sidebar-brand-name">{{ tenant_name }}</div>
+        <div class="sidebar-brand-sub">Employee Portal</div>
+      </div>
+      <button class="sb-pin-btn" id="sb-pin-btn" onclick="toggleSbPin()" title="Pin sidebar open">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24z"/></svg>
+      </button>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="sidebar-section">Main</div>
+      <div class="nav-item active" data-panel="home" onclick="switchPanel('home',this)">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span> Home
+      </div>
+      <div class="nav-item" data-panel="attendance" onclick="switchPanel('attendance',this)">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span> Attendance &amp; Leave
+        <span class="nav-badge" id="sb-leave-badge" style="display:none">0</span>
+      </div>
+      <div class="nav-item" data-panel="finances" onclick="switchPanel('finances',this)">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></span> My Finances
+      </div>
+      <div class="nav-item" data-panel="goals" id="nav-goals" onclick="switchPanel('goals',this)" style="display:none">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span> Performance
+        <span class="nav-badge" id="sb-goals-badge" style="display:none">0</span>
+      </div>
+      <div class="nav-item" data-panel="policies" id="nav-policies" onclick="switchPanel('policies',this)" style="display:none">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg></span>
+        <span class="nav-label">Policies</span>
+        <span class="nav-badge" id="sb-policies-badge" style="display:none">0</span>
+      </div>
+      <div class="nav-item" data-panel="attendance-insights" id="nav-att-insights" onclick="switchPanel('attendance-insights',this)">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="13" y="7" width="3" height="10"/></svg></span>
+        <span class="nav-label">Attendance Insights</span>
+      </div>
+      <div class="nav-item" data-panel="att-record" id="nav-att-record" onclick="switchPanel('att-record',this)">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M9 16h6"/></svg></span>
+        <span class="nav-label">My Attendance</span>
+      </div>
+      <div class="nav-item" data-panel="org-chart" id="nav-org-chart" onclick="switchPanel('org-chart',this)" style="display:none">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="5" rx="1"/><rect x="2" y="17" width="6" height="5" rx="1"/><rect x="16" y="17" width="6" height="5" rx="1"/><path d="M12 7v4M5 17v-3h14v3"/></svg></span>
+        <span class="nav-label">Organisation</span>
+      </div>
+      <div id="mgmt-section-hdr" class="sidebar-section" style="margin-top:8px;display:none">Management</div>
+      <div class="nav-item" data-panel="team" id="nav-team" onclick="switchPanel('team',this)" style="display:none">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></span> Team View
+        <span class="nav-badge" id="sb-team-badge" style="display:none">0</span>
+      </div>
+      <div class="nav-item" data-panel="analytics" id="nav-analytics" onclick="switchPanel('analytics',this)" style="display:none">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span> HR Analytics
+      </div>
+      <div class="nav-item" data-panel="data-review" id="nav-data-review" onclick="switchPanel('data-review',this)" style="display:none">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 14l2 2 4-4"/></svg></span> Data to review
+        <span class="nav-badge" id="sb-dr-badge" style="display:none">0</span>
+      </div>
+      <div class="nav-item" data-panel="org-settings" id="nav-org-settings" onclick="switchPanel('org-settings',this)" style="display:none">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span> Org Settings
+      </div>
+      <div id="req-section-hdr" class="sidebar-section" style="margin-top:8px;display:none">Requests</div>
+      <div class="nav-item" data-panel="shift-req" id="nav-shift-req" onclick="switchPanel('shift-req',this)" style="display:none">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg></span> Shift Request
+      </div>
+      <div class="nav-item" data-panel="att-req" id="nav-att-req" onclick="switchPanel('att-req',this)" style="display:none">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg></span> Attendance Request
+      </div>
+      <div class="nav-item" data-panel="adv-req" id="nav-adv-req" onclick="switchPanel('adv-req',this)" style="display:none">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></span> Request Advance
+      </div>
+      <div class="sidebar-section" style="margin-top:8px">Tools</div>
+      <div class="nav-item" data-panel="attendance" onclick="switchPanel('attendance',this)">
+        <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span> Checkin Log
+      </div>
+    </nav>
+    <!-- nav scroll hint buttons (shown/hidden by JS) -->
+    <button class="sb-scroll-btn" id="sb-scroll-up" aria-label="Scroll up" onclick="sbScrollNav(-120)">
+      <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15"/></svg>
+    </button>
+    <button class="sb-scroll-btn" id="sb-scroll-down" aria-label="Scroll down" onclick="sbScrollNav(120)">
+      <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
+    <div class="sidebar-footer">
+        <!-- Switch to the desk. Label and target depend on the role, and it stays
+             hidden for employees, who have no business there. -->
+        <div id="nav-switch-link" style="display:none;margin-bottom:8px">
+          <a href="#" id="nav-switch-a" class="nav-item" style="text-decoration:none;color:inherit">
+            <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg></span>
+            <span id="nav-switch-label">Switch</span>
+          </a>
+        </div>
+      <div id="nav-admin-link" style="display:none;margin-bottom:8px">
+        <a href="/alvoraa-admin" class="nav-item" style="text-decoration:none;color:inherit">
+          <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></span> Tenant Admin
+        </a>
+      </div>
+      <div class="sidebar-user">
+        <div class="sidebar-avatar" id="sb-avatar">?</div>
+        <div style="flex:1;min-width:0">
+          <div class="sidebar-user-name" id="sb-name">Loading...</div>
+          <div class="sidebar-user-role" id="sb-desig"></div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+    <!-- Mobile top bar -->
+    <header class="mob-header">
+      <button class="mob-hamburger" onclick="openSidebar()" aria-label="Open navigation">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="mob-brand">{{ tenant_name }}</div>
+      <div class="mob-notif" id="mob-notif-btn" title="Notifications" onclick="toggleNotifPanel(event)">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        <span class="notif-badge" id="notif-badge"></span>
+      </div>
+      <!-- Notification panel -->
+      <div id="notif-panel" class="notif-panel">
+        <div class="notif-panel-hdr">
+          <span>Pending Approvals</span>
+          <button onclick="document.getElementById('notif-panel').classList.remove('open')" style="background:none;border:none;cursor:pointer;font-size:var(--fs-md);color:var(--text3);line-height:1">&times;</button>
+        </div>
+        <div id="notif-panel-body"><div class="notif-empty">Loading…</div></div>
+      </div>
+      <div class="mob-avatar" id="mob-avatar" title="Profile">?</div>
+    </header>
+
+    <!-- Panels -->
+    <div class="main-content">
+
+      <!-- ══ HOME ══════════════════════════════════════ -->
+      <div id="panel-home" class="panel active">
+        <div class="page-header" style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+          <div>
+            <div class="page-title" id="home-title">Good morning!</div>
+            <div class="page-sub" id="home-sub">Today's overview</div>
+          </div>
+          <button class="btn btn-outline" style="margin-left:auto;font-size:var(--fs-base)" onclick="openLeaveModal()">+ Apply Leave</button>
+        </div>
+
+        <!-- Check-in hero -->
+        <div class="checkin-hero">
+          <div class="checkin-left">
+            <div class="checkin-greeting">Hey there,</div>
+            <div class="checkin-name" id="ci-emp-name">...</div>
+            <div class="checkin-dept" id="ci-emp-dept"></div>
+            <div class="checkin-status-line">
+              <span class="status-dot none" id="ci-dot"></span>
+              <span class="checkin-status-txt" id="ci-status-txt">Loading...</span>
+            </div>
+            <div class="checkin-time-txt" id="ci-last-time"></div>
+          </div>
+          <div class="checkin-right">
+            <div>
+              <div class="clock-display" id="live-clock">--:--:--</div>
+              <div class="clock-date" id="live-date"></div>
+            </div>
+            <button class="btn-checkin check-in" id="ci-btn" onclick="doCheckin()" data-action="IN">Check In</button>
+          </div>
+        </div>
+
+        <!-- 2-col: Left (activity + goals) | Right (approvals + holidays) -->
+        <div class="home-body-grid">
+
+          <!-- LEFT: Activity + Goals -->
+          <div class="home-left-col">
+
+            <div class="card">
+              <div class="card-header">
+                <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" style="opacity:.6"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span class="card-title" style="margin-left:6px">Activity</span>
+              </div>
+              <div class="card-body" style="padding:12px 20px">
+                <div id="home-activity-feed"><div class="empty-state"><div class="empty-state-text">Loading&hellip;</div></div></div>
+              </div>
+            </div>
+
+            <!-- My Goals (shown when alvoraa_goals installed) -->
+            <!-- This week (phase 3) -->
+            <div class="card" id="home-week-card" style="display:none;margin-top:16px">
+              <div class="card-header">
+                <span><i class=ic-users></i></span>
+                <span class="card-title" style="margin-left:6px" id="home-week-title">This week</span>
+                <span style="margin-left:auto;font-size:var(--fs-xs);color:var(--text3)" id="home-week-basis"></span>
+              </div>
+              <div class="card-body" style="padding:12px 20px">
+                <div id="home-week-body"></div>
+              </div>
+            </div>
+
+            <div class="home-goals-section" id="home-goals-section" style="display:none">
+              <div class="home-goals-hdr">
+                <div class="home-goals-title">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+                  My Goals
+                </div>
+                <span class="home-goals-link" onclick="switchPanel('goals',document.getElementById('nav-goals'))" style="cursor:pointer">Full Portal →</span>
+              </div>
+              <div id="home-goals-list"></div>
+            </div>
+
+            <!-- Team Goals (managers only) -->
+            <div class="home-goals-section" id="home-team-goals-section" style="display:none">
+              <div class="home-goals-hdr">
+                <div class="home-goals-title">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+                  Team Goals
+                </div>
+                <span class="home-goals-link" onclick="switchPanel('team',null)">Team View →</span>
+              </div>
+              <div id="home-team-goals-list"></div>
+            </div>
+
+          </div>
+
+          <!-- RIGHT: Approvals + Holidays -->
+          <div class="home-actions-col">
+
+            <!-- Pending Approvals (managers only, hidden until data loaded) -->
+            <div class="card" id="home-leave-card" style="display:none;margin-bottom:16px">
+              <div class="card-header">
+                <span><i class=ic-leave></i></span>
+                <span class="card-title" style="margin-left:6px">Leave balance</span>
+                <a href="#" onclick="switchPanel('attendance');return false" style="margin-left:auto;font-size:var(--fs-sm)">Details →</a>
+              </div>
+              <div class="card-body" style="padding:8px 20px 14px">
+                <div id="home-leave-list"></div>
+              </div>
+            </div>
+            <div id="home-attention-banner" style="display:none" class="card">
+              <div class="card-header home-appr-hdr" onclick="toggleHomeApprovals()" style="cursor:pointer;user-select:none">
+                <span style="font-size:var(--fs-md)"><i class=ic-zap></i></span>
+                <span class="card-title" style="margin-left:6px"><span id="home-pending-count">0</span> Pending Approval<span id="home-pending-plural">s</span></span>
+                <span class="home-appr-chip" style="margin-left:auto;font-size:var(--fs-xs);color:var(--primary);font-weight:600">Tap to review</span>
+                <svg class="rev-chev" id="home-appr-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="margin-left:8px;color:var(--text3);transition:transform .2s"><polyline points="6 9 12 15 18 9"/></svg>
+              </div>
+              <div id="home-approvals-list" style="display:none;padding:0 12px 12px;flex-direction:column;gap:8px"></div>
+            </div>
+
+            <!-- Upcoming Holidays -->
+            <div class="card" id="home-holidays-card">
+              <div class="card-header">
+                <span><i class=ic-award></i></span>
+                <span class="card-title" style="margin-left:6px" id="hol-month-label">Upcoming Holidays</span>
+                <div style="margin-left:auto;display:flex;align-items:center;gap:4px">
+                  <button id="hol-view-all-btn" onclick="holToggleViewAll()" style="background:none;border:1px solid var(--border);border-radius:var(--r-sm);cursor:pointer;padding:3px 8px;font-size:var(--fs-xs);color:var(--text2);line-height:1.4" title="View all holidays this year">All year</button>
+                  <div id="hol-nav" style="display:none;align-items:center;gap:2px">
+                    <button id="hol-prev" onclick="holNavMonth(-1)" style="background:none;border:none;cursor:pointer;padding:4px 6px;font-size:var(--fs-base);color:var(--text3);line-height:1" title="Previous month">&#8249;</button>
+                    <button id="hol-next" onclick="holNavMonth(1)"  style="background:none;border:none;cursor:pointer;padding:4px 6px;font-size:var(--fs-base);color:var(--text3);line-height:1" title="Next month">&#8250;</button>
+                  </div>
+                </div>
+              </div>
+              <div class="card-body">
+                <div id="holidays-list"><div class="empty-state"><div class="empty-state-text">Loading&hellip;</div></div></div>
+              </div>
+            </div>
+
+            <!-- My Documents (build B4: employee document checklist) -->
+            <div class="card" id="my-docs-card" style="display:none;margin-top:20px">
+              <div class="card-header">
+                <span><i class=ic-folder></i></span>
+                <span class="card-title" style="margin-left:6px">My Documents</span>
+                <span id="my-docs-summary" style="margin-left:auto;font-size:var(--fs-sm);color:var(--text3)"></span>
+              </div>
+              <div class="card-body" style="padding:12px 20px">
+                <div id="my-docs-list"></div>
+              </div>
+            </div>
+
+            <!-- Policies widget (build B5: policy library) -->
+            <div class="card" id="home-policies-card" style="display:none;margin-top:20px">
+              <div class="card-header">
+                <span><i class=ic-book></i></span>
+                <span class="card-title" style="margin-left:6px">Policies</span>
+                <a href="#" onclick="switchPanel('policies');return false" style="margin-left:auto;font-size:var(--fs-sm)">All policies →</a>
+              </div>
+              <div class="card-body" style="padding:12px 20px">
+                <div id="home-policies-list"></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ══ ATTENDANCE ═════════════════════════════════ -->
+      <!-- ══ ATTENDANCE & LEAVE (merged) ══════════════════ -->
+      <div id="panel-attendance" class="panel">
+        <div class="page-header" style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+          <div>
+            <div class="page-title">Attendance &amp; Leave</div>
+            <div class="page-sub" id="att-sub">This month's record</div>
+          </div>
+          <button class="btn btn-primary" style="margin-left:auto" onclick="openLeaveModal()">+ Apply Leave</button>
+        </div>
+
+        <div class="att-summary">
+          <div class="att-sum-box"><div class="att-sum-val num" id="att-present" style="color:var(--green)">—</div><div class="att-sum-lbl">Present</div></div>
+          <div class="att-sum-box"><div class="att-sum-val num" id="att-absent" style="color:var(--red)">—</div><div class="att-sum-lbl">Absent</div></div>
+          <div class="att-sum-box"><div class="att-sum-val num" id="att-leave" style="color:var(--amber)">—</div><div class="att-sum-lbl">On Leave</div></div>
+          <div class="att-sum-box"><div class="att-sum-val num" id="att-wfh" style="color:var(--primary)">—</div><div class="att-sum-lbl">WFH</div></div>
+        </div>
+
+        <div class="att-leave-grid">
+          <!-- Mini calendar widget -->
+          <div class="card">
+            <div class="card-header">
+              <div class="cal-nav" style="flex:1">
+                <button class="cal-nav-btn" onclick="calNav(-1)">‹</button>
+                <div class="cal-month-label" id="cal-label">...</div>
+                <button class="cal-nav-btn" onclick="calNav(1)">›</button>
+              </div>
+            </div>
+            <div class="card-body" style="padding:10px">
+              <div class="cal-grid cal-mini" id="cal-grid-main"></div>
+              <div class="cal-legend" style="margin-top:6px;gap:6px">
+                <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--green-lt);border:1px solid var(--green)"></div>Present</div>
+                <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--red-lt);border:1px solid var(--red)"></div>Absent</div>
+                <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--amber-lt);border:1px solid var(--amber)"></div>Leave</div>
+                <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--primary-lt);border:1px solid var(--primary)"></div>WFH</div>
+                <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--purple-lt);border:1px solid var(--purple)"></div>Holiday</div>
+                <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--surface2);border:1px solid var(--border)"></div>Weekend</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Leave balances -->
+          <div class="card">
+            <div class="card-header"><span><i class=ic-leave></i></span><span class="card-title">Leave Balance</span></div>
+            <div class="card-body">
+              <div class="leave-rings" id="leave-rings">
+                <div class="empty-state"><div class="empty-state-text">Loading...</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Leave applications -->
+        <div class="card">
+          <div class="card-header"><span><i class=ic-clipboard></i></span><span class="card-title">Leave Applications</span></div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Status</th></tr></thead>
+              <tbody id="leave-apps-tbody">
+                <tr><td colspan="5" style="text-align:center;color:var(--text3)">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Late-coming rule (build B1): the employee's own violations and deductions -->
+        <div class="card" id="late-card" style="margin-top:20px;display:none">
+          <div class="card-header"><span>⏰</span><span class="card-title">Late &amp; Deductions</span>
+            <span class="card-sub" id="late-rule-text" style="margin-left:auto;font-size:var(--fs-xs);color:var(--text3)"></span></div>
+          <div class="card-body" id="late-this-week" style="padding:10px 16px;border-bottom:1px solid var(--border)"></div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Week</th><th>Violations</th><th>Counted</th><th>Deducted</th><th>From leave</th><th>Loss of pay</th><th>Explanation</th></tr></thead>
+              <tbody id="late-tbody"><tr><td colspan="7" style="text-align:center;color:var(--text3)">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ POLICIES (build B5) ════════════════════════════ -->
+      <div id="panel-attendance-insights" class="panel">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">Attendance Insights</h1>
+            <p class="page-sub" id="ai-sub">Who is short of their hours, and how often</p>
+          </div>
+        </div>
+
+        <div class="ai-views" id="ai-views"></div>
+        <div class="ai-bar" id="ai-bar"></div>
+        <div id="ai-body"><p class="ai-empty">Loading&hellip;</p></div>
+      </div>
+
+      <div id="panel-att-record" class="panel">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">My Attendance</h1>
+            <p class="page-sub" id="ac-sub">Every day of the month, and how to get one corrected</p>
+          </div>
+        </div>
+
+        <div class="ac-bar" id="ac-bar"></div>
+        <div id="ac-body"><p class="ac-empty">Loading&hellip;</p></div>
+
+        <div id="ac-review-wrap" style="display:none;margin-top:26px">
+          <div class="sec-divider">Waiting for you</div>
+          <div id="ac-review"></div>
+        </div>
+
+        <div id="ac-mine-wrap" style="margin-top:26px">
+          <div class="sec-divider">Corrections you have asked for</div>
+          <div id="ac-mine"></div>
+        </div>
+      </div>
+
+      <div id="panel-org-chart" class="panel">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">Organisation</h1>
+            <p class="page-sub" id="oc-sub">Where you sit, and who is around you</p>
+          </div>
+          <div class="oc-search-wrap">
+            <input id="oc-search" class="oc-search" placeholder="Find someone&hellip;"
+                   autocomplete="off" oninput="ocSearch(this.value)">
+            <div id="oc-results" class="oc-results"></div>
+          </div>
+        </div>
+        <div id="oc-stats" class="oc-stats"></div>
+        <div id="oc-drill" class="oc-drill"></div>
+        <div id="oc-legend" class="oc-legend"></div>
+        <div id="oc-crumb" class="oc-crumb"></div>
+        <div id="oc-body" class="oc-body"><p class="oc-muted">Loading&hellip;</p></div>
+      </div>
+
+      <div id="panel-policies" class="panel">
+        <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:20px">
+          <div>
+            <div class="page-title">Policies</div>
+            <div class="page-sub">The policies that apply to you, with the version you have acknowledged</div>
+          </div>
+          <div style="display:flex;gap:4px;background:var(--surface2);border-radius:var(--r-sm);padding:4px;border:1px solid var(--border)">
+            <button class="gp-tab active" id="pol-tab-read" onclick="polShowTab('read')">Read</button>
+            <button class="gp-tab" id="pol-tab-manage" onclick="polShowTab('manage')" style="display:none">Manage</button>
+            <button class="gp-tab" id="pol-tab-compliance" onclick="polShowTab('compliance')" style="display:none">Compliance</button>
+          </div>
+        </div>
+        <div id="pol-read">
+          <div class="card" style="margin-bottom:16px"><div class="card-body" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px">
+            <input class="gp-input" id="pol-search" placeholder="Search title or text…" style="flex:1;min-width:180px;height:34px;padding:6px 10px" oninput="polDebounceLoad()">
+            <select class="gp-input" id="pol-dept" style="height:34px;padding:4px 8px;width:auto" onchange="polLoad()"><option value="">All departments</option></select>
+            <select class="gp-input" id="pol-cat" style="height:34px;padding:4px 8px;width:auto" onchange="polLoad()"><option value="">All categories</option></select>
+          </div></div>
+          <div id="pol-list"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
+          <div id="pol-detail" style="display:none"></div>
+        </div>
+        <div id="pol-manage" style="display:none"></div>
+        <div id="pol-compliance" style="display:none"></div>
+      </div>
+
+      <!-- ══ MY FINANCES ═══════════════════════════════════ -->
+      <div id="panel-finances" class="panel">
+        <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:20px">
+          <div>
+            <div class="page-title">My Finances</div>
+            <div class="page-sub">Salary slips, expenses &amp; leave encashment</div>
+          </div>
+          <div class="fin-tabs-bar" style="display:flex;gap:4px;background:var(--surface2);border-radius:var(--r-sm);padding:4px;border:1px solid var(--border)">
+            <button class="gp-tab active" id="fin-tab-salary" onclick="showFinTab('salary')">Salary Slips</button>
+            <button class="gp-tab" id="fin-tab-expenses" onclick="showFinTab('expenses')">Expenses</button>
+            <button class="gp-tab" id="fin-tab-leave-enc" onclick="showFinTab('leave-enc')" style="display:none">Leave Encashment</button>
+          </div>
+        </div>
+
+        <!-- ── Salary Slips ── -->
+        <div id="fin-body-salary">
+          <div class="payslip-list" id="payslip-list">
+            <div class="empty-state"><div class="empty-state-icon"><i class=ic-money></i></div><div class="empty-state-text">Loading payslips...</div></div>
+          </div>
+        </div>
+
+        <!-- ── Expense Claims ── -->
+        <div id="fin-body-expenses" style="display:none">
+          <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+            <button class="btn btn-primary" onclick="openExpenseModal()">+ New Claim</button>
+          </div>
+          <div id="expense-list">
+            <div class="empty-state"><div class="empty-state-icon"><i class=ic-file></i></div><div class="empty-state-text">Loading...</div></div>
+          </div>
+        </div>
+
+        <!-- ── Leave Encashment ── -->
+        <div id="fin-body-leave-enc" style="display:none">
+          <div class="card" style="margin-bottom:20px">
+            <div class="card-header"><span><i class=ic-money></i></span><span class="card-title">New Encashment Request</span></div>
+            <div class="card-body">
+              <div class="callout callout-info">Encashment is available only for leave types that permit it. Processing time may vary — HR will confirm the encashed amount.</div>
+              <div class="form-group">
+                <label class="form-label">Leave Type *</label>
+                <select class="form-control" id="le-leave-type">
+                  <option value="">Loading eligible leave types...</option>
+                </select>
+                <div class="form-err" id="le-type-err">Please select a leave type.</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Encashment Date</label>
+                <input type="date" class="form-control" id="le-date">
+                <div class="form-hint">Defaults to today if left blank.</div>
+              </div>
+              <div class="form-actions">
+                <button class="btn btn-primary" onclick="submitLeaveEncashment()">Submit Encashment</button>
+                <button class="btn btn-outline" onclick="showFinTab('salary')">Cancel</button>
+              </div>
+            </div>
+          </div>
+          <div class="sec-divider">Previous Encashments</div>
+          <div id="le-history"></div>
+        </div>
+      </div>
+
+      <!-- ══ TEAM VIEW ════════════════════════════════════ -->
+      <div id="panel-team" class="panel">
+        <div class="page-header" style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+          <div>
+            <div class="page-title">Team View</div>
+            <div class="page-sub" id="team-sub">Your direct reports and pending approvals</div>
+          </div>
+        </div>
+
+        <div class="team-view-tabs">
+          <div class="tvtab active" id="tvtab-attendance" onclick="switchTeamTab('attendance')">Team Attendance</div>
+          <div class="tvtab" id="tvtab-notes" onclick="switchTeamTab('notes')">Manager Notes</div>
+        </div>
+        <div id="tv-attendance-panel">
+        <!-- Summary -->
+        <div class="stat-chips">
+          <div class="stat-chip"><div class="stat-chip-icon"><i class=ic-users></i></div><div class="stat-chip-val num" id="t-size">—</div><div class="stat-chip-lbl">Direct Reports</div></div>
+          <div class="stat-chip"><div class="stat-chip-icon"><i class=ic-check></i></div><div class="stat-chip-val num" id="t-present">—</div><div class="stat-chip-lbl">Present Today</div></div>
+          <div class="stat-chip"><div class="stat-chip-icon"><i class=ic-leave></i></div><div class="stat-chip-val num" id="t-on-leave">—</div><div class="stat-chip-lbl">On Leave</div></div>
+          <div class="stat-chip"><div class="stat-chip-icon"><i class=ic-clipboard></i></div><div class="stat-chip-val num" id="t-pending-count">—</div><div class="stat-chip-lbl">Pending Approvals</div></div>
+        </div>
+
+        <!-- Today's attendance grid -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header"><span><i class=ic-calendar></i></span><span class="card-title">Today's Team Attendance</span></div>
+          <div class="card-body">
+            <div class="team-grid" id="team-grid">
+              <div class="empty-state"><div class="empty-state-text">Loading team...</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- On leave today -->
+        <div class="card" style="margin-bottom:20px" id="on-leave-card">
+          <div class="card-header"><span><i class=ic-leave></i></span><span class="card-title">On Leave Today</span></div>
+          <div class="card-body" id="on-leave-body">
+            <div class="empty-state"><div class="empty-state-text">Loading...</div></div>
+          </div>
+        </div>
+
+        <!-- Late list (build B1): this week so far, per direct report -->
+        <div class="card" style="margin-bottom:20px;display:none" id="team-late-card">
+          <div class="card-header"><span>⏰</span><span class="card-title">Late List</span>
+            <span id="team-late-week" style="margin-left:auto;font-size:var(--fs-xs);color:var(--text3)"></span></div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Employee</th><th>This week</th><th>Counted</th><th>Projected</th><th>Detail</th></tr></thead>
+              <tbody id="team-late-tbody"><tr><td colspan="5" style="text-align:center;color:var(--text3)">Loading...</td></tr></tbody>
+            </table>
+          </div>
+          <div class="card-body" id="team-late-recent" style="padding:10px 16px;border-top:1px solid var(--border);font-size:var(--fs-sm)"></div>
+        </div>
+
+        <!-- Pending leave approvals -->
+        <div class="sec-divider">Pending Leave Approvals</div>
+        <div id="team-pending-list">
+          <div class="empty-state"><div class="empty-state-text">Loading...</div></div>
+        </div>
+
+        <!-- Pending progress approvals (goals + KPIs) -->
+        <div class="sec-divider">Pending Progress Approvals</div>
+        <div id="team-progress-approvals">
+          <div class="empty-state"><div class="empty-state-text">Loading…</div></div>
+        </div>
+
+        <!-- Month leaves -->
+        <div class="sec-divider">Team Leaves This Month</div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Employee</th><th>Leave Type</th><th>From</th><th>To</th><th>Days</th></tr></thead>
+            <tbody id="team-month-tbody">
+              <tr><td colspan="5" style="text-align:center;color:var(--text3)">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        </div>
+        <div id="tv-notes-panel" style="display:none">
+          <div class="notes-filter-row">
+            <input type="date" class="form-control" id="tn-from" placeholder="From date">
+            <input type="date" class="form-control" id="tn-to" placeholder="To date">
+            <select class="form-control" id="tn-emp" style="max-width:200px">
+              <option value="">All team members</option>
+            </select>
+            <button class="btn btn-outline btn-sm" onclick="loadTeamNotes()">Filter</button>
+            <button class="btn btn-primary btn-sm" onclick="tnShowAdd()">+ Add Note</button>
+            <button class="btn btn-outline btn-sm" onclick="printTeamNotes()">Print</button>
+          </div>
+
+          <!-- Writing a note was previously only reachable from an employee's
+               drawer, so this tab could show notes but never take one. -->
+          <div class="note-add-form" id="tn-add-form" style="display:none">
+            <div class="note-add-title">New note</div>
+            <div class="tn-add-grid">
+              <label class="tn-field">Employee *
+                <select class="form-control" id="tn-new-emp"></select>
+              </label>
+              <label class="tn-field">Date *
+                <input type="date" class="form-control" id="tn-new-date">
+              </label>
+            </div>
+            <textarea class="form-control" id="tn-new-text" rows="3"
+                      placeholder="What happened? Keep it factual — these are your private notes."></textarea>
+            <div class="form-err" id="tn-new-err"></div>
+            <div class="tn-add-actions">
+              <button class="btn btn-primary btn-sm" id="tn-save-btn" onclick="tnSaveNote()">Save Note</button>
+              <button class="btn btn-outline btn-sm" onclick="tnHideAdd()">Cancel</button>
+              <span class="tn-add-hint">Only you can see these.</span>
+            </div>
+          </div>
+
+          <div id="tn-list"><div class="notes-empty">Select a date range and click Filter to view notes.</div></div>
+        </div>
+      </div>
+
+      <!-- ══ ANALYTICS ══════════════════════════════════ -->
+      <div id="panel-analytics" class="panel">
+        <div class="page-header">
+          <div class="page-title">HR Analytics</div>
+          <div class="page-sub">Organisation health &amp; workforce data</div>
+        </div>
+        <!-- Slice 012: "data up to", doubtful days, figures that need review, not linked -->
+        <div id="ana-dr-notes" aria-live="polite"></div>
+
+        <!-- KPI grid -->
+        <div class="kpi-grid">
+          <div class="kpi-card" onclick="window.open('/app/employee?status=Active','_blank')" style="cursor:pointer" title="View active employees in Frappe HR"><div class="kpi-icon"><i class=ic-user></i><i class=ic-briefcase></i></div><div class="kpi-val" id="kpi-active" style="color:var(--text)">—</div><div class="kpi-lbl">Active Employees</div></div>
+          <div class="kpi-card" onclick="window.open('/app/employee','_blank')" style="cursor:pointer" title="View employees in Frappe HR"><div class="kpi-icon">🆕</div><div class="kpi-val" id="kpi-joiners" style="color:var(--green)">—</div><div class="kpi-lbl">New Joiners (Month)</div></div>
+          <div class="kpi-card" onclick="window.open('/app/attendance','_blank')" style="cursor:pointer" title="View attendance records in Frappe HR"><div class="kpi-icon"><i class=ic-calendar></i></div><div class="kpi-val" id="kpi-att-rate" style="color:var(--primary)">—%</div><div class="kpi-lbl">Attendance Rate</div></div>
+          <div class="kpi-card" onclick="window.open('/app/leave-application?status=Open','_blank')" style="cursor:pointer" title="View pending leave applications in Frappe HR"><div class="kpi-icon"><i class=ic-clipboard></i></div><div class="kpi-val" id="kpi-pend-leaves" style="color:var(--amber)">—</div><div class="kpi-lbl">Pending Approvals</div></div>
+          <div class="kpi-card" onclick="window.open('/app/employee','_blank')" style="cursor:pointer" title="View employees pending confirmation in Frappe HR"><div class="kpi-icon"><i class=ic-graduation></i></div><div class="kpi-val" id="kpi-confirmations" style="color:var(--purple)">—</div><div class="kpi-lbl">Confirmations Due</div></div>
+          <div class="kpi-card" onclick="window.open('/app/leave-allocation','_blank')" style="cursor:pointer" title="View leave allocations in Frappe HR"><div class="kpi-icon"><i class=ic-leave></i></div><div class="kpi-val" id="kpi-leave-util" style="color:var(--red)">—%</div><div class="kpi-lbl">Leave Utilisation</div></div>
+        </div>
+
+        <!-- Dept + Gender -->
+        <div class="g2" style="margin-bottom:20px">
+          <div class="card">
+            <div class="card-header"><span><i class=ic-building></i></span><span class="card-title">Department Distribution</span></div>
+            <div class="card-body bar-chart" id="dept-chart"><div class="empty-state"><div class="empty-state-text">Loading...</div></div></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><span><i class=ic-user></i></span><span class="card-title">Gender Ratio</span></div>
+            <div class="card-body"><div class="gender-rows" id="gender-chart"></div></div>
+          </div>
+        </div>
+
+        <!-- Attendance breakdown + Leave util -->
+        <div class="g2" style="margin-bottom:20px">
+          <div class="card">
+            <div class="card-header"><span><i class=ic-trend></i></span><span class="card-title">Org Health (Month)</span></div>
+            <div class="card-body">
+              <div class="att-summary" style="grid-template-columns:repeat(2,1fr);margin-bottom:0" id="org-health-grid">
+                <div class="att-sum-box"><div class="att-sum-val num" id="oh-present" style="color:var(--green)">—</div><div class="att-sum-lbl">Days Present</div></div>
+                <div class="att-sum-box"><div class="att-sum-val num" id="oh-absent" style="color:var(--red)">—</div><div class="att-sum-lbl">Days Absent</div></div>
+                <div class="att-sum-box"><div class="att-sum-val num" id="oh-pending" style="color:var(--amber)">—</div><div class="att-sum-lbl">Pending Leaves</div></div>
+                <div class="att-sum-box"><div class="att-sum-val num" id="oh-conf" style="color:var(--purple)">—</div><div class="att-sum-lbl">Confirmations Due</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><span><i class=ic-chart></i></span><span class="card-title">Designation Mix (Top 10)</span></div>
+            <div class="card-body bar-chart" id="desig-chart"><div class="empty-state"><div class="empty-state-text">Loading...</div></div></div>
+          </div>
+        </div>
+
+        <!-- Confirmations due -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header"><span><i class=ic-graduation></i></span><span class="card-title">Confirmations Due This Month</span></div>
+          <div class="card-body" id="confirmations-list">
+            <div class="empty-state"><div class="empty-state-text">Loading...</div></div>
+          </div>
+        </div>
+
+        <!-- Recent joiners -->
+        <div class="card">
+          <div class="card-header"><span>🆕</span><span class="card-title">Recent Joiners</span></div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Name</th><th>Designation</th><th>Department</th><th>Joined</th></tr></thead>
+              <tbody id="recent-emp-tbody">
+                <tr><td colspan="4" style="text-align:center;color:var(--text3)">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ DATA TO REVIEW (slice 012) ═══════════════════ -->
+      <div id="panel-data-review" class="panel">
+        <div class="page-header">
+          <div class="page-title">Data to review</div>
+          <div class="page-sub">Figures whose data looks wrong or incomplete</div>
+        </div>
+        <div id="dr-body" aria-live="polite" aria-busy="true">
+          <div class="empty-state"><div class="empty-state-text">Loading...</div></div>
+        </div>
+        <div class="gp-backdrop" id="dr-confirm">
+          <div class="gp-modal" role="alertdialog" aria-modal="true" aria-labelledby="dr-confirm-title" aria-describedby="dr-confirm-text" style="max-width:520px">
+            <div class="gp-modal-hdr"><h2 class="gp-modal-title" id="dr-confirm-title"></h2></div>
+            <div class="gp-modal-body"><p id="dr-confirm-text" style="margin:0;line-height:1.5"></p></div>
+            <div class="gp-modal-footer">
+              <button type="button" class="btn btn-outline" id="dr-confirm-keep" onclick="drCloseConfirm()"></button>
+              <button type="button" class="btn btn-primary" id="dr-confirm-go" onclick="drConfirmGo()"></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ SHIFT REQUEST ═══════════════════════════════ -->
+      <div id="panel-shift-req" class="panel">
+        <div class="page-header">
+          <div class="page-title">Shift Request</div>
+          <div class="page-sub">Request a change to your shift schedule</div>
+        </div>
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header"><span><i class=ic-refresh></i></span><span class="card-title">New Shift Request</span></div>
+          <div class="card-body">
+            <div class="form-group">
+              <label class="form-label">Shift Type *</label>
+              <select class="form-control" id="sr-shift-type">
+                <option value="">Select shift...</option>
+              </select>
+              <div class="form-err" id="sr-shift-err">Please select a shift type.</div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">From Date *</label>
+                <input type="date" class="form-control" id="sr-from-date">
+                <div class="form-err" id="sr-date-err">Please enter a valid date range.</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">To Date *</label>
+                <input type="date" class="form-control" id="sr-to-date">
+              </div>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" onclick="submitShiftRequest()">Submit Request</button>
+              <button class="btn btn-outline" onclick="switchPanel('home',null)">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <div class="sec-divider">Previous Requests</div>
+        <div id="sr-history"></div>
+      </div>
+
+      <!-- ══ ATTENDANCE REQUEST ══════════════════════════ -->
+      <div id="panel-att-req" class="panel">
+        <div class="page-header">
+          <div class="page-title">Attendance Request</div>
+          <div class="page-sub">Regularise your attendance for missed punches or field duty</div>
+        </div>
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header"><span><i class=ic-clipboard></i></span><span class="card-title">New Attendance Request</span></div>
+          <div class="card-body">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">From Date *</label>
+                <input type="date" class="form-control" id="ar-from-date">
+                <div class="form-err" id="ar-date-err">Please enter a valid date range.</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">To Date *</label>
+                <input type="date" class="form-control" id="ar-to-date">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Reason *</label>
+              <select class="form-control" id="ar-reason">
+                <option value="">Select reason...</option>
+                <option value="Work From Home">Work From Home</option>
+                <option value="On Duty">On Duty</option>
+                <option value="Field Work">Field Work</option>
+                <option value="Training">Training</option>
+                <option value="Outdoor Work">Outdoor Work</option>
+                <option value="Other">Other</option>
+              </select>
+              <div class="form-err" id="ar-reason-err">Please select a reason.</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Explanation</label>
+              <textarea class="form-control" id="ar-explanation" placeholder="Add any details that help HR process this request..."></textarea>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" onclick="submitAttendanceRequest()">Submit Request</button>
+              <button class="btn btn-outline" onclick="switchPanel('home',null)">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <div class="sec-divider">Previous Requests</div>
+        <div id="ar-history"></div>
+      </div>
+
+
+      <!-- ══ REQUEST ADVANCE ════════════════════════════ -->
+      <div id="panel-adv-req" class="panel">
+        <div class="page-header">
+          <div class="page-title">Request Advance</div>
+          <div class="page-sub">Request an employee advance against your salary</div>
+        </div>
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header"><span><i class=ic-cash-out></i></span><span class="card-title">New Advance Request</span></div>
+          <div class="card-body">
+            <div class="callout callout-warn">Advances are subject to management approval and company policy. Processing may take 3–5 working days.</div>
+            <div class="form-group">
+              <label class="form-label">Purpose *</label>
+              <textarea class="form-control" id="adv-purpose" placeholder="Describe the reason for this advance request..."></textarea>
+              <div class="form-err" id="adv-purpose-err">Please provide the purpose.</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Amount Requested (₹) *</label>
+              <input type="number" class="form-control" id="adv-amount" placeholder="0" min="1" step="1">
+              <div class="form-err" id="adv-amount-err">Please enter a valid amount greater than zero.</div>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" onclick="submitAdvanceRequest()">Submit Request</button>
+              <button class="btn btn-outline" onclick="switchPanel('home',null)">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <div class="sec-divider">Previous Advances</div>
+        <div id="adv-history"></div>
+      </div>
+
+      <!-- ══ GOALS & PERFORMANCE ════════════════════════ -->
+      <div id="panel-goals" class="panel">
+        <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:20px">
+          <div>
+            <div class="page-title">Goals &amp; Performance</div>
+            <div class="page-sub">My goals, appraisals, and team performance</div>
+          </div>
+          <div style="display:flex;gap:4px;background:var(--surface2);border-radius:var(--r-sm);padding:4px;border:1px solid var(--border)">
+            <button class="gp-tab active" id="gtab-overview" onclick="gpShowTab('overview')">Overview</button>
+            <button class="gp-tab" id="gtab-tree" onclick="gpShowTab('tree')">Objectives &amp; KPIs</button>
+            <button class="gp-tab" id="gtab-reviews" onclick="gpShowTab('reviews')">Reviews</button>
+            <button class="gp-tab" id="gtab-team" onclick="gpShowTab('team')" style="display:none">Team</button>
+            <button class="gp-tab" id="gtab-hr" onclick="gpShowTab('hr')" style="display:none">HR Setup</button>
+            <button class="gp-tab" id="gtab-calibration" onclick="gpShowTab('calibration')" style="display:none">Calibration</button>
+            <button class="gp-tab" id="gtab-distribution" onclick="gpShowTab('distribution')" style="display:none">Distribution</button>
+          </div>
+        </div>
+
+        <!-- TAB: Overview -->
+        <div id="gp-tab-overview">
+          <div id="gp-cycle-banner"></div>
+          <div class="g4" id="gp-kpis" style="margin-bottom:20px"></div>
+          <div class="g2" style="margin-bottom:20px">
+            <div class="card">
+              <div class="card-header"><span class="card-title">Goal Progress by Status</span></div>
+              <div class="card-body" id="gp-traj"><div class="empty-state"><div class="empty-state-text">Loading...</div></div></div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <span class="card-title">Upcoming Deadlines</span>
+                <span style="font-size:var(--fs-xs);color:var(--text3)">Next 30 days</span>
+              </div>
+              <div class="card-body" id="gp-deadlines"><div class="empty-state"><div class="empty-state-text">Loading...</div></div></div>
+            </div>
+          </div>
+          <!-- Review status card — shown when there is an active appraisal -->
+          <div id="gp-review-status-card" style="display:none">
+            <div class="card">
+              <div class="card-header">
+                <span class="card-title">My Appraisal Review</span>
+              </div>
+              <div class="card-body">
+                <!-- Stage bar -->
+                <div class="pms-stage-bar" id="gp-stage-bar">
+                  <div class="psb-track">
+                    <div class="psb-step" id="psb-step-0">
+                      <div class="psb-dot" id="psb-dot-0"></div>
+                      <div class="psb-label">Employee<br>Review</div>
+                    </div>
+                    <div class="psb-connector" id="psb-conn-0"></div>
+                    <div class="psb-step" id="psb-step-1">
+                      <div class="psb-dot" id="psb-dot-1"></div>
+                      <div class="psb-label">Manager<br>Review</div>
+                    </div>
+                    <div class="psb-connector" id="psb-conn-1"></div>
+                    <div class="psb-step" id="psb-step-2">
+                      <div class="psb-dot" id="psb-dot-2"></div>
+                      <div class="psb-label">HR<br>Review</div>
+                    </div>
+                    <div class="psb-connector" id="psb-conn-2"></div>
+                    <div class="psb-step" id="psb-step-3">
+                      <div class="psb-dot" id="psb-dot-3"></div>
+                      <div class="psb-label">Completed</div>
+                    </div>
+                  </div>
+                </div>
+                <div id="gp-review-status-body" style="margin-top:14px"></div>
+                <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap" id="gp-review-actions"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: Objectives & KPIs (combined, hierarchical) -->
+        <div id="gp-tab-tree" style="display:none">
+
+          <!-- One sticky control bar. Primary controls stay visible; the rest
+               live behind a disclosure so the tree starts near the top. -->
+          <div class="tv-controls">
+            <div class="tv-controls-row">
+              <div class="tv-search">
+                <svg class="tv-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.65" y2="16.65"/>
+                </svg>
+                <input id="tv-search" type="search" autocomplete="off"
+                       placeholder="Search objectives and KPIs…  (press /)"
+                       aria-label="Search objectives and KPIs"
+                       oninput="tvSearch()" onkeydown="tvSearchKey(event)">
+                <button class="tv-search-clear" id="tv-search-clear" onclick="tvClearSearch()"
+                        aria-label="Clear search" title="Clear search">&times;</button>
+              </div>
+
+              <div class="tv-seg" role="group" aria-label="Show">
+                <button class="tv-seg-btn active" id="tvf-all"  onclick="tvSetShow('all')">All</button>
+                <button class="tv-seg-btn"        id="tvf-obj"  onclick="tvSetShow('objectives')">Objectives</button>
+                <button class="tv-seg-btn"        id="tvf-kpi"  onclick="tvSetShow('kpis')">KPIs</button>
+              </div>
+
+              <input type="hidden" id="tv-scope" value="mine">
+
+              <div class="tv-seg" role="group" aria-label="View">
+                <button class="tv-seg-btn active" id="tvv-tree" onclick="tvSetView('tree')"
+                        title="Hierarchy view" aria-label="Hierarchy view">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="12" height="4" rx="1"/><rect x="12" y="10" width="9" height="4" rx="1"/><rect x="12" y="17" width="9" height="4" rx="1"/><path d="M6 4v15M6 12h6M6 19h6"/></svg>
+                </button>
+                <button class="tv-seg-btn" id="tvv-list" onclick="tvSetView('list')"
+                        title="List view" aria-label="List view">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+                </button>
+              </div>
+
+              <div class="tv-popwrap">
+                <button class="tv-ghost" id="tv-filter-btn" onclick="tvTogglePop(event)"
+                        aria-haspopup="true" aria-expanded="false">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 5h18l-7 8v5l-4 2v-7z"/></svg>
+                  Filters<span class="tv-count" id="tv-filter-count" hidden>0</span>
+                </button>
+              </div>
+              <div class="tv-pop-backdrop" id="tv-pop-backdrop" onclick="tvClosePop()"></div>
+              <div class="tv-pop" id="tv-pop" role="dialog" aria-label="Filters" aria-modal="true">
+                  <div class="tv-pop-hdr">
+                    <div class="tv-pop-title">Filter Objectives &amp; KPIs</div>
+                    <button class="tv-pop-close" onclick="tvClosePop()" aria-label="Close">&times;</button>
+                  </div>
+                  <div class="tv-pop-body">
+                    <div class="tv-pop-row">
+                      <div class="tv-pop-field" style="margin-bottom:6px">Scope</div>
+                      <div class="tv-scope-radios">
+                        <label class="tv-scope-radio"><input type="radio" name="tv-scope-radio" value="mine" checked onchange="tvSetScope(this.value)"> Only mine</label>
+                        <label class="tv-scope-radio"><input type="radio" name="tv-scope-radio" value="team" onchange="tvSetScope(this.value)"> Me &amp; my team</label>
+                        <label class="tv-scope-radio"><input type="radio" name="tv-scope-radio" value="department" onchange="tvSetScope(this.value)"> My department</label>
+                        <label class="tv-scope-radio"><input type="radio" name="tv-scope-radio" value="organisation" onchange="tvSetScope(this.value)"> Whole organisation</label>
+                      </div>
+                    </div>
+                    <div class="tv-pop-row">
+                      <label class="tv-pop-field">Appraisal cycle
+                        <select class="gp-input" id="tv-cycle" onchange="tvLoad()"></select>
+                      </label>
+                    </div>
+                    <div class="tv-pop-row tv-pop-2">
+                      <label class="tv-pop-field">From
+                        <input type="date" class="gp-input" id="tv-from" onchange="tvLoad()">
+                      </label>
+                      <label class="tv-pop-field">To
+                        <input type="date" class="gp-input" id="tv-to" onchange="tvLoad()">
+                      </label>
+                    </div>
+                    <div class="tv-pop-row">
+                      <label class="tv-pop-field">Category
+                        <select class="gp-input" id="tv-category" onchange="tvLoad()">
+                          <option value="">All categories</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div class="tv-pop-row">
+                      <div class="tv-pop-field" style="margin-bottom:6px">Status</div>
+                      <div class="tv-traj" role="group" aria-label="Status">
+                        <label class="tv-traj-opt tv-traj-on">
+                          <input type="checkbox" class="tv-traj-cb" value="On Track" onchange="tvLoad()"> On track
+                        </label>
+                        <label class="tv-traj-opt tv-traj-risk">
+                          <input type="checkbox" class="tv-traj-cb" value="At Risk" onchange="tvLoad()"> At risk
+                        </label>
+                        <label class="tv-traj-opt tv-traj-off">
+                          <input type="checkbox" class="tv-traj-cb" value="Off Track" onchange="tvLoad()"> Off track
+                        </label>
+                        <label class="tv-traj-opt">
+                          <input type="checkbox" class="tv-traj-cb" value="Not Started" onchange="tvLoad()"> Not started
+                        </label>
+                      </div>
+                      <div class="gp-hint" style="margin-top:5px">KPIs have no trajectory of
+                        their own, so theirs is read from attainment: 70%+ on track, 40&ndash;70% at risk.</div>
+                    </div>
+                    <div class="tv-pop-row">
+                      <div class="tv-pop-field" style="margin-bottom:6px">Progress %</div>
+                      <div class="tv-pop-2">
+                        <input class="gp-input" id="tv-prog-min" type="number" min="0" max="100"
+                               placeholder="Min" aria-label="Minimum progress percent" onchange="tvLoad()">
+                        <input class="gp-input" id="tv-prog-max" type="number" min="0" max="100"
+                               placeholder="Max" aria-label="Maximum progress percent" onchange="tvLoad()">
+                      </div>
+                    </div>
+                  </div>
+                  <div class="tv-pop-foot">
+                    <button class="tv-ghost" onclick="tvClearFilters()">Reset all</button>
+                    <button class="btn btn-primary btn-sm" onclick="tvClosePop()">Done</button>
+                  </div>
+                </div>
+
+              <div class="tv-controls-spacer"></div>
+
+              <button class="tv-ghost" onclick="tvExpandAll(true)" title="Expand all">Expand</button>
+              <button class="tv-ghost" onclick="tvExpandAll(false)" title="Collapse all">Collapse</button>
+              <button class="tv-ghost" onclick="tvLoad()" title="Refresh" aria-label="Refresh">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+              </button>
+
+              <div class="tv-newwrap">
+                <button class="btn btn-primary btn-sm" onclick="tvToggleNew(event)"
+                        aria-haspopup="true" aria-expanded="false" id="tv-new-btn">
+                  + New
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="tv-menu" id="tv-new-menu" role="menu">
+                  <button role="menuitem" onclick="tvCloseNew();gpOpenCreateGoal()">
+                    <span class="tv-dot tv-dot-obj"></span>
+                    <span><strong>Objective</strong><em>A goal that others can cascade from</em></span>
+                  </button>
+                  <button role="menuitem" onclick="tvCloseNew();pfOpenKpiModal('tree')">
+                    <span class="tv-dot tv-dot-kpi"></span>
+                    <span><strong>KPI</strong><em>A measurable target under an objective</em></span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Active filters stay visible once the popover closes. -->
+            <div class="tv-chips" id="tv-chips" hidden></div>
+          </div>
+
+          <div class="tv-summary" id="tv-summary"></div>
+          <div id="tv-body"><div class="tv-skeleton" aria-busy="true"><i></i><i></i><i></i></div></div>
+          <div class="tv-legend">
+            <span class="tv-key tv-key-obj">Objective</span>
+            <span class="tv-key tv-key-org">Organisational</span>
+            <span class="tv-key tv-key-kpi">KPI</span>
+            <span class="tv-hint" id="tv-dnd-hint">Drag a KPI onto any objective to re-link it.</span>
+          </div>
+          <div id="tv-msg" class="tv-toast" hidden></div>
+        </div>
+
+        <!-- TAB: Reviews (merged My Reviews + Team Reviews) -->
+        <div id="gp-tab-reviews" style="display:none">
+
+          <!-- Section: My Performance Reviews -->
+          <div class="rev-sec">
+            <div class="rev-sec-hdr" onclick="toggleRevSec('my')">
+              <div>
+                <div class="rev-sec-title">My Performance Reviews</div>
+                <div class="rev-sec-sub">Performance reviews created for you across all cycles.</div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();mrLoad(true)">&#8635; Refresh</button>
+                <svg class="rev-chev" id="rev-chev-my" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </div>
+            </div>
+            <div class="rev-sec-body" id="rev-body-my">
+              <div id="mr-body"><div class="empty-state"><div class="empty-state-text">Loading&#8230;</div></div></div>
+            </div>
+          </div>
+
+          <!-- Section: My team's reviews (managers only, hidden until pfBoot confirms).
+               Reviews opened here open as their manager; HR's reviews are on the
+               HR review list in HR Setup (decision 37). -->
+          <div class="rev-sec" id="rev-sec-team-reviews" style="display:none">
+            <div class="rev-sec-hdr" onclick="toggleRevSec('team-reviews')">
+              <div>
+                <div class="rev-sec-title">My team's reviews</div>
+                <div class="rev-sec-sub">Reviews of the people who report to you. You open them as their manager.</div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <select class="gp-input pf-cycle-select" id="pf-review-cycle" onchange="pfLoadReviews()" onclick="event.stopPropagation()"></select>
+                <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();pfLoadReviews()">&#8635; Refresh</button>
+                <svg class="rev-chev" id="rev-chev-team-reviews" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </div>
+            </div>
+            <div class="rev-sec-body" id="rev-body-team-reviews">
+              <div id="pf-review-body"><div class="empty-state"><div class="empty-state-text">Loading team...</div></div></div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- TAB: Team Goals -->
+        <div id="gp-tab-team" style="display:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+            <div style="font-size:var(--fs-md);font-weight:700">Your Team's Goals</div>
+            <button class="btn btn-outline btn-sm" onclick="gpLoadTeam(true)">&#8635; Refresh</button>
+          </div>
+          <div id="gp-team-body"><div class="empty-state"><div class="empty-state-text">Loading team...</div></div></div>
+        </div>
+
+        <!-- TAB: HR Setup -->
+        <div id="gp-tab-hr" style="display:none">
+          <div class="pf-toolbar">
+            <div>
+              <div class="pf-h">Performance Administration</div>
+              <div class="pf-sub">Run the whole review cycle from here — no desk required.</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select class="gp-input pf-cycle-select" id="pf-hr-cycle" onchange="pfLoadHrCycle()"></select>
+              <button class="btn btn-outline btn-sm" onclick="pfLoadHr(true)">&#8635; Refresh</button>
+            </div>
+          </div>
+          <div class="pf-hr-actions">
+            <button class="btn btn-primary btn-sm" onclick="pfOpenNewCycleDialog()">+ New Cycle</button>
+            <button class="btn btn-outline btn-sm" onclick="pfExportCycleCsv()">Export CSV</button>
+          </div>
+          <div id="pf-hr-msg"></div>
+          <div id="pf-hr-body"><div class="empty-state"><div class="empty-state-text">Loading setup...</div></div></div>
+        </div>
+        <!-- TAB: Calibration (HR only) -->
+        <div id="gp-tab-calibration" style="display:none">
+          <div class="cal-toolbar">
+            <div>
+              <div class="pf-h">Calibration Matrix</div>
+              <div class="pf-sub">Reviews in HR Review &amp; Completed stage, plotted by overall &amp; potential rating</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select class="gp-input" id="cal-cycle-sel" onchange="calLoad()" style="min-width:200px"></select>
+              <button class="btn btn-outline btn-sm" id="cal-filter-btn" onclick="calToggleFilters()"
+                      style="display:none;white-space:nowrap" aria-expanded="false">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="margin-right:4px;vertical-align:-1px"><path d="M3 5h18l-7 8v5l-4 2v-7z"/></svg>Filters
+                <span id="cal-filter-badge" hidden style="background:var(--primary);color:var(--surface);border-radius:var(--r);padding:0 5px;font-size:var(--fs-xs);margin-left:4px;font-weight:700"></span>
+              </button>
+              <button class="btn btn-outline btn-sm" id="cal-export-btn" onclick="calExportCsv()" style="display:none;white-space:nowrap">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="margin-right:4px;vertical-align:-1px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV
+              </button>
+              <button class="btn btn-sm" id="cal-signoff-btn" onclick="calOpenSignoff()" style="display:none;white-space:nowrap;background:var(--green);color:var(--surface);border:1px solid var(--green)">
+                <i class=ic-check></i> Sign Off
+              </button>
+            </div>
+          </div>
+
+          <!-- Cycle duration + stage tiles (populated by calLoad) -->
+          <div class="cal-cycle-info" id="cal-cycle-info" style="display:none"></div>
+          <!-- Sign-off banner (shown after sign-off) -->
+          <div id="cal-signoff-banner" style="display:none;background:rgba(76,175,80,.1);border:1px solid var(--green);border-radius:var(--r);padding:12px 16px;margin-bottom:12px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="color:var(--green);font-size:var(--fs-md)"><i class=ic-check></i></span>
+              <strong style="font-size:var(--fs-base)">Calibration Signed Off</strong>
+              <span id="cal-signoff-meta" style="color:var(--text3);font-size:var(--fs-sm);margin-left:4px"></span>
+            </div>
+            <div id="cal-signoff-summary" style="margin-top:6px;font-size:var(--fs-base);color:var(--text2)"></div>
+          </div>
+
+          <!-- Filters -->
+          <div class="cal-filters" id="cal-filters" style="display:none">
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Department</label>
+              <select class="cal-filter-sel" id="cal-f-dept" multiple onchange="calApplyFilters()"></select>
+            </div>
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Designation</label>
+              <select class="cal-filter-sel" id="cal-f-desig" multiple onchange="calApplyFilters()"></select>
+            </div>
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Employment Type</label>
+              <select class="cal-filter-sel" id="cal-f-emptype" multiple onchange="calApplyFilters()"></select>
+            </div>
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Reporting Manager</label>
+              <select class="cal-filter-sel" id="cal-f-mgr" multiple onchange="calApplyFilters()"></select>
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="calClearFilters()" style="align-self:flex-end;white-space:nowrap">Clear filters</button>
+          </div>
+          <div id="cal-filter-summary" style="display:none;font-size:var(--fs-sm);color:var(--text3);margin-bottom:12px"></div>
+
+          <!-- Matrix area -->
+          <div id="cal-body">
+            <div class="empty-state"><div class="empty-state-text">Select an appraisal cycle to view the calibration matrix.</div></div>
+          </div>
+          <!-- Sign-off modal -->
+          <div id="cal-signoff-modal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.45);align-items:center;justify-content:center">
+            <div style="background:var(--card);border-radius:var(--r);padding:28px;max-width:480px;width:90%;box-shadow:var(--sh3)">
+              <div style="font-size:var(--fs-md);font-weight:700;margin-bottom:4px">Sign Off Calibration</div>
+              <div id="cal-signoff-cycle-lbl" style="font-size:var(--fs-sm);color:var(--text3);margin-bottom:16px"></div>
+              <label style="font-size:var(--fs-base);font-weight:600;display:block;margin-bottom:6px">Summary / Notes</label>
+              <textarea id="cal-signoff-text" rows="5" class="gp-input" style="width:100%;resize:vertical" placeholder="Summarise calibration outcomes, key decisions, and any notes for the record…"></textarea>
+              <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+                <button class="btn btn-outline btn-sm" onclick="calCloseSignoff()">Cancel</button>
+                <button class="btn btn-sm" onclick="calSubmitSignoff()" style="background:var(--green);color:var(--surface);border:1px solid var(--green)">Confirm Sign Off</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: Distribution / Bell Curve (HR only) -->
+        <div id="gp-tab-distribution" style="display:none">
+          <div class="pd-toolbar">
+            <div>
+              <div class="pf-h">Performance Distribution</div>
+              <div class="pf-sub">Rating bell curves &amp; employee breakdown by review cycle</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select class="gp-input" id="pd-cycle-sel" onchange="pdLoad()" style="min-width:200px"></select>
+              <button class="btn btn-outline btn-sm" id="pd-filter-btn" onclick="pdToggleFilters()"
+                      style="display:none;white-space:nowrap" aria-expanded="false">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="margin-right:4px;vertical-align:-1px"><path d="M3 5h18l-7 8v5l-4 2v-7z"/></svg>Filters
+                <span id="pd-filter-badge" hidden style="background:var(--primary);color:var(--surface);border-radius:var(--r);padding:0 5px;font-size:var(--fs-xs);margin-left:4px;font-weight:700"></span>
+              </button>
+              <button class="btn btn-outline btn-sm" id="pd-export-btn" onclick="pdExportCSV()" style="display:none;white-space:nowrap">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="margin-right:4px;vertical-align:-1px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV
+              </button>
+            </div>
+          </div>
+
+          <!-- Collapsible filters -->
+          <div class="cal-filters" id="pd-filters" style="display:none">
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Department</label>
+              <select class="cal-filter-sel" id="pd-f-dept" multiple onchange="pdApplyFilters()"></select>
+            </div>
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Designation</label>
+              <select class="cal-filter-sel" id="pd-f-desig" multiple onchange="pdApplyFilters()"></select>
+            </div>
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Employment Type</label>
+              <select class="cal-filter-sel" id="pd-f-emptype" multiple onchange="pdApplyFilters()"></select>
+            </div>
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Reporting Manager</label>
+              <select class="cal-filter-sel" id="pd-f-mgr" multiple onchange="pdApplyFilters()"></select>
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="pdClearFilters()" style="align-self:flex-end;white-space:nowrap">Reset all</button>
+          </div>
+
+          <!-- Dynamic body — stats + charts + table rendered here -->
+          <div id="pd-body">
+            <div class="empty-state"><div class="empty-state-text">Select an appraisal cycle to view the distribution.</div></div>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- ── Org Settings Panel ──────────────────────── -->
+      <div id="panel-org-settings" class="panel">
+        <div class="pf-toolbar" style="margin-bottom:24px">
+          <div>
+            <div class="pf-h">Organisation Settings</div>
+            <div class="pf-sub">Company values and leadership principles that apply across the organisation.</div>
+          </div>
+        </div>
+
+        <!-- Document Compliance (build B4) -->
+        <div class="pf-card" style="margin-bottom:24px;display:none" id="org-docs-card">
+          <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div>
+              <div style="font-weight:600;font-size:var(--fs-md)">Document Compliance</div>
+              <div class="pf-card-meta" id="org-docs-meta">Employees with a mandatory document not yet verified, or a document that has expired</div>
+            </div>
+            <select class="gp-input" id="org-docs-branch" style="height:32px;padding:4px 8px;width:auto" onchange="orgLoadDocuments()"><option value="">All branches</option></select>
+          </div>
+          <div id="org-docs-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
+        </div>
+
+        <!-- Company Values -->
+        <div class="pf-card" style="margin-bottom:24px">
+          <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div style="font-weight:600;font-size:var(--fs-md)">Company Values</div>
+            <button class="btn btn-primary btn-sm" onclick="orgOpenValueModal(null)">+ Add Value</button>
+          </div>
+          <div id="org-values-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
+        </div>
+
+        <!-- Leadership Principles -->
+        <div class="pf-card" style="margin-bottom:24px">
+          <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div style="font-weight:600;font-size:var(--fs-md)">Leadership Principles</div>
+            <button class="btn btn-primary btn-sm" onclick="pfOpenPrincipleModal(null)">+ Add Principle</button>
+          </div>
+          <div id="org-principles-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
+        </div>
+
+        <!-- Rating Scales -->
+        <div class="pf-card" style="margin-bottom:24px">
+          <div class="pf-card-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div>
+              <div style="font-weight:600;font-size:var(--fs-md)">Rating Scales</div>
+              <div style="font-size:var(--fs-sm);color:var(--text3);margin-top:2px">Define numerical scales used for appraisal ratings across cycles.</div>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="rsOpenModal(null)">+ Add Scale</button>
+          </div>
+          <div id="org-scales-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
+        </div>
+
+        <!-- Review settings (slice 010 group D, decision 23) -->
+        <div class="pf-card" style="margin-bottom:24px" id="org-review-card">
+          <div style="font-weight:600;font-size:var(--fs-md);margin-bottom:4px">Performance reviews</div>
+          <div style="font-size:var(--fs-sm);color:var(--text3);margin-bottom:16px">A review takes its own copy of each objective and KPI, so the numbers it was decided on stay put. These three settings say when those numbers close, how long the originals stay locked, and what happens to an item taken out of a review.</div>
+          <div id="org-review-msg" style="font-size:var(--fs-sm);margin-bottom:10px"></div>
+          <div class="gp-field">
+            <label class="gp-label" for="org-review-freeze">When do a review's numbers close?</label>
+            <select class="gp-input" id="org-review-freeze"></select>
+            <div class="gp-hint">After this point, later progress and evidence no longer change the review.</div>
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="org-review-lock">Days after the cycle ends before the originals unlock</label>
+            <input class="gp-input" id="org-review-lock" type="number" min="0" max="3650" step="1">
+            <div class="gp-hint">While a review holds an objective or KPI, its name, target, weight and period cannot change. Use 0 to keep it locked until the review is finished.</div>
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="org-review-removal">When an item is taken out of a review</label>
+            <select class="gp-input" id="org-review-removal"></select>
+            <div class="gp-hint">An item that already has a rating is always kept and marked removed, whichever setting is chosen.</div>
+          </div>
+          <div style="text-align:right">
+            <button class="btn btn-primary btn-sm" id="org-review-save" onclick="riSaveSettings()">Save review settings</button>
+          </div>
+        </div>
+
+        <!-- Key Result Areas -->
+        <div class="pf-card">
+          <div style="font-weight:600;font-size:var(--fs-md);margin-bottom:4px">Key Result Areas</div>
+          <div style="font-size:var(--fs-sm);color:var(--text3);margin-bottom:16px">KRAs are the areas of responsibility that belong to a role. They come from the employee's appraisal template, so every objective can be traced back to what the job is for.</div>
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+            <input type="checkbox" id="org-kra-mandatory" style="width:16px;height:16px;accent-color:var(--primary)" onchange="orgSaveKraMandatory(this.checked)">
+            <span style="font-size:var(--fs-base)">Every objective must be linked to a Key Result Area</span>
+          </label>
+          <div style="font-size:var(--fs-xs);color:var(--text3);margin-top:8px">When on, an objective cannot be activated without a KRA. Drafts are still allowed, so nobody is blocked while HR assigns an appraisal template.</div>
+        </div>
+      </div>
+
+
+      <!-- ── Appraisal Setup Full Page ──────────────── -->
+    <!-- ── New Cycle choice modal ─────────────────────── -->
+    <div class="gp-backdrop" id="pf-new-cycle-modal">
+      <div class="gp-modal" style="max-width:540px">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title" id="pf-new-cycle-modal-title">New Review Cycle</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-new-cycle-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body" id="pf-new-cycle-modal-body" style="padding:20px"></div>
+      </div>
+    </div>
+
+      <div id="panel-appraisal-setup" class="panel">
+        <div class="aps-header">
+          <button class="btn btn-outline btn-sm" onclick="switchPanel('goals'); gpShowTab('hr')">← HR Setup</button>
+          <div class="aps-title">
+            <div style="font-size:var(--fs-lg);font-weight:700">Appraisal Cycle Setup</div>
+            <div style="font-size:var(--fs-base);color:var(--text3)" id="aps-cycle-subtitle">Configure the new performance review cycle</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="gp-error" id="aps-header-error" style="padding:6px 12px;margin:0"></span>
+            <button class="btn btn-outline" onclick="apsSaveAsTemplate()" title="Save current setup as a reusable template">Save as Template</button>
+            <button class="btn btn-outline" onclick="apsLaunch(false)">Save Draft</button>
+            <button class="btn btn-primary" onclick="apsLaunch(true)" id="aps-launch-btn">Launch Cycle</button>
+          </div>
+        </div>
+        <div class="aps-body">
+          <div class="aps-nav" id="aps-nav">
+            <div class="aps-nav-section">Setup</div>
+            <div class="aps-nav-item active" id="apsn-cycle-details" onclick="apsShowItem('cycle-details')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+              Cycle Details
+            </div>
+            <div class="aps-nav-item" id="apsn-emp-fields" onclick="apsShowItem('emp-fields')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+              Employee Fields
+            </div>
+            <div class="aps-nav-item" id="apsn-scoring" onclick="apsShowItem('scoring')" style="display:none">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 15l4-5 4 3 5-7"/></svg>
+              How the Score Is Built
+            </div>
+            <div class="aps-nav-item" id="apsn-select-emps" onclick="apsShowItem('select-emps')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              Select Employees
+              <span class="aps-sel-badge" id="aps-emp-badge" style="display:none">0</span>
+            </div>
+            <div class="aps-nav-section" style="margin-top:8px">
+              Appraisal Pages
+              <button class="aps-add-page-btn" title="Add page" onclick="apsTogglePageMenu(event)">+</button>
+            </div>
+            <div id="aps-page-list"></div>
+          </div>
+          <div class="aps-settings" id="aps-settings-panel"></div>
+        </div>
+      </div>
+
+    <!-- ── Employee Review Wizard Panel ──────────────── -->
+    <div class="panel" id="panel-pms-review">
+      <!-- topbar -->
+      <div class="pr-topbar">
+        <button class="pr-back-btn" onclick="switchPanel('goals');gpShowTab('reviews')">&#8592; Back</button>
+        <div>
+          <div class="pr-topbar-title" id="pr-title">My Performance Review</div>
+          <div class="pr-topbar-sub" id="pr-sub"></div>
+        </div>
+        <div id="pr-status-badge" style="margin-left:auto"></div>
+      </div>
+      <!-- stage strip -->
+      <div class="pr-stage-strip" id="pr-stage-strip">
+        <div class="pr-sst" id="pr-ss-0">
+          <div class="pr-sd" id="pr-sd-0">1</div>
+          <div class="pr-slbl">Employee<br>Review</div>
+        </div>
+        <div class="pr-sconn" id="pr-sc-0"></div>
+        <div class="pr-sst" id="pr-ss-1">
+          <div class="pr-sd" id="pr-sd-1">2</div>
+          <div class="pr-slbl">Manager<br>Review</div>
+        </div>
+        <div class="pr-sconn" id="pr-sc-1"></div>
+        <div class="pr-sst" id="pr-ss-2">
+          <div class="pr-sd" id="pr-sd-2">3</div>
+          <div class="pr-slbl">Final<br>Review</div>
+        </div>
+        <div class="pr-sconn" id="pr-sc-2"></div>
+        <div class="pr-sst" id="pr-ss-3">
+          <div class="pr-sd" id="pr-sd-3">4</div>
+          <div class="pr-slbl">HR<br>Review</div>
+        </div>
+        <div class="pr-sconn" id="pr-sc-3"></div>
+        <div class="pr-sst" id="pr-ss-4">
+          <div class="pr-sd" id="pr-sd-4">5</div>
+          <div class="pr-slbl">Completed</div>
+        </div>
+      </div>
+      <!-- A review that holds objectives or KPIs but has no page to show them
+           on is a fault, not an empty review. Say so here rather than render a
+           shorter wizard and leave the items invisible. -->
+      <div id="pr-missing-pages" role="alert" style="display:none;margin:0 16px 12px"></div>
+      <!-- body -->
+      <div class="pr-body">
+        <div class="pr-nav" id="pr-nav"></div>
+        <div class="pr-content" id="pr-content">
+          <div style="color:var(--text3);font-size:var(--fs-base);padding-top:40px;text-align:center">Loading review...</div>
+        </div>
+      </div>
+      <!-- footer -->
+      <div class="pr-footer">
+        <button class="btn btn-outline btn-sm" id="pr-prev-btn" onclick="prPrevPage()" style="display:none">&#8592; Previous</button>
+        <span class="pr-save-indicator" id="pr-save-ind"></span>
+        <button class="btn btn-primary btn-sm" id="pr-next-btn" onclick="prNextPage()" style="margin-left:auto">Save &amp; Continue</button>
+      </div>
+    </div>
+
+    <!-- ── Reviewer Feedback Full-Window Panel ────── -->
+    <div class="panel" id="panel-mr-review">
+      <div class="pr-topbar">
+        <button class="pr-back-btn" onclick="mrCloseReview()">&#8592; Back</button>
+        <div>
+          <div class="pr-topbar-title" id="mr-rv-title">Submit Feedback</div>
+          <div class="pr-topbar-sub" id="mr-rv-sub"></div>
+        </div>
+        <div id="mr-rv-status" style="margin-left:auto"></div>
+      </div>
+      <div class="pr-body">
+        <div class="pr-nav" id="mr-rv-nav"></div>
+        <div class="pr-content" id="mr-rv-content">
+          <div style="color:var(--text3);font-size:var(--fs-base);padding-top:40px;text-align:center">Loading&hellip;</div>
+        </div>
+      </div>
+      <div class="pr-footer">
+        <div id="mr-rv-msg" style="font-size:var(--fs-sm);flex:1;color:var(--text2)"></div>
+        <button id="mr-rv-submit" class="btn btn-primary btn-sm" onclick="mrSubmitFeedback()" style="margin-left:auto">Submit Feedback</button>
+      </div>
+    </div>
+
+    <!-- ── Employee Scorecard Panel ──────────────────── -->
+    <div id="panel-scorecard" class="panel">
+      <div class="sc-topbar">
+        <button class="sc-back-btn" onclick="scGoBack()">&#8592; Back</button>
+        <div class="sc-identity">
+          <div class="sc-avatar" id="sc-avatar"></div>
+          <div>
+            <div class="sc-emp-name" id="sc-emp-name"></div>
+            <div class="sc-emp-role" id="sc-emp-role"></div>
+          </div>
+        </div>
+        <div class="sc-join-badge" id="sc-join-badge"></div>
+      </div>
+      <div class="sc-body" id="sc-body">
+        <div style="padding:40px;text-align:center;color:var(--text3)">Loading…</div>
+      </div>
+    </div>
+
+    </div><!-- /main-content -->
+
+    <!-- ── Rating Scale Modal ───────────────────────── -->
+    <div class="gp-backdrop" id="rs-modal">
+      <div class="gp-modal" style="max-width:520px;width:95vw">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title" id="rs-modal-title">New Rating Scale</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('rs-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="rs-error"></div>
+          <input type="hidden" id="rs-existing-name">
+          <div class="gp-field">
+            <div class="gp-label">Scale Name *</div>
+            <input class="gp-input" id="rs-name" placeholder="e.g. 5-Point Performance Scale">
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Description</div>
+            <input class="gp-input" id="rs-desc" placeholder="Optional — e.g. Used for all objective ratings">
+          </div>
+          <div style="font-size:var(--fs-xs);font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:8px">Scale Points</div>
+          <div id="rs-items" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
+          <button class="btn btn-outline btn-sm" onclick="rsAddPoint()" style="width:100%">+ Add Point</button>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('rs-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="rsSubmit()">Save Scale</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Create Goal Modal ──────────────────────────── -->
+    <div class="gp-backdrop" id="gp-create-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title" id="gp-modal-title">Create New Goal</div>
+          <button class="gp-modal-close" onclick="gpCloseCreateGoal()">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="gp-create-error"></div>
+          <input type="hidden" id="gp-edit-id">
+          <input type="hidden" id="gp-c-cycle">
+          <div class="gp-field" id="gp-creator-field" style="display:none">
+            <div class="gp-label">Created by</div>
+            <div id="gp-creator-display" style="font-size:var(--fs-base);color:var(--text2);padding:6px 0;font-weight:500"></div>
+          </div>
+          <div class="gp-field" id="gp-employee-field">
+            <div class="gp-label">Goal for *</div>
+            <select class="gp-input" id="gp-c-employee" onchange="gpReloadAlignment()"></select>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Align this goal to *</div>
+            <div class="gp-hint" id="gp-align-chain" style="margin-bottom:6px"></div>
+            <div class="gp-cascade-wrap" id="gp-cascade-wrap">
+              <input class="gp-input" id="gp-align-search" autocomplete="off"
+                     placeholder="Select an objective to align to…"
+                     oninput="gpFilterAlignList()"
+                     onfocus="gpOpenCascadeDropdown()"
+                     onclick="gpOpenCascadeDropdown()">
+              <div class="cascade-grid" id="gp-cascade-list" style="display:none"></div>
+            </div>
+            <input type="hidden" id="gp-sel-cascade">
+            <input type="hidden" id="gp-sel-parent">
+            <input type="hidden" id="gp-sel-standalone">
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Goal Name *</div>
+            <input class="gp-input" id="gp-c-name" placeholder="e.g. Achieve 120 Orders in Q3">
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Target Value *</div>
+              <input class="gp-input" id="gp-c-target" type="number" min="1" placeholder="100">
+              <div class="gp-hint" id="gp-c-unit-hint"></div>
+            </div>
+            <div></div>
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Start Date *</div>
+              <input class="gp-input" id="gp-c-start" type="date">
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">End Date *</div>
+              <input class="gp-input" id="gp-c-end" type="date">
+            </div>
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Key Result Area <span id="gp-kra-req" style="color:var(--red);display:none">*</span></div>
+              <select class="gp-input" id="gp-c-kra">
+                <option value="">— None —</option>
+              </select>
+              <div id="gp-kra-hint" style="font-size:var(--fs-xs);color:var(--text3);margin-top:6px;display:none"></div>
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Goal Type</div>
+              <select class="gp-input" id="gp-c-goal-type">
+                <option value="Business">Business</option>
+                <option value="Development">Development</option>
+              </select>
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Company Value</div>
+              <select class="gp-input" id="gp-c-company-value">
+                <option value="">— None —</option>
+              </select>
+            </div>
+          </div>
+          <div class="gp-field">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 0">
+              <input type="checkbox" id="gp-c-stretch">
+              <span>Extra Initiative / Stretch goal</span>
+            </label>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="gpCloseCreateGoal()">Cancel</button>
+          <button class="btn btn-primary" id="gp-create-btn" onclick="gpSubmitCreateGoal()">
+            <span id="gp-create-label">Create Goal</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Log KPI Progress Modal ─────────────────────── -->
+    <div class="gp-backdrop" id="pf-log-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Log KPI Progress</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-log-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="pf-log-error"></div>
+          <input type="hidden" id="pf-log-kpi">
+          <div class="pf-modal-context" id="pf-log-context"></div>
+          <div class="gp-field">
+            <label class="gp-label" id="pf-log-value-label" for="pf-log-value">Amount since your last update *</label>
+            <input class="gp-input" id="pf-log-value" type="number" step="any" placeholder="e.g. 32">
+            <div class="gp-hint" id="pf-log-hint"></div>
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="pf-log-date">Which day is this reading for?</label>
+            <input class="gp-input" id="pf-log-date" type="date">
+            <div class="gp-hint">Leave it as today unless the reading is for an earlier day. It cannot be in the future.</div>
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="pf-log-note">Comment <span style="font-weight:400;color:var(--text3)">(required)</span></label>
+            <input class="gp-input" id="pf-log-note" placeholder="What changed since the last update?">
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Evidence <span style="font-weight:400;color:var(--text3)">(optional — updates without evidence will be flagged)</span></div>
+            <label class="ev-upload-zone" onclick="document.getElementById('pf-log-file').click()">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span id="pf-log-file-name" style="font-size:var(--fs-sm);color:var(--text3)">Click to attach image or document…</span>
+            </label>
+            <input type="file" id="pf-log-file" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" style="display:none" onchange="pfLogFileChanged()">
+          </div>
+          <div style="margin-top:18px">
+            <div style="font-size:var(--fs-xs);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Update History</div>
+            <div id="pf-log-history" class="upd-timeline"></div>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-log-modal')">Cancel</button>
+          <button class="btn btn-primary" id="pf-log-submit-btn" onclick="pfSubmitLog()">Save Progress</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Past-Objectives / KPI Selector Modal ──────── -->
+    <div class="gp-backdrop" id="pr-sel-modal">
+      <div class="gp-modal" style="max-width:500px">
+        <div class="gp-modal-hdr">
+          <div>
+            <div class="gp-modal-title" id="pr-sel-title">Add / Remove Objectives</div>
+            <div style="font-size:var(--fs-sm);color:var(--text3);margin-top:2px" id="pr-sel-subtitle"></div>
+          </div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pr-sel-modal')">&times;</button>
+        </div>
+        <div class="pr-sel-body">
+          <div class="gp-error" id="pr-sel-error"></div>
+          <div class="sel-list" id="pr-sel-list"></div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pr-sel-modal')">Cancel</button>
+          <button class="btn btn-primary" id="pr-sel-confirm">Confirm</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Review item: change the definition inside the review (slice 010 D) ── -->
+    <div class="gp-backdrop" id="ri-edit-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div>
+            <div class="gp-modal-title">Change this item in the review</div>
+            <div style="font-size:var(--fs-sm);color:var(--text3);margin-top:2px" id="ri-edit-sub"></div>
+          </div>
+          <button class="gp-modal-close" onclick="pfCloseModal('ri-edit-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="ri-edit-error"></div>
+          <input type="hidden" id="ri-edit-row">
+          <div class="pf-modal-context">The change stays inside this review until it is completed. The live record is not touched now.</div>
+          <div class="gp-field">
+            <label class="gp-label" for="ri-edit-title">Name</label>
+            <input class="gp-input" id="ri-edit-title" type="text">
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="ri-edit-target">Target</label>
+            <input class="gp-input" id="ri-edit-target" type="number" step="any">
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="ri-edit-weight">Weight (%)</label>
+            <input class="gp-input" id="ri-edit-weight" type="number" step="any" min="0" max="100">
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="ri-edit-from">Period from</label>
+            <input class="gp-input" id="ri-edit-from" type="date">
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="ri-edit-to">Period to</label>
+            <input class="gp-input" id="ri-edit-to" type="date">
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('ri-edit-modal')">Cancel</button>
+          <button class="btn btn-primary" id="ri-edit-save" onclick="riSaveEditItem()">Save change</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Review item: take it out of the review (slice 010 D, R12) ── -->
+    <div class="gp-backdrop" id="ri-remove-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title" id="ri-remove-title">Remove from this review</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('ri-remove-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="ri-remove-error"></div>
+          <input type="hidden" id="ri-remove-row">
+          <input type="hidden" id="ri-remove-mode">
+          <div class="pf-modal-context" id="ri-remove-warning"></div>
+          <div class="gp-field" id="ri-remove-reason-field">
+            <label class="gp-label" for="ri-remove-reason">Why is it being removed? <span id="ri-remove-reason-req" style="font-weight:400;color:var(--text3)"></span></label>
+            <input class="gp-input" id="ri-remove-reason" type="text" placeholder="The employee will see this reason.">
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('ri-remove-modal')">Keep it</button>
+          <button class="btn btn-primary" id="ri-remove-confirm" onclick="riConfirmRemove()">Remove it</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Self-Review Narrative Modal ──────────────── -->
+    <div class="gp-backdrop" id="pf-narrative-modal">
+      <div class="gp-modal" style="max-width:600px">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Write Self-Review Narrative</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-narrative-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="pf-narrative-error"></div>
+          <input type="hidden" id="pf-narrative-appraisal">
+          <div class="gp-field">
+            <div class="gp-label">Key Achievements</div>
+            <textarea class="gp-input" id="pf-narrative-achievements" rows="3"
+              placeholder="What did you accomplish this period?"></textarea>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Challenges Faced</div>
+            <textarea class="gp-input" id="pf-narrative-challenges" rows="3"
+              placeholder="What obstacles did you encounter, and how did you address them?"></textarea>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Development Needs</div>
+            <textarea class="gp-input" id="pf-narrative-devneeds" rows="3"
+              placeholder="What skills or areas do you want to develop?"></textarea>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Support Needed from Manager</div>
+            <textarea class="gp-input" id="pf-narrative-support" rows="2"
+              placeholder="What specific support do you need from your manager?"></textarea>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Goals for Next Period</div>
+            <textarea class="gp-input" id="pf-narrative-forward" rows="3"
+              placeholder="What do you want to focus on next?"></textarea>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-narrative-modal')">Cancel</button>
+          <button class="btn btn-primary" id="pf-narrative-btn" onclick="pfSubmitNarrative()">Save Narrative</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Action Item Modal ─────────────────────────── -->
+    <div class="gp-backdrop" id="pf-action-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Add Action Item</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-action-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="pf-action-error"></div>
+          <input type="hidden" id="pf-action-appraisal">
+          <div class="gp-field">
+            <div class="gp-label">Description *</div>
+            <input class="gp-input" id="pf-action-desc" placeholder="e.g. Complete leadership training by Q3">
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Assigned To</div>
+              <select class="gp-input" id="pf-action-assignee"></select>
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Due Date</div>
+              <input class="gp-input" id="pf-action-due" type="date">
+            </div>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-action-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="pfSubmitActionItem()">Add Action Item</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Check-In Modal ────────────────────────────── -->
+    <!-- No KRAs assigned: a blocked employee must never be left without a way out -->
+    <div class="gp-backdrop" id="gp-nokra-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">You need a Key Result Area first</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('gp-nokra-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div style="font-size:var(--fs-base);line-height:1.6;color:var(--text2)">
+            Your organisation requires every objective to sit under a
+            <strong>Key Result Area</strong> &mdash; the part of your role it contributes to.
+            <br><br>
+            No Key Result Areas have been assigned to you yet. These come from your
+            appraisal template, which HR sets up for your role, so this is not
+            something you can fix yourself.
+            <br><br>
+            You can still save your objective as a <strong>draft</strong> and attach a
+            Key Result Area once HR has set them up.
+          </div>
+          <div class="gp-field" style="margin-top:16px">
+            <div class="gp-label">Anything to add for HR? (optional)</div>
+            <textarea class="gp-input" id="gp-nokra-note" rows="2"
+              placeholder="e.g. I have just moved to a new role"></textarea>
+          </div>
+        </div>
+        <div class="gp-modal-ftr">
+          <button class="btn btn-outline" onclick="pfCloseModal('gp-nokra-modal')">Continue as draft</button>
+          <button class="btn btn-primary" id="gp-nokra-report" onclick="gpReportMissingKra()">Report to HR</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="gp-backdrop" id="gp-checkin-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Goal Check-In</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('gp-checkin-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="gp-checkin-error"></div>
+          <input type="hidden" id="gp-checkin-goal">
+          <div class="pf-modal-context" id="gp-checkin-context"></div>
+          <div class="gp-field">
+            <div class="gp-label">Note *</div>
+            <textarea class="gp-input" id="gp-checkin-note" rows="3"
+              placeholder="What progress did you make? Any blockers?"></textarea>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">% Complete <span style="color:var(--text3)">(optional)</span></div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input class="gp-input" id="gp-checkin-pct" type="number" min="0" max="100" step="1" placeholder="0 – 100" style="flex:1">
+              <span style="font-size:var(--fs-base);font-weight:600;color:var(--text3)">%</span>
+            </div>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Outlook <span style="color:var(--text3)">(optional)</span></div>
+            <div style="display:flex;gap:8px">
+              <button type="button" id="gp-checkin-traj-likely" class="btn btn-outline btn-sm checkin-traj-btn"
+                onclick="gpSetCheckinTraj('On Track')">Likely to Succeed</button>
+              <button type="button" id="gp-checkin-traj-unlikely" class="btn btn-outline btn-sm checkin-traj-btn"
+                onclick="gpSetCheckinTraj('At Risk')">Unlikely to Succeed</button>
+            </div>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('gp-checkin-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="gpSubmitCheckin()">Save Check-In</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Company Value Modal (HR) ─────────────────── -->
+    <div class="gp-backdrop" id="pf-value-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Company Value</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-value-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="pf-value-error"></div>
+          <input type="hidden" id="pf-val-name">
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Value Name *</div>
+              <input class="gp-input" id="pf-val-value-name" placeholder="e.g. Integrity">
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Icon / Emoji</div>
+              <input class="gp-input" id="pf-val-emoji" placeholder="e.g. <i class=ic-award></i>">
+            </div>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Description</div>
+            <textarea class="gp-input" id="pf-val-desc" rows="2"
+              placeholder="What this value means at {{ tenant_name }}"></textarea>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-value-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="pfSubmitValue()">Save Value</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Upward Feedback Modal ─────────────────────── -->
+    <div class="gp-backdrop" id="pf-upward-modal">
+      <div class="gp-modal" style="max-width:540px">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Upward Feedback</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-upward-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="pf-upward-error"></div>
+          <input type="hidden" id="pf-upward-about">
+          <input type="hidden" id="pf-upward-cycle">
+          <div class="pf-modal-context" id="pf-upward-context"
+            style="font-size:var(--fs-sm);color:var(--text2);margin-bottom:12px">
+          </div>
+          <div id="pf-upward-principles">
+            <!-- Populated dynamically with principle rating inputs -->
+          </div>
+          <div class="gp-field" style="margin-top:12px">
+            <div class="gp-label">Overall Rating (0–5)</div>
+            <input class="gp-input" id="pf-upward-rating" type="number"
+              min="0" max="5" step="0.5" placeholder="e.g. 4">
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Comments <span style="color:var(--text3)">(optional)</span></div>
+            <textarea class="gp-input" id="pf-upward-comments" rows="3"
+              placeholder="Share any specific observations…"></textarea>
+          </div>
+          <p style="font-size:var(--fs-xs);color:var(--text3);margin:8px 0 0">
+            Your response is anonymous. Results are only shown to your manager once a minimum number of responses are received.
+          </p>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-upward-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="pfSubmitUpwardFeedback()">Submit Feedback</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Additional Reviewer Modal ─────────────────── -->
+    <div class="gp-backdrop" id="pf-reviewer-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Add Additional Reviewer</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-reviewer-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="pf-reviewer-error"></div>
+          <input type="hidden" id="pf-reviewer-kpi">
+          <div class="pf-modal-context" id="pf-reviewer-context"></div>
+          <div class="gp-field">
+            <div class="gp-label">Reviewer (Employee ID) *</div>
+            <input class="gp-input" id="pf-reviewer-emp" placeholder="e.g. EMP-001">
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Role / Relationship</div>
+            <input class="gp-input" id="pf-reviewer-role" placeholder="e.g. Dotted-line manager, Project lead">
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-reviewer-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="pfSubmitAdditionalReviewer()">Add Reviewer</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Leadership Principle Modal (HR) ───────────── -->
+    <div class="gp-backdrop" id="pf-principle-modal">
+      <div class="gp-modal" style="max-width:540px">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Leadership Principle</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-principle-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="pf-principle-error"></div>
+          <input type="hidden" id="pf-principle-name">
+          <div class="gp-field">
+            <div class="gp-label">Principle Name *</div>
+            <input class="gp-input" id="pf-principle-title" placeholder="e.g. Customer First">
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Description</div>
+            <textarea class="gp-input" id="pf-principle-desc" rows="2"
+              placeholder="Brief description of this principle"></textarea>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Expected Behaviours</div>
+            <textarea class="gp-input" id="pf-principle-behaviours" rows="4"
+              placeholder="One behaviour per line, e.g.:&#10;Actively listens to customer concerns&#10;Resolves complaints within 24 hours"></textarea>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-principle-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="pfSubmitPrinciple()">Save Principle</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Calibration Note Modal (HR) ──────────────────── -->
+    <div class="gp-backdrop" id="pf-calib-note-modal">
+      <div class="gp-modal" style="max-width:480px">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Calibration Note</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-calib-note-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div id="pf-calib-note-context" style="margin-bottom:12px;font-size:var(--fs-base);color:var(--text2)"></div>
+          <div class="gp-field">
+            <label class="gp-label">Calibration Notes</label>
+            <textarea id="pf-calib-note-text" class="gp-input" rows="4" placeholder="Notes on this employee's calibration…" style="width:100%;resize:vertical"></textarea>
+          </div>
+          <div class="gp-field">
+            <label class="gp-label">Calibrated Rating (optional, 0–5)</label>
+            <input type="number" id="pf-calib-rating" class="gp-input" min="0" max="5" step="0.1" placeholder="e.g. 3.5" style="width:120px">
+          </div>
+          <div id="pf-calib-note-error" class="callout callout-warn" style="display:none;margin-top:8px"></div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-calib-note-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="pfSubmitCalibNote()">Save Note</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Appraisal Setup Wizard (HR) ───────────────── -->
+    <div class="gp-backdrop" id="pf-cycle-modal">
+      <div class="gp-modal" style="max-width:600px;width:95vw">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title" id="wiz-title">Appraisal Setup</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-cycle-modal')">&times;</button>
+        </div>
+
+        <!-- Step indicator -->
+        <div style="display:flex;align-items:center;gap:0;padding:16px 24px 0;border-bottom:1px solid var(--border)">
+          <div class="wiz-step" id="wiz-ind-1" style="display:flex;align-items:center;gap:6px">
+            <div class="wiz-dot" id="wiz-dot-1">1</div>
+            <span style="font-size:var(--fs-xs);font-weight:500" id="wiz-lbl-1">Cycle Details</span>
+          </div>
+          <div style="height:1px;background:var(--border);flex:1;margin:0 4px"></div>
+          <div class="wiz-step" id="wiz-ind-2" style="display:flex;align-items:center;gap:6px">
+            <div class="wiz-dot" id="wiz-dot-2">2</div>
+            <span style="font-size:var(--fs-xs);font-weight:500" id="wiz-lbl-2">Profile Fields</span>
+          </div>
+          <div style="height:1px;background:var(--border);flex:1;margin:0 4px"></div>
+          <div class="wiz-step" id="wiz-ind-3" style="display:flex;align-items:center;gap:6px">
+            <div class="wiz-dot" id="wiz-dot-3">3</div>
+            <span style="font-size:var(--fs-xs);font-weight:500" id="wiz-lbl-3">Appraisal Pages</span>
+          </div>
+          <div style="height:1px;background:var(--border);flex:1;margin:0 4px"></div>
+          <div class="wiz-step" id="wiz-ind-4" style="display:flex;align-items:center;gap:6px">
+            <div class="wiz-dot" id="wiz-dot-4">4</div>
+            <span style="font-size:var(--fs-xs);font-weight:500" id="wiz-lbl-4">Select Employees</span>
+          </div>
+        </div>
+
+        <div class="gp-modal-body" style="min-height:320px">
+          <div class="gp-error" id="pf-cycle-error"></div>
+
+          <!-- Step 1: Cycle Details -->
+          <div id="wiz-step-1">
+            <div class="gp-field">
+              <div class="gp-label">Appraisal Cycle Name *</div>
+              <input class="gp-input" id="pf-cy-name" placeholder="e.g. H2 2026 Performance Review">
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Description</div>
+              <textarea class="gp-input" id="pf-cy-desc" rows="2"
+                placeholder="Brief overview of this review cycle — its purpose and scope"></textarea>
+            </div>
+            <div class="gp-row2">
+              <div class="gp-field">
+                <div class="gp-label">Start Date *</div>
+                <input class="gp-input" id="pf-cy-start" type="date">
+              </div>
+              <div class="gp-field">
+                <div class="gp-label">End Date *</div>
+                <input class="gp-input" id="pf-cy-end" type="date">
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 2: Employee Profile Fields -->
+          <div id="wiz-step-2" style="display:none">
+            <p style="font-size:var(--fs-base);color:var(--text2);margin:0 0 16px">
+              Choose which employee details appear at the top of each appraisal form.
+            </p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <label class="wiz-check"><input type="checkbox" id="wf-designation" checked> Designation</label>
+              <label class="wiz-check"><input type="checkbox" id="wf-department" checked> Department</label>
+              <label class="wiz-check"><input type="checkbox" id="wf-branch"> Branch / Location</label>
+              <label class="wiz-check"><input type="checkbox" id="wf-grade"> Grade / Level</label>
+              <label class="wiz-check"><input type="checkbox" id="wf-joining_date"> Date of Joining</label>
+              <label class="wiz-check"><input type="checkbox" id="wf-years_of_service" checked> Years of Service</label>
+              <label class="wiz-check"><input type="checkbox" id="wf-reports_to" checked> Reporting Manager</label>
+              <label class="wiz-check"><input type="checkbox" id="wf-employment_type"> Employment Type</label>
+            </div>
+          </div>
+
+          <!-- Step 3: Appraisal Pages -->
+          <div id="wiz-step-3" style="display:none">
+            <p style="font-size:var(--fs-base);color:var(--text2);margin:0 0 16px">
+              Select the sections to include in each employee's appraisal form. Drag to reorder (coming soon).
+            </p>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <label class="wiz-page-check">
+                <div style="display:flex;align-items:flex-start;gap:10px">
+                  <input type="checkbox" id="pg-past-objectives" checked style="margin-top:3px">
+                  <div>
+                    <div style="font-weight:600;font-size:var(--fs-base)">Past Objectives &amp; KPIs</div>
+                    <div style="font-size:var(--fs-sm);color:var(--text3)">Review targets set for this period — actual vs target, self-rating and manager rating</div>
+                  </div>
+                </div>
+              </label>
+              <label class="wiz-page-check">
+                <div style="display:flex;align-items:flex-start;gap:10px">
+                  <input type="checkbox" id="pg-past-dev" checked style="margin-top:3px">
+                  <div>
+                    <div style="font-weight:600;font-size:var(--fs-base)">Past Development Goals</div>
+                    <div style="font-size:var(--fs-sm);color:var(--text3)">Reflect on learning and growth goals from this period</div>
+                  </div>
+                </div>
+              </label>
+              <label class="wiz-page-check">
+                <div style="display:flex;align-items:flex-start;gap:10px">
+                  <input type="checkbox" id="pg-future-objectives" style="margin-top:3px">
+                  <div>
+                    <div style="font-weight:600;font-size:var(--fs-base)">Future Objectives &amp; KPIs</div>
+                    <div style="font-size:var(--fs-sm);color:var(--text3)">Set performance targets for the next review period</div>
+                  </div>
+                </div>
+              </label>
+              <label class="wiz-page-check">
+                <div style="display:flex;align-items:flex-start;gap:10px">
+                  <input type="checkbox" id="pg-future-dev" style="margin-top:3px">
+                  <div>
+                    <div style="font-weight:600;font-size:var(--fs-base)">Future Development Goals</div>
+                    <div style="font-size:var(--fs-sm);color:var(--text3)">Plan skills and learning goals for the next period</div>
+                  </div>
+                </div>
+              </label>
+              <label class="wiz-page-check">
+                <div style="display:flex;align-items:flex-start;gap:10px">
+                  <input type="checkbox" id="pg-manager-feedback" checked style="margin-top:3px">
+                  <div>
+                    <div style="font-weight:600;font-size:var(--fs-base)">Manager's Feedback</div>
+                    <div style="font-size:var(--fs-sm);color:var(--text3)">Structured commentary: overall assessment, strengths, development areas, and action plan</div>
+                  </div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Step 4: Select Employees -->
+          <div id="wiz-step-4" style="display:none">
+            <p style="font-size:var(--fs-base);color:var(--text2);margin:0 0 14px">
+              Filter and select the employees to include in this appraisal cycle. An appraisal form will be generated for each selected employee.
+            </p>
+            <!-- Filters -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+              <div>
+                <div class="gp-label" style="margin-bottom:4px">Department</div>
+                <select class="gp-input" id="wiz-f-dept" style="padding:6px 8px;height:34px" onchange="wizApplyFilters()">
+                  <option value="">All Departments</option>
+                </select>
+              </div>
+              <div>
+                <div class="gp-label" style="margin-bottom:4px">Manager</div>
+                <select class="gp-input" id="wiz-f-mgr" style="padding:6px 8px;height:34px" onchange="wizApplyFilters()">
+                  <option value="">All Managers</option>
+                </select>
+              </div>
+              <div>
+                <div class="gp-label" style="margin-bottom:4px">Designation</div>
+                <select class="gp-input" id="wiz-f-desig" style="padding:6px 8px;height:34px" onchange="wizApplyFilters()">
+                  <option value="">All Designations</option>
+                </select>
+              </div>
+              <div>
+                <div class="gp-label" style="margin-bottom:4px">Date of Joining</div>
+                <div style="display:flex;gap:4px;align-items:center">
+                  <input type="date" class="gp-input" id="wiz-f-join-from" style="padding:6px 8px;height:34px;flex:1" placeholder="From" onchange="wizApplyFilters()">
+                  <span style="font-size:var(--fs-xs);color:var(--text3)">–</span>
+                  <input type="date" class="gp-input" id="wiz-f-join-to" style="padding:6px 8px;height:34px;flex:1" placeholder="To" onchange="wizApplyFilters()">
+                </div>
+              </div>
+            </div>
+            <!-- Search -->
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px">
+              <input class="gp-input" id="wiz-emp-search" placeholder="Search by name…" style="flex:1;height:34px;padding:6px 10px" oninput="wizRenderEmpList()">
+              <div id="wiz-emp-loading" style="font-size:var(--fs-sm);color:var(--text3);display:none">Loading…</div>
+            </div>
+            <!-- Select all / deselect -->
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <div style="font-size:var(--fs-sm);color:var(--text3)">
+                <span id="wiz-sel-count">0</span> of <span id="wiz-emp-count">0</span> selected
+              </div>
+              <div style="display:flex;gap:12px">
+                <button class="btn" style="font-size:var(--fs-sm);padding:2px 10px;background:none;border:1px solid var(--border);border-radius:var(--r-sm)" onclick="wizToggleAll(true)">Select All</button>
+                <button class="btn" style="font-size:var(--fs-sm);padding:2px 10px;background:none;border:1px solid var(--border);border-radius:var(--r-sm)" onclick="wizToggleAll(false)">Deselect All</button>
+              </div>
+            </div>
+            <!-- Employee list -->
+            <div id="wiz-emp-list" style="border:1px solid var(--border);border-radius:var(--r-sm);max-height:220px;overflow-y:auto">
+              <div class="empty-state" style="padding:24px">
+                <div class="empty-state-text">Click a filter or type to load employees</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="gp-modal-footer" style="justify-content:space-between">
+          <button class="btn btn-outline" id="wiz-back-btn" onclick="wizStep(-1)" style="display:none">← Back</button>
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-cycle-modal')" id="wiz-cancel-btn">Cancel</button>
+          <button class="btn btn-primary" id="wiz-next-btn" onclick="wizStep(1)">Next →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── New Appraisal Process Modal (HR) ───────────── -->
+    <div class="gp-backdrop" id="ap-process-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">New Appraisal Process</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('ap-process-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="ap-process-error"></div>
+          <div class="gp-field">
+            <div class="gp-label">Process / cycle name *</div>
+            <input class="gp-input" id="ap-p-name" placeholder="e.g. H1 2027 Performance Review">
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Start date *</div>
+              <input class="gp-input" id="ap-p-start" type="date">
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">End date *</div>
+              <input class="gp-input" id="ap-p-end" type="date">
+            </div>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Description</div>
+            <input class="gp-input" id="ap-p-desc" placeholder="Optional">
+          </div>
+          <div class="gp-field">
+            <label class="pf-toggle">
+              <input type="checkbox" id="ap-p-generate" checked>
+              Generate appraisals now for everyone with KPIs in this cycle
+            </label>
+            <div class="gp-hint">Scored on manager-rated KPIs. Each employee's KPI weightages
+              must total 100% before their appraisal can be generated — anyone short is
+              listed back to you rather than silently skipped.</div>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('ap-process-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="apSubmitProcess()">Start Process</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── New Cascade Modal (HR) ─────────────────────── -->
+    <div class="gp-backdrop" id="pf-cascade-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">New Goal Cascade</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-cascade-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="pf-cascade-error"></div>
+          <div class="gp-field">
+            <div class="gp-label">Cascade Name *</div>
+            <input class="gp-input" id="pf-ca-name" placeholder="e.g. Revenue FY26">
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Company Target *</div>
+              <input class="gp-input" id="pf-ca-target" type="number" step="any" placeholder="250">
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Unit *</div>
+              <select class="gp-input" id="pf-ca-unit">
+                <option>Orders</option><option>Revenue</option>
+                <option>Skill Score</option><option>Units Sold</option>
+              </select>
+            </div>
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Period Start *</div>
+              <input class="gp-input" id="pf-ca-start" type="date">
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Period End *</div>
+              <input class="gp-input" id="pf-ca-end" type="date">
+            </div>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-cascade-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="pfSubmitCascade()">Create Cascade</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Assign KPI Modal (HR) ──────────────────────── -->
+    <div class="gp-backdrop" id="pf-kpi-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title" id="pf-kpi-modal-title">Assign KPI</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-kpi-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="pf-kpi-error"></div>
+          <input type="hidden" id="pf-k-id">
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Employee *</div>
+              <select class="gp-input" id="pf-k-employee" onchange="pfReloadObjectives()"></select>
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Cycle *</div>
+              <select class="gp-input" id="pf-k-cycle"></select>
+            </div>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Linked objective</div>
+            <div class="cbx" id="pf-k-objective-cbx">
+              <input class="gp-input" id="pf-k-objective-search" autocomplete="off"
+                     placeholder="Type to search objectives…"
+                     oninput="cbxFilter('pf-k-objective')"
+                     onfocus="cbxFilter('pf-k-objective')"
+                     onkeydown="cbxKey(event,'pf-k-objective')">
+              <input type="hidden" id="pf-k-objective">
+              <div class="cbx-list" id="pf-k-objective-list"></div>
+            </div>
+            <div class="gp-hint">Their own objective, or one held above them. Several people can
+              contribute KPIs to the same objective. Leave blank for none.</div>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">KPI Name *</div>
+            <input class="gp-input" id="pf-k-name" placeholder="e.g. New accounts opened">
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Target *</div>
+              <input class="gp-input" id="pf-k-target" type="number" step="any" placeholder="40">
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Weightage % *</div>
+              <input class="gp-input" id="pf-k-weightage" type="number" step="any" min="0" max="100" placeholder="60">
+              <div class="gp-hint" id="pf-k-weight-hint"></div>
+            </div>
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Unit</div>
+              <select class="gp-input" id="pf-k-unit">
+                <optgroup label="Count &amp; value">
+                  <option>Number</option><option>Percent</option><option>Currency</option>
+                  <option>Crore</option><option>Lakh</option><option>Cases</option><option>Score</option>
+                </optgroup>
+                <optgroup label="Time">
+                  <option>Days</option><option>Hours</option>
+                </optgroup>
+                <optgroup label="Weight">
+                  <option>Grams</option><option>Kilograms</option><option>Quintals</option>
+                  <option>Tonnes</option><option>Pounds</option>
+                </optgroup>
+                <optgroup label="Volume">
+                  <option>Litres</option>
+                </optgroup>
+              </select>
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Direction</div>
+              <select class="gp-input" id="pf-k-direction">
+                <option>Higher is Better</option><option>Lower is Better</option>
+              </select>
+            </div>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Category</div>
+            <select class="gp-input" id="pf-k-category">
+              <option>Financial</option><option>Customer</option><option>Process</option>
+              <option>People</option><option>Learning &amp; Growth</option>
+            </select>
+          </div>
+          <!-- The company cascade is derived from the linked objective above,
+               so there is nothing to ask for here. -->
+          <div class="gp-hint" id="pf-k-cascade-note" style="margin-top:-4px"></div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-kpi-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="pfSubmitKpi()">Save KPI</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Leave Application Modal ──────────────────────── -->
+    <div class="gp-backdrop" id="la-modal">
+      <div class="gp-modal" style="max-width:500px">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Apply for Leave</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('la-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="la-error" style="display:none;margin-bottom:12px;padding:10px 12px;background:var(--red-lt,var(--red-lt));color:var(--red,var(--red));border-radius:var(--r-sm);font-size:var(--fs-base)"></div>
+          <!-- HR on-behalf selector (hidden for regular employees) -->
+          <div class="gp-field" id="la-behalf-row" style="display:none">
+            <div class="gp-label">Apply on behalf of</div>
+            <div style="position:relative">
+              <input class="gp-input" id="la-behalf-search" type="text" placeholder="Search by name or employee ID…" autocomplete="off" oninput="laSearchEmployee(this.value)" style="padding-right:32px">
+              <div id="la-behalf-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);box-shadow:var(--sh2);max-height:200px;overflow-y:auto;z-index:1000"></div>
+            </div>
+            <input type="hidden" id="la-behalf-employee">
+            <div id="la-behalf-selected" style="display:none;margin-top:6px;font-size:var(--fs-sm);color:var(--text3)"></div>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Leave Type *</div>
+            <select class="gp-input" id="la-leave-type" onchange="laPreview()">
+              <option value="">Loading…</option>
+            </select>
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">From Date *</div>
+              <input class="gp-input" id="la-from-date" type="date" onchange="laPreview()">
+            </div>
+            <div class="gp-field" id="la-to-date-row">
+              <div class="gp-label">To Date *</div>
+              <input class="gp-input" id="la-to-date" type="date" onchange="laPreview()">
+            </div>
+          </div>
+          <!-- Balance preview. Filled by laPreview() from preview_leave_request, which
+               reuses Frappe HR's own day-count and balance functions. -->
+          <div id="la-preview" style="display:none;margin:2px 0 10px;padding:9px 12px;border-radius:var(--r-sm);font-size:var(--fs-sm);line-height:1.5"></div>
+          <div class="gp-field" style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+            <input type="checkbox" id="la-half-day" onchange="laToggleHalfDay(); laPreview()" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer">
+            <label for="la-half-day" style="font-size:var(--fs-base);font-weight:500;color:var(--text);cursor:pointer;margin:0">Half Day</label>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Reason</div>
+            <textarea class="gp-input" id="la-reason" rows="3" placeholder="Optional – describe the reason for your leave…" style="resize:vertical;min-height:72px"></textarea>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('la-modal')">Cancel</button>
+          <button class="btn btn-primary" id="la-submit-btn" onclick="submitLeaveApp()">Submit Application</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Expense Claim Modal ───────────────────────── -->
+    <div class="gp-backdrop" id="ec-modal">
+      <div class="gp-modal" style="max-width:480px">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">New Expense Claim</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('ec-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="ec-error" style="display:none;margin-bottom:12px;padding:10px 12px;background:var(--red-lt,var(--red-lt));color:var(--red,var(--red));border-radius:var(--r-sm);font-size:var(--fs-base)"></div>
+          <div class="gp-field">
+            <div class="gp-label">Expense Type *</div>
+            <select class="gp-input" id="ec-expense-type">
+              <option value="">Loading…</option>
+            </select>
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Expense Date *</div>
+              <input class="gp-input" id="ec-expense-date" type="date">
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Amount (₹) *</div>
+              <input class="gp-input" id="ec-amount" type="number" step="0.01" min="0.01" placeholder="0.00">
+            </div>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Purpose / Description</div>
+            <textarea class="gp-input" id="ec-description" rows="3" placeholder="Brief description of the expense…" style="resize:vertical;min-height:72px"></textarea>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('ec-modal')">Cancel</button>
+          <button class="btn btn-primary" id="ec-submit-btn" onclick="submitExpenseClaim()">Submit Claim</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Goal Detail Side Panel ─────────────────────── -->
+    <div id="gp-detail-panel">
+      <div class="gp-panel-hdr">
+        <div style="flex:1;min-width:0">
+          <div id="gp-dp-name" style="font-weight:700;font-size:var(--fs-md);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+          <div id="gp-dp-description" style="font-size:var(--fs-sm);color:var(--text2);margin-bottom:3px;line-height:1.4;display:none"></div>
+          <div id="gp-dp-cascade" style="font-size:var(--fs-xs);color:var(--text3)"></div>
+        </div>
+        <button class="gp-panel-close" onclick="gpCloseDetail()">&times;</button>
+      </div>
+      <div class="gp-panel-body">
+        <!-- Progress block -->
+        <div class="gp-panel-section">
+          <div style="display:flex;align-items:center;gap:16px;margin-bottom:14px">
+            <div id="gp-dp-ring"></div>
+            <div>
+              <div style="font-size:var(--fs-xs);font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Progress</div>
+              <div id="gp-dp-progress-line" style="font-size:var(--fs-lg);font-weight:800;margin-top:2px"></div>
+              <div id="gp-dp-trajectory" style="margin-top:4px"></div>
+            </div>
+            <div style="flex:1"></div>
+            <div id="gp-dp-status"></div>
+          </div>
+          <!-- Info grid: dates + people -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:var(--fs-sm)">
+            <div><div style="color:var(--text3);font-size:var(--fs-xs);margin-bottom:2px">START</div><div id="gp-dp-start" style="font-weight:600"></div></div>
+            <div><div style="color:var(--text3);font-size:var(--fs-xs);margin-bottom:2px">END</div><div id="gp-dp-end" style="font-weight:600"></div></div>
+            <div><div style="color:var(--text3);font-size:var(--fs-xs);margin-bottom:2px">TARGET</div><div id="gp-dp-target" style="font-weight:600"></div></div>
+            <div><div style="color:var(--text3);font-size:var(--fs-xs);margin-bottom:2px">ACTUAL</div><div id="gp-dp-actual" style="font-weight:600"></div></div>
+            <div><div style="color:var(--text3);font-size:var(--fs-xs);margin-bottom:2px">ASSIGNEE</div><div id="gp-dp-assignee" style="font-weight:600"></div></div>
+            <div><div style="color:var(--text3);font-size:var(--fs-xs);margin-bottom:2px">CREATED BY</div><div id="gp-dp-owner" style="font-weight:600"></div></div>
+            <div id="gp-dp-cv-row" style="display:none"><div style="color:var(--text3);font-size:var(--fs-xs);margin-bottom:2px">COMPANY VALUE</div><div id="gp-dp-cv" style="font-weight:600"></div></div>
+            <div id="gp-dp-gt-row" style="display:none"><div style="color:var(--text3);font-size:var(--fs-xs);margin-bottom:2px">GOAL TYPE</div><div id="gp-dp-gt" style="font-weight:600"></div></div>
+          </div>
+        </div>
+        <!-- Editable progress (managers / HR only) -->
+        <div class="gp-panel-section" id="gp-dp-edit-section" style="display:none">
+          <div class="gp-panel-section-title">Update Progress</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="number" class="form-control" id="gp-dp-prog-inp" min="0" step="any" style="max-width:120px" placeholder="Actual value">
+            <span id="gp-dp-prog-unit" style="font-size:var(--fs-sm);color:var(--text3)"></span>
+            <button class="btn btn-primary btn-sm" onclick="gpSaveProgress()">Save</button>
+          </div>
+        </div>
+        <!-- Evidence submit (own goal) -->
+        <div class="gp-panel-section" id="gp-dp-ev-section" style="display:none">
+          <div class="gp-panel-section-title">Submit Evidence</div>
+          <div id="gp-dp-ev-form"></div>
+        </div>
+        <!-- KPIs -->
+        <div class="gp-panel-section">
+          <div class="gp-panel-section-title">KPIs Feeding This Objective</div>
+          <div id="gp-dp-contributors"></div>
+        </div>
+        <!-- Evidence list -->
+        <div class="gp-panel-section">
+          <div class="gp-panel-section-title">Evidence Submitted</div>
+          <div class="gp-evidence-list" id="gp-dp-evidence"></div>
+        </div>
+      </div>
+    </div>
+    <div id="gp-detail-overlay" onclick="gpCloseDetail()" style="display:none;position:fixed;inset:0;z-index:1149;background:rgba(0,0,0,.3)"></div>
+
+  </div><!-- /flex column -->
+
+  <!-- Bottom nav (mobile) -->
+  <nav class="bottom-nav">
+    <div class="bottom-nav-inner">
+      <div class="bnav-item active" data-panel="home" onclick="switchPanel('home',null)">
+        <div class="bnav-icon"><i class=ic-home></i></div>
+        <div>Home</div>
+      </div>
+      <div class="bnav-item" data-panel="attendance" onclick="switchPanel('attendance',null)">
+        <div class="bnav-icon"><i class=ic-calendar></i></div>
+        <div>Attendance</div>
+      </div>
+      <div class="bnav-item" data-panel="finances" onclick="switchPanel('finances',null)">
+        <div class="bnav-icon"><i class=ic-card></i></div>
+        <div>Finances</div>
+      </div>
+    </div>
+  </nav>
+
+</div><!-- /emp-app -->
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loading-overlay"><div class="spinner"></div></div>
+<!-- Toast container -->
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<!-- Employee detail drawer -->
+<!-- One payslip. Drawn from alvoraa_portal.hr_api.get_payslip, which checks the
+     slip is the caller's own. It used to open in the desk, which needed the
+     Employee role to read Salary Slip - the permission that let managers open
+     their team's pay. -->
+<div class="emp-drawer-overlay" id="payslip-drawer-overlay" onclick="closePayslip()"></div>
+<div class="emp-drawer" id="payslip-drawer" role="dialog" aria-modal="true" aria-labelledby="ps-title">
+  <div class="emp-drawer-head">
+    <div class="emp-drawer-av"><i class=ic-money></i></div>
+    <div class="emp-drawer-meta">
+      <div class="emp-drawer-name" id="ps-title">Payslip</div>
+      <div class="emp-drawer-role" id="ps-sub"></div>
+    </div>
+    <button class="emp-drawer-close" onclick="closePayslip()" aria-label="Close"><i class=ic-x></i></button>
+  </div>
+  <div class="emp-drawer-body" id="ps-body"></div>
+</div>
+
+<div class="emp-drawer-overlay" id="emp-drawer-overlay" onclick="closeEmpDrawer()"></div>
+<div class="emp-drawer" id="emp-drawer">
+  <div class="emp-drawer-head">
+    <div class="emp-drawer-av" id="ed-av"></div>
+    <div class="emp-drawer-meta">
+      <div class="emp-drawer-name" id="ed-name"></div>
+      <div class="emp-drawer-role" id="ed-role"></div>
+    </div>
+    <button class="emp-drawer-close" onclick="closeEmpDrawer()"><i class=ic-x></i></button>
+  </div>
+  <div class="emp-drawer-body" id="ed-body">
+    <div style="padding:40px;text-align:center;color:var(--text3)">Select an employee to view details.</div>
+  </div>
+</div>
+
+<!-- Goal detail drawer -->
+<div class="emp-drawer-overlay" id="goal-drawer-overlay" onclick="closeGoalDrawer()"></div>
+<div class="emp-drawer" id="goal-drawer">
+  <div class="emp-drawer-head" id="gd-head" style="background:var(--primary)">
+    <div style="flex:1;min-width:0">
+      <div style="font-size:var(--fs-lg);font-weight:700;color:var(--surface)">Goal Details</div>
+    </div>
+    <button class="emp-drawer-close" onclick="closeGoalDrawer()"><i class=ic-x></i></button>
+  </div>
+  <div class="emp-drawer-body" id="gd-body">
+    <div style="padding:40px;text-align:center;color:var(--text3)">Loading...</div>
+  </div>
+</div>
+

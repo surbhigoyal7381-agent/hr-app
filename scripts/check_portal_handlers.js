@@ -12,6 +12,7 @@
  * Usage: node scripts/check_portal_handlers.js [file.html ...]
  */
 const fs = require("fs"), path = require("path"), vm = require("vm");
+const { readPortalSource } = require("./lib/portal_source");
 
 const EVENTS = ["onclick=", "onchange=", "oninput=", "onsubmit=", "onkeyup=",
   "onkeydown=", "onfocus=", "onblur="];
@@ -59,7 +60,9 @@ function stub(name) {
 }
 
 function check(file) {
-  let html = fs.readFileSync(file, "utf8").replace(/^﻿/, "");
+  // Follows the page's Jinja includes (slice 034 US-10, AC-37). Reading the
+  // page alone would now find a short shell with no handlers in it at all.
+  let html = readPortalSource(file);
   const blocks = [...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)]
     .filter((m) => !m[1].includes("src=")).map((m) => m[2]);
   if (!blocks.length) return [];

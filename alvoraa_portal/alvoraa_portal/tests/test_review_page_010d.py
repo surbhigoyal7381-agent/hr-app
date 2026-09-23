@@ -16,13 +16,13 @@ import re
 from frappe.tests.utils import FrappeTestCase
 
 import alvoraa_portal
+from alvoraa_portal.tests import portal_source
 
 
 def _page():
-	path = os.path.join(os.path.dirname(alvoraa_portal.__file__), "www", "hrms-employee.html")
-	# Read it the way Python reads a source file, BOM and all.
-	with open(path, encoding="utf-8-sig") as f:
-		return f.read()
+	# Read it the way Python reads a source file, BOM and all, and following
+	# the page's Jinja includes (slice 034 US-10, AC-37).
+	return portal_source.read_page(encoding="utf-8-sig")
 
 
 def _between(page, start, end):

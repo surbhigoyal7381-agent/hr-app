@@ -1,1 +1,2 @@
 frappe
+anthropic>=1.8,<2

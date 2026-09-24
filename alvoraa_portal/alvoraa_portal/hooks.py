@@ -136,6 +136,9 @@ doc_events = {
     # with one SQL statement and writes the rest with db_update() - so hooks on
     # that child doctype look correct and never fire.
     "User": {
+        # Slice 043 (V-6): a user may not hold an AI intake mailbox unless they
+        # are a sales user without an HR role. Silent on sites without the field.
+        "validate":     "alvoraa_portal.ai_leads.guards.validate_user",
         "after_insert": "alvoraa_portal.module_access.apply_on_user_insert",
         "on_update":    ["alvoraa_portal.hr_api.invalidate_portal_context_cache",
                          "alvoraa_portal.module_access.apply_on_user_update"],
@@ -207,6 +210,11 @@ doc_events = {
     "Shift Location": {
         "validate": "alvoraa_portal.field_checkin.refuse_small_radius",
     },
+    # Slice 043 (SEC-8, V-1 to V-7): which mailboxes AI lead intake may read.
+    # Refused on the document, so the desk, the REST API and imports all obey it.
+    "Email Account": {
+        "validate": "alvoraa_portal.ai_leads.guards.validate_email_account",
+    },
 }
 
 # ── Row-level security ───────────────────────────────────────────────────────
@@ -270,6 +278,11 @@ scheduler_events = {
     "cron": {
         "30 6 * * *": [
             "alvoraa_portal.data_review.enqueue_morning_checks",
+        ],
+        # Slice 043: enquiry emails into CRM leads. Returns before any query on a
+        # site that has not switched it on; 25 emails at most per run (OPS-2).
+        "*/5 * * * *": [
+            "alvoraa_portal.ai_leads.intake.sweep",
         ],
     },
 }

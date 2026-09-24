@@ -372,6 +372,20 @@ ERPNEXT_FEATURES["whatsapp"] = {
     "erpnext": True,
 }
 
+# AI lead intake (slice 043): chosen sales mailboxes read by AI, real enquiries
+# turned into Frappe CRM leads with the columns filled. An add-on to the CRM, not
+# part of it: it is priced separately, sends email text to an outside model
+# provider, and needs the tenant's acceptance of that. No app and no module of
+# its own - the code lives in alvoraa_portal and the sweep checks this key.
+ERPNEXT_FEATURES["crm_ai_intake"] = {
+    "desc": "Reads chosen sales mailboxes and turns real enquiries into CRM leads, columns filled by AI",
+    "icon": "✉️",
+    "label": "AI lead intake",
+    "module_defs": [],
+    "erpnext": True,
+    "requires": ["crm"],
+}
+
 # Two things called "CRM" in one catalogue would be confusing, so ERPNext's own
 # Lead/Opportunity module says which one it is. The KEY stays `erp_crm`: tenants
 # already hold it in their `features` list, and renaming it would lock them out.
@@ -463,6 +477,9 @@ TENANT_DOCTYPES = [
     # Slice 013 step 6: one row a day of how the tenant's field app was used,
     # numbers only. The tenant's own, read by its HR.
     "Alvoraa Field App Daily Count",
+    # Slice 043: what the tenant's AI lead intake did with each of its own emails.
+    # The tenant's record, read by its System Manager - tenant-side.
+    "Alvoraa AI Call Log",
 ]
 
 REQUIRED = [k for k, v in FEATURES.items() if v.get("required")]
@@ -706,7 +723,9 @@ def requires_feature(name):
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
             if not has_feature(name):
-                label = FEATURES.get(name, {}).get("label", name)
+                # feature_spec, not FEATURES: a gated ERPNext-side feature (the CRM
+                # add-ons) must be named by its own label, not its key.
+                label = feature_spec(name).get("label", name)
                 frappe.throw(
                     _("{0} is not included in your plan.").format(label),
                     frappe.PermissionError,

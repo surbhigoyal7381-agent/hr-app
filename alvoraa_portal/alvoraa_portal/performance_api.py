@@ -20,6 +20,7 @@ from alvoraa_goals.permissions import get_effective_manager, get_hr_manager_empl
 
 from alvoraa_goals.controllers.kpi import MAX_RATING, TOTAL_WEIGHTAGE, rating_from_attainment
 import alvoraa_goals.review_items as review_items
+from alvoraa_portal import growth_api
 from hrms.alvoraa_hr_core.access import (
     permitted_companies, permitted_employees, refuse, refuse_hr_step_in_line, refuse_own_rating,
     subjects_in_my_line,
@@ -4406,7 +4407,19 @@ def save_review_page(appraisal, page_key, page_data_json):
     if page_key not in done:
         done.append(page_key)
 
-    ext.page_data       = json.dumps(all_pd)
+    # 045 / OPS-W4. `page_data` is a MariaDB TEXT - 65,535 BYTES, not
+    # characters - and `sql_mode` is strict, so an oversize write RAISES
+    # rather than truncating. Measured on this project's own bench: 21,845
+    # Devanagari characters fit, 21,846 raise DataError 1406.
+    #
+    # Throwing is the better of the two failures, but this write is an
+    # AUTOSAVE: unhandled, an employee keeps typing while nothing saves and
+    # nothing tells them. So the budget is checked first, with a sentence that
+    # says what to do next and confirms that what was already saved is safe.
+    serialised = json.dumps(all_pd)
+    growth_api.check_page_data_fits(serialised)
+
+    ext.page_data       = serialised
     ext.pages_completed = json.dumps(done)
     if ext.review_status == "Not Started":
         ext.review_status = "Employee Review"

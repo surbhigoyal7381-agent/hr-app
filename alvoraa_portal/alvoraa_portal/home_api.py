@@ -54,6 +54,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, get_first_day, getdate, today
 
+from alvoraa_portal.call_cache import close_cache, holiday_list_for, once, open_cache
 from alvoraa_portal.frame_api import ME_FIELDS
 
 # Every top-level key `get_home` returns, for every persona. The set does not
@@ -211,8 +212,6 @@ def _gap_days(employee, joined, date_):
 
 	Four queries, whatever the window. Never one per day.
 	"""
-	from erpnext.setup.doctype.employee.employee import get_holiday_list_for_employee
-
 	date_ = getdate(date_)
 	start = get_first_day(date_)
 	for _i in range(GAP_MONTHS - 1):
@@ -225,8 +224,7 @@ def _gap_days(employee, joined, date_):
 
 	# Rule 3 - the employee's OWN list, found the way payroll finds it.
 	off = set()
-	holiday_list = get_holiday_list_for_employee(employee, raise_exception=False,
-	                                             as_on=date_)
+	holiday_list = holiday_list_for(employee, date_)
 	if holiday_list:
 		off = {str(h.holiday_date) for h in frappe.get_all(
 			"Holiday", filters={"parent": holiday_list,
@@ -294,27 +292,16 @@ def _span(from_date, to_date, start, end):
 # ── The team card: counts, and the minimum group size ────────────────────────
 
 
-def _peers(me_row):
-	"""The people a plain employee is shown as "in today".
-
-	**People with the same manager, and no department fallback** (D-3, AC-55).
-	Somebody with no manager sees no peer card at all, rather than the whole
-	department - which is what the old week-presence endpoint did, and is why it
-	is deleted in the commit that replaces this card (SEC-9 / AC-59).
-	"""
-	if not me_row.get("reports_to"):
-		return []
-	return frappe.get_all(
-		"Employee",
-		filters={"reports_to": me_row["reports_to"], "status": "Active",
-		         "name": ["!=", me_row["name"]]},
-		pluck="name", limit_page_length=0)
-
-
 def _reports(employee):
-	return frappe.get_all(
+	"""This person's active direct reports, asked once per call.
+
+	`_team_today` and `_goals` both want the same list, and `_team_today` asked
+	for it twice on its own - three identical statements on a manager's Home
+	(measured, 044 D2). The memo lives for one `get_home` and no longer.
+	"""
+	return once(("reports", employee), lambda: frappe.get_all(
 		"Employee", filters={"reports_to": employee, "status": "Active"},
-		pluck="name", limit_page_length=0)
+		pluck="name", limit_page_length=0))
 
 
 def _hr_scope():
@@ -325,35 +312,99 @@ def _hr_scope():
 	"""
 	from hrms.alvoraa_hr_core.access import permitted_employees
 
-	return sorted(permitted_employees() or set())
+	return once("hr_scope", lambda: sorted(permitted_employees() or set()))
 
 
-def _presence_counts(names, date_):
+def _filter_list(filters):
+	"""A Frappe filter dict as a list of conditions, so two can be added together.
+
+	A dict can only hold one condition per field, so "everyone HR may see" and
+	"not me" cannot both be written on `name`. As a list they can, and
+	`permitted_employee_filters()`' fail-closed `["name", "in", []]` survives
+	the addition rather than being overwritten by it - which is the whole reason
+	this is not a `dict.update()`.
+	"""
+	out = []
+	for field, value in (filters or {}).items():
+		if isinstance(value, (list, tuple)) and len(value) == 2:
+			out.append([field, value[0], value[1]])
+		else:
+			out.append([field, "=", value])
+	return out
+
+
+def _scope_filters(me, me_row, is_hr):
+	"""(basis, conditions) - the group whose presence this caller may see.
+
+	The same three groups as before, said as **conditions on Employee** rather
+	than as a list of names read into Python. That is what makes the card honest
+	above a thousand people: see `_presence_counts`.
+	"""
+	if is_hr:
+		from hrms.alvoraa_hr_core.access import permitted_employee_filters
+
+		conds = _filter_list(permitted_employee_filters())
+		conds += [["status", "=", "Active"], ["name", "!=", me["employee"]]]
+		return "hr", conds
+	if _reports(me["employee"]):
+		return "team", [["reports_to", "=", me["employee"]], ["status", "=", "Active"]]
+	if me_row.get("reports_to"):
+		# The peer card: same manager, not me (D-3, AC-55). No department
+		# fallback - somebody with no manager sees no card at all.
+		return "peers", [["reports_to", "=", me_row["reports_to"]],
+		                 ["status", "=", "Active"],
+		                 ["name", "!=", me_row["name"]]]
+	return "none", None
+
+
+def _presence_counts(conds, date_):
 	"""In, away and still to come - three numbers about a group of people.
 
-	Nothing about any one of them. The only thing read is today's Attendance
-	status, and it is collapsed to three buckets before it leaves this function,
-	so a leave TYPE cannot reach a caller even by accident.
+	**Counted in the database, and never capped** (044 D6). The first version
+	read every name in the group into Python and shipped them back as an
+	`IN (...)`, capped at `LIST_CAP * 20` = 1,000 names. At 1,001 people that
+	cap did not fail and it did not warn: it counted the first thousand and
+	drew the answer as if it were the whole tenant. A quietly wrong number on a
+	screen is worse than no number, because nobody goes looking for it.
+
+	Here the group is a condition, the database does the counting, and the
+	group's size is the sum of the three buckets - so the numbers and the size
+	the minimum-group rule is applied to can never come from different
+	populations.
+
+	One statement, whatever the headcount. Nothing about any one person leaves
+	this function: today's Attendance status is collapsed into three buckets
+	inside the SQL itself, so a leave TYPE cannot reach a caller even by
+	accident.
 	"""
-	if not names:
-		return {"in": 0, "away": 0, "due": 0}
-	marked = {}
-	for row in frappe.get_all(
-		"Attendance",
-		filters={"employee": ["in", names], "docstatus": 1, "attendance_date": date_},
-		fields=["employee", "status"], limit_page_length=0,
-	):
-		marked[row.employee] = row.status
+	from frappe.query_builder.functions import Count
+
 	counts = {"in": 0, "away": 0, "due": 0}
-	for name in names:
-		status = marked.get(name)
+	if not conds:
+		return counts, 0
+	Emp = frappe.qb.DocType("Employee")
+	Att = frappe.qb.DocType("Attendance")
+	rows = (
+		frappe.qb.from_(Emp)
+		.left_join(Att)
+		.on((Att.employee == Emp.name) & (Att.attendance_date == date_)
+		    & (Att.docstatus == 1))
+		.where(Emp.name.isin(
+			frappe.qb.get_query("Employee", fields=["name"], filters=conds)))
+		.select(Att.status, Count("*"))
+		.groupby(Att.status)
+	).run()
+	group = 0
+	for status, n in rows:
+		n = int(n or 0)
+		group += n
 		if status in ("Present", "Work From Home"):
-			counts["in"] += 1
-		elif status:          # On Leave, Absent, Half Day - all just "away"
-			counts["away"] += 1
+			counts["in"] += n
+		elif status:
+			counts["away"] += n   # On Leave, Absent, Half Day - all just "away"
 		else:
-			counts["due"] += 1
-	return counts
+			counts["due"] += n
+	return counts, group
 
 
 def _suppress(counts, group):
@@ -401,26 +452,19 @@ def _team_today(me, me_row, is_hr, date_):
 	"""The team card, for whichever kind of caller is asking.
 
 	A manager sees their own reports. An HR caller sees the people they look
-	after, through `permitted_employees()`. Everybody else sees their peers, and
-	somebody with no manager sees nothing at all.
+	after, through `permitted_employee_filters()` - the same rule
+	`permitted_employees()` is built on, pushed into the query instead of read
+	into a list. Everybody else sees their peers, and somebody with no manager
+	sees nothing at all.
 	"""
-	basis = "peers"
-	names = []
-	if is_hr:
-		basis = "hr"
-		names = [n for n in _hr_scope() if n != me["employee"]]
-	elif _reports(me["employee"]):
-		basis = "team"
-		names = _reports(me["employee"])
-	else:
-		names = _peers(me_row)
-	if not names:
+	basis, conds = _scope_filters(me, me_row, is_hr)
+	counts, group = _presence_counts(conds, date_) if conds else ({}, 0)
+	if not group:
 		# Not an empty card frame and not a silent zero: nothing is drawn
 		# (042 AC-33, AC-55).
 		return {"in": None, "away": None, "due": None, "basis": "none",
 		        "suppressed": False}
-	counts = _presence_counts(names[:LIST_CAP * 20], date_)
-	shown = _suppress(counts, len(names))
+	shown = _suppress(counts, group)
 	shown["basis"] = basis
 	return {k: shown.get(k) for k in TEAM_TODAY_KEYS}
 
@@ -611,6 +655,21 @@ def get_home():
 	if user == "Guest":
 		frappe.throw(_("Please sign in."), frappe.PermissionError)
 
+	# One memo, for this call and no longer (044 R1). Home asks four questions
+	# more than once - the caller's holiday list, their company, their reports,
+	# and for HR the permitted-employee list - and nothing inside this call
+	# writes, so the answer cannot change between two of them. It is torn down
+	# in the `finally` below whether this returns or raises: a scope that
+	# outlived the call would be a permission bug, not a cache.
+	open_cache()
+	try:
+		return _build_home(user)
+	finally:
+		close_cache()
+
+
+def _build_home(user):
+	"""Everything `get_home` returns. Split out only so the memo has a `finally`."""
 	from alvoraa_portal.hr_api import (
 		_ledger_leave_balances,
 		_own_upcoming_holidays,

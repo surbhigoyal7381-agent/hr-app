@@ -333,9 +333,14 @@ def _own_upcoming_holidays(employee, date_):
 
     Returns (holidays, note). note is None when a list was found.
     """
-    from erpnext.setup.doctype.employee.employee import get_holiday_list_for_employee
+    # `holiday_list_for` is ERPNext's `get_holiday_list_for_employee` with a
+    # memo that lives for one call and only when a call opened one (044 R1).
+    # Home asks this question twice - the attendance-gap rule and this card -
+    # for the same person on the same day. Every other caller behaves exactly
+    # as before: with no memo open the lookup simply runs.
+    from alvoraa_portal.call_cache import holiday_list_for
 
-    holiday_list = get_holiday_list_for_employee(employee, raise_exception=False, as_on=date_)
+    holiday_list = holiday_list_for(employee, date_)
     if not holiday_list:
         return [], _("No holiday list is assigned to you yet. Ask HR to set one up.")
 

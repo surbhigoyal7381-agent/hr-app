@@ -265,33 +265,60 @@ class TestNoModuleLevelStateAndNoIgnorePermissions(FrappeTestCase):
 			#     rows, filtered to their own employee id. The readable policies
 			#     beside it are a get_list, which is where the permission
 			#     question actually is.
-			"inbox_api.py": ("frappe.get_all",) * 3,
-			# home_api (slice 042). Ten reads and one count, and all but three
-			# are the CALLER'S OWN record:
+			# ...plus the four `frappe.qb.from_` queries in the goal-updates
+			# part. They were always here; this test could not see them until
+			# 044 R4 added `frappe.qb.get_query` to the watched list and the
+			# blind spot became obvious. Two count them and two list them, and
+			# all four take the SAME scope subquery out of the part's one filter
+			# expression - which is the control, not the call.
+			"inbox_api.py": ("frappe.get_all",) * 3 + ("frappe.qb.from_",) * 4,
+			# home_api (slice 042, re-counted for 044 R1/D6). EIGHT reads, one
+			# count and one aggregate, and all but two are the CALLER'S OWN
+			# record:
 			#
 			#   own: Shift Assignment, Employee Checkin, Holiday, Attendance,
 			#     Leave Application, Attendance Request, Individual Goal - every
 			#     one filtered to `employee = the caller's own Active record`,
 			#     which `_me` resolved. get_list would add nothing: a tenant
 			#     cannot narrow a person out of their own attendance.
-			#   `_peers` / `_reports` - Employee ids by `reports_to`, used only
-			#     to build a group to COUNT. No name and no field leaves them.
-			#   `_presence_counts` - today's Attendance status for that group,
-			#     collapsed to in / away / due before it leaves the function, so
-			#     a leave type cannot reach a caller even by accident. This is
-			#     the one that is deliberately an aggregate rather than a list.
+			#   `_reports` - Employee ids by `reports_to`, used only to decide
+			#     which group the team card is about. No name and no field
+			#     leaves it.
+			#   `_presence_counts` - the team card, now ONE aggregate instead of
+			#     a name list plus a lookup (044 D6). The group is a condition
+			#     on Employee built from `permitted_employee_filters()`, the
+			#     shared scope helper, and today's Attendance status is
+			#     collapsed into in / away / due inside the SQL - so no name, no
+			#     row and no leave type can reach a caller even by accident.
+			#     It reads `frappe.qb.get_query` to build that condition and
+			#     `frappe.qb.from_` to count against it. **Both are new to this
+			#     list.** They bypass the permission layer exactly as
+			#     `frappe.get_all` does, and until 044 this test did not watch
+			#     them, so a scope written in the query builder was an
+			#     undeclared route. It is declared now.
 			#   the `frappe.db.count` - the team goal summary, one integer over
 			#     a scope `permitted_employees()` already decided.
 			#
+			# `_peers` is gone: the peer group is one of the three conditions
+			# `_scope_filters` returns, so it is no longer a separate read.
+			#
 			# The HR scope itself is never read here: it comes from
-			# `permitted_employees()`, which is the shared definition.
-			"home_api.py": ("frappe.get_all",) * 10 + ("frappe.db.count",),
+			# `permitted_employees()` and `permitted_employee_filters()`, which
+			# are the shared definitions.
+			"home_api.py": (("frappe.get_all",) * 8 + ("frappe.db.count",)
+			                + ("frappe.qb.get_query", "frappe.qb.from_")),
 			# staff_api: the staff list itself and its total. Both take the same
 			# filters dict, built by the shared scope helper.
 			"staff_api.py": ("frappe.db.count", "frappe.get_all"),
 		}
+		# `frappe.qb.get_query` and `frappe.qb.from_` join the list in 044.
+		# A query written in the query builder skips Frappe's permission layer
+		# just as `frappe.get_all` does, and this test used to walk past every
+		# one of them - so "no undeclared bypass" was not true for the four in
+		# the Inbox's goal-updates part. It is true now.
 		watched = ("frappe.get_all", "frappe.db.get_all", "frappe.db.count",
-		           "frappe.db.sql", "frappe.db.sql_list", "frappe.db.multisql")
+		           "frappe.db.sql", "frappe.db.sql_list", "frappe.db.multisql",
+		           "frappe.qb.get_query", "frappe.qb.from_")
 
 		for name, path in _module_files():
 			found = []

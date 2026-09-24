@@ -493,3 +493,82 @@ them to `frappe.db.count` or `frappe.qb`:
 `hrms/hr/doctype/goal/goal.py:218` counts `{"parent_goal": …}` with **no status filter at
 all**, while the list at `:191` filters `status != "Archived"`. So the "X of Y Completed"
 denominator counts archived children the tree does not draw. Upstream HRMS code. **P3.**
+
+---
+
+# 13. A regression the full suite found — HR waits for a manager who does not exist
+
+**P1. Found 2026-09-24 by running the whole `alvoraa_portal` suite rather than only Wave
+4's own modules. It is not in Wave 4's tests, which is why nobody saw it.**
+
+## 13.1 What happens
+
+Five tests in the **existing** `test_attendance_correction` module now error:
+
+```
+test_a_decided_one_leaves_the_queue
+test_the_same_one_cannot_be_decided_twice
+test_a_declined_request_does_not_look_like_a_waiting_one
+test_approving_actually_corrects_the_day
+test_declining_without_a_reason_is_refused
+```
+
+All five with the same refusal, from `decide()`:
+
+> `PermissionError: This is still with their manager until 2026-09-26. You can decide it
+> as HR from then, counted as two working days on this person's own holiday list.`
+
+**Read the message carefully: "their manager", with no name.** That is
+`_manager_user_for()` returning `None`. The fixture's `person()`
+(`test_attendance_correction.py:187`) creates employees with **no `reports_to` at all**.
+
+So: **for an employee with nobody recorded as their manager, Wave 4 makes HR wait two
+working days for a manager who does not exist.** Nobody can act for two days, and the
+sentence tells the user to wait for a person the product cannot name.
+
+## 13.2 Why this matters more than five red tests
+
+The engineer's own finding 1 (section 7a) says it plainly: **"five of the nine have no
+manager recorded — the ordinary state of most people in a shop."** So this is not an edge
+case in a fixture. It is the common case on a shop floor, and today HR can decide those
+corrections straight away.
+
+`decided_as()` gives an HR caller `"HR"` whenever they are not the requester's manager —
+and somebody with no manager has no manager, so every HR decision on them takes the wait.
+
+## 13.3 Not fixed here, and deliberately not papered over
+
+Two things could be changed and **only one of them is right**:
+
+1. **Change the product** so the wait does not apply when there is no manager to wait
+   for. The wait exists to give the manager first refusal; with no manager there is
+   nobody to give it to. **This is my recommendation.**
+2. **Change the five old tests** to give their people a manager. That would make the
+   suite green and leave the defect in the product for a real shop to find.
+
+**I did not do either.** Option 2 is bending a test until it passes, which is the thing
+this file keeps saying not to do, and option 1 changes product behaviour, which is the
+engineer's call and Surbhi's decision — answer 5 said "HR acts from day three" and did
+not say what happens when there is no manager. **Owner: `hrms-fullstack-engineer` for the
+fix, `hrms-business-analyst` if AC-81 needs a clause for the no-manager case.**
+
+## 13.4 The site-config trap that hid it, and how the run was made honest
+
+The first full-suite run gave **150 errors, 145 of them
+`ValidationError: Throttled`** — Frappe caps new `User` records at sixty an hour, and the
+suite makes far more. `fixtures_scale_044`'s docstring already names the fix, and it had
+never been applied to `test045`:
+
+```
+bench --site test045 set-config -p throttle_user_limit 5000
+```
+
+**The `-p` matters.** Without it the value is stored as the string `"5000"` and
+`throttle_user_creation` then dies with
+`TypeError: '>' not supported between instances of 'int' and 'str'`, which takes out 41
+of 42 tests in a way that looks nothing like a throttle. Both mistakes were made here in
+one sitting; they are written down so the next person makes neither.
+
+**So the full-suite numbers from that first run are not a result and must not be quoted.**
+The five failures above were re-run **alone, on a clean throttle setting**, and reproduce
+exactly. **The whole suite still needs one clean run** — see the hand-off.

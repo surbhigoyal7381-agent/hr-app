@@ -25,6 +25,15 @@
  *   bench --site <site> serve --port 8000 &           # your own site
  *   PROBE_USR=... PROBE_PWD=... node scripts/browser_check_time_pay.js
  *
+ * **Give the probe its OWN login, not a test fixture's person.** The preview
+ * page needs `portal_preview` in the site config and a System Manager role, and
+ * the first run of this script borrowed a fixture employee and granted him one.
+ * Two tests in `test_time_api_043` then failed - he could suddenly open a
+ * colleague's month, because System Manager may review - and they looked like
+ * permission bugs in code that had not changed. A login is shared state on a
+ * site. The fixture now sets its roles exactly, which fixes it from the other
+ * end, but borrowing a fixture person is still the wrong thing to do.
+ *
  * It prints a line per check and exits non-zero if any fails.
  */
 

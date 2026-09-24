@@ -84,14 +84,32 @@ def _ensure(doctype, name, **values):
 
 
 def _user(local, roles=("Employee",)):
+	"""A login with EXACTLY these roles - strays removed, not just added.
+
+	This used to only add roles, and that is not the same thing. A login is
+	shared state on a site: something else granted this one System Manager
+	between two runs of this file, `_may_review()` went true, and two tests
+	about who may open a colleague's month failed for a reason that had nothing
+	to do with the code. The tests were right and the fixture was not owning
+	its own state.
+
+	`TestTheFixtureOwnsItsOwnRoles` asserts the result, so the day it happens
+	again the failure says what happened instead of looking like a permission
+	bug.
+	"""
 	email = "s043t.%s@example.com" % local
 	if not frappe.db.exists("User", email):
 		doc = frappe.get_doc({"doctype": "User", "email": email,
 		                      "first_name": local.title(),
-		                      "send_welcome_email": 0,
-		                      "roles": [{"role": r} for r in roles]})
+		                      "send_welcome_email": 0})
 		doc.flags.ignore_permissions = True
 		doc.insert(ignore_permissions=True)
+	doc = frappe.get_doc("User", email)
+	doc.set("roles", [])
+	for role in roles:
+		doc.append("roles", {"role": role})
+	doc.flags.ignore_permissions = True
+	doc.save(ignore_permissions=True)
 	frappe.db.set_value("User", email, "module_profile", None,
 	                    update_modified=False)
 	frappe.db.delete("Block Module", {"parent": email, "parenttype": "User"})
@@ -434,6 +452,36 @@ class TestWhoMayCallIt(TimeFixture):
 		frappe.set_user(self.rahul_login)
 		with self.assertRaises(frappe.PermissionError):
 			self.time(employee=self.outsider)
+
+
+class TestTheFixtureOwnsItsOwnRoles(TimeFixture):
+	"""The guard for the way this file broke once.
+
+	Every test about who may open whose month rests on Rahul being a plain
+	employee. A login is shared state on a site, and something else on this
+	machine granted this one System Manager between two runs - `_may_review()`
+	went true, and two tests failed looking like permission bugs in code that
+	had not changed.
+
+	`_user` now sets the role list exactly. This says so out loud, so the next
+	time it happens the failure names the cause.
+	"""
+
+	def test_rahul_is_a_plain_employee(self):
+		frappe.set_user(self.rahul_login)
+		roles = set(frappe.get_roles(self.rahul_login))
+		self.assertIn("Employee", roles)
+		for wider in ("System Manager", "HR Manager", "HR User"):
+			self.assertNotIn(
+				wider, roles,
+				"Rahul has picked up %s. Every test in this file about who may "
+				"open whose month depends on him not having it." % wider)
+
+	def test_he_may_not_review(self):
+		"""The thing the role actually changes, asserted directly."""
+		from alvoraa_portal.attendance_correction import _may_review
+		frappe.set_user(self.rahul_login)
+		self.assertFalse(_may_review())
 
 
 class TestSomebodyElsesMonthCarriesNothingElse(TimeFixture):

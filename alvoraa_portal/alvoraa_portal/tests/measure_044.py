@@ -54,6 +54,7 @@ def _calls():
 	"""The calls a portal page actually makes, each as (name, thunk)."""
 	from alvoraa_portal import (
 		frame_api,
+		growth_api,
 		home_api,
 		hr_api,
 		inbox_api,
@@ -91,6 +92,17 @@ def _calls():
 		# becoming two per person - which is exactly what a two-list rewrite is
 		# most likely to break.
 		("get_team", lambda: team_api.get_team()),
+		# Slice 045, Wave 4. The Growth screen's one call. Section 9 of the
+		# implementation notes said this could not be measured "because there
+		# is no such endpoint yet" - there is now, so the gap closes here
+		# rather than staying an unmeasured number in the budget.
+		#
+		# **An OWN-RECORD call**, like `get_time` and `get_pay`: it reads the
+		# caller's own goals, their KPIs and their own review. So the number to
+		# watch is not the count, it is whether the count MOVES between twenty
+		# people and 981. If it does, something in it is reading the tenant
+		# rather than the caller.
+		("get_growth", lambda: growth_api.get_growth()),
 	]
 
 

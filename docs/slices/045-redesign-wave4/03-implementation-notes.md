@@ -3,10 +3,10 @@ slice: 045-redesign-wave4
 artifact: 03-implementation-notes
 author: hrms-fullstack-engineer
 date: 2026-09-24
-status: partial — the server side of the defect fixes, the decision capacity, the Team
-  two-section matrix, the Growth data model and the directory are built and tested
-  locally. The screens are NOT built. Local only: not pushed, not merged into `dev`,
-  no server, no production, no `docker cp`.
+status: the server side AND the screens are built and tested locally. Growth, Team
+  and People are drawn; the three jsdom tests that had never run, run. See section 15.
+  Local only: not pushed, not merged into `dev`, no server, no production, no
+  `docker cp`.
 bench: own container `hrlocal-045`, own site `test045`, bind-mounted apps from this
   worktree. `hrlocal-bench` not used. Measurement sites `test044` / `test044s` mounted
   read-only in intent and not rebuilt.
@@ -18,10 +18,10 @@ bench: own container `hrlocal-045`, own site `test045`, bind-mounted apps from t
 
 **Three things you should know before the good parts.**
 
-1. **The screens are not built.** This is server side, the data model and the tests.
-   Growth, Team and People still draw from the old panels. Surbhi's answer 3 said the
-   wizard's look waits for a short design pass; the rest of the screens are simply not
-   done yet in this session.
+1. ~~**The screens are not built.**~~ **Built 2026-09-24 night — see section 15.**
+   Growth, Team and People are drawn, and the People directory is open to employees.
+   What is still not built is the **person sheet** behind five of the Team actions
+   (§15.1), and the wizard's design pass has still not happened (§15.6).
 2. **`get_manager_dashboard` still sends an `IN (...)` of the drawn ids** for
    "on leave today". The raw SQL is gone and both privacy fields are gone, but the id
    list is not, and AC-14 asks for a subquery. That is a **declared trade-off** with a
@@ -283,7 +283,7 @@ working, however long it has been. Killing it cost a full re-run.
 | Gap | Label |
 |---|---|
 | `on_leave_today` keeps an id list instead of a subquery | **intentional trade-off** — the count must equal the drawn list; `team_api` supersedes the function |
-| The screens are not built | **temporary debt** — removed by the screen work, with the wizard waiting on the design pass |
+| ~~The screens are not built~~ | **Paid off 2026-09-24 night** — section 15. What remains is the person sheet, §15.12 |
 | ~~No `test044` measurement~~ | **Paid off 2026-09-24** — section 11 |
 | No `get_growth` measurement, because there is no `get_growth` | **temporary debt** — removed when the Growth screen is built; §14's Growth budget stays an unmeasured number until then |
 | `get_inbox`'s query count is not flat between the two sites | **not this slice's debt** — `get_inbox` is untouched by Wave 4. Logged for Wave 5, P3 (§11.5) |
@@ -823,3 +823,529 @@ it first.
 * **A fixture that writes to a shared company is a trap I walked into once today.** The
   lesson is in `test_count_matches_list_045`'s docstring rather than in a person's head:
   borrow existing people, do not hire new ones.
+---
+
+# 15. The screens — 2026-09-24 night (engineer)
+
+**Section 1 said "the screens are not built" and section 10 called it temporary
+debt. This is that debt paid.** Growth, Team and People are drawn. The three
+jsdom tests that had never run, run.
+
+**Local only. Not pushed, not merged into `dev`, no server, no production, no
+`docker cp`.** Own container `hrlocal-045`, own site `test045`, apps
+bind-mounted from this worktree. `hrlocal-bench` not used. One
+`bench run-tests` at a time throughout.
+
+## 15.1 Bad news first
+
+1. **Four of the eleven Team actions lead to a screen that does not exist**, so
+   they are **listed** on the person's sheet rather than offered as a button:
+   `open_record`, `see_presence`, `see_scorecard`, `invite_or_block_phone` and
+   `cancel_deduction`. Hiding them would be a lie about the caller's access; a
+   button that goes nowhere is worse than a sentence saying where to go. The
+   person sheet (AC-19, AC-79) is a piece Wave 4 did not build and this session
+   did not build either. **Declared, not hidden.**
+2. **I built a second staff-list screen and then deleted it.** `next-people.js`
+   existed for about twenty minutes. The frame already draws the staff list,
+   with race-condition handling and escaping that `next_frame_test.js` pins, and
+   the panel seam would have taken the route over and left that code dead and
+   that test asserting nothing. **People is the frame's existing screen, widened
+   — not a new one beside it.**
+3. **The design pass on the wizard still has not happened.** §15.6 says exactly
+   what it may and may not change.
+4. **The wizard has no Send button**, and that is a finding rather than an
+   omission: the submit path stores a self-rating on a **KPI** copy and only a
+   comment on a **goal** copy, so Surbhi's "the self-review rates goals" has
+   nowhere to land yet. **§15.11a.** Wiring it anyway would have dropped every
+   goal rating silently.
+
+## 15.2 What a person can now see and do
+
+| Screen | Before this session | Now |
+|---|---|---|
+| **Team** | Wave 1's placeholder sentence | Two sections, **"Your team (N)"** and **"You cover (N)"**, each with its own count; tapping a person opens a sheet listing what the caller may do for **that** person |
+| **Growth** | the placeholder | The cycle, the goals with their KPI figures, the approved figure and the waiting one as two separate lines, a trajectory chip in words with the date it was worked out, "Needs attention (N)", and a way into the self-review |
+| **Self-review** | the old wizard on the old page | Five steps from the server, goals rated in whole points with the figures beside them, **every** company value rated, and a room-left line that moves while you type |
+| **People** | HR only | **Every employee on a tenant with the switch**, scoped to their own company, with work email |
+
+## 15.3 File by file
+
+| File | Mechanism | Why |
+|---|---|---|
+| `public/js/ess/next-team.js` | **build** | The two sections, and the row's own `actions` array drawn as-is. It never asks "which section is this" — the section decides what the SERVER returns |
+| `public/js/ess/next-growth.js` | **build** | Both Growth routes. No figure is computed; the byte budget is counted here so somebody is warned while typing |
+| `public/css/ess/next-growth-team.css` | **build** | A fourth static file on OPS-31's terms. Its own file so two waves never meet in one stylesheet. 44px rating buttons are in here, not hoped for |
+| `parts/next-team.html`, `parts/next-growth.html` | **build** | Skeletons. Team's has **two** cards, because the screen has two sections and a skeleton of the wrong shape is a page that jumps |
+| `next/frame.html`, `www/hrms-employee-next.html` | **extend** | Two parts, two scripts, one stylesheet |
+| `public/js/ess/next-frame.js` | **extend** | The People menu entry loses `is_hr`; `personRow` gains the work email |
+| `frame_api.py` — `_allowed_pages` | **extend** | `plan_staff_list` opens the Company group, for anybody. Without it the server allowed a screen the frame never offered |
+| `staff_api.py` | **extend** | `DIRECTORY_SCOPE_FOR_EMPLOYEES`, and the one branch that used to refuse |
+| `growth_api.py` | **extend** | `get_growth`, `get_self_review`, `save_self_review`, `room_left_characters`, `bytes_per_character` |
+| `performance_api.py` — `save_review_page` | **extend** | `ensure_ascii=False`, and the budget figures in the return |
+| `public/js/ess/portal.js` — `tvTogglePop` | **fix** | One missing `tvPlace(pop, btn)`. See §15.7 |
+| `scripts/run_dom_tests.js` | **extend** | Empty SKIP map, the two fixtures wired in, the count asserted, and the wrong "Wave 3" comment corrected |
+| `tests/make_performance_tree_fixture.py` + `tests/fixtures/performance_tree.json` | **build** | AC-63's fixture, captured from a real call with every name replaced |
+| `tests/next_growth_team_test.js` | **build** | Replaces `portal_appraisal_test.js` |
+| `scripts/browser_check_growth_team.js` | **build** | Chromium at 390px, a real login, real records |
+
+## 15.4 The People directory — the one line that reverses it
+
+**Surbhi decided employees get the directory with work contact. She did not say
+how wide, so the width is mine, and it is behind one named constant.**
+
+```
+alvoraa_portal/alvoraa_portal/staff_api.py
+DIRECTORY_SCOPE_FOR_EMPLOYEES = "own_company"
+```
+
+**That assignment is the line. Change it to `"own_branch"` and a plain
+employee's directory becomes their own store only.** Nothing else moves: both
+values are implemented, `_SCOPE_FIELD` maps them to the Employee field the
+query uses, and `test_one_constant_reverses_the_decision_to_store_only` sets the
+constant and proves the scope really moves. A constant that selects between one
+real branch and a branch nobody wrote is not a switch, it is a comment.
+
+**A value the constant does not know fails closed** — refused, not quietly
+widened back to the company. Falling back would hide the typo and ship the
+wider scope, which is the worse of the two failures.
+
+**What did NOT widen.** The tenant switch still decides whether the screen
+exists. An HR caller still gets the HR scope, which is narrower than a company
+for a store's HR person — proved by giving Kamal a Company permission for the
+other company and asserting his directory is that company and **not** his own.
+Leavers are still absent. A caller the product cannot place is still refused,
+and the refusal is byte-identical whichever the cause.
+
+**The pin test was replaced, not deleted**, as its own docstring asked.
+`test_a_plain_employee_still_cannot_open_the_directory_at_all` is now
+`test_a_plain_employee_can_now_open_the_directory`, and the name changes so a
+reader of the history sees the behaviour turn over rather than a test vanish.
+
+**Work email only. No phone number of any kind.** Unchanged from §4: the data
+model has no work phone field, `cell_number` is labelled Mobile and is personal,
+and adding a work-phone custom field needs Surbhi's word.
+
+## 15.5 The Team screen — what the eleven rows do on a screen
+
+`row.actions` is the server's answer to the matrix **for that person**.
+`next-team.js` draws what is in that array and nothing else. It does not know
+which section a row is in, and it must not: asking the question twice is how a
+screen and a server come to disagree.
+
+**Three things that follow from that, each with a test:**
+
+* **A covered row has no leave-approval control at all** — absent from the
+  markup, not disabled. `01b` §14 rule 1 forbids a greyed control, and a
+  disabled one can be re-enabled from a console.
+* **An action the server sends that this file has no words for is drawn with its
+  own name**, not skipped. A silently dropped action is a permission that was
+  granted and never reached the screen.
+* **The number in a heading is the length of the array beneath it**, taken from
+  that array — not `part.total`, which is the true total and is said separately
+  when the list is capped. A heading showing the true total above a shorter list
+  is the one thing worse than no number.
+
+**No combined total, and the test proves it by arithmetic.** With both sections
+drawn, the browser check asserts that `direct.total + covered.total` appears in
+no heading.
+
+## 15.6 The wizard — and what the design pass may still change
+
+**Built to the spec.** Five steps in the server's order, goals rated in whole
+points with the KPI figures beside them, **every** active company value rated
+with an optional comment each, and a room-left line.
+
+**What the design pass could still change, with no new decision:**
+
+| | |
+|---|---|
+| **The step order** | It is `data.steps` from the server, which is exactly why — reordering is a server list, not a browser rewrite |
+| **The rating control's look** | Five buttons today. Any control that cannot produce a half-point is allowed |
+| **The phone layout of a long value list** | Seven values at 390px is a scrolling problem. Today each one says "Value 5 of 7" so somebody knows how much is left. A stepper, an accordion or a single-value-per-screen flow would all be fine |
+
+**What it cannot change without a new decision from Surbhi:**
+
+| | |
+|---|---|
+| **The byte budget** | 65,535 bytes, strict mode, and the write is an autosave |
+| **Whole points** | Server-validated. A half-point is refused |
+| **Every value is rated** | Her answer was all of them. Six of seven is not a finished step |
+
+## 15.7 The byte ceiling — two things that were wrong, and one that was missing
+
+**1. The stored string was ASCII-escaped, which halved a Hindi writer's room.**
+`save_review_page` wrote `json.dumps(all_pd)` with the default
+`ensure_ascii=True`, which turns every Devanagari character into `\uXXXX` —
+**six bytes for a character that costs three**. The measurement behind the
+constant (21,845 Devanagari characters fit) was taken on the raw column, so this
+code path was quietly giving a Hindi or Punjabi writer **half** the ceiling and
+an English writer no difference at all. It now writes the characters themselves.
+`json.loads` reads either form and the column is utf8mb4, so what was written
+before still reads back the same: **a widening with no migration behind it.**
+
+**2. The "how much over" figure was divided by three.** True in Devanagari,
+wrong by a factor of three in English. `bytes_per_character()` now measures the
+person's own text and `room_left_characters()` divides by that, so the number is
+in the characters they are actually typing. A fixed divisor told a Hindi writer
+to cut three times more than they needed to — wrong in the direction that
+matters.
+
+**3. Nothing told anybody until the write failed.** The write is an **autosave**,
+so an employee would keep typing while nothing was being saved. Now:
+
+* the screen counts the UTF-8 bytes of what is in the form and shows the room
+  left, always — not only as a warning that appears under pressure;
+* past the ceiling it **does not send**, and says how much to cut;
+* every successful save returns `room_left_characters` from the string that was
+  **actually written**, which carries every other page of the review too. A
+  budget measured on one page's fragment is a number that is only ever too
+  generous.
+
+**And one fork removed.** The byte counter first tried `TextEncoder` and fell
+back to `length * 3`. jsdom has no `TextEncoder` on its window, so the test took
+the fallback and "an English character costs one byte" got **nine**. The counter
+now computes UTF-8 length itself, with surrogate pairs at four bytes, so the
+number a test sees is the number a phone sees. **That is the same shape as the
+bug Wave 1 lost a week to** — a path only ever exercised in the test, and
+another only ever in production.
+
+## 15.8 The three dead browser tests — and the live defect one of them found
+
+**`run_dom_tests.js`'s SKIP map is empty. Eight tests run, 353 assertions, none
+skipped.**
+
+**Its comment was wrong twice over and is corrected in the same commit.** It
+said the three were "about the Growth screens, which Wave 3 rebuilds": Growth is
+**Wave 4's**, and the reason they were skipped was a missing fixture, not a wave.
+
+| Test | What happened |
+|---|---|
+| `portal_tree_test.js` | Runs, **19 assertions**, with the new fixture |
+| `portal_redesign_test.js` | Runs, **74 assertions**, with the same fixture |
+| `portal_appraisal_test.js` | **Replaced** by `next_growth_team_test.js` (68 assertions), which drives the Growth panel that exists. AC-64's first option |
+
+**The fixture is a real call, scrubbed.**
+`alvoraa_portal.tests.make_performance_tree_fixture.main` calls
+`get_performance_tree` and writes
+`alvoraa_portal/alvoraa_portal/tests/fixtures/performance_tree.json`. It lives
+inside the app rather than in `scripts/` because the container mounts the apps
+and not the repository root — a tool in `scripts/` could not be reached from
+`bench execute` without copying it in, and copying files into a container is
+what this slice may not do.
+
+Three things the capture refuses to do:
+
+* **write a file with no KPIs in it.** The first capture, as Administrator over
+  the default scope, came back with twelve objectives and **no KPIs** — and
+  `portal_tree_test.js` exists to click KPI rows. That fixture would have turned
+  a skip everybody could see into a pass nobody could question. It now raises;
+* **write anything that still looks like a contact detail** after the scrub, by
+  a regex over the finished file — because the key list is a list somebody
+  maintains, and this is the check for when they forget one;
+* **use names that share a prefix.** `portal_redesign_test.js` searches for the
+  first six characters of the first objective and asserts the tree gets
+  *shorter*. With every row called "Fixture …" the search matched everything and
+  the assertion failed — a fixture defect that looked exactly like a product
+  defect. The names are now Alpha, Bravo, Charlie.
+
+### **A live defect, found only because the test finally ran**
+
+**The filter popover on the Objectives & KPIs screen renders under the
+sidebar.** `panels.css:1027` says, in a comment written months ago, that the
+popover "cannot live inside `.tv-controls`: that bar is `position:sticky` with a
+z-index, which forms a stacking context, so any z-index on a descendant is
+[trapped]". `tvPlace()` exists to move an overlay to `<body>` and position it.
+`tvToggleNew` has always called it. **`tvTogglePop` never did.** So the filter
+popover kept its `z-index: 1180` and still painted underneath the sidebar's 50.
+
+Fixed with one call, plus the backdrop moved with it and the popover added to
+the reposition handler so it follows its trigger on scroll and resize.
+**Proved by removing the line again and watching the two assertions go red.**
+
+**This is the argument against skipping, in one paragraph:** the CSS author knew,
+wrote it down, and the markup never moved — and the test that would have caught
+it was skipped for want of a fixture file.
+
+### Two blocks of `portal_redesign_test.js` were written against a layout the page no longer has
+
+Both **crashed** rather than failed, which is what a skip lets you keep doing.
+
+* **The scope selector.** The test read `#tv-scope` as a `<select>` and called
+  `.options` on it — `undefined is not iterable`. The control is now four radios
+  with a hidden input behind them. It drives the radios, through the page's own
+  `tvSetScope`, and expects `"mine"` as the default the markup ships. The old
+  line wanted `"team"`, an earlier layout's default.
+* **The cycle toggle.** It hunted a row button labelled "Toggle review cycle".
+  There is no such button, and **its absence is deliberate**: slice 010 group D
+  (R5) changed what "in review" means, so the row carries a badge rather than a
+  switch. The test now asserts what R5 actually decided — the badge says what
+  being in a review means for the owner, and carries **no rating, no review name
+  and no link** — and drives `tvToggleCycle` directly to prove the nomination
+  call still posts what the server expects. A control removed on purpose is not
+  a defect; a broken call would be.
+
+## 15.9 Where the guard did not bite, which is a finding
+
+**I removed `is_hr` from the People menu entry and `next_frame_test.js` still
+passed "a plain employee gets no staff-list entry".** That is the failure mode
+this project keeps naming: when you break a guard and nothing goes red, the
+guard was not the one doing the work.
+
+The reason was a **second gate in front of it**: `itemIsOffered` also requires
+`frame.allowedSet[item.page]`, and `frame_api._allowed_pages` did not put
+`"company"` in a plain employee's list. Its comment said why, at length, and the
+reason was that the endpoint refused a non-HR caller — which had just stopped
+being true. So the server allowed a screen the frame would never have offered.
+
+`plan_staff_list` now opens the Company group, for anybody, and the comment says
+what changed and why. The jsdom assertion **turns over** with its reason beside
+it, and two new assertions bound the widening: People is the entry they gain,
+and none of the four HR-only entries comes with it.
+
+## 15.10 Non-functional dimensions, against the code actually written
+
+| Dimension | Verdict | Against the code |
+|---|---|---|
+| Performance | **improves** | `get_growth` is four reads whatever the goal count: goals, KPIs, and one pending-reading read per child table. No read is inside a loop. The Team screen is still the one call the budget allows. The People search is one call per pause in typing, not one per keystroke |
+| Security | **neutral for permissions, improves in reach** | No permission widened except the one Surbhi decided, and that one is checked on the server. Three new endpoints, all with Guest, wrong-persona and scope tests in the same commit. None takes an employee argument. The three panels escape everything they draw, proved with a hostile job title and a hostile company-value name |
+| Reliability | **improves** | The autosave can no longer fail silently; it is refused before the call, with the amount to cut. A refused call shows the server's sentence rather than a page error. A card that fails leaves the rest of the screen working |
+| Scalability | **improves** | Both Team sections stay capped with their own totals. The directory pages at 12 and never returns more than 50. `get_growth` caps goals at 100, KPIs at 200 and pending readings at 200 |
+| Maintainability | **improves, with one honest cost** | One matrix, read in one place, drawn by a file that cannot second-guess it. Two dead-code hazards avoided: no second staff list, and no TextEncoder fork. The cost is two more panel files and a fourth stylesheet — which OPS-31 measured as free |
+| Data integrity | **improves** | Every heading takes its number from the array beneath it. The approved figure and the waiting one are two keys and nothing adds them, asserted by searching the whole serialised payload for the sum |
+| Compliance / privacy | **improves in one place, widens in one, both deliberate** | The directory is work contact only and no phone number of any kind ships. The **audience** widened, by Surbhi's decision, and the scope is one reversible constant. Nothing else was widened as a side effect: the four HR-only Company entries are asserted absent for an employee |
+
+## 15.11 NFR notes
+
+* **Query counts.** `get_growth`: 4 reads plus the cycle lookup and the review
+  block's two `get_value`s — flat in the number of goals. `get_staff_list`: two,
+  unchanged. `get_team`: unchanged, and §11 measured it flat at 20 and at 981.
+* **Indexes.** None added. Every filter is on a column the existing lists
+  already filter on (`employee`, `company`, `branch`, `status`, `parent`).
+* **Background jobs.** None. Nothing here takes longer than a read.
+* **Permission enforcement points.** `staff_api.get_staff_list` (feature,
+  then scope, then Active), `growth_api.get_self_review` and
+  `save_self_review` (ownership of the Appraisal, before anything is read or
+  written), `team_api.may` / `allowed` (unchanged).
+* **Sensitive fields touched.** `company_email` reaches a wider audience, by
+  decision. `personal_email` and `cell_number` are asserted absent, by value
+  and by key, on real populated fixture data.
+* **Fallbacks.** A refused call shows the server's sentence; a page error shows
+  Wave 1's sentence and a code with nothing personal in it; the byte counter has
+  no fallback any more, which is the point.
+
+## 15.11a The wizard has no Send, and that is a finding rather than a shortcut
+
+**I stopped here rather than wiring it, because wiring it would have quietly
+lost something.**
+
+Surbhi's answer 1 is that the self-review **rates goals**, in whole points, with
+the KPI figures beside them. The wizard does that. But the path that turns a
+draft into a sent review is
+`performance_api.submit_employee_review`, and it hands the answers to
+`alvoraa_goals.review_items.apply_self_review:1153` — which, read in the
+installed source, does this:
+
+* for a **KPI** copy it writes `self_rating` and `self_comment`;
+* for an **objective** copy it writes **`self_comment` only, from a key called
+  `reflection`. There is no path that stores a rating on a goal.**
+
+The field exists — `set_item_rating` will set `self_rating` on any review item
+row — so this is not a schema problem. It is that the submit path was written
+when objectives carried a reflection and KPIs carried the rating, and Surbhi's
+answer moved the rating to the goal.
+
+**Two more things would have had to be decided at the same time**, and neither
+is mine:
+
+1. **The page key.** `submit_employee_review` reads
+   `page_data["past-objectives"]`. The new wizard writes `page_data["wizard"]`.
+   Whichever way that is reconciled, the old wizard and the new one have to
+   agree, or a review typed in one is invisible to the other.
+2. **What happens to the company-value ratings on submit.** Nothing in
+   `submit_employee_review` reads them today.
+
+**So the wizard drafts, saves and resumes; sending still happens on the old
+screen.** A Send button that appeared to work and dropped every goal rating
+would have been the worse outcome, and it is the one that would not have been
+noticed until a calibration meeting. **Owner: `hrms-business-analyst` for
+whether a goal rating is stored on the objective copy, then the engineer.**
+
+## 15.12 Known gaps and shortcuts
+
+* **The person sheet is not built — temporary debt.** Five of the eleven Team
+  actions have no screen to open, so they are listed as text with a sentence
+  naming where they are done today. Removed by building AC-19's single
+  person-sheet endpoint and its screen, which is its own piece of work.
+* **"Step N of 5" only moves when the wizard is reloaded — declared limitation,
+  and deliberately not fixed in the browser.** The count comes from the server's
+  `steps_answered`, which is the whole point of AC-28: a step is done when it
+  has an answer, and the server decides what an answer is. Recomputing it in
+  JavaScript would be a second copy of that rule, in the place where it is
+  easiest to get generous. The honest fix is for `save_self_review` to return
+  the recomputed list, which is a small change and not one to make without the
+  test that goes with it. **Removed by:** returning `steps_answered` from the
+  save and painting it.
+* **The wizard has no Send — escalated, not shortcut.** §15.11a says why, and
+  what has to be decided before it can be wired.
+* **`portal_tree_test.js` and `portal_redesign_test.js` drive the OLD page —
+  acceptable simplification.** They test the old Objectives & KPIs screen,
+  because that is the screen they were written for and that screen is still
+  what ships. The new Growth panel has its own test.
+* **The fixture was captured from `test045`, not `test044s` — acceptable
+  simplification.** AC-63 says `test044s`; that site has no KPIs, and a fixture
+  with no KPIs makes `portal_tree_test.js` prove nothing. `test045` is a real
+  fixture site and the capture is a real call. Neither site was written to.
+* **`scripts/check_app_integrity.py` cannot see a module-level constant —
+  not this slice's debt, but worth writing down.** `from hrms.x import SOME_CONSTANT`
+  always fails its check, because `defined_names()` collects only functions and
+  classes. The convention (`import ... as access`, then `access.NO_EMPLOYEES`)
+  works, and this session followed it rather than changing a shared checker
+  mid-slice. Widening `defined_names()` to include assignment targets is a
+  small, separate change.
+* **The org-goal colour assertion in `portal_tree_test.js` is weak —
+  pre-existing.** It compares the first objective row's colour with the first
+  KPI row's, and the first objective happens to be organisational, so
+  "organisational objectives have their own colour" passes against the same
+  value twice. It passes honestly on this fixture; it would also pass if the
+  distinction were removed. Noted, not fixed: it is not Wave 4's assertion.
+---
+
+# 16. The two pre-existing failures, with a verdict on each
+
+§14.7 listed seven pre-existing red tests and said two of them deserved
+somebody's attention. This is that attention.
+
+## 16.1 `test_portal_security_010` PRIV-3 — **the test is wrong, and it is now fixed**
+
+**Verdict: the test was asserting behaviour we removed on purpose. It is updated,
+not left red, and the update is stricter than the original.**
+
+**What it asserted.** *"the email to employee and manager keeps the leave type
+and the days, and never carries a money figure"* — decision 9, 14 September
+2026. One `sendmail`, one body, both recipients on one list.
+
+**What Wave 3 did, and why.** ALV-113 / 043 AC-17. The stored explanation reads
+`"Taken: 0.5 from Sick Leave, 0.5 as loss of pay"`. Both recipients got that
+string, so **a manager whose report had half a day taken from Sick Leave read
+that leave type in his inbox** — a colleague's leave type, which slice 002's
+one-way rule and the design's §9 both forbid, and which the product hides on
+every screen. Wave 3 split the send in two and gave the manager a body with the
+days and no leave type
+(`hrms/alvoraa_late_rules/doctype/attendance_deduction/attendance_deduction.py:207`).
+
+**Why the test then failed in a way that looked like a defect.** It read
+`sendmail.call_args`, which is the **last** call. The last call is now the
+manager's. So it was asserting the manager's body against the employee's rule,
+and going red because the leak was closed.
+
+**What it asserts now.** Per recipient, which is what the split made possible:
+
+| | |
+|---|---|
+| the employee's body | names their own leave type and their own days — it is their leave, and withholding it from the person it is about would be a second harm |
+| the manager's body | names the days and **no** leave type |
+| both bodies and both subjects | carry **no** money figure — PRIV-3's actual promise |
+| the send count | is **two**, because two people on one `recipients` list share a body by construction, and that is what ALV-113 was about |
+
+**It is not a duplicate of Wave 3's coverage.**
+`hrms/alvoraa_late_rules/tests/test_deduction_email_043.py` has thirteen tests
+on the split. This keeps PRIV-3's own check where the rest of PRIV-3 lives, and
+it now fails for the right reasons rather than for a stale one.
+
+**One process note worth keeping.** `sendmail.call_args` is fragile by nature:
+it means "the last call", and it reads like "the call". It was right while there
+was one send and silently wrong the moment there were two. `call_args_list`,
+keyed by recipient, cannot go wrong that way.
+
+## 16.2 `test_inbox_counts_034` — **the test leaks, and behind it is a real product hazard**
+
+**Verdict, in two parts, because the answer is not one thing.**
+
+**The five red tests are a test defect. The mechanism they expose is a product
+hazard, and that part is not a footnote.**
+
+### What actually happens
+
+`test_a_reviewer_who_is_not_hr_keeps_their_whole_queue` does what the product
+says a tenant may do: it gives a **Shift Supervisor** role the submit permission
+on `Attendance Request`, so the corrections queue can be handed to somebody who
+is not HR. It does that by inserting **one `Custom DocPerm` row**, and its
+`finally` deletes the row again.
+
+**Once any `Custom DocPerm` row exists for a doctype, Frappe ignores that
+doctype's standard permissions entirely.** `module_access` says so in its own
+words at `module_access.py:262`: *"Once ANY Custom DocPerm row exists for a
+doctype, its standard permissions are ignored entirely. That is the lever and
+the danger in one sentence."*
+
+So while that single row existed, `Attendance Request` had exactly one
+permission row — the Shift Supervisor's — and **HR User, HR Manager, Employee
+and System Manager all had no read at all.**
+
+**The `finally` put the table right and left the cache wrong.** It cleared the
+user cache and not the doctype cache, and Frappe caches the answer to "does this
+doctype have any custom permissions". So the row was gone and the process still
+believed it was there.
+
+### Why exactly five, and why it looked like something else
+
+Tests in a class run alphabetically:
+
+| | |
+|---|---|
+| `test_a_correction_with_no_label…` | **passes** — runs before |
+| `test_a_declined_or_withdrawn…` | **passes** — runs before |
+| **`test_a_reviewer_who_is_not_hr…`** | **the one that poisons the cache** |
+| `test_at_the_cap…` | **fails** |
+| `test_company_wide_hr…` | **fails** |
+| `test_my_own_correction…` | **fails** |
+| `test_store_hr_counts…` | **fails** |
+| `test_the_count_equals_the_list…` | **fails** |
+
+Five after, two before. That is the whole pattern.
+
+**And this is why it looked like leftover site state.** The row really is
+deleted, so the site afterwards is perfectly healthy — which is exactly what a
+probe found: no `Custom DocPerm` on `Attendance Request`, no blocked modules, no
+User Permission, and an HR User who can read the doctype without complaint. The
+damage exists only inside the process that ran the test.
+
+**Ruled out, one at a time, before landing on this:** persistent `Custom
+DocPerm` rows, `module_access` restrictions, a blocked HR module, a
+`module_profile` on the user, roles reset by a fixture, and the Branch User
+Permission with `apply_to_all_doctypes` (inserted by hand and measured: read
+stayed true).
+
+### The fix
+
+One line in the test's own tidy-up — `frappe.clear_cache(doctype=REQUEST)` —
+which is what its own `setUpClass` already does after `after_migrate()`. The
+tidy-up was only half undoing itself.
+
+### **The product hazard, which is the part worth somebody's attention**
+
+**The documented way to use this feature takes the queue away from HR.**
+
+`attendance_correction._may_review` deliberately tests the submit permission
+rather than a role, so that *"an organisation that grants it to a new role gets
+the inbox for free"*. The obvious way for a tenant to grant it — the Desk's Role
+Permissions Manager — writes a `Custom DocPerm` row. **The moment they do, the
+standard permissions on `Attendance Request` stop applying, and HR User, HR
+Manager and Employee lose theirs unless the tenant happens to re-add all of
+them.**
+
+So a tenant following the product's own design would hand the queue to a Shift
+Supervisor and take it away from HR, silently, with no error anywhere. `Employee`
+losing read is worse still: an employee could no longer see their own
+correction.
+
+**`module_access` already solved this for itself.** `_keep_exempt_row` exists
+precisely because of this Frappe behaviour, and its docstring calls it
+load-bearing. Nothing protects the `_may_review` path the same way.
+
+**Recommendation, not built:** whatever grants that role — a helper, a setup
+wizard, or a line in the manual — must write the standard rows alongside the new
+one, the way `module_access._keep_exempt_row` does. **Owner:
+`hrms-security-privacy-engineer` for whether this needs a control, then the
+engineer.** It is not Wave 4's to build, and it is bigger than the five red
+tests that led to it.

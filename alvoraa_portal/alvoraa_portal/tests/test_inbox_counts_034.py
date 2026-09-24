@@ -343,6 +343,26 @@ class TestTheCorrectionsCountEqualsItsScreen(_InboxFixture):
 				frappe.db.delete("Custom DocPerm",
 				                 {"parent": attendance_correction.REQUEST, "role": role})
 			frappe.clear_cache(user=self.plain_user)
+			# **The doctype cache, not only the user cache. 045.**
+			#
+			# Frappe decides whether to use custom permissions by asking
+			# `get_doctypes_with_custom_docperms()` - "does this doctype have
+			# ANY Custom DocPerm row?" - and the answer is cached. Once it is
+			# yes, the STANDARD permissions are ignored entirely: the doctype
+			# has exactly the rows the Custom DocPerm table holds, which here
+			# was one row for a Shift Supervisor and nothing for HR User, HR
+			# Manager, Employee or System Manager.
+			#
+			# Deleting the row put the table right and left the cache saying
+			# "yes". So every test in this class that runs AFTER this one
+			# alphabetically - five of them - failed with "Insufficient
+			# Permission for Attendance Request" for an HR User, and the site
+			# looked perfectly healthy afterwards because the row really had
+			# been deleted.
+			#
+			# `setUpClass` already clears this cache after `after_migrate()`.
+			# The tidy-up has to do the same, or it only half undoes itself.
+			frappe.clear_cache(doctype=attendance_correction.REQUEST)
 			frappe.db.commit()
 
 

@@ -116,8 +116,7 @@ async function main() {
   is(frameUp.frame, true, "next-frame.js ran at all - if this fails, the " +
      "assets are not being served and nothing below means anything");
   if (!frameUp.frame) {
-    console.error("
-The page loaded but no script ran. Check that " +
+    console.error("The page loaded but no script ran. Check that " +
                   "/assets/alvoraa_portal/js/ess/next-frame.js answers 200 on " +
                   "the site you are serving.");
     await browser.close();

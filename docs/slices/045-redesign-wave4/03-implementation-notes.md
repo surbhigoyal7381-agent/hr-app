@@ -1506,3 +1506,68 @@ is a permission change and deserves its own test), or AC-54 gains a named
 exception with this reason. **Not decided here**, because "make the check pass"
 and "make the code right" are two different commits and this is the wrong hour
 to guess which one the AC wanted.
+
+---
+
+# 19. The test numbers, and the one thing still running
+
+## 19.1 What was run, module by module — all green
+
+| Module | Result |
+|---|---|
+| `test_directory_contact_045` (rewritten) | **17 ran, OK** |
+| `test_growth_screen_045` (new) | **22 ran, OK** |
+| `test_endpoint_guards_045` (extended) | **10 ran, OK** |
+| `test_growth_045` | **17 ran, OK** |
+| `test_frame_api_034` (one pin added) | **34 ran, OK** |
+| `test_inbox_counts_034` | **17 + 2 ran, OK** — was 5 errors |
+| `test_review_screens_010d` | **OK** |
+| `test_review_copies_010d` | **OK** |
+| `python scripts/check_app_integrity.py` | **643 checks, OK** — before every commit |
+
+## 19.2 The browser tests — 8 files, 355 assertions, none skipped
+
+| File | Assertions |
+|---|---|
+| `portal_dom_test.js` | 8 |
+| `portal_notes_test.js` | 12 |
+| `next_frame_test.js` | 86 |
+| `next_panels_test.js` | 27 |
+| `next_time_pay_test.js` | 61 |
+| `next_growth_team_test.js` (new) | 68 |
+| `portal_tree_test.js` (**was skipped**) | 19 |
+| `portal_redesign_test.js` (**was skipped**) | 74 |
+| **total** | **355, 0 failed, 0 not run** |
+
+`scripts/browser_check_growth_team.js` in Chromium at 390 px: **33 passed, 0
+failed.**
+
+## 19.3 The full suite — running, and honest about it
+
+**A full `bench run-tests --app alvoraa_portal` was started on `test045` and is
+STILL RUNNING as these notes are written.** Its progress at that moment:
+**320 tests reported, 1 red.**
+
+**The one red was mine and is already fixed** —
+`test_frame_endpoint_registry_034.test_no_module_level_dict_list_or_set`, which
+caught the scope map I had written as a module-level dict in `staff_api.py`
+(AC-70: a worker serves several sites). It is a tuple of pairs now, in commit
+`a0d13aa`, **after** the suite had already read the file. So that red will
+appear in this run's output and is not a live defect.
+
+**What this means for the numbers, said plainly:** the per-module results above
+were all run and are real. The full-suite total is **not** a number I can quote
+yet, and I am not going to guess it from two earlier runs.
+
+## 19.4 The one change I have not re-run myself
+
+**`test_portal_security_010`'s PRIV-3 test (§16.1) was rewritten and has not
+been run in isolation.** The full suite covers it and had not reached it when
+these notes were written. That is the one claim in this document resting on
+reading rather than on a green run, and it is flagged here rather than left to
+be assumed. Whoever picks this up should run
+`bench --site test045 run-tests --module alvoraa_portal.tests.test_portal_security_010`
+first.
+
+**Everything else in sections 15 to 18 was run.**
+

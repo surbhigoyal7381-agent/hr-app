@@ -90,7 +90,7 @@ SHAPES = {
 		"companies": 1,
 		"branches_per_company": 1,
 		"leads_per_branch": 1,
-		"staff_per_lead": 15,
+		"staff_per_lead": 17,
 		"attendance_days": 20,
 		"history_people": 20,
 		"leave_every": 6,
@@ -629,13 +629,13 @@ def _corrections(shape, people):
 	s = shape_of(shape)
 	attendance_correction.after_migrate()
 	frappe.clear_cache(doctype=attendance_correction.REQUEST)
-	day = add_days(nowdate(), -20)
+	# OUTSIDE the attendance window on purpose. Frappe HR refuses a request for
+	# a day whose attendance already says what the request would say, so a
+	# correction has to land on a day nobody has a row for.
+	day = add_days(nowdate(), -45)
 	made = frappe.db.count(attendance_correction.REQUEST,
 	                       {"explanation": "%s fixture" % s["prefix"]})
-	# People WITHOUT attendance history, because Frappe HR refuses a request
-	# for a day whose attendance already says what the request would say
-	# ("Attendance status unchanged"). Found by leaving validation on.
-	for emp in people[s["history_people"]:]:
+	for emp in people:
 		if made >= s["corrections"]:
 			break
 		if frappe.db.exists(attendance_correction.REQUEST, {"employee": emp}):

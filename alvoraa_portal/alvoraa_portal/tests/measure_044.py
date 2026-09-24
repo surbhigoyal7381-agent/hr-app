@@ -151,3 +151,43 @@ def run(shape="large", repeats=REPEATS, build_first=1, write=1):
 		print("\nwritten: %s" % path, flush=True)
 	print(json.dumps(results["personas"], indent=1, default=str), flush=True)
 	return results
+
+
+def profile(shape="large", persona="sysmgr", call="get_nav_counts", top=12):
+	"""Where the time and the queries actually go, for one call, one persona.
+
+	A number that fails a budget is only half the answer; the other half is
+	which statement it was. This prints every statement with its own time,
+	slowest first, with the tables it touched.
+	"""
+	from alvoraa_portal.tests import fixtures_scale_044 as fx
+
+	thunk = dict(_calls())[call]
+	frappe.set_user(fx.login_of(shape, persona))
+	frappe.local.request_ip = "127.0.0.1"
+	for _ in range(WARM):
+		thunk()
+
+	timed = []
+	real = frappe.db.sql
+
+	def spy(query, *args, **kwargs):
+		start = time.perf_counter()
+		out = real(query, *args, **kwargs)
+		timed.append(((time.perf_counter() - start) * 1000.0, str(query)))
+		return out
+
+	frappe.db.sql = spy
+	try:
+		thunk()
+	finally:
+		frappe.db.sql = real
+	frappe.set_user("Administrator")
+
+	total = sum(ms for ms, _q in timed)
+	print("\n%s / %s / %s: %d statements, %.1f ms in SQL"
+	      % (shape, persona, call, len(timed), total), flush=True)
+	for ms, query in sorted(timed, reverse=True)[:int(top)]:
+		flat = " ".join(query.split())
+		print("  %7.1f ms  %s" % (ms, flat[:260]), flush=True)
+	return [(round(ms, 2), " ".join(q.split())[:400]) for ms, q in timed]

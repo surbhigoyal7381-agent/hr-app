@@ -572,3 +572,254 @@ one sitting; they are written down so the next person makes neither.
 **So the full-suite numbers from that first run are not a result and must not be quoted.**
 The five failures above were re-run **alone, on a clean throttle setting**, and reproduce
 exactly. **The whole suite still needs one clean run** — see the hand-off.
+
+---
+
+# 14. The P1 fix, the NULL fixes, and the first honest full-suite run — 2026-09-24 evening (engineer)
+
+**Local only. Not pushed, not merged into `dev`, no server, no production, no
+`docker cp`.** Own container `hrlocal-045`, own site `test045`. One
+`bench run-tests` at a time throughout.
+
+## 14.0 First: the uncommitted change that made the branch a lie
+
+`alvoraa_portal/alvoraa_portal/tests/fixtures_045.py` was sitting on disk, changed and
+**not committed**. Every green result on this branch had been produced with it in place,
+so the branch did not mean what it said.
+
+It was read, finished and committed (`4a20389`). It does two things:
+
+* **`own_employee()` returns early when the person already matches.** `setUpClass` runs
+  once per test class, so after the first class every later call re-saved the same
+  people for nothing.
+* **The `user_id` link is written after the save**, with `db.set_value`, instead of
+  being set on the document. Setting it on the document makes ERPNext's `update_user()`
+  open and save the linked User inside the Employee save
+  (`erpnext/setup/doctype/employee/employee.py:212`), and that inner save was refused
+  with "has been modified after you have opened it" — the two timestamps **26
+  microseconds apart**, so it was one save checking its own work against a copy it had
+  already superseded. Nothing here needs `update_user()`; `own_user()` already sets
+  exactly the roles this fixture wants.
+
+**One thing was added before committing.** The early return skipped the User Permission
+cleanup that every call used to do. A User Permission left behind by anything else on
+the site narrows every list that user sees, which would make a test about *our* rules
+pass or fail for a reason that is not ours. The save is skipped now; the login
+housekeeping still runs.
+
+## 14.1 The P1 — HR was made to wait for a manager who does not exist
+
+**Fixed. `e1bd348`.**
+
+Wave 4 put a two-working-day window in front of an HR decision on somebody else's
+manager's attendance correction. It was applied to **every** HR decision, including
+decisions about people who have no manager at all. Five tests in the existing
+`test_attendance_correction` module went red with:
+
+> `PermissionError: This is still with their manager until 2026-09-26.`
+
+"their manager", with no name, because there was no manager.
+
+**The fix, and why it is a restoration rather than a new decision.** The window exists
+to give the employee's own manager first refusal. With no manager there is nobody to
+give it to. So the wait now applies **only where a manager exists and could act** — no
+`reports_to`, or a `reports_to` with no login, means HR decides immediately, which is
+what HR does today. The answer behind the window was "HR sees from day one, acts from
+day three", and it was about waiting for a *manager*. It was never about waiting for
+nobody. Most people in a shop have no manager recorded, so without this clause the
+window was blocking a working flow for the common case.
+
+**Where it is enforced.** One place only: `attendance_correction.decide()`. Grepped —
+`hr_may_act_from` has exactly one caller in product code, and nothing else in the
+portal or the app surfaces the wait, so there is no second copy of this rule to fix.
+
+**The derivation is shared on purpose.** The gate reads `_manager_user_for()`, the same
+function `decided_as()` uses. The capacity and the wait therefore cannot disagree about
+who somebody's manager is. The stored capacity is unchanged: an HR decision on a person
+with no manager is still `alvoraa_decided_as = "HR"`, and a test asserts it.
+
+**AC-81 now carries the clause**, in `02-functional-spec.md`, as a clause and not a
+note: the no-manager case, the "restoration, not a new decision" statement, and the
+requirement that the refusal names the manager.
+
+## 14.2 The refusal itself — a sentence that named nobody
+
+The message was already reviewed for privacy and for "what do I do next". It was not
+reviewed for **whether it names anybody**, and it did not:
+
+> This is still with **their manager** until 26 September 2026.
+
+An HR person reading that is told to wait and given nobody to chase. It now reads:
+
+> This is still with **Sandeep Gupta** until 26 September 2026. You can decide it as HR
+> from then, counted as two working days on this person's own holiday list.
+
+The name comes from the manager's **own Employee row** (`employee_name`), because that
+is the name the rest of the product prints, with the login's `full_name` as a fallback.
+Only the name is read — no contact detail, no id, nothing else off that row. A refusal
+needs one word, not a record.
+
+Where the record genuinely holds no name, it says so and says what to do:
+
+> This is still with the manager on this person's record until 26 September 2026 — the
+> record has no name for them. … To act sooner, ask HR to check who this person reports
+> to.
+
+**The test for this had to be tightened twice, and that is worth writing down.** The
+first version asserted a name was present, and it **passed before the fix too** — the
+login on this site happened to carry a matching spelling, so the assertion could not
+tell which source the code read. The two sources are now deliberately set to disagree
+inside the test, so only the Employee-row path can pass it.
+
+## 14.3 Two headings that counted fewer rows than the list beneath them
+
+**Fixed. `af85de6`.** The mechanism was already proved in section 12: `get_all` /
+`get_list` wrap the column in `IFNULL`, `frappe.db.count` does not, and
+`NULL <> 'Cancelled'` is NULL in SQL rather than true.
+
+| Where | What a user saw | Now |
+|---|---|---|
+| `home_api.py:620` — the Home team card | "N goals" over a Goals screen listing N plus the NULL-status ones | counted with `len(get_all(..., pluck="name"))`, the same path as the list |
+| `goals_api.py:308` — the goal card's KPI chip | short of the contributor list on the detail screen | the same |
+
+**Tests: `tests/test_count_matches_list_045.py`, three of them, all red without the
+fixes.** Each writes a row with a **NULL** status — `None`, not `""`, because an empty
+string passes `<> 'Cancelled'` quite happily — and asserts the shipped number equals the
+list. **Each also asserts `frappe.db.count` still gives the wrong answer on the same
+data**, so a site where the trap did not reproduce cannot let them pass over nothing.
+The third is a static pin: `frappe.db.count` with a **negated** filter is refused in
+either function, because the fix is one "optimisation" away from being undone and the
+data it needs to show up is not on most sites. `db.count` on an equality is untouched —
+both engines agree about `=`.
+
+**`inbox_api._count_rows` is the pattern that is already right, and must stay that
+way.** It counts with `frappe.get_list(..., pluck="name", limit_page_length=0)` — the
+same legacy path as the rows — which is why the inbox badge and the inbox list cannot
+diverge. **Anyone who "optimises" it to `frappe.db.count` to make it faster turns it
+into a live bug**, because `attendance_correction.review_queue_filters` negates a
+**nullable** `alvoraa_review_status` and is safe only because of the `IFNULL`. That
+warning is now in the new test module's docstring, where somebody making the change
+would trip over it.
+
+**The third pairing is deliberately not fixed here.** `Alvoraa Position.status` —
+`hrms/alvoraa_org_structure/api.py:161` against `:74`, `:501` and `:893` — is **P3**,
+reachable only through a migration (`reqd = 1`), and outside this slice's files.
+Raised, owned, left alone.
+
+## 14.4 The full suite — two runs, and what each really said
+
+**Run 1 (the first honest one; the throttle fix was in place, `throttle_user_limit` an
+integer, and there were _zero_ `Throttled` errors).** It runs in two batches:
+
+| | Tests | Result |
+|---|---|---|
+| batch 1 | 769 | **FAILED (failures=4, skipped=6)** |
+| batch 2 | 1,411 | **FAILED (failures=2, errors=5, skipped=12)** |
+| **total** | **2,180** | **11 red, 18 skipped**, 2h 17m |
+
+The five `test_attendance_correction` failures were **gone** — that is the P1 fix
+holding across the whole suite. Of the 11 red, **four were mine** and seven were not.
+
+**The four that were mine, and what each one caught (all fixed in `b931e3a`):**
+
+1. **`test_directory_contact_045` — my own new test module broke another Wave 4 test.**
+   It hired five people into the shared `S045` company. The staff directory pages at
+   twelve rows, so five extra names pushed the person that test looks for onto page two.
+   **A fixture that adds people to a shared company changes every other test's data.**
+   The Home-card test now borrows two of the company's existing people as Sandeep's
+   reports for the length of one test and points them back; the no-login-manager test
+   borrows an existing loginless person the same way. Nobody new is hired. Because the
+   borrowed people may already carry goals from another suite, that test now measures
+   the **change** its own two rows make to the two numbers rather than asserting
+   absolutes. **The seven Employee rows the failed run left on `test045` were deleted.**
+2. **`test_frame_endpoint_registry_034`** counts every route past the permission layer,
+   by module. `home_api`'s `frappe.db.count` became a ninth `frappe.get_all`, so the
+   declaration had to say so. **The guard did exactly its job** and the declaration now
+   explains why the call changed.
+3. **`test_portal_security_010` SEC-16 ceiling** counts the *string*
+   `ignore_permissions` in `goals_api.py`, and I had added two — one in code, one in a
+   comment. `frappe.get_all` sets `ignore_permissions` itself
+   (`frappe/__init__.py:1402`, read in the installed source), so the explicit flag was
+   **redundant**: the number this chip shows has not changed for anybody. Dropped, and
+   the comment reworded.
+4. **`test_payslips_payload_043`** still listed `get_manager_dashboard` as a
+   pre-existing offender that hands out a whole Employee row. **Wave 4 itself paid that
+   off** in `5e98029`. The test's own instruction is "fixing one? take it out of
+   KNOWN_PRE_EXISTING", so it is out.
+
+**The seven that are not mine — proved, not assumed.** Each module was run **alone**,
+and then `test_inbox_counts_034` was run again with `attendance_correction.py`,
+`home_api.py`, `goals_api.py` and `fixtures_045.py` **reverted to `bb18069`**, the
+commit before this session. It failed identically. So these are pre-existing on
+`test045` and this session did not cause them:
+
+| Module | Red | What it looks like |
+|---|---|---|
+| `test_inbox_counts_034` | 5 errors | `PermissionError: Insufficient Permission for Attendance Request` for an HR User inside `frappe.get_list`. No `Custom DocPerm` exists on that doctype, so it looks like module/plan state left on the site by another suite — the same class of problem `Wave4Base.setUpClass` already works around with `module_access.release_permissions()`. **P2, not this slice's.** |
+| `test_shift_types_043` | 1 failure | `['CI Test Shift', 'S043 Unused Shift'] != ['S043 Unused Shift']` — a shift from another suite reaching a company that should have one. Cross-suite leftover. **P3.** |
+| `test_portal_security_010` PRIV-3 | 1 failure | the deduction email does not name the leave type — `'Casual Leave' not found in …`. **P3.** |
+
+**Run 2, after those four fixes — and this is the number to quote.**
+
+| | Tests | Result |
+|---|---|---|
+| batch 1 | 769 | **FAILED (failures=1, skipped=6)** |
+| batch 2 | 1,411 | **FAILED (failures=1, errors=5, skipped=12)** |
+| **total** | **2,180** | **7 red, 18 skipped, 0 Throttled**, 1h 46m |
+
+**11 red became 7, and the 7 are exactly the pre-existing ones named above** — 5
+`test_inbox_counts_034`, 1 `test_shift_types_043`, 1 PRIV-3. Nothing new appeared.
+
+**So the suite has had a clean run in the sense that matters and not in the sense the
+word usually means, and the honest sentence is this: every failure that is this
+session's work is fixed, and seven failures that were already there are still there.**
+It is not green. Three of them deserve somebody's attention, and the inbox five deserve
+it first.
+
+## 14.5 Commands run, and what they really said
+
+| Command | Result |
+|---|---|
+| `bench --site test045 run-tests --module …test_decided_as_045` | **20 OK** (the P1 pin tests included) |
+| the same, with `attendance_correction.py` at `HEAD` | **2 errors** — both new pin tests red without the fix |
+| `bench --site test045 run-tests --module …test_attendance_correction` | **42 OK** — the five P1 failures gone |
+| `bench --site test045 run-tests --module …test_count_matches_list_045` | **3 OK** |
+| the same, with `home_api.py` / `goals_api.py` at `HEAD` | **3 failures** — all three red without the fixes |
+| `bench --site test045 run-tests --app alvoraa_portal` (run 1) | **769 + 1,411 = 2,180 tests, 11 red, 18 skipped, 0 Throttled**, 2h 17m |
+| `…--module test_directory_contact_045` / `…registry_034` / `…payslips_payload_043` / `…test_count_matches_list_045` after the fixes | **6 / 8 / 12 / 3, all OK** |
+| `…--module test_inbox_counts_034` alone, and again at `bb18069` | **5 errors both times** — pre-existing |
+| `python scripts/check_app_integrity.py` | **643 checks, OK** before every commit |
+
+## 14.6 The seven dimensions, against the code actually written
+
+| Dimension | Verdict | Why |
+|---|---|---|
+| Performance | **neutral** | Both counts were already one statement and still are. The KPI chip's `get_all` sits in a loop that was already per-goal, so no query was added. No index needed: both filters are the ones the lists already use |
+| Security | **neutral** | No permission changed. `frappe.get_all` reads past the permission layer exactly as `frappe.db.count` did, over the same scope, so no caller sees a row they could not see before. The redundant `ignore_permissions` flag was removed rather than declared |
+| Reliability | **improves** | The P1 restored a flow that Wave 4 had blocked for everybody with no manager recorded. The wait now has one enforcement point and one derivation shared with the capacity, so the two cannot drift |
+| Scalability | **neutral** | Nothing here grows with headcount |
+| Maintainability | **improves** | Three new pin tests and one static check mean a "faster" `db.count` cannot come back quietly. Four stale declarations (registry, ceiling, offenders, the fixture's footprint) are now true again |
+| Data integrity | **improves** | Two headings now agree with the lists beneath them, which is the standing rule |
+| Compliance / privacy | **improves** | A refusal that named nobody now names the manager — and **only** the name, from the row the product already prints. No contact detail, no id, and no personal content in any log line this change touches |
+
+## 14.7 Known gaps and shortcuts
+
+* **The three pre-existing failures are not fixed — intentional trade-off.**
+  `test_inbox_counts_034` (5 errors), `test_shift_types_043` and PRIV-3 were red before
+  this session and are red now. Two of the three look like cross-suite state on
+  `test045` rather than product defects, but **that is a guess until somebody looks**,
+  and the inbox one deserves its own look because "HR User cannot read Attendance
+  Request" would be a real defect if it turned out to be the product rather than the
+  site. **Raised, owned, not fixed here.**
+* **The third `!=` / NULL pairing (`Alvoraa Position.status`) is untouched — intentional
+  trade-off**, P3 and outside this slice.
+* **The pre-existing limit the test engineer pinned is untouched — intentional trade-off.**
+  A plain line manager cannot decide a correction, because the standard permissions on
+  Attendance Request give submit to HR User, HR Manager and System Manager only. That is
+  pre-existing, now tested, and changing it is a permission decision for Surbhi.
+* **`get_inbox`'s query count is still not proved flat — temporary debt** (§11.5). It
+  moves with what is in the inbox, not with headcount. Wave 5.
+* **The screens are still not built** (§1). Nothing in this session changed that.
+* **A fixture that writes to a shared company is a trap I walked into once today.** The
+  lesson is in `test_count_matches_list_045`'s docstring rather than in a person's head:
+  borrow existing people, do not hire new ones.

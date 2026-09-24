@@ -127,9 +127,16 @@ MIN_TERM = 2
 # for people who had none; it does not widen anybody who already had a scope.
 DIRECTORY_SCOPE_FOR_EMPLOYEES = "own_company"
 
-# The Employee fields the scope is built from, per option. Named here so the
+# The Employee field the scope is built from, per option. Named here so the
 # constant above cannot select a shape that no query knows how to build.
-_SCOPE_FIELD = {"own_company": "company", "own_branch": "branch"}
+#
+# **A tuple of pairs, not a dict, and that is a rule rather than a style.** A
+# module-level dict can be mutated by one request and read by the next - a
+# worker serves several sites - so `test_frame_endpoint_registry_034` bans
+# every module-level dict, list and set in this file. The first version of this
+# was a dict and the guard caught it on the full-suite run. The pairs are
+# turned into a lookup inside the function, where the copy is per call.
+_SCOPE_FIELDS = (("own_company", "company"), ("own_branch", "branch"))
 
 
 def _own_scope_filters(user=None):
@@ -150,7 +157,7 @@ def _own_scope_filters(user=None):
 	# caller in this app uses the module form; this one does too.
 	import hrms.alvoraa_hr_core.access as access
 
-	field = _SCOPE_FIELD.get(DIRECTORY_SCOPE_FOR_EMPLOYEES)
+	field = dict(_SCOPE_FIELDS).get(DIRECTORY_SCOPE_FOR_EMPLOYEES)
 	if not field:
 		# Fail closed on a constant somebody has edited to a value no query
 		# knows. The alternative - falling back to "own_company" - would hide

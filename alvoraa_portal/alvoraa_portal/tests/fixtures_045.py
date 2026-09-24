@@ -131,7 +131,47 @@ def own_employee(first, reports_to=None, user=None, branch=STORE_A, company=None
 	Saved through the document so Employee's nested set (lft/rgt) follows
 	`reports_to` - the people-search scope reads it.
 	"""
+	wanted = {
+		"company": company or COMPANY,
+		"status": "Active",
+		"reports_to": reports_to,
+		"user_id": user,
+		"branch": branch,
+		"date_of_birth": FORBIDDEN_VALUES["date_of_birth"],
+		"date_of_joining": FORBIDDEN_VALUES["date_of_joining"],
+		"cell_number": FORBIDDEN_VALUES["cell_number"],
+	}
 	name = frappe.db.get_value("Employee", {"first_name": first, "last_name": TAG}, "name")
+
+	# **If nothing needs changing, do not save.**
+	#
+	# `setUpClass` runs once per test CLASS, so after the first class these
+	# people already exist and every later call was re-saving them for no
+	# reason. That matters because saving an Employee with a `user_id` makes
+	# ERPNext save the linked User (`employee.update_user:212`) - and two of
+	# those in the same second is what produced
+	# `TimestampMismatchError: ... has been modified after you have opened it`,
+	# which then failed a whole class's setUpClass and took six tests with it.
+	#
+	# Clearing the document cache was not enough on its own, because the race
+	# is between two writes and not between a read and a write. Not writing at
+	# all when there is nothing to write is the fix that actually holds, and it
+	# makes the fixture faster as a side effect.
+	if name:
+		current = frappe.db.get_value("Employee", name, list(wanted), as_dict=True)
+		if current and all(
+				str(current.get(k) or "") == str(v or "") for k, v in wanted.items()):
+			# The SAVE is what is skipped, not the login housekeeping. Every
+			# call used to clear these, and a User Permission left behind by
+			# anything else on the site would narrow every list this user
+			# sees - which would make a test about OUR rules pass or fail for
+			# a reason that has nothing to do with the rule.
+			if user:
+				frappe.db.delete("User Permission", {"user": user})
+				frappe.clear_cache(user=user)
+				frappe.db.commit()
+			return name
+
 	if name:
 		doc = frappe.get_doc("Employee", name)
 	else:
@@ -139,7 +179,7 @@ def own_employee(first, reports_to=None, user=None, branch=STORE_A, company=None
 	doc.company = company or COMPANY
 	doc.status = "Active"
 	doc.reports_to = reports_to
-	doc.user_id = user
+	# **`user_id` is deliberately NOT set on the document.** See below.
 	doc.gender = ensure_gender()
 	doc.date_of_birth = FORBIDDEN_VALUES["date_of_birth"]
 	doc.date_of_joining = FORBIDDEN_VALUES["date_of_joining"]
@@ -149,24 +189,29 @@ def own_employee(first, reports_to=None, user=None, branch=STORE_A, company=None
 	# user sees, so a test about OUR rules would pass or fail because of it.
 	doc.create_user_permission = 0
 	doc.flags.ignore_permissions = True
-	if user:
-		# **Saving this Employee will SAVE that User** - ERPNext's
-		# `employee.update_user:212` fetches the User and writes to it. If a
-		# stale copy is cached, that inner save is refused with "has been
-		# modified after you have opened it", and the failure lands on the
-		# Employee save with no hint that a User was involved.
-		#
-		# Clearing the cache on both sides of the write is what actually stops
-		# it: before, so the inner save reads the current row; and again after,
-		# so the next fixture call does not re-open the version this save has
-		# just superseded.
-		frappe.clear_document_cache("User", user)
 	doc.save(ignore_permissions=True)
+
+	# **The login is linked AFTER the save, with `db.set_value`.**
+	#
+	# Setting `user_id` on the document makes ERPNext's `update_user()` open
+	# and save that User inside the Employee save
+	# (`erpnext/setup/doctype/employee/employee.py:212`). That inner save was
+	# refused with "has been modified after you have opened it", and the
+	# timestamps in the failure were **26 microseconds apart** - so it was not
+	# two competing writes at all, it was one save writing the User more than
+	# once and then checking its own work against a copy it had already
+	# superseded.
+	#
+	# Nothing here needs `update_user()`. Its job is to grant the Employee role
+	# and copy a few fields onto the login, and `own_user()` above already sets
+	# exactly the roles this fixture wants - which is the point of owning them.
+	# So the link is written directly and the whole problem disappears.
 	if user:
-		frappe.clear_document_cache("User", user)
-	if user:
+		frappe.db.set_value("Employee", doc.name, "user_id", user,
+		                    update_modified=False)
 		frappe.db.delete("User Permission", {"user": user})
 		frappe.clear_cache(user=user)
+		frappe.clear_document_cache("User", user)
 	frappe.db.commit()
 	return doc.name
 

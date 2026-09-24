@@ -296,6 +296,15 @@ docker restart compose-nginx-1
 
 ---
 
+### 5.11 "Throttled" when creating users
+
+Frappe 16.35 and later refuse the 61st User created within an hour on a site, with the
+one-word error "Throttled". The configurator sets `throttle_user_limit` to 5000 in
+`common_site_config.json` (ALV-119); a site that shows "Throttled" during onboarding or a
+seed run is missing that key. Set it with a number, not text:
+`bench set-config -gp throttle_user_limit 5000` (the `p` matters - a quoted "5000" makes the
+comparison crash), then `pkill -HUP gunicorn` in the backend so the web workers reread it.
+
 ## 6. Verify — per site, not just once
 
 ```bash

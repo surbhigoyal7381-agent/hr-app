@@ -212,6 +212,11 @@ services:
         bench set-config -gp mute_emails     "$$MUTE_EMAILS"
         # Server Scripts are arbitrary Python execution from the UI. Off. (§20)
         bench set-config -gp server_script_enabled 0
+        # Frappe 16.35 refuses the 61st User created within an hour on a site
+        # ("Throttled", frappe 012667b, 22 Sep 2026). Fine against abuse, fatal
+        # for a tenant onboarding 100 employees with logins. Raised, not removed
+        # (ALV-119). Override per environment with THROTTLE_USER_LIMIT.
+        bench set-config -gp throttle_user_limit "$${THROTTLE_USER_LIMIT:-5000}"
         echo "configurator done"
 
   # ── Web (horizontally scalable) ──────────────────────────────────────────

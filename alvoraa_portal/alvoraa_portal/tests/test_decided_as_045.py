@@ -22,6 +22,7 @@ and a field a client can lie about:
 """
 
 import frappe
+import frappe.model.document
 from frappe.utils import add_days, getdate, nowdate
 
 from alvoraa_portal import attendance_correction as ac
@@ -52,10 +53,29 @@ def may_review_granted():
 	So the guard is patched in this process instead. What is under test in this
 	file is the CAPACITY and the WAIT WINDOW, not who may review;
 	`test_the_guard_itself_still_refuses` keeps the guard honest separately.
+
+	**TWO guards have to be stood down, not one, and the second one taught me
+	something.** Patching `_may_review` alone still failed on the approve path,
+	because `decide()` approves by calling `doc.submit()` and Frappe's own
+	`Document.check_permission("submit")` runs underneath it. `decide()`'s own
+	comment says so in as many words - "submit() runs its own permission check,
+	so `_may_review()` above is a clear message rather than the only thing
+	standing in the way" - and it is right: **our guard is the sentence a
+	person reads, the framework's is the lock.** A test that stood down only
+	ours would have been testing a door with the deadbolt still on.
+
+	Both are stood down here TOGETHER and only here, for the two tests that
+	need to reach the stored record.
 	"""
+	from contextlib import ExitStack
 	from unittest.mock import patch
 
-	return patch.object(ac, "_may_review", return_value=True)
+	stack = ExitStack()
+	stack.enter_context(patch.object(ac, "_may_review", return_value=True))
+	stack.enter_context(
+		patch.object(frappe.model.document.Document, "check_permission",
+		             lambda self, permtype="read", permlevel=None: None))
+	return stack
 
 
 class _Corrections(Wave4Base):
@@ -87,6 +107,17 @@ class _Corrections(Wave4Base):
 		# A fixture whose dates collide with its own other fixture is a defect
 		# slice 043 met too.
 		day = add_days(nowdate(), -15)
+		# **Clear this person's day before asking for it.**
+		#
+		# Frappe HR refuses a second Attendance Request that overlaps an
+		# existing one (`OverlappingAttendanceRequestError`), and `_request`
+		# COMMITS - so a request left behind by an earlier run of this module,
+		# for any reason, poisons every later run until somebody deletes it by
+		# hand. That happened: a run whose cleanup could not delete a submitted
+		# document left `HR-ARQ-...-00001` on the site, and the next run failed
+		# on an employee it had never touched. The fixture now owns its own
+		# day rather than trusting the site to be empty.
+		self._clear_day(employee, day)
 		doc = frappe.get_doc({
 			"doctype": ac.REQUEST,
 			"employee": employee,
@@ -104,10 +135,38 @@ class _Corrections(Wave4Base):
 		self.addCleanup(self._drop, doc.name)
 		return frappe.get_doc(ac.REQUEST, doc.name)
 
-	def _drop(self, name):
+	def _clear_day(self, employee, day):
+		"""Remove any Attendance Request this person already holds for `day`."""
 		frappe.set_user("Administrator")
-		if frappe.db.exists(ac.REQUEST, name):
-			frappe.delete_doc(ac.REQUEST, name, force=True, ignore_permissions=True)
+		existing = frappe.get_all(ac.REQUEST,
+		                          filters={"employee": employee,
+		                                   "from_date": ("<=", day),
+		                                   "to_date": (">=", day)},
+		                          pluck="name")
+		for name in existing:
+			self._drop(name)
+
+	def _drop(self, name):
+		"""Take the request back out, **including one that was approved.**
+
+		Found by `frappe.exceptions.LinkExistsError` / "Submitted Record
+		cannot be deleted": the tests in this file now really approve, and
+		approving submits. `delete_doc` refuses a submitted document, so the
+		cleanup silently failed, the request survived the rollback (`_request`
+		commits), and the NEXT test on the same person and the same day died
+		with `OverlappingAttendanceRequestError`. A test that does not put
+		back what it takes breaks the tests after it, not itself.
+		"""
+		frappe.set_user("Administrator")
+		if not frappe.db.exists(ac.REQUEST, name):
+			frappe.db.commit()
+			return
+		doc = frappe.get_doc(ac.REQUEST, name)
+		if doc.docstatus == 1:
+			doc.flags.ignore_permissions = True
+			doc.cancel()
+			frappe.db.commit()
+		frappe.delete_doc(ac.REQUEST, name, force=True, ignore_permissions=True)
 		frappe.db.commit()
 
 
@@ -307,16 +366,39 @@ class TestTheRecordAnswersOnItsOwn(_Corrections):
 		`reports_to` lookup - and then changes `reports_to` underneath both, to
 		prove the stored answer is the stored answer (SEC-19(h)).
 		"""
-		by_manager = self._request(self.rahul,
+		by_manager = self._request(self.kamal_both,
 		                           raised_on=f"{add_days(nowdate(), -9)} 09:00:00")
 		by_hr = self._request(self.covered_only[2],
 		                      raised_on=f"{add_days(nowdate(), -9)} 09:00:00")
 
-		with may_review_granted():
-			self.as_user(self.sandeep_user)
-			ac.decide(by_manager.name, 1)
-			self.as_user(self.priya_user)
-			ac.decide(by_hr.name, 1)
+		# **Kamal decides the Manager one, not Sandeep, and the reason is a
+		# fact about the product rather than about this fixture.**
+		#
+		# `decide()` approves by calling `doc.submit()`, and Frappe runs its
+		# OWN submit permission check inside that call. On a clean site the
+		# standard permissions on Attendance Request give submit to HR User,
+		# HR Manager and System Manager, and NOT to the plain Employee role.
+		# So a line manager who holds only `Employee` - Sandeep - cannot
+		# approve anything, whatever `_may_review()` is patched to say.
+		#
+		# The earlier version of this test patched `_may_review` and used
+		# Sandeep, and it errored with `PermissionError` from
+		# `check_docstatus_transition`. Patching the guard harder would have
+		# been bending the fixture until it passed. Kamal is the honest
+		# reviewer instead: he manages `kamal_both` AND holds HR Manager, so
+		# he really can submit, and `decided_as` still answers **Manager**
+		# because being somebody's manager is what he did here. That is
+		# exactly the configuration a tenant has to be in for AC-82(c) to
+		# happen at all, and
+		# `test_a_plain_manager_cannot_decide_without_the_submit_permission`
+		# below pins the other half.
+		#
+		# Nothing is patched. Both callers go through the real guard and the
+		# real submit permission.
+		self.as_user(self.kamal_user)
+		ac.decide(by_manager.name, 1)
+		self.as_user(self.priya_user)
+		ac.decide(by_hr.name, 1)
 		frappe.set_user("Administrator")
 
 		stored = {
@@ -331,14 +413,27 @@ class TestTheRecordAnswersOnItsOwn(_Corrections):
 		# SEC-19(h). Move the reporting line and ask again. A derived answer
 		# would change here; a stored one does not, and the year somebody asks
 		# is exactly the year it has changed.
-		frappe.db.set_value("Employee", self.rahul, "reports_to", self.kamal,
+		frappe.db.set_value("Employee", self.kamal_both, "reports_to", self.sandeep,
 		                    update_modified=False)
 		frappe.db.commit()
+		self.addCleanup(self._put_reports_to_back, self.kamal_both, self.kamal)
 		self.assertEqual(
 			"Manager",
 			frappe.db.get_value(ac.REQUEST, by_manager.name, "alvoraa_decided_as"),
 			"the stored capacity moved when reports_to moved")
-		frappe.db.set_value("Employee", self.rahul, "reports_to", self.sandeep,
+		frappe.db.set_value("Employee", self.kamal_both, "reports_to", self.kamal,
+		                    update_modified=False)
+		frappe.db.commit()
+
+	def _put_reports_to_back(self, employee, manager):
+		"""Put the reporting line back even if the assertion above fails.
+
+		The restore used to sit after the assertion, so a red assertion left
+		the fixture's tree rewired for every test that ran afterwards - a test
+		that does not put back what it takes.
+		"""
+		frappe.set_user("Administrator")
+		frappe.db.set_value("Employee", employee, "reports_to", manager,
 		                    update_modified=False)
 		frappe.db.commit()
 
@@ -354,15 +449,58 @@ class TestTheRecordAnswersOnItsOwn(_Corrections):
 		self.assertNotIn("S045-MOBILE", msg, "a refusal must carry no personal detail")
 
 	def test_the_manager_is_not_made_to_wait(self):
-		"""The window is HR's, not everybody's. Sandeep decides his own
-		report's request the moment it is raised."""
-		doc = self._request(self.rahul)
-		with may_review_granted():
-			self.as_user(self.sandeep_user)
-			ac.decide(doc.name, 1)
+		"""The window is HR's, not everybody's.
+
+		Kamal decides his own report's request the moment it is raised, and
+		the point is sharper with him than it was with Sandeep: Kamal **holds
+		HR Manager**. If the two-working-day wait were keyed on holding an HR
+		role rather than on the capacity the person acted in, he would be made
+		to wait here. He is not, because `decided_as` answers **Manager**.
+
+		Nothing is patched - see the note in
+		`test_a_year_later_the_two_documents_can_be_told_apart` for why a
+		plain-Employee manager cannot reach this path at all.
+		"""
+		doc = self._request(self.kamal_both)
+		self.as_user(self.kamal_user)
+		ac.decide(doc.name, 1)
 		frappe.set_user("Administrator")
 		self.assertEqual("Manager",
 		                 frappe.db.get_value(ac.REQUEST, doc.name, "alvoraa_decided_as"))
+
+	def test_a_plain_manager_cannot_decide_without_the_submit_permission(self):
+		"""**The finding the two errors above were really pointing at.**
+
+		Sandeep manages Rahul and holds only the `Employee` role. He can
+		OPEN Rahul's month - `_subject()` lets a manager through on
+		`_reports_to` - but he cannot DECIDE, because approving is submitting
+		and the standard permissions on Attendance Request give submit to
+		HR User, HR Manager and System Manager only.
+
+		So AC-82(c)'s "the employee's own manager decides as Manager" is
+		reachable only for a reviewer who is **both** the requester's
+		`reports_to` **and** holds submit - which a tenant has to configure.
+		This is not something Wave 4 changed; `_may_review()` and the stock
+		DocPerms both predate it. It is pinned here so that it is a measured
+		fact with a test on it rather than an assumption, and so that a later
+		decision to let line managers approve shows up as this test going red
+		rather than as silence.
+		"""
+		self.assertNotIn("HR User", frappe.get_roles(self.sandeep_user),
+		                 "the fixture's plain manager has acquired an HR role")
+		doc = self._request(self.rahul)
+		self.as_user(self.sandeep_user)
+		with self.assertRaises(frappe.PermissionError) as caught:
+			ac.decide(doc.name, 1)
+		self.assertIn("do not review", str(caught.exception))
+		frappe.set_user("Administrator")
+		# Empty, not "Manager". The column stores "" rather than NULL on a row
+		# that was never decided - `_shape()` is what turns that into "not
+		# recorded" for a screen - so the assertion is that nothing was
+		# CLAIMED, which is the thing that matters in an audit field.
+		self.assertFalse(
+			frappe.db.get_value(ac.REQUEST, doc.name, "alvoraa_decided_as"),
+			"a refused decision wrote a capacity onto the record")
 
 	def test_an_undecided_record_says_not_recorded_and_never_manager(self):
 		"""No backfill, and no default. An empty value belongs to a decision

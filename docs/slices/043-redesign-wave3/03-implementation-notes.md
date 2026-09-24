@@ -190,6 +190,29 @@ three live defects, the shift-type scope, and the Why? sheet's endpoint and word
 | `bench run-tests --module …test_late_rules` (unedited, Wave 0b's) | **5 ran, OK** |
 | `bench run-tests --module …test_frame_endpoint_registry_034` (Wave 1's) | **8 ran, OK** |
 | `bench run-tests --module …test_opt_in_features` | **8 + 11 ran, OK** — the pin for `subscription.py` |
+| `bench run-tests --module …test_endpoint_entitlement` | **13 ran, OK** — it exercises `requires_feature` directly, which this slice changed, so it is the real pin for the new `message` argument |
+| `bench run-tests --module …test_frame_api_034` (Wave 1's, unedited) | **33 ran, OK** |
+| `bench run-tests --module …test_inbox_counts_034` (Wave 1's, unedited) | **17 + 2 ran, OK** |
+| `bench run-tests --module …test_home_api_042` (Wave 2's, unedited) | **23 ran, OK** |
+| `bench run-tests --module …test_inbox_parts_042` (Wave 2's, unedited) | **24 ran, OK** — matching Wave 2's own recorded number |
+| `npm ci` then `node scripts/run_dom_tests.js` | **129 passed, 0 failed** — 8 + 12 + 82 + 27, and the same 3 files not run for Wave 1's recorded reasons. `jsdom` was not installed in this worktree, which is why the first attempt reported 4 failures that meant nothing |
+| `node scripts/check_undefined_js.js` | undefined identifiers: none |
+| `node scripts/check_portal_handlers.js` | all reachable and callable |
+
+**A phantom failure I caused and caught.** One run of
+`test_inbox_parts_042` reported **19 ran, 2 setUpClass errors**. It was not
+reproducible: the next clean run gave 24 ran, OK. The cause was mine - I had a
+backgrounded sweep still holding `test043` when I started that run, so two
+`bench run-tests` were on one site at once. That is the exact thing this project
+learned on 2026-09-10, arrived at again from the other direction. **Nothing of
+Wave 2's was broken; I broke the measurement.** Every number above is from one
+run at a time.
+
+**The jsdom caveat, stated because it matters for the part not yet built.** The jsdom
+harness is kinder than a real browser - its stub calls an error path `website.js` never
+calls. This slice changed no JavaScript, so the 129 above are a regression check and
+nothing more. When the Time and Pay screens exist, anything that depends on a failed
+call being noticed must be proved with `scripts/browser_check_frame.js`, not jsdom.
 
 One `bench run-tests` at a time, on my own container and site. `hrlocal-bench` untouched.
 No `docker cp` — the worktree reaches the container through a bind mount, and the two

@@ -951,6 +951,28 @@ def _manager_user_for(employee):
 	return frappe.db.get_value("Employee", mgr, "user_id") if mgr else None
 
 
+def _manager_name_for(employee):
+	"""What to call this person's manager on screen, or None.
+
+	**A refusal that names nobody is a bad refusal.** "This is still with their
+	manager" tells an HR person to wait for somebody the product will not name,
+	and nobody can chase a blank. So the name is read from the manager's own
+	Employee row first - that is the name the rest of the product prints - and
+	from the login's full name second.
+
+	Only the manager's NAME comes back. No contact detail, no id, nothing else
+	off that row: a refusal needs one word, not a record.
+	"""
+	mgr = frappe.db.get_value("Employee", employee, "reports_to")
+	if not mgr:
+		return None
+	row = frappe.db.get_value("Employee", mgr, ["employee_name", "user_id"],
+	                          as_dict=True) or {}
+	return (row.get("employee_name")
+	        or frappe.db.get_value("User", row.get("user_id"), "full_name")
+	        or None)
+
+
 def decided_as(doc, user=None):
 	"""`Manager`, `HR`, or **None** - derived by the server, never declared.
 
@@ -1054,20 +1076,49 @@ def decide(name, approve, note=None):
 	# body can influence it - `decide()` takes no `decided_as` argument, and
 	# adding one later would be a change somebody has to make on purpose.
 	capacity = decided_as(doc)
-	if capacity == "HR":
+	# **The wait applies only where there is a manager who could act.**
+	#
+	# 045 AC-81, the no-manager clause. The two working days exist to give
+	# the employee's own manager first refusal. Somebody with no
+	# `reports_to`, or whose `reports_to` has no login, has nobody to give
+	# it to - so there is nothing to wait for, and HR decides straight
+	# away, which is what HR does today. Most people in a shop have no
+	# manager recorded; without this clause the window stops a working flow
+	# for all of them and tells them to wait for a person the product
+	# cannot name.
+	#
+	# **This restores what HR does today. It is not a new policy.** The
+	# answer behind the window was "HR sees from day one, acts from day
+	# three", and it was about waiting for a MANAGER. It was never about
+	# waiting for nobody.
+	#
+	# `_manager_user_for` is the same derivation `decided_as` uses, so the
+	# two cannot drift: whoever counts as the manager for the capacity is
+	# exactly whoever the wait is for.
+	mgr_user = _manager_user_for(doc.employee) if capacity == "HR" else None
+	if capacity == "HR" and mgr_user:
 		may_act_from, basis = hr_may_act_from(doc)
 		if frappe.utils.getdate(frappe.utils.nowdate()) < frappe.utils.getdate(may_act_from):
-			mgr_user = _manager_user_for(doc.employee)
-			mgr = frappe.db.get_value("User", mgr_user, "full_name") if mgr_user else None
+			mgr = _manager_name_for(doc.employee)
 			# Says what happened, why, and what to do next - never "not
 			# allowed". The date is the one the row shows, so the screen and
-			# the refusal agree.
+			# the refusal agree. **And it names the person.** Where the
+			# record holds no name at all it says plainly who to go to,
+			# instead of leaving the reader with an anonymous "their manager".
+			if mgr:
+				frappe.throw(
+					_("This is still with {0} until {1}. You can decide it as HR "
+					  "from then, counted as two {2}.").format(
+						mgr,
+						frappe.utils.formatdate(may_act_from),
+						basis),
+					frappe.PermissionError)
 			frappe.throw(
-				_("This is still with {0} until {1}. You can decide it as HR from "
-				  "then, counted as two {2}.").format(
-					mgr or _("their manager"),
-					frappe.utils.formatdate(may_act_from),
-					basis),
+				_("This is still with the manager on this person's record until "
+				  "{0} - the record has no name for them. You can decide it as HR "
+				  "from then, counted as two {1}. To act sooner, ask HR to check "
+				  "who this person reports to.").format(
+					frappe.utils.formatdate(may_act_from), basis),
 				frappe.PermissionError)
 
 	stamp = {"alvoraa_review_note": (note or "").strip() or None,

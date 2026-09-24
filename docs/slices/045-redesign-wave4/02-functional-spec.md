@@ -1126,6 +1126,21 @@ engineer would otherwise guess at.
   `03-implementation-notes.md` §1 item 2). **Until Surbhi answers it, the fail-closed
   behaviour is the one that ships: the action is not offered on a covered row at all**, and
   the test asserts the absence. §21 D-12.
+  **And the clause that says when the wait does not apply at all:** *given* a person with
+  **no manager recorded** — no `reports_to`, or a `reports_to` who has no login and so
+  cannot act — *then* there is nobody to give first refusal to, **so HR may decide
+  immediately** and the two-working-day window does not apply. The window applies **only**
+  where a manager exists and could act. This is **a restoration of what HR does today**,
+  not a new decision: the answer behind the window was about waiting for a manager, and it
+  was never about waiting for nobody. Most people in a shop have no manager recorded, so
+  without this clause the window would block a working flow for all of them. The capacity
+  is unaffected — an HR decision on a person with no manager is still stored as
+  `alvoraa_decided_as = "HR"` (AC-82).
+  **The refusal, where the wait does apply, names the manager.** "This is still with
+  *their manager*" is not an acceptable message: it tells an HR person to wait and gives
+  them nobody to chase. The sentence carries the manager's **name** and the date, and
+  nothing else off that row; where the record genuinely holds no name it says so and says
+  who to ask instead.
 - **AC-82 · an HR override is stored as an HR decision, and the test fails if the record
   cannot tell.** *Given* Priya approves a covered person's attendance correction after the
   manager did not act, *then*:

@@ -441,12 +441,97 @@ class TestTheRecordAnswersOnItsOwn(_Corrections):
 		"""AC-81. Raised today, so Priya is refused - and the sentence names
 		the manager and the date, because "not allowed" is not a next step."""
 		doc = self._request(self.rahul)
+
+		# **The two sources of a name are deliberately made to disagree.**
+		#
+		# The manager's name is taken from their own Employee row, because
+		# that is the name the rest of the product prints. The login's
+		# `full_name` is only a fallback. On this site the login already
+		# happened to carry a matching name, so an assertion on the shared
+		# spelling passed whichever source the code read - it proved
+		# nothing. Setting the two apart is what makes this a real check.
+		was = frappe.db.get_value("User", self.sandeep_user, "full_name")
+		self.addCleanup(self._put_full_name_back, self.sandeep_user, was)
+		frappe.db.set_value("User", self.sandeep_user, "full_name",
+						    "S045WrongSource", update_modified=False)
+		employee_name = frappe.db.get_value("Employee", self.sandeep, "employee_name")
+
 		self.as_user(self.priya_user)
 		with may_review_granted(), self.assertRaises(frappe.PermissionError) as caught:
 			ac.decide(doc.name, 1)
 		msg = str(caught.exception)
 		self.assertIn("still with", msg)
+		# **The refusal must NAME the person.** "still with their manager" is
+		# an anonymous sentence: it tells an HR person to wait and gives them
+		# nobody to chase.
+		self.assertIn(employee_name, msg,
+					  "the refusal did not name the manager it is waiting for")
+		self.assertNotIn("their manager", msg)
+		self.assertNotIn("S045WrongSource", msg,
+					  "the name came off the login, not the manager's own record")
 		self.assertNotIn("S045-MOBILE", msg, "a refusal must carry no personal detail")
+
+	def _put_full_name_back(self, user, full_name):
+		frappe.set_user("Administrator")
+		frappe.db.set_value("User", user, "full_name", full_name,
+						    update_modified=False)
+		frappe.db.commit()
+
+	def test_with_no_manager_recorded_hr_decides_straight_away(self):
+		"""**AC-81, the no-manager clause. This is the P1 pin test.**
+
+		The two-working-day window exists to give the employee's own manager
+		first refusal. `covered_only[0]` has no `reports_to` at all - the
+		ordinary state of most people in a shop - so there is nobody to give
+		it to, and HR decides today, which is what HR does today.
+
+		Without the clause this errors with
+		`PermissionError: This is still with their manager until <date>`, and
+		five tests in the existing `test_attendance_correction` module error
+		with it too. The request is raised TODAY on purpose: backdate it and
+		the window would be over and the test would prove nothing.
+		"""
+		doc = self._request(self.covered_only[0])
+		self.assertFalse(
+			frappe.db.get_value("Employee", self.covered_only[0], "reports_to"),
+			"the fixture gained a manager - this test would pass over nothing")
+
+		self.as_user(self.priya_user)
+		with may_review_granted():
+			ac.decide(doc.name, 1)
+		frappe.set_user("Administrator")
+
+		# Decided, and decided AS HR - the capacity is unchanged by the
+		# clause. Only the wait went away.
+		stored = frappe.db.get_value(
+			ac.REQUEST, doc.name, ["docstatus", "alvoraa_decided_as"], as_dict=True)
+		self.assertEqual(1, stored.docstatus, "the approval did not go through")
+		self.assertEqual("HR", stored.alvoraa_decided_as)
+
+	def test_a_manager_with_no_login_is_nobody_to_wait_for_either(self):
+		"""The wait is for a manager who **could act**.
+
+		`reports_to` pointing at somebody with no `user_id` is a manager who
+		cannot open the screen, so waiting for them is the same dead end as
+		waiting for nobody. This is the same derivation `decided_as` uses,
+		so the capacity and the wait cannot disagree about who the manager
+		is.
+		"""
+		loginless = own_employee("S045NoLoginBoss")
+		person = self.covered_only[1]
+		frappe.db.set_value("Employee", person, "reports_to", loginless,
+						    update_modified=False)
+		frappe.db.commit()
+		self.addCleanup(self._put_reports_to_back, person, None)
+
+		doc = self._request(person)
+		self.as_user(self.priya_user)
+		with may_review_granted():
+			ac.decide(doc.name, 1)
+		frappe.set_user("Administrator")
+		self.assertEqual(
+			1, frappe.db.get_value(ac.REQUEST, doc.name, "docstatus"),
+			"HR was made to wait for a manager who has no way in")
 
 	def test_the_manager_is_not_made_to_wait(self):
 		"""The window is HR's, not everybody's.

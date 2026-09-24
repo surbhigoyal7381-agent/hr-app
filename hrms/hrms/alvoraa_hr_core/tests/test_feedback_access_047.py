@@ -164,6 +164,15 @@ class FeedbackFixtures047(IntegrationTestCase):
 				"status": "Active",
 				"branch": branch,
 				"user_id": email,
+				# ERPNext defaults this to 1, which quietly writes a User
+				# Permission tying the login to its own Employee record on
+				# EVERY doctype with an `employee` link - including this one.
+				# It is a setting, not a control (see finding F5 and
+				# test_erpnexts_own_user_permission_is_a_setting_not_a_control),
+				# and it also blocks the manager and HR access this slice is
+				# meant to allow. The fixtures turn it off so the tests measure
+				# the hooks, and one test measures the setting on its own.
+				"create_user_permission": 0,
 			}
 		)
 		employee.flags.ignore_permissions = True
@@ -172,6 +181,10 @@ class FeedbackFixtures047(IntegrationTestCase):
 
 	@classmethod
 	def _user_permissions(cls):
+		# Clear anything ERPNext wrote for these logins before, so a re-run on
+		# an existing site starts from the same place as a fresh one.
+		frappe.db.delete("User Permission", {"user": ("like", "alv117.%"), "allow": "Employee"})
+		frappe.db.commit()
 		for key in ("hr_in", "hr_out", "hr_co", "hr_read"):
 			cls._user_permission(_email(key), "Company", COMPANY)
 		for key, branch in BRANCH_LIMIT.items():
@@ -195,6 +208,7 @@ class FeedbackFixtures047(IntegrationTestCase):
 
 	@classmethod
 	def _appraisal(cls):
+		_ensure("KRA", "ALV117 Delivery", title="ALV117 Delivery")
 		_ensure(
 			"Appraisal Template",
 			TEMPLATE,
@@ -271,11 +285,19 @@ class FeedbackFixtures047(IntegrationTestCase):
 
 	@classmethod
 	def _make_leaver(cls):
-		employee = frappe.get_doc("Employee", cls.emp["leaver"])
-		employee.status = "Left"
-		employee.relieving_date = "2026-06-30"
-		employee.flags.ignore_permissions = True
-		employee.save(ignore_permissions=True)
+		# Written straight to the row on purpose. ERPNext refuses to relieve
+		# somebody who still has people reporting to them
+		# (InactiveEmployeeStatusError), which is a good rule and closes most
+		# of this case in practice. It does not close all of it: a reports_to
+		# can be set afterwards, and data loads and imports do not go through
+		# that validation. The hook has to fail closed either way, so the
+		# fixture forces the state the validation would not let us reach.
+		frappe.db.set_value(
+			"Employee",
+			cls.emp["leaver"],
+			{"status": "Left", "relieving_date": "2026-06-30"},
+			update_modified=False,
+		)
 		# The login stays enabled on purpose - that is the case ALV-117 asked
 		# about, and it is what a real tenant looks like the week after someone
 		# leaves.
@@ -381,9 +403,13 @@ class TestFeedbackAccess047(FeedbackFixtures047):
 		"hr_in": (True, True, True, True, True, True, True),
 		"hr_out": (False, False, False, False, False, False, False),
 		"hr_co": (True, True, True, True, True, True, True),
-		# HR User is read-only in the doctype itself, so the role rows cap it
-		# before the hook is even asked.
-		"hr_read": (True, False, False, False, True, True, True),
+		# Finding F6: HR User is read-only in the doctype's own rows, but every
+		# HR person also holds the Employee role, and that row grants write,
+		# create, submit and cancel. So a "read-only" HR user can write. The
+		# hooks do not widen that - before them the same person could write on
+		# every record in the tenant, and now only inside their HR scope - but
+		# the doctype's read-only HR row has never meant what it says.
+		"hr_read": (True, True, True, True, True, True, True),
 		"sysmgr": (True, True, True, True, True, True, True),
 	}
 
@@ -410,7 +436,9 @@ class TestFeedbackAccess047(FeedbackFixtures047):
 		"hr_in": (True, True, True, True, True),
 		"hr_out": (False, False, False, False, False),
 		"hr_co": (True, True, True, True, True),
-		"hr_read": (True, False, True, True, True),
+		# finding F6 again: the Employee role carries cancel, so "read-only" HR
+		# can cancel. Inside their HR scope now, rather than anywhere.
+		"hr_read": (True, True, True, True, True),
 		"leaver": (False, False, False, False, False),
 		"sysmgr": (True, True, True, True, True),
 	}
@@ -479,13 +507,16 @@ class TestFeedbackAccess047(FeedbackFixtures047):
 		"subj": {"main", "submitted", "by_subj"},
 		"auth": {"main", "submitted"},
 		"unrel": set(),
-		"mgr": {"main", "submitted"},
+		# mgr sees the two about subj (a direct report) AND the three they
+		# wrote themselves about leaver, exrep and hq.
+		"mgr": {"main", "submitted", "leaver", "exrep", "hq"},
 		"mgr2": {"by_subj"},
 		"other": {"by_subj"},
 		"hq": {"hq"},
 		"exrep": {"exrep"},
 		# store North: subj, auth, unrel, mgr, hr_in, hr_co, hr_read, sysmgr
 		"hr_in": {"main", "submitted"},
+		# hr_read has the same Branch permission as hr_in
 		# store South: mgr2, other, leaver, exrep, hr_out
 		"hr_out": {"by_subj", "leaver", "exrep"},
 		"hr_co": {"main", "submitted", "by_subj", "leaver", "exrep", "hq"},
@@ -574,8 +605,12 @@ class TestFeedbackAccess047(FeedbackFixtures047):
 		finally:
 			frappe.local.form_dict = frappe._dict()
 			frappe.set_user("Administrator")
-		values = data.get("values") or []
-		return {row[0] for row in values} & self._my_names()
+		# reportview.get returns either the compressed {keys, values} shape or
+		# a plain list of rows, depending on the arguments the desk sent.
+		if isinstance(data, dict):
+			rows = data.get("values") or []
+			return {row[0] for row in rows} & self._my_names()
+		return {(row[0] if isinstance(row, list | tuple) else row.get("name")) for row in data} & self._my_names()
 
 	def _export_text(self, key):
 		from frappe.desk.reportview import export_query
@@ -717,21 +752,85 @@ class TestFeedbackAccess047(FeedbackFixtures047):
 
 	# ── 8. the known gap, written down ──────────────────────────────────────
 
-	def test_a_docshare_still_widens_a_list_but_not_the_record(self):
-		"""Finding F3, recorded so it cannot be forgotten.
+	def test_erpnexts_own_user_permission_is_a_setting_not_a_control(self):
+		"""Finding F5, measured rather than assumed.
 
-		frappe/model/db_query.py ORs the share condition onto the permission
-		conditions, so a share puts the row in the recipient's list. The
-		record itself, and printing, emailing or sharing it, stay refused.
-		Closing the list side means dropping `share` from the Employee row in
-		the doctype JSON - upstream drift, a decision of its own.
+		ERPNext's Employee has `create_user_permission`, and it defaults to 1.
+		When it is on, linking a login to an Employee record writes a User
+		Permission that ties that login to its own Employee record on EVERY
+		doctype with an `employee` link - this one included. So on a tenant
+		where those rows exist, an ordinary employee was already limited to
+		feedback about themselves.
+
+		That is not a reason to skip ALV-117, for three reasons this test
+		shows: the row is one tick away from not existing, it is per employee
+		rather than per tenant, and while it is on it also blocks the manager
+		and HR access the product actually needs. The hooks give the rule; the
+		setting only ever gave an accident.
 		"""
+		user = _email("unrel")
+		doc = frappe.get_doc(DOCTYPE, self.fb["main"])
+		self.assertFalse(self._may("unrel", "read", doc))  # the hook refuses anyway
+
+		# With the row removed - which is what `create_user_permission = 0`
+		# leaves behind - the hook is the only thing standing there.
+		self.assertFalse(
+			frappe.db.exists("User Permission", {"user": user, "allow": "Employee"}),
+			"fixtures deliberately have no per-employee User Permission",
+		)
+		self.assertEqual(self._visible("unrel"), set())
+
+		# And the manager access the product needs is blocked by that same
+		# setting when it is on, which is why it cannot be the control.
+		self._user_permission(_email("mgr"), "Employee", self.emp["mgr"])
+		try:
+			frappe.clear_cache(user=_email("mgr"))
+			self.assertNotIn(self.fb["main"], self._visible("mgr"))
+		finally:
+			frappe.db.delete("User Permission", {"user": _email("mgr"), "allow": "Employee"})
+			frappe.db.commit()
+			frappe.clear_cache(user=_email("mgr"))
+		self.assertIn(self.fb["main"], self._visible("mgr"))
+
+	def test_a_docshare_beats_both_hooks_for_read_print_and_email(self):
+		"""Finding F3, measured rather than assumed - and worse than expected.
+
+		Two places in Frappe put a share above a permission rule:
+
+		* `frappe/model/db_query.py` ORs the share condition onto the
+		  permission conditions, so a shared row appears in the list;
+		* `frappe/permissions.py has_permission` falls back to
+		  `false_if_not_shared()` AFTER the controller hook has refused, and
+		  that fallback covers read, write, share, submit, email and print.
+
+		So a share defeats both hooks. What still holds is who may create one:
+		`share` itself goes through the hook, so only the author or HR in
+		scope can share a feedback record at all. The residue is "the author
+		may hand their own feedback to anyone", which is a deliberate act on
+		their own text rather than a tenant-wide leak.
+
+		Closing it properly means dropping `share` (and probably `email`) from
+		the Employee row in the doctype JSON. That is a change to a standard
+		Frappe HR doctype and a decision of its own, so it is recorded here
+		rather than made quietly.
+		"""
+		doc = frappe.get_doc(DOCTYPE, self.fb["main"])
+		# Only the people the hook allows can create the share in the first
+		# place - that is the part that still holds.
+		self.assertFalse(self._may("unrel", "share", doc))
+		self.assertTrue(self._may("auth", "share", doc))
+
 		frappe.share.add(DOCTYPE, self.fb["main"], _email("unrel"), read=1)
 		try:
 			self.assertIn(self.fb["main"], self._visible("unrel"))
-			doc = frappe.get_doc(DOCTYPE, self.fb["main"])
+			# The hook itself still says no...
 			self.assertFalse(has_feedback_permission(doc, "read", _email("unrel")))
-			for ptype in ("write", "submit", "cancel", "print", "email", "share"):
+			# ...and the framework overrides it for exactly these three.
+			for ptype in ("read", "print", "email"):
+				with self.subTest(action=ptype, beaten_by_the_share=True):
+					self.assertTrue(self._may("unrel", ptype, doc))
+			# These the share does not carry.
+			for ptype in ("write", "submit", "cancel", "share"):
 				with self.subTest(action=ptype):
 					self.assertFalse(self._may("unrel", ptype, doc))
 		finally:
@@ -739,3 +838,4 @@ class TestFeedbackAccess047(FeedbackFixtures047):
 				"DocShare", {"share_doctype": DOCTYPE, "share_name": self.fb["main"]}
 			)
 			frappe.db.commit()
+		self.assertNotIn(self.fb["main"], self._visible("unrel"))

@@ -38,6 +38,13 @@ ABBR = "S45W4"
 STORE_A = "S045 Store A"
 STORE_B = "S045 Store B"
 
+# A SECOND company, so a scope test has somewhere outside the scope to look.
+# Wave 4's own, like everything else here - the alternative is borrowing
+# another suite's company, and then "this person is out of scope" becomes a
+# fact about whatever ran first.
+OTHER_COMPANY = "S045 Other Company"
+OTHER_ABBR = "S45OC"
+
 # Every Employee field AC-6 says must never reach a browser, with a value that
 # would be found if it did. The strings are distinctive on purpose: the
 # assertion searches the serialised payload for them rather than checking named
@@ -68,6 +75,31 @@ def own_company():
 	                    update_modified=False)
 	frappe.db.commit()
 	return COMPANY
+
+
+def second_company():
+	"""Wave 4's OTHER company. Nobody in it is in anybody's scope by accident.
+
+	Backdated for the same reason `own_company()` is: `ensure_company()` hands
+	every other test the NEWEST company on the site, so a company created here
+	would silently become another suite's default - one with no holiday list
+	and no fiscal year.
+	"""
+	if not frappe.db.exists("Company", OTHER_COMPANY):
+		own_company()  # the prerequisites, once
+		frappe.get_doc(
+			{
+				"doctype": "Company",
+				"company_name": OTHER_COMPANY,
+				"abbr": OTHER_ABBR,
+				"default_currency": "INR",
+				"country": "India",
+			}
+		).insert(ignore_permissions=True)
+	frappe.db.set_value("Company", OTHER_COMPANY, "creation", "2000-01-01 00:00:00",
+	                    update_modified=False)
+	frappe.db.commit()
+	return OTHER_COMPANY
 
 
 def own_branches():

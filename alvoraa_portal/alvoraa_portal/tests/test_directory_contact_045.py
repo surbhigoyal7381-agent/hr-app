@@ -23,7 +23,15 @@ what makes the wider audience safe.
 import frappe
 
 from alvoraa_portal import staff_api
-from alvoraa_portal.tests.fixtures_045 import FORBIDDEN_VALUES, Wave4Base
+from alvoraa_portal.tests.fixtures_045 import (
+	FORBIDDEN_VALUES,
+	STORE_B,
+	Wave4Base,
+	own_company,
+	own_employee,
+	own_user,
+	second_company,
+)
 from alvoraa_portal.tests.test_team_payload_045 import find_key, find_value
 
 WORK_EMAIL = "s045.work.contact@example.com"
@@ -40,6 +48,24 @@ class TestTheDirectoryCarriesWorkContactOnly(Wave4Base):
 		                    update_modified=False)
 		frappe.db.set_value("Employee", cls.rahul, "personal_email", PERSONAL_EMAIL,
 		                    update_modified=False)
+
+		# **This module's own people, in this module's own companies.**
+		#
+		# The lesson this slice paid for: a fixture that hires into a shared
+		# company changes every other test's data. So the outsider lives in a
+		# SECOND company that belongs to Wave 4's fixture, and the two people
+		# added to Wave 4's own company are the smallest number that can prove
+		# a scope moved: one in the other store, one who has left.
+		cls.outsider = own_employee("S045Outsider", branch=None,
+		                            company=second_company())
+		cls.other_branch = own_employee("S045OtherStore", branch=STORE_B)
+		cls.leaver = own_employee("S045Leaver")
+		frappe.db.set_value("Employee", cls.leaver, "status", "Left",
+		                    update_modified=False)
+
+		# A login with no Employee record at all: a platform operator, a vendor
+		# login, anybody the product cannot place in a scope.
+		cls.no_employee_user = own_user("directory.nobody", ("Employee",))
 		frappe.db.commit()
 
 	def test_the_fixture_really_carries_both_emails(self):
@@ -84,28 +110,197 @@ class TestTheDirectoryCarriesWorkContactOnly(Wave4Base):
 			frappe.conf["features"] = self._saved_features
 		super().tearDown()
 
-	def test_a_plain_employee_still_cannot_open_the_directory_at_all(self):
-		"""**The half of Surbhi's decision 4 that is NOT built, asserted so it
-		cannot be mistaken for done.**
+	def test_a_plain_employee_can_now_open_the_directory(self):
+		"""**This test REPLACES the one that pinned the old refusal.**
 
-		She said the directory is *"for employees too"*. Today
-		`get_staff_list` refuses any caller with no HR entitlement -
-		`permitted_employee_filters()` returns `NO_EMPLOYEES` for a plain
-		employee and the endpoint refuses before it reads anything.
+		The commit before this one asserted
+		`test_a_plain_employee_still_cannot_open_the_directory_at_all`, and its
+		docstring said it was expected to be replaced once the scope was decided -
+		not deleted. This is that replacement, and the name changes on purpose so
+		a reader of the history sees the behaviour turn over rather than a test
+		quietly disappear.
 
-		Adding the **field** was the small half and it is done. Opening the
-		**audience** is the other half, and it needs a scope decision that is
-		Surbhi's, not mine: does a shop assistant see their own store, or their
-		whole company? Those are very different directories, and guessing
-		would widen visibility as a side effect - which is the one thing this
-		wave is not allowed to do.
-
-		So this test pins today's behaviour, and it is expected to be REPLACED
-		by a test of the new scope once that is decided - not deleted.
+		Surbhi's decision 4 had two halves. The field half shipped in `59d0c0d`;
+		this is the audience half.
 		"""
+		self.as_user(self.rahul_user)
+		out = staff_api.get_staff_list()
+		self.assertTrue(out.get("rows"),
+		                "a plain employee opened the directory and got nothing")
+		self.assertIn(self.rahul, [r["employee"] for r in out["rows"]],
+		              "a directory that does not contain the person reading it "
+		              "is a bug people report")
+
+	def test_a_plain_employee_sees_their_own_company_and_no_other(self):
+		"""The scope, asserted against somebody who really is in another company.
+
+		The other company and the person in it belong to THIS test module. Nobody
+		new is hired into a shared company: that is the trap this slice walked
+		into once already, when five extra names pushed another test's person on
+		to page two.
+		"""
+		self.as_user(self.rahul_user)
+		out = staff_api.get_staff_list(limit=50)
+		drawn = [r["employee"] for r in out["rows"]]
+		self.assertNotIn(self.outsider, drawn,
+		                 "somebody from another company reached the directory")
+		companies = set(frappe.get_all(
+			"Employee", filters={"name": ["in", drawn]}, pluck="company"))
+		self.assertEqual({frappe.db.get_value("Employee", self.rahul, "company")},
+		                 companies)
+
+	def test_the_count_equals_the_list_it_is_the_total_of(self):
+		"""Surbhi's standing rule, on the new scope."""
+		self.as_user(self.rahul_user)
+		out = staff_api.get_staff_list(limit=50)
+		company = frappe.db.get_value("Employee", self.rahul, "company")
+		self.assertEqual(
+			frappe.db.count("Employee", {"company": company, "status": "Active"}),
+			out["total"])
+
+	def test_one_constant_reverses_the_decision_to_store_only(self):
+		"""**The line that reverses it, exercised rather than described.**
+
+		`DIRECTORY_SCOPE_FOR_EMPLOYEES = "own_branch"` narrows a plain employee's
+		directory to their own store. This test sets that one constant and
+		asserts the scope really moves, so the sentence in the notes is a fact
+		about the code and not a promise.
+
+		This is NOT patching a gate. The feature switch, the refusal and the
+		permission path are untouched; what moves is the one documented
+		configuration constant, which is the thing under test.
+		"""
+		branch = frappe.db.get_value("Employee", self.rahul, "branch")
+		self.as_user(self.rahul_user)
+		wide = [r["employee"] for r in staff_api.get_staff_list(limit=50)["rows"]]
+		self.assertIn(self.other_branch, wide,
+		              "the wide scope does not contain the other store, so "
+		              "narrowing it would prove nothing")
+
+		saved = staff_api.DIRECTORY_SCOPE_FOR_EMPLOYEES
+		try:
+			staff_api.DIRECTORY_SCOPE_FOR_EMPLOYEES = "own_branch"
+			narrow = [r["employee"]
+			          for r in staff_api.get_staff_list(limit=50)["rows"]]
+		finally:
+			staff_api.DIRECTORY_SCOPE_FOR_EMPLOYEES = saved
+		self.assertNotIn(self.other_branch, narrow)
+		self.assertIn(self.rahul, narrow)
+		self.assertTrue(all(
+			frappe.db.get_value("Employee", e, "branch") == branch for e in narrow))
+
+	def test_an_unknown_value_in_the_constant_fails_closed(self):
+		"""A typo in the constant refuses; it does not fall back to the wider one.
+
+		Falling back to `own_company` would hide the typo AND ship the wider
+		scope, which is the worse of the two failures.
+		"""
+		saved = staff_api.DIRECTORY_SCOPE_FOR_EMPLOYEES
+		try:
+			staff_api.DIRECTORY_SCOPE_FOR_EMPLOYEES = "own_planet"
+			self.as_user(self.rahul_user)
+			with self.assertRaises(frappe.PermissionError):
+				staff_api.get_staff_list()
+		finally:
+			staff_api.DIRECTORY_SCOPE_FOR_EMPLOYEES = saved
+
+	def test_the_scope_helper_never_returns_an_empty_filter_dict(self):
+		"""SEC-4 / AC-84. `{}` in Frappe means everybody."""
+		import hrms.alvoraa_hr_core.access as access
+
+		for user in ("Guest", self.rahul_user, "s045.no.such.login@example.com"):
+			with self.subTest(user=user):
+				got = staff_api._own_scope_filters(user)
+				self.assertNotEqual({}, got)
+				self.assertTrue(got)
+		self.assertEqual(
+			access.NO_EMPLOYEES,
+			staff_api._own_scope_filters("s045.no.such.login@example.com"))
+
+	def test_guest_is_still_refused(self):
+		self.as_user("Guest")
+		with self.assertRaises(frappe.PermissionError):
+			staff_api.get_staff_list()
+
+	def test_a_login_with_no_employee_record_is_still_refused(self):
+		"""A platform operator, a vendor login, anybody the product cannot place."""
+		self.as_user(self.no_employee_user)
+		with self.assertRaises(frappe.PermissionError):
+			staff_api.get_staff_list()
+
+	def test_the_refusal_reads_the_same_whichever_the_cause(self):
+		"""045's standing rule: "not bought" and "not allowed" say the same thing.
+
+		Two causes, one sentence. A refusal that varies is a map of what to go
+		after next.
+		"""
+		import alvoraa_portal.subscription as sub
+
+		said = []
+		self.as_user(self.rahul_user)
+		frappe.conf["features"] = list(sub.DEFAULT_ON)
+		try:
+			staff_api.get_staff_list()
+		except frappe.PermissionError as exc:
+			said.append(str(exc))
+		finally:
+			frappe.conf["features"] = list(sub.DEFAULT_ON) + [staff_api.FEATURE]
+
+		self.as_user(self.no_employee_user)
+		try:
+			staff_api.get_staff_list()
+		except frappe.PermissionError as exc:
+			said.append(str(exc))
+
+		self.assertEqual(2, len(said), "one of the two causes did not refuse")
+		self.assertEqual(said[0], said[1])
+
+	def test_the_feature_switch_still_gates_an_employee(self):
+		"""Opening the audience did not open the tenant switch (SEC-16, A14)."""
+		import alvoraa_portal.subscription as sub
+
+		frappe.conf["features"] = list(sub.DEFAULT_ON)
 		self.as_user(self.rahul_user)
 		with self.assertRaises(frappe.PermissionError):
 			staff_api.get_staff_list()
+
+	def test_an_hr_caller_still_gets_the_hr_scope_and_not_the_employee_one(self):
+		"""The new floor must not take over from a scope somebody already had.
+
+		Kamal is given a Company permission for the OTHER company - the shape a
+		real multi-company HR person has. His directory must then be that
+		company, decided by `permitted_employee_filters`. If the new employee
+		scope had been applied to him instead, he would see his own company,
+		which is the opposite answer - so this distinguishes the two paths
+		rather than merely finding rows.
+		"""
+		from alvoraa_portal.tests.fixtures_045 import OTHER_COMPANY
+
+		frappe.get_doc({
+			"doctype": "User Permission", "user": self.kamal_user,
+			"allow": "Company", "for_value": OTHER_COMPANY,
+		}).insert(ignore_permissions=True)
+		frappe.clear_cache(user=self.kamal_user)
+		try:
+			self.as_user(self.kamal_user)
+			drawn = [r["employee"]
+			         for r in staff_api.get_staff_list(limit=50)["rows"]]
+		finally:
+			frappe.set_user("Administrator")
+			frappe.db.delete("User Permission", {"user": self.kamal_user})
+			frappe.clear_cache(user=self.kamal_user)
+		self.assertIn(self.outsider, drawn,
+		              "the HR scope did not decide an HR caller's directory")
+		self.assertNotIn(self.rahul, drawn,
+		                 "the employee scope leaked into an HR caller's "
+		                 "directory - he is seeing his own company as well")
+
+	def test_a_leaver_is_absent_for_an_employee_caller_too(self):
+		"""Active only, on the query - PRIV-2, and easy to lose on a new path."""
+		self.as_user(self.rahul_user)
+		drawn = [r["employee"]
+		         for r in staff_api.get_staff_list(limit=50)["rows"]]
+		self.assertNotIn(self.leaver, drawn)
 
 	def test_the_payload_carries_the_work_email_and_not_the_personal_one(self):
 		"""Searched recursively over the real payload, for values that are

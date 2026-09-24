@@ -24,12 +24,18 @@ drawing a menu entry is not a permission. An HR user on a tenant without the
 feature who calls this function by hand is refused, and the refusal is written
 to the security log with no personal content in it.
 
-**The scope is the shared one (SEC-16, SEC-4).** `permitted_employee_filters()`
-is `permitted_employees()` in the shape a query wants, so a store's HR person
-gets their store and a company's HR person gets their companies - the same
-answer every other screen in this slice gives. A caller who is entitled to
-nobody is refused outright rather than handed an empty list, and the helper can
-never return an empty filter dict, which in Frappe would mean everybody.
+**The scope is the shared one for an HR caller (SEC-16, SEC-4).**
+`permitted_employee_filters()` is `permitted_employees()` in the shape a query
+wants, so a store's HR person gets their store and a company's HR person gets
+their companies - the same answer every other screen in this slice gives.
+
+**045 adds a second scope, for everybody else.** Surbhi opened the directory to
+employees on 24 September 2026. A caller with no HR entitlement now gets
+`_own_scope_filters()` instead of a refusal - **their own company**, and the
+width is one named constant, `DIRECTORY_SCOPE_FOR_EMPLOYEES`. Neither helper can
+ever return an empty filter dict, which in Frappe would mean everybody, and a
+caller neither of them can place is still refused outright rather than handed an
+empty list.
 
 **The payload is PRIV-2's five keys and Active people only.** No phone, no
 email, no employee number, no branch, no manager. A leaver does not appear.
@@ -90,6 +96,74 @@ MAX_LIMIT = 50
 MIN_TERM = 2
 
 
+# ── who may open the directory at all ────────────────────────────────────────
+#
+# **045, Surbhi's decision of 24 September 2026: employees get the directory.**
+# Her decision had two halves. The field half (work email, no phone) shipped in
+# `59d0c0d`. This is the audience half.
+#
+# **The SCOPE of a plain employee's directory is the engineer's call, not
+# hers** - she said "employees get it", she did not say how wide. So it is
+# behind ONE constant, and changing that one line reverses the decision:
+#
+#   DIRECTORY_SCOPE_FOR_EMPLOYEES = "own_company"   <- today: their own company
+#   DIRECTORY_SCOPE_FOR_EMPLOYEES = "own_branch"    <- their own store only
+#
+# **Both are implemented below**, because a constant that selects between one
+# real branch and a branch nobody wrote is not a switch, it is a comment. The
+# line to change is the assignment on the next line and nothing else.
+#
+# **Why "own_company" is the recommendation.** A directory whose point is "find
+# and contact a colleague" is not much use if it stops at your own shop floor,
+# and the fields on it are already limited to what is safe to show widely -
+# name, job title, department, photo and WORK email. There is no phone number
+# of any kind, because the data model has no work phone field
+# (`cell_number` is labelled "Mobile" and is personal).
+#
+# **What this does NOT change.** The tenant switch still gates the screen
+# (`has_feature`), the refusal is still the same sentence whichever the cause,
+# and an HR caller still gets their HR scope, which is narrower than a company
+# for a store's HR person and wider for a multi-company one. This adds a floor
+# for people who had none; it does not widen anybody who already had a scope.
+DIRECTORY_SCOPE_FOR_EMPLOYEES = "own_company"
+
+# The Employee fields the scope is built from, per option. Named here so the
+# constant above cannot select a shape that no query knows how to build.
+_SCOPE_FIELD = {"own_company": "company", "own_branch": "branch"}
+
+
+def _own_scope_filters(user=None):
+	"""The directory scope for a caller with **no HR entitlement**.
+
+	Returns a filter dict, or `NO_EMPLOYEES` - **never an empty dict**, which in
+	Frappe means everybody (SEC-4, 045 AC-84). The three ways this can fail all
+	fail the same way: no Employee record, no company (or no branch) on it, and
+	an unknown value in the constant above.
+
+	The caller is not excluded from their own directory. A staff list that hides
+	you from yourself is a bug people report.
+	"""
+	# `import ... as access`, not `from ... import NO_EMPLOYEES`. The repo's
+	# integrity check resolves a `from hrms...` import against the functions and
+	# classes defined there and cannot see a module-level constant, so the
+	# from-import form fails the check even though the name exists. Every other
+	# caller in this app uses the module form; this one does too.
+	import hrms.alvoraa_hr_core.access as access
+
+	field = _SCOPE_FIELD.get(DIRECTORY_SCOPE_FOR_EMPLOYEES)
+	if not field:
+		# Fail closed on a constant somebody has edited to a value no query
+		# knows. The alternative - falling back to "own_company" - would hide
+		# the typo and ship the wider scope.
+		return dict(access.NO_EMPLOYEES)
+	emp = frappe.db.get_value(
+		"Employee", {"user_id": user or frappe.session.user, "status": "Active"},
+		["name", field], as_dict=True)
+	if not emp or not emp.get(field):
+		return dict(access.NO_EMPLOYEES)
+	return {field: emp.get(field)}
+
+
 def _escape_like(term):
 	"""Make `%` and `_` mean themselves (PRIV-3).
 
@@ -108,9 +182,10 @@ def _refuse():
 	log (PRIV-5).
 
 	The wording is section 6's, and it is deliberately the SAME sentence whether
-	the tenant has not been given the feature or the caller is not HR. A plain
-	employee must not be able to tell those two apart - the first is a fact about
-	what the company bought, and the second is a fact about a colleague's role.
+	the tenant has not been given the feature, the caller cannot be placed in any
+	scope, or Guest asked. A caller must not be able to tell those apart - the
+	first is a fact about what the company bought, and the rest are facts about
+	the caller's own record that a refusal has no business confirming.
 
 	`subscription.requires_feature` is the decorator this would otherwise use.
 	It is not used here for one reason: it does not log the refusal, and abuse
@@ -160,13 +235,23 @@ def get_staff_list(q=None, start=0, limit=DEFAULT_LIMIT):
 	if not has_feature(FEATURE):
 		_refuse()
 
-	# The scope, from the one shared definition. A caller who is entitled to
-	# nobody - a plain employee, a plain manager, a vendor login - is refused
-	# here rather than handed an empty list, so the screen never looks like a
-	# company with no people in it.
+	# The scope, from the one shared definition. An HR caller gets their HR
+	# scope - their companies, narrowed to their branches for a store's HR
+	# person - exactly as before.
 	filters = access.permitted_employee_filters()
 	if filters == access.NO_EMPLOYEES:
-		_refuse()
+		# **045: a caller with no HR entitlement is no longer refused outright.**
+		# Until today this line was the end of the road for a plain employee,
+		# and the directory was HR-only. Surbhi opened it to employees; the
+		# width is `DIRECTORY_SCOPE_FOR_EMPLOYEES`, one constant, above.
+		#
+		# This is still fail-closed: `_own_scope_filters` returns NO_EMPLOYEES
+		# for anybody it cannot place - no Employee record, no company on it -
+		# and that is refused below, with the same sentence as every other
+		# cause.
+		filters = _own_scope_filters()
+		if filters == access.NO_EMPLOYEES:
+			_refuse()
 
 	# Active only. `permitted_employee_filters` returns every status on purpose
 	# (a leaver's history still belongs to the store that had them), so the

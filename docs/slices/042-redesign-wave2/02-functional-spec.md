@@ -562,9 +562,17 @@ Given / When / Then. Each one has an observable oracle.
 - **AC-14** A static check finds **no other pending-count query** left in the portal page
   or in `goals_api.get_pending_approvals_count:1410`'s callers: the bell, the menu item,
   the bottom-bar button and the Team badge all read `get_nav_counts`.
-- **AC-15** *Given* any persona, `get_nav_counts` makes **no more than 15 queries** and
-  `get_inbox` no more than **25**, whatever the team size, measured on a 1,000-employee
-  fixture as company-wide HR.
+- **AC-15 (numbers moved 24 Sep 2026, after slice 044 measured them — see §13)**
+  *Given* any persona, the query count for `get_nav_counts` and `get_inbox` is **the same
+  for a 20-person tenant as for a 981-person one** — that is the requirement. The
+  measured worst case, on slice 044's fixtures, is **21 queries** for `get_nav_counts`
+  (store HR and company-wide HR) and **26** for `get_inbox` (store HR and company-wide
+  HR), and those are the numbers the tests hold.
+  *The old numbers were 15 and 25, and both were written without anyone counting.* They
+  failed identically at twenty people, so they were never scale budgets; they were
+  guesses that read as proof. Slice 044 R1 and R4 took `get_nav_counts` from 23 to 21 and
+  `get_inbox` from 28 to 26 first, so the moved numbers are the floor after the cheap
+  work, not instead of it.
 - **AC-16** No boot path calls `goals_api.get_pending_approvals` or
   `hr_api.get_pending_approvals:2179`.
 
@@ -837,12 +845,13 @@ Measured on "Slow 4G" with a 4× CPU slow-down, cache off (W1D-09).
 |---|---|
 | Calls on Home | **3** (`get_frame`, `get_nav_counts`, `get_home`), no timer — but the six count parts are computed **once**, in `get_nav_counts` only (§8) |
 | **Payload size** *(new in revision 2, from DevOps OPS-W2-7 — `nfr-budget.md` carries no payload number)* | `get_nav_counts` ≤ **1 KB**, `get_home` ≤ **30 KB**, `get_inbox` ≤ **60 KB** at the 50-row cap, asserted **in bytes** in the same test as the query count |
-| Query counts asserted, not only times | At **1,000 employees** and 4 companies, per persona — especially `_pending_approvals_scope`, the gap rule and the team summary (OPS-W2-9). The old bell took 16.4 s for HR because it walked one employee at a time, and that helper is being reused |
+| Query counts asserted, not only times | At **981 employees** and 4 companies, per persona — done (slice 044). `_pending_approvals_scope` was the one that mattered: it read every permitted employee id into Python and each reader shipped the list back as an `IN (...)` of 981 values, uncapped. One statement, so the count was flat and nothing looked wrong, while the clock grew with the company. **It is a subquery now** (044 R4), so the rule never leaves the database and the statement is the same size whatever the headcount |
 | Calls per page, against the rate limit | nginx allows **120 requests a minute per IP address**, burst 30 (`deploy/nginx.conf`). **A 20-person store is one address**: twenty people opening Home at the shift bell is about 60 requests in a few seconds. Count the API calls one Home load and one five-minute session make, and compare (OPS-W2-10). **Wave 2 does not touch `deploy/nginx.conf`** — one nginx serves dev and production from that file (OPS-W2-11) |
-| Fixtures | A **1,000-employee, 4-company** fixture and a **20-person store** fixture, built once and shared with Wave 3 (OPS-W2-8). Neither exists today, so every budget in this table is a target nobody has tested |
-| `get_nav_counts` | ≤ **15** queries, ≤ 500 ms p95 over 20 warm calls as company-wide HR at 1,000 employees — **Wave 1's budget; Wave 2 must not regress it** |
-| `get_inbox` | ≤ **25** queries whatever the team size, ≤ 500 ms p95 |
-| `get_home` | ≤ **20** queries, ≤ 500 ms p95 for a manager with 19 reports |
+| Fixtures | **Both exist** (slice 044, OPS-W2-8): sites `test044` (981 people, 4 companies, 16 stores) and `test044s` (20 people). Keep them — the large one takes about 26 minutes to rebuild. Every query number in this table has now been measured on both |
+| **The gate is flatness, and the counts are a note** *(added 24 Sep 2026, slice 044 R3)* | A query count is a proxy. The property it exists to protect is that the landing calls cost the same for twenty people as for a thousand, and that is now asserted by `tests/test_scale_flatness_044.py` — which is itself proved able to fail: one of its eleven tests writes the 16.4-second bell in three lines and checks the machinery catches it. `tests/test_no_repeat_queries_044.py` holds the other half: no statement is run twice with the same parameters in one `get_home`, and the scope the Inbox sends does not grow with the company. **A change that moves a count by one and keeps both properties is fine; a change that keeps the count and breaks flatness is not.** The numbers above are recorded so a drift is visible, not so a build fails on it |
+| `get_nav_counts` | **Flat in headcount — that is the gate.** Measured note: **21 queries** worst case (store HR, company-wide HR), 13 for a plain employee or a manager, 16 for a System Manager; identical at 20 people and at 981. ≤ 500 ms p95: measured **139 ms** worst (System Manager at 981). *Was ≤ 15 (Wave 2) and ≤ 20 (Wave 1's W1D-23); both measured 23 before slice 044's fixes and 21 after* |
+| `get_inbox` | **Flat in headcount — that is the gate.** Measured note: **26 queries** worst case (store HR, company-wide HR), 13 for a plain employee; identical at 20 people and at 981. ≤ 500 ms p95: measured **215 ms** worst (System Manager at 981). *Was ≤ 25; measured 26–28 before slice 044's fixes and 24–26 after* |
+| `get_home` | **Flat in headcount — that is the gate.** Measured note: **28 queries** worst case (System Manager), 27 for a manager or HR, 26 for a plain employee; identical at 20 people and at 981. ≤ 500 ms p95: measured **129 ms** worst at 981. *Was ≤ 20, and it measured 30–31 for every persona at both sizes — wrong by half, and wrong the day it was written* |
 | Skeleton painted | ≤ 300 ms, median of 5 |
 | Home usable | ≤ 2.5 s p95 of 20 loads, with slice 036's compression live |
 | Every list | capped at **50**, with the true total shown |

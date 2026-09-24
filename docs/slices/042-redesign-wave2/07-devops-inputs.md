@@ -121,12 +121,21 @@ classic place a query lands inside a loop. The spec's budgets (§13) are the rig
 they need a payload budget beside them, because there is none anywhere in
 `nfr-budget.md`.
 
-| Endpoint | Queries — spec's budget | Payload — my recommended budget | Basis |
+**Numbers updated 24 Sep 2026.** The query column was an estimate in every row; slice
+044 measured it on a 981-person and a 20-person tenant, and slice 044's R1/R4 fixes then
+moved it. What is written below is what was measured after the fixes, on both sites, and
+it is the same on both. The payload column was an estimate too — it is measured now, and
+it is nowhere near its budget.
+
+| Endpoint | Queries — measured, worst persona | Payload — budget | Payload — measured at 981 |
 |---|---|---|---|
-| `get_frame` (Wave 1) | ≤ 15 | ≤ 4 KB | Wave 1's own budget, unchanged |
-| `get_nav_counts` | ≤ 15 | **≤ 1 KB** | Six integers and a total. **Estimate** |
-| `get_home` | ≤ 20 | **≤ 30 KB** | **Estimate**: 10 needs rows, 6 leave types, 5 holidays, a team summary and counts is roughly 8–15 KB, with room |
-| `get_inbox` | ≤ 25 | **≤ 60 KB** at the 50-row cap | **Estimate**: 50 rows × 250–400 bytes, plus wording |
+| `get_frame` (Wave 1) | **5** (HR personas), 3 otherwise — *was ≤ 15* | ≤ 4 KB | 1,368 B |
+| `get_nav_counts` | **21** (store HR, company HR) — *was ≤ 15, measured 23 before the fixes* | ≤ 1 KB | 638 B |
+| `get_home` | **28** (System Manager) — *was ≤ 20, measured 30–31 before the fixes, at both tenant sizes* | ≤ 30 KB | 1,470 B |
+| `get_inbox` | **26** (store HR, company HR) — *was ≤ 25, measured 26–28 before the fixes* | ≤ 60 KB at the 50-row cap | 18,351 B |
+
+The gate is **flatness**, not these numbers: every one of them is identical for twenty
+people and for 981, and that is what the tests assert. See §13 of the spec.
 
 **The N+1 risks, named so the engineer can write the assertion rather than hunt the bug:**
 
@@ -157,7 +166,7 @@ page, for the person who opens it most often.
 
 | Measure | On what | Against |
 |---|---|---|
-| Query count and p95 for `get_nav_counts`, `get_home`, `get_inbox` | a 1,000-employee, 4-company fixture, as **company-wide HR** and as a 19-report manager, 20 warm calls | the spec's 15 / 20 / 25 queries and **≤ 500 ms p95** (`nfr-budget` §2, whitelisted API) |
+| Query count and p95 for `get_nav_counts`, `get_home`, `get_inbox` | **Done** (slice 044): sites `test044` (981 people, 4 companies) and `test044s` (20 people), five personas, 20 warm calls each | **the same count on both sites** — measured, for every call and every persona. The counts themselves are 21 / 28 / 26 worst case, which replaces the spec's original 15 / 20 / 25. p95 worst **215 ms** against **≤ 500 ms** (`nfr-budget` §2) |
 | The same, with **50 open requests per approver** | the same fixture | queries must not move with the row count — that is the assertion, not the timing |
 | Home usable, p95 | the W1D-09 rig (Chrome Slow 4G, 4× CPU slow-down) | **≤ 2.5 s** (`nfr-budget` §2), with slice 036's compression live |
 | Concurrency | 20 signed-in Home loads at once against the local bench | production's web tier is **gunicorn, 4 workers × 2 threads = 8 requests at a time**, one backend replica (**Fact**, `deploy/compose/docker-compose.app.yml` line 223). `nfr-budget` §1 designs for **300 concurrent users**. Three calls per Home load, times a 09:30 shift-start spike, is the load event nobody has sized |

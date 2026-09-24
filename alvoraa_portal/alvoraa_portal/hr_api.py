@@ -10,11 +10,107 @@ import calendar as _calendar
 from frappe.utils import cint, flt, today, get_first_day, get_last_day, getdate, add_days, now
 from alvoraa_goals.permissions import get_effective_manager
 from hrms.alvoraa_hr_core.access import permitted_employee_filters
+from alvoraa_portal.frame_api import ME_FIELDS
 
 # The Team screen's ceiling. Company-wide HR on a thousand-person tenant would
 # otherwise draw a thousand cards and push a thousand ids into the attendance
 # and leave queries below. The same 50 the Inbox uses (SEC-13, AC-72).
 TEAM_LIST_CAP = 50
+
+
+def me_block(row):
+    """The caller's own six keys, cut from an Employee row already read.
+
+    **The six names are `frame_api.ME_FIELDS` and they are not re-typed here**
+    (045 AC-6). Wave 1 decided which fields describe the caller and named what
+    must never join them - date_of_birth, gender, cell_number, date_of_joining,
+    reports_to, branch. A second list in a second module is how the two come to
+    disagree, and the disagreement is always in the direction of more.
+
+    `_get_employee()` reads twelve fields because other callers need them. This
+    takes the six, and the Employee id arrives as `name` and leaves as
+    `employee`, so a payload never carries two things called name - the same
+    rename `frame_api._me` does.
+
+    Returns None when there is no Active record, which is persona rule 6.
+    """
+    if not row:
+        return None
+    src = dict(row)
+    src["employee"] = src.get("name")
+    return {k: src.get(k) for k in ME_FIELDS}
+
+
+def direct_reports_query(emp_id):
+    """This person's own Active direct reports, **as a subquery**.
+
+    Never a list of ids read into Python and shipped back as an `IN (...)`.
+    That shape is one statement, so the query count stays flat and nothing
+    looks wrong, while the statement's cost grows with the company - slice 044
+    measured a x5 slope on it and `nfr-budget.md` now bans it.
+
+    Fails closed on a caller with no Employee id: `name IN ()` matches nobody
+    in every Frappe query builder, and it is never an empty condition (SEC-4).
+    """
+    if not emp_id:
+        return frappe.qb.get_query("Employee", fields=["name"],
+                                   filters=[["name", "in", []]])
+    return frappe.qb.get_query("Employee", fields=["name"],
+                               filters={"reports_to": emp_id, "status": "Active"})
+
+
+# The approval row's own fields, and the two that describe WHY somebody is off.
+# Split into two names so that "what can this query return" is answerable by
+# reading the query (045 AC-76e).
+LEAVE_ROW_FIELDS = ("name", "employee", "employee_name", "department",
+                    "from_date", "to_date", "total_leave_days")
+LEAVE_WHY_FIELDS = ("leave_type", "description")
+
+
+def _pending_leave_for_approver(user, emp_id):
+    """Open leave requests this person approves, in **two reads**.
+
+    The difference between the two reads is the whole of 045 AC-76.
+
+    `leave_type` is the category - "Sick Leave". `description` is what the
+    employee typed - "father in hospital" - and it is the more personal of the
+    two, so a rule written about the category alone would leak the worse half
+    and look like it had been followed.
+
+    Both travel on ONE kind of row: the approval row for the caller's own
+    direct report, where the caller is deciding that request and needs to know
+    what they are deciding. Everywhere else, for everybody, **neither field is
+    read at all**.
+
+    **The case an engineer will meet, and the rule does not soften for it**
+    (045 Q4a): an HR person who is the named `leave_approver` for somebody who
+    is NOT their direct report decides that request **without seeing either
+    field**. The decided rule is `reports_to`-based; the approval duty is
+    `leave_approver`-based; the two do not always coincide. They see the dates,
+    the days and the person - "why" stays withheld, in both its forms.
+
+    **Two reads rather than one read and a blank-out afterwards**, because the
+    fields must be absent from the `fields` list. A field removed after the
+    query is a field that was read, and the next person to touch this function
+    re-adds it to the payload without noticing they widened anything.
+    """
+    LA = frappe.qb.DocType("Leave Application")
+    mine = ((LA.leave_approver == user) & (LA.status == "Open") & (LA.docstatus == 0))
+    scope = direct_reports_query(emp_id)
+
+    def _read(fields, own):
+        cond = LA.employee.isin(scope) if own else LA.employee.notin(scope)
+        q = frappe.qb.from_(LA).where(mine & cond).orderby(LA.creation)
+        for f in fields:
+            q = q.select(getattr(LA, f))
+        rows = q.run(as_dict=True)
+        for row in rows:
+            row["is_own_report"] = own
+        return rows
+
+    return (_read(LEAVE_ROW_FIELDS + LEAVE_WHY_FIELDS, True)
+            + _read(LEAVE_ROW_FIELDS, False))
+
 
 # ── Cache invalidation helpers (called by doc_events hooks in hooks.py) ──────
 
@@ -545,7 +641,18 @@ def get_manager_dashboard():
         # "direct report" when most of them are not.
         "is_hr_scope":     is_hr_scope,
         "team_cap":        TEAM_LIST_CAP,
-        "l2_size":         len(l2),
+        # 045 AC-16 / US-16. `l2_reports` and `l2_size` are GONE. Wave 1
+        # recorded at hr_api.py:441-460 that nothing reads them, and a grep
+        # across alvoraa_portal, alvoraa_goals, hrms and mobile/ on this branch
+        # agrees: the only reader anywhere was Wave 1's own test asserting they
+        # were empty. A payload key nobody reads cannot grow a reader later if
+        # it is not there.
+        #
+        # `l2` itself is still worked out for a manager, because it still feeds
+        # `team_ids` and so the presence and leave reads. That is the remaining
+        # question - a person in team_ids who is not drawn on the screen makes a
+        # count disagree with its list - and it belongs to the Team rewrite and
+        # its per-section counts (AC-12, AC-74), not to this deletion.
     }
 
 

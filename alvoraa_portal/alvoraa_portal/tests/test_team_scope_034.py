@@ -363,9 +363,17 @@ class TestTheCapCapsEveryQueryBehindIt(_TeamFixture):
 		                 "query behind a store HR person's Team screen")
 
 	def test_an_hr_caller_is_sent_no_indirect_reports(self):
+		"""Wave 1's rule, kept; slice 045 AC-16 deleted the two keys it read.
+
+		The keys `l2_reports` and `l2_size` had no reader anywhere in the
+		repository except this assertion, so Wave 4 removed them from the
+		payload. Wave 1's rule has not changed - an HR caller is still sent no
+		indirect reports - so what is asserted is that the keys are absent
+		rather than present and empty. An absent key cannot grow a reader.
+		"""
 		d, _names = self._team(self.s_hr_user)
-		self.assertEqual(d["l2_reports"], [])
-		self.assertEqual(d["l2_size"], 0)
+		self.assertNotIn("l2_reports", d)
+		self.assertNotIn("l2_size", d)
 
 	def test_a_manager_still_gets_their_indirect_reports(self):
 		"""The other half. Deleting the block outright would have quietly

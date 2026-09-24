@@ -305,9 +305,24 @@ def get_my_goals(include_team=0):
         # Nothing above it: an organisational objective rather than a link in
         # someone else's chain.
         g["is_organisational"] = int(not g["parent_goal"] and not g["goal_cascade"])
-        g["linked_kpi_count"] = frappe.db.count(
-            "KPI", {"individual_goal": g["name"], "status": ["!=", "Cancelled"]}
-        )
+        # **Counted through the same query path as the contributor list.**
+        #
+        # `frappe.db.count` and `frappe.get_all` do not agree on a negation.
+        # `get_all` wraps the column - `IFNULL(`status`,'') <> 'Cancelled'` -
+        # and `db.count` does not. `NULL <> 'Cancelled'` is NULL in SQL, not
+        # true, so the count dropped every KPI whose status is NULL while
+        # `goal_detail` (which uses `get_all` with this exact filter) listed
+        # them: the chip on the card came out short of the list on the
+        # detail screen. `KPI.status` is nullable and not required.
+        #
+        # `ignore_permissions=True` matches the list this number heads, so
+        # the chip cannot count rows the screen will not draw, or miss rows
+        # it will.
+        g["linked_kpi_count"] = len(frappe.get_all(
+            "KPI",
+            filters={"individual_goal": g["name"], "status": ["!=", "Cancelled"]},
+            pluck="name", limit_page_length=0, ignore_permissions=True,
+        ))
         g["evidence_count"]   = frappe.db.count("Goal Evidence", {"parent": g["name"]})
         g["pending_evidence"] = frappe.db.count(
             "Goal Evidence", {"parent": g["name"], "validation_status": "Pending"}

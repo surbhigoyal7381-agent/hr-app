@@ -100,6 +100,30 @@ async function main() {
   is(resp.status(), 200, "the preview page answers 200");
   await wait(2500);
 
+  /* **The frame itself, first, and the run stops if it did not load.**
+     Added after the first real run of this file: every ess asset 404'd on the
+     site being served - the sites volume carried a stale copy of the app's
+     public folder with no `ess` folder in it at all - so NOTHING ran, and
+     three assertions below passed anyway against the server-rendered markup.
+     "Team is not showing an error" was true because the state box starts
+     hidden, and "the skeleton was put away" was true because it starts hidden
+     too. A check that passes when the page is dead is worse than no check. */
+  const frameUp = await page.evaluate(() => ({
+    frame: !!window.NextFrame,
+    team: !!window.NextTeam,
+    growth: !!window.NextGrowth,
+  }));
+  is(frameUp.frame, true, "next-frame.js ran at all - if this fails, the " +
+     "assets are not being served and nothing below means anything");
+  if (!frameUp.frame) {
+    console.error("
+The page loaded but no script ran. Check that " +
+                  "/assets/alvoraa_portal/js/ess/next-frame.js answers 200 on " +
+                  "the site you are serving.");
+    await browser.close();
+    process.exit(1);
+  }
+
   const team = await page.evaluate(async () => {
     const screens = document.getElementById("nf-screens");
     const state = document.getElementById("nf-state");

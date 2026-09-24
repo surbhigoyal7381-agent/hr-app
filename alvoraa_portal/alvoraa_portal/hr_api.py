@@ -2296,18 +2296,25 @@ def submit_advance_request(purpose, amount):
 def submit_leave_encashment(leave_type, encashment_date=None):
     """Ask to encash leave. 043 AC-55.
 
-    **This never worked.** `Leave Period` and `currency` are both `reqd` on
-    Leave Encashment (checked field by field in `leave_encashment.json`) and
-    neither is fetched from anywhere - the desk's own client script sets them
-    (`leave_encashment.js:101-109` for the currency). This endpoint set
-    neither, so every claim an employee sent failed on a mandatory field, and
-    the portal reported it as a generic error. Nobody on either client tenant
-    has a successful Leave Encashment; appendix C F-5 recorded the button as
-    never proven end to end, and this is why.
+    **This never worked**, and for two different reasons - the second of which
+    I got wrong the first time and `test_encashment_043` corrected.
 
-    The two values are set on the SERVER, not asked of the browser. A currency
-    the caller can choose is a currency the caller can get wrong, and the
-    figure is going into a payroll component.
+    `leave_period` and `currency` are both `reqd` on Leave Encashment (checked
+    field by field in `leave_encashment.json`) and this endpoint set neither.
+
+      * **`leave_period` crashed it.** Nothing fetches it and nothing defaults
+        it, so every claim an employee sent failed on a mandatory field and
+        the portal showed a generic error. Nobody on either client tenant has
+        a successful Leave Encashment; appendix C F-5 recorded the button as
+        never proven end to end, and this is why.
+      * **`currency` did something quieter.** It is `read_only` AND `reqd`, so
+        Frappe fills it from the site's Global Defaults before the mandatory
+        check ever runs - meaning the claim was stamped with the SITE's
+        currency, not the one the employee is paid in, and that figure goes
+        into a payroll component.
+
+    Both are set on the SERVER, not asked of the browser. A currency the
+    caller can choose is a currency the caller can get wrong.
     """
     emp = _get_employee()
     if not emp:

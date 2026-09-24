@@ -27,8 +27,10 @@ bench: own container `hrlocal-045`, own site `test045`, bind-mounted apps from t
    list is not, and AC-14 asks for a subquery. That is a **declared trade-off** with a
    reason (section 5), not an oversight — and the function is replaced by `team_api`
    anyway.
-3. **`test044` and `test044s` measurements have not been taken yet.** The flatness gate
-   is not proved. Everything below was run on `test045`, my own site.
+3. ~~**`test044` and `test044s` measurements have not been taken yet.** The flatness gate
+   is not proved.~~ **Closed 2026-09-24 by the test engineer — see section 11. Flatness
+   holds: `get_team` costs the same at 20 people and at 981, for every persona.** The
+   rest of this document below was run on `test045`, my own site.
 
 ## 2. What was built, file by file
 
@@ -266,7 +268,10 @@ working, however long it has been. Killing it cost a full re-run.
 
 ## 9. What I could not prove
 
-- **The flatness gate.** No measurement on `test044` (981) or `test044s` (20) yet.
+- ~~**The flatness gate.**~~ **Done — section 11.** Measured on `test044` (981) and
+  `test044s` (20), both twice. Flatness holds. What is still **not** proved there:
+  `get_growth`, because there is no such endpoint yet (§11.4), and `get_inbox`, whose
+  count is data-dependent rather than flat (§11.5).
 - **The screens.** Nothing in Growth, Team or People is drawn differently yet, so nothing
   here has been seen by a person in a browser.
 - **`hrms`'s own tests.** Not run — `attendance_correction.py` lives in `alvoraa_portal`,
@@ -279,6 +284,134 @@ working, however long it has been. Killing it cost a full re-run.
 |---|---|
 | `on_leave_today` keeps an id list instead of a subquery | **intentional trade-off** — the count must equal the drawn list; `team_api` supersedes the function |
 | The screens are not built | **temporary debt** — removed by the screen work, with the wizard waiting on the design pass |
-| No `test044` measurement | **temporary debt** — removed by running slice 044's `measure_044.run` harness |
+| ~~No `test044` measurement~~ | **Paid off 2026-09-24** — section 11 |
+| No `get_growth` measurement, because there is no `get_growth` | **temporary debt** — removed when the Growth screen is built; §14's Growth budget stays an unmeasured number until then |
+| `get_inbox`'s query count is not flat between the two sites | **not this slice's debt** — `get_inbox` is untouched by Wave 4. Logged for Wave 5, P3 (§11.5) |
 | The five defect fixes land in **three** commits, not five | **acceptable simplification, and the grouping is deliberate.** AC-6 (the `me` block) and AC-16 (the dead keys) edit the **same return dict**, so they ship together — splitting them would mean writing the deleted keys back in one commit to remove them in the next. AC-76 (the leave fields), AC-21 (the month) and the raw-SQL half of AC-14 are **three lines of the same read** in one function. AC-14's scorecard half is its own commit. Each of the three is independently revertable and each intermediate state runs and passes; they were staged hunk by hunk rather than by editing the file three times |
 | No work phone in the directory | **not debt — a decision waiting for Surbhi.** Shipping `cell_number` would have been the dangerous option |
+
+---
+
+# 11. The flatness measurement — taken 2026-09-24 (test automation)
+
+**Section 9 said this was not proved. It is now.** Measured by the test engineer, not
+the engineer who wrote the code.
+
+**Flatness holds.** Every query count on `get_team` is **identical at 20 people and at
+981**, for all five personas. `get_staff_list` is identical too. Nothing in the two new
+sections grew with headcount.
+
+## 11.1 How it was measured, and what to trust in it
+
+| | |
+|---|---|
+| Harness | `alvoraa_portal.tests.measure_044.run`, slice 044's, unchanged |
+| Sites | `test044` (981 Employees) and `test044s` (20 Employees), **reused, not rebuilt** — `build_first=0`, `write=0`, so neither fixture site was written to |
+| Container | `hrlocal-045` (mine). `hrlocal-bench` not used. No `docker cp` |
+| Method | 3 warm-up calls, then **20 measured** calls, per call per persona. Nothing written between measurements (Wave 2's method fault) |
+| Commands | `bench --site test044s execute alvoraa_portal.tests.measure_044.run --kwargs "{'shape':'small','build_first':0,'write':0}"` and the same with `--site test044` / `'shape':'large'` |
+| Runs | **Both sites measured twice**, in two windows |
+
+**What is safe to quote, and what is not.**
+
+* **Query counts and payload bytes: trust them.** Every single number reproduced
+  **exactly** across both runs, on both sites, for all five personas. They are
+  deterministic.
+* **Wall-clock times: treat as an upper bound, not a measurement.** The machine was busy
+  throughout — load average **7.1–7.8 on 8 cores**, because another session was running a
+  full `alvoraa_portal` suite in `hrlocal-wa042` the whole time. The same untouched call
+  moved a lot between the two runs (`storehr` `get_team` p50 went 22.5 ms → 54.9 ms at
+  981 with no code change). So **the times below are worse than the real ones**, which is
+  the safe direction: they pass the budget anyway, with a lot of room.
+
+## 11.2 `get_team` — the gate
+
+Query counts and bytes are from both runs and were identical in both. Times are shown as
+run 1 / run 2.
+
+| Persona | q @20 | q @981 | **flat?** | bytes @20 | bytes @981 | p50 @20 | p95 @20 | p50 @981 | p95 @981 |
+|---|---|---|---|---|---|---|---|---|---|
+| plain employee | **3** | **3** | **yes** | 320 | 320 | 4.2 / 5.8 | 5.5 / 8.3 | 16.6 / 17.7 | 28.2 / 23.6 |
+| manager | **3** | **3** | **yes** | 6,243 | 6,931 | 5.4 / 6.0 | 6.2 / 9.5 | 15.1 / 33.2 | 19.1 / 47.4 |
+| store HR | **6** | **6** | **yes** | 6,185 | 16,369 | 14.4 / 18.0 | 22.4 / 25.5 | 22.5 / 54.9 | 27.2 / 88.6 |
+| company HR | **6** | **6** | **yes** | 6,496 | 16,543 | 14.2 / 9.6 | 23.3 / 12.2 | 26.0 / 38.4 | 30.7 / 50.6 |
+| System Manager | **3** | **3** | **yes** | 320 | 320 | 5.1 / 6.0 | 7.2 / 10.6 | 11.1 / 27.7 | 18.8 / 41.8 |
+
+**Read it this way.** A caller with an HR entitlement pays **6** queries — the two
+sections asked as two scopes, each a row read plus its own total — and a caller without
+one pays **3**. Forty-nine times the headcount adds **nothing**. That is the thing §14
+made the gate, and it is the thing a two-list rewrite was most likely to break.
+
+**Against §14's budgets:**
+
+| Budget | Measured | Verdict |
+|---|---|---|
+| `get_team` payload ≤ **40 KB** | **16,543 bytes** worst case (company HR at 981) | **passes, 41 % of budget.** §14's "revision 2" worry about 100 rows instead of 50 was right to ask and wrong to fear |
+| p95 ≤ **500 ms** | **88.6 ms** worst case, **on a machine at 95 % load** | **passes with room** |
+| Two sections must stay **two constant queries, not one per person** | 6 at twenty people, 6 at 981 | **passes** |
+
+## 11.3 `get_staff_list` — the People call
+
+| Persona | q @20 | q @981 | bytes @20 | bytes @981 |
+|---|---|---|---|---|
+| plain employee | **refused** | **refused** | — | — |
+| manager | **refused** | **refused** | — | — |
+| store HR | **2** | **2** | 1,769 | 1,763 |
+| company HR | **2** | **2** | 1,765 | 1,728 |
+| System Manager | **2** | **2** | 1,765 | 1,725 |
+
+**§14's "`get_staff_list`, which exists and costs 2 queries flat" was written before
+anybody measured it. It is now measured, and it was right.** Two queries, flat, and the
+payload does not grow.
+
+The two refusals are section 4a's open decision showing up in the numbers, not a fault:
+the directory is HR-only today, and a plain employee gets
+`PermissionError: This page is not part of your access.` **The audience half of decision
+4 is still waiting on Surbhi**, and when it is answered these two rows must be
+re-measured, because widening the audience is what would change the shape.
+
+## 11.4 `get_growth` — **not measured, because it does not exist**
+
+§14 budgets "Calls on Growth: 1 (`get_growth`)". **There is no `get_growth`.**
+`growth_api.py` exposes exactly one whitelisted endpoint, `get_company_values()`, and the
+Growth screen is not built (section 1, bad news 1). So the Growth budget in §14 is still
+an unmeasured number and must stay labelled as one. **It is a gap, not a pass.**
+
+## 11.5 Everything else the harness covers, and one thing that is not flat
+
+Measured on the way past, both runs identical.
+
+| Call | emp | mgr | store HR | company HR | sysmgr | flat 20 → 981? |
+|---|---|---|---|---|---|---|
+| `get_frame` | 3 | 3 | 5 | 5 | 5 | **yes** |
+| `get_nav_counts` | 13 | 13 | 21 | 21 | 16 | **yes** |
+| `get_home` | 26 | 27 | 27 | 27 | 28 | **yes** |
+| `get_team_scorecard` | 2 | 10 | 2 | 2 | 2 | **yes** |
+| `get_time` | 35 | 35 | 36 | 35 | 32 | **yes** |
+| `get_pay` | 2 | 2 | 2 | 2 | 2 | **yes** |
+| **`get_inbox`** | 13 → 13 | **20 → 17** | **26 → 24** | 26 → 26 | **23 → 20** | **NO** |
+
+**`get_inbox` is the one call whose query count is not identical between the two sites.**
+Three personas move. Two things say it is not an N+1 on headcount, and one says it still
+needs a look:
+
+* It moves **downward** with 49× the people. An N+1 goes up.
+* Both runs gave the same numbers on the same site, so it is the data, not noise.
+* But it means `get_inbox`'s cost depends on **what is in the inbox**, so this method
+  cannot prove it flat. The two fixture sites hold different numbers of open items, and
+  a site with more of the right kind of item could push it the other way.
+
+**Not Wave 4's code** — `get_inbox` is untouched by this slice. Logged as a note for
+Wave 5 rather than fixed here. **P3.**
+
+## 11.6 One thing the numbers show that is worth a sentence
+
+**A System Manager's Team screen is empty** — 320 bytes, the same as a plain employee's,
+at both sizes. That is `team_api._caller()` deciding HR entitlement as
+`{"HR Manager", "HR User"} & roles`, and **System Manager is not in that set**.
+
+It fails **closed**, so it is not a leak and not a defect. It is worth knowing because
+§14 and the persona list treat System Manager as one of the five, and on the Team screen
+that persona sees nothing unless the tenant also gives them an HR role. If a CXO is
+expected to see a company's team, that is a product decision, not a bug — flagged, not
+changed.

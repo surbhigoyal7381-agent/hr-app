@@ -1347,6 +1347,41 @@ and 2 were wrong the day they were written and failed at twenty people as badly 
 | Personal or sensitive data | Self-assessments, manager notes, ratings, trajectories. **A self-review is among the most sensitive text an employee writes**, and it is free text, so it can contain anything |
 | Accessibility | WCAG 2.2 AA; 390 px; 200 % zoom; 12 px floor; 44 px targets. **The rating buttons are the named risk** (`01b` N4) |
 
+**MEASURED 24 September 2026 — the numbers below are taken, not guessed.** Slice 044's
+harness `measure_044.run` on `test044` (981 people) and `test044s` (20), reused not
+rebuilt, three warm-ups then twenty measured calls, **both sites measured twice with every
+query count and payload size identical in both runs**. Following W1D-23's precedent: a
+number goes into this spec only once somebody has just measured it.
+
+| Call | Persona | Queries @20 | Queries @981 | Flat? | Payload worst case |
+|---|---|---|---|---|---|
+| `get_team` | plain employee | 3 | 3 | **yes** | 320 B |
+| `get_team` | manager | 3 | 3 | **yes** | 6,931 B |
+| `get_team` | store HR | **6** | **6** | **yes** | 16,369 B |
+| `get_team` | company HR | **6** | **6** | **yes** | 16,543 B |
+| `get_team` | System Manager | 3 | 3 | **yes** | 320 B |
+| `get_staff_list` | store HR / company HR / System Manager | **2** | **2** | **yes** | 1,769 B |
+| `get_staff_list` | plain employee / manager | **refused** | **refused** | — | — |
+
+**No budget in this section has to move.** `get_team`'s worst payload is **16,543 bytes
+against the 40 KB line** — §14's "revision 2" worry that two sections of fifty rows would
+strain it was right to ask and wrong to fear. The worst p95 anywhere on `get_team` was
+**88.6 ms against the 500 ms line**, and that was on a machine running another session's
+full test suite at the same time, so the real number is lower. **The gate — the count is
+identical at 20 and at 981 — is met for every persona.** The "2 queries flat" written
+above for `get_staff_list` was written before anyone measured it; it is now measured and
+it was correct.
+
+**Two things in this section are still NOT measured, and must not be read as passing:**
+
+1. **`get_growth` does not exist.** `growth_api.py` exposes one endpoint,
+   `get_company_values()`, and the Growth screen is not built. The "Calls on Growth: 1"
+   budget above is an unmeasured number until it does.
+2. **`get_inbox` is not flat** — its count differs between the two sites (manager 20 → 17,
+   store HR 26 → 24, System Manager 23 → 20), reproducibly. It moves **downward** with 49×
+   the headcount, so it is not an N+1 on people; it depends on what is in the inbox.
+   `get_inbox` is untouched by this slice. Raised for Wave 5.
+
 **One thing measured and reusable, so nobody rebuilds it:** `home_api._presence_counts`
 runs in **12.0 ms for a System Manager at 981 people** (042 `03b` D6), driving off
 Attendance's date index. The `LEFT JOIN` shape was 51.9 ms and the name-list shape

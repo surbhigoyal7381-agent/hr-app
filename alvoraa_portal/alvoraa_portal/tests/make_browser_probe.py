@@ -27,6 +27,7 @@ BRANCH = "S045 Probe Store"
 USER = "s045.probe@example.com"
 PASSWORD = "s045-probe-Aa1!"
 CYCLE = "S045 Probe Cycle"
+DESIGNATION = "S045 Probe Designation"
 
 
 def _company():
@@ -66,7 +67,18 @@ def _person(first, reports_to=None, user=None):
 	doc.reports_to = reports_to
 	doc.date_of_joining = "2020-01-01"
 	doc.date_of_birth = "1990-01-01"
-	doc.designation = "Sales Executive"
+	# The Designation has to exist: Employee links to it, and a link that does
+	# not exist refuses the save. Created here rather than assumed, because a
+	# fresh site has none.
+	if not frappe.db.exists("Designation", DESIGNATION):
+		frappe.get_doc({"doctype": "Designation",
+		                "designation_name": DESIGNATION}).insert(ignore_permissions=True)
+	doc.designation = DESIGNATION
+	# Gender is mandatory on Employee. `ensure_gender` is the existing helper;
+	# writing a second one here is how the two come to disagree.
+	from alvoraa_goals.tests.utils import ensure_gender
+
+	doc.gender = ensure_gender()
 	doc.company_email = first.lower() + ".probe@example.com"
 	doc.create_user_permission = 0
 	doc.flags.ignore_permissions = True

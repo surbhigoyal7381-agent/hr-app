@@ -4416,8 +4416,20 @@ def save_review_page(appraisal, page_key, page_data_json):
     # AUTOSAVE: unhandled, an employee keeps typing while nothing saves and
     # nothing tells them. So the budget is checked first, with a sentence that
     # says what to do next and confirms that what was already saved is safe.
-    serialised = json.dumps(all_pd)
-    growth_api.check_page_data_fits(serialised)
+    # `ensure_ascii=False`, and it matters more than it looks.
+    #
+    # The default escapes every non-ASCII character to `\uXXXX` - **six bytes
+    # for a Devanagari character that costs three when it is written as
+    # itself**. The measurement behind the constant above (21,845 Devanagari
+    # characters fit) was taken on the raw column, so with the default this
+    # code path was quietly giving a Hindi or Punjabi writer HALF the room the
+    # ceiling allows, and an English writer no difference at all.
+    #
+    # `json.loads` reads either form, the column is utf8mb4, and what was
+    # written before still reads back the same. So this is a widening with no
+    # migration behind it.
+    serialised = json.dumps(all_pd, ensure_ascii=False)
+    used = growth_api.check_page_data_fits(serialised)
 
     ext.page_data       = serialised
     ext.pages_completed = json.dumps(done)
@@ -4425,7 +4437,17 @@ def save_review_page(appraisal, page_key, page_data_json):
         ext.review_status = "Employee Review"
     review_items.save_review_record(ext)
     frappe.db.commit()
-    return {"pages_completed": done}
+    # The room left travels back with every save, so the screen can warn while
+    # somebody is still typing. Counted on the string that was ACTUALLY
+    # written, not on the fragment this call was handed - the stored value
+    # carries every other page too, and a budget measured on one page would be
+    # a number that is only ever too generous.
+    return {
+        "pages_completed": done,
+        "used_bytes": used,
+        "budget_bytes": growth_api.PAGE_DATA_BUDGET_BYTES,
+        "room_left_characters": growth_api.room_left_characters(serialised),
+    }
 
 
 @frappe.whitelist()

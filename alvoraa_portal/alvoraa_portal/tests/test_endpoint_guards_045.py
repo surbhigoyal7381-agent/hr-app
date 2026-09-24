@@ -48,6 +48,24 @@ def whitelisted_in(module):
 	return out
 
 
+def placeholder_args(fn):
+	"""Enough arguments to reach the permission check, and no more.
+
+	An endpoint with required arguments called with none of them raises
+	`TypeError` in Python before a single line of ours runs - which would make
+	the Guest loop below look green while proving nothing about the endpoint.
+	So every required parameter gets an empty string: a value the endpoint has
+	to refuse on its own terms, not one Python refuses for it.
+	"""
+	out = {}
+	for name, param in inspect.signature(fn).parameters.items():
+		if param.default is inspect.Parameter.empty and param.kind in (
+				inspect.Parameter.POSITIONAL_OR_KEYWORD,
+				inspect.Parameter.KEYWORD_ONLY):
+			out[name] = ""
+	return out
+
+
 class TestGuestReachesNothing(Wave4Base):
 	def test_every_wave_four_endpoint_refuses_a_guest(self):
 		"""Not one of them is `allow_guest`, and calling as Guest refuses.
@@ -66,7 +84,7 @@ class TestGuestReachesNothing(Wave4Base):
 						f"{name} is whitelisted with allow_guest")
 					frappe.set_user("Guest")
 					try:
-						result = fn()
+						result = fn(**placeholder_args(fn))
 					except Exception as exc:
 						self.assertIsInstance(
 							exc, (frappe.PermissionError, frappe.ValidationError,
@@ -89,6 +107,32 @@ class TestGuestReachesNothing(Wave4Base):
 		names = {n for m in WAVE4_MODULES for n, _f in whitelisted_in(m)}
 		self.assertIn("get_team", names)
 		self.assertIn("get_company_values", names)
+		# The Growth screen's own three, added with the screens. Named here so
+		# that deleting one of them fails a test rather than quietly shrinking
+		# the loop above.
+		self.assertIn("get_growth", names)
+		self.assertIn("get_self_review", names)
+		self.assertIn("save_self_review", names)
+
+	def test_the_placeholder_arguments_really_reach_the_endpoint(self):
+		"""Check the check, again.
+
+		If `placeholder_args` were wrong, every endpoint with required
+		arguments would raise TypeError, the loop above would call that a
+		refusal, and Guest would never actually have been tested.
+		"""
+		from alvoraa_portal import growth_api as g
+
+		self.assertEqual({"appraisal": "", "answers": ""},
+		                 placeholder_args(g.save_self_review))
+		frappe.set_user("Guest")
+		try:
+			with self.assertRaises(Exception) as caught:
+				g.save_self_review(**placeholder_args(g.save_self_review))
+			self.assertNotIsInstance(caught.exception, TypeError,
+			                         "the Guest check never reached our code")
+		finally:
+			frappe.set_user("Administrator")
 
 
 class TestTheWrongPersonaIsRefused(Wave4Base):

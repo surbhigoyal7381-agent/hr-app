@@ -2054,10 +2054,72 @@ def preview_leave_request(leave_type, from_date, to_date, half_day=0, half_day_d
 
 @frappe.whitelist()
 def get_shift_types():
+    """The shift types a caller may ask to be moved to.
+
+    043 AC-52 (`01c` SEC-7). What was live: `@frappe.whitelist()` and nothing
+    else, `ignore_permissions=True`, no caller check and no scope - so EVERY
+    Shift Type in the tenant went to anybody with a login, including somebody
+    who had left and whose account was still open. A tenant's shift names
+    ("Karol Bagh Night", "Warehouse C 22:00") are a map of its operation.
+
+    **The scope, and why it is this one.** The spec first asked for "the
+    caller's company's shift types". `Shift Type` has **no `company` field** -
+    verified in `hrms/hrms/hr/doctype/shift_type/shift_type.json`, which has no
+    company fieldname at all - so there is nothing to filter on, and an
+    engineer meeting that sentence at 11pm would invent a custom field or
+    quietly drop the check. `Shift Assignment` DOES carry a company. So the
+    scope is D-6's recommendation:
+
+        the Shift Types in use in the caller's own company, through submitted
+        Shift Assignments, plus the caller's own `Employee.default_shift`
+
+    That is a scope that exists in the data and needs no schema change. It also
+    reads correctly: a shift you could actually be moved to is one somebody in
+    your company is already working.
+
+    **Fail closed.** No Active Employee record, no answer. An empty scope
+    returns an EMPTY LIST, never an unfiltered one - no filter dict this
+    function builds is ever allowed to be empty, because an empty filter dict
+    means "everything" to `frappe.get_all` and that is exactly the defect being
+    fixed. The screen must say "no shifts are set up for your company" rather
+    than draw an empty dropdown.
+    """
+    emp = _get_employee()
+    if not emp:
+        # The same shape the other self-service reads use: a caller with no
+        # Active Employee record has nothing to be moved between.
+        return []
+
+    # The shift types somebody in this company is actually assigned to.
+    in_use = frappe.get_all(
+        "Shift Assignment",
+        filters={"company": emp.company, "docstatus": 1},
+        pluck="shift_type",
+        distinct=True,
+    )
+
+    # Read on its own rather than added to `_get_employee`'s field list.
+    # Widening that row would put `default_shift` into the five older payloads
+    # that still hand the whole row to the browser (AC-6's pinned debt), and
+    # adding a field to a payload is a visibility change even when the field is
+    # dull. One cheap query instead.
+    default_shift = frappe.db.get_value("Employee", emp.name, "default_shift")
+
+    names = {s for s in in_use if s}
+    if default_shift:
+        # Their own shift is always offered, even in a company that has never
+        # made a Shift Assignment - otherwise the one person whose shift is set
+        # on the Employee record sees a list that does not contain it.
+        names.add(default_shift)
+
+    if not names:
+        return []
+
     return frappe.get_all(
         "Shift Type",
+        filters={"name": ["in", sorted(names)]},
         fields=["name", "start_time", "end_time"],
-        ignore_permissions=True,
+        order_by="name asc",
     )
 
 

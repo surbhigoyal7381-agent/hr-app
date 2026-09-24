@@ -38,7 +38,14 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, nowdate
 
-from alvoraa_portal import frame_api, home_api, inbox_api, staff_api
+from alvoraa_portal import (
+	frame_api,
+	home_api,
+	inbox_api,
+	pay_api,
+	staff_api,
+	time_api,
+)
 
 TAG = "S044F"
 COMPANY = "S044F Flatness Company"
@@ -279,6 +286,43 @@ class TestTheLandingCallsAreFlatInHeadcount(_Flatness):
 		self.assertEqual(
 			payload["team_today"]["basis"], "peers",
 			"the employee's Home did not draw a peer card")
+
+	# ── Wave 3's two landing calls (slice 043) ───────────────────────────
+	#
+	# Added here rather than in a file of their own, because the property is
+	# the same property and the harness that proves it is this one. Measured
+	# on the real fixture sites as well: `get_time` is 35 queries for a plain
+	# employee at TWENTY people and 35 at 981, and `get_pay` is 2 at both. The
+	# count is the note; this is the gate.
+
+	def test_get_time_is_flat_for_a_plain_employee(self):
+		"""Time is an own-record screen, so hiring must not touch it at all.
+
+		If this ever grows, something in `get_time` has started reading the
+		tenant instead of the caller - which is exactly how the month calendar
+		would become the next 16.4-second bell.
+		"""
+		_small, _grown, payload = self._flat(
+			self.emp_login, time_api.get_time, "get_time (employee)")
+		self.assertTrue(payload["is_self"],
+		                "the measurement was not of the caller's own month, "
+		                "so it did not measure what this test is about")
+
+	def test_get_time_is_flat_for_a_manager(self):
+		"""A manager MAY open somebody else's month, so their own month is the
+		one place a scope could leak into an own-record call."""
+		self._flat(self.mgr_login, time_api.get_time, "get_time (manager)")
+
+	def test_get_pay_is_flat_for_a_plain_employee(self):
+		"""Pay is own-record only for everybody, including HR. There is no
+		wider view of it anywhere in the product, so a query that grew with
+		headcount here would have nothing legitimate to be reading."""
+		self._flat(self.emp_login, pay_api.get_pay, "get_pay (employee)")
+
+	def test_get_pay_is_flat_for_hr(self):
+		"""HR's scope IS the headcount everywhere else in this file. On Pay it
+		must make no difference at all."""
+		self._flat(self.hr_login, pay_api.get_pay, "get_pay (HR)")
 
 	def test_get_inbox_is_flat_for_hr(self):
 		self._flat(self.hr_login, inbox_api.get_inbox, "get_inbox (HR)")

@@ -28,13 +28,17 @@ and this project has paid for that three times (demo/README.md, first section).
 **The two places this bends, and why each is the normal flow too:**
 
 1. `ignore_update_nsm` during the bulk employee load, with one
-   `rebuild_tree("Employee", "reports_to")` at the end. Frappe ships
+   `rebuild_tree("Employee")` at the end. Frappe ships
    `rebuild_tree` for exactly this; updating the nested set once per insert is
    O(n) per row and turns a 1,000-person load into an hour. The tree that comes
    out is the same tree.
-2. The holiday list is set as the **company default** rather than assigned per
-   employee. That is how a real tenant is configured; per-employee assignment
-   would be 1,000 extra submitted documents to reach the same answer.
+2. The holiday list is assigned **per company**, one submitted Holiday List
+   Assignment each, rather than one per employee. That is how a real tenant is
+   configured, and per-employee assignment would be 1,000 extra submitted
+   documents for the same answer. (Setting `default_holiday_list` on the
+   Company is NOT enough: Frappe HR reads the assignment and throws without
+   one. The leave step found that, which is the argument for leaving
+   validation on.)
 
 ## Reuse — the whole point
 
@@ -43,6 +47,11 @@ Building is idempotent and cheap to skip: `is_built(shape)` is one query. Call
 nothing here needs rebuilding between test runs or between slices. Section
 "Reuse" of `docs/slices/044-scale-fixtures/04-test-report.md` says how to take a
 copy so a rebuild is never needed at all.
+
+**One site setting the build needs**, because Frappe throttles user creation to
+sixty an hour and this makes about seventy logins:
+
+    bench --site <site> set-config throttle_user_limit 5000
 
 Every person here is invented. No real name, no real identifier, nothing copied
 from any tenant.
@@ -64,8 +73,12 @@ SHAPES = {
 		"branches_per_company": 4,
 		"leads_per_branch": 3,
 		"staff_per_lead": 19,
-		# Attendance history, in days back from today, for everybody.
-		"attendance_days": 10,
+		# Today is marked for EVERYBODY, because that is the fan-out the
+		# presence card makes: one query with every name in it. History is
+		# only given to the first `history_people`, because the only caller
+		# who reads history is reading their OWN. See _attendance().
+		"attendance_days": 20,
+		"history_people": 80,
 		# Roughly one in this many people has an open leave request.
 		"leave_every": 16,
 		"corrections": 40,
@@ -78,7 +91,8 @@ SHAPES = {
 		"branches_per_company": 1,
 		"leads_per_branch": 1,
 		"staff_per_lead": 15,
-		"attendance_days": 10,
+		"attendance_days": 20,
+		"history_people": 20,
 		"leave_every": 6,
 		"corrections": 3,
 		"goals_for": 12,
@@ -124,11 +138,18 @@ def headcount(shape):
 # ── Is it already there? ─────────────────────────────────────────────────────
 
 
+def _done_key(shape):
+	return "s044_built_%s" % shape
+
+
 def is_built(shape):
-	"""One query. This is what makes the fixture free to reuse."""
-	s = shape_of(shape)
-	return bool(frappe.db.exists("Employee", {"last_name": s["prefix"],
-	                                          "first_name": "Sysmgr"}))
+	"""One query, and it is set at the very END of the build.
+
+	A half-finished build must read as not built: a marker written early would
+	make a broken fixture look complete, which is the fixture equivalent of a
+	test that cannot fail.
+	"""
+	return frappe.db.get_default(_done_key(shape)) == "1"
 
 
 def count_built(shape):
@@ -200,6 +221,26 @@ def ensure_user(shape, persona, roles):
 	return name
 
 
+def _manager_login(shape, slug):
+	"""A plain Employee login for a manager in the tree.
+
+	Not a persona - nobody measures as one of these. They exist because an
+	approver is a User: without them every leave request in the tenant would
+	have to name the one persona manager, and the spread of pending approvals
+	would be a fiction.
+	"""
+	email = "%s.%s@example.com" % (shape_of(shape)["prefix"].lower(), slug)
+	if not frappe.db.exists("User", email):
+		doc = frappe.get_doc({
+			"doctype": "User", "email": email, "first_name": slug,
+			"last_name": shape_of(shape)["prefix"], "send_welcome_email": 0,
+			"enabled": 1, "roles": [{"role": "Employee"}],
+		})
+		doc.flags.ignore_permissions = True
+		doc.insert(ignore_permissions=True)
+	return email
+
+
 def ensure_holiday_list(shape):
 	name = "%s Holidays" % shape_of(shape)["prefix"]
 	if not frappe.db.exists("Holiday List", name):
@@ -237,6 +278,20 @@ def ensure_companies(shape):
 			doc.flags.ignore_permissions = True
 			doc.insert(ignore_permissions=True)
 		frappe.db.set_value("Company", name, "default_holiday_list", holidays)
+		# Frappe HR does NOT read `default_holiday_list` when it works out an
+		# employee's holidays - it reads a submitted Holiday List Assignment,
+		# for the person or for their company, and throws when there is none.
+		# Found the hard way: the leave step failed with exactly that message.
+		# One assignment per company is how a tenant is really set up.
+		if not frappe.db.exists("Holiday List Assignment",
+		                        {"assigned_to": name, "docstatus": 1}):
+			frappe.get_doc({
+				"doctype": "Holiday List Assignment",
+				"holiday_list": holidays,
+				"applicable_for": "Company",
+				"assigned_to": name,
+				"from_date": add_days(nowdate(), -900),
+			}).insert(ignore_permissions=True).submit()
 		out.append(name)
 	frappe.db.commit()
 	return out
@@ -272,6 +327,14 @@ def make_employee(shape, first, company, branch=None, reports_to=None,
 	existing = frappe.db.get_value(
 		"Employee", {"first_name": first, "last_name": prefix}, "name")
 	if existing:
+		if login and not frappe.db.get_value("Employee", existing, "user_id"):
+			doc = frappe.get_doc("Employee", existing)
+			doc.user_id = login
+			doc.create_user_permission = 0
+			doc.flags.ignore_permissions = True
+			doc.save(ignore_permissions=True)
+			frappe.db.delete("User Permission", {"user": login})
+			frappe.clear_cache(user=login)
 		return existing
 	doc = frappe.get_doc({
 		"doctype": "Employee",
@@ -340,9 +403,10 @@ def build(shape, verbose=True):
 	leave_type = _leave(shape, people, logins)
 	clock.step("leave allocations + open requests")
 
-	_attendance(shape, people)
-	clock.step("attendance", "%d days x %d people"
-	           % (s["attendance_days"], len(people)))
+	marked = _attendance(shape, people)
+	clock.step("attendance", "%d rows: today for all %d, %d days for %d"
+	           % (marked, len(people), s["attendance_days"],
+	              min(s["history_people"], len(people))))
 
 	_corrections(shape, people)
 	clock.step("attendance corrections")
@@ -353,6 +417,7 @@ def build(shape, verbose=True):
 	_policies(shape)
 	clock.step("policies")
 
+	frappe.db.set_default(_done_key(shape), "1")
 	frappe.db.commit()
 	total = clock.total
 	print("%s built in %.0f s (%.1f min), %d people"
@@ -381,13 +446,20 @@ def _build_tree(shape, companies, logins):
 				branch = branch_of(shape, ci, bi)
 				mgr = make_employee(shape, "Store%d-%d" % (ci, bi), company,
 				                    branch=branch, reports_to=head,
+				                    login=_manager_login(shape, "store%d-%d"
+				                                         % (ci, bi)),
 				                    designation="%s Store Manager" % s["prefix"])
 				people.append(mgr)
 				for li in range(1, s["leads_per_branch"] + 1):
 					# The five personas take the first slots of company 1,
 					# store 1, so they sit in a real team rather than beside it.
+					# EVERY lead and store manager is a login. Leave requests
+					# go to the approver's USER, so a tree of managers with no
+					# logins produces a tenant with one approver and a
+					# measurement that proves nothing about approval scope.
 					lead_login = (logins["mgr"] if (ci, bi, li) == (1, 1, 1)
-					              else None)
+					              else _manager_login(shape, "lead%d-%d-%d"
+					                                  % (ci, bi, li)))
 					lead = make_employee(
 						shape, "Lead%d-%d-%d" % (ci, bi, li), company,
 						branch=branch, reports_to=mgr, login=lead_login,
@@ -408,7 +480,7 @@ def _build_tree(shape, companies, logins):
 		frappe.db.commit()
 	finally:
 		frappe.local.flags.ignore_update_nsm = False
-	rebuild_tree("Employee", "reports_to")
+	rebuild_tree("Employee")
 	frappe.db.commit()
 	return people
 
@@ -435,6 +507,10 @@ def _leave(shape, people, logins):
 	start = add_days(nowdate(), -120)
 	end = add_days(nowdate(), 240)
 	for i, emp in enumerate(people):
+		if frappe.db.exists("Leave Allocation", {"employee": emp,
+		                                         "leave_type": leave_type,
+		                                         "docstatus": 1}):
+			continue
 		doc = frappe.get_doc({
 			"doctype": "Leave Allocation",
 			"employee": emp,
@@ -467,6 +543,10 @@ def _leave(shape, people, logins):
 		approver = approvers[reports_to]
 		if not approver:
 			continue
+		if frappe.db.exists("Leave Application", {"employee": emp,
+		                                          "status": "Open"}):
+			n += 1
+			continue
 		doc = frappe.get_doc({
 			"doctype": "Leave Application",
 			"employee": emp,
@@ -485,20 +565,40 @@ def _leave(shape, people, logins):
 
 
 def _attendance(shape, people):
-	"""Today marked for everyone, plus history, so the presence card and the
-	attendance-gap rule both have something real to read.
+	"""Today marked for everyone, and history for the people who are read.
+
+	**Sized to the reads, and here is the arithmetic that decided it.** Two
+	things read Attendance on these screens:
+
+	* `_presence_counts` asks for **today**, for up to a thousand names at
+	  once. That fan-out is the thing worth measuring, so today is marked for
+	  everybody.
+	* the attendance-gap rule asks for **one person's own** last few weeks.
+	  Only the caller's history is ever read, so history is given to the first
+	  `history_people` - which covers every persona and their whole team.
+
+	**What this does NOT reproduce, said plainly:** a real 1,000-person tenant
+	a year in has roughly a quarter of a million Attendance rows, and this has
+	a few thousand. Index selectivity at that size is not tested here. It is a
+	named gap in the test report, not something to read past.
 
 	One day in the window is left unmarked for a slice of people, so the gap
 	rule has gaps to find rather than a clean sheet that would make it free.
 	"""
 	s = shape_of(shape)
 	days = [add_days(nowdate(), -d) for d in range(s["attendance_days"])]
+	history = set(people[:s["history_people"]])
 	n = 0
 	for pi, emp in enumerate(people):
 		company = frappe.db.get_value("Employee", emp, "company")
-		for di, day in enumerate(days):
+		mine = days if emp in history else days[:1]
+		for di, day in enumerate(mine):
 			# One in seven has no row for the day three back: that is the gap.
 			if di == 3 and pi % 7 == 0:
+				continue
+			if frappe.db.exists("Attendance", {"employee": emp,
+			                                   "attendance_date": day,
+			                                   "docstatus": ["<", 2]}):
 				continue
 			status = "Present"
 			if di and (pi + di) % 11 == 0:
@@ -530,10 +630,16 @@ def _corrections(shape, people):
 	attendance_correction.after_migrate()
 	frappe.clear_cache(doctype=attendance_correction.REQUEST)
 	day = add_days(nowdate(), -20)
-	made = 0
-	for emp in people:
+	made = frappe.db.count(attendance_correction.REQUEST,
+	                       {"explanation": "%s fixture" % s["prefix"]})
+	# People WITHOUT attendance history, because Frappe HR refuses a request
+	# for a day whose attendance already says what the request would say
+	# ("Attendance status unchanged"). Found by leaving validation on.
+	for emp in people[s["history_people"]:]:
 		if made >= s["corrections"]:
 			break
+		if frappe.db.exists(attendance_correction.REQUEST, {"employee": emp}):
+			continue
 		doc = frappe.get_doc({
 			"doctype": attendance_correction.REQUEST,
 			"employee": emp,
@@ -560,6 +666,10 @@ def _goals(shape, people):
 	end = add_days(nowdate(), 240)
 	goals = []
 	for i, emp in enumerate(people[:s["goals_for"]]):
+		seen = frappe.db.get_value("Individual Goal", {"employee": emp}, "name")
+		if seen:
+			goals.append(seen)
+			continue
 		doc = frappe.get_doc({
 			"doctype": "Individual Goal",
 			"employee": emp,
@@ -577,6 +687,8 @@ def _goals(shape, people):
 
 	for i, goal in enumerate(goals[:s["goal_updates"]]):
 		doc = frappe.get_doc("Individual Goal", goal)
+		if doc.get("progress_updates"):
+			continue
 		doc.append("progress_updates", {
 			"log_date": add_days(nowdate(), -3),
 			"value": 10 + i,
@@ -591,28 +703,46 @@ def _goals(shape, people):
 
 
 def _policies(shape):
-	"""One policy everybody still has to acknowledge, so the policies part is
-	not silently zero for every persona."""
+	"""Three published policies nobody has acknowledged.
+
+	The policies part counts what the caller may READ and has not accepted at
+	its current version, so this is what stops that part being a silent zero
+	for every persona - which would make the Inbox measurement a measurement of
+	five parts, not six.
+	"""
 	if not frappe.db.exists("DocType", "Policy Document"):
-		return None
+		return []
 	s = shape_of(shape)
-	name = "%s Code of Conduct" % s["prefix"]
-	if frappe.db.exists("Policy Document", {"title": name}):
-		return name
-	meta = frappe.get_meta("Policy Document")
-	doc = frappe.get_doc({"doctype": "Policy Document", "title": name})
-	for field, value in (("status", "Published"), ("published", 1),
-	                     ("effective_from", add_days(nowdate(), -30)),
-	                     ("requires_acknowledgement", 1), ("version", "1.0"),
-	                     ("body", "%s fixture policy" % s["prefix"]),
-	                     ("content", "%s fixture policy" % s["prefix"])):
-		if meta.has_field(field):
-			doc.set(field, value)
-	doc.flags.ignore_permissions = True
-	try:
+	department = "%s People" % s["prefix"]
+	company = company_of(shape, 1)
+	if not frappe.db.exists("Department", {"department_name": department}):
+		frappe.get_doc({"doctype": "Department", "department_name": department,
+		                "company": company}).insert(ignore_permissions=True)
+	department = frappe.db.get_value("Department",
+	                                 {"department_name": department}, "name")
+	made = []
+	for n, (title, category) in enumerate((
+		("%s Code of Conduct" % s["prefix"], "HR"),
+		("%s Leave Policy" % s["prefix"], "HR"),
+		("%s Safety Rules" % s["prefix"], "Safety"),
+	), start=1):
+		if frappe.db.exists("Policy Document", {"title": title}):
+			made.append(title)
+			continue
+		doc = frappe.get_doc({
+			"doctype": "Policy Document",
+			"title": title,
+			"owner_department": department,
+			"category": category,
+			"status": "Published",
+			"current_version": 1,
+			"acknowledge_on_joining": 1,
+			"acknowledge_on_new_version": 1,
+			"effective_from": add_days(nowdate(), -30),
+			"content": "<p>%s fixture policy</p>" % s["prefix"],
+		})
+		doc.flags.ignore_permissions = True
 		doc.insert(ignore_permissions=True)
-	except Exception as exc:          # the doctype's own rules win, not ours
-		print("  policy not created: %s" % exc, flush=True)
-		return None
+		made.append(doc.name)
 	frappe.db.commit()
-	return doc.name
+	return made

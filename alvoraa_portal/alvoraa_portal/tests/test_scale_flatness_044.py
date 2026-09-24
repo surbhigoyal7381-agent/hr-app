@@ -173,7 +173,7 @@ class _Flatness(FrappeTestCase):
 			frappe.db.commit()
 		finally:
 			frappe.local.flags.ignore_update_nsm = False
-		rebuild_tree("Employee", "reports_to")
+		rebuild_tree("Employee")
 		frappe.db.commit()
 		return frappe.db.count("Employee",
 		                       {"reports_to": cls.mgr, "status": "Active"})

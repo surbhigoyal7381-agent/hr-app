@@ -1417,3 +1417,70 @@ confirm.
 * **A literal newline inside a JavaScript string** stopped node compiling the
   whole check before a single assertion ran. It got there from a patch script,
   and it was caught by running the file rather than by reading it.
+
+---
+
+# 18. The flatness gate, re-measured with the screens' own calls
+
+**Measured on `test044` (981 Employees) and `test044s` (20), both reused rather
+than rebuilt — `build_first=0`, `write=0`, so neither fixture site was written
+to.** Harness: `alvoraa_portal.tests.measure_044.run`, slice 044's, with one
+call added.
+
+**§9 said `get_growth` could not be measured "because there is no such endpoint
+yet". There is now, so the gap is closed rather than left as an unmeasured
+number in the budget.**
+
+## 18.1 Flatness holds. Every count is identical at 20 people and at 981
+
+| Call | Persona | 20 people | 981 people | Moves? |
+|---|---|---|---|---|
+| **`get_growth`** | emp | **7** | **7** | no |
+| | mgr | 7 | 7 | no |
+| | storehr | 7 | 7 | no |
+| | companyhr | 7 | 7 | no |
+| | sysmgr | 7 | 7 | no |
+| **`get_team`** | emp | 3 | 3 | no |
+| | mgr | 3 | 3 | no |
+| | storehr | 6 | 6 | no |
+| | companyhr | 6 | 6 | no |
+| | sysmgr | 3 | 3 | no |
+| **`get_staff_list`** | **emp** | **3** | **3** | **no** |
+| | **mgr** | **3** | **3** | **no** |
+| | storehr | 2 | 2 | no |
+| | companyhr | 2 | 2 | no |
+| | sysmgr | 2 | 2 | no |
+
+`queries_min` equals `queries_max` on every row, over 20 repeats — so the count
+is stable within a site as well as between the two.
+
+## 18.2 The one number that changed, and why
+
+**The employee directory costs one query more than the HR one: three instead of
+two.** That is the read that finds the caller's own company, and it is a single
+`get_value` on their own Employee row. **It is constant, not per person** — the
+same 3 at twenty people and at 981.
+
+It is the honest price of opening the directory to employees, it is paid once
+per call, and it does not grow with anything.
+
+## 18.3 Time, at 981 people
+
+| Call | Worst p95 across the five personas, at 981 |
+|---|---|
+| `get_growth` | **40.0 ms** (emp) |
+| `get_team` | **52.0 ms** (companyhr) |
+| `get_staff_list` | **42.0 ms** (mgr) |
+
+The heaviest call on either new screen is well inside the budget, and the
+heaviest of the three is `get_team` for a company-wide HR person — the persona
+with the largest scope, which is the right place for the cost to be.
+
+## 18.4 What is still not measured
+
+* **The wizard's save path.** `save_self_review` writes, and the harness is a
+  read-only measurement by construction (`write=0` is what keeps the fixture
+  sites clean). Its cost is one document save, unchanged in shape from
+  `save_review_page`, which was already the write path.
+* **`get_inbox`'s query count**, which moves with what is in the inbox rather
+  than with headcount. Still Wave 5's, unchanged by this slice (§11.5).

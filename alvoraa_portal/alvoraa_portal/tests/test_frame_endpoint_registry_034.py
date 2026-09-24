@@ -39,7 +39,7 @@ from frappe.tests.utils import FrappeTestCase
 import alvoraa_portal
 
 MODULES = ("frame_api.py", "inbox_api.py", "staff_api.py", "home_api.py",
-           "pay_api.py")
+           "pay_api.py", "time_api.py")
 
 # AC-69. One row per whitelisted function. `guest`, `persona` and `scope` each
 # name a test method that must exist in the test file named by `tests`.
@@ -95,6 +95,28 @@ ENDPOINT_REGISTRY = {
 	# endpoint has: own record, and nothing else, for everybody including HR.
 	# There is no wider view of it anywhere in the product, on purpose - a
 	# manager may never learn what a report lost in pay.
+	# Wave 3's Time screen (043 AC-42). Its "scope" case is the one place this
+	# endpoint answers about somebody other than the caller: a manager opening
+	# a report's month through `attendance_correction._subject`. The test that
+	# carries it proves the answer stops at the month - no leave, no rule, no
+	# pay - because that is where a scope mistake here would become a person's
+	# leave balance on their manager's screen.
+	"time_api.get_time": {
+		"tests": "alvoraa_portal.tests.test_time_api_043",
+		"guest": "TestWhoMayCallIt.test_guest_is_refused",
+		"persona": "TestWhoMayCallIt.test_a_caller_with_no_employee_record_is_refused",
+		"scope": "TestSomebodyElsesMonthCarriesNothingElse.test_no_leave_no_rule_and_no_pay_reach_a_manager",
+	},
+	# Wave 3's Pay screen (043 AC-42). Own record only, for everybody,
+	# including HR - there is no wider view of a payslip anywhere in the
+	# product, so its "scope" case is the payroll gate and the single refusal
+	# sentence that cannot tell a caller what exists.
+	"pay_api.get_pay": {
+		"tests": "alvoraa_portal.tests.test_pay_screen_043",
+		"guest": "TestWhoMayCallThePayScreen.test_guest_is_refused",
+		"persona": "TestWhoMayCallThePayScreen.test_a_caller_with_no_employee_record_gets_no_slips",
+		"scope": "TestWhoMayCallThePayScreen.test_a_tenant_without_payroll_is_refused",
+	},
 	"pay_api.get_deduction_explanation": {
 		"tests": "alvoraa_portal.tests.test_why_sheet_043",
 		"guest": "TestWhoMayCallIt.test_guest_is_refused",
@@ -323,6 +345,26 @@ class TestNoModuleLevelStateAndNoIgnorePermissions(FrappeTestCase):
 			# staff_api: the staff list itself and its total. Both take the same
 			# filters dict, built by the shared scope helper.
 			"staff_api.py": ("frappe.db.count", "frappe.get_all"),
+			# time_api (slice 043). FIVE reads, and every one of them is
+			# filtered to a SINGLE employee id that `attendance_correction.
+			# _subject` already decided the caller may open:
+			#
+			#   `_shift_card`       - today's Shift Assignment, `employee = me`.
+			#   `_days_off`         - the weekly-off rows of the holiday list
+			#     ERPNext says this person is on. A Holiday row holds a date and
+			#     a description and says nothing about anybody.
+			#   `_past_leave`       - the caller's own Leave Applications, and
+			#     their own Leave Ledger Entry rows. Both `employee = me`.
+			#   `_record_this_year` - the caller's own Attendance Deduction
+			#     rows, `employee = me`, bounded by the financial year and
+			#     capped, with the cap declared in the payload.
+			#
+			# `get_list` would add nothing to any of them: a tenant cannot
+			# narrow a person out of their own attendance, and these are only
+			# ever reached on the `is_self` branch. The month calendar itself
+			# is `attendance_correction`'s, which uses `frappe.get_list`
+			# throughout and is not this file.
+			"time_api.py": ("frappe.get_all",) * 5,
 		}
 		# `frappe.qb.get_query` and `frappe.qb.from_` join the list in 044.
 		# A query written in the query builder skips Frappe's permission layer

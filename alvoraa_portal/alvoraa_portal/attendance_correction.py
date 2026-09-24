@@ -35,6 +35,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate, nowdate
 
+from alvoraa_portal.call_cache import holiday_list_for
 from alvoraa_portal.attendance_analytics import (
 	DEFAULT_TOLERANCE_MINS,
 	TOLERANCE_KEY,
@@ -419,13 +420,33 @@ def month(year=None, month=None, employee=None):
 		else:
 			punches.setdefault(str(c.time)[:10], []).append(mark)
 
+	# `weekly_off` tells a Sunday apart from Diwali (043 AC-1). Both arrive as
+	# Holiday rows on the same list and only this flag says which is which, so
+	# without it the calendar has to draw them the same - and a person's week
+	# then looks like a month of public holidays. It is read here, beside the
+	# rest of the day, rather than derived from the weekday somewhere else: a
+	# tenant whose staff are off on Thursdays is the reason this is data.
 	holidays = {}
-	if me.holiday_list:
+	weekly_offs = set()
+	# WHICH list, and why this changed (043). This read used `me.holiday_list`
+	# - the field on the Employee record. Frappe HR does not: it answers
+	# "which holiday list is this person on" from Holiday List Assignment, and
+	# `hr_api._own_upcoming_holidays` was moved onto that in slice 035 after
+	# store staff at PP Jewellers were shown Head Office's holidays.
+	#
+	# So the calendar and the days-off card beside it could draw two different
+	# lists for one person, and the calendar's was the one payroll ignores. The
+	# assignment wins now; `me.holiday_list` is the fallback, so a tenant that
+	# only ever set the Employee field keeps exactly the calendar it had.
+	holiday_list = holiday_list_for(me.name, end) or me.holiday_list
+	if holiday_list:
 		for h in frappe.get_all("Holiday",
-		                        filters={"parent": me.holiday_list,
+		                        filters={"parent": holiday_list,
 		                                 "holiday_date": ("between", [start, end])},
-		                        fields=["holiday_date", "description"]):
+		                        fields=["holiday_date", "description", "weekly_off"]):
 			holidays[str(h.holiday_date)] = h.description
+			if cint(h.weekly_off):
+				weekly_offs.add(str(h.holiday_date))
 
 	# Requests already raised for these days, so a person cannot ask twice and
 	# can see where the first one got to.
@@ -454,7 +475,7 @@ def month(year=None, month=None, employee=None):
 		marks = by_attendance.get(att.name) if att else None
 		days.append(_day(date, att, holidays, leave_days, claimed, me,
 		                 shift_cache, tolerance, today,
-		                 marks or punches.get(date, [])))
+		                 marks or punches.get(date, []), weekly_offs))
 
 	return {
 		"employee": me.name, "employee_name": me.employee_name,
@@ -474,17 +495,28 @@ def month(year=None, month=None, employee=None):
 
 
 def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, today,
-         marks=()):
+         marks=(), weekly_offs=()):
 	d = getdate(date)
 	out = {
 		"date": date,
 		"weekday": _calendar.day_name[d.weekday()],
 		"future": d > today,
 		"holiday": holidays.get(date),
+		# True for a weekly off, False for a named public holiday. Kept beside
+		# `holiday` rather than replacing it: `state` stays exactly what it was,
+		# so the review screen and every existing test still read the same day
+		# the same way, and the calendar gains the one fact it was missing.
+		"weekly_off": date in weekly_offs,
 		"leave_type": leave_days.get(date),
 		"status": None, "shift": None, "in_time": None, "out_time": None,
 		"hours": None, "expected_hours": None, "short_by": 0.0,
 		"late_entry": 0, "early_exit": 0, "is_late": False, "grace_mins": 0,
+		# WHERE the grace came from (043 AC-5). The day sheet says "15 minutes
+		# of grace, set by <name>", and it can only say that truthfully if it
+		# knows whether the figure is this shift's own or the organisation's
+		# default. Without it the screen would have to guess, and a screen that
+		# guesses at a number is the thing this wave exists to stop.
+		"grace_source": None,
 		"attendance": None,
 		"punches": list(marks),
 		"shift_starts": None, "shift_ends": None,
@@ -533,6 +565,7 @@ def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, t
 	# true minutes, with the grace named beside them.
 	if begins is not None and att.in_time:
 		out["grace_mins"] = _shift_grace(shift_cache, shift)
+		out["grace_source"] = _grace_source(shift_cache, shift)
 		arrived = _minutes(str(att.in_time)[11:16])
 		if arrived is not None and arrived > begins:
 			out["late_by_mins"] = int(round(arrived - begins))
@@ -555,6 +588,22 @@ def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, t
 		if short > 0:
 			out["short_by"] = round(short, 2)
 	return out
+
+
+def _grace_source(cache, shift):
+	"""Which record the grace figure came from: this shift, or the organisation.
+
+	Exactly the order `attendance_analytics._shift_grace` uses to pick the
+	number - the shift's own `late_entry_grace_period` where it is set above
+	zero, otherwise the organisation default - so the two can never name
+	different sources for one figure. Returns None when there is no grace at
+	all, which the day sheet says in words rather than showing "0 minutes of
+	grace, set by nobody".
+	"""
+	row = _shift_row(cache, shift) if shift else None
+	if row and cint(row.late_entry_grace_period) > 0:
+		return "shift"
+	return "organisation" if org_late_grace() > 0 else None
 
 
 def _hhmm(minutes):

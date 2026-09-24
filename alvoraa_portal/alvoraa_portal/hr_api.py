@@ -1692,16 +1692,53 @@ def get_payslips():
     emp = _get_employee()
     if not emp:
         return {"no_employee": True}
-    slips = frappe.get_all(
+    return {"payslips": _own_slips(emp.name), "me": _me_block(emp)}
+
+
+# The fields the payslip LIST carries. `rounded_total` joined them in 043: the
+# Pay screen calls the rounded figure the take-home (§20 D-2), because that is
+# what the bank paid, and a list that carried only `net_pay` would disagree
+# with the hero above it by a rupee on 555 of PP Jewellers' 800 slips.
+SLIP_LIST_FIELDS = ("name", "posting_date", "start_date", "end_date",
+                    "gross_pay", "total_deduction", "net_pay", "rounded_total",
+                    "currency")
+
+# Twelve months. A year of slips is what a person needs to show a bank, and an
+# uncapped read of a long-serving employee's whole history is a list nobody
+# scrolls.
+SLIP_LIST_LIMIT = 12
+
+
+def _own_slips(employee):
+    """The employee's own submitted payslips, newest first.
+
+    **Why the flag is here and not in `pay_api`.** The Employee role no longer
+    holds read on Salary Slip at all - that permission was a back door, because
+    wherever the narrowing User Permission was wider or missing, other people's
+    pay showed. So every payslip read in this product is an ownership check
+    followed by a deliberate `ignore_permissions`, and that pattern is declared
+    and tested HERE, in `hr_api`. 043 AC-43 forbids the flag in `time_api.py`
+    and `pay_api.py` outright, so the Pay screen calls this rather than
+    carrying a second copy of the query - which also means the list and the
+    payslip page can never disagree about which slips exist.
+
+    The ownership check is the filter itself: `employee` is resolved from the
+    session by the caller, never taken from the browser. A cancelled slip
+    (`docstatus 2`) is excluded here, which is what keeps it off the screen and
+    out of the download (043 AC-53).
+    """
+    return frappe.get_all(
         "Salary Slip",
-        filters={"employee": emp.name, "docstatus": 1},
-        fields=["name", "posting_date", "start_date", "end_date",
-                "gross_pay", "total_deduction", "net_pay", "currency"],
-        order_by="posting_date desc",
-        limit=12,
+        filters={"employee": employee, "docstatus": 1},
+        fields=list(SLIP_LIST_FIELDS),
+        # Newest PERIOD first, with the posting date only breaking a tie. Two
+        # slips posted on the same day - a re-run, or a correction - would
+        # otherwise come back in an order the database chose, and the Pay
+        # screen reads slips[0] as "the latest".
+        order_by="start_date desc, posting_date desc",
+        limit=SLIP_LIST_LIMIT,
         ignore_permissions=True,
     )
-    return {"payslips": slips, "me": _me_block(emp)}
 
 
 # ── One payslip, shown in the portal ─────────────────────────────────────────
@@ -1738,7 +1775,23 @@ def _own_payslip(name):
 @requires_feature("payroll", message=PAYSLIP_UNAVAILABLE)
 def get_payslip(name):
     """One of the caller's own payslips, for the portal to draw."""
-    slip = _own_payslip(name)
+    return _payslip_payload(_own_payslip(name))
+
+
+def _payslip_payload(slip):
+    """One payslip's payload, in ONE place.
+
+    043: Wave 3's Pay screen shows the newest slip in full on the first load,
+    so two callers now build this - `get_payslip` and `pay_api.get_pay`. Two
+    copies would drift, and the one that drifts is the one nobody is looking
+    at: the Why? control hangs off `additional_salary`, so a copy that forgot
+    it would leave a person with a deduction and no way to ask about it.
+
+    Takes an already-checked Salary Slip document. Ownership is `_own_payslip`'s
+    job and it happens before this is reached, every time - this function does
+    no checking of its own and must never be given a slip that has not been
+    through it.
+    """
 
     def lines(rows):
         """One line per non-zero salary component.
@@ -2241,16 +2294,58 @@ def submit_advance_request(purpose, amount):
 
 @frappe.whitelist()
 def submit_leave_encashment(leave_type, encashment_date=None):
+    """Ask to encash leave. 043 AC-55.
+
+    **This never worked.** `Leave Period` and `currency` are both `reqd` on
+    Leave Encashment (checked field by field in `leave_encashment.json`) and
+    neither is fetched from anywhere - the desk's own client script sets them
+    (`leave_encashment.js:101-109` for the currency). This endpoint set
+    neither, so every claim an employee sent failed on a mandatory field, and
+    the portal reported it as a generic error. Nobody on either client tenant
+    has a successful Leave Encashment; appendix C F-5 recorded the button as
+    never proven end to end, and this is why.
+
+    The two values are set on the SERVER, not asked of the browser. A currency
+    the caller can choose is a currency the caller can get wrong, and the
+    figure is going into a payroll component.
+    """
     emp = _get_employee()
     if not emp:
-        frappe.throw("No employee record found for this user.")
+        frappe.throw(_("No employee record found for this user."))
+
+    date_ = encashment_date or today()
+
+    # The period the date falls in, for this employee's own company. Leave
+    # Period is per company, so a group with two companies has two, and picking
+    # the first one on the site would file the claim against the wrong year.
+    period = frappe.db.get_value("Leave Period", {
+        "company": emp.company,
+        "from_date": ("<=", date_),
+        "to_date": (">=", date_),
+    }, "name")
+    if not period:
+        # Says what happened, why, and what to do next. "Mandatory field
+        # Leave Period" tells an employee nothing they can act on.
+        frappe.throw(_("Leave cannot be encashed for {0} yet, because no leave "
+                       "period covers that date. Ask HR to set one up.")
+                     .format(frappe.format(date_, "Date")))
+
+    from hrms.payroll.doctype.salary_structure_assignment.salary_structure_assignment import (
+        get_employee_currency,
+    )
+
     doc = frappe.get_doc({
         "doctype": "Leave Encashment",
         "employee": emp.name,
         "employee_name": emp.employee_name,
         "department": emp.department,
         "leave_type": leave_type,
-        "encashment_date": encashment_date or today(),
+        "encashment_date": date_,
+        "leave_period": period,
+        # Throws its own plain sentence when the employee has no salary
+        # structure - which is a real setup gap, not something to paper over
+        # with a default currency that would then be wrong on the component.
+        "currency": get_employee_currency(emp.name),
     })
     doc.insert(ignore_permissions=True)
     frappe.db.commit()

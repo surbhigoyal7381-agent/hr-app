@@ -51,7 +51,14 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
-from alvoraa_portal.hr_api import PAYSLIP_UNAVAILABLE, _get_employee
+from alvoraa_portal.hr_api import (
+	PAYSLIP_UNAVAILABLE,
+	_get_employee,
+	_me_block,
+	_own_payslip,
+	_own_slips,
+	_payslip_payload,
+)
 from alvoraa_portal.subscription import requires_feature
 
 # Every top-level key the Why? sheet returns. A fixed list, the same discipline
@@ -277,3 +284,120 @@ def _accountable_contact(rule):
 		if full_name:
 			return full_name, True
 	return _("your HR team - no individual is named on this rule yet"), False
+
+
+# ── The Pay screen ───────────────────────────────────────────────────────────
+
+# Every top-level key `get_pay` returns. The same fixed-list discipline as
+# `WHY_KEYS` above and `frame_api.FRAME_KEYS`.
+PAY_KEYS = (
+	"me",
+	"payslips",
+	"latest",
+	"year_to_date",
+	"take_home",
+	"currency",
+	"note",
+)
+
+# What the screen calls take-home, and why (§20 D-2). The ROUNDED total, because
+# that is the figure a person can check against their bank statement; the exact
+# net is in the breakdown below it. Wave 2's "your payslip is ready" row must
+# make the same choice or the two screens disagree by a rupee, so the choice is
+# named here as a constant rather than left implicit in a template.
+TAKE_HOME_FIELD = "rounded_total"
+
+NO_PAYSLIPS = "No payslips have been issued to you yet."
+
+
+@frappe.whitelist()
+@requires_feature("payroll", message=PAYSLIP_UNAVAILABLE)
+def get_pay():
+	"""The whole Pay screen, in one call: the slips, the newest one, the year.
+
+	**Own record only, for everybody, including HR.** There is no wider view of
+	this anywhere in the product; HR uses the desk. `_own_payslip` is the whole
+	check and it runs on the one slip this opens.
+
+	**The year figure is READ, never added up** (AC-25). Frappe HR stores
+	`year_to_date` and `gross_year_to_date` on the slip itself, worked out by
+	the payroll run against the payroll period. Summing the twelve slips this
+	screen happens to list would give a different number for a mid-year joiner,
+	for anyone whose slips do not start in April, and for anyone whose list is
+	capped at twelve - and it would be the portal's number rather than payroll's.
+
+	**No comparison with last month** (§20 D-4). August was ₹11,851.61 above
+	July at PP Jewellers because of a one-off Diamond Incentive, and there is no
+	field anywhere that says a component was one-off. A green "+₹11,851.61 more
+	than July" on a payslip reads as a raise, and it is what people screenshot.
+
+	**Payroll rounding is not touched here.** 555 of 800 PP Jewellers slips
+	print a net the bank does not pay. That is an open decision, and this screen
+	must not make the wrong figure look more authoritative than it is - which is
+	why `take_home` is the rounded total, the figure actually paid, with the
+	exact net shown beside it rather than instead of it.
+	"""
+	# A Guest is refused before anything else, and this is not belt-and-braces
+	# for its own sake. `@frappe.whitelist()` without `allow_guest` stops a
+	# Guest at the REQUEST layer, so in production this line is unreachable -
+	# but the empty payload below was written for "a signed-in person with no
+	# Employee record", and a Guest fell into it. `test_guest_is_refused` found
+	# that by calling the function the way a later caller inside the product
+	# would: directly, with no request layer above it. A signed-out caller is
+	# not the same thing as a person who has no payroll record, and answering
+	# them the same way is how a soft answer ends up behind a hard door.
+	if frappe.session.user == "Guest":
+		_refuse()
+
+	emp = _get_employee()
+	if not emp:
+		# Not a refusal: a person with no Employee record has no payslips, and
+		# saying "not available" would suggest there is something being kept
+		# from them. The frame does not offer Pay to them at all (034 §3).
+		return {"me": None, "payslips": [], "latest": None, "year_to_date": None,
+		        "take_home": None, "currency": None, "note": _(NO_PAYSLIPS)}
+
+	# `hr_api._own_slips`, not a second copy of the query. This file carries no
+	# `ignore_permissions` at all (AC-43), and every payslip read in this
+	# product needs one, because the Employee role deliberately holds no read
+	# on Salary Slip. So the flag stays in the one module where that pattern is
+	# declared and tested, and this list cannot drift from the list the payslip
+	# page shows. A cancelled slip is excluded there (AC-53); an amended one is
+	# a new document at docstatus 1 while the original sits at 2, so an
+	# amendment is listed once, under the name it has now.
+	#
+	# The first version of this function had the query inline, flag and all.
+	# `test_no_ignore_permissions_anywhere_in_these_files` caught it.
+	slips = _own_slips(emp.name)
+	if not slips:
+		return {"me": _me_block(emp), "payslips": [], "latest": None,
+		        "year_to_date": None, "take_home": None, "currency": None,
+		        "note": _(NO_PAYSLIPS)}
+
+	# The newest slip in full, through the SAME ownership check a direct call
+	# to `get_payslip` goes through. The name comes from the list above, which
+	# was already filtered to this employee, so the check cannot fail here - and
+	# it runs anyway, because a check that is skipped when the caller "must" be
+	# right is a check that stops existing the day the list changes.
+	latest = _payslip_payload(_own_payslip(slips[0].name))
+
+	stored = frappe.db.get_value(
+		"Salary Slip", slips[0].name,
+		["year_to_date", "gross_year_to_date"], as_dict=True) or {}
+
+	return {
+		"me": _me_block(emp),
+		"payslips": slips,
+		"latest": latest,
+		"year_to_date": {
+			"net": flt(stored.get("year_to_date")),
+			"gross": flt(stored.get("gross_year_to_date")),
+			# Which slip the figure was read off, so a person who thinks it is
+			# wrong can point at the document rather than at the screen.
+			"from_slip": latest["name"],
+			"up_to": latest["end_date"],
+		},
+		"take_home": flt(latest.get(TAKE_HOME_FIELD)),
+		"currency": latest.get("currency"),
+		"note": None,
+	}

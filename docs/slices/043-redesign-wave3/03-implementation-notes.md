@@ -6,7 +6,7 @@ date: 2026-09-24
 spec: 02-functional-spec.md revision 2
 branch: slice/043-redesign-wave3, rebased onto slice/042-redesign-wave2
 bench: own container hrlocal-043, own redis hrlocal-043-redis, own site test043. hrlocal-bench not used, no docker cp
-status: **the three live defects, the shift-type scope and the Why? sheet are built and tested. The Time and Pay SCREENS are not built.** §9 says exactly what is missing
+status: **the three live defects, the shift-type scope, the Why? sheet AND the Time and Pay screens are built and tested.** Rebased onto `slice/042-redesign-wave2` at `f34e68f`, which now carries slice 044's scale fixtures and five performance commits. What is still NOT done is AC-18/19, retiring the two old endpoints - §13 says why, and it is deliberate
 ---
 
 # Wave 3 — what was built, and what was not
@@ -234,3 +234,145 @@ config files were written with `docker exec -i … bash -c 'cat > …'`.
 **What I would fix with more time, honestly:** finding 2. It is a bigger live leak than
 the one this slice was written to fix, it affects more screens, and it has a go-live date
 against it.
+
+---
+
+# Part two — the screens, the rebase, and what the numbers actually say
+
+Written after the second working session. Everything above stands; this part
+adds what was built on top of it and corrects two things it claimed.
+
+## 13. The rebase, and what came in
+
+This branch was rebased onto `slice/042-redesign-wave2` again, at `f34e68f`.
+**Ten commits came in** — slice 044's two scale fixtures and its measuring tool,
+plus five performance commits on 042. The rebase replayed twelve commits with
+**no conflict**: 042's one hunk in `hr_api.py` is near line 336 and mine are at
+1,598 and beyond, exactly as their work-board row predicted.
+
+| Came in | What it meant for Wave 3 |
+|---|---|
+| `call_cache.py` — a memo that lives for one call and dies in a `finally` | Used, not reinvented. `get_time` asks "which holiday list is this person on" twice — the days-off card and the weekly-off weekdays — so it opens one and closes it in a `finally` |
+| `goals_api._pending_approvals_scope_query` is a subquery now | Read, and the rule behind it applied: no scope in this slice is a list of ids. Every read `time_api` makes is filtered to **one** employee id |
+| `fixtures_scale_044.py`, sites `test044` (981 people) and `test044s` (20) | **Reused, not rebuilt.** Both screens measured on both |
+| `measure_044.py` | Extended with two rows rather than copied |
+| `test_scale_flatness_044.py` | Extended with four tests rather than copied |
+| The rewritten budgets in `nfr-budget.md` | Followed: flatness is the gate, the count is a note, and both were measured rather than guessed |
+
+Nothing of theirs is behind me and nothing of theirs was edited except by
+addition — two lines in `measure_044._calls`, four test methods and an import in
+`test_scale_flatness_044`, and one pinned set in `test_portal_split_034`.
+
+## 14. What was built in part two, file by file
+
+| File | Mechanism | Why |
+|---|---|---|
+| `alvoraa_portal/time_api.py` | **build** — new | The whole Time screen in one call. Own-record throughout, except the month calendar, which follows `attendance_correction._subject` — and which returns the month **and nothing else** when the subject is not the caller |
+| `attendance_correction.py` | **extend**, three small things | `weekly_off` per day (AC-1), `grace_source` per day (AC-5), and the holiday list resolved the way payroll resolves it — see §16 finding 1 |
+| `hr_api.py` — `_own_slips`, `_payslip_payload` | **extend** | One definition of "the caller's own slips" and one of "a payslip's payload", so the list, the payslip page and the Pay screen cannot drift |
+| `hr_api.py` — `submit_leave_encashment` | **extend** | AC-55. See §16 finding 3 |
+| `pay_api.py` — `get_pay` | **extend** | The Pay screen in one call |
+| `public/js/ess/next-time.js`, `next-pay.js` | **build** — new static files | One file per panel, as Wave 2 established |
+| `public/css/ess/next-time-pay.css` | **build** — new static file | Its own, so two waves do not meet in one stylesheet |
+| `templates/includes/ess/parts/next-time.html`, `next-pay.html` | **build** — new parts | No Jinja, no template cache slot (AC-44) |
+| `public/js/ess/next-frame.js` | **extend** — two keys | `openSheet` and `closeSheet` handed to a panel. The frame already had a sheet with a focus trap, Escape and focus return; a panel writing its own would be a second copy of that work |
+| `www/hrms-employee-next.html`, `next/frame.html` | **extend** | Two parts pasted, one stylesheet and two scripts loaded with a `?v=` stamp |
+| `tests/test_time_api_043.py`, `test_pay_screen_043.py`, `test_encashment_043.py` | **build** | |
+| `alvoraa_portal/tests/next_time_pay_test.js` | **build** | The panels in jsdom |
+| `scripts/browser_check_time_pay.js` | **build** | The panels in a REAL browser, which is where the things jsdom cannot answer get answered |
+
+## 15. The numbers, measured on both fixture sites
+
+**The gate is flatness, and it holds.** Steady state, 20 warm calls each, three
+warm-ups, nothing written in between.
+
+| Call · persona | test044s (20 people) | test044 (981 people) | Flat? |
+|---|---|---|---|
+| `get_time` · employee | **35 q**, p50 97 ms, p95 173 ms, 17,069 B | **35 q**, p50 75 ms, p95 128 ms, 17,069 B | yes |
+| `get_time` · manager | **35 q**, p50 161 ms, p95 306 ms | **35 q**, p50 332 ms, p95 **656 ms** | queries yes, time no |
+| `get_time` · store HR | **36 q**, p50 94 ms, p95 118 ms | **36 q**, p50 84 ms, p95 110 ms | yes |
+| `get_time` · company HR | **35 q**, p50 75 ms, p95 101 ms | **35 q**, p50 127 ms, p95 157 ms | yes |
+| `get_time` · System Manager | **32 q**, p50 66 ms, p95 99 ms | **32 q**, p50 129 ms, p95 217 ms | yes |
+| `get_pay` · every persona | **2 q**, p50 3–10 ms, 317 B | **2 q**, p50 11–26 ms, 317 B | yes |
+
+**Against the budgets.** `get_time` is 35 queries against the spec's §13 limit of
+40, and 17 KB against its 40 KB. `get_pay` is 2 queries against 15 — but see the
+caveat below. Payload bytes are identical at 20 people and at 981, which is the
+other half of the same property.
+
+**The one number that is not good, stated plainly: a manager's `get_time` has a
+p95 of 656 ms at 981 people, against the 500 ms line.** The query count did not
+move, the payload did not move, and a profile of that exact call says **44.2 ms
+of the 332 ms median is SQL** — 35 statements, the slowest 6.7 ms, every one of
+them filtered to a single employee id. So it is not a statement whose cost grows
+with the company, which is the failure mode `nfr-budget.md` warns about. Where
+the rest of the time goes I **could not attribute** in this session; the most
+likely candidate is Frappe's own permission machinery for a manager persona
+(`_may_review()` calls `frappe.has_permission`), which is not something this
+slice added. **It is named here rather than rounded off.**
+
+**A caveat on `get_pay`'s 2 queries, because the number looks better than it
+is.** The 044 fixture people have no Salary Slips, so `get_pay` takes the
+"no payslips yet" branch and stops after two reads. The figure proves the empty
+path is cheap and flat; it does **not** measure a full Pay screen. The full path
+is covered by `test_pay_screen_043` for correctness, and its shape is bounded —
+twelve slips, one `get_doc`, one `get_value` — but **its query count at scale is
+not measured, and I am not claiming it is.**
+
+## 16. Findings from part two that were not in the spec
+
+| # | Finding | State |
+|---|---|---|
+| 1 | **The month calendar and the days-off card read two different holiday lists.** `attendance_correction.month` read `Employee.holiday_list`; `hr_api._own_upcoming_holidays` reads the Holiday List Assignment, which is the list payroll and leave actually use (slice 035 moved it there after store staff were shown Head Office's holidays). One person, two lists on one screen, and the calendar's was the one payroll ignores | **Fixed.** The assignment wins, `Employee.holiday_list` is the fallback, so a tenant that only ever set the Employee field keeps exactly the calendar it had |
+| 2 | **`get_pay` answered a Guest with an empty page instead of refusing.** Both a Guest and a signed-in person with no Employee record reach `_get_employee() -> None`. The request layer stops a real Guest, so nothing was exposed — but a soft answer behind a hard door is a door somebody removes later | **Fixed**, with the test that found it |
+| 3 | **Leave encashment: I had half the diagnosis wrong.** `leave_period` genuinely crashes every claim. `currency` does **not** — it is `read_only` and `reqd`, so Frappe fills it from the site's Global Defaults before the mandatory check runs, and the claim was quietly stamped with the SITE's currency rather than the one the employee is paid in | **Both fixed**, and the notes, the docstring and the test now say the true thing. Found by a test that asserted a crash that does not happen |
+| 4 | **Both panels re-parsed `_server_messages` off a rejection.** The frame's `api` has already consumed it and put the sentence on `err.message`. So every refusal fell through to the page error: a person who opened a month they may not see was told the page had broken | **Fixed.** Caught by the new DOM test, three assertions at once |
+| 5 | **The sites volume hides the app's `public/` assets.** On my own container `sites/assets/alvoraa_portal` was a real directory holding one file from the image, not a link to the app — so no portal static file was served at all and the browser check found `window.NextTime` missing | **Worked around locally** with a symlink; no `bench build` was run. It is the same trap ALV-112 is about, and it is worth knowing that a *local* bench has it too |
+| 6 | **A test fixture can hide itself.** `Attendance Deduction.validate` recomputes `deduction_days` from the violation rows, so a figure passed to `insert` is thrown away. The year table then summed to 0.0 and every assertion about it still passed, because 0 equals 0 | Fixed in the fixture, with the reason written beside it |
+
+## 17. Guards broken on purpose in part two
+
+| Guard removed | What went red |
+|---|---|
+| `weekly_off` forced to False in `_day` | **4** Python assertions (the state set, the two-way distinction, and two totals) |
+| The weekly-off state dropped from the panel's `dayState` | **3** DOM assertions |
+| The "it does not undo this deduction" line dropped from the Why? sheet | **1** DOM assertion |
+| The false remedy written into `next-pay.js` | AC-58's static check fired — which **proves that check reaches the new JavaScript**, not only the Python |
+
+The last one is the one worth having: AC-58(c) was written before any
+JavaScript existed, so "it walks `public/js/ess`" was a claim until this.
+
+## 18. What is still NOT built, and why
+
+| Not built | ACs | Why |
+|---|---|---|
+| **Retiring `get_attendance_calendar` and `submit_attendance_request`** | AC-18, AC-19 | **Deliberate, and this is the honest reason.** Their only callers are `hrms-employee.html` — the page that is LIVE. The panels that replace them are on `/hrms-employee-next`, which is 404 on production by design (two locks: the `portal_preview` flag, then System Manager). Deleting the endpoints now takes a working calendar away from every tenant and puts nothing in its place, which is exactly what release gate 2 forbids. **What unblocks it: the preview page becoming the real page.** Then the deletion is its own commit and a revert is one step |
+| The arithmetic line on the Why? sheet | AC-57 element 4 | D-3 unanswered. Unchanged from part one |
+| A named accountable human | AC-60's full form | D-7 unanswered. The fail-closed fallback ships |
+| Payroll rounding | — | **Untouched on purpose.** The Pay screen shows the rounded total as take-home *and* the exact net beside it, so the difference stays visible rather than being hidden behind a nicer screen |
+| Automatic recomputation after a correction | AC-58 | It would move money with nobody involved |
+| The Hindi fixture at 390 px, and 200% zoom | AC-41 (part) | English at 390 px in a real browser: proved. The Hindi fixture: **not run** |
+
+## 19. Things I could not prove in part two
+
+| Claim | Why not |
+|---|---|
+| Where a manager's extra ~250 ms of `get_time` goes at 981 people | SQL is 44 ms of it and no statement grows with headcount. The rest is outside SQL and I could not attribute it. **Named, not rounded off** |
+| `get_pay`'s query count on a full Pay screen at scale | The 044 fixture people have no payslips, so the measured 2 queries are the empty path |
+| AC-41 with the Hindi fixture, and at 200% zoom | Only English at 390 px was driven in a real browser |
+| AC-54, a deduction dated in an already-paid month | Still no demo data. Unchanged from part one |
+| AC-22's PDF in a tenant's own print format | `download_payslip` is unchanged and untested here; setting the format is a per-tenant action (release gate 3) |
+| That the encashment AMOUNT is right | Valuing one needs a real payroll run. What is proved is that a claim now saves, with the right period and the employee's own currency |
+| That no other developer is in these files on another machine | The work board is per-machine. A check, not a guarantee |
+
+## 20. The seven dimensions, re-assessed against part two's code
+
+| Dimension | Verdict | One line |
+|---|---|---|
+| **Performance** | **improves** | Time was 35–40 queries across several calls; it is **one** call of 35, flat from 20 people to 981, 17 KB. One p95 is over the line and is named in §15 rather than smoothed |
+| **Security** | **improves** | A Guest now gets a refusal from `get_pay` rather than a page. `time_api` and `pay_api` carry no `ignore_permissions` at all; the one payslip read that needs it lives in `hr_api`, behind an ownership check, where that pattern is declared and tested |
+| **Reliability** | **neutral to improves** | A card that fails leaves the rest of the screen working. A refusal is a sentence rather than an error page — which was a real defect until the DOM test found it |
+| **Scalability** | **improves** | Every read in `time_api` is filtered to one employee id; no scope is a list of ids; the year table is bounded by the financial year and says when it was capped |
+| **Maintainability** | **improves** | One definition of the payslip payload and of "the caller's own slips". The panels hold no number and no day of the week, so a tenant changing a setting changes the screen and nobody has to remember to edit the copy |
+| **Data integrity** | **neutral** | Nothing on any new path writes, asserted with a write-count spy on both screens — and the spy is proved able to see a write |
+| **Compliance / privacy** | **improves** | A manager opening a report's month gets the month and nothing else — no leave balance, no rule, no pay. The Why? sheet tells a person a machine cut their pay, in the server's words, and creates no record of their having read it |

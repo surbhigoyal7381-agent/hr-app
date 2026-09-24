@@ -52,7 +52,15 @@ class _Spy:
 
 def _calls():
 	"""The calls a portal page actually makes, each as (name, thunk)."""
-	from alvoraa_portal import frame_api, home_api, hr_api, inbox_api, staff_api
+	from alvoraa_portal import (
+		frame_api,
+		home_api,
+		hr_api,
+		inbox_api,
+		pay_api,
+		staff_api,
+		time_api,
+	)
 
 	return [
 		("get_frame", lambda: frame_api.get_frame()),
@@ -61,6 +69,16 @@ def _calls():
 		("get_inbox", lambda: inbox_api.get_inbox()),
 		("get_staff_list", lambda: staff_api.get_staff_list()),
 		("get_team_scorecard", lambda: hr_api.get_team_scorecard()),
+		# Slice 043, Wave 3. Two more landing calls, measured on the same two
+		# fixture sites and by the same method, because a budget written
+		# without a real headcount behind it is a guess that reads as proof -
+		# four of Wave 2's five were wrong the day they were written.
+		#
+		# Both are OWN-RECORD calls, so the interesting number is not the count
+		# but whether the count MOVES between twenty people and 981. If it
+		# does, something in them is reading the tenant rather than the caller.
+		("get_time", lambda: time_api.get_time()),
+		("get_pay", lambda: pay_api.get_pay()),
 	]
 
 

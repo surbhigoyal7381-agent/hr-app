@@ -1305,30 +1305,69 @@ def get_goal_update_log(goal_id):
     return result
 
 
-def _pending_approvals_scope(emp_id, is_hr):
-    """Employees whose KPI/goal updates this caller may approve.
+def _pending_approvals_scope_query(emp_id, is_hr):
+    """Employees whose KPI/goal updates this caller may approve, as a SUBQUERY.
 
-    Shared by get_pending_approvals and get_pending_approvals_count so the two
-    can never disagree on scope — a future change to who HR or a manager may
-    approve for (e.g. another company-scoping fix) only has one place to land.
+    **The definition lives here, and it lives as a query** (044 R4). It used to
+    live as a list: every permitted employee id read into Python and shipped
+    back to the database by each reader as an `IN (...)` of - measured - 981
+    parameters. That was one statement, so the query count stayed flat and
+    nothing looked wrong; but the statement's cost grew with the company, and
+    it was the widest slope in the whole 044 measurement (the System Manager's
+    bell went x5.1 between 20 people and 981). There was no cap on it either,
+    so the list was as long as the tenant was large.
+
+    As a subquery the scope never leaves the database. The reader writes
+    `employee IN (SELECT name FROM tabEmployee WHERE ...)`, MariaDB uses the
+    index on `company` or `reports_to`, and the statement is the same size for
+    twenty people as for fifty thousand.
+
+    The rule itself is unchanged:
+
+    - HR: everyone in the companies you look after, plus your own direct
+      reports wherever they sit (security review m8), never yourself.
+    - Anyone else: your own active direct reports.
+
+    One difference, deliberate and safe: `name != emp_id` now applies to the
+    direct-reports half as well as the company half. Nobody reports to
+    themselves, so it removes nobody it did not already remove - and it is the
+    plainest way to say "your own updates are not yours to approve" once
+    instead of twice. `test_the_subquery_scope_matches_the_list_scope_exactly`
+    proves the two agree on the 981-person fixture rather than asserting it.
     """
+    if not emp_id:
+        # Fail closed. `name IN ()` matches nothing in every Frappe query
+        # builder, and it is never an empty condition (SEC-4).
+        return frappe.qb.get_query("Employee", fields=["name"],
+                                   filters=[["name", "in", []]])
     if is_hr:
-        # Everyone but yourself, in the companies you look after, plus your own
-        # direct reports (security review m8: HR approves only there). Your own
-        # updates are not yours to approve.
         from hrms.alvoraa_hr_core.access import permitted_companies
-        return sorted(set(frappe.get_all(
-            "Employee",
-            filters={"status": "Active", "name": ["!=", emp_id], "company": ["in", permitted_companies() or [""]]},
-            pluck="name",
-        )) | set(frappe.get_all(
-            "Employee", filters={"reports_to": emp_id, "status": "Active"}, pluck="name"
-        ) if emp_id else []))
-    return frappe.get_all(
-        "Employee",
+
+        return frappe.qb.get_query(
+            "Employee", fields=["name"],
+            filters={"status": "Active", "name": ["!=", emp_id]},
+            or_filters={"company": ["in", permitted_companies() or [""]],
+                        "reports_to": emp_id},
+        )
+    return frappe.qb.get_query(
+        "Employee", fields=["name"],
         filters={"reports_to": emp_id, "status": "Active"},
-        pluck="name",
     )
+
+
+def _pending_approvals_scope(emp_id, is_hr):
+    """The same employees, as a list of names.
+
+    One definition, two shapes - the pattern `permitted_employee_filters()` and
+    `permitted_employees()` already use. This runs the subquery above rather
+    than repeating its rule, so the two can never disagree about who a manager
+    or an HR person may approve for.
+
+    **Prefer the subquery.** This shape is still here for
+    `get_pending_approvals`, which walks one employee at a time. Every reader
+    that only needs the scope inside a `WHERE` should take the query.
+    """
+    return [row[0] for row in _pending_approvals_scope_query(emp_id, is_hr).run()]
 
 
 @frappe.whitelist()
@@ -1420,10 +1459,8 @@ def get_pending_approvals_count():
     if not is_mgr and not is_hr:
         return {"total": 0}
 
-    all_employees = _pending_approvals_scope(emp_id, is_hr)
-
-    if not all_employees:
-        return {"total": 0}
+    # The scope as a subquery, never as a list of ids (044 R4).
+    scope = _pending_approvals_scope_query(emp_id, is_hr)
 
     def _pending(field):
         return (field == "Pending") | (field == "") | field.isnull()
@@ -1433,7 +1470,7 @@ def get_pending_approvals_count():
     kpi_total = (
         frappe.qb.from_(KPILog)
         .join(KPI).on(KPILog.parent == KPI.name)
-        .where(KPI.employee.isin(all_employees) & (KPI.status != "Cancelled"))
+        .where(KPI.employee.isin(scope) & (KPI.status != "Cancelled"))
         .where(_pending(KPILog.approval_status))
         .select(Count("*"))
     ).run()[0][0]
@@ -1443,7 +1480,7 @@ def get_pending_approvals_count():
     goal_total = (
         frappe.qb.from_(GoalUpd)
         .join(Goal).on(GoalUpd.parent == Goal.name)
-        .where(Goal.employee.isin(all_employees) & (Goal.status != "Cancelled") & (Goal.docstatus != 2))
+        .where(Goal.employee.isin(scope) & (Goal.status != "Cancelled") & (Goal.docstatus != 2))
         .where(_pending(GoalUpd.approval_status))
         .select(Count("*"))
     ).run()[0][0]

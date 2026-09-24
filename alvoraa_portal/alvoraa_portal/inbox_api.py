@@ -431,43 +431,61 @@ def _part_goal_updates(who):
 	`goals_api.get_pending_approvals`, which walks one employee at a time and
 	took 16.4 seconds for an HR caller (042 AC-16).
 	"""
-	scope_names = []
+	scope = None
 	available = bool(who.employee) and _has_doctype("KPI")
 	if available:
 		# `_is_hr` is imported rather than re-derived: it is the definition
 		# `get_pending_approvals_count` uses, and the scope helper is built for
 		# that definition. Asking the question a second way is how two screens
 		# come to disagree about who HR is.
-		from alvoraa_portal.goals_api import _is_hr, _pending_approvals_scope
+		from alvoraa_portal.goals_api import _is_hr, _pending_approvals_scope_query
 
-		scope_names = _pending_approvals_scope(who.employee, _is_hr(who.user)) or []
-		# Belt as well as braces: the helper already removes the caller, and this
-		# line is what still removes them if it ever stops (042 AC-25).
-		scope_names = [n for n in scope_names if n != who.employee]
+		# **A subquery, not a list of names** (044 R4). This used to read every
+		# permitted employee id into Python - 981 of them on the measured
+		# fixture, uncapped - and ship them back inside each `IN (...)`. The
+		# scope now stays in the database, so the statement is the same size
+		# whatever the tenant's headcount.
+		scope = _pending_approvals_scope_query(who.employee, _is_hr(who.user))
 
 	# The one filter expression. `no_rows()` rather than `{}` for a caller
 	# entitled to nobody (SEC-4) - and the test reads this value, not the rows.
-	filters = {"employee": ["in", scope_names]} if scope_names else no_rows()
+	#
+	# `employee_not` is belt as well as braces for 042 AC-25: the scope query
+	# already excludes the caller, and this is what still excludes them if it
+	# ever stops. It lives IN the filters, not in a closure, so `count_fn` and
+	# `rows_fn` still cannot be handed anything the badge was not counted with.
+	filters = ({"employee": ["in", scope], "employee_not": who.employee}
+	           if scope is not None else no_rows())
 
 	def _pending(field):
 		return (field == "Pending") | (field == "") | field.isnull()
 
-	def _names(filters):
+	def _scope_of(filters):
+		"""(scope subquery, the employee it must exclude), or (None, None).
+
+		Read out of `filters` rather than closed over, so `count_fn` and
+		`rows_fn` still cannot be handed anything the badge was not counted
+		with. `no_rows()` carries a plain list, which is the "nobody" case.
+		"""
 		got = filters.get("employee")
-		return list(got[1]) if isinstance(got, (list, tuple)) and got[0] == "in" else []
+		if (isinstance(got, (list, tuple)) and got[0] == "in"
+				and not isinstance(got[1], (list, tuple))):
+			return got[1], filters.get("employee_not")
+		return None, None
 
 	def count_fn(filters):
 		from frappe.query_builder.functions import Count
 
-		names = _names(filters)
-		if not names:
+		scope, not_me = _scope_of(filters)
+		if scope is None:
 			return 0
 		KPI = frappe.qb.DocType("KPI")
 		KPILog = frappe.qb.DocType("KPI Progress Log")
 		kpi_total = (
 			frappe.qb.from_(KPILog)
 			.join(KPI).on(KPILog.parent == KPI.name)
-			.where(KPI.employee.isin(names) & (KPI.status != "Cancelled"))
+			.where(KPI.employee.isin(scope) & (KPI.employee != not_me)
+			       & (KPI.status != "Cancelled"))
 			.where(_pending(KPILog.approval_status))
 			.select(Count("*"))
 		).run()[0][0]
@@ -476,16 +494,16 @@ def _part_goal_updates(who):
 		goal_total = (
 			frappe.qb.from_(GoalUpd)
 			.join(Goal).on(GoalUpd.parent == Goal.name)
-			.where(Goal.employee.isin(names) & (Goal.status != "Cancelled")
-			       & (Goal.docstatus != 2))
+			.where(Goal.employee.isin(scope) & (Goal.employee != not_me)
+			       & (Goal.status != "Cancelled") & (Goal.docstatus != 2))
 			.where(_pending(GoalUpd.approval_status))
 			.select(Count("*"))
 		).run()[0][0]
 		return int(kpi_total) + int(goal_total)
 
 	def rows_fn(filters, limit):
-		names = _names(filters)
-		if not names:
+		scope, not_me = _scope_of(filters)
+		if scope is None:
 			return []
 		out = []
 		KPI = frappe.qb.DocType("KPI")
@@ -493,7 +511,8 @@ def _part_goal_updates(who):
 		kpi_rows = (
 			frappe.qb.from_(KPILog)
 			.join(KPI).on(KPILog.parent == KPI.name)
-			.where(KPI.employee.isin(names) & (KPI.status != "Cancelled"))
+			.where(KPI.employee.isin(scope) & (KPI.employee != not_me)
+			       & (KPI.status != "Cancelled"))
 			.where(_pending(KPILog.approval_status))
 			.select(KPILog.name, KPI.kpi_name, KPI.employee, KPILog.value,
 			        KPILog.creation)
@@ -504,8 +523,8 @@ def _part_goal_updates(who):
 		goal_rows = (
 			frappe.qb.from_(GoalUpd)
 			.join(Goal).on(GoalUpd.parent == Goal.name)
-			.where(Goal.employee.isin(names) & (Goal.status != "Cancelled")
-			       & (Goal.docstatus != 2))
+			.where(Goal.employee.isin(scope) & (Goal.employee != not_me)
+			       & (Goal.status != "Cancelled") & (Goal.docstatus != 2))
 			.where(_pending(GoalUpd.approval_status))
 			.select(GoalUpd.name, Goal.goal_name, Goal.employee, GoalUpd.value,
 			        GoalUpd.creation)

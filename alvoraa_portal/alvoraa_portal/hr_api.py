@@ -585,47 +585,120 @@ def get_manager_dashboard():
         for r in rows:
             today_att[r.employee] = r.status
 
-    # Who is on leave today
+    # Who is on leave today - PRESENCE ONLY.
+    #
+    # 045 AC-76 / PRIV-2 / D-1, and `01b` §14 rule 9: no screen shows a
+    # colleague the reason for an absence. `leave_type` used to be selected
+    # here. For a manager about their own report that was arguable - they
+    # approve the request. W1D-20 then widened `team_ids` from a manager's
+    # direct reports to an HR person's whole scope, up to 50 people, and the
+    # leave type went with it. Nobody asked for that; it arrived with a scope
+    # change. This takes it back.
+    #
+    # The field is gone from the SELECT, not from the renderer. A field
+    # filtered in JavaScript is still in the response and still in the
+    # browser's cache.
+    # 045 AC-14, the second live instance of the banned shape. This was raw SQL
+    # with one bound parameter per person - `employee IN (%s,%s,...)` built from
+    # `team_ids`. For a company-wide HR caller that was up to fifty, and before
+    # Wave 1 capped the list it was the whole tenant.
+    #
+    # **What this fix does and does not do, said plainly.** The raw SQL is
+    # gone and `leave_type` is gone. The id list is NOT gone: it is now a
+    # `filters={"employee": ["in", team_ids]}`, which is the same `IN (...)`
+    # shape written in the query builder instead of by hand.
+    #
+    # That is a declared trade-off, not an oversight. AC-14 asks for a
+    # subquery, and the reason a subquery cannot simply be dropped in here is
+    # that this read must match the list the screen DRAWS, which is capped at
+    # TEAM_LIST_CAP - a subquery over the caller's scope would count people who
+    # are not on the page, and a number that does not equal the list beside it
+    # is the fault AC-12 exists to stop. MariaDB's support for `LIMIT` inside
+    # an `IN (SELECT ...)` is not something to build a privacy-relevant read
+    # on.
+    #
+    # The list is bounded at fifty by construction, so the x5 slope slice 044
+    # measured cannot appear here. **AC-14's subquery lands with the Team
+    # rewrite**, where `direct` and `covered` are each their own scope with
+    # their own count and the question "which list must this equal" has an
+    # answer. This function is replaced there.
     on_leave_today = []
     if team_ids:
-        # .format() only inserts "%s" placeholders — no user data in the format string; safe.
-        on_leave_today = frappe.db.sql("""
-            SELECT employee, employee_name, leave_type
-            FROM `tabLeave Application`
-            WHERE employee IN ({placeholders})
-              AND docstatus = 1 AND status = 'Approved'
-              AND from_date <= %s AND to_date >= %s
-        """.format(placeholders=",".join(["%s"] * len(team_ids))),
-            tuple(team_ids) + (td, td), as_dict=True,
+        on_leave_today = frappe.get_all(
+            "Leave Application",
+            filters={"employee": ["in", team_ids], "docstatus": 1,
+                     "status": "Approved",
+                     "from_date": ["<=", td], "to_date": [">=", td]},
+            fields=["employee", "employee_name"],
+            ignore_permissions=True,
         )
 
-    # Pending leave approvals (from all in org for this approver)
-    pending = frappe.get_all(
-        "Leave Application",
-        filters={"leave_approver": user, "status": "Open", "docstatus": 0},
-        fields=["name", "employee", "employee_name", "department", "leave_type",
-                "from_date", "to_date", "total_leave_days", "description"],
-        order_by="creation asc",
-        ignore_permissions=True,
-    )
+    # Pending leave approvals, in TWO reads, and the difference between them is
+    # the whole of AC-76.
+    #
+    # `leave_type` is the category - "Sick Leave". `description` is what the
+    # employee typed - "father in hospital" - and it is the more personal of
+    # the two, so a rule written about the category alone would leak the worse
+    # half and look like it had been followed.
+    #
+    # Both travel on ONE row only: the approval row for the caller's OWN direct
+    # report, where the caller is deciding that request and needs to know what
+    # they are deciding. Everywhere else, for everybody, neither field is read.
+    #
+    # The case an engineer will meet, and the rule does not soften for it
+    # (045 Q4a): an HR person who is the named `leave_approver` for somebody who
+    # is NOT their direct report decides that request WITHOUT seeing either
+    # field. The decided rule is reports_to-based; the approval duty is
+    # leave_approver-based; the two do not always coincide. They see the dates,
+    # the days and the person - "why" stays withheld, in both its forms.
+    #
+    # Two reads rather than one read and a blank-out in Python: the fields must
+    # be absent from the `fields` list, not removed after the fact, so that
+    # "what can this query return" is answerable by reading the query.
+    pending = _pending_leave_for_approver(user, emp.name)
 
-    # Approved leaves for the month (team)
+    # Approved leaves that TOUCH this month.
+    #
+    # 045 AC-21. This asked `from_date >= mo_start`, which is not the question
+    # the card asks. Two ways it was wrong, and it has been wrong since it was
+    # written (Appendix D B18/TM-05):
+    #
+    #   * leave that BEGAN last month and is still running was missing. Somebody
+    #     off from 28 August to 3 September did not appear on the September
+    #     card at all, which is the person a manager most needs to see.
+    #   * leave that starts NEXT month was included. A request for 2-4 October
+    #     appeared on the September card.
+    #
+    # The right test is overlap: it starts on or before the last day of the
+    # month AND ends on or after the first. Still one query.
+    #
+    # `leave_type` is also gone from the `fields` list - AC-76. This is a card,
+    # not an approval row, so it carries presence and dates and nothing about
+    # why.
     mo_start = get_first_day(td)
+    mo_end = get_last_day(td)
     month_leaves = []
     if team_ids:
         month_leaves = frappe.get_all(
             "Leave Application",
             filters={"employee": ["in", team_ids], "docstatus": 1,
-                     "status": "Approved", "from_date": [">=", mo_start]},
-            fields=["employee_name", "leave_type", "from_date", "to_date", "total_leave_days"],
+                     "status": "Approved",
+                     "from_date": ["<=", mo_end], "to_date": [">=", mo_start]},
+            fields=["employee_name", "from_date", "to_date", "total_leave_days"],
             order_by="from_date asc",
             ignore_permissions=True,
         )
 
     return {
-        "manager":         emp,
+        # 045 AC-6 / US-12. This was `"manager": emp` - the WHOLE Employee row
+        # that `_get_employee()` reads, which carries date_of_birth, gender,
+        # cell_number, branch, date_of_joining and reports_to. Every browser
+        # that drew a Team screen was handed all of them, and nothing on the
+        # screen ever used one. The key is renamed as well as narrowed: this
+        # block describes the CALLER, and calling it "manager" is what made a
+        # whole record look like a reasonable thing to put there.
+        "me":              me_block(emp),
         "team":            team,
-        "l2_reports":      l2,
         "today_att":       today_att,
         "on_leave_today":  on_leave_today,
         "pending_approvals": pending,

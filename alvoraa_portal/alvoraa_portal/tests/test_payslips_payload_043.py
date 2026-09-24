@@ -132,7 +132,12 @@ class TestNoWaveThreeModuleHandsAnEmployeeRowToAPayload(FrappeTestCase):
 	#
 	#     get_portal_context      -> portal.js:2715 reads `ctx.employee`
 	#     get_employee_dashboard  -> portal.js reads `d.employee`
-	#     get_manager_dashboard   -> same
+	#     get_manager_dashboard   -> same. **PAID OFF by slice 045** (AC-6 /
+	#                                AC-16): the Team call stopped handing
+	#                                over the whole Employee row and now
+	#                                sends a six-key `me` block. It is out
+	#                                of the list below because the list is
+	#                                debt, and this debt is gone.
 	#     get_expense_claims      -> same
 	#     get_checkin_status      -> portal.js:3071 reads `d.employee`
 	#
@@ -150,7 +155,6 @@ class TestNoWaveThreeModuleHandsAnEmployeeRowToAPayload(FrappeTestCase):
 		("hr_api.py", "get_checkin_status"),
 		("hr_api.py", "get_employee_dashboard"),
 		("hr_api.py", "get_expense_claims"),
-		("hr_api.py", "get_manager_dashboard"),
 		("hr_api.py", "get_portal_context"),
 	)
 

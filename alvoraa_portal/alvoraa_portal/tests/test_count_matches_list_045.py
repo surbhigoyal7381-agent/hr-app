@@ -101,6 +101,11 @@ class _Goals(Wave4Base):
 # the KPI chip below is the live call site, and the static pin at the bottom
 # still reads `home_api._goals`, so the `mine` query - which also negates a
 # nullable `status` - cannot be "optimised" back to `frappe.db.count` either.
+#
+# The later full-suite fix to this test is carried too, by being made moot: it
+# had to stop HIRING five people into the shared S045 company, because five
+# extra names pushed `test_directory_contact_045`'s person onto page two of a
+# directory that pages at twelve. This file now hires nobody at all.
 
 class TestTheGoalCardKpiChip(_Goals):
 	"""`goals_api.get_my_goals` — the KPI chip against the contributor list."""
@@ -114,7 +119,7 @@ class TestTheGoalCardKpiChip(_Goals):
 		wrong = frappe.db.count("KPI", filters)
 		# The same filter the contributor list on the detail screen uses.
 		listed = len(frappe.get_all("KPI", filters=filters, pluck="name",
-		                            limit_page_length=0, ignore_permissions=True))
+		                            limit_page_length=0))
 		self.assertEqual(2, listed)
 		self.assertEqual(1, wrong,
 		                 "db.count and get_all agreed - the trap did not reproduce")

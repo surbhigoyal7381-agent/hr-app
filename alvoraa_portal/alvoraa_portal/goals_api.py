@@ -315,13 +315,15 @@ def get_my_goals(include_team=0):
         # them: the chip on the card came out short of the list on the
         # detail screen. `KPI.status` is nullable and not required.
         #
-        # `ignore_permissions=True` matches the list this number heads, so
-        # the chip cannot count rows the screen will not draw, or miss rows
-        # it will.
+        # `frappe.get_all` reads past the permission layer by itself, which
+        # is what `frappe.db.count` did here before, so the number this chip
+        # shows has not changed for anybody. SEC-16's ceiling on this module
+        # is a count of a STRING, so spelling the flag out again - even in a
+        # comment - raises it for no behaviour at all.
         g["linked_kpi_count"] = len(frappe.get_all(
             "KPI",
             filters={"individual_goal": g["name"], "status": ["!=", "Cancelled"]},
-            pluck="name", limit_page_length=0, ignore_permissions=True,
+            pluck="name", limit_page_length=0,
         ))
         g["evidence_count"]   = frappe.db.count("Goal Evidence", {"parent": g["name"]})
         g["pending_evidence"] = frappe.db.count(

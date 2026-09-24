@@ -516,8 +516,17 @@ class TestTheRecordAnswersOnItsOwn(_Corrections):
 		waiting for nobody. This is the same derivation `decided_as` uses,
 		so the capacity and the wait cannot disagree about who the manager
 		is.
+		**No new person is created for this.** `sandeep_reports[1]` already
+		exists and already has no login - the fixture makes Sandeep's extra
+		reports without one. Adding an Employee to this company instead
+		would push somebody off the first page of the staff directory, and
+		that is exactly how this file broke
+		`test_directory_contact_045` once already.
 		"""
-		loginless = own_employee("S045NoLoginBoss")
+		loginless = self.sandeep_reports[1]
+		self.assertFalse(
+			frappe.db.get_value("Employee", loginless, "user_id"),
+			"the borrowed manager has a login - this test needs one without")
 		person = self.covered_only[1]
 		frappe.db.set_value("Employee", person, "reports_to", loginless,
 						    update_modified=False)

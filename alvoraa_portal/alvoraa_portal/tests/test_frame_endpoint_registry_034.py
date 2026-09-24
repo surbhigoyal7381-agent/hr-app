@@ -331,8 +331,16 @@ class TestNoModuleLevelStateAndNoIgnorePermissions(FrappeTestCase):
 			#     does, and until 044 this test did not watch them, so a scope
 			#     written in the query builder was an undeclared route. It is
 			#     declared now.
-			#   the `frappe.db.count` - the team goal summary, one integer over
-			#     a scope `permitted_employees()` already decided.
+			#   the team goal summary - one integer over a scope
+			#     `permitted_employees()` already decided. **It was a
+			#     `frappe.db.count` until 045 and is now a ninth
+			#     `frappe.get_all`.** The two do not agree on a negation:
+			#     `get_all` writes `IFNULL(`status`,'') <> 'Cancelled'` and
+			#     `db.count` writes a bare `<>`, and `NULL <> 'Cancelled'` is
+			#     NULL in SQL - so the count dropped every goal with a NULL
+			#     status while the Goals screen listed it. Counting through the
+			#     list path is the fix, and it is the same route past the
+			#     permission layer as before, over the same scope.
 			#
 			# `_peers` is gone: the peer group is one of the three conditions
 			# `_scope_filters` returns, so it is no longer a separate read.
@@ -340,7 +348,7 @@ class TestNoModuleLevelStateAndNoIgnorePermissions(FrappeTestCase):
 			# The HR scope itself is never read here: it comes from
 			# `permitted_employees()` and `permitted_employee_filters()`, which
 			# are the shared definitions.
-			"home_api.py": (("frappe.get_all",) * 8 + ("frappe.db.count",)
+			"home_api.py": (("frappe.get_all",) * 9
 			                + ("frappe.qb.get_query",) * 2 + ("frappe.qb.from_",)),
 			# staff_api: the staff list itself and its total. Both take the same
 			# filters dict, built by the shared scope helper.

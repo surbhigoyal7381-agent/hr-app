@@ -24,9 +24,12 @@ number of *rows*; this one grows the number of *people*, which is the axis the
    perfectly on an empty fixture. Every test here first asserts that the team
    or the scope actually got bigger, and says by how much when it does not.
 
-Runs on any site in about a minute. It does **not** need the 1,000-person
-fixture: a query inside a loop shows up at thirty people just as clearly, and a
-regression guard nobody can afford to run is not a guard.
+Runs on any site in **about five and a half minutes** (measured: 327 s for
+eleven tests on a fresh site). It does **not** need the 1,000-person fixture: a
+query inside a loop shows up at thirty people just as clearly, and a regression
+guard nobody can afford to run is not a guard. Most of the time is spent hiring
+thirty people through the ORM, once per test - which is also what keeps the
+tests independent of each other.
 
 Synthetic people only, tagged S044F, in this file's own company.
 """
@@ -284,7 +287,18 @@ class TestTheLandingCallsAreFlatInHeadcount(_Flatness):
 		self._flat(self.hr_login, frame_api.get_frame, "get_frame (HR)")
 
 	def test_get_staff_list_is_flat_for_hr(self):
-		"""The staff list is paged, so a bigger company must cost the same."""
+		"""The staff list is paged, so a bigger company must cost the same.
+
+		Skipped where the tenant has not bought the staff list: that switch is
+		checked on the server (SEC-16) and a test must not pass or fail because
+		of a plan. `subscription.has_feature` is asked, not assumed.
+		"""
+		from alvoraa_portal.subscription import has_feature
+		from alvoraa_portal.staff_api import FEATURE
+
+		if not has_feature(FEATURE):
+			self.skipTest("this site is not entitled to the staff list "
+			              "(%s), so there is nothing to measure" % FEATURE)
 		_small, _grown, payload = self._flat(
 			self.hr_login, staff_api.get_staff_list, "get_staff_list (HR)")
 		self.assertGreaterEqual(

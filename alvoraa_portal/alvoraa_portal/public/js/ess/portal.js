@@ -8014,6 +8014,13 @@ window.pfRatingLabel = function(value, scale) {
   function tvReposition() {
     var menu = document.getElementById("tv-new-menu");
     if (menu && menu.classList.contains("open")) tvPlace(menu, document.getElementById("tv-new-btn"));
+    /* Slice 045: the filter popover is portaled too now, so it has to follow
+       its trigger on resize and scroll like the New menu does - otherwise it
+       sits where the button USED to be. */
+    var pop = document.getElementById("tv-pop");
+    if (pop && pop.classList.contains("open")) {
+      tvPlace(pop, document.getElementById("tv-filter-btn"));
+    }
   }
   window.addEventListener("resize", tvReposition);
   window.addEventListener("scroll", tvReposition, true);
@@ -8026,8 +8033,29 @@ window.pfRatingLabel = function(value, scale) {
     var btn = document.getElementById("tv-filter-btn");
     if (!pop) return;
     var open = !pop.classList.contains("open");
-    if (open) { pop.classList.add("open"); if (bd) bd.classList.add("open"); }
-    else { pop.classList.remove("open"); if (bd) bd.classList.remove("open"); }
+    if (open) {
+      /* **Slice 045: this line was missing, and the filter popover rendered
+         under the sidebar.**
+
+         The comment above this block says overlays are moved to <body> before
+         they open, and the `.tv-pop` CSS rule says why: `.tv-controls` is
+         `position: sticky` with a z-index, which forms a stacking context, so
+         a descendant's z-index cannot lift it above the sidebar's 50 however
+         large the number is. `tvToggleNew` below has always called `tvPlace`.
+         This one never did, so the popover kept its 1180 and still painted
+         underneath.
+
+         Found by `portal_redesign_test.js`, which asserts exactly this and had
+         **never run** - it was skipped for want of a fixture. A skipped test
+         is not coverage; this is what was behind the skip. */
+      tvPlace(pop, btn);
+      if (bd && bd.parentNode !== document.body) { document.body.appendChild(bd); }
+      pop.classList.add("open");
+      if (bd) bd.classList.add("open");
+    } else {
+      pop.classList.remove("open");
+      if (bd) bd.classList.remove("open");
+    }
     if (btn) btn.setAttribute("aria-expanded", open);
   };
   window.tvClosePop = function() {

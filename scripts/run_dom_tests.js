@@ -8,45 +8,76 @@
  * "Cannot find module 'jsdom'" and nobody saw it. jsdom is now a pinned
  * devDependency in the repository's package.json and these run in CI.
  *
- * Slice 034 Wave 1 adds a fourth that runs, next_frame_test.js: the new frame,
- * loaded from the preview page's own source and clicked. Three of the original
- * five still do not run.
+ * **Slice 045, Wave 4: the SKIP map is empty, and the three that had never run
+ * now do.** 045 AC-62 to AC-64.
  *
- * Two of the five run. Three do not, and the reasons are recorded here rather
- * than in a comment nobody reads:
+ * The comment this file used to carry said the three skipped tests were "about
+ * the Growth screens, which Wave 3 rebuilds". **That was wrong twice over:**
+ * Growth is Wave 4's, not Wave 3's, and the reason they were skipped was not
+ * the wave but a missing fixture. What happened to each:
  *
- *   portal_tree_test.js      needs a get_performance_tree payload as argv[3].
- *   portal_redesign_test.js  the same payload. No such fixture is in the
- *                            repository, so the file cannot be produced by
- *                            reading the repo alone.
- *   portal_appraisal_test.js drives #panel-appraisals. The page has 19 panels
- *                            and that is not one of them, so the test is
- *                            written against a layout the page no longer has.
+ *   portal_tree_test.js      and portal_redesign_test.js needed a
+ *   portal_redesign_test.js  `get_performance_tree` payload as argv[3]. There
+ *                            is one now - `alvoraa_portal/tests/fixtures/
+ *                            performance_tree.json`, captured from a real call
+ *                            with every name replaced, by
+ *                            `alvoraa_portal.tests.make_performance_tree_fixture`.
+ *                            Both run here, with the page and the fixture.
+ *   portal_appraisal_test.js drove #panel-appraisals, a panel the page has not
+ *                            had for a long time. It is REPLACED by
+ *                            next_growth_team_test.js, which drives the Growth
+ *                            panel that exists - AC-64's first option. The
+ *                            commit that did it says why.
  *
- * All three are about the Growth screens, which Wave 3 rebuilds. Repairing them
- * belongs with that work, not with the frame.
+ * **Two things the newly-running tests found, which is the argument against
+ * skipping in the first place.** The filter popover on the Objectives screen
+ * was never portaled out of the sticky control bar, so it painted underneath
+ * the sidebar - the CSS comment beside it had said for months that it could
+ * not live there. And two blocks of `portal_redesign_test.js` were written
+ * against controls the page had replaced, so they crashed rather than failed.
+ * A skipped test is not coverage; it is a question nobody is asking.
  *
- * The skip list is checked, not trusted: if a sixth test appears, or one of
- * these is renamed, this script fails rather than quietly running less.
+ * The lists are checked, not trusted: if a test appears, disappears or is
+ * renamed, this script fails rather than quietly running less. The expected
+ * count is asserted too (AC-64), so a fourth cannot go missing unnoticed.
  */
 const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
 const DIR = path.join(__dirname, "..", "alvoraa_portal", "tests");
+const PAGE = path.join(__dirname, "..", "alvoraa_portal", "alvoraa_portal",
+                       "www", "hrms-employee.html");
+const TREE_FIXTURE = path.join(__dirname, "..", "alvoraa_portal", "alvoraa_portal",
+                               "tests", "fixtures", "performance_tree.json");
 
-const RUN = ["portal_dom_test.js", "portal_notes_test.js", "next_frame_test.js",
-             "next_panels_test.js",
-             /* Slice 043, Wave 3: the Time and Pay panels. */
-             "next_time_pay_test.js"];
-const SKIP = {
-  "portal_tree_test.js": "needs a get_performance_tree fixture that is not in the repository (ALV-111, Wave 3)",
-  "portal_redesign_test.js": "needs a get_performance_tree fixture that is not in the repository (ALV-111, Wave 3)",
-  "portal_appraisal_test.js": "drives #panel-appraisals, which the page does not have (ALV-111, Wave 3)",
-};
+/* Each entry is the file and the arguments it needs. Two of them take the page
+   and a payload; the rest find the page themselves. */
+const RUN = [
+  { file: "portal_dom_test.js" },
+  { file: "portal_notes_test.js" },
+  { file: "next_frame_test.js" },
+  { file: "next_panels_test.js" },
+  /* Slice 043, Wave 3: the Time and Pay panels. */
+  { file: "next_time_pay_test.js" },
+  /* Slice 045, Wave 4: the Growth and Team panels. Replaces
+     portal_appraisal_test.js, which drove a panel the page no longer has. */
+  { file: "next_growth_team_test.js" },
+  /* Slice 045, Wave 4: the two that needed a get_performance_tree payload. */
+  { file: "portal_tree_test.js", args: [PAGE, TREE_FIXTURE] },
+  { file: "portal_redesign_test.js", args: [PAGE, TREE_FIXTURE] },
+];
+
+/* **Empty, and it stays empty.** AC-62: an entry here needs a ticket and a
+   date, not a wave. */
+const SKIP = {};
+
+/* AC-64. A number, so a test that disappears is a failure rather than a
+   shorter run nobody reads. Raise it deliberately when you add one. */
+const EXPECTED_BROWSER_TESTS = 8;
 
 const onDisk = fs.readdirSync(DIR).filter((f) => f.endsWith("_test.js")).sort();
-const known = [...RUN, ...Object.keys(SKIP)].sort();
+const known = [...RUN.map((r) => r.file), ...Object.keys(SKIP)].sort();
 if (onDisk.join(",") !== known.join(",")) {
   console.error("The DOM test list here and the files on disk disagree.");
   console.error("  on disk: " + onDisk.join(", "));
@@ -54,12 +85,31 @@ if (onDisk.join(",") !== known.join(",")) {
   console.error("Add the new test to RUN, or to SKIP with the reason it cannot run.");
   process.exit(1);
 }
+if (known.length !== EXPECTED_BROWSER_TESTS) {
+  console.error(`There are ${known.length} DOM tests and this script expects ` +
+                `${EXPECTED_BROWSER_TESTS}. If that is deliberate, change ` +
+                "EXPECTED_BROWSER_TESTS in the same commit and say why.");
+  process.exit(1);
+}
+for (const entry of RUN) {
+  for (const arg of entry.args || []) {
+    if (!fs.existsSync(arg)) {
+      console.error(`${entry.file} needs ${arg}, which does not exist. ` +
+                    "Capture it with " +
+                    "`bench --site <site> execute " +
+                    "alvoraa_portal.tests.make_performance_tree_fixture.main`.");
+      process.exit(1);
+    }
+  }
+}
 
 let failed = 0;
-for (const name of RUN) {
-  console.log("=== " + name);
+for (const entry of RUN) {
+  console.log("=== " + entry.file);
   try {
-    execFileSync(process.execPath, [path.join(DIR, name)], { stdio: "inherit" });
+    execFileSync(process.execPath,
+                 [path.join(DIR, entry.file), ...(entry.args || [])],
+                 { stdio: "inherit" });
   } catch (e) {
     failed++;
   }

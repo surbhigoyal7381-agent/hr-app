@@ -1625,6 +1625,43 @@ def get_attendance_calendar(year, month):
 PAYSLIP_UNAVAILABLE = "That payslip is not available."
 
 
+# ── The only Employee fields that leave a Wave 3 payload ─────────────────────
+#
+# 043 AC-6, and Wave 1's biggest finding, live until this commit.
+#
+# `get_payslips` returned `{"payslips": [...], "employee": emp}` where `emp` is
+# `_get_employee()`'s WHOLE row: date_of_birth, gender, cell_number, branch,
+# reports_to and date_of_joining along with the rest. That is the payload behind
+# the screen people screenshot and attach to a support ticket, and send to a
+# bank. Nothing on the screen ever read it - `portal.js:2593` uses
+# `data.payslips` and nothing else - so seven fields of the most sensitive data
+# in the product travelled on every Pay load for no reason at all.
+#
+# The same six fields Wave 1 fixed on the frame (`frame_api.ME_FIELDS`), and the
+# same discipline: a FIXED KEY LIST, so adding a field is a decision somebody
+# makes on purpose rather than something that arrives by passing a row through.
+ME_FIELDS = ("employee", "employee_name", "designation", "department", "image", "company")
+
+
+def _me_block(emp):
+    """The six-key `me` block, built key by key from an Employee row.
+
+    Deliberately not `{k: emp[k] for k in ME_FIELDS}` over a row - the point is
+    that this function names what it returns, so a reviewer reads the payload
+    here rather than working out what `_get_employee` happens to select today.
+    """
+    if not emp:
+        return None
+    return {
+        "employee": emp.name,
+        "employee_name": emp.employee_name,
+        "designation": emp.designation,
+        "department": emp.department,
+        "image": emp.image,
+        "company": emp.company,
+    }
+
+
 @frappe.whitelist()
 @requires_feature("payroll", message=PAYSLIP_UNAVAILABLE)
 def get_payslips():
@@ -1664,7 +1701,7 @@ def get_payslips():
         limit=12,
         ignore_permissions=True,
     )
-    return {"payslips": slips, "employee": emp}
+    return {"payslips": slips, "me": _me_block(emp)}
 
 
 # ── One payslip, shown in the portal ─────────────────────────────────────────

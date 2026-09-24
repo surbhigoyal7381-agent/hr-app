@@ -674,8 +674,9 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
         needs_india  = ("india_compliance" in modules
                         and "india_compliance" not in installed)
         needs_crm    = "crm" in modules and "crm" not in installed
+        needs_whatsapp = "whatsapp" in modules and "frappe_whatsapp" not in installed
 
-        if needs_vendor or needs_goals or needs_india or needs_crm:
+        if needs_vendor or needs_goals or needs_india or needs_crm or needs_whatsapp:
             job_id = uuid.uuid4().hex[:12]
             cfg = _read_site_config(site_name)
             jobs = _read_jobs()
@@ -706,6 +707,7 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
                 install_goals=needs_goals,
                 install_india_compliance=needs_india,
                 install_crm=needs_crm,
+                install_whatsapp=needs_whatsapp,
             )
             return {
                 "status": "installing",
@@ -1134,7 +1136,8 @@ def _install_crm_after_wizard(site_name):
 
 
 def _run_install_modules(pjob_id, site_name, install_vendor=False, install_goals=False,
-                         install_india_compliance=False, install_crm=False):
+                         install_india_compliance=False, install_crm=False,
+                         install_whatsapp=False):
     """Background job: install additional Frappe apps on an existing site."""
     def _update(status, log_append="", finished=False):
         jobs = _read_jobs()
@@ -1197,6 +1200,14 @@ def _run_install_modules(pjob_id, site_name, install_vendor=False, install_goals
                 # must see it: the feature is ticked and the app is not there.
                 raise RuntimeError(crm_msg)
             _update("Provisioning", crm_msg + "\n")
+
+        if install_whatsapp:
+            # No wizard guard needed: the app seeds nothing on install.
+            _update("Provisioning", f"[{now_datetime()}] Installing frappe_whatsapp…\n")
+            r = _bench_run(f"--site {site_name} install-app frappe_whatsapp", timeout=600)
+            if r.returncode != 0:
+                raise RuntimeError(f"frappe_whatsapp install failed:\n{r.stderr}")
+            _update("Provisioning", r.stdout + "\n")
 
         _bench_run(f"--site {site_name} clear-cache")
         _update("Done", f"[{now_datetime()}] ✅ Module installation complete.\n", finished=True)

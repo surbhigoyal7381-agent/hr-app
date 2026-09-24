@@ -181,6 +181,7 @@ jobs:
             FRAPPE_BRANCH=version-16
             ERPNEXT_BRANCH=version-16
             CRM_TAG=v1.84.0
+            WHATSAPP_COMMIT=08bc1f6af2e3
 
       # ── Copy the old releases into the new package, for rollback ─────────
       #

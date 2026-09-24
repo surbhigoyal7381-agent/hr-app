@@ -39,6 +39,15 @@ ARG INDIA_COMPLIANCE_BRANCH=version-16
 # apps/frappe/ui, so a moving branch could break every future image build with
 # no change on our side. Bump the tag on purpose, in one place (slice 040).
 ARG CRM_TAG=v1.84.0
+# Frappe WhatsApp (shridarpatil/frappe_whatsapp): Meta's WhatsApp Cloud API,
+# sold as the `whatsapp` feature in subscription.py. Present in the image,
+# installed on a site only when sold. No setup-wizard hook, so provisioning
+# installs it directly.
+#
+# Pinned to a COMMIT on master: the newest tag (v1.0.11, Nov 2025) predates
+# multi-account support, which only master has. Bump on purpose, in one place
+# (slice 042).
+ARG WHATSAPP_COMMIT=08bc1f6af2e3
 
 USER frappe
 WORKDIR /home/frappe
@@ -71,6 +80,12 @@ RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench g
 # frontend's yarn install; the Vite build itself happens in step 4 below.
 RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch "${CRM_TAG}" https://github.com/frappe/crm
 
+# get-app cannot take a commit, so: fetch master, then pin. The editable pip
+# install get-app already did stays valid - the checkout changes files in place.
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch master https://github.com/shridarpatil/frappe_whatsapp \
+ && git -C apps/frappe_whatsapp checkout --quiet "${WHATSAPP_COMMIT}" \
+ && git -C apps/frappe_whatsapp log -1 --format='frappe_whatsapp pinned at %h (%cs)'
+
 # ── 2. First-party apps, copied from THIS commit ────────────────────────────
 COPY --chown=frappe:frappe hrms                 apps/hrms
 COPY --chown=frappe:frappe alvoraa_goals          apps/alvoraa_goals
@@ -81,7 +96,7 @@ RUN ./env/bin/pip install --no-cache-dir \
         -e apps/hrms \
         -e apps/alvoraa_goals \
         -e apps/alvoraa_portal \
- && printf 'frappe\nerpnext\nindia_compliance\ncrm\nhrms\nalvoraa_goals\nalvoraa_portal\n' > sites/apps.txt
+ && printf 'frappe\nerpnext\nindia_compliance\ncrm\nfrappe_whatsapp\nhrms\nalvoraa_goals\nalvoraa_portal\n' > sites/apps.txt
 
 # ── 3b. Node dependencies for the copied apps ───────────────────────────────
 # `bench get-app` runs yarn install for the app it fetches. COPY does not, so the
@@ -114,6 +129,7 @@ RUN bench build --production --app frappe
 RUN bench build --production --app erpnext
 RUN bench build --production --app india_compliance
 RUN bench build --production --app crm
+RUN bench build --production --app frappe_whatsapp
 RUN bench build --production --app hrms
 RUN bench build --production --app alvoraa_goals
 RUN bench build --production --app alvoraa_portal

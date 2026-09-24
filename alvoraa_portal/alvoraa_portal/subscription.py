@@ -356,6 +356,22 @@ ERPNEXT_FEATURES["crm"] = {
     "erpnext": True,
 }
 
+# Frappe WhatsApp (shridarpatil/frappe_whatsapp) - Meta's WhatsApp Cloud API:
+# accounts, templates, notifications on document events, bulk sends, flows.
+# Same catalogue as the CRM for the same reason. `app` makes it install only
+# where sold. No `roles`: every one of its doctypes is System Manager only, so
+# the tenant's own administrator configures it and nobody else sees it. No
+# `requires`: it works on an HR-only tenant. In no plan bundle, so an existing
+# tenant has it unticked until someone ticks it. (Slice 042.)
+ERPNEXT_FEATURES["whatsapp"] = {
+    "desc": "WhatsApp messages, templates and notifications through Meta's Cloud API",
+    "icon": "💬",
+    "label": "WhatsApp",
+    "app": "frappe_whatsapp",
+    "module_defs": ["Frappe Whatsapp"],
+    "erpnext": True,
+}
+
 # Two things called "CRM" in one catalogue would be confusing, so ERPNext's own
 # Lead/Opportunity module says which one it is. The KEY stays `erp_crm`: tenants
 # already hold it in their `features` list, and renaming it would lock them out.

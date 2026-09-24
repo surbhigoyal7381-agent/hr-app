@@ -22,15 +22,22 @@ their own list and are not requirements.
 **I did not touch production, a bench or a live tenant.** Every line number below was read
 in this worktree.
 
-> **Written against `02` revision 1, then checked against revision 2 before committing.**
-> While I was working, the analyst's **revision 2** landed **uncommitted** in this worktree,
-> carrying two decisions Surbhi took on **25 September 2026**: **peer feedback is out of
-> Wave 4 entirely** (ALV-116), and **the Team screen separates "Your team" from "You cover"**,
-> which **closes `045 D-1`**. I read it and did not stage it — it is the analyst's work to
-> commit. **Four things below are marked "revision 2" where they changed**: my **Q1 is
-> answered** (PRIV-2), **Finding 4's peer-feedback half is moot and its doctype half is
-> sharper**, **PRIV-2's rule is narrowed to match the decided one**, and there is **one new
-> requirement, SEC-18**, for a surface revision 2 creates.
+> **Written against `02` revision 1, then reconciled with revision 2 (`76bc73d`).**
+> Revision 2 carries two decisions Surbhi took on **24 September 2026**: **peer feedback is
+> out of Wave 4 entirely** (ALV-116), and **the Team screen separates "Your team" from "You
+> cover"**, which **closes `045 D-1`**. Items below marked *revision 2* changed because of it:
+> my **Q1 is answered** (PRIV-2), **Finding 4's peer-feedback half is moot and its doctype
+> half is sharper**, **PRIV-2's rule is narrowed to match the decided one**, and **SEC-18 and
+> SEC-19** are new, for surfaces revision 2 creates.
+>
+> **Two answers came back to me from revision 2 and I have taken both:** `AC-86` supplies
+> PRIV-8's oracle — **accepted as written**, with one addition and a note on why its
+> fail-towards-the-subject default is correct; and PRIV-10 is **amended** for SEC-19's field,
+> though as a scope boundary rather than as an exception. Neither needed overruling.
+>
+> **And `SEC-17` is answered.** The census I asked for was run on 24 September, read-only, on
+> both production tenants. **Not live today; live from the DTC staff load.** See
+> "SEC-17, answered".
 
 **What makes Wave 4 different from Waves 2 and 3.** Time and Pay were about one person's own
 most sensitive record. **Wave 4 is the first wave whose whole point is one person looking at
@@ -72,7 +79,7 @@ and is being rendered to answer "who is around today". **PRIV-2 requires it drop
 reads.**
 
 > **Revision 2 — this is now decided, and decided well.** `045 D-1` is **closed**. Surbhi's
-> decision of 25 September 2026 splits the Team screen into "Your team" and "You cover", and
+> decision of 24 September 2026 splits the Team screen into "Your team" and "You cover", and
 > the leave type survives **only on the approval row of a person's own direct report** and
 > **nowhere else, for anybody** (`045 AC-76`). **That is narrower than my fail-closed default
 > and narrower than my recommendation**, and I endorse it without reservation: an HR person in
@@ -119,7 +126,7 @@ I could not is itself the finding.
    six keys exactly), reused as the helper, **not a hand-written dict in a second module**.
    Two copies of one key list drift, and this codebase has already proved it (SEC-6).
 
-### Finding 2 — the leave type, widened by W1D-20 · **was P1; decided 25 Sep, now a build requirement**
+### Finding 2 — the leave type, widened by W1D-20 · **was P1; decided 24 Sep, now a build requirement**
 
 Assessed in "Bad news" above. Requirement **PRIV-2**. **Revision 2 closes `045 D-1`**, so this
 is no longer waiting on anybody: it is a thing to build and a thing to test. **The rank does
@@ -198,35 +205,56 @@ feedback record in the tenant: who it is about, who wrote it, the `feedback` fre
 
 **Blast radius: the whole tenant.** One step below the top of the scale.
 
-**Unknown — and this is the finding.** Whether that scenario is live turns on two things I
-could not check:
+### SEC-17, answered · **P3 today · P1 on the day DTC's staff are loaded**
 
-1. **Are ordinary employee logins on `dtc` and `aahr` System Users?** *Verified in code:*
-   `tenant_setup.py:41` creates users as `"System User"`, but that path provisions a tenant's
-   admin and HR users; `demo_setup.py:43` creates `"Website User"`. I could not establish
-   which shape an ordinary employee has.
-2. **Has `module_access` written Custom DocPerm rows that override this?** *Verified in code*,
-   `module_access.py:245-263`: once **any** Custom DocPerm row exists for a doctype, its
-   standard permissions are ignored entirely — so a tenant's module selection may already have
-   closed this, or may never have touched it.
+**The census was run for me on 24 September 2026, read-only, on both production tenants.
+Nothing was changed.** I did not run it and would not have; it is recorded here as
+*verified by running it*, by the coordinator, with the numbers as taken:
 
-**Access I would need:** a read of `User.user_type` and `Has Role` for one ordinary employee
-on each client tenant, `frappe.db.count("Employee Performance Feedback")`, and
-`frappe.get_all("Custom DocPerm", {"parent": "Employee Performance Feedback"})`. **A dev-stack
-copy of a tenant answers all three.** I did not probe production and will not.
+| | `dtc.alvoraa.co` | `aahr.alvoraa.co` |
+|---|---|---|
+| Enabled users, by type | System User **4**, Website User 1 | System User **7**, Website User 1 |
+| `Employee Performance Feedback` rows | **0** | **0** |
+| `Custom DocPerm` on that doctype | **none** | **none** |
 
-| Rank | Condition |
+**So the scenario above is not live today — and the only reason is that almost nobody has a
+login yet.** Those four and seven are Surbhi and the client admins. **No Custom DocPerm means
+`module_access` has not closed it**, so the standard permissions in the doctype JSON are what
+is in force, unmodified. That was the one thing that could have quietly saved us, and it has
+not.
+
+**It becomes live on a predictable date, and the date is not a release date.**
+*Verified in code:* `tenant_setup.py:41` creates users as `"System User"`. **DTC loads its
+staff before go-live, in the first week of October.** From the moment that load finishes,
+every employee on that tenant holds `read`, `report` and `export` on every feedback record in
+it.
+
+**And both halves of the exposure arrive in the same window, which is the part worth pausing
+on.** The zero row count is not reassurance — it is the same clock. The staff load creates
+the **readers**; the appraisal cycle that follows it creates the **rows**, through
+`dotted_line.py:125-136`, whenever a manager scores an appraisal. **Neither half is dangerous
+alone, and they are scheduled together.**
+
+| State | Rank |
 |---|---|
-| **P1 — blocks the release** | If employees are System Users **and** `org_structure` is on **and** no Custom DocPerm overrides it |
-| **P3 — after release** | If any one of those three is false |
+| **Today** — 11 admin logins between two tenants, 0 rows | **P3** |
+| **From the DTC staff load** — first week of October | **P1** |
 
-**What I require now** (SEC-17): **the check is run before Wave 4 ships**, on a dev copy, and
-the answer is written down. It is fifteen minutes and it decides between P1 and P3. Wave 4
-does not touch this doctype and does not have to wait for the *fix* — but it must not be the
-thing that surfaced the question and then put it back in the drawer.
+**This is a finding whose severity changes with no commit at all.** Nothing in CI will catch
+it, no diff will show it, and no review will be triggered by it: **the trigger is a data
+event.** That is a category this programme has not had before, and it is exactly the shape
+the coordinator is right to call a go-live item rather than a someday item. **It is also the
+one finding that peer feedback leaving Wave 4 made easy to lose**, because the slice that
+would have forced somebody to look at this doctype is gone.
+
+**What I require** (SEC-17, rewritten): not another check, but **the row-scope itself** —
+a `permission_query_conditions` entry and a `has_permission` for
+`Employee Performance Feedback` in `hrms/hooks.py`, scoping a row to its subject, its reviewer
+and HR — **landed before the staff load, not before Wave 4 ships.** Wave 4 does not touch this
+doctype and must not be gated on it. **R3 carries the date, and the date is the staff load.**
 
 **And on peer feedback itself:** no-go, agreed — **and revision 2 went further than a no-go.**
-Surbhi removed it from Wave 4 entirely on 25 September; it becomes an HR-run process with a
+Surbhi removed it from Wave 4 entirely on 24 September; it becomes an HR-run process with a
 stated purpose and its own specification (**ALV-116**). **I think that is the better answer
 than the one I was going to give**, and for a privacy reason nobody has said out loud yet: a
 feedback *programme* that HR starts, for a stated purpose, with a beginning and an end, **has
@@ -336,7 +364,7 @@ choice, and is the correct shape if the answer is yes.
 
 | Who | Must not see |
 |---|---|
-| **Any colleague, any manager, any HR person, on the Team or People screens** | Why somebody is away — the leave type or the reason. **One exception, and only one:** the approval row for the caller's **own direct report**, per `045 D-1` as closed on 25 Sep 2026. **An HR caller's "You cover" section carries no leave type at all** (PRIV-2, `045 AC-76`) |
+| **Any colleague, any manager, any HR person, on the Team or People screens** | Why somebody is away — the leave type or the reason. **One exception, and only one:** the approval row for the caller's **own direct report**, per `045 D-1` as closed on 24 Sep 2026. **An HR caller's "You cover" section carries no leave type at all** (PRIV-2, `045 AC-76`) |
 | Any employee | Another person's draft self-review, at any stage, including their own manager's before it is sent |
 | **Any employee, about themselves** | `manager_internal_notes`, `potential_rating`, or `overall_rating` before release (PRIV-5) |
 | Anyone at all | Who wrote a piece of upward feedback, or any upward-feedback detail below three responses (PRIV-6) |
@@ -421,7 +449,7 @@ written a question for counsel instead of a requirement.
 | **SEC-14** | **A caller with no Employee record is refused explicitly, not filtered by an absent value.** No Wave 4 query runs with an employee filter of `None` | Per endpoint: call as a user with no Employee record; assert refusal **and** assert the scoped query did not run |
 | **SEC-15** | **The person sheet is one endpoint.** Four entry points, one whitelisted function, one key list. *Verified in code:* there are two today (`get_employee_scorecard:915` and `get_employee_detail_for_manager:1218`) with the same over-wide field list. **The second must be removed or gated in the same slice**, or Wave 4 narrows one door and leaves the other open | `045 AC-19`, extended: a test asserts exactly one whitelisted person-sheet function **and** that the retired one is no longer callable |
 | **SEC-16** | **Everything drawn from data is escaped, in Jinja and in the browser.** Wave 4 adds three panel scripts; `034 SEC-10`'s check must be **extended to them**, not assumed to cover them. Designation, department and company-value names are all tenant-editable text | A DOM test with an employee whose designation is `<img src=x onerror=alert(1)>`, rendered on all three screens; a scan for `innerHTML` receiving API data without `esc()` |
-| **SEC-17** | **Before Wave 4 ships, somebody establishes whether `Employee Performance Feedback` is readable tenant-wide today**, on a dev copy: are ordinary employees System Users, does `org_structure` create rows on the client tenants, and is there a Custom DocPerm override. **The answer is written down either way.** *Revision 2:* peer feedback left the wave on 25 September, so **this check is now the only thing keeping the question alive** | Not a code test — a recorded check, with a date and a name. It decides whether Finding 4 is P1 or P3 |
+| **SEC-17** *(answered 24 Sep 2026 — see "SEC-17, answered" below)* | **`Employee Performance Feedback`'s row-scope must be written before DTC's staff are loaded, not before Wave 4 ships.** The check I asked for has been run, read-only, on both client tenants: **it is not live today, and it becomes live on the day staff logins are created.** The requirement is therefore no longer "find out" — it is **a `permission_query_conditions` entry and a `has_permission` for that doctype, in `hrms/hooks.py`, landed before the staff load**, scoping a feedback row to its subject, its reviewer and HR | A permission test: an ordinary employee with the `Employee` role sees **only** feedback about themselves or written by themselves, in `get_list`, in the report view and in an **export**. Plus a re-run of the census below on the day after the staff load, as a go-live checklist line |
 | **SEC-18** *(revision 2)* | **Revision 2's action matrix is a permission matrix, and it must be enforced on the server.** §6a gives "Your team" and "You cover" different action sets — eleven rows. **`045 AC-77` already says the right thing** — *"Absent from the payload, not disabled on the screen… and when the matching endpoints are called by hand as Priya, each refuses on the server"* — and I am making it a requirement rather than one acceptance criterion, because **eleven UI rows are eleven server-side checks**, and a matrix is the shape where one row gets missed. **The section a person is in is derived, not stored** (`reports_to = me` versus the HR scope minus that), so **the server must re-derive it on every action** and never trust a section name sent by the client | Every one of the eleven rows called **by hand** as a caller for whom it is a covered row: each refuses on the server, logged without personal content. **Plus** a test that passing a `section` or `basis` argument to any action endpoint changes nothing — the server derives it. **A test that only checks the payload's absent keys satisfies AC-77 and not this** |
 | **SEC-19** *(revision 2)* | **`alvoraa_decided_as` must be written by the server from the caller's real relationship, never from the request.** Revision 2 adds a Select on `Attendance Request` recording whether an approval was made as the manager or as HR (`045 AC-82`). **This is the best audit change in either spec** — it is exactly the field that answers a grievance a year later, when `reports_to` has since changed and the capacity can no longer be worked out. It is also a field a client could lie about if it is ever accepted as an argument | A test that the field is set from the server's own derivation; a test that supplying `decided_as` in the request body does not change what is stored; and a test that the stored value survives a later change to `reports_to` |
 
@@ -430,18 +458,40 @@ written a question for counsel instead of a requirement.
 | ID | Requirement | How it is tested |
 |---|---|---|
 | **PRIV-1** | **Pay never appears on a Team or People surface, for any persona including HR.** Wave 3's rule, restated because Wave 4 renders a person sheet, and a person sheet is where a salary figure gets added | Serialise-and-search over every Wave 4 payload for any salary, component or net-pay key |
-| **PRIV-2** *(narrowed in revision 2 to match the decided rule)* | **A colleague's leave type and leave reason leave the Team screen.** `leave_type` comes out of the `on_leave_today` SQL (`hr_api.py:498`) and out of `month_leaves`'s `fields` list (`hr_api.py:520`) — **at the read, not at the renderer.** `leave_type` **and `description`** survive **only** on an approval row for the caller's **own direct report**, per `045 D-1` as closed on 25 Sep 2026 — **not** on a covered row, and **not** for an HR caller. `045 D-1` is closed, so there is no default to fall back to: this is the rule | `045 AC-33` and `045 AC-76`, with one addition: **a second assertion proves `description` is absent from every non-approval row**, which neither AC names. The assertion names **"Sick Leave" and "Casual Leave" and every other Leave Type on the fixture**, against the **serialised payload**, for Sandeep **and** for Priya. It must go **red on today's code** first |
+| **PRIV-2** *(narrowed in revision 2 to match the decided rule)* | **A colleague's leave type and leave reason leave the Team screen.** `leave_type` comes out of the `on_leave_today` SQL (`hr_api.py:498`) and out of `month_leaves`'s `fields` list (`hr_api.py:520`) — **at the read, not at the renderer.** `leave_type` **and `description`** survive **only** on an approval row for the caller's **own direct report**, per `045 D-1` as closed on 24 Sep 2026 — **not** on a covered row, and **not** for an HR caller. `045 D-1` is closed, so there is no default to fall back to: this is the rule | `045 AC-33` and `045 AC-76`, with one addition: **a second assertion proves `description` is absent from every non-approval row**, which neither AC names. The assertion names **"Sick Leave" and "Casual Leave" and every other Leave Type on the fixture**, against the **serialised payload**, for Sandeep **and** for Priya. It must go **red on today's code** first |
 | **PRIV-3** | **No phone number, personal email, company email, employee number or gender about anybody but the caller, in any Wave 4 payload.** *Verified in code*, both person-sheet endpoints return `cell_number`, `personal_email`, `company_email` and `gender` today | `045 AC-20`, with the fixture **populating all four**, asserted for every persona including a manager about a direct report |
 | **PRIV-4** | **The People search and staff list stay inside Wave 1's scope**, with designation matching added inside the same scope, `%` and `_` still escaped, and the call still POST so a colleague's name never reaches a URL or a browser history | Wave 1's scope tests re-run unchanged; a new test that a designation match does not cross a store boundary (`045 AC-27`) |
 | **PRIV-5** | **`manager_internal_notes`, `potential_rating` and an unreleased `overall_rating` never reach an employee-facing payload — and the released-status condition is in the query, not in Python afterwards.** *Verified in code:* `hr_api.py:1174-1181` selects `overall_rating` for the whole team and filters on `review_status` at `:1183-1185`. The payload is correct; the data is in the worker. One `return rows` away is not a control | `045 AC-32` with **all three populated** in the fixture, plus a query-level assertion that an unreleased rating is not read at all on a team path |
 | **PRIV-6** | **Upward feedback stays totals-only, with a minimum of three responses, and no author name anywhere.** `goals_api.get_upward_feedback:1113`, which has no minimum and no caller, is **deleted** | `045 AC-35`, plus a call-by-hand test proving it is off the whitelist |
 | **PRIV-7** | **No review content, rating, manager note, leave type, goal figure or employee name reaches a log, an error message, a notification body or a push preview.** The send notification (`045 AC-36`) carries the employee's name and the cycle and **nothing from inside the review**; the page-error code is a time plus a short reference | Log-capture on a normal, a refused and a failed call for all three screens; a mail-capture test on the send path asserting the body against a fixture whose review text contains a distinctive string |
-| **PRIV-8** | **Growth is the employee's own access path to their own performance record, and it must not be narrower than the record.** A person must be able to read everything about them that is not a legitimately withheld manager field | A test that every field on the employee's own review other than PRIV-5's three is reachable from their own screen |
+| **PRIV-8** *(oracle supplied by the analyst as `AC-86`; **accepted, not overruled**)* | **Growth is the employee's own access path to their own performance record, and it must not be narrower than the record.** A person must be able to read everything about them that is not a legitimately withheld manager field | **`045 AC-86`, and I am adopting it as written.** Two things in it are better than what I would have asked for and I want them on the record. **(1) The field list is read from the doctype's own meta, not hand-written** — so a new field about an employee cannot quietly vanish from their own view. **(2) An unclassified field counts as "must be reachable."** See the note below on why that is the correct direction and must not be "corrected" later. **My one addition:** the withhold list's one-line reason must say **why the field is plumbing** — "internal" is not a reason. A content field on that list with a plausible-sounding reason is the only way this check can be defeated |
 | **PRIV-9** | **The trajectory chip is not a decision, and it is kept that way by structure.** Three parts: **(a)** the employee sees the **same chip, with the same words and the same "as of" date**, on their own Goals screen — the wording lives in one place so the two cannot drift; **(b)** **no ranking** — no sorted-by-performance list, no ordering by progress, no percentile, no "most improved", in any payload, on any screen, behind any flag; **(c)** **no per-person attention history** — nothing records who was on the list on which day | (a) a test that the manager's chip string and the employee's chip string come from one constant; (b) a static check that no Wave 4 payload contains a list of more than one employee sorted by any progress or trajectory field, plus a payload check for a rank, position or percentile key; (c) a static check that no Wave 4 endpoint writes on a read path and that the slice adds no DocType, field or log line recording an attention state |
-| **PRIV-10** | **Wave 4 stores no second copy of a performance record and creates no derived store**, so counsel's "employment + 6 months, then erased" applies unchanged. The chosen-values answer goes in the existing `page_data` JSON on the existing extension | Assert the slice adds no DocType, no custom field and no patch — **except** `045 D-7`'s single consent `Check` field if that decision is yes, which is a preference and not a performance record |
+| **PRIV-10** *(amended — the analyst is right, and the framing is tightened)* | **Wave 4 stores no second copy of a performance record and creates no derived store**, so counsel's "employment + 6 months, then erased" applies unchanged. The chosen-values answer goes in the existing `page_data` JSON on the existing extension. **PRIV-10 governs records *about the subject*.** `045 D-7`'s consent flag is a **preference**, and SEC-19's `alvoraa_decided_as` is a fact about **the approver's capacity** on a document that already exists — **neither is a record about the subject's performance, so neither is inside PRIV-10's scope** | Assert the slice adds no DocType, no derived store and no patch, and **no custom field other than those two**. *Framing note, and it is the reason I did not simply take the proposed wording:* the analyst offered these as **exceptions** to PRIV-10 and offered to let SEC-19 win a fight between them. **There is no fight.** But two exceptions in a list become three, and the third will be a genuine performance field with a good story. **So they are outside the scope, not exceptions to it** — and the test asserts a boundary rather than maintaining an allowlist |
 | **PRIV-11** | **No control on any Wave 4 screen may claim a route that does not exist.** There is no recorded, clocked grievance route in the product (counsel, 18 Sep 2026: *"Not built. Handled by hand"*). The "What your manager will see" block and every explanatory sentence must be true of the code on the day it ships | `045 AC-41`, extended: a static check that no Growth or Team module contains a sentence asserting a behaviour the product does not have, **and** that no control is labelled "contest", "dispute" or "appeal" unless something is actually recorded |
 | **PRIV-12** | **Minimum-group suppression is `home_api._suppress` and `MIN_GROUP = 5`, reused** — a second implementation fails the test — **and the next-smallest group is suppressed with it**, or the suppressed number is recoverable by subtraction | `045 AC-34`, with a four-person group and a table where a second small group makes the first recoverable |
 | **PRIV-13** | **Nothing in this slice is AI-shaped.** No model, no inference, no emotion, voice or facial analysis, no passive behavioural monitoring, no individual-level surveillance. **There is no model anywhere in this slice, so there is no redaction boundary to build** — said plainly so nobody later assumes one exists | A static check that no Wave 4 module imports or calls a model client |
+
+### Why PRIV-8's unclassified field defaults to *visible*, and must stay that way
+
+**This reads like a breach of my own standing rule and it is not, and the distinction is
+worth one paragraph because somebody will try to "fix" it.**
+
+My rule is *fail closed on anything about a person: ambiguous permission, unknown sensitivity
+class → deny.* `AC-86` does the opposite — an unclassified field on an employee's own review
+counts as **must be reachable by that employee**. Those are the same rule, not two.
+
+**"Fail closed" means fail towards the person the data is about.** On every other path in this
+product that person is a third party, so the safe failure is to deny. **On a subject-access
+path they are the data subject**, and denial is not the cautious answer — it is a second harm.
+A hidden field on somebody's own performance record is a thing written about them that they
+cannot see or contest, which is what DPDP s.11 and, if it applies, GDPR Art 15 exist to stop.
+
+**So the direction is: deny to everybody else, disclose to the subject, and let an
+unclassified field fail towards the subject.** The two exception sets are the whole of the
+discipline — PRIV-5's three legitimately withheld manager fields, and a short plumbing list
+whose reasons are readable. **If a later reviewer inverts `AC-86`'s default to "unclassified
+means hidden", the check stops being a subject-access control and becomes a way of losing
+fields quietly.** That is the failure it was written to prevent.
 
 ---
 
@@ -451,8 +501,8 @@ written a question for counsel instead of a requirement.
 
 | # | Question | My reading, and the fail-closed default meanwhile | Owner | Blocks |
 |---|---|---|---|---|
-| **Q1** | ~~**`045 D-1` — may a colleague's leave type and leave reason stay on the Team screen?**~~ **ANSWERED 25 Sep 2026** | **Closed, and closed tighter than I asked for.** Surbhi's two-section Team screen keeps the leave type on an own-direct-report approval row and nowhere else, for anybody. **Nothing is blocked. PRIV-2 is narrowed to match**, and the only thing left is to build and test it — including the `description` field, which the decision's acceptance criteria still do not name | — | **Nothing. Build it** |
-| **Q2** | **Is `Employee Performance Feedback` readable tenant-wide on `dtc` and `aahr` today?** Three facts decide it and I could check none of them from the repository | **Run the check on a dev copy before Wave 4 ships** (SEC-17). **Until it is answered I am treating the shape as unsafe**, which is why peer feedback is a no-go regardless | Surbhi, with the engineer | Nothing in Wave 4's build. It decides whether this is a P1 for the **product**, and it must not be dropped |
+| **Q1** | ~~**`045 D-1` — may a colleague's leave type and leave reason stay on the Team screen?**~~ **ANSWERED 24 Sep 2026** | **Closed, and closed tighter than I asked for.** Surbhi's two-section Team screen keeps the leave type on an own-direct-report approval row and nowhere else, for anybody. **Nothing is blocked. PRIV-2 is narrowed to match**, and the only thing left is to build and test it — including the `description` field, which the decision's acceptance criteria still do not name | — | **Nothing. Build it** |
+| **Q2** | ~~**Is `Employee Performance Feedback` readable tenant-wide on `dtc` and `aahr` today?**~~ **ANSWERED 24 Sep 2026, by running it** | **No — today. Yes — from the DTC staff load.** 11 admin logins across both tenants, 0 rows, and **no Custom DocPerm override**, so the doctype's own permissions are in force unmodified. **The question is now a scheduling question, not a security one:** the hook must land before the staff load. See "SEC-17, answered" | **Surbhi owns the go-live gate**; the engineer owns the hook | **Nothing in Wave 4's build.** It is a go-live item — R3 |
 | **Q3** | **`045 D-7` — may a colleague's work phone number and email appear in the person sheet, and does that need an opt-in under DPDP, or is it employment context?** | **Not in Wave 4.** Ship `staff_api`'s five keys. If it is wanted, it is one `Check` field on Employee, default 0, plus a row on the person's own account screen. **The default is "no contact detail", which is what ships today** | Surbhi, **with an advisor** | Nothing — the default is the safe one |
 
 ### Should know
@@ -513,7 +563,7 @@ path, sees this data*. They are here so they are not lost, and they are **not** 
 |---|---|---|---|---|
 | **R1** | **A successful over-read leaves no signal.** Refusals are logged; successes are not. **Wave 4 is the wave that makes this bite**, because it is the first wave built for one person to look at another | Security & privacy engineer, with DevOps | Logging first step **2026-10-15**; detection slice **2026-11-30** | **Carried from Wave 1 R3 and Wave 3 R1, and re-stated rather than re-accepted quietly.** If the leave type stays (Q1), there is no record of anybody using the Team screen to work out who is unwell |
 | **R2** | **No repo-wide `ignore_permissions` counter in CI.** 976 across the three apps today, counted | Security & privacy engineer (feature map B4 / I3) | Baseline script **2026-10-31**; blocking gate on the next commit after | **Carried from Wave 1 R4 and Wave 3 R2.** Wave 1 recorded the gate as due **before Wave 2 added endpoints**. Waves 2, 3, 4 and 5 are all here. **Temporary debt that is becoming permanent — this is the date I would defend** |
-| **R3** | **`Employee Performance Feedback` grants the `Employee` role ten actions on the whole doctype with no row scope, and we already write rows to it** through `dotted_line.py:125-136` | Security & privacy engineer, with the engineer | **Check by 2026-10-05** (SEC-17); fix scheduled once the check says P1 or P3 | **Not accepted — open, and new.** **Sharper after revision 2:** peer feedback was the slice that would have forced somebody to look at this, and it left Wave 4 on 25 September. The finding must not leave with it. It is not Wave 4's to fix and it must not be Wave 4's to forget |
+| **R3** | **`Employee Performance Feedback` grants the `Employee` role ten actions on the whole doctype with no row scope**, no `permission_query_conditions` and no `has_permission`, and `dotted_line.py:125-136` writes rows to it whenever a manager scores an appraisal. **Verified by running it, 24 Sep 2026: not live today — 11 admin logins across both tenants, 0 rows, no Custom DocPerm override** | Fullstack engineer for the hook; security & privacy engineer for the test; **Surbhi owns the go-live gate** | **Before DTC's staff are loaded** — first week of October, and **the anchor is the staff load, not a calendar date.** If the load moves, this moves with it | **Not accepted — open, and it is a go-live item.** **The severity changes with no commit**: nothing in CI, no diff and no review is triggered by a data load. **Do not re-date this to a Tuesday** — whoever schedules the DTC staff load owns the trigger, and the hook must be in before they run it. Peer feedback leaving Wave 4 removed the slice that would have forced the look; this row is what is left |
 | **R4** | **No retention job for performance records.** Counsel set employment + 6 months on 18 Sep 2026; I could find nothing enforcing it | Security & privacy engineer, with Surbhi | **Confirm by 2026-10-31**; a job by **2026-12-15** | **Not accepted — open.** Wave 4 adds no new record, so it is not made worse. Nobody else owns it |
 | **R5** | **The org chart shows every company and store** (`ALV-86`, Critical). Wave 4 does not touch the chart and does not work around it | Fullstack engineer | Before DTC go-live | **Carried from Wave 1 R1.** Named here because Wave 4 puts a People screen next to it |
 | **R6** | **Store HR whose Branch User Permission is narrowed to a single doctype is treated as company-wide** (`access.py:233` fails open) | Live check: Surbhi. Code fix: engineer, `ALV-86` | Live check **2026-09-30**; fix **2026-11-15** | **Carried from Wave 1 R6 and Wave 3 R6.** Wave 4 is the wave where it decides how many people are on Priya's Team screen |
@@ -528,8 +578,9 @@ retention job, removed when the job exists.
 **Acceptable simplification** — the person sheet gated by scope rather than by a purpose tag,
 because feature-map A1 does not exist yet.
 **Dangerous debt** — **R3.** Ten permissions on a whole doctype about people's performance, on
-a doctype we already write to, on tenants nobody has checked. It is not sitting quietly in a
-table: it is Q2, SEC-17 and R3, and it has a date.
+a doctype we already write to. **It has now been checked rather than feared: not live today,
+live from the DTC staff load in the first week of October.** It is not sitting quietly in a
+table — it is SEC-17, R3 and a go-live gate — **and its date is an event, not a Tuesday.**
 
 ---
 
@@ -543,10 +594,17 @@ table: it is Q2, SEC-17 and R3, and it has a date.
 - `[ASSUMPTION]` Slice 010 groups A–D are on `origin/dev` and the Growth write paths are
   ownership-checked. *Verified in code* for `submit_employee_review:4419`; **the reads are not
   verified, which is why SEC-9 exists.**
+- **Closed, 24 Sep 2026 — *verified by running it*, by the coordinator, read-only on both
+  production tenants.** Whether ordinary employees on `dtc` and `aahr` are System Users,
+  whether `Employee Performance Feedback` has rows, and whether a Custom DocPerm overrides it.
+  **Answer: 11 admin logins, 0 rows, no override — not live today, live from the staff load.**
+  This was the sharpest unknown in this document and it is now a dated go-live item (R3).
 - **Unknown — I could not check these, and each names the access I would need:**
-  - **Whether ordinary employees on `dtc` and `aahr` are System Users**, and whether
-    `Employee Performance Feedback` has rows and a Custom DocPerm override. *Access: a dev copy
-    of either tenant.* **This is Q2 and it is the sharpest unknown in this document.**
+  - **Whether `org_structure` is enabled on either client tenant.** 0 feedback rows is
+    consistent with the feature being off *and* with it being on with no appraisal yet scored.
+    It does not change the verdict — the permission shape is wrong either way and rows can also
+    be made on the desk — but it changes **how fast** rows appear after the staff load.
+    *Access: the tenants' feature lists.*
   - **Whether any job enforces counsel's performance-record retention period.** *Access: the
     scheduler events on a dev copy.* Q5, R4.
   - **Whether the notification paths elsewhere in Growth carry review content.** *Access: a
@@ -560,7 +618,7 @@ table: it is Q2, SEC-17 and R3, and it has a date.
 started writing.**
 
 **Against revision 1 this was "not ready to build the two leave lists", with one P1 waiting on
-a decision.** Revision 2 closed that decision on 25 September, tighter than I recommended.
+a decision.** Revision 2 closed that decision on 24 September, tighter than I recommended.
 **The P1 is now a build requirement rather than an open question**, and it stays a P1 until it
 is built, because an undecided leak and an unbuilt fix look identical from the outside.
 
@@ -611,15 +669,18 @@ is invisible until somebody presses it.
 | 2 | **Whether a plain employee gets the directory at all** (Q4, `045 D-10`) | A visibility decision no code answers |
 | 3 | **Accepting R8** — the trajectory chip as a judgement a manager acts on | An accepted risk with a name and a date is governance; the same risk unnamed is an accident waiting for an owner |
 | 4 | **Commissioning Q6 to counsel** | Only she can |
+| 5 *(new)* | **The `Employee Performance Feedback` hook lands before DTC's staff are loaded** (R3) | It is not a build decision — it is a **go-live sequencing** decision, and only the person who schedules the staff load can hold it |
 
-**`045 D-1` has come off this list** — it was decided on 25 September, and decided tighter than
+**`045 D-1` has come off this list** — it was decided on 24 September, and decided tighter than
 I asked for. Everything else on the analyst's list is a design or build choice with a safe
 default already written into a check, and it does not need her.
 
 **No P0.** The three handed-over defects rank **P1 (the leave type — decided, not yet built),
 P2 (the `manager` key and the SQL shape), P4 (the SQL as injection — it is not one).**
-Finding 4 is **P1 or P3, and Q2 decides which**; it is not Wave 4's to fix, **and peer
-feedback leaving the wave is exactly why SEC-17 has a date**.
+**Finding 4 is settled: P3 today, P1 from the DTC staff load** — measured, not guessed. It is
+not Wave 4's to fix and Wave 4 must not be gated on it, **but it is the one finding whose
+severity moves with no commit, and peer feedback leaving the wave removed the slice that would
+have caught it.** R3 holds the date, and the date is an event.
 
 ---
 
@@ -658,6 +719,8 @@ member with no limit and filters in Python.
 
 **To me, at review:** PRIV-2 first (is the leave type genuinely out of the read?), then SEC-6
 (is there still only one filter builder?), then SEC-7 (what gates the person sheet?), then
-SEC-3's recursive assertion, then Q2's answer. **And I specified SEC-3, SEC-5 and PRIV-2 against
+SEC-3's recursive assertion, then **whether the `Employee Performance Feedback` hook landed
+before the staff load** — that one I will check against the tenant, not the diff, because the
+diff cannot show it. **And I specified SEC-3, SEC-5 and PRIV-2 against
 code I read myself — if I am asked to review my own requirement being met, I will say so and ask
 for a second pair of eyes on those three.**

@@ -47,6 +47,12 @@
    next-panels.css, so that two sessions building two waves do not meet in one
    stylesheet. #}
 <link rel="stylesheet" href="/assets/alvoraa_portal/css/ess/next-time-pay.css?v={{ asset_version | e }}">
+{# Slice 045: Growth, Team and the People rows. A fourth static file on the
+   same terms - cached for a month by the same nginx rule, stamped by the same
+   build version, and costing no template cache slot. Its own file rather than
+   an addition to Wave 3's, so that two sessions building two waves do not meet
+   in one stylesheet. #}
+<link rel="stylesheet" href="/assets/alvoraa_portal/css/ess/next-growth-team.css?v={{ asset_version | e }}">
 {% endblock %}
 
 {% block page_content %}
@@ -70,4 +76,10 @@
    next-frame.js, so the panel seam exists before these register with it. #}
 <script src="/assets/alvoraa_portal/js/ess/next-time.js?v={{ asset_version | e }}" defer></script>
 <script src="/assets/alvoraa_portal/js/ess/next-pay.js?v={{ asset_version | e }}" defer></script>
+{# Slice 045: one file per panel, still. `defer` keeps them in order behind
+   next-frame.js, so the panel seam exists before these register with it.
+   People is NOT a file here: the frame already draws the staff list, and Wave 4
+   widened who may open it rather than building a second one beside it. #}
+<script src="/assets/alvoraa_portal/js/ess/next-team.js?v={{ asset_version | e }}" defer></script>
+<script src="/assets/alvoraa_portal/js/ess/next-growth.js?v={{ asset_version | e }}" defer></script>
 {% endblock %}

@@ -348,6 +348,29 @@ class TestWhatEachPersonaMayOpen(_Personas):
 		self._sell("org_structure")
 		self.assertIn("company", self._frame_as(self.subject_user)["allowed_pages"])
 
+	def test_the_staff_list_switch_opens_the_group_for_a_plain_employee(self):
+		"""**045: this behaviour turns over, and it needs its own pin.**
+
+		Until 24 September 2026 `plan_staff_list` deliberately did NOT open the
+		Company group for a non-HR caller, because `get_staff_list` refused
+		them - opening it would have offered a group whose only new entry then
+		refused. Surbhi opened the directory to employees, so that reason has
+		gone and the group has to open, or the server allows a screen the frame
+		never offers.
+
+		**This test exists because removing the menu entry's own `is_hr` made
+		no difference at all** - `allowed_pages` was a second gate in front of
+		it and the jsdom assertion stayed green. A guard you can remove with
+		nothing going red is not the guard doing the work.
+		"""
+		self._sell()
+		self.assertNotIn("company", self._frame_as(self.subject_user)["allowed_pages"],
+		                 "with nothing sold, a plain employee has no Company group")
+		self._sell("staff_list")
+		self.assertIn("company", self._frame_as(self.subject_user)["allowed_pages"],
+		              "the staff-list switch did not open the Company group for "
+		              "a plain employee, so the directory is unreachable for them")
+
 	def test_hr_always_has_the_company_group(self):
 		"""Org settings is HR's on every tenant, whatever the plan says."""
 		self._sell()

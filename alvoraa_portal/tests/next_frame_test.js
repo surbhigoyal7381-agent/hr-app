@@ -288,11 +288,39 @@ async function run() {
   is(split.indexOf("company/people"), -1,
      "and the org chart entry is not - the two flags are independent (W1D-21)");
 
-  /* The staff list entry is hidden for a non-HR caller even where the tenant
-     has the feature: it is an HR screen and the endpoint refuses them. */
-  dom = await load(makeFrame({ features: { plan_payroll: 1, plan_staff_list: true } }), makeCounts());
-  is(menuRoutes(dom).indexOf("company/staff"), -1,
-     "a plain employee gets no staff-list entry even when the tenant has the switch on");
+  /* Slice 045: this assertion turns over, on purpose.
+     The staff list used to be hidden from a non-HR caller even where the
+     tenant had the feature, because the endpoint refused them. Surbhi opened
+     the directory to employees on 24 September 2026, so now the tenant having
+     the switch is exactly what decides it - for anybody. */
+  /* `allowed_pages` carries "company" here because that is what the server
+     now sends: `frame_api._allowed_pages` opens the Company group when the
+     tenant has `plan_staff_list`, for anybody. The Python side of that is
+     `test_frame_api_034`; this is the menu's half of it. */
+  dom = await load(makeFrame({
+    features: { plan_payroll: 1, plan_staff_list: true },
+    allowed_pages: ["home", "inbox", "time", "pay", "company"],
+  }), makeCounts());
+  is(menuRoutes(dom).indexOf("company/staff") !== -1, true,
+     "a plain employee DOES get the People entry when the tenant has the switch on (045)");
+  /* And opening the group must not have handed an employee an HR screen.
+     Policies and the org chart are already there for a plain employee on the
+     missing-key rule, which is Wave 1's behaviour and not this change's; what
+     matters is that the four HR-only entries stay out. */
+  const hrOnly = ["company/analytics", "company/data", "company/reviews",
+                  "company/settings"];
+  is(menuRoutes(dom).filter((r) => hrOnly.includes(r)).length, 0,
+     "and opening the group handed them no HR screen - not analytics, not " +
+     "Data to review, not Reviews (HR), not Org settings");
+
+  /* With the switch OFF a plain employee gets no Company group at all, so the
+     widening really is the switch and not the persona. */
+  dom = await load(makeFrame({
+    features: { plan_payroll: 1 },
+    allowed_pages: ["home", "inbox", "time", "pay"],
+  }), makeCounts());
+  is(menuRoutes(dom).filter((r) => r.indexOf("company/") === 0).length, 0,
+     "with the switch off a plain employee has no Company group at all");
 
   /* ── the bottom bar (US-3) ─────────────────────────────────────────────── */
 

@@ -211,22 +211,33 @@ def _allowed_pages(has_employee, is_hr, has_reports, features):
 	allowed["company"] = bool(
 		is_hr                                    # Org settings, and HR analytics / Reviews where sold
 		or features.get("plan_policy_library")   # Policies
-		or features.get("plan_org_structure")    # People, the org chart
+		or features.get("plan_org_structure")    # the org chart
+		# **Slice 045: `plan_staff_list` joins the list, and the reason it was
+		# left out has gone away.**
+		#
+		# What this comment used to say: the staff list is an HR screen,
+		# `get_staff_list` refuses a caller who is entitled to nobody, so the
+		# tenant having the feature was no reason to open the group for
+		# somebody who is not HR - it would open a group whose only new entry
+		# then refused them.
+		#
+		# That was true and it is not true any more. Surbhi opened the
+		# directory to employees on 24 September 2026, and the endpoint now
+		# gives a caller with no HR entitlement their own company
+		# (`staff_api.DIRECTORY_SCOPE_FOR_EMPLOYEES`). So the group has to
+		# open, or the server allows a screen the frame never offers.
+		#
+		# **Found because a test did NOT go red.** The menu entry's own
+		# `is_hr` was removed first and `next_frame_test.js` still passed
+		# "a plain employee gets no staff-list entry" - because this line was
+		# in front of it and hid the change. A guard that can be removed with
+		# nothing going red is a guard that was not the one doing the work.
+		#
+		# It is still opt-in and absent still hides: a tenant that was never
+		# given the feature, and an entitlement read that failed, look the
+		# same (AC-45).
+		or features.get("plan_staff_list")       # People, the staff directory
 	)
-	# `plan_staff_list` is deliberately NOT in that list (W1D-21, SEC-16).
-	#
-	# The staff list is an HR screen - `staff_api.get_staff_list` refuses a
-	# caller who is entitled to nobody - so the tenant having the feature is not
-	# a reason to open the Company group for somebody who is not HR. It would
-	# open a group whose only new entry then refuses them.
-	#
-	# For an HR caller `is_hr` already opens the group above, so the staff list
-	# needs nothing here. What decides whether the ENTRY is drawn is
-	# `is_hr and features.plan_staff_list`, and both of those are already in
-	# this payload - the entry list itself is the page's job, not the frame's.
-	# Absent must behave as hidden, because the key is opt-in: a tenant that was
-	# never given it, and an entitlement read that failed, must look the same
-	# (AC-45).
 	return allowed
 
 

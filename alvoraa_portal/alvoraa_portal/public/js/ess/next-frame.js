@@ -140,9 +140,17 @@
          absent must HIDE, or a failed read hands out an unsold screen. The org
          chart above keeps `plan_org_structure`; the two are independent, which
          is the whole point of the split. The server refuses the endpoint as
-         well, because a hidden entry is not a permission. */
-      { route: "company/staff", page: "company", title: __("Staff list"),
-        when: function (f) { return f.is_hr && f.features.plan_staff_list === true; } },
+         well, because a hidden entry is not a permission.
+
+         **Slice 045: `is_hr` is gone from this test, and only from this one.**
+         Surbhi opened the directory to employees on 24 September 2026, and the
+         server now gives a caller with no HR entitlement their own company
+         (`staff_api.DIRECTORY_SCOPE_FOR_EMPLOYEES`). The tenant switch is
+         unchanged and still decides whether the screen exists at all; what
+         changed is who may open it once it does. Every other entry in this
+         group keeps its `is_hr`. */
+      { route: "company/staff", page: "company", title: __("People"),
+        when: function (f) { return f.features.plan_staff_list === true; } },
       { route: "company/settings", page: "company", title: __("Org settings"),
         when: function (f) { return f.is_hr; } }
     ] }
@@ -767,9 +775,20 @@
       + (row.image ? '<img src="' + esc(row.image) + '" alt="" onerror="this.remove()">' : "")
       + "</span>";
     var sub = [row.title, row.department].filter(Boolean).join(" · ");
+    /* Slice 045: work contact. `work_email` and nothing else - there is no
+       work phone or extension field in the data model, so no phone number
+       ships. A real mail link, because the point of a directory is getting
+       hold of somebody; the address is escaped as text AND percent-encoded in
+       the href, which are two different escapes and both are needed. */
+    var mail = row.work_email
+      ? '<br><a class="nf-person-mail" href="mailto:'
+        + esc(encodeURIComponent(row.work_email)) + '">'
+        + esc(row.work_email) + "</a>"
+      : "";
     return '<li class="nf-person">' + mark
       + "<span><span class=\"nf-person-name\">" + esc(row.name) + "</span>"
       + (sub ? '<br><span class="nf-person-sub">' + esc(sub) + "</span>" : "")
+      + mail
       + "</span></li>";
   }
 

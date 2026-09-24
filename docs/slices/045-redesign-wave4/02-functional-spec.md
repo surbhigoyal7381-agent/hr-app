@@ -24,7 +24,7 @@ of revision 1.
 | **3** | "This spec is revision 1 until the `01c` lands" | **The `01c` landed** — `d1ef233`, and it is itself revision 2, written against these same two decisions. It sets `SEC-1` to `SEC-19` and `PRIV-1` to `PRIV-13`, and its verdict lists **eight changes `02` must make before code** | All eight are applied: AC-6, AC-14, AC-19, AC-23, AC-32, AC-33, AC-76, AC-77, AC-82, and three new checks AC-83 to AC-85. §20 carries the `SEC`/`PRIV` traceability | **The security verdict is "ready to build".** What is still missing is the `07` |
 | **4** | The leave decision was written about `leave_type`. Revision 2's first pass mentioned `description` but **no acceptance criterion named it as a value to search for** | **The same rule and the same assertion now cover both fields.** `description` is the employee's own written reason, it travels in the same payload at `hr_api.py:508-516`, and **it is the more personal of the two** — "father in hospital" is worse to leak than "Sick Leave". A rule about the category would have looked followed while leaking the worse half | **AC-76 rewritten**: the fixture populates both fields on both people, each field is asserted independently, and **the payload is searched recursively for the fixture strings instead of checking two named keys** — a two-key check passes the moment a third key carries the same value. AC-33 follows it | Also §4, §5b, §6, §6a, §12, §19.1, §19.3, §20, §21 and release gate 3 |
 | **5** | The `01c`'s two questions back to me were answered but still marked "his to correct" | **Both accepted, neither overruled**, and one came back better than I wrote it. **PRIV-8 / AC-86**: accepted as written, plus his requirement that every withhold reason says **why** a field is plumbing — "internal" is not a reason — and his framing of why an unclassified field must be reachable: **fail closed means fail towards the person the data is about.** **PRIV-10 / SEC-19**: there was no clash to win. PRIV-10 governs records **about the subject**; a capacity and a preference are **outside its scope, not exceptions to it** | AC-86, §15, §19.5, §20 | **§15 no longer proposes an amendment.** Two exceptions in a list become three, and the third would be a real performance field with a good story |
-| **6** | `045 SEC-17` was an open check: is `Employee Performance Feedback` readable tenant-wide? | **Answered by a census run read-only on production, and re-homed as `ALV-117`** — a dated go-live blocker. **Not live today** (no readers, no rows); **live on the day the DTC staff load creates the logins**, because the load creates the readers and the appraisal cycle behind it creates the rows, and the two are scheduled together | §23, bad news 5, §20, §24, open questions | **Nothing from the `01c` is left hanging in this spec.** Peer feedback leaving the wave did not take the finding with it |
+| **6** | `045 SEC-17` was an open check: is `Employee Performance Feedback` readable tenant-wide? | **Answered by running it, and re-homed as `ALV-117`.** Census read-only on both production tenants: eleven admin logins, zero rows, no Custom DocPerm — **not live today, and only because almost nobody has a login.** **Live from the DTC staff load**: the load creates the readers, the appraisal cycle behind it creates the rows. **SEC-17 is no longer "find out"** — in `01c` revision 2 it is a `permission_query_conditions` entry and a `has_permission`, landed **before the load**. **P3 today, P1 from the load, and the anchor is the event, not a date** | §23, bad news 5, §20, §24, open questions | **Nothing from the `01c` is left hanging in this spec.** Peer feedback leaving the wave did not take the finding with it — **and the severity changes with no commit, so nothing in CI would have caught it** |
 
 **Why decision 2 matters beyond the layout.** W1D-20 widened `team_ids` from a manager's
 direct reports to an HR person's whole scope — up to 50 people — and the leave type went
@@ -1387,9 +1387,13 @@ the two fields against that and neither is the kind of thing it is about:
 
 **Why the framing matters more than the outcome, and this is his reason, kept because it is
 worth keeping:** "two exceptions" in a list becomes three, and **the third will be a real
-performance field with a good story**. A scope boundary does not rot that way. So PRIV-10 is
-not amended and gains no exceptions; it simply does not reach these two, and the test still
-asserts the slice adds no DocType, no store and no field beyond them.
+performance field with a good story**. A scope boundary does not rot that way.
+
+**Precisely what happened to PRIV-10, since this spec should not misreport his document:**
+he **did amend the requirement's text** — to state the boundary in it — **and he did not add
+an exception list**. Its test now asserts the slice adds no DocType, no derived store, no
+patch and **no custom field other than those two**, which reads as a boundary rather than an
+allowlist somebody maintains. *(045 `01c` revision 2, `af896fe`.)*
 
 **Two things that are not migrations and must still happen:**
 
@@ -1708,7 +1712,7 @@ choice. **Recomputing on read would be a write on a read path**, which is exactl
 | **045 SEC-14** | a caller with no Employee record is refused explicitly | US-13 | AC-47 | covered |
 | **045 SEC-15** | one person sheet — **and the twin retired** | US-7 | AC-19 | covered — strengthened |
 | **045 SEC-16** | everything drawn from data is escaped, on all three new panels | US-13 | **AC-85** | covered — new |
-| **045 SEC-17** | establish whether `Employee Performance Feedback` is readable tenant-wide | — | — | **CLOSED as a question, OPEN as a dated blocker — `ALV-117`.** The census was run read-only on production by the coordinator: **not live today**, because there are no readers and no rows. **It goes live on the day the DTC staff load creates the logins** — the load creates the readers, the appraisal cycle that follows creates the rows, and the two are scheduled together. **Not Wave 4's to fix and not Wave 4's to wait for**; it is a go-live blocker with a date |
+| **045 SEC-17** *(rewritten in `01c` revision 2 — no longer "find out")* | **a `permission_query_conditions` entry and a `has_permission` for `Employee Performance Feedback` in `hrms/hooks.py`, landed before the DTC staff load** | — | — | **Answered by running it, and re-homed as `ALV-117`.** Census taken read-only on both production tenants, 24 Sep: **dtc 4 System Users + 1 Website User, aahr 7 + 1, zero feedback rows on either, and no Custom DocPerm override** — so **not live today, and only because almost nobody has a login yet.** `tenant_setup.py:41` creates System Users, so **the staff load creates the readers and the appraisal cycle behind it creates the rows** (`dotted_line.py:125-136`) — both halves arrive in the same window. **P3 today, P1 from the load. The anchor is the load, not a calendar date** — if the load moves, this moves with it. **Not Wave 4's to build and not Wave 4's to wait for** |
 | **045 SEC-18** | the eleven-row action matrix is enforced on the server, section derived | US-19 | AC-77 | covered — strengthened |
 | **045 SEC-19** | `alvoraa_decided_as` is server-derived and unspoofable | US-20 | AC-82 | covered — strengthened |
 | **045 PRIV-1** | no pay on any Team or People surface | US-10 | AC-20, AC-33 | covered |
@@ -1729,7 +1733,7 @@ choice. **Recomputing on read would be a write on a read path**, which is exactl
 
 | Gap | Why it is a gap |
 |---|---|
-| **045 SEC-17 — no longer a gap here; it is `ALV-117`** | Answered: the doctype is **not readable tenant-wide today** because nobody holds the role and no rows exist, **and it becomes readable on the day of the DTC staff load**. It left this spec's gap list and became a dated go-live blocker instead, which is the right home for it |
+| **045 SEC-17 — no longer a gap here; it is `ALV-117`** | Answered by running it: **not readable tenant-wide today**, and only because almost nobody has a login — eleven admin accounts across both tenants and zero rows. **It becomes readable on the DTC staff load**, and the requirement is now **a hook that must land before that load**, not a question. **Its severity changes with no commit at all** — no diff, no CI run and no review is triggered by a data load, which is why it is anchored to the event and not to a Tuesday |
 | **045 PRIV-8** | "Growth is not narrower than the record" has no acceptance criterion yet. The security engineer offered to give the oracle; I would rather ask than invent one |
 | **No `07` for this slice** | §14 has no measured numbers yet, by design. `OPS-W4-n` items are not written |
 | **No design run for Growth, Team and People** | `01b` §11 says so explicitly. §22 records every place this spec goes beyond the prototype |
@@ -1974,9 +1978,12 @@ of the two has to move, and I think it should be PRIV-10.** **SEC-17 is answered
 readable tenant-wide today** because nobody holds the role and no rows exist, and it
 **becomes readable on the day the DTC staff load creates the logins** — the load creates the
 readers, the appraisal cycle behind it creates the rows, and the two are scheduled together.
-It is **`ALV-117`**, a dated go-live blocker, which is a better home for it than an
-acceptance criterion in a slice that does not touch it. **R3's 2026-10-05 check date in your
-`01c` should now point at that ticket.** **And §19.3's
+It is **`ALV-117`**, a go-live blocker anchored to the staff load, which is a better home
+for it than an acceptance criterion in a slice that does not touch it. **I have taken your
+revision 2's version of SEC-17 as the requirement** — the `permission_query_conditions` and
+`has_permission` entries, landed before the load — rather than my own shorter "somebody must
+check". And your point that **the severity changes with no commit** is the reason this is
+recorded here at all: nothing in CI, no diff and no review fires on a data load. **And §19.3's
 paragraph about the W1D-20 widening is unsoftened** — it now reads better, because the
 widening is taken back rather than merely named.
 

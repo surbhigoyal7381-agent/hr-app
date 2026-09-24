@@ -173,7 +173,16 @@ class TestThePageIsStillSplit(FrappeTestCase):
 			 # meet in one file. None of these is a template either, so the
 			 # count going up costs nothing (AC-44).
 			 "css/ess/next-time-pay.css", "js/ess/next-time.js",
-			 "js/ess/next-pay.js"})
+			 "js/ess/next-pay.js",
+			 # Slice 045, Wave 4: Growth and Team, and their shared stylesheet.
+			 # One stylesheet for the two because they are one wave, not two
+			 # sessions; the scripts stay separate for the usual reason. There
+			 # is NO next-people.js: the frame already draws the staff list, and
+			 # Wave 4 widened who may open it rather than building a second one
+			 # beside it, which would have left the frame's copy dead and
+			 # `next_frame_test.js` asserting nothing.
+			 "css/ess/next-growth-team.css", "js/ess/next-team.js",
+			 "js/ess/next-growth.js"})
 
 	def test_the_static_files_hold_no_jinja(self):
 		"""They are served raw by nginx. A Jinja tag in one would reach the

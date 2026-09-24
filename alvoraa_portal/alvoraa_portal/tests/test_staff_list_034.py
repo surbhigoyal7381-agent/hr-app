@@ -438,12 +438,27 @@ class TestWhatTheStaffListShows(_StaffListBase):
 # ── the frame ────────────────────────────────────────────────────────────────
 
 
-class TestTheFrameDoesNotOpenAGroupForSomebodyWhoWouldBeRefused(FrappeTestCase):
-	"""The staff list must not open the Company group for a non-HR person.
+class TestTheStaffListSwitchOpensTheGroupForAnybody(FrappeTestCase):
+	"""**This class asserted the opposite until slice 045, and the reason it
+	gave has gone away.**
 
-	It is an HR screen. If the tenant having the feature were enough to open the
-	group, an ordinary employee would be shown a Company menu whose only new
-	entry refuses them - which is worse than not offering it.
+	What it said: *"The staff list must not open the Company group for a non-HR
+	person. It is an HR screen. If the tenant having the feature were enough to
+	open the group, an ordinary employee would be shown a Company menu whose
+	only new entry refuses them - which is worse than not offering it."*
+
+	Every word of that was true while `get_staff_list` refused a caller with no
+	HR entitlement. Surbhi opened the directory to employees on 24 September
+	2026, and the endpoint now gives them their own company
+	(`staff_api.DIRECTORY_SCOPE_FOR_EMPLOYEES`). So the entry no longer refuses
+	them, and the group has to open - otherwise the server allows a screen the
+	frame never offers.
+
+	**Two things are kept, and they are what stops this being a widening.**
+	`test_the_group_carries_no_hr_screen_for_an_employee` below asserts that
+	opening the group hands an employee none of the four HR-only entries, and
+	`test_with_the_switch_off_an_employee_still_has_no_group` asserts the switch
+	is still what decides it. The tenant switch is untouched.
 	"""
 
 	def _company_group(self, is_hr, features):
@@ -451,8 +466,38 @@ class TestTheFrameDoesNotOpenAGroupForSomebodyWhoWouldBeRefused(FrappeTestCase):
 
 		return _allowed_pages(True, is_hr, False, features)["company"]
 
-	def test_the_switch_alone_does_not_open_the_group_for_an_employee(self):
-		self.assertFalse(self._company_group(False, {f"plan_{KEY}": True}))
+	def test_the_switch_opens_the_group_for_a_plain_employee(self):
+		"""045. The assertion turns over, with its reason above."""
+		self.assertTrue(
+			self._company_group(False, {f"plan_{KEY}": True}),
+			"the staff-list switch did not open the Company group for a plain "
+			"employee, so the directory is unreachable for them")
+
+	def test_with_the_switch_off_an_employee_still_has_no_group(self):
+		"""So the widening really is the switch, and not the persona."""
+		self.assertFalse(self._company_group(False, {}))
+		self.assertFalse(self._company_group(False, {f"plan_{KEY}": False}))
+
+	def test_the_group_carries_no_hr_screen_for_an_employee(self):
+		"""Opening the group must not have handed an employee an HR screen.
+
+		Read off the frame's own menu rather than from a list typed here, so an
+		entry added later is covered by this check instead of slipping past it.
+		"""
+		import re
+
+		path = frappe.get_app_path("alvoraa_portal", "public", "js", "ess",
+		                           "next-frame.js")
+		with open(path, encoding="utf-8") as handle:
+			source = handle.read()
+		block = source[source.index('key: "company"'):source.index('var DEEP')]
+		hr_only = re.findall(r'route: "(company/[a-z]+)"[^}]*?f\.is_hr', block)
+		self.assertTrue(hr_only, "no HR-only Company entries were found at all, "
+		                         "so this check proves nothing")
+		for route in hr_only:
+			self.assertNotEqual(
+				"company/staff", route,
+				"the People entry is gated on is_hr again, which undoes 045")
 
 	def test_hr_already_has_the_group_with_or_without_the_switch(self):
 		self.assertTrue(self._company_group(True, {f"plan_{KEY}": True}))

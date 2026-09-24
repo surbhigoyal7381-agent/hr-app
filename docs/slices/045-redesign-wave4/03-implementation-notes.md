@@ -1484,3 +1484,25 @@ with the largest scope, which is the right place for the cost to be.
   `save_review_page`, which was already the write path.
 * **`get_inbox`'s query count**, which moves with what is in the inbox rather
   than with headcount. Still Wave 5's, unchanged by this slice (§11.5).
+
+## 18.5 One AC this slice does not fully meet, said plainly
+
+**AC-54 says `growth_api.py` contains no `ignore_permissions`. It contains
+one**, on `company_values_for`'s read of `Company Value`
+(`growth_api.py:193`). It is **pre-existing** — it shipped in the commit that
+created that function, not in the screen work — and the order is right: the
+employee's own company is resolved first and the read is scoped to it, so the
+flag follows a scope check rather than replacing one.
+
+**What I did not do is add to it.** `get_growth`, `get_self_review` and
+`save_self_review` pass no such flag. They do use `frappe.get_all`, which sets
+`ignore_permissions` itself inside Frappe — and every one of those reads is
+filtered to the caller's own Employee id, or to parents drawn from the caller's
+own goals, before it runs.
+
+**Recommendation:** either `company_values_for` moves to `frappe.get_list` (a
+tenant's own values list is not a secret, so this should be uneventful, but it
+is a permission change and deserves its own test), or AC-54 gains a named
+exception with this reason. **Not decided here**, because "make the check pass"
+and "make the code right" are two different commits and this is the wrong hour
+to guess which one the AC wanted.

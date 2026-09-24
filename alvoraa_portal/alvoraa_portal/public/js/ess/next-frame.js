@@ -780,10 +780,12 @@
        ships. A real mail link, because the point of a directory is getting
        hold of somebody; the address is escaped as text AND percent-encoded in
        the href, which are two different escapes and both are needed. */
+    /* `esc` in the href as well as in the text. It escapes the quote, so a
+       hostile address cannot break out of the attribute, and it leaves the `@`
+       alone - percent-encoding it gives a mailto some clients mishandle. */
     var mail = row.work_email
-      ? '<br><a class="nf-person-mail" href="mailto:'
-        + esc(encodeURIComponent(row.work_email)) + '">'
-        + esc(row.work_email) + "</a>"
+      ? '<br><a class="nf-person-mail" href="mailto:' + esc(row.work_email)
+        + '">' + esc(row.work_email) + "</a>"
       : "";
     return '<li class="nf-person">' + mark
       + "<span><span class=\"nf-person-name\">" + esc(row.name) + "</span>"

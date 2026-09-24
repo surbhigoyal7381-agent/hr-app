@@ -540,7 +540,11 @@ async function run() {
   /* ── the staff list, and what it does with a nasty job title ───────────── */
 
   const nasty = { employee: "HR-EMP-9", name: "Meera Rao",
-                  title: "<img src=x onerror=alert(1)>", department: "Sales", image: null };
+                  title: "<img src=x onerror=alert(1)>", department: "Sales", image: null,
+                  /* Slice 045: work contact. The work email is the ONLY contact
+                     field the directory carries - there is no work phone in the
+                     data model, so none ships. */
+                  work_email: "meera.rao@example.com" };
   dom = await load(
     makeFrame(Object.assign({}, hrBase, { features: { goals: 1, plan_staff_list: true } })),
     makeCounts(),
@@ -553,6 +557,14 @@ async function run() {
      "a job title of <img onerror> creates no element (AC-58)");
   is(out.textContent.includes("<img src=x onerror=alert(1)>"), true,
      "it appears as text instead");
+  /* Slice 045: the work email is drawn, as a real mail link, because the point
+     of a directory is getting hold of somebody. */
+  is(out.querySelector('a[href="mailto:meera.rao@example.com"]') !== null, true,
+     "the work email is a mail link on the row");
+  /* And nothing personal came with it. Asserted on the RENDERED row, not on
+     the payload, because this is the place a field would be added by hand. */
+  is(/\+91|cell|mobile|personal/i.test(out.textContent), false,
+     "and no phone number or personal address reached the directory row");
 
   /* Key off: the address shows the no-permission sentence, never a blank list
      and never an error (AC-76). */

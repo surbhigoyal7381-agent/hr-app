@@ -4,7 +4,7 @@ artifact: 02-functional-spec
 author: hrms-business-analyst
 date: 2026-09-24
 revision: 2
-status: draft, revised 2026-09-24 after Surbhi's two decisions of that day — peer feedback is out of Wave 4 entirely, and the Team screen separates the two reasons a person is on it. See "What changed in revision 2" below. **This slice's `01c` landed while revision 2 was being written** (`d1ef233`, revision 2, already carrying both of Surbhi's decisions), and its eight required spec changes are absorbed here. **There is still no `07`.** — see "What is missing before this is ready" below
+status: draft, revised 2026-09-24 after Surbhi's two decisions of that day — peer feedback is out of Wave 4 entirely, and the Team screen separates the two reasons a person is on it. Then extended the same day: the leave rule covers the written reason as well as the type, the `01c`'s two questions came back accepted, and SEC-17 became `ALV-117`. See "What changed in revision 2" below. **This slice's `01c` landed while revision 2 was being written** (`d1ef233`, revision 2, already carrying both of Surbhi's decisions), and its eight required spec changes are absorbed here. **There is still no `07`.** — see "What is missing before this is ready" below
 inputs: [01c-security-privacy-requirements.md (045, revision 2, `d1ef233`), ../009-ess-portal-redesign/00-assessment-and-plan.md §4 Wave 4 and Appendix D, ../009-ess-portal-redesign/appendix-d-growth-team-people.md, ../009-ess-portal-redesign/01b-ux-design.md, ../009-ess-portal-redesign/00f-decisions-2026-09-22.md, ../034-redesign-wave1/00g-decision-register.md (W1D-01 to W1D-23), ../034-redesign-wave1/02-functional-spec.md revision 4, ../034-redesign-wave1/03-implementation-notes.md, ../042-redesign-wave2/02-functional-spec.md revision 2, ../042-redesign-wave2/03b-implementation-notes-044-followups.md, ../043-redesign-wave3/02-functional-spec.md revision 2, ../043-redesign-wave3/03-implementation-notes.md, .claude/context/nfr-budget.md, prototype-v2.html]
 brief: there is no `01` for this slice. The approved brief is `../009-ess-portal-redesign/00-assessment-and-plan.md` (Wave 4), the design is `../009-ess-portal-redesign/01b-ux-design.md`, and the decisions are in `00f-decisions-2026-09-22.md` and `../034-redesign-wave1/00g-decision-register.md`
 ---
@@ -13,15 +13,18 @@ brief: there is no `01` for this slice. The approved brief is `../009-ess-portal
 
 ## What changed in revision 2
 
-**Two decisions Surbhi took on 24 September 2026.** Both are written into the spec in
-place; this list is so nobody works from a printout of revision 1.
+**Two decisions Surbhi took on 24 September 2026, and four things that followed from
+them.** All are written into the spec in place; this list is so nobody works from a printout
+of revision 1.
 
 | # | Revision 1 said | The decision | Where it is written | Effect |
 |---|---|---|---|---|
 | **1** | Peer feedback is "last in Wave 4, with its own go/no-go", specified in §23 with a 4-day cost | **Peer feedback is out of Wave 4 entirely — not deferred inside it, removed.** Surbhi: *"leave the peer feedback we will build it as a specific process run intentionally, by the HR, with specific organisational level purpose, not open. we will do a separate market analysis and build the complete specification for this."* That is a **different product** from the always-available feature §23 costed: a programme HR starts, for a stated purpose, with a beginning and an end | §23 is now four sentences and a pointer. The reasoning and the route live in **ALV-116** | §23's body, its stories and **its 4-day estimate are struck** — the estimate was for a different thing and must not be carried forward. Nothing in Wave 4 depended on it |
 | **2** | The Team screen was one list, with `is_hr_scope` as a label on the whole screen (W1D-20) | **The Team screen separates the two reasons a person is on it, and the actions follow.** Two sections — "Your team (4)" then "You cover (38)" — with a different action set on each. **Approved in full** | New **§6a**, with AC-73 to AC-82. §4, §5b, §6, §7, §8, §10, §19.3 and §22 follow it | **This closes D-1**: leave type appears on the approval row for a person's own reports and **nowhere else**. It also makes the server work bigger than revision 1 said — one capped list becomes two, each with its own count |
-
 | **3** | "This spec is revision 1 until the `01c` lands" | **The `01c` landed** — `d1ef233`, and it is itself revision 2, written against these same two decisions. It sets `SEC-1` to `SEC-19` and `PRIV-1` to `PRIV-13`, and its verdict lists **eight changes `02` must make before code** | All eight are applied: AC-6, AC-14, AC-19, AC-23, AC-32, AC-33, AC-76, AC-77, AC-82, and three new checks AC-83 to AC-85. §20 carries the `SEC`/`PRIV` traceability | **The security verdict is "ready to build".** What is still missing is the `07` |
+| **4** | The leave decision was written about `leave_type`. Revision 2's first pass mentioned `description` but **no acceptance criterion named it as a value to search for** | **The same rule and the same assertion now cover both fields.** `description` is the employee's own written reason, it travels in the same payload at `hr_api.py:508-516`, and **it is the more personal of the two** — "father in hospital" is worse to leak than "Sick Leave". A rule about the category would have looked followed while leaking the worse half | **AC-76 rewritten**: the fixture populates both fields on both people, each field is asserted independently, and **the payload is searched recursively for the fixture strings instead of checking two named keys** — a two-key check passes the moment a third key carries the same value. AC-33 follows it | Also §4, §5b, §6, §6a, §12, §19.1, §19.3, §20, §21 and release gate 3 |
+| **5** | The `01c`'s two questions back to me were answered but still marked "his to correct" | **Both accepted, neither overruled**, and one came back better than I wrote it. **PRIV-8 / AC-86**: accepted as written, plus his requirement that every withhold reason says **why** a field is plumbing — "internal" is not a reason — and his framing of why an unclassified field must be reachable: **fail closed means fail towards the person the data is about.** **PRIV-10 / SEC-19**: there was no clash to win. PRIV-10 governs records **about the subject**; a capacity and a preference are **outside its scope, not exceptions to it** | AC-86, §15, §19.5, §20 | **§15 no longer proposes an amendment.** Two exceptions in a list become three, and the third would be a real performance field with a good story |
+| **6** | `045 SEC-17` was an open check: is `Employee Performance Feedback` readable tenant-wide? | **Answered by a census run read-only on production, and re-homed as `ALV-117`** — a dated go-live blocker. **Not live today** (no readers, no rows); **live on the day the DTC staff load creates the logins**, because the load creates the readers and the appraisal cycle behind it creates the rows, and the two are scheduled together | §23, bad news 5, §20, §24, open questions | **Nothing from the `01c` is left hanging in this spec.** Peer feedback leaving the wave did not take the finding with it |
 
 **Why decision 2 matters beyond the layout.** W1D-20 widened `team_ids` from a manager's
 direct reports to an HR person's whole scope — up to 50 people — and the leave type went
@@ -50,9 +53,12 @@ list. **It is narrower than today, so it needs a release note** — release gate
    W1D-20 an HR caller's `team_ids` is up to 50 people in their HR scope, not their
    reports**, and `01b` §14 rule 9 says no screen shows a colleague the reason for an
    absence. Wave 3 `02` §5 forbids it outright. **Surbhi settled it on 24 September and the rule wins:**
-   presence only on every list, card and chip, with the leave type kept **only** on the
-   approval row for a person's **own direct reports**, where the approver is deciding that
-   request. §6a, AC-76. **It is narrower than today, so it ships with a release note.**
+   presence only on every list, card and chip, with the leave type **and the employee's own
+   written reason** kept **only** on the approval row for a person's **own direct reports**,
+   where the approver is deciding that request. §6a, AC-76. **The reason matters more than
+   the type** — "father in hospital" is worse to leak than "Sick Leave" — and it travels in
+   the same payload at `hr_api.py:508-516`. **It is narrower than today, so it ships with a
+   release note.**
 3. **`month_leaves` has been wrong since it was written, and the redesign puts it on a
    bigger card.** `from_date >= mo_start` (`hr_api.py:522`) **misses leave that began
    last month and is still running**, and **includes leave that starts next month**.
@@ -77,7 +83,11 @@ list. **It is narrower than today, so it needs a release note** — release gate
    outside a review cycle. **Feedback is a trust feature that one export ends
    permanently.** Surbhi removed it from the wave on 24 September; it becomes a process HR
    runs on purpose, and it gets its own market analysis and its own specification.
-   **ALV-116**, §23.
+   **ALV-116**, §23. **And the doctype's own exposure now has a ticket and a date:
+   `ALV-117`.** The census was run read-only on production — **it is not live today**, because
+   nobody holds the role and there are no rows, **and it goes live on the day the DTC staff
+   load creates the logins**, since the load creates the readers and the appraisal cycle
+   behind it creates the rows. **Not Wave 4's to fix. Not anybody's to forget.**
 
 **Good news, and it is most of the wave.** Everything Appendix D called a live security
 hole in Growth — the self-review writing other people's records (B4), evidence approving
@@ -257,8 +267,8 @@ leads with the approved figure and names the pending amount separately.**
 | The `manager` key | `:530` returns `emp` — the **whole Employee row** | **Extend** — the six-key `me` block. **Live leak.** AC-6 | S |
 | `l2_reports` / `l2_size` | Returned; **nothing in this repository reads them** (`hr_api.py:441-460` says so) | **Drop** — delete the keys with the screen that never used them. AC-16 | S |
 | "In now / still to come" | `today_att` (`:482`) is Attendance only and never counts today (B18) | **Drop and reuse** `home_api._presence_counts` + `_scope_filters` + `_suppress` (Wave 2, rewritten in slice 044's follow-ups as two aggregates with the scope in the query). AC-14 | S |
-| "Who is on leave today" | `:496-504` — **raw SQL**, `employee IN (...)` with one `%s` per person, and it selects **`leave_type`** | **Extend.** **D-1 is closed** (§6a): presence only — the list says who is away, never why. `leave_type` leaves this read entirely; it survives **only** on an approval row in "Your team". The `IN (...)` goes too (AC-14). AC-76 | S |
-| "On leave this month" | `:517-525` — `from_date >= mo_start` **misses leave begun last month and includes next month's** (B18/TM-05), and also selects `leave_type` | **Extend** — a real overlap test (AC-21), and `leave_type` is dropped from this read under D-1's closed answer (AC-76) | S |
+| "Who is on leave today" | `:496-504` — **raw SQL**, `employee IN (...)` with one `%s` per person, and it selects **`leave_type`**; `:508-516` also carries **`description`**, the employee's own reason | **Extend.** **D-1 is closed** (§6a): presence only — the list says who is away, never why. **Both `leave_type` and `description` leave this read entirely**; they survive **only** on an approval row in "Your team". The `IN (...)` goes too (AC-14). AC-76 | S |
+| "On leave this month" | `:517-525` — `from_date >= mo_start` **misses leave begun last month and includes next month's** (B18/TM-05), and also selects `leave_type` | **Extend** — a real overlap test (AC-21), and **`leave_type` and `description` are both dropped** from this read under D-1's closed answer (AC-76) | S |
 | "Waiting on you" | Wave 2's approvals service behind `inbox_api` | **Reuse.** One definition, filtered to this team. AC-13 | S |
 | "Needs attention" | No rule. The prototype's 75 % is invented (appendix D TM-03) | **Extend** — use the **stored `trajectory`**, not a percentage. §21 D-2 and D-3 | S |
 | "Late this week" | `get_team_late_list:2898` — days only, no amount (Wave 3 AC-16 pins it) | **Reuse unchanged.** AC-33 pins it again because Wave 4 renders it | — |
@@ -326,8 +336,9 @@ autosave and the screen says when that was).
    (§6a, AC-73).
 2. **Decision point — approve or decline?** He acts on the card. The row leaves the list
    and the Inbox count moves, because it is the same service (AC-13). The approval row for
-   one of his own reports carries the **leave type**, because he is deciding that request
-   and needs it. It is the only place on the screen where a leave type appears (AC-76).
+   one of his own reports carries the **leave type and the reason**, because he is deciding
+   that request and needs them. It is the only place on the screen where either appears
+   (AC-76).
 3. He taps a person. The sheet shows what he may see about them — never their leave
    reason, never their pay.
 
@@ -343,8 +354,8 @@ the other gets "This one has already been decided."); a report has left (not on 
 2. Every row offers what HR does: open the employee record, invite or block their phone,
    cancel an attendance deduction. **No approve or decline on leave, no goal actions, no
    scorecard** — those belong to the person's own manager (AC-77).
-3. **No leave type anywhere**, on any row, including the person who is off today. She sees
-   that they are away, not why (AC-76).
+3. **No leave type and no reason anywhere**, on any row, including the person who is off
+   today. She sees that they are away, not why — in either form (AC-76).
 4. **Decision point — the manager has not acted.** After the request has sat with the
    manager for two working days, an attendance correction becomes actionable for her, and
    the button says **"Approve as HR"** (AC-81, AC-82). **042 D-2 is still open**, so until
@@ -382,8 +393,8 @@ plain list); a term of `%` (escaped — it does not return everyone).
 | Team: the list | not in his menu | ✓ direct reports | ✓ HR scope | ✓ HR scope | — |
 | Team: a report's late **days** | — | ✓ | ✓ | ✓ | — |
 | Team: a report's late **amount** or the stored explanation | **— never** | **— never** | **— never** | **— never** | — |
-| Team: a colleague's **leave type** on a list, chip or card | **— never** | **— never** | **— never** | **— never** | — |
-| Team: the leave type on an **approval row** for a request they are deciding | — (not in his menu) | ✓ **own direct reports only** | **— never** | ✓ **own direct reports only** | — |
+| Team: a colleague's **leave type or their own written reason** on a list, chip or card | **— never** | **— never** | **— never** | **— never** | — |
+| Team: the leave type **and the reason** on an **approval row** for a request they are deciding | — (not in his menu) | ✓ **own direct reports only** | **— never** | ✓ **own direct reports only** | — |
 | Team: "Your team" section | — | ✓ | — (no reports) | ✓ | — |
 | Team: "You cover" section | — | — (not HR) | ✓ HR scope minus her own reports | ✓ | — |
 | Team: approve or decline leave, set goals, approve evidence, see a scorecard | — | ✓ **own direct reports only** | **— never** | ✓ **own direct reports only** | — |
@@ -415,7 +426,7 @@ plain list); a term of `%` (escaped — it does not return everyone).
 | Must not | Why |
 |---|---|
 | The caller's own `date_of_birth`, `gender`, `cell_number`, `branch` or `reports_to` | The live leak in bad news 1. AC-6 |
-| A colleague's leave **reason or type**, anywhere except an approval row for one's own direct report | `01b` §14 rule 9; Wave 3 §5. **D-1 is closed this way** — §6a, AC-76 |
+| A colleague's leave **type (`leave_type`) or their own written reason (`description`)**, anywhere except an approval row for one's own direct report | `01b` §14 rule 9; Wave 3 §5. **D-1 is closed this way, and it covers both fields** — §6a, AC-76, 045 PRIV-2 |
 | An HR decision dressed as a manager's approval | §6a. Same outcome, different act — AC-82 |
 | A manager action on somebody who is only covered, or an HR-only action on a report who is not covered | §6a's matrix — AC-77, AC-80 |
 | A report's loss-of-pay amount | Q-b of 14 Sep, pinned by Wave 3 AC-16 |
@@ -466,7 +477,7 @@ the last column; each one has an observable oracle in §11.
 | Action | Direct report ("Your team") | Covered ("You cover" — HR scope, not their report) | Check |
 |---|---|---|---|
 | Approve or decline leave | **yes** | **no** | AC-77 |
-| See the leave type on that request | **yes — needed to decide** | **never** | **AC-76** |
+| See the leave type **and the employee's own reason** on that request | **yes — needed to decide** | **never, neither field** | **AC-76** |
 | Approve an attendance correction | **yes** | **only after it has sat with the manager** — the two-working-day rule, **042 D-2** | AC-81 |
 | Approve goal evidence / KPI progress | **yes** | **no** | AC-77 |
 | Set or change goals | **yes** | **no** | AC-77 |
@@ -530,15 +541,19 @@ not touched; it is asked twice, both times **as a subquery** (AC-14), never as a
 
 ### The two rules that carry the most weight
 
-**1 · The leave type, and why this closes D-1.**
+**1 · The leave type *and the reason*, and why this closes D-1.**
 
-**The leave type appears on the approval row for a person's own direct reports, and
-nowhere else.** Not on a card, not on a chip, not in "on leave today", not in "on leave
-this month", not on a covered row at any time, and not in the payload that draws any of
-them.
+**Two fields, not one.** `leave_type` is the category — "Sick Leave". **`description` is
+what the employee typed** — "father in hospital". **The reason is the more personal of the
+two**, so a rule written about the type alone would leak the worse half and look like it had
+been followed.
+
+**Both appear on the approval row for a person's own direct reports, and nowhere else.** Not
+on a card, not on a chip, not in "on leave today", not in "on leave this month", not on a
+covered row at any time, and not in the payload that draws any of them.
 
 **Confirmed fact:** `on_leave_today` (`hr_api.py:496-504`) and `month_leaves` (`:517-525`)
-both select `leave_type` today. **W1D-20 widened who receives it** from a manager's own
+both select `leave_type` today, and `hr_api.py:508-516` carries `description`. **W1D-20 widened who receives it** from a manager's own
 direct reports to an HR person's whole scope — up to 50 people — and `01b` §14 rule 9 says
 no screen shows a colleague the reason for an absence. That widening was never asked for;
 it arrived with a scope change. This decision takes it back.
@@ -624,7 +639,7 @@ combined Team total is forbidden**, because there is no single list it could equ
 | **US-8** | As **Priya**, I want to look a colleague up and find only the people I am allowed to find, so that a search never becomes a company directory I was not given. | People | 3 | AC-26, AC-27 |
 | **US-9** | As **Kamal**, I want my Team screen to say it is my HR scope and not call fifty people my direct reports, so that the screen does not lie about what it is. | Team | 2 | AC-15 |
 | **US-10** | As **Rahul**, I must never see a colleague's leave reason, a manager's internal note, a rating before release, or the name of whoever gave upward feedback — so that the portal stays safe to use in front of other people. | all three | 5 | AC-32, AC-33, AC-34, AC-35 |
-| **US-11** | As **Priya**, I must never learn which leave type anybody in my HR scope used, and as **Sandeep** I see it only on a request I am deciding about my own report. | Team | 3 | AC-33, AC-76 |
+| **US-11** | As **Priya**, I must never learn which leave type anybody in my HR scope used **or read the reason they typed**, and as **Sandeep** I see either only on a request I am deciding about my own report. | Team | 3 | AC-33, AC-76 |
 | **US-12** | As **Rahul**, the Team screen's call must not hand my date of birth, gender and phone number to somebody's browser. | Team | 3 | AC-6 |
 | **US-13** | As **Rahul**, I want every state on all three screens named, so that an empty Growth screen never reads as "you have no goals". | all three | 5 | AC-42 to AC-51 |
 | **US-14** | As **Kamal**, I want every number on Team to equal the list under it, so that I never have to ask which one is right. | Team | 3 | AC-12 |
@@ -662,7 +677,7 @@ matrix is worse than none, since the half that is missing is the half somebody p
 | Scoped people search and staff list | Reuse Wave 1's; add designation matching | Priya | 3 | AC-26, AC-27 |
 | The Team screen says what it is showing | Two headings, two counts — "Your team (4)" and "You cover — showing the first 50 of 408" | Kamal | 2 | AC-15 |
 | The negatives, asserted | Leave reason, internal note, unreleased rating, feedback author | Rahul | 5 | AC-32 to AC-35 |
-| No leave type on the Team screen | Payload and screen | Sandeep | 3 | AC-33 |
+| No leave type and no leave reason on the Team screen | Both fields, out of the payload at the read, searched recursively | Sandeep | 3 | AC-33, AC-76 |
 | The Team call stops leaking the Employee row | Six-key `me` block on `get_manager_dashboard` | Rahul | 3 | AC-6 |
 | Every state named on all three screens | Loading, empty, no data, error, no permission | Rahul | 5 | AC-42 to AC-51 |
 | Every total equals its list | Enumerated from one place | Kamal | 3 | AC-12 |
@@ -937,11 +952,13 @@ passes a `_get_employee()` result into a payload — the same check Wave 3 built
 - **AC-33** *(D-1 is closed — revision 2)* *Given* a team where somebody is on **Sick
   Leave** today, *when* Sandeep and Priya open Team, *then* the string "Sick Leave" — and
   every other Leave Type name on the fixture — **does not appear anywhere in the serialised
-  Team payload**, with the single exception AC-76 allows. **And the same is true of
+  Team payload**, with the single exception AC-76 allows. **And the same is asserted for
   `description`, the employee's own free-text reason** (045 PRIV-2), which travels in the
-  same payload at `hr_api.py:508-516`: a decision applied to the type and not to the reason
-  would leak the worse of the two. The assertion runs over the
-  serialised payload, not over the screen. **Confirmed fact:** `hr_api.py:498` and `:520`
+  same payload at `hr_api.py:508-516` — **the reason is the more personal of the two**, and a
+  decision applied to the type and not to the reason would leak the worse half.
+  **The assertion searches the serialised payload recursively for each fixture string, not
+  two named keys** — a two-key check passes the moment a third key carries the same value.
+  It runs on the payload, never on the screen. **Confirmed fact:** `hr_api.py:498` and `:520`
   select `leave_type` today, so this test goes red before the change.
 - **AC-34** *Given* a group of four people, *then* every aggregate about them is
   suppressed, **and the next-smallest group in the same table is suppressed with it**
@@ -1033,28 +1050,38 @@ engineer would otherwise guess at.
   (invite or block their phone, cancel an attendance deduction). A test asserts the two
   lists share no employee id, and that `len(direct) + len(covered)` equals the number of
   distinct people the caller can act on.
-- **AC-76 · the leave type, and nowhere else (this closes D-1).** *Given* a fixture where
-  a direct report is on **Sick Leave** and a covered person is on **Casual Leave**, *then*:
-  (a) neither leave type appears in `on_leave_today`, `month_leaves`, any card, any chip or
-  any presence value, for any persona;
-  (b) **"Sick Leave" appears once** — on the approval row of the leave request Sandeep is
-  the approver of, in `direct`;
-  (c) **"Casual Leave" appears nowhere at all**, for anybody, because nobody on the screen
-  is deciding that request;
-  (d) for **Priya**, whose 38 people are all covered, **no leave type appears anywhere**.
-  (e) **the same five parts are asserted for `description`**, the employee's own free-text
-  reason (`hr_api.py:508-516`) — 045 PRIV-2 names it and revision 1 did not. **Dropped at
-  the SQL and at the `fields` list, not in the renderer**: a field filtered in JavaScript is
-  still in the response and still in the cache.
-  The assertion runs on the serialised payload and names both leave-type strings. **It goes
-  red on today's code**, because `hr_api.py:498` and `:520` select `leave_type` now.
-  **One case an engineer will meet and this rule does not soften** (045 Q4a): an HR person
-  who is the **named `leave_approver`** for somebody who is **not** their direct report now
-  decides that request **without seeing the leave type**. The decided rule is
+- **AC-76 · the leave type *and the reason*, on one row and nowhere else (this closes D-1).**
+  **The rule covers two fields, not one.** `leave_type` is the category; **`description` is
+  the employee's own free-text reason**, and it travels in the same payload at
+  `hr_api.py:508-516`. **The reason is the more personal of the two** — "father in hospital"
+  is worse to leak than "Sick Leave" — so a decision applied to the type and not to the
+  reason would leak the worse half. 045 PRIV-2 names both; revision 2 as first written named
+  only the type in its assertion, and this is the correction.
+  *Given* a fixture where **a direct report** is on **Sick Leave** with the reason
+  **"father in hospital"**, and **a covered person** is on **Casual Leave** with the reason
+  **"sister's wedding"** — both fields populated on both people, because an empty fixture
+  passes while the leak survives — *then*, **for each of the two fields independently**:
+  (a) it appears **nowhere** in `on_leave_today`, `month_leaves`, any card, any chip, any
+      presence value or any count, for any persona;
+  (b) the **direct report's** value appears **exactly once** — on the approval row of the
+      leave request Sandeep is the approver of, inside `direct`;
+  (c) the **covered person's** value appears **nowhere at all**, for anybody, because nobody
+      on this screen is deciding that request;
+  (d) for **Priya**, whose 38 people are all covered, **neither field appears anywhere**;
+  (e) both are **dropped at the SQL and at the `fields` list, never in the renderer** — a
+      field filtered in JavaScript is still in the response and still in the browser cache.
+  **The assertion searches the serialised payload recursively for the four fixture strings.
+  It does not check two named keys.** A two-key check passes the moment somebody adds a
+  third key carrying the same value — which is exactly how this leak reached two functions
+  in the first place. **It goes red on today's code**, because `hr_api.py:498` and `:520`
+  select `leave_type` now and `:508-516` carries `description`.
+  **One case an engineer will meet, and the rule does not soften for it** (045 Q4a): an HR
+  person who is the **named `leave_approver`** for somebody who is **not** their direct
+  report now decides that request **without seeing either field**. The decided rule is
   `reports_to`-based; the approval duty is `leave_approver`-based; the two do not always
-  coincide. **They can see the dates, the balance and the person, and "why" stays withheld.**
-  §21 open question 15 asks for a count of how often that combination actually occurs on the
-  client tenants, so HR does not meet it for the first time on a Monday.
+  coincide. **They see the dates, the balance and the person — "why" stays withheld, in both
+  its forms.** §21 open question 15 asks for a count of how often that combination actually
+  occurs on the client tenants, so HR does not meet it for the first time on a Monday.
 - **AC-77 · manager actions are absent on a covered row.** *Given* Priya's covered rows,
   *then* the payload carries **no** approve/decline control for leave, **no** goal-evidence
   or KPI approval, **no** set-or-change-goal control and **no** scorecard or trajectory
@@ -1157,21 +1184,27 @@ engineer would otherwise guess at.
   all tenant-editable text.
 
 - **AC-86 (045 PRIV-8) · the employee's own screen is not narrower than their own record.**
-  *This is my reading of PRIV-8's oracle, written down so it can be corrected rather than
-  left hanging between two documents.* The security engineer offered to supply it; here is
-  what I would build, and he can overrule any line of it.
+  **Accepted by the security engineer as written**, with one addition of his that is in
+  part (b) below.
   *Given* an employee whose own review is fully populated, *when* their own Growth screen is
   drawn, *then* **every content field on the review and its extension that holds a value is
   reachable from that screen**, with exactly two sets of exceptions:
   (a) **PRIV-5's three** — `manager_internal_notes`, `potential_rating` and an unreleased
       `overall_rating`, which are legitimately withheld;
-  (b) **a withhold list that lives in one constant, with a one-line reason against each
-      entry**, for the fields that are plumbing rather than content — links, naming, flags.
+  (b) **a withhold list that lives in one constant, with a reason against each entry that
+      says *why* the field is plumbing** — links, naming, flags. **"internal" is not a
+      reason** (the security engineer's requirement, and he is right): a content field with a
+      plausible-sounding one-word label is the only way this check can be defeated, so the
+      reason has to be readable by somebody who did not write it.
   **The field list is read from the doctype's own meta, not hand-written**, and **a field
-  nobody has classified counts as "must be reachable"**. That direction is deliberate: on a
-  subject-access path the safe failure is showing a person their own data, not hiding it, and
-  it means **adding a field about an employee without deciding whether they may see it fails
-  a test** instead of quietly disappearing from their view.
+  nobody has classified counts as "must be reachable"**. That means **adding a field about an
+  employee without deciding whether they may see it fails a test** instead of quietly
+  disappearing from their view.
+  **Why that is not a breach of the fail-closed rule** — his framing, and it is clearer than
+  mine: **fail closed means fail towards the person the data is about.** On every other path
+  in this product that person is a **third party**, so refusing is the safe direction. On a
+  subject-access path they are the **data subject**, and refusing them their own record is a
+  **second harm**, not a safeguard. Same rule, and the direction follows from who is asking.
   **What this check is not:** it is not a screenshot test and it does not care where on the
   screen a value appears — only that the value is in the payload the employee's own screen
   receives.
@@ -1264,7 +1297,7 @@ engineer would otherwise guess at.
 | **New** | `l2_reports` / `l2_size` have no reader | Live today | AC-16 |
 | **New** | `trajectory` is only recomputed when the goal is saved | Live today | AC-24; the nightly recompute is its own ticket |
 | **New** | Three browser tests have never run and are attributed to the wrong wave | Live today | AC-62 to AC-64 |
-| **New** | An HR caller gets the leave type of up to 50 people in their scope — a widening that arrived with W1D-20 and that nobody asked for | **Live today** (`hr_api.py:498`, `:520`) | **Closed by decision, 24 Sep.** AC-76, and a release note because it is a narrowing |
+| **New** | An HR caller gets the leave type **and the employee's own written reason** for up to 50 people in their scope — a widening that arrived with W1D-20 and that nobody asked for | **Live today** (`hr_api.py:498`, `:520`, and `description` at `:508-516`) | **Closed by decision, 24 Sep.** AC-76 covers **both** fields — the reason was the half a rule about "leave type" would have missed — and a release note because it is a narrowing |
 | **New** | Nothing in the record says whether an approval was made as the manager or as HR | Live today — `alvoraa_reviewed_by` says who, not in what capacity | **AC-82**, one Select field |
 
 ---
@@ -1338,19 +1371,25 @@ Attendance's date index. The `LEFT JOIN` shape was 51.9 ms and the name-list sha
 
 Both are custom fields in JSON and one `bench migrate`. **No data patch either way.**
 
-**Answering 045 PRIV-10, which says the slice adds no custom field except D-7's.** That is
-no longer true, and **it is his own SEC-19 that made it untrue** — so here is my reading,
-for him to correct. **PRIV-10's intent holds and its letter needs one word added.** Its
-intent is that Wave 4 stores **no second copy of a performance record and no derived
-store**, so counsel's "employment + 6 months, then erased" applies unchanged. That is still
-exactly true: `alvoraa_decided_as` is **one of two words on a document that already exists**,
-it is a fact about a **decision** rather than a record **about a person**, it is deleted when
-the Attendance Request is deleted, it creates no new store and it changes no period.
-**Recommendation:** amend PRIV-10 to read "no new DocType, no new store, and no custom field
-other than D-7's consent flag **and SEC-19's `alvoraa_decided_as`**", and keep the test as
-written — assert the slice adds nothing beyond those two. **If he disagrees, the cheaper
-disagreement is his:** SEC-19 and PRIV-10 cannot both be satisfied without one of them
-moving, and SEC-19 is the one that answers a grievance a year later.
+**045 PRIV-10 and these two fields: settled, and not as an exception.** I first wrote this
+up as a clash between PRIV-10 and SEC-19 that one of them had to lose. **The security
+engineer's framing is better and it is the one that stands: there was no clash, because
+neither field is in PRIV-10's scope.**
+
+**PRIV-10 governs records about the subject** — no second copy of a performance record, no
+derived store, so counsel's "employment + 6 months, then erased" applies unchanged. Measure
+the two fields against that and neither is the kind of thing it is about:
+
+| Field | What it is a fact about | In PRIV-10's scope? |
+|---|---|---|
+| `alvoraa_decided_as` | **the approver's capacity** — whether this person decided as the manager or as HR | **No.** It is not a record about the subject at all |
+| `alvoraa_share_contact` (D-7, if it happens) | **a preference the person set themselves** | **No.** A choice, not a performance record |
+
+**Why the framing matters more than the outcome, and this is his reason, kept because it is
+worth keeping:** "two exceptions" in a list becomes three, and **the third will be a real
+performance field with a good story**. A scope boundary does not rot that way. So PRIV-10 is
+not amended and gains no exceptions; it simply does not reach these two, and the test still
+asserts the slice adds no DocType, no store and no field beyond them.
 
 **Two things that are not migrations and must still happen:**
 
@@ -1448,6 +1487,7 @@ this wave carries a rating, a self-assessment sentence, a leave reason or a pay 
 | Upward feedback about a manager | **sensitive**, and the author must stay hidden | management development | employment | No |
 | A colleague's name, designation, department, photo | internal | working together | employment | No |
 | A colleague's **leave type** | **sensitive** — it can imply a medical or family circumstance | leave administration | employment / statutory | No — and from this wave it is **shown less**: only to the approver of that request, about their own direct report (§6a, AC-76) |
+| A colleague's **written leave reason** (`description`) | **sensitive, and the most sensitive field on this screen** — the employee typed it themselves and it can name a third party's illness, a bereavement or a family matter nobody asked about. "Father in hospital" is worse to leak than "Sick Leave" | leave administration | employment | No — and it is **shown less**, under exactly the same rule as the type (§6a, AC-76, 045 PRIV-2) |
 | **Whether an approval was made as the manager or as HR** | internal — a fact about a decision, not about a person's character | accountability for a decision that affects pay or attendance | employment | **Yes, one new value** — and the outcome is impossible without it: "who approved this, and why not the manager" cannot be answered a year later if the record does not say. It is the smallest thing that answers it: one of two words |
 | A colleague's phone number or email | internal, and **a contact detail is the thing people most object to sharing** | contact | employment | **Only if §21 D-7 says yes** — and then with a consent flag, default off |
 
@@ -1479,8 +1519,8 @@ exist and are **reused, not respecified**.
 | Rahul | the approved figure and the pending amount as two numbers | **New, and narrower in effect** — today one bar implies the pending amount has landed |
 | Rahul | "still open from last time" | **New**; the records existed with no reader |
 | Sandeep | his team's trajectory chips with the date they were worked out | **New on screen**; the field existed |
-| Sandeep | a colleague's **leave type** | **Narrower than today.** It survives only on the approval row of a request he is deciding about his own direct report. It leaves every card, chip and list (AC-76) |
-| An HR caller | the leave types of up to 50 people in their HR scope | **Narrower than today — removed.** W1D-20 had widened `team_ids` from a manager's reports to an HR person's scope and the leave type came with it. **That widening is taken back** (§6a, AC-76). It needs a release note, because HR has been seeing it |
+| Sandeep | a colleague's **leave type, and the reason they typed** | **Narrower than today, in both fields.** Each survives only on the approval row of a request he is deciding about his own direct report. Both leave every card, chip and list (AC-76) |
+| An HR caller | the leave types **and written reasons** of up to 50 people in their HR scope | **Narrower than today — removed, both fields.** W1D-20 had widened `team_ids` from a manager's reports to an HR person's scope and the leave type and reason came with it. **That widening is taken back** (§6a, AC-76). It needs a release note, because HR has been seeing it |
 | An HR caller | **that** somebody in their scope is away today, without the reason | **Today: yes**, and unchanged. Status only, both sections (AC-78) |
 | An HR caller | invite or block a phone, and cancel an attendance deduction, from the Team screen | **Today: yes, on the desk.** `field_app_desk.hr_who_may_act:74` already allows it and already scopes it to their own companies. **New entry point, no new permission** (AC-80) |
 | A manager | any of the four HR-only actions | **No, and still no** — they are absent from the payload and refused on the server (AC-80) |
@@ -1551,9 +1591,10 @@ slice does not need a new answer.
 field on a document that already exists, with the same life as the document — it is deleted
 when the Attendance Request is. It is **not** a record about a person; it is a fact about a
 decision. If the request survives an erasure request because it is decision-bearing, this
-value survives with it, for the same reason. **This is the field 045 PRIV-10's letter does
-not yet allow for**; §15 sets out my reading and the one-word amendment I would make, and
-the security engineer can overrule it.
+value survives with it, for the same reason. **And it is not an exception to 045 PRIV-10 —
+it is outside its scope**: PRIV-10 governs records **about the subject**, and this is a fact
+about the **approver's capacity**. §15 sets that out, in the security engineer's framing
+rather than my first one.
 
 Three things deliberately **not** stored, each of which would be a new personal record:
 
@@ -1596,7 +1637,7 @@ choice. **Recomputing on read would be a write on a read path**, which is exactl
 | Plan §4 Wave 4 | "one Team call" | US-5 | AC-13, AC-14 | covered |
 | Plan §4 Wave 4 | "needs attention" | US-6 | AC-23, AC-24 | covered |
 | Plan §4 Wave 4 | "late this week" | US-5 | AC-33 | covered — reused from Wave 3, unchanged |
-| Plan §4 Wave 4 | "on leave" | US-5, US-19 | AC-21, AC-76 | covered — **D-1 closed 24 Sep**: presence on the list, leave type only on a direct report's approval row |
+| Plan §4 Wave 4 | "on leave" | US-5, US-19 | AC-21, AC-76 | covered — **D-1 closed 24 Sep**: presence on the list; leave type **and written reason** only on a direct report's approval row |
 | Plan §4 Wave 4 | "new joiners" | US-5 | AC-22 | covered |
 | Plan §4 Wave 4 | "one person sheet" | US-7 | AC-19, AC-20 | covered |
 | Plan §4 Wave 4 | "a permission-scoped directory and search" | US-8 | AC-26, AC-27, AC-50, AC-51 | **mostly built already** — Wave 1's `staff_api` and `search_people` |
@@ -1613,7 +1654,7 @@ choice. **Recomputing on read would be a write on a read path**, which is exactl
 | Design `01b` §14 rule 5 | the review never reads the live goal | US-2 | AC-30 | covered |
 | Design `01b` §14 rule 6 | a pending amount is never folded in | US-3 | AC-29 | covered |
 | Design `01b` §14 rule 8 | one's own reporting line cannot do the HR step, and sees a note | US-13 | AC-47 | covered — slice 010's note reused |
-| Design `01b` §14 rule 9 | no screen shows a colleague the reason for an absence | US-11, US-19 | AC-33, AC-76 | **covered — the conflict is resolved.** The rule wins everywhere except the approval row of one's own direct report, where the approver needs it to decide |
+| Design `01b` §14 rule 9 | no screen shows a colleague the reason for an absence | US-11, US-19 | AC-33, AC-76 | **covered — the conflict is resolved, and the rule's own word is honoured.** It says *reason*, so it covers `description` as much as `leave_type`. Both win everywhere except the approval row of one's own direct report, where the approver needs them to decide |
 | Design `01b` §14 rule 10 | minimum group of five, and the next-smallest too | US-10 | AC-34 | covered |
 | Design `01b` §14 rule 11 | a figure that cannot be trusted says "Needs review" | US-6 | AC-67 | covered |
 | Design `01b` §14 rule 12 | every total carries the date its data runs to | US-6 | AC-24 | covered |
@@ -1667,19 +1708,19 @@ choice. **Recomputing on read would be a write on a read path**, which is exactl
 | **045 SEC-14** | a caller with no Employee record is refused explicitly | US-13 | AC-47 | covered |
 | **045 SEC-15** | one person sheet — **and the twin retired** | US-7 | AC-19 | covered — strengthened |
 | **045 SEC-16** | everything drawn from data is escaped, on all three new panels | US-13 | **AC-85** | covered — new |
-| **045 SEC-17** | establish whether `Employee Performance Feedback` is readable tenant-wide | — | — | **open — not an AC.** A recorded check with a date and a name. **Peer feedback leaving the wave is why it still matters**; open question 16 |
+| **045 SEC-17** | establish whether `Employee Performance Feedback` is readable tenant-wide | — | — | **CLOSED as a question, OPEN as a dated blocker — `ALV-117`.** The census was run read-only on production by the coordinator: **not live today**, because there are no readers and no rows. **It goes live on the day the DTC staff load creates the logins** — the load creates the readers, the appraisal cycle that follows creates the rows, and the two are scheduled together. **Not Wave 4's to fix and not Wave 4's to wait for**; it is a go-live blocker with a date |
 | **045 SEC-18** | the eleven-row action matrix is enforced on the server, section derived | US-19 | AC-77 | covered — strengthened |
 | **045 SEC-19** | `alvoraa_decided_as` is server-derived and unspoofable | US-20 | AC-82 | covered — strengthened |
 | **045 PRIV-1** | no pay on any Team or People surface | US-10 | AC-20, AC-33 | covered |
-| **045 PRIV-2** | leave type **and `description`** leave the read; approval row only | US-11, US-19 | AC-33, AC-76 | covered — `description` added |
+| **045 PRIV-2** | leave type **and `description`** leave the read; approval row only | US-11, US-19 | AC-33, AC-76 | covered — **`description` is now first-class in both checks**, with a fixture that populates it and a **recursive** payload search rather than two named keys |
 | **045 PRIV-3** | no phone, email, employee number or gender about anybody but the caller | US-7 | AC-20 | covered |
 | **045 PRIV-4** | search and staff list stay inside Wave 1's scope, POST | US-8 | AC-27, AC-50 | covered |
 | **045 PRIV-5** | manager-only fields never reach the employee — **in the query** | US-10 | AC-32 | covered — query assertion added |
 | **045 PRIV-6** | upward feedback: totals only, minimum three, no author | US-10, US-16 | AC-35 | covered |
 | **045 PRIV-7** | nothing sensitive in a log, error, notification or preview | US-1, US-13 | AC-36, AC-48 | covered |
-| **045 PRIV-8** | Growth is not narrower than the employee's own record | US-1 | **AC-86** | covered — **my reading of the oracle, written to be corrected.** Field list from the doctype meta; an unclassified field counts as "must be reachable" |
+| **045 PRIV-8** | Growth is not narrower than the employee's own record | US-1 | **AC-86** | **covered — accepted as written**, plus his requirement that each withhold reason says *why* a field is plumbing. **Fail closed means fail towards the person the data is about**, which is why an unclassified field counts as "must be reachable" |
 | **045 PRIV-9** | the trajectory chip: same words to both, no ranking, no history | US-6, US-10 | AC-23, AC-24, §19.4 | covered — the shared constant added |
-| **045 PRIV-10** | no second copy, no derived store | — | §15, §19.5 | covered **on intent**, and §15 proposes a one-word amendment to its letter: the slice adds `alvoraa_decided_as` as well as D-7's flag, **because SEC-19 asked for it**. A fact about a decision, on a document that already exists, deleted with it, changing no retention period. **His to accept or overrule** |
+| **045 PRIV-10** | no second copy, no derived store | — | §15, §19.5 | **covered, and not by an exception.** PRIV-10 governs records **about the subject**; `alvoraa_decided_as` is a fact about the **approver's capacity** and D-7's flag is a **preference**, so both sit outside its scope. **No amendment, no exception list** — two exceptions become three, and the third would be a real performance field with a good story |
 | **045 PRIV-11** | no control claims a route that does not exist | US-1 | AC-41, AC-80 | covered |
 | **045 PRIV-12** | minimum group of five, reused, next-smallest too | US-10 | AC-34 | covered |
 | **045 PRIV-13** | nothing AI-shaped, and no redaction boundary to pretend about | — | §19.7 | covered |
@@ -1688,7 +1729,7 @@ choice. **Recomputing on read would be a write on a read path**, which is exactl
 
 | Gap | Why it is a gap |
 |---|---|
-| **045 SEC-17** | Whether `Employee Performance Feedback` is readable tenant-wide today is **still unknown**, and peer feedback leaving the wave is exactly why it must not be dropped. Not Wave 4's to fix; it decides a product severity |
+| **045 SEC-17 — no longer a gap here; it is `ALV-117`** | Answered: the doctype is **not readable tenant-wide today** because nobody holds the role and no rows exist, **and it becomes readable on the day of the DTC staff load**. It left this spec's gap list and became a dated go-live blocker instead, which is the right home for it |
 | **045 PRIV-8** | "Growth is not narrower than the record" has no acceptance criterion yet. The security engineer offered to give the oracle; I would rather ask than invent one |
 | **No `07` for this slice** | §14 has no measured numbers yet, by design. `OPS-W4-n` items are not written |
 | **No design run for Growth, Team and People** | `01b` §11 says so explicitly. §22 records every place this spec goes beyond the prototype |
@@ -1709,7 +1750,7 @@ without it.
 
 | # | Question | My recommendation | Blocks? |
 |---|---|---|---|
-| ~~**D-1**~~ | ~~May a colleague's leave type appear on the Team screen?~~ | **CLOSED — Surbhi, 24 September 2026.** Presence only on every list, card and chip. **The leave type appears on the approval row for a person's own direct reports and nowhere else.** For an HR caller looking at somebody they merely cover, never. Written up in **§6a**; checked by **AC-76**; and because it is **narrower than today**, it ships with a release note (gate 3) | **No longer blocks anything** |
+| ~~**D-1**~~ | ~~May a colleague's leave type appear on the Team screen?~~ | **CLOSED — Surbhi, 24 September 2026.** Presence only on every list, card and chip. **The leave type — and the reason the employee typed — appear on the approval row for a person's own direct reports and nowhere else.** For an HR caller looking at somebody they merely cover, never. **The decision was taken about `leave_type`; it is applied to `description` as well**, because the reason is the more personal field and a rule that covered only the category would have looked followed while leaking the worse half (045 PRIV-2). Written up in **§6a**; checked by **AC-76**; and because it is **narrower than today**, it ships with a release note (gate 3) | **No longer blocks anything** |
 | **D-12** *(new in revision 2)* | **May an HR person approve a covered person's attendance correction, and from when?** §6a says "only after it has sat with the manager for two working days" — but **that is Wave 2's D-2, and Wave 2 did not build it** (042 `03-implementation-notes.md` §1 item 2). It is a permission change, not a routing change (042 `01c` SEC-8) | **Answer 042 D-2 once, for both waves.** My recommendation is unchanged from Wave 2's: HR sees every correction from day one and may act from day three, counted on the **requester's own** holiday list, with the row labelled "with \<manager\> until \<date\>". **Until then the fail-closed behaviour ships: the action is not offered on a covered row at all**, and AC-81 asserts its absence | **Blocks one row of §6a's matrix**, not the screen and not the sections |
 | **D-2** | **What exactly is "needs attention"?** (Q27) The prototype's 75 % is invented; the stored `trajectory` is real | **Stored `trajectory` in (`At Risk`, `Off Track`)**, with AC-24's staleness rule and AC-57's joiner rule. No percentage anywhere. It is explainable to the person named, which a percentage is not | While building |
 | **D-3** | **The trajectory is only recomputed when a goal is saved.** A goal nobody touches keeps an old answer | **Ship AC-24** — show the date it was worked out, and do not count a stale On Track as attention-worthy — **and raise the nightly recompute as its own ticket.** Recomputing on read is a write on a read path and §19.5 rules it out | While building |
@@ -1773,6 +1814,14 @@ export ends permanently** — it is not a feature you ship and then tighten.
 then the organisational purpose, then the process HR runs, then the specification and the
 permission model. **Nothing in Wave 4 depends on it**, so nothing above changes.
 
+**One thing had to survive the feature leaving, and it did.** Peer feedback was the work
+that would have forced somebody to look at that doctype's permissions; the exposure does not
+go away because the feature did. It is now **`ALV-117`**, with a census run read-only on
+production behind it: **not live today** — no readers, no rows — and **live on the day the
+DTC staff load creates the logins**, because the load creates the readers and the appraisal
+cycle that follows creates the rows, and the two are scheduled together. **A dated go-live
+blocker**, owned outside this slice.
+
 ---
 
 ## 24. Ready check
@@ -1781,7 +1830,7 @@ permission model. **Nothing in Wave 4 depends on it**, so nothing above changes.
 |---|---|
 | Brief approved | ✓ — the 009 plan (Wave 4) and the decisions stand in for `01` |
 | Clickable prototype reviewed | **Partly** — reviewed 22 Sep, but `01b` §11 says Growth, Team and People were **deliberately not redesigned**. §22 records twelve differences. **D-8** asks for a short design pass on the wizard |
-| `01c` security and privacy written | **✓ landed** (`d1ef233`, revision 2) and **absorbed**: all eight of its required changes are in this revision, and §20 traces every `SEC` and `PRIV` item. **PRIV-8 now has an oracle** (AC-86) and **PRIV-10's conflict with SEC-19 is answered in §15** — both are my reading, written to be corrected rather than left hanging. **One is genuinely open: SEC-17**, a recorded check somebody must run |
+| `01c` security and privacy written | **✓ landed** (`d1ef233`, revision 2) and **absorbed**: all eight of its required changes are in this revision, and §20 traces every `SEC` and `PRIV` item. **PRIV-8 now has an oracle** (AC-86) and **PRIV-10's conflict with SEC-19 is answered in §15** — both are my reading, written to be corrected rather than left hanging. **And SEC-17 is answered** — the census was run on production and it became `ALV-117`, a dated go-live blocker rather than an open question. **Nothing from the `01c` is left hanging** |
 | `07` DevOps inputs written | **✗ — not written.** §14 carries no measured number on purpose |
 | Every state designed and specified per persona | ✓ §10 |
 | Gap analysis verified in source | ✓ §4, with file and line |
@@ -1836,7 +1885,7 @@ D-12.
 | 13 | **D-12 / 042 D-2 — may HR decide a covered person's attendance correction, and from when?** It is a permission change and Wave 2 never built it | Surbhi | **One row of §6a's matrix** (AC-81), in Wave 2 as well as here | Yes — the action is simply not offered until she answers |
 | 14 | Should a manager be told actively when HR decides over them, or is the row and the record enough? | Surbhi | One possible row in §16 | Yes — the default sends nothing |
 | 15 | **045 Q4a** — how often is an HR person the named `leave_approver` for somebody who is **not** their direct report? Under the decided rule they now approve without seeing the leave type | The engineer, on a dev copy; then Surbhi if it is common | Nothing — the rule stands either way (AC-76) | Yes. **But find out before HR meets it on a Monday** |
-| 16 | **045 SEC-17 / Q2** — is `Employee Performance Feedback` readable tenant-wide on the client tenants today? | Surbhi, with the engineer | Nothing in Wave 4. It decides a **product** severity, and peer feedback leaving the wave is why it must not be dropped | Yes |
+| — | ~~045 SEC-17 / Q2 — is `Employee Performance Feedback` readable tenant-wide today?~~ | — | — | **ANSWERED and re-homed as `ALV-117`.** Census run read-only on production: **no**, not today — no readers, no rows. **Yes on the day the DTC staff load creates the logins**, because the load creates the readers and the appraisal cycle behind it creates the rows, and the two are scheduled together. **A go-live blocker with a date, not a Wave 4 question** |
 | 12 | Is "employment + 6 months" being enforced on performance records today? | Surbhi, with the security engineer | Nothing here | Yes — recorded debt |
 
 ## Assumptions
@@ -1887,9 +1936,10 @@ D-12.
    `get_upward_feedback` (AC-35) — so a rollback is one step.
 3. **The leave-type change goes with a release note, and this is now a commitment rather
    than a proposal.** D-1 is answered: leave type survives only on the approval row for a
-   person's own direct reports (§6a, AC-76). **HR and managers have been seeing it on every
-   Team list**, so stopping is a **narrowing** and they are told before the push, not after.
-   One short note: what they will stop seeing, why, and where the leave type still appears.
+   person's own direct reports — **and so does the reason the employee typed** (§6a, AC-76).
+   **HR and managers have been seeing both on every Team list**, so stopping is a
+   **narrowing** and they are told before the push, not after. One short note: what they
+   will stop seeing, why, and where the two fields still appear.
 4. **Demo data seeded on the local copy before the test run** (§15), or most Growth tests
    pass for the wrong reason.
 5. **The three browser tests run in CI, or are deleted with a reason**, before the wave is
@@ -1919,10 +1969,14 @@ SEC-19 contradict each other**, and §15 answers it: PRIV-10's **intent** holds 
 no second copy, no derived store, no changed retention period — and its **letter** needs one
 word, because the slice now adds `alvoraa_decided_as` as well as D-7's flag. It is a fact
 about a decision, on a document that already exists, deleted with it. **If you disagree, one
-of the two has to move, and I think it should be PRIV-10.** **SEC-17 stays open and stays
-yours to chase:** peer
-feedback leaving the wave is exactly why the question of whether
-`Employee Performance Feedback` is readable tenant-wide must not be dropped. **And §19.3's
+of the two has to move, and I think it should be PRIV-10.** **SEC-17 is answered and re-homed**, so nothing from your
+`01c` is left hanging here: the census was run read-only on production, the doctype is **not
+readable tenant-wide today** because nobody holds the role and no rows exist, and it
+**becomes readable on the day the DTC staff load creates the logins** — the load creates the
+readers, the appraisal cycle behind it creates the rows, and the two are scheduled together.
+It is **`ALV-117`**, a dated go-live blocker, which is a better home for it than an
+acceptance criterion in a slice that does not touch it. **R3's 2026-10-05 check date in your
+`01c` should now point at that ticket.** **And §19.3's
 paragraph about the W1D-20 widening is unsoftened** — it now reads better, because the
 widening is taken back rather than merely named.
 
@@ -1953,7 +2007,11 @@ card, not after.
 `covered` is the HR scope **minus** `direct`, `direct` wins for anybody in both, each list
 has its own count and cap, and there is no combined total anywhere (AC-73 to AC-75). **Two
 sections must stay one call and two subqueries** — not one query per person and not an
-`IN (...)` (AC-14, §14). **And an HR override is a different act, not a different label:**
+`IN (...)` (AC-14, §14). **Drop `leave_type` and `description` at the SQL and at the `fields` list, not in the
+renderer** — a field filtered in JavaScript is still in the response and still in the
+browser cache, and `description` is the one that carries "father in hospital". **Both
+fields, not just the type.** **And an HR override is a different act, not a different
+label:**
 "Approve as HR" on the button **and** `alvoraa_decided_as = "HR"` on the record, stamped in
 `decide()` beside the `alvoraa_reviewed_by` it already writes (AC-82). A label with no field
 behind it is worse than neither.
@@ -1968,10 +2026,14 @@ opposite. **AC-30** must assert **both** directions in one test. **AC-12** must 
 the totals from one place, so that a total added later with no list fails it rather than
 being missed.
 
-**Revision 2 adds three more of the same shape.** **AC-76** must use a fixture with **two**
-leave types — one for a direct report whose request the caller is deciding, one for a
-covered person — and assert the first appears exactly once and the second not at all;
-written with one leave type it passes while half the leak survives. **AC-75** must include a
+**Revision 2 adds three more of the same shape.** **AC-76** must use a fixture with **two
+leave types and two written reasons** — one pair for a direct report whose request the caller
+is deciding, one pair for a covered person — and assert, **per field**, that the first
+appears exactly once and the second not at all. Written with one leave type it passes while
+most of the leak survives; **written without `description` it passes while the worse half
+survives.** And **search the serialised payload recursively for the fixture strings, not two
+named keys** — a two-key check passes the moment somebody adds a third key carrying the same
+value, which is how this reached two functions already. **AC-75** must include a
 person who is in **both** lists, or the de-duplication is never exercised. **AC-82** must
 read **only the two stored documents** — no screen, no session, no `reports_to` lookup — and
 still tell a manager's approval from an HR override; if the test needs anything outside the

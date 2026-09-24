@@ -38,7 +38,8 @@ from frappe.tests.utils import FrappeTestCase
 
 import alvoraa_portal
 
-MODULES = ("frame_api.py", "inbox_api.py", "staff_api.py", "home_api.py")
+MODULES = ("frame_api.py", "inbox_api.py", "staff_api.py", "home_api.py",
+           "pay_api.py")
 
 # AC-69. One row per whitelisted function. `guest`, `persona` and `scope` each
 # name a test method that must exist in the test file named by `tests`.
@@ -89,6 +90,16 @@ ENDPOINT_REGISTRY = {
 		"guest": "TestWhoMayCallTheStaffList.test_guest_is_refused",
 		"persona": "TestWhoMayCallTheStaffList.test_a_plain_employee_is_refused",
 		"scope": "TestWhatTheStaffListShows.test_store_hr_gets_their_store_and_nobody_else",
+	},
+	# Wave 3's Why? sheet (043 AC-42). Its "scope" case is the only scope this
+	# endpoint has: own record, and nothing else, for everybody including HR.
+	# There is no wider view of it anywhere in the product, on purpose - a
+	# manager may never learn what a report lost in pay.
+	"pay_api.get_deduction_explanation": {
+		"tests": "alvoraa_portal.tests.test_why_sheet_043",
+		"guest": "TestWhoMayCallIt.test_guest_is_refused",
+		"persona": "TestWhoMayCallIt.test_a_caller_with_no_employee_record_is_refused",
+		"scope": "TestWhoMayCallIt.test_somebody_elses_deduction_is_refused",
 	},
 }
 

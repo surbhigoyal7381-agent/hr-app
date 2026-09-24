@@ -1741,8 +1741,31 @@ def get_payslip(name):
     slip = _own_payslip(name)
 
     def lines(rows):
-        return [{"component": r.salary_component, "amount": flt(r.amount)}
-                for r in (rows or []) if flt(r.amount)]
+        """One line per non-zero salary component.
+
+        043 AC-26 adds `additional_salary` - and only where Frappe HR set one.
+        It is the first link in the chain the "Why?" sheet follows:
+
+            Salary Detail.additional_salary
+              -> Additional Salary.ref_doctype / ref_docname
+                -> Attendance Deduction
+                  -> its violation rows
+
+        A line with no link does not carry the key at all, so the client can
+        ask "is there a Why? control on this line" by asking whether the key is
+        there, rather than by guessing from the component's name. A component
+        called "Late Coming Deduction" that HR typed in by hand has no link,
+        and AC-29 is the sentence for that case.
+        """
+        out = []
+        for r in (rows or []):
+            if not flt(r.amount):
+                continue
+            line = {"component": r.salary_component, "amount": flt(r.amount)}
+            if r.get("additional_salary"):
+                line["additional_salary"] = r.additional_salary
+            out.append(line)
+        return out
 
     return {
         "name": slip.name,

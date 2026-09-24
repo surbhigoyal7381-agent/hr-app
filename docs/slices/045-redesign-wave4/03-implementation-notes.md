@@ -1542,7 +1542,42 @@ to guess which one the AC wanted.
 `scripts/browser_check_growth_team.js` in Chromium at 390 px: **33 passed, 0
 failed.**
 
-## 19.3 The full suite — running, and honest about it
+## 19.3 The full suite — batch one, and a correction to what I first said
+
+**Batch one: 769 tests, 4 failures, 6 skipped, in 20m 29s. THREE of the four
+were mine.**
+
+I first reported "1 red, and it is mine and already fixed" after watching 321
+tests go by. That was **an understatement**, and it was wrong in the way that
+matters: I read a partial run as if it were a result. The corrected list:
+
+| Red | Mine? | State |
+|---|---|---|
+| `test_frame_endpoint_registry_034.test_no_module_level_dict_list_or_set` | **yes** | fixed in `a0d13aa` — the scope map was a module-level dict (AC-70) |
+| `test_staff_list_034.test_the_switch_alone_does_not_open_the_group_for_an_employee` | **yes** | fixed in `d8bc1f4` — see below |
+| `test_portal_split_034.test_the_styles_and_script_are_static_files_not_templates` | **yes** | fixed in `d8bc1f4` — the three new static files are declared |
+| `test_shift_types_043.test_my_own_default_shift_is_always_offered` | no | **pre-existing**, still P3, untouched |
+
+**The middle one is the one worth reading, because it is a miss and not a
+mishap.** `test_staff_list_034` pinned the rule this slice turned over — *"the
+switch alone does not open the Company group for an employee"* — **in Python**,
+and I only updated the jsdom copy. I found the jsdom pin because it was in a
+file I was already editing. **I never grepped for the other pins of the same
+rule.** When a slice changes a decision, the right move is to search for every
+test that asserts the old one, not to fix the ones that happen to go red in
+front of you.
+
+Its replacement asserts the new behaviour with the old wording quoted above it,
+and adds two assertions that bound the widening: the switch is still what
+decides it, and an employee gets **none** of the four HR-only Company entries —
+read off the frame's own menu rather than a list typed into the test, so an
+entry added later is covered rather than slipping past.
+
+**Batch two (1,446 tests) was still running when this was written**, and the
+three fixes above landed **after** the suite had read those files, so they
+cannot show in this run's output. The suite needs one more clean pass.
+
+## 19.3a What the running suite is, and is not
 
 **A full `bench run-tests --app alvoraa_portal` was started on `test045` and is
 STILL RUNNING as these notes are written.** Its progress at that moment:

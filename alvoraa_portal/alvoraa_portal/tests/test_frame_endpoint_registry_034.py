@@ -88,7 +88,10 @@ ENDPOINT_REGISTRY = {
 	"staff_api.get_staff_list": {
 		"tests": "alvoraa_portal.tests.test_staff_list_034",
 		"guest": "TestWhoMayCallTheStaffList.test_guest_is_refused",
-		"persona": "TestWhoMayCallTheStaffList.test_a_plain_employee_is_refused",
+		# 045 D-10: the persona case is no longer a refusal. A plain employee
+		# gets the directory now, and what the persona test has to prove is
+		# that they got a SCOPE - their own company - and not everybody.
+		"persona": "TestWhoMayCallTheStaffList.test_a_plain_employee_now_gets_their_own_company",
 		"scope": "TestWhatTheStaffListShows.test_store_hr_gets_their_store_and_nobody_else",
 	},
 	# Wave 3's Why? sheet (043 AC-42). Its "scope" case is the only scope this

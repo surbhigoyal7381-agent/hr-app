@@ -214,22 +214,64 @@ class TestWhoMayCallTheStaffList(_StaffListBase):
 		for junk in ([], ["a"], 7, {"x": 1}):
 			self.assertIn("rows", staff_api.get_staff_list(q=junk), msg=repr(junk))
 
-	def test_a_plain_employee_is_refused(self):
-		"""Not an empty list - a refusal. An employee is entitled to nobody
-		here, and an empty list would read as "this company has no staff"."""
-		self._as(self.subject_user)
-		with self.assertRaises(frappe.PermissionError):
-			staff_api.get_staff_list()
+	def test_a_plain_employee_now_gets_their_own_company(self):
+		"""**This asserted the opposite until slice 045, and the decision it
+		rested on has been reversed.**
 
-	def test_a_plain_manager_and_a_vendor_login_are_refused(self):
+		What it said: *"Not an empty list - a refusal. An employee is entitled
+		to nobody here, and an empty list would read as 'this company has no
+		staff'."*
+
+		The decision: `02-functional-spec.md` section 21, **D-10** - *"does a
+		plain employee get the staff directory at all, or is it HR-only?"* -
+		answered on 24 September 2026, **employees too, on tenants with the
+		switch**. `03-implementation-notes.md` section 15.4 records it and the
+		one constant that sets the width,
+		`staff_api.DIRECTORY_SCOPE_FOR_EMPLOYEES`.
+
+		So the caller is no longer refused. What must still hold, and is
+		asserted here, is that they got a SCOPE and not everybody: every row is
+		in their own company. The tenant switch, the no-Employee-record refusal
+		and the width itself are covered in `test_directory_contact_045`.
+		"""
+		mine = frappe.db.get_value("Employee", self.subject, "company")
+		self.assertTrue(mine, "the fixture employee has no company, so scoping "
+		                      "this caller would prove nothing")
+		self._as(self.subject_user)
+		out = staff_api.get_staff_list(limit=50)
+		self.assertTrue(out["rows"], "a plain employee got an empty directory, "
+		                             "which D-10 did not ask for")
+		for row in out["rows"]:
+			self.assertEqual(
+				mine, frappe.db.get_value("Employee", row["employee"], "company"),
+				"a plain employee was shown somebody outside their own company")
+
+	def test_a_plain_manager_gets_it_too_and_a_vendor_login_still_does_not(self):
+		"""The same D-10 reversal for a manager, and the floor underneath it.
+
+		A manager is an employee, so the directory opens for them as well. A
+		vendor portal login is NOT an employee - the product cannot place them
+		in any company - and that caller is still refused. The two halves are
+		deliberately in one test: the refusal only means something next to a
+		caller who gets through.
+		"""
 		for user in (self.manager_user, self.vendor_user):
 			self._as(user)
 			self.assertFalse(
 				{"HR Manager", "HR User", "System Manager"} & set(frappe.get_roles(user)),
 				msg=f"{user} was handed an HR role by a fixture; this test would pass for the wrong reason",
 			)
-			with self.assertRaises(frappe.PermissionError, msg=user):
-				staff_api.get_staff_list()
+		self._as(self.manager_user)
+		self.assertIn("rows", staff_api.get_staff_list(limit=50))
+
+		self.assertFalse(
+			frappe.db.exists("Employee", {"user_id": self.vendor_user, "status": "Active"}),
+			"the vendor login was given an Employee record by a fixture; the "
+			"refusal below would then be asserting the wrong rule",
+		)
+		self._as(self.vendor_user)
+		with self.assertRaises(frappe.PermissionError):
+			staff_api.get_staff_list()
 
 	def test_hr_is_refused_on_a_tenant_that_was_never_given_the_feature(self):
 		"""Abuse case A14, and the reason SEC-16 exists.
@@ -281,17 +323,25 @@ class TestWhoMayCallTheStaffList(_StaffListBase):
 			self.assertNotIn(name, body, f"{employee} is named in the security log line")
 
 	def test_the_refusal_says_the_same_thing_whatever_the_reason(self):
-		"""A plain employee must not be able to tell "your company did not buy
-		this" from "you are not HR". Both are facts they are not entitled to."""
+		"""A refused caller must not be able to tell "your company did not buy
+		this" from "the product cannot place you". Both are facts they are not
+		entitled to.
+
+		**045, D-10.** The second cause used to be "you are not HR", with a
+		plain employee as the caller. That cause no longer exists - an employee
+		gets their own company now - so the test would otherwise have been
+		comparing one refusal with a list. The vendor login takes its place: a
+		caller with no Employee record, which is still refused.
+		"""
 		self._feature_off()
 		self._as(self.store_hr_user)
 		with self.assertRaises(frappe.PermissionError) as no_feature:
 			staff_api.get_staff_list()
 		self._feature_on()
-		self._as(self.subject_user)
-		with self.assertRaises(frappe.PermissionError) as not_hr:
+		self._as(self.vendor_user)
+		with self.assertRaises(frappe.PermissionError) as cannot_place:
 			staff_api.get_staff_list()
-		self.assertEqual(str(no_feature.exception), str(not_hr.exception))
+		self.assertEqual(str(no_feature.exception), str(cannot_place.exception))
 
 
 # ── what it shows ────────────────────────────────────────────────────────────

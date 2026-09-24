@@ -284,18 +284,20 @@ class TestNoModuleLevelStateAndNoIgnorePermissions(FrappeTestCase):
 			#   `_reports` - Employee ids by `reports_to`, used only to decide
 			#     which group the team card is about. No name and no field
 			#     leaves it.
-			#   `_presence_counts` - the team card, now ONE aggregate instead of
-			#     a name list plus a lookup (044 D6). The group is a condition
-			#     on Employee built from `permitted_employee_filters()`, the
-			#     shared scope helper, and today's Attendance status is
-			#     collapsed into in / away / due inside the SQL - so no name, no
-			#     row and no leave type can reach a caller even by accident.
-			#     It reads `frappe.qb.get_query` to build that condition and
-			#     `frappe.qb.from_` to count against it. **Both are new to this
-			#     list.** They bypass the permission layer exactly as
-			#     `frappe.get_all` does, and until 044 this test did not watch
-			#     them, so a scope written in the query builder was an
-			#     undeclared route. It is declared now.
+			#   `_presence_counts` - the team card, now two aggregates instead
+			#     of a name list plus a row-per-person lookup (044 D6). The
+			#     group is a condition on Employee built from
+			#     `permitted_employee_filters()`, the shared scope helper: one
+			#     statement counts the group, one counts today's Attendance by
+			#     status, and "still to come" is the subtraction. The status is
+			#     collapsed into in / away / due, so no name, no row and no
+			#     leave type can reach a caller even by accident. Two
+			#     `frappe.qb.get_query` (the group count and the scope subquery)
+			#     and one `frappe.qb.from_`. **All three are new to this list.**
+			#     They bypass the permission layer exactly as `frappe.get_all`
+			#     does, and until 044 this test did not watch them, so a scope
+			#     written in the query builder was an undeclared route. It is
+			#     declared now.
 			#   the `frappe.db.count` - the team goal summary, one integer over
 			#     a scope `permitted_employees()` already decided.
 			#
@@ -306,7 +308,7 @@ class TestNoModuleLevelStateAndNoIgnorePermissions(FrappeTestCase):
 			# `permitted_employees()` and `permitted_employee_filters()`, which
 			# are the shared definitions.
 			"home_api.py": (("frappe.get_all",) * 8 + ("frappe.db.count",)
-			                + ("frappe.qb.get_query", "frappe.qb.from_")),
+			                + ("frappe.qb.get_query",) * 2 + ("frappe.qb.from_",)),
 			# staff_api: the staff list itself and its total. Both take the same
 			# filters dict, built by the shared scope helper.
 			"staff_api.py": ("frappe.db.count", "frappe.get_all"),

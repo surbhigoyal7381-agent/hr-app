@@ -363,47 +363,59 @@ def _presence_counts(conds, date_):
 	**Counted in the database, and never capped** (044 D6). The first version
 	read every name in the group into Python and shipped them back as an
 	`IN (...)`, capped at `LIST_CAP * 20` = 1,000 names. At 1,001 people that
-	cap did not fail and it did not warn: it counted the first thousand and
-	drew the answer as if it were the whole tenant. A quietly wrong number on a
+	cap did not fail and it did not warn: it counted the first thousand and drew
+	the answer as if it were the whole tenant. A quietly wrong number on a
 	screen is worse than no number, because nobody goes looking for it.
 
-	Here the group is a condition, the database does the counting, and the
-	group's size is the sum of the three buckets - so the numbers and the size
-	the minimum-group rule is applied to can never come from different
-	populations.
+	Two statements, whatever the headcount - the same two the old shape took,
+	and the same two for twenty people as for fifty thousand:
 
-	One statement, whatever the headcount. Nothing about any one person leaves
-	this function: today's Attendance status is collapsed into three buckets
-	inside the SQL itself, so a leave TYPE cannot reach a caller even by
-	accident.
+	  1. how many people are in the group at all;
+	  2. how many of them have an Attendance row today, by status.
+
+	Still to come is the subtraction. **Which way round matters.** Driving from
+	Attendance and its date index means the second statement touches only
+	today's rows; driving from Employee and joining out to Attendance touches
+	every person in the group. Measured on the 981-person fixture, as the System
+	Manager: 12 ms this way, 52 ms the other way, and 53 ms for the old
+	name-list shape. Flat, as well as fast - a company of 245 and a company of
+	981 both take about 12 ms, because neither reads a row per person.
+
+	Nothing about any one person leaves this function: the status is collapsed
+	into three buckets, so a leave TYPE cannot reach a caller even by accident.
 	"""
 	from frappe.query_builder.functions import Count
 
 	counts = {"in": 0, "away": 0, "due": 0}
 	if not conds:
 		return counts, 0
-	Emp = frappe.qb.DocType("Employee")
+
+	group = int(frappe.qb.get_query(
+		"Employee", fields=[Count("*")], filters=conds).run()[0][0] or 0)
+	if not group:
+		return counts, 0
+
 	Att = frappe.qb.DocType("Attendance")
 	rows = (
-		frappe.qb.from_(Emp)
-		.left_join(Att)
-		.on((Att.employee == Emp.name) & (Att.attendance_date == date_)
-		    & (Att.docstatus == 1))
-		.where(Emp.name.isin(
-			frappe.qb.get_query("Employee", fields=["name"], filters=conds)))
+		frappe.qb.from_(Att)
+		.where((Att.attendance_date == date_) & (Att.docstatus == 1)
+		       & Att.employee.isin(frappe.qb.get_query(
+			       "Employee", fields=["name"], filters=conds)))
 		.select(Att.status, Count("*"))
 		.groupby(Att.status)
 	).run()
-	group = 0
+	marked = 0
 	for status, n in rows:
 		n = int(n or 0)
-		group += n
+		marked += n
 		if status in ("Present", "Work From Home"):
 			counts["in"] += n
-		elif status:
-			counts["away"] += n   # On Leave, Absent, Half Day - all just "away"
-		else:
-			counts["due"] += n
+		else:                 # On Leave, Absent, Half Day - all just "away"
+			counts["away"] += n
+	# Never negative. One person cannot hold two submitted Attendance rows for
+	# one day, so this should not fire - and a card that drew "-2 still to come"
+	# because it did would be worse than a card that drew nothing.
+	counts["due"] = max(0, group - marked)
 	return counts, group
 
 

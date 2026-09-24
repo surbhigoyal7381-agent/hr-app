@@ -1349,3 +1349,71 @@ one, the way `module_access._keep_exempt_row` does. **Owner:
 `hrms-security-privacy-engineer` for whether this needs a control, then the
 engineer.** It is not Wave 4's to build, and it is bigger than the five red
 tests that led to it.
+
+---
+
+# 17. The real browser — and the check that passed over a dead page
+
+**33 assertions, 0 failed**, Chromium at 390 px, a real login, real records, on
+`test045` served from my own container. `scripts/browser_check_growth_team.js`.
+
+## 17.1 The finding that came first: nothing ran, and the check said fine
+
+**The first real run found every `ess` asset returning 404** on the site being
+served. `sites/assets/alvoraa_portal` on that sites volume is a stale **copy**
+of the app's public folder from the image, with no `ess` folder in it at all —
+the trap the 23 September note already records as *"deploys never refresh
+sites/assets"*. So `next-frame.js`, `next-team.js`, `next-growth.js` and the
+three stylesheets were all missing, and **not one line of JavaScript ran.**
+
+**And three assertions passed anyway.** Both of these were true of a dead page:
+
+| Assertion | Why it passed with nothing running |
+|---|---|
+| "Team is not showing an error or a spinner" | it reads the state box only when it is **visible**, and the box ships hidden |
+| "the skeleton was put away once the answer landed" | the skeleton ships `hidden` too |
+
+**This is the same shape as the bug Wave 1 lost a week to**, in a new place: a
+check whose happy answer and whose dead answer are the same value. The file now
+asserts `window.NextFrame` exists **before anything else** and stops the run
+with a sentence naming the asset URL to look at. `is(frameUp.frame, true, …)` is
+the first real check in the file.
+
+**How the assets were served for the run, and how it was put back.** The `ess`
+folders were copied into `sites/assets/alvoraa_portal/` — **additively**, nothing
+replaced, nothing removed — the check was run, and then exactly what was added
+was deleted and the directory verified back to its one original file
+(`js/portal_switch.js`). `bench build` was **not** run. The two site-config
+switches the probe sets (`portal_preview`, `features`) were put back with
+`make_browser_probe.undo()`.
+
+**What that leaves for a release:** the new stylesheet and the two new scripts
+are files under `public/`, so a real deploy has to actually build assets for
+them. On the evidence of this site, the sites volume will hide them if it does
+not. That belongs in the release plan, and it is the DevOps engineer's to
+confirm.
+
+## 17.2 What the browser proved that jsdom could not
+
+| | |
+|---|---|
+| **The two sections, against real records** | "Your team (2)" and "You cover — showing the first 50 of 168", both taken from the same `get_team` the screen used, asked again by hand from the page with the CSRF header. 52 rows drawn, 52 on screen |
+| **No combined total** | 170 appears in no heading — asserted by arithmetic, not by key name |
+| **The server's refusals are the screen's** | every action offered on the person sheet was in that row's `actions`; nothing extra, nothing silently dropped. And the HR act reads "Approve as HR", never plain "Approve" |
+| **The sheet's keyboard behaviour** | tapping opens it, the title takes focus, **Escape closes it and focus goes back to the row that opened it** — a real keypress in a real engine |
+| **44 px, measured** | every rating button in the wizard is at least 44 × 44 in a real layout. `01b` finding N4 measured them at **32 px**; jsdom has no layout and cannot see this at all |
+| **No sideways scroll at 390 px** | on Team, on Growth and in the wizard |
+| **Nothing under 12 px** | measured on Team's rendered text |
+| **The wizard saves and resumes** | a marker typed in, the idle autosave fired, the screen said "Saved at" with the **server's** time, and after a full page reload the text was still in the box |
+| **No uncaught JavaScript errors** | `[]` |
+
+## 17.3 Two more things the run cost, and both were mine
+
+* **`bench execute` swallows the real error.** A failure inside the called
+  function surfaces as `NameError: name 'alvoraa_portal' is not defined`, which
+  says nothing. The real message is in the **first** traceback, not the last:
+  `… 2>&1 | head -25`. Two missing records were found that way — a `Designation`
+  and a `gender`, both mandatory on `Employee` on a fresh site.
+* **A literal newline inside a JavaScript string** stopped node compiling the
+  whole check before a single assertion ran. It got there from a patch script,
+  and it was caught by running the file rather than by reading it.

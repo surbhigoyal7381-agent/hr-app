@@ -577,9 +577,34 @@ class TestPriv3ManagersNeverReceiveTheLossOfPayAmount(_Base):
 			res = hr_api.get_my_attendance_deductions()
 		self.assertEqual(res["rows"][0]["lwp_amount"], 548.39)
 
-	def test_priv3_deduction_email_names_leave_type_and_days_but_no_amount(self):
-		"""Decision 9 (2026-09-14): the email to employee and manager keeps the
-		leave type and the days, and never carries a money figure."""
+	def test_priv3_the_deduction_emails_carry_no_money_figure_to_anybody(self):
+		"""**Rewritten for slice 043's change, not left red — 045.**
+
+		What this test used to assert: *"the email to employee and manager keeps
+		the leave type and the days, and never carries a money figure"*
+		(decision 9, 2026-09-14). One `sendmail`, one body, both recipients.
+
+		**Slice 043 / ALV-113 deliberately stopped the MANAGER'S copy naming the
+		leave type**, and split the one send into two so a later change to one
+		body cannot reach the other person. The stored explanation reads
+		"Taken: 0.5 from Sick Leave, 0.5 as loss of pay" — so a manager whose
+		report had half a day taken from Sick Leave was reading, in his inbox, a
+		leave type the product hides on every screen.
+
+		This test then failed for a reason that looked like a defect and was
+		not: it read `sendmail.call_args`, which is the **last** call, and the
+		last call is now the manager's. It was asserting a leak we removed on
+		purpose.
+
+		**So it is updated rather than deleted, and the update is stricter than
+		the original.** PRIV-3's actual promise — no money figure, to anybody —
+		is now asserted per recipient, and the leave type is asserted present
+		for the employee (whose own leave it is) and absent for the manager.
+
+		`hrms/alvoraa_late_rules/tests/test_deduction_email_043.py` is the fuller
+		coverage of the split; this keeps PRIV-3's own check where the rest of
+		PRIV-3 lives.
+		"""
 		rule = frappe.get_doc(
 			{"doctype": "Attendance Deduction Rule", "rule_name": "S010 Email Rule", "company": ensure_company(),
 			 "enabled": 0, "week_start_day": "Monday", "late_threshold_minutes": 60, "free_violations_per_week": 0,
@@ -602,12 +627,33 @@ class TestPriv3ManagersNeverReceiveTheLossOfPayAmount(_Base):
 		doc.explanation = doc.build_explanation()
 		with patch("frappe.sendmail") as sendmail:
 			doc.notify()
-		kwargs = sendmail.call_args.kwargs
-		self.assertIn(self.mgr_user, kwargs["recipients"])
-		self.assertIn("Casual Leave", kwargs["message"])
-		self.assertIn("0.5", kwargs["message"])
-		for text in (kwargs["message"], kwargs["subject"]):
-			self.assertNotIn("548", text)
+
+		# One send per recipient, so each body can be checked on its own terms.
+		# `call_args` alone is the LAST call, which is how this test came to be
+		# asserting the manager's body against the employee's rule.
+		bodies = {}
+		for call in sendmail.call_args_list:
+			for who in call.kwargs["recipients"]:
+				bodies[who] = call.kwargs
+		self.assertIn(self.rep_user, bodies, "the employee was not written to")
+		self.assertIn(self.mgr_user, bodies, "the manager was not written to")
+		self.assertEqual(2, len(sendmail.call_args_list),
+		                 "two people on one recipients list share a body by "
+		                 "construction, which is what ALV-113 was about")
+
+		# The employee: their own leave type and their own days. It is their
+		# leave, and withholding it from them would be a second harm.
+		self.assertIn("Casual Leave", bodies[self.rep_user]["message"])
+		self.assertIn("0.5", bodies[self.rep_user]["message"])
+
+		# The manager: the days, and nothing that names a leave type.
+		self.assertNotIn("Casual Leave", bodies[self.mgr_user]["message"])
+		self.assertIn("1", bodies[self.mgr_user]["message"])
+
+		# PRIV-3 itself, for everybody: no money figure in any body or subject.
+		for kwargs in bodies.values():
+			for text in (kwargs["message"], kwargs["subject"]):
+				self.assertNotIn("548", text)
 
 	def test_priv4_amount_fields_are_hr_only_in_the_shipped_doctype(self):
 		import hrms

@@ -17,6 +17,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from alvoraa_goals.tests.utils import ensure_company
+from alvoraa_portal.tests.utils import ensure_fiscal_years
 from alvoraa_portal import invoicing, pricing, usage
 
 
@@ -48,6 +49,9 @@ class InvoiceCase(FrappeTestCase):
 		self._plane = frappe.conf.get("alvoraa_control_plane")
 		frappe.conf["alvoraa_control_plane"] = 1
 		_clear()
+		# The invoice is dated in PERIOD; a fresh site has no fiscal year for it
+		# unless another module happened to run first (CI, 24 Sep 2026).
+		ensure_fiscal_years(f"{self.PERIOD}-28")
 		pricing.seed()
 		# Name the sender, as a control plane with more than one company must.
 		# Other tests leave extra companies behind on purpose, so "the only

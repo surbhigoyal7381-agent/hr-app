@@ -26,6 +26,7 @@ from alvoraa_portal import attendance_analytics as aa
 from alvoraa_portal import attendance_correction as ac
 from alvoraa_portal import hr_api
 from alvoraa_portal.attendance_analytics import _shift_minutes, _shift_row
+from alvoraa_portal.tests.utils import ensure_fiscal_years
 
 # Start 09:30 = 570 minutes past midnight. Length = 540 minutes. The two must
 # never be swappable, so they are deliberately different here.
@@ -273,6 +274,9 @@ class _MoneyBase(FrappeTestCase):
 		cls.company = _company()
 		_shift(SHIFT, "09:30:00", "18:30:00")
 		cls.holidays = _holiday_list(cls.company)
+		# A fresh site has no fiscal year; make the one this file needs rather
+		# than hoping another module ran first (CI, 24 Sep 2026).
+		ensure_fiscal_years()
 		# The week under test, and the three working days inside it that every
 		# money test uses. Derived, never written down - see the helper.
 		cls.week_start, cls.fy_start = _week_in_this_fiscal_year()

@@ -109,6 +109,10 @@ def own_user(local, roles):
 	# another suite's leftovers, which is what this guard is looking for.
 	FRAMEWORK_ROLES = {"All", "Guest", "Desk User"}
 	held = set(frappe.get_roles(user)) - FRAMEWORK_ROLES
+	# Roles this slice's own tests created are allowed - they are tagged S045
+	# and are part of the fixture, not somebody else's leftovers. Everything
+	# else is what this guard is looking for.
+	held = {r for r in held if not r.startswith(TAG)}
 	assert held <= set(roles), \
 		f"{user} holds roles this fixture did not give it: {held - set(roles)}"
 	# module_access points every new user at the site's plan profile. On a test

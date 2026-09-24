@@ -332,9 +332,25 @@ class TestWhatTheStaffListShows(_StaffListBase):
 			self._as(user)
 			self.assertNotIn(self.leaver, self._names(staff_api.get_staff_list(limit=50)), msg=user)
 
-	def test_the_payload_holds_exactly_the_five_keys(self):
-		"""PRIV-2, asserted on the payload rather than on the screen. No phone,
-		no email, no employee number, no branch, no manager."""
+	def test_the_payload_holds_exactly_the_keys_that_were_decided(self):
+		"""PRIV-2, asserted on the payload rather than on the screen.
+
+		**This pin changed once, on purpose, and here is the decision.**
+		Wave 1 fixed the list at five keys and said adding one is a visibility
+		change that needs its own decision. **Surbhi took that decision on
+		24 September 2026:** the staff directory is for employees too and work
+		contact is in, because the companies have NDAs.
+
+		So **one** key was added - `work_email`, from `Employee.company_email`.
+		**No phone number.** There is no work-phone or extension field in the
+		data model at all: `cell_number` is labelled "Mobile" and is personal,
+		and shipping it would have been the dangerous reading of "contact
+		details are in". Her instruction had a stop condition for exactly that,
+		and this is it, kept as a test.
+
+		Still absent, and each would need its own decision: personal email,
+		mobile, employee number, branch, manager, date of birth.
+		"""
 		self._as(self.store_hr_user)
 		payload = staff_api.get_staff_list(limit=50)
 		self.assertEqual(set(payload), {"rows", "total", "start", "limit"})
@@ -342,8 +358,12 @@ class TestWhatTheStaffListShows(_StaffListBase):
 		for row in payload["rows"]:
 			self.assertEqual(set(row), set(staff_api.ROW_KEYS))
 		self.assertEqual(
-			set(staff_api.ROW_KEYS), {"employee", "name", "title", "department", "image"}
+			set(staff_api.ROW_KEYS),
+			{"employee", "name", "title", "department", "image", "work_email"}
 		)
+		for never in ("cell_number", "personal_email", "employee_number",
+		              "branch", "reports_to", "date_of_birth"):
+			self.assertNotIn(never, staff_api.ROW_KEYS)
 
 	def test_the_true_total_is_returned_even_when_the_page_is_smaller(self):
 		"""On a large tenant a silent cap is how somebody concludes a colleague

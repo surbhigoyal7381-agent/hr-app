@@ -56,11 +56,29 @@ ROW_FIELDS = (
 	"designation as title",
 	"department",
 	"image",
+	# 045, Surbhi's decision of 24 September 2026: the staff directory is for
+	# employees too, and **work contact is in**. Her reason: *"the companies
+	# have NDAs"*.
+	#
+	# **`company_email` and nothing else.** It is the one genuinely
+	# work-shaped contact field ERPNext's Employee has. There is **no work
+	# phone or extension field at all** - `cell_number` is labelled "Mobile"
+	# and is personal, `personal_email` says what it is, and
+	# `emergency_phone_number` is somebody else's number entirely. Adding a
+	# work-phone field is a decision for Surbhi, not a thing to slip in here.
+	#
+	# **And the NDA point, because it is the part that is easy to get
+	# backwards:** an NDA binds the employee who LOOKS. It is not the same as
+	# the employer's own duty to the person whose data it is. A colleague
+	# promising not to share a home address does not make collecting and
+	# showing it proportionate. Keeping this to work contact is what makes the
+	# wider audience safe.
+	"company_email as work_email",
 )
 
 # The keys each row actually leaves with, after the aliases above. Kept beside
 # them so the test can assert the payload rather than the query.
-ROW_KEYS = ("employee", "name", "title", "department", "image")
+ROW_KEYS = ("employee", "name", "title", "department", "image", "work_email")
 
 # The same caps as people search (PRIV-3): the screen asks for 12, the server
 # never returns more than 50 however large a number is sent.

@@ -1346,28 +1346,59 @@ def get_team_scorecard():
                 "avg": round(goal_average(rows), 1),
             }
 
-    # Latest appraisal score per team member
+    # Latest released appraisal score per team member.
+    #
+    # 045 AC-14. Three things were wrong with the statement this replaces, and
+    # they were wrong together:
+    #
+    #   * **the scope was an `IN (...)` with one bound parameter per person.**
+    #     That is one statement, so the query count stayed flat and nothing
+    #     looked wrong, while the statement's cost grew with the company.
+    #     Slice 044 measured a x5 slope on this shape and `nfr-budget.md` now
+    #     bans it. The scope goes into the database as a subquery instead, and
+    #     the statement is the same size for four reports as for four hundred.
+    #   * **`ORDER BY ae.creation DESC` with no `LIMIT`.** Every extension row
+    #     every report ever had came back, sorted, so a team that had been
+    #     through twelve cycles fetched twelve times the rows needed.
+    #   * **the privacy filter ran in Python**, so unreleased ratings were read
+    #     out of the database and into this process before being dropped. The
+    #     `review_status` test is the whole of slice 010's PRIV-1, and a filter
+    #     that runs after the read is a filter that the next refactor forgets.
+    #     It is now in the `WHERE`: an unreleased rating is never fetched.
+    #
+    # The correlated `MAX(creation)` is what makes it one row per person rather
+    # than all of them sorted - the same answer the Python loop was working out
+    # by taking the first of each employee it met.
     score_by_emp = {}
     if frappe.db.exists("DocType", "Alvoraa Appraisal Extension"):
-        # .format() only inserts "%s" placeholders — no user data in the format string; safe.
-        placeholders = ",".join(["%s"] * len(emp_ids))
+        # .format() only inserts "%s" placeholders and a fixed-length list of
+        # them for the three released statuses — no user data, and no
+        # per-person placeholder, in the format string.
+        released = ",".join(["%s"] * len(_REVIEW_RATING_RELEASED))
         rows = frappe.db.sql("""
-            SELECT ae.employee, ae.overall_rating, ae.review_status,
-                   (SELECT a2.total_score FROM `tabAppraisal` a2 WHERE a2.name = ae.name LIMIT 1) AS score
+            SELECT ae.employee, ae.overall_rating, a2.total_score AS score
             FROM `tabAlvoraa Appraisal Extension` ae
-            WHERE ae.employee IN ({})
+            LEFT JOIN `tabAppraisal` a2 ON a2.name = ae.name
+            WHERE ae.employee IN (
+                    SELECT e.name FROM `tabEmployee` e
+                    WHERE e.reports_to = %s AND e.status = 'Active')
               AND ae.docstatus != 2
-            ORDER BY ae.creation DESC
-        """.format(placeholders), emp_ids, as_dict=True)
+              AND ae.review_status IN ({released})
+              AND ae.creation = (
+                    SELECT MAX(x.creation) FROM `tabAlvoraa Appraisal Extension` x
+                    WHERE x.employee = ae.employee
+                      AND x.docstatus != 2
+                      AND x.review_status IN ({released}))
+        """.format(released=released),
+            (mgr_emp.name,) + tuple(_REVIEW_RATING_RELEASED)
+            + tuple(_REVIEW_RATING_RELEASED),
+            as_dict=True,
+        )
         for r in rows:
-            # The latest review whose rating has been released (slice 010, PRIV-1).
-            if r.review_status not in _REVIEW_RATING_RELEASED:
-                continue
-            if r.employee not in score_by_emp:
-                score_by_emp[r.employee] = {
-                    "score": float(r.score or 0),
-                    "rating": r.overall_rating or "",
-                }
+            score_by_emp[r.employee] = {
+                "score": float(r.score or 0),
+                "rating": r.overall_rating or "",
+            }
 
     members = []
     for m in team:

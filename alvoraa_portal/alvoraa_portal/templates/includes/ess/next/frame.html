@@ -110,6 +110,12 @@
         panel replaces it. -#}
     {{ ess_part("next-home") }}
     {{ ess_part("next-inbox") }}
+    {#- Slice 043: Time's and Pay's skeletons, on the same terms. Two more
+        parts cost nothing - OPS-31 measured twelve of them rendering FASTER
+        than one include file - so the page does not have to choose between
+        being split and being quick (AC-44). -#}
+    {{ ess_part("next-time") }}
+    {{ ess_part("next-pay") }}
 
     <div class="nf-screens" id="nf-screens" hidden></div>
   </main>

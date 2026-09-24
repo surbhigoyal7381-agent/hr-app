@@ -1,0 +1,232 @@
+/* Slice 043, Wave 3: the Time and Pay screens.
+ *
+ * A third static file under /assets/, cached for a month by nginx's existing
+ * `location ^~ /assets/` block and stamped with the build version, exactly like
+ * next-frame.css and next-panels.css (OPS-31, OPS-34, AC-44). It is not a
+ * template and takes no cache slot, which is why Wave 3 gets its own rather
+ * than growing Wave 2's.
+ *
+ * It uses the design system's own tokens - --text, --bg, --border, --brand and
+ * the rest - so a tenant's colours and both themes come for free.
+ *
+ * Three rules from section 16, kept in the styles rather than hoped for:
+ *   nothing smaller than 12px;
+ *   nothing tappable smaller than 44px;
+ *   no sideways scroll at 390px.
+ *
+ * And a fourth, which this file needs more than any other in the product:
+ *   COLOUR IS NEVER THE ONLY SIGNAL. A month calendar is the most tempting
+ *   place in an HR product to say everything with colour. Every cell here
+ *   carries its state in words in its accessible name, every state has a
+ *   different shape as well as a different colour, and the day list below the
+ *   grid says every state in words for anybody who cannot use the grid at all.
+ */
+
+.nf-time,
+.nf-pay {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  /* `min-width: 0` on a flex child is what actually stops a long word forcing
+     the page sideways. */
+  min-width: 0;
+}
+
+/* ── the tabs ────────────────────────────────────────────────────────────── */
+
+.nf-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border, rgba(128, 128, 128, 0.25));
+  /* The tab strip scrolls rather than wrapping, so three tabs in Hindi - which
+     runs about 30% longer - do not become two rows on a 390px phone. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.nf-tab-btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--text2, inherit);
+  /* 44px, because these are pressed with a thumb on a factory floor. */
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: var(--fs-sm, 14px);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.nf-tab-btn[aria-selected="true"] {
+  color: var(--text, inherit);
+  border-bottom-color: var(--brand, currentColor);
+  font-weight: 600;
+}
+
+/* The focus ring is never removed. A keyboard user who cannot see where they
+   are cannot use this page at all. */
+.nf-tab-btn:focus-visible,
+.nf-cal-btn:focus-visible {
+  outline: 2px solid var(--brand, currentColor);
+  outline-offset: 2px;
+}
+
+/* ── the month calendar ──────────────────────────────────────────────────── */
+
+.nf-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.nf-cal-title { margin: 0; }
+
+.nf-cal {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.nf-cal-day {
+  /* A square cell, whatever the width. `aspect-ratio` keeps the grid from
+     becoming a row of slivers on a narrow phone. */
+  aspect-ratio: 1 / 1;
+  min-height: 40px;
+  display: flex;
+}
+
+.nf-cal-btn {
+  flex: 1 1 auto;
+  appearance: none;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
+  border-radius: 8px;
+  background: var(--bg2, var(--bg));
+  color: var(--text, inherit);
+  font-size: var(--fs-sm, 14px);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* A day that cannot be opened is not a button at all, so it is never in the
+   tab order and never announced as something to press (AC-3). */
+.nf-cal-day.is-flat {
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border, rgba(128, 128, 128, 0.25));
+  border-radius: 8px;
+  color: var(--text3, var(--text2, inherit));
+  font-size: var(--fs-sm, 14px);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The states. Each has a colour AND a shape, and the words are in the cell's
+   accessible name either way - so this block is the third signal, not the
+   only one. `currentColor` borders keep every one of them visible in a forced
+   -colours / high-contrast mode, where background colours are thrown away. */
+.nf-cal-present .nf-cal-btn { border-color: var(--brand, currentColor); }
+.nf-cal-late    .nf-cal-btn { border-style: dashed; border-width: 2px; }
+.nf-cal-absent  .nf-cal-btn { border-width: 2px; text-decoration: underline; }
+.nf-cal-leave   .nf-cal-btn { border-style: dotted; border-width: 2px; }
+.nf-cal-half    .nf-cal-btn { border-style: double; border-width: 3px; }
+.nf-cal-holiday .nf-cal-btn,
+.nf-cal-weeklyoff .nf-cal-btn {
+  background: var(--bg, transparent);
+  color: var(--text3, var(--text2, inherit));
+}
+/* A weekly off and a public holiday must not look the same (AC-1): both arrive
+   as Holiday rows and only one of them is a day the organisation named. */
+.nf-cal-weeklyoff .nf-cal-btn { border-style: none; }
+.nf-cal-holiday .nf-cal-btn { border-style: solid; font-weight: 600; }
+
+.nf-cal-pad { visibility: hidden; }
+
+/* ── the sheet's own bits ────────────────────────────────────────────────── */
+
+.nf-sheet-lead {
+  margin: 0 0 12px;
+  font-size: var(--fs-md, 16px);
+  font-weight: 600;
+}
+
+/* The sentence a person most needs to have read. Weight, not colour - see the
+   header. */
+.nf-sheet-strong {
+  margin: 12px 0;
+  font-weight: 700;
+  font-size: var(--fs-sm, 14px);
+}
+
+.nf-sheet-acts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.nf-sheet-acts .nf-btn { flex: 1 1 auto; min-height: 44px; }
+
+.nf-btn-quiet {
+  background: transparent;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
+  color: var(--text, inherit);
+}
+
+/* Every input has a VISIBLE label. A placeholder is not a label: it disappears
+   the moment somebody types, and it is the commonest reason a form cannot be
+   filled in a second time. */
+.nf-label {
+  display: block;
+  margin: 12px 0 4px;
+  font-size: var(--fs-sm, 14px);
+  font-weight: 600;
+}
+
+.nf-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  font-size: var(--fs-sm, 14px);
+  color: var(--text, inherit);
+  background: var(--bg, transparent);
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
+  border-radius: 8px;
+}
+
+textarea.nf-input { min-height: 88px; }
+
+/* ── Pay ─────────────────────────────────────────────────────────────────── */
+
+.nf-pay-big {
+  margin: 0 0 4px;
+  font-size: var(--fs-xl, 28px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  /* A take-home figure must never be cut off. It wraps rather than
+     overflowing, which is the one number on this page nobody will accept a
+     guess about. */
+  overflow-wrap: anywhere;
+}
+
+/* ── the skeleton's month grid ───────────────────────────────────────────── */
+
+.nf-sk-grid { height: 220px; }
+
+/* ── the phone ───────────────────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .nf-cal { gap: 3px; }
+  .nf-cal-day { min-height: 44px; }
+  .nf-sheet-acts .nf-btn { flex: 1 1 100%; }
+}
+
+/* Nothing here animates by default. Where the frame's skeleton pulses it
+   already asks first; this file adds no motion of its own. */

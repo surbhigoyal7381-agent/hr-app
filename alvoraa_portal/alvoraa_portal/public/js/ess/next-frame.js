@@ -628,7 +628,16 @@
          browser never decrements a number it is holding: a number worked out in
          two places is how the badge and the list come to disagree. */
       reloadCounts: function () { return loadCounts(true); },
-      go: go
+      go: go,
+      /* Slice 043. The day sheet and the Why? sheet are sheets, and this is
+         the one the frame already built: it has the focus trap, Escape, the
+         title that takes focus, and the return of focus to the control that
+         opened it (AC-34, AC-9). A panel writing its own would be a second
+         copy of that work, and the copy is the one that would be missing a
+         piece. A panel still cannot reach the search or profile sheets - it
+         gets the opener and the closer, nothing else. */
+      openSheet: openSheet,
+      closeSheet: closeSheet
     };
   }
 

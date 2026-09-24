@@ -41,6 +41,12 @@
    month by the same nginx rule, stamped by the same build version. OPS-31 made
    this free - it is not a template and costs no cache slot. #}
 <link rel="stylesheet" href="/assets/alvoraa_portal/css/ess/next-panels.css?v={{ asset_version | e }}">
+{# Slice 043: Time and Pay. A third static file on the same terms - cached for
+   a month by the same nginx rule, stamped by the same build version, and
+   costing no template cache slot. Its own file rather than an addition to
+   next-panels.css, so that two sessions building two waves do not meet in one
+   stylesheet. #}
+<link rel="stylesheet" href="/assets/alvoraa_portal/css/ess/next-time-pay.css?v={{ asset_version | e }}">
 {% endblock %}
 
 {% block page_content %}
@@ -60,4 +66,8 @@
    in one file, and OPS-31 made the split cost nothing. #}
 <script src="/assets/alvoraa_portal/js/ess/next-home.js?v={{ asset_version | e }}" defer></script>
 <script src="/assets/alvoraa_portal/js/ess/next-inbox.js?v={{ asset_version | e }}" defer></script>
+{# Slice 043: one file per panel, still. `defer` keeps them in order behind
+   next-frame.js, so the panel seam exists before these register with it. #}
+<script src="/assets/alvoraa_portal/js/ess/next-time.js?v={{ asset_version | e }}" defer></script>
+<script src="/assets/alvoraa_portal/js/ess/next-pay.js?v={{ asset_version | e }}" defer></script>
 {% endblock %}

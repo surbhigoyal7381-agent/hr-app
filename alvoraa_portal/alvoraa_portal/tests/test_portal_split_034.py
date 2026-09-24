@@ -166,7 +166,14 @@ class TestThePageIsStillSplit(FrappeTestCase):
 			 # building two panels should not meet in one - and OPS-31 made the
 			 # split cost nothing, because none of these is a template.
 			 "css/ess/next-panels.css", "js/ess/next-home.js",
-			 "js/ess/next-inbox.js"})
+			 "js/ess/next-inbox.js",
+			 # Slice 043, Wave 3: Time and Pay, on the same terms. Their own
+			 # stylesheet rather than an addition to next-panels.css, for the
+			 # same reason the scripts are separate - two waves should not
+			 # meet in one file. None of these is a template either, so the
+			 # count going up costs nothing (AC-44).
+			 "css/ess/next-time-pay.css", "js/ess/next-time.js",
+			 "js/ess/next-pay.js"})
 
 	def test_the_static_files_hold_no_jinja(self):
 		"""They are served raw by nginx. A Jinja tag in one would reach the

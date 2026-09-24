@@ -140,9 +140,20 @@ class TestTheTeamScreenFollowsTheHrScope(_TeamFixture):
 			self.assertNotIn(self.leaver_a, names, user)
 
 	def test_the_caller_is_never_on_their_own_screen(self):
+		"""Wave 1's rule, kept. Slice 045 AC-6 renamed the key it reads.
+
+		The caller block used to be `d["manager"]`, and it held the WHOLE
+		Employee row - date of birth, gender, mobile number. Wave 4 replaced it
+		with `d["me"]`, the six keys in `frame_api.ME_FIELDS`, and the Employee
+		id arrives there as `employee` rather than `name` so that a payload
+		never carries two things called name.
+
+		**This test going red is the pin doing its job**, and the fix is to
+		read the new key rather than to put the old one back.
+		"""
 		for user in (self.s_hr_user, self.hr_user, self.lonely_user):
 			d, names = self._team(user)
-			self.assertNotIn(d["manager"]["name"], names, user)
+			self.assertNotIn(d["me"]["employee"], names, user)
 
 	def test_a_direct_report_outside_the_hr_scope_is_still_on_the_screen(self):
 		"""They manage this person. Losing them would be a new regression, not
@@ -158,9 +169,11 @@ class TestTheTeamScreenFollowsTheHrScope(_TeamFixture):
 		self._as(self.manager_user)
 		d = hr_api.get_manager_dashboard()
 		names = {row["name"] for row in d["team"]}
+		# `d["manager"]["name"]` until slice 045 AC-6 renamed the caller block
+		# to `d["me"]` and its id key to `employee`. Wave 1's rule is unchanged.
 		expected = set(frappe.get_all(
 			"Employee",
-			filters={"reports_to": d["manager"]["name"], "status": "Active"},
+			filters={"reports_to": d["me"]["employee"], "status": "Active"},
 			pluck="name"))
 		self.assertEqual(names, expected)
 		self.assertFalse(d["is_hr_scope"])

@@ -30,7 +30,7 @@ from alvoraa_goals.tests.utils import (
 	ensure_company,
 	ensure_gender,
 )
-from alvoraa_portal.tests.leave_fixtures import ensure_user
+from alvoraa_portal.tests.leave_fixtures import assign_holiday_list, ensure_user
 
 TAG = "S045"
 COMPANY = "S045 Wave Four Company"
@@ -86,7 +86,17 @@ def own_user(local, roles):
 	roles are set rather than added - otherwise "Sandeep is not HR" is a
 	sentence in a docstring and not a fact about the fixture (043's lesson).
 	"""
-	user = ensure_user(f"s045.{local}@example.com", roles=roles)
+	email = f"s045.{local}@example.com"
+	# **Drop any cached copy of this User first.**
+	#
+	# Found by four errors that said "has been modified after you have opened
+	# it". Creating an Employee with a `user_id` makes ERPNext SAVE that User
+	# (`employee.update_user:212`), so by the time a later test class's
+	# setUpClass reopens it, an in-process cached copy is a version behind and
+	# the save is refused. Nothing was wrong with the data - the fixture was
+	# holding a stale document.
+	frappe.clear_document_cache("User", email)
+	user = ensure_user(email, roles=roles)
 	# `ensure_user` RESETS the roles rather than adding to them, which is what
 	# makes "Sandeep is not HR" a fact about the fixture instead of a sentence
 	# in a docstring. Asserted here rather than trusted, because the whole
@@ -135,7 +145,21 @@ def own_employee(first, reports_to=None, user=None, branch=STORE_A, company=None
 	# user sees, so a test about OUR rules would pass or fail because of it.
 	doc.create_user_permission = 0
 	doc.flags.ignore_permissions = True
+	if user:
+		# **Saving this Employee will SAVE that User** - ERPNext's
+		# `employee.update_user:212` fetches the User and writes to it. If a
+		# stale copy is cached, that inner save is refused with "has been
+		# modified after you have opened it", and the failure lands on the
+		# Employee save with no hint that a User was involved.
+		#
+		# Clearing the cache on both sides of the write is what actually stops
+		# it: before, so the inner save reads the current row; and again after,
+		# so the next fixture call does not re-open the version this save has
+		# just superseded.
+		frappe.clear_document_cache("User", user)
 	doc.save(ignore_permissions=True)
+	if user:
+		frappe.clear_document_cache("User", user)
 	if user:
 		frappe.db.delete("User Permission", {"user": user})
 		frappe.clear_cache(user=user)
@@ -187,6 +211,23 @@ class Wave4Base(FrappeTestCase):
 		# People in the company who report to nobody Wave 4 cares about: the
 		# covered-only population.
 		cls.covered_only = [own_employee(f"S045Covered{i}") for i in range(3)]
+
+		# Everybody gets a Holiday List Assignment.
+		#
+		# Found by the first run going red twelve times: this hrms version
+		# resolves holidays through a SUBMITTED "Holiday List Assignment", not
+		# through the old `Employee.holiday_list` field, and an Attendance
+		# Request or a Leave Application for somebody without one is refused
+		# outright - "No Holiday List was found for Employee ... Please assign
+		# through Holiday List Assignment".
+		#
+		# `assign_holiday_list` is the existing helper that does it correctly.
+		# Writing a second one here is how the two come to disagree.
+		cls.everybody = ([cls.sandeep, cls.kamal, cls.priya, cls.rahul,
+		                  cls.kamal_both] + list(cls.sandeep_reports)
+		                 + list(cls.covered_only))
+		for emp in dict.fromkeys(cls.everybody):
+			assign_holiday_list(emp)
 		frappe.db.commit()
 
 	def setUp(self):

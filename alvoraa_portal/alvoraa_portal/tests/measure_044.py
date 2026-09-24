@@ -59,6 +59,7 @@ def _calls():
 		inbox_api,
 		pay_api,
 		staff_api,
+		team_api,
 		time_api,
 	)
 
@@ -79,6 +80,17 @@ def _calls():
 		# does, something in them is reading the tenant rather than the caller.
 		("get_time", lambda: time_api.get_time()),
 		("get_pay", lambda: pay_api.get_pay()),
+		# Slice 045, Wave 4. The Team screen's ONE call, carrying BOTH
+		# sections. It is here rather than in a new harness for the reason
+		# Wave 3 gave: a budget written without a real headcount behind it is a
+		# guess that reads as proof.
+		#
+		# **The number to watch is not the count, it is whether the count
+		# MOVES** between twenty people and 981. Two sections mean the scope is
+		# asked twice, and "twice" must stay two constant queries rather than
+		# becoming two per person - which is exactly what a two-list rewrite is
+		# most likely to break.
+		("get_team", lambda: team_api.get_team()),
 	]
 
 

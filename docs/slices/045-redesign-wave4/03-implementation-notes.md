@@ -415,3 +415,81 @@ It fails **closed**, so it is not a leak and not a defect. It is worth knowing b
 that persona sees nothing unless the tenant also gives them an HR role. If a CXO is
 expected to see a company's team, that is a product decision, not a bug — flagged, not
 changed.
+
+---
+
+# 12. The `!=` and NULL trap — the second sweep, 2026-09-24 (test automation)
+
+Section 7a finding 1 said the trap "is not live anywhere else today". **That was checked
+again independently, and it is not quite right. Three more live pairings exist. None of
+them is Wave 4's code, and none is a security problem — they make a heading number
+disagree with the list under it, which is Surbhi's standing rule.**
+
+## 12.1 The mechanism, now proven rather than described
+
+Section 7a described the framework difference. Here it is, from the two engines' own SQL
+for the **identical** filter `{"status": ["!=", "Cancelled"]}`:
+
+```
+frappe.get_all / get_list   SELECT name FROM `tabKPI` WHERE IFNULL(`status`,'') <> 'Cancelled'
+frappe.db.count             SELECT COUNT(*) FROM `tabKPI` WHERE `status` <> 'Cancelled'
+```
+
+The legacy path coalesces; the newer one does not, and in SQL `NULL <> 'Cancelled'` is
+**NULL**, not true — so the count drops every row whose column is NULL and the list keeps
+it. Read with `frappe.db.get_list(..., run=False)` and `frappe.qb.get_query(...)` on
+`test045`, so it is the real generated SQL and not a reading of the framework's source.
+
+All three columns below are `IS_NULLABLE = YES` in MariaDB.
+
+## 12.2 The three pairings found
+
+| # | The count | The list | Field | Reachable NULL? | What a user would see |
+|---|---|---|---|---|---|
+| 1 | `home_api.py:620` `frappe.db.count("Individual Goal", …"status": ["!=", "Cancelled"]…)` | the same filter as `get_all` at `goals_api.py:968`, `performance_api.py:1262`, `hr_api.py:3042` | `Individual Goal.status` | **yes** — `reqd = 0`, nullable | the Home team card says "N goals"; the Goals screen lists N + the NULL-status ones |
+| 2 | `goals_api.py:308` `g["linked_kpi_count"] = frappe.db.count("KPI", …"status": ["!=", "Cancelled"]…)` | `get_all("KPI", …same filter…)` at `goals_api.py:738` | `KPI.status` | **yes** — `reqd = 0`, nullable | the goal card's KPI chip is short of the contributor list on the detail screen |
+| 3 | `hrms/alvoraa_org_structure/api.py:161` `_descendant_count` | `get_all` with the same filter at `:74`, `:501`, `:893` | `Alvoraa Position.status` | **only via migration** — `reqd = 1`, so the form cannot make one, but the column allows it | an org-chart node says "not expandable" above children that are drawn |
+
+**Severity: P2 for 1 and 2, P3 for 3.** Not a leak — nothing extra is shown to anybody;
+a number is too small. That is the same fault Wave 4 found on the Team screen ("You cover
+(4)" over nine cards) and the same fix applies: take the total through the **same query
+path** as the list.
+
+**Not fixed here.** All three are outside Wave 4's files, and changing `home_api`,
+`goals_api` and the org-structure API in a test commit would be exactly the
+"edit a module this slice does not otherwise touch" that W1D-23 declined. **Raised, with
+an owner, not fixed.**
+
+## 12.3 The pattern that is already right, and worth copying
+
+`inbox_api.py:290-301` `_count_rows` counts with
+`frappe.get_list(..., pluck="name", limit_page_length=0)` — **the same legacy path as the
+rows**. That is why the inbox badge and the inbox list cannot diverge, including for
+`attendance_correction.review_queue_filters`, which negates a **nullable**
+`alvoraa_review_status` and is safe only because of it. **If anyone ever swaps
+`_count_rows` for `frappe.db.count` to make it faster, that becomes a live bug.** Worth a
+comment on the function.
+
+`hrms/alvoraa_hr_core/access.py:249` `ALL_EMPLOYEES = {"name": ["!=", ""]}` is the one
+negation that deliberately reaches both engines, and it is on the **primary key**, which
+can never be NULL. Safe by construction, and the comment there already says so.
+
+## 12.4 Six latent cases — correct today, and only because of the `IFNULL`
+
+Each of these negates a **nullable** column through `get_all` with no count beside it.
+They are right today. They would silently change meaning the moment somebody converts
+them to `frappe.db.count` or `frappe.qb`:
+
+| Where | Filter |
+|---|---|
+| `hrms/pms/pms_notifications.py:113` | `reports_to != ""` — **the very same field and idiom as Wave 4's bug** |
+| `alvoraa_portal/scheduled_jobs.py:32` | `Order Rating.driver != ""` |
+| `hrms/alvoraa_late_rules/late_rules.py:170` | `Employee.grade not in [...]` |
+| `hrms/hr/doctype/overtime_slip/overtime_slip.py:184` | `Attendance.overtime_type != ""` |
+| `hrms/hr/doctype/leave_application/leave_application.py:635` | `Attendance.half_day_status != "Absent"` |
+| `alvoraa_portal/performance_api.py:4173` | `Individual Goal.appraisal_cycle not in [cycle, ""]` |
+
+**And one count/list mismatch with a different cause**, found on the way:
+`hrms/hr/doctype/goal/goal.py:218` counts `{"parent_goal": …}` with **no status filter at
+all**, while the list at `:191` filters `status != "Archived"`. So the "X of Y Completed"
+denominator counts archived children the tree does not draw. Upstream HRMS code. **P3.**

@@ -134,3 +134,24 @@ Measured on real companies from the Sargam server, 25 Sep 2026:
 Proof: `test_ai_leads_research_043` 24 OK (17 no database, 7 on a site), `test_ai_leads_site_043`
 20 OK, `test_ai_leads_043` 38 OK, test_invoicing 24 OK, test_subscription 32 OK; ruff clean;
 integrity OK.
+
+## 7. Two findings from the first live test (25 Sep 2026)
+
+**A lead took 3 min 11 s, not one minute.** Sent 19:11:44, fetched 19:14:36, lead 19:14:45,
+company note 19:14:55. Frappe's scheduler wakes every 4 minutes by default
+(`DEFAULT_SCHEDULER_TICK`), so a `* * * * *` job runs every 3-4 minutes. Fixed on dev only, on
+the user's word: `bench set-config -gp scheduler_tick_interval 60` in devstack's
+common_site_config, scheduler restarted; the mail check then ran at 20:37:53, 20:38:53,
+20:39:55. Production has its own sites volume and still ticks every 4 minutes: **set the
+same key there when the release goes to production.**
+
+**Company details came from the wrong company.** An email naming "Bharat Industries" came from
+an HR firm's address; research used the firm's domain and put the firm's website on the lead.
+The sender's own domain is now used only when it plausibly belongs to the company named in the
+email (`research.belongs_to`: a distinctive word of the name in the domain, or its initials);
+otherwise the company is looked up by name, exactly as for a Gmail sender. The user: "more
+businesses might not have business domains in their email addresses and might use their gmail
+accounts". A website the email itself names is still trusted.
+
+Proof: test_ai_leads_research_043 26 OK (2 new), test_ai_leads_site_043 20 OK,
+test_portal_module_gate_016 17 OK.

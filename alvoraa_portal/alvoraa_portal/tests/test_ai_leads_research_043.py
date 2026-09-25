@@ -40,6 +40,28 @@ class TestWhatIsLookedUp(unittest.TestCase):
         self.assertIsNone(research.company_domain("gmail.com", "x@" + YAHOO))
         self.assertIsNone(research.company_domain("", ""))
 
+    def test_a_sender_domain_is_used_only_for_its_own_company(self):
+        cd = research.company_domain
+        self.assertEqual(cd("", "anil@konkanship.example.com", "Konkan Shipbuilders Pvt Ltd"),
+                         "konkanship.example.com")
+        self.assertEqual(cd("", "ravi@tcs.example.com", "Tata Consultancy Services"), "tcs.example.com")
+        self.assertEqual(cd("", "ravi@bharat-ind.example.com", "Bharat Industries"), "bharat-ind.example.com")
+        # 25 Sep 2026: a consultant writing about a client from their own firm's address.
+        self.assertIsNone(cd("", "surbhi@hrfirm.example.com", "Bharat Industries"))
+        self.assertIsNone(cd("", "a@agency.example.com", "Konkan Shipbuilders"))
+        # Nothing distinctive to compare: the sender's domain is the best there is.
+        self.assertEqual(cd("", "a@konkan.example.com", "Industries Pvt Ltd"), "konkan.example.com")
+        # A website the email itself named is trusted whatever the sender.
+        self.assertEqual(cd("https://konkanship.example.com", "a@agency.example.com", "Konkan"),
+                         "konkanship.example.com")
+
+    def test_a_gmail_sender_is_looked_up_by_company_name(self):
+        domain = research.company_domain("", "rohit@" + GMAIL, "Konkan Shipbuilders")
+        self.assertIsNone(domain)
+        prompt, tools = research.build_request("Konkan Shipbuilders", domain, "Mumbai")
+        self.assertNotIn("allowed_domains", tools[0])
+        self.assertIn("Konkan Shipbuilders", prompt)
+
     def test_a_known_website_is_searched_only_on_that_site(self):
         prompt, tools = research.build_request("Konkan Shipbuilders", "konkan.example.com", "Mumbai")
         self.assertEqual([(t["name"], t["max_uses"]) for t in tools], [("web_search", 1)])

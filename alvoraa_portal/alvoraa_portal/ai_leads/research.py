@@ -68,15 +68,55 @@ def daily_cap(conf=None):
     return cint(conf.get("ai_lead_intake_research_cap") or DEFAULT_CAP)
 
 
-def company_domain(website, sender_email):
-    """The company's own domain: from the website the email named, else from the sender's
-    address unless that is a public mail provider. None when there is none."""
-    for candidate in (website, (sender_email or "").rsplit("@", 1)[-1] if "@" in (sender_email or "") else ""):
-        d = (candidate or "").strip().lower()
-        d = re.sub(r"^https?://", "", d).split("/")[0].split(":")[0]
-        d = d[4:] if d.startswith("www.") else d
-        if d and "." in d and d not in rules.FREE_MAIL and re.fullmatch(r"[a-z0-9.-]+", d):
-            return d
+# Words that say nothing about which company it is.
+_GENERIC = {"the", "and", "pvt", "private", "ltd", "limited", "llp", "inc", "llc", "plc", "corp",
+            "corporation", "company", "group", "industries", "industry", "enterprises", "india",
+            "international", "global", "solutions", "services", "works", "trading", "traders",
+            "exports", "imports", "systems", "technologies", "tech", "engineering", "manufacturing"}
+_SECOND_LEVEL = {"co", "com", "org", "net", "gov", "ac", "edu", "res", "firm", "gen", "ind"}
+
+
+def _clean_domain(value):
+    d = (value or "").strip().lower()
+    d = re.sub(r"^https?://", "", d).split("/")[0].split(":")[0]
+    d = d[4:] if d.startswith("www.") else d
+    if d and "." in d and d not in rules.FREE_MAIL and re.fullmatch(r"[a-z0-9.-]+", d):
+        return d
+    return None
+
+
+def belongs_to(domain, organization):
+    """Does this email domain plausibly belong to the named company? Pure.
+
+    True when a distinctive word of the name is in the domain ("Konkan Shipbuilders",
+    konkanship.com) or the initials are ("Tata Consultancy Services", tcs.com). True
+    when there is no distinctive word to compare. False otherwise: a consultant or agent
+    writing from their own firm about a client (25 Sep 2026: "Bharat Industries" from
+    an HR firm's address) must not get the firm's details on the client's lead.
+    """
+    words = re.findall(r"[a-z0-9]+", (organization or "").lower())
+    distinctive = [w for w in words if len(w) >= 3 and w not in _GENERIC]
+    if not distinctive:
+        return True
+    labels = [x.replace("-", "") for x in domain.split(".")[:-1] if x not in _SECOND_LEVEL]
+    initials = {"".join(w[0] for w in words), "".join(w[0] for w in words if w not in _GENERIC)}
+    return any(w in label for w in distinctive for label in labels) or         any(len(i) >= 2 and i in labels for i in initials)
+
+
+def company_domain(website, sender_email, organization=""):
+    """The company's own domain, or None.
+
+    The website the email named is trusted (the extraction kept it only because the
+    email names it). The sender's own domain is used only when it is not a public mail
+    provider and plausibly belongs to the company named in the email; otherwise the
+    company is looked up by name, as for a Gmail sender.
+    """
+    named = _clean_domain(website)
+    if named:
+        return named
+    sender = _clean_domain(sender_email.rsplit("@", 1)[-1] if "@" in (sender_email or "") else "")
+    if sender and belongs_to(sender, organization):
+        return sender
     return None
 
 
@@ -218,7 +258,7 @@ def run(log_name, conf=None):
         return _finish(log, "Skipped", "daily research limit reached")
     lead = frappe.db.get_value("CRM Lead", log.lead,
                                ["name", "organization", "website", "email", "territory"], as_dict=True)
-    domain = company_domain(lead.website, lead.email)
+    domain = company_domain(lead.website, lead.email, lead.organization)
     request = build_request(lead.organization, domain, lead.territory)
     if not request:
         return _finish(log, "Skipped", "no company name or website")

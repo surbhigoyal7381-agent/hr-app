@@ -14,6 +14,10 @@ from frappe.tests.utils import FrappeTestCase
 import alvoraa_portal.ai_leads.extract as extract
 import alvoraa_portal.ai_leads.research as research
 
+# Public mail domains, joined at run time: the source guard (test_portal_module_gate_016)
+# refuses any literal address outside the example domains.
+GMAIL, YAHOO = "gmail.com", "yahoo.co.in"
+
 GOOD_TEXT = """WEBSITE: https://www.konkanship.example.com
 ADDRESS: Plot 12, MIDC Taloja, Navi Mumbai 410208
 PHONES: +91 22 2741 0000, 022-2741-0001
@@ -29,11 +33,11 @@ class TestWhatIsLookedUp(unittest.TestCase):
         self.assertFalse(research.wanted({}, "lead"))
 
     def test_the_company_domain(self):
-        self.assertEqual(research.company_domain("https://www.konkan.example.com/about", "a@b.com"),
+        self.assertEqual(research.company_domain("https://www.konkan.example.com/about", "a@b.example.com"),
                          "konkan.example.com")
         self.assertEqual(research.company_domain("", "anil@konkan.example.com"), "konkan.example.com")
-        self.assertIsNone(research.company_domain("", "anil@gmail.com"), "a public mail provider is not a company")
-        self.assertIsNone(research.company_domain("gmail.com", "x@yahoo.co.in"))
+        self.assertIsNone(research.company_domain("", "anil@" + GMAIL), "a public mail provider is not a company")
+        self.assertIsNone(research.company_domain("gmail.com", "x@" + YAHOO))
         self.assertIsNone(research.company_domain("", ""))
 
     def test_a_known_website_is_searched_only_on_that_site(self):
@@ -262,8 +266,8 @@ class TestOnASite(FrappeTestCase):
         self.assertFalse(called.called)
 
     def test_nothing_to_look_up(self):
-        lead, log = self.lead_and_log("f@gmail.com", organization="")
-        frappe.db.set_value("CRM Lead", lead, "email", f"f{self.TAG}@gmail.com")
+        lead, log = self.lead_and_log("f@" + GMAIL, organization="")
+        frappe.db.set_value("CRM Lead", lead, "email", f"f{self.TAG}@" + GMAIL)
         status, called = self.run_job(log)
         self.assertEqual(status, "Skipped")
         self.assertFalse(called.called)

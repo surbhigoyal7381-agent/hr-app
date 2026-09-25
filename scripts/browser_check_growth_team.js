@@ -352,9 +352,18 @@ async function main() {
     is(/Saved at/.test(saved), true,
        "the autosave landed and the screen says when - the SERVER's time");
 
-    await page.goto(BASE + PAGE + "#growth/review",
-                    { waitUntil: "networkidle0", timeout: 30000 });
-    await wait(2500);
+    /* **This was a `goto` to the URL the browser was already on, fragment and
+       all - which Chrome treats as a same-document navigation.** Nothing
+       reloaded, so the assertion read the value still sitting in the DOM and
+       passed while the draft really was being lost. A marker on `window`
+       proves the document was thrown away before anything is read from it.
+       The wizard's own checks live in `browser_check_self_review.js`. */
+    await page.evaluate(() => { window.__alvoraaSameDocument = 1; });
+    await page.reload({ waitUntil: "networkidle0", timeout: 30000 });
+    await wait(3000);
+    is(await page.evaluate(() => !window.__alvoraaSameDocument), true,
+       "the document really was reloaded - without this the next check reads " +
+       "the value that never left the browser");
     const resumed = await page.evaluate((m) => {
       const boxes = Array.from(
         document.querySelectorAll("#nf-screens textarea")).map((b) => b.value);

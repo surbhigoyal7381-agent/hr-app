@@ -161,6 +161,27 @@ def main():
 		                "appraisal_cycle": CYCLE,
 		                "company": COMPANY}).insert(ignore_permissions=True)
 
+	# **The review goes back to a draft on every run.**
+	#
+	# The browser check ends by SENDING it, and a sent review cannot be typed
+	# in again - which is exactly what AC-95 asks for and exactly what would
+	# make the second run of the check fail for the wrong reason. Ratings and
+	# page data go with it, so each run starts from the same review.
+	appraisal = frappe.db.get_value("Appraisal",
+	                                {"employee": me, "appraisal_cycle": CYCLE}, "name")
+	if appraisal and frappe.db.exists("Alvoraa Appraisal Extension", appraisal):
+		from alvoraa_goals import review_items
+
+		ext = frappe.get_doc("Alvoraa Appraisal Extension", appraisal)
+		ext.review_status = "Employee Review"
+		ext.page_data = "{}"
+		ext.pages_completed = "[]"
+		for row in ext.review_items:
+			row.self_rating = 0
+			row.self_comment = ""
+			row.self_rated_on = None
+		review_items.save_review_record(ext)
+
 	# Seven company values, because five would let a screen that assumed five
 	# look right.
 	for i in range(1, 8):

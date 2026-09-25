@@ -18,7 +18,13 @@
   "prompt_version",
   "confidence",
   "input_tokens",
-  "output_tokens"
+  "output_tokens",
+  "section_research",
+  "research",
+  "research_reason",
+  "research_searches",
+  "research_fetches",
+  "research_tokens"
  ],
  "fields": [
   {
@@ -111,11 +117,47 @@
    "fieldtype": "Int",
    "label": "Output tokens",
    "read_only": 1
+  },
+  {
+   "fieldname": "section_research",
+   "fieldtype": "Section Break",
+   "label": "Company details"
+  },
+  {
+   "fieldname": "research",
+   "fieldtype": "Select",
+   "label": "Research",
+   "options": "\nDone\nNot found\nSkipped\nFailed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "research_reason",
+   "fieldtype": "Data",
+   "label": "Research reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "research_searches",
+   "fieldtype": "Int",
+   "label": "Web searches",
+   "read_only": 1
+  },
+  {
+   "fieldname": "research_fetches",
+   "fieldtype": "Int",
+   "label": "Pages read",
+   "read_only": 1
+  },
+  {
+   "fieldname": "research_tokens",
+   "fieldtype": "Int",
+   "label": "Research tokens",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-09-24 20:00:00.000000",
+ "modified": "2026-09-25 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Portal",
  "name": "Alvoraa AI Call Log",

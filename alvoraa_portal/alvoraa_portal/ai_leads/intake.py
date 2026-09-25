@@ -30,6 +30,7 @@ from frappe.utils import add_to_date, cint, escape_html, flt, get_datetime, now_
 
 import alvoraa_portal.ai_leads.extract as extract
 import alvoraa_portal.ai_leads.guards as guards
+import alvoraa_portal.ai_leads.research as research
 import alvoraa_portal.ai_leads.rules as rules
 import alvoraa_portal.ai_leads.text as text_mod
 
@@ -352,8 +353,11 @@ def process_one(comm_name, acc, log_name=None, conf=None):
         return finish(log, "Not a lead", reason="the AI judged it not an enquiry", **common)
     log.update(common)
     lead = make_lead(comm, fields, flags, verdict, acc, log)
-    return finish(log, "Lead created" if verdict == "lead" else "Needs review",
-                  reason="; ".join(flags)[:140] if flags else None, lead=lead, **common)
+    finish(log, "Lead created" if verdict == "lead" else "Needs review",
+           reason="; ".join(flags)[:140] if flags else None, lead=lead, **common)
+    if research.enabled(conf) and research.wanted(fields, verdict):
+        research.enqueue(log.name)          # its own job: the lead never waits for it
+    return lead
 
 
 # ── The lead ─────────────────────────────────────────────────────────────────

@@ -110,3 +110,27 @@ Known limits, accepted for slice one: a burst of new mail becomes one job per em
 sweep's 25-per-run limit does not apply to it (the daily cap still does); an OAuth mailbox
 without a token is fetched and fails in Frappe's own log, where Frappe's fetch would skip it
 (no OAuth mailbox uses intake today).
+
+## 6. Company details for sure leads (25 Sep 2026, approved the same day)
+
+The user asked for the company's website, official address and published phone numbers
+on each lead the AI is at least 85% sure of - "not deep research".
+
+| Piece | What it does |
+|---|---|
+| `ai_leads/research.py` | Its own job after the lead is made. One model call with one web search: limited to the company's own site when its domain is known (from the website in the email, or the sender's address unless it is a public mail provider), else a search for the company name and city. Four fixed answer lines; code checks each (the website must be on the company's own domain, look-alikes refused; phones must look like phones; no markup or links in the address). A note "Company details (AI, please check)" on the lead; the website field filled only when empty; the person's phone never touched |
+| What leaves the site | The company name, website and city from the lead. Never the person, the email address or the email text - the job reads the lead, not the email |
+| Switch and limit | Off unless `ai_lead_intake_research` = 1 on the site; `ai_lead_intake_research_cap` a day, default 50 |
+| Call log | New read-only fields: research (Done, Not found, Skipped, Failed), reason, searches, pages read, tokens |
+
+Measured on real companies from the Sargam server, 25 Sep 2026:
+
+| Way | Result | Cost |
+|---|---|---|
+| Read the website, two pages | a guessed contact page failed; only the website found | 1.8 cents |
+| Read pages, then search the site | everything found, but a PDF and three pages read | 7.5 cents |
+| One search, limited to the company's site (chosen) | website, phones, address where published | 2.1 cents each |
+
+Proof: `test_ai_leads_research_043` 24 OK (17 no database, 7 on a site), `test_ai_leads_site_043`
+20 OK, `test_ai_leads_043` 38 OK, test_invoicing 24 OK, test_subscription 32 OK; ruff clean;
+integrity OK.

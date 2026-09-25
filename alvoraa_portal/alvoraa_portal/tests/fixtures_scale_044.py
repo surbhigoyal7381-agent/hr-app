@@ -746,3 +746,138 @@ def _policies(shape):
 		made.append(doc.name)
 	frappe.db.commit()
 	return made
+
+
+# ── Payslips (043 review F3) ─────────────────────────────────────────────────
+#
+# Wave 3 measured `get_pay` at **2 queries** and said so in its notes with an
+# honest caveat: the fixture people have no payslips, so 2 is the cost of the
+# EMPTY screen. The review's F3 is that section 13's Pay budget was therefore
+# backed by nothing. This is the fixture function that fixes it.
+#
+# It is deliberately additive and idempotent, so it can be run on the two sites
+# that are already built without rebuilding them - the large one takes about 26
+# minutes and there is no reason to spend it.
+
+# `hr_api._own_slips` caps the list at twelve, so twelve is the number that
+# makes the list path full rather than half-measured.
+PAYSLIP_MONTHS = 12
+
+# The real risk the review names is not the count. It is `get_doc` on a slip
+# with a long salary structure, because `_payslip_payload` walks every child
+# row. A realistic Indian payslip is about this size.
+PAYSLIP_EARNINGS = ("Basic", "House Rent Allowance", "Conveyance Allowance",
+                    "Medical Allowance", "Special Allowance",
+                    "Education Allowance", "Leave Travel Allowance",
+                    "Performance Allowance")
+PAYSLIP_DEDUCTIONS = ("Provident Fund", "Professional Tax",
+                      "Income Tax", "Loan Repayment")
+
+
+def _payslip_component(name, kind):
+	full = "%s %s" % (TAG, name)
+	if not frappe.db.exists("Salary Component", full):
+		frappe.get_doc({
+			"doctype": "Salary Component", "salary_component": full,
+			"type": kind,
+			"salary_component_abbr": ("%s%s" % (TAG, name))[:10].replace(" ", ""),
+		}).insert(ignore_permissions=True)
+	return full
+
+
+def seed_payslips(shape, months=PAYSLIP_MONTHS, verbose=True):
+	"""Twelve months of submitted Salary Slips for each persona login.
+
+	Only the five persona logins, not all 981 people. `get_pay` is an
+	**own-record** call: it reads the caller's own slips and nobody else's, so
+	a thousand other people's payslips would add build time and change no
+	number this measures. The question F3 asks is "what does the FULL screen
+	cost", and the full screen is one person's twelve slips with the newest one
+	opened in full.
+
+	Idempotent: a slip that is already there is left alone.
+
+	Run it as:
+	    bench --site <site> execute \
+	      alvoraa_portal.tests.fixtures_scale_044.seed_payslips \
+	      --kwargs "{'shape': 'large'}"
+	"""
+	earnings = [_payslip_component(n, "Earning") for n in PAYSLIP_EARNINGS]
+	deductions = [_payslip_component(n, "Deduction") for n in PAYSLIP_DEDUCTIONS]
+	frappe.db.commit()
+
+	made, skipped = 0, 0
+	for persona, _roles in PERSONAS:
+		login = login_of(shape, persona)
+		employee = frappe.db.get_value(
+			"Employee", {"user_id": login, "status": "Active"}, "name")
+		if not employee:
+			raise RuntimeError(
+				"%s has no Active Employee - build(%r) first, or this would "
+				"quietly measure an empty screen again" % (login, shape))
+		company = frappe.db.get_value("Employee", employee, "company")
+		for month in range(int(months)):
+			# Whole months back from today, newest first.
+			end = add_days(nowdate(), -30 * month)
+			start = add_days(end, -29)
+			if frappe.db.exists("Salary Slip",
+			                    {"employee": employee, "start_date": start}):
+				skipped += 1
+				continue
+			_one_payslip(employee, company, start, end, earnings, deductions)
+			made += 1
+		frappe.db.commit()
+
+	if verbose:
+		print("payslips on %s: %d made, %d already there (%d people x %d months)"
+		      % (shape, made, skipped, len(PERSONAS), months), flush=True)
+	return {"made": made, "skipped": skipped,
+	        "people": len(PERSONAS), "months": int(months)}
+
+
+def _one_payslip(employee, company, start, end, earnings, deductions):
+	"""One submitted slip with a realistic number of child rows on it.
+
+	`ignore_validate` for the same reason `fixtures_043.salary_slip` gives:
+	Salary Slip's `validate()` exists to CALCULATE a slip from a Salary
+	Structure, and nothing in Wave 3 calculates one - every screen reads a slip
+	payroll already made. Building a real structure, assignment and payroll
+	period for sixty slips would make the fixture the thing most likely to
+	break, and it would not change what `get_pay` reads.
+
+	The totals are written to agree with the rows, so the measurement is not
+	taken against a slip whose own numbers contradict each other.
+	"""
+	gross = 0.0
+	rows_e = []
+	for n, component in enumerate(earnings):
+		amount = float(40000 - n * 4000)
+		gross += amount
+		rows_e.append({"salary_component": component, "amount": amount})
+	total_deduction = 0.0
+	rows_d = []
+	for n, component in enumerate(deductions):
+		amount = float(2400 - n * 400)
+		total_deduction += amount
+		rows_d.append({"salary_component": component, "amount": amount})
+
+	doc = frappe.get_doc({
+		"doctype": "Salary Slip",
+		"employee": employee,
+		"company": company,
+		"start_date": start,
+		"end_date": end,
+		"posting_date": end,
+		"currency": "INR",
+		"payroll_frequency": "Monthly",
+		"earnings": rows_e,
+		"deductions": rows_d,
+	})
+	doc.flags.ignore_permissions = True
+	doc.flags.ignore_validate = True
+	doc.insert(ignore_permissions=True, ignore_mandatory=True)
+	net = gross - total_deduction
+	doc.db_set({"gross_pay": gross, "total_deduction": total_deduction,
+	            "net_pay": net, "rounded_total": round(net),
+	            "docstatus": 1}, update_modified=False)
+	return doc.name

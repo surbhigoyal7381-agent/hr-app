@@ -105,10 +105,19 @@ PINNED_DEPTH = {
 	"drawers.html": -2,
 	"growth.html": 0,
 	"home.html": 0,
+	# Slice 045's two skeletons, pinned when Wave 4 rebased onto this check.
+	# Each is ONE `<div class="nf-skeleton">` that opens and closes inside its
+	# own file, holding only decorative boxes that do the same. Neither closes
+	# anything the frame opened and neither leaves anything for the frame to
+	# close, so 0 is the number the file is, not the number that made the check
+	# pass: giving either of them a non-zero pin would mean a skeleton had
+	# started re-parenting the screen drawn after it.
+	"next-growth.html": 0,
 	"next-home.html": 0,
 	"next-inbox.html": 0,
 	# Slice 043's two skeletons, pinned when Wave 3 rebased onto this check.
 	"next-pay.html": 0,
+	"next-team.html": 0,
 	"next-time.html": 0,
 	"org-settings.html": 0,
 	"pay.html": 0,

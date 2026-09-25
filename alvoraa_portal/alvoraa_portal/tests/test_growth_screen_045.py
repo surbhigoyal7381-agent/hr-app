@@ -300,9 +300,21 @@ class TestTheSelfReviewWizard(GrowthFixture):
 			growth_api._steps_answered({"overall": {"text": "done"}}, values, ["g1"]))
 
 	def test_a_step_with_only_blank_text_is_not_done(self):
-		"""Typing a space is not an answer."""
+		"""Typing a space is not an answer.
+
+		**Updated for AC-90 (25 Sep 2026).** This used to pass NO goals and
+		assert the answer was `[]` - which was pinning the old rule that a
+		review with no goals could never finish step one, and that rule made
+		Send unreachable for anybody with no goals. So the goals step is given
+		a goal here, and the blank-text rule is what this test is about again.
+		"""
 		self.assertEqual(
-			[], growth_api._steps_answered({"overall": {"text": "   "}}, [], []))
+			[], growth_api._steps_answered({"overall": {"text": "   "}}, [], ["g1"]))
+
+	def test_a_review_with_no_goals_has_its_goals_step_answered(self):
+		"""AC-90. Nothing to rate is not the same as not finished."""
+		self.assertEqual(
+			[growth_api.STEP_GOALS], growth_api._steps_answered({}, [], []))
 
 	def test_a_half_point_rating_is_refused_by_the_save(self):
 		self.as_user(self.rahul_user)

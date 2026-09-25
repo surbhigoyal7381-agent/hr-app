@@ -505,7 +505,11 @@ def _steps_answered(answers, values, goals):
 	answers = answers or {}
 	done = []
 	rated = answers.get("goals") or {}
-	if goals and all(rated.get(g, {}).get("rating") for g in goals):
+	# **No `goals and`.** A review with no goal copies has nothing to rate, so
+	# the step is answered - `all()` over an empty list is already true. With
+	# the old `goals and` a person with no goals could never finish step 1 and
+	# Send was unreachable for them (AC-90).
+	if all((rated.get(g) or {}).get("rating") for g in goals):
 		done.append(STEP_GOALS)
 	if values_step_is_answered(answers.get("values"), values):
 		done.append(STEP_VALUES)
@@ -551,7 +555,17 @@ def get_self_review(appraisal=None):
 
 	page = performance_api.get_my_review(appraisal)
 	values = company_values_for(me)
-	answers = page.get("page_data") or {}
+	# **The wizard's OWN block, not the whole page_data (AC-97).**
+	#
+	# `save_self_review` writes under `page_data["wizard"]`; this read used to
+	# hand back the whole dict. So the screen was given `{"wizard": {...}}`,
+	# drew an empty wizard, and posted that back - which stored
+	# `wizard.wizard`, then `wizard.wizard.wizard`. A draft did not survive a
+	# reload and each save buried the last one a level deeper. Nothing raised,
+	# which is why it took a real reload in a real browser to see it: a
+	# same-URL `goto` does not reload the document at all, and the check that
+	# said "it resumes" was reading the value still sitting in the DOM.
+	answers = wizard_block(page.get("page_data") or {})
 	goal_ids = [g.get("name") for g in (page.get("goals") or []) if g.get("name")]
 	return {
 		"appraisal": appraisal,
@@ -566,6 +580,12 @@ def get_self_review(appraisal=None):
 		"answers": answers,
 		"steps": list(STEPS),
 		"steps_answered": _steps_answered(answers, values, goal_ids),
+		# D-13's default, sent to the screen rather than repeated in it: the
+		# ratings are required, the three written steps are not, and the last
+		# step lists the ones still empty so nobody sends blank answers
+		# without noticing. One tuple decides it, on the server.
+		"required_steps": list(REQUIRED_STEPS),
+		"blank_optional_steps": blank_optional_steps(answers),
 		"rating_min": RATING_MIN,
 		"rating_max": RATING_MAX,
 		"rating_step": 1,
@@ -635,3 +655,215 @@ def save_self_review(appraisal, answers):
 		"budget_bytes": out.get("budget_bytes"),
 		"room_left_characters": out.get("room_left_characters"),
 	}
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Send - the wizard's answers reach the manager (US-21, AC-87 to AC-99)
+# ══════════════════════════════════════════════════════════════════════════
+#
+# **The failure this closes is a silent one.** Before this, the submit path
+# wrote `self_rating` for a KPI copy and only a comment for a goal copy, so a
+# Send that appeared to work would have dropped every goal rating and nobody
+# would have found out until a calibration meeting. That is why the checks
+# below compare stored values with what was on screen rather than checking
+# that nothing threw.
+
+# One page key per screen. `wizard` is the wizard's; `past-objectives` is the
+# OLD Objectives & KPIs screen's, and it still ships. Nothing is renamed and no
+# data is moved (AC-98).
+WIZARD_PAGE_KEY = "wizard"
+OLD_PAGE_KEYS = ("past-objectives", "past_objectives")
+
+# ── what counts as finished for Send (D-13) ──────────────────────────────────
+#
+# **This tuple is the whole answer to D-13, and changing it is one line.**
+#
+# Surbhi has not answered yet, so this is the recommended default from the
+# spec: **the ratings are required, the three written steps are not.** A review
+# is mostly unusable without its ratings; it is still usable when somebody had
+# nothing to add. Forcing text produces "n/a" in three boxes, which looks like
+# an answer and is worse than a blank one.
+#
+# If she wants the written steps required too, that is this one line:
+#     REQUIRED_STEPS = STEPS
+# The refusal sentences, the screen's list of blank steps and the tests all
+# read this tuple, so nothing else has to change.
+REQUIRED_STEPS = (STEP_GOALS, STEP_VALUES)
+
+
+def optional_steps():
+	"""The steps a person may leave empty. Derived, never listed twice."""
+	return tuple(step for step in STEPS if step not in REQUIRED_STEPS)
+
+
+def wizard_block(page_data):
+	"""The wizard's own block of a review's `page_data`, never the whole dict."""
+	block = (page_data or {}).get(WIZARD_PAGE_KEY)
+	return block if isinstance(block, dict) else {}
+
+
+def _block(answers, key):
+	block = (answers or {}).get(key)
+	return block if isinstance(block, dict) else {}
+
+
+def _entry(block, key):
+	entry = block.get(key)
+	return entry if isinstance(entry, dict) else {}
+
+
+def _text_of(entry):
+	if isinstance(entry, dict):
+		return " ".join(str(v or "") for v in entry.values())
+	if isinstance(entry, str):
+		return entry
+	return ""
+
+
+def blank_optional_steps(answers):
+	"""The written steps that are still empty, so the last step can say so.
+
+	Listed, never blocked (D-13). The person sees what they are leaving blank
+	and decides; the screen does not decide for them.
+	"""
+	answers = answers or {}
+	return [step for step in optional_steps()
+	        if not _text_of(answers.get(step)).strip()]
+
+
+def _live_rows(ext, item_type=None):
+	"""This review's own live copies. Never a live `Individual Goal` or `KPI`."""
+	from frappe.utils import cint
+
+	return [row for row in (ext.get("review_items") or [])
+	        if not cint(row.removed)
+	        and (item_type is None or row.item_type == item_type)]
+
+
+def check_wizard_keys(ext, answers, endpoint="save_review_page"):
+	"""SEC-1 on the wizard's page, on a save AND on a send (AC-92, AC-93).
+
+	Every key in the goals block must be a row name of THIS review's own live
+	**Objective** copy. One key that is not refuses the whole call and nothing
+	is stored - the same rule the old screen has had since slice 010, running
+	at last on the page the product is about to use.
+
+	A KPI row name under `goals` is refused too (AC-93). Surbhi decided on
+	24 September that goals are rated and KPI figures are shown beside them;
+	this is that decision enforced rather than assumed.
+	"""
+	from hrms.alvoraa_hr_core.access import refuse
+
+	def no(message):
+		refuse(message, "SEC-1", endpoint, "Alvoraa Appraisal Extension", ext.name)
+
+	if not isinstance(answers, dict):
+		no(_("This review could not be read. Reload the page and try again."))
+	goals = answers.get(STEP_GOALS)
+	if goals is None:
+		return
+	if not isinstance(goals, dict):
+		no(_("This review could not be read. Reload the page and try again."))
+	live = {row.name: row.item_type for row in _live_rows(ext)}
+	for key in goals:
+		if key not in live:
+			no(_("The self-review names an item that is not in this review."))
+		if live[key] != "Objective":
+			# A KPI row name in the goals block. Refused, not quietly ignored:
+			# ignoring it would store a rating the product has no screen for,
+			# and nobody would ever see it again.
+			no(_("KPI figures are shown beside a goal, not rated. "
+			     "Send the rating on the goal itself."))
+
+
+def refuse_if_unfinished(ext, answers, endpoint="submit_employee_review"):
+	"""A part-finished review cannot be sent, and the SCREEN is not what says so.
+
+	AC-89, AC-90, AC-91. The check runs on the review's live copies at the
+	moment of Send, never on the list the browser was holding - so a goal added
+	after somebody rated everything blocks the send until it is rated.
+
+	Nothing is written before this passes.
+	"""
+	rated_goals = _block(answers, STEP_GOALS)
+	unrated = [row.title or row.name for row in _live_rows(ext, "Objective")
+	           if not _entry(rated_goals, row.name).get("rating")]
+	if unrated:
+		# Whole sentences with placeholders. Never a sentence built by joining
+		# pieces - word order moves between English, Hindi and Punjabi.
+		if len(unrated) == 1:
+			frappe.throw(_("One goal still needs a rating: {0}. Go back to the goals "
+			               "step, give it a rating, and send again.").format(unrated[0]))
+		frappe.throw(_("{0} goals still need a rating: {1}. Go back to the goals step, "
+		               "give each one a rating, and send again.").format(
+			len(unrated), ", ".join(unrated)))
+
+	if STEP_VALUES in REQUIRED_STEPS:
+		rated_values = _block(answers, STEP_VALUES)
+		missing = [v.get("value_name") or v["name"]
+		           for v in company_values_for(ext.employee)
+		           if not _entry(rated_values, v["name"]).get("rating")]
+		if missing:
+			if len(missing) == 1:
+				frappe.throw(_("One company value still needs a rating: {0}. Go back "
+				               "to the values step, give it a rating, and send again."
+				               ).format(missing[0]))
+			frappe.throw(_("{0} company values still need a rating: {1}. Go back to the "
+			               "values step, give each one a rating, and send again."
+			               ).format(len(missing), ", ".join(missing)))
+
+	# Only reached if D-13 comes back the other way and a written step joins
+	# REQUIRED_STEPS. One tuple decides it, here and on the screen.
+	for step in REQUIRED_STEPS:
+		if step in (STEP_GOALS, STEP_VALUES):
+			continue
+		if not _text_of((answers or {}).get(step)).strip():
+			frappe.throw(_("This step still needs an answer before you can send: {0}."
+			               ).format(_(step_label(step))))
+
+
+STEP_LABELS = {
+	STEP_GOALS: "Your goals",
+	STEP_VALUES: "Company values",
+	STEP_OPEN_ITEMS: "Still open from last time",
+	STEP_NEXT: "What you want to take on next",
+	STEP_OVERALL: "Anything else",
+}
+
+
+def step_label(step):
+	"""The name a person sees for a step. One list, read by the server and the
+	screen, so a refusal never names a step by a key nobody recognises."""
+	return STEP_LABELS.get(step, step)
+
+
+def apply_wizard_self_review(ext, answers, endpoint="submit_employee_review"):
+	"""The wizard's goal ratings onto the review's OWN copies (AC-87).
+
+	Through `review_items.set_item_rating`, which is the one function that
+	already writes a rating and its stamp together - so the record keeps the
+	numbers the person was looking at when they pressed Send, not the numbers
+	today. That is what makes AC-96 answerable a year later.
+
+	**The KPI half is left exactly as it is** (AC-94). The old Objectives & KPIs
+	screen still writes `self_rating` on a KPI copy; the wizard never does. A
+	KPI copy the wizard never touched keeps 0, and 0 already reads as "not
+	rated" everywhere in this code, never as a score of zero.
+
+	Nothing outside the review is written (AC-88, R13, SEC-1): no live
+	`Individual Goal`, no `KPI`, and no figure is recomputed.
+	"""
+	from alvoraa_goals import review_items
+
+	check_wizard_keys(ext, answers, endpoint)
+	for key, values in _block(answers, STEP_GOALS).items():
+		values = values if isinstance(values, dict) else {}
+		rating = check_whole_point(values.get("rating"))
+		if rating is None:
+			continue
+		comment = values.get("comment")
+		review_items.set_item_rating(
+			review_items.live_row(ext, key), "self",
+			rating=rating,
+			comment=str(comment) if comment is not None else None,
+		)

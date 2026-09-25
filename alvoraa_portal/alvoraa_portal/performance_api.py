@@ -4395,11 +4395,19 @@ def save_review_page(appraisal, page_key, page_data_json):
     except: all_pd = {}
     try: new_pd = json.loads(page_data_json) if isinstance(page_data_json, str) else page_data_json
     except: new_pd = {}
-    if page_key in ("past-objectives", "past_objectives"):
+    if page_key in growth_api.OLD_PAGE_KEYS:
         # Ratings are keyed by this review's copies only; anything else refuses
         # the save before it is stored (SEC-1).
         review_items.open_review(ext)
         review_items.apply_self_review(ext, new_pd, "save_review_page", write=False)
+    elif page_key == growth_api.WIZARD_PAGE_KEY:
+        # **The same check, on the page the product is about to use (AC-92).**
+        # It ran only for the OLD screen's key, so a `wizard` save stored
+        # whatever row names it was given. Nothing was written onto a row by
+        # that path, but the guard that refuses a foreign row name - or one
+        # removed from this review - was not running at all on the new screen.
+        review_items.open_review(ext)
+        growth_api.check_wizard_keys(ext, new_pd, "save_review_page")
     all_pd[page_key] = new_pd
 
     try: done = json.loads(ext.pages_completed or "[]")
@@ -4450,6 +4458,52 @@ def save_review_page(appraisal, page_key, page_data_json):
     }
 
 
+def _notify_manager_review_sent(ap, ext):
+    """One notification to the manager when a self-review is sent (AC-36).
+
+    **Nothing from inside the review travels in it.** The subject line carries
+    the person's name and the cycle; no rating, no comment, no goal title. A
+    notification is read by whoever has the manager's phone in their hand, and
+    a review's contents are not a thing to put on a lock screen.
+
+    It goes to the manager on `reports_to` only - never to HR, never to a
+    reviewer, and never to a list built from anything else.
+
+    **It does not use the `eval_js` helper** appendix D recorded as B26: a
+    notification that pushes script to a browser is a defect, not a feature.
+
+    A failure here never fails the send. The review is already stored and
+    committed; losing the ping is a smaller harm than throwing after the fact,
+    and the error is logged so somebody can see it happened.
+    """
+    try:
+        reports_to = frappe.db.get_value("Employee", ap.employee, "reports_to")
+        if not reports_to:
+            return
+        manager_user = frappe.db.get_value("Employee", reports_to, "user_id")
+        if not manager_user:
+            return
+        cycle = frappe.db.get_value(
+            "Appraisal Cycle", ap.appraisal_cycle, "cycle_name") or ap.appraisal_cycle
+        notif = frappe.new_doc("Notification Log")
+        notif.for_user = manager_user
+        notif.type = "Alert"
+        notif.document_type = "Appraisal"
+        notif.document_name = ap.name
+        notif.subject = frappe._("{0} has sent you their self-review for {1}").format(
+            ap.employee_name or ap.employee, cycle)
+        notif.email_content = frappe._(
+            "<p>Open the review to read it and add your own ratings.</p>")
+        notif.insert(ignore_permissions=True)
+        frappe.db.commit()
+    except Exception:
+        # The document name, never anything about the person or the review.
+        frappe.log_error(
+            title="Self-review sent: the manager could not be notified",
+            message=f"Appraisal {ap.name}",
+        )
+
+
 @frappe.whitelist()
 def submit_employee_review(appraisal, overall_comment=""):
     """Employee sends their self-review to the manager.
@@ -4467,7 +4521,10 @@ def submit_employee_review(appraisal, overall_comment=""):
 
     ext = _get_or_create_extension(appraisal)
     if ext.review_status not in ("Not Started", "Employee Review"):
-        frappe.throw("Review has already been submitted.")
+        # AC-95. A double tap, a retried request or a hand-made second call.
+        # Nothing is written and no second notification goes out, because the
+        # refusal happens before any of it.
+        frappe.throw(frappe._("This has already been sent. Your manager has it."))
     review_items.open_review(ext)
 
     try:
@@ -4477,9 +4534,35 @@ def submit_employee_review(appraisal, overall_comment=""):
     if not isinstance(all_pd, dict):
         all_pd = {}
 
+    # ── The wizard's block, checked BEFORE anything at all is written ──
+    #
+    # Two keys, one per screen, and both are read (AC-98). A review half-typed
+    # on the old Objectives & KPIs screen and finished in the wizard keeps
+    # both: the old block is applied first and the wizard's second, so the
+    # wizard wins wherever the two name the same row.
+    #
+    # The checks come first on purpose. A part-finished review refused halfway
+    # through writing would be this story's silent failure in another hat.
+    #
+    # **Only a review typed in the wizard is held to the wizard's rules.** The
+    # old screen still ships and has never required a rating on every goal - it
+    # rates KPIs and writes a reflection on a goal - so holding it to the new
+    # rule refused three of its own tests, which is how this was found. The
+    # KEY decides it, not the contents: an empty wizard block is a wizard that
+    # was opened, and it answers for itself.
+    from_wizard = growth_api.WIZARD_PAGE_KEY in all_pd
+    wizard = growth_api.wizard_block(all_pd)
+    if from_wizard:
+        growth_api.check_wizard_keys(ext, wizard, "submit_employee_review")
+        growth_api.refuse_if_unfinished(ext, wizard, "submit_employee_review")
+
     # ── Past Objectives: self-ratings and comments onto the copies ──
     past = all_pd.get("past-objectives") or all_pd.get("past_objectives") or {}
     review_items.apply_self_review(ext, past)
+
+    # ── The wizard: a goal's rating onto the review's own copy (AC-87) ──
+    if from_wizard:
+        growth_api.apply_wizard_self_review(ext, wizard, "submit_employee_review")
 
     # ── Past Development: copy textarea fields to extension named fields ──
     past_dev = all_pd.get("past-dev") or {}
@@ -4522,11 +4605,24 @@ def submit_employee_review(appraisal, overall_comment=""):
         ig.is_future_plan = 1
         ig.insert(ignore_permissions=True)
 
-    ext.overall_comment = overall_comment
+    # The two wizard answers that already have a home on the extension, so the
+    # manager's existing screen shows them with no new work (AC-99). The old
+    # screen's own fields win only when the wizard left the step empty -
+    # nothing typed is overwritten by a blank.
+    wizard_next = str((wizard.get("next") or {}).get("text") or "").strip()
+    if wizard_next:
+        ext.next_period_goals_text = wizard_next
+    wizard_overall = str((wizard.get("overall") or {}).get("text") or "").strip()
+    ext.overall_comment = overall_comment or wizard_overall
+
     ext.review_status   = "Manager Review"
     review_items.apply_stage(ext)
     review_items.save_review_record(ext)
     frappe.db.commit()
+    # AC-36. One notification, to the manager on `reports_to`, carrying the
+    # person's name and the cycle and NOTHING from inside the review. After the
+    # commit, so a review is never announced before it is stored.
+    _notify_manager_review_sent(ap, ext)
     return {"review_status": "Manager Review"}
 
 

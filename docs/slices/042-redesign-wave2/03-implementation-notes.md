@@ -79,9 +79,12 @@ eye before this goes anywhere.
 | AC-15 | `get_inbox` ≤ 25 queries, asserted on the S042 fixture; **and** a test that the query count does not GROW when the rows go from one to five. `get_nav_counts` ≤ 15 at 1,000 employees is **not proved** — no such fixture (§6) | **partly met, and it found a real N+1** — see §4 |
 | AC-16 | No portal boot path calls the old heavy approvals call; the AST check keeps `get_nav_counts`/`get_inbox` from querying directly | **partly met** — the direct-query check is in; a repo-wide "no boot path calls it" check is not |
 | AC-17 (a) | Every drawn correction driven through its own action | **met** |
+| AC-17 (a), the other half | Four of the six parts drew rows with no buttons and no link, because `build()` never used `part.route`. The screen could say "2 policies to read and accept" with no way to read one. Fixed by review F6: the card title is a link to the route the server already sends | **met** |
 | AC-17 (b) | An **undrawn** document called by hand is refused, and nothing is written | **met** — the half that matters |
-| AC-18 | "This one has already been decided." is reused from `decide`; the panel removes the row and refreshes | **met in code**, not driven in jsdom |
-| AC-19 / AC-20 | My requests: own Active Employee only, plain-word state, withdraw only where allowed | **met** |
+| AC-18 | "This one has already been decided." is now shown **only when the server says it**. The panel used to say it for every rejection, so a timeout told a manager a colleague had decided. Fixed by review F5 and driven in jsdom, both the conflict and the timeout | **met**, and now driven in jsdom |
+| AC-19 (withdraw) | The Withdraw button, built by review F2: drawn from the server's `can_withdraw`, calling the whitelisted `attendance_correction.withdraw`. Four jsdom assertions including the negative control | **met** |
+| AC-19 (the three states) | AC-19 asks for "Waiting for Sakshi Verma", "Approved" and "Declined — <the reason>". The part only ever returns `state: "waiting"`, because **§6.2 of the spec defines part 6 as *open* requests**. The two halves of the spec disagree and the code follows §6.2 | **NOT met, and not deferred with a plan — the spec contradicts itself.** `hrms-business-analyst` to decide whether AC-19 narrows to open requests or §6.2 widens to decided ones. Until then the screen shows open requests only, which is what it has always shown |
+| AC-20 | My requests: own Active Employee only | **met** |
 | AC-21 / AC-22 | The Fix button carries the days the gap rule found; the number and the list come from `_gap_days` | **met** for the number/list identity, including the capped case |
 | AC-23 / AC-24 | Priya's queue is her store's; head office's correction is in neither her count nor her list | **met** |
 | AC-25 | Own item not in own count or list; the decide action refuses through `refuse_own_decision` | **met** for corrections; the other four paths reuse the same helper and are not each fixtured (§6) |
@@ -119,7 +122,7 @@ eye before this goes anywhere.
 | AC-58 | Two approvers within a second: one wins | **met by inheritance** — `decide` already refuses a second decision |
 | AC-59 | The endpoint is deleted with the card; the name is in no source file of this app; calling it finds nothing | **met**, and the check asserts it really scanned |
 | AC-60 | Nothing from the server reaches `innerHTML` unescaped; a hostile Designation is text in a queue row, a context line and the team card | **met**, and proved able to fail |
-| AC-61 | **Not built.** D-8 unanswered → own anniversary only, `joiners` empty, asserted | **fail-closed default shipped** |
+| AC-61 | **Not built.** D-8 unanswered → own anniversary only, `joiners` empty, asserted. The anniversary card was **computed and drawn nowhere** until review F7; it is now on the screen, and a test asserts a joiners list the server sent is still not drawn | **fail-closed default shipped, and now visible** |
 | AC-62 | The entitlement test changes the site's own `features` list and patches nothing; a static check fires on a real patch and **not** on prose about patching | **met** |
 
 ---
@@ -356,3 +359,33 @@ not bought before it looks for the row.
 | **R2** | Wave 1 recorded that a repo-wide `ignore_permissions` CI gate must exist **before** Wave 2 added endpoints. Wave 2 is here and the gate is not | Either the 2026-10-31 date holds and this waits, or the date moves with her name against it |
 | **OPS-W2-8** | The two fixtures and the numbers | Gap 3 above. My strongest recommendation: before any production release |
 | Push | Nothing is pushed. **034 must reach `dev` first** | Local only, as asked |
+
+---
+
+## 19. What the senior review changed (2026-09-25)
+
+`05-review.md` was acted on. Every fix has a test that was watched go red.
+
+| Finding | What I did | The test that went red without it |
+|---|---|---|
+| **F1** (P1) | Deleted the one extra `</div>` at `parts/home.html:51`. The live Home page laid out wrong: `home-left-col` closed 25 lines early, so the goals sections fell out of the left column and the whole right-hand column fell out of the grid | `scripts/check_tag_balance.py` — new. It reported `hrms-employee.html` at depth −1 and named `parts/home.html` |
+| **F1, the gap** | New static check, wired into CI with a positive control. It balances the **assembled** page through the same `portal_source` expander every other check uses, and pins each fragment's net depth so a failure names a file | `--self-test` rebuilds the real 042 bug and fails unless the check catches it, plus six other shapes and a "read no file" guard |
+| **F2** | Built the Withdraw button; gave `my_requests` rows a translated `title`, so no raw internal key can head a row | 4 jsdom assertions + `test_my_own_requests_are_headed_with_words_not_an_internal_key` |
+| **F2, the AC** | AC-19 split in two in the table above. The withdraw half is met. **The three-states half is not met**, and the reason is that AC-19 and §6.2 of the spec contradict each other — the BA decides, not me | — |
+| **F3** | Deleted `_goals`' `team` branch and `_hr_scope` with it. Home now reads no list of employee ids at all | 3 tests in `TestHomeCarriesNoTeamGoalSummary`, one of them a source walk through `ast` with both controls |
+| **F5** | The client no longer guesses why a decision failed. The server's own sentence where there is one; "that did not go through, nothing has changed" where there is not; the row is never removed on a failure | 2 jsdom assertions. The 504 case found a real bug in my first version — `apiError` falls back to `res.statusText`, so a gateway timeout would have shown a person the bare number 504 |
+| **F6** | The card title links to `part.route` | 2 jsdom assertions + a negative control on a non-hash route |
+| **F7** | Drew the own work anniversary | 1 jsdom assertion + a negative control |
+
+**Not acted on, and why.**
+
+| Finding | Why |
+|---|---|
+| **F4** (the presence card's residual risk **R6**) | It needs Surbhi's word in the decision register, not a code change. Unchanged |
+| **F8** (no release note for the deleted week grid) | `hrms-product-manager` and `hrms-devops-engineer` own it |
+| **F9** | The reviewer agreed with the budget move. Nothing to do |
+| **P4 backlog** (`frappe.db.get_value` outside the watched list; the double `_my_employee`; `_part_goal_updates`' unguarded doctypes; `_card`'s traceback claim) | Left as backlog, as the review ranked them |
+
+**One thing I chose, that is not mine to choose.** The anniversary card sits last on
+the Home screen. I could not find the approved prototype in this worktree, so that
+position is my guess. `hrms-ux-designer` should confirm it.

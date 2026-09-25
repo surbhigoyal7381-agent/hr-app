@@ -182,3 +182,83 @@ gate.** `scripts/check_app_integrity.py` before every commit.
 
 Push, merge into `dev`, touch a server, touch production, run `docker cp`, run anything in
 `hrlocal-bench`, or add a work-phone field to Employee.
+
+---
+
+# 9. Send — the impact analysis for revision 3 (US-21, AC-87 to AC-99)
+
+Written 25 September 2026, before any file was opened. The strategy itself is the one
+`02` revision 3 sets out; what follows is what it touches and what it costs.
+
+## 9.1 The contradiction I resolved first
+
+Two reports disagreed about whether the wizard's draft survives a reload. **The analyst
+was right and the browser check was wrong**, and the browser check was wrong for the
+reason this project has been caught by before: its "reload" was
+`page.goto(<the same URL, same hash>)`, which Chrome treats as a **same-document**
+navigation. Nothing reloaded, so the assertion read the value still sitting in the DOM.
+Proof is in `03` §15.11b: a marker set on `window` survived the old "reload" and
+disappeared on a real one, and on the real one the typed text was gone and the stored
+answers were **four levels deep** (`wizard.wizard.wizard.wizard`).
+
+## 9.2 Files this changes
+
+| File | Change |
+|---|---|
+| `alvoraa_portal/growth_api.py` | read the `wizard` block back (AC-97); the key check; the finished check (D-13); the wizard's ratings applied to the review's own copies |
+| `alvoraa_portal/performance_api.py` | `save_review_page` runs the key check on the `wizard` key too (AC-92); `submit_employee_review` reads both blocks, old first (AC-98), and notifies the manager once (AC-36) |
+| `alvoraa_goals/review_items.py` | **unchanged.** `set_item_rating` already writes a rating and its stamp together |
+| `public/js/ess/next-growth.js` | the Send button on the last step, the list of blank optional steps, the sent state |
+| tests | `test_send_self_review_045.py` (new), `scripts/browser_check_self_review.js` (new) |
+
+**No new field, no new DocType, no patch, no migration.** `Alvoraa Review Item.self_rating`
+already exists on every row.
+
+## 9.3 Cross-module reach, and every caller
+
+* `apply_self_review` — callers: `save_review_page:4400`, `submit_employee_review:4478`.
+  **Not changed**, so the old Objectives & KPIs screen is untouched.
+* `set_item_rating` — callers: `save_review_item_rating`, the manager path, and now the
+  wizard. Signature unchanged.
+* `save_review_page` — callers: `growth_api.save_self_review`, the old screen's page save.
+  The new branch only runs for `page_key == "wizard"`, which only the wizard sends.
+* `submit_employee_review` — callers: `portal.js:12127` (the old screen) and now the
+  wizard. The old screen sends no `wizard` block, so its behaviour is unchanged except
+  for the notification, which is AC-36 and is wanted on both paths.
+* `_steps_answered` — callers: `get_self_review` and its tests.
+
+## 9.4 Persona impact
+
+| | |
+|---|---|
+| **Employee (Rahul)** | Gains a Send that stores his goal ratings; his draft survives a reload. Refused, with a sentence, when a rating is missing |
+| **HR Manager (Priya/Kamal)** | Nothing new is visible to HR before the review is sent — `get_my_review`'s PRIV-2 refusal is unchanged |
+| **Manager (Sandeep)** | Receives one notification and the sent review. The **company-value ratings and the open-items note arrive in the payload and are not drawn** — declared debt, AC-99, unchanged by this work |
+| **CXO** | No change |
+
+## 9.5 The seven dimensions, before the code
+
+| | Verdict | Why |
+|---|---|---|
+| Performance | neutral | Send adds one `Notification Log` insert and no query in a loop. The rows are the review's own child table, already in memory |
+| Security | **improves** | The SEC-1 row-key check starts running on the `wizard` key (AC-92), and a KPI row name in the goals block is refused (AC-93) |
+| Reliability | **improves** | A part-finished review is refused **before** anything is written; the second send is refused by the existing stage guard |
+| Scalability | neutral | Bounded by one review's own copies and one tenant's value list |
+| Maintainability | improves | One page key per screen, and the finished rule is one tuple (`REQUIRED_STEPS`) rather than a condition spread over a screen and a server |
+| Data integrity | **improves** | The live loss AC-97 describes is fixed: the draft is read back from where it is written, and stops burying itself |
+| Compliance / privacy | neutral | The notification carries the person's name and the cycle and **nothing from inside the review**. No personal text in any log line |
+
+## 9.6 D-13, unanswered — the recommended default, in one line
+
+`growth_api.REQUIRED_STEPS = (STEP_GOALS, STEP_VALUES)`. Ratings required, the three
+written steps optional and listed on the last step. If Surbhi wants text required, add the
+three step names to that tuple; the refusal sentences and the screen already follow it.
+
+## 9.7 Parallel-work check
+
+Worktree `.claude/worktrees/045-redesign-wave4`, branch `slice/045-redesign-wave4`, own
+container `hrlocal-045`. Files claimed on the board: `growth_api.py`,
+`performance_api.py` (`save_review_page`, `submit_employee_review`),
+`public/js/ess/next-growth.js`, the new test file and the new browser check.
+`performance_api.py` is a hot file — both hunks are named above so anybody else in it can
+see exactly where I am. Local only: no push, no merge into `dev`, no server.

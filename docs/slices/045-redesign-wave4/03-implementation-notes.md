@@ -1186,6 +1186,146 @@ survive a reload (AC-97); and `save_review_page:4400` skips the SEC-1 key check 
 before Send, or only the ratings? The specified default is ratings required, text
 optional.
 
+## 15.11b Send, built — and the two reports that could not both be true
+
+**The analyst was right and the browser check was wrong**, and the browser check
+was wrong in the way this project has been caught by before: **its happy answer
+and its dead answer were the same value.**
+
+### What the two reports said
+
+| | |
+|---|---|
+| The engineer who built the screens | *"the wizard saved and still had the text after a full reload"* — a real Chromium run, 33 assertions, 0 failed |
+| The analyst, reading the code | `get_self_review:566` returns the whole `page_data` as `answers` while `save_self_review:629` writes under `page_data["wizard"]`, so a reload shows an empty wizard and the next save buries the answers a level deeper |
+
+### What running it showed
+
+**First, on the server, with no browser at all.** Save one answer, read it back,
+post back what was handed over — which is exactly what the screen does:
+
+```
+ANSWERS AFTER SAVE 1: {"wizard": {"overall": {"text": "probe text one"}}}
+STEPS ANSWERED:       []
+STORED AFTER SAVE 2:  {"wizard": {"wizard": {"overall": {"text": "probe text one"}}}}
+```
+
+The analyst's reading, confirmed exactly: the screen is handed `{"wizard": …}`,
+draws nothing from it, and posts it back one level deeper. "Step n of 5" was
+reading the empty wizard too.
+
+**Then in a real browser, to find out why the check passed.** The old check's
+"reload" was:
+
+```js
+await page.goto(BASE + PAGE + "#growth/review", …);   // the URL it was already on
+```
+
+Chrome treats a navigation to **the same URL including the fragment** as a
+same-document navigation. **Nothing reloads.** A marker put on `window` proves
+it:
+
+```
+SAME-URL goto  : {"marker":"yes, this document was never reloaded","boxesWithTheText":1}
+REAL reload    : {"marker":"(gone - a real reload)","boxesWithTheText":0,
+                  "answers":"{\"wizard\":{\"wizard\":{\"wizard\":{\"wizard\":{…}}}}}"}
+```
+
+So the assertion read the text still sitting in the DOM. On a real reload the
+text is gone and the stored answers are **four levels deep**.
+
+**The engineer's report was wrong, and not because the run was faked** — 33
+assertions really did pass in a real Chromium. It was wrong because one of them
+was not testing what its sentence claimed. That is the same shape as §17.1's
+finding, in a new place, and it is why `browser_check_self_review.js` proves
+every reload with a marker before it reads anything.
+
+The lying assertion in `browser_check_growth_team.js` is fixed rather than
+deleted: it reloads for real now, and asserts the document was thrown away
+first.
+
+### What Send is, file by file
+
+| File | Change | Mechanism, and why |
+|---|---|---|
+| `growth_api.get_self_review` | reads `page_data["wizard"]`, not the whole dict | **extend** — AC-97. One line, and the loss stops |
+| `growth_api._steps_answered` | `goals and all(…)` → `all(…)` | **extend** — AC-90. With no goals the step is answered; `all()` over nothing is already true, and the old `and` made Send unreachable for anybody with no goals |
+| `growth_api.check_wizard_keys` | new | **build** — SEC-1 on the wizard's keys (AC-92) and a KPI row name in the goals block refused (AC-93) |
+| `growth_api.refuse_if_unfinished` | new | **build** — AC-89, AC-90, AC-91, read from the review's live copies at the moment of Send |
+| `growth_api.apply_wizard_self_review` | new | **extend** — the rating onto `Alvoraa Review Item.self_rating` through `review_items.set_item_rating`, which already writes the stamp with it. **No new field, no patch, no migration** |
+| `performance_api.save_review_page` | the key check now runs on the `wizard` key | **extend** — AC-92 |
+| `performance_api.submit_employee_review` | both page keys, old block first (AC-98); the two text answers onto the extension (AC-99); one notification (AC-36); "This has already been sent." (AC-95) | **extend** |
+| `performance_api._notify_manager_review_sent` | new | **build** — B25 closed. The name and the cycle, nothing from inside the review, and not through the `eval_js` helper B26 recorded |
+| `public/js/ess/next-growth.js` | the Send button, the blank-step list, the sent screen | **build** |
+| `alvoraa_goals/review_items.py` | **not touched** | `set_item_rating` was already the right mechanism |
+
+### D-13 — the recommended default, and the one line that changes it
+
+`growth_api.REQUIRED_STEPS = (STEP_GOALS, STEP_VALUES)` — **that is the line.**
+Ratings required; the three written steps optional, with the empty ones listed
+on the last step so the person sees what they are leaving blank. If Surbhi wants
+text required, it becomes `REQUIRED_STEPS = STEPS`: the refusal sentences, the
+screen's list and the tests all read that tuple, so nothing else changes.
+
+### The rule that was found by breaking somebody else's tests
+
+The finished check applies **only to a review that was typed in the wizard** —
+decided by the presence of the `wizard` page **key**, not by whether the block
+has anything in it. The first run held the OLD Objectives & KPIs screen to the
+new rule and refused three of its own tests in `test_review_screens_010d`; that
+screen has never required a rating on every goal. `test_send_self_review_045`
+now pins both halves: no wizard block sends as it always did, and an empty
+wizard block still has to answer for itself.
+
+### AC-96, proved by breaking it
+
+`apply_wizard_self_review` was made to skip the goal rows
+(`if True: return`), the suite was run, and **five tests went red**, AC-96's
+among them:
+
+```
+FAIL test_the_stored_answers_read_back_equal_to_what_was_posted   (AC-96)
+FAIL test_the_rating_lands_on_the_reviews_own_copy_with_its_stamp (AC-87)
+FAIL test_the_manager_receives_what_was_sent                      (AC-99)
+FAIL test_the_old_block_is_applied_first_and_the_wizard_wins      (AC-98)
+FAIL test_a_half_point_is_refused_by_the_send_as_well_as_the_save
+Ran 25 tests — FAILED (failures=5)
+```
+
+The break was then put back and the file is green again. **A silent Send does
+not pass this file.**
+
+### The seven dimensions, re-assessed against the code that was written
+
+| | Before → after | Why |
+|---|---|---|
+| Performance | neutral | Send adds one `Notification Log` insert. No query in a loop: the rows are the review's own child table, already in memory, and the value list is one query it already made |
+| Security | **improves** | The SEC-1 key check runs on the wizard's page at last, on the save **and** on the send; a KPI row name in the goals block is refused |
+| Reliability | **improves** | Everything is checked before anything is written; the second send is refused with a sentence; a failed notification cannot fail a send that is already stored |
+| Scalability | neutral | Bounded by one review's copies and one tenant's values |
+| Maintainability | **improves** | One tuple decides what "finished" means, read by the server, the screen and the tests |
+| Data integrity | **improves** | The draft is read back from where it is written and stops burying itself; the rating carries the numbers it was given against |
+| Compliance / privacy | neutral | The notification carries a name and a cycle and nothing from the review; the error log holds the document name only |
+
+### Known gaps and shortcuts
+
+* **The manager's screen still does not draw the wizard's value ratings —
+  declared debt, confirmed still true, and not fixed here.** `get_manager_review`
+  builds its pages from `page_config`, which does not know the `wizard` key, so
+  the company-value ratings and the "still open from last time" note **travel in
+  the payload and are not drawn**. AC-99 names it; `test_the_manager_receives_what_was_sent`
+  asserts the payload half and asserts the `page_config` half is absent, so the
+  day somebody fixes it, that line is where they start. **Owner: the engineer,
+  its own piece of work.**
+* **The wizard sends `overall_comment: ""` and lets the server take the text
+  from the wizard's own block — acceptable simplification.** The old screen
+  still passes its own argument, and the argument wins when it is filled, so
+  neither screen overwrites the other with a blank.
+* **The browser check is not in CI — acceptable simplification**, like its two
+  siblings. It needs a served site, a login and Chromium.
+* **`page_data` is still one text column for every page of a review —
+  intentional trade-off**, unchanged by this work and measured in §15.7.
+
 ## 15.12 Known gaps and shortcuts
 
 * **The person sheet is not built — temporary debt.** Five of the eleven Team
@@ -1201,8 +1341,10 @@ optional.
   the recomputed list, which is a small change and not one to make without the
   test that goes with it. **Removed by:** returning `steps_answered` from the
   save and painting it.
-* **The wizard has no Send — escalated, not shortcut.** §15.11a says why, and
-  what has to be decided before it can be wired.
+* ~~**The wizard has no Send — escalated, not shortcut.**~~ **Built, 25 September
+  2026 — §15.11b.** The goal rating lands on `Alvoraa Review Item.self_rating`
+  through `set_item_rating`, both page keys are read on Send, and the two silent
+  faults §15.11a's answer named (AC-97, AC-92) are fixed.
 * **`portal_tree_test.js` and `portal_redesign_test.js` drive the OLD page —
   acceptable simplification.** They test the old Objectives & KPIs screen,
   because that is the screen they were written for and that screen is still

@@ -791,8 +791,10 @@ def refuse_if_unfinished(ext, answers, endpoint="submit_employee_review"):
 	Nothing is written before this passes.
 	"""
 	rated_goals = _block(answers, STEP_GOALS)
-	unrated = [row.title or row.name for row in _live_rows(ext, "Objective")
-	           if not _entry(rated_goals, row.name).get("rating")]
+	unrated = []
+	if STEP_GOALS in REQUIRED_STEPS:
+		unrated = [row.title or row.name for row in _live_rows(ext, "Objective")
+		           if not _entry(rated_goals, row.name).get("rating")]
 	if unrated:
 		# Whole sentences with placeholders. Never a sentence built by joining
 		# pieces - word order moves between English, Hindi and Punjabi.

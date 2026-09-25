@@ -667,4 +667,8 @@ class TestTheOldScreenIsNotHeldToTheWizardsRule(SendFixture):
 		self._write_page_data({"wizard": {}})
 		with self.assertRaises(frappe.ValidationError) as caught:
 			self.send()
-		self.assertIn("still needs a rating", str(caught.exception))
+		# Two goals are unrated here, so the sentence is the plural one - which
+		# is why this is a pattern and not a fixed string. The first run of
+		# this test looked for "still needs a rating" and went red on
+		# "2 goals still need a rating", which is the sentence being right.
+		self.assertRegex(str(caught.exception), "still needs? a rating")

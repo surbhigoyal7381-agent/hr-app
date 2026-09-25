@@ -498,6 +498,41 @@ async function run() {
      "and the row stays on screen, because nothing was decided");
 
 
+
+  /* ── 042 AC-61, review F7: the own work anniversary is DRAWN ───────────── */
+
+  /* The server has always built `celebrations` and `HOME_KEYS` has always
+     carried it. No screen read it, so AC-61's fail-closed default - the
+     caller's own work anniversary - never appeared. */
+  dom = await load(makeFrame(), makeCounts(), {
+    "alvoraa_portal.home_api.get_home": makeHome({
+      celebrations: { own_anniversary_years: 5, joiners: [] } }),
+  });
+  is(/5 years with us today/.test(text(dom)), true,
+     "an own work anniversary is on the screen: " + text(dom).slice(-60));
+
+  /* The negative control, which is also 364 days in 365: no anniversary, no
+     card. Without it the assertion above could pass on an always-drawn card. */
+  dom = await load(makeFrame(), makeCounts(), {
+    "alvoraa_portal.home_api.get_home": makeHome({
+      celebrations: { own_anniversary_years: null, joiners: [] } }),
+  });
+  is(/years with us today/.test(text(dom)), false,
+     "no anniversary today means no card at all");
+
+  /* D-8 is unanswered, so nothing here may start drawing joiners the moment
+     the server begins filling the key. If that day comes it is a decision
+     somebody makes, not a card that appears. */
+  dom = await load(makeFrame(), makeCounts(), {
+    "alvoraa_portal.home_api.get_home": makeHome({
+      celebrations: { own_anniversary_years: 5,
+                      joiners: [{ employee_name: "Meera Nair",
+                                  designation: "Fitter", joined: "2026-09-01" }] } }),
+  });
+  is(/Meera Nair|Fitter/.test(text(dom)), false,
+     "a joiners list the server sent is still not drawn (D-8 is unanswered)");
+
+
   console.log("\n" + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);
 }

@@ -62,6 +62,7 @@
       awayWord: __("Away"),
       dueWord: __("Still to come"),
       goals: __("Your goals"),
+      celebrations: __("Today"),
       fix: __("Fix"),
       checkIn: __("Check in"),
       checkOut: __("Check out"),
@@ -242,6 +243,25 @@
     return card(esc(SAY.goals), body, esc);
   }
 
+  /* 042 AC-61, review F7. The server has always built this and no screen drew
+     it, so the "own work anniversary" that AC-61's fail-closed default was
+     supposed to ship never appeared.
+
+     It is the caller's OWN joining date and nobody else's - `joiners` is an
+     empty list until D-8 is answered, and this deliberately does not read it,
+     so answering D-8 is a decision somebody makes rather than a card that
+     appears the moment the server starts filling the key. Nothing is drawn
+     when there is no anniversary today, which is 364 days in 365. */
+  function celebrations(home, esc, __, SAY) {
+    var c = home.celebrations;
+    if (isError(c)) { return ""; }
+    var years = c && c.own_anniversary_years;
+    if (!years) { return ""; }
+    return card(esc(SAY.celebrations),
+      '<p class="nf-card-note">' + esc(__("{0} years with us today. Thank you.", [years]))
+      + "</p>", esc);
+  }
+
   function card(title, body, esc) {
     return '<section class="nf-card"><h2 class="nf-card-title">' + title + "</h2>"
       + body + "</section>";
@@ -255,6 +275,7 @@
       + holidays(home, esc, SAY)
       + team(home, esc, SAY)
       + goals(home, esc, SAY)
+      + celebrations(home, esc, __, SAY)
       + "</section>";
   }
 

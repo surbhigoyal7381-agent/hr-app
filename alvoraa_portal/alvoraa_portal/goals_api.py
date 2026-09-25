@@ -1126,38 +1126,20 @@ def submit_upward_feedback(about_employee, cycle, rating, comments=""):
     return {"name": fb.name, "message": "Feedback submitted. Thank you."}
 
 
-@frappe.whitelist()
-def get_upward_feedback(cycle, employee=None):
-    """Return aggregated upward feedback received about a manager.
-
-    Managers see their own; HR sees everyone's. Individual rater identities
-    are always anonymised.
-    """
-    emp_id = _require_employee()
-    hr_roles = {"HR Manager", "HR User", "System Manager"}
-    is_hr = bool(hr_roles.intersection(frappe.get_roles(frappe.session.user)))
-
-    target = employee or emp_id
-    if target != emp_id and not is_hr:
-        frappe.throw("Not permitted.", frappe.PermissionError)
-
-    rows = frappe.get_all(
-        "Upward Feedback",
-        filters={"about_employee": target, "appraisal_cycle": cycle},
-        fields=["rating", "comments", "submitted_on"],
-        order_by="submitted_on desc",
-        ignore_permissions=True,
-    )
-    if not rows:
-        return {"count": 0, "avg_rating": None, "comments": []}
-
-    avg = flt(sum(flt(r["rating"]) for r in rows) / len(rows), 2)
-    return {
-        "count": len(rows),
-        "avg_rating": avg,
-        "comments": [r["comments"] for r in rows if r.get("comments")],
-    }
-
+# `get_upward_feedback` used to live here. Deleted for 045 AC-35 / PRIV-6.
+#
+# It was whitelisted, read with `ignore_permissions=True`, and returned the
+# individual comment strings with NO minimum group - so a manager whose cycle
+# drew one response got that one person's words back, and in a small team the
+# author is recoverable by elimination. PRIV-12 sets a minimum group of five
+# for exactly this shape.
+#
+# It had no caller: portal.js calls `submit_upward_feedback` (the write) and
+# nothing calls the read. The manager's own aggregate is served by
+# `performance_api.get_upward_feedback_received`, which does apply a minimum.
+#
+# Do not reinstate a read here without a minimum group. `home_api._suppress`
+# with `home_api.MIN_GROUP` is the mechanism this product already uses.
 
 # ── Progress update log (Individual Goal) ────────────────────────────────
 

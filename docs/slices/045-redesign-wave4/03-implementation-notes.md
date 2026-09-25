@@ -177,11 +177,22 @@ moment the question is asked. A test passes `section` and `basis` in the form di
 and asserts the answer does not move; another moves a person's `reports_to` and asserts
 they change sections, which is what proves the derivation is real rather than a constant.
 
-**`allowed()` is the only place the matrix is read.** The payload builder and the by-hand
-permission check both call it, so a screen and a server cannot disagree about a row. The
-matrix is **data, not branching**, so a test can walk all eleven rows one at a time —
-eleven UI rows are eleven server checks, and a matrix is the shape where one row gets
-missed.
+**`allowed()` is the only place the matrix is read.** The matrix is **data, not
+branching**, so a test can walk all eleven rows one at a time, and a matrix is the shape
+where one row gets missed.
+
+> **Corrected on 2026-09-25.** This paragraph used to end *"eleven UI rows are eleven
+> server checks"*, and the sentence above it said the payload builder and the by-hand
+> permission check both call `allowed()`, *"so a screen and a server cannot disagree
+> about a row"*. **The claim was false.** `team_api.may()` has no caller anywhere
+> outside `team_api` and its own tests, so the eleven rows decide **which buttons the
+> payload carries** and nothing else. A control absent from a payload is a screen
+> decision, not a permission.
+>
+> The behaviour may well be right — every action a person can actually reach is enforced
+> by the endpoint that performs it. But those are the **endpoints'** rules, not this
+> matrix's, and they are written out one by one in **§7b** below. The test class was
+> renamed to match (`TestTheElevenRowsDecideWhichButtonsThePayloadCarries`).
 
 **The both-person** appears once, under "Your team", with the manager actions **plus** the
 HR-only ones. Being somebody's manager does not take an HR caller's HR entitlements away;
@@ -223,12 +234,72 @@ filter dict — and it is safe for that reason. **So this is a trap, not a live 
 elsewhere.** It is written down here because the next person to add a `!=` beside a
 count will not find it by reading.
 
+## 7b. The eleven rows — what really enforces each one
+
+Written on 2026-09-25, because the sentence this replaces was false. `may()` decides
+which buttons the payload carries. **What stops a person doing the thing is whatever
+guards the endpoint that does it**, and that is a different piece of code every time.
+Each row below names it, with the file and the line. Where there is no endpoint, the row
+says so instead of inventing a rule.
+
+Read the "screen today" column first: it is what the Team screen's `GOES_TO` map
+(`next-team.js:74-82`) does with the action. Five actions navigate; six are drawn as
+inert text, and the file says so at `:32-38`.
+
+| # | Row | Screen today | The server rule that really enforces it |
+|---|---|---|---|
+| 1 | `approve_leave` | Inbox | `hr_api.action_leave:966`. **Named approver only**: `_can_action_leave:925` refuses unless `frappe.session.user == _leave_approver_for(doc)`, refuses your own record (`is_own_record`), and then still needs `frappe.has_permission("Leave Application", "submit", doc=doc)`. `refuse_own_decision` runs first so the message says why |
+| 2 | `see_leave_why` | Inbox | **No endpoint of its own.** The leave reason reaches a caller in exactly one place in the portal — the `description` field in `hr_api.get_employee_detail_for_manager:1501-1507` — so its rule is row 8's. The Wave 4 path deliberately withholds it: `home_api._pending_leave_for_approver` does **two** reads so `leave_type` and `description` are absent from the field list on a non-report row, rather than blanked afterwards |
+| 3 | `approve_correction` | Inbox | `attendance_correction.decide:1053`. `_may_review:259` is `frappe.has_permission("Attendance Request", "submit")` — a doctype permission, not a role list — plus `refuse_own_decision:1068`, plus a capacity derived server side by `decided_as:976`. The queue it is reached from is scoped by `review_queue_filters:820`, which uses `permitted_employees()` and removes the caller |
+| 4 | `approve_evidence` | Inbox | `alvoraa_goals/controllers/evidence.py:117`, reached through the portal wrapper `hr_api.approve_goal_evidence:2813`. `_assert_can_validate:83` runs `refuse_own_decision` and then `can_validate_evidence` — manager-or-HR — and throws otherwise. **Caveat, and it is a finding:** the only caller is the OLD screen (`portal.js:3610`). Wave 4's Inbox has no evidence action at all (`next-inbox.js:45-58` maps only leave and attendance), so `GOES_TO.approve_evidence = "inbox"` sends the person to a screen with no such button |
+| 5 | `set_goals` | Growth | `goals_api.create_goal:518`, `update_goal:615`, `delete_goal:665`. Create: `_require_manages:379` — your own record, or an HR role, or somebody in `_descendants(me)`. Edit and delete are narrower: `_require_can_edit:594` is creator-or-HR **and** subtree |
+| 6 | `see_scorecard` | **not built** | The endpoint exists but no Wave 4 screen reaches it: `hr_api.get_employee_scorecard:1095` — `get_effective_manager` must match, else an HR role plus `_hr_target_employee`, which scopes HR to their own companies |
+| 7 | `see_presence` | **not built** | **There is no per-person presence read anywhere**, so there is no rule to name. The only presence surface in the product is Home's aggregate team card, `home_api._team_today:459`, scoped by `_scope_filters:332` through `permitted_employee_filters()` and suppressed below a minimum group by `_suppress:418`. A person's own checkins appear only inside row 8's payload |
+| 8 | `open_record` | **not built** | `hr_api.get_employee_detail_for_manager:1429` is the door that exists, and it is the weakest of the manager checks: a **direct** `reports_to` match (not `get_effective_manager`, unlike row 6), else HR roles plus `_hr_target_employee`. **This is the second person-sheet door `01c` SEC-15 already names as debt**, with the over-wide field list. It carries the leave reason, the personal email and the contact number |
+| 9 | `invite_or_block_phone` | **desk only** | `field_app_join.make_code:494`, `field_app_join.cancel_code:547`, `field_app_device.block_phone:70` — all `@desk_request`, wired to the Employee form (`public/js/employee_field_app.js`, `hooks.py:82`), not to any portal screen. One shared gate: `field_app_desk.hr_who_may_act:74` — an HR role or Administrator, **and** `has_permission("Employee", "read", doc=employee)`. So the matrix's HR-only column matches reality, but by role plus Employee-read, not by `covered_conditions()` |
+| 10 | `cancel_deduction` | **not built** | **No endpoint exists anywhere. This is the finding.** Greps for `cancel_deduction`, `cancel_attendance_deduction` and `def .*cancel.*deduction` return nothing outside the matrix itself and its label. Cancelling is a desk action on the `Attendance Deduction` doctype, governed by `hrms/alvoraa_late_rules/permissions.py:35` — an HR role returns `True` unconditionally with **no company narrowing**, and everybody else is read-only. The portal's only trace of it is copy telling the employee who to ask (`pay_api.py:243-247`) |
+| 11 | `act_as_hr` | Inbox | Not a separate endpoint: it is the HR-capacity branch of row 3. Capacity comes from `decided_as:976` — `"Manager"` if the caller is `_manager_user_for(doc.employee)`, else `"HR"` if `permitted_companies(user)`. Derived, never an argument. The HR-only extra rule is the two-working-day wait at `attendance_correction.py:1108-1113`, skipped when the employee has no manager with a login |
+
+### The four that lead nowhere yet
+
+`see_scorecard`, `see_presence`, `open_record` and `cancel_deduction` are drawn as text on
+the Team screen and lead to no Wave 4 screen. Three of them have a pre-existing endpoint
+behind them; **`cancel_deduction` has nothing at all**. That is not an exposure — a row
+with no endpoint cannot be called — but it does mean the screen names an action the
+product cannot perform outside the desk.
+
+### Two places the matrix and the real rule disagree
+
+Neither is an exposure today, and both are recorded rather than fixed here, because
+changing either is a behaviour change that needs its own decision.
+
+1. **`approve_leave`** — the matrix says `False` on the covered column. `action_leave`
+   never consults the matrix; its rule is "the named approver, and not you". A named
+   approver who happens to be an HR person with no reporting line to the employee **can**
+   approve, and should — that is Frappe HR's own model and the reason the role bypass was
+   taken out. So the endpoint is stricter in the axis that matters (approval is a named
+   job) and wider in the axis the matrix describes (section).
+2. **`set_goals`** — the matrix says `False` on the covered column. `_require_manages:379`
+   returns early for **any** holder of `alvoraa_goals.permissions.FULL_ACCESS_ROLES`, with
+   no company scope at all — unlike `approve_goal_update:1232`, which does check
+   `permitted_companies()`. So an HR role can create a goal for anyone in the tenant. The
+   screen would not offer the button on a covered row; the endpoint would accept the call.
+
+### What would make the original sentence true
+
+Not bolting `may()` onto eleven endpoints. The endpoints above already have rules, and
+several of them are better rules than the matrix. What is missing is the **person sheet**:
+when it is built, `may()` becomes the gate on each of its new endpoints, the tests call
+the endpoint rather than the helper, and SEC-15's over-wide second door
+(`get_employee_detail_for_manager`) closes in the same slice. That is where rows 6, 7, 8
+and 10 get a real server rule. **P1 for the person-sheet slice.**
+
 ## 8. Non-functional re-assessment — against the code actually written
 
 | Dimension | Verdict | Against the code |
 |---|---|---|
 | Performance | **improves** | Two banned raw-SQL shapes gone; the scorecard's unbounded `ORDER BY` bounded; the privacy filter moved into the `WHERE` so unreleased ratings are never fetched. **Not yet measured on `test044`** — the flatness gate is unproven |
-| Security | **improves** | A live leak closed; eleven rows enforced server side and callable by hand; the section derived; the capacity derived; Guest and wrong-persona tests on both new endpoints |
+| Security | **improves** | A live leak closed; the section derived, never taken from the request; the capacity derived; Guest and wrong-persona tests on both new endpoints. **Corrected 2026-09-25:** this row used to read *"eleven rows enforced server side and callable by hand"*. It is not true — `may()` has no production caller, so the eleven rows are a display rule. What each row is really enforced by is §7b. The verdict stays **improves** on the other four grounds |
 | Reliability | **improves** | The migration risk is handled at the read **and** the write. The holiday-list read fails soft and says which basis it used |
 | Scalability | **improves, partly unproven** | Subqueries where it matters; both sections capped with their own totals. The 981-person measurement is not done |
 | Maintainability | **improves** | One filter builder, one matrix, one capacity derivation, two dead fields gone. Two new modules is the cost |

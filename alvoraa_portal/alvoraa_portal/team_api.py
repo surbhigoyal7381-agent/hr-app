@@ -48,8 +48,27 @@ from alvoraa_portal.home_api import _filter_list
 ROW_FIELDS = ("name", "employee_name", "designation", "department", "user_id", "image")
 
 # The eleven rows of the action matrix, as names the server decides and the
-# screen only draws. Each one is enforced here AND by the endpoint behind it;
-# a screen that hides a button is not an access rule.
+# screen only draws.
+#
+# ── What this matrix is, corrected on 2026-09-25 ────────────────────────────
+#
+# This comment used to say "Each one is enforced here AND by the endpoint
+# behind it". **That is not true, and it was never true.** `may()` has no
+# caller anywhere outside this module and its own tests: the eleven rows decide
+# which buttons the Team payload carries, and nothing else. A control that is
+# absent from a payload is a screen decision, not a permission - exactly the
+# thing the next line warns about.
+#
+# The behaviour is still right. Every action a person can actually reach is
+# enforced by the endpoint that performs it, and those rules are written out
+# one by one in `docs/slices/045-redesign-wave4/03-implementation-notes.md`
+# section 7a, with the file and line of each. **Four of the eleven lead to
+# screens that do not exist yet**, and one - `cancel_deduction` - has no server
+# endpoint at all; the section says so rather than inventing a rule.
+#
+# So: a screen that hides a button is not an access rule, and this matrix is
+# the screen. When the person sheet is built, `may()` becomes the gate on each
+# new endpoint and the test calls the endpoint rather than this helper.
 ACT_APPROVE_LEAVE = "approve_leave"
 ACT_SEE_LEAVE_WHY = "see_leave_why"
 ACT_APPROVE_CORRECTION = "approve_correction"

@@ -144,8 +144,35 @@ class TestTheTwoSectionsShareNobody(_Team):
 						self.assertEqual(section["total"], rows)
 
 
-class TestTheElevenRowsCalledByHand(_Team):
-	"""SEC-18(a). Eleven UI rows are eleven server checks."""
+class TestTheElevenRowsDecideWhichButtonsThePayloadCarries(_Team):
+	"""SEC-18(a), half met - and the name now says which half.
+
+	**Renamed on 2026-09-25. It used to be
+	`TestTheElevenRowsCalledByHand`, and that name claimed something this file
+	does not prove.** What is called by hand below is `team_api.may()`, the
+	matrix helper. `may()` has no caller anywhere outside `team_api` and these
+	tests, so what the eleven rows actually decide is which buttons the Team
+	payload carries. A control absent from a payload is a screen decision, not
+	a permission.
+
+	What this class DOES prove, and it is worth having:
+
+	* the matrix is walked row by row, so a row cannot be missed silently;
+	* a plain manager gets no HR-only action;
+	* a stranger is refused every row, and fails closed;
+	* every refusal reads the same whatever the cause;
+	* an unknown action is refused rather than ignored.
+
+	What it does NOT prove is that the endpoint behind a row refuses. Those
+	rules exist and are real, but they are the ENDPOINTS' own - named one by
+	one, with file and line, in `03-implementation-notes.md` section 7a. Four
+	of the eleven lead to screens that do not exist yet, and `cancel_deduction`
+	has no endpoint at all.
+
+	**When the person sheet is built, `may()` becomes the gate on each new
+	endpoint and these tests call the endpoint, not this helper.** That is the
+	commit where this class earns the old name back.
+	"""
 
 	def test_every_row_of_the_matrix_is_checked_for_a_direct_report(self):
 		self.as_user(self.sandeep_user)

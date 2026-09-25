@@ -516,3 +516,43 @@ Deliberately. Surbhi has not answered which figure the bank pays, and the
 reviewer flagged that the answer changes the severity. No sentence was added to
 the screen, because any sentence I could write there would be a guess about
 money.
+
+### 21.7 Two tests I found erroring, which I did not cause and did not fix
+
+`bench --site test044f run-tests --module …test_scale_flatness_044`:
+**15 ran, 13 passed, 2 errors.** Both are `get_pay`:
+
+```
+ERROR  test_get_pay_is_flat_for_a_plain_employee
+ERROR  test_get_pay_is_flat_for_hr
+frappe.exceptions.PermissionError: That payslip is not available.
+```
+
+**The cause is the site, not the code.** That sentence is `PAYSLIP_UNAVAILABLE`,
+the payroll entitlement gate AC-30 added. `test044f` has no `payroll` in its
+feature list; `test044` and `test044s` do. So these two tests pass where payroll
+is sold and error where it is not, and `test044f` is the bare site the rest of
+the flatness file is designed to run on.
+
+**It is not mine.** My change to `fixtures_scale_044.py` adds functions and
+deletes nothing — `git diff` shows zero removed lines — and I did not touch
+`test_scale_flatness_044.py` at all. The other thirteen tests in the file,
+including both positive controls, pass.
+
+I have **not** fixed it, for two reasons. It is slice 044's test file and
+another session may be in it; and the honest fix is a judgement I should not
+make alone — either the test asserts its precondition and says so, or the bare
+site gains the entitlement, and those are different decisions about what
+`test044f` is for.
+
+**An error is loud, so nothing is hiding.** But a test that passes or fails on
+the site's *plan* is a test whose result is about configuration, and that is
+worth one line in the follow-up. Owner: `hrms-test-automation-engineer`.
+
+### 21.8 What is still NOT measured, said plainly
+
+- **The payslip PDF path.** `07-devops-inputs.md` flags it separately; this did
+  not touch it.
+- **Wall-clock on anything quieter than a developer's Docker host.** See §21.2.
+- **390 px, dark mode, 200 % zoom and the Hindi fixture.** Still not run, as the
+  notes already said.

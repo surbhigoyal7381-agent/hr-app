@@ -209,3 +209,106 @@ def profile(shape="large", persona="sysmgr", call="get_nav_counts", top=12):
 		flat = " ".join(query.split())
 		print("  %7.1f ms  %s" % (ms, flat[:260]), flush=True)
 	return [(round(ms, 2), " ".join(q.split())[:400]) for ms, q in timed]
+
+
+def attribute_time(shape="large", repeats=REPEATS):
+	"""043 review F2: where does `get_time`'s wall-clock time actually go?
+
+	Wave 3's notes recorded that three of five personas roughly doubled in
+	wall-clock between 20 people and 981 while the query count stayed flat at
+	35 - manager 161 -> 332 ms p50, System Manager 66 -> 129, company HR
+	75 -> 127 - and that nobody knew why. "Flat in queries, 2x in time" is the
+	shape that hides a real problem until a tenant is three times bigger, so
+	the review asked for an hour of attribution before production.
+
+	The reviewer's hypothesis, marked as a guess: `_may_review()` calls
+	`frappe.has_permission("Attendance Request", "submit")`, which builds a
+	permission query and resolves User Permissions - and the three slow
+	personas are the three where it returns True and a role set has to be
+	walked. The cheap test is to stub it True and re-measure.
+
+	This is that test, written down so it can be run again rather than
+	described. Four things, in order:
+
+	  1. **Who does `_may_review()` actually return True for?** The hypothesis
+	     rests on this, so it is measured, not assumed.
+	  2. **The baseline**, through the same `measure_one` the budgets used.
+	  3. **`_may_review()` timed on its own.** If it cannot account for the
+	     gap by itself, it is not the answer whatever the stub says.
+	  4. **Stubbed True, then stubbed False.** True is the reviewer's test.
+	     False is the contrast: if BOTH stubs are as fast as each other and as
+	     slow as the baseline, the function is not where the time goes.
+
+	Nothing here is a fix and nothing is cached. Capping or caching to make
+	the number go down was refused by the engineer and by the reviewer, and
+	this does not do it either.
+
+	Run it as:
+	    bench --site <site> execute \
+	      alvoraa_portal.tests.measure_044.attribute_time \
+	      --kwargs "{'shape': 'large'}"
+	"""
+	from alvoraa_portal import attendance_correction, time_api
+	from alvoraa_portal.tests import fixtures_scale_044 as fx
+
+	def sweep(label):
+		out = {}
+		for persona, _roles in fx.PERSONAS:
+			frappe.set_user(fx.login_of(shape, persona))
+			frappe.local.request_ip = "127.0.0.1"
+			got = measure_one(lambda: time_api.get_time(), repeats=int(repeats))
+			out[persona] = got
+			print("  %-10s %-14s q=%-4s p50=%-8s p95=%-8s"
+			      % (persona, label, got.get("queries_min"),
+			         got.get("ms_p50"), got.get("ms_p95")), flush=True)
+			frappe.set_user("Administrator")
+		return out
+
+	print("\n%s: %d people\n" % (shape, fx.count_built(shape)), flush=True)
+
+	says = {}
+	for persona, _roles in fx.PERSONAS:
+		frappe.set_user(fx.login_of(shape, persona))
+		says[persona] = attendance_correction._may_review()
+		frappe.set_user("Administrator")
+	print("_may_review() says: %s\n" % says, flush=True)
+
+	real = attendance_correction._may_review
+	print("BASELINE", flush=True)
+	base = sweep("baseline")
+
+	print("\n_may_review() ALONE", flush=True)
+	alone = {}
+	for persona, _roles in fx.PERSONAS:
+		frappe.set_user(fx.login_of(shape, persona))
+		got = measure_one(lambda: attendance_correction._may_review(),
+		                  repeats=int(repeats))
+		alone[persona] = got
+		print("  %-10s %-14s q=%-4s p50=%-8s p95=%-8s"
+		      % (persona, "alone", got.get("queries_min"),
+		         got.get("ms_p50"), got.get("ms_p95")), flush=True)
+		frappe.set_user("Administrator")
+
+	print("\nSTUBBED True (the reviewer's cheap test)", flush=True)
+	attendance_correction._may_review = lambda: True
+	try:
+		stub_true = sweep("stub True")
+	finally:
+		attendance_correction._may_review = real
+
+	print("\nSTUBBED False (the contrast)", flush=True)
+	attendance_correction._may_review = lambda: False
+	try:
+		stub_false = sweep("stub False")
+	finally:
+		attendance_correction._may_review = real
+
+	if attendance_correction._may_review is not real:
+		raise RuntimeError("the stub was not put back - do not trust any later "
+		                   "measurement on this worker")
+
+	results = {"shape": shape, "people": fx.count_built(shape),
+	           "may_review": says, "baseline": base, "alone": alone,
+	           "stub_true": stub_true, "stub_false": stub_false}
+	print("\n" + json.dumps(results, default=str), flush=True)
+	return results

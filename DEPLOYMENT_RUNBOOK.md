@@ -377,6 +377,7 @@ are not rollback triggers — fix forward.
   history rather than the source of truth.
 - **Then the objectives/KPI restructure begins**, against a green test suite and servers that
   finally match the repo.
+- **Run the permission freeze check on each tenant** — `bench --site <site> execute alvoraa_portal.permission_health.check_permission_freeze`. It is read-only, and it is the only thing that notices a doctype whose permissions stopped tracking Frappe HR, so a migrate's upstream fixes never arrived. Same command after any permission change made in the Desk. See `docs/runbooks/permission-freeze-check.md` (ALV-127).
 
 ---
 

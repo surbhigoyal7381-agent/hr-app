@@ -729,7 +729,27 @@ OLD_PAGE_KEYS = ("past-objectives", "past_objectives")
 #     REQUIRED_STEPS = STEPS
 # The refusal sentences, the screen's list of blank steps and the tests all
 # read this tuple, so nothing else has to change.
-REQUIRED_STEPS = (STEP_GOALS, STEP_VALUES)
+#
+# ── 045 F3: STEP_VALUES came OUT, and it goes back in when the manager's
+#    screen draws it ────────────────────────────────────────────────────────
+#
+# The company-values step was required AND invisible. Nobody ever read the
+# answers: the manager's screen is built from `page_config`, which does not
+# know the wizard's key, and `test_the_manager_receives_what_was_sent` asserts
+# exactly that - `assertNotIn("wizard", json.dumps(page_config))`. So Rahul was
+# blocked from sending until he rated six company values on a phone that no
+# manager, no HR user and no later screen would ever see.
+#
+# Required and unread is the worst of the two halves. Making it optional keeps
+# the ratings for anybody who wants to give them - the step still draws, the
+# control still works, and a rating still stores and still travels in the
+# payload - and stops the wizard demanding work with no reader.
+#
+# **Put STEP_VALUES back the day the manager's review screen draws the wizard's
+# value block.** That is this one line and nothing else: `refuse_if_unfinished`
+# already has the `if STEP_VALUES in REQUIRED_STEPS` branch, with its two
+# refusal sentences, and the screen reads `required_steps` from the payload.
+REQUIRED_STEPS = (STEP_GOALS,)
 
 
 def optional_steps():

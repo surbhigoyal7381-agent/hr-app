@@ -272,14 +272,49 @@ class TestAPartFinishedReviewCannotBeSent(SendFixture):
 				frappe.db.get_value("Alvoraa Review Item", row.name, "self_rating"),
 				"a rating was written by a send that was refused")
 
-	def test_an_unrated_company_value_refuses_the_send(self):
+	def test_an_unrated_company_value_no_longer_refuses_the_send(self):
+		"""**Turned over for 045 F3, on 2026-09-25. It used to assert a refusal.**
+
+		This test was right for the decision it was written against: the
+		company-values step was in REQUIRED_STEPS, so an unrated value blocked
+		the Send with a sentence naming it.
+
+		The review found that the step was required AND invisible - the
+		manager's screen is built from `page_config`, which does not know the
+		wizard's key - so Rahul was made to rate six values nobody would ever
+		read. STEP_VALUES came out of REQUIRED_STEPS.
+
+		It is kept, turned over, rather than deleted: the day the manager's
+		screen draws the value block, STEP_VALUES goes back and this test flips
+		back with it. The refusal sentences it used to prove are still in
+		`refuse_if_unfinished`, behind `if STEP_VALUES in REQUIRED_STEPS`.
+		"""
 		answers = self.full_answers()
-		answers["values"].pop(self.values[0]["name"])
+		dropped = self.values[0]
+		answers["values"].pop(dropped["name"])
 		self.save_wizard(answers)
-		with self.assertRaises(frappe.ValidationError) as caught:
-			self.send()
+		self.assertEqual("Manager Review", self.send()["review_status"])
+
+	def test_the_values_refusal_is_still_there_for_the_day_it_is_wanted(self):
+		"""The other half of the turn-over: the branch still works.
+
+		Without this, "STEP_VALUES is optional" could be true because the
+		refusal was deleted rather than switched off, and putting the one line
+		back would quietly do nothing.
+		"""
+		answers = self.full_answers()
+		dropped = self.values[0]
+		answers["values"].pop(dropped["name"])
+		self.save_wizard(answers)
+		required = (growth_api.STEP_GOALS, growth_api.STEP_VALUES)
+		with patch.object(growth_api, "REQUIRED_STEPS", required):
+			with self.assertRaises(frappe.ValidationError) as caught:
+				self.send()
 		self.assertIn("still needs a rating", str(caught.exception))
-		self.assertIn(self.values[0]["value_name"], str(caught.exception))
+		self.assertIn(dropped["value_name"], str(caught.exception))
+		self.assertEqual("Employee Review",
+		                 frappe.db.get_value("Alvoraa Appraisal Extension",
+		                                     self.appraisal, "review_status"))
 
 	def test_a_review_with_no_goals_can_still_be_sent(self):
 		"""AC-90. With `goals and all(...)` the step could never be done."""
@@ -324,11 +359,15 @@ class TestAPartFinishedReviewCannotBeSent(SendFixture):
 	def test_d13_is_one_line_and_the_written_steps_are_optional_today(self):
 		"""D-13's recommended default, built and named.
 
-		The ratings are required; the three written steps are not, and the ones
+		The goal ratings are required; the written steps are not, and the ones
 		left empty are listed so nobody sends a blank without noticing.
+
+		**The company values came out of REQUIRED_STEPS for 045 F3** - see the
+		comment on the tuple. They were required and invisible, so they are
+		listed with the other optional steps now.
 		"""
-		self.assertEqual((growth_api.STEP_GOALS, growth_api.STEP_VALUES),
-		                 growth_api.REQUIRED_STEPS)
+		self.assertEqual((growth_api.STEP_GOALS,), growth_api.REQUIRED_STEPS)
+		self.assertNotIn(growth_api.STEP_VALUES, growth_api.REQUIRED_STEPS)
 		answers = self.full_answers()
 		for step in ("open_items", "next", "overall"):
 			answers.pop(step)
@@ -336,6 +375,46 @@ class TestAPartFinishedReviewCannotBeSent(SendFixture):
 		self.assertEqual(["open_items", "next", "overall"],
 		                 growth_api.blank_optional_steps(answers))
 		self.assertEqual("Manager Review", self.send()["review_status"])
+
+	def test_a_review_with_no_value_ratings_can_be_sent(self):
+		"""045 F3. The values step was REQUIRED and nobody ever read the answers.
+
+		The manager's screen is built from `page_config`, which does not know
+		the wizard's key - `test_the_manager_receives_what_was_sent` asserts
+		`assertNotIn("wizard", json.dumps(page_config))`. So Rahul was blocked
+		from sending until he rated six company values on a phone that no
+		manager, no HR user and no later screen would ever see.
+
+		**The positive control is in the same test**: the goal ratings are
+		still required, proved by removing one and watching the send refuse
+		with that goal's title in the sentence. Without it, "the send went
+		through" would pass just as happily if `refuse_if_unfinished` had
+		stopped refusing anything at all.
+
+		This goes back to a refusal the day the manager's screen draws the
+		value block. One line on REQUIRED_STEPS; this test flips with it.
+		"""
+		answers = self.full_answers()
+		answers["values"] = {}
+		self.save_wizard(answers)
+		self.assertIn(growth_api.STEP_VALUES,
+		              growth_api.blank_optional_steps(answers),
+		              "an unrated values step is now listed, not blocked")
+		self.assertEqual("Manager Review", self.send()["review_status"])
+
+	def test_the_goal_ratings_are_still_required(self):
+		"""The control for the test above, as its own case so a red names itself."""
+		answers = self.full_answers()
+		answers["values"] = {}
+		dropped = self.goal_rows[0]
+		answers["goals"].pop(dropped.name)
+		self.save_wizard(answers)
+		with self.assertRaises(frappe.ValidationError) as caught:
+			self.send()
+		self.assertIn(dropped.title or dropped.name, str(caught.exception))
+		self.assertEqual("Employee Review",
+		                 frappe.db.get_value("Alvoraa Appraisal Extension",
+		                                     self.appraisal, "review_status"))
 
 
 class TestTheKeyCheckRunsOnTheWizardsPage(SendFixture):

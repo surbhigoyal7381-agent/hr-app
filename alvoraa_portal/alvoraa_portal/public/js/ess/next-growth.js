@@ -355,7 +355,10 @@
          sentence naming what is missing - a greyed-out button that says
          nothing is how somebody stands there wondering which step they
          missed. */
-      html += '<button type="button" class="nf-btn nf-btn-main" id="nf-wiz-send">'
+      /* `nf-btn` IS the primary style in this stylesheet - there is no
+         "main" variant, and a class the CSS does not define is a promise
+         nobody keeps. The wizard's look is D-8's design pass. */
+      html += '<button type="button" class="nf-btn" id="nf-wiz-send">'
         + esc(SAY.send) + "</button>";
     }
     return html + "</div></section>";

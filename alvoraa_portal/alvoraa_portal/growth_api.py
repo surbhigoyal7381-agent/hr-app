@@ -593,7 +593,12 @@ def get_self_review(appraisal=None):
 		# can warn while somebody is still typing rather than after the save
 		# has already failed.
 		"budget_bytes": PAGE_DATA_BUDGET_BYTES,
-		"used_bytes": page_data_bytes(json.dumps(answers, ensure_ascii=False)),
+		# **The whole `page_data`, not just the wizard's block.** The ceiling is
+		# on the column, and the column carries every page of the review - so a
+		# number measured on one block is one that is only ever too generous.
+		# Every save returns the real one; this is the first paint.
+		"used_bytes": page_data_bytes(
+			json.dumps(page.get("page_data") or {}, ensure_ascii=False)),
 	}
 
 

@@ -29,7 +29,6 @@ from alvoraa_portal import growth_api, performance_api
 from alvoraa_portal.tests.fixtures_045 import COMPANY
 from alvoraa_portal.tests.test_growth_screen_045 import GrowthFixture
 
-DEVANAGARI = "क"
 FOREIGN_GOAL = "S045 Not Rahul's Goal"
 
 # The goal one test adds after everything was rated (AC-91). Named here

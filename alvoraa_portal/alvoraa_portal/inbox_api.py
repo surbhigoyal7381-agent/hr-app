@@ -123,8 +123,13 @@ ROW_KEYS = (
 	# My own requests are mine, so the state sentence and the reason I was given
 	# are mine to read. No approver's name beyond the one the state sentence
 	# already says, and never anybody else's row (042 AC-20).
-	("my_requests", ("name", "kind", "from_date", "to_date", "state", "says",
-	                 "note", "can_withdraw", "action")),
+	#
+	# `title` is a TRANSLATED WORD, added by the 042 review (F2). These rows
+	# carry no `employee_name` - they are the caller's own - so the screen used
+	# to fall back to `kind` and head an employee's own rows with the raw
+	# internal keys `attendance_fix` and `shift_request`, untranslated.
+	("my_requests", ("name", "kind", "title", "from_date", "to_date", "state",
+	                 "says", "note", "can_withdraw", "action")),
 )
 
 
@@ -760,7 +765,7 @@ def _part_my_requests(who):
 			order_by="creation desc", limit_page_length=0,
 		):
 			out.append({
-				"name": r.name, "kind": "leave",
+				"name": r.name, "kind": "leave", "title": _("Leave request"),
 				"from_date": str(r.from_date) if r.from_date else None,
 				"to_date": str(r.to_date) if r.to_date else None,
 				"state": "waiting", "says": _("Waiting for your approver"),
@@ -776,6 +781,7 @@ def _part_my_requests(who):
 		):
 			out.append({
 				"name": r.name, "kind": "attendance_fix",
+				"title": _("Attendance correction"),
 				"from_date": str(r.from_date) if r.from_date else None,
 				"to_date": str(r.to_date) if r.to_date else None,
 				"state": "waiting", "says": _("Waiting to be decided"),
@@ -794,6 +800,7 @@ def _part_my_requests(who):
 			):
 				out.append({
 					"name": r.name, "kind": "shift_request",
+					"title": _("Shift change request"),
 					"from_date": str(r.from_date) if r.from_date else None,
 					"to_date": str(r.to_date) if r.to_date else None,
 					"state": "waiting", "says": _("Waiting for your approver"),

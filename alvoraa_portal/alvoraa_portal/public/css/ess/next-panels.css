@@ -41,6 +41,36 @@
   color: var(--text, inherit);
 }
 
+/* 042 review F6. The card title is a link to the screen that can act on the
+   part. It has to look like a link and be reachable by keyboard, and its target
+   has to be big enough for a thumb on a factory floor - so the whole heading is
+   the hit area, not the arrow. The arrow is aria-hidden: the link's own text
+   already says where it goes, and "Policies →" read aloud as "Policies right
+   arrow" is worse than "Policies". */
+.nf-card-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.nf-card-link:hover,
+.nf-card-link:focus-visible {
+  text-decoration: underline;
+}
+
+.nf-card-link:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.nf-card-link-go {
+  color: var(--text3, var(--text2, inherit));
+}
+
 .nf-card-note {
   margin: 8px 0 0;
   font-size: 12px;                 /* the floor, never below it */

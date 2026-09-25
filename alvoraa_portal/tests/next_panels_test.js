@@ -354,6 +354,150 @@ async function run() {
      "a person with no employee record gets no cards");
   is(kind(dom), null, "and no error state either");
 
+
+  /* ── 042 review F2, F5, F6: the Inbox's rows, actions and refusals ─────── */
+
+  /* One helper for all of them: an Inbox holding the caller's own requests. */
+  function myRequests(rows) {
+    return makeInbox({
+      total: rows.length, approvals_total: 0,
+      parts: [{
+        key: "my_requests", route: "#time", count: rows.length, shown: rows.length,
+        cap: 50, capped: false, label: rows.length + " of your requests are waiting",
+        rows: rows,
+      }],
+    });
+  }
+
+  const FIX_ROW = {
+    name: "ATR-1", kind: "attendance_fix", title: "Attendance correction",
+    from_date: "2026-09-20", to_date: "2026-09-20", state: "waiting",
+    says: "Waiting to be decided", note: null, can_withdraw: true,
+    action: "my_attendance_fix",
+  };
+  const SHIFT_ROW = {
+    name: "SHR-1", kind: "shift_request", title: "Shift change request",
+    from_date: "2026-10-01", to_date: "2026-10-01", state: "waiting",
+    says: "Waiting for your approver", note: null, can_withdraw: false,
+    action: "my_shift_request",
+  };
+
+  const toasts = (d) => Array.prototype.map.call(
+    d.window.document.querySelectorAll(".nf-toast"), (n) => n.textContent).join(" | ");
+
+  async function openInbox(inbox, answers) {
+    const d = await load(makeFrame(), makeCounts({ total: inbox.total }),
+                         Object.assign({
+                           "alvoraa_portal.home_api.get_home": makeHome(),
+                           "alvoraa_portal.inbox_api.get_inbox": inbox,
+                         }, answers || {}));
+    d.window.NextFrame.go("inbox");
+    await new Promise((r) => setTimeout(() => setTimeout(r, 0), 0));
+    return d;
+  }
+
+  /* F2. AC-19's Withdraw button. The server has always sent `can_withdraw`;
+     nothing drew it, so Rahul could see his own mistaken correction and had no
+     way to take it back. US-6's whole point was "so that I stop asking HR". */
+  dom = await openInbox(myRequests([FIX_ROW, SHIFT_ROW]));
+  is(screens(dom).querySelectorAll(".nf-withdraw").length, 1,
+     "a request the server says may be withdrawn gets exactly one Withdraw button");
+  is(screens(dom).querySelector(".nf-withdraw").getAttribute("data-name"), "ATR-1",
+     "and it is wired to that request, not to the other one");
+  is(screens(dom).querySelectorAll(".nf-decide").length, 0,
+     "the caller's own requests carry no Approve or Decline");
+
+  /* The negative control: the flag decides, not the kind. Turn it off on the
+     same row and the button must go, so the assertion above can fail. */
+  dom = await openInbox(myRequests([Object.assign({}, FIX_ROW, { can_withdraw: false })]));
+  is(screens(dom).querySelectorAll(".nf-withdraw").length, 0,
+     "can_withdraw false means no button");
+
+  /* F2, the other half: a raw internal key must never head a row. */
+  dom = await openInbox(myRequests([FIX_ROW, SHIFT_ROW]));
+  is(/attendance_fix|shift_request/.test(text(dom)), false,
+     "no raw internal key reaches the screen");
+  is(text(dom).indexOf("Attendance correction") !== -1, true,
+     "the row is headed with the translated words instead");
+
+  /* And the fallback holds even for a row the server sends with no title at
+     all - it falls back to the part's label, never to `kind`. */
+  dom = await openInbox(myRequests([Object.assign({}, FIX_ROW, { title: null })]));
+  is(/attendance_fix/.test(text(dom)), false,
+     "a row with no title still never shows the internal key");
+
+  /* F2. Pressing Withdraw calls the endpoint that exists, with that name. */
+  const withdrawn = [];
+  dom = await openInbox(myRequests([FIX_ROW]), {
+    "alvoraa_portal.attendance_correction.withdraw": (args) => {
+      withdrawn.push(args.name); return { ok: 1 };
+    },
+  });
+  screens(dom).querySelector(".nf-withdraw").click();
+  await new Promise((r) => setTimeout(() => setTimeout(() => setTimeout(r, 0), 0), 0));
+  is(withdrawn.join(","), "ATR-1",
+     "Withdraw calls attendance_correction.withdraw for that request");
+
+  /* F6. Every part's card title is a link to the screen that can act on it.
+     The server has always sent `route`; `build()` never used it, so four of the
+     six parts drew rows with no buttons and no way through either. */
+  dom = await openInbox(myRequests([FIX_ROW]));
+  const cardLink = screens(dom).querySelector(".nf-card-title .nf-card-link");
+  is(cardLink !== null, true, "the card title is a link");
+  is(cardLink && cardLink.getAttribute("href"), "#time",
+     "and it points at the route the server sent");
+
+  /* The negative control: a route that is not a hash route is not turned into
+     a link at all, rather than escaped and trusted. */
+  dom = await openInbox(makeInbox({
+    total: 1, parts: [{ key: "policies", route: "javascript:alert(1)", count: 1,
+                        shown: 1, cap: null, capped: false, label: "1 policy to read",
+                        rows: [{ name: "POL-1", title: "Travel policy",
+                                 version: "2", action: "policy" }] }],
+  }));
+  is(screens(dom).querySelectorAll(".nf-card-link").length, 0,
+     "a route that is not a hash route is not made into a link at all");
+
+  /* F5. A decide that fails must not always say "already decided".
+
+     First the real conflict: the server SAYS the sentence, and it is shown. */
+  const approvals = makeInbox({
+    total: 1, approvals_total: 1,
+    parts: [{ key: "attendance_fixes", route: "#time/fix", count: 1, shown: 1,
+              cap: 50, capped: false, label: "1 attendance fix to decide",
+              rows: [{ name: "ATR-9", employee_name: "Meera", from_date: "2026-09-20",
+                       to_date: "2026-09-20", reason: null, context: null,
+                       action: "attendance_fix" }] }],
+  });
+  dom = await openInbox(approvals, {
+    "alvoraa_portal.attendance_correction.decide": () => ({
+      status: 417,
+      body: { exc_type: "ValidationError",
+              _server_messages: said("This one has already been decided.") },
+    }),
+  });
+  screens(dom).querySelector('.nf-decide[data-yes="1"]').click();
+  await new Promise((r) => setTimeout(() => setTimeout(() => setTimeout(r, 0), 0), 0));
+  is(/already been decided/.test(toasts(dom)), true,
+     "a real conflict still says the server's own sentence");
+
+  /* Now the timeout. The server never answered, so nothing may claim a
+     colleague decided it. This is the bug: Sandeep taps Approve on a factory
+     floor, the request times out, the row vanishes and he is told the leave is
+     handled. It is not, and the list never redraws. */
+  dom = await openInbox(approvals, {
+    "alvoraa_portal.attendance_correction.decide": () => ({ status: 504, body: {} }),
+  });
+  screens(dom).querySelector('.nf-decide[data-yes="1"]').click();
+  await new Promise((r) => setTimeout(() => setTimeout(() => setTimeout(r, 0), 0), 0));
+  is(/already been decided/.test(toasts(dom)), false,
+     "a timeout is NOT reported as somebody else deciding first");
+  is(/did not go through/.test(toasts(dom)), true,
+     "it says what happened and what to do next: " + toasts(dom));
+  is(screens(dom).querySelectorAll(".nf-row").length, 1,
+     "and the row stays on screen, because nothing was decided");
+
+
   console.log("\n" + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);
 }

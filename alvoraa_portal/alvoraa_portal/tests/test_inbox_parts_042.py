@@ -638,6 +638,39 @@ class TestWhoMayCallTheInbox(_WaveTwo):
 		self.assertIn(mine, names)
 		self.assertNotIn(theirs, names)
 
+	def test_my_own_requests_are_headed_with_words_not_an_internal_key(self):
+		"""042 review F2.
+
+		These rows carry no `employee_name` - they are the caller's own - so the
+		screen fell back to `kind` and headed an employee's own requests with
+		the raw internal keys `attendance_fix` and `shift_request`,
+		untranslated, on screen.
+
+		The server now sends a translated `title`. This is the pin that stops a
+		merge from dropping it again: the screen's own guard is in
+		`next_panels_test.js`, and a guard that lives only on one side of the
+		wire is a guard that half a change can walk past.
+		"""
+		self._correction(self.rahul, add_days(nowdate(), -10))
+		frappe.db.commit()
+		self._as(self.rahul_login)
+		built, _hr = inbox_api.parts()
+		rows = self._part(built, "my_requests").rows(limit=None)
+		frappe.set_user("Administrator")
+		self.assertTrue(rows, "the fixture raised no request, so this proved nothing")
+		for row in rows:
+			self.assertTrue(
+				row.get("title"),
+				"a my_requests row carries no title, so the screen has nothing "
+				"to head it with but the internal key: %s" % (row,))
+			self.assertNotEqual(
+				row["title"], row.get("kind"),
+				"the title IS the internal key, which is what F2 was about")
+			self.assertNotIn(
+				"_", row["title"],
+				"%r looks like an internal key, not words a person reads"
+				% (row["title"],))
+
 
 # ── AC-38: the parts are computed once, and get_home carries no counts ───────
 

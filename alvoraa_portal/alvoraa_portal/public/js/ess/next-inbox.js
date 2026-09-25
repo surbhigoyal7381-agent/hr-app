@@ -14,8 +14,17 @@
  *
  *   **A row that is drawn is a row that can be acted on** (042 AC-17). The list
  *   and the action share one scope function on the server, so Approve never
- *   returns a refusal. When somebody else decided first, the answer is
- *   "This one has already been decided." - which is not an error state.
+ *   returns a refusal. Where a part decides on its own screen rather than here,
+ *   the card title is a link to that screen, so no row is drawn with nothing a
+ *   person can do with it (review F6).
+ *
+ *   **A refusal is described in the server's words, never guessed** (review F5).
+ *   When somebody else decided first the server says "This one has already been
+ *   decided." and that sentence is shown. When the server said nothing at all -
+ *   a timeout, a dropped connection - the person is told THAT, and the screen is
+ *   redrawn from the server either way. This file used to say "already decided"
+ *   for every failure, which told a manager on a factory-floor phone that a
+ *   timed-out leave request had been handled. It had not.
  *
  *   **Nothing from the server reaches innerHTML unescaped** (042 AC-60).
  *
@@ -31,7 +40,9 @@
 
   /* Each part's decide action, and what its two buttons mean. A part with no
      entry here is a list with no buttons - which is right for policies and for
-     the caller's own requests. */
+     goal updates and shift changes, whose own screens do the deciding. Those
+     parts get a LINK to their screen instead (042 review F6), so a row is never
+     drawn with nothing a person can do with it. */
   var ACTIONS = {
     leave_approvals: {
       approve: "alvoraa_portal.hr_api.action_leave",
@@ -46,6 +57,17 @@
       }
     }
   };
+
+  /* 042 AC-19, review F2. Taking your own request back. It is NOT in ACTIONS
+     because it is not a decision on somebody else's document and it has one
+     button, not two: the server checks the request is the caller's own and is
+     still a draft (`attendance_correction.withdraw`), and the row carries
+     `can_withdraw` from the same condition.
+
+     Only attendance corrections can be withdrawn today. Leave and shift changes
+     send `can_withdraw: false`, so their rows get no button - the flag decides,
+     not a list of kinds held here as well. */
+  var WITHDRAW = "alvoraa_portal.attendance_correction.withdraw";
 
 
   /* The skeleton is server-rendered markup sitting in `#nf-main` (AC-31). It is
@@ -66,10 +88,18 @@
       approve: __("Approve"),
       decline: __("Decline"),
       why: __("Please say why, so the person knows what to do next."),
-      decided: __("This one has already been decided."),
-      mine: __("My requests"),
-      waitingOnMe: __("Waiting on me"),
-      withdraw: __("Withdraw")
+      /* There is deliberately no "This one has already been decided." here any
+         more. The server says that sentence itself, and a second copy on the
+         client is a second thing to keep in step.
+
+         A failed decision is also not always a race. A timeout, a
+         dropped connection or a server error must not tell somebody their
+         request was handled by a colleague - they would walk away believing
+         the leave is settled. */
+      couldNotDecide: __("That did not go through. Nothing has changed. Try again."),
+      withdraw: __("Withdraw"),
+      withdrawn: __("Request withdrawn."),
+      couldNotWithdraw: __("The request could not be withdrawn. Nothing has changed. Try again.")
     };
 
     skeleton(true);
@@ -90,11 +120,28 @@
     });
   }
 
+  /* A route is only ever one of the fixed strings in `inbox_api.PARTS`, all of
+     which look like "#time/fix". Anything else is not turned into a link at
+     all, rather than trusted and escaped: a link is a thing a person clicks, so
+     this fails closed. */
+  function routeHref(route) {
+    return (typeof route === "string" && /^#[a-z0-9/_-]+$/.test(route)) ? route : "";
+  }
+
   function build(parts, esc, __, SAY) {
     var html = '<section class="nf-screen nf-inbox">';
     parts.forEach(function (part) {
+      /* 042 review F6. The server sends every part's route and nothing used
+         it, so four of the six parts drew rows with no buttons AND no way
+         through to the screen that can act on them - "2 policies to read and
+         accept" with no way to read one. The card title is that way through. */
+      var href = routeHref(part.route);
+      var heading = href
+        ? '<a class="nf-card-link" href="' + esc(href) + '">' + esc(part.label)
+          + '<span class="nf-card-link-go" aria-hidden="true"> →</span></a>'
+        : esc(part.label);
       html += '<section class="nf-card" data-part="' + esc(part.key) + '">'
-        + '<h2 class="nf-card-title">' + esc(part.label) + "</h2>";
+        + '<h2 class="nf-card-title">' + heading + "</h2>";
       /* Where the list is capped and the count is not, the screen says so. No
          part ever shows "50+", because a "50+" cannot be added into one honest
          total (042 AC-11). */
@@ -113,7 +160,13 @@
   }
 
   function rowHtml(part, row, esc, SAY) {
-    var title = esc(row.employee_name || row.title || row.kind || "");
+    /* 042 review F2. `row.kind` is an INTERNAL KEY - "attendance_fix",
+       "shift_request" - and it used to be the last fallback here, so an
+       employee's own requests were headed with it, untranslated. The server
+       now sends a translated `title` for those rows. The remaining fallback is
+       the part's own label, which is a translated sentence; a raw key can no
+       longer reach the screen from here. */
+    var title = esc(row.employee_name || row.title || part.label || "");
     var when = row.from_date
       ? esc(row.from_date) + (row.to_date && row.to_date !== row.from_date
                               ? " – " + esc(row.to_date) : "")
@@ -132,6 +185,14 @@
         + ' data-name="' + esc(row.name) + '">' + esc(SAY.approve) + "</button>"
         + '<button type="button" class="nf-btn nf-btn-small nf-decide" data-yes="0"'
         + ' data-name="' + esc(row.name) + '">' + esc(SAY.decline) + "</button>"
+        + "</span>";
+    } else if (row.can_withdraw) {
+      /* 042 AC-19, review F2. US-6's whole point: Rahul raises a correction by
+         mistake and takes it back himself instead of asking HR. The server
+         decides whether he may (`can_withdraw`); this draws it. */
+      buttons = '<span class="nf-row-acts">'
+        + '<button type="button" class="nf-btn nf-btn-small nf-withdraw"'
+        + ' data-name="' + esc(row.name) + '">' + esc(SAY.withdraw) + "</button>"
         + "</span>";
     }
     return '<li class="nf-row" data-name="' + esc(row.name) + '">'
@@ -165,15 +226,77 @@
               return ctx.reloadCounts();
             })
             .then(function () { draw(ctx); })
-            .catch(function () {
-              /* Somebody decided it first. The row goes, the counts refresh,
-                 and this is not an error state (042 AC-18). */
-              if (row) { row.remove(); }
-              ctx.toast(SAY.decided);
-              ctx.reloadCounts();
+            .catch(function (err) {
+              /* 042 review F5. This used to say "This one has already been
+                 decided." for ANY rejection and remove the row. So a timeout on
+                 a factory-floor phone told Sandeep a colleague had handled the
+                 leave, took the row off his screen, and did not redraw - and he
+                 walked away believing it was settled. It was not.
+
+                 A conflict is the sentence; anything else is an error with a
+                 way forward. Either way the screen is redrawn from the server,
+                 so what he is looking at is true (AC-18). */
+              btn.disabled = false;
+              var said = serverSaid(err);
+              ctx.toast(said || SAY.couldNotDecide, said ? "" : "bad");
+              return ctx.reloadCounts().then(function () { draw(ctx); });
             });
         });
       });
+
+    Array.prototype.forEach.call(document.querySelectorAll(".nf-withdraw"),
+      function (btn) {
+        btn.addEventListener("click", function () {
+          btn.disabled = true;
+          ctx.api(WITHDRAW, { name: btn.getAttribute("data-name") })
+            .then(function () {
+              ctx.toast(SAY.withdrawn);
+              return ctx.reloadCounts();
+            })
+            .then(function () { draw(ctx); })
+            .catch(function (err) {
+              /* The same honesty as the decide path: nothing is removed from
+                 the screen on a failure, the server's own sentence is shown
+                 where there is one - "HR has already decided this one, so it
+                 cannot be withdrawn." - and the screen is re-read so it shows
+                 what the server actually holds. */
+              btn.disabled = false;
+              var said = serverSaid(err);
+              ctx.toast(said || SAY.couldNotWithdraw, said ? "" : "bad");
+              return ctx.reloadCounts().then(function () { draw(ctx); });
+            });
+        });
+      });
+  }
+
+  /* Was this refusal "somebody decided it first", or was it a timeout, a
+     dropped connection or a server fault?
+
+     The client does not guess. `attendance_correction.decide` already throws
+     the sentence "This one has already been decided." and `next-frame.api`
+     already carries the server's own sentence through on `err.message`. So the
+     rule is: if the server said something, say what the server said; if it said
+     nothing, it never answered, and the person is told that instead.
+
+     That is why the client-side copy of the conflict sentence is gone. Two
+     places holding the same sentence is two places that can disagree, and the
+     one that was wrong was the client - it said "already decided" for every
+     failure, including the ones where nothing had been decided at all.
+
+     A refusal with no sentence fails closed to the error state: one extra
+     retry costs a tap, and the other wrong guess costs a leave request nobody
+     approves. */
+  function serverSaid(err) {
+    if (!err) { return ""; }
+    /* `exc_type` is set only when the APPLICATION raised - Frappe puts it on
+       the body beside the sentence in `_server_messages`. A 504 from a proxy,
+       a 502, a dropped connection: no `exc_type`, and no sentence either.
+       Without this gate `err.message` falls back to `res.statusText`, so a
+       gateway timeout would show a person the word "Gateway Timeout" - or, in
+       the harness that caught this, the bare number 504. */
+    if (!err.exc_type) { return ""; }
+    var said = typeof err.message === "string" ? err.message.trim() : "";
+    return said === "Request failed" ? "" : said;
   }
 
   if (window.NextFrame && window.NextFrame.panel) {

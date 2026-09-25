@@ -187,6 +187,66 @@ class TestPipeline(FrappeTestCase):
         self.assertTrue(called.called)
         self.assertEqual(frappe.db.get_value(intake.LOG, {"communication": comm}, "outcome"), "Lead created")
 
+    # ── instant hand-over (25 Sep 2026: a demo cannot wait for the sweep) ─────
+    def test_a_new_email_is_handed_over_at_once_only_when_it_should_be(self):
+        with patch("frappe.enqueue") as queued, patch.dict(frappe.conf, {"ai_lead_intake_enabled": 0}):
+            self.email(f"off@{TAG}-n.example.com")
+        self.assertFalse(queued.called, "switched off: nothing queued")
+        with patch("frappe.enqueue") as queued, patch.dict(frappe.conf, {"ai_lead_intake_enabled": 1}):
+            comm = self.email(f"on@{TAG}-n.example.com")
+            sent = frappe.get_doc({"doctype": "Communication", "communication_medium": "Email",
+                                   "communication_type": "Communication", "sent_or_received": "Sent",
+                                   "sender": MAILBOX, "subject": "Our reply", "content": "x",
+                                   "email_account": ACCOUNT}).insert(ignore_permissions=True)
+        self.assertEqual(queued.call_count, 1, "received mail only, not our own sent mail")
+        self.assertEqual(queued.call_args.kwargs["communication"], comm)
+        self.assertEqual(queued.call_args.args[0], "alvoraa_portal.ai_leads.intake.process_new")
+        self.assertTrue(queued.call_args.kwargs["enqueue_after_commit"])
+        self.assertNotEqual(sent.name, comm)
+
+    def test_intake_mailboxes_are_fetched_every_minute_only_when_on(self):
+        with patch("frappe.enqueue") as queued, patch.dict(frappe.conf, {"ai_lead_intake_enabled": 0}):
+            intake.pull_intake_mailboxes()
+        self.assertFalse(queued.called, "switched off: no fetch")
+        with patch("frappe.enqueue") as queued, patch.dict(frappe.conf, {"ai_lead_intake_enabled": 1}),                 patch("frappe.utils.background_jobs.get_jobs", return_value={frappe.local.site: []}):
+            intake.pull_intake_mailboxes()
+        names = [c.kwargs["email_account"] for c in queued.call_args_list]
+        self.assertIn(ACCOUNT, names)
+        self.assertEqual(queued.call_args_list[names.index(ACCOUNT)].kwargs["job_name"],
+                         f"pull_from_email_account|{ACCOUNT}", "same job name as Frappe's own fetch")
+        with patch("frappe.enqueue") as queued, patch.dict(frappe.conf, {"ai_lead_intake_enabled": 1}),                 patch("frappe.utils.background_jobs.get_jobs",
+                      return_value={frappe.local.site: [f"pull_from_email_account|{ACCOUNT}"]}):
+            intake.pull_intake_mailboxes()
+        self.assertNotIn(ACCOUNT, [c.kwargs["email_account"] for c in queued.call_args_list],
+                         "a fetch already queued is not queued twice")
+
+    def _process_new(self, comm):
+        conf = {"ai_lead_intake_enabled": 1, "ai_lead_intake_api_key": "stub"}
+        with patch.dict(frappe.conf, conf),                 patch("frappe.enqueue"),                 patch("alvoraa_portal.subscription.has_feature", return_value=True),                 patch.object(guards, "_feature_on", return_value=True),                 patch.object(extract, "call_model",
+                             return_value=(dict(GOOD), "claude-haiku-4-5", 900, 120)) as called:
+            intake.process_new(comm)
+        return called
+
+    def test_the_handed_over_email_becomes_one_lead(self):
+        comm = self.email(f"instant@{TAG}-o.example.com")
+        called = self._process_new(comm)
+        self.assertTrue(called.called)
+        self.assertEqual(frappe.db.get_value(intake.LOG, {"communication": comm}, "outcome"), "Lead created")
+        again = self._process_new(comm)
+        self.assertFalse(again.called, "a second job, or the sweep, never calls the AI twice")
+        self.assertEqual(frappe.db.count(intake.LOG, {"communication": comm}), 1)
+
+    def test_the_handed_over_job_ignores_mail_from_before_switch_on(self):
+        comm = self.email(f"old@{TAG}-p.example.com")
+        frappe.db.set_value("Email Account", ACCOUNT, guards.SINCE_FIELD, "2999-01-01 00:00:00")
+        try:
+            called = self._process_new(comm)
+        finally:
+            frappe.db.set_value("Email Account", ACCOUNT, guards.SINCE_FIELD, "2000-01-01 00:00:00")
+            frappe.db.commit()
+        self.assertFalse(called.called)
+        self.assertFalse(frappe.db.exists(intake.LOG, {"communication": comm}))
+
     def test_a_mailbox_keeps_being_read_after_its_oldest_emails_are_done(self):  # review P1-2
         for i in range(6):
             done = self.email(f"noreply{i}@{TAG}-l.example.com")

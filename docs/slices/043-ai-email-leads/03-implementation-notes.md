@@ -86,3 +86,27 @@ test_subscription 32 OK, test_crm_feature_040 40 OK, test_whatsapp_feature_042 2
 5. We run `switch_on` with that mailbox, `daily_cap` 50 for the demo, owner `sales@sargam.dev.alvoraa.co`.
 6. Send one real enquiry and one newsletter to the mailbox; within about ten minutes (mail pull,
    then the sweep) the enquiry is a lead and the newsletter is not.
+
+## 5. Faster intake for the demo (25 Sep 2026)
+
+The user: a demo cannot wait 15 minutes for a lead. The AI takes seconds; the wait was
+two timers in a row - Frappe fetches mail every 10 minutes, the sweep ran every 5.
+
+| Change | What it does |
+|---|---|
+| `intake.on_new_email` (Communication `after_insert`) | A newly fetched email on an intake mailbox is queued for the AI at once (`short` queue, after commit, one job per email). The model is never called inside the mail fetch |
+| `intake.process_new` | That job: the sweep's own checks for one email (feature, mailbox rules V-7, the switch-on date, not already claimed), then the same `safely()` path |
+| `intake.pull_intake_mailboxes`, cron every minute | Fetches intake mailboxes only, queued exactly as Frappe queues its own fetch (same queue, same job name), so the two never read one mailbox at once. Frappe's own fetch of other mailboxes stays at 10 minutes. No query on a site with intake off |
+| The five-minute sweep | Unchanged; now the safety net and the retry |
+
+Result: a lead about a minute after the email is sent, two at most.
+
+Proof: `test_ai_leads_site_043` 20 OK (4 new: hand-over only for received mail on an intake
+mailbox and only when on; one lead however many runs; mail from before switch-on ignored;
+the one-minute fetch only when on, with Frappe's job name, never queued twice),
+`test_ai_leads_043` 38 OK, integrity 636 OK, ruff clean.
+
+Known limits, accepted for slice one: a burst of new mail becomes one job per email, so the
+sweep's 25-per-run limit does not apply to it (the daily cap still does); an OAuth mailbox
+without a token is fetched and fails in Frappe's own log, where Frappe's fetch would skip it
+(no OAuth mailbox uses intake today).

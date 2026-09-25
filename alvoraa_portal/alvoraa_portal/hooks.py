@@ -215,6 +215,11 @@ doc_events = {
     "Email Account": {
         "validate": "alvoraa_portal.ai_leads.guards.validate_email_account",
     },
+    # Slice 043: a newly pulled email goes to AI lead intake at once (a queued
+    # job, never inside the mail pull). The five-minute sweep is the safety net.
+    "Communication": {
+        "after_insert": "alvoraa_portal.ai_leads.intake.on_new_email",
+    },
 }
 
 # ── Row-level security ───────────────────────────────────────────────────────
@@ -283,6 +288,12 @@ scheduler_events = {
         # site that has not switched it on; 25 emails at most per run (OPS-2).
         "*/5 * * * *": [
             "alvoraa_portal.ai_leads.intake.sweep",
+        ],
+        # Slice 043: fetch intake mailboxes every minute (Frappe fetches all mail
+        # every ten). Each new email then goes to the AI at once (on_new_email).
+        # Returns before any query on a site that has not switched intake on.
+        "* * * * *": [
+            "alvoraa_portal.ai_leads.intake.pull_intake_mailboxes",
         ],
     },
 }

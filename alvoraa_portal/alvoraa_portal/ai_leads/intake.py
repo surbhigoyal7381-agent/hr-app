@@ -1,4 +1,7 @@
-"""The five-minute sweep: new emails on opted-in mailboxes into CRM Leads.
+"""New emails on opted-in mailboxes into CRM Leads.
+
+Each email is handed over as soon as Frappe pulls it (on_new_email); the five-minute
+sweep is the safety net and the retry. Both go through the same steps:
 
 For each email, in order, and stopping at the first that applies:
 
@@ -53,16 +56,102 @@ def daily_cap(conf=None):
     return min(cint(conf.get("ai_lead_intake_daily_cap") or DEFAULT_CAP), CEILING)
 
 
-def sweep():
-    """Scheduler entry point (hooks.py, every five minutes)."""
+def _ready():
+    """Is intake on for this site? Cheapest check first."""
     if not enabled():
-        return
+        return False
     if "crm" not in frappe.get_installed_apps():
+        return False
+    if not frappe.get_meta("Email Account").has_field(guards.INTAKE_FIELD):
+        return False
+    from alvoraa_portal.subscription import has_feature
+    return bool(has_feature("crm_ai_intake"))
+
+
+def on_new_email(doc, method=None):
+    """Communication after_insert: hand a newly pulled email to the intake at once,
+    so a lead appears seconds after Frappe fetches the mail, not at the next sweep.
+
+    Only queues a job; the model is never called inside the mail pull. The sweep
+    stays as the safety net: if this job is lost, the email is still unclaimed and
+    the next sweep takes it. The claim row stops the two ever making two leads.
+    """
+    if doc.sent_or_received != "Received" or doc.communication_medium != "Email":
+        return
+    if doc.communication_type != "Communication" or not doc.email_account:
+        return
+    if not enabled():                      # a site-config read, no query
         return
     if not frappe.get_meta("Email Account").has_field(guards.INTAKE_FIELD):
         return
-    from alvoraa_portal.subscription import has_feature
-    if not has_feature("crm_ai_intake"):
+    if not frappe.db.get_value("Email Account", doc.email_account, guards.INTAKE_FIELD):
+        return
+    frappe.enqueue(
+        "alvoraa_portal.ai_leads.intake.process_new",
+        queue="short",
+        communication=doc.name,
+        enqueue_after_commit=True,
+        job_id=f"ai-lead-intake::{doc.name}",
+        deduplicate=True,
+    )
+
+
+def pull_intake_mailboxes():
+    """Every minute: fetch new mail for intake mailboxes only, so an enquiry is read
+    about a minute after it is sent. Frappe's own fetch of every mailbox stays at
+    ten minutes. Returns at once, with no query, on a site where intake is off.
+
+    Queued exactly as Frappe queues its own fetch - same queue, same job name - so the
+    two never read one mailbox at the same time.
+    """
+    if not enabled():
+        return
+    if not frappe.get_meta("Email Account").has_field(guards.INTAKE_FIELD):
+        return
+    from frappe.email.doctype.email_account.email_account import pull_from_email_account
+    from frappe.utils.background_jobs import get_jobs
+
+    names = frappe.get_all(
+        "Email Account",
+        filters={guards.INTAKE_FIELD: 1, "enable_incoming": 1, "awaiting_password": 0},
+        pluck="name",
+    )
+    if not names:
+        return
+    queued = get_jobs(site=frappe.local.site, key="job_name").get(frappe.local.site) or []
+    for name in names:
+        job_name = f"pull_from_email_account|{name}"
+        if job_name not in queued:
+            frappe.enqueue(pull_from_email_account, "short", job_name=job_name, email_account=name)
+
+
+def process_new(communication):
+    """Background job queued by on_new_email: the same checks as the sweep, for one email."""
+    if not _ready():
+        return None
+    row = frappe.db.get_value(
+        "Communication", communication,
+        ["name", "email_account", "communication_date"], as_dict=True)
+    if not row or not row.email_account:
+        return None
+    acc = frappe.db.get_value(
+        "Email Account",
+        {"name": row.email_account, guards.INTAKE_FIELD: 1, "enable_incoming": 1},
+        ["name", "email_id", guards.SINCE_FIELD], as_dict=True)
+    if not acc or not guards.account_still_ok(acc.name):          # V-7
+        return None
+    since = acc.get(guards.SINCE_FIELD)
+    if since and row.communication_date and get_datetime(row.communication_date) < get_datetime(since):
+        return None
+    if frappe.db.exists(LOG, {"communication": communication}):
+        return None
+    return safely(communication, acc)
+
+
+def sweep():
+    """Scheduler entry point (hooks.py, every five minutes). The safety net behind
+    on_new_email, and the retry of failed emails."""
+    if not _ready():
         return
 
     deadline = time.monotonic() + TIME_LIMIT

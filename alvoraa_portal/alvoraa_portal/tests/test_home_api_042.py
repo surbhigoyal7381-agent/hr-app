@@ -504,3 +504,115 @@ class TestOneCardFailingIsOneCard(_HomeFixture):
 		self.assertEqual(payload["team_today"], {"error": True})
 		self.assertIsNotNone(payload["me"], "the whole page went down with one card")
 		self.assertEqual(sorted(payload.keys()), sorted(home_api.HOME_KEYS))
+
+
+# ── 042 review F3: the team goal summary is gone ─────────────────────────────
+
+
+def _names_used(source):
+	"""Every identifier the PARSER sees in a module: imports, calls, attributes.
+
+	Deliberately not a text search. A text search over this module would match
+	the paragraph explaining why the thing was deleted, which is how the first
+	version of the test below failed on its own documentation. Prose cannot
+	call a function; only code can.
+	"""
+	import ast
+
+	names = set()
+	for node in ast.walk(ast.parse(source)):
+		if isinstance(node, ast.ImportFrom):
+			names.update(alias.name for alias in node.names)
+		elif isinstance(node, ast.Import):
+			names.update(alias.name for alias in node.names)
+		elif isinstance(node, ast.Name):
+			names.add(node.id)
+		elif isinstance(node, ast.Attribute):
+			names.add(node.attr)
+	return names
+
+
+class TestHomeCarriesNoTeamGoalSummary(_HomeFixture):
+	"""The review's F3.
+
+	`_goals` used to return a `team` block holding `{"people": N, "goals": M}`
+	where `people` counted EVERYBODY the caller may see and `goals` counted the
+	goals of the first fifty of them. On the 981-person fixture, company-wide HR
+	got "981 people, N goals" with N taken from 50 people - the same "a heading
+	said 4 over a list of nine" shape this programme has paid for four times.
+
+	It also read every permitted employee id into Python to do it, which is the
+	exact thing this branch wrote into `nfr-budget.md` as forbidden: *"A cap is
+	the wrong answer - it makes the number wrong instead of slow."*
+
+	And nothing drew it. `next-home.js` reads `g.mine` only.
+
+	So it was deleted. These tests fail on the version that still has it.
+	"""
+
+	def test_the_goals_card_has_no_team_block_at_all(self):
+		for login in (self.rahul_login, self.sandeep_login, self.priya_login,
+		              self.kamal_login):
+			payload = self._home(login)
+			goals = payload["goals"]
+			self.assertIsInstance(goals, dict, "%s got no goals card" % login)
+			self.assertEqual(
+				sorted(goals.keys()), ["mine"],
+				"%s still gets a team goal summary: %s" % (login, goals))
+
+	def test_no_wrong_number_can_be_read_off_the_payload(self):
+		"""The number that was wrong is not merely hidden - it is not computed."""
+		blob = frappe.as_json(self._home(self.priya_login))
+		self.assertNotIn('"people"', blob)
+
+	def test_home_api_no_longer_reads_a_list_of_employee_ids(self):
+		"""The structural half, so the deletion cannot quietly come back.
+
+		`permitted_employees()` returns a SET OF IDS. Home's remaining scoped
+		queries all go through `permitted_employee_filters()`, which pushes the
+		same rule into the query instead. The difference is the whole point: one
+		is flat in headcount, the other ships 981 ids to the database as an
+		`IN (...)`.
+
+		This asserts on the source, not on a call, so it holds even where a
+		fixture is too small for the difference to show.
+		"""
+		import inspect
+
+		names = _names_used(inspect.getsource(home_api))
+		self.assertTrue(
+			names, "the walk read no names at all, so it proved nothing")
+		self.assertNotIn(
+			"permitted_employees", names,
+			"home_api reads a list of employee ids again. Use "
+			"permitted_employee_filters() and push the rule into the query.")
+		# And the thing it IS allowed to use is still there, so this is not
+		# passing because Home stopped scoping anything.
+		self.assertIn("permitted_employee_filters", names)
+		self.assertFalse(
+			hasattr(home_api, "_hr_scope"),
+			"_hr_scope is back. Its only caller was the deleted team summary.")
+
+	def test_this_check_can_actually_fail(self):
+		"""The positive control for the source walk above.
+
+		A source assertion that would pass over an empty string proves nothing,
+		and the first version of this walk DID pass wrongly: it matched raw text,
+		so the docstring explaining the deletion set it off. It reads names the
+		parser sees now, and this proves that reading still bites.
+		"""
+		bad = _names_used(
+			"def f():\n"
+			'    """A docstring naming permitted_employee_filters only."""\n'
+			"    from hrms.alvoraa_hr_core.access import permitted_employees\n"
+			"    return sorted(permitted_employees())\n")
+		self.assertIn("permitted_employees", bad,
+		              "the walk cannot see the thing it forbids")
+
+		good = _names_used(
+			"def f():\n"
+			'    """Mentions permitted_employees in prose, and does not call it."""\n'
+			"    from hrms.alvoraa_hr_core.access import permitted_employee_filters\n"
+			"    return permitted_employee_filters()\n")
+		self.assertNotIn("permitted_employees", good,
+		                 "the walk fires on prose, so it would be turned off")

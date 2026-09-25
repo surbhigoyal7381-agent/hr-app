@@ -87,7 +87,7 @@ function makeHome(over) {
     leave: [],
     holidays: [],
     holiday_note: null,
-    goals: { mine: null, team: null },
+    goals: { mine: null },
     team_today: { in: null, away: null, due: null, basis: "none", suppressed: false },
     celebrations: { own_anniversary_years: null, joiners: [] },
   }, over || {});

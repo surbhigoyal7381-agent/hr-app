@@ -68,7 +68,7 @@ HOME_KEYS = (
 	"leave",         # the caller's own leave left, from the ledger
 	"holidays",      # the caller's OWN holiday list, never the company's
 	"holiday_note",  # slice 035's sentence when no list is assigned
-	"goals",         # the caller's own; for a manager or HR, the team summary too
+	"goals",         # the caller's OWN goals only - the team summary was deleted (F3)
 	"team_today",    # counts only - never names, never reasons
 	"celebrations",  # own work anniversary; joiners are not built (D-8)
 )
@@ -304,15 +304,11 @@ def _reports(employee):
 		pluck="name", limit_page_length=0))
 
 
-def _hr_scope():
-	"""The people an HR caller looks after, through the shared definition.
-
-	`permitted_employees()` is the one place that knows a store's HR person is a
-	store's HR person (Wave 1 SEC-3, W1D-20). It is called, never re-derived.
-	"""
-	from hrms.alvoraa_hr_core.access import permitted_employees
-
-	return once("hr_scope", lambda: sorted(permitted_employees() or set()))
+# `_hr_scope()` lived here. It read every permitted employee id into Python so
+# the deleted team goal summary could ship fifty of them back as an `IN (...)`.
+# Home has no reader for a list of ids any more: every scoped query goes through
+# `permitted_employee_filters()`, which pushes the same rule into the query and
+# is flat in headcount. See the 042 review, F3.
 
 
 def _filter_list(filters):
@@ -592,17 +588,31 @@ def _needs(me, me_row, features, date_):
 # ── Goals ────────────────────────────────────────────────────────────────────
 
 
-def _goals(me, is_hr, features):
-	"""The caller's own goals, and a team summary for a manager or HR.
+def _goals(me, features):
+	"""The caller's own goals, and nothing about anybody else's.
 
-	A colleague's goal percentage is never shown to a peer (042 section 5); the
-	team summary is counts, and it follows the same minimum-group rule as the
-	presence card.
+	A colleague's goal percentage is never shown to a peer (042 section 5).
+
+	There used to be a `team` block here too: `{"people": N, "goals": M}` for a
+	manager or for HR. It was deleted (042 review F3) because all three things
+	that could be wrong with it were:
+
+	  * **The number was wrong.** `people` counted everybody; `goals` counted
+	    the goals of the first fifty of them. Company-wide HR on a 981-person
+	    tenant was told "981 people, N goals" with N taken from 50 people.
+	  * **It broke this slice's own budget rule.** It read every permitted
+	    employee id into Python. `nfr-budget.md`, edited by this very branch:
+	    *"A cap is the wrong answer - it makes the number wrong instead of
+	    slow."* That cap was this one.
+	  * **Nothing drew it.** `next-home.js` reads `mine` only.
+
+	If a team goal summary is wanted later it is a new, specified thing, and it
+	should be one aggregate query rather than a list of ids.
 	"""
 	if not features.get("goals"):
-		return {"mine": None, "team": None}
+		return {"mine": None}
 	if not frappe.db.exists("DocType", "Individual Goal"):
-		return {"mine": None, "team": None}
+		return {"mine": None}
 	mine = frappe.get_all(
 		"Individual Goal",
 		filters={"employee": me["employee"], "status": ["!=", "Cancelled"],
@@ -613,17 +623,7 @@ def _goals(me, is_hr, features):
 	summary = {"count": len(mine),
 	           "rows": [{"name": r.name, "goal_name": r.goal_name,
 	                     "progress": r.progress_pct} for r in mine]}
-	team = None
-	names = _hr_scope() if is_hr else _reports(me["employee"])
-	names = [n for n in (names or []) if n != me["employee"]]
-	if names:
-		total = frappe.db.count(
-			"Individual Goal",
-			{"employee": ["in", names[:LIST_CAP]], "status": ["!=", "Cancelled"],
-			 "docstatus": ["!=", 2]})
-		team = {"people": len(names), "goals": total} if len(names) >= MIN_GROUP else {
-			"people": len(names), "goals": None}
-	return {"mine": summary, "team": team}
+	return {"mine": summary}
 
 
 # ── Celebrations ─────────────────────────────────────────────────────────────
@@ -700,7 +700,7 @@ def _build_home(user):
 		"leave": [],
 		"holidays": [],
 		"holiday_note": None,
-		"goals": {"mine": None, "team": None},
+		"goals": {"mine": None},
 		"team_today": {"in": None, "away": None, "due": None, "basis": "none",
 		               "suppressed": False},
 		"celebrations": {"own_anniversary_years": None, "joiners": []},
@@ -750,7 +750,7 @@ def _build_home(user):
 	else:
 		home["holidays"] = {"error": True}
 
-	home["goals"] = _card("goals", lambda: _goals(me, is_hr, features))
+	home["goals"] = _card("goals", lambda: _goals(me, features))
 	home["team_today"] = _card("team_today",
 	                           lambda: _team_today(me, me_row, is_hr, date_))
 	home["celebrations"] = _card("celebrations",

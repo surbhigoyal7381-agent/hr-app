@@ -672,3 +672,33 @@ class TestTheOldScreenIsNotHeldToTheWizardsRule(SendFixture):
 		# this test looked for "still needs a rating" and went red on
 		# "2 goals still need a rating", which is the sentence being right.
 		self.assertRegex(str(caught.exception), "still needs? a rating")
+
+
+class TestTwoCyclesRunningAtOnce(SendFixture):
+	"""The defect the browser check found by suddenly having nothing to open.
+
+	`get_self_review` with no argument used to ask for "a" cycle with status
+	`In Progress` and take whatever came back first, then look for an appraisal
+	in THAT cycle. A tenant with two companies has two cycles running, and half
+	the staff were told "there is no review running right now" while their own
+	review was open.
+
+	This fixture has two running cycles - Rahul's, and Sandeep's own - so the
+	test fails on the old code whichever one the database returns first.
+	"""
+
+	def test_rahul_gets_his_own_review_not_whichever_cycle_came_back_first(self):
+		self.assertGreaterEqual(
+			len(growth_api.running_cycles()), 2,
+			"only one cycle is running, so this test could pass on the old "
+			"code by luck")
+		self.as_user(self.rahul_user)
+		out = growth_api.get_self_review()
+		self.assertEqual(self.appraisal, out["appraisal"])
+
+	def test_somebody_with_no_review_in_any_running_cycle_is_told_so(self):
+		"""And the sentence is still the sentence, not an empty wizard."""
+		self.as_user(self.priya_user)
+		out = growth_api.get_self_review()
+		self.assertEqual("", out["appraisal"])
+		self.assertIn("no review running", out["note"])

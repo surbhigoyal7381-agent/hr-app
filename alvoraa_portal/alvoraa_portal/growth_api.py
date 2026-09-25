@@ -282,6 +282,32 @@ TRAJECTORY_STALE_DAYS = 14
 TRAJECTORY_NEEDS_ATTENTION = ("Off Track", "At Risk")
 
 
+def running_cycles():
+	"""Every cycle that is running right now. A tenant may have more than one.
+
+	**Found by a browser check that suddenly had no review to open.** Both
+	reads here used to ask for "a" cycle with status `In Progress` and take
+	whatever the database handed back first. One tenant, two companies, two
+	cycles running - and half the staff were told "there is no review running
+	right now" while theirs was open. The question is not which cycle is
+	running; it is which running cycle THIS person has a review in.
+	"""
+	return frappe.get_all("Appraisal Cycle", filters={"status": "In Progress"},
+	                      pluck="name")
+
+
+def my_open_review(employee, cycles=None):
+	"""This person's own appraisal in a running cycle, or None. Two queries."""
+	cycles = running_cycles() if cycles is None else cycles
+	if not employee or not cycles:
+		return None
+	return frappe.db.get_value(
+		"Appraisal",
+		{"employee": employee, "appraisal_cycle": ["in", cycles],
+		 "docstatus": ["!=", 2]},
+		["name", "appraisal_cycle"], as_dict=True)
+
+
 def _me():
 	from alvoraa_portal.performance_api import _require_employee
 
@@ -401,8 +427,15 @@ def get_growth():
 		return {"no_employee": True}
 	me = emp["name"]
 
+	# The running cycle THIS person has a review in. A tenant with two
+	# companies can have two running at once, and taking whichever the
+	# database returned first showed half the staff somebody else's cycle -
+	# or told them there was none.
+	cycles = running_cycles()
+	mine = my_open_review(me, cycles)
 	cycle = frappe.db.get_value(
-		"Appraisal Cycle", {"status": "In Progress"},
+		"Appraisal Cycle",
+		mine["appraisal_cycle"] if mine else {"status": "In Progress"},
 		["name", "cycle_name", "start_date", "end_date"], as_dict=True)
 
 	goals = frappe.get_all(
@@ -539,10 +572,13 @@ def get_self_review(appraisal=None):
 				_("This page is not part of your access. Ask HR if you think it should be."),
 				frappe.PermissionError)
 	else:
-		cycle = frappe.db.get_value("Appraisal Cycle", {"status": "In Progress"}, "name")
-		appraisal = frappe.db.get_value(
-			"Appraisal", {"employee": me, "appraisal_cycle": cycle,
-			              "docstatus": ["!=", 2]}, "name") if cycle else None
+		# **The cycle this person has a review in**, not the first one the
+		# database happens to return. With two cycles running, the old read
+		# asked for one at random and then looked for an appraisal in it - so
+		# somebody whose review was in the other one was told there was no
+		# review running at all.
+		mine = my_open_review(me)
+		appraisal = mine["name"] if mine else None
 	if not appraisal:
 		# AC-43. A sentence, never an empty wizard and never a spinner that
 		# stops.

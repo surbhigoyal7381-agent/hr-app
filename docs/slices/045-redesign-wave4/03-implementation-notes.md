@@ -1295,6 +1295,41 @@ Ran 25 tests — FAILED (failures=5)
 The break was then put back and the file is green again. **A silent Send does
 not pass this file.**
 
+### A third fault, found by the browser check having nothing to open
+
+With two cycles running on the site, the wizard opened **neither**. Both reads
+asked for "a" cycle with `status = In Progress` and took whatever the database
+returned first, then looked for an appraisal in **that** cycle:
+
+```python
+cycle = frappe.db.get_value("Appraisal Cycle", {"status": "In Progress"}, "name")
+```
+
+On a tenant with two companies, two cycles run at once. Half the staff would be
+told **"there is no review running right now"** while their own review was open,
+and the Growth screen would show the other company's cycle dates. The question
+is not which cycle is running; it is **which running cycle this person has a
+review in**.
+
+Fixed in `growth_api.running_cycles()` and `my_open_review()`, two bounded
+queries, used by both reads. `TestTwoCyclesRunningAtOnce` pins it, and it fails
+on the old code: the first cycle the database returns on this site is not
+Rahul's. **Found by running it** — three cycles were running on `test045` and
+the browser check suddenly had nothing to open.
+
+### What the real browser proved
+
+`scripts/browser_check_self_review.js`, Chromium at 390 px, a real login, real
+records on `test045` in my own container: **20 passed, 0 failed.** Rate a goal,
+type an answer, wait for the autosave, **reload for real**, find both still
+there and the answers at the top level; walk to the last step, press Send with
+the values unrated and get the server's own sentence —
+
+> 7 company values still need a rating: S045 Probe Value 1, …
+
+— rate them, send, reload again, and it still reads as sent with no second Send
+to press. Every reload is proved by a marker on `window` first.
+
 ### The seven dimensions, re-assessed against the code that was written
 
 | | Before → after | Why |

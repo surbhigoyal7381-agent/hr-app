@@ -171,14 +171,17 @@ async function main() {
      "D-13: the written steps left empty are named before sending");
 
   await page.evaluate(() => document.getElementById("nf-wiz-send").click());
-  await wait(3000);
+  /* Read the toast while it is still on screen - it removes itself after four
+     seconds, and a check that waits longer than the message lives is a check
+     that fails for a reason that has nothing to do with the product. */
+  await wait(2000);
   const refused = await page.evaluate(() => ({
-    said: document.body.textContent,
+    said: (document.getElementById("nf-toasts") || {}).textContent || "",
     still: !!document.getElementById("nf-wiz-send"),
   }));
-  is(/still needs a rating/.test(refused.said), true,
+  is(/still needs? a rating/.test(refused.said), true,
      "AC-89: the values are not rated, so the SERVER refuses and names what " +
-     "is missing");
+     "is missing - it said: " + JSON.stringify(refused.said.slice(0, 160)));
   is(refused.still, true, "and the wizard is still there to finish");
 
   /* Rate every value, then send for real. */

@@ -14,9 +14,12 @@ android {
         // 0.1.0, build 5: added the missing com.google.android.material
         // dependency - the first real Android build of this branch failed
         // AAPT2 resource linking without it.
+        // 0.2.0, build 0: ALV-128, sign in with work email and password.
+        // A new feature, so the minor number moves; the server's
+        // MIN_APP_VERSION stays 0.1.0, so 0.1.x phones keep working.
         // scripts/check_versions.mjs enforces this on every push.
-        versionCode 10005
-        versionName "0.1.0"
+        versionCode 20000
+        versionName "0.2.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

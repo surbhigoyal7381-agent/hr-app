@@ -61,3 +61,10 @@ button.primary-purple { background: #6d28d9; }
 button.row-link { background: #fff; color: var(--ink); border: 2px solid var(--line); text-align: left; }
 button.row-link.danger-text { color: #9f1c1c; border-color: #f0c8c8; }
 button.danger { background: #9f1c1c; }
+
+/* Sign in (ALV-128). Big boxes for thumbs; the label sits above its box. */
+label.field { display: block; font-weight: 600; margin-top: 12px; }
+label.field input { display: block; width: 100%; min-height: 52px; margin-top: 4px;
+                    padding: 8px 12px; font-size: 18px; border: 2px solid var(--line);
+                    border-radius: 10px; background: #fff; color: var(--ink); }
+label.field input:focus-visible { outline: 3px solid #111; outline-offset: 1px; }

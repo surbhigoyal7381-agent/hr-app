@@ -170,11 +170,33 @@
       { token: token, notice_version: noticeVersion }, opts);
   }
 
+  // ── ALV-128: signing in with a work email and password ──────────────────
+  //
+  // The password travels in this one POST body and nowhere else: not in a
+  // URL, not in storage, not in a log. The caller passes it in and forgets it.
+  // agreed is always 0 here: the notice is shown after the answer, and
+  // acknowledgeNotice() below moves the phone to Active - the same path a
+  // code-joined phone takes after "Not now", so the password is sent once.
+
+  function signInWithPassword(origin, params, opts) {
+    // params: { email, password, device_label, platform, token }
+    return callMethod(origin, "alvoraa_portal.field_app_join.sign_in_with_password",
+      Object.assign({}, params, { agreed: 0 }), opts);
+  }
+
+  function confirmSignInCode(origin, params, opts) {
+    // params: { tmp_id, otp, device_label, platform, token }
+    return callMethod(origin, "alvoraa_portal.field_app_join.confirm_sign_in_code",
+      Object.assign({}, params, { agreed: 0 }), opts);
+  }
+
   var api = {
     callMethod: callMethod,
     checkCode: checkCode,
     refuseCode: refuseCode,
     joinWithCode: joinWithCode,
+    signInWithPassword: signInWithPassword,
+    confirmSignInCode: confirmSignInCode,
     fieldStatus: fieldStatus,
     punch: punch,
     removeMyPhone: removeMyPhone,

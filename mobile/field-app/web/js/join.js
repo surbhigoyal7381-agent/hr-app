@@ -433,5 +433,17 @@
   // decision (does this phone already have a secret?) now lives in main.js,
   // which calls this exported start() only when it decides the join flow is
   // the right one to show. Nothing else in this file changed.
-  window.AlvoraaJoin = { start: function () { resetJoinState(); show("first"); } };
+  //
+  // ALV-128: a phone that is not set up now starts on the sign-in screen
+  // (signin.js), which leads with email and password. `start()` is still the
+  // one door main.js and checkin.js call; `startQr()` is this file's own QR
+  // screen, reached from "I have a joining code". Nothing else here changed.
+  window.AlvoraaJoin = {
+    start: function () {
+      resetJoinState();
+      if (window.AlvoraaSignin) window.AlvoraaSignin.start();
+      else show("first");
+    },
+    startQr: function () { resetJoinState(); show("first"); },
+  };
 })();

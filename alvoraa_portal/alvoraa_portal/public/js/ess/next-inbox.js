@@ -44,10 +44,21 @@
      parts get a LINK to their screen instead (042 review F6), so a row is never
      drawn with nothing a person can do with it. */
   var ACTIONS = {
+    /* **The key names here are the server's parameter names, not ours.** Frappe
+       keeps only the arguments the function declares (`get_newargs`) and drops
+       the rest without a word, so a near-miss on a name is silent on the wire
+       and a `TypeError` in the worker. This entry sent `name` where the server
+       says `leave_id`, and every Approve and Decline on this screen failed from
+       Wave 2 until 2026-09-25. `test_browser_call_args_045.py` now checks the
+       names a browser sends against the names the server declares.
+
+       `note` is NOT sent: `action_leave` has no parameter for it, so it was
+       being dropped too. The decline reason a manager types is still not
+       recorded anywhere - see the addendum to 00-impact-analysis.md, D5. */
     leave_approvals: {
       approve: "alvoraa_portal.hr_api.action_leave",
-      args: function (row, yes, note) {
-        return { name: row.name, action: yes ? "approve" : "reject", reason: note || "" };
+      args: function (row, yes, note) {  // eslint-disable-line no-unused-vars
+        return { leave_id: row.name, action: yes ? "approve" : "reject" };
       }
     },
     attendance_fixes: {

@@ -3232,7 +3232,9 @@ function renderScorecard(d, color) {
 }
 
 window.scActionLeave = function(leaveName, action) {
-  api("action_leave", {leave_name: leaveName, action: action}, function() {
+  /* `leave_id` is the server's parameter name. `leave_name` was dropped on the
+     wire and the call raised TypeError - see test_browser_call_args_045.py. */
+  api("action_leave", {leave_id: leaveName, action: action}, function() {
     var card = document.getElementById("sc-appr-" + leaveName);
     if (card) card.innerHTML = '<div style="padding:10px;color:var(--text3);font-size:var(--fs-base)">' + (action === "approve" ? "<i class=ic-check></i> Approved" : "<i class=ic-x></i> Rejected") + '</div>';
     toast(action === "approve" ? "Leave approved" : "Leave rejected", action === "approve" ? "ok" : "");
@@ -5409,8 +5411,17 @@ function deleteDrawerNote(noteId, empId) {
     listEl.style.display = "none";
     listEl.innerHTML = "";
 
-    gpFetch("alvoraa_portal.goals_api.get_alignment_options",
-            {employee: pfGoalEmployee()}).then(function(data) {
+    /* **This asked for one employee's chain and never got it.**
+       `goals_api.get_alignment_options()` declares no parameters, so Frappe
+       dropped `employee` on the wire and the server answered with the CALLER's
+       reporting line. Raising a goal for somebody else therefore offered
+       parents from the wrong chain, and `create_goal` then refused the save,
+       because it checks the parent against the SUBJECT's chain. Sending a name
+       the server does not declare is not a way to ask for anything, so the key
+       is gone. Making the picker right needs `get_alignment_options(employee)`
+       on the server, guarded by `_require_manages` - see the addendum to
+       docs/slices/045-redesign-wave4/00-impact-analysis.md, D7. */
+    gpFetch("alvoraa_portal.goals_api.get_alignment_options", {}).then(function(data) {
       _gpCascades = (data && data.options) || [];
       var chain = (data && data.chain) || [];
       if (chainEl) {

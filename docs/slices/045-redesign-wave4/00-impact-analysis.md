@@ -262,3 +262,173 @@ container `hrlocal-045`. Files claimed on the board: `growth_api.py`,
 `public/js/ess/next-growth.js`, the new test file and the new browser check.
 `performance_api.py` is a hot file — both hunks are named above so anybody else in it can
 see exactly where I am. Local only: no push, no merge into `dev`, no server.
+
+---
+
+# Addendum, 2026-09-25 — two faults found while correcting the eleven-rows claim
+
+Local only: no push, no merge into `dev`, no server, no production. Own container
+`hrlocal-045`, own site `test045`. `hrlocal-bench` not used. No `docker cp`.
+
+## A. The Inbox cannot approve leave, and has not since Wave 2
+
+`next-inbox.js:49` sends `{ name, action, reason }`. The server declares
+`hr_api.action_leave(leave_id, action)`. Frappe's `get_newargs`
+(`apps/frappe/frappe/__init__.py:1168`, read in the container, not from memory) keeps
+only the keys the function declares. So the call arrives as `action_leave(action="approve")`
+and raises `TypeError: action_leave() missing 1 required positional argument: 'leave_id'`.
+Every Approve and Decline on the new Inbox has failed since Wave 2.
+
+`portal.js:3235` (`scActionLeave`) has the same class of fault with a different wrong name,
+`leave_name`. The other three `action_leave` call sites (portal.js 3404, 3432, 3627) are
+correct.
+
+**A second fault on the same call, found while fixing the first.** `reason` is not a
+parameter of `action_leave` either, so `get_newargs` drops it. The Inbox prompts a manager
+for a decline reason on a factory-floor phone and then throws it away. The code comment
+claims "The server enforces it too". It does not. Recorded, not fixed — where a leave
+decline reason should be stored is a product decision, not mine.
+
+### Reach
+
+| Dimension | Finding |
+|---|---|
+| Cross-module | None. `hr_api.action_leave` is unchanged; only the browser's key changes |
+| Callers | 5 call sites of `action_leave` in JS, all listed above. No Python caller outside tests |
+| CXO / System Manager | No change |
+| HR Manager / manager | Approve and Decline on the Inbox start working. Today they fail |
+| Employee | No change |
+| HRMS domain | Leaves. Nothing else |
+
+### Non-functional verdict
+
+| Dimension | Verdict | Why |
+|---|---|---|
+| Performance | neutral | Same call, two keys instead of three |
+| Security | neutral | Server-side permission path untouched |
+| Reliability | improves | The call stops raising |
+| Scalability | neutral | — |
+| Maintainability | improves | The new check makes this class of fault visible |
+| Data integrity | neutral | — |
+| Compliance / privacy | neutral | No new field crosses the wire; one fewer (`reason`) does |
+
+## B. The test that would have caught it
+
+No test on this project can see a browser-to-server argument-name mismatch, because every
+test calls the Python directly. That is the real gap — a whole class of fault with no
+check.
+
+New structural test, modelled on `test_frappe_api_calls.py`: read the portal's own
+JavaScript, collect every whitelisted endpoint called with an object literal of arguments,
+and compare those key names against the Python signature. Two failures:
+
+* a **required** parameter the browser never sends — the `TypeError` class;
+* a key the server **does not declare** — the silently-dropped class (`reason`).
+
+**Scope, stated plainly.** Enforced over the redesign's own panels,
+`public/js/ess/next-*.js`, and over `portal.js`'s `api("name", {...})` shape. Not covered:
+calls built dynamically, `frappe.call` written by hand elsewhere in the repo, the desk, the
+mobile app, and any endpoint reached by plain navigation rather than an argument call. A
+narrow check that runs beats a wide one that does not exist.
+
+The check fails loudly rather than quietly: it pins a minimum number of call sites, and
+every `alvoraa_portal.*` endpoint named in those files must either be matched to a call
+site or listed with a reason. A call shape it cannot parse fails the test.
+
+## C. A goal can be set for anyone in the tenant by any HR role
+
+`goals_api._require_manages:379` returns for any `FULL_ACCESS_ROLES` holder with **no
+company scope at all**. Its sibling `approve_goal_update:1232` checks
+`permitted_companies()`. On a multi-company tenant, HR at one company can create goals for
+a person at another.
+
+**The same shape elsewhere in the module** (all found by grepping `_is_hr()`):
+
+| Line | Function | Act | Decision |
+|---|---|---|---|
+| 379 | `_require_manages` (create_goal, get_linkable_objectives) | write | fix |
+| 600 | `_require_can_edit` (update_goal, delete) | write | fix |
+| 837 | `set_goal_progress` | write | fix |
+| 1152 | `submit_goal_update` | write | fix |
+| 399 | `get_manageable_employees` | read — the picker `create_goal` is driven from | fix |
+| 737 | `get_goal_detail` | read | fix |
+| 1264 | `get_goal_update_log` | read | fix |
+| 238, 300, 807, 1275 | `is_hr` / `can_edit` / `can_action` display flags | flag | leave — the write paths above are the gate |
+| 1343, 1377, 1456 | `_pending_approvals_scope_query` and its two callers | read | already scoped |
+
+`get_manageable_employees` is fixed with the writes on purpose: leaving it wide would draw
+a picker full of people the server then refuses, which is the opposite of this codebase's
+"a row that is drawn is a row that can be acted on" rule.
+
+One helper, `_hr_may_act_for()`, wrapping `permitted_companies()`. No third definition of
+"which companies".
+
+### Whose behaviour changes
+
+| Who | Before | After |
+|---|---|---|
+| System Manager / Administrator | everyone | everyone — `permitted_companies` returns every company |
+| HR with no Company user-permission, on a single-company tenant | everyone | everyone — falls back to their own Employee's company |
+| HR with Company user-permissions (store or single-company HR) | **every company** | their permitted companies only |
+| HR with **no** Company user-permission and **no** active Employee record | everyone | **nothing** — fails closed |
+| Manager, non-HR | own subtree | own subtree, unchanged |
+| Employee | self | self, unchanged |
+
+Rows 3 and 4 are the release note. Row 4 is a deliberate fail-closed, and it is the rule
+`approve_goal_update` and `get_pending_approvals` already apply — this makes the module
+agree with itself.
+
+### Non-functional verdict
+
+| Dimension | Verdict | Why |
+|---|---|---|
+| Performance | neutral | One `get_value` for the company and one `permitted_companies()` per guarded call |
+| Security | improves | Closes cross-company goal writes and reads by an HR role |
+| Reliability | neutral | Refusals are named sentences with a next step |
+| Scalability | neutral | — |
+| Maintainability | improves | One definition of company scope instead of two-and-a-gap |
+| Data integrity | neutral | — |
+| Compliance / privacy | improves | Another company's employees stop being readable and writable |
+
+## D. Recorded, not fixed
+
+1. **`cancel_deduction` has no endpoint anywhere.** Cancelling is a desk action on
+   `Attendance Deduction`, where `hrms/alvoraa_late_rules/permissions.py:35` returns `True`
+   for an HR role with no company narrowing. Not an exposure — a row with no endpoint
+   cannot be called — but the Team screen names an action the product cannot perform
+   outside the desk.
+2. **`see_presence` has no per-person rule** because there is no per-person read at all.
+3. **`approve_evidence` navigates to a dead end.** `GOES_TO.approve_evidence = "inbox"`,
+   and the new Inbox maps only leave and attendance.
+4. **Nothing in CI checks that `main.pot` is current.** That is why it drifted for a day
+   unseen. Deliberately not added here: it needs git in CI, and it is its own decision.
+5. **The Inbox's decline reason is discarded** (section A).
+6. **`goals_api` defines `_is_hr` twice** — line 17 and line 386. The second wins at import.
+   Both resolve to the same three roles today, so nothing is wrong now; it is a trap.
+7. **`get_alignment_options` has never been able to answer for another employee.**
+   Found by the new check, not by a person. `portal.js:5414` sent
+   `{employee: pfGoalEmployee()}`; the server declares
+   `goals_api.get_alignment_options()` with no parameters, so Frappe dropped the key and
+   answered with the CALLER's reporting line. Raising a goal for somebody else therefore
+   offered parents from the wrong chain - and `create_goal` then refused the save,
+   because it checks the parent against the SUBJECT's chain. The key is removed from the
+   browser (sending a name the server does not declare asks for nothing), which changes
+   no behaviour. Making the picker right needs `get_alignment_options(employee)` on the
+   server, guarded by `_require_manages`. **That is a decision, not a typo fix.**
+8. **The new reader's own first version read next-inbox.js's whole ACTIONS table as
+   nothing, and passed.** It searched a copy of the source with string bodies blanked,
+   so the endpoint paths - which live inside quotes - were invisible. The orphan guard
+   caught it. The reader now keeps a second copy with comments blanked and strings
+   intact. Worth remembering: the guard, not the check, found the hole in the check.
+
+## E. Parallel-work check
+
+`git fetch origin dev`: nothing came in. `slice/045-redesign-wave4` contains all of
+`origin/dev` (0 behind, 162 ahead). Worktree clean at the start.
+
+Work board: every `045` row says the bench is released; `048` is finished and its container
+stopped. No other row claims `goals_api.py`, `hr_api.py`, `next-inbox.js` or `portal.js`.
+
+Files I will change: `alvoraa_portal/alvoraa_portal/goals_api.py`,
+`public/js/ess/next-inbox.js`, `public/js/ess/portal.js` (one line, 3235), and two new test
+files. `portal.js` is a hot file — the one changed line is named here.

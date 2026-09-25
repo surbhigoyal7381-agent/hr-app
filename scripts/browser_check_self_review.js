@@ -116,9 +116,17 @@ async function main() {
     return !!btn;
   }, typed);
   is(rated, true, "a goal rating was pressed");
-  await wait(1500);
-  is(/Saved at/.test(await page.evaluate(() =>
-       (document.getElementById("nf-wiz-room") || {}).textContent || "")), true,
+  /* **Wait for the line, do not sleep a guess.** A fixed 1.5 s passed on a warm
+     server and failed on a cold one, while the save itself had landed - a
+     check that fails for a reason that is not the product is worse than no
+     check. Fifteen seconds is the ceiling, not the expectation. */
+  let saidSaved = "";
+  for (let i = 0; i < 30 && !/Saved at/.test(saidSaved); i++) {
+    await wait(500);
+    saidSaved = await page.evaluate(() =>
+      (document.getElementById("nf-wiz-room") || {}).textContent || "");
+  }
+  is(/Saved at/.test(saidSaved), true,
      "the autosave landed and the screen says when - the SERVER's time");
 
   await mark(page);

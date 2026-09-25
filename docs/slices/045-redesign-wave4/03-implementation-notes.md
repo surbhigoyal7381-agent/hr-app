@@ -1320,7 +1320,7 @@ the browser check suddenly had nothing to open.
 ### What the real browser proved
 
 `scripts/browser_check_self_review.js`, Chromium at 390 px, a real login, real
-records on `test045` in my own container: **20 passed, 0 failed.** Rate a goal,
+records on `test045` in my own container: **20 passed, 0 failed** — run again against the final code after the notification changed, and it still is. Rate a goal,
 type an answer, wait for the autosave, **reload for real**, find both still
 there and the answers at the top level; walk to the last step, press Send with
 the values unrated and get the server's own sentence —
@@ -1329,6 +1329,12 @@ the values unrated and get the server's own sentence —
 
 — rate them, send, reload again, and it still reads as sent with no second Send
 to press. Every reload is proved by a marker on `window` first.
+
+One assertion in it had to be made patient rather than lucky: "the autosave
+landed" slept 1.5 seconds, which passed on a warm server and failed on a cold
+one **while the save had in fact landed**. It waits for the line now, up to
+fifteen seconds. A check that fails for a reason that is not the product is
+worse than no check, because the next person learns to ignore it.
 
 ### Two security checks that caught me, and were right to
 

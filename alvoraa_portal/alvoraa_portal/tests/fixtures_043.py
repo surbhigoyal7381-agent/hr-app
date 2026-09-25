@@ -26,7 +26,7 @@ Attendance Deduction can be valued at all.
 """
 
 import frappe
-from frappe.utils import add_days, nowdate
+from frappe.utils import add_days, flt, nowdate
 
 from alvoraa_goals.tests.utils import (
 	_ensure_erpnext_company_prerequisites,
@@ -242,3 +242,198 @@ def salary_slip(employee_name, company=COMPANY_A, start=None, end=None, submit=T
 		doc.db_set("docstatus", 1)
 	frappe.db.commit()
 	return doc.name
+
+
+# ── The browser check's data (043 review F5) ─────────────────────────────────
+
+
+def seed_deduction_for_browser_check(login=None):
+	"""One real loss-of-pay line with a real Attendance Deduction behind it.
+
+	`scripts/browser_check_time_pay.js` is the only check that renders the Why?
+	sheet in a real browser engine. It used to print SKIP and exit 0 when the
+	site had no such line, so its seven assertions may never have run at all -
+	the review's F5, and lesson 2 again: *ask what must be true in the data for
+	the claim to be observable.* The script now exits 2 instead, and this is the
+	function its error message tells you to run.
+
+	It builds the whole chain the sheet follows, because a break anywhere in it
+	produces the same empty screen:
+
+	    Salary Detail.additional_salary
+	      -> Additional Salary.ref_doctype / ref_docname
+	        -> Attendance Deduction
+	          -> its violation rows and its rule
+
+	Safe to run twice: everything is looked up before it is made.
+
+	Run it as:
+	    bench --site <site> execute \
+	      alvoraa_portal.tests.fixtures_043.seed_deduction_for_browser_check
+	"""
+	ensure_company()
+	ensure_branches()
+
+	if login:
+		# A login was named - almost always the browser check's own probe user,
+		# which the script's docstring insists must NOT be a fixture person.
+		# Use the Employee record it already has; never move a login onto one of
+		# this file's people, which is how a probe run once gave a fixture
+		# employee System Manager and broke two unrelated tests.
+		employee_name = frappe.db.get_value(
+			"Employee", {"user_id": login, "status": "Active"}, "name")
+		if not employee_name:
+			frappe.throw(
+				"%s has no Active Employee record. Give the probe user one "
+				"before seeding - this function will not take one of the S043 "
+				"fixture people and point it at your login." % login)
+	else:
+		login = user("rahul", ["Employee"])
+		employee_name = employee("Rahul", branch=STORE_A, login=login)
+
+	component = salary_component("S043 Late Coming Deduction", kind="Deduction")
+	rule = _browser_check_rule(component)
+	deduction = _browser_check_deduction(employee_name, rule)
+	extra = _browser_check_additional_salary(employee_name, component, deduction)
+	slip = _browser_check_slip(employee_name, component, extra)
+
+	frappe.db.commit()
+	print("seeded: deduction %s -> additional salary %s -> payslip %s"
+	      % (deduction, extra, slip))
+	print("Sign in as %s and open /hrms-employee-next#pay." % login)
+	return {"deduction": deduction, "additional_salary": extra, "payslip": slip}
+
+
+def _browser_check_rule(component):
+	name = "S043 Browser Check Rule"
+	if frappe.db.exists("Attendance Deduction Rule", name):
+		return name
+	frappe.get_doc({
+		"doctype": "Attendance Deduction Rule",
+		"rule_name": name,
+		"company": COMPANY_A,
+		"enabled": 1,
+		# The browser check asserts the week-start day came from the RECORD and
+		# not from the copy, so this has to be a real value it can find.
+		"week_start_day": "Monday",
+		"late_threshold_minutes": 10,
+		"free_violations_per_week": 1,
+		"deduction_per_violation_days": 0.5,
+		# The rule's own validate() refuses "deduct from leave first" with no
+		# leave types on it. The browser check is about the Why? SHEET, not
+		# about leave, so the simplest honest rule is one that goes straight to
+		# loss of pay.
+		"deduct_from_leave_first": 0,
+		"lwp_salary_component": component,
+	}).insert(ignore_permissions=True)
+	return name
+
+
+def _browser_check_deduction(employee_name, rule):
+	"""A SUBMITTED Attendance Deduction with violations on it.
+
+	Two things here are deliberate and both are lessons this slice already paid
+	for.
+
+	**`validate()` computes the days; this fixture does not.** Passing
+	`deduction_days` in would be thrown away - that is how slice 043's own year
+	table summed to 0.0 while every assertion passed, because 0 equalled 0
+	(`03-implementation-notes.md` section 16, finding 6). The violations are the
+	input; the days are the rule's answer; the fixture asserts afterwards that
+	the answer is not zero, so a rule change that values this week at nothing
+	fails here rather than producing an empty Why? sheet.
+
+	**`db_set("docstatus", 1)` rather than `submit()`.** `on_submit` values the
+	loss of pay, which needs a Salary Structure Assignment, and this fixture is
+	about the explanation rather than the valuation. The same shape
+	`test_why_sheet_043._deduction` already uses, for the same reason.
+	"""
+	existing = frappe.db.get_value(
+		"Attendance Deduction",
+		{"employee": employee_name, "rule": rule, "docstatus": 1}, "name")
+	if existing:
+		return existing
+
+	week_start = add_days(nowdate(), -45)
+	doc = frappe.get_doc({
+		"doctype": "Attendance Deduction",
+		"employee": employee_name,
+		"company": COMPANY_A,
+		"rule": rule,
+		"week_start": week_start,
+		"week_end": add_days(week_start, 6),
+		"violations": [
+			{"attendance_date": add_days(week_start, 1), "violation_type": "Late Arrival",
+			 "expected_time": "09:30:00", "actual_time": "10:05:00", "minutes": 35},
+			{"attendance_date": add_days(week_start, 2), "violation_type": "Late Arrival",
+			 "expected_time": "09:30:00", "actual_time": "10:12:00", "minutes": 42},
+			{"attendance_date": add_days(week_start, 3), "violation_type": "Late Arrival",
+			 "expected_time": "09:30:00", "actual_time": "10:40:00", "minutes": 70},
+		],
+	})
+	doc.flags.ignore_permissions = True
+	doc.insert(ignore_permissions=True, ignore_mandatory=True)
+	doc.db_set("docstatus", 1, update_modified=False)
+	doc.reload()
+	if not flt(doc.deduction_days):
+		frappe.throw(
+			"the rule valued this week at 0 days, so the Why? sheet would open "
+			"on an empty week and the browser check would prove nothing. "
+			"Deduction %s, rule %s." % (doc.name, rule))
+	return doc.name
+
+
+def _browser_check_additional_salary(employee_name, component, deduction):
+	existing = frappe.db.get_value(
+		"Additional Salary",
+		{"employee": employee_name, "ref_doctype": "Attendance Deduction",
+		 "ref_docname": deduction, "docstatus": 1}, "name")
+	if existing:
+		return existing
+	doc = frappe.get_doc({
+		"doctype": "Additional Salary",
+		"employee": employee_name,
+		"company": COMPANY_A,
+		"salary_component": component,
+		"amount": 500.0,
+		"payroll_date": add_days(nowdate(), -31),
+		"currency": "INR",
+		"overwrite_salary_structure_amount": 0,
+		"ref_doctype": "Attendance Deduction",
+		"ref_docname": deduction,
+	})
+	doc.flags.ignore_permissions = True
+	doc.flags.ignore_validate = True
+	doc.insert(ignore_permissions=True, ignore_mandatory=True)
+	doc.db_set("docstatus", 1)
+	return doc.name
+
+
+def _browser_check_slip(employee_name, component, extra):
+	"""The newest slip, carrying the deduction line the Why? button hangs off.
+
+	`get_pay` shows the NEWEST slip in full, so this one is dated this month -
+	otherwise the screen would open on a slip with no deduction line and the
+	check would still find no `[data-why]`.
+	"""
+	start = add_days(nowdate(), -30)
+	name = salary_slip(employee_name, start=start, end=nowdate())
+	slip = frappe.get_doc("Salary Slip", name)
+	already = [r for r in (slip.deductions or [])
+	           if r.get("additional_salary") == extra]
+	if already:
+		return name
+	slip.append("deductions", {
+		"salary_component": component,
+		"amount": 500.0,
+		"additional_salary": extra,
+	})
+	slip.flags.ignore_validate = True
+	slip.flags.ignore_permissions = True
+	slip.db_set({"gross_pay": 30000.0, "total_deduction": 500.0,
+	             "net_pay": 29500.0, "rounded_total": 29500.0},
+	            update_modified=False)
+	for row in slip.deductions:
+		row.db_insert() if not row.name or not frappe.db.exists(
+			row.doctype, row.name) else row.db_update()
+	return name

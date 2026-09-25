@@ -187,10 +187,25 @@ async function main() {
   is(pay.state, null, "Pay is not showing an error or a spinner");
   is(pay.sideways, false, "AC-41: no sideways scroll on Pay at 390px");
 
+  /* 043 review F5. This used to print SKIP here and carry on, so the script
+     exited 0 having checked NONE of the seven assertions below - and everything
+     this script exists for is in them. The jsdom file covers the wording; only
+     this one renders the Why? sheet in a real browser engine against a real
+     Attendance Deduction. A run that could not do that is not a pass.
+     `fixtures_043.seed_deduction_for_browser_check` seeds the row. */
   if (pay.whys < 1) {
-    console.log("  SKIP  the Why? sheet: this site has no deduction line with " +
-                "an Additional Salary behind it. Seed one and run again.");
-  } else {
+    console.error(
+      "\nMISSING DATA - this site has no deduction line with an Additional " +
+      "Salary behind it, so the Why? sheet cannot be opened and its seven " +
+      "assertions did not run.\n" +
+      "\n  Seed it:  bench --site <site> execute " +
+      "alvoraa_portal.tests.fixtures_043.seed_deduction_for_browser_check\n" +
+      "\nExiting 2. This is NOT a pass: the thing this script exists to prove " +
+      "was not observable in the data (043 review F5, lesson 2).");
+    await browser.close();
+    process.exit(2);
+  }
+  {
     const why = await page.evaluate(async () => {
       document.querySelector("#nf-screens [data-why]").click();
       await new Promise((r) => setTimeout(r, 900));

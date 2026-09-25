@@ -174,6 +174,9 @@ function makeReview(over) {
     values: values, values_count: 7,
     answers: {}, steps: ["goals", "values", "open_items", "next", "overall"],
     steps_answered: [],
+    /* D-13's default, decided on the SERVER and sent here: the ratings are
+       required, the three written steps are not. */
+    required_steps: ["goals", "values"], blank_optional_steps: [],
     rating_min: 1, rating_max: 5, rating_step: 1,
     budget_bytes: 63487, used_bytes: 2,
   }, over || {});
@@ -498,6 +501,39 @@ async function run() {
   is(screens(dom).querySelectorAll("img[src='x']").length, 0,
      "AC-85: a hostile company value name creates no element");
   is(dom.window.__alerted, false, "and nothing executed");
+
+  /* ── Send, on the last step (US-21) ─────────────────────────────────── */
+
+  dom = await load("#growth/review", makeFrame(), makeCounts(),
+                   { [REVIEW]: makeReview() });
+  let G0 = dom.window.NextGrowth;
+  G0._state().step = 4;
+  G0.drawReview.length;                         /* the panel is loaded */
+  el(dom, "nf-wiz-next");                       /* step 0 still drawn */
+  /* Walk to the last step the way a person does. */
+  for (let i = 0; i < 4; i++) {
+    el(dom, "nf-wiz-next").dispatchEvent(
+      new dom.window.MouseEvent("click", { bubbles: true }));
+    await settle();
+  }
+  is(!!el(dom, "nf-wiz-send"), true, "the last step has a Send button");
+  is(el(dom, "nf-wiz-send").disabled, false,
+     "and it is never greyed out - the SERVER says what is missing, and a " +
+     "dead button says nothing");
+  is(/leaving these empty/.test(text(dom)), true,
+     "D-13: the three written steps are optional, and the ones left empty " +
+     "are named on the last step");
+  is(/Still open from last time/.test(text(dom)), true,
+     "and named by what they are called on the screen, not by a key");
+  is(/Nothing reaches your manager until you press Send/.test(text(dom)), true,
+     "the last step says what pressing Send does");
+
+  /* A review that has already been sent is not an editable wizard. */
+  dom = await load("#growth/review", makeFrame(), makeCounts(),
+                   { [REVIEW]: makeReview({ review_status: "Manager Review" }) });
+  is(/Sent\. Your manager has your review now/.test(text(dom)), true,
+     "a sent review says so instead of offering the wizard again");
+  is(!!el(dom, "nf-wiz-send"), false, "and offers no second Send");
 
   /* ── the byte budget, watched while somebody types ──────────────────── */
 

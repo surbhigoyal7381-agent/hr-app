@@ -44,6 +44,12 @@
   var GROWTH = "alvoraa_portal.growth_api.get_growth";
   var REVIEW = "alvoraa_portal.growth_api.get_self_review";
   var SAVE = "alvoraa_portal.growth_api.save_self_review";
+  var SUBMIT = "alvoraa_portal.performance_api.submit_employee_review";
+
+  /* The review is still a draft in these two states, and in no others. The
+     SERVER decides whether a send is allowed; this only decides what to draw,
+     so a review that has been sent never shows an editable wizard. */
+  var DRAFT = { "Not Started": 1, "Employee Review": 1 };
 
   /* The wizard's state while it is open. Reset on every load, so a second
      visit never shows the first visit's answers. */
@@ -84,10 +90,19 @@
       overall: __("Anything else"),
       tooLong: __("This is too long to save. Shorten your longest answer."),
       /* The last step used to end with a Back button and nothing else, which
-         reads as "you have finished" when nothing has been sent. Sending is
-         not built here yet - see the implementation notes, section 15.11a -
-         and saying so is better than a screen that lets somebody assume. */
-      lastStep: __("Your answers are saved as you type. Sending your review to your manager is still done on the Reviews screen."),
+         reads as "you have finished" when nothing had been sent. It sends now
+         (US-21), and the sentence says what pressing it does. */
+      lastStep: __("Your answers are saved as you type. Nothing reaches your manager until you press Send."),
+      send: __("Send to your manager"),
+      sending: __("Sending\u2026"),
+      sent: __("Sent. Your manager has your review now."),
+      sentNote: __("You cannot change it now. If something is wrong, ask your manager to send it back."),
+      /* D-13's default, said out loud rather than enforced: the three written
+         steps may be left empty, and the person is told which ones are. */
+      blankNote: function (steps) {
+        return __("You are leaving these empty: {0}. That is allowed - send when you are ready.",
+                  [steps]);
+      },
       /* Whole phrases with placeholders. Never a sentence built by joining
          pieces: the figures move in word order between English, Hindi and
          Punjabi. */
@@ -287,6 +302,13 @@
   }
 
   function paint(ctx) {
+    /* A review that has been sent is not an editable wizard. The server
+       refuses a second send either way; this is so the screen never offers
+       one. */
+    if (review && !DRAFT[review.review_status]) {
+      ctx.showScreen(sentScreen(ctx));
+      return;
+    }
     ctx.showScreen(buildReview(ctx));
     wireReview(ctx);
     showRoom(ctx);
@@ -308,7 +330,15 @@
       + esc(stepTitle(which, SAY)) + "</h2>"
       + '<div id="nf-wiz-body">' + stepBody(which, ctx, SAY) + "</div></section>"
       + '<p class="nf-card-note" id="nf-wiz-room" role="status"></p>';
-    if (step === steps.length - 1) {
+    var last = step === steps.length - 1;
+    if (last) {
+      var blank = blankOptional();
+      if (blank.length) {
+        html += '<p class="nf-screen-note" id="nf-wiz-blank">'
+          + esc(SAY.blankNote(blank.map(function (which) {
+            return stepTitle(which, SAY);
+          }).join(", "))) + "</p>";
+      }
       html += '<p class="nf-screen-note">' + esc(SAY.lastStep) + "</p>";
     }
     html += '<div class="nf-sheet-acts">';
@@ -320,7 +350,40 @@
       html += '<button type="button" class="nf-btn" id="nf-wiz-next">'
         + esc(SAY.next) + "</button>";
     }
+    if (last) {
+      /* **Never disabled.** A missing rating is refused by the SERVER, with a
+         sentence naming what is missing - a greyed-out button that says
+         nothing is how somebody stands there wondering which step they
+         missed. */
+      html += '<button type="button" class="nf-btn nf-btn-main" id="nf-wiz-send">'
+        + esc(SAY.send) + "</button>";
+    }
     return html + "</div></section>";
+  }
+
+  /* Which of the OPTIONAL steps are still empty, worked out from what is on
+     screen right now so the person sees it as they type. **The server sends
+     `required_steps`** - this never decides what may be sent, only what to
+     say. */
+  function blankOptional() {
+    /* No list from the server means say nothing. Guessing which steps are
+       optional would be a second copy of a rule the server owns, and a wrong
+       guess here tells somebody they are leaving their ratings blank. */
+    if (!review.required_steps) { return []; }
+    var required = {};
+    review.required_steps.forEach(function (which) { required[which] = 1; });
+    return (review.steps || []).filter(function (which) {
+      if (required[which]) { return false; }
+      return !String(((answers[which] || {}).text) || "").trim();
+    });
+  }
+
+  function sentScreen(ctx) {
+    var esc = ctx.esc, SAY = words(ctx);
+    return '<section class="nf-screen nf-growth-wizard">'
+      + '<section class="nf-card"><h2 class="nf-card-title">' + esc(SAY.sent)
+      + "</h2>"
+      + '<p class="nf-card-note">' + esc(SAY.sentNote) + "</p></section></section>";
   }
 
   function stepTitle(which, SAY) {
@@ -530,6 +593,33 @@
         paint(ctx);
       });
     }
+    var sendBtn = document.getElementById("nf-wiz-send");
+    if (sendBtn) {
+      sendBtn.addEventListener("click", function () { doSend(ctx, sendBtn); });
+    }
+  }
+
+  /* **Save first, then send.** The autosave waits for a pause in typing, so
+     the last thing somebody typed may not have left the browser yet. Sending
+     without this is how a Send stores everything except the last answer -
+     the silent failure US-21 is about, in miniature. */
+  function doSend(ctx, button) {
+    var SAY = words(ctx);
+    button.disabled = true;
+    button.textContent = SAY.sending;
+    window.clearTimeout(saveTimer);
+    lastSaveAt = 0;              /* the minimum gap does not apply to a send */
+    save(ctx).then(function () {
+      return ctx.api(SUBMIT, { appraisal: review.appraisal, overall_comment: "" });
+    }).then(function (out) {
+      review.review_status = (out && out.review_status) || "Manager Review";
+      paint(ctx);
+    }).catch(function (reason) {
+      /* The SERVER's sentence, which names what is still missing. */
+      button.disabled = false;
+      button.textContent = SAY.send;
+      ctx.toast(refusalSentence(reason) || SAY.cardFailed, "bad");
+    });
   }
 
   /* A save after a pause, and never more often than MIN_GAP_MS. An unchanged
@@ -583,6 +673,7 @@
     figures: figures,
     bytesOf: bytesOf,
     roomLeft: roomLeft,
+    blankOptional: blankOptional,
     _state: function () { return { review: review, answers: answers, step: step }; }
   };
 })();

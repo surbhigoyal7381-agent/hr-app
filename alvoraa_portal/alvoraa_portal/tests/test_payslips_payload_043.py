@@ -162,14 +162,35 @@ class TestNoWaveThreeModuleHandsAnEmployeeRowToAPayload(FrappeTestCase):
 	WAVE_THREE_FUNCTIONS = ("get_payslips", "get_payslip", "download_payslip",
 	                        "get_shift_types")
 
+	# ── The files this walks (045 F6) ────────────────────────────────────
+	#
+	# It was three. Wave 4 added `team_api.py` and `growth_api.py` - two
+	# modules whose whole job is building payloads about people - and neither
+	# was scanned, so the check that exists to catch this shape of mistake did
+	# not look at the two newest places it could happen.
+	#
+	# Neither offends today: `team_api` builds every row key by key from
+	# `ROW_FIELDS` and the caller's own block from `me_block`, and `growth_api`
+	# puts no Employee row in a payload at all. That is the point - the guard is
+	# for the SIXTH one, and it now runs where the sixth would be written.
+	SOURCES = ("hr_api.py", "pay_api.py", "time_api.py",
+	           "team_api.py", "growth_api.py")
+
 	def _wave_three_sources(self):
 		root = os.path.dirname(os.path.abspath(alvoraa_portal.__file__))
 		found = []
-		for name in ("hr_api.py", "pay_api.py", "time_api.py"):
+		for name in self.SOURCES:
 			path = os.path.join(root, name)
 			if os.path.isfile(path):
 				found.append((name, path))
 		return found
+
+	def test_every_named_source_really_exists(self):
+		"""A file renamed away would silently stop being scanned, and the list
+		above would still read as though it covered five modules."""
+		self.assertEqual([n for n, _ in self._wave_three_sources()],
+		                 list(self.SOURCES),
+		                 "a file in SOURCES is missing - it is no longer scanned")
 
 	def test_there_is_something_to_check(self):
 		self.assertTrue(self._wave_three_sources())

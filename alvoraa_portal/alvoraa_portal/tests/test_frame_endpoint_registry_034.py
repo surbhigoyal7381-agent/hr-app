@@ -41,6 +41,24 @@ import alvoraa_portal
 MODULES = ("frame_api.py", "inbox_api.py", "staff_api.py", "home_api.py",
            "pay_api.py", "time_api.py")
 
+# ── The whole-file rules cover MORE files than the registry does (045) ──────
+#
+# `MODULES` is the AC-69 registry set: one typed row per whitelisted function,
+# naming its Guest, wrong-persona and scope tests. Wave 4's two modules do not
+# join it, and that is deliberate rather than an omission: `test_endpoint_
+# guards_045.py` gives `team_api` and `growth_api` the same three cases
+# DISCOVERED from `frappe.whitelisted` instead of typed out, so an endpoint
+# added to either file without guards fails there. Typing them here as well
+# would be a second list of the same thing, and two lists drift.
+#
+# **The AC-70 and AC-71 whole-file rules are a different matter.** They are not
+# per-endpoint; they are properties of a file, and nothing else checks them for
+# the two modules Wave 4 wrote. Until 045 they did not run on `team_api.py` or
+# `growth_api.py` at all - so the five `ignore_permissions` flags those two
+# carry were never counted, and a SIXTH could have been added without anything
+# going red. They are counted below now, each with the scope it sits behind.
+STATE_MODULES = MODULES + ("team_api.py", "growth_api.py")
+
 # AC-69. One row per whitelisted function. `guest`, `persona` and `scope` each
 # name a test method that must exist in the test file named by `tests`.
 #
@@ -129,15 +147,25 @@ ENDPOINT_REGISTRY = {
 }
 
 
-def _module_files():
-	"""The files these rules cover, skipping any not written yet."""
+def _files(names):
+	"""The named files, skipping any not written yet."""
 	root = os.path.dirname(os.path.abspath(alvoraa_portal.__file__))
 	found = []
-	for name in MODULES:
+	for name in names:
 		path = os.path.join(root, name)
 		if os.path.isfile(path):
 			found.append((name, path))
 	return found
+
+
+def _module_files():
+	"""The registry set (AC-69)."""
+	return _files(MODULES)
+
+
+def _state_module_files():
+	"""The whole-file-rule set (AC-70, AC-71) - wider than the registry set."""
+	return _files(STATE_MODULES)
 
 
 def _source(path):
@@ -234,14 +262,14 @@ class TestEveryNewEndpointHasItsThreeCases(FrappeTestCase):
 class TestNoModuleLevelStateAndNoIgnorePermissions(FrappeTestCase):
 	def test_no_global_statement(self):
 		"""AC-70. `global` in a web worker is one request writing another's data."""
-		for name, path in _module_files():
+		for name, path in _state_module_files():
 			for node in ast.walk(ast.parse(_source(path))):
 				self.assertNotIsInstance(node, ast.Global, f"{name} uses `global`")
 
 	def test_no_module_level_dict_list_or_set(self):
 		"""AC-70. A tuple cannot be appended to; a list, dict or set can be, and
 		a worker serves several sites. Constants in these modules are tuples."""
-		for name, path in _module_files():
+		for name, path in _state_module_files():
 			for node in ast.parse(_source(path)).body:
 				if not isinstance(node, (ast.Assign, ast.AnnAssign)):
 					continue
@@ -253,11 +281,68 @@ class TestNoModuleLevelStateAndNoIgnorePermissions(FrappeTestCase):
 					self.fail(f"{name}: module-level mutable `{label}` (line {node.lineno}). "
 					          f"Use a tuple, or build it inside the function.")
 
-	def test_no_ignore_permissions_anywhere_in_these_files(self):
-		"""AC-71 / SEC-6, first half. Not "few". None."""
-		for name, path in _module_files():
-			self.assertNotIn("ignore_permissions", _code_only(path),
-			                 f"{name} uses ignore_permissions")
+	# AC-71 / SEC-6. **Zero is still the rule; a declared count is the
+	# exception, and the exception has to be written down here by a person.**
+	#
+	# Wave 4's two modules carry five between them. Every one of them raises the
+	# flag AFTER the scope has been built and on a filter that already carries
+	# it - that is why they are not an exposure - but "not an exposure today"
+	# is not a control. Counting them is: a sixth turns this red, and whoever
+	# adds it has to come here and say what scope it sits behind.
+	IGNORE_PERMISSIONS_DECLARED = {
+		# team_api - FOUR, all inside a scope `covered_conditions` or
+		# `_own_scope_filters` already decided, none of them ever reached with
+		# an empty filter (`test_no_wave_four_helper_can_return_an_empty_filter`
+		# in test_endpoint_guards_045 proves that half):
+		#
+		#   `_section` x3 (one get_all + two db.count, :208 :212 :218-225) -
+		#     the rows and the total of one section. `conds` always carries
+		#     `status = Active` plus the section's own conditions; the flag is
+		#     on the read, not on the scope.
+		#   `relationship` :294 - one existence check, `name = <employee>` AND
+		#     the caller's HR conditions. It answers "is this person inside my
+		#     HR scope", which is the scope question itself.
+		#   `get_team` :353 - the same question asked once for the whole drawn
+		#     page instead of once per row, filtered to names already drawn.
+		#
+		# Why the flag at all: `frappe.get_list` would drop a row a tenant's own
+		# User Permissions narrow away, and the section totals would then stop
+		# matching the section lists - the exact defect §F5 of the Wave 3 review
+		# was about. The loss is a tenant's extra narrowing, which is recorded
+		# here as a known difference rather than being invisible.
+		"team_api.py": 4,
+		# growth_api - ONE, and it is pre-existing (AC-54 declares it).
+		#
+		#   `company_values_for` :193 - the tenant's own `Company Value` rows,
+		#     filtered to the CALLER'S OWN company, which is read from their own
+		#     Employee record two lines above. A Company Value is a policy
+		#     statement, not a person, and it is the content of a step the
+		#     caller is being asked to answer.
+		"growth_api.py": 1,
+	}
+
+	def test_ignore_permissions_is_counted_and_declared(self):
+		"""AC-71 / SEC-6, first half. Not "few". None, unless declared here."""
+		for name, path in _state_module_files():
+			found = _code_only(path).count("ignore_permissions")
+			self.assertEqual(
+				found, self.IGNORE_PERMISSIONS_DECLARED.get(name, 0),
+				f"{name} uses ignore_permissions {found} time(s); "
+				f"{self.IGNORE_PERMISSIONS_DECLARED.get(name, 0)} are declared. "
+				f"Adding one? Say here what scope it sits behind. Removing one? "
+				f"Take it out of IGNORE_PERMISSIONS_DECLARED.")
+
+	def test_that_count_can_actually_fail(self):
+		"""The counter is a string count over `_code_only`, and `_code_only`
+		throws away comments and strings. If it threw away too much, every file
+		would read zero and this class would pass by seeing nothing."""
+		self.assertGreater(sum(self.IGNORE_PERMISSIONS_DECLARED.values()), 0)
+		root = os.path.dirname(os.path.abspath(alvoraa_portal.__file__))
+		for name in self.IGNORE_PERMISSIONS_DECLARED:
+			path = os.path.join(root, name)
+			if os.path.isfile(path):
+				self.assertGreater(_code_only(path).count("ignore_permissions"), 0,
+				                   f"the counter cannot see {name}'s flags")
 
 	def test_every_other_way_past_the_permission_layer_is_declared(self):
 		"""AC-71 / SEC-6, second half (F7).
@@ -378,6 +463,38 @@ class TestNoModuleLevelStateAndNoIgnorePermissions(FrappeTestCase):
 			# is `attendance_correction`'s, which uses `frappe.get_list`
 			# throughout and is not this file.
 			"time_api.py": ("frappe.get_all",) * 5,
+			# team_api (slice 045). SEVEN - four reads and three counts, and
+			# every one of them takes `covered_conditions` or
+			# `_own_scope_filters`, the file's own scope helpers, which always
+			# carry `status = Active` and can never return an empty filter
+			# (`test_no_wave_four_helper_can_return_an_empty_filter`):
+			#
+			#   `_section` - the rows of one section (`frappe.get_all`) and its
+			#     totals. THREE counts, not one, because the direct reports are
+			#     subtracted from the covered total using two equalities rather
+			#     than a `reports_to != me` the two query paths disagree about
+			#     on NULL. That defect drew nine cards under a heading of four.
+			#   `relationship` - one existence check with `limit=1, pluck=name`.
+			#     No field leaves it; the answer is a boolean.
+			#   `get_team` - one read for the whole drawn page instead of a
+			#     `relationship()` per row, which would be an N+1 at fifty
+			#     reports. Filtered to names already drawn.
+			"team_api.py": ("frappe.get_all",) * 4 + ("frappe.db.count",) * 3,
+			# growth_api (slice 045). FIVE reads, and four of the five are the
+			# CALLER'S OWN record - there is no `employee` argument anywhere on
+			# the Growth panel, so there is nobody else to ask about:
+			#
+			#   `company_values_for` - the tenant's active Company Values for
+			#     the caller's own company. A policy statement, not a person.
+			#   `running_cycles`     - the tenant's open Appraisal Cycles. A
+			#     date window, not a person.
+			#   `_pending_for`       - the caller's own pending goal updates.
+			#   `get_growth` x2      - the caller's own Individual Goals and
+			#     their KPI rows.
+			#
+			# `get_list` would add nothing to the own-record four: a tenant
+			# cannot narrow a person out of their own goals.
+			"growth_api.py": ("frappe.get_all",) * 5,
 		}
 		# `frappe.qb.get_query` and `frappe.qb.from_` join the list in 044.
 		# A query written in the query builder skips Frappe's permission layer
@@ -388,7 +505,7 @@ class TestNoModuleLevelStateAndNoIgnorePermissions(FrappeTestCase):
 		           "frappe.db.sql", "frappe.db.sql_list", "frappe.db.multisql",
 		           "frappe.qb.get_query", "frappe.qb.from_")
 
-		for name, path in _module_files():
+		for name, path in _state_module_files():
 			found = []
 			for node in ast.walk(ast.parse(_source(path))):
 				if not isinstance(node, ast.Call):

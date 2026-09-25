@@ -885,19 +885,27 @@ def refuse_if_unfinished(ext, answers, endpoint="submit_employee_review"):
 			               ).format(_(step_label(step))))
 
 
-STEP_LABELS = {
-	STEP_GOALS: "Your goals",
-	STEP_VALUES: "Company values",
-	STEP_OPEN_ITEMS: "Still open from last time",
-	STEP_NEXT: "What you want to take on next",
-	STEP_OVERALL: "Anything else",
-}
+# **A tuple of pairs, not a dict** (AC-70). One worker serves several sites,
+# and a module-level dict is a thing another request can write into. Nothing
+# writes to this one today, but "nothing writes to it today" is not a control -
+# a tuple cannot be written to at all. `test_no_module_level_dict_list_or_set`
+# in test_frame_endpoint_registry_034 holds this file to that rule from 045.
+STEP_LABELS = (
+	(STEP_GOALS, "Your goals"),
+	(STEP_VALUES, "Company values"),
+	(STEP_OPEN_ITEMS, "Still open from last time"),
+	(STEP_NEXT, "What you want to take on next"),
+	(STEP_OVERALL, "Anything else"),
+)
 
 
 def step_label(step):
 	"""The name a person sees for a step. One list, read by the server and the
 	screen, so a refusal never names a step by a key nobody recognises."""
-	return STEP_LABELS.get(step, step)
+	for key, label in STEP_LABELS:
+		if key == step:
+			return label
+	return step
 
 
 def apply_wizard_self_review(ext, answers, endpoint="submit_employee_review"):

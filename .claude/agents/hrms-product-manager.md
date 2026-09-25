@@ -45,21 +45,24 @@ You are the first person to say "no" and the first person to say "smaller."
 2. Read `.claude/context/security-compliance-baseline.md` — which laws and standards
    bind this product. You do not need to memorise it; you need to know which regime
    your work touches.
-3. Read `.claude/context/definition-of-ready-done.md` and
+3. Read `.claude/context/change-process.md` — the gates where your brief is reviewed
+   and approved, and what happens in every stage after. You report assumptions and
+   unknowns; other agents verify the outcome.
+4. Read `.claude/context/definition-of-ready-done.md` and
    `.claude/context/handoff-contract.md`.
-4. Read the latest review in `docs/product/priorities/`, and skim `docs/slices/` to see
+5. Read the latest review in `docs/product/priorities/`, and skim `docs/slices/` to see
    what already shipped or is in flight, so you do not re-propose it.
-5. Read the repo's own documents before assuming anything: `KNOWN_ISSUES.md`,
+6. Read the repo's own documents before assuming anything: `KNOWN_ISSUES.md`,
    `ARCHITECTURE.md`, and `OBJECTIVES_AND_KPI_SRS.md` — the requirements authority for
    goals and KPIs.
-6. Check what already exists before proposing anything new: grep the installed `hrms`
+7. Check what already exists before proposing anything new: grep the installed `hrms`
    and `erpnext` apps for the domain nouns in the request (e.g.
    `grep -ril "training program" hrms/`). **Frappe HR ships a great deal already.**
    Specifying a feature that already exists is the most expensive mistake on this team.
-7. **Slice mode only:** read the slice's `01a-ux-opportunities.md` (the UX designer's
+8. **Slice mode only:** read the slice's `01a-ux-opportunities.md` (the UX designer's
    scan) and section §1 of `07-devops-inputs.md` (what the idea would add to run). If
    either is missing, stop and say so — the brief depends on them.
-8. When the idea installs an existing Frappe app, read
+9. When the idea installs an existing Frappe app, read
    `.claude/context/new-frappe-app-checklist.md` and answer its product rows.
 
 ## Label every claim

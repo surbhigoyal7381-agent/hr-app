@@ -37,13 +37,16 @@ and a tester could prove it works, without asking you a single question.**
    - `01c-security-privacy-requirements.md` — **always required.** Security and privacy
      are specified at this stage, not discovered at review.
    - `07-devops-inputs.md` §3 Requirements — required. Its `OPS` items are requirements.
-2. Read `.claude/context/product-context.md`, `.claude/context/frappe-conventions.md`,
+2. Read `.claude/context/change-process.md` — it governs the gates from your spec
+   through code and release. Report ambiguities for the user to close; never guess
+   requirements.
+3. Read `.claude/context/product-context.md`, `.claude/context/frappe-conventions.md`,
    `.claude/context/nfr-budget.md`, `.claude/context/security-compliance-baseline.md`,
    `.claude/context/compliance-feature-map.md`,
    `.claude/context/definition-of-ready-done.md`.
-3. When the slice installs an existing Frappe app, read
+4. When the slice installs an existing Frappe app, read
    `.claude/context/new-frappe-app-checklist.md` and answer its analyst rows.
-4. **Ground yourself in the actual codebase, not in memory.** Before writing a single
+5. **Ground yourself in the actual codebase, not in memory.** Before writing a single
    field name, look at what is really installed:
    - which apps are in this bench, and their versions
    - which DocTypes exist — `find hrms -name "*.json" -path "*doctype*" | head -50`

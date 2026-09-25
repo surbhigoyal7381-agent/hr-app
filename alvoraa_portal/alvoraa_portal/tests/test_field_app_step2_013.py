@@ -197,8 +197,10 @@ class TheSettingsInstallSafely(SettingsCase):
 		self.assertTrue(fas.after_migrate(), "the installer is not safe to run twice")
 
 		current = fas.settings()
+		# ALV-128 added the two ways in; both are on by default.
 		self.assertEqual(current, {"enabled": True, "designations": [], "lifetime": "1 day",
-		                           "lifetime_hours": 24, "readable": True})
+		                           "lifetime_hours": 24, "readable": True,
+		                           "code_join": True, "password_signin": True})
 		self.assertEqual(others_before, others(), "the installer touched another setting")
 
 	def test_013_ac14_a_value_the_tenant_saved_is_never_overwritten(self):

@@ -72,6 +72,21 @@ CODES = {
 	"INVALID_REQUEST":    (400, ()),          # never a field name. SEC-19
 	"TOO_MANY_TRIES":     (429, ("retry_after_s",)),
 	"SERVER_ERROR":       (500, ()),
+
+	# signing in with email and password (ALV-128). Added, never renamed.
+	# SIGN_IN_FAILED is one answer for an unknown email, a wrong password and a
+	# disabled login, so the app cannot be used to find out who works here.
+	"SIGN_IN_FAILED":      (401, ()),
+	"ACCOUNT_LOCKED":      (429, ("retry_after_s",)),
+	"PASSWORD_EXPIRED":    (403, ()),
+	"SIGN_IN_NOT_ALLOWED": (403, ()),
+	"OTP_WRONG":           (401, ()),
+	"OTP_EXPIRED":         (410, ()),
+	"NO_EMPLOYEE_RECORD":  (403, ()),
+	# HR turned one way into the app off (HR Settings). A phone that came in
+	# that way stops until it is turned on again; its secret is kept.
+	"PASSWORD_SIGNIN_OFF": (403, ()),
+	"JOIN_CODE_OFF":       (403, ()),
 }
 
 

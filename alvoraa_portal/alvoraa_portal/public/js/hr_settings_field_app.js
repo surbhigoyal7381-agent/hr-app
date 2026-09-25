@@ -17,6 +17,10 @@
 	const F = {
 		designations: "alvoraa_field_worker_designations",
 		enabled: "alvoraa_field_app_enabled",
+		// ALV-128: the two ways into the app. Turning either off needs a reason
+		// too (the server refuses without one), and one of them must stay on.
+		codeJoin: "alvoraa_app_code_join",
+		password: "alvoraa_app_password_signin",
 		lifetime: "alvoraa_app_code_lifetime",
 		reason: "alvoraa_field_app_change_reason",
 		info: "alvoraa_field_app_info",
@@ -43,6 +47,8 @@
 		if (!frm.is_dirty()) {
 			frm._alvfa_saved = {
 				enabled: !!frm.doc[F.enabled],
+				codeJoin: !!frm.doc[F.codeJoin],
+				password: !!frm.doc[F.password],
 				designations: alvfaRows(frm),
 			};
 		}
@@ -252,8 +258,20 @@
 			if (!alvfaHasTab(frm) || !frm._alvfa_saved) return;
 			const saved = frm._alvfa_saved;
 			const now = alvfaRows(frm);
-			const turningOff = saved.enabled && !frm.doc[F.enabled];
+			const turningOff = (saved.enabled && !frm.doc[F.enabled])
+				|| (saved.codeJoin && !frm.doc[F.codeJoin])
+				|| (saved.password && !frm.doc[F.password]);
 			const removed = saved.designations.filter((d) => !now.includes(d));
+			if (F.codeJoin in frm.doc && F.password in frm.doc
+				&& !frm.doc[F.codeJoin] && !frm.doc[F.password]) {
+				frappe.msgprint({
+					title: __("Keep one way in"),
+					message: __("Keep at least one way into the app switched on: a code from HR, or email and password."),
+					indicator: "orange",
+				});
+				frappe.validated = false;
+				return;
+			}
 			if ((turningOff || removed.length) && !frm.doc[F.reason]) {
 				frappe.msgprint({
 					title: __("Choose a reason"),

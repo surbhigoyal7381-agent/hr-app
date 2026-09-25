@@ -32,6 +32,11 @@ PHONE_KEY = "phone_hash_key"
 HR_KEY = "hr_user_key"
 # A signed-in employee asking about their own records (step 6, US-28).
 SELF_KEY = "self_user_key"
+# Signing in with email and password (ALV-128): the email, hashed, so an
+# address is never written into a Redis key; and the two-factor step's
+# one-time id, hashed the same way.
+SIGNIN_KEY = "signin_email_key"
+OTP_KEY = "signin_otp_key"
 
 WINDOW_SECONDS = 60 * 60
 
@@ -59,6 +64,9 @@ def _limited(field, source, limit):
 		@functools.wraps(fn)
 		def wrapper(*args, **kwargs):
 			value = frappe.session.user if source == "user" else kwargs.get(source)
+			if source == "email" and isinstance(value, str):
+				# One bucket per address however it is typed.
+				value = value.strip().lower()
 			hashed = _hash(value if isinstance(value, str) else "")
 			frappe.form_dict[field] = hashed
 			try:
@@ -76,6 +84,38 @@ def _limited(field, source, limit):
 		# So a test can read every endpoint's limit off the function itself and
 		# pin the whole table (step 6, US-25): what it is keyed on, and how many.
 		wrapper.__alvoraa_limit__ = (field, source, limit, WINDOW_SECONDS)
+		return wrapper
+
+	return decorator
+
+
+def _limited_by_address(limit):
+	"""Rate limit an endpoint per caller address (ALV-128, password sign-in only).
+
+	Every other app endpoint is keyed on a phone or a code, never on the
+	address, because 400 phones behind one depot Wi-Fi are 400 callers
+	(AC-140). Signing in is different: the email is the thing an attacker
+	varies, so a per-email limit alone would let one machine try a password
+	against every address in turn. The address is the one thing it cannot vary
+	cheaply. Set high enough that a depot signing everybody in on day one is
+	not refused; Frappe's own lockout still counts every wrong password.
+	"""
+	def decorator(fn):
+		limited = rate_limit(limit=limit, seconds=WINDOW_SECONDS, methods=["POST"],
+		                     ip_based=True)(fn)
+
+		@functools.wraps(fn)
+		def wrapper(*args, **kwargs):
+			try:
+				return limited(*args, **kwargs)
+			except frappe.RateLimitExceededError:
+				frappe.clear_messages()
+				refuse("TOO_MANY_TRIES",
+				       _("Too many tries. Please wait a while and try again."),
+				       retry_after_s=_seconds_left(getattr(frappe.local, "request_ip", "") or "",
+				                                   WINDOW_SECONDS))
+
+		wrapper.__alvoraa_address_limit__ = (limit, WINDOW_SECONDS)
 		return wrapper
 
 	return decorator

@@ -41,6 +41,14 @@ from frappe.utils import now
 # with that role do the same thing by hand.
 SERVER_FLAG = "alvoraa_server_write"
 
+# How a phone arrived. The two APP ways are the ones the organisation's app
+# settings govern; a web check-in page phone is not touched by them (ALV-128
+# added the second app way: email and password, for anyone with a login).
+JOIN_WEB = "Web check-in page"
+JOIN_QR = "App QR code"
+JOIN_PASSWORD = "App password sign-in"
+APP_JOIN_METHODS = (JOIN_QR, JOIN_PASSWORD)
+
 # States a person may put a phone into, from the state it is in now.
 ALLOWED_BY_A_PERSON = {
 	("Pending", "Active"),
@@ -188,12 +196,13 @@ class AlvoraaFieldDevice(Document):
 				_("A phone cannot be moved from {0} to {1}.").format(_(old), _(new)),
 				frappe.ValidationError)
 
-		if (old, new) == ("Pending", "Active") and self.join_method == "App QR code":
+		if (old, new) == ("Pending", "Active") and self.join_method in APP_JOIN_METHODS:
 			# A phone that joined with HR's code was already approved by the
-			# person who made the code. Nobody approves it a second time, and
+			# person who made the code; one that signed in was approved by the
+			# person's own password. Nobody approves it a second time, and
 			# nobody uses this door to switch on a phone the app parked.
 			frappe.throw(
-				_("A phone that joined with a code is switched on by the app, not "
+				_("A phone that joined through the app is switched on by the app, not "
 				  "from here."),
 				frappe.ValidationError)
 

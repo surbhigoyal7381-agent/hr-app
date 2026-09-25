@@ -150,7 +150,9 @@ doc_events = {
         "validate":     "alvoraa_portal.ai_leads.guards.validate_user",
         "after_insert": "alvoraa_portal.module_access.apply_on_user_insert",
         "on_update":    ["alvoraa_portal.hr_api.invalidate_portal_context_cache",
-                         "alvoraa_portal.module_access.apply_on_user_update"],
+                         "alvoraa_portal.module_access.apply_on_user_update",
+                         # ALV-128: a disabled login stops the app phones it signed in.
+                         "alvoraa_portal.field_app_device.block_phones_for_disabled_login"],
     },
     # ── Global features cache invalidation ───────────────────────────────
     # Clear portal_features_global when HR configuration changes

@@ -1,7 +1,9 @@
 """The organisation's three switches for the field attendance app (slice 013, US-3).
 
 Who may have the app (a list of designations), whether the app is on at all,
-and how long a joining code works. They live on **HR Settings** as custom
+and how long a joining code works. Since ALV-128 there are two more: whether
+each way into the app is on - a code from HR, or email and password - with
+one of the two always on. They live on **HR Settings** as custom
 fields, not in a Single of our own, because `CLAUDE.md` section 4 puts
 organisation settings there, and because HR Settings already does the two
 things the story needs: HR Manager writes and HR User only reads (its own
@@ -34,6 +36,9 @@ import frappe
 from frappe import _
 from frappe.utils import cint, get_fullname
 
+from alvoraa_portal.alvoraa_portal.doctype.alvoraa_field_device.alvoraa_field_device import (
+	APP_JOIN_METHODS,
+)
 from alvoraa_portal.field_app_errors import refuse, requires_field_app_plan
 
 SETTINGS = "HR Settings"
@@ -51,10 +56,14 @@ F_LIFETIME = "alvoraa_app_code_lifetime"
 F_REASON = "alvoraa_field_app_change_reason"
 F_INFO_SECTION = "alvoraa_field_app_info_section"
 F_INFO = "alvoraa_field_app_info"
+# The two ways into the app (ALV-128). Both on by default; HR may turn either
+# off, never both at once.
+F_CODE_JOIN = "alvoraa_app_code_join"
+F_PASSWORD = "alvoraa_app_password_signin"
 
 # The fields whose changes the history on the screen is about. Layout fields
 # never appear in a Version row, so they are not here.
-TRACKED_FIELDS = (F_DESIGNATIONS, F_ENABLED, F_LIFETIME, F_REASON)
+TRACKED_FIELDS = (F_DESIGNATIONS, F_ENABLED, F_LIFETIME, F_REASON, F_CODE_JOIN, F_PASSWORD)
 
 # How long a joining code works. The user's decision: 24 hours by default, at
 # most 7 days. Held as a Select rather than a number so a REST save cannot
@@ -85,7 +94,12 @@ LABELS = {
 	F_ENABLED: "Field workers can use the app",
 	F_LIFETIME: "App codes work for",
 	F_REASON: "Why?",
+	F_CODE_JOIN: "Field workers can join the app with a code from HR",
+	F_PASSWORD: "Employees can sign in to the app with their email and password",
 }
+
+# The on/off switches, for the history's "on → off" wording.
+_SWITCHES = (F_ENABLED, F_CODE_JOIN, F_PASSWORD)
 
 HISTORY_LIMIT = 20
 
@@ -108,6 +122,20 @@ def settings():
 	try:
 		enabled = cint(frappe.db.get_single_value(SETTINGS, F_ENABLED, cache=False))
 		lifetime = frappe.db.get_single_value(SETTINGS, F_LIFETIME, cache=False)
+		# ALV-128. Read straight from `Singles`, in one query, and NOT with
+		# get_single_value: in the minutes between a deploy and its migrate the
+		# two fields do not exist yet, and get_single_value throws for a field
+		# it cannot find - which the except below would turn into "the whole
+		# app is off". With no stored value, the NEW way in reads as off (fail
+		# closed); the code way in reads as on, because that is how it worked
+		# before the switch existed, and code phones must not stop for a migrate.
+		stored = dict(frappe.qb.get_query(
+			table="Singles",
+			filters={"doctype": SETTINGS, "field": ["in", [F_CODE_JOIN, F_PASSWORD]]},
+			fields=["field", "value"],
+		).run())
+		code_join = cint(stored[F_CODE_JOIN]) if stored.get(F_CODE_JOIN) not in (None, "") else 1
+		password = cint(stored.get(F_PASSWORD))
 		designations = frappe.get_all(
 			CHILD,
 			filters={"parent": SETTINGS, "parenttype": SETTINGS, "parentfield": F_DESIGNATIONS},
@@ -120,7 +148,8 @@ def settings():
 		frappe.log_error("field app settings could not be read; the app is treated as off",
 		                 "Field app settings")
 		return {"enabled": False, "designations": [], "lifetime": DEFAULT_LIFETIME,
-		        "lifetime_hours": LIFETIME_HOURS[DEFAULT_LIFETIME], "readable": False}
+		        "lifetime_hours": LIFETIME_HOURS[DEFAULT_LIFETIME], "readable": False,
+		        "code_join": False, "password_signin": False}
 
 	if lifetime not in LIFETIME_HOURS:
 		lifetime = DEFAULT_LIFETIME
@@ -131,6 +160,8 @@ def settings():
 		"lifetime": lifetime,
 		"lifetime_hours": LIFETIME_HOURS[lifetime],
 		"readable": True,
+		"code_join": bool(code_join),
+		"password_signin": bool(password),
 	}
 
 
@@ -143,16 +174,41 @@ def refuse_unless_eligible(designation):
 
 	The app is asked about first, so a switched-off tenant answers the same for
 	everybody and does not say who is or is not on the list.
+
+	This is the JOINING-CODE way in. Since ALV-128 it also asks whether HR
+	still allows that way (`JOIN_CODE_OFF`); the designation list applies to
+	it alone - a person who signs in with a password is not asked about it.
 	"""
 	current = settings()
 	if not current["enabled"]:
 		refuse("APP_OFF_FOR_FIELD",
 		       _("The app is not switched on for field staff."))
+	if not current["code_join"]:
+		refuse("JOIN_CODE_OFF",
+		       _("Joining the app with a code from HR is switched off. Sign in with "
+		         "your work email and password, or speak to HR."))
 	if not designation or designation not in current["designations"]:
 		refuse("NOT_FIELD_ROLE",
 		       _("This app is not for your job yet. Keep marking attendance the "
 		         "usual way."),
 		       designation=designation or "")
+
+
+def refuse_unless_password_signin_on():
+	"""The password way in (ALV-128): the master switch, then its own switch.
+
+	Open to any active employee with a login - no designation list. Asked
+	before a password is ever checked, so a switched-off tenant answers the
+	same for everybody and no failed attempt is counted against anyone.
+	"""
+	current = settings()
+	if not current["enabled"]:
+		refuse("APP_OFF_FOR_FIELD",
+		       _("The app is not switched on for field staff."))
+	if not current["password_signin"]:
+		refuse("PASSWORD_SIGNIN_OFF",
+		       _("Signing in to the app with an email and password is switched off. "
+		         "Ask HR for a joining code."))
 
 
 # ── the rules, on every door into HR Settings ────────────────────────────────
@@ -182,11 +238,24 @@ def validate_hr_settings(doc, method=None):
 	if reason and reason not in CHANGE_REASONS:
 		frappe.throw(_("Choose a reason from the list."), frappe.ValidationError)
 
+	# ALV-128: at least one way into the app stays on. Checked on every save,
+	# not only a change, so no door (REST, import, set_value) can store it.
+	if doc.meta.has_field(F_CODE_JOIN) and doc.meta.has_field(F_PASSWORD) \
+			and not cint(doc.get(F_CODE_JOIN)) and not cint(doc.get(F_PASSWORD)):
+		frappe.throw(
+			_("Keep at least one way into the app switched on: a code from HR, or "
+			  "email and password. To stop the app for everybody, turn off \"{0}\" "
+			  "instead.").format(_(LABELS[F_ENABLED])),
+			frappe.ValidationError)
+
 	before = doc.get_doc_before_save()
 	if before is None:
 		return
 
-	turning_off = cint(before.get(F_ENABLED)) and not cint(doc.get(F_ENABLED))
+	# Turning off the app, or either way into it, stops phones that are working
+	# today - so it needs a reason, kept in the change history.
+	turning_off = any(cint(before.get(f)) and not cint(doc.get(f))
+	                  for f in _SWITCHES if doc.meta.has_field(f))
 	removed = _designations_on(before) - _designations_on(doc)
 	if (turning_off or removed) and not reason:
 		frappe.throw(_("Choose a reason. It is kept in the change history."),
@@ -291,7 +360,8 @@ def _waiting_codes():
 
 
 def _active_app_phones():
-	return frappe.db.count(DEVICE, {"status": "Active", "join_method": "App QR code"})
+	"""Every Active app phone, either way in: the master switch stops them all."""
+	return frappe.db.count(DEVICE, {"status": "Active", "join_method": ["in", list(APP_JOIN_METHODS)]})
 
 
 def _retention_line():
@@ -302,7 +372,7 @@ def _retention_line():
 def _describe(field, old, new):
 	"""One line of history, in the screen's own words."""
 	label = _(LABELS.get(field, field))
-	if field == F_ENABLED:
+	if field in _SWITCHES:
 		old, new = (_("on") if cint(old) else _("off")), (_("on") if cint(new) else _("off"))
 	return f"{label}: {old or '—'} → {new or '—'}"
 
@@ -450,11 +520,27 @@ def after_migrate():
 				"description": "From 1 hour to 7 days. Shorter is safer. Longer is easier when you hand out printed codes before a joining day. HR can choose a shorter time for one code.",
 			},
 			{
+				"fieldname": F_CODE_JOIN,
+				"fieldtype": "Check",
+				"label": LABELS[F_CODE_JOIN],
+				"default": "1",
+				"insert_after": F_LIFETIME,
+				"description": "The QR code way in, for people in the field worker designations above. When this is off, you cannot make codes, and phones that joined with a code stop marking attendance until you turn it on again.",
+			},
+			{
+				"fieldname": F_PASSWORD,
+				"fieldtype": "Check",
+				"label": LABELS[F_PASSWORD],
+				"default": "1",
+				"insert_after": F_CODE_JOIN,
+				"description": "For any active employee who has a login, whatever their designation. The password is checked the same way as on the website: wrong tries lock the account, and two-factor sign-in applies. When this is off, phones that signed in this way stop marking attendance until you turn it on again. One of the two ways must stay on.",
+			},
+			{
 				"fieldname": F_REASON,
 				"fieldtype": "Select",
 				"label": "Why? (kept in the change history)",
 				"options": "\n" + "\n".join(CHANGE_REASONS),
-				"insert_after": F_LIFETIME,
+				"insert_after": F_PASSWORD,
 				"no_copy": 1,
 				"description": "Needed when you turn the app off or remove a designation. It is emptied again after the save.",
 			},
@@ -475,8 +561,12 @@ def after_migrate():
 	# A Check custom field with default 1 is only 1 for a record that is CREATED
 	# after the field exists. HR Settings already exists on every site, so the
 	# switch would read as off on every existing tenant - the opposite of AC-14.
-	# Seed the two values once, where no value has ever been stored.
-	for fieldname, value in ((F_ENABLED, 1), (F_LIFETIME, DEFAULT_LIFETIME)):
+	# Seed the values once, where no value has ever been stored. The two ways in
+	# (ALV-128) are seeded ON here too: this runs on the first migrate after the
+	# release, so every existing tenant gets both on without a separate patch,
+	# and a tenant that later turned one off is never turned back on.
+	for fieldname, value in ((F_ENABLED, 1), (F_LIFETIME, DEFAULT_LIFETIME),
+	                         (F_CODE_JOIN, 1), (F_PASSWORD, 1)):
 		stored = frappe.qb.get_query(
 			table="Singles",
 			filters={"doctype": SETTINGS, "field": fieldname},

@@ -8,6 +8,12 @@ decision C-3). Every guest endpoint here is wrapped the way the punch is: POST
 only, personal fields kept out of every log, `Cache-Control: no-store`, a code
 in the body the app picks its screen from.
 
+ALV-128 adds a second way in, at the end of this file: an employee with a login
+signs in with their work email and password (and a one-time code when
+two-factor sign-in is on). The password is checked by Frappe's own login code,
+so lockout and two-factor behave exactly as on the website; after that the
+phone is set up by the same `_set_up_phone` the joining code uses.
+
 **The one rule that keeps the join honest: a fixed lock order.** Four rows
 change in a join - the employee is read, the code is used, an old phone is
 replaced, a new phone is made - and two callers can collide on the same rows: two
@@ -46,6 +52,11 @@ from alvoraa_portal.alvoraa_portal.doctype.alvoraa_app_invite.alvoraa_app_invite
 	SERVER_FLAG,
 	cancel_invite,
 )
+from alvoraa_portal.alvoraa_portal.doctype.alvoraa_field_device.alvoraa_field_device import (
+	APP_JOIN_METHODS,
+	JOIN_PASSWORD,
+	JOIN_QR,
+)
 from alvoraa_portal.alvoraa_portal.doctype.alvoraa_notice_acknowledgement.alvoraa_notice_acknowledgement import (
 	latest_version_for,
 	record_acknowledgement,
@@ -55,9 +66,12 @@ from alvoraa_portal.field_app_errors import refuse, requires_field_app_plan
 from alvoraa_portal.field_app_limits import (  # re-exported: the step-3 tests name the keys here
 	CODE_KEY,
 	HR_KEY,
+	OTP_KEY,
 	PHONE_KEY,
+	SIGNIN_KEY,
 	_hash,
 	_limited,
+	_limited_by_address,
 )
 from alvoraa_portal.field_checkin import (
 	DEVICE,
@@ -139,9 +153,12 @@ def _phones_locked(employee, old_hash=None):
 	take the rows the same way round.
 	"""
 	Device = frappe.qb.DocType(DEVICE)
+	# Either app way in (ALV-128): a phone that signed in with a password
+	# replaces one that joined with a code, and the other way round - one live
+	# app phone per person, whichever way it came.
 	own = ((Device.employee == employee)
 	       & (Device.status.isin(list(_NOTICE_STATES)))
-	       & (Device.join_method == "App QR code"))
+	       & (Device.join_method.isin(list(APP_JOIN_METHODS))))
 	where = own | (Device.token_hash == old_hash) if old_hash else own
 	return (
 		frappe.qb.from_(Device)
@@ -320,28 +337,62 @@ def join_with_code(code, notice_version=None, device_label=None, platform=None,
 		       version=facts["version"], rows=facts["rows"],
 		       retention_days=facts["retention_days"], what_changed=facts["what_changed"])
 
+	# Lock 3: the phones this join settles, and the new phone (shared with the
+	# password sign-in, so the two ways in can never drift apart).
+	phone, secret, two_people = _set_up_phone(
+		emp, JOIN_QR, agreed, device_label, platform, token,
+		# Who allowed this phone: the person who made the code. Set here so the
+		# controller does not write "Guest" into it.
+		activated_by=inv.owner, invite=inv.name)
+
+	used = frappe.get_doc(INVITE, inv.name)
+	used.status = "Used"
+	used.used_at = now()
+	used.used_device = phone.name
+	used.flags[SERVER_FLAG] = True
+	used.save(ignore_permissions=True)
+
+	_record_agreement(emp, phone, agreed)
+	frappe.db.commit()
+
+	alerts.code_used(inv.name)
+	_tell_hr_one_phone_two_people(two_people, phone)
+	return _joined_answer(emp, secret, agreed)
+
+
+# ── the part of a join both ways in share (ALV-128) ──────────────────────────
+#
+# Moved out of join_with_code unchanged, so that the joining code and the
+# password sign-in set a phone up, replace the old one, and handle "this
+# phone's old secret belongs to somebody else" in exactly one place. The
+# caller holds lock 1 (the Employee) already; this takes lock 3.
+
+def _set_up_phone(emp, join_method, agreed, device_label, platform, token,
+                  activated_by, invite=None):
+	"""Make the new phone and settle the old ones. Returns (phone, secret, two_people).
+
+	`token` is the secret the app was already carrying, if any (SEC-14).
+	Nothing is committed here; the caller commits once, after its own writes.
+	"""
 	old_hash = _hash(token) if token and isinstance(token, str) and 20 <= len(token) <= MAX_TOKEN_CHARS else None
 
 	# Lock 3: the phones this join settles.
 	phones = _phones_locked(emp.name, old_hash)
 
 	secret = secrets.token_urlsafe(32)
-	app_version = _app_version()
 	phone = frappe.get_doc({
 		"doctype": DEVICE,
 		"employee": emp.name,
 		"employee_name": emp.employee_name,
 		"status": "Active" if agreed else "Consent not given",
-		"join_method": "App QR code",
-		"invite": inv.name,
-		"device_label": (device_label or "")[:140],
-		"platform": (platform or "")[:60],
-		"app_version": app_version,
+		"join_method": join_method,
+		"invite": invite,
+		"device_label": (device_label or "")[:140] if isinstance(device_label, str) else "",
+		"platform": (platform or "")[:60] if isinstance(platform, str) else "",
+		"app_version": _app_version(),
 		"token_hash": _hash(secret),
 		"registered_on": now(),
-		# Who allowed this phone: the person who made the code. Set here so the
-		# controller does not write "Guest" into it.
-		"activated_by": inv.owner,
+		"activated_by": activated_by,
 	})
 	phone.flags[SERVER_FLAG] = True
 	phone.insert(ignore_permissions=True)
@@ -365,25 +416,24 @@ def join_with_code(code, notice_version=None, device_label=None, platform=None,
 			two_people.append(old.name)
 		old_doc.save(ignore_permissions=True)
 
-	used = frappe.get_doc(INVITE, inv.name)
-	used.status = "Used"
-	used.used_at = now()
-	used.used_device = phone.name
-	used.flags[SERVER_FLAG] = True
-	used.save(ignore_permissions=True)
+	return phone, secret, two_people
 
+
+def _record_agreement(emp, phone, agreed):
 	if agreed:
 		record_acknowledgement(emp.name, notice.CURRENT_VERSION, "App", device=phone.name,
-		                       app_version=app_version)
+		                       app_version=phone.app_version)
 
-	frappe.db.commit()
 
-	alerts.code_used(inv.name)
+def _tell_hr_one_phone_two_people(two_people, phone):
 	for old_name in two_people:
 		alerts.one_phone_two_people(old_name, phone.name)
 
+
+def _joined_answer(emp, secret, agreed):
 	return {
-		# The only answer, anywhere, that carries the device secret.
+		# The only answers, anywhere, that carry the device secret: this one,
+		# given once by join_with_code or by the password sign-in.
 		"token": secret,
 		"status": "active" if agreed else "not_agreed",
 		"first_name": emp.first_name,
@@ -568,3 +618,287 @@ def cancel_code(invite):
 	cancel_invite(row.name, "By HR", cancelled_by=user)
 	frappe.db.commit()
 	return {}
+
+
+# ── ALV-128 · signing in with email and password ─────────────────────────────
+#
+# For any active employee whose Employee record is linked to a login (the
+# user's decision, 25 Sep 2026): no designation list, no code from HR. The
+# master switch and the password switch on HR Settings still apply, and so
+# does the plan.
+#
+# Four promises, each with a test in test_field_app_password_signin_128.py:
+#
+#   * **Frappe checks the password, not us.** `LoginManager.authenticate` -
+#     the website's own function - so the failed-attempt lockout, disabled
+#     logins, and the "user pass login disabled" system setting behave exactly
+#     as on the website. Two-factor sign-in, when on for the person, uses
+#     Frappe's own `authenticate_for_2factor` and `confirm_otp_token`.
+#   * **No web session.** `LoginManager.__init__` is never run, so no session
+#     row, no `sid` cookie; the phone is proven from then on by the device
+#     secret, like every other app phone.
+#   * **The password never lands anywhere.** It is taken out of the request's
+#     form fields before anything else runs (`_private_request`), it is not
+#     cached for the two-factor step (Frappe's website caches it; we hand
+#     Frappe an empty string instead), and the app never stores it.
+#   * **One answer for "no such email" and "wrong password".** SIGN_IN_FAILED,
+#     word for word, so the app cannot be used to find out who works here.
+
+MAX_EMAIL_CHARS = 140   # a User's name is at most 140 characters
+
+# Everything these two endpoints are sent, kept out of every log.
+_SIGNIN_PRIVATE = ("email", "password", "otp", "tmp_id", "token", "device_label",
+                   "platform", "notice_version", "agreed")
+
+# Frappe's two-factor step keeps these beside the one-time id in Redis.
+_SECOND_STEP_KEYS = ("_usr", "_pwd", "_otp_secret", "_token")
+
+
+def _refuse_sign_in_failed():
+	frappe.clear_messages()
+	refuse("SIGN_IN_FAILED",
+	       _("That email and password do not match. Check them and try again. If you "
+	         "forgot your password, reset it on your company's Alvoraa website."))
+
+
+def _refuse_locked():
+	frappe.clear_messages()
+	wait = cint(frappe.db.get_single_value("System Settings", "allow_login_after_fail")) or 60
+	refuse("ACCOUNT_LOCKED",
+	       _("Too many wrong tries. Your account is locked for a while. Try again in "
+	         "{0} minutes, or reset your password on the website.").format(max(1, wait // 60)),
+	       retry_after_s=wait)
+
+
+def _login_manager(user=None):
+	"""Frappe's LoginManager WITHOUT its constructor. The constructor is what
+	makes a session and sets cookies; `authenticate` and the checks after it
+	need none of that."""
+	from frappe.auth import LoginManager
+
+	lm = LoginManager.__new__(LoginManager)
+	lm.user = user
+	lm.info = None
+	lm.full_name = None
+	lm.user_type = None
+	lm.resume = False
+	return lm
+
+
+def _check_password(email, password):
+	"""The website's own password check. Returns the LoginManager, or refuses."""
+	from frappe.auth import MAX_PASSWORD_SIZE
+
+	if cint(frappe.get_system_settings("disable_user_pass_login")):
+		# The site allows no password logins at all (Frappe's own switch).
+		refuse("PASSWORD_SIGNIN_OFF",
+		       _("Signing in to the app with an email and password is switched off. "
+		         "Ask HR for a joining code."))
+	if (not isinstance(email, str) or not isinstance(password, str)
+			or not email.strip() or not password
+			or len(email) > MAX_EMAIL_CHARS or len(password) > MAX_PASSWORD_SIZE):
+		_refuse_sign_in_failed()
+
+	lm = _login_manager()
+	try:
+		lm.authenticate(user=email.strip(), pwd=password)
+	except frappe.SecurityException:
+		_refuse_locked()
+	except frappe.AuthenticationError:
+		# Unknown email, wrong password, disabled login: Frappe has already
+		# counted the attempt and written its own authentication log.
+		_refuse_sign_in_failed()
+	finally:
+		# `fail()` writes Frappe's own words ("Invalid login credentials", "User
+		# disabled or missing") into the answer. They differ by case - which is
+		# exactly what must not reach the phone.
+		frappe.local.response.pop("message", None)
+
+	if lm.force_user_to_reset_password():
+		refuse("PASSWORD_EXPIRED",
+		       _("Your password has expired. Change it on your company's Alvoraa "
+		         "website, then sign in here with the new one."))
+	return lm
+
+
+def _checks_after_sign_in(lm):
+	"""What Frappe's `post_login` checks, without making a session: the login's
+	allowed addresses and allowed hours."""
+	from frappe.auth import validate_ip_address
+
+	try:
+		if getattr(frappe.local, "request", None) is not None:
+			validate_ip_address(lm.user)
+		lm.validate_hour()
+	except frappe.AuthenticationError:
+		frappe.clear_messages()
+		refuse("SIGN_IN_NOT_ALLOWED",
+		       _("Your login cannot be used from here or at this time. Please speak to HR."))
+
+
+def _employee_for_login(user):
+	"""The Active employee whose record names this login, or a clear refusal."""
+	rows = frappe.get_all("Employee", filters={"user_id": user, "status": "Active"},
+	                      pluck="name", order_by="creation asc", limit=1)
+	if rows:
+		return rows[0]
+	if frappe.db.exists("Employee", {"user_id": user}):
+		refuse("EMPLOYEE_NOT_ACTIVE",
+		       _("This employee record is no longer active. Please speak to HR."))
+	refuse("NO_EMPLOYEE_RECORD",
+	       _("Your login is not linked to an employee record, so this app cannot mark "
+	         "attendance for you. Ask HR to link your employee record to your login."))
+
+
+def _join_signed_in(user, notice_version, device_label, platform, token, agreed):
+	"""Set this phone up for the person who just signed in - the same locked
+	save the joining code makes, minus the code. Lock 1 (the Employee), then
+	lock 3 (the phones); there is no code to take lock 2 on."""
+	agreed = cint(agreed)
+	name = _employee_for_login(user)
+
+	emp = _employee(name, lock=True)
+	if not emp or emp.status != "Active":
+		refuse("EMPLOYEE_NOT_ACTIVE",
+		       _("This employee record is no longer active. Please speak to HR."))
+
+	if agreed and notice_version != notice.CURRENT_VERSION:
+		facts = notice.facts()
+		refuse("NOTICE_CHANGED",
+		       _("The notice has changed. Please read it again."),
+		       version=facts["version"], rows=facts["rows"],
+		       retention_days=facts["retention_days"], what_changed=facts["what_changed"])
+
+	# Who allowed this phone: the person themselves, by their own password. It is
+	# also how the User hook finds this phone when the login is disabled.
+	phone, secret, two_people = _set_up_phone(
+		emp, JOIN_PASSWORD, agreed, device_label, platform, token, activated_by=user)
+	_record_agreement(emp, phone, agreed)
+	frappe.db.commit()
+
+	_tell_hr_one_phone_two_people(two_people, phone)
+	answer = _joined_answer(emp, secret, agreed)
+	# The app shows the notice next (a phone that has not agreed yet cannot
+	# punch); these are the words, from the same place the code join reads them.
+	answer["notice"] = notice.facts()
+	answer["min_version"] = errors.MIN_APP_VERSION
+	return answer
+
+
+def _start_second_step(user):
+	"""Two-factor sign-in is on for this person: send the one-time code the
+	way the website does, and tell the app to ask for it."""
+	from frappe.twofactor import authenticate_for_2factor
+
+	# Frappe caches `form_dict["pwd"]` beside the one-time id, because its
+	# website re-checks the password on the second step. We do not re-check
+	# it - the second step proves the one-time id and the code - so Frappe is
+	# handed an empty string and the real password is never cached.
+	frappe.form_dict["pwd"] = ""
+	try:
+		authenticate_for_2factor(user)
+	finally:
+		frappe.form_dict.pop("pwd", None)
+
+	verification = frappe.local.response.pop("verification", None) or {}
+	tmp_id = frappe.local.response.pop("tmp_id", None)
+	return {
+		"status": "otp_required",
+		"tmp_id": tmp_id,
+		"method": verification.get("method") or "",
+		"prompt": verification.get("prompt") or "",
+	}
+
+
+def _forget_second_step(tmp_id):
+	"""The one-time id works once. Frappe's own flow leaves it to run out."""
+	frappe.cache.delete(*[tmp_id + suffix for suffix in _SECOND_STEP_KEYS])
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@_private_request(*_SIGNIN_PRIVATE)
+@requires_field_app_plan
+@_limited_by_address(limit=100)
+@_limited(SIGNIN_KEY, "email", limit=10)
+def sign_in_with_password(email=None, password=None, notice_version=None, device_label=None,
+                          platform=None, token=None, agreed=0):
+	"""Sign in with a work email and password, and set this phone up (ALV-128).
+
+	Answers one of:
+	  * the joined answer - `token` (the device secret, given once), `status`
+	    "active" or "not_agreed", the person's first name and company, today's
+	    punches, and the notice to show;
+	  * `{"status": "otp_required", "tmp_id", "method", "prompt"}` when
+	    two-factor sign-in is on - the app then calls `confirm_sign_in_code`;
+	  * a refusal with its code.
+
+	The app sends `agreed=0` and shows the notice after this answer; the phone
+	sits in "Consent not given" until `acknowledge_notice` moves it to Active,
+	exactly as a code-joined phone does after "Not now". That way the password
+	is sent once and never held while the person reads.
+
+	Rate limits: 10 an hour per email (hashed) and 100 an hour per caller
+	address, on top of Frappe's own lockout of the login.
+	"""
+	errors.check_app_version()
+	settings.refuse_unless_password_signin_on()
+	lm = _check_password(email, password)
+	if should_run_2fa(lm.user):
+		return _start_second_step(lm.user)
+	_checks_after_sign_in(lm)
+	return _join_signed_in(lm.user, notice_version, device_label, platform, token, agreed)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@_private_request(*_SIGNIN_PRIVATE)
+@requires_field_app_plan
+@_limited_by_address(limit=100)
+@_limited(OTP_KEY, "tmp_id", limit=5)
+def confirm_sign_in_code(tmp_id=None, otp=None, notice_version=None, device_label=None,
+                         platform=None, token=None, agreed=0):
+	"""The second step of a two-factor sign-in (ALV-128): the one-time id from
+	`sign_in_with_password` and the code the person was sent. Checked by
+	Frappe's `confirm_otp_token`, which counts a wrong code against the login's
+	lockout like the website does. The id works once."""
+	from frappe.twofactor import ExpiredLoginException, confirm_otp_token
+
+	errors.check_app_version()
+	settings.refuse_unless_password_signin_on()
+
+	if not isinstance(tmp_id, str) or not tmp_id or len(tmp_id) > 32:
+		refuse("OTP_EXPIRED", _("Your sign-in has timed out. Please sign in again."))
+	user = frappe.safe_decode(frappe.cache.get(tmp_id + "_usr"))
+	if not user:
+		refuse("OTP_EXPIRED", _("Your sign-in has timed out. Please sign in again."))
+	if not isinstance(otp, str) or not otp.strip() or len(otp) > 12:
+		refuse("OTP_WRONG", _("That code is not right. Check it and try again."))
+
+	lm = _login_manager(user)
+	try:
+		confirmed = confirm_otp_token(lm, otp=otp.strip(), tmp_id=tmp_id)
+	except ExpiredLoginException:
+		frappe.clear_messages()
+		refuse("OTP_EXPIRED", _("Your sign-in has timed out. Please sign in again."))
+	except frappe.SecurityException:
+		_refuse_locked()
+	except frappe.AuthenticationError:
+		frappe.clear_messages()
+		refuse("OTP_WRONG", _("That code is not right. Check it and try again."))
+	finally:
+		frappe.local.response.pop("message", None)
+	if not confirmed:
+		refuse("OTP_WRONG", _("That code is not right. Check it and try again."))
+
+	_forget_second_step(tmp_id)
+	# The login could have been disabled in the minutes between the two steps.
+	if not cint(frappe.db.get_value("User", user, "enabled")):
+		_refuse_sign_in_failed()
+	_checks_after_sign_in(lm)
+	return _join_signed_in(user, notice_version, device_label, platform, token, agreed)
+
+
+def should_run_2fa(user):
+	"""Frappe's own question, imported late so a test can change the answer."""
+	from frappe.twofactor import should_run_2fa as frappe_should_run_2fa
+
+	return frappe_should_run_2fa(user)

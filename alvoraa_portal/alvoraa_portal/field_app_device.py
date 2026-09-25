@@ -25,6 +25,7 @@ from frappe import _
 
 from alvoraa_portal import field_app_errors as errors
 from alvoraa_portal.alvoraa_portal.doctype.alvoraa_field_device.alvoraa_field_device import (
+	JOIN_PASSWORD,
 	SERVER_FLAG,
 )
 from alvoraa_portal.field_app_desk import BLOCK_REASONS, BLOCKABLE, desk_request, hr_who_may_act
@@ -128,3 +129,42 @@ def block_phone(device, reason=None):
 	doc.save()
 	frappe.db.commit()
 	return {}
+
+
+# ── ALV-128 · a disabled login stops the phones it signed in ─────────────────
+
+def block_phones_for_disabled_login(doc, method=None):
+	"""doc_events User on_update. A phone that signed in with a password stops
+	for good the moment that login is disabled - the same final Blocked state,
+	with the secret retired, that HR's own block and the leaver hook give it.
+
+	The leaver hook does not cover this: an employee can stay Active while
+	their login is switched off. Phones that joined with a code from HR are
+	left alone - they never depended on a login. The punch and the start
+	screen also refuse a password phone whose login is disabled
+	(`field_checkin._refuse_unless_app_phone_is_eligible`), so a disable made
+	without this hook (a script, `db.set_value`) still stops the phone.
+
+	Found by `activated_by` (the login that signed in) and by the employee
+	record that names the login today, so an unlinked record is still caught.
+	One phone that will not save does not stop the others or the User save.
+	"""
+	if doc.enabled or not frappe.db.exists("DocType", DEVICE):
+		return
+	employees = frappe.get_all("Employee", filters={"user_id": doc.name}, pluck="name")
+	live = ["in", list(BLOCKABLE)]
+	names = set(frappe.get_all(DEVICE, filters={"join_method": JOIN_PASSWORD, "status": live,
+	                                            "activated_by": doc.name}, pluck="name"))
+	if employees:
+		names |= set(frappe.get_all(DEVICE, filters={"join_method": JOIN_PASSWORD, "status": live,
+		                                             "employee": ["in", employees]}, pluck="name"))
+	for name in sorted(names):
+		try:
+			phone = frappe.get_doc(DEVICE, name)
+			phone.status = "Blocked"
+			phone.block_reason = "Login disabled"
+			phone.flags[SERVER_FLAG] = True
+			phone.save(ignore_permissions=True)
+		except Exception:
+			frappe.log_error(f"could not block field device {name} for a disabled login",
+			                 "Field app disabled login")

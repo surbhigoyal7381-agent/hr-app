@@ -31,6 +31,10 @@ from frappe.utils import get_datetime, get_fullname, get_url, getdate, now
 
 from alvoraa_portal import field_app_settings as settings
 from alvoraa_portal.alvoraa_portal.doctype.alvoraa_app_invite.alvoraa_app_invite import INVITE
+from alvoraa_portal.alvoraa_portal.doctype.alvoraa_field_device.alvoraa_field_device import (
+	APP_JOIN_METHODS,
+	JOIN_PASSWORD,
+)
 from alvoraa_portal.field_app_errors import desk_request, requires_field_app_plan
 from alvoraa_portal.field_checkin import DEVICE
 
@@ -65,6 +69,8 @@ BLOCK_REASONS = (
 	"Has a new phone",
 	"Someone else was using it",
 	"Left the company",
+	# ALV-128: set by the server when a login that signed a phone in is disabled.
+	"Login disabled",
 	"Other",
 )
 
@@ -162,8 +168,15 @@ def _phone_rows(employee, phones, codes_by_name, current, listed, names):
 	places = _workplaces(employee, [p.last_seen for p in phones if p.last_seen])
 	out = []
 	for p in phones:
-		app_phone = p.join_method == "App QR code"
-		stopped = app_phone and p.status == "Active" and not (current["enabled"] and listed)
+		app_phone = p.join_method in APP_JOIN_METHODS
+		# What would refuse this Active app phone right now. A code phone answers
+		# to the designation list and the code switch; a password phone only to
+		# the password switch (ALV-128). Both to the master switch.
+		if p.join_method == JOIN_PASSWORD:
+			allowed = current["enabled"] and current["password_signin"]
+		else:
+			allowed = current["enabled"] and current["code_join"] and listed
+		stopped = app_phone and p.status == "Active" and not allowed
 		inv = codes_by_name.get(p.invite) if p.invite else None
 		out.append({
 			"name": p.name,
@@ -230,7 +243,11 @@ def _state(emp, current, listed, waiting, phones):
 		return "not_active"
 	if not current["enabled"]:
 		return "app_off"
-	if not listed:
+	# A person outside the designation list who signed in with their password
+	# is still a joined person (ALV-128), not "not a field worker".
+	signed_in = any(p["join_method"] == JOIN_PASSWORD and p["status"] in ("Active", "Consent not given")
+	                for p in phones)
+	if not listed and not signed_in:
 		return "not_field"
 	if waiting:
 		return "code_waiting"

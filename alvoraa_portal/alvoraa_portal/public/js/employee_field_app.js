@@ -202,7 +202,9 @@
 			case "joined": {
 				const how = p.join_method === "App QR code"
 					? __("by the QR code {0} made {1}", [alvfeWho(info, p.invite_made_by, p.invite_made_by_name), alvfeWhichDay(p.invite_made_at)])
-					: __("on the web check-in page, approved by {0}", [alvfeWho(info, p.activated_by, p.activated_by_name)]);
+					: p.join_method === "App password sign-in"
+						? __("by signing in with their email and password")
+						: __("on the web check-in page, approved by {0}", [alvfeWho(info, p.activated_by, p.activated_by_name)]);
 				const last = p.last_seen
 					? esc(__("Last check-in {0}{1}.", [alvfeWhen(p.last_seen), p.last_place ? " " + __("at {0}", [p.last_place]) : ""]))
 					: esc(__("No check-in from this phone yet."));
@@ -257,6 +259,8 @@
 		const rows = info.phones.map((p) => {
 			const how = p.join_method === "App QR code"
 				? esc(__("QR code made by {0}", [alvfeWho(info, p.invite_made_by, p.invite_made_by_name)])) + `<small>${esc(alvfeWhen(p.invite_made_at))}</small>`
+				: p.join_method === "App password sign-in"
+				? esc(__("Email and password")) + `<small>${esc(alvfeWhen(p.registered_on))}</small>`
 				: esc(__("Web check-in page")) + (p.activated_by
 					? `<small>${esc(__("approved by {0}, {1}", [alvfeWho(info, p.activated_by, p.activated_by_name), alvfeWhen(p.status_changed_on || p.registered_on)]))}</small>`
 					: "");

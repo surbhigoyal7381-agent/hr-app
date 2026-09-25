@@ -160,6 +160,13 @@ DEFAULT_RADIUS_M = 100
 # What an operator sees for a crash: where it happened, never with what.
 _SERVER_ERROR_TITLE = "Field check-in: unexpected error"
 
+# Taken out of EVERY wrapped request, whatever the endpoint names (ALV-128).
+# Frappe already masks field names containing "password" or "pwd" in an Error
+# Log row, but not "otp", and a local variable in a crash dump is not masked
+# at all. Nothing here needs them from form_dict: the endpoints are handed
+# their arguments directly.
+_NEVER_KEPT = ("password", "pwd", "otp")
+
 
 def _code_places(exc):
 	"""The exception's class and file:line:function for each frame. No values.
@@ -187,7 +194,7 @@ def _private_request(*fields):
 		def wrapper(*args, **kwargs):
 			# The arguments were already handed to us; the copy in form_dict is
 			# only read by logging from here on.
-			for field in fields:
+			for field in (*fields, *_NEVER_KEPT):
 				frappe.form_dict.pop(field, None)
 			_never_cache()
 			try:
@@ -371,8 +378,20 @@ def _refuse_unless_app_phone_is_eligible(device, designation=None):
 
 	The secret is kept and the phone's status is not changed: when HR restores
 	the setting, the same phone works again with no new code (AC-78, AC-211).
+
+	ALV-128: a phone that signed in with email and password answers to the
+	master switch and the password switch, never the designation list - the
+	user's decision is that anyone with a login may use the app. It also stops
+	the moment the login it signed in with is disabled, even if the User hook
+	that blocks it was skipped (a script, `db.set_value`): one primary-key read.
 	"""
-	if device.join_method != "App QR code":
+	if device.join_method == device_rules.JOIN_PASSWORD:
+		settings.refuse_unless_password_signin_on()
+		if not device.activated_by or not cint(
+				frappe.db.get_value("User", device.activated_by, "enabled")):
+			refuse("DEVICE_BLOCKED", _("This phone has been blocked. Please speak to HR."))
+		return
+	if device.join_method != device_rules.JOIN_QR:
 		return
 	if designation is None:
 		designation = frappe.db.get_value("Employee", device.employee, "designation")
@@ -549,7 +568,7 @@ def field_checkin(token, log_type, latitude=None, longitude=None,
 		refuse("INVALID_REQUEST", _("Invalid check-in type."))
 
 	lat, lon = _require_position(latitude, longitude, accuracy,
-	                             accuracy_required=device.join_method == "App QR code")
+	                             accuracy_required=device.join_method in device_rules.APP_JOIN_METHODS)
 	claimed = _validated_captured_at(captured_at)
 
 	_refuse_duplicate(device, log_type)
@@ -637,9 +656,10 @@ def _refuse_unless_notice_is_current(device):
 	or see home until they do (AC-80, AC-91, D19). Web phones are never asked
 	again (AC-96): they registered under the words the page showed them.
 
-	One indexed read on the acknowledgement table (by device).
+	One indexed read on the acknowledgement table (by device). Both app ways
+	in are asked (ALV-128); only the web page is not.
 	"""
-	if device.join_method != "App QR code":
+	if device.join_method not in device_rules.APP_JOIN_METHODS:
 		return
 	if latest_version_for(device.name) == notice.CURRENT_VERSION:
 		return
@@ -870,7 +890,7 @@ def field_status(token):
 		"notice_version": notice.CURRENT_VERSION,
 		"joined_on": str(device.registered_on or ""),
 	}
-	if device.join_method != "App QR code":
+	if device.join_method not in device_rules.APP_JOIN_METHODS:
 		# The web page's block, byte for byte what it was before slice 013.
 		answer["work_location"] = {
 			"name": site.location_name,

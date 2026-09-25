@@ -59,6 +59,7 @@ const TEAM = "alvoraa_portal.team_api.get_team";
 const GROWTH = "alvoraa_portal.growth_api.get_growth";
 const REVIEW = "alvoraa_portal.growth_api.get_self_review";
 const SAVE = "alvoraa_portal.growth_api.save_self_review";
+const SUBMIT = "alvoraa_portal.performance_api.submit_employee_review";
 
 function makeFrame(over) {
   return Object.assign({
@@ -592,6 +593,102 @@ async function run() {
   is(/Saved at 10:00/.test(el(dom, "nf-wiz-room").textContent), true,
      "AC-37: and the time shown is the server's confirmed time, not the " +
      "browser's clock");
+
+  /* ── 045 F2: a failed save must STOP the Send ───────────────────────── */
+
+  /* This is the silent Send US-21 exists to prevent, in the one place AC-96's
+     test does not look. AC-96 posts, then sends, so the browser's save/send
+     ORDERING is never exercised, and the server's refuse_if_unfinished catches
+     a MISSING rating but never a STALE one. `save()` used to resolve on two
+     failing paths, so `doSend`'s `.then` ran anyway: the submit went through on
+     the server's older copy and the screen said "Sent."
+
+     A rating changed from 3 to 5 on a shop-floor phone that dropped its
+     connection was stored as 3, and the manager read 3 in the calibration
+     meeting.
+
+     Three scenarios, and the positive control comes FIRST - without it,
+     "SUBMIT was never called" would pass just as happily if the Send button
+     had stopped working altogether. */
+
+  const SAVED_OK = { saved_at: "2026-09-24 10:00:00", used_bytes: 20,
+                     budget_bytes: 63487, room_left_characters: 63000 };
+
+  async function atLastStep(stubs) {
+    const d = await load("#growth/review", makeFrame(), makeCounts(), stubs);
+    for (let i = 0; i < 4; i++) {
+      el(d, "nf-wiz-next").dispatchEvent(
+        new d.window.MouseEvent("click", { bubbles: true }));
+      await settle();
+    }
+    return d;
+  }
+
+  async function typeThenSend(d) {
+    /* Something unsaved, so `save` has real work to do - an unchanged step
+       resolves early on purpose and would prove nothing. */
+    const box = screens(d).querySelector("textarea");
+    if (box) {
+      box.value = "Changed on the last step.";
+      box.dispatchEvent(new d.window.Event("input", { bubbles: true }));
+      await settle();
+    }
+    el(d, "nf-wiz-send").dispatchEvent(
+      new d.window.MouseEvent("click", { bubbles: true }));
+    await settle();
+    await settle();
+    await settle();
+    return d;
+  }
+
+  /* POSITIVE CONTROL: when the save lands, the Send goes through. */
+  dom = await atLastStep({ [REVIEW]: makeReview(), [SAVE]: SAVED_OK,
+                           [SUBMIT]: { review_status: "Manager Review" } });
+  await typeThenSend(dom);
+  is(dom.window.calls.filter((c) => c === SUBMIT).length, 1,
+     "F2 control: a save that lands is followed by the Send");
+  is(/Sent\. Your manager has your review now/.test(text(dom)), true,
+     "F2 control: and the screen says it went");
+
+  /* 1. The save POST fails. */
+  dom = await atLastStep({ [REVIEW]: makeReview(),
+                           [SAVE]: { refuse: "Your session has expired." },
+                           [SUBMIT]: { review_status: "Manager Review" } });
+  await typeThenSend(dom);
+  is(dom.window.calls.filter((c) => c === SUBMIT).length, 0,
+     "F2: a failed save stops the Send - the submit never runs on the " +
+     "server's older copy");
+  is(/Sent\. Your manager has your review now/.test(text(dom)), false,
+     "F2: and the screen does NOT say Sent");
+  is(el(dom, "nf-wiz-send").disabled, false,
+     "F2: the button comes back, so the person can fix it and press again");
+  is(/not sent/.test(text(dom)) || /not sent/.test(
+       (el(dom, "nf-toast") || { textContent: "" }).textContent) ||
+     dom.window.document.body.textContent.indexOf("not sent") >= 0, true,
+     "F2: and they are told the review did not go, not only that a save failed");
+
+  /* 2. Over the byte budget. `save` refuses before the call, and that refusal
+        must stop the Send too. */
+  dom = await atLastStep({ [REVIEW]: makeReview(), [SAVE]: SAVED_OK,
+                           [SUBMIT]: { review_status: "Manager Review" } });
+  const over = screens(dom).querySelector("textarea");
+  over.value = "क".repeat(30000);
+  over.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  await settle();
+  el(dom, "nf-wiz-send").dispatchEvent(
+    new dom.window.MouseEvent("click", { bubbles: true }));
+  await settle();
+  await settle();
+  is(dom.window.calls.filter((c) => c === SUBMIT).length, 0,
+     "F2: over the byte budget the Send stops too - the person was told " +
+     "there was no room and the review used to go anyway");
+  is(dom.window.calls.filter((c) => c === SAVE).length, 0,
+     "F2: and nothing was posted either");
+  /* `!!` and a guard, not `.disabled` on a bare lookup: without the fix the
+     Send goes through, the panel repaints to "Sent" and the button is GONE -
+     and a crash reads as a broken test rather than a red assertion. */
+  is(!!el(dom, "nf-wiz-send") && !el(dom, "nf-wiz-send").disabled, true,
+     "F2: the button is still there and comes back enabled");
 
   /* A refusal is the server's sentence, not a page error. */
   dom = await load("#growth", makeFrame(), makeCounts(),

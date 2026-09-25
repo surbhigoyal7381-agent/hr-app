@@ -61,6 +61,11 @@
   var lastSaveAt = 0;
 
   /* AC-37: a save after a pause in typing, and never more often than this. */
+  /* The marker `save` rejects with when the answers are over the byte budget.
+     Not a server refusal, so `refusalSentence` has nothing to say about it and
+     the Send needs its own sentence. */
+  var OVER_BUDGET = "nf-over-budget";
+
   var IDLE_MS = 4000;
   var MIN_GAP_MS = 15000;
 
@@ -118,6 +123,8 @@
         return __("About {0} characters too long. Shorten your longest answer and it will save again.", [n]);
       },
       savedAt: function (t) { return __("Saved at {0}", [t]); },
+      notSent: __("Your review was not sent, because your answers did not save. "
+                  + "Check what the note above says, then press Send again."),
       valueOf: function (n, total) { return __("Value {0} of {1}", [n, total]); }
     };
   }
@@ -584,7 +591,7 @@
     if (back) {
       back.addEventListener("click", function () {
         step = Math.max(0, step - 1);
-        save(ctx);          /* on step change, always */
+        quietSave(ctx);     /* on step change, always */
         paint(ctx);
       });
     }
@@ -592,7 +599,7 @@
     if (next) {
       next.addEventListener("click", function () {
         step = Math.min((review.steps || []).length - 1, step + 1);
-        save(ctx);
+        quietSave(ctx);
         paint(ctx);
       });
     }
@@ -621,7 +628,12 @@
       /* The SERVER's sentence, which names what is still missing. */
       button.disabled = false;
       button.textContent = SAY.send;
-      ctx.toast(refusalSentence(reason) || SAY.cardFailed, "bad");
+      if (reason && reason.message === OVER_BUDGET) {
+        /* showRoom() has already said how much too long it is. This says the
+           thing that sentence does not: the review did NOT go. */
+        return ctx.toast(SAY.notSent, "bad");
+      }
+      ctx.toast(refusalSentence(reason) || SAY.notSent, "bad");
     });
   }
 
@@ -629,7 +641,15 @@
      step sends nothing at all - `lastSent` is what makes that true. */
   function queueSave(ctx) {
     window.clearTimeout(saveTimer);
-    saveTimer = window.setTimeout(function () { save(ctx); }, IDLE_MS);
+    saveTimer = window.setTimeout(function () { quietSave(ctx); }, IDLE_MS);
+  }
+
+  /* An autosave nobody is waiting on. `save` rejects so a SEND can stop; a
+     step change and the idle timer must not raise an unhandled rejection for
+     the same reason, and there is nothing to add - `save` has already shown
+     the person why it did not land. */
+  function quietSave(ctx) {
+    return save(ctx).catch(function () { /* already reported inside save */ });
   }
 
   function save(ctx) {
@@ -641,9 +661,14 @@
     if (roomLeft() < 0) {
       /* **Refused here, before the call.** The server refuses it too and has
          the final word; this stops an autosave failing silently while somebody
-         keeps typing. */
+         keeps typing.
+
+         **Rejects, and that is the point (045 F2).** This used to resolve, so
+         a Send chained straight past it: the person was told there was no
+         room and the review was sent anyway, on whatever the server already
+         held. */
       showRoom(ctx);
-      return Promise.resolve();
+      return Promise.reject(new Error(OVER_BUDGET));
     }
     lastSaveAt = now;
     lastSent = text;
@@ -660,6 +685,12 @@
       .catch(function (reason) {
         lastSent = "";   /* it did not land, so it is not the last thing sent */
         ctx.toast(refusalSentence(reason) || words(ctx).cardFailed, "bad");
+        /* **Re-thrown, not swallowed (045 F2).** Swallowing it made the save
+           look like a success to doSend, which then submitted on the server's
+           OLDER copy and painted "Sent." A rating changed from 3 to 5 on a
+           phone that lost its connection was stored as 3, and the manager read
+           3 in the calibration meeting. The person must stay on the wizard. */
+        throw reason;
       });
   }
 

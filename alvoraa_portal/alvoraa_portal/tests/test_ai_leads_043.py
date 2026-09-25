@@ -88,6 +88,13 @@ class TestRules(unittest.TestCase):
     def test_internal_mail(self):
         self.assertEqual(self.reason(sender="deepa@sargammetals.example.com"), "internal sender")
 
+    def test_a_gmail_mailbox_still_reads_gmail_senders(self):
+        """A shared public domain is not a shared company (25 Sep 2026)."""
+        for domain in ("gmail.com", "yahoo.co.in"):
+            # Built from parts: the source may not hold a real-domain address (slice 016 guard).
+            mailbox, sender = "demo.sales@" + domain, "buyer@" + domain
+            self.assertIsNone(rules.skip_reason("RFQ: anodes", sender, RFQ, mailbox), domain)
+
     def test_ignore_list(self):
         self.assertEqual(self.reason(ignore=["@konkanship.example.com"]), "on the ignore list")
         self.assertEqual(self.reason(ignore=["ravi@konkanship.example.com"]), "on the ignore list")

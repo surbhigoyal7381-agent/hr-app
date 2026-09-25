@@ -24,6 +24,16 @@ _AUTO_SUBJECT = re.compile(
     re.IGNORECASE,
 )
 
+# Public mail providers. Sharing one of these domains with the mailbox says
+# nothing about being a colleague: a sales inbox on gmail.com gets its enquiries
+# from gmail.com senders too. Many small Indian firms run sales on Gmail
+# (25 Sep 2026: the Sargam demo mailbox itself is a Gmail address).
+FREE_MAIL = {
+    "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.in", "ymail.com", "rediffmail.com",
+    "outlook.com", "hotmail.com", "live.com", "msn.com", "icloud.com", "me.com",
+    "aol.com", "proton.me", "protonmail.com", "zohomail.in", "zohomail.com", "gmx.com",
+}
+
 # Mail that belongs to HR or recruitment, never to a sales pipeline (SEC-8's
 # per-email half). The mailbox rules already refuse HR mailboxes; this catches
 # the odd HR email that lands in a sales one.
@@ -48,7 +58,7 @@ def skip_reason(subject, sender_email, body, mailbox_email, ignore=None):
         return "automatic sender"
     if _AUTO_SUBJECT.match((subject or "").strip()):
         return "auto-reply or bounce"
-    if domain and domain == text_mod.sender_domain(mailbox_email):
+    if domain and domain not in FREE_MAIL and domain == text_mod.sender_domain(mailbox_email):
         return "internal sender"
     for entry in ignore or []:
         entry = (entry or "").strip().lower()

@@ -376,16 +376,67 @@ def _alignable_goal_ids(employee_id):
     return {g["name"] for g in _chain_goals(employee_id)}
 
 
+def _permitted_companies():
+    """The companies this caller may act for as HR.
+
+    One definition, imported - not a third copy. `approve_goal_update` and
+    `_pending_approvals_scope_query` already call this; everything else in this
+    module used to hold an HR role and reach the whole tenant.
+    """
+    from hrms.alvoraa_hr_core.access import permitted_companies
+
+    return permitted_companies()
+
+
+def _hr_may_act_for(employee_id):
+    """Is this employee inside the companies the caller looks after?
+
+    **Holding an HR role is not a company scope.** On a tenant with more than
+    one company, HR at the Delhi store could set goals for, read and rewrite the
+    goals of somebody at the Mumbai store, because every guard in this module
+    but one returned early for any HR role with no company check at all. Its one
+    scoped sibling, `approve_goal_update`, is where this rule comes from.
+
+    Fails closed, on purpose (SEC-4): an employee with no company on their
+    record, or an HR user with neither a Company user-permission nor an active
+    Employee record of their own, gets nothing rather than everything.
+    """
+    if not employee_id:
+        return False
+    company = frappe.db.get_value("Employee", employee_id, "company")
+    return bool(company) and company in _permitted_companies()
+
+
+def _refuse_other_company(employee_id, endpoint):
+    from hrms.alvoraa_hr_core.access import refuse
+
+    refuse(
+        "This employee belongs to a company you do not look after. "
+        "Ask the HR person for their company to do this.",
+        "SEC-26", endpoint, "Employee", employee_id,
+    )
+
+
 def _require_manages(employee_id):
-    """Caller must be this employee, or somewhere above them in the tree."""
-    if _is_hr():
+    """Caller must be this employee, somewhere above them in the tree, or HR
+    for their company.
+
+    The reporting line is checked FIRST, so an HR person who happens to be this
+    person's actual manager keeps working even when the two are in different
+    companies - that reach comes from the org chart, not from the role.
+    """
+    me = _employee_id()
+    if me and (employee_id == me or employee_id in _descendants(me)):
         return
-    me = _require_employee()
-    if employee_id != me and employee_id not in _descendants(me):
-        frappe.throw(
-            "You can only do this for yourself or someone who reports to you.",
-            frappe.PermissionError,
-        )
+    if _is_hr():
+        if _hr_may_act_for(employee_id):
+            return
+        _refuse_other_company(employee_id, "goals_api._require_manages")
+    _require_employee()
+    frappe.throw(
+        "You can only do this for yourself or someone who reports to you.",
+        frappe.PermissionError,
+    )
 
 
 def _is_hr(user=None):
@@ -397,8 +448,21 @@ def _is_hr(user=None):
 def get_manageable_employees():
     """Employees the caller may raise goals and KPIs for: self plus subtree."""
     if _is_hr():
+        # Scoped with the WRITE path it feeds, not left wide. A picker that
+        # offers people `create_goal` will then refuse breaks this codebase's
+        # rule that a row you can see is a row you can act on.
+        #
+        # Three ways in, as an OR: the companies this HR person looks after,
+        # anyone who reports to them, and their own record - so an HR person
+        # whose own Employee sits in a company they have no permission for can
+        # still raise a goal for themselves.
+        me = _employee_id()
+        or_filters = {"company": ["in", _permitted_companies() or [""]]}
+        if me:
+            or_filters["reports_to"] = me
+            or_filters["name"] = me
         rows = frappe.get_all(
-            "Employee", filters={"status": "Active"},
+            "Employee", filters={"status": "Active"}, or_filters=or_filters,
             fields=["name", "employee_name", "designation"], order_by="employee_name",
         )
     else:
@@ -598,7 +662,10 @@ def _require_can_edit(doc, what):
     rewrite one they wrote for themselves.
     """
     if _is_hr():
-        return
+        # HR's reach stops at the companies they look after (SEC-26).
+        if _hr_may_act_for(doc.employee):
+            return
+        _refuse_other_company(doc.employee, "goals_api._require_can_edit")
     me = _require_employee()
     if doc.employee != me and doc.employee not in _descendants(me):
         frappe.throw(
@@ -734,7 +801,11 @@ def get_goal_detail(goal_id):
     # Viewable if it is yours, one of your subordinates', or one you may align
     # to (i.e. held above you) — the last case is why a plain "is it mine"
     # check is not enough now that goals cascade.
-    if not _is_hr():
+    # An HR role on its own is not a reason to read another company's goals
+    # (SEC-26). Where the caller is genuinely in this person's reporting line,
+    # the ordinary check below still lets them through.
+    may_hr = _is_hr() and _hr_may_act_for(goal.employee)
+    if not may_hr:
         viewable = set(_manageable_employees()) | set(_manager_chain(emp_id))
         if goal.employee not in viewable:
             frappe.throw(
@@ -804,7 +875,9 @@ def get_goal_detail(goal_id):
         "docstatus":       goal.docstatus,
         "goal_type":       getattr(goal, "goal_type", "") or "",
         "company_value":   getattr(goal, "company_value", "") or "",
-        "can_edit":        int(_is_hr() or goal.owner == frappe.session.user),
+        # The flag and the gate say the same thing: `_require_can_edit` now
+        # stops HR outside the company, so the pencil must not be drawn either.
+        "can_edit":        int(may_hr or goal.owner == frappe.session.user),
         "is_mine":         int(goal.employee == emp_id),
         "is_organisational": int(not goal.parent_goal and not goal.goal_cascade),
         # Slice 010 group D (R5, PRIV-10): only "in a review" and the day after
@@ -834,7 +907,9 @@ def set_goal_progress(goal_id, actual_progress):
     """Allow HR/managers to manually override actual_progress on a goal."""
     emp_id = _require_employee()
     goal = frappe.get_doc("Individual Goal", goal_id)
-    if not (_is_hr() or goal.owner == frappe.session.user):
+    if not ((_is_hr() and _hr_may_act_for(goal.employee))
+            or goal.owner == frappe.session.user):
+        # An HR role reaches only its own companies (SEC-26).
         frappe.throw("Not permitted to update this goal", frappe.PermissionError)
     # Progress set by hand has no dated fact behind it, so while a review holds
     # the goal it would change the review's number unseen (decision 21).
@@ -1149,7 +1224,9 @@ def submit_goal_update(goal_id, new_value, note="", evidence_url=None):
     emp_id = _require_employee()
     goal   = frappe.get_doc("Individual Goal", goal_id)
 
-    if goal.employee != emp_id and not _is_hr():
+    if goal.employee != emp_id and not (_is_hr() and _hr_may_act_for(goal.employee)):
+        # HR may log an update for somebody else, but only inside the companies
+        # they look after (SEC-26).
         frappe.throw("You can only update your own goals.", frappe.PermissionError)
     if goal.docstatus == 2:
         frappe.throw("Goal is cancelled.")
@@ -1231,11 +1308,11 @@ def approve_goal_update(goal_id, row_name, action, comment=""):
     if not (_is_hr() or my_emp == goal_mgr):
         frappe.throw("Only this employee's manager or HR can approve updates.",
                      frappe.PermissionError)
-    from hrms.alvoraa_hr_core.access import permitted_companies, refuse
-    if my_emp != goal_mgr and frappe.db.get_value("Employee", goal.employee, "company") not in permitted_companies():
-        # HR approves only for the companies they look after (security review m8).
-        refuse("This employee belongs to a company you do not look after.",
-               "SEC-26", "goals_api.approve_goal_update", "Individual Goal", goal.name)
+    if my_emp != goal_mgr and not _hr_may_act_for(goal.employee):
+        # HR approves only for the companies they look after (security review
+        # m8). This was the ONLY guard in the module that checked; it now shares
+        # `_hr_may_act_for` with the other seven instead of holding its own copy.
+        _refuse_other_company(goal.employee, "goals_api.approve_goal_update")
 
     for row in (goal.progress_updates or []):
         if row.name == row_name:
@@ -1261,7 +1338,8 @@ def get_goal_update_log(goal_id):
     goal   = frappe.get_doc("Individual Goal", goal_id)
 
     goal_mgr = frappe.db.get_value("Employee", goal.employee, "reports_to")
-    if not (_is_hr() or goal.employee == emp_id or emp_id == goal_mgr):
+    if not (goal.employee == emp_id or emp_id == goal_mgr
+            or (_is_hr() and _hr_may_act_for(goal.employee))):
         frappe.throw("Not permitted.", frappe.PermissionError)
 
     # Whether THIS user may action these updates - the same rule
@@ -1272,7 +1350,11 @@ def get_goal_update_log(goal_id):
     # employee sees their own updates and cannot approve them. Drawing the
     # buttons for everyone who can READ was the bug.
     # Never on your own goal, even for HR - approve_goal_update refuses it.
-    can_action = bool(goal.employee != emp_id and (_is_hr() or (goal_mgr and emp_id == goal_mgr)))
+    # Matches approve_goal_update exactly, company scope included - a button
+    # drawn here is a button the server will honour.
+    can_action = bool(goal.employee != emp_id
+                      and ((_is_hr() and _hr_may_act_for(goal.employee))
+                           or (goal_mgr and emp_id == goal_mgr)))
 
     rows = sorted(
         goal.progress_updates or [],
@@ -1340,12 +1422,10 @@ def _pending_approvals_scope_query(emp_id, is_hr):
         return frappe.qb.get_query("Employee", fields=["name"],
                                    filters=[["name", "in", []]])
     if is_hr:
-        from hrms.alvoraa_hr_core.access import permitted_companies
-
         return frappe.qb.get_query(
             "Employee", fields=["name"],
             filters={"status": "Active", "name": ["!=", emp_id]},
-            or_filters={"company": ["in", permitted_companies() or [""]],
+            or_filters={"company": ["in", _permitted_companies() or [""]],
                         "reports_to": emp_id},
         )
     return frappe.qb.get_query(

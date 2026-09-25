@@ -308,9 +308,9 @@ class TestNoModuleLevelStateAndNoIgnorePermissions(FrappeTestCase):
 			# all four take the SAME scope subquery out of the part's one filter
 			# expression - which is the control, not the call.
 			"inbox_api.py": ("frappe.get_all",) * 3 + ("frappe.qb.from_",) * 4,
-			# home_api (slice 042, re-counted for 044 R1/D6). EIGHT reads, one
-			# count and one aggregate, and all but two are the CALLER'S OWN
-			# record:
+			# home_api (slice 042, re-counted for 044 R1/D6, and again when
+			# Wave 4 rebased onto the fixed Wave 3). EIGHT reads and one
+			# aggregate, and all but one are the CALLER'S OWN record:
 			#
 			#   own: Shift Assignment, Employee Checkin, Holiday, Attendance,
 			#     Leave Application, Attendance Request, Individual Goal - every
@@ -334,16 +334,18 @@ class TestNoModuleLevelStateAndNoIgnorePermissions(FrappeTestCase):
 			#     does, and until 044 this test did not watch them, so a scope
 			#     written in the query builder was an undeclared route. It is
 			#     declared now.
-			#   the team goal summary - one integer over a scope
-			#     `permitted_employees()` already decided. **It was a
-			#     `frappe.db.count` until 045 and is now a ninth
-			#     `frappe.get_all`.** The two do not agree on a negation:
-			#     `get_all` writes `IFNULL(`status`,'') <> 'Cancelled'` and
-			#     `db.count` writes a bare `<>`, and `NULL <> 'Cancelled'` is
-			#     NULL in SQL - so the count dropped every goal with a NULL
-			#     status while the Goals screen listed it. Counting through the
-			#     list path is the fix, and it is the same route past the
-			#     permission layer as before, over the same scope.
+			# **The team goal summary is gone, and with it the ninth read.**
+			# It was one integer over a scope `permitted_employees()` had
+			# already decided. Slice 045 turned it from a `frappe.db.count`
+			# into a ninth `frappe.get_all`, because the two do not agree on a
+			# negation - `get_all` writes `IFNULL(`status`,'') <> 'Cancelled'`
+			# and `db.count` writes a bare `<>`, and `NULL <> 'Cancelled'` is
+			# NULL in SQL, so the count dropped every goal with a NULL status
+			# while the Goals screen listed it. Then the 042 review's F3
+			# deleted the whole summary: the number was wrong for a second
+			# reason as well, it read every permitted employee id into Python,
+			# and no screen drew it. So the route is not narrowed or re-scoped
+			# here - it does not exist. Nine became eight.
 			#
 			# `_peers` is gone: the peer group is one of the three conditions
 			# `_scope_filters` returns, so it is no longer a separate read.
@@ -351,7 +353,7 @@ class TestNoModuleLevelStateAndNoIgnorePermissions(FrappeTestCase):
 			# The HR scope itself is never read here: it comes from
 			# `permitted_employees()` and `permitted_employee_filters()`, which
 			# are the shared definitions.
-			"home_api.py": (("frappe.get_all",) * 9
+			"home_api.py": (("frappe.get_all",) * 8
 			                + ("frappe.qb.get_query",) * 2 + ("frappe.qb.from_",)),
 			# staff_api: the staff list itself and its total. Both take the same
 			# filters dict, built by the shared scope helper.

@@ -1170,6 +1170,22 @@ would have been the worse outcome, and it is the one that would not have been
 noticed until a calibration meeting. **Owner: `hrms-business-analyst` for
 whether a goal rating is stored on the objective copy, then the engineer.**
 
+**ANSWERED — `02-functional-spec.md` revision 3 (25 Sep 2026), §9 and §11 US-21,
+AC-87 to AC-99.** In short, and none of it needs a new decision from Surbhi: the goal's
+self-rating goes on **`Alvoraa Review Item.self_rating`, on the row whose `item_type` is
+`Objective`** — the field already exists on every review-item row, so **no new field, no
+patch, no migration**; write it through `set_item_rating(row, "self", …)` so the stamp
+goes with it. **The KPI `self_rating` is left exactly as it is** — the old screen still
+writes it, the wizard never does, and nothing is cleared or derived. **`wizard` is the
+correct page key**; Send reads the old `past-objectives` block first and the `wizard`
+block second, so a review half-typed on each screen keeps both. **Two further faults
+found while reading the code and now specified:** `get_self_review:566` hands back the
+whole `page_data` as `answers` while the save writes under `wizard`, so a draft does not
+survive a reload (AC-97); and `save_review_page:4400` skips the SEC-1 key check for the
+`wizard` key (AC-92). **One open question, D-13:** must the three written steps be filled
+before Send, or only the ratings? The specified default is ratings required, text
+optional.
+
 ## 15.12 Known gaps and shortcuts
 
 * **The person sheet is not built — temporary debt.** Five of the eleven Team

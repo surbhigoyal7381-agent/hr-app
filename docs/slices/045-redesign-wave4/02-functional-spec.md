@@ -3,13 +3,39 @@ slice: 045-redesign-wave4
 artifact: 02-functional-spec
 author: hrms-business-analyst
 date: 2026-09-24
-revision: 2
-status: draft, revised 2026-09-24 after Surbhi's two decisions of that day — peer feedback is out of Wave 4 entirely, and the Team screen separates the two reasons a person is on it. Then extended the same day: the leave rule covers the written reason as well as the type, the `01c`'s two questions came back accepted, and SEC-17 became `ALV-117`. See "What changed in revision 2" below. **This slice's `01c` landed while revision 2 was being written** (`d1ef233`, revision 2, already carrying both of Surbhi's decisions), and its eight required spec changes are absorbed here. **There is still no `07`.** — see "What is missing before this is ready" below
-inputs: [01c-security-privacy-requirements.md (045, revision 2, `d1ef233`), ../009-ess-portal-redesign/00-assessment-and-plan.md §4 Wave 4 and Appendix D, ../009-ess-portal-redesign/appendix-d-growth-team-people.md, ../009-ess-portal-redesign/01b-ux-design.md, ../009-ess-portal-redesign/00f-decisions-2026-09-22.md, ../034-redesign-wave1/00g-decision-register.md (W1D-01 to W1D-23), ../034-redesign-wave1/02-functional-spec.md revision 4, ../034-redesign-wave1/03-implementation-notes.md, ../042-redesign-wave2/02-functional-spec.md revision 2, ../042-redesign-wave2/03b-implementation-notes-044-followups.md, ../043-redesign-wave3/02-functional-spec.md revision 2, ../043-redesign-wave3/03-implementation-notes.md, .claude/context/nfr-budget.md, prototype-v2.html]
+revision: 3
+status: draft, **revision 3 of 25 September 2026 closes the Send gap** — the self-review wizard now has a specified Send, and the goal rating has somewhere to land (§11 US-21, AC-87 to AC-99). Revision 2 was written 2026-09-24 after Surbhi's two decisions of that day — peer feedback is out of Wave 4 entirely, and the Team screen separates the two reasons a person is on it. Then extended the same day: the leave rule covers the written reason as well as the type, the `01c`'s two questions came back accepted, and SEC-17 became `ALV-117`. See "What changed in revision 2" below. **This slice's `01c` landed while revision 2 was being written** (`d1ef233`, revision 2, already carrying both of Surbhi's decisions), and its eight required spec changes are absorbed here. **There is still no `07`.** — see "What is missing before this is ready" below
+inputs: [03-implementation-notes.md §15.11a (the engineer's Send finding, 24 Sep 2026), alvoraa_goals/review_items.py `apply_self_review:1153`, `set_item_rating:1188`, `review_payload:929`, alvoraa_portal/performance_api.py `save_review_page:4382`, `submit_employee_review:4454`, `get_my_review:4126`, alvoraa_portal/growth_api.py `get_self_review:523`, `save_self_review:581`, hrms `Appraisal`/`Appraisal Goal` doctype JSON, 01c-security-privacy-requirements.md (045, revision 2, `d1ef233`), ../009-ess-portal-redesign/00-assessment-and-plan.md §4 Wave 4 and Appendix D, ../009-ess-portal-redesign/appendix-d-growth-team-people.md, ../009-ess-portal-redesign/01b-ux-design.md, ../009-ess-portal-redesign/00f-decisions-2026-09-22.md, ../034-redesign-wave1/00g-decision-register.md (W1D-01 to W1D-23), ../034-redesign-wave1/02-functional-spec.md revision 4, ../034-redesign-wave1/03-implementation-notes.md, ../042-redesign-wave2/02-functional-spec.md revision 2, ../042-redesign-wave2/03b-implementation-notes-044-followups.md, ../043-redesign-wave3/02-functional-spec.md revision 2, ../043-redesign-wave3/03-implementation-notes.md, .claude/context/nfr-budget.md, prototype-v2.html]
 brief: there is no `01` for this slice. The approved brief is `../009-ess-portal-redesign/00-assessment-and-plan.md` (Wave 4), the design is `../009-ess-portal-redesign/01b-ux-design.md`, and the decisions are in `00f-decisions-2026-09-22.md` and `../034-redesign-wave1/00g-decision-register.md`
 ---
 
 # Wave 4 — Growth, Team and People: functional spec
+
+## What changed in revision 3
+
+**One thing, and it is the thing that stopped the wave being finishable: the
+self-review had no Send, because a goal rating had nowhere to be stored.** The
+engineer found it and stopped rather than ship a Send that looked like it worked
+(`03-implementation-notes.md` §15.11a). It was right to stop. This revision says where
+the rating goes, what happens to the KPI half, which page key is the real one, and what
+Send must prove before it counts as built.
+
+| # | Revision 2 said | What revision 3 says | Where it is written |
+|---|---|---|---|
+| **1** | §9 listed "self-rating and comment → the review item's `self_rating`, `self_comment`" without saying that **no code path put a rating on a goal copy** | **A goal's self-rating is stored on the review's own copy of that goal — `Alvoraa Review Item.self_rating`, on the row whose `item_type` is `Objective`.** The field already exists on every review-item row, goal and KPI alike (read in `alvoraa_review_item.json`). **No new field, no new DocType, no patch, no migration.** What is missing is not a column, it is the four lines of `apply_self_review` that write one | §9, AC-87, AC-88 |
+| **2** | Nothing said what happens to a KPI's `self_rating` once goals are what get rated | **The KPI field is left exactly as it is, and it is not dead.** The old Objectives & KPIs screen still ships and still writes it (`portal.js:10224`), and `save_review_item_rating` writes it for any row. **The wizard simply never sends one.** A KPI copy the wizard never touched keeps `self_rating` 0, and 0 already means "not rated" everywhere in this code (`is_rated:1129`). **Nothing is recomputed, cleared or back-filled** | §9, AC-94 |
+| **3** | The page key was not mentioned | **`wizard` is the correct key and it stays.** `past-objectives` is the old screen's key and both are read on Send, old block first, wizard block second, so a review started on one screen and finished on the other keeps both answers and the newer one wins | AC-98 |
+| **4** | — | **Bad news 6: the wizard's draft does not survive a reload today, and nothing says so.** `save_self_review:629` writes the answers under `page_data["wizard"]`; `get_self_review:566` hands back **the whole `page_data` dict** as `answers`. So a reload shows an empty wizard and the next save buries the first answers one level deeper each time. **Confirmed fact**, read on this branch. It is the same failure mode as the Send gap — silence, not an error | Bad news 6, AC-97 |
+| **5** | — | **Bad news 7: a wizard save skips the SEC-1 key check.** `save_review_page:4400` runs `apply_self_review(… write=False)` **only** when the page key is `past-objectives` or `past_objectives`. A `wizard` save stores whatever keys it is given. Nothing is written onto a row by that path, but the check that refuses a foreign row name is not running on the page the product is about to use | Bad news 7, AC-92 |
+| **6** | D-4 and D-5 were open and blocking the wizard | **Both are closed by Surbhi's answers of 24 September**, as recorded in `03-implementation-notes.md` §15.6 and in `growth_api.company_values_for:161`. **D-4: rate the goals, whole points, KPI figures shown beside them. D-5: every active value on the tenant's own `Company Value` list, comment optional.** They are struck in §21 so nobody reads them as still open | §21, Open questions |
+| **7** | US-1's third piece, "check and send", had **no acceptance criterion of its own** | **US-21 and thirteen checks, AC-87 to AC-99.** The one that matters most is AC-96: what is stored can be read back and equals what the person saw when they pressed Send. The failure this whole finding is about is a silent one, so the check has to be a comparison and not an absence of an error | §8, §11 US-21, §20 |
+
+**What revision 3 does not do.** It does not automate anything, it does not derive a
+rating from a figure, and it does not recompute a goal's numbers at Send. The person
+presses the button, the person's own numbers are stored, and the numbers the copy held at
+that moment are stamped beside them so the record can be read a year later.
+
+---
 
 ## What changed in revision 2
 
@@ -36,7 +62,9 @@ list. **It is narrower than today, so it needs a release note** — release gate
 
 ## Bad news first
 
-**Five things, and the first is a live leak on the very screen this wave re-dresses.**
+**Seven things, and the first is a live leak on the very screen this wave re-dresses.**
+**Items 6 and 7 are new in revision 3** and both are about the self-review wizard: they
+are silent failures, not errors, which is why neither was noticed by running the screen.
 
 1. **The Team screen's endpoint hands the browser a whole Employee row today.**
    `hr_api.get_manager_dashboard:530` returns `"manager": emp`, where `emp` is
@@ -88,6 +116,24 @@ list. **It is narrower than today, so it needs a release note** — release gate
    nobody holds the role and there are no rows, **and it goes live on the day the DTC staff
    load creates the logins**, since the load creates the readers and the appraisal cycle
    behind it creates the rows. **Not Wave 4's to fix. Not anybody's to forget.**
+
+6. **The wizard's draft does not survive a reload, and the screen says "Saved" anyway.**
+   `growth_api.save_self_review:629` writes the answers under `page_data["wizard"]`.
+   `growth_api.get_self_review:566` sets `answers` to `page.get("page_data")` — **the whole
+   dictionary**, not the `wizard` block inside it. So after a reload the wizard is handed
+   `{"wizard": {…}}`, finds no `goals` key, shows every step unanswered, and the next
+   autosave writes the whole thing back one level deeper. **Confirmed fact**, read on
+   `slice/045-redesign-wave4` today at those two lines. The fix is one line in the read; the
+   check that it stays fixed is **AC-97**. **Nothing has shipped**, so there is nothing to
+   migrate — only local drafts to throw away (§15).
+7. **A wizard save does not run the check that refuses a row name from somebody else's
+   review.** `performance_api.save_review_page:4400` runs
+   `review_items.apply_self_review(… write=False)` — the SEC-1 key check — **only when the
+   page key is `past-objectives` or `past_objectives`**. The wizard's key is `wizard`, so the
+   check is skipped and the payload is stored unchecked. **No row is written by that path**,
+   so this is not a data leak today; it is a guard that stops running on the page the product
+   is about to start using, and Send would then be the only place the keys were ever looked
+   at. **AC-92** puts the check on both keys. **Confirmed fact**, read at `:4400`.
 
 **Good news, and it is most of the wave.** Everything Appendix D called a live security
 hole in Growth — the self-review writing other people's records (B4), evidence approving
@@ -648,6 +694,7 @@ combined Team total is forbidden**, because there is no single list it could equ
 | **US-17** | As **Sandeep**, I want to approve or decline from the Team card and see the Inbox number move, so that the two screens are never out of step. | Team | 3 | AC-13 |
 | **US-18** | As **Kamal**, who is both a manager and HR, I want my team and the people I cover in two separate sections, so that I can see at a glance which relationship I am in before I press anything. | Team | 3 | AC-73, AC-74, AC-75 |
 | **US-19** | As **Priya**, I want each section to offer only the actions that belong to it, so that I never approve a leave request that was somebody else's to decide. | Team | 5 | AC-76 to AC-81 |
+| **US-21** *(new in revision 3)* | As **Rahul**, I want a Send that stores every rating I gave, so that what my manager reads in the calibration meeting is what I typed — and as **Sandeep**, I must never be shown a self-review with silently missing ratings. | Growth · review | 5 | AC-87 to AC-99 |
 | **US-20** | As **the person asked a year later who approved this**, I want an HR override to be stored as an HR decision and not as the manager's approval, so that the record answers the question on its own. | Team | 3 | AC-82 |
 
 **INVEST check on the three biggest.** US-1, US-5 and US-15 are all 8 or close to it.
@@ -658,6 +705,12 @@ would let two of the three be dropped quietly.
 **The story deliberately not here:** peer feedback. It is **out of Wave 4 entirely**
 (Surbhi, 24 Sep 2026) and becomes an HR-run process with its own market analysis and its
 own specification — **ALV-116**, §23. Its old 4-day estimate does not travel with it.
+
+**INVEST on US-21.** It is a 5 and it does not split. The four parts — store the rating,
+refuse a part-finished review, refuse a second send, prove the read-back — are one
+behaviour seen from four sides, and any three of them shipped without the fourth is the
+same silent loss the engineer stopped for. It is independent of the Team and People work
+and of every open decision.
 
 **INVEST on the three new ones.** US-18 and US-20 are small and independently testable.
 US-19 is a 5 because it is eleven rows of a matrix, but it does not split: half an action
@@ -687,6 +740,7 @@ matrix is worse than none, since the half that is missing is the half somebody p
 | Team: two sections, "Your team" and "You cover" | Per-section counts and caps; no empty heading; somebody who is both appears once, in Your team | Kamal | 3 | AC-73 to AC-75 |
 | Team: the actions follow the section | The eleven-row matrix in §6a, each row a check | Priya | 5 | AC-76 to AC-81 |
 | An HR override is recorded as an HR decision | "Approve as HR"; `alvoraa_decided_as` on the record | Priya | 3 | AC-82 |
+| Send the self-review, and store every rating | Goal ratings onto the review's own copies (`self_rating` on the `Objective` rows); refuse a part-finished or a repeated send on the server; the stored answers read back equal to what was on screen | Rahul | 5 | AC-87 to AC-99 |
 
 **Do not create these in YouTrack.** That is the user's call.
 
@@ -703,7 +757,12 @@ appears only if §21 D-7 is answered "yes". **Neither needs a patch or a data ba
 | Shown | Doctype · field | Why an existing field carries it |
 |---|---|---|
 | The review's copies of goals and KPIs | the Appraisal extension's review-item child rows, written by `review_items` | slice 010 group D built them for exactly this |
-| Self-rating and comment | the review item's `self_rating`, `self_comment` | on the copy, never on the live record |
+| **A goal's self-rating and comment** | **the review item's `self_rating` and `self_comment`, on the row whose `item_type` is `Objective`** · `Alvoraa Review Item`, Float and Small Text, already there | **The field already exists on every review-item row — goal and KPI alike** (read in `alvoraa_review_item.json`, `section_self`). Frappe HR's own `Appraisal Goal` child table was checked first and does **not** fit: it carries one `score` set by the manager, has no self/manager split and no link to an `Individual Goal` (`hrms/hr/doctype/appraisal_goal.json`). `Employee Feedback Rating` is the peer-feedback table and is a different record. **So: no new field, no new DocType, no patch, no migration.** What is missing is the write, not the column — AC-87 |
+| A KPI's self-rating | the same two fields on the `KPI` rows — **unchanged, and not written by the wizard** | KPI figures are shown beside the goal for reference, not rated (Surbhi, 24 Sep). The old Objectives & KPIs screen still writes them (`portal.js:10224`), so the field is **not** dead. A KPI copy the wizard never touched keeps `self_rating` 0, and 0 already reads as "not rated" (`review_items.is_rated:1129`) — never as a rating of zero. **Nothing clears it, nothing derives it from the goal's rating** — AC-94 |
+| The stamp beside a goal's rating | `self_rated_on`, `self_basis_actual`, `self_basis_target`, `self_basis_weightage`, `self_flag` on the same row | `review_items.stamp_rating:692` already writes all five. **This is what makes AC-96 answerable a year later:** the record holds the numbers the person was looking at when they pressed Send, not the numbers today |
+| The wizard's answers, as typed | **one key, `page_data["wizard"]`** — the extension's Text field | `growth_api.save_self_review:629` already writes it there. `past-objectives` stays the **old** screen's key; both are read on Send (AC-98). One key per screen, no renaming, no data move |
+| Company-value ratings and the three text steps | inside that same `wizard` block | **`Company Value` has no per-appraisal child table and creating one would be a new DocType for a Wave 4 render.** `[ASSUMPTION]` the JSON block is enough for now; **[Recommendation]** revisit when values have to be reported on across a company, and raise it as its own ticket rather than widening this wave |
+| The two text answers that already have a home | `next` → `next_period_goals_text`, `overall` → `overall_comment`, both on the extension | `submit_employee_review:4497,4523` already writes both from the old screen. Using them means the manager's existing screen shows those two answers with no new work — AC-99 |
 | Chosen values and their example | one new key in the extension's `page_data` JSON | Text, about 64 KB. No schema change. `[ASSUMPTION]` long answers fit — AC-40 measures it |
 | Went well / would do differently | `achievements_text`, `challenges_text` | already copied on submit |
 | Next quarter | `development_needs_text`, `support_needed` | already there |
@@ -936,6 +995,131 @@ passes a `_get_employee()` result into a payload — the same check Wave 3 built
   true of the code on the day it ships, and a static check fails on any sentence in the
   Growth modules that asserts a behaviour the product does not have. **This is Wave 3's
   lesson applied before the mistake** — its revision 1 shipped a false remedy.
+
+### US-21 · Send — the self-review reaches the manager *(new in revision 3)*
+
+**Why these are written the way they are.** The failure this closes is a **silent** one.
+A Send that stored nothing would raise no error, show no red, and be found in a
+calibration meeting weeks later. So most of these checks compare a stored value with the
+value the person saw, rather than checking that nothing threw.
+
+**Where a goal rating goes, in one sentence:** onto the review's **own copy** of that goal
+— `Alvoraa Review Item.self_rating`, on the row whose `item_type` is `Objective` — through
+`review_items.set_item_rating(row, "self", …)`, which is the one function that already
+writes a rating and its stamp together. No live `Individual Goal` or `KPI` is written
+(R13, SEC-1), and no figure is recomputed by Send.
+
+- **AC-87 · the rating lands, with its stamp.** *Given* Rahul's review holds four
+  `Objective` copies and he rates the copy `AREV-0042` **4** with the comment "shipped the
+  Diwali window two weeks early", *when* he presses Send, *then* that row has
+  `self_rating` = 4.0, `self_comment` = that exact text, `self_rated_on` set to a server
+  time, `self_basis_actual`, `self_basis_target` and `self_basis_weightage` equal to the
+  copy's `actual_value`, `target_value` and `weightage` at that moment, and `self_flag` = 0.
+  **Oracle:** the six field values read back from the database after the call, compared to
+  the numbers in the `get_self_review` payload that drew the screen. A half point (3.5), a
+  6, a 0 or "good" is refused by the same call — `check_whole_point` and
+  `review_items.rating_value` agree that the range is 1 to 5 (**confirmed fact**:
+  `growth_api.py:128-129`, `controllers/kpi.MAX_RATING = 5.0`).
+- **AC-88 · nothing outside the review is written.** *Given* the same Send, *then* the
+  employee's `Individual Goal` and `KPI` records, and the `Appraisal` itself, are
+  unchanged field for field before and after, apart from the appraisal's own `modified`
+  stamp. **Oracle:** a field-by-field snapshot of those records either side of the call.
+  This re-asserts slice 010's R13 on the new path rather than trusting it.
+- **AC-89 · a part-finished review cannot be sent, and the screen is not what enforces
+  it.** *Given* four goal copies of which one is unrated, **or** an active company value
+  with no rating, *when* `submit_employee_review` is called **directly, with a hand-built
+  payload and no browser involved**, *then* it refuses with a sentence naming what is
+  missing ("One goal still needs a rating." / "One company value still needs a rating."),
+  `review_status` stays `Employee Review`, **no `self_rating` is written on any row**, and
+  no notification is sent. **Oracle:** the refusal, plus every row's `self_rating` still at
+  its previous value. The test bypasses the Send button on purpose — a rule only the
+  screen keeps is not a rule.
+- **AC-90 · a review with no goals can still be sent.** *Given* a review whose copies
+  include **no** live `Objective` row, *then* the goals step counts as answered, Send is
+  allowed, and the screen says "There are no goals in this review" rather than showing a
+  finished-looking empty step. **Confirmed fact:** today `growth_api._steps_answered:508`
+  requires `goals and all(…)`, so with no goals the step can never be marked done and Send
+  would be unreachable. **Oracle:** the send succeeds and `review_status` becomes
+  `Manager Review`.
+- **AC-91 · a goal added after the rating blocks the send until it is rated.** *Given*
+  Rahul rated all four copies, *when* a fifth `Objective` copy is added to the review and
+  he presses Send **without reloading**, *then* the send is refused, names that goal, and
+  writes nothing. **Oracle:** the refusal and four unchanged rows. The check runs on the
+  review's live copies at the moment of Send, never on the list the browser was holding.
+- **AC-92 · the key check runs on the wizard's page too.** *Given* a save or a send
+  naming a row that belongs to **somebody else's** review, or a row that was removed from
+  this one, *then* it is refused under SEC-1 and **nothing is stored in `page_data`**.
+  **Confirmed fact, and this is a guard that is not running today:**
+  `performance_api.save_review_page:4400` runs `apply_self_review(… write=False)` only for
+  the page keys `past-objectives` / `past_objectives`, so a `wizard` save stores unchecked
+  keys. **Oracle:** the refusal, and `ext.page_data` unchanged from before the call.
+- **AC-93 · a KPI row name in the goals block is refused.** *Given* a payload that puts a
+  `KPI` row's name under `answers.goals`, *then* the whole call is refused and no rating is
+  written anywhere. **Oracle:** the refusal, and that KPI row's `self_rating` unchanged.
+  This is Surbhi's decision made enforceable rather than assumed: **goals are rated, KPI
+  figures are shown beside them.**
+- **AC-94 · the KPI half is left alone, in both directions.** *Given* a review whose KPI
+  copy already carries `self_rating` 3 from the **old** Objectives & KPIs screen, *when*
+  the review is sent from the wizard, *then* that KPI still reads 3, with its
+  `self_rated_on` unchanged. *And given* a KPI copy that was never rated, *then* after Send
+  it still reads 0, and no payload or screen presents 0 as a rating — `is_rated:1129`
+  already treats only a value above 0 as rated. **Oracle:** both rows read back, plus a
+  static check that no Wave 4 module writes a KPI `self_rating`. **Nothing is derived from
+  the goal's rating and nothing is cleared.**
+- **AC-95 · sending twice does not double-write.** *Given* a sent review, *when* Send is
+  called a second time — a double tap, a retried request, or a hand-made call — *then* the
+  second call is refused with "This has already been sent.", `review_status` is still
+  `Manager Review`, **every `self_rating`, `self_comment` and `self_rated_on` is identical
+  to after the first call**, no second `Individual Goal` is created from the "what you want
+  to take on next" step, and the manager gets **exactly one** notification (AC-36).
+  **Oracle:** a snapshot of the review-item rows and a count of notification rows, both
+  taken after each call. **Confirmed fact:** the stage guard exists today at
+  `submit_employee_review:4471`; what is missing is the test that proves it holds for the
+  new path, including the future-goal creation at `:4508`.
+- **AC-96 · the stored result reads back equal to what the person saw. This is the point
+  of US-21.** *Given* Rahul rates five goals, rates every active company value, writes the
+  three text answers in Hindi and English, and presses Send, *when* he re-opens Growth and
+  his manager opens the review, *then*: every goal's `self_rating` equals the number his
+  screen showed; `page_data["wizard"]`, parsed, is **equal to the object that was posted**,
+  key for key, including every Devanagari character unescaped (`ensure_ascii=False`,
+  §15.7 of the notes); every value he rated carries its rating; and the number of rated
+  goals in the payload equals the number of ratings he gave. **Oracle:** one test that
+  rates, sends, re-reads through `get_self_review` **and** `get_manager_review`, and
+  compares the **whole** structure — not a spot check on one field, because a spot check is
+  how a half-written Send passes.
+- **AC-97 · the draft survives a reload, and a second save does not bury the first.**
+  *Given* Rahul rates two goals and the autosave runs, *when* the page is reloaded, *then*
+  `get_self_review` returns those two ratings at `answers.goals` — **not** at
+  `answers.wizard.goals` — "step n of 5" counts them, and a further save leaves
+  `page_data["wizard"]` exactly one level deep. **Confirmed fact, red today:**
+  `get_self_review:566` returns the whole `page_data` as `answers` while
+  `save_self_review:629` writes under `wizard`. **Oracle:** the shape of the returned
+  object and the depth of the stored one after two saves and a reload.
+- **AC-98 · one page key per screen, and a review half-typed on each keeps both.**
+  *Given* a review whose `page_data` holds an old `past-objectives` block with KPI ratings
+  **and** a `wizard` block with goal ratings, *when* it is sent, *then* the old block is
+  applied first and the wizard block second, so the KPI ratings survive and the wizard's
+  goal ratings win wherever both name the same row. **Oracle:** a fixture with both blocks
+  and a conflicting rating on one goal; the stored value is the wizard's.
+  `pages_completed` may carry both keys and that is harmless — it is the old screen's
+  progress list, and **AC-28's step count comes from `steps_answered`, never from it**.
+- **AC-99 · the manager receives what was sent.** *Given* the review is sent, *when* the
+  manager calls `get_manager_review`, *then* the payload carries the `wizard` block, the
+  goals carry their `self_rating` and `self_comment`, and the two text answers that have a
+  home are on the extension (`next` → `next_period_goals_text`, `overall` →
+  `overall_comment`). **Declared limitation, written down rather than discovered:** the
+  manager's screen draws its pages from `page_config`, which does not know the wizard's
+  keys, so the **company-value ratings and the "still open from last time" note travel in
+  the payload but are not drawn on that screen yet**. §12 carries it as debt with an owner.
+  **Oracle:** the payload keys, plus a named entry in §12 — not a promise that the screen
+  shows them.
+
+**What Send must not do, stated so it cannot be read in:** it must not rate anything on
+the person's behalf, must not fill an empty rating with a default, must not recompute a
+goal's `actual_value`, `progress_pct` or `trajectory`, and must not write a live
+`Individual Goal` or `KPI` other than the next-period goals the person typed themselves
+(the existing VIS-15 path). A rating with nobody involved is not a smaller feature, it is
+a different and worse one.
 
 ### US-10, US-11 · the negatives
 
@@ -1313,6 +1497,10 @@ engineer would otherwise guess at.
 | **New** | `trajectory` is only recomputed when the goal is saved | Live today | AC-24; the nightly recompute is its own ticket |
 | **New** | Three browser tests have never run and are attributed to the wrong wave | Live today | AC-62 to AC-64 |
 | **New** | An HR caller gets the leave type **and the employee's own written reason** for up to 50 people in their scope — a widening that arrived with W1D-20 and that nobody asked for | **Live today** (`hr_api.py:498`, `:520`, and `description` at `:508-516`) | **Closed by decision, 24 Sep.** AC-76 covers **both** fields — the reason was the half a rule about "leave type" would have missed — and a release note because it is a narrowing |
+| **New, revision 3** | **No code path stores a rating on a goal copy.** `apply_self_review:1153` writes `self_rating` for a **KPI** copy and only `self_comment` (from `reflection`) for an objective | **Live on this branch** — the reason the wizard has no Send | **AC-87**, on the existing `self_rating` field. No new field, no migration |
+| **New, revision 3** | The wizard's draft is written under `page_data["wizard"]` and read back as the whole `page_data` | **Live on this branch** (`get_self_review:566` against `save_self_review:629`) | **AC-97** |
+| **New, revision 3** | A `wizard` page save skips the SEC-1 row-key check | **Live on this branch** (`save_review_page:4400`) | **AC-92** |
+| **Debt, revision 3** | The manager's existing review screen draws pages from `page_config`, so the wizard's company-value ratings and its "still open from last time" note **arrive in the payload but are not drawn** | Will be live the day the wizard ships | **AC-99 names it.** Fixing it is drawing one block on the manager screen — **owner: the engineer, its own piece of work**, not a Wave 4 commit |
 | **New** | Nothing in the record says whether an approval was made as the manager or as HR | Live today — `alvoraa_reviewed_by` says who, not in what capacity | **AC-82**, one Select field |
 
 ---
@@ -1420,6 +1608,18 @@ Attendance's date index. The `LEFT JOIN` shape was 51.9 ms and the name-list sha
    for a consent flag.
 
 Both are custom fields in JSON and one `bench migrate`. **No data patch either way.**
+
+**3. The Send work needs no migration at all — written down rather than assumed.** The
+goal self-rating goes on `Alvoraa Review Item.self_rating`, **a field that already exists
+on every review-item row**, so there is no column to add, no patch to write and nothing to
+recompute. Reviews sent before this ships keep exactly what they hold: KPI self-ratings
+from the old screen, objective rows with a comment and no rating. **Those are not
+back-filled and must not be** — inventing a rating nobody gave is the one thing worse than
+a missing one. The wizard has never shipped, so the only `page_data["wizard"]` blocks that
+exist are **local drafts on a development bench**; the nesting described in bad news 6 may
+have buried a few of them, and the remedy is to delete those drafts, not to write a patch.
+**Rollback** is the same shape: the change is new code on an existing field, so reverting
+the commit leaves every stored rating readable and nothing orphaned.
 
 **045 PRIV-10 and these two fields: settled, and not as an exception.** I first wrote this
 up as a clash between PRIV-10 and SEC-19 that one of them had to lose. **The security
@@ -1686,6 +1886,12 @@ choice. **Recomputing on read would be a write on a read path**, which is exactl
 | Plan §4 Wave 4 | "the guided 5-step self-review on existing endpoints" | US-1 | AC-27b, AC-28, AC-37 | covered |
 | Plan §4 Wave 4 | "with debounced autosave" | US-1 | AC-37 | covered |
 | Plan §4 Wave 4 | "and a notification to the manager on send" | US-1 | AC-36 | covered — **new work; B25 was never fixed** |
+| Plan §4 Wave 4 | "the guided 5-step self-review" — **the send half** | US-21 | AC-87 to AC-99 | covered in revision 3. **The gap revision 2 left:** US-1's third piece, "check and send", had no AC of its own, and the engineer found there was nowhere to store a goal rating (`03` §15.11a) |
+| Surbhi, 24 Sep 2026 | "rate goals, whole points, KPI figures beside them" (D-4) | US-21 | AC-87, AC-93, AC-94 | covered — **and enforced**: a KPI row name sent in the goals block is refused |
+| Surbhi, 24 Sep 2026 | "every active company value is rated" (D-5) | US-21 | AC-89, AC-96 | covered — checked on the server, not only on the screen |
+| `03` §15.11a | "the page key also differs" | US-21 | AC-98 | covered — `wizard` is the wizard's key; both keys are read on Send |
+| Code, read 25 Sep | `get_self_review:566` returns the whole `page_data` as `answers` | US-21 | AC-97 | covered — **a live silent loss on this branch** |
+| Code, read 25 Sep | `save_review_page:4400` skips the SEC-1 key check for the `wizard` key | US-21 | AC-92 | covered |
 | Plan §4 Wave 4 | "goals with evidence on one progress model" | US-3 | AC-29 | covered — one model, chosen: the approved figure |
 | Plan §4 Wave 4 | "open action items" | US-4 | AC-31 | covered |
 | Plan §4 Wave 4 | "one Team call" | US-5 | AC-13, AC-14 | covered |
@@ -1796,7 +2002,9 @@ choice. **Recomputing on read would be a write on a read path**, which is exactl
 
 ## 21. Needs a decision
 
-**Eleven live, one closed, and five of them stop something.** **D-1 is closed** — Surbhi answered it on
+**Revision 3: nine live, three closed, one new.** **D-4 and D-5 are now closed too** — Surbhi answered both on 24 September, and the answers are already in the code (`growth_api.company_values_for:161` quotes her). **D-13 is new**, and it is the only thing in the Send work that is not already settled by a decision she has taken.
+
+**Eleven live, one closed, and five of them stop something.** *(revision 2's count, kept so the history reads straight)* **D-1 is closed** — Surbhi answered it on
 24 September with §6a's design, and the two peer-feedback questions left the wave with the
 feature. **D-12 is new** and inherits a decision Wave 2 is still waiting on. Everything
 else has a fail-closed default written into an acceptance check, so the build starts
@@ -1806,10 +2014,11 @@ without it.
 |---|---|---|---|
 | ~~**D-1**~~ | ~~May a colleague's leave type appear on the Team screen?~~ | **CLOSED — Surbhi, 24 September 2026.** Presence only on every list, card and chip. **The leave type — and the reason the employee typed — appear on the approval row for a person's own direct reports and nowhere else.** For an HR caller looking at somebody they merely cover, never. **The decision was taken about `leave_type`; it is applied to `description` as well**, because the reason is the more personal field and a rule that covered only the category would have looked followed while leaking the worse half (045 PRIV-2). Written up in **§6a**; checked by **AC-76**; and because it is **narrower than today**, it ships with a release note (gate 3) | **No longer blocks anything** |
 | **D-12** *(new in revision 2)* | **May an HR person approve a covered person's attendance correction, and from when?** §6a says "only after it has sat with the manager for two working days" — but **that is Wave 2's D-2, and Wave 2 did not build it** (042 `03-implementation-notes.md` §1 item 2). It is a permission change, not a routing change (042 `01c` SEC-8) | **Answer 042 D-2 once, for both waves.** My recommendation is unchanged from Wave 2's: HR sees every correction from day one and may act from day three, counted on the **requester's own** holiday list, with the row labelled "with \<manager\> until \<date\>". **Until then the fail-closed behaviour ships: the action is not offered on a covered row at all**, and AC-81 asserts its absence | **Blocks one row of §6a's matrix**, not the screen and not the sections |
+| **D-13** *(new in revision 3 — **the one question the Send work needs**)* | **What counts as finished for Send?** The ratings are settled: every goal and every company value (D-4, D-5). **What is not settled is the three written steps** — "Still open from last time", "What you want to take on next", "Anything else". Must they be filled before a person may send, or may they be left empty? | **My recommendation: the ratings are required, the three written answers are not.** Send refuses a missing rating (AC-89) and lists the empty written steps on the last step without blocking, which is what §5a step 5 already describes. A review is mostly unusable without its ratings; it is still usable when somebody had nothing to add. Forcing text produces "n/a" in three boxes, which is worse than an empty box because it looks like an answer | **No — the build starts on the recommendation.** If she wants text required, it is one line in the same check and one sentence on the screen |
 | **D-2** | **What exactly is "needs attention"?** (Q27) The prototype's 75 % is invented; the stored `trajectory` is real | **Stored `trajectory` in (`At Risk`, `Off Track`)**, with AC-24's staleness rule and AC-57's joiner rule. No percentage anywhere. It is explainable to the person named, which a percentage is not | While building |
 | **D-3** | **The trajectory is only recomputed when a goal is saved.** A goal nobody touches keeps an old answer | **Ship AC-24** — show the date it was worked out, and do not count a stale On Track as attention-worthy — **and raise the nightly recompute as its own ticket.** Recomputing on read is a write on a read path and §19.5 rules it out | While building |
-| **D-4** | **Rate goals or KPIs, and whole or half points?** (Q24) Rahul has 11 Q2 KPIs, 6 of them linked to goals | **Rate the goals, in whole points**, with the KPI figures shown beside each goal. Eleven rating boxes on a phone between customers is the review nobody finishes. `[ASSUMPTION]` — the usability test in `01b` §12 is the evidence that would settle it | **Blocks step 1 of the wizard** |
-| **D-5** | **Values: pick two with an example, or rate all seven criteria? Which master list —** `Company Value` **or HRMS's** `Employee Feedback Criteria`**?** (Q23) Two sources describe the same thing | **Pick two with an example, from `Company Value`** — it is the tenant's own list and PP Jewellers has five real ones. Rating seven generic criteria is what the current wizard does, and it is why nobody reads the answers. **HRMS's template stays the desk's; the portal does not write it** | **Blocks step 2 of the wizard** |
+| ~~**D-4**~~ | ~~Rate goals or KPIs, and whole or half points?~~ | **CLOSED — Surbhi, 24 September 2026. Rate the goals, in whole points, with the KPI figures shown beside them.** Built (`03` §15.6) and now **stored**: the rating goes on the review's own copy of the goal, `Alvoraa Review Item.self_rating` on the `Objective` row (§9, AC-87). **A KPI row name sent in the goals block is refused** (AC-93), so the decision is enforced and not merely drawn | **No longer blocks anything** |
+| ~~**D-5**~~ | ~~Values: pick two with an example, or rate them all? Which master list?~~ | **CLOSED — Surbhi, 24 September 2026, and she overruled my "pick two": every active value on the tenant's own `Company Value` list is rated, comment optional.** Quoted in `growth_api.company_values_for:161`. **HRMS's `Employee Feedback Criteria` stays the desk's** — the portal does not write it, so `Company Value` is the single source of truth for this list. The ratings are stored in the review's `page_data["wizard"]` block (§9) and **checked on the server before Send** (AC-89) | **No longer blocks anything** |
 | **D-6** | **Where do the "one thing to get better at" options come from?** (SR-05) The prototype's list is invented; `Skill` has 9 rows and `Designation Skill` is empty | **A free-text box for v1.** Nine skills is not a list, and an empty designation table means most people would see nothing. Revisit when a tenant has filled it in | While building |
 | **D-7** | **May a colleague's work phone number and email appear in the person sheet, and does it need an opt-in?** (Q28, PE-07) There is no consent field anywhere today | **Not in Wave 4.** Ship the sheet with `staff_api`'s five keys. If it is wanted, it is **one `Check` field on Employee, default 0** (§15) and a row on the person's own account screen — a small, honest feature, not a line in this spec | While building; the default is "no" |
 | **D-8** | **There is no design run for these three screens** — `01b` §11 says so. This spec specifies behaviour the prototype only sketches | **Run a short design pass on the self-review wizard only**, before its commit. Team and People are re-dresses of screens that exist and can proceed. The wizard is the one screen with a two-minute budget and a 32 px control that already failed measurement | **Blocks the wizard's commit**, not the wave |
@@ -1897,10 +2106,20 @@ blocker**, owned outside this slice.
 | Migration stated | ✓ §15 — **one Select custom field** (`alvoraa_decided_as`, no backfill, and an empty value reads as "not recorded"), plus D-7's optional second |
 | Compliance sub-analysis | ✓ §19 — including the two places this wave shapes a judgement about a person |
 | No prohibited capability | ✓ nothing AI-shaped; the two prohibitions approached (a ranking, an attention history) are refused in writing in §19.4 |
-| Open questions owned, none blocks day 1 | **Partly, and better than revision 1.** The server work (US-12, US-5's lists) starts today, and §6a's two sections can be built now. **D-4, D-5 and D-8 block the wizard's commit; D-10 blocks People's menu rule; D-12 blocks one row of §6a's matrix.** **D-1 no longer blocks anything — it is answered.** Every remaining one has a fail-closed default |
+| Open questions owned, none blocks day 1 | **Better again in revision 3: D-4 and D-5 are closed, so the wizard is no longer waiting on three answers — only on D-8's design pass. D-13 is new and does not block: it has a default.** |
+| **Send is specified** *(new row, revision 3)* | ✓ — US-21, AC-87 to AC-99. **The goal rating has a home** (`self_rating` on the `Objective` copy, no new field, no migration), **the KPI field keeps its old meaning and is not written by the wizard**, the page key is `wizard`, and the read-back check (AC-96) is the one that catches the silent failure |
+| Open questions owned, none blocks day 1 *(revision 2's wording)* | **Partly, and better than revision 1.** The server work (US-12, US-5's lists) starts today, and §6a's two sections can be built now. **D-4, D-5 and D-8 block the wizard's commit; D-10 blocks People's menu rule; D-12 blocks one row of §6a's matrix.** **D-1 no longer blocks anything — it is answered.** Every remaining one has a fail-closed default |
 | Frappe details verified in source | **Partly** — AC-40 (`page_data` size) and the evidence notification in §16 are `[UNVERIFIED]` and need one bench run |
 | The three dead browser tests are owned | ✓ US-15, and the ticket's wave attribution is corrected |
 | Nothing in the wave creates a new record type | ✓ — true since 24 Sep. Peer feedback was the only one, and it left (§23, ALV-116) |
+
+**Revision 3, plainly: the Send gap is closed on paper, and it needed no new decision
+about where data goes.** The rating has a home that already exists, the KPI field keeps
+the meaning it has, the page key is `wizard`, and thirteen checks say what Send must
+prove — including the one that compares what was stored with what the person saw. **Two
+live silent faults on this branch were found while writing it** (bad news 6 and 7) and
+each now has a check. **One question is open, D-13, and it has a default**, so the
+engineer can start.
 
 **Verdict, plainly: ready to start, not ready to finish.** The five server items are
 specified, verified in source and independent of every open decision — and one of them
@@ -1927,8 +2146,9 @@ D-12.
 |---|---|---|---|---|
 | — | ~~D-1 — a colleague's leave type on the Team screen~~ | — | — | **CLOSED 24 Sep** — §6a, AC-76. What survives is release gate 3, the note about the narrowing |
 | 2 | D-2 — the "needs attention" rule | Surbhi | The card | Yes — AC-23 is the default |
-| 3 | D-4 — rate goals or KPIs, whole or half points | Surbhi | Step 1 of the wizard | **No** — the step cannot be built either way |
-| 4 | D-5 — values: pick two, and which master list | Surbhi | Step 2 of the wizard | **No** |
+| — | ~~D-4 — rate goals or KPIs, whole or half points~~ | — | — | **CLOSED 24 Sep** — goals, whole points. Stored on the `Objective` row's `self_rating` (AC-87); a KPI row in the goals block is refused (AC-93) |
+| — | ~~D-5 — values: pick two, and which master list~~ | — | — | **CLOSED 24 Sep** — every active `Company Value`, comment optional. Checked on the server before Send (AC-89) |
+| 16 | **D-13 — must the three written steps be filled before a person may send, or only the ratings?** | Surbhi | One line of the Send check and one sentence on the last step | **Yes** — the default is: ratings required, written answers optional, the empty ones listed before Send |
 | 5 | D-6 — where the skill options come from | Surbhi | One field | Yes — free text |
 | 6 | D-7 — contact details on the person sheet, and consent | Surbhi, **with an advisor** | One field, and a DPDP question | Yes — the default is "no contact detail" |
 | 7 | D-8 — a design pass on the self-review wizard | Surbhi, with the UX designer | The wizard's commit | Yes for Team and People |
@@ -1958,6 +2178,26 @@ D-12.
 - `[ASSUMPTION]` The demo copy can be seeded with an open review cycle, pending evidence and
   open requests through `demo/` scripts. Without it most of §11 passes for the wrong reason
   (§15).
+- **Confirmed fact, not an assumption (revision 3):** `Alvoraa Review Item` carries
+  `self_rating`, `self_comment`, `self_rated_on`, the three `self_basis_*` fields and
+  `self_flag` on **every** row, whatever its `item_type`. Read in
+  `alvoraa_goals/…/alvoraa_review_item/alvoraa_review_item.json`. **So a goal's
+  self-rating needs no new field.**
+- **Confirmed fact (revision 3):** Frappe HR's own `Appraisal Goal` child table carries a
+  single `score` with no self/manager split and no link to an `Individual Goal`
+  (`hrms/hr/doctype/appraisal_goal/appraisal_goal.json`), and `Employee Feedback Rating`
+  is the peer-feedback table. **Neither can carry this**, which is why the review's own
+  copy is the right home and not a parallel structure.
+- `[ASSUMPTION]` **The company-value ratings are fine inside `page_data` for now.** They
+  are not queryable across a company, so a future "how did the whole store rate
+  Ownership?" report would need a structured home. **[Recommendation]** raise that as its
+  own ticket when somebody asks for the report — building a child table today for a
+  question nobody has asked is the over-engineering this project keeps refusing.
+  `[UNVERIFIED — engineer to confirm]` that no existing report reads value ratings.
+- `[ASSUMPTION]` **Applying the old `past-objectives` block first and the `wizard` block
+  second is the right order** when a review was half-typed on each screen (AC-98). It is a
+  judgement: the wizard is the newer screen, so its answer is the later intention. It is
+  one line and it is tested, so it is cheap to reverse.
 - **Confirmed fact, not an assumption:** slice 010 groups A–D are on `origin/dev` at
   `8718f27`. `submit_employee_review:4419` checks ownership and writes to copies;
   `submit_goal_evidence` saves Pending with a private file. Wave 4's Growth work stands on

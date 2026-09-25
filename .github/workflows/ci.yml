@@ -178,6 +178,25 @@ jobs:
           python scripts/check_preview_flag.py --self-test
           python scripts/check_preview_flag.py
 
+      # Slice 042, review finding F1. Removing the "this week" card deleted the
+      # card's opening <div> and its two inner ones and left the CLOSING one
+      # behind. The browser does not error on that - it re-parents everything
+      # after it, so the live Home page lost its two-column layout and nothing
+      # anywhere went red. The design-system counter reads colours, the handler
+      # checks read JavaScript, and the jsdom tests drive the PREVIEW page, not
+      # hrms-employee.html.
+      #
+      # This assembles both portal pages the way the server sends them and
+      # counts the tags, and pins each markup fragment's depth so the failure
+      # names a file rather than a line in a 3,000-line assembled document.
+      # The first line is the positive control: it rebuilds the real 042 bug in
+      # a temporary folder and fails the build unless the check CATCHES it.
+      # Text only: no bench, no database, no site, no browser.
+      - name: The portal pages open and close the same tags
+        run: |
+          python scripts/check_tag_balance.py --self-test
+          python scripts/check_tag_balance.py
+
       # Slice 034, review finding F1. The portal's styles and script are static
       # files under /assets/ now, served with `try_files $uri =404`. A 404 on
       # portal.js is the whole portal gone and nothing in any log, because

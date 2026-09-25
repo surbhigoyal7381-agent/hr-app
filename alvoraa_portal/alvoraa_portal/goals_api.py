@@ -426,11 +426,16 @@ def _require_manages(employee_id):
     companies - that reach comes from the org chart, not from the role.
     """
     me = _employee_id()
-    if me and (employee_id == me or employee_id in _descendants(me)):
+    if me and employee_id == me:
+        return
+    # In-company HR answers with one `get_value`, before the tree is walked -
+    # `_descendants` on a 981-person tenant is not a price to pay for the
+    # commonest caller.
+    if _is_hr() and _hr_may_act_for(employee_id):
+        return
+    if me and employee_id in _descendants(me):
         return
     if _is_hr():
-        if _hr_may_act_for(employee_id):
-            return
         _refuse_other_company(employee_id, "goals_api._require_manages")
     _require_employee()
     frappe.throw(

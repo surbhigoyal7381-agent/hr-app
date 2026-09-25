@@ -4461,47 +4461,37 @@ def save_review_page(appraisal, page_key, page_data_json):
 def _notify_manager_review_sent(ap, ext):
     """One notification to the manager when a self-review is sent (AC-36).
 
-    **Nothing from inside the review travels in it.** The subject line carries
-    the person's name and the cycle; no rating, no comment, no goal title. A
+    **Through `_send_notification`, the helper this file already has**, which
+    sends an email and nothing else. Two rules hold because of that choice:
+    the server never pushes script to a browser (SEC-12, and the static check
+    that guards it), and nothing here needs a permission bypass - which is why
+    this is not a `Notification Log` row written past the caller's rights.
+
+    **Nothing from inside the review travels in it.** The subject carries the
+    person's name and the cycle; no rating, no comment, no goal title. A
     notification is read by whoever has the manager's phone in their hand, and
     a review's contents are not a thing to put on a lock screen.
 
     It goes to the manager on `reports_to` only - never to HR, never to a
-    reviewer, and never to a list built from anything else.
+    reviewer, never to a list built from anything else.
 
-    **It does not use the `eval_js` helper** appendix D recorded as B26: a
-    notification that pushes script to a browser is a defect, not a feature.
-
-    A failure here never fails the send. The review is already stored and
-    committed; losing the ping is a smaller harm than throwing after the fact,
-    and the error is logged so somebody can see it happened.
+    A failure never fails the send: the helper logs a traceback with no names
+    and returns.
     """
-    try:
-        reports_to = frappe.db.get_value("Employee", ap.employee, "reports_to")
-        if not reports_to:
-            return
-        manager_user = frappe.db.get_value("Employee", reports_to, "user_id")
-        if not manager_user:
-            return
-        cycle = frappe.db.get_value(
-            "Appraisal Cycle", ap.appraisal_cycle, "cycle_name") or ap.appraisal_cycle
-        notif = frappe.new_doc("Notification Log")
-        notif.for_user = manager_user
-        notif.type = "Alert"
-        notif.document_type = "Appraisal"
-        notif.document_name = ap.name
-        notif.subject = frappe._("{0} has sent you their self-review for {1}").format(
-            ap.employee_name or ap.employee, cycle)
-        notif.email_content = frappe._(
-            "<p>Open the review to read it and add your own ratings.</p>")
-        notif.insert(ignore_permissions=True)
-        frappe.db.commit()
-    except Exception:
-        # The document name, never anything about the person or the review.
-        frappe.log_error(
-            title="Self-review sent: the manager could not be notified",
-            message=f"Appraisal {ap.name}",
-        )
+    reports_to = frappe.db.get_value("Employee", ap.employee, "reports_to")
+    if not reports_to:
+        return
+    manager_user = frappe.db.get_value("Employee", reports_to, "user_id")
+    if not manager_user:
+        return
+    cycle = frappe.db.get_value(
+        "Appraisal Cycle", ap.appraisal_cycle, "cycle_name") or ap.appraisal_cycle
+    _send_notification(
+        manager_user,
+        frappe._("{0} has sent you their self-review for {1}").format(
+            ap.employee_name or ap.employee, cycle),
+        frappe._("<p>Open the review to read it and add your own ratings.</p>"),
+    )
 
 
 @frappe.whitelist()

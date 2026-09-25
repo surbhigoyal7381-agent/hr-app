@@ -1255,7 +1255,7 @@ first.
 | `growth_api.apply_wizard_self_review` | new | **extend** — the rating onto `Alvoraa Review Item.self_rating` through `review_items.set_item_rating`, which already writes the stamp with it. **No new field, no patch, no migration** |
 | `performance_api.save_review_page` | the key check now runs on the `wizard` key | **extend** — AC-92 |
 | `performance_api.submit_employee_review` | both page keys, old block first (AC-98); the two text answers onto the extension (AC-99); one notification (AC-36); "This has already been sent." (AC-95) | **extend** |
-| `performance_api._notify_manager_review_sent` | new | **build** — B25 closed. The name and the cycle, nothing from inside the review, and not through the `eval_js` helper B26 recorded |
+| `performance_api._notify_manager_review_sent` | new | **build** — B25 closed. The name and the cycle, nothing from inside the review, **through `_send_notification`, the helper this file already had** |
 | `public/js/ess/next-growth.js` | the Send button, the blank-step list, the sent screen | **build** |
 | `alvoraa_goals/review_items.py` | **not touched** | `set_item_rating` was already the right mechanism |
 
@@ -1329,6 +1329,28 @@ the values unrated and get the server's own sentence —
 
 — rate them, send, reload again, and it still reads as sent with no second Send
 to press. Every reload is proved by a marker on `window` first.
+
+### Two security checks that caught me, and were right to
+
+The notification was written first as a `Notification Log` row, and two of this
+project's own static checks went red:
+
+| Check | What it said |
+|---|---|
+| **SEC-12** — the server never pushes script to a browser | The check greps for the literal name of the banned helper, and **my docstring contained it** while explaining that it was not used. The check is textual and it should be: the comment came out |
+| **SEC-16** — `ignore_permissions` never grows | `performance_api.py` has a ceiling of 64 and the row insert made it 65. An employee cannot create a `Notification Log` for somebody else without a bypass |
+
+Both are fixed by using `_send_notification`, the helper this file already had —
+which is what the spec's gap table said to do ("reusing the existing helper").
+It sends an email and nothing else: no script push, **no permission bypass**,
+and a failure logs a traceback with no names. The ceiling is back at 64.
+
+**And my own test poisoned the site while proving a point.** The "no manager
+recorded" case sets `reports_to` to nothing, and the send inside it commits —
+so a rollback did not undo it, and two later tests failed because nobody was
+notified. It puts the manager back in a cleanup now. That is the third time in
+this file that a committed side effect had to be undone by hand; every one of
+them is written down where it happened.
 
 ### The seven dimensions, re-assessed against the code that was written
 

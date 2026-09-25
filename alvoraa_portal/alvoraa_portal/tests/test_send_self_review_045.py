@@ -20,6 +20,7 @@ that matters reads the database back.
 """
 
 import json
+from unittest.mock import patch
 
 import frappe
 from frappe.utils import add_days, nowdate
@@ -455,22 +456,28 @@ class TestTheKpiHalfIsLeftAlone(SendFixture):
 class TestSendingTwiceChangesNothing(SendFixture):
 	"""AC-95, and AC-36's 'one notification' with it."""
 
-	def _notifications(self):
-		return frappe.db.count("Notification Log", {"document_name": self.appraisal})
+	def _restore_manager(self):
+		frappe.set_user("Administrator")
+		frappe.db.set_value("Employee", self.rahul, "reports_to", self.sandeep,
+		                    update_modified=False)
+		frappe.db.commit()
 
 	def test_the_second_send_is_refused_and_nothing_moves(self):
 		self.save_wizard(self.full_answers())
-		self.send()
+		with patch("frappe.sendmail") as sendmail:
+			self.send()
+			first = sendmail.call_count
 		after_one = {
 			row.name: frappe.db.get_value(
 				"Alvoraa Review Item", row.name,
 				["self_rating", "self_comment", "self_rated_on"], as_dict=True)
 			for row in self.goal_rows}
-		notifications = self._notifications()
 		goals_before = frappe.db.count("Individual Goal", {"employee": self.rahul})
 
-		with self.assertRaises(frappe.ValidationError) as caught:
-			self.send()
+		with patch("frappe.sendmail") as sendmail:
+			with self.assertRaises(frappe.ValidationError) as caught:
+				self.send()
+			second = sendmail.call_count
 		self.assertIn("already been sent", str(caught.exception))
 		self.assertEqual("Manager Review",
 		                 frappe.db.get_value("Alvoraa Appraisal Extension",
@@ -481,27 +488,46 @@ class TestSendingTwiceChangesNothing(SendFixture):
 				frappe.db.get_value("Alvoraa Review Item", name,
 				                    ["self_rating", "self_comment", "self_rated_on"],
 				                    as_dict=True))
-		self.assertEqual(notifications, self._notifications(),
-		                 "a second notification went out")
+		self.assertEqual(1, first, "the first send did not notify the manager")
+		self.assertEqual(0, second, "a second notification went out")
 		self.assertEqual(goals_before,
 		                 frappe.db.count("Individual Goal", {"employee": self.rahul}),
 		                 "a second next-period goal was created")
 
 	def test_the_manager_is_notified_once_and_the_review_is_not_in_the_message(self):
-		"""AC-36. The name and the cycle, and nothing from inside the review."""
-		before = self._notifications()
+		"""AC-36. The name and the cycle, and nothing from inside the review.
+
+		Through `_send_notification`, the helper this file already had, so the
+		server still pushes no script to a browser (SEC-12) and nothing here
+		needs a permission bypass (SEC-16).
+		"""
 		self.save_wizard(self.full_answers(comment="a private reflection"))
-		self.send()
-		rows = frappe.get_all(
-			"Notification Log", filters={"document_name": self.appraisal},
-			fields=["for_user", "subject", "email_content"],
-			order_by="creation desc")
-		self.assertEqual(before + 1, len(rows))
+		with patch("frappe.sendmail") as sendmail:
+			self.send()
+		self.assertEqual(1, sendmail.call_count)
+		sent = sendmail.call_args.kwargs
 		manager_user = frappe.db.get_value("Employee", self.sandeep, "user_id")
-		self.assertEqual(manager_user, rows[0]["for_user"])
-		whole = rows[0]["subject"] + (rows[0]["email_content"] or "")
+		self.assertEqual([manager_user], sent["recipients"])
+		whole = sent["subject"] + sent["message"]
+		self.assertIn(self.cycle, whole, "the notification does not say which cycle")
 		self.assertNotIn("a private reflection", whole)
 		self.assertNotIn(self.goal_rows[0].title, whole)
+
+	def test_somebody_with_no_manager_recorded_is_not_notified_and_can_still_send(self):
+		"""Nobody to send it to is not a reason to lose the review."""
+		frappe.set_user("Administrator")
+		# **Put the manager back afterwards, and commit it.** The send inside
+		# this test commits, so a rollback does not undo this line - the first
+		# run left Rahul with no manager and two later tests then failed
+		# because nobody was notified. The same trap as the removed goals.
+		self.addCleanup(self._restore_manager)
+		frappe.db.set_value("Employee", self.rahul, "reports_to", None,
+		                    update_modified=False)
+		self.as_user(self.rahul_user)
+		self.save_wizard(self.full_answers())
+		with patch("frappe.sendmail") as sendmail:
+			self.assertEqual("Manager Review", self.send()["review_status"])
+		self.assertEqual(0, sendmail.call_count)
 
 
 class TestWhatIsStoredIsWhatWasOnScreen(SendFixture):

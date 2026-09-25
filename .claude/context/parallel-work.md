@@ -70,7 +70,10 @@ Once the strategy is approved, **add a row to the work board**:
 | 012-payslip-view | .claude/worktrees/012 · slice/012 | hr_api.py (get_payslip*), hrms-employee.html (#panel-payslip, ps* functions) | no | 2026-09-14 10:05 | 2026-09-14 11:30 |
 ```
 
-Keep it current. Remove the row when the work is pushed or abandoned.
+Keep it current. Remove the row when the work is pushed or abandoned. **When an agent has
+reported, stop it immediately** — a finished agent still holding a worktree is
+indistinguishable from a working one, and the cost of restarting it far exceeds the cost
+of stopping it on time.
 
 ## 3. While you work
 

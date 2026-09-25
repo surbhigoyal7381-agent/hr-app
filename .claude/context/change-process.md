@@ -169,3 +169,36 @@ file:
 
 A lesson that fails any of these is still worth recording — as a note with its evidence,
 not as a rule. The difference matters: a note informs judgement, a rule replaces it.
+
+---
+
+## Doing the work without wasting it
+
+Five rules learned from running many agents in parallel. Shared here so every agent reads
+them instead of every brief retyping them.
+
+**1 · Match the model to the task.** Every agent runs on the parent's model unless told
+otherwise. Reviews, security work and anything judging code keep the strong model.
+Mechanical work — rebases, file moves, ticket updates, running a known command — goes
+on a cheaper one. **Reason: the redesign ran five waves through dozens of agents and every
+one of them ran on the expensive model, including the ones moving files.**
+
+**2 · Stop an agent the moment it reports.** Three agents on 2026-09-25 kept running after
+handing back their report; one burned a very large amount of work before a duplicate
+notification gave it away. **Reason: two agents in one worktree is also how work gets lost —
+that nearly happened twice the same day.**
+
+**3 · The lessons belong here, not in every brief.** A brief carries the task, the
+constraints specific to it, and the two or three lessons that actually bear on it.
+**Reason: repeating the same paragraph in twenty briefs costs real money and buries the
+part that is specific.**
+
+**4 · A full test suite is nearly two hours. Run it once, at the end.** After each fix,
+the changed modules plus their neighbours answer the question. **Reason: full runs were
+being asked for after individual fixes, which is where hours went.**
+
+**5 · Do not ask for a measurement the machine cannot give.** Wall-clock timings on this
+machine vary by more than the effect being measured — an untouched call moved 46 ms to
+122 ms between two sweeps minutes apart. Query counts and payload bytes reproduce exactly.
+**Reason: an agent spent an afternoon attributing a slowdown that turned out not to
+reproduce.**

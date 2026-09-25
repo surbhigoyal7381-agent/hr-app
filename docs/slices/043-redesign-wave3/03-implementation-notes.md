@@ -57,7 +57,8 @@ or put on any server.
 | **AC-60** | Fallback wording, never blank, never implying review; a test asserts the rule still has no owner field | ✓ |
 | **AC-61** | Write count around two full calls, plus a static check for every write call | ✓ |
 | **AC-16, AC-17** | Separate bodies, separate sends, days only, no leave type — asserted on the rendered body per recipient against a Sick Leave fixture | ✓ |
-| **AC-1 to AC-5, AC-7 to AC-15, AC-18 to AC-25, AC-32 to AC-41, AC-44 to AC-51, AC-53 to AC-56** | **Not built.** These are the Time and Pay screens | ✗ — §9 |
+| **AC-1 to AC-5, AC-7 to AC-15, AC-20 to AC-25, AC-32 to AC-41, AC-44 to AC-51, AC-53 to AC-56** | **Not built.** These are the Time and Pay screens | ✗ — §9 |
+| **AC-18, AC-19** (retire `get_attendance_calendar` and `submit_attendance_request`) | **NOT MET, deferred with a reason.** Their only callers are `hrms-employee.html`, the page every tenant is on today. The screens that replace them live on `/hrms-employee-next`, which is 404 on production behind two locks. Deleting the endpoints now takes a working calendar away from every customer and puts nothing in its place - which is what release gate 2 forbids. **What unblocks it:** the preview page becoming the real page; then the deletion is its own commit so a revert is one step, and it must carry the same test shape as Wave 2's `test_week_presence_retired_042.py` - a source walk with a positive control, plus a call-by-hand test. Recorded as not met on the review's F4, which agreed with the decision | **✗ not met, deliberately deferred** - §18, §21.3 |
 
 ## 3. The seven non-functional dimensions, against the code actually written
 
@@ -293,31 +294,19 @@ warm-ups, nothing written in between.
 | `get_time` · store HR | **36 q**, p50 94 ms, p95 118 ms | **36 q**, p50 84 ms, p95 110 ms | yes |
 | `get_time` · company HR | **35 q**, p50 75 ms, p95 101 ms | **35 q**, p50 127 ms, p95 157 ms | yes |
 | `get_time` · System Manager | **32 q**, p50 66 ms, p95 99 ms | **32 q**, p50 129 ms, p95 217 ms | yes |
-| `get_pay` · every persona | **2 q**, p50 3–10 ms, 317 B | **2 q**, p50 11–26 ms, 317 B | yes |
+| `get_pay` · every persona | **2 q**, p50 3-10 ms, 317 B | **2 q**, p50 11-26 ms, 317 B | yes - **but this was the EMPTY screen. Superseded by §21** |
 
 **Against the budgets.** `get_time` is 35 queries against the spec's §13 limit of
-40, and 17 KB against its 40 KB. `get_pay` is 2 queries against 15 — but see the
-caveat below. Payload bytes are identical at 20 people and at 981, which is the
-other half of the same property.
+40, and 17 KB against its 40 KB. Payload bytes are identical at 20 people and at
+981, which is the other half of the same property.
 
-**The one number that is not good, stated plainly: a manager's `get_time` has a
-p95 of 656 ms at 981 people, against the 500 ms line.** The query count did not
-move, the payload did not move, and a profile of that exact call says **44.2 ms
-of the 332 ms median is SQL** — 35 statements, the slowest 6.7 ms, every one of
-them filtered to a single employee id. So it is not a statement whose cost grows
-with the company, which is the failure mode `nfr-budget.md` warns about. Where
-the rest of the time goes I **could not attribute** in this session; the most
-likely candidate is Frappe's own permission machinery for a manager persona
-(`_may_review()` calls `frappe.has_permission`), which is not something this
-slice added. **It is named here rather than rounded off.**
+**`get_pay`'s "2 queries" was the empty path**, because the 044 fixture people had
+no Salary Slips. The review's F3 is that §13's Pay budget was therefore backed by
+nothing. **It is measured now - see §21, and the real number is 11.**
 
-**A caveat on `get_pay`'s 2 queries, because the number looks better than it
-is.** The 044 fixture people have no Salary Slips, so `get_pay` takes the
-"no payslips yet" branch and stops after two reads. The figure proves the empty
-path is cheap and flat; it does **not** measure a full Pay screen. The full path
-is covered by `test_pay_screen_043` for correctness, and its shape is bounded —
-twelve slips, one `get_doc`, one `get_value` — but **its query count at scale is
-not measured, and I am not claiming it is.**
+**The 656 ms was investigated after the review asked for it. It did not
+reproduce, and the reason is in §21.** This table's manager row should be read
+with that section beside it.
 
 ## 16. Findings from part two that were not in the spec
 
@@ -376,3 +365,154 @@ JavaScript existed, so "it walks `public/js/ess`" was a claim until this.
 | **Maintainability** | **improves** | One definition of the payslip payload and of "the caller's own slips". The panels hold no number and no day of the week, so a tenant changing a setting changes the screen and nobody has to remember to edit the copy |
 | **Data integrity** | **neutral** | Nothing on any new path writes, asserted with a write-count spy on both screens — and the spy is proved able to see a write |
 | **Compliance / privacy** | **improves** | A manager opening a report's month gets the month and nothing else — no leave balance, no rule, no pay. The Why? sheet tells a person a machine cut their pay, in the server's words, and creates no record of their having read it |
+
+---
+
+## 21. The two numbers the review sent back (2026-09-25)
+
+`05-review.md` F3 and F2. Both are measured now rather than reasoned about.
+Measured on my own container `hrlocal-r43` against the same two sites
+(`test044`, 981 people; `test044s`, 20), same `measure_one`, 20 warm calls after
+three warm-ups.
+
+### 21.1 `get_pay`, measured on the FULL screen: **11 queries, flat**
+
+F3 was right and the caveat in section 15 was honest, but a budget backed by the
+empty path is still a budget backed by nothing.
+`fixtures_scale_044.seed_payslips` now puts twelve submitted Salary Slips on each
+of the five persona logins, each with eight earning rows and four deduction
+rows - because the risk the reviewer named is not the count, it is `get_doc` on
+a slip with a long salary structure, and `_payslip_payload` walks every child
+row.
+
+Only the five persona logins, not all 981 people: `get_pay` is an own-record
+call, so a thousand other people's payslips would add build time and change no
+number here.
+
+| `get_pay` | 20 people | 981 people | flat? |
+|---|---|---|---|
+| employee | **11 q**, p50 28.8 ms, p95 40.7 ms, 4,465 B | **11 q**, p50 18.8 ms, p95 24.6 ms, 4,465 B | **yes** |
+| manager | **11 q**, p50 17.6, p95 25.5, 4,459 B | **11 q**, p50 42.7, p95 55.7, 4,459 B | **yes** |
+| store HR | **11 q**, p50 16.4, p95 47.6 | **11 q**, p50 41.1, p95 64.6 | **yes** |
+| company HR | **11 q**, p50 11.5, p95 18.4 | **11 q**, p50 54.8, p95 77.3 | **yes** |
+| System Manager | **11 q**, p50 17.4, p95 32.3 | **11 q**, p50 21.8, p95 36.9 | **yes** |
+
+**11 queries against section 13's budget of 15, identical at both headcounts, and
+the payload is byte-identical.** The reviewer's inferred "roughly 5-6 statements"
+was low - the real figure is 11 - but the property that matters, that nothing in
+it grows with the company, holds and is now measured instead of reasoned.
+
+So section 13's Pay row reads **11 queries, measured**, not "2" and not "not
+measured".
+
+**Still not measured, and still named:** the payslip PDF download path.
+`07-devops-inputs.md` flags it separately and this did not touch it.
+
+### 21.2 The 656 ms: **it is measurement noise, not a persona and not headcount**
+
+F2 asked for an hour of attribution and offered a hypothesis, marked as a guess:
+`_may_review()` calls `frappe.has_permission`, and the three slow personas are
+the three where it returns True.
+
+The test is written down as `measure_044.attribute_time(shape)` so it can be run
+again rather than described. It does four things: asks who `_may_review()`
+actually returns True for, takes a baseline, times `_may_review()` on its own,
+then re-measures with it stubbed True and stubbed False.
+
+**The hypothesis is disproved, three ways.**
+
+1. **The correlation does not hold.** `_may_review()` returns True for store HR,
+   company HR and System Manager - and **False for the manager**, who was the
+   slowest persona in section 15's table. The three slow personas and the three
+   True personas are not the same three.
+2. **The function is far too cheap.** Timed alone at 981 people: 2.6 ms and one
+   query for the two who get False, and **0.0 ms and zero queries** for the three
+   who get True - Frappe has it cached by then. It cannot account for a 170 ms
+   gap.
+3. **Stubbing it changes nothing.** Stub True and stub False run the *same number
+   of statements* as each other, so they are exactly comparable, and they differ
+   from each other by up to **166 per cent**.
+
+**And the 2x itself did not reproduce.** Same method, same sites, same session:
+
+| `get_time` p50 | 20 people | 981 people | ratio | section 15 said |
+|---|---|---|---|---|
+| employee | 76.6 ms | 78.5 ms | 1.0x | 0.8x |
+| **manager** | 75.4 ms | 84.9 ms | **1.1x** | **2.1x** |
+| store HR | 119.7 ms | 103.8 ms | 0.9x | 0.9x |
+| company HR | 67.9 ms | 110.2 ms | 1.6x | 1.7x |
+| **System Manager** | 105.6 ms | 62.1 ms | **0.6x** | **2.0x** |
+
+No p95 anywhere near 656 ms. The manager's p50 at 981 came out at 84.9 ms
+against section 15's 332 ms.
+
+**The honest conclusion: the spread between runs that should be identical is as
+large as the effect that was being attributed.** Between stub True and stub
+False - two sweeps minutes apart, identical query counts - one persona's p50
+moved from 46.0 ms to 122.2 ms. A local Docker container sharing a host with a
+dozen other containers is not an instrument that can resolve a 2x difference in
+sub-second wall-clock. The query count and the payload size can be trusted
+because they are counted, not timed; the milliseconds cannot.
+
+**What this does NOT mean.** It does not mean `get_time` is fast on a real
+tenant, and it does not mean the 656 ms never happened - it did, on that run. It
+means the number was never evidence of a persona problem or of a headcount
+problem, and no code change is justified by it. **Nothing was capped and nothing
+was cached to make the number go down.** The engineer refused that, the reviewer
+agreed, and this session did not do it either.
+
+**What is real, and is what the budget should watch:** `get_time` is 32-36
+queries at twenty people and the same 32-36 at 981, with a byte-identical
+payload. That is the property `nfr-budget.md` makes the gate, and it holds.
+
+**What I would ask for before production**, and it is not this slice's job:
+wall-clock budgets need to be measured somewhere quieter than a developer's
+Docker host, or they will keep producing numbers nobody can act on. Owner:
+`hrms-devops-engineer`, with a date. Until then section 13's wall-clock lines
+should be read as indicative, and only the query and byte counts as gates.
+
+### 21.3 AC-18 and AC-19 in the AC table
+
+F4 asked that they be recorded as "not met, deferred with a reason" rather than
+left looking met. Section 2's table now says exactly that. The decision itself is
+unchanged and the reviewer agreed with it.
+
+### 21.4 `_subject` - confirmed still true, and it belongs on the risk register
+
+The review's F7, checked again on this branch and **still exactly as described**:
+
+`attendance_correction._subject` is the whole control for opening another
+person's month, and the check it makes is `_may_review()`, which is
+`frappe.has_permission("Attendance Request", "submit")` - **a doctype-level
+permission with no document and no company narrowing.** So anybody a tenant
+grants that permission to can open **any** employee's month, in any company on
+the site, including their punch times.
+
+This session's measurement confirms the shape from the other side: on the
+981-person fixture, spanning four companies, `_may_review()` returns True for
+store HR, company HR **and** System Manager, with no company narrowing anywhere
+in the call.
+
+Wave 3 does not widen it - `get_time(employee=...)` returns strictly less than
+`attendance_correction.month` already did, and
+`TestSomebodyElsesMonthCarriesNothingElse` asserts that. `01c` SEC-9 names
+`_subject` as the control on purpose. **Nothing was changed here**, as asked.
+
+**For the risk register, in one line:** *whoever holds submit permission on
+Attendance Request can open any employee's attendance month in any company on
+the site; pre-existing, intended, narrowable by `permitted_employees()` in Wave
+4 or 5 without changing anybody's screen who is correctly scoped today.*
+
+### 21.5 F5, the browser check
+
+See its own commit. Both halves were run: with the data seeded, **27 passed and
+0 failed in a real browser - the first recorded run in which the Why? sheet's
+seven assertions actually executed** - and with a user whose payslip has no
+deduction line, exit 2.
+
+### 21.6 The payslip rounding (F6) was not touched
+
+Deliberately. Surbhi has not answered which figure the bank pays, and the
+reviewer flagged that the answer changes the severity. No sentence was added to
+the screen, because any sentence I could write there would be a guess about
+money.

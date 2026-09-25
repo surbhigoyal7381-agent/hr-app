@@ -107,6 +107,9 @@ PINNED_DEPTH = {
 	"home.html": 0,
 	"next-home.html": 0,
 	"next-inbox.html": 0,
+	# Slice 043's two skeletons, pinned when Wave 3 rebased onto this check.
+	"next-pay.html": 0,
+	"next-time.html": 0,
 	"org-settings.html": 0,
 	"pay.html": 0,
 	"policies.html": 0,

@@ -12,7 +12,7 @@ description: >-
   Frappe HR already ships the thing before anyone specs it. Recommends only — the user
   decides. Do NOT use for detailed requirements (use hrms-business-analyst) or for code.
 tools: Read, Grep, Glob, Write, Edit, WebSearch, WebFetch
-model: inherit
+model: opus
 color: purple
 ---
 

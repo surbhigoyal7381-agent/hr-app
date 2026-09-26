@@ -14,7 +14,7 @@ description: >-
   that stop controls regressing. Does not decide points of law, and does not approve
   anything — the user does.
 tools: Read, Grep, Glob, Bash, Write, Edit, WebSearch, WebFetch
-model: inherit
+model: opus
 color: orange
 ---
 

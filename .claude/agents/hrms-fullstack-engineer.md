@@ -9,7 +9,7 @@ description: >-
   permission enforcement, privacy, reliability, observability, accessibility and
   upgrade-safety. Works safely alongside other sessions and developers changing the
   same repository at the same time. Do NOT use to decide scope or to sign off its own work.
-model: inherit
+model: opus
 color: green
 ---
 

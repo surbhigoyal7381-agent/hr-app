@@ -172,3 +172,18 @@ it stays hidden when the switch is off.
   merged or rebased onto this change, **keep `return !!f.org_attendance_scoring;`**.
   `plan_attendance_scoring` no longer exists, so keeping it would hide the attendance
   step of the cycle wizard for everyone, and nothing would error.
+
+### Proof after the review fixes
+
+All runs were in `hrlocal-oas` / `testoas`, one module at a time, after the rebase onto 0ed32b7. The container is stopped afterwards.
+
+| Run | Result |
+|---|---|
+| `test_org_attendance_switches` (was 34) | **47 tests, OK** |
+| hrms `test_attendance_score` + `test_late_rules` | **17 tests, OK** |
+| The same 14 portal modules as before, plus the incoming `test_permission_health_048` | **427 tests, OK** |
+| **Total** | **491 tests, 0 failures** |
+
+- `check_app_integrity.py`, design system, portal handlers, undefined JS, tag balance and API paths all pass.
+- The jsdom tests pass: 8 files, 0 failed. `next_time_pay_test.js` passes 66 checks.
+- ruff 0.6.9 finds nothing new on the changed lines. The one finding near them, RUF005 at `hr_api.py` line 3490, is in older code.

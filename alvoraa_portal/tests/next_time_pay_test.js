@@ -422,16 +422,35 @@ async function run() {
 
   /* ── late rules switched off in Organisation Settings (26 Sep 2026) ─────── */
 
+  var OFF_NOTE = "Late coming rules are switched off for your company, so nothing new is deducted. Days already taken are listed below.";
+  var offRule = { covered: false, switched_on: false, note: OFF_NOTE,
+    clauses: [], accountable: null, accountable_named: false };
+
+  /* Off, and nothing taken this year: no tab at all. */
   dom = await load("#time", makeFrame(), makeCounts(), {
-    [TIME]: makeTime({ rule: { covered: false, switched_on: false, note: "",
-      clauses: [], accountable: null, accountable_named: false } }),
+    [TIME]: makeTime({ rule: offRule,
+      record_this_year: { from_date: "2026-01-01", months: [], total_days: 0,
+                          weeks_listed: 0, capped: false, cap: 120 } }),
   });
   dom.window.NextTime.setTab("rule");
   await settle();
   is(screens(dom).querySelector('[data-tab="rule"]'), null,
-     "switched off: there is no Late rule tab at all");
+     "switched off, nothing taken: there is no Late rule tab at all");
   is(!!screens(dom).querySelector('[data-tab="days"]'), true,
      "and the Days and Leave tabs are still there");
+
+  /* Off, with days taken this year: the tab stays, read-only (review fix 3). */
+  dom = await load("#time", makeFrame(), makeCounts(), {
+    [TIME]: makeTime({ rule: offRule }),
+  });
+  screens(dom).querySelector('[data-tab="rule"]').click();
+  await settle();
+  is(/switched off for your company/.test(text(dom)), true,
+     "switched off, days taken: the tab says the rule is off");
+  is(/2026-09-29/.test(text(dom)), true,
+     "and the days already taken are still listed");
+  is(/Arriving more than/.test(text(dom)), false,
+     "and no forward-looking rule terms are shown");
 
   /* ── the rule tab shows the SERVER's sentences ─────────────────────────── */
 

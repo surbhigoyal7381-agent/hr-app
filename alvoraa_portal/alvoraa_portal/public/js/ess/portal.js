@@ -2051,6 +2051,13 @@ function loadMyLateDeductions() {
     if (!d || !d.enabled) { card.style.display = "none"; return; }
     card.style.display = "";
     const r = d.rule;
+    if (!r) {
+      /* Switched off in Organisation Settings: past deductions stay, read-only.
+         No rule terms and no "this week" - nothing new is deducted. */
+      document.getElementById("late-rule-text").textContent = "";
+      document.getElementById("late-this-week").textContent =
+        drT("Late coming rules are switched off for your company, so nothing new is deducted. Days already taken are listed below.");
+    } else {
     document.getElementById("late-rule-text").textContent =
       "Late after " + r.late_threshold_minutes + " min" + (r.early_exit_threshold_minutes ? ", early exit before " + r.early_exit_threshold_minutes + " min" : "") +
       " · first " + r.free_violations_per_week + " free · " + r.deduction_per_violation_days + " day each · " + r.round_up_from_days + " day becomes " + r.round_up_to_days;
@@ -2059,6 +2066,7 @@ function loadMyLateDeductions() {
       ? "<b>This week (from " + tw.week_start + "):</b> " + tw.violations.map(_lateViolationText).join(", ") +
         " → " + tw.counted + " counted, " + tw.projected_days + " day projected"
       : "<b>This week:</b> no violations so far";
+    }
     const tb = document.getElementById("late-tbody");
     tb.innerHTML = d.rows.length ? d.rows.map(function(x) {
       return "<tr><td>" + x.week_start + "</td><td>" + x.total_violations + "</td><td>" + x.counted_violations + "</td><td><b>" + x.deduction_days + "</b></td><td>" +

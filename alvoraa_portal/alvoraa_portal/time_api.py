@@ -277,7 +277,11 @@ def _rule_explained(emp):
 	# page. AC-35's "the tab says so" is for a company that HAS a rule which
 	# does not cover this person.
 	if not late_rules_on():
-		return {"covered": False, "switched_on": False, "note": "",
+		# The page draws the tab only when this person has days already taken
+		# this year (`record_this_year`), and then read-only: no terms, nothing
+		# about this week - those look forward, and nothing is deducted now.
+		return {"covered": False, "switched_on": False,
+		        "note": _("Late coming rules are switched off for your company, so nothing new is deducted. Days already taken are listed below."),
 		        "clauses": [], "accountable": None, "accountable_named": False}
 
 	rule = _late_rule_for(emp.name)

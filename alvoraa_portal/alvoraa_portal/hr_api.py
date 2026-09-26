@@ -3444,10 +3444,18 @@ def get_my_attendance_deductions(months=3):
     if not emp:
         return {"no_employee": True}
     rule = _late_rule_for(emp.name)
+    since = frappe.utils.add_months(frappe.utils.nowdate(), -int(months))
     if not rule:
+        # Switched off in Organisation Settings: nothing new is deducted, but
+        # days already taken stay on the person's screen, read-only. Only the
+        # forward-looking parts (this week so far, the rule's terms) go.
+        if not org_features.late_rules_on():
+            rows = _deduction_rows({"employee": emp.name, "docstatus": 1, "week_start": [">=", since]})
+            if rows:
+                return {"enabled": True, "switched_on": False, "rule": None,
+                        "rows": rows, "this_week": None}
         return {"enabled": False, "rows": [], "this_week": None}
     from hrms.alvoraa_late_rules.late_rules import current_week_projection
-    since = frappe.utils.add_months(frappe.utils.nowdate(), -int(months))
     rows = _deduction_rows({"employee": emp.name, "docstatus": 1, "week_start": [">=", since]})
     projection = current_week_projection(rule, emp.name)
     for v in projection["violations"]:

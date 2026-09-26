@@ -174,10 +174,14 @@
       + "</section>";
   }
 
-  /* The Late rule tab exists only when the company has switched late coming
-     rules on in Organisation Settings. Absent means an older server: shown. */
+  /* The Late rule tab exists when the company has switched late coming rules
+     on in Organisation Settings, or - switched off - when this person still
+     has days taken this year, which stay visible read-only. Absent means an
+     older server: shown. */
   function ruleShown(data) {
-    return !(data && data.rule && data.rule.switched_on === false);
+    if (!(data && data.rule && data.rule.switched_on === false)) { return true; }
+    var rec = data.record_this_year || {};
+    return (rec.weeks_listed || 0) > 0;
   }
 
   function tabs(esc, SAY, data) {

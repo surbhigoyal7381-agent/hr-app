@@ -407,10 +407,34 @@ class TestOffMeansNothingHappens(_SwitchCase):
 			self.assertIsNone(hr_api._late_rule_for("HR-EMP-OAS"))
 
 	def test_screens_answer_not_enabled_when_off(self):
+		"""Off, and nothing was ever taken from this person: the card is hidden."""
 		emp = frappe._dict(name="HR-EMP-OAS")
 		with patch.object(hr_api, "_get_employee", return_value=emp):
 			self.assertEqual(hr_api.get_my_attendance_deductions(),
 			                 {"enabled": False, "rows": [], "this_week": None})
+
+	def test_days_already_taken_stay_visible_when_off(self):
+		"""Review fix 3. Off, with past deductions: the history is still
+		returned, read-only - no rule terms and no projection for this week."""
+		emp = frappe._dict(name="HR-EMP-OAS")
+		past = [{"name": "AD-OAS-1", "week_start": "2026-08-17", "deduction_days": 0.5}]
+		with patch.object(hr_api, "_get_employee", return_value=emp), \
+		     patch.object(hr_api, "_deduction_rows", return_value=past) as rows, \
+		     patch("hrms.alvoraa_late_rules.late_rules.current_week_projection",
+		           side_effect=AssertionError("projected")):
+			res = hr_api.get_my_attendance_deductions()
+		self.assertEqual(res, {"enabled": True, "switched_on": False, "rule": None,
+		                       "rows": past, "this_week": None})
+		# Only this person's submitted records.
+		filters = rows.call_args.args[0]
+		self.assertEqual((filters["employee"], filters["docstatus"]), ("HR-EMP-OAS", 1))
+
+	def test_the_time_tab_explains_the_history_when_off(self):
+		from alvoraa_portal.time_api import _rule_explained
+
+		off = _rule_explained(frappe._dict(name="HR-EMP-OAS"))
+		self.assertEqual(off["clauses"], [], "no forward-looking terms")
+		self.assertIn("switched off", off["note"])
 
 	def test_the_time_tab_is_hidden_when_off_and_shown_when_on(self):
 		from alvoraa_portal.time_api import _rule_explained

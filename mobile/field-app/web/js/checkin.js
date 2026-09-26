@@ -66,20 +66,22 @@
     lastAction: null,        // "status" | "punch" | "remove" | "notice"
     pendingLogType: null,    // "IN" or "OUT" - what Try again resends
     photoDataUrl: null,      // kept across Try again (AC-205)
-    stream: null,
+    photoTakenAt: null,      // the phone's clock when the photo was taken
+    skipPhoto: false,        // the person chose "Check in without a photo"
+    camera: null,            // camera.js's instance, made on first use
+    cameraReopen: false,     // the preview was stopped because the app was paused
     noticeAgainValues: null, // the six rows to re-render on noticeAgain
     removeReason: null,      // "settings" | "gate" - which screen asked for E6
   };
 
   function stopCamera() {
-    if (state.stream) {
-      state.stream.getTracks().forEach(function (t) { t.stop(); });
-      state.stream = null;
-    }
+    if (state.camera) state.camera.cancel();
   }
 
   function resetPunchState() {
     state.photoDataUrl = null;
+    state.photoTakenAt = null;
+    state.skipPhoto = false;
     state.pendingLogType = null;
   }
 
@@ -332,13 +334,11 @@
       statusText.textContent = "Checked out at " + clockOnly(last.time);
     }
 
+    // Always shown since 27 Sep 2026: a radius of 0 or none is "Check in from
+    // anywhere", never hidden and never "0 m".
     var ruleLine = el("home-rule");
-    if (state.workplaceName && state.radiusM) {
-      ruleLine.textContent = "You need to be within " + state.radiusM + " m of " + state.workplaceName;
-      ruleLine.hidden = false;
-    } else {
-      ruleLine.hidden = true;
-    }
+    ruleLine.textContent = window.AlvoraaCheckinScreens.ruleLine(data.workplace);
+    ruleLine.hidden = false;
 
     var button = el("home-punch-button");
     button.textContent = state.checkedIn ? "Check Out" : "Check In";
@@ -385,6 +385,9 @@
   // ── Check In / Check Out ─────────────────────────────────────────────────
 
   function pressPunch() {
+    // A fresh press always takes a fresh photo. Only "Try again" on a problem
+    // screen resends the one already taken (AC-205, retryLast -> doPunch).
+    resetPunchState();
     var logType = state.checkedIn ? "OUT" : "IN";
     if (logType === "IN" && !hasSeenLocationExplain()) {
       state.pendingLogType = logType;
@@ -399,34 +402,132 @@
     doPunch(state.pendingLogType);
   }
 
-  function capturePunchPhoto() {
-    // Reuses the exact getUserMedia + canvas + photo.js pipeline join.js's
-    // scanner already proves works in this WebView (09-install-the-test-app.md),
-    // aimed at the still-image case instead of a continuous decode loop.
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      return Promise.resolve(null);
+  // ── the camera screen (fix of 27 Sep 2026) ──────────────────────────────
+  //
+  // Until 0.2.1 the photo was grabbed from a hidden <video> with no screen at
+  // all. Now the person sees the preview, presses "Take photo", sees the
+  // still, and chooses "Use photo" or "Retake". "Cancel" goes home and sends
+  // nothing. camera.js holds the steps and stops the stream on every way out;
+  // this part only draws the screen for the state it returns.
+
+  function cameraView(which) {
+    // which: "opening" | "live" | "still" | "denied" | "unavailable"
+    var live = which === "live" || which === "opening";
+    el("camera-video").hidden = !live;
+    el("camera-still").hidden = which !== "still";
+    el("camera-take").hidden = !live;
+    el("camera-take").disabled = which !== "live";
+    el("camera-use").hidden = which !== "still";
+    el("camera-retake").hidden = which !== "still";
+    el("camera-try-again").hidden = which !== "denied" && which !== "unavailable";
+    el("camera-no-photo").hidden = which !== "denied" && which !== "unavailable";
+    var message = el("camera-message");
+    if (which === "denied") {
+      message.textContent = "The camera is off for this app. To take your photo, allow Camera for "
+        + "Alvoraa in your phone's settings, then press Try the camera again. "
+        + "Or check in without a photo - your attendance still counts.";
+      message.hidden = false;
+    } else if (which === "unavailable") {
+      message.textContent = "The camera could not be opened. Press Try the camera again. "
+        + "Or check in without a photo - your attendance still counts.";
+      message.hidden = false;
+    } else {
+      message.textContent = "";
+      message.hidden = true;
     }
-    return navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user", width: { ideal: 960 }, height: { ideal: 720 } },
-      audio: false,
-    }).then(function (stream) {
-      return new Promise(function (resolve) {
-        var video = document.createElement("video");
-        video.playsInline = true;
-        video.muted = true;
-        video.srcObject = stream;
-        video.play();
-        video.addEventListener("loadeddata", function once() {
-          video.removeEventListener("loadeddata", once);
-          var shrunk = window.AlvoraaPhoto.shrinkToJpeg(video, video.videoWidth, video.videoHeight);
-          stream.getTracks().forEach(function (t) { t.stop(); });
-          resolve(shrunk ? shrunk.dataUrl : null);
-        }, { once: true });
+    if (which === "opening") el("camera-status").textContent = "Opening the camera";
+    else if (which === "live") el("camera-status").textContent = "Look at the camera, then press Take photo.";
+    else if (which === "still") el("camera-status").textContent = "Is your face clear?";
+    else el("camera-status").textContent = "";
+  }
+
+  function camera() {
+    if (!state.camera) {
+      var devices = navigator.mediaDevices;
+      state.camera = window.AlvoraaCamera.createCamera({
+        getUserMedia: devices && devices.getUserMedia ? devices.getUserMedia.bind(devices) : null,
+        video: el("camera-video"),
+        shrink: window.AlvoraaPhoto.shrinkToJpeg,
       });
-    }).catch(function () {
-      return null; // denied, or no camera - punch still counts (AC-200)
+    }
+    return state.camera;
+  }
+
+  function openCameraScreen() {
+    el("camera-heading").textContent = state.pendingLogType === "OUT"
+      ? "Take your photo to check out" : "Take your photo to check in";
+    show("camera");
+    cameraView("opening");
+    camera().open().then(function (s) {
+      if (currentScreen() !== "camera") {
+        camera().cancel(); // the person left while it opened: no camera left on
+        return;
+      }
+      if (s === "live" && !camera().ready()) {
+        // "Take photo" works from the first real frame, not before.
+        el("camera-video").addEventListener("loadeddata", function () {
+          if (camera().state() === "live" && currentScreen() === "camera") cameraView("live");
+        }, { once: true });
+        return;
+      }
+      cameraView(s);
     });
   }
+
+  function takePhoto() {
+    if (!camera().take()) return; // no frame yet - the button stays
+    el("camera-still").src = camera().stillDataUrl();
+    cameraView("still");
+  }
+
+  function usePhoto() {
+    var taken = camera().use();
+    el("camera-still").removeAttribute("src");
+    if (!taken) { openCameraScreen(); return; }
+    state.photoDataUrl = taken.dataUrl;
+    state.photoTakenAt = taken.takenAt;
+    state.cameraAvailable = true;
+    sendPunch(state.pendingLogType);
+  }
+
+  function retakePhoto() {
+    el("camera-still").removeAttribute("src");
+    openCameraScreen();
+  }
+
+  function cancelCamera() {
+    if (state.camera) state.camera.cancel();
+    el("camera-still").removeAttribute("src");
+    resetPunchState();
+    show("home"); // nothing was sent; home is as it was
+  }
+
+  function punchWithoutPhoto() {
+    if (state.camera) state.camera.cancel();
+    state.cameraAvailable = false; // AC-200: the punch still counts, without a photo
+    state.skipPhoto = true;
+    sendPunch(state.pendingLogType);
+  }
+
+  function currentScreen() {
+    var shown = app.querySelector(".screen:not([hidden])");
+    return shown ? shown.getAttribute("data-screen") : null;
+  }
+
+  // The app went to the background (or the phone locked) with the preview
+  // open: stop the camera now, and open it again when the app comes back.
+  document.addEventListener("visibilitychange", function () {
+    if (!state.camera) return;
+    if (document.hidden) {
+      state.cameraReopen = state.camera.pause();
+    } else if (state.cameraReopen && currentScreen() === "camera") {
+      state.cameraReopen = false;
+      openCameraScreen();
+    }
+  });
+  window.addEventListener("pagehide", function () {
+    if (state.camera) state.camera.cancel();
+  });
 
   function getPosition() {
     return new Promise(function (resolve, reject) {
@@ -454,24 +555,23 @@
   function doPunch(logType) {
     state.lastAction = "punch";
     state.pendingLogType = logType;
+    if (state.photoDataUrl || state.skipPhoto) {
+      sendPunch(logType); // AC-205: Try again resends the SAME photo, no new camera
+      return;
+    }
+    openCameraScreen();
+  }
+
+  function sendPunch(logType) {
+    state.lastAction = "punch";
     show("punching");
-    el("punching-status").textContent = "Taking your photo";
+    var photoDataUrl = state.photoDataUrl;
+    el("punching-status").textContent = "Finding where you are";
 
-    var photoPromise = state.photoDataUrl
-      ? Promise.resolve(state.photoDataUrl) // AC-205: Try again resends the SAME photo
-      : capturePunchPhoto().then(function (dataUrl) {
-          state.cameraAvailable = !!dataUrl;
-          state.photoDataUrl = dataUrl;
-          return dataUrl;
-        });
-
-    photoPromise.then(function (photoDataUrl) {
-      el("punching-status").textContent = "Finding where you are";
-      return getPosition().then(function (coords) {
-        return { photoDataUrl: photoDataUrl, coords: coords };
-      }, function (locErr) {
-        return { photoDataUrl: photoDataUrl, locErr: locErr };
-      });
+    getPosition().then(function (coords) {
+      return { photoDataUrl: photoDataUrl, coords: coords };
+    }, function (locErr) {
+      return { photoDataUrl: photoDataUrl, locErr: locErr };
     }).then(function (found) {
       if (found.locErr) {
         showProblem(found.locErr.code, {});
@@ -485,7 +585,10 @@
         longitude: found.coords.longitude,
         accuracy: found.coords.accuracy,
         photo: found.photoDataUrl || undefined,
-        captured_at: new Date().toISOString().replace("T", " ").slice(0, 19),
+        // The phone's local time WITH its offset from UTC, so the server can
+        // put it in the site's time zone (before 0.2.1: UTC with no mark,
+        // stored 5 h 30 min early). The photo's own moment when there is one.
+        captured_at: window.AlvoraaCheckinScreens.localTimeWithOffset(state.photoTakenAt || new Date()),
         // SEC-21 wants Android's own "is this a fake GPS provider" flag.
         // The standard `navigator.geolocation` Web API this file uses has no
         // such field - GeolocationCoordinates never carries one - so this is
@@ -500,7 +603,7 @@
         if (result.ok) {
           var hadPhoto = !!found.photoDataUrl;
           resetPunchState();
-          showResult(result.data, logType, hadPhoto);
+          showResult(result.data, logType, hadPhoto, found.coords.accuracy);
         } else if (result.code === "NOTICE_CHANGED") {
           state.noticeAgainValues = result.values;
           renderNoticeAgain(result.values);
@@ -514,12 +617,15 @@
     });
   }
 
-  function showResult(data, logType, hadPhoto) {
+  function showResult(data, logType, hadPhoto, phoneAccuracy) {
     el("result-heading").textContent = logType === "IN" ? "Checked in" : "Checked out";
     el("result-time").textContent = clockOnly(data.time);
     var card = el("result-card");
     clearChildren(card);
-    if (state.workplaceName) card.appendChild(textEl("p", "Where you were · At " + state.workplaceName));
+    // 27 Sep 2026: from the server's measurement, never the workplace's name
+    // alone - "At <workplace>" only when the person was inside its radius.
+    card.appendChild(textEl("p", "Where you were · "
+      + window.AlvoraaCheckinScreens.whereLine(data.location, phoneAccuracy)));
     card.appendChild(textEl("p", hadPhoto ? "Photo · Taken" : "Photo · Not taken"));
     if (!hadPhoto) {
       card.appendChild(textEl("p", "The camera was not on. Your attendance still counts."));
@@ -588,7 +694,8 @@
   function renderSettings() {
     el("settings-you").textContent = (el("home-person").textContent || "")
       + (state.workplaceName ? " · " + state.company + " · " + state.workplaceName : " · " + state.company)
-      + (state.radiusM ? " · Check in within " + state.radiusM + " m" : "");
+      + " · " + (Math.round(Number(state.radiusM) || 0) > 0
+        ? "Check in within " + Math.round(Number(state.radiusM)) + " m" : "Check in from anywhere");
 
     // D15/AC-224: the language row exists in the DOM only in a debug build -
     // not merely hidden, so it cannot be reached in pilot or release by any
@@ -695,6 +802,12 @@
   var ACTIONS = {
     "checkin-punch": pressPunch,
     "checkin-loc-continue": continueFromLocExplain,
+    "checkin-camera-take": takePhoto,
+    "checkin-camera-use": usePhoto,
+    "checkin-camera-retake": retakePhoto,
+    "checkin-camera-cancel": cancelCamera,
+    "checkin-camera-try-again": openCameraScreen,
+    "checkin-camera-no-photo": punchWithoutPhoto,
     "checkin-camera-retry": function () { state.cameraAvailable = undefined; loadStatus(); },
     "checkin-result-done": loadStatus,
     "checkin-open-settings": renderSettings,

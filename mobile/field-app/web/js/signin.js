@@ -265,8 +265,9 @@
     card.appendChild(textEl("p", "Company · " + (data.company || "")));
     if (data.workplace && data.workplace.name) {
       card.appendChild(textEl("p", "Your workplace · " + data.workplace.name));
-      card.appendChild(textEl("p", "Check in within · " + data.workplace.radius_m + " m"));
     }
+    // A radius of 0 or none means no limit - never "Check in within 0 m" (27 Sep 2026).
+    card.appendChild(textEl("p", window.AlvoraaCheckinScreens.ruleLine(data.workplace)));
     // Nothing from this sign-in stays in memory past this point.
     state.answer = null;
     state.token = null;

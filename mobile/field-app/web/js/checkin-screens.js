@@ -68,6 +68,65 @@
     return hours === 1 ? "an hour" : hours + " hours";
   }
 
+  // ── where and when (fix of 27 Sep 2026) ──────────────────────────────────
+
+  // 740 -> "740 m"; 13216 -> "13.2 km". Metres under 1 km, so a person near
+  // the gate reads a number they can walk; kilometres above, so 13 km is not
+  // written as "13216 m".
+  function formatDistance(metres) {
+    var m = Math.max(0, Math.round(Number(metres) || 0));
+    if (m < 1000) return m + " m";
+    return (Math.round(m / 100) / 10).toFixed(1) + " km";
+  }
+
+  // A radius of 0, or none at all, is Frappe HR's "no limit". Never "0 m".
+  function hasRadius(radius) {
+    return Math.round(Number(radius) || 0) > 0;
+  }
+
+  // The rule line on welcome and home. `workplace` is the server's
+  // { name, radius_m } or null.
+  function ruleLine(workplace) {
+    if (workplace && workplace.name && hasRadius(workplace.radius_m)) {
+      return "Check in within " + Math.round(Number(workplace.radius_m)) + " m of " + workplace.name;
+    }
+    return "Check in from anywhere";
+  }
+
+  // The result card's "where you were" line. `loc` is field_checkin's
+  // `location` answer: { workplace, radius_m, distance_m, within, accuracy_m }.
+  // It names the workplace as where the person WAS only when the server
+  // measured them inside its radius - never from the workplace's name alone.
+  // `phoneAccuracy` is used when an older server sends no `location` at all.
+  function whereLine(loc, phoneAccuracy) {
+    loc = loc || {};
+    var acc = loc.accuracy_m !== undefined && loc.accuracy_m !== null ? loc.accuracy_m : phoneAccuracy;
+    var accText = (acc !== undefined && acc !== null && acc !== "" && isFinite(Number(acc)))
+      ? " · accuracy " + Math.round(Number(acc)) + " m" : "";
+    var hasDistance = loc.distance_m !== undefined && loc.distance_m !== null && loc.distance_m !== "";
+    if (loc.workplace && loc.within === true) {
+      return "At " + loc.workplace + " (within " + Math.round(Number(loc.radius_m)) + " m)" + accText;
+    }
+    if (loc.workplace && hasDistance) {
+      return "About " + formatDistance(loc.distance_m) + " from " + loc.workplace + accText;
+    }
+    return "Location recorded" + accText;
+  }
+
+  // The phone's own wall-clock time with its offset from UTC, for
+  // `captured_at`: "2026-09-27T14:05:09+05:30". The server turns it into the
+  // site's time zone. (Before 0.2.1 the app sent UTC with no mark, and the
+  // server read it as local time - 5 h 30 min early in India.)
+  function localTimeWithOffset(date) {
+    function pad(n) { return n < 10 ? "0" + n : String(n); }
+    var offset = -date.getTimezoneOffset(); // minutes east of UTC
+    var sign = offset >= 0 ? "+" : "-";
+    var abs = Math.abs(offset);
+    return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate())
+      + "T" + pad(date.getHours()) + ":" + pad(date.getMinutes()) + ":" + pad(date.getSeconds())
+      + sign + pad(Math.floor(abs / 60)) + ":" + pad(abs % 60);
+  }
+
   function removeButton(company) {
     return "Remove " + (company || "this company") + " from this phone";
   }
@@ -210,7 +269,7 @@
     OUTSIDE_WORKPLACE: function (v) {
       var site = v.site || "your workplace";
       var body = (v.distance_m !== undefined && v.distance_m !== null && v.distance_m !== "")
-        ? "You are about " + Math.round(Number(v.distance_m)) + " m from " + site + ". You need to be within "
+        ? "You are about " + formatDistance(v.distance_m) + " from " + site + ". You need to be within "
           + Math.round(Number(v.radius_m) || 0) + " m to check in. Walk closer and press Try again. "
           + "Nothing has been saved."
         // AC-208: the server's other sentence, when the distance cannot be measured.
@@ -343,7 +402,14 @@
     return result;
   }
 
-  var api = { screenFor: screenFor, friendlyWait: friendlyWait };
+  var api = {
+    screenFor: screenFor,
+    friendlyWait: friendlyWait,
+    formatDistance: formatDistance,
+    ruleLine: ruleLine,
+    whereLine: whereLine,
+    localTimeWithOffset: localTimeWithOffset,
+  };
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;

@@ -218,6 +218,27 @@
     <button type="button" data-action="checkin-loc-continue">Continue</button>
   </section>
 
+  <!-- ============================== the check-in camera (fix of 27 Sep 2026) ==============================
+       The person sees the preview and takes the photo themselves; nothing is
+       sent until "Use photo". checkin.js shows or hides the buttons for the
+       camera's state (camera.js). Plain markup on purpose: the redesign
+       restyles it. -->
+  <section class="screen" data-screen="camera">
+    <h2 id="camera-heading">Take your photo</h2>
+    <p class="small" id="camera-status" aria-live="polite"></p>
+    <div class="camera-frame">
+      <video id="camera-video" playsinline muted aria-label="Camera preview"></video>
+      <img id="camera-still" alt="The photo you took" hidden>
+    </div>
+    <p class="error" id="camera-message" role="alert" hidden></p>
+    <button type="button" class="primary-green" id="camera-take" data-action="checkin-camera-take">Take photo</button>
+    <button type="button" class="primary-green" id="camera-use" data-action="checkin-camera-use" hidden>Use photo</button>
+    <button type="button" class="secondary" id="camera-retake" data-action="checkin-camera-retake" hidden>Retake</button>
+    <button type="button" id="camera-try-again" data-action="checkin-camera-try-again" hidden>Try the camera again</button>
+    <button type="button" class="secondary" id="camera-no-photo" data-action="checkin-camera-no-photo" hidden>Check in without a photo</button>
+    <button type="button" class="link" data-action="checkin-camera-cancel">Cancel</button>
+  </section>
+
   <!-- ============================== saving the punch (01b §7.11) ============================== -->
   <section class="screen" data-screen="punching">
     <p class="busy" id="punching-status">Taking your photo</p>
@@ -316,6 +337,7 @@
 <script src="js/app-version.js"></script>
 <script src="js/host-check.js"></script>
 <script src="js/photo.js"></script>
+<script src="js/camera.js"></script>
 <script src="js/qr-decode.js"></script>
 <script src="js/device-secret.js"></script>
 <script src="js/notice-cache.js"></script>

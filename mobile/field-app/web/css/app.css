@@ -58,6 +58,11 @@ button.primary-purple { background: #6d28d9; }
 .settings-group h3 { font-size: 15px; color: var(--muted); margin: 0 0 8px; text-transform: uppercase; }
 .radio-row { display: flex; align-items: center; gap: 10px; min-height: 56px; }
 .radio-row input { width: 22px; height: 22px; flex: none; }
+
+/* The check-in camera (fix of 27 Sep 2026). Functional only; the redesign restyles it. */
+.camera-frame video, .camera-frame img { max-height: 60vh; min-height: 240px; }
+button:disabled { opacity: 0.5; }
+button[hidden], video[hidden], img[hidden] { display: none; } /* `button` sets display: block */
 button.row-link { background: #fff; color: var(--ink); border: 2px solid var(--line); text-align: left; }
 button.row-link.danger-text { color: #9f1c1c; border-color: #f0c8c8; }
 button.danger { background: #9f1c1c; }

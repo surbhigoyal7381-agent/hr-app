@@ -17,10 +17,14 @@ that drops one fails CI:
     least one stays on. Turning a way off stops NEW joins that way only;
     phones that already joined keep working (the user's decision, 26 Sep
     2026). The designation list still binds code phones only.
-  * **A phone stops when its login does.** Disabling the User, changing its
-    password (SEC-26) or unlinking it from the employee record (SEC-28) blocks
-    the phones it signed in - through a hook and, where a hook can be skipped,
-    on the phone's next call.
+  * **A phone stops when its login does.** Disabling the User or unlinking it
+    from the employee record (SEC-28) blocks the phones it signed in - through
+    a hook and, where a hook can be skipped, on the phone's next call.
+  * **A changed password signs the phone out** (the user's decision, 26 Sep
+    2026, replacing SEC-26's block). Any path - the User form, a reset key,
+    `update_password` called directly, tenant_setup - and the phone's next
+    call is told PASSWORD_CHANGED_SIGN_IN_AGAIN. It is not Blocked; signing
+    in again replaces it with no HR step and no email.
   * **One app phone per person.** A new sign-in replaces the old phone,
     whichever way the old one joined, and emails the person (SEC-27).
 
@@ -808,7 +812,7 @@ class ADisabledLoginStopsItsPhone(PasswordCase):
 		self.assertEqual(self.phone_of(qr_token).status, "Active")
 		self.assertIsNotNone(self.status(qr_token), self.words())
 
-	# ── SEC-26 · a changed password ──────────────────────────────────────────
+	# ── SEC-28 · an unlinked login ───────────────────────────────────────────
 
 	def blocked_as(self, token, reason):
 		phone = frappe.db.get_value(fc.DEVICE, self.phone_of(token).name,
@@ -817,60 +821,6 @@ class ADisabledLoginStopsItsPhone(PasswordCase):
 		self.assertFalse(phone.token_hash, "the secret is retired in the same save")
 		self.assertIsNone(self.punch(token))
 		self.assertEqual(self.answer()[:2], (403, "DEVICE_BLOCKED"))
-
-	def test_128_sec26_a_new_password_set_on_the_user_form_blocks_the_phone(self):
-		token = self.signed_in()
-		frappe.set_user("Administrator")
-		user = frappe.get_doc("User", PW_EMAIL)
-		user.new_password = "Zqx-Pw128-Newer!horse-" + "9"
-		user.save(ignore_permissions=True)
-		frappe.db.commit()
-		frappe.set_user("Guest")
-		self.blocked_as(token, "Password changed")
-
-	def test_128_sec26_a_forgot_password_reset_blocks_the_phone(self):
-		from alvoraa_portal import field_app_device as device_api
-
-		token = self.signed_in()
-		frappe.set_user("Administrator")
-		link = frappe.get_doc("User", PW_EMAIL)._reset_password(send_email=False)
-		key = link.split("key=", 1)[1].split("&", 1)[0]
-		frappe.db.commit()
-		frappe.set_user("Guest")
-		# The website's /update-password page, through the override in hooks.py.
-		self.assertEqual(frappe.get_hooks("override_whitelisted_methods")
-		                 .get("frappe.core.doctype.user.user.update_password"),
-		                 ["alvoraa_portal.field_app_device.update_password"])
-		frappe.local.response = frappe._dict()
-		with mock.patch.object(frappe.local, "login_manager", mock.MagicMock(), create=True):
-			device_api.update_password(new_password="Zqx-Pw128-Reset!horse-" + "7", key=key)
-		frappe.db.commit()
-		frappe.set_user("Guest")
-		self.blocked_as(token, "Password changed")
-
-	def test_128_sec26_our_own_tenant_setup_reset_blocks_the_phone(self):
-		"""Round-two P3: tenant_setup resets an existing login's password with
-		frappe.utils.password.update_password, which no hook sees."""
-		from alvoraa_portal import tenant_setup
-
-		token = self.signed_in()
-		frappe.set_user("Administrator")
-		tenant_setup._make_user(PW_EMAIL, FIRST_NAME, "Zqx-Pw128-Setup!horse-" + "5", ["Employee"])
-		frappe.db.commit()
-		frappe.set_user("Guest")
-		self.blocked_as(token, "Password changed")
-
-	def test_128_sec26_a_used_or_wrong_reset_key_blocks_nothing(self):
-		from alvoraa_portal import field_app_device as device_api
-
-		token = self.signed_in()
-		frappe.local.response = frappe._dict()
-		with mock.patch.object(frappe.local, "login_manager", mock.MagicMock(), create=True):
-			device_api.update_password(new_password="Zqx-Pw128-Reset!horse-" + "7", key="zqx-no-such-key")
-		self.assertEqual(frappe.local.response.get("http_status_code"), 410)
-		self.assertEqual(self.phone_of(token).status, "Active")
-
-	# ── SEC-28 · an unlinked login ───────────────────────────────────────────
 
 	def test_128_sec28_changing_the_employees_login_blocks_the_phone(self):
 		token = self.signed_in()
@@ -903,6 +853,251 @@ class ADisabledLoginStopsItsPhone(PasswordCase):
 		frappe.db.commit()
 		frappe.set_user("Guest")
 		self.assertEqual(self.phone_of(token).status, "Active")
+
+
+# ── a changed password signs the phone out (26 Sep 2026 design change) ──────
+
+NEW_PASSWORD = "Zqx-Pw128-Newer!horse-" + "9"
+
+
+class APasswordChangeSignsThePhoneOut(PasswordCase):
+	"""The user's decision, 26 Sep 2026: a password reset from the server side,
+	by an admin or anyone, must not kill the phone for good; it asks the person
+	to sign in again. Every path that sets a password signs the phone out -
+	never Blocked - and the person signs in again.
+
+	Fail-without-fix: delete the `_sign_out_if_password_changed(device)` line
+	in `field_checkin._refuse_unless_app_phone_is_eligible` and all four
+	`..._signs_the_phone_out` tests fail - the phone keeps working."""
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		update_password(PW_EMAIL, PASSWORD)
+		frappe.db.commit()
+		super().tearDown()
+
+	def emails_about(self, phone_name):
+		return frappe.get_all("Email Queue", filters={"reference_doctype": fc.DEVICE,
+		                                              "reference_name": phone_name}, pluck="name")
+
+	def change_password_directly(self):
+		frappe.set_user("Administrator")
+		update_password(PW_EMAIL, NEW_PASSWORD)
+		frappe.db.commit()
+		frappe.set_user("Guest")
+
+	def assert_signed_out(self, token, status_first=False):
+		"""The next field_checkin AND field_status both say sign in again; the
+		record is Signed out with its secret retired, and not Blocked. Then the
+		person signs in again on the same phone: no HR step, no email."""
+		calls = [self.punch, self.status]
+		if status_first:
+			calls.reverse()
+		for call in calls:
+			self.assertIsNone(call(token), call.__name__)
+			self.assertEqual(self.answer()[:2], (401, "PASSWORD_CHANGED_SIGN_IN_AGAIN"),
+			                 call.__name__)
+			self.assertIn("Your password was changed. Please sign in again.", self.words())
+		phone = frappe.db.get_value(fc.DEVICE, self.phone_of(token).name,
+		                            ["status", "block_reason", "token_hash", "retired_token_hash",
+		                             "status_change_source"], as_dict=True)
+		self.assertEqual(phone.status, "Signed out")
+		self.assertFalse(phone.block_reason)
+		self.assertFalse(phone.token_hash, "the secret is retired")
+		self.assertEqual(phone.retired_token_hash, fc._hash(token))
+		self.assertEqual(phone.status_change_source, "System")
+
+		# The old password no longer signs in; the new one does, on the same
+		# phone (the app sends the secret it held).
+		self.assertIsNone(self.sign_in())
+		self.assertEqual(self.answer()[1], "SIGN_IN_FAILED")
+		again = self.sign_in(password=NEW_PASSWORD, token=token)
+		self.assertIn("token", again or {}, f"{self.answer()} {self.words()}")
+		self.call(join.acknowledge_notice, {"token": again["token"],
+		                                    "notice_version": notice.CURRENT_VERSION})
+		self.assertIsNotNone(self.status(again["token"]), self.words())
+		old = frappe.db.get_value(fc.DEVICE, self.phone_of(token).name,
+		                          ["status", "replaced_by"], as_dict=True)
+		self.assertEqual(old.status, "Replaced")
+		self.assertEqual(old.replaced_by, self.phone_of(again["token"]).name)
+		self.assertEqual(self.emails_about(self.phone_of(again["token"]).name), [],
+		                 "no new-phone email after a password change")
+		return again["token"]
+
+	def test_128_a_desk_user_form_password_change_signs_the_phone_out(self):
+		token = self.signed_in()
+		frappe.set_user("Administrator")
+		user = frappe.get_doc("User", PW_EMAIL)
+		user.new_password = NEW_PASSWORD
+		user.save(ignore_permissions=True)
+		frappe.db.commit()
+		frappe.set_user("Guest")
+		self.assert_signed_out(token)
+
+	def test_128_a_forgot_password_reset_key_signs_the_phone_out(self):
+		from frappe.core.doctype.user.user import update_password as website_update_password
+
+		token = self.signed_in()
+		frappe.set_user("Administrator")
+		link = frappe.get_doc("User", PW_EMAIL)._reset_password(send_email=False)
+		key = link.split("key=", 1)[1].split("&", 1)[0]
+		frappe.db.commit()
+		frappe.set_user("Guest")
+		# Frappe's own endpoint - nothing of ours wraps it any more.
+		self.assertNotIn("frappe.core.doctype.user.user.update_password",
+		                 frappe.get_hooks("override_whitelisted_methods") or {})
+		frappe.local.response = frappe._dict()
+		with mock.patch.object(frappe.local, "login_manager", mock.MagicMock(), create=True):
+			website_update_password(new_password=NEW_PASSWORD, key=key)
+		frappe.db.commit()
+		frappe.set_user("Guest")
+		self.assert_signed_out(token, status_first=True)
+
+	def test_128_a_direct_update_password_signs_the_phone_out(self):
+		"""frappe.utils.password.update_password, called directly - what
+		`bench set-password`, the setup wizard and any admin script do. No hook
+		sees it; the fingerprint does."""
+		token = self.signed_in()
+		self.change_password_directly()
+		self.assert_signed_out(token)
+
+	def test_128_tenant_setups_reset_signs_the_phone_out(self):
+		from alvoraa_portal import tenant_setup
+
+		token = self.signed_in()
+		frappe.set_user("Administrator")
+		tenant_setup._make_user(PW_EMAIL, FIRST_NAME, NEW_PASSWORD, ["Employee"])
+		frappe.db.commit()
+		frappe.set_user("Guest")
+		self.assert_signed_out(token, status_first=True)
+
+	def test_128_a_phone_that_has_not_agreed_is_signed_out_at_the_notice_too(self):
+		out = self.sign_in()
+		self.change_password_directly()
+		self.assertIsNone(self.call(join.acknowledge_notice,
+		                            {"token": out["token"], "notice_version": notice.CURRENT_VERSION}))
+		self.assertEqual(self.answer()[:2], (401, "PASSWORD_CHANGED_SIGN_IN_AGAIN"))
+		self.assertEqual(self.phone_of(out["token"]).status, "Signed out")
+
+	def test_128_signing_in_again_on_another_phone_after_a_sign_out_sends_no_email(self):
+		token = self.signed_in()
+		self.change_password_directly()
+		self.assertIsNone(self.status(token))
+		# No old secret sent: this is a different phone.
+		again = self.sign_in(password=NEW_PASSWORD)
+		self.assertIn("token", again or {}, self.words())
+		self.assertEqual(self.phone_of(token).status, "Replaced")
+		self.assertEqual(self.emails_about(self.phone_of(again["token"]).name), [])
+
+	def test_128_the_same_phone_signing_in_again_is_not_emailed(self):
+		"""An Active phone that signs in again sending its own secret is the
+		same phone: replaced, but no SEC-27 email. Without the secret it is
+		treated as another phone, and the person IS emailed."""
+		first = self.signed_in()
+		second = self.sign_in(token=first)
+		self.assertIn("token", second or {}, self.words())
+		self.assertEqual(self.phone_of(first).status, "Replaced")
+		self.assertEqual(self.emails_about(self.phone_of(second["token"]).name), [])
+		third = self.sign_in()
+		self.assertEqual(len(self.emails_about(self.phone_of(third["token"]).name)), 1)
+
+	def test_128_an_unchanged_password_never_signs_the_phone_out(self):
+		token = self.signed_in()
+		# The website's own password check on the same login changes nothing.
+		from frappe.utils.password import check_password
+
+		frappe.set_user("Administrator")
+		check_password(PW_EMAIL, PASSWORD)
+		frappe.db.commit()
+		frappe.set_user("Guest")
+		for _ in range(3):
+			self.assertIsNotNone(self.status(token), self.words())
+		self.assertIsNotNone(self.punch(token), f"{self.answer()} {self.words()}")
+		self.assertEqual(self.phone_of(token).status, "Active")
+
+	def test_128_a_signed_out_phone_cannot_be_switched_back_on(self):
+		token = self.signed_in()
+		self.change_password_directly()
+		self.assertIsNone(self.status(token))
+		frappe.set_user("Administrator")
+		name = self.phone_of(token).name
+		for target in ("Active", "Blocked"):
+			doc = frappe.get_doc(fc.DEVICE, name)
+			doc.status = target
+			doc.block_reason = "Other"
+			with self.assertRaises(frappe.ValidationError, msg=target):
+				doc.save(ignore_permissions=True)
+			frappe.db.rollback()
+		self.assertEqual(frappe.db.get_value(fc.DEVICE, name, "status"), "Signed out")
+		# HR's desk section says it plainly: signed out, can sign in again.
+		frappe.set_user(self.maker)
+		frappe.local.form_dict = frappe._dict(employee=self.employee)
+		section = desk.employee_app_section(employee=self.employee)
+		self.assertEqual(section["state"], "no_phone")
+		self.assertEqual(section["phone"]["status"], "Signed out")
+		self.assertEqual(section["phones"][0]["status_word"], "Signed out")
+		self.assertFalse(section["phones"][0]["can_block"])
+
+	def test_128_the_fingerprint_is_never_sent_logged_or_versioned(self):
+		out = self.sign_in()
+		answers = [out]
+		name = self.phone_of(out["token"]).name
+		stamp = frappe.db.get_value(fc.DEVICE, name, "password_stamp")
+		self.assertEqual(len(stamp or ""), 32)
+		self.assertEqual(stamp, fc.password_stamp(PW_EMAIL))
+		raw = frappe.db.sql("select password from `__Auth` where doctype='User' and name=%s "
+		                    "and fieldname='password'", PW_EMAIL)[0][0]
+		self.assertNotIn(stamp, raw, "a fingerprint, not a piece of the hash")
+
+		answers.append(self.call(join.acknowledge_notice,
+		                         {"token": out["token"], "notice_version": notice.CURRENT_VERSION}))
+		answers.append(self.status(out["token"]))
+		answers.append(self.punch(out["token"]))
+		answers.append(dict(frappe.local.response))
+		# A desk user reading the phone: the form, a list, and the Employee
+		# section. A System Manager (not Administrator) sees every company and
+		# still holds no permission level 1, so the field is stripped for them.
+		from frappe.client import get as client_get
+		from frappe.client import get_list as client_get_list
+
+		from alvoraa_portal.tests.test_field_app_step2_013 import _user
+
+		reader = _user("pw128.reader", ["System Manager"])
+		frappe.set_user(reader)
+		answers.append(client_get(fc.DEVICE, name))
+		answers.append(client_get_list(fc.DEVICE, fields=["*"], filters={"name": name}))
+		# The section picks its own fields, whoever reads it.
+		frappe.set_user("Administrator")
+		frappe.local.form_dict = frappe._dict(employee=self.employee)
+		answers.append(desk.employee_app_section(employee=self.employee))
+		# ...and the refusal after a change.
+		self.change_password_directly()
+		self.status(out["token"])
+		answers.append(dict(frappe.local.response))
+		answers.append(list(frappe.local.message_log))
+		for i, answer in enumerate(answers):
+			text = json.dumps(answer, default=str)
+			self.assertNotIn(stamp, text, f"answer {i}")
+			# Frappe's form read keeps the key and strips the value to null.
+			self.assertNotRegex(text, r'"password_stamp": "', f"answer {i}")
+		for doctype, fields in (("Error Log", ["method", "error"]),
+		                        ("Activity Log", ["subject", "content"]),
+		                        ("Version", ["data"]),
+		                        ("Comment", ["content"])):
+			for row in frappe.get_all(doctype, filters={"creation": [">=", self.started]},
+			                          fields=fields):
+				self.assertNotIn(stamp, json.dumps(row, default=str), doctype)
+
+	def test_128_code_phones_are_not_touched_and_make_no_extra_query(self):
+		qr_token = self.app_phone()
+		self.assertFalse(frappe.db.get_value(fc.DEVICE, self.phone_of(qr_token).name,
+		                                     "password_stamp"))
+		self.change_password_directly()
+		with mock.patch.object(fc, "password_stamp", wraps=fc.password_stamp) as spy:
+			self.assertIsNotNone(self.status(qr_token), self.words())
+			self.assertIsNotNone(self.punch(qr_token), f"{self.answer()} {self.words()}")
+		spy.assert_not_called()
+		self.assertEqual(self.phone_of(qr_token).status, "Active")
 
 
 # ── the limits and the wrapping ──────────────────────────────────────────────
@@ -982,7 +1177,8 @@ class TheLimits(PasswordCase):
 	def test_128_the_new_codes_are_in_the_table_and_the_old_ones_did_not_move(self):
 		for code in ("SIGN_IN_FAILED", "ACCOUNT_LOCKED", "PASSWORD_EXPIRED", "SIGN_IN_NOT_ALLOWED",
 		             "OTP_WRONG", "OTP_EXPIRED", "NO_EMPLOYEE_RECORD", "PASSWORD_SIGNIN_OFF",
-		             "JOIN_CODE_OFF", "NETWORK_LOCKED", "LOGIN_UNLINKED"):
+		             "JOIN_CODE_OFF", "NETWORK_LOCKED", "LOGIN_UNLINKED",
+		             "PASSWORD_CHANGED_SIGN_IN_AGAIN"):
 			self.assertIn(code, errors.CODES)
 		self.assertEqual(errors.CODES["SIGN_IN_FAILED"], (401, ()))
 		self.assertEqual(errors.CODES["QR_USED"], (410, ("used_at",)))

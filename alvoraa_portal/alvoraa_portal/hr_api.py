@@ -2916,6 +2916,23 @@ ORG_SWITCH_NEEDS = {
 }
 
 
+def _open_cycles_using_attendance():
+    """Appraisal cycles, not yet Completed, that count attendance in the score.
+
+    Switching attendance scoring off under them breaks them: their formula still
+    multiplies a stored attendance score, and completing the cycle saves it, which
+    the switched-off check then refuses. So HR finishes or changes them first.
+    Cycle names only - never a person.
+    """
+    if not frappe.db.has_column("Appraisal Cycle", "include_attendance_score"):
+        return []
+    return frappe.get_all(
+        "Appraisal Cycle",
+        filters={"include_attendance_score": 1, "status": ["!=", "Completed"]},
+        pluck="name", order_by="name asc", limit=20, ignore_permissions=True,
+    )
+
+
 def _switch_missing(key):
     """Labels of the sold features this switch still needs, or []."""
     from alvoraa_portal.subscription import feature_spec, has_feature
@@ -2955,6 +2972,13 @@ def set_org_setting(key, value):
             _refuse_org_setting("hr_api.set_org_setting")
     elif value not in allowed:
         _refuse_org_setting("hr_api.set_org_setting")
+    if value == "0" and key == org_features.ATTENDANCE_SCORING_SWITCH:
+        open_cycles = _open_cycles_using_attendance()
+        if open_cycles:
+            frappe.throw(
+                _("Finish or change these appraisal cycles first: {0}. They count attendance in the score, and switching it off would stop them completing.").format(", ".join(open_cycles)),
+                frappe.ValidationError,
+            )
     if value == "1" and key in ORG_SWITCH_NEEDS:
         missing = _switch_missing(key)
         if missing:

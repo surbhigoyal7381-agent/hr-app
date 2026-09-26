@@ -242,7 +242,8 @@ class TestOnlyHrReadsAndChangesThem(_SwitchCase):
 
 	def test_hr_sets_and_reads_both(self):
 		frappe.set_user(self.hr)
-		with patch("alvoraa_portal.subscription.has_feature", return_value=True):
+		with patch("alvoraa_portal.subscription.has_feature", return_value=True), \
+		     patch.object(hr_api, "_open_cycles_using_attendance", return_value=[]):
 			for key in SWITCHES:
 				self.assertEqual(hr_api.set_org_setting(key, "1"), {"ok": True})
 				self.assertEqual(hr_api.get_org_setting(key), "1")
@@ -317,6 +318,61 @@ class TestPrerequisitesAreEnforced(_SwitchCase):
 		with self._without("payroll", "performance"):
 			self.assertEqual(hr_api.set_org_setting(LATE_RULES_SWITCH, "0"), {"ok": True})
 		self.assertFalse(org_switch(LATE_RULES_SWITCH))
+
+
+class TestScoringCannotBeSwitchedOffUnderAnOpenCycle(_SwitchCase):
+	"""Review fix 2. An open cycle that counts attendance would break: its
+	formula keeps a stale score and completing it saves the cycle, which the
+	switched-off check refuses. So switching off waits until it is finished."""
+
+	CYCLE = "OAS Open Attendance Cycle"
+
+	def setUp(self):
+		super().setUp()
+		self.hr = _user("PriyaOas", "HR Manager")
+		frappe.db.set_default(ATTENDANCE_SCORING_SWITCH, "1")
+		self.addCleanup(self._drop_cycle)
+		self._drop_cycle()
+		company = frappe.get_all("Company", pluck="name", limit=1)[0]
+		cycle = frappe.get_doc({
+			"doctype": "Appraisal Cycle", "cycle_name": self.CYCLE, "company": company,
+			"start_date": "2026-04-01", "end_date": "2026-09-30",
+			"include_attendance_score": 1, "goal_weight": 50, "feedback_weight": 30,
+			"attendance_weight": 20, "attendance_reliability_weight": 60,
+			"attendance_punctuality_weight": 40,
+		})
+		cycle.insert(ignore_permissions=True, ignore_mandatory=True)
+		self.cycle = cycle.name
+
+	def _drop_cycle(self):
+		frappe.set_user("Administrator")
+		for name in frappe.get_all("Appraisal Cycle", filters={"cycle_name": self.CYCLE}, pluck="name"):
+			frappe.delete_doc("Appraisal Cycle", name, force=True, ignore_permissions=True)
+		frappe.db.commit()
+
+	def test_refused_while_the_cycle_is_open_and_the_cycle_is_named(self):
+		frappe.set_user(self.hr)
+		with self.assertRaises(frappe.ValidationError) as ctx:
+			hr_api.set_org_setting(ATTENDANCE_SCORING_SWITCH, "0")
+		self.assertIn("Finish or change these appraisal cycles first", str(ctx.exception))
+		self.assertIn(self.cycle, str(ctx.exception))
+		self.assertTrue(org_switch(ATTENDANCE_SCORING_SWITCH))
+
+	def test_allowed_once_the_cycle_is_completed(self):
+		frappe.db.set_value("Appraisal Cycle", self.cycle, "status", "Completed")
+		frappe.set_user(self.hr)
+		self.assertEqual(hr_api.set_org_setting(ATTENDANCE_SCORING_SWITCH, "0"), {"ok": True})
+		self.assertFalse(org_switch(ATTENDANCE_SCORING_SWITCH))
+
+	def test_allowed_once_the_cycle_stops_counting_attendance(self):
+		frappe.db.set_value("Appraisal Cycle", self.cycle, "include_attendance_score", 0)
+		frappe.set_user(self.hr)
+		self.assertEqual(hr_api.set_org_setting(ATTENDANCE_SCORING_SWITCH, "0"), {"ok": True})
+
+	def test_late_rules_are_not_held_by_cycles(self):
+		frappe.db.set_default(LATE_RULES_SWITCH, "1")
+		frappe.set_user(self.hr)
+		self.assertEqual(hr_api.set_org_setting(LATE_RULES_SWITCH, "0"), {"ok": True})
 
 
 # ── 5. Off means nothing happens; on means what happened before ──────────────

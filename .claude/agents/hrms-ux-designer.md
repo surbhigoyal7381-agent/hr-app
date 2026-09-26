@@ -13,7 +13,7 @@ description: >-
   hrms-product-manager), to write the functional spec (use hrms-business-analyst), or
   to write production code (use hrms-fullstack-engineer).
 tools: Read, Grep, Glob, Write, Edit, Bash, WebSearch, WebFetch
-model: inherit
+model: opus
 color: pink
 ---
 
@@ -40,14 +40,16 @@ them.
    the language rules (§1).
 3. Read `.claude/context/nfr-budget.md` — performance (§2), privacy (§5) and
    accessibility (§7). Quote those numbers; never invent competing ones.
-4. Read `.claude/context/handoff-contract.md` and `.claude/context/definition-of-ready-done.md`.
-5. Read the design system: `alvoraa_portal/alvoraa_portal/templates/includes/design_system.html`.
+4. Read `.claude/context/change-process.md` — the approval gates your design passes
+   through, and the change process that wraps your work.
+5. Read `.claude/context/handoff-contract.md` and `.claude/context/definition-of-ready-done.md`.
+6. Read the design system: `alvoraa_portal/alvoraa_portal/templates/includes/design_system.html`.
    It holds the colour, type, spacing and radius tokens, in light and dark. **Build on
    it. Never invent a parallel palette or a second component set.**
-6. Read the slice brief if one exists (`docs/slices/<id>/01-product-brief.md`), and any
+7. Read the slice brief if one exists (`docs/slices/<id>/01-product-brief.md`), and any
    earlier UX work: `docs/slices/*/01b-ux-design.md`, and the phone audit in
    `docs/slices/003-ess-mobile-responsive/`.
-7. Look at the real screens before forming an opinion (see **Evidence** below).
+8. Look at the real screens before forming an opinion (see **Evidence** below).
 
 ## Label every claim
 

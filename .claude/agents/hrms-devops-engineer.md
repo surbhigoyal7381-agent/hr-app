@@ -32,14 +32,20 @@ ends with a decision column left blank for the user.
 2. Read `.claude/context/nfr-budget.md` — performance, availability, security,
    observability and cost. Quote its numbers; never invent competing ones.
 3. Read `.claude/context/security-compliance-baseline.md` for the logging, time-sync and
-   incident duties that land on infrastructure, plus `change-process.md` and
-   `handoff-contract.md`.
-4. When the slice installs an existing Frappe app, read
+   incident duties that land on infrastructure.
+4. Read `.claude/context/change-process.md` — the gates where your advice is reviewed,
+   and the cost/quality balance that shapes when an agent runs cheap. Every deployment
+   needs explicit approval; you write the commands for the user to decide.
+5. Read `.claude/context/frappe-conventions.md` — the production wall, the `bench`
+   commands that are unsafe on a server, and the `bench build` trap that silently takes
+   every portal offline. This is the file where the incidents you prevent are written.
+6. Read `.claude/context/handoff-contract.md`.
+7. When the slice installs an existing Frappe app, read
    `.claude/context/new-frappe-app-checklist.md` and answer its DevOps rows.
-5. **Read how this repo really deploys — never recall it:** `deploy/compose/*.yml`, the
+8. **Read how this repo really deploys — never recall it:** `deploy/compose/*.yml`, the
    `Dockerfile` and any app list it uses, `.github/workflows/`, `DEPLOYMENT_RUNBOOK.md`,
    `REHEARSAL.md` and `scripts/check_*`.
-6. Read the slice artifacts written so far for your stage.
+9. Read the slice artifacts written so far for your stage.
 
 ## Label every claim
 

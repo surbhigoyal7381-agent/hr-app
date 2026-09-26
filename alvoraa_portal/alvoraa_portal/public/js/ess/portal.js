@@ -12312,11 +12312,17 @@ window.pfRatingLabel = function(value, scale) {
   window.orgLoadAttendanceRules = function() {
     var card = document.getElementById("org-attrules-card");
     window.gpFetch("alvoraa_portal.hr_api.get_attendance_rule_switches", {}).then(function(res) {
+      /* A store's HR person reads the switches but cannot change them: the
+         boxes are greyed out and say so, rather than flipping back on save. */
+      var canEdit = !(res && res.can_edit === false);
+      if (!canEdit) pfSetHtml("org-attrules-msg",
+        "<span style=\"color:var(--text3)\">" +
+        gpEsc(drT("Only HR with company-wide access can change these.")) + "</span>");
       ((res && res.switches) || []).forEach(function(sw) {
         var ids = ORG_ATT_SWITCH_IDS[sw.key];
         if (!ids) return;
         var box = document.getElementById(ids.box);
-        if (box) { box.checked = !!sw.on; box.disabled = !sw.available && !sw.on; }
+        if (box) { box.checked = !!sw.on; box.disabled = !canEdit || (!sw.available && !sw.on); }
         var needs = document.getElementById(ids.needs);
         if (needs) needs.textContent = sw.available ? "" :
           drT("Not available yet: your plan does not include {0}. Ask your Alvoraa account contact to add it.",
@@ -12346,7 +12352,7 @@ window.pfRatingLabel = function(value, scale) {
         pfSetHtml("org-attrules-msg", "<span style=\"color:var(--danger,var(--red))\">" +
           gpEsc((e && e.message) || drT("The setting could not be saved. Try again, or ask your administrator.")) + "</span>");
       })
-      .finally(function() { box.disabled = false; orgLoadAttendanceRules(); });
+      .finally(function() { orgLoadAttendanceRules(); });
   };
 
   window.orgSaveKraMandatory = function(enabled) {

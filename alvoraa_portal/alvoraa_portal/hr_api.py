@@ -3000,12 +3000,18 @@ def get_attendance_rule_switches():
     tenant's data or any person's record.
     """
     _require_hr()
+    # Whether THIS caller may save them: the same rule set_org_setting applies
+    # (a store's HR person reads, never saves). Computed without calling the
+    # guard, which would log a refusal just for opening the page.
+    from alvoraa_portal.frame_api import _may_save_settings
+
+    can_edit = _may_save_settings(set(frappe.get_roles()))
     out = []
     for key in org_features.ORG_SWITCHES:
         missing = _switch_missing(key)
         out.append({"key": key, "on": org_features.org_switch(key),
                     "available": not missing, "needs": missing})
-    return {"switches": out}
+    return {"switches": out, "can_edit": can_edit}
 
 
 def _require_hr():

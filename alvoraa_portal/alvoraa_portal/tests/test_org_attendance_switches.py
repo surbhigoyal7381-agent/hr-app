@@ -282,6 +282,48 @@ class TestOnlyHrReadsAndChangesThem(_SwitchCase):
 			self.assertEqual(r["needs"], [])
 
 
+class TestAStoreHrPersonSeesThemGreyedOut(_SwitchCase):
+	"""Review fix 4. A store's HR Manager (a Branch User Permission) reads the
+	switches but cannot change them, so the card is told to grey them out -
+	and the server still refuses a save."""
+
+	BRANCH = "OAS Store"
+
+	def setUp(self):
+		super().setUp()
+		if not frappe.db.exists("Branch", self.BRANCH):
+			frappe.get_doc({"doctype": "Branch", "branch": self.BRANCH}).insert(ignore_permissions=True)
+		self.store_hr = _user("StoreOas", "HR Manager")
+		self.central_hr = _user("CentralOas", "HR Manager")
+		if not frappe.db.exists("User Permission", {"user": self.store_hr, "allow": "Branch"}):
+			frappe.get_doc({"doctype": "User Permission", "user": self.store_hr, "allow": "Branch",
+			                "for_value": self.BRANCH, "apply_to_all_doctypes": 1}).insert(ignore_permissions=True)
+		frappe.clear_cache(user=self.store_hr)
+		self.addCleanup(self._unlimit)
+
+	def _unlimit(self):
+		frappe.set_user("Administrator")
+		frappe.db.delete("User Permission", {"user": self.store_hr, "allow": "Branch"})
+		frappe.clear_cache(user=self.store_hr)
+		frappe.db.commit()
+
+	def test_store_hr_is_told_it_cannot_edit_and_is_refused(self):
+		frappe.set_user(self.store_hr)
+		with patch("alvoraa_portal.subscription.has_feature", return_value=True):
+			res = hr_api.get_attendance_rule_switches()
+			self.assertIs(res["can_edit"], False)
+			self.assertEqual(len(res["switches"]), 2)
+			with patch("hrms.alvoraa_hr_core.access.log_refusal"):
+				with self.assertRaises(frappe.PermissionError):
+					hr_api.set_org_setting(LATE_RULES_SWITCH, "1")
+		self.assertFalse(org_switch(LATE_RULES_SWITCH))
+
+	def test_company_wide_hr_may_edit(self):
+		frappe.set_user(self.central_hr)
+		with patch("alvoraa_portal.subscription.has_feature", return_value=True):
+			self.assertIs(hr_api.get_attendance_rule_switches()["can_edit"], True)
+
+
 # ── 4. Prerequisites ─────────────────────────────────────────────────────────
 
 class TestPrerequisitesAreEnforced(_SwitchCase):

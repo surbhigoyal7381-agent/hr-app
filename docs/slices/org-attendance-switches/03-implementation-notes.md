@@ -121,3 +121,54 @@ at a time.
 - **Not done:** no hand check in a real browser of the new card (the portal checks and
   jsdom tests ran; no running portal in this container).
 - Old keys in site config are left in place and ignored, as approved.
+
+---
+
+## Review fixes (26 Sep 2026, "fix all as suggested")
+
+The review said SHIP WITH FIXES. Five fixes, each its own commit on the same branch,
+rebased first onto `origin/dev` 0ed32b7. **What came in:** four ALV-127 commits
+(2894a1d, e93f280, 17dcd9e, 0ed32b7). They add a read-only permission-freeze check
+(`permission_health.py`), its tests (048), a runbook, and one line in
+`DEPLOYMENT_RUNBOOK.md`. None of those files overlap with this slice, and the rebase
+ran without conflicts.
+
+| # | Problem | Fix | Test |
+|---|---|---|---|
+| 1 (P2) | A tenant synced before the move kept its deny rows on Alvoraa Late Rules. Turning late rules on left Attendance Deduction Rule with no permissions, because nothing re-runs `sync_site` on a deploy. | New patch `resync_access_after_attendance_switches`. It runs `sync_site` once, only on a site that currently has recorded restrictions. It skips the control plane, and it skips sites never synced (developer and test sites), so it cannot bring deny-by-default to a site that never had it. It is safe to run twice. A failure is logged and does not stop the migrate. | `TestTheResyncPatchMovesExistingTenants` (5): the old deny state is rebuilt, then after the patch HR Manager can read the rule on a payroll site and still cannot on starter. Also covered: running twice, never synced, control plane, a failure. |
+| 2 (P2) | Turning scoring off in the middle of a cycle broke open cycles: the formula kept using a stale score, and "complete cycle" would be refused. | `set_org_setting` refuses to turn `attendance_scoring_enabled` off while any cycle that is not Completed has `include_attendance_score = 1`. The message names the cycles: "Finish or change these appraisal cycles first: …". | `TestScoringCannotBeSwitchedOffUnderAnOpenCycle` (4), both ways, on a real cycle record. |
+| 3 (P2) | Turning late rules off hid deductions already taken. | Off, with past records: `get_my_attendance_deductions` still returns the history (no rule terms, no this-week projection). The Time tab stays, read-only, when `record_this_year` has weeks, and says the rule is off. Off with no records: hidden, as before. | 2 server tests; 3 new jsdom checks in `next_time_pay_test.js`. |
+| 4 (P3) | A store's HR person saw a live box that flipped back when they saved. | `get_attendance_rule_switches` returns `can_edit`, from the same rule `set_org_setting` uses (`frame_api._may_save_settings`). When it is false, both boxes are greyed out, with "Only HR with company-wide access can change these." | `TestAStoreHrPersonSeesThemGreyedOut` (2). |
+| 5 (P3) | Notes | This section. | — |
+
+**Still hidden when off (a deliberate choice):** the manager's team late list. It is
+mostly this week's projection, and its "last 4 weeks" line is about other people, so
+it stays hidden when the switch is off.
+
+### Release notes for this change
+
+- **Visible to HR on every payroll tenant:** the "Late Coming Deductions" report and
+  the Attendance Deduction list and rule form. After the resync patch, HR sees them in
+  the desk wherever payroll is sold, even with the switch off. With the switch off,
+  nothing new is added to them.
+- The resync patch changes permissions on every tenant that has been synced before. It
+  applies the tenant's current plan, the same way a plan change in the console does.
+  If it fails on a site, the Error Log shows "module_access: resync after attendance
+  switches failed". The fix is to run
+  `bench --site <site> execute alvoraa_portal.module_access.sync_site`.
+- Attendance scoring cannot be turned off while an open appraisal cycle counts
+  attendance. HR finishes or changes those cycles first.
+
+### Design notes
+
+- **The switch covers the whole tenant; the rule values are set per company.** The
+  switch is one Frappe default for the whole site. The rules themselves (threshold,
+  free lapses, deduction, leave order, exempt grades) stay on Attendance Deduction Rule,
+  one per company and shift, and the cycle weights stay per cycle. This is deliberate.
+  A group that wants a rule for only one company turns the switch on and enables a rule
+  for that company only.
+- **Rebase warning.** Branches 034, 042, 043 and 044 carry
+  `return !!f.plan_attendance_scoring;` in `portal.js` (`apsScoringSold`). When they are
+  merged or rebased onto this change, **keep `return !!f.org_attendance_scoring;`**.
+  `plan_attendance_scoring` no longer exists, so keeping it would hide the attendance
+  step of the cycle wizard for everyone, and nothing would error.

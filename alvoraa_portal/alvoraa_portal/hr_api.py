@@ -2058,6 +2058,14 @@ def _payslip_payload(slip):
         "total_deduction": flt(slip.total_deduction),
         "net_pay": flt(slip.net_pay),
         "rounded_total": flt(slip.rounded_total),
+        # 051. The year so far, READ off the slip, never added up. Frappe HR's
+        # payroll run works these out against the payroll period and stores
+        # them here. Summing the slips the screen happens to list would give a
+        # different number for a mid-year joiner and for anyone whose list is
+        # capped - and it would be the portal's number rather than payroll's,
+        # which is the one Form 16 will agree with.
+        "year_to_date": flt(slip.get("year_to_date")),
+        "gross_year_to_date": flt(slip.get("gross_year_to_date")),
         "earnings": lines(slip.earnings),
         "deductions": lines(slip.deductions),
     }

@@ -63,6 +63,9 @@ const RUN = [
   /* Slice 045, Wave 4: the Growth and Team panels. Replaces
      portal_appraisal_test.js, which drove a panel the page no longer has. */
   { file: "next_growth_team_test.js" },
+  /* Slice 051: the salary drawer on the EXISTING portal - both pay figures,
+     the year so far, and the Why? behind a deduction. */
+  { file: "portal_salary_test.js", args: [PAGE] },
   /* Slice 045, Wave 4: the two that needed a get_performance_tree payload. */
   { file: "portal_tree_test.js", args: [PAGE, TREE_FIXTURE] },
   { file: "portal_redesign_test.js", args: [PAGE, TREE_FIXTURE] },
@@ -74,7 +77,7 @@ const SKIP = {};
 
 /* AC-64. A number, so a test that disappears is a failure rather than a
    shorter run nobody reads. Raise it deliberately when you add one. */
-const EXPECTED_BROWSER_TESTS = 8;
+const EXPECTED_BROWSER_TESTS = 9;
 
 const onDisk = fs.readdirSync(DIR).filter((f) => f.endsWith("_test.js")).sort();
 const known = [...RUN.map((r) => r.file), ...Object.keys(SKIP)].sort();

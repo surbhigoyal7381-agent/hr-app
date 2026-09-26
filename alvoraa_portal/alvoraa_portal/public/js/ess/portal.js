@@ -2597,6 +2597,20 @@ function submitExpenseClaim() {
 }
 
 /* ── SALARY ──────────────────────────────────────── */
+
+/* The payslip the drawer is currently showing. The Why? view replaces the
+   drawer's body, and Back draws this again rather than asking the server a
+   second time for something it already has. */
+let _psSlip = null;
+
+/* Money to the paisa. `fmtMoney` rounds to whole rupees, which is right for a
+   list but wrong for the one line whose whole job is to show the difference
+   between what the payslip says and what the bank paid. */
+function fmtMoneyPaise(n) {
+  if (n == null) return "—";
+  return "₹" + parseFloat(n).toLocaleString("en-IN", {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
 function loadSalary() {
   api("get_payslips", {}, function(data) {
     const el = document.getElementById("payslip-list");
@@ -2639,37 +2653,167 @@ function loadSalary() {
   };
 
   function renderPayslip(d) {
+    _psSlip = d;
     const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
     const sd = new Date(d.start_date);
     document.getElementById("ps-title").textContent = months[sd.getMonth()] + " " + sd.getFullYear();
     document.getElementById("ps-sub").textContent = fmtDate(d.start_date) + " to " + fmtDate(d.end_date);
 
-    function table(title, rows, total) {
+    function table(title, rows, total, explainable) {
       if (!rows.length) return "";
       return '<div style="margin-top:18px"><div style="font-weight:700;margin-bottom:6px">' + esc(title) + '</div>' +
         '<table class="pf-table" style="width:100%">' +
         rows.map(function(r) {
-          return '<tr><td>' + esc(r.component) + '</td><td style="text-align:right;font-variant-numeric:tabular-nums">' + fmtMoney(r.amount) + '</td></tr>';
+          /* 051. The server puts `additional_salary` on a line it can explain,
+             and leaves the key off a line it cannot - so whether there is a
+             Why? here is the server's answer, never a guess from the
+             component's name. */
+          const why = (explainable && r.additional_salary)
+            ? ' <button type="button" class="btn btn-outline btn-sm" style="margin-left:8px" onclick="psWhy(' + esc(JSON.stringify(r.additional_salary)) + ')">Why?</button>'
+            : "";
+          return '<tr><td>' + esc(r.component) + why + '</td><td style="text-align:right;font-variant-numeric:tabular-nums">' + fmtMoney(r.amount) + '</td></tr>';
         }).join("") +
         '<tr><td style="font-weight:700">Total</td><td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums">' + fmtMoney(total) + '</td></tr>' +
         '</table></div>';
     }
 
+    /* Both figures, never one (051).
+
+       Payroll's rounding is not touched by this screen, and 555 of 800 PP
+       Jewellers payslips print a net that is not the amount the bank pays. The
+       big number is therefore the ROUNDED total - the one a person can check
+       against their bank statement - and the exact net is shown BESIDE it
+       rather than instead of it. Showing only one of them would make whichever
+       we chose look authoritative, and the old screen chose silently.
+
+       The exact line appears only when the two really differ. On a slip where
+       they agree, a second identical figure would read as a fault. */
     const pay = d.rounded_total || d.net_pay;
+    const differs = d.rounded_total && Math.abs(d.rounded_total - d.net_pay) >= 0.005;
+    const exact = differs
+      ? '<div style="font-size:var(--fs-sm);color:var(--text3);margin-top:2px">Exact amount on the payslip: ' +
+        esc(fmtMoneyPaise(d.net_pay)) + '</div>'
+      : "";
+
+    /* The year so far, read off the slip by the server. Shown only when
+       payroll has worked one out - a zero here means "not calculated", and a
+       confident ₹0 would be worse than no line at all. */
+    const ytd = d.year_to_date
+      ? '<div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">' +
+          '<div style="font-size:var(--fs-sm);color:var(--text3)">This financial year so far</div>' +
+          '<div style="font-weight:700;font-variant-numeric:tabular-nums">' + fmtMoney(d.year_to_date) + '</div>' +
+          '<div style="font-size:var(--fs-sm);color:var(--text3)">Before deductions ' + fmtMoney(d.gross_year_to_date) +
+            ' · up to ' + esc(fmtDate(d.end_date)) + '</div>' +
+        '</div>'
+      : "";
+
     document.getElementById("ps-body").innerHTML =
       '<div style="padding:4px 2px 0">' +
         '<div style="font-size:var(--fs-sm);color:var(--text3)">Take-home pay</div>' +
         '<div style="font-size:32px;font-weight:800;color:var(--green);font-variant-numeric:tabular-nums">' + fmtMoney(pay) + '</div>' +
+        exact +
         '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;font-size:var(--fs-sm);color:var(--text2)">' +
           '<span>Working days <b>' + esc(d.total_working_days) + '</b></span>' +
           '<span>Paid days <b>' + esc(d.payment_days) + '</b></span>' +
           (d.leave_without_pay ? '<span>Unpaid leave <b>' + esc(d.leave_without_pay) + '</b></span>' : '') +
         '</div>' +
-        table("Earnings", d.earnings, d.gross_pay) +
-        table("Deductions", d.deductions, d.total_deduction) +
+        table("Earnings", d.earnings, d.gross_pay, false) +
+        table("Deductions", d.deductions, d.total_deduction, true) +
+        ytd +
         '<a class="btn btn-primary" style="margin-top:22px;width:100%;justify-content:center" ' +
           'href="/api/method/' + MOD + '.download_payslip?name=' + encodeURIComponent(d.name) + '">Download PDF</a>' +
       '</div>';
+  }
+
+  /* ── Why was this taken off? (051) ─────────────────────────────────────────
+     The first place in this product where somebody is told that a decision
+     about their pay was made by a machine.
+
+     Every sentence below is the SERVER'S, rendered as it is. This code does not
+     rewrite one, shorten one or add one. The wording is built and tested in
+     `pay_api._explanation`, and the one that matters most - that correcting the
+     day does NOT undo the deduction - is held there by a check that reads the
+     strings. Rephrasing it here would walk straight round that check.
+
+     Nothing is written on this path. Opening this view creates no record about
+     the person: no read receipt, no "acknowledged" flag, nothing inferred from
+     closing it. The record is the deduction; this is a rendering of it. */
+
+  window.psWhy = function(link) {
+    const body = document.getElementById("ps-body");
+    body.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text3)">Loading&hellip;</div>';
+    window.gpFetch("alvoraa_portal.pay_api.get_deduction_explanation", {additional_salary: link})
+      .then(renderWhy)
+      .catch(function(e) {
+        body.innerHTML = whyHead() +
+          '<div style="padding:24px 2px;color:var(--danger)">' +
+          esc((e && e.message) || "We could not load that explanation.") + '</div>';
+      });
+  };
+
+  /* Back to the payslip the drawer already has. No second call: the payload is
+     unchanged, and asking again would be a request nobody needs. */
+  window.psBack = function() {
+    if (_psSlip) { renderPayslip(_psSlip); }
+  };
+
+  function whyHead() {
+    return '<div style="padding:4px 2px 0">' +
+      '<button type="button" class="btn btn-outline btn-sm" onclick="psBack()">&lsaquo; Back to payslip</button>' +
+      '<div style="font-weight:700;margin-top:14px">Why this was taken off</div></div>';
+  }
+
+  function renderWhy(why) {
+    const body = document.getElementById("ps-body");
+
+    /* A component payroll typed in by hand has no week behind it. Saying so is
+       the whole answer. Drawing an empty week instead would read as "we think
+       you were late on no days and took your money anyway". */
+    if (why && why.hand_entered) {
+      body.innerHTML = whyHead() +
+        '<div style="padding:8px 2px 0;color:var(--text2)">' +
+        'This was entered by hand, so there are no days behind it.</div>';
+      return;
+    }
+
+    let html = whyHead() + '<div style="padding:8px 2px 0">' +
+      '<p style="color:var(--text2)">' + esc(why.how_it_was_decided) + '</p>' +
+      '<div style="font-weight:700;margin-top:18px;margin-bottom:6px">The week</div>' +
+      '<div style="font-size:var(--fs-sm);color:var(--text3)">' +
+        esc(fmtDate(why.week_start)) + ' – ' + esc(fmtDate(why.week_end)) + '</div>' +
+      '<table class="pf-table" style="width:100%;margin-top:10px">';
+
+    (why.violations || []).forEach(function(row) {
+      /* Which ones were free is the server's `counted` flag, never a position
+         in this list. Somebody told "the first one is free" who then counts
+         down the rows themselves has to land on the same answer. */
+      html += '<tr><td>' + esc(fmtDate(row.attendance_date)) +
+        '<div style="font-size:var(--fs-xs);color:var(--text3)">' +
+          esc(row.violation_type || "") + ' · ' + esc(row.actual_time || "") +
+          ' · ' + esc(row.minutes) + ' min</div></td>' +
+        '<td style="text-align:right">' + (row.counted ? "Counted" : "Free") + '</td></tr>';
+    });
+    html += '</table>';
+
+    if (why.rounded_up) {
+      html += '<div style="font-size:var(--fs-sm);color:var(--text3);margin-top:10px">' +
+        esc(why.computed_days) + ' days was rounded up to ' + esc(why.deduction_days) + '.</div>';
+    }
+    (why.taken_from_leave || []).forEach(function(row) {
+      html += '<div style="font-size:var(--fs-sm);color:var(--text3);margin-top:4px">' +
+        esc(row.days) + ' day(s) came from ' + esc(row.leave_type) + '.</div>';
+    });
+
+    html += '<div style="font-weight:700;margin-top:18px;margin-bottom:6px">What you can do</div>' +
+      '<p style="color:var(--text2)">' + esc(why.if_a_day_is_wrong) + '</p>' +
+      /* The sentence this whole view exists to get right. Emphasised with
+         weight, not colour - colour is never the only signal. */
+      '<p style="color:var(--text)"><b>' + esc(why.what_a_correction_does_not_do) + '</b></p>' +
+      '<p style="color:var(--text2)">' + esc(why.getting_it_put_back) + '</p>' +
+      '<p style="color:var(--text2)">' + esc(why.who_to_go_to) + '</p>' +
+      '</div>';
+
+    body.innerHTML = html;
   }
 
 /* ── Sidebar drawer (mobile) ─────────────────────── */

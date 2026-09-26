@@ -33,6 +33,7 @@ from alvoraa_portal import hr_api
 from alvoraa_portal import module_access as ma
 from alvoraa_portal import subscription as sub
 from alvoraa_portal.patches.v1_0 import org_attendance_switches_from_features as mig
+from alvoraa_portal.patches.v1_0 import resync_access_after_attendance_switches as resync
 from alvoraa_portal.tests.utils import set_org_switch
 
 LATE_RULES_SWITCH = org_features.LATE_RULES_SWITCH
@@ -145,6 +146,67 @@ class TestSyncSiteDoesNotHideThem(FrappeTestCase):
 		                "Appraisal Cycle Exempt Grade"):
 			if frappe.db.exists("DocType", doctype):
 				self.assertNotIn(doctype, denied)
+
+
+class TestTheResyncPatchMovesExistingTenants(FrappeTestCase):
+	"""Review fix 1. A tenant synced BEFORE the move still has the old deny rows
+	on Alvoraa Late Rules. The patch re-runs the sync so they follow payroll."""
+
+	DOCTYPE = "Attendance Deduction Rule"
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		self.addCleanup(ma.release_permissions)
+		self.addCleanup(frappe.set_user, "Administrator")
+		self.hr = _user("MeeraOas", "HR Manager")
+
+	def _old_deny_state(self, feats):
+		"""What sync_site wrote before 26 Sep: Late Rules owned by nobody sold."""
+		with patch.dict(sub.FEATURES["payroll"], {"module_defs": ["Payroll"]}):
+			ma.sync_site(feats)
+		self.assertIn(self.DOCTYPE, ma.get_restricted_doctypes()["doctypes"])
+
+	def _hr_can_read(self):
+		frappe.clear_cache(doctype=self.DOCTYPE)
+		return frappe.has_permission(self.DOCTYPE, "read", user=self.hr)
+
+	def test_payroll_tenant_gets_the_rule_back(self):
+		business = sub.plan_features("business")
+		self._old_deny_state(business)
+		self.assertFalse(self._hr_can_read(), "the old state really denied it")
+		with patch.dict(frappe.conf, {"features": business}):
+			self.assertTrue(resync.should_resync())
+			resync.execute()
+		self.assertNotIn(self.DOCTYPE, ma.get_restricted_doctypes()["doctypes"])
+		self.assertTrue(self._hr_can_read())
+
+	def test_tenant_without_payroll_stays_denied(self):
+		starter = sub.plan_features("starter")
+		self._old_deny_state(starter)
+		with patch.dict(frappe.conf, {"features": starter}):
+			resync.execute()
+			resync.execute()     # twice: same state
+		self.assertIn(self.DOCTYPE, ma.get_restricted_doctypes()["doctypes"])
+		self.assertFalse(self._hr_can_read())
+
+	def test_a_site_never_synced_is_left_alone(self):
+		ma.release_permissions()
+		self.assertFalse(resync.should_resync())
+		with patch.object(ma, "sync_site", side_effect=AssertionError("synced")):
+			resync.execute()
+
+	def test_the_control_plane_is_left_alone(self):
+		self._old_deny_state(sub.plan_features("business"))
+		with patch.dict(frappe.conf, {"alvoraa_control_plane": 1}):
+			self.assertFalse(resync.should_resync())
+
+	def test_a_failed_sync_is_logged_and_does_not_stop_the_migrate(self):
+		self._old_deny_state(sub.plan_features("business"))
+		with patch.object(ma, "sync_site", side_effect=RuntimeError("boom")), \
+		     patch("frappe.log_error") as logged:
+			resync.execute()
+		self.assertEqual(logged.call_args.kwargs["title"],
+		                 "module_access: resync after attendance switches failed")
 
 
 # ── 3. The switches themselves ───────────────────────────────────────────────

@@ -8,6 +8,11 @@ and `hrlocal-wa042` were not used.
 
 The strategy was approved by the user on 25 Sep 2026 (brought forward from ALV-128).
 
+> **Read the "Review fixes (26 Sep 2026)" section at the end first.** It changes
+> several things described below: the route switches now stop new joins only;
+> the per-address limit is 500; the per-email limit is now per account; and the
+> gaps list is mostly closed.
+
 ---
 
 ## What it does, in one paragraph
@@ -218,3 +223,116 @@ The main checkout holds another session's uncommitted files under
 `mobile/field-app/android/` (gradle files, new `.kts` files, `.idea/`) — not
 touched; this branch changes `android/app/build.gradle` only (versionName and
 versionCode), which that session has not modified.
+
+---
+
+## Review fixes (26 Sep 2026)
+
+The code review blocked on one P1; the security review passed with conditions.
+The user approved all the fixes below on 26 Sep 2026. They are new commits on the
+same branch; the three earlier commits were not rewritten. `origin/dev` had not
+moved (still 0d51cac), so nothing came in.
+
+### P1 — the two-factor step could cross tenants (fixed)
+
+Frappe writes its two-factor keys (`<tmp_id>_usr`, `_otp_secret`, …) into Redis
+with **no site prefix**, and one Redis serves every tenant on the bench. Because
+the second step no longer re-checks the password, an id made on tenant A could
+be confirmed on tenant B. Now:
+
+- `_start_second_step` also writes `alvoraa_app_2fa:<tmp_id>` → user through
+  `frappe.cache.set_value`, which puts **this site's database name** in front
+  (5 minutes).
+- `confirm_sign_in_code` takes the user **only** from that key; missing →
+  `OTP_EXPIRED`. The key is deleted on success.
+- This also means an id made by the website's own login is never accepted here.
+
+Tests: an id whose `_usr` and secret exist but that this site never marked →
+`OTP_EXPIRED`; a marker written under another site's prefix → `OTP_EXPIRED`; the
+real marker is prefixed with this site's name and is gone after use.
+
+### Security requirements added (SEC-26 to SEC-31)
+
+| Item | What was built | Test |
+|---|---|---|
+| **SEC-26** a password change blocks the login's password phones | Two doors, because Frappe has two: (1) a new password set on the User form (HR or the person) — the existing User `on_update` hook reads Frappe's private `_User__new_password`; (2) the website's "forgot password" and change-password page (`frappe.core.doctype.user.user.update_password`), which writes the password **without saving the User** — wrapped through `override_whitelisted_methods` in `hooks.py`. Frappe's function does all the work; ours finds the user first (reset key or signed-in user) and blocks only after Frappe succeeded. Reason "Password changed". | User-form change → next punch `DEVICE_BLOCKED`; forgot-password reset with a real key → blocked; a wrong key (410) → nothing blocked |
+| **SEC-27** a sign-in that replaces the same person's phone emails them | `frappe.sendmail` (Email Queue, `delayed=True`) to the login: "A new phone signed in to the Alvoraa attendance app as you… If this was not you, tell HR and change your password." Plus an Info comment on the new phone's timeline. Not sent for a first-ever phone. Password sign-in only. | Email Queue row with the right recipient and words; none for the first phone; the timeline comment |
+| **SEC-28** Employee.user_id ≠ the phone's login → refused; unlinking blocks | Every call on a password phone checks it (`LOGIN_UNLINKED`, 403 — new code). An Employee `on_update` hook blocks, reason "Login unlinked", when `user_id` changes. This answers the user's question 3. | Change the link → blocked; unlink with the hook skipped → `LOGIN_UNLINKED`; a save that does not change the link blocks nothing |
+| **SEC-29** per-account limit on the account Frappe finds | The pre-lookup per-typed-text limit is gone. `_count_account_try` asks Frappe's `User.find_by_credentials` (no password check) which login the typed text finds, and counts 10 an hour on a hash of that login's name; text that finds nobody is counted on itself. | Capitals, spaces, an "ä" and a "ŵ" all find the same login and share one count of 10; the key holds a hash |
+| **SEC-30** `loggingBehavior: "none"` | Set in `capacitor.config.json`; `check_app.mjs` now fails a config without it. | `check-app.test.js`: missing or "debug" fails |
+| **SEC-31** Activity Log per sign-in | `add_authentication_log("Phone app sign-in (<model>, <phone record>)", user, operation="Login")`. Activity Log fills in the caller's address itself. No session is made. | One row, with the address and the model; session user still Guest |
+
+### The user's answers, and what changed
+
+1. **Per-address limit 500 an hour** (was 100), on both sign-in endpoints. Pinned
+   by a test.
+2. **The route switches stop NEW joins only.** Phones that already joined keep
+   working; HR blocks one phone with the existing block action, or stops everyone
+   with the master switch. `PASSWORD_SIGNIN_OFF` is asked only by the sign-in
+   endpoints; `JOIN_CODE_OFF` only by `check_code`, `join_with_code` and
+   `make_code`. The punch and start screen ask only the master switch (plus the
+   designation list for code phones). Field help texts and the reason help text
+   now say so. The desk's "Stopped" label follows the same rule. Decision 3 in the
+   list above is replaced by this.
+3. **Unlinking a login stops the phone** — SEC-28.
+4. **Invite pressed while codes are off** → "Joining codes are switched off in HR
+   Settings." (server sentence and the Employee form's own wording).
+5. **First-time notice.** A phone closed on the first notice now reopens on
+   "Before you start / Please read this and agree before your first check-in",
+   with no "What is new" line. The sign is an empty notice cache (it is written
+   only once the person agrees). One side effect: a phone whose app storage was
+   cleared also sees the first-time heading for a real notice change — harmless.
+6. **"Remove this phone"** now says "To use the app again, sign in again, or ask
+   HR for a new code."
+7. **Per-network lock words.** When Frappe's lock is on the caller's address, not
+   the account, the answer is the new code `NETWORK_LOCKED` with "Too many sign-in
+   attempts from this network. Try again later." — it never says "your account".
+   Tested both ways (account lock from four networks; network lock from failures
+   on other emails).
+
+New block reasons on the phone record: "Password changed", "Login unlinked" (they
+also appear in HR's block list, which is pinned to the field). Two new error codes,
+added only: `NETWORK_LOCKED` (429), `LOGIN_UNLINKED` (403). The app shows
+`LOGIN_UNLINKED` as "Please sign in again" with the Remove button.
+
+### Proof, after the fixes
+
+All in `hrlocal-128` / `test128`, one module at a time. (Docker Desktop was not
+running when this session started; I started it, which brought the shared
+`hrlocal-*` containers back up as they were. `test128`'s database user was tied
+to the container's old address, so I let that one user connect from any address
+on the private Docker network. No other site's user was touched.)
+
+| Run | Result |
+|---|---|
+| `test_field_app_password_signin_128` | **48 tests, OK** (was 35) |
+| Neighbours: steps 1–6, permissions, check-in location, check-in security 014, module gate 016 | **255 tests, OK** |
+| **Total** | **303 tests, 0 failures** |
+
+- The first neighbour run failed once: `test_016_no_bare_email_address_is_hardcoded`
+  found an example address I had written in a comment. Reworded; module 016 and
+  the new suite were run again after it and pass.
+- `check_app_integrity.py` OK; `check_api_paths.py --max 2` OK; `check_min_app_version.py`
+  OK; `check_no_demo_passwords.py` and `check_tracked_keys.py` OK; ruff 0.6.9 with
+  the CI config: all checks passed on the changed files.
+- App: 134 node tests. In the worktree 132 pass; the 2 failures are the known
+  Windows line-ending trap on the vendored files. On a copy with LF line endings
+  those pass and `check_app.mjs` says OK (that copy lacks the two build-type
+  override files, so its 3 build-type tests cannot run there — they pass in the
+  worktree). `check_versions.mjs` OK.
+- **Browser, headless Chrome, stubbed storage and network:** the whole sign-in
+  path from before still behaves the same (same 11 steps). New: a phone that holds
+  a secret but never agreed reopens on "Before you start", with no "What is new";
+  after one agreement, a changed notice still says "The notice has changed"; a
+  network lock shows the neutral sentence and "Code for HR: NETWORK_LOCKED"; the
+  Remove screen shows the new wording.
+
+### Still not done
+
+- **No APK** — no Android SDK here. A debug build on a real phone is still needed.
+- **SEC-26 blocks on a password *change*, not on a reset *request*.** Pressing
+  "Forgot password" only emails a link; the phone stops when the new password is
+  actually set. A password changed by a script with `frappe.utils.password.update_password`
+  (not through the User form or the website) does not fire either door.
+- The desk section has no special state for "codes are switched off"; the Invite
+  dialog says so when pressed.

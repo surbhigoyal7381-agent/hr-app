@@ -25,6 +25,7 @@ defaults in the agent file.
 | P5 | Check a fact in the data before calling it a UI bug. | "Holiday" on Thursdays turned out to be the store's weekly off. The real bug was the label. | Review 11 Sep 2026 |
 | P6 | Every design run ends with a clickable prototype. No design check without one. | The user reviews by clicking, not by reading a document. | Surbhi, 11 Sep 2026 |
 | P7 | Persona-by-persona ideas for the employee portal come before the brief, in the opportunities scan. | The PM needs UX evidence to shape the slice, not a design after it is fixed. | Surbhi, 11 Sep 2026 |
+| P8 | The Android field app follows **Material Design 3** (the platform's own design language), built on Alvoraa's tokens and floors: 48 px targets, nothing under 12 px, 16 px field and button text. | She tested the app on a real phone and called the screens "very awkward"; she approved an M3 redesign. | Surbhi, 26–27 Sep 2026 |
 
 ---
 
@@ -79,6 +80,11 @@ a usability test shows it, or the same need comes up again.
 | **A feature the tenant has not bought lives in settings under "Not switched on for …", with "Ask about it"** — never in a menu, never greyed | A buyer can ask for it; a shop assistant never meets a door that will not open | Slice 009, Org settings, vendor and driver portal | applied |
 | **Phone rules are `@media` in the product; a phone frame in a prototype is the *same* rules copied by script under a wrapper class** | Hand-copying the rules lets the prototype and the product drift; a container query on the app wrapper breaks every fixed pop-up | Slice 009 prototype v2, D1 | applied |
 | **The review scaffolding carries the in-product switches only when they are not in the product**: language and theme moved out of the demo bar and into the profile menu, so the design gets reviewed, not the scaffolding | If a control lives only on the demo bar, nobody checks whether it has a home in the product | Slice 009 prototype v2, D2 | applied |
+| **Status card: colour + icon + words, with the rule inside it** ("Checked in / since 9:12 am", "Check in within 200 m of …") | A person must know where they stand in one look, in sunlight, without reading a list | Slice 013 M3 redesign, Home | applied |
+| **Meaning colours do not follow the tenant's brand**: success (green) and warning (amber) are fixed tones of the design system's `--green` and `--amber`; only primary, secondary and surfaces follow the brand | A brand in green or red would otherwise make "checked in" and "wrong" look the same | Slice 013 M3 redesign, tokens | applied |
+| **Consent tick and Agree in a fixed bottom bar**, the whole row as the target, Agree never greyed (unticked → the error and focus move) | A wall of text with a small box at the end; a greyed button does not say why | Slice 013 M3 redesign, notice | applied |
+| **The result says the measured truth** ("About 13.2 km from …", "accuracy 14 m"), never the configured place name as if it were the position | The old result said "At {site}" whatever the distance | Slice 013 M3 redesign, result | applied |
+| **At 150%+ text, a labelled top-bar action keeps its icon and spoken name but drops the word** — the one exception to words beside icons | At 200% the word pushed the company name down to "PP J…" | Slice 013 M3 redesign, measured | applied |
 
 ---
 
@@ -141,6 +147,11 @@ Items learned the hard way. Add these to the standard pre-handoff check.
 - [ ] When a behaviour changes under a design (a copy, an increment, a grace period), check every **derived** label as well as the main one: "Arrived on time" became "Arrived within grace"; "No record" became "Marked absent".
 - [ ] When the portal becomes the landing page, design the **empty, first-morning** state deliberately and put the speed budget in the design, not the footnote.
 - [ ] Before accepting a token from the design system, check it against our own floors. `--fs-xs` was 11 px against a 12 px rule; raise it as a decision rather than working around it per screen.
+- [ ] When a palette is made from a tenant's brand colour, test **black, grey and pale** seeds as well as the real ones. Material's default recipe turns black into pink; use the monochrome recipe when the seed has almost no colour (chroma under 8). PPJ's local brand colour is black.
+- [ ] For every consent or setting a person can give in the app, check there is a screen to take it back. The server had `withdraw_agreement`; the app had no button for it.
+- [ ] A label about where someone was must come from the measured value the server returns, not from the configured place name.
+- [ ] Before recommending a component library, check it is still maintained and measure its size. `@material/web` has been in maintenance mode since June 2024; 9 components = 173 KB minified / 35.5 KB gzip (27 Sep 2026).
+- [ ] Test every phone design at 200% text as well as 360 px. Two faults showed only there: a truncated company name and an unbreakable error code.
 
 ---
 
@@ -169,6 +180,9 @@ Items learned the hard way. Add these to the standard pre-handoff check.
 | Slice 009: I disagree with the plan on three points (`01b` §10) — close Q15 as presence only, move Feedback to the end of Wave 4, and measure Hindi each wave rather than at Wave 5. | Surbhi | The wave order |
 | Slice 009 prototype v2 not yet published (no artifact tool in that run) and not yet reacted to. | Lead session to publish; then Surbhi | Promoting any slice 009 pattern |
 | Slice 009: no current-state capture taken on 19 Sep (bench untouched by instruction); evidence carried over from the 14 Sep appendices. | Designer, when the bench is free | Nothing in the design; it would confirm the carried-over figures |
+| Slice 013 M3 redesign: decisions D-M3-1 to D-M3-7 in `01d-ux-redesign-m3.md` §13. D-M3-1 reopens D9 (pinned light); D-M3-4 and D-M3-6 need security. | Surbhi; security | CSS build, notice layout, sign-in copy |
+| Slice 013 M3 redesign: prototype v1 not yet published (no artifact tool in that run) and not yet reacted to. The designer did not see her phone screenshots, only her description. | Lead session to publish; then Surbhi | Promoting any M3 pattern |
+| Slice 013 M3 redesign: server needs E-1 to E-5 (`01d` §8): brand colour after sign-in, true distance and accuracy on a saved punch, the rule, notice part keys. | Engineer; E-4 with security | Brand colour, result screen, notice icons |
 
 ---
 
@@ -176,6 +190,10 @@ Items learned the hard way. Add these to the standard pre-handoff check.
 
 | Date | Source | What was said | What it teaches | What changed | Status |
 |---|---|---|---|---|---|
+| 2026-09-27 | Own look (Playwright, measured), M3 prototype v1 | 48 screens at 360 px light, dark and 200% text: clean at the end; the first pass found an 11 px Sample tag, an unbreakable `PASSWORD_CHANGED_SIGN_IN_AGAIN` at 200%, and "PP J…" in the top bar at 200% | Large text is its own device size; long codes need a break rule | Two checklist items; a pattern for icon-only actions at 150%+ | applied |
+| 2026-09-27 | Own measurement, M3 palette | PPJ's local brand colour is `#000000`; Material's tonal-spot recipe made it pink (`#8c4a60`) | The tenant's real setting can be the edge case; generate the palette, do not assume it | Monochrome rule under chroma 8; checklist item; D-M3-5 | applied |
+| 2026-09-27 | Own reading of code, M3 redesign | The app ignores `brand_colour`; the result says "At {site}" whatever the distance; `withdraw_agreement` has no screen; Remove asks twice (screen + `window.confirm`) | A restyle brief hides behaviour gaps; read what each screen claims, not only how it looks | Findings M3-5, M3-6, M3-8, M3-9 in `01d`; two checklist items | heard |
+| 2026-09-26 | Surbhi, tested the field app on a real phone | "the mobile application pages designs are very awkward. Use the best mobile applications design systems in present times to improve its design." Approved a Material Design 3 redesign on 27 Sep | Plain equal blocks and "Label · Value" rows read as unfinished on a phone. On Android, the platform's own design language is the bar people compare against | Principle P8; `01d-ux-redesign-m3.md`; prototype v1 | principle |
 | 2026-09-19 | Own look (Playwright, measured), slice 009 prototype v2 | 42 renders, 3 people × 2 devices, plus Hindi, Punjabi and dark at 390 px: clean at the end, but the first pass found 37 px menu links in the phone drawer, 32 px rating buttons on the self-review, 18 px section links and 10–11 px hints | The drawer is hidden by a transform, so looking never catches it. And 44 px everywhere produces a false list on desktop — the rule is 24 px on a mouse, 44 px on a phone | Four checklist items; all fixed before handoff | applied |
 | 2026-09-19 | Task instruction, slice 009 | Four behaviours changed under the plan: reviews work on copies, KPI progress is an increment, lateness has a per-tenant grace, the vendor portal is opt-in. "Build these in, do not design around the old behaviour" | A design written against last month's behaviour is worse than no design. Read the change list before the plan | Five patterns; §7 of `01b` written before anything else | heard |
 | 2026-09-19 | Task instruction, slice 009 | "Anything in the plan you now think is wrong … say so with your reasoning rather than building it because it is written down" | Being handed an approved plan is not permission to stop thinking. Disagreement goes in the handoff note, not into a quietly different build | `01b` §10: three disagreements, each with a recommendation | heard |

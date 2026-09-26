@@ -257,33 +257,76 @@ by hand, run the same script by hand - never `bench build` on the server:
 bash scripts/refresh_bench_files.sh ghcr.io/surbhigoyal7381-agent/alvoraa-app:<tag> compose_sites   # or devstack_sites
 ```
 
-### Symlinked assets that nginx cannot follow
+### Symlinked assets that nginx cannot follow — `bench build` is a trap here
 
-`bench build` links `sites/assets/<app>` → `apps/<app>/<app>/public`. The backend has `/apps`;
-**nginx mounts only the sites volume and does not**. It follows a dangling link and returns 404
-for every CSS and JS file.
+**Do not run `bench build` in a running container on the server. On this architecture it
+takes every portal offline, in every environment sharing that sites volume, with no error
+in any log.**
 
-The portal then renders with no styling and every panel stuck on "Loading…" — the profile menu
-drops out of the corner into the middle of the page. It looks like a broken application. It is a
-404 on a stylesheet.
+Why. `bench build` replaces each entry under `sites/assets/` with a symlink:
 
-**After any `bench build` that writes into the volume:**
-
-```bash
-docker cp scripts/materialise_assets.sh compose-backend-1:/tmp/
-docker exec compose-backend-1 bash /tmp/materialise_assets.sh
-docker exec compose-nginx-1 nginx -s reload
+```
+sites/assets/alvoraa_portal -> /home/frappe/frappe-bench/apps/alvoraa_portal/alvoraa_portal/public
 ```
 
-Confirm before declaring success — a 404 here is invisible from the server side:
+Three things make that fatal here:
+
+1. **It relinks EVERY app, not the one you named.** `bench build --app alvoraa_portal` on
+   `devstack-backend-1` on 2026-09-26 turned all eight entries into symlinks, all stamped
+   the same minute.
+2. **nginx cannot follow them.** `compose-nginx-1` mounts only the sites volumes -
+   `compose_sites` at `/home/frappe/frappe-bench/sites` and `devstack_sites` at
+   `/devstack-sites`. It has no `apps` folder at all, so every link dangles and every CSS
+   and JS file returns **404**.
+3. **Nothing logs it.** The page still renders its shell, no script runs, nothing reaches
+   the backend, so no backend log has a line about it.
+
+**How to recognise it.** An unstyled page with panels stuck on "Loading…", the profile
+menu falling out of the corner into the middle of the page, and 404s on `/assets/...` in
+the browser's network tab. Then, on the server:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}
-' https://<site>/assets/frappe/dist/css/website.bundle.*.css
+docker exec devstack-backend-1 ls -la /home/frappe/frappe-bench/sites/assets   # or compose-backend-1
 ```
 
-The image now dereferences these at build time (`Dockerfile` §4b), so a plain image swap is safe.
-This step is only needed when `bench build` is run **inside a live container**.
+Entries beginning with `l` (`lrwxrwxrwx ... alvoraa_portal -> /home/frappe/...`) are the
+fault. Real directories begin with `d`.
+
+**How to recover — preferred: put the image's own files back.** This is what fixed dev on
+2026-09-26. Remove the symlinks, then copy the real directories out of the image the
+stack is pinned to:
+
+```bash
+# 1. the tag actually running - read the pin, do not remember it
+cat /var/www/html/hr-app/deploy/compose/.image.dev.env    # production: .image.env
+
+# 2. delete the links (links only - this does not touch a real directory)
+docker exec devstack-backend-1 bash -c   'cd /home/frappe/frappe-bench/sites/assets && find . -maxdepth 1 -type l -delete'
+
+# 3. copy the real thing out of the image
+cd /var/www/html/hr-app
+bash scripts/refresh_bench_files.sh ghcr.io/surbhigoyal7381-agent/alvoraa-app:<tag> devstack_sites
+#                                                                          production: compose_sites
+
+# 4. prove it from outside, by URL - a server-side `ls` is not proof
+curl -sI -o /dev/null -w '%{http_code}
+' https://dev.alvoraa.co/assets/alvoraa_portal/js/ess/portal.js
+```
+
+**The fallback, `scripts/materialise_assets.sh`,** copies each link's target in place. Use
+it only when the container's `apps/` really is the source of truth - inside the image
+build (`Dockerfile` §4b does exactly this) or on a local bench you built in. On a server
+it copies whatever that container's apps folder holds, which is not necessarily what the
+pinned image shipped, so prefer `refresh_bench_files.sh`.
+
+**Getting the volume name wrong is silent.** `docker run -v <name>:/vol` creates an empty
+volume for a typo. `refresh_bench_files.sh` refuses a volume with no
+`common_site_config.json` for that reason - but read its output, do not assume it ran.
+
+**What to do instead of `bench build` on a server.** Nothing on the server. Assets are
+built in the image (`deploy/Dockerfile` §4) and the deploy copies them into the volume
+with `refresh_bench_files.sh`. If the served assets are wrong, the answer is a rebuilt
+image or a re-run of that script - never a build in a live container.
 
 ### Always restart nginx after replacing the backend
 

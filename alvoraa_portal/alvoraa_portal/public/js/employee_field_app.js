@@ -169,7 +169,7 @@
 
 	const STATUS_COLOUR = {
 		Active: "green", "Waiting for HR": "orange", Blocked: "red", Replaced: "gray",
-		Removed: "gray", Stopped: "gray", "Not agreed yet": "orange",
+		Removed: "gray", Stopped: "gray", "Not agreed yet": "orange", "Signed out": "gray",
 	};
 
 	function alvfeStatusLine(info) {
@@ -224,6 +224,9 @@
 					esc(__("{0} was blocked {1} by {2} · {3}.", [p.device_label || __("The phone"), alvfeWhen(p.status_changed_on),
 						alvfeWho(info, p.status_changed_by, p.status_changed_by_name), __(p.block_reason || "")])));
 			default:
+				if (p && p.status === "Signed out") {
+					return line("", `<b>${esc(__("No working phone."))}</b> ${esc(__("The password for {0}'s login was changed {1}, so {2} was signed out. {0} can sign in again with the new password. No code is needed.", [first, alvfeWhen(p.status_changed_on), p.device_label || __("the phone")]))}`);
+				}
 				if (p && p.status === "Removed") {
 					return line("", `<b>${esc(__("No working phone."))}</b> ${esc(__("{0} removed {1} {2}.", [first, p.device_label || __("the last phone"), alvfeWhen(p.status_changed_on)]))}`);
 				}
@@ -266,7 +269,7 @@
 					: "");
 			let status = alvfePill(STATUS_COLOUR[p.status_word] || "gray", __(p.status_word));
 			if (p.status === "Blocked") status += `<small>${esc(alvfeWhen(p.status_changed_on))}${p.block_reason ? " · " + esc(__(p.block_reason)) : ""}</small>`;
-			else if (p.status === "Replaced" || p.status === "Removed") status += `<small>${esc(alvfeWhen(p.status_changed_on))}</small>`;
+			else if (p.status === "Replaced" || p.status === "Removed" || p.status === "Signed out") status += `<small>${esc(alvfeWhen(p.status_changed_on))}</small>`;
 			else if (p.stopped) status += `<small>${esc(info.app.enabled ? __("Not a field worker designation now") : __("App switched off"))}</small>`;
 			if (p.not_field_worker) {
 				status += `<small>${alvfePill("orange", __("Not a field worker"))}</small><small>${esc(__("Joined before this rule. Keeps working."))}</small>`;

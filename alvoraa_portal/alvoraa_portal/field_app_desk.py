@@ -58,6 +58,7 @@ STATUS_WORDS = {
 	"Replaced": "Replaced",
 	"Removed": "Removed",
 	"Consent not given": "Not agreed yet",
+	"Signed out": "Signed out",
 }
 
 # A phone in one of these states still holds a live secret, so HR may block it.
@@ -70,10 +71,9 @@ BLOCK_REASONS = (
 	"Someone else was using it",
 	"Left the company",
 	# ALV-128: set by the server when the login that signed a phone in is
-	# disabled, has its password changed (SEC-26), or is unlinked from the
-	# employee record (SEC-28).
+	# disabled, or is unlinked from the employee record (SEC-28). A changed
+	# password is not a block: the phone is signed out (26 Sep 2026).
 	"Login disabled",
-	"Password changed",
 	"Login unlinked",
 	"Other",
 )
@@ -249,7 +249,10 @@ def _state(emp, current, listed, waiting, phones):
 		return "app_off"
 	# A person outside the designation list who signed in with their password
 	# is still a joined person (ALV-128), not "not a field worker".
-	signed_in = any(p["join_method"] == JOIN_PASSWORD and p["status"] in ("Active", "Consent not given")
+	# A phone signed out after a password change counts too: the person can
+	# sign in again at any time, with no code from HR.
+	signed_in = any(p["join_method"] == JOIN_PASSWORD
+	                and p["status"] in ("Active", "Consent not given", "Signed out")
 	                for p in phones)
 	if not listed and not signed_in:
 		return "not_field"
@@ -274,7 +277,7 @@ def _line_phone(state, phones):
 	}.get(state)
 	if want:
 		return next((p for p in phones if p["status"] == want), None)
-	if state == "no_phone" and phones and phones[0]["status"] == "Removed":
+	if state == "no_phone" and phones and phones[0]["status"] in ("Removed", "Signed out"):
 		return phones[0]
 	return None
 

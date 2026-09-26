@@ -131,7 +131,11 @@ def block_phone(device, reason=None):
 	return {}
 
 
-# ── ALV-128 · a login that stops, changes or is unlinked stops its phones ────
+# ── ALV-128 · a login that stops or is unlinked stops its phones ────────────
+#
+# A CHANGED PASSWORD is not here any more (26 Sep 2026 design change): it signs
+# the phone out on its next call instead of blocking it, and it covers every
+# path that can set a password - see `field_checkin._sign_out_if_password_changed`.
 
 def block_phones_for_disabled_login(doc, method=None):
 	"""doc_events User on_update. A phone that signed in with a password stops
@@ -149,21 +153,14 @@ def block_phones_for_disabled_login(doc, method=None):
 	record that names the login today, so an unlinked record is still caught.
 	One phone that will not save does not stop the others or the User save.
 
-	Also SEC-26 (review fixes, 26 Sep 2026): a NEW PASSWORD set on the User
-	form - by HR, or by the person in their own settings - blocks the phones
-	the old password signed in, reason "Password changed". The website's
-	"forgot password" and change-password page go through `update_password`
-	below instead, because they write the password without saving the User.
+	A new password is NOT handled here: it signs the phone out on its next
+	call (the user's decision, 26 Sep 2026), which no hook could cover for
+	every path that sets a password.
 	"""
 	if not frappe.db.exists("DocType", DEVICE):
 		return
 	if not doc.enabled:
 		_block_password_phones(doc.name, "Login disabled")
-	elif getattr(doc, "_User__new_password", None) and not doc.flags.in_insert:
-		# Frappe's User controller keeps the new password in a private
-		# attribute between validate and on_update (user.py, `__new_password`);
-		# the field itself is already emptied by then.
-		_block_password_phones(doc.name, "Password changed")
 
 
 def _block_password_phones(user, reason, employee=None):
@@ -199,15 +196,6 @@ def _block_password_phones(user, reason, employee=None):
 	return sorted(names)
 
 
-def block_phones_for_new_password(user):
-	"""SEC-26 for our own server code that sets a password directly with
-	`frappe.utils.password.update_password` (tenant_setup's reset of an
-	existing login). Safe on a site without the phone doctype."""
-	if not user or not frappe.db.exists("DocType", DEVICE):
-		return []
-	return _block_password_phones(user, "Password changed")
-
-
 def block_phones_for_unlinked_login(doc, method=None):
 	"""doc_events Employee on_update (SEC-28). When an employee record stops
 	naming a login - changed to another, or emptied - the password phones the
@@ -218,35 +206,3 @@ def block_phones_for_unlinked_login(doc, method=None):
 	if not doc.has_value_changed("user_id") or not frappe.db.exists("DocType", DEVICE):
 		return
 	_block_password_phones(doc.get("user_id"), "Login unlinked", employee=doc.name)
-
-
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-def update_password(new_password: str, logout_all_sessions: int = 0, key: str | None = None,
-                    old_password: str | None = None):
-	"""SEC-26: Frappe's own change-password and "forgot password" endpoint,
-	then block the phones the old password signed in.
-
-	Wired through `override_whitelisted_methods` in hooks.py, so Frappe's
-	function does all the work - key check, strength rules, sessions, the
-	login that follows - and this only acts once it has succeeded. It fails
-	in the ways Frappe's fails: an exception passes straight through, and an
-	expired or wrong key answers 410 with Frappe's own message and blocks
-	nothing.
-	"""
-	from frappe.core.doctype.user.user import update_password as frappe_update_password
-	from frappe.utils.data import sha256_hash
-
-	# Whose password this is, read BEFORE Frappe clears the reset key - the
-	# same two lookups Frappe itself makes, read only.
-	user = None
-	if key and isinstance(key, str):
-		user = frappe.db.get_value("User", {"reset_password_key": sha256_hash(key)}, "name")
-	elif old_password:
-		user = frappe.session.user
-
-	out = frappe_update_password(new_password=new_password, logout_all_sessions=logout_all_sessions,
-	                             key=key, old_password=old_password)
-	changed = frappe.local.response.get("http_status_code") != 410
-	if changed and user and user != "Guest" and frappe.db.exists("DocType", DEVICE):
-		_block_password_phones(user, "Password changed")
-	return out

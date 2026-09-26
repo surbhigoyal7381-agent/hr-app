@@ -26,6 +26,8 @@ driver can act on, with the real distance in it. The rule stays Frappe's.
 """
 
 import functools
+import hashlib
+import hmac
 import secrets
 import traceback
 
@@ -286,6 +288,10 @@ _REFUSAL_FOR_STATUS = {
 	            "This phone is no longer linked. Ask HR for a new code to set it up again."),
 	"Consent not given": ("CONSENT_REQUIRED",
 	                      "Please read the notice and agree before you check in."),
+	# ALV-128, 26 Sep 2026: a password phone whose login's password changed. Not
+	# a block - the person signs in again with the new password.
+	"Signed out": ("PASSWORD_CHANGED_SIGN_IN_AGAIN",
+	               "Your password was changed. Please sign in again."),
 }
 
 # Which field carries the time each final state was reached, for the one value
@@ -339,7 +345,7 @@ def _device_from_token(token: str, allowed=("Active",)):
 
 	device = frappe.get_doc(DEVICE, name)
 
-	if retired and device.status not in ("Blocked", "Replaced", "Removed"):
+	if retired and device.status not in device_rules.NO_LIVE_SECRET:
 		# A retired hash on a phone that is not in a final state should be
 		# impossible - the two are written in the same save. If it ever happens,
 		# the row is not to be trusted, so the secret opens nothing.
@@ -386,8 +392,12 @@ def _refuse_unless_app_phone_is_eligible(device, designation=None):
 	  * when its login is disabled, even if the User hook that blocks it was
 	    skipped (a script, `db.set_value`) - DEVICE_BLOCKED;
 	  * when the employee record no longer names the login that signed it in
-	    (SEC-28), even if the Employee hook was skipped - LOGIN_UNLINKED.
-	Two primary-key reads.
+	    (SEC-28), even if the Employee hook was skipped - LOGIN_UNLINKED;
+	  * when the login's password has changed since the phone signed in, by
+	    ANY path (the User form, "forgot password", `bench set-password`, a
+	    script) - the phone is signed out, not blocked, and told
+	    PASSWORD_CHANGED_SIGN_IN_AGAIN (the user's decision, 26 Sep 2026).
+	Three primary-key reads (Employee, User, `__Auth`). A QR phone makes none.
 	"""
 	if device.join_method == device_rules.JOIN_PASSWORD:
 		settings.refuse_unless_app_on()
@@ -398,12 +408,84 @@ def _refuse_unless_app_phone_is_eligible(device, designation=None):
 			         "employee record. Sign in again, or speak to HR."))
 		if not cint(frappe.db.get_value("User", device.activated_by, "enabled")):
 			refuse("DEVICE_BLOCKED", _("This phone has been blocked. Please speak to HR."))
+		_sign_out_if_password_changed(device)
 		return
 	if device.join_method != device_rules.JOIN_QR:
 		return
 	if designation is None:
 		designation = frappe.db.get_value("Employee", device.employee, "designation")
 	settings.refuse_unless_eligible(designation)
+
+
+def password_stamp(user):
+	"""A fingerprint of the login's CURRENT password, for a password phone to
+	carry (ALV-128, 26 Sep 2026).
+
+	HMAC-SHA256 of the password hash Frappe keeps in `__Auth`, keyed with this
+	site's encryption key, cut to 32 hex characters. Never the password and
+	never the hash: without the site's key the fingerprint cannot be matched to
+	anything, and it changes whenever the hash does - which is every time the
+	password is set, by any path, because Frappe salts each new hash.
+
+	One read on `__Auth`'s primary key (doctype, name, fieldname), the same
+	shape as Frappe's own `check_password`. An empty string when the login has
+	no password at all, which never matches a stored fingerprint.
+	"""
+	from frappe.utils.password import Auth, get_encryption_key
+
+	if not user:
+		return ""
+	row = (
+		frappe.qb.from_(Auth)
+		.select(Auth.password)
+		.where((Auth.doctype == "User") & (Auth.name == user)
+		       & (Auth.fieldname == "password") & (Auth.encrypted == 0))
+		.limit(1)
+	).run()
+	if not row or not row[0][0]:
+		return ""
+	key = get_encryption_key().encode()
+	return hmac.new(key, str(row[0][0]).encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def _sign_out_if_password_changed(device):
+	"""Sign a password phone out when its login's password has changed.
+
+	Not a block: the secret is retired and the record goes to "Signed out", so
+	the next call from the same secret gets the same code, and signing in
+	again (on this phone or another) replaces the record with no HR step.
+
+	Written and committed BEFORE the refusal, because a refusal rolls the
+	request back. Locks in the fixed order - the employee, then the phone -
+	and re-reads the phone under the lock, so a block HR made a moment earlier
+	is answered as a block, never overwritten.
+
+	A phone with no fingerprint (signed in before this check existed) fails
+	closed: it is signed out once and signs in again.
+	"""
+	stored = device.get("password_stamp") or ""
+	current = password_stamp(device.activated_by)
+	if stored and current and hmac.compare_digest(stored, current):
+		return
+
+	frappe.db.get_value("Employee", device.employee, "name", for_update=True)
+	now_row = frappe.db.get_value(DEVICE, device.name, ["status", "token_hash"], as_dict=True,
+	                              for_update=True)
+	if not now_row or now_row.token_hash != device.token_hash 			or now_row.status not in ("Active", "Consent not given"):
+		# Something else stopped this phone while we looked. Its own answer.
+		code, sentence = _REFUSAL_FOR_STATUS.get(
+			now_row.status if now_row else None,
+			("DEVICE_BLOCKED", "This phone has been blocked. Please speak to HR."))
+		refuse(code, _(sentence))
+
+	phone = frappe.get_doc(DEVICE, device.name)
+	phone.status = device_rules.SIGNED_OUT
+	phone.flags[device_rules.SERVER_FLAG] = True
+	phone.flags["alvoraa_change_source"] = "System"
+	phone.save(ignore_permissions=True)
+	frappe.db.commit()
+	refuse("PASSWORD_CHANGED_SIGN_IN_AGAIN",
+	       _("Your password was changed. Please sign in again."))
 
 
 def _refuse_as_pending():

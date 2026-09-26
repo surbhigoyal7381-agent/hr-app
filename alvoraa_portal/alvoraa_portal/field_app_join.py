@@ -56,6 +56,7 @@ from alvoraa_portal.alvoraa_portal.doctype.alvoraa_field_device.alvoraa_field_de
 	APP_JOIN_METHODS,
 	JOIN_PASSWORD,
 	JOIN_QR,
+	SIGNED_OUT,
 )
 from alvoraa_portal.alvoraa_portal.doctype.alvoraa_notice_acknowledgement.alvoraa_notice_acknowledgement import (
 	latest_version_for,
@@ -81,6 +82,7 @@ from alvoraa_portal.field_checkin import (
 	_refuse_unless_app_phone_is_eligible,
 	_shift_location_for,
 	_todays_punches,
+	password_stamp,
 )
 from alvoraa_portal.field_checkin import _workplace as workplace
 from alvoraa_portal.tenant_context import get_branding
@@ -93,6 +95,10 @@ HR_ROLES = {"HR Manager", "HR User", "System Manager"}
 
 # The states an app phone can be in and still talk to the notice endpoints.
 _NOTICE_STATES = ("Active", "Consent not given")
+
+# The person's own app phones a new join settles: the live ones, and one that
+# was signed out after a password change (ALV-128), which ends Replaced.
+_SETTLED_BY_A_JOIN = (*_NOTICE_STATES, SIGNED_OUT)
 
 
 def _refuse_bad_code(code):
@@ -157,12 +163,13 @@ def _phones_locked(employee, old_hash=None):
 	# replaces one that joined with a code, and the other way round - one live
 	# app phone per person, whichever way it came.
 	own = ((Device.employee == employee)
-	       & (Device.status.isin(list(_NOTICE_STATES)))
+	       & (Device.status.isin(list(_SETTLED_BY_A_JOIN)))
 	       & (Device.join_method.isin(list(APP_JOIN_METHODS))))
 	where = own | (Device.token_hash == old_hash) if old_hash else own
 	return (
 		frappe.qb.from_(Device)
-		.select(Device.name, Device.employee, Device.status, Device.token_hash)
+		.select(Device.name, Device.employee, Device.status, Device.token_hash,
+		        Device.retired_token_hash)
 		.where(where)
 		.orderby(Device.name)
 		.for_update()
@@ -374,8 +381,16 @@ def _set_up_phone(emp, join_method, agreed, device_label, platform, token,
 	"""Make the new phone and settle the old ones.
 
 	Returns (phone, secret, two_people, replaced): `replaced` are this same
-	person's earlier phones that the new one replaced (the password sign-in
-	emails the person about them, SEC-27).
+	person's earlier phones that the new one replaced AND that may be another
+	phone - the password sign-in emails the person about those (SEC-27).
+	Left out of `replaced` (no email, 26 Sep 2026 design change):
+	  * a phone that was signed out because the password changed - the person
+	    was already told on that phone to sign in again;
+	  * the same physical phone signing in again. The app sends the secret it
+	    was holding as `token`; if its hash is this old record's live OR
+	    retired hash, the new sign-in is on the phone that record describes.
+	    After PASSWORD_CHANGED_SIGN_IN_AGAIN the app forgets the secret from
+	    storage but keeps it in memory for the sign-in screen, for this.
 
 	`token` is the secret the app was already carrying, if any (SEC-14).
 	Nothing is committed here; the caller commits once, after its own writes.
@@ -399,6 +414,9 @@ def _set_up_phone(emp, join_method, agreed, device_label, platform, token,
 		"token_hash": _hash(secret),
 		"registered_on": now(),
 		"activated_by": activated_by,
+		# The fingerprint of the password that let this phone in (ALV-128). A
+		# code-joined phone does not depend on a password and carries none.
+		"password_stamp": password_stamp(activated_by) if join_method == JOIN_PASSWORD else None,
 	})
 	phone.flags[SERVER_FLAG] = True
 	phone.insert(ignore_permissions=True)
@@ -407,6 +425,7 @@ def _set_up_phone(emp, join_method, agreed, device_label, platform, token,
 	for old in phones:
 		if old.status in ("Blocked", "Replaced", "Removed"):
 			continue
+		same_phone = bool(old_hash) and old_hash in (old.token_hash, old.retired_token_hash)
 		old_doc = frappe.get_doc(DEVICE, old.name)
 		old_doc.flags[SERVER_FLAG] = True
 		if old.employee == emp.name:
@@ -414,7 +433,8 @@ def _set_up_phone(emp, join_method, agreed, device_label, platform, token,
 			old_doc.status = "Replaced"
 			old_doc.replaced_by = phone.name
 			old_doc.flags["alvoraa_change_source"] = "System"
-			replaced.append(old.name)
+			if old.status != SIGNED_OUT and not same_phone:
+				replaced.append(old.name)
 		else:
 			# One phone, two people (AC-74, SEC-14): the earlier person's record
 			# is removed, and HR is told after the save.

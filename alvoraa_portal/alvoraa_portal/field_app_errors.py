@@ -93,6 +93,10 @@ CODES = {
 	# the login that signed it in (SEC-28).
 	"NETWORK_LOCKED":      (429, ("retry_after_s",)),
 	"LOGIN_UNLINKED":      (403, ()),
+	# 26 Sep 2026 design change: a password phone whose login's password has
+	# changed - by anyone, by any path - is signed out, never blocked. The app
+	# forgets its secret and opens the sign-in screen.
+	"PASSWORD_CHANGED_SIGN_IN_AGAIN": (401, ()),
 }
 
 

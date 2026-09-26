@@ -17,16 +17,17 @@ frappe.listview_settings["Alvoraa Field Device"] = {
 			const esc = frappe.utils.escape_html;
 			const colour = {
 				Active: "green", Pending: "orange", Blocked: "red", Replaced: "gray",
-				Removed: "gray", "Consent not given": "orange",
+				Removed: "gray", "Consent not given": "orange", "Signed out": "gray",
 			}[value] || "gray";
 			const word = {
 				Active: __("Active"), Pending: __("Waiting for HR"), Blocked: __("Blocked"),
 				Replaced: __("Replaced"), Removed: __("Removed"),
 				"Consent not given": __("Not agreed yet"),
+				"Signed out": __("Signed out"),
 			}[value] || __(value || "");
 			let under = "";
 			if (value === "Blocked" && doc.block_reason) under = __(doc.block_reason);
-			else if (["Blocked", "Replaced", "Removed"].includes(value) && doc.status_changed_on) {
+			else if (["Blocked", "Replaced", "Removed", "Signed out"].includes(value) && doc.status_changed_on) {
 				under = frappe.datetime.str_to_user(doc.status_changed_on);
 			}
 			// Colour and a word, never colour alone.

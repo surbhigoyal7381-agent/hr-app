@@ -204,7 +204,7 @@
    "fieldname": "block_reason",
    "fieldtype": "Select",
    "label": "Why it was blocked",
-   "options": "\nPhone lost or stolen\nHas a new phone\nSomeone else was using it\nLeft the company\nLogin disabled\nPassword changed\nLogin unlinked\nOther",
+   "options": "\nPhone lost or stolen\nHas a new phone\nSomeone else was using it\nLeft the company\nLogin disabled\nLogin unlinked\nOther",
    "no_copy": 1,
    "description": "Required whenever a phone is blocked. Kept in the record. It is never sent to the phone or shown to the employee."
   },

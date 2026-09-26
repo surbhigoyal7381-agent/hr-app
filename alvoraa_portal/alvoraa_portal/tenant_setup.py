@@ -59,13 +59,8 @@ def _make_user(email, first_name, password, roles):
         # Make them choose their own on first login. The generated one is shown
         # on a provisioning screen and may be written down or pasted around.
         frappe.db.set_value("User", email, "reset_password_key", None)
-        if existed:
-            # ALV-128 SEC-26: this writes the password directly, so neither the
-            # User hook nor the website override sees it. A reset of an existing
-            # login must still stop the app phones the old password signed in.
-            from alvoraa_portal.field_app_device import block_phones_for_new_password
-
-            block_phones_for_new_password(user.name)
+        # ALV-128: a field app phone this login signed in is signed out on its
+        # next call, because the password fingerprint no longer matches.
 
     return user.name
 

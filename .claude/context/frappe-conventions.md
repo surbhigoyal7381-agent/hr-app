@@ -159,6 +159,34 @@ or currency formats.
 
 ---
 
+## Never run `bench build` on a server or on a shared bench
+
+*Learned the hard way on 2026-09-26, and again on 2026-08-19. Full detail in
+`DEPLOYMENT_RUNBOOK.md` §5.7.*
+
+`bench build` does not just rebuild bundles. It replaces every entry under
+`sites/assets/` with a symlink into `apps/<app>/<app>/public` - **every app, not only the
+one you passed to `--app`.** The backend container can follow those links. **nginx cannot:
+it mounts only the sites volumes and has no `apps` folder**, so every CSS and JS file on
+that stack returns 404.
+
+The symptom looks like an application fault and is not one: an unstyled page, panels stuck
+on "Loading…", nothing in any backend log, because nothing reaches the backend.
+
+- **Do not reach for `bench build` during an incident.** It is the command that causes this
+  incident.
+- Assets are built in the image (`deploy/Dockerfile` §4) and copied into the sites volume
+  by the deploy (`scripts/refresh_bench_files.sh`, ALV-112).
+- If assets look wrong: check `ls -la .../sites/assets` for entries starting with `l`,
+  then recover with the runbook's steps - delete the links, re-run
+  `refresh_bench_files.sh <image> <volume>`, and prove it with a `curl` against the URL.
+- On the local bench a build is fine, but run `scripts/materialise_assets.sh` straight
+  after it, and remember the local sites volume is **shared with other sessions**.
+- Never call a fix done from a server-side `ls`. Only a 200 with a non-zero length on the
+  real URL proves it.
+
+---
+
 ## 🚫 Production is off limits
 
 *From `CLAUDE.md` §3. This is the hardest rule in the repo. Read it as a wall, not a

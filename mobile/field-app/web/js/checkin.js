@@ -222,6 +222,29 @@
     });
   }
 
+  // ALV-128, 26 Sep 2026: the login's password changed, so the server signed
+  // this phone out. Forget the stored secret (the server has retired it
+  // anyway) and open the sign-in screen with the company code kept. The old
+  // secret goes to the sign-in in memory only, so the server can tell it is
+  // the same phone and sends no "new phone" email.
+  function signInAgain() {
+    var oldSecret = state.secret;
+    var oldOrigin = state.origin;
+    forgetPhoneLocally().then(function () {
+      state.secret = null;
+      state.origin = null;
+      window.AlvoraaSignin.start({
+        reason: "PASSWORD_CHANGED_SIGN_IN_AGAIN",
+        previousToken: oldSecret,
+        origin: oldOrigin,
+      });
+    });
+  }
+
+  function isSignedOut(code) {
+    return window.AlvoraaGateRefusal.planForGateRefusal(code, {}).action === "signInAgain";
+  }
+
   function loadStatus() {
     state.lastAction = "status";
     window.AlvoraaApi.fieldStatus(state.origin, state.secret).then(function (result) {
@@ -245,6 +268,10 @@
       });
       return;
     }
+    if (plan.action === "signInAgain") {
+      signInAgain();
+      return;
+    }
     if (plan.action === "noticeAgain") {
       state.noticeAgainValues = plan.values;
       renderNoticeAgain(plan.values);
@@ -266,6 +293,8 @@
           renderNoticeAgain(probePlan.values);
         } else if (probePlan.action === "reloadStatus") {
           loadStatus();
+        } else if (isSignedOut(probePlan.code)) {
+          signInAgain();
         } else {
           showProblem(probePlan.code, probePlan.values);
         }
@@ -475,6 +504,9 @@
         } else if (result.code === "NOTICE_CHANGED") {
           state.noticeAgainValues = result.values;
           renderNoticeAgain(result.values);
+        } else if (isSignedOut(result.code)) {
+          resetPunchState();
+          signInAgain();
         } else {
           showProblem(result.code, result.values);
         }
@@ -533,6 +565,10 @@
     var version = state.noticeAgainValues && state.noticeAgainValues.version;
     window.AlvoraaApi.acknowledgeNotice(state.origin, state.secret, version).then(function (result) {
       if (!result.ok) {
+        if (isSignedOut(result.code)) {
+          signInAgain();
+          return;
+        }
         showProblem(result.code, result.values);
         return;
       }

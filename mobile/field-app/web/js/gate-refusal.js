@@ -32,11 +32,20 @@
    *   { action: "forgetAndFirst" }                  - NOT_SET_UP, DEVICE_PENDING, DEVICE_REMOVED
    *   { action: "noticeAgain", values }              - NOTICE_CHANGED
    *   { action: "probeConsentRequired" }             - CONSENT_REQUIRED (see below)
+   *   { action: "signInAgain" }                      - PASSWORD_CHANGED_SIGN_IN_AGAIN
    *   { action: "problem", code, values }            - everything else
+   *
+   * signInAgain (ALV-128, 26 Sep 2026): the login's password changed, so the
+   * server signed this phone out - not a block. The app forgets the stored
+   * secret and opens the sign-in screen with the company code kept. The same
+   * plan applies to a refusal from the punch and from the notice.
    */
   function planForGateRefusal(code, values) {
     if (code === "NOT_SET_UP" || code === "DEVICE_PENDING" || code === "DEVICE_REMOVED") {
       return { action: "forgetAndFirst" };
+    }
+    if (code === "PASSWORD_CHANGED_SIGN_IN_AGAIN") {
+      return { action: "signInAgain" };
     }
     if (code === "NOTICE_CHANGED") {
       return { action: "noticeAgain", values: values };

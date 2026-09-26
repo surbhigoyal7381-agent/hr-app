@@ -53,6 +53,10 @@
     token: null,
     answer: null,   // the sign-in answer: first name, company, workplace, notice
     busy: false,
+    // The secret this phone held before it was signed out for a password
+    // change (memory only, never stored). Sent with the sign-in so the server
+    // knows it is the same phone and sends no "new phone" email.
+    previousToken: null,
   };
 
   function reset() {
@@ -62,6 +66,7 @@
     state.token = null;
     state.answer = null;
     state.busy = false;
+    state.previousToken = null;
     el("signin-password").value = "";
     el("signin-otp").value = "";
     hideError("signin");
@@ -110,6 +115,7 @@
       password: passwordBox.value,
       device_label: "", // AC-220: model name only, once the app reads Device.getInfo()
       platform: "android",
+      token: state.previousToken || undefined,
     });
     // Emptied now: the request already holds its own copy, and nothing else may.
     passwordBox.value = "";
@@ -157,6 +163,7 @@
       otp: checked.otp,
       device_label: "",
       platform: "android",
+      token: state.previousToken || undefined,
     }).then(function (result) {
       state.busy = false;
       el("signin-otp").value = "";
@@ -264,6 +271,7 @@
     state.answer = null;
     state.token = null;
     state.tmpId = null;
+    state.previousToken = null;
     show("welcome");  // its buttons are join.js's: they hand over to the Attendance screen
   }
 
@@ -286,10 +294,24 @@
     if (action) action();
   });
 
-  function start() {
+  /*
+   * opts (optional):
+   *   reason         a server code to explain on the form, e.g.
+   *                  PASSWORD_CHANGED_SIGN_IN_AGAIN ("Your password was
+   *                  changed. Please sign in again.")
+   *   previousToken  the secret the phone held (memory only)
+   *   origin         the address the phone was using, for the company code
+   *                  when none is remembered
+   */
+  function start(opts) {
+    opts = opts || {};
     reset();
-    el("signin-company").value = core.rememberedCompany();
+    state.previousToken = typeof opts.previousToken === "string" ? opts.previousToken : null;
+    el("signin-company").value = core.rememberedCompany() || core.companyFromOrigin(opts.origin);
     show("signin");
+    if (opts.reason) {
+      showError(opts.reason, {}, el("signin-company").value ? "password" : "company");
+    }
   }
 
   window.AlvoraaSignin = { start: start };

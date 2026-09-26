@@ -87,6 +87,9 @@
     TOO_MANY_TRIES: ["form", null],   // needs the wait, see below
     OTP_WRONG: ["otp", "That code is not right. Check it and try again."],
     OTP_EXPIRED: ["form", "Your sign-in timed out. Please sign in again."],
+    // The phone was signed out because the login's password changed (26 Sep
+    // 2026). Shown on the sign-in form the app opens for it.
+    PASSWORD_CHANGED_SIGN_IN_AGAIN: ["form", "Your password was changed. Please sign in again."],
     NOTICE_CHANGED: ["form", "The notice changed while you were signing in. Please sign in again."],
     SERVER_ERROR: ["form", "Something went wrong on our side. Please try again in a minute."],
     INVALID_REQUEST: ["form", "Something went wrong. Please try again. If it keeps happening, show this screen to HR."],
@@ -137,12 +140,26 @@
     try { return s.getItem(COMPANY_KEY) || ""; } catch (e) { return ""; }
   }
 
+  /*
+   * The company code back out of the address the phone was using, e.g.
+   * the host sargam.alvoraa.co gives "sargam" (also <code>.dev.alvoraa.co).
+   * Used when the phone is signed out and the remembered code is missing (a
+   * phone that joined with a QR code never typed one). Anything that is not
+   * an Alvoraa address gives "" - the person then types the code.
+   */
+  function companyFromOrigin(origin) {
+    var m = /^https:\/\/([a-z0-9-]+)\.(?:dev\.)?alvoraa\.co\/?$/i.exec(
+      typeof origin === "string" ? origin.trim() : "");
+    return m ? m[1].toLowerCase() : "";
+  }
+
   var api = {
     checkForm: checkForm,
     checkOtp: checkOtp,
     messageFor: messageFor,
     rememberCompany: rememberCompany,
     rememberedCompany: rememberedCompany,
+    companyFromOrigin: companyFromOrigin,
     COMPANY_KEY: COMPANY_KEY,
   };
 

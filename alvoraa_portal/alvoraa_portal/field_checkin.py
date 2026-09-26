@@ -1161,7 +1161,9 @@ def block_devices_for_leaver(doc, method=None):
 	for name in frappe.get_all(
 		DEVICE,
 		filters={"employee": doc.name,
-		         "status": ["in", ["Active", "Pending", "Consent not given"]]},
+		         # "Signed out" too (ALV-128 review): no live secret, but HR must
+		         # read "Left the company", not "can sign in again".
+		         "status": ["in", ["Active", "Pending", "Consent not given", "Signed out"]]},
 		pluck="name",
 	):
 		try:

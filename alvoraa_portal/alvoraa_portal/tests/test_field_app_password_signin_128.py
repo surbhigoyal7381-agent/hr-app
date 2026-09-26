@@ -979,7 +979,10 @@ class APasswordChangeSignsThePhoneOut(PasswordCase):
 		self.assertEqual(self.answer()[:2], (401, "PASSWORD_CHANGED_SIGN_IN_AGAIN"))
 		self.assertEqual(self.phone_of(out["token"]).status, "Signed out")
 
-	def test_128_signing_in_again_on_another_phone_after_a_sign_out_sends_no_email(self):
+	def test_128_another_phone_signing_in_after_a_sign_out_is_emailed(self):
+		"""The takeover case (review P2): someone else changed the password, the
+		owner's phone was signed out, then a different phone signs in. The owner
+		must still be told."""
 		token = self.signed_in()
 		self.change_password_directly()
 		self.assertIsNone(self.status(token))
@@ -987,7 +990,20 @@ class APasswordChangeSignsThePhoneOut(PasswordCase):
 		again = self.sign_in(password=NEW_PASSWORD)
 		self.assertIn("token", again or {}, self.words())
 		self.assertEqual(self.phone_of(token).status, "Replaced")
-		self.assertEqual(self.emails_about(self.phone_of(again["token"]).name), [])
+		self.assertEqual(len(self.emails_about(self.phone_of(again["token"]).name)), 1)
+
+	def test_128_a_leavers_signed_out_phone_is_blocked(self):
+		token = self.signed_in()
+		self.change_password_directly()
+		self.assertIsNone(self.status(token))
+		self.assertEqual(self.phone_of(token).status, "Signed out")
+		frappe.set_user("Administrator")
+		name = self.phone_of(token).name
+		emp = frappe.get_doc("Employee", self.employee)
+		emp.status = "Left"
+		fc.block_devices_for_leaver(emp)          # the Employee hook itself
+		self.assertEqual(tuple(frappe.db.get_value(fc.DEVICE, name, ["status", "block_reason"])),
+		                 ("Blocked", "Left the company"))
 
 	def test_128_the_same_phone_signing_in_again_is_not_emailed(self):
 		"""An Active phone that signs in again sending its own secret is the

@@ -582,3 +582,16 @@ added: the portal's `jinja` hook, well away from the lines this branch
 changes). This branch was **not** rebased (the brief said add commits only). A
 trial merge (`git merge-tree`) of this branch with origin/dev shows no
 conflict; the rebase before any push still needs the full suite re-run.
+
+## Review of the sign-out design (26 Sep 2026) and what was fixed
+
+Security review verdict: ship with one fix. Both findings below are fixed; the rest is recorded.
+
+| Finding | Fix |
+|---|---|
+| P2: no new-phone email when the old phone was Signed out - exactly the takeover case (someone changes the password, the owner's phone is signed out, the attacker signs in) | The email now goes out whenever a different phone signs in; only the same phone, proven by its own secret, is skipped. Test: `test_128_another_phone_signing_in_after_a_sign_out_is_emailed` |
+| P3: a leaver's Signed out phone stayed Signed out, and HR's desk said "can sign in again" | The leaver hook now blocks Signed out phones too ("Left the company"); the phone record allows Signed out -> Blocked (still never back to Active). Test: `test_128_a_leavers_signed_out_phone_is_blocked` |
+
+Recorded, not changed: the sign-out commits before its refusal, so a future caller that writes first would have that write committed (none does today); Frappe re-hashing a password after a scheme change signs phones out once; `withdraw_agreement` and `remove_my_phone` skip the check (both only reduce access); HR can read token hashes on the desk and in Version history (pre-existing, hashes of random secrets, worth a ticket).
+
+Rebased onto origin/dev f106668 (166 commits from other sessions, all by this repo's own sessions: portal redesign waves, CI checks, deduction email; no conflicts, no obfuscated code, no font or build-config files). After the rebase and these fixes: the ALV-128 module 59 OK; field-app steps 1-6, permissions, check-in location, check-in security 014 and module gate 016 all OK; integrity OK.

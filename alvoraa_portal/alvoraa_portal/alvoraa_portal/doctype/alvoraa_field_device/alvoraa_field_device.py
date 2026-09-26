@@ -26,7 +26,8 @@ The rules, in plain words:
     code. There is no unblock, for anybody, including a System Manager.
   * "Signed out" (ALV-128, 26 Sep 2026) is a password phone whose login's
     password changed. It is not a block: its secret is retired like a stopped
-    phone's, and the only way out is "Replaced", when the person signs in again.
+    phone's, it becomes "Replaced" when the person signs in again, or "Blocked"
+    when they leave the company.
   * Whenever a phone stops or is signed out, its secret's hash moves into
     `retired_token_hash` in the same save. The old secret then gets its own refusal instead of a 200,
     and "why did this phone stop" is still answerable a year later.
@@ -189,9 +190,10 @@ class AlvoraaFieldDevice(Document):
 				  "instead."),
 				frappe.ValidationError)
 
-		if old == SIGNED_OUT and new != "Replaced":
+		if old == SIGNED_OUT and new not in ("Replaced", "Blocked"):
 			# A signed-out phone has no live secret. Nothing - not HR, not the
-			# server - may switch it back on; a new sign-in replaces it.
+			# server - may switch it back on; a new sign-in replaces it. It may
+			# still be blocked for good (a leaver), which gives nothing back.
 			frappe.throw(
 				_("A signed-out phone cannot be switched back on. The person signs in "
 				  "again instead."),

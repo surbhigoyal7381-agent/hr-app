@@ -433,7 +433,10 @@ def _set_up_phone(emp, join_method, agreed, device_label, platform, token,
 			old_doc.status = "Replaced"
 			old_doc.replaced_by = phone.name
 			old_doc.flags["alvoraa_change_source"] = "System"
-			if old.status != SIGNED_OUT and not same_phone:
+			# Emailed even when the old phone was signed out by a password
+			# change (ALV-128 review, P2): that is exactly when a takeover
+			# happens. Only the same phone - proven by its own secret - is not.
+			if not same_phone:
 				replaced.append(old.name)
 		else:
 			# One phone, two people (AC-74, SEC-14): the earlier person's record

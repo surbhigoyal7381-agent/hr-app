@@ -2,6 +2,7 @@
   "appId": "co.alvoraa.app",
   "appName": "Alvoraa Attendance",
   "webDir": "web",
+  "loggingBehavior": "none",
   "android": {
     "allowMixedContent": false,
     "webContentsDebuggingEnabled": false

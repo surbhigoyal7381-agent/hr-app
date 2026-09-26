@@ -73,6 +73,9 @@
     // the server's answers
     SIGN_IN_FAILED: ["form", "That email and password do not match. Check them and try again. If you forgot your password, reset it on your company's Alvoraa website."],
     ACCOUNT_LOCKED: ["form", null],   // needs the wait, see below
+    // Frappe's lock on the network (many failures from one address), not on
+    // this account - so it must not say "your account".
+    NETWORK_LOCKED: ["form", "Too many sign-in attempts from this network. Try again later."],
     PASSWORD_EXPIRED: ["form", "Your password has expired. Change it on your company's Alvoraa website, then sign in here with the new one."],
     SIGN_IN_NOT_ALLOWED: ["form", "Your login cannot be used from here or at this time. Please speak to HR."],
     NO_EMPLOYEE_RECORD: ["form", "Your login is not linked to an employee record, so this app cannot mark attendance for you. Ask HR to link your employee record to your login."],

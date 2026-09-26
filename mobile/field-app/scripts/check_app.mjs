@@ -85,6 +85,12 @@ export function checkCapacitorConfig(config) {
   if (config.plugins?.CapacitorHttp?.enabled !== true) {
     problems.push("CapacitorHttp must be on (plugins.CapacitorHttp.enabled = true), or the WebView blocks every call to the tenant as cross-origin (OPS-2, slice 038).");
   }
+  // SEC-30 (ALV-128): Capacitor's bridge logs every native call - with native
+  // HTTP on, that is every request body, sign-in password included - to the
+  // Android log, which other tools on a phone can read. "none" turns it off.
+  if (config.loggingBehavior !== "none") {
+    problems.push('loggingBehavior must be "none" in capacitor.config.json, or request bodies (a sign-in password among them) reach the Android log (SEC-30).');
+  }
   if (config.plugins?.CapacitorCookies?.enabled !== false) {
     problems.push("CapacitorCookies must be off (plugins.CapacitorCookies.enabled = false) (OPS-79).");
   }

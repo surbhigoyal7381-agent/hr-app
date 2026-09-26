@@ -155,6 +155,20 @@
         retry: false,
       };
     },
+    // ALV-128 SEC-28: a phone that signed in with a login the employee record
+    // no longer names. Same screen shape and button as "replaced": remove this
+    // phone here, then sign in again.
+    LOGIN_UNLINKED: function (v, now, company) {
+      return {
+        screen: "replaced",
+        heading: "Please sign in again",
+        body: "This phone was set up with a login that is no longer linked to your employee record. "
+          + "Remove this phone, then sign in again. If you do not know why, speak to HR.",
+        steps: [],
+        buttons: [removeButton(company)],
+        retry: false,
+      };
+    },
     EMPLOYEE_NOT_ACTIVE: function (v, now, company) {
       return {
         screen: "left",

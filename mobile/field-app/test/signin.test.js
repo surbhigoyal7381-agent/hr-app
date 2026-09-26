@@ -90,7 +90,7 @@ test("the one-time code is cleaned of spaces and must be there", () => {
 const SERVER_CODES = ["SIGN_IN_FAILED", "ACCOUNT_LOCKED", "PASSWORD_EXPIRED", "SIGN_IN_NOT_ALLOWED",
   "OTP_WRONG", "OTP_EXPIRED", "NO_EMPLOYEE_RECORD", "EMPLOYEE_NOT_ACTIVE", "PASSWORD_SIGNIN_OFF",
   "APP_OFF_FOR_FIELD", "FEATURE_OFF", "APP_TOO_OLD", "TOO_MANY_TRIES", "SERVER_ERROR",
-  "INVALID_REQUEST", "NO_INTERNET", "NOTICE_CHANGED"];
+  "INVALID_REQUEST", "NO_INTERNET", "NOTICE_CHANGED", "NETWORK_LOCKED"];
 
 test("every sign-in answer has its own plain sentence and the code for HR", () => {
   const generic = core.messageFor("SOMETHING_NEW", {}).text;
@@ -113,6 +113,19 @@ test("the lock and the limit say how long to wait", () => {
   assert.match(core.messageFor("ACCOUNT_LOCKED", { retry_after_s: 300 }).text, /5 minutes/);
   assert.match(core.messageFor("TOO_MANY_TRIES", { retry_after_s: 3600 }).text, /60 minutes/);
   assert.match(core.messageFor("ACCOUNT_LOCKED", {}).text, /a few minutes/);
+});
+
+test("a locked network is never called a locked account (review fix)", () => {
+  const text = core.messageFor("NETWORK_LOCKED", { retry_after_s: 300 }).text;
+  assert.equal(text, "Too many sign-in attempts from this network. Try again later.");
+  assert.doesNotMatch(text, /account/i);
+});
+
+test("a phone whose login was unlinked is asked to sign in again (SEC-28)", () => {
+  const screens = require(path.join(__dirname, "..", "web", "js", "checkin-screens.js"));
+  const info = screens.screenFor("LOGIN_UNLINKED", {}, { company: "Sargam Metals" });
+  assert.equal(info.heading, "Please sign in again");
+  assert.match(info.body, /no longer linked/);
 });
 
 test("an unknown code still gets words, never a blank screen", () => {

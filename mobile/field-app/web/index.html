@@ -234,8 +234,10 @@
 
   <!-- ============================== the notice changed, mid-daily-use (US-42, 01b §7.12 noticeAgain) ============================== -->
   <section class="screen" data-screen="noticeAgain">
-    <h2>The notice has changed</h2>
-    <p>Please read it again before your next check-in.</p>
+    <!-- ALV-128: checkin.js swaps these two lines for "Before you start" when
+         this phone has never agreed (the app was closed on the first notice). -->
+    <h2 id="notice-again-heading">The notice has changed</h2>
+    <p id="notice-again-intro">Please read it again before your next check-in.</p>
     <p id="notice-again-changed"></p>
     <div id="notice-again-rows"></div>
     <p class="error" id="notice-again-tick-error" role="alert" hidden>Please tick the box to show you have read the notice.</p>
@@ -294,7 +296,7 @@
     <p>Attendance you already marked stays in your HR record.</p>
     <p>Photos already taken are deleted as the notice says.</p>
     <p>HR will see that you removed this phone.</p>
-    <p>To use the app again, you need a new code from HR.</p>
+    <p>To use the app again, sign in again, or ask HR for a new code.</p>
     <p class="small">You need the internet for this.</p>
     <p class="error" id="leave-error" role="alert" hidden></p>
     <button type="button" class="danger" data-action="checkin-remove-confirm">Remove this phone</button>

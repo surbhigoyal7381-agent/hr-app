@@ -499,6 +499,17 @@
   // ── the changed notice, mid-daily-use (US-42) ────────────────────────────
 
   function renderNoticeAgain(values) {
+    // ALV-128: a phone that has never agreed on this phone (closed on the first
+    // notice after signing in) is reading it for the FIRST time - it must not
+    // be told the notice "has changed". The notice cache is written only once
+    // the person has agreed, so an empty cache is the sign.
+    var firstTime = !window.AlvoraaNoticeCache.load();
+    el("notice-again-heading").textContent = firstTime
+      ? "Before you start" : "The notice has changed";
+    el("notice-again-intro").textContent = firstTime
+      ? "Please read this and agree before your first check-in."
+      : "Please read it again before your next check-in.";
+    el("notice-again-changed").hidden = firstTime;
     el("notice-again-changed").textContent = "What is new: " + (values.what_changed || "") + ".";
     var rowsBox = el("notice-again-rows");
     clearChildren(rowsBox);

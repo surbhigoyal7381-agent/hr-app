@@ -13,6 +13,7 @@ const load = () => import(pathToFileURL(path.join(__dirname, "..", "scripts", "c
 const GOOD_CONFIG = {
   appId: "co.alvoraa.app",
   webDir: "web",
+  loggingBehavior: "none",
   android: { allowMixedContent: false, webContentsDebuggingEnabled: false },
   plugins: { CapacitorHttp: { enabled: true }, CapacitorCookies: { enabled: false } },
 };
@@ -43,6 +44,9 @@ test("config: a server block, debugging, mixed content, cookies on or native HTT
     // Native HTTP off again: the WebView would block every tenant call as cross-origin (slice 038).
     { ...GOOD_CONFIG, plugins: { CapacitorHttp: { enabled: false }, CapacitorCookies: { enabled: false } } },
     { ...GOOD_CONFIG, plugins: { CapacitorCookies: { enabled: false } } },
+    // SEC-30 (ALV-128): the bridge's log would carry request bodies, a sign-in password among them.
+    { ...GOOD_CONFIG, loggingBehavior: "debug" },
+    { ...GOOD_CONFIG, loggingBehavior: undefined },
   ];
   for (const config of bad) {
     assert.ok(checkCapacitorConfig(config).length > 0, JSON.stringify(config));

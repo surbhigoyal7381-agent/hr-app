@@ -9,6 +9,14 @@ required_apps = ["frappe/erpnext"]
 # ── Post-login redirect: portal users → their portal; admins → /app ───────
 on_login = "alvoraa_portal.auth.on_login"
 
+# ── A changed password stops the app phones it signed in (ALV-128, SEC-26) ─
+# Frappe's "forgot password" and change-password page write the password
+# without saving the User, so no doc_event sees it. This wraps Frappe's own
+# endpoint: Frappe does all the work, then the phones are blocked.
+override_whitelisted_methods = {
+    "frappe.core.doctype.user.user.update_password": "alvoraa_portal.field_app_device.update_password",
+}
+
 # ── The bare address "/" lands where login does (slice 024) ───────────────
 # Frappe resolves "/" through get_home_page(), which asks this hook. Without
 # it, typing https://<tenant>/ dropped a signed-in employee into the desk,
@@ -133,6 +141,8 @@ doc_events = {
         "on_update": [
             "alvoraa_portal.hr_api.invalidate_portal_context_cache",
             "alvoraa_portal.field_checkin.block_devices_for_leaver",
+            # ALV-128 SEC-28: an unlinked login stops the app phones it signed in.
+            "alvoraa_portal.field_app_device.block_phones_for_unlinked_login",
         ],
         "on_trash":  "alvoraa_portal.hr_api.invalidate_portal_context_cache",
     },
@@ -151,7 +161,8 @@ doc_events = {
         "after_insert": "alvoraa_portal.module_access.apply_on_user_insert",
         "on_update":    ["alvoraa_portal.hr_api.invalidate_portal_context_cache",
                          "alvoraa_portal.module_access.apply_on_user_update",
-                         # ALV-128: a disabled login stops the app phones it signed in.
+                         # ALV-128: a disabled login, or a new password set on the
+                         # User form (SEC-26), stops the app phones it signed in.
                          "alvoraa_portal.field_app_device.block_phones_for_disabled_login"],
     },
     # ── Global features cache invalidation ───────────────────────────────

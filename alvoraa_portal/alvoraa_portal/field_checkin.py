@@ -380,15 +380,23 @@ def _refuse_unless_app_phone_is_eligible(device, designation=None):
 	the setting, the same phone works again with no new code (AC-78, AC-211).
 
 	ALV-128: a phone that signed in with email and password answers to the
-	master switch and the password switch, never the designation list - the
-	user's decision is that anyone with a login may use the app. It also stops
-	the moment the login it signed in with is disabled, even if the User hook
-	that blocks it was skipped (a script, `db.set_value`): one primary-key read.
+	master switch only - never the designation list (anyone with a login may
+	use the app), and never the password switch, which stops NEW sign-ins
+	only (the user's decision, 26 Sep 2026). It also stops, failing closed:
+	  * when its login is disabled, even if the User hook that blocks it was
+	    skipped (a script, `db.set_value`) - DEVICE_BLOCKED;
+	  * when the employee record no longer names the login that signed it in
+	    (SEC-28), even if the Employee hook was skipped - LOGIN_UNLINKED.
+	Two primary-key reads.
 	"""
 	if device.join_method == device_rules.JOIN_PASSWORD:
-		settings.refuse_unless_password_signin_on()
-		if not device.activated_by or not cint(
-				frappe.db.get_value("User", device.activated_by, "enabled")):
+		settings.refuse_unless_app_on()
+		linked = frappe.db.get_value("Employee", device.employee, "user_id")
+		if not device.activated_by or linked != device.activated_by:
+			refuse("LOGIN_UNLINKED",
+			       _("This phone was set up with a login that is no longer linked to your "
+			         "employee record. Sign in again, or speak to HR."))
+		if not cint(frappe.db.get_value("User", device.activated_by, "enabled")):
 			refuse("DEVICE_BLOCKED", _("This phone has been blocked. Please speak to HR."))
 		return
 	if device.join_method != device_rules.JOIN_QR:

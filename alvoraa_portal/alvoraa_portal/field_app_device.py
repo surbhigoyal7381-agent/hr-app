@@ -131,7 +131,7 @@ def block_phone(device, reason=None):
 	return {}
 
 
-# ── ALV-128 · a disabled login stops the phones it signed in ─────────────────
+# ── ALV-128 · a login that stops, changes or is unlinked stops its phones ────
 
 def block_phones_for_disabled_login(doc, method=None):
 	"""doc_events User on_update. A phone that signed in with a password stops
@@ -148,23 +148,96 @@ def block_phones_for_disabled_login(doc, method=None):
 	Found by `activated_by` (the login that signed in) and by the employee
 	record that names the login today, so an unlinked record is still caught.
 	One phone that will not save does not stop the others or the User save.
+
+	Also SEC-26 (review fixes, 26 Sep 2026): a NEW PASSWORD set on the User
+	form - by HR, or by the person in their own settings - blocks the phones
+	the old password signed in, reason "Password changed". The website's
+	"forgot password" and change-password page go through `update_password`
+	below instead, because they write the password without saving the User.
 	"""
-	if doc.enabled or not frappe.db.exists("DocType", DEVICE):
+	if not frappe.db.exists("DocType", DEVICE):
 		return
-	employees = frappe.get_all("Employee", filters={"user_id": doc.name}, pluck="name")
+	if not doc.enabled:
+		_block_password_phones(doc.name, "Login disabled")
+	elif getattr(doc, "_User__new_password", None) and not doc.flags.in_insert:
+		# Frappe's User controller keeps the new password in a private
+		# attribute between validate and on_update (user.py, `__new_password`);
+		# the field itself is already emptied by then.
+		_block_password_phones(doc.name, "Password changed")
+
+
+def _block_password_phones(user, reason, employee=None):
+	"""Block every live password phone this login signed in (or, with
+	`employee`, that employee's password phones not signed in by `user`).
+	The same final Blocked state, with the secret retired, that HR's own block
+	gives. Returns the phone names it blocked."""
 	live = ["in", list(BLOCKABLE)]
-	names = set(frappe.get_all(DEVICE, filters={"join_method": JOIN_PASSWORD, "status": live,
-	                                            "activated_by": doc.name}, pluck="name"))
-	if employees:
-		names |= set(frappe.get_all(DEVICE, filters={"join_method": JOIN_PASSWORD, "status": live,
-		                                             "employee": ["in", employees]}, pluck="name"))
+	if employee:
+		names = set(frappe.get_all(DEVICE, filters={"join_method": JOIN_PASSWORD, "status": live,
+		                                            "employee": employee,
+		                                            "activated_by": ["!=", user or ""]},
+		                           pluck="name"))
+	else:
+		employees = frappe.get_all("Employee", filters={"user_id": user}, pluck="name")
+		names = set(frappe.get_all(DEVICE, filters={"join_method": JOIN_PASSWORD, "status": live,
+		                                            "activated_by": user}, pluck="name"))
+		if employees:
+			names |= set(frappe.get_all(DEVICE, filters={"join_method": JOIN_PASSWORD, "status": live,
+			                                             "employee": ["in", employees]}, pluck="name"))
 	for name in sorted(names):
 		try:
 			phone = frappe.get_doc(DEVICE, name)
 			phone.status = "Blocked"
-			phone.block_reason = "Login disabled"
+			phone.block_reason = reason
 			phone.flags[SERVER_FLAG] = True
+			phone.flags["alvoraa_change_source"] = "System"
 			phone.save(ignore_permissions=True)
 		except Exception:
-			frappe.log_error(f"could not block field device {name} for a disabled login",
-			                 "Field app disabled login")
+			# Named by the phone record only; nothing personal in the log.
+			frappe.log_error(f"could not block field device {name} ({reason})",
+			                 "Field app password phone")
+	return sorted(names)
+
+
+def block_phones_for_unlinked_login(doc, method=None):
+	"""doc_events Employee on_update (SEC-28). When an employee record stops
+	naming a login - changed to another, or emptied - the password phones the
+	OLD login signed in are blocked, reason "Login unlinked". A phone signed in
+	by the login the record names now is left alone. The punch refuses such a
+	phone too (`LOGIN_UNLINKED`), so a change made without this hook still
+	stops it."""
+	if not doc.has_value_changed("user_id") or not frappe.db.exists("DocType", DEVICE):
+		return
+	_block_password_phones(doc.get("user_id"), "Login unlinked", employee=doc.name)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def update_password(new_password: str, logout_all_sessions: int = 0, key: str | None = None,
+                    old_password: str | None = None):
+	"""SEC-26: Frappe's own change-password and "forgot password" endpoint,
+	then block the phones the old password signed in.
+
+	Wired through `override_whitelisted_methods` in hooks.py, so Frappe's
+	function does all the work - key check, strength rules, sessions, the
+	login that follows - and this only acts once it has succeeded. It fails
+	in the ways Frappe's fails: an exception passes straight through, and an
+	expired or wrong key answers 410 with Frappe's own message and blocks
+	nothing.
+	"""
+	from frappe.core.doctype.user.user import update_password as frappe_update_password
+	from frappe.utils.data import sha256_hash
+
+	# Whose password this is, read BEFORE Frappe clears the reset key - the
+	# same two lookups Frappe itself makes, read only.
+	user = None
+	if key and isinstance(key, str):
+		user = frappe.db.get_value("User", {"reset_password_key": sha256_hash(key)}, "name")
+	elif old_password:
+		user = frappe.session.user
+
+	out = frappe_update_password(new_password=new_password, logout_all_sessions=logout_all_sessions,
+	                             key=key, old_password=old_password)
+	changed = frappe.local.response.get("http_status_code") != 410
+	if changed and user and user != "Guest" and frappe.db.exists("DocType", DEVICE):
+		_block_password_phones(user, "Password changed")
+	return out

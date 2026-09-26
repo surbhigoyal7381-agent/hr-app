@@ -69,8 +69,12 @@ BLOCK_REASONS = (
 	"Has a new phone",
 	"Someone else was using it",
 	"Left the company",
-	# ALV-128: set by the server when a login that signed a phone in is disabled.
+	# ALV-128: set by the server when the login that signed a phone in is
+	# disabled, has its password changed (SEC-26), or is unlinked from the
+	# employee record (SEC-28).
 	"Login disabled",
+	"Password changed",
+	"Login unlinked",
 	"Other",
 )
 
@@ -169,13 +173,13 @@ def _phone_rows(employee, phones, codes_by_name, current, listed, names):
 	out = []
 	for p in phones:
 		app_phone = p.join_method in APP_JOIN_METHODS
-		# What would refuse this Active app phone right now. A code phone answers
-		# to the designation list and the code switch; a password phone only to
-		# the password switch (ALV-128). Both to the master switch.
+		# What would refuse this Active app phone right now. Both answer to the
+		# master switch; a code phone also to the designation list. The two
+		# "ways in" switches stop new joins only (ALV-128, 26 Sep decision).
 		if p.join_method == JOIN_PASSWORD:
-			allowed = current["enabled"] and current["password_signin"]
+			allowed = current["enabled"]
 		else:
-			allowed = current["enabled"] and current["code_join"] and listed
+			allowed = current["enabled"] and listed
 		stopped = app_phone and p.status == "Active" and not allowed
 		inv = codes_by_name.get(p.invite) if p.invite else None
 		out.append({

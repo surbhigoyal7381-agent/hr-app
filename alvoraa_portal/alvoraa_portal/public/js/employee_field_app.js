@@ -371,7 +371,11 @@
 					.catch((xhr) => {
 						d.get_primary_btn().prop("disabled", false);
 						const why = alvfeRefusal(xhr);
-						d.fields_dict.notes.$wrapper.html(alvfeStyle() + `<div class="alvfe"><div class="alvfe-warn" role="alert">${esc(why.sentence)}</div></div>`);
+						// ALV-128: HR turned the code way in off on HR Settings.
+						const words = why.code === "JOIN_CODE_OFF"
+							? __("Joining codes are switched off in HR Settings.")
+							: why.sentence;
+						d.fields_dict.notes.$wrapper.html(alvfeStyle() + `<div class="alvfe"><div class="alvfe-warn" role="alert">${esc(words)}</div></div>`);
 					});
 			},
 			secondary_action_label: __("Cancel"),

@@ -175,23 +175,39 @@ def refuse_unless_eligible(designation):
 	The app is asked about first, so a switched-off tenant answers the same for
 	everybody and does not say who is or is not on the list.
 
-	This is the JOINING-CODE way in. Since ALV-128 it also asks whether HR
-	still allows that way (`JOIN_CODE_OFF`); the designation list applies to
-	it alone - a person who signs in with a password is not asked about it.
+	This is the JOINING-CODE rule. The designation list applies to code phones
+	alone (ALV-128) - a person who signs in with a password is not asked.
 	"""
-	current = settings()
-	if not current["enabled"]:
-		refuse("APP_OFF_FOR_FIELD",
-		       _("The app is not switched on for field staff."))
-	if not current["code_join"]:
-		refuse("JOIN_CODE_OFF",
-		       _("Joining the app with a code from HR is switched off. Sign in with "
-		         "your work email and password, or speak to HR."))
+	current = refuse_unless_app_on()
 	if not designation or designation not in current["designations"]:
 		refuse("NOT_FIELD_ROLE",
 		       _("This app is not for your job yet. Keep marking attendance the "
 		         "usual way."),
 		       designation=designation or "")
+
+
+def refuse_unless_app_on():
+	"""The master switch alone. Returns the settings it read."""
+	current = settings()
+	if not current["enabled"]:
+		refuse("APP_OFF_FOR_FIELD",
+		       _("The app is not switched on for field staff."))
+	return current
+
+
+# ALV-128, the user's decision of 26 Sep 2026: the two "ways in" switches stop
+# NEW joins and sign-ins only. A phone that already joined keeps working; HR
+# stops one phone with the block action, or everybody with the master switch.
+# So these two are asked when a phone joins, never on a punch.
+
+def refuse_unless_code_join_on(message=None):
+	"""Joining with a code from HR: the master switch, then its own switch.
+	`message` lets the desk say it in HR's words."""
+	current = refuse_unless_app_on()
+	if not current["code_join"]:
+		refuse("JOIN_CODE_OFF", message or _(
+			"Joining the app with a code from HR is switched off. Sign in with your "
+			"work email and password, or speak to HR."))
 
 
 def refuse_unless_password_signin_on():
@@ -201,10 +217,7 @@ def refuse_unless_password_signin_on():
 	before a password is ever checked, so a switched-off tenant answers the
 	same for everybody and no failed attempt is counted against anyone.
 	"""
-	current = settings()
-	if not current["enabled"]:
-		refuse("APP_OFF_FOR_FIELD",
-		       _("The app is not switched on for field staff."))
+	current = refuse_unless_app_on()
 	if not current["password_signin"]:
 		refuse("PASSWORD_SIGNIN_OFF",
 		       _("Signing in to the app with an email and password is switched off. "
@@ -252,8 +265,8 @@ def validate_hr_settings(doc, method=None):
 	if before is None:
 		return
 
-	# Turning off the app, or either way into it, stops phones that are working
-	# today - so it needs a reason, kept in the change history.
+	# Turning off the app stops phones working today; turning off a way in stops
+	# new joins. Either is a decision HR must explain - a reason, kept in the history.
 	turning_off = any(cint(before.get(f)) and not cint(doc.get(f))
 	                  for f in _SWITCHES if doc.meta.has_field(f))
 	removed = _designations_on(before) - _designations_on(doc)
@@ -525,7 +538,7 @@ def after_migrate():
 				"label": LABELS[F_CODE_JOIN],
 				"default": "1",
 				"insert_after": F_LIFETIME,
-				"description": "The QR code way in, for people in the field worker designations above. When this is off, you cannot make codes, and phones that joined with a code stop marking attendance until you turn it on again.",
+				"description": "The QR code way in, for people in the field worker designations above. When this is off, you cannot make new codes and nobody new can join with one. Phones that already joined keep working; to stop one phone, block it on the employee's record.",
 			},
 			{
 				"fieldname": F_PASSWORD,
@@ -533,7 +546,7 @@ def after_migrate():
 				"label": LABELS[F_PASSWORD],
 				"default": "1",
 				"insert_after": F_CODE_JOIN,
-				"description": "For any active employee who has a login, whatever their designation. The password is checked the same way as on the website: wrong tries lock the account, and two-factor sign-in applies. When this is off, phones that signed in this way stop marking attendance until you turn it on again. One of the two ways must stay on.",
+				"description": "For any active employee who has a login, whatever their designation. The password is checked the same way as on the website: wrong tries lock the account, and two-factor sign-in applies. When this is off, nobody new can sign in to the app this way. Phones that already signed in keep working; to stop one phone, block it on the employee's record. One of the two ways must stay on.",
 			},
 			{
 				"fieldname": F_REASON,
@@ -542,7 +555,7 @@ def after_migrate():
 				"options": "\n" + "\n".join(CHANGE_REASONS),
 				"insert_after": F_PASSWORD,
 				"no_copy": 1,
-				"description": "Needed when you turn the app off or remove a designation. It is emptied again after the save.",
+				"description": "Needed when you turn the app off, turn off a way into it, or remove a designation. It is emptied again after the save.",
 			},
 			{
 				"fieldname": F_INFO_SECTION,

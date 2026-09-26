@@ -193,7 +193,7 @@
    "fieldname": "block_reason",
    "fieldtype": "Select",
    "label": "Why it was blocked",
-   "options": "\nPhone lost or stolen\nHas a new phone\nSomeone else was using it\nLeft the company\nLogin disabled\nOther",
+   "options": "\nPhone lost or stolen\nHas a new phone\nSomeone else was using it\nLeft the company\nLogin disabled\nPassword changed\nLogin unlinked\nOther",
    "no_copy": 1,
    "description": "Required whenever a phone is blocked. Kept in the record. It is never sent to the phone or shown to the employee."
   },
@@ -247,7 +247,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-09-25 12:00:00.000000",
+ "modified": "2026-09-26 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Portal",
  "name": "Alvoraa Field Device",

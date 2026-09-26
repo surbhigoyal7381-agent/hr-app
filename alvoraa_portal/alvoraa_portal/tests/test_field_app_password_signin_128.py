@@ -14,14 +14,21 @@ that drops one fails CI:
     the Error Log, not in the answer, not in Redis - not even beside the
     two-factor one-time id, where Frappe's own website keeps it.
   * **HR keeps both doors.** Two switches on HR Settings, one per way in; at
-    least one stays on; turning the password way off stops password phones,
-    turning the code way off stops code phones. The designation list still
-    binds code phones only.
-  * **A phone stops when its login does.** Disabling the User blocks the
-    phones it signed in, through the User hook and, if the hook is skipped, on
-    the phone's next call.
+    least one stays on. Turning a way off stops NEW joins that way only;
+    phones that already joined keep working (the user's decision, 26 Sep
+    2026). The designation list still binds code phones only.
+  * **A phone stops when its login does.** Disabling the User, changing its
+    password (SEC-26) or unlinking it from the employee record (SEC-28) blocks
+    the phones it signed in - through a hook and, where a hook can be skipped,
+    on the phone's next call.
   * **One app phone per person.** A new sign-in replaces the old phone,
-    whichever way the old one joined.
+    whichever way the old one joined, and emails the person (SEC-27).
+
+Review fixes, 26 Sep 2026: the two-factor second step takes its user from a
+site-prefixed marker only (P1 - Frappe's own keys are shared by every tenant on
+the bench); the per-account limit counts the login Frappe finds (SEC-29); a
+sign-in writes an Activity Log row (SEC-31); Frappe's per-network lock is not
+called an account lock.
 
 **Fail-without-fix recipes:** make `_refuse_sign_in_failed` say something
 different for an unknown email and `test_128_an_unknown_email_and_a_wrong_password_get_one_answer`
@@ -55,7 +62,7 @@ from alvoraa_portal.alvoraa_portal.doctype.alvoraa_field_device.alvoraa_field_de
 	JOIN_QR,
 )
 from alvoraa_portal.tests.test_field_app_step1_013 import _company
-from alvoraa_portal.tests.test_field_app_step3_013 import _FakeRequest
+from alvoraa_portal.tests.test_field_app_step3_013 import _code_of, _FakeRequest
 from alvoraa_portal.tests.test_field_app_step4_013 import JPEG_1PX, DailyCase
 from alvoraa_portal.tests.test_field_app_step6_013 import _clear_counters, _keys, _limit_of
 
@@ -67,6 +74,7 @@ WRONG = "Zqx-Pw128-Wrong!horse"
 FIRST_NAME = "Zqxpwone"
 ROLE_2FA = "Zqx Two Factor 128"
 IP = "203.0.113.128"
+OTHER_IPS = ("203.0.113.1", "203.0.113.2", "203.0.113.3", "203.0.113.4")   # test addresses only
 
 _SYSTEM_FIELDS = ("allow_consecutive_login_attempts", "allow_login_after_fail",
                   "enable_two_factor_auth", "two_factor_method", "disable_user_pass_login")
@@ -132,6 +140,7 @@ class PasswordCase(DailyCase):
 		for f, v in cls._saved_system.items():
 			frappe.db.set_single_value("System Settings", f, v, update_modified=False)
 		frappe.db.set_value("User", PW_EMAIL, "enabled", 1, update_modified=False)
+		frappe.db.set_value("Employee", cls.employee, "user_id", PW_EMAIL, update_modified=False)
 		frappe.db.commit()
 		frappe.clear_cache()
 		super().tearDownClass()
@@ -147,11 +156,12 @@ class PasswordCase(DailyCase):
 		frappe.db.set_single_value("System Settings", "disable_user_pass_login", 0,
 		                           update_modified=False)
 		_login(PW_EMAIL)
-		frappe.db.set_value("Employee", self.employee, "status", "Active", update_modified=False)
+		frappe.db.set_value("Employee", self.employee, {"status": "Active", "user_id": PW_EMAIL},
+		                    update_modified=False)
 		frappe.db.commit()
 		frappe.clear_cache()
 		_clear_counters()
-		_forget_trackers(PW_EMAIL, OTHER_EMAIL, UNKNOWN_EMAIL, IP)
+		_forget_trackers(PW_EMAIL, OTHER_EMAIL, UNKNOWN_EMAIL, IP, *OTHER_IPS)
 		self.with_request()
 		self.started = now()
 		frappe.set_user("Guest")
@@ -160,7 +170,8 @@ class PasswordCase(DailyCase):
 		frappe.local.request = None
 		frappe.set_user("Administrator")
 		_clear_counters()
-		_forget_trackers(PW_EMAIL, OTHER_EMAIL, UNKNOWN_EMAIL, IP)
+		_forget_trackers(PW_EMAIL, OTHER_EMAIL, UNKNOWN_EMAIL, IP, *OTHER_IPS)
+		frappe.local.request_ip = IP
 		super().tearDown()
 
 	# ── helpers ──────────────────────────────────────────────────────────────
@@ -288,6 +299,44 @@ class SigningIn(PasswordCase):
 		live = [p for p in self.phones() if p.status in ("Active", "Consent not given")]
 		self.assertEqual(len(live), 1)
 
+	def emails_about(self, phone_name):
+		return frappe.get_all("Email Queue", filters={"reference_doctype": fc.DEVICE,
+		                                              "reference_name": phone_name},
+		                      fields=["name", "message"])
+
+	def test_128_sec27_a_sign_in_that_replaces_a_phone_emails_the_person(self):
+		first = self.signed_in()
+		first_phone = self.phone_of(first).name
+		self.assertEqual(self.emails_about(first_phone), [], "no email for a first-ever phone")
+		second = self.signed_in()
+		phone = self.phone_of(second).name
+		mails = self.emails_about(phone)
+		self.assertEqual(len(mails), 1)
+		recipients = frappe.get_all("Email Queue Recipient", filters={"parent": mails[0].name},
+		                            pluck="recipient")
+		self.assertEqual(recipients, [PW_EMAIL])
+		# The queued message is MIME, wrapped at 76 characters; unwrap it to read.
+		body = mails[0].message.replace("=\r\n", "")
+		self.assertIn("Subject: A new phone signed in to the Alvoraa app as you", body)
+		self.assertIn("If this was not you, tell HR and change your password", body)
+		# ...and it is on the new phone's timeline.
+		notes = frappe.get_all("Comment", filters={"reference_doctype": fc.DEVICE,
+		                                           "reference_name": phone, "comment_type": "Info"},
+		                       pluck="content")
+		self.assertTrue(any(first_phone in n and "emailed" in n for n in notes), notes)
+
+	def test_128_sec31_each_sign_in_writes_an_activity_log_row(self):
+		self.signed_in(device_label="Zqx Model 128")
+		rows = frappe.get_all("Activity Log",
+		                      filters={"user": PW_EMAIL, "creation": [">=", self.started],
+		                               "operation": "Login", "status": "Success"},
+		                      fields=["subject", "ip_address"])
+		self.assertEqual(len(rows), 1, rows)
+		self.assertIn("Phone app sign-in", rows[0].subject)
+		self.assertIn("Zqx Model 128", rows[0].subject)
+		self.assertEqual(rows[0].ip_address, IP)
+		self.assertEqual(frappe.session.user, "Guest", "still no session")
+
 
 # ── Frappe checks the password ───────────────────────────────────────────────
 
@@ -313,7 +362,7 @@ class ThePasswordCheck(PasswordCase):
 		self.assertIsNone(self.sign_in())
 		self.assertEqual(self.answer()[:2], (401, "SIGN_IN_FAILED"))
 
-	def test_128_frappe_lockout_is_respected(self):
+	def lockout_on(self):
 		frappe.set_user("Administrator")
 		frappe.db.set_single_value("System Settings", "allow_consecutive_login_attempts", 2,
 		                           update_modified=False)
@@ -322,13 +371,31 @@ class ThePasswordCheck(PasswordCase):
 		frappe.db.commit()
 		frappe.clear_cache()
 		frappe.set_user("Guest")
-		for _ in range(3):
+
+	def test_128_frappe_lockout_of_the_account_is_respected(self):
+		self.lockout_on()
+		# Three wrong tries from three networks: the ACCOUNT's lock, not a network's.
+		for ip in OTHER_IPS[:3]:
+			frappe.local.request_ip = ip
 			self.assertIsNone(self.sign_in(password=WRONG))
-		# The right password now: still locked, as on the website.
+		# The right password now, from a fourth network: still locked, as on the website.
+		frappe.local.request_ip = OTHER_IPS[3]
 		self.assertIsNone(self.sign_in())
 		self.assertEqual(self.answer()[:2], (429, "ACCOUNT_LOCKED"))
 		self.assertEqual(self.answer()[2], {"retry_after_s": 120})
+		self.assertIn("Your account is locked", self.words())
 		self.assertEqual(self.phones(), [])
+
+	def test_128_a_locked_network_is_not_called_a_locked_account(self):
+		self.lockout_on()
+		# Three failures from one address, each for a different unknown email:
+		# Frappe locks the address; this account never failed at all.
+		for i in range(3):
+			self.assertIsNone(self.sign_in(email=f"zqx.pw128.stranger{i}@example.com", password=WRONG))
+		self.assertIsNone(self.sign_in())
+		self.assertEqual(self.answer()[:2], (429, "NETWORK_LOCKED"))
+		self.assertIn("Too many sign-in attempts from this network", self.words())
+		self.assertNotIn("account", self.words().lower())
 
 	def test_128_an_expired_password_is_sent_to_the_website(self):
 		with mock.patch("frappe.auth.LoginManager.force_user_to_reset_password", return_value=True):
@@ -425,6 +492,47 @@ class TwoFactor(PasswordCase):
 		self.assertIsNone(self.confirm("zqxnotanid", "123456"))
 		self.assertEqual(self.answer()[:2], (410, "OTP_EXPIRED"))
 
+	def test_128_p1_an_id_frappe_wrote_without_our_marker_is_refused(self):
+		"""Frappe's own keys have no site prefix. An id whose `_usr` and secret
+		exist - written by another tenant, or by the website's own login - but
+		that this site never marked, opens nothing."""
+		tmp_id = "zqxp1raw"
+		secret = pyotp.random_base32()
+		frappe.cache.set(tmp_id + "_usr", PW_EMAIL, 180)
+		frappe.cache.set(tmp_id + "_otp_secret", secret, 180)
+		try:
+			self.assertIsNone(self.confirm(tmp_id, pyotp.TOTP(secret).now()))
+			self.assertEqual(self.answer()[:2], (410, "OTP_EXPIRED"))
+			self.assertEqual(self.phones(), [])
+		finally:
+			frappe.cache.delete(tmp_id + "_usr", tmp_id + "_otp_secret")
+
+	def test_128_p1_a_marker_written_for_another_site_is_refused(self):
+		import pickle
+
+		tmp_id = "zqxp1oth"
+		secret = pyotp.random_base32()
+		other = f"_zqx_other_site_db|{join._MARKER_KEY.format(tmp_id)}".encode()
+		frappe.cache.set(other, pickle.dumps(PW_EMAIL), 180)
+		frappe.cache.set(tmp_id + "_usr", PW_EMAIL, 180)
+		frappe.cache.set(tmp_id + "_otp_secret", secret, 180)
+		try:
+			self.assertIsNone(self.confirm(tmp_id, pyotp.TOTP(secret).now()))
+			self.assertEqual(self.answer()[:2], (410, "OTP_EXPIRED"))
+			self.assertEqual(self.phones(), [])
+		finally:
+			frappe.cache.delete(other, tmp_id + "_usr", tmp_id + "_otp_secret")
+
+	def test_128_p1_the_marker_is_this_sites_and_goes_with_success(self):
+		with mock.patch("frappe.twofactor.send_token_via_email", return_value=True):
+			tmp_id = self.sign_in()["tmp_id"]
+		key = frappe.cache.make_key(join._MARKER_KEY.format(tmp_id))
+		self.assertTrue(key.startswith(f"{frappe.local.conf.db_name}|".encode()))
+		# Raw reads: `key` is already the full, prefixed name.
+		self.assertIsNotNone(frappe.cache.get(key))
+		self.assertIsNotNone(self.confirm(tmp_id, self._code_for(tmp_id)), self.words())
+		self.assertIsNone(frappe.cache.get(key), "the marker must go once used")
+
 	def test_128_a_login_disabled_between_the_two_steps_is_refused(self):
 		with mock.patch("frappe.twofactor.send_token_via_email", return_value=True):
 			tmp_id = self.sign_in()["tmp_id"]
@@ -468,8 +576,8 @@ class ThePasswordLandsNowhere(PasswordCase):
 				for field in ("password", "pwd", "email", "otp", "token"):
 					self.assertNotIn(field, frappe.form_dict)
 				self.scan()
-		# The limiter's keys hold a hash of the email, never the address.
-		self.assertFalse([k for k in _keys("rl:") if PW_EMAIL in k])
+		# The limiters' keys hold a hash of the account, never the address.
+		self.assertFalse([k for k in _keys("rl:") + _keys("alvoraa_fa") if PW_EMAIL in k])
 
 	def test_128_a_crash_logs_a_place_and_no_password(self):
 		with mock.patch.object(join, "_set_up_phone", side_effect=RuntimeError("boom " + PASSWORD)):
@@ -485,19 +593,15 @@ class ThePasswordLandsNowhere(PasswordCase):
 
 class TheTwoWaysIn(PasswordCase):
 
-	def test_128_the_password_switch_off_refuses_sign_in_and_stops_password_phones(self):
+	def test_128_the_password_switch_off_stops_new_sign_ins_only(self):
+		"""The user's decision, 26 Sep 2026: a phone that already signed in keeps
+		working; HR stops one phone with the block action."""
 		token = self.signed_in()
 		self.routes(code=1, password=0)
 		self.assertIsNone(self.sign_in())
 		self.assertEqual(self.answer()[:2], (403, "PASSWORD_SIGNIN_OFF"))
-		self.assertIsNone(self.status(token))
-		self.assertEqual(self.answer()[:2], (403, "PASSWORD_SIGNIN_OFF"))
-		self.assertIsNone(self.punch(token))
-		self.assertEqual(self.answer()[1], "PASSWORD_SIGNIN_OFF")
-		# The phone is kept: on again, the same phone works with no new sign-in.
-		self.assertEqual(self.phone_of(token).status, "Active")
-		self.routes(code=1, password=1)
 		self.assertIsNotNone(self.status(token), self.words())
+		self.assertIsNotNone(self.punch(token, accuracy="15"), self.words())
 
 	def test_128_the_master_switch_stops_both_ways(self):
 		token = self.signed_in()
@@ -507,12 +611,22 @@ class TheTwoWaysIn(PasswordCase):
 		self.assertIsNone(self.status(token))
 		self.assertEqual(self.answer()[1], "APP_OFF_FOR_FIELD")
 
-	def test_128_the_code_switch_off_stops_code_phones_and_not_password_phones(self):
+	def test_128_the_code_switch_off_stops_new_codes_and_joins_only(self):
 		qr_token = self.app_phone()
+		code = _code_of(self.make())               # made while codes were on
 		self.routes(code=0, password=1)
-		self.assertIsNone(self.status(qr_token))
+		# The phone that already joined keeps working.
+		self.assertIsNotNone(self.status(qr_token), self.words())
+		# A waiting code cannot be used to join now...
+		self.assertIsNone(self.check(code))
 		self.assertEqual(self.answer()[:2], (403, "JOIN_CODE_OFF"))
-		# Signing in with a password still works, and that phone works.
+		self.assertIsNone(self.joined(code))
+		self.assertEqual(self.answer()[:2], (403, "JOIN_CODE_OFF"))
+		# ...and HR cannot make one, in HR's own words (the user's answer 4).
+		self.assertIsNone(self.make())
+		self.assertEqual(self.answer()[:2], (403, "JOIN_CODE_OFF"))
+		self.assertIn("Joining codes are switched off in HR Settings.", self.words())
+		# Signing in with a password still works.
 		token = self.signed_in()
 		self.assertIsNotNone(self.status(token), self.words())
 
@@ -651,29 +765,132 @@ class ADisabledLoginStopsItsPhone(PasswordCase):
 		self.assertEqual(self.phone_of(qr_token).status, "Active")
 		self.assertIsNotNone(self.status(qr_token), self.words())
 
+	# ── SEC-26 · a changed password ──────────────────────────────────────────
+
+	def blocked_as(self, token, reason):
+		phone = frappe.db.get_value(fc.DEVICE, self.phone_of(token).name,
+		                            ["status", "block_reason", "token_hash"], as_dict=True)
+		self.assertEqual((phone.status, phone.block_reason), ("Blocked", reason))
+		self.assertFalse(phone.token_hash, "the secret is retired in the same save")
+		self.assertIsNone(self.punch(token))
+		self.assertEqual(self.answer()[:2], (403, "DEVICE_BLOCKED"))
+
+	def test_128_sec26_a_new_password_set_on_the_user_form_blocks_the_phone(self):
+		token = self.signed_in()
+		frappe.set_user("Administrator")
+		user = frappe.get_doc("User", PW_EMAIL)
+		user.new_password = "Zqx-Pw128-Newer!horse-" + "9"
+		user.save(ignore_permissions=True)
+		frappe.db.commit()
+		frappe.set_user("Guest")
+		self.blocked_as(token, "Password changed")
+
+	def test_128_sec26_a_forgot_password_reset_blocks_the_phone(self):
+		from alvoraa_portal import field_app_device as device_api
+
+		token = self.signed_in()
+		frappe.set_user("Administrator")
+		link = frappe.get_doc("User", PW_EMAIL)._reset_password(send_email=False)
+		key = link.split("key=", 1)[1].split("&", 1)[0]
+		frappe.db.commit()
+		frappe.set_user("Guest")
+		# The website's /update-password page, through the override in hooks.py.
+		self.assertEqual(frappe.get_hooks("override_whitelisted_methods")
+		                 .get("frappe.core.doctype.user.user.update_password"),
+		                 ["alvoraa_portal.field_app_device.update_password"])
+		frappe.local.response = frappe._dict()
+		with mock.patch.object(frappe.local, "login_manager", mock.MagicMock(), create=True):
+			device_api.update_password(new_password="Zqx-Pw128-Reset!horse-" + "7", key=key)
+		frappe.db.commit()
+		frappe.set_user("Guest")
+		self.blocked_as(token, "Password changed")
+
+	def test_128_sec26_a_used_or_wrong_reset_key_blocks_nothing(self):
+		from alvoraa_portal import field_app_device as device_api
+
+		token = self.signed_in()
+		frappe.local.response = frappe._dict()
+		with mock.patch.object(frappe.local, "login_manager", mock.MagicMock(), create=True):
+			device_api.update_password(new_password="Zqx-Pw128-Reset!horse-" + "7", key="zqx-no-such-key")
+		self.assertEqual(frappe.local.response.get("http_status_code"), 410)
+		self.assertEqual(self.phone_of(token).status, "Active")
+
+	# ── SEC-28 · an unlinked login ───────────────────────────────────────────
+
+	def test_128_sec28_changing_the_employees_login_blocks_the_phone(self):
+		token = self.signed_in()
+		frappe.set_user("Administrator")
+		emp = frappe.get_doc("Employee", self.employee)
+		emp.user_id = OTHER_EMAIL
+		emp.create_user_permission = 0
+		emp.save(ignore_permissions=True)
+		frappe.db.commit()
+		frappe.set_user("Guest")
+		self.blocked_as(token, "Login unlinked")
+
+	def test_128_sec28_an_unlink_that_skipped_the_hook_is_still_refused(self):
+		token = self.signed_in()
+		frappe.set_user("Administrator")
+		frappe.db.set_value("Employee", self.employee, "user_id", None, update_modified=False)
+		frappe.db.commit()
+		frappe.set_user("Guest")
+		self.assertIsNone(self.punch(token))
+		self.assertEqual(self.answer()[:2], (403, "LOGIN_UNLINKED"))
+		self.assertIsNone(self.status(token))
+		self.assertEqual(self.answer()[:2], (403, "LOGIN_UNLINKED"))
+
+	def test_128_sec28_saving_the_employee_without_changing_the_login_blocks_nothing(self):
+		token = self.signed_in()
+		frappe.set_user("Administrator")
+		emp = frappe.get_doc("Employee", self.employee)
+		emp.create_user_permission = 0
+		emp.save(ignore_permissions=True)
+		frappe.db.commit()
+		frappe.set_user("Guest")
+		self.assertEqual(self.phone_of(token).status, "Active")
+
 
 # ── the limits and the wrapping ──────────────────────────────────────────────
 
 class TheLimits(PasswordCase):
 
-	def test_128_the_eleventh_try_for_one_email_in_an_hour_is_too_many(self):
+	def test_128_the_eleventh_try_for_one_account_in_an_hour_is_too_many(self):
 		for _ in range(10):
 			self.assertIsNone(self.sign_in(password=WRONG))
 			self.assertEqual(self.answer()[1], "SIGN_IN_FAILED")
 		self.assertIsNone(self.sign_in())
 		self.assertEqual(self.answer()[:2], (429, "TOO_MANY_TRIES"))
-		# Another email from the same address is its own bucket.
+		# Another account from the same address is its own bucket.
 		self.assertIsNone(self.sign_in(email=OTHER_EMAIL))
 		self.assertEqual(self.answer()[1], "NO_EMPLOYEE_RECORD")
 
+	def test_128_sec29_spellings_of_one_account_share_one_count(self):
+		from frappe.core.doctype.user.user import User
+
+		local, domain = PW_EMAIL.split("@")
+		spellings = [PW_EMAIL.upper(), f" {PW_EMAIL} ", f"{local}@exämple.com",
+		             f"{local.replace('pw', 'pŵ')}@{domain}", PW_EMAIL.title()]
+		# The database finds the same login for every spelling - that is the gap.
+		for s in spellings:
+			found = User.find_by_credentials(s.strip(), "", validate_password=False)
+			self.assertEqual(found and found["name"], PW_EMAIL, s)
+		for i in range(10):
+			self.assertIsNone(self.sign_in(email=spellings[i % len(spellings)], password=WRONG))
+			self.assertEqual(self.answer()[1], "SIGN_IN_FAILED", spellings[i % len(spellings)])
+		self.assertIsNone(self.sign_in())
+		self.assertEqual(self.answer()[:2], (429, "TOO_MANY_TRIES"))
+		# The count's key holds a hash, never the address.
+		self.assertFalse([k for k in _keys("alvoraa_fa") if local in k])
+
 	def test_128_the_address_limit_counts_every_email(self):
-		# Read the limit off the function, then prove it bites with a small one.
-		chain, fn = [], join.sign_in_with_password
-		while fn is not None:
-			chain.append(fn)
-			fn = getattr(fn, "__wrapped__", None)
-		self.assertIn((100, limits.WINDOW_SECONDS),
-		              [getattr(f, "__alvoraa_address_limit__", None) for f in chain])
+		# Read the limit off each endpoint, then prove it bites with a small one.
+		# 500 an hour: the user's decision of 26 Sep 2026 (a depot's first day).
+		for endpoint in (join.sign_in_with_password, join.confirm_sign_in_code):
+			chain, fn = [], endpoint
+			while fn is not None:
+				chain.append(getattr(fn, "__alvoraa_address_limit__", None))
+				fn = getattr(fn, "__wrapped__", None)
+			self.assertIn((500, limits.WINDOW_SECONDS), chain, endpoint.__name__)
 
 		@limits._limited_by_address(limit=2)
 		def probe():
@@ -687,7 +904,9 @@ class TheLimits(PasswordCase):
 		self.assertEqual(caught.exception.alvoraa_code, "TOO_MANY_TRIES")
 
 	def test_128_both_endpoints_are_post_only_guest_private_gated_and_limited(self):
-		self.assertEqual(_limit_of(join.sign_in_with_password), ("signin_email_key", "email", 10))
+		# The per-account limit is counted inside, on the login Frappe finds (SEC-29).
+		self.assertIsNone(_limit_of(join.sign_in_with_password))
+		self.assertEqual(join.ACCOUNT_LIMIT, 10)
 		self.assertEqual(_limit_of(join.confirm_sign_in_code), ("signin_otp_key", "tmp_id", 5))
 		for fn in (join.sign_in_with_password, join.confirm_sign_in_code):
 			with self.subTest(endpoint=fn.__name__):
@@ -708,7 +927,7 @@ class TheLimits(PasswordCase):
 	def test_128_the_new_codes_are_in_the_table_and_the_old_ones_did_not_move(self):
 		for code in ("SIGN_IN_FAILED", "ACCOUNT_LOCKED", "PASSWORD_EXPIRED", "SIGN_IN_NOT_ALLOWED",
 		             "OTP_WRONG", "OTP_EXPIRED", "NO_EMPLOYEE_RECORD", "PASSWORD_SIGNIN_OFF",
-		             "JOIN_CODE_OFF"):
+		             "JOIN_CODE_OFF", "NETWORK_LOCKED", "LOGIN_UNLINKED"):
 			self.assertIn(code, errors.CODES)
 		self.assertEqual(errors.CODES["SIGN_IN_FAILED"], (401, ()))
 		self.assertEqual(errors.CODES["QR_USED"], (410, ("used_at",)))

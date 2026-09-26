@@ -68,7 +68,7 @@ from alvoraa_portal.field_app_limits import (  # re-exported: the step-3 tests n
 	HR_KEY,
 	OTP_KEY,
 	PHONE_KEY,
-	SIGNIN_KEY,
+	WINDOW_SECONDS,
 	_hash,
 	_limited,
 	_limited_by_address,
@@ -253,6 +253,7 @@ def check_code(code, token=None):
 	errors.check_app_version()
 	row, emp = _live_invite(code, token, alert_if_used=True)
 	settings.refuse_unless_eligible(emp.designation)
+	settings.refuse_unless_code_join_on()
 	return {
 		"first_name": emp.first_name,
 		"surname_initial": (emp.last_name or "").strip()[:1],
@@ -329,6 +330,7 @@ def join_with_code(code, notice_version=None, device_label=None, platform=None,
 		refuse("QR_CANCELLED", _("This code was cancelled. Ask HR for a new one."))
 
 	settings.refuse_unless_eligible(emp.designation)
+	settings.refuse_unless_code_join_on()
 
 	if agreed and notice_version != notice.CURRENT_VERSION:
 		facts = notice.facts()
@@ -339,7 +341,7 @@ def join_with_code(code, notice_version=None, device_label=None, platform=None,
 
 	# Lock 3: the phones this join settles, and the new phone (shared with the
 	# password sign-in, so the two ways in can never drift apart).
-	phone, secret, two_people = _set_up_phone(
+	phone, secret, two_people, _replaced = _set_up_phone(
 		emp, JOIN_QR, agreed, device_label, platform, token,
 		# Who allowed this phone: the person who made the code. Set here so the
 		# controller does not write "Guest" into it.
@@ -369,7 +371,11 @@ def join_with_code(code, notice_version=None, device_label=None, platform=None,
 
 def _set_up_phone(emp, join_method, agreed, device_label, platform, token,
                   activated_by, invite=None):
-	"""Make the new phone and settle the old ones. Returns (phone, secret, two_people).
+	"""Make the new phone and settle the old ones.
+
+	Returns (phone, secret, two_people, replaced): `replaced` are this same
+	person's earlier phones that the new one replaced (the password sign-in
+	emails the person about them, SEC-27).
 
 	`token` is the secret the app was already carrying, if any (SEC-14).
 	Nothing is committed here; the caller commits once, after its own writes.
@@ -397,7 +403,7 @@ def _set_up_phone(emp, join_method, agreed, device_label, platform, token,
 	phone.flags[SERVER_FLAG] = True
 	phone.insert(ignore_permissions=True)
 
-	two_people = []
+	two_people, replaced = [], []
 	for old in phones:
 		if old.status in ("Blocked", "Replaced", "Removed"):
 			continue
@@ -408,6 +414,7 @@ def _set_up_phone(emp, join_method, agreed, device_label, platform, token,
 			old_doc.status = "Replaced"
 			old_doc.replaced_by = phone.name
 			old_doc.flags["alvoraa_change_source"] = "System"
+			replaced.append(old.name)
 		else:
 			# One phone, two people (AC-74, SEC-14): the earlier person's record
 			# is removed, and HR is told after the save.
@@ -416,7 +423,7 @@ def _set_up_phone(emp, join_method, agreed, device_label, platform, token,
 			two_people.append(old.name)
 		old_doc.save(ignore_permissions=True)
 
-	return phone, secret, two_people
+	return phone, secret, two_people, replaced
 
 
 def _record_agreement(emp, phone, agreed):
@@ -557,6 +564,7 @@ def make_code(employee, lifetime_hours=None):
 	if not emp or emp.status != "Active":
 		frappe.throw(_("Only active employees can be invited."), frappe.ValidationError)
 	settings.refuse_unless_eligible(emp.designation)
+	settings.refuse_unless_code_join_on(_("Joining codes are switched off in HR Settings."))
 	hours = _lifetime(lifetime_hours)
 
 	# Lock 2: this person's waiting codes. Cancel every one of them first.
@@ -661,13 +669,56 @@ def _refuse_sign_in_failed():
 	         "forgot your password, reset it on your company's Alvoraa website."))
 
 
+def _address_is_locked():
+	"""Is it Frappe's per-address lock, rather than the account's, that refused?
+	Frappe keeps one failure counter per login and one per caller address, and
+	raises the same exception for both."""
+	from frappe.auth import get_login_attempt_tracker
+
+	ip = getattr(frappe.local, "request_ip", None)
+	if not ip:
+		return False
+	return not get_login_attempt_tracker(ip, raise_locked_exception=False).is_user_allowed()
+
+
 def _refuse_locked():
 	frappe.clear_messages()
 	wait = cint(frappe.db.get_single_value("System Settings", "allow_login_after_fail")) or 60
+	if _address_is_locked():
+		# Not "your account": the lock is on the network, and saying otherwise
+		# would tell a stranger on the same Wi-Fi something about this login.
+		refuse("NETWORK_LOCKED",
+		       _("Too many sign-in attempts from this network. Try again later."),
+		       retry_after_s=wait)
 	refuse("ACCOUNT_LOCKED",
 	       _("Too many wrong tries. Your account is locked for a while. Try again in "
 	         "{0} minutes, or reset your password on the website.").format(max(1, wait // 60)),
 	       retry_after_s=wait)
+
+
+# SEC-29: ten tries an hour per ACCOUNT - the login Frappe finds for what was
+# typed, not the typed text. MariaDB compares names without case or accents, so
+# an address typed in capitals, or with an "ä" for an "a", finds the same login;
+# a limit keyed on the text would give every spelling its own ten. Typed text that finds no
+# login is counted on itself. The key starts "alvoraa_fa" like the app's other
+# counters and holds a hash, never the address.
+ACCOUNT_LIMIT = 10
+_ACCOUNT_KEY = "alvoraa_fa_signin_account:{0}"
+
+
+def _count_account_try(email):
+	from frappe.core.doctype.user.user import User
+
+	found = User.find_by_credentials(email, "", validate_password=False)
+	account = found["name"] if found else email.strip().lower()
+	key = frappe.cache.make_key(_ACCOUNT_KEY.format(_hash(account)))
+	tries = frappe.cache.incrby(key, 1)
+	if tries == 1:
+		frappe.cache.expire(key, WINDOW_SECONDS)
+	if tries > ACCOUNT_LIMIT:
+		ttl = frappe.cache.ttl(key)
+		refuse("TOO_MANY_TRIES", _("Too many tries. Please wait a while and try again."),
+		       retry_after_s=int(ttl) if ttl and int(ttl) > 0 else WINDOW_SECONDS)
 
 
 def _login_manager(user=None):
@@ -699,6 +750,7 @@ def _check_password(email, password):
 			or len(email) > MAX_EMAIL_CHARS or len(password) > MAX_PASSWORD_SIZE):
 		_refuse_sign_in_failed()
 
+	_count_account_try(email.strip())
 	lm = _login_manager()
 	try:
 		lm.authenticate(user=email.strip(), pwd=password)
@@ -771,9 +823,12 @@ def _join_signed_in(user, notice_version, device_label, platform, token, agreed)
 
 	# Who allowed this phone: the person themselves, by their own password. It is
 	# also how the User hook finds this phone when the login is disabled.
-	phone, secret, two_people = _set_up_phone(
+	phone, secret, two_people, replaced = _set_up_phone(
 		emp, JOIN_PASSWORD, agreed, device_label, platform, token, activated_by=user)
 	_record_agreement(emp, phone, agreed)
+	_log_sign_in(user, phone)
+	if replaced:
+		_tell_the_person_a_new_phone_signed_in(user, phone, replaced)
 	frappe.db.commit()
 
 	_tell_hr_one_phone_two_people(two_people, phone)
@@ -783,6 +838,46 @@ def _join_signed_in(user, notice_version, device_label, platform, token, agreed)
 	answer["notice"] = notice.facts()
 	answer["min_version"] = errors.MIN_APP_VERSION
 	return answer
+
+
+def _log_sign_in(user, phone):
+	"""SEC-31: one Activity Log row per app sign-in, like the website's "Login"
+	row, with the caller's address (Activity Log fills it in) and the phone's
+	model. Written straight to the log - no session is made."""
+	from frappe.core.doctype.activity_log.activity_log import add_authentication_log
+
+	label = phone.device_label or _("unknown model")
+	add_authentication_log(_("Phone app sign-in ({0}, {1})").format(label, phone.name), user,
+	                       operation="Login", status="Success")
+
+
+def _tell_the_person_a_new_phone_signed_in(user, phone, replaced):
+	"""SEC-27: a sign-in that replaced this person's earlier phone. If it was not
+	them, the email is how they find out. Sent through Frappe's email queue, and
+	noted on the new phone's timeline. Not sent for a first-ever phone."""
+	frappe.sendmail(
+		recipients=[user],
+		subject=_("A new phone signed in to the Alvoraa app as you"),
+		message=_("A new phone signed in to the Alvoraa attendance app as you, and your "
+		          "earlier phone stopped working. If this was not you, tell HR and change "
+		          "your password."),
+		reference_doctype=DEVICE,
+		reference_name=phone.name,
+		delayed=True,
+	)
+	phone.add_comment("Info", _("Replaced the earlier phone {0} of the same person. The person "
+	                            "was emailed.").format(", ".join(replaced)))
+
+
+# The second step's own marker (review P1, 26 Sep 2026). Frappe writes the
+# two-factor keys (`<tmp_id>_usr`, `_otp_secret`, ...) into Redis with NO site
+# prefix, and one Redis serves every tenant on the bench - so an id made on one
+# tenant could be confirmed on another. This key goes through `make_key`, which
+# puts this site's database name in front, and the second step takes the user
+# from it and from nothing else. It also means an id made by the website's own
+# login is never accepted here.
+_MARKER_KEY = "alvoraa_app_2fa:{0}"
+_MARKER_SECONDS = 300
 
 
 def _start_second_step(user):
@@ -802,6 +897,7 @@ def _start_second_step(user):
 
 	verification = frappe.local.response.pop("verification", None) or {}
 	tmp_id = frappe.local.response.pop("tmp_id", None)
+	frappe.cache.set_value(_MARKER_KEY.format(tmp_id), user, expires_in_sec=_MARKER_SECONDS)
 	return {
 		"status": "otp_required",
 		"tmp_id": tmp_id,
@@ -813,13 +909,20 @@ def _start_second_step(user):
 def _forget_second_step(tmp_id):
 	"""The one-time id works once. Frappe's own flow leaves it to run out."""
 	frappe.cache.delete(*[tmp_id + suffix for suffix in _SECOND_STEP_KEYS])
+	frappe.cache.delete_value(_MARKER_KEY.format(tmp_id))
+
+
+# 500 an hour per caller address (the user's decision, 26 Sep 2026): high
+# enough for a depot signing everybody in on day one from one Wi-Fi, low enough
+# to stop one machine trying passwords against every address in turn. The
+# per-account limit (SEC-29) and Frappe's lockout still count every try.
+ADDRESS_LIMIT = 500
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_private_request(*_SIGNIN_PRIVATE)
 @requires_field_app_plan
-@_limited_by_address(limit=100)
-@_limited(SIGNIN_KEY, "email", limit=10)
+@_limited_by_address(limit=ADDRESS_LIMIT)
 def sign_in_with_password(email=None, password=None, notice_version=None, device_label=None,
                           platform=None, token=None, agreed=0):
 	"""Sign in with a work email and password, and set this phone up (ALV-128).
@@ -837,8 +940,8 @@ def sign_in_with_password(email=None, password=None, notice_version=None, device
 	exactly as a code-joined phone does after "Not now". That way the password
 	is sent once and never held while the person reads.
 
-	Rate limits: 10 an hour per email (hashed) and 100 an hour per caller
-	address, on top of Frappe's own lockout of the login.
+	Rate limits: 10 an hour per account (the login Frappe finds, SEC-29) and
+	500 an hour per caller address, on top of Frappe's own lockout.
 	"""
 	errors.check_app_version()
 	settings.refuse_unless_password_signin_on()
@@ -852,7 +955,7 @@ def sign_in_with_password(email=None, password=None, notice_version=None, device
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @_private_request(*_SIGNIN_PRIVATE)
 @requires_field_app_plan
-@_limited_by_address(limit=100)
+@_limited_by_address(limit=ADDRESS_LIMIT)
 @_limited(OTP_KEY, "tmp_id", limit=5)
 def confirm_sign_in_code(tmp_id=None, otp=None, notice_version=None, device_label=None,
                          platform=None, token=None, agreed=0):
@@ -867,8 +970,10 @@ def confirm_sign_in_code(tmp_id=None, otp=None, notice_version=None, device_labe
 
 	if not isinstance(tmp_id, str) or not tmp_id or len(tmp_id) > 32:
 		refuse("OTP_EXPIRED", _("Your sign-in has timed out. Please sign in again."))
-	user = frappe.safe_decode(frappe.cache.get(tmp_id + "_usr"))
-	if not user:
+	# The user comes from THIS site's marker only - never from Frappe's
+	# unprefixed `<tmp_id>_usr`, which another tenant could have written.
+	user = frappe.cache.get_value(_MARKER_KEY.format(tmp_id), use_local_cache=False)
+	if not user or not isinstance(user, str):
 		refuse("OTP_EXPIRED", _("Your sign-in has timed out. Please sign in again."))
 	if not isinstance(otp, str) or not otp.strip() or len(otp) > 12:
 		refuse("OTP_WRONG", _("That code is not right. Check it and try again."))

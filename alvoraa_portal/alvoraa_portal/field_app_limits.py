@@ -32,10 +32,9 @@ PHONE_KEY = "phone_hash_key"
 HR_KEY = "hr_user_key"
 # A signed-in employee asking about their own records (step 6, US-28).
 SELF_KEY = "self_user_key"
-# Signing in with email and password (ALV-128): the email, hashed, so an
-# address is never written into a Redis key; and the two-factor step's
-# one-time id, hashed the same way.
-SIGNIN_KEY = "signin_email_key"
+# The two-factor step of the password sign-in (ALV-128): its one-time id,
+# hashed. (The per-account limit on the first step is keyed on the login Frappe
+# finds, not on an argument, so it lives in field_app_join - SEC-29.)
 OTP_KEY = "signin_otp_key"
 
 WINDOW_SECONDS = 60 * 60
@@ -64,9 +63,6 @@ def _limited(field, source, limit):
 		@functools.wraps(fn)
 		def wrapper(*args, **kwargs):
 			value = frappe.session.user if source == "user" else kwargs.get(source)
-			if source == "email" and isinstance(value, str):
-				# One bucket per address however it is typed.
-				value = value.strip().lower()
 			hashed = _hash(value if isinstance(value, str) else "")
 			frappe.form_dict[field] = hashed
 			try:

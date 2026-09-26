@@ -87,6 +87,12 @@ CODES = {
 	# that way stops until it is turned on again; its secret is kept.
 	"PASSWORD_SIGNIN_OFF": (403, ()),
 	"JOIN_CODE_OFF":       (403, ()),
+	# Review fixes, 26 Sep 2026. NETWORK_LOCKED is Frappe's per-address lock
+	# (too many failures from one network), which is not the account's lock;
+	# LOGIN_UNLINKED is a password phone whose employee record no longer names
+	# the login that signed it in (SEC-28).
+	"NETWORK_LOCKED":      (429, ("retry_after_s",)),
+	"LOGIN_UNLINKED":      (403, ()),
 }
 
 

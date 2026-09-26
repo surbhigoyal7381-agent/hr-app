@@ -89,6 +89,8 @@
     appOff: ["done-to-first"],
     notField: ["done-to-first"],
     featureOff: ["done-to-first"],
+    // ALV-128: "signin-open" is signin.js's action - it opens the sign-in screen.
+    codeJoinOff: ["signin-open", "done-to-first"],
     camDenied: ["choose-picture", "open-settings"],
     noSignalJoin: ["retry-last", "done-to-first"],
     serverError: ["retry-last", "done-to-first"],

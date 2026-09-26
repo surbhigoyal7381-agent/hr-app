@@ -128,6 +128,16 @@ test("a phone whose login was unlinked is asked to sign in again (SEC-28)", () =
   assert.match(info.body, /no longer linked/);
 });
 
+test("joining codes switched off has its own screen with a way to sign in (ALV-128)", () => {
+  const joinScreens = require(path.join(__dirname, "..", "web", "js", "join-screens.js"));
+  const info = joinScreens.screenFor("JOIN_CODE_OFF", {});
+  assert.equal(info.screen, "codeJoinOff");
+  assert.equal(info.body,
+    "Joining codes are switched off at your company. Sign in with your work email and password, or ask HR.");
+  assert.equal(info.buttons[0], "Sign in with email and password");
+  assert.equal(info.footerCode, "JOIN_CODE_OFF");
+});
+
 test("an unknown code still gets words, never a blank screen", () => {
   const msg = core.messageFor("SOMETHING_NEW", {});
   assert.ok(msg.text);

@@ -150,6 +150,19 @@
         retry: false,
       };
     },
+    // ALV-128: HR turned the joining-code way in off. The other way in is
+    // email and password, so the first button leads straight to it.
+    JOIN_CODE_OFF: function () {
+      return {
+        screen: "codeJoinOff",
+        heading: "Joining codes are switched off",
+        body: "Joining codes are switched off at your company. Sign in with your work email "
+          + "and password, or ask HR.",
+        steps: [],
+        buttons: ["Sign in with email and password", "Done"],
+        retry: false,
+      };
+    },
     FEATURE_OFF: function () {
       return {
         // Confirmed byte-for-byte against the real 008 web check-in page

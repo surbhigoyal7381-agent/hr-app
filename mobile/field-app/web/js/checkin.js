@@ -483,7 +483,7 @@
   function usePhoto() {
     var taken = camera().use();
     el("camera-still").removeAttribute("src");
-    if (!taken) { openCameraScreen(); return; }
+    if (!taken) return; // nothing to use (a second tap); the screen stays as it is
     state.photoDataUrl = taken.dataUrl;
     state.photoTakenAt = taken.takenAt;
     state.cameraAvailable = true;

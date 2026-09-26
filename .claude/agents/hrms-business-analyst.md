@@ -13,7 +13,7 @@ description: >-
   an existing feature. Do NOT use to decide priority or scope (use
   hrms-product-manager) or to write code.
 tools: Read, Grep, Glob, Write, Edit, Bash
-model: inherit
+model: opus
 color: blue
 ---
 

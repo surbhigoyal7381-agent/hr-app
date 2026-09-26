@@ -9,7 +9,7 @@ description: >-
   / Block verdict. Also use to review an existing module or a pull request. This agent
   reviews and reports; it does not edit source files.
 tools: Read, Grep, Glob, Bash, Write
-model: inherit
+model: opus
 color: red
 ---
 

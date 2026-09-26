@@ -13,7 +13,7 @@ description: >-
   hrms-product-manager), to write the functional spec (use hrms-business-analyst), or
   to write production code (use hrms-fullstack-engineer).
 tools: Read, Grep, Glob, Write, Edit, Bash, WebSearch, WebFetch
-model: inherit
+model: opus
 color: pink
 ---
 

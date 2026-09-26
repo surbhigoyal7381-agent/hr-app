@@ -169,3 +169,67 @@ file:
 
 A lesson that fails any of these is still worth recording — as a note with its evidence,
 not as a rule. The difference matters: a note informs judgement, a rule replaces it.
+
+---
+
+## Doing the work without wasting it
+
+**The governing principle:** Save on the clerical work. Never on the checking. This project's
+thoroughness comes from a small number of habits, and none is expensive to keep. What has
+been expensive is doing routine work at premium rates, running the same test suite four
+times, and repeating the same paragraph in every brief.
+
+**The one-line test:** If a task can be wrong in a way a test would not catch, it keeps the
+strong model and the full process. A rebase cannot be wrong that way — git either succeeds
+or conflicts. A bug fix can.
+
+**How it goes wrong:** It starts with "this rebase is mechanical", and three weeks later
+somebody is fixing a small bug on a cheap model because it looked small. Thoroughness is
+never lost by decision, always by drift.
+
+### Five cost-matched rules for how agents work
+
+**1 · Match the model to the task.** Every agent runs on the parent's model unless told
+otherwise. Reviews, security, and code judgment keep the strong model. Mechanical work —
+rebases, moves, ticket updates, running known commands — goes on a cheaper one. Reason: the
+redesign ran five waves through dozens of agents, all on the expensive model, even those
+moving files.
+
+**2 · Stop an agent the moment it reports.** No continued running after handoff. Two agents
+in one worktree is how work gets lost — that nearly happened twice on 2026-09-25. Reason:
+the same day, three agents kept running after handing back their report, and one burned a
+very large amount of work before a duplicate notification gave it away.
+
+**3 · Shared context, not every brief.** A brief carries the task, the constraints specific
+to it, and the two or three lessons that bear on it. Repeating the same paragraph in twenty
+briefs costs real money and buries what is specific.
+
+**4 · Run the full test suite once, at the end.** A full suite is nearly two hours. After
+each fix, the changed modules plus their neighbours answer the question. Reason: full runs
+were being asked for after individual fixes, which is where hours went.
+
+**5 · Do not ask for a measurement the machine cannot give.** Query counts and payload bytes
+reproduce exactly. Wall-clock timings on this machine vary by more than the effect being
+measured — an untouched call moved 46 ms to 122 ms between two sweeps minutes apart. Reason:
+an agent spent an afternoon attributing a slowdown that turned out not to reproduce.
+
+### Techniques that save real time and cost nothing
+
+- **Reuse the fixtures.** `test044` (981 people) takes about 26 minutes; `test044s` under a
+  minute. They exist. Rebuilding because it is easier than finding has happened.
+- **Do not re-run what another agent just ran.** Read their log. If you doubt it, re-run that
+  one thing, not everything.
+- **Run independent work in parallel.** Two reviews side by side took the time of one.
+- **Read the incoming diff once, and write down what came in.** Every agent re-deriving the
+  same rebase is waste, and a half-read diff is how somebody's work gets undone.
+- **Small commits, one concern each.** A revert that takes one command costs nothing;
+  untangling a large commit costs an afternoon.
+
+### What is never traded, whatever the budget
+
+- A different agent reviews the work than wrote it.
+- Every guard is broken on purpose to prove its test can fail. Eleven tests on this project
+  proved nothing while looking green.
+- Security checks the code, not the notes.
+- Impact analysis before code, review after.
+- What could not be proved is reported, not rounded off.

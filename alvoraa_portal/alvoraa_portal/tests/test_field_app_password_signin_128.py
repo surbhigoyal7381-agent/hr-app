@@ -325,6 +325,49 @@ class SigningIn(PasswordCase):
 		                       pluck="content")
 		self.assertTrue(any(first_phone in n and "emailed" in n for n in notes), notes)
 
+	def test_128_sec27_no_outgoing_email_account_never_fails_the_sign_in(self):
+		"""Round-two P2: a tenant with no outgoing Email Account makes sendmail
+		raise at once. The sign-in must still succeed."""
+		from frappe.email.doctype.email_account.email_account import EmailAccount
+
+		first = self.signed_in()
+
+		def no_account(*args, **kwargs):
+			raise frappe.OutgoingEmailError("Please setup default outgoing Email Account")
+
+		with mock.patch.object(EmailAccount, "find_outgoing", side_effect=no_account):
+			out = self.sign_in()
+		self.assertIsNotNone(out, f"{self.answer()} {self.words()}")
+		self.assertIn("token", out)
+		self.assertNotIn("outgoing Email Account", self.words())
+		phone = self.phone_of(out["token"])
+		self.assertEqual(phone.status, "Consent not given")
+		self.assertEqual(self.phone_of(first).status, "Replaced")
+		self.assertEqual(self.emails_about(phone.name), [])
+		# The timeline says the email could not be sent; the log names the phone only.
+		notes = frappe.get_all("Comment", filters={"reference_doctype": fc.DEVICE,
+		                                           "reference_name": phone.name}, pluck="content")
+		self.assertTrue(any("could not be sent" in n for n in notes), notes)
+		logs = frappe.get_all("Error Log", filters={"creation": [">=", self.started],
+		                                            "method": "Field app sign-in email"},
+		                      fields=["error"])
+		self.assertTrue(logs)
+		self.assertIn(phone.name, logs[0].error)
+		self.assertNotIn(PW_EMAIL, logs[0].error)
+		self.assertNotIn(PASSWORD, logs[0].error)
+		# The app goes on as normal: agree, and the phone is Active.
+		self.call(join.acknowledge_notice, {"token": out["token"],
+		                                    "notice_version": notice.CURRENT_VERSION})
+		self.assertEqual(self.phone_of(out["token"]).status, "Active")
+
+	def test_128_sec27_the_email_goes_to_the_users_email_field(self):
+		self.signed_in()
+		with mock.patch.object(frappe.db, "get_value", wraps=frappe.db.get_value) as spy:
+			second = self.signed_in()
+		self.assertTrue(any(c.args[:3] == ("User", PW_EMAIL, "email") for c in spy.call_args_list))
+		mails = self.emails_about(self.phone_of(second).name)
+		self.assertEqual(len(mails), 1)
+
 	def test_128_sec31_each_sign_in_writes_an_activity_log_row(self):
 		self.signed_in(device_label="Zqx Model 128")
 		rows = frappe.get_all("Activity Log",
@@ -801,6 +844,18 @@ class ADisabledLoginStopsItsPhone(PasswordCase):
 		frappe.local.response = frappe._dict()
 		with mock.patch.object(frappe.local, "login_manager", mock.MagicMock(), create=True):
 			device_api.update_password(new_password="Zqx-Pw128-Reset!horse-" + "7", key=key)
+		frappe.db.commit()
+		frappe.set_user("Guest")
+		self.blocked_as(token, "Password changed")
+
+	def test_128_sec26_our_own_tenant_setup_reset_blocks_the_phone(self):
+		"""Round-two P3: tenant_setup resets an existing login's password with
+		frappe.utils.password.update_password, which no hook sees."""
+		from alvoraa_portal import tenant_setup
+
+		token = self.signed_in()
+		frappe.set_user("Administrator")
+		tenant_setup._make_user(PW_EMAIL, FIRST_NAME, "Zqx-Pw128-Setup!horse-" + "5", ["Employee"])
 		frappe.db.commit()
 		frappe.set_user("Guest")
 		self.blocked_as(token, "Password changed")

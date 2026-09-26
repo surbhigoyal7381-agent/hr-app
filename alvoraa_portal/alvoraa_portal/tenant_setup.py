@@ -27,7 +27,8 @@ import frappe
 
 def _make_user(email, first_name, password, roles):
     """Create the user if absent, then set roles and password. Idempotent."""
-    if frappe.db.exists("User", email):
+    existed = bool(frappe.db.exists("User", email))
+    if existed:
         user = frappe.get_doc("User", email)
     else:
         user = frappe.get_doc({
@@ -58,6 +59,13 @@ def _make_user(email, first_name, password, roles):
         # Make them choose their own on first login. The generated one is shown
         # on a provisioning screen and may be written down or pasted around.
         frappe.db.set_value("User", email, "reset_password_key", None)
+        if existed:
+            # ALV-128 SEC-26: this writes the password directly, so neither the
+            # User hook nor the website override sees it. A reset of an existing
+            # login must still stop the app phones the old password signed in.
+            from alvoraa_portal.field_app_device import block_phones_for_new_password
+
+            block_phones_for_new_password(user.name)
 
     return user.name
 

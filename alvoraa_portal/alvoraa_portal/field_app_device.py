@@ -199,6 +199,15 @@ def _block_password_phones(user, reason, employee=None):
 	return sorted(names)
 
 
+def block_phones_for_new_password(user):
+	"""SEC-26 for our own server code that sets a password directly with
+	`frappe.utils.password.update_password` (tenant_setup's reset of an
+	existing login). Safe on a site without the phone doctype."""
+	if not user or not frappe.db.exists("DocType", DEVICE):
+		return []
+	return _block_password_phones(user, "Password changed")
+
+
 def block_phones_for_unlinked_login(doc, method=None):
 	"""doc_events Employee on_update (SEC-28). When an employee record stops
 	naming a login - changed to another, or emptied - the password phones the

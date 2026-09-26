@@ -827,10 +827,12 @@ def _join_signed_in(user, notice_version, device_label, platform, token, agreed)
 		emp, JOIN_PASSWORD, agreed, device_label, platform, token, activated_by=user)
 	_record_agreement(emp, phone, agreed)
 	_log_sign_in(user, phone)
-	if replaced:
-		_tell_the_person_a_new_phone_signed_in(user, phone, replaced)
 	frappe.db.commit()
 
+	# After the commit, and never able to undo it: the phone is set up whether
+	# or not the email can be queued (round-two review, P2).
+	if replaced:
+		_tell_the_person_a_new_phone_signed_in(user, phone, replaced)
 	_tell_hr_one_phone_two_people(two_people, phone)
 	answer = _joined_answer(emp, secret, agreed)
 	# The app shows the notice next (a phone that has not agreed yet cannot
@@ -854,19 +856,48 @@ def _log_sign_in(user, phone):
 def _tell_the_person_a_new_phone_signed_in(user, phone, replaced):
 	"""SEC-27: a sign-in that replaced this person's earlier phone. If it was not
 	them, the email is how they find out. Sent through Frappe's email queue, and
-	noted on the new phone's timeline. Not sent for a first-ever phone."""
-	frappe.sendmail(
-		recipients=[user],
-		subject=_("A new phone signed in to the Alvoraa app as you"),
-		message=_("A new phone signed in to the Alvoraa attendance app as you, and your "
-		          "earlier phone stopped working. If this was not you, tell HR and change "
-		          "your password."),
-		reference_doctype=DEVICE,
-		reference_name=phone.name,
-		delayed=True,
-	)
-	phone.add_comment("Info", _("Replaced the earlier phone {0} of the same person. The person "
-	                            "was emailed.").format(", ".join(replaced)))
+	noted on the new phone's timeline. Not sent for a first-ever phone.
+
+	Runs AFTER the sign-in is committed and never raises: a tenant with no
+	outgoing Email Account makes `frappe.sendmail` raise at once, and that must
+	not undo a sign-in that already succeeded (round-two review, P2). A failure
+	is logged by the phone record's name only, and the timeline says so.
+	Addressed to the User's `email` field, not its name (the two can differ).
+	"""
+	emailed = False
+	try:
+		address = frappe.db.get_value("User", user, "email")
+		if address:
+			frappe.sendmail(
+				recipients=[address],
+				subject=_("A new phone signed in to the Alvoraa app as you"),
+				message=_("A new phone signed in to the Alvoraa attendance app as you, and your "
+				          "earlier phone stopped working. If this was not you, tell HR and change "
+				          "your password."),
+				reference_doctype=DEVICE,
+				reference_name=phone.name,
+				delayed=True,
+			)
+			emailed = True
+	except Exception:
+		# The sign-in is already committed; drop only whatever half an email left.
+		frappe.db.rollback()
+		frappe.clear_messages()
+		# Named arguments, and a message given: without one, Frappe logs the
+		# traceback WITH its local variables, which would include the address.
+		frappe.log_error(title="Field app sign-in email",
+		                 message=f"new-phone email could not be queued for field device {phone.name}")
+	try:
+		note = (_("Replaced the earlier phone {0} of the same person. The person was emailed.")
+		        if emailed else
+		        _("Replaced the earlier phone {0} of the same person. The email to the person "
+		          "could not be sent."))
+		phone.add_comment("Info", note.format(", ".join(replaced)))
+		frappe.db.commit()
+	except Exception:
+		frappe.db.rollback()
+		frappe.log_error(title="Field app sign-in email",
+		                 message=f"new-phone note could not be written on field device {phone.name}")
 
 
 # The second step's own marker (review P1, 26 Sep 2026). Frappe writes the

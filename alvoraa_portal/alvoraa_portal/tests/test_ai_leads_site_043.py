@@ -14,6 +14,11 @@ import alvoraa_portal.ai_leads.extract as extract
 import alvoraa_portal.ai_leads.guards as guards
 import alvoraa_portal.ai_leads.intake as intake
 import alvoraa_portal.ai_leads.setup as setup
+from alvoraa_portal import subscription as _sub
+
+# The tenant's own feature list, as the admin console writes it: the real gate
+# is exercised, never patched (the slice-043 payslip guard, AC-30b).
+INTAKE_FEATURES = sorted(set(_sub.enabled_features({})) | {"crm", "crm_ai_intake"})
 
 ACCOUNT = "AI Test Sales 043"
 MAILBOX = "sales@aitest043.example.com"
@@ -169,10 +174,10 @@ class TestPipeline(FrappeTestCase):
         self.assertEqual(frappe.db.count("CRM Lead", {"email": f"cap@{TAG}-i.example.com"}), 0)
 
     def _sweep(self, enabled):
-        conf = {"ai_lead_intake_enabled": 1 if enabled else 0, "ai_lead_intake_api_key": "stub"}
+        conf = {"ai_lead_intake_enabled": 1 if enabled else 0, "ai_lead_intake_api_key": "stub",
+                "features": INTAKE_FEATURES}
         with patch.dict(frappe.conf, conf), \
-                patch("alvoraa_portal.subscription.has_feature", return_value=True), \
-                patch.object(guards, "_feature_on", return_value=True), \
+                                patch.object(guards, "_feature_on", return_value=True), \
                 patch.object(extract, "call_model",
                              return_value=(dict(GOOD), "claude-haiku-4-5", 900, 120)) as called:
             intake.sweep()
@@ -221,8 +226,9 @@ class TestPipeline(FrappeTestCase):
                          "a fetch already queued is not queued twice")
 
     def _process_new(self, comm):
-        conf = {"ai_lead_intake_enabled": 1, "ai_lead_intake_api_key": "stub"}
-        with patch.dict(frappe.conf, conf),                 patch("frappe.enqueue"),                 patch("alvoraa_portal.subscription.has_feature", return_value=True),                 patch.object(guards, "_feature_on", return_value=True),                 patch.object(extract, "call_model",
+        conf = {"ai_lead_intake_enabled": 1, "ai_lead_intake_api_key": "stub",
+                "features": INTAKE_FEATURES}
+        with patch.dict(frappe.conf, conf),                 patch("frappe.enqueue"),                 patch.object(guards, "_feature_on", return_value=True),                 patch.object(extract, "call_model",
                              return_value=(dict(GOOD), "claude-haiku-4-5", 900, 120)) as called:
             intake.process_new(comm)
         return called

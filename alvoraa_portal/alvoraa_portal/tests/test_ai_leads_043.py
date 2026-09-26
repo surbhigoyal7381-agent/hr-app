@@ -314,7 +314,9 @@ class TestTheFeature(unittest.TestCase):
         @sub.requires_feature("crm_ai_intake")
         def endpoint():
             return "ran"
-        with patch.object(sub, "has_feature", return_value=False), \
+        # Off through the tenant's own feature list, not a patched gate (AC-30b).
+        off = [f for f in sub.enabled_features({}) if f != "crm_ai_intake"]
+        with patch.dict(sub.frappe.conf, {"features": off}), \
                 patch.object(sub.frappe, "throw", side_effect=RuntimeError) as thrown:
             with self.assertRaises(RuntimeError):
                 endpoint()

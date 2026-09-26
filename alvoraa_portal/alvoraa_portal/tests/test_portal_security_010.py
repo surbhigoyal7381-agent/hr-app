@@ -780,7 +780,10 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# Slice 013 step 4 (new files). The phone removing itself is one save as
 		# the server on a guest path with no session, after the secret was
 		# checked; the limiter writes nothing.
-		("alvoraa_portal", "field_app_device.py"): 1,
+		# 2 from ALV-128 (26 Sep 2026): the server blocks a person's password
+		# phones when their login is disabled or unlinked - a hook run by whoever
+		# edits the User or Employee, who holds no write on phone records.
+		("alvoraa_portal", "field_app_device.py"): 2,
 		("alvoraa_portal", "field_app_limits.py"): 0,
 		# Slice 013 step 5 (new file): the Employee form's section reads for one
 		# employee after Frappe's own read check on that employee; nothing here

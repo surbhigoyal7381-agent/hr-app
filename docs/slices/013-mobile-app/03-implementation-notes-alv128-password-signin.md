@@ -336,3 +336,57 @@ on the private Docker network. No other site's user was touched.)
   (not through the User form or the website) does not fire either door.
 - The desk section has no special state for "codes are switched off"; the Invite
   dialog says so when pressed.
+
+---
+
+## Round-two fixes (26 Sep 2026)
+
+Second review: security PASS for dev; code review SHIP WITH FIXES. Four items,
+new commits on the same branch, nothing pushed. `origin/dev` had not moved
+(still 0d51cac), so nothing came in.
+
+| # | Finding | Fix | Test |
+|---|---|---|---|
+| 1 | P2: the SEC-27 email could fail the sign-in. `frappe.sendmail` looks up the outgoing Email Account at once and raises when there is none, and it ran before the commit - so the sign-in rolled back and the phone saw Frappe's "setup default outgoing Email Account" text. | The sign-in commits first; the email is sent afterwards inside `try/except`. A failure rolls back only the half-made email, is logged by the phone record's name only (title "Field app sign-in email", message given explicitly so Frappe does not write a traceback with local variables), and the phone's timeline says "the email to the person could not be sent". The email now goes to the User's `email` field, not its name. | Outgoing-account lookup patched to raise: the sign-in still returns a token, the phone is "Consent not given" as normal and becomes Active on agreement, the old phone is Replaced, no queue row, the log holds no address and no password. A second test proves the address is read from `User.email`. |
+| 2 | P3: the app had no screen for `JOIN_CODE_OFF`; it showed the generic "may be out of date" words. | `join-screens.js` has a `JOIN_CODE_OFF` screen: "Joining codes are switched off at your company. Sign in with your work email and password, or ask HR." Its first button, "Sign in with email and password", opens the sign-in screen. | Node test on the words and buttons; headless browser: a picked QR picture while codes are off shows the screen with "Code for HR: JOIN_CODE_OFF", and the first button lands on sign-in. |
+| 3 | P3: `tenant_setup._make_user` resets an existing login's password with `frappe.utils.password.update_password`, which no hook sees. | After resetting an EXISTING user's password it calls the new `field_app_device.block_phones_for_new_password(user)` - the same block helper, reason "Password changed". A brand-new user has no phones, so nothing is called. | `_make_user` on the signed-in login → next punch `DEVICE_BLOCKED`, reason "Password changed". |
+| 4 | Notes only. | See "Known and accepted" below. | - |
+
+### Known and accepted (for the user to accept)
+
+- **Password changes that still do not stop a password phone:** `bench
+  set-password`, `bench add-user`, the setup wizard, and any other Python code
+  that calls `frappe.utils.password.update_password` directly. All are
+  server-side admin actions, not something an employee or an HR user can do from
+  a screen. Recorded as accepted residual risk. HR can still block the phone.
+- **SEC-29 lets a stranger spend someone's 10 tries an hour.** Anyone who knows an
+  email can use up that account's hourly count, so the real person is told "Too
+  many tries" until the hour passes. This is the same trade Frappe's own lockout
+  already makes on the website.
+- **The network-lock message can hide an account lock.** If a tenant sets
+  Frappe's lockout below 10 tries, and the same network is also locked, the app
+  says "Too many sign-in attempts from this network" rather than "your account is
+  locked". The person is still refused; only the words differ.
+
+### Proof, after round two
+
+All in `hrlocal-128` / `test128`, one module at a time; the container is stopped
+afterwards.
+
+| Run | Result |
+|---|---|
+| `test_field_app_password_signin_128` | **51 tests, OK** (was 48) |
+| Neighbours: steps 1–6, permissions, check-in location, check-in security 014, module gate 016 | **255 tests, OK** |
+| **Total** | **306 tests, 0 failures** |
+
+- The first run of the new module failed one assertion in the new email test: it
+  looked for the Error Log by title, and I had passed the title and message the
+  wrong way round. Fixed with named arguments (which also keeps Frappe from
+  logging local variables); the full set above was run after the fix.
+- Integrity, `check_api_paths.py --max 2`, `check_min_app_version.py`: OK. ruff
+  on the changed Python files: all checks passed.
+- App: 135 node tests - 133 pass in the worktree, the 2 failures are the known
+  Windows line-ending trap on the vendored files; on an LF copy they pass and
+  `check_app.mjs` says OK. `check_versions.mjs` OK.
+- Headless browser: both harnesses re-run; everything from round one still holds,
+  plus the new "codes off" screen and its way back to sign-in.

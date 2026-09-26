@@ -74,6 +74,30 @@ the screen it has today" note and no screen of its own, so it needed no change.
 | Data integrity | neutral | Existing deductions and scores untouched. Patch never overwrites a value HR set. |
 | Compliance / privacy | neutral | No personal data in any new response or log. Deduction of pay now needs an explicit HR decision per company. |
 
+## Proof: what was run, and what it said
+
+All in `hrlocal-oas` / `testoas`, a fresh site built the way CI builds one, one module
+at a time.
+
+| Run | Result |
+|---|---|
+| New `test_org_attendance_switches` | **34 tests, OK** |
+| hrms `test_attendance_score` (now 12, one new switch-off test) and `test_late_rules` | **17 tests, OK** |
+| Neighbours: opt_in_features, late_minutes_017, time_api_043, why_sheet_043, portal_security_010, module_access, subscription_access, org_settings_allowlist_012, org_setting_scope_030, frame_api_034, personas_012, payslips_payload_043, frame_endpoint_registry_034, scale_flatness_044, portal_call_paths | **426 tests, OK** (1 skipped in scale_flatness, as before) |
+| **Total** | **477 tests, 0 failures** |
+
+- `check_app_integrity.py`: OK (first run failed on the cross-app constant imports; fixed as described above).
+- CI portal checks: design system, portal handlers, undefined JS, rating bands, tag
+  balance, preview flag, assets gate, API paths (`--max 2`), min app version, demo
+  passwords, tracked keys: all OK.
+- jsdom DOM tests (`run_dom_tests.js`): 8 files, 0 failed. `next_time_pay_test.js`: 63
+  passed, including the two new "switched off: no Late rule tab" checks.
+- ruff 0.6.9 on the changed files: no new findings on my lines. The files carry older
+  findings and older formatting, which CI does not block on.
+- The whole `alvoraa_portal` suite was **not** run end to end; the modules above are the
+  ones that touch the registry, module access, org settings, the late rule, the Time
+  screen and scoring.
+
 ## Parallel work
 
 - Work board row added. Incoming from `origin/dev` at start: none beyond 1934fef.

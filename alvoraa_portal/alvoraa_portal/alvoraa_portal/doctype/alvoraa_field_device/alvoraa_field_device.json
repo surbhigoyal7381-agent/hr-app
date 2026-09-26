@@ -20,6 +20,7 @@
   "column_break_dev",
   "token_hash",
   "retired_token_hash",
+  "password_stamp",
   "status_section",
   "status_changed_on",
   "status_changed_by",
@@ -62,9 +63,9 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Pending\nActive\nBlocked\nReplaced\nRemoved\nConsent not given",
+   "options": "Pending\nActive\nBlocked\nReplaced\nRemoved\nConsent not given\nSigned out",
    "reqd": 1,
-   "description": "Only an Active phone may send a check-in. Every other state is refused with its own reason. Blocked, Replaced and Removed are final - getting the app back always needs a new code. A phone that is linked but has not agreed to the notice sits in Consent not given and cannot punch."
+   "description": "Only an Active phone may send a check-in. Every other state is refused with its own reason. Blocked, Replaced and Removed are final - getting the app back always needs a new code. A phone that is linked but has not agreed to the notice sits in Consent not given and cannot punch. Signed out is a phone that signed in with a password that has since changed: its secret is retired, and the person signs in again with the new password (the record then ends Replaced)."
   },
   {
    "fieldname": "column_break_reg",
@@ -154,6 +155,16 @@
    "no_copy": 1,
    "search_index": 1,
    "description": "The secret's hash, moved here when the phone stopped. Keeps \"why did this phone stop working\" answerable while the live hash is empty."
+  },
+  {
+   "fieldname": "password_stamp",
+   "fieldtype": "Data",
+   "label": "Password Stamp",
+   "read_only": 1,
+   "hidden": 1,
+   "no_copy": 1,
+   "permlevel": 1,
+   "description": "A keyed fingerprint (HMAC) of the login's password hash when this phone signed in with a password. Never the password or the hash. When the login's password changes, the fingerprint no longer matches and the phone is signed out. Permission level 1, which no role holds, so it is never sent to a browser."
   },
   {
    "fieldname": "status_section",
@@ -247,7 +258,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-09-26 12:00:00.000000",
+ "modified": "2026-09-26 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Portal",
  "name": "Alvoraa Field Device",

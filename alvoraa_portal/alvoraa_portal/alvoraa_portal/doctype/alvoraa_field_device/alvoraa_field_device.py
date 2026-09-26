@@ -24,8 +24,11 @@ The rules, in plain words:
   * Replaced and Removed are set by server code, never by a person.
   * Blocked, Replaced and Removed are final. Getting the app back needs a new
     code. There is no unblock, for anybody, including a System Manager.
-  * Whenever a phone stops, its secret's hash moves into `retired_token_hash` in
-    the same save. The old secret then gets its own refusal instead of a 200,
+  * "Signed out" (ALV-128, 26 Sep 2026) is a password phone whose login's
+    password changed. It is not a block: its secret is retired like a stopped
+    phone's, and the only way out is "Replaced", when the person signs in again.
+  * Whenever a phone stops or is signed out, its secret's hash moves into
+    `retired_token_hash` in the same save. The old secret then gets its own refusal instead of a 200,
     and "why did this phone stop" is still answerable a year later.
 """
 
@@ -60,13 +63,20 @@ ALLOWED_BY_A_PERSON = {
 # System Manager, not by an import.
 FINAL = ("Blocked", "Replaced", "Removed")
 
+# A password phone whose login's password changed (ALV-128). Not final - a new
+# sign-in on any phone moves it to Replaced - but it holds no live secret.
+SIGNED_OUT = "Signed out"
+
+# Every state in which the phone holds no live secret.
+NO_LIVE_SECRET = (*FINAL, SIGNED_OUT)
+
 # Only the server puts a phone into these.
-SERVER_ONLY = ("Replaced", "Removed", "Consent not given")
+SERVER_ONLY = ("Replaced", "Removed", "Consent not given", SIGNED_OUT)
 
 # Never editable after the record exists. The two hash fields are the exception
 # the server needs when it retires a secret, and only then.
 FROZEN_AFTER_INSERT = (
-	"employee", "join_method", "invite", "registered_on",
+	"employee", "join_method", "invite", "registered_on", "password_stamp",
 )
 FROZEN_UNLESS_SERVER = ("token_hash", "retired_token_hash")
 
@@ -96,7 +106,7 @@ class AlvoraaFieldDevice(Document):
 		before = self.get_doc_before_save()
 		if before is not None and before.status != self.status:
 			self._record_the_change()
-			if self.status in FINAL:
+			if self.status in NO_LIVE_SECRET:
 				self._retire_the_secret()
 
 	def on_update(self):
@@ -177,6 +187,14 @@ class AlvoraaFieldDevice(Document):
 			frappe.throw(
 				_("A blocked phone cannot be switched back on. Make a new code "
 				  "instead."),
+				frappe.ValidationError)
+
+		if old == SIGNED_OUT and new != "Replaced":
+			# A signed-out phone has no live secret. Nothing - not HR, not the
+			# server - may switch it back on; a new sign-in replaces it.
+			frappe.throw(
+				_("A signed-out phone cannot be switched back on. The person signs in "
+				  "again instead."),
 				frappe.ValidationError)
 
 		if self._by_the_server():

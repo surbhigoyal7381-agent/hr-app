@@ -10,6 +10,9 @@ import calendar as _calendar
 from frappe.utils import cint, flt, today, get_first_day, get_last_day, getdate, add_days, now
 from alvoraa_goals.permissions import get_effective_manager
 from hrms.alvoraa_hr_core.access import permitted_employee_filters
+# A module import, not `from ... import`: the two switch KEYS are constants, and
+# scripts/check_app_integrity.py only recognises functions and classes across apps.
+import hrms.alvoraa_hr_core.features as org_features
 from alvoraa_portal.frame_api import ME_FIELDS
 
 # The Team screen's ceiling. Company-wide HR on a thousand-person tenant would
@@ -1658,6 +1661,12 @@ def get_available_features():
         frappe.log_error(title="hr_api: could not read plan entitlement",
                          message=frappe.get_traceback())
 
+    # Organisation switches (26 Sep 2026). Not plan entitlements: HR turns them on
+    # in Organisation Settings. Read live, never from the cached block above, so
+    # a switch HR just changed shows on the next page load.
+    features["org_late_rules"] = org_features.late_rules_on()
+    features["org_attendance_scoring"] = org_features.attendance_scoring_on()
+
     # `goals` already meant "is the app installed", which wave 5 makes plan-aware
     # anyway. AND them so a site that still has the app from an earlier plan does
     # not keep showing the panel after a downgrade.
@@ -2883,10 +2892,36 @@ def reject_kpi_progress(kpi_name, log_idx, comment=None):
 # and still an allow-list, just an arithmetic one. It grants no visibility: it
 # moves a threshold on a screen the person can already see, and it does not
 # touch the deduction rule, which keeps its own per-organisation threshold.
+#
+# 26 Sep 2026 (Surbhi): late coming rules and attendance in the appraisal score
+# stop being tenant features in the admin console and become these two switches.
+# Every company sets its own rules, so HR decides; both are off until HR turns
+# them on. Neither grants visibility - each only lets a rule the company already
+# writes for itself start acting. Turning one on also needs the modules it works
+# on to be sold (ORG_SWITCH_NEEDS below); turning one off is always allowed.
 ALLOWED_ORG_SETTINGS = {
     "kra_link_mandatory": ("0", "1"),
     LATE_GRACE_KEY: range(0, 241),          # up to four hours; nothing sensible is longer
+    org_features.LATE_RULES_SWITCH: ("0", "1"),
+    org_features.ATTENDANCE_SCORING_SWITCH: ("0", "1"),
 }
+
+# What each switch needs the tenant to have bought before it may be turned on.
+# Late rules take days from leave and then from pay, and read attendance; the
+# appraisal score reads attendance into an appraisal. Checked with the same
+# has_feature() every other entitlement uses.
+ORG_SWITCH_NEEDS = {
+    org_features.LATE_RULES_SWITCH: ("attendance", "leaves", "payroll"),
+    org_features.ATTENDANCE_SCORING_SWITCH: ("performance", "attendance"),
+}
+
+
+def _switch_missing(key):
+    """Labels of the sold features this switch still needs, or []."""
+    from alvoraa_portal.subscription import feature_spec, has_feature
+
+    return [_(feature_spec(f).get("label", f)) for f in ORG_SWITCH_NEEDS.get(key, ())
+            if not has_feature(f)]
 
 
 def _refuse_org_setting(endpoint):
@@ -2920,9 +2955,33 @@ def set_org_setting(key, value):
             _refuse_org_setting("hr_api.set_org_setting")
     elif value not in allowed:
         _refuse_org_setting("hr_api.set_org_setting")
+    if value == "1" and key in ORG_SWITCH_NEEDS:
+        missing = _switch_missing(key)
+        if missing:
+            frappe.throw(
+                _("This can be switched on only when your plan includes {0}. Ask your Alvoraa account contact to add it.").format(", ".join(missing)),
+                frappe.ValidationError,
+            )
     frappe.db.set_default(key, value)
     frappe.db.commit()
     return {"ok": True}
+
+
+@frappe.whitelist()
+def get_attendance_rule_switches():
+    """The Organisation Settings card "Attendance rules": both switches, whether
+    each is on, and - when the plan does not allow one - what it still needs.
+
+    HR only, like the settings it describes. Returns labels, never another
+    tenant's data or any person's record.
+    """
+    _require_hr()
+    out = []
+    for key in org_features.ORG_SWITCHES:
+        missing = _switch_missing(key)
+        out.append({"key": key, "on": org_features.org_switch(key),
+                    "available": not missing, "needs": missing})
+    return {"switches": out}
 
 
 def _require_hr():
@@ -3291,6 +3350,13 @@ def _late_rule_for(employee, emp_row=None, cache=None):
     """
     if cache is None:
         cache = {}
+    # Switched off in Organisation Settings: no rule acts on anybody, so every
+    # screen built on this (my deductions, the team list, the Time tab) is
+    # hidden. Recorded deductions are kept; they are simply not drawn here.
+    if "_switched_on" not in cache:
+        cache["_switched_on"] = org_features.late_rules_on()
+    if not cache["_switched_on"]:
+        return None
     if "_have_doctype" not in cache:
         cache["_have_doctype"] = bool(frappe.db.exists("DocType", "Attendance Deduction Rule"))
     if not cache["_have_doctype"]:

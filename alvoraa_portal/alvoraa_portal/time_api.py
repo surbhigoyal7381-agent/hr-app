@@ -268,11 +268,21 @@ def _rule_explained(emp):
 	would read as "the rule is satisfied", which is a different thing entirely
 	and the one a person would not query.
 	"""
+	from hrms.alvoraa_hr_core.features import late_rules_on
+
 	from alvoraa_portal.hr_api import _late_rule_for
+
+	# Switched off in Organisation Settings (26 Sep 2026): the company has no
+	# late-coming rule at all, so the tab is not drawn - `switched_on` tells the
+	# page. AC-35's "the tab says so" is for a company that HAS a rule which
+	# does not cover this person.
+	if not late_rules_on():
+		return {"covered": False, "switched_on": False, "note": "",
+		        "clauses": [], "accountable": None, "accountable_named": False}
 
 	rule = _late_rule_for(emp.name)
 	if not rule:
-		return {"covered": False,
+		return {"covered": False, "switched_on": True,
 		        "note": _("No late-coming rule applies to you."),
 		        "clauses": [], "accountable": None, "accountable_named": False}
 

@@ -78,7 +78,14 @@ FEATURES = {
         "label": "Shift & Attendance",
         "required": True,
         "workspaces": ["Shift & Attendance"],
-        "module_defs": ["HR"],
+        # Alvoraa HR Core holds shared HR plumbing (access helpers, the attendance
+        # score) and one doctype, Appraisal Cycle Exempt Grade. It used to be
+        # claimed only by the opt-in `attendance_scoring` feature, so it was
+        # blocked on every tenant that had not been given that feature. Since
+        # 26 Sep 2026 attendance scoring is an Organisation Settings switch, not
+        # a feature, so the module is claimed here, by a required feature: it is
+        # never hidden by the deny-by-default sync, on any plan.
+        "module_defs": ["HR", "Alvoraa HR Core"],
     },
     "expenses": {
         "desc": "Expense claims, advances, travel",
@@ -116,7 +123,13 @@ FEATURES = {
         "desc": "Salary structures, slips, payment entries",
         "icon": "💰",
         "label": "Payroll",
-        "module_defs": ["Payroll"],
+        # Alvoraa Late Rules (the Attendance Deduction Rule and its records) is
+        # available wherever attendance, leaves and payroll are sold. Attendance
+        # and leaves are required on every plan, so payroll is the one that
+        # decides. It used to belong to the opt-in `late_rules` feature; since
+        # 26 Sep 2026 whether the rule ACTS is HR's switch in Organisation
+        # Settings (hrms.alvoraa_hr_core.features.org_switch), not a feature.
+        "module_defs": ["Payroll", "Alvoraa Late Rules"],
         "workspaces": ["Payroll"],
     },
     "tax_benefits": {
@@ -163,22 +176,13 @@ FEATURES = {
         "opt_in": True,
     },
     # ── Opt-in features (off everywhere until the console ticks them for a tenant) ──
-    "late_rules": {
-        "desc": "Late-coming and early-exit rule: quarter-day deductions from leave, then pay",
-        "icon": "⏰",
-        "label": "Late Coming Rules",
-        "module_defs": ["Alvoraa Late Rules"],
-        "opt_in": True,
-        "requires": ["attendance", "leaves", "payroll"],
-    },
-    "attendance_scoring": {
-        "desc": "Attendance as a weighted part of the appraisal score, set up from the cycle wizard",
-        "icon": "📅",
-        "label": "Attendance in Appraisals",
-        "module_defs": ["Alvoraa HR Core"],
-        "opt_in": True,
-        "requires": ["performance", "attendance"],
-    },
+    #
+    # `late_rules` and `attendance_scoring` used to be here. Surbhi, 26 Sep 2026:
+    # "Every company has their own rules", so they are not something the console
+    # sells - they are two switches HR turns on in Organisation Settings
+    # (hr_api.ALLOWED_ORG_SETTINGS), off by default. Their modules moved to
+    # `payroll` and `attendance` above. A site config that still names either key
+    # is harmless: an unknown key grants nothing.
     "field_checkin": {
         "desc": "Attendance from a phone for staff with no desk: photo, place and time, checked against the branch radius",
         "icon": "📍",
@@ -189,8 +193,8 @@ FEATURES = {
         "app": "alvoraa_portal",
         "module_defs": ["Alvoraa Portal"],
         "opt_in": True,
-        # Attendance only. Deliberately NOT late_rules: a customer can buy field
-        # punches without buying deductions, and most will start that way.
+        # Attendance only. Deliberately not the late-coming rule: a customer can
+        # have field punches without deductions, and most will start that way.
         "requires": ["attendance"],
     },
     "employee_documents": {

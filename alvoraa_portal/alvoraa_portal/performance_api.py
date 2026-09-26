@@ -1621,12 +1621,13 @@ def _build_formula(cycle):
 
 def _apply_scoring(cycle, scoring):
     """Copy the wizard's "How the score is built" step onto the Appraisal Cycle.
-    Ignored unless the tenant has the attendance-scoring feature."""
+    Ignored unless HR has switched attendance in the appraisal score on in
+    Organisation Settings (an organisation switch since 26 Sep 2026)."""
     import json
     if not scoring:
         return
-    from alvoraa_portal.subscription import has_feature
-    if not has_feature("attendance_scoring"):
+    from hrms.alvoraa_hr_core.features import attendance_scoring_on
+    if not attendance_scoring_on():
         return
     if isinstance(scoring, str):
         scoring = json.loads(scoring or "{}")

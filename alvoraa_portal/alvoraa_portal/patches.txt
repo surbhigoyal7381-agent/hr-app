@@ -5,3 +5,4 @@ alvoraa_portal.patches.v1_0.remove_alvox_module_defs
 alvoraa_portal.patches.v1_0.fill_branch_on_hr_records
 alvoraa_portal.patches.v1_0.redact_field_checkin_error_logs
 alvoraa_portal.patches.v1_0.repoint_broken_brand_images
+alvoraa_portal.patches.v1_0.org_attendance_switches_from_features

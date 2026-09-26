@@ -122,7 +122,11 @@ class TestNothingExistingChanged(FrappeTestCase):
 	# whether it is free or paid - and on which plans - is deliberately not
 	# decided yet. Belonging to no plan bundle is what keeps that decision a
 	# tick in the console instead of another release.
-	SHIPPED_OPT_IN = ["late_rules", "attendance_scoring", "employee_documents",
+	# "late_rules" and "attendance_scoring" LEFT this list on 26 Sep 2026: they are
+	# no longer features at all but Organisation Settings switches, off by default
+	# (test_org_attendance_switches.py). Removing them from the registry withholds
+	# nothing on the fallback path, because an opt-in key was never on it.
+	SHIPPED_OPT_IN = ["employee_documents",
 	                  "screening_forms", "policy_library", "org_structure",
 	                  "field_checkin", "vendor", "staff_list"]
 

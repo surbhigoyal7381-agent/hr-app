@@ -23,6 +23,8 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from alvoraa_portal import time_api
+from alvoraa_portal.tests.utils import set_org_switch
+import hrms.alvoraa_hr_core.features as org_features
 
 TAG = "S043T"
 COMPANY = "S043T Time Company"
@@ -171,6 +173,8 @@ class TimeFixture(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
+		# The Late rule tab is drawn only when HR has switched it on (26 Sep 2026).
+		cls.addClassCleanup(set_org_switch(org_features.LATE_RULES_SWITCH))
 		cls.company = _ensure("Company", COMPANY, company_name=COMPANY,
 		                      abbr=ABBR, default_currency="INR",
 		                      country="India").name

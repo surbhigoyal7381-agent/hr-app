@@ -99,3 +99,15 @@ def ensure_fiscal_years(*dates):
 			doc.insert(ignore_permissions=True)
 		frappe.db.commit()
 		frappe.cache.delete_value("fiscal_years")
+
+
+def set_org_switch(key, value="1"):
+	"""Set an Organisation Settings switch (late rules, attendance scoring) for a
+	test, and return a function that puts the old value back.
+
+	Use it as `cls.addClassCleanup(set_org_switch(KEY))`. Defaults are cached,
+	so a rollback alone would leave the cache saying "on" for the next suite.
+	"""
+	before = frappe.db.get_default(key)
+	frappe.db.set_default(key, value)
+	return lambda: frappe.db.set_default(key, before or "")

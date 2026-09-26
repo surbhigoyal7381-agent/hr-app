@@ -17,9 +17,13 @@ android {
         // 0.2.0, build 0: ALV-128, sign in with work email and password.
         // A new feature, so the minor number moves; the server's
         // MIN_APP_VERSION stays 0.1.0, so 0.1.x phones keep working.
+        // 0.2.1, build 0: check-in fixes found on a real phone on 26 Sep 2026 -
+        // a visible camera, the true distance on the result, "from anywhere"
+        // for a radius of 0, and the photo time sent with its time zone.
+        // MIN_APP_VERSION does not move.
         // scripts/check_versions.mjs enforces this on every push.
-        versionCode 20000
-        versionName "0.2.0"
+        versionCode 20100
+        versionName "0.2.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

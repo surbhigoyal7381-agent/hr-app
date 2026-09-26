@@ -51,7 +51,7 @@ test("the committed app-version.js matches the committed build.gradle", async ()
   const jsText = fs.readFileSync(path.join(__dirname, "..", "web", "js", "app-version.js"), "utf8");
   const gradleVersion = extractVersion(gradleText);
   const jsVersion = extractAppVersionConstant(jsText);
-  assert.equal(jsVersion, "0.2.0"); // ALV-128: email and password sign-in
+  assert.equal(jsVersion, "0.2.1"); // 27 Sep 2026: the check-in fixes
   assert.deepEqual(checkAppVersionMatchesGradle(jsVersion, gradleVersion.versionName), []);
 });
 

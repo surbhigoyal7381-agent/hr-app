@@ -169,16 +169,23 @@
   function build(data, ctx) {
     var esc = ctx.esc, SAY = words(ctx);
     return '<section class="nf-screen nf-time">'
-      + tabs(esc, SAY)
+      + tabs(esc, SAY, data)
       + '<div id="nf-time-body">' + body(data, ctx, SAY) + "</div>"
       + "</section>";
   }
 
-  function tabs(esc, SAY) {
+  /* The Late rule tab exists only when the company has switched late coming
+     rules on in Organisation Settings. Absent means an older server: shown. */
+  function ruleShown(data) {
+    return !(data && data.rule && data.rule.switched_on === false);
+  }
+
+  function tabs(esc, SAY, data) {
     /* `role="tablist"` with real buttons. A person on a keyboard reaches them
        with Tab and presses them with Space, and a screen reader is told which
        one is current - which is what `aria-selected` is for. */
-    var list = [["days", SAY.days], ["leave", SAY.leave], ["rule", SAY.rule]];
+    var list = [["days", SAY.days], ["leave", SAY.leave]];
+    if (ruleShown(data)) { list.push(["rule", SAY.rule]); }
     var html = '<div class="nf-tabs" role="tablist" aria-label="' + esc(SAY.tabs) + '">';
     list.forEach(function (row) {
       html += '<button type="button" class="nf-tab-btn" role="tab"'
@@ -191,7 +198,7 @@
 
   function body(data, ctx, SAY) {
     if (tab === "leave") { return leaveTab(data, ctx, SAY); }
-    if (tab === "rule") { return ruleTab(data, ctx, SAY); }
+    if (tab === "rule" && ruleShown(data)) { return ruleTab(data, ctx, SAY); }
     return daysTab(data, ctx, SAY);
   }
 

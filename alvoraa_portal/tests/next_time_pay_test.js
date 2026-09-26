@@ -420,6 +420,19 @@ async function run() {
   is(/\b0\b/.test(screens(dom).querySelector(".nf-counts") ? "0" : ""), false,
      "and it does not show zeros as if the rule were satisfied");
 
+  /* ── late rules switched off in Organisation Settings (26 Sep 2026) ─────── */
+
+  dom = await load("#time", makeFrame(), makeCounts(), {
+    [TIME]: makeTime({ rule: { covered: false, switched_on: false, note: "",
+      clauses: [], accountable: null, accountable_named: false } }),
+  });
+  dom.window.NextTime.setTab("rule");
+  await settle();
+  is(screens(dom).querySelector('[data-tab="rule"]'), null,
+     "switched off: there is no Late rule tab at all");
+  is(!!screens(dom).querySelector('[data-tab="days"]'), true,
+     "and the Days and Leave tabs are still there");
+
   /* ── the rule tab shows the SERVER's sentences ─────────────────────────── */
 
   dom = await load("#time", makeFrame(), makeCounts(), { [TIME]: makeTime() });

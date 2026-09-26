@@ -455,7 +455,7 @@ function switchPanel(name, triggerEl) {
     if (name === "team")        loadTeamPanel();
     if (name === "analytics")   loadAnalyticsPanel();
     if (name === "goals")       loadGoalsPanel();
-    if (name === "org-settings") { orgLoad(); orgLoadDocuments(); riLoadSettings(); }
+    if (name === "org-settings") { orgLoad(); orgLoadDocuments(); riLoadSettings(); orgLoadAttendanceRules(); }
     if (name === "policies")    polLoad();
   }
 
@@ -12291,6 +12291,56 @@ window.pfRatingLabel = function(value, scale) {
     });
   };
 
+  /* ── Attendance rules (26 Sep 2026) ──
+     Two organisation switches, off by default. The server says whether each is
+     on and, when the plan cannot support one, what it still needs; the box is
+     then disabled and that sentence shown. Saving goes through set_org_setting,
+     which checks the same thing again - the disabled box is a courtesy. */
+  var ORG_ATT_SWITCH_IDS = {
+    late_rules_enabled: {box: "org-late-rules-on", needs: "org-late-rules-needs"},
+    attendance_scoring_enabled: {box: "org-att-scoring-on", needs: "org-att-scoring-needs"},
+  };
+
+  window.orgLoadAttendanceRules = function() {
+    var card = document.getElementById("org-attrules-card");
+    window.gpFetch("alvoraa_portal.hr_api.get_attendance_rule_switches", {}).then(function(res) {
+      ((res && res.switches) || []).forEach(function(sw) {
+        var ids = ORG_ATT_SWITCH_IDS[sw.key];
+        if (!ids) return;
+        var box = document.getElementById(ids.box);
+        if (box) { box.checked = !!sw.on; box.disabled = !sw.available && !sw.on; }
+        var needs = document.getElementById(ids.needs);
+        if (needs) needs.textContent = sw.available ? "" :
+          drT("Not available yet: your plan does not include {0}. Ask your Alvoraa account contact to add it.",
+              [(sw.needs || []).join(", ")]);
+      });
+      if (card) card.style.display = "";
+    }).catch(function() {
+      /* Not HR for this site: the card simply is not there. */
+      if (card) card.style.display = "none";
+    });
+  };
+
+  window.orgSaveAttendanceSwitch = function(key, box) {
+    var on = !!box.checked;
+    box.disabled = true;
+    window.gpFetch("alvoraa_portal.hr_api.set_org_setting", {key: key, value: on ? "1" : "0"})
+      .then(function() {
+        pfSetHtml("org-attrules-msg", "<span style=\"color:var(--green)\">" +
+          gpEsc(on ? drT("Switched on. It applies from now; nothing earlier is changed.")
+                   : drT("Switched off. Nothing new is deducted or scored; records already made are kept.")) +
+          "</span>");
+        /* Other screens read the switch from the feature list. */
+        if (window._features) window._features[key === "late_rules_enabled" ? "org_late_rules" : "org_attendance_scoring"] = on;
+      })
+      .catch(function(e) {
+        box.checked = !on;
+        pfSetHtml("org-attrules-msg", "<span style=\"color:var(--danger,var(--red))\">" +
+          gpEsc((e && e.message) || drT("The setting could not be saved. Try again, or ask your administrator.")) + "</span>");
+      })
+      .finally(function() { box.disabled = false; orgLoadAttendanceRules(); });
+  };
+
   window.orgSaveKraMandatory = function(enabled) {
     window.gpFetch("alvoraa_portal.hr_api.set_org_setting", {key: "kra_link_mandatory", value: enabled ? "1" : "0"})
       .then(function() { toast(enabled ? "KRA linking is now required" : "KRA linking is now optional", "ok"); })
@@ -12499,8 +12549,10 @@ window.pfRatingLabel = function(value, scale) {
             exempt_grades: []};
   }
   function apsScoringSold() {
+    /* An Organisation Settings switch since 26 Sep 2026, not a plan feature:
+       HR turns "Attendance in appraisal score" on for the whole company. */
     var f = window._features || {};
-    return !!f.plan_attendance_scoring;
+    return !!f.org_attendance_scoring;
   }
   function apsShowScoringNav() {
     var el = document.getElementById("apsn-scoring");

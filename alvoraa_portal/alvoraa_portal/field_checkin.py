@@ -25,6 +25,7 @@ Assignment. This module catches that refusal and rewrites it into words a
 driver can act on, with the real distance in it. The rule stays Frappe's.
 """
 
+import datetime
 import functools
 import hashlib
 import hmac
@@ -37,6 +38,7 @@ from frappe.rate_limiter import rate_limit
 from frappe.utils import (
 	add_to_date,
 	cint,
+	convert_utc_to_system_timezone,
 	flt,
 	get_datetime,
 	now,
@@ -730,6 +732,10 @@ def field_checkin(token, log_type, latitude=None, longitude=None,
 		"employee_name": emp.employee_name,
 		# So the app can redraw home from this answer with no extra E4 (AC-199).
 		"todays_checkins": _todays_punches(emp.name),
+		# Where the punch was, as measured here (fix of 27 Sep 2026): the app
+		# said "At <workplace>" for someone 13 km away because it only had the
+		# workplace's name. Never the workplace's coordinates (PRIV-6).
+		"location": _where_it_was(emp.name, lat, lon, accuracy),
 	}
 
 
@@ -778,6 +784,43 @@ def _workplace(site):
 	return {"name": site.location_name, "radius_m": cint(site.checkin_radius)} if site else None
 
 
+def _where_it_was(employee, lat, lon, accuracy):
+	"""How far a saved punch was from the workplace, for the phone's result card.
+
+	`within` is True or False only when the workplace has a radius above 0;
+	with no workplace, a radius of 0 (Frappe HR's "no limit") or no
+	coordinates on the workplace, it is None and the app never claims the
+	person was at the workplace. The distance is measured the same way Frappe
+	HR's own radius rule measures it (`get_distance_between_coordinates`).
+	Two small reads, on a punch that has already been saved.
+	"""
+	acc = flt(accuracy) if accuracy not in (None, "") else None
+	answer = {
+		"workplace": None,
+		"radius_m": None,
+		"distance_m": None,
+		"within": None,
+		"accuracy_m": int(round(acc)) if acc is not None else None,
+	}
+	site = _shift_location_for(employee)
+	if not site:
+		return answer
+	radius = cint(site.checkin_radius)
+	answer["workplace"] = site.location_name
+	answer["radius_m"] = radius
+	if not (site.latitude or site.longitude):
+		return answer
+
+	from hrms.hr.utils import get_distance_between_coordinates
+
+	distance = get_distance_between_coordinates(
+		flt(site.latitude), flt(site.longitude), flt(lat), flt(lon))
+	answer["distance_m"] = int(round(distance))
+	if radius > 0:
+		answer["within"] = distance <= radius
+	return answer
+
+
 def _require_position(latitude, longitude, accuracy, accuracy_required=False):
 	"""A punch without a trustworthy position is not recorded.
 
@@ -817,6 +860,12 @@ def _validated_captured_at(captured_at):
 	Anything more than a day either side of server time is a wrong clock or a
 	replayed request, and is dropped rather than stored as if it meant
 	something. Returns None when there is nothing trustworthy to keep.
+
+	A time that carries its offset from UTC ("2026-09-27T14:05:09+05:30", what
+	the app sends from 0.2.1) is moved into the site's time zone before it is
+	compared or stored. A time with no offset is read as site time, as before;
+	app builds before 0.2.1 sent UTC that way, so theirs stay 5 h 30 min early
+	in India until the phone updates (fix of 27 Sep 2026).
 	"""
 	if not captured_at:
 		return None
@@ -824,6 +873,11 @@ def _validated_captured_at(captured_at):
 		claimed = get_datetime(captured_at)
 	except Exception:
 		return None
+	if not claimed:
+		return None
+	if claimed.tzinfo is not None:
+		claimed = convert_utc_to_system_timezone(
+			claimed.astimezone(datetime.timezone.utc)).replace(tzinfo=None)
 	if abs(time_diff_in_seconds(now(), claimed)) > 24 * 60 * 60:
 		return None
 	return claimed

@@ -8,10 +8,12 @@ and `hrlocal-wa042` were not used.
 
 The strategy was approved by the user on 25 Sep 2026 (brought forward from ALV-128).
 
-> **Read the "Review fixes (26 Sep 2026)" section at the end first.** It changes
-> several things described below: the route switches now stop new joins only;
-> the per-address limit is 500; the per-email limit is now per account; and the
-> gaps list is mostly closed.
+> **Read the "Review fixes (26 Sep 2026)" section, and then the "Design change:
+> a changed password signs the phone out" section at the very end, first.**
+> They change several things described below: the route switches now stop new
+> joins only; the per-address limit is 500; the per-email limit is now per
+> account; the gaps list is mostly closed; and a changed password no longer
+> blocks a phone (SEC-26 is replaced).
 
 ---
 
@@ -255,7 +257,7 @@ real marker is prefixed with this site's name and is gone after use.
 
 | Item | What was built | Test |
 |---|---|---|
-| **SEC-26** a password change blocks the login's password phones | Two doors, because Frappe has two: (1) a new password set on the User form (HR or the person) — the existing User `on_update` hook reads Frappe's private `_User__new_password`; (2) the website's "forgot password" and change-password page (`frappe.core.doctype.user.user.update_password`), which writes the password **without saving the User** — wrapped through `override_whitelisted_methods` in `hooks.py`. Frappe's function does all the work; ours finds the user first (reset key or signed-in user) and blocks only after Frappe succeeded. Reason "Password changed". | User-form change → next punch `DEVICE_BLOCKED`; forgot-password reset with a real key → blocked; a wrong key (410) → nothing blocked |
+| **SEC-26** ~~a password change blocks the login's password phones~~ | **Replaced on 26 Sep 2026** — a changed password now signs the phone out instead of blocking it, on every path. The User-hook branch, the `update_password` override and the "Password changed" block reason are gone. See the last section. | See the last section |
 | **SEC-27** a sign-in that replaces the same person's phone emails them | `frappe.sendmail` (Email Queue, `delayed=True`) to the login: "A new phone signed in to the Alvoraa attendance app as you… If this was not you, tell HR and change your password." Plus an Info comment on the new phone's timeline. Not sent for a first-ever phone. Password sign-in only. | Email Queue row with the right recipient and words; none for the first phone; the timeline comment |
 | **SEC-28** Employee.user_id ≠ the phone's login → refused; unlinking blocks | Every call on a password phone checks it (`LOGIN_UNLINKED`, 403 — new code). An Employee `on_update` hook blocks, reason "Login unlinked", when `user_id` changes. This answers the user's question 3. | Change the link → blocked; unlink with the hook skipped → `LOGIN_UNLINKED`; a save that does not change the link blocks nothing |
 | **SEC-29** per-account limit on the account Frappe finds | The pre-lookup per-typed-text limit is gone. `_count_account_try` asks Frappe's `User.find_by_credentials` (no password check) which login the typed text finds, and counts 10 an hour on a hash of that login's name; text that finds nobody is counted on itself. | Capitals, spaces, an "ä" and a "ŵ" all find the same login and share one count of 10; the key holds a hash |
@@ -330,10 +332,9 @@ on the private Docker network. No other site's user was touched.)
 ### Still not done
 
 - **No APK** — no Android SDK here. A debug build on a real phone is still needed.
-- **SEC-26 blocks on a password *change*, not on a reset *request*.** Pressing
-  "Forgot password" only emails a link; the phone stops when the new password is
-  actually set. A password changed by a script with `frappe.utils.password.update_password`
-  (not through the User form or the website) does not fire either door.
+- ~~SEC-26 misses a password changed by a script.~~ Closed by the design change
+  at the end: every path is covered. (Pressing "Forgot password" still changes
+  nothing until the new password is actually set.)
 - The desk section has no special state for "codes are switched off"; the Invite
   dialog says so when pressed.
 
@@ -349,16 +350,15 @@ new commits on the same branch, nothing pushed. `origin/dev` had not moved
 |---|---|---|---|
 | 1 | P2: the SEC-27 email could fail the sign-in. `frappe.sendmail` looks up the outgoing Email Account at once and raises when there is none, and it ran before the commit - so the sign-in rolled back and the phone saw Frappe's "setup default outgoing Email Account" text. | The sign-in commits first; the email is sent afterwards inside `try/except`. A failure rolls back only the half-made email, is logged by the phone record's name only (title "Field app sign-in email", message given explicitly so Frappe does not write a traceback with local variables), and the phone's timeline says "the email to the person could not be sent". The email now goes to the User's `email` field, not its name. | Outgoing-account lookup patched to raise: the sign-in still returns a token, the phone is "Consent not given" as normal and becomes Active on agreement, the old phone is Replaced, no queue row, the log holds no address and no password. A second test proves the address is read from `User.email`. |
 | 2 | P3: the app had no screen for `JOIN_CODE_OFF`; it showed the generic "may be out of date" words. | `join-screens.js` has a `JOIN_CODE_OFF` screen: "Joining codes are switched off at your company. Sign in with your work email and password, or ask HR." Its first button, "Sign in with email and password", opens the sign-in screen. | Node test on the words and buttons; headless browser: a picked QR picture while codes are off shows the screen with "Code for HR: JOIN_CODE_OFF", and the first button lands on sign-in. |
-| 3 | P3: `tenant_setup._make_user` resets an existing login's password with `frappe.utils.password.update_password`, which no hook sees. | After resetting an EXISTING user's password it calls the new `field_app_device.block_phones_for_new_password(user)` - the same block helper, reason "Password changed". A brand-new user has no phones, so nothing is called. | `_make_user` on the signed-in login → next punch `DEVICE_BLOCKED`, reason "Password changed". |
+| 3 | P3: `tenant_setup._make_user` resets an existing login's password with `frappe.utils.password.update_password`, which no hook sees. | ~~Called `block_phones_for_new_password`.~~ Replaced on 26 Sep 2026: the call and the helper are gone; the fingerprint check signs the phone out on its next call. | `test_128_tenant_setups_reset_signs_the_phone_out` |
 | 4 | Notes only. | See "Known and accepted" below. | - |
 
 ### Known and accepted (for the user to accept)
 
-- **Password changes that still do not stop a password phone:** `bench
-  set-password`, `bench add-user`, the setup wizard, and any other Python code
-  that calls `frappe.utils.password.update_password` directly. All are
-  server-side admin actions, not something an employee or an HR user can do from
-  a screen. Recorded as accepted residual risk. HR can still block the phone.
+- ~~Password changes that still do not stop a password phone (`bench
+  set-password`, the setup wizard, scripts).~~ **Closed on 26 Sep 2026** — the
+  fingerprint check covers every path that sets a password. Nothing left for
+  the user to accept here.
 - **SEC-29 lets a stranger spend someone's 10 tries an hour.** Anyone who knows an
   email can use up that account's hourly count, so the real person is told "Too
   many tries" until the hour passes. This is the same trade Frappe's own lockout
@@ -390,3 +390,195 @@ afterwards.
   `check_app.mjs` says OK. `check_versions.mjs` OK.
 - Headless browser: both harnesses re-run; everything from round one still holds,
   plus the new "codes off" screen and its way back to sign-in.
+
+---
+
+## Design change: a changed password signs the phone out (26 Sep 2026)
+
+The user's words, 26 Sep 2026: *"if the password is reset from server side by
+admin, it shouldn't kill the mobile session active on the employee mobile. and
+also ask to login again."* So a password change of any kind now **signs the
+phone out and asks the person to sign in again**. It never blocks the phone,
+and it covers every path that can set a password. New commits on the same
+branch; nothing pushed.
+
+### How it works
+
+1. **At password sign-in** the new phone record stores `password_stamp`: an
+   HMAC-SHA256 of the login's current password hash in `__Auth` (doctype
+   "User", fieldname "password"), keyed with the site's encryption key
+   (`frappe.utils.password.get_encryption_key`), cut to 32 hex characters. It is
+   never the password or the hash. Without the site's key it cannot be matched
+   to anything. QR-joined phones carry none.
+2. **On every call from a password phone** - in
+   `field_checkin._refuse_unless_app_phone_is_eligible`, right after the
+   LOGIN_UNLINKED and disabled-login checks - the fingerprint is recomputed
+   with one read on `__Auth`'s primary key. If it differs (or the phone has
+   none), the phone is locked in the usual order (Employee, then phone),
+   re-read, set to the new status **Signed out** with its secret retired, the
+   change is **committed**, and the call is refused with the new code
+   `PASSWORD_CHANGED_SIGN_IN_AGAIN` (401): "Your password was changed. Please
+   sign in again." The commit comes first because a refusal rolls the request
+   back. A later call with the same secret finds the retired hash and gets the
+   same code. That covers `field_checkin`, `field_status` and
+   `acknowledge_notice`.
+3. **Why this covers every path:** Frappe salts each new hash, so ANY write of
+   a password - the User form, "forgot password", the change-password page,
+   `bench set-password`, the setup wizard, `tenant_setup`, a script calling
+   `update_password` - changes the hash and so the fingerprint. No hook is
+   needed.
+4. **Signing in again** goes through the normal `_set_up_phone` path, with no
+   HR step. The person's Signed out phone is now one of the phones a join
+   settles, and it ends **Replaced**.
+5. **No new-phone email (SEC-27)** when the replaced phone was Signed out, or
+   when it is the same physical phone. **How the same phone is recognised:**
+   the app sends the secret it held as `token`; the server hashes it and
+   compares it with the old record's live hash *or* its retired hash. After
+   `PASSWORD_CHANGED_SIGN_IN_AGAIN` the app deletes the secret from storage but
+   keeps it in memory for the sign-in screen, so it can still send it. A
+   sign-in with no secret, or with another phone's, is treated as a different
+   phone and emails the person as before.
+
+### What was removed
+
+- The password-change branch of `block_phones_for_disabled_login` (the User
+  hook). Disabling a login still blocks, unchanged.
+- The `override_whitelisted_methods` wrap of
+  `frappe.core.doctype.user.user.update_password` in `hooks.py`, and its
+  function `field_app_device.update_password`. Frappe's endpoint runs as
+  shipped again.
+- `tenant_setup._make_user`'s call and the helper
+  `block_phones_for_new_password`.
+- The block reason "Password changed" (in `BLOCK_REASONS` and the field's
+  options; they are pinned together). Nothing sets it any more, and offering it
+  in HR's block dialog would suggest a permanent block for a password change.
+- Their tests, replaced by the ones below.
+
+Unchanged, still permanent blocks: disabled login, leaver, unlinked login
+(SEC-28), HR block.
+
+### The Signed out state
+
+| Where | What it does |
+|---|---|
+| Phone record controller | `SIGNED_OUT`; `NO_LIVE_SECRET = FINAL + Signed out` retires the secret; server-only; the only move out of it is to Replaced (nobody, not even the server, can switch it back on); `password_stamp` is frozen after insert |
+| `password_stamp` field | Hidden, read-only, no copy, **permission level 1**, which no role holds. Frappe strips it from every form and list read (tested: the key comes back as `null`). Set only at insert, so no Version row ever holds it |
+| HR's Employee section | Status word "Signed out"; the status line says "No working phone. The password for Ravi's login was changed …, so … was signed out. Ravi can sign in again with the new password. No code is needed."; no Block button (no live secret) |
+| Phone list | Grey pill "Signed out", with the date under it |
+| Counts | The active-phone count reads Active only; the clean-up self-check (live secrets on stopped records) treats Signed out as stopped, which is right; the leaver hook and the login hooks touch only phones with a live secret |
+
+### The app
+
+- `gate-refusal.js`: `PASSWORD_CHANGED_SIGN_IN_AGAIN` → plan `signInAgain`.
+- `checkin.js`: the start screen (home), the punch, the notice and the notice
+  probe all call one `signInAgain()`: forget the stored secret and origin,
+  then open sign-in with the reason, the old secret (memory only) and the old
+  address.
+- `signin.js`: `start(opts)` shows the reason on the form ("Your password was
+  changed. Please sign in again." with "Code for HR: …"), fills the company
+  code (the remembered one, or read back from the address with the new
+  `signin-core.companyFromOrigin`), focuses the password box, and sends the
+  old secret as `token` on both sign-in calls.
+
+### Proof, after the design change
+
+All in `hrlocal-128` / `test128`, one module at a time. The worktree is
+bind-mounted into the container, so nothing was copied; `test128` was migrated
+first (new field and status option).
+
+| Run | Result |
+|---|---|
+| `test_field_app_password_signin_128` | **58 tests, OK** (was 51: 4 SEC-26 tests removed, 11 added) |
+| Neighbours: steps 1–6, permissions, check-in location, check-in security 014, module gate 016 | **255 tests, OK** |
+| **Total** | **313 tests, 0 failures** |
+
+New tests: the four paths (desk User form, reset key through Frappe's own
+endpoint, `update_password` called directly, `tenant_setup`) each give
+`PASSWORD_CHANGED_SIGN_IN_AGAIN` on the next `field_checkin` **and**
+`field_status`, with the phone Signed out, not Blocked, secret retired; the old
+password then fails and the new one signs in again on the same phone, the old
+record ends Replaced, and no email is queued. Also: a phone that never agreed
+is signed out at the notice; a different phone after a sign-out gets no email;
+the same Active phone signing in again (sending its secret) gets no email,
+while one without the secret does; an unchanged password, and a website
+password check on the same login, never sign a phone out; a signed-out phone
+cannot be moved to Active or Blocked; the fingerprint is in no endpoint
+answer, form read, list read, Employee section, message, Error Log, Activity
+Log, Version or Comment; QR phones are untouched and never compute a
+fingerprint.
+
+- **Fail without the fix:** with the `_sign_out_if_password_changed(device)`
+  line removed, `test_128_a_direct_update_password_signs_the_phone_out` fails
+  (the punch succeeds after the change). Restored.
+- The first runs of the new module failed twice, both in my test, not the
+  code: the fixture's HR maker has no company scope, so it cannot open the
+  phone record; and Frappe's form read keeps the stripped field as `null`, so
+  the test now looks for a value, not the key.
+- `check_app_integrity.py` OK (639 checks); `check_api_paths.py --max 2` OK;
+  `check_min_app_version.py` OK; ruff 0.6.9 with the CI config: all checks
+  passed on the changed Python files.
+- App: 141 node tests (6 new in `test/password-changed.test.js`). In the
+  worktree 139 pass; the 2 failures are the known Windows line-ending trap on
+  the vendored files. On an LF copy all 141 pass and `check_app.mjs` says OK.
+  `check_versions.mjs` OK (0.2.0 / 20000). My first `check_app.mjs` run caught
+  a full web address I had written in a comment; reworded.
+- **Headless browser** (scratch harness, not committed), a new third harness:
+  a phone holding a secret whose `field_status` answers the new code opens on
+  sign-in with "Your password was changed. Please sign in again." and "Code for
+  HR: PASSWORD_CHANGED_SIGN_IN_AGAIN", company code "sargam" read back from the
+  address (none was remembered), focus in the password box, secret and address
+  gone from storage. Signing in sends the old secret as `token`, empties the
+  password box, stores the new secret, and the password is in neither store.
+  The two earlier harnesses were re-run and behave as before.
+
+### Performance
+
+One extra query per call from a password phone (a primary-key read of
+`__Auth`), and none for QR or web phones (tested: the fingerprint function is
+never called for a QR phone). A sign-out adds two row locks and one save, once
+per phone per password change.
+
+### Non-functional check, against the code as written
+
+| Dimension | Verdict | Why |
+|---|---|---|
+| Performance | neutral | +1 primary-key read per password-phone call; 0 for QR phones |
+| Security | improves | Every password-setting path now stops the old phone, where before `bench set-password` and scripts did not. The fingerprint is keyed, truncated, level-1 and never sent. One trade-off below |
+| Reliability | improves | A password reset no longer kills a phone for good; the person recovers alone |
+| Scalability | neutral | Same per-call shape at 400 phones; no job, no fan-out on a password change |
+| Maintainability | improves | One check replaces a hook branch, a whitelisted override and a helper; no dependence on Frappe's private `_User__new_password` |
+| Data integrity | neutral | Sign-out is locked, re-read and committed before the refusal; a concurrent HR block wins and is answered as a block |
+| Compliance / privacy | neutral | No new personal data; the fingerprint says nothing without the site key; the email to the person is kept for every case except "you were just told on this phone" |
+
+### Known gaps and trade-offs
+
+- **No email for the first sign-in after a password change** *(intentional
+  trade-off — ask the user if she wants otherwise)*. Someone who changed the
+  password (for example through a compromised mailbox) and signs in on their
+  own phone sends no SEC-27 email, because the old phone was Signed out. The
+  person still sees "Your password was changed. Please sign in again." on
+  their own phone, which is the warning; the Activity Log row (SEC-31) is
+  still written.
+- **A Frappe upgrade that re-hashes passwords** signs password phones out once.
+  Frappe's `check_password` re-hashes a password when its hash scheme is
+  out of date, which changes the fingerprint. Each person signs in again once.
+  *(acceptable simplification — rare and harmless)*
+- **`remove_my_phone` and `withdraw_agreement` do not check the fingerprint**,
+  the same as they do not check LOGIN_UNLINKED. Removing is the person
+  dropping the phone anyway; after a withdrawal the next start screen signs
+  the phone out. *(acceptable simplification)*
+- **Seen, not changed:** the desk form read of a phone record returns
+  `token_hash` and `retired_token_hash` to HR (they are hidden, level 0). That
+  predates this branch; the same level-1 treatment would hide them. Not changed
+  without the user's word. *(question for the user)*
+- **No APK** — still no Android SDK here.
+
+### What else moved while I worked
+
+`origin/dev` moved from 0d51cac to f106668 — 166 commits from other sessions
+(Waves 2 to 4 of the portal redesign, slices 042–045, security reviews). Of
+the files this branch changes, only `hooks.py` was touched there (9 lines
+added: the portal's `jinja` hook, well away from the lines this branch
+changes). This branch was **not** rebased (the brief said add commits only). A
+trial merge (`git merge-tree`) of this branch with origin/dev shows no
+conflict; the rebase before any push still needs the full suite re-run.

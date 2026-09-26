@@ -21,9 +21,11 @@ BASE_DOMAIN="${BASE_DOMAIN:-dev.alvoraa.co}"
 SITE="${SUBDOMAIN}.${BASE_DOMAIN}"
 TENANT_NAME="PP Jewellers (demo)"
 # The full Enterprise bundle (vendor stays ticked so the derived plan label is "enterprise")
-# plus the five opt-in keys the six builds need. create_tenant writes this list to the
-# site's features config, which is what the console tick does.
-MODULES='["portal","leaves","attendance","expenses","hr_setup","tenure","recruitment","payroll","tax_benefits","performance","goals","analytics","vendor","late_rules","attendance_scoring","employee_documents","screening_forms","policy_library"]'
+# plus the three opt-in keys the builds need. create_tenant writes this list to the
+# site's features config, which is what the console tick does. Late coming rules and
+# attendance in the appraisal score are no longer features (26 Sep 2026): they are
+# Organisation Settings switches, turned on in step 2b.
+MODULES='["portal","leaves","attendance","expenses","hr_setup","tenure","recruitment","payroll","tax_benefits","performance","goals","analytics","vendor","employee_documents","screening_forms","policy_library"]'
 
 bench_exec() {   # bench_exec <site> <dotted.path> <json kwargs>
   docker exec "$BACKEND" bash -lc "cd /home/frappe/frappe-bench && bench --site $1 execute $2 --kwargs '$3'"
@@ -49,6 +51,11 @@ for i in $(seq 1 60); do
   sleep 20
 done
 echo "Save the Administrator password printed above. It is not shown again."
+
+echo "== 2b. switch on the two attendance rules (Organisation Settings, off by default)"
+for KEY in late_rules_enabled attendance_scoring_enabled; do
+  bench_exec "$SITE" frappe.db.set_default "{\"key\":\"$KEY\",\"val\":\"1\"}"
+done
 
 echo "== 3. TLS name"
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"

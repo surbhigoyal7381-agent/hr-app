@@ -133,7 +133,8 @@ class TestTenantBrandText(FrappeTestCase):
 		with open(path, encoding="utf-8") as f:
 			sql = f.read()
 		for value in brand_text.APP_NAME_DEFAULTS + brand_text.TEXT_DEFAULTS \
-				+ brand_text.EMAIL_ACCOUNT_DEFAULTS + brand_text.HELP_ITEMS_TO_HIDE:
+				+ brand_text.EMAIL_ACCOUNT_DEFAULTS + brand_text.HELP_ITEMS_TO_HIDE \
+				+ tuple(brand_text.NAMED_EMAIL_RENAMES):
 			self.assertIn(f"'{value}'", sql, value)
 		for field in brand_text.TEXT_FIELDS:
 			self.assertIn(f"'{field}'", sql, field)
@@ -203,7 +204,8 @@ class TestTheDryRunListsWhatThePatchesDo(FrappeTestCase):
 	SINGLES = (("Website Settings", "app_name"), ("System Settings", "app_name"),
 	           ("Website Settings", "copyright"), ("Website Settings", "footer_powered"),
 	           ("Website Settings", "splash_image"), ("Website Settings", "favicon"))
-	ACCOUNTS = ("alvoraa", "Alvoraa HR", "Alvora HR", "Alvoraa HRMS", "Alvora HRMS")
+	ACCOUNTS = ("alvoraa", "Alvoraa HR", "Alvora HR", "Alvoraa HRMS", "Alvoraa HR Admin",
+	            "Alvora HRMS", "Alvora HR Admin")
 
 	def setUp(self):
 		if not os.path.exists(os.path.join(REPO, "scripts", "brand_text_dry_run.sh")):
@@ -216,7 +218,7 @@ class TestTheDryRunListsWhatThePatchesDo(FrappeTestCase):
 		frappe.db.set_single_value("Website Settings", "footer_powered", "Powered by Alvoraa")  # exact
 		frappe.db.set_single_value("Website Settings", "splash_image", "/ASSETS/alvoraa_portal/images/x.png")
 		frappe.db.set_single_value("Website Settings", "favicon", "/private/files/f.png")
-		for name in self.ACCOUNTS[:4]:
+		for name in self.ACCOUNTS[:5]:
 			if not frappe.db.exists("Email Account", name):
 				frappe.get_doc({"doctype": "Email Account", "email_account_name": name,
 				                "email_id": frappe.scrub(name).replace("_", ".") + ".dry149@example.com",
@@ -266,9 +268,49 @@ class TestTheDryRunListsWhatThePatchesDo(FrappeTestCase):
 		self.assertIn(("Email Account (From name)", "Alvora HRMS"), sql)
 		self.assertNotIn(("Email Account (From name)", "alvora"), sql)
 		self.assertNotIn(("Email Account (From name)", "Alvora HR"), sql, "the new name exists")
+		self.assertIn(("Email Account (From name)", "Alvora HR Admin"), sql, "Surbhi's named rename")
 
-	def test_review_p3_control_plane_never_renames_an_email_account(self):
+	def test_review_p3_control_plane_renames_only_the_named_account(self):
 		frappe.local.conf["alvoraa_control_plane"] = 1
 		sql, patch = self._sql_changes(True), self._patch_changes()
 		self.assertEqual(sql, patch)
-		self.assertFalse([s for s in sql if s[0].startswith("Email Account")])
+		# only the account Surbhi named is renamed on the control plane
+		self.assertEqual([s for s in sql if s[0].startswith("Email Account")],
+		                 [("Email Account (From name)", "Alvora HR Admin")])
+
+
+class TestTheNamedSendingAccount(FrappeTestCase):
+	"""Surbhi, 27 Sep 2026: alvoraa.co's sending account "Alvoraa HR Admin" is
+	renamed "Alvora HR Admin" - by Frappe's own rename, so links follow - on the
+	control plane too, and never over an account that already has the new name."""
+
+	OLD, NEW = "Alvoraa HR Admin", "Alvora HR Admin"
+
+	def _account(self, name):
+		frappe.get_doc({"doctype": "Email Account", "email_account_name": name,
+		                "email_id": frappe.scrub(name).replace("_", ".") + ".named149@example.com",
+		                "enable_incoming": 0, "enable_outgoing": 0,
+		                "awaiting_password": 1}).insert(ignore_permissions=True)
+
+	def tearDown(self):
+		for name in (self.OLD, self.NEW):
+			if frappe.db.exists("Email Account", name):
+				frappe.delete_doc("Email Account", name, force=True, ignore_permissions=True)
+		frappe.local.conf.pop("alvoraa_control_plane", None)
+
+	def test_alv149_named_account_is_renamed_on_the_control_plane(self):
+		frappe.local.conf["alvoraa_control_plane"] = 1
+		self._account(self.OLD)
+		result = brand_text.apply()
+		self.assertEqual(result["failed"], [])
+		self.assertTrue(frappe.db.exists("Email Account", self.NEW))
+		self.assertFalse(frappe.db.exists("Email Account", self.OLD))
+		self.assertEqual(frappe.db.get_value("Email Account", self.NEW, "email_account_name"), self.NEW)
+
+	def test_alv149_named_account_is_left_when_the_new_name_exists(self):
+		self._account(self.OLD)
+		self._account(self.NEW)
+		plan = {r["current"]: r for r in brand_text.plan() if r["setting"].startswith("Email Account")}
+		self.assertEqual(plan[self.OLD]["action"], "leave")
+		brand_text.apply()
+		self.assertTrue(frappe.db.exists("Email Account", self.OLD))

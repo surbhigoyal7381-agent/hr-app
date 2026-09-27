@@ -33,7 +33,9 @@ read -r -d '' SQL <<'SQL' || true
 -- default collation would treat 'frappe' and 'Frappe ' as 'Frappe', and the
 -- patch (Python) does not - so without BINARY this list would promise changes
 -- the patch never makes. @alvoraa_cp is 1 on the control plane (set by the
--- shell below, from site_config.json), where Email Accounts are never renamed.
+-- shell below, from site_config.json), where Email Accounts are never renamed -
+-- except the ones Surbhi named one by one (brand_text.NAMED_EMAIL_RENAMES,
+-- 'Alvoraa HR Admin'): alvoraa.co's own sending account lives there.
 SELECT IF(BINARY COALESCE(s.value,'') IN ('','Frappe','ERPNext','Alvoraa','Alvoraa HR','Alvoraa HRMS'),'change','leave') AS action,
        CONCAT(d.dt,'.app_name') AS setting, COALESCE(s.value,'(not set)') AS current_value,
        IF(BINARY COALESCE(s.value,'') IN ('','Frappe','ERPNext','Alvoraa','Alvoraa HR','Alvoraa HRMS'),'Alvora HRMS','(left alone)') AS proposed
@@ -49,11 +51,13 @@ FROM tabSingles
 WHERE doctype = 'Website Settings' AND field IN ('brand_html','copyright','footer_powered','title_prefix')
   AND (value LIKE BINARY '%Alvoraa%' OR value LIKE BINARY '%ALVORAA%')
 UNION ALL
-SELECT IF(BINARY e.name IN ('Alvoraa','Alvoraa HR','Alvoraa HRMS') AND @alvoraa_cp = 0
+SELECT IF(((BINARY e.name IN ('Alvoraa','Alvoraa HR','Alvoraa HRMS') AND @alvoraa_cp = 0)
+             OR BINARY e.name IN ('Alvoraa HR Admin'))
           AND NOT EXISTS (SELECT 1 FROM `tabEmail Account` n WHERE n.name = REPLACE(e.name,'Alvoraa','Alvora')),
           'change','leave'),
        'Email Account (From name)', e.name,
-       IF(BINARY e.name IN ('Alvoraa','Alvoraa HR','Alvoraa HRMS') AND @alvoraa_cp = 0
+       IF(((BINARY e.name IN ('Alvoraa','Alvoraa HR','Alvoraa HRMS') AND @alvoraa_cp = 0)
+             OR BINARY e.name IN ('Alvoraa HR Admin'))
           AND NOT EXISTS (SELECT 1 FROM `tabEmail Account` n WHERE n.name = REPLACE(e.name,'Alvoraa','Alvora')),
           REPLACE(e.name,'Alvoraa','Alvora'),'(left alone)')
 FROM `tabEmail Account` e WHERE e.name LIKE '%Alvoraa%'
@@ -96,7 +100,7 @@ for site in $SITES; do
   CP=0
   if grep -Eq '"alvoraa_control_plane": *(1|true)' "sites/$site/site_config.json" 2>/dev/null; then
     CP=1
-    echo "(control plane: Email Account names are listed as 'leave' - never renamed here)"
+    echo "(control plane: only the Email Accounts Surbhi named are renamed here)"
   fi
   grep -o '"tenant_name": *"Alvoraa"' "sites/$site/site_config.json" 2>/dev/null \
     && echo "(report only: site_config tenant_name is \"Alvoraa\" - not changed by the patch)" || true

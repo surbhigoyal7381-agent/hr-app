@@ -42,6 +42,16 @@ TEXT_DEFAULTS = ("Alvoraa", "Alvoraa HR", "Alvoraa HRMS", "© Alvoraa", "Powered
 
 EMAIL_ACCOUNT_DEFAULTS = ("Alvoraa", "Alvoraa HR", "Alvoraa HRMS")
 
+# Real sending accounts Surbhi named one by one, exact name -> new name. Unlike
+# the defaults above these ARE renamed on the control plane too: that is where
+# alvoraa.co's own sending account lives, and it was her reason for adding it
+# (27 Sep 2026). The control-plane skip exists so the patch never renames an
+# account nobody chose; a name listed here has been chosen. Still skipped when
+# the new name already exists. Add a name here only on her word.
+NAMED_EMAIL_RENAMES = {
+	"Alvoraa HR Admin": "Alvora HR Admin",
+}
+
 HELP_ITEMS_TO_HIDE = ("Frappe Support",)
 
 
@@ -81,8 +91,10 @@ def plan():
 
 	for name in frappe.get_all("Email Account", filters={"name": ["like", "%Alvoraa%"]},
 	                           pluck="name"):
-		ours = name in EMAIL_ACCOUNT_DEFAULTS and not _is_control_plane()
-		new = _respell(name)
+		if name in NAMED_EMAIL_RENAMES:
+			ours, new = True, NAMED_EMAIL_RENAMES[name]
+		else:
+			ours, new = name in EMAIL_ACCOUNT_DEFAULTS and not _is_control_plane(), _respell(name)
 		if ours and frappe.db.exists("Email Account", new):
 			ours = False
 		rows.append({"setting": "Email Account (From name)", "current": name,

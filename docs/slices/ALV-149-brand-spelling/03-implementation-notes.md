@@ -120,12 +120,20 @@ report  Emails queued, not sent (keep their old text)    780
 `test_site` showed the same four changes and 3 queued emails. The 780 on ppj are
 local demo mail that was never sent (mail is muted locally).
 
-### Waiting for Surbhi (not built)
+### The named sending account (Surbhi, 27 Sep 2026)
 
-**alvoraa.co's sending account "Alvoraa HR Admin"** - and any similar real From
-name - is not an exact old default, so the patch leaves it, and the dry-run lists it
-as "leave". The coordinator has asked Surbhi whether to add it to the patch as a
-named rename. Nothing is built for it until she answers.
+alvoraa.co's sending account **"Alvoraa HR Admin" becomes "Alvora HR Admin"**. It is
+not an exact old default, so it is a named rename in `brand_text.NAMED_EMAIL_RENAMES`:
+exact match, Frappe's own `rename_doc` (links follow, and Email Account's
+`after_rename` updates `email_account_name`), skipped if "Alvora HR Admin" already
+exists. **It applies on the control plane too** - that is where the account lives,
+and the control-plane skip exists only for accounts nobody chose. The dry-run shows
+it as "change". Any other name goes on that list only on her word.
+
+Other "Alvoraa <something>" From-names: **none found** on the local sites
+(`ppj.localhost`, `test_site`, `test149`; read-only), and no `email_sender_name` in
+their site configs. The dry-run on dev and production will list any there as
+"leave".
 
 ## 6 · The ALVORA artwork (D2) — done, commit 7a4ff3c
 
@@ -257,3 +265,12 @@ instead of skipping); guard self-test OK (19 cases) and repository scan clean;
 integrity OK; ruff clean; dry-run on the two local sites (read-only) unchanged in
 content. No full suite: the fixes touch only the dry-run script, the guard,
 `brand_text.py`'s one comparison and the test file.
+
+## 11 · After the review
+
+- Rebased onto `origin/dev` ebae5c2, which moved the ALV-145 switch code in
+  `portal.js` out of the review-settings span. That fixes the pre-existing
+  `test_decision23` failure named in section 7a. My two `portal.js` string edits
+  survived the rebase (checked).
+- The named rename above. `test_brand_spelling_149`: **19 of 19 pass**; guard
+  self-test and scan OK; integrity OK; ruff clean.

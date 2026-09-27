@@ -271,3 +271,11 @@ body.sb-collapsed .sidebar:hover .sb-scroll-btn{display:flex}
 .bnav-icon{font-size:var(--fs-lg);line-height:1;transition:transform var(--t)}
 .bnav-item.active .bnav-icon{transform:scale(1.12)}
 
+/* ALV-153: Frappe's avatar menu (top right) offered two more ways into the desk:
+   "Switch To Desk" (/desk) and, on tenants with an app outside /desk such as CRM,
+   "Apps" (/apps, which Frappe 16 redirects to /desk). Both land on the same screen,
+   and both show for any System User. The portal's own sidebar switch asks the
+   server who may go to the desk (module_access.get_switch_target), so it stays
+   the one door. "My Account" and "Log out" are untouched (Surbhi, 27 Sep). */
+#website-post-login .switch-to-desk,
+#website-post-login .apps{display:none !important}

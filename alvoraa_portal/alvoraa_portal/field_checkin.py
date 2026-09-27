@@ -661,7 +661,7 @@ def field_checkin(token, log_type, latitude=None, longitude=None,
 
 	lat, lon = _require_position(latitude, longitude, accuracy,
 	                             accuracy_required=device.join_method in device_rules.APP_JOIN_METHODS)
-	claimed = _validated_captured_at(captured_at)
+	claimed = _validated_captured_at(captured_at, errors.sent_app_version())
 
 	_refuse_duplicate(device, log_type)
 
@@ -779,9 +779,21 @@ def _todays_punches(employee):
 	)
 
 
+def _radius_checked():
+	"""Frappe HR checks the workplace radius only when HR Settings allows
+	location tracking. With it off, a radius is a rule nobody enforces, so the
+	phone must say "from anywhere" rather than promise a distance (27 Sep 2026)."""
+	return bool(cint(frappe.db.get_single_value("HR Settings", "allow_geolocation_tracking")))
+
+
+def _enforced_radius(site):
+	return cint(site.checkin_radius) if site and _radius_checked() else 0
+
+
 def _workplace(site):
-	"""Name and radius only. Never the coordinates (PRIV-6)."""
-	return {"name": site.location_name, "radius_m": cint(site.checkin_radius)} if site else None
+	"""Name and radius only. Never the coordinates (PRIV-6). The radius is 0
+	when nobody enforces it (location tracking off in HR Settings)."""
+	return {"name": site.location_name, "radius_m": _enforced_radius(site)} if site else None
 
 
 def _where_it_was(employee, lat, lon, accuracy):
@@ -805,7 +817,7 @@ def _where_it_was(employee, lat, lon, accuracy):
 	site = _shift_location_for(employee)
 	if not site:
 		return answer
-	radius = cint(site.checkin_radius)
+	radius = _enforced_radius(site)
 	answer["workplace"] = site.location_name
 	answer["radius_m"] = radius
 	if not (site.latitude or site.longitude):
@@ -854,7 +866,11 @@ def _require_position(latitude, longitude, accuracy, accuracy_required=False):
 	return flt(latitude), flt(longitude)
 
 
-def _validated_captured_at(captured_at):
+# App builds before this one sent the phone's time in UTC with no offset.
+FIRST_BUILD_WITH_OFFSET = (0, 2, 1)
+
+
+def _validated_captured_at(captured_at, app_version=None):
 	"""The phone's own timestamp, kept only when it is plausible.
 
 	Anything more than a day either side of server time is a wrong clock or a
@@ -863,9 +879,10 @@ def _validated_captured_at(captured_at):
 
 	A time that carries its offset from UTC ("2026-09-27T14:05:09+05:30", what
 	the app sends from 0.2.1) is moved into the site's time zone before it is
-	compared or stored. A time with no offset is read as site time, as before;
-	app builds before 0.2.1 sent UTC that way, so theirs stay 5 h 30 min early
-	in India until the phone updates (fix of 27 Sep 2026).
+	compared or stored. A time with no offset from an app build before 0.2.1
+	is UTC (those builds sent `toISOString()` without the Z), so it is read as
+	UTC and moved the same way. A time with no offset and no app version (the
+	web check-in page) is read as site time, as before (27 Sep 2026).
 	"""
 	if not captured_at:
 		return None
@@ -875,12 +892,20 @@ def _validated_captured_at(captured_at):
 		return None
 	if not claimed:
 		return None
+	if claimed.tzinfo is None and _sends_bare_utc(app_version):
+		claimed = claimed.replace(tzinfo=datetime.timezone.utc)
 	if claimed.tzinfo is not None:
 		claimed = convert_utc_to_system_timezone(
 			claimed.astimezone(datetime.timezone.utc)).replace(tzinfo=None)
 	if abs(time_diff_in_seconds(now(), claimed)) > 24 * 60 * 60:
 		return None
 	return claimed
+
+
+def _sends_bare_utc(app_version):
+	"""True for an app build older than 0.2.1. No version (the web page) is False."""
+	parsed = errors.parse_version(app_version) if app_version else None
+	return bool(parsed) and parsed < FIRST_BUILD_WITH_OFFSET
 
 
 def _refuse_duplicate(device, log_type):

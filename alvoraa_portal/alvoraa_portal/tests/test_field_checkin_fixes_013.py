@@ -143,15 +143,25 @@ class WithAWorkplace(DailyCase):
 		self.assertTrue(250 <= loc["distance_m"] <= 500, loc)
 		self.assertEqual(loc["accuracy_m"], 14)
 
-	def test_fix0927_a_radius_not_enforced_says_outside_never_at(self):
+	def test_fix0927_a_radius_not_enforced_is_from_anywhere_never_at(self):
 		"""Tracking off: Frappe HR does not enforce the radius, so the punch is
-		saved - and the answer still says the person was outside it."""
+		saved, the phone is told the radius is 0 (from anywhere), and it still
+		says how far away the person was - never "at" the workplace."""
 		self.radius(200, tracking=0)
 		token = self.app_phone()
 		out = self.punch(token, **FAR)
 		self.assertEqual((out or {}).get("status"), "ok", self.words())
-		self.assertIs(out["location"]["within"], False)
+		self.assertEqual(out["location"]["radius_m"], 0)
+		self.assertIsNone(out["location"]["within"])
 		self.assertTrue(250 <= out["location"]["distance_m"] <= 500)
+
+	def test_fix0927_status_says_from_anywhere_when_tracking_is_off(self):
+		"""The rule line on welcome and home: a radius nobody checks is shown as 0."""
+		self.radius(200, tracking=0)
+		token = self.app_phone()
+		self.assertEqual(self.status(token)["workplace"], {"name": DEPOT, "radius_m": 0})
+		self.radius(200, tracking=1)
+		self.assertEqual(self.status(token)["workplace"], {"name": DEPOT, "radius_m": 200})
 
 	def test_fix0927_the_answer_never_carries_the_workplace_coordinates(self):
 		self.radius(200)
@@ -214,6 +224,21 @@ class ThePhotoTime(DailyCase):
 		site_local = self.site_now()
 		self.assertEqual(fc._validated_captured_at(site_local.strftime("%Y-%m-%d %H:%M:%S")),
 		                 site_local)
+
+	def test_fix0927_an_old_app_time_with_no_offset_is_read_as_utc(self):
+		"""Builds before 0.2.1 sent UTC with no offset: read as UTC, not site time."""
+		site_local = self.site_now()
+		aware = site_local.replace(tzinfo=ZoneInfo(get_system_timezone()))
+		bare_utc = aware.astimezone(datetime.UTC).strftime("%Y-%m-%d %H:%M:%S")
+		self.assertEqual(fc._validated_captured_at(bare_utc, "0.2.0"), site_local)
+		self.assertEqual(fc._validated_captured_at(bare_utc, "0.1.0"), site_local)
+
+	def test_fix0927_new_app_and_web_page_bare_times_stay_site_time(self):
+		site_local = self.site_now()
+		bare = site_local.strftime("%Y-%m-%d %H:%M:%S")
+		self.assertEqual(fc._validated_captured_at(bare, "0.2.1"), site_local)
+		self.assertEqual(fc._validated_captured_at(bare, None), site_local)       # the web page
+		self.assertEqual(fc._validated_captured_at(bare, "not-a-version"), site_local)
 
 	def test_fix0927_nonsense_is_dropped_not_an_error(self):
 		for sent in ("not a time", "2026-13-45T99:00:00+05:30", "", None):

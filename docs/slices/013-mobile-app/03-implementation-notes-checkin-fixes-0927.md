@@ -136,3 +136,19 @@ cannot run ("Unsupported class file major version 69"). The APK was built with
 ## What else moved while I worked
 
 Branch started from `origin/dev` 6411f73. No other commits were brought in.
+
+## Two follow-ups from the review (27 Sep 2026, on the user's word "add both and push")
+
+- **Old phones' photo time.** A `captured_at` with no offset from an app build before 0.2.1 (the
+  `X-Alvoraa-App-Version` header) is read as UTC, which is what those builds sent, and moved into
+  site time. A bare time from 0.2.1 or later, or from the web page (no version), is still read as
+  site time. Times already stored wrong on dev are not corrected.
+- **Location tracking off.** When HR Settings `allow_geolocation_tracking` is off, Frappe HR does
+  not enforce the radius, so `field_status` and the punch's `location` block now report the
+  radius as 0: the app says "Check in from anywhere" and never "At <workplace>". No app change.
+- **Release rule (review P2).** App 0.2.1 or later must never talk to a server without this
+  branch: the old server fails every punch on the offset time. The server change lands on each
+  tenant before any 0.2.1 phone joins it, including on the way to main.
+
+Tests: test_field_checkin_fixes_013 16 OK (3 new), ALV-128 59 OK, check-in location 9 OK,
+check-in security 014 16 OK.

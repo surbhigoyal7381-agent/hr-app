@@ -23,13 +23,32 @@
 
 FROM frappe/bench:latest
 
-ARG FRAPPE_BRANCH=version-16
-ARG ERPNEXT_BRANCH=version-16
+# ── The framework, pinned to release TAGS (ALV-156, slice 055) ──────────────
+#
+# These three were `version-16` - a MOVING branch. Two builds of the same commit
+# of our code could contain different Frappe, different ERPNext and different
+# India Compliance, and nothing in the repository recorded which one an image got.
+# Measured on 2026-09-27: production (prod-65878e8, built 20 Sep) ran Frappe
+# v16.34.0 / ERPNext v16.35.0 / India Compliance v16.9.1, while dev (dev-3bb22ac,
+# built 27 Sep) ran v16.35.0 / v16.36.0 / v16.10.0 from the same branch names.
+#
+# So: a tag, like CRM_TAG below. Frappe and ERPNext tag every release on
+# version-16 and the branch tip sits on the newest tag, so a tag costs nothing in
+# freshness and buys a build you can reproduce. Raised on purpose, never by
+# itself - the procedure is in docs/slices/055-pin-framework-versions/
+# 07-devops-inputs.md §4.
+#
+# Change these three together with .github/workflows/ci.yml, which builds its own
+# bench for the Python tests. scripts/check_version_pins.py checks they agree.
+ARG FRAPPE_TAG=v16.35.0
+ARG ERPNEXT_TAG=v16.36.0
 # Indian statutory compliance: GST returns, e-invoicing, e-way bills, TDS on
 # vendor payments, and the Companies Act audit trail. Sold as a module - see
 # subscription.py - so it is present in the image but installed on a site only
 # when the plan includes it.
-ARG INDIA_COMPLIANCE_BRANCH=version-16
+#
+# Its own release line, not Frappe's: v16.x here is india-compliance's numbering.
+ARG INDIA_COMPLIANCE_TAG=v16.10.0
 # Frappe CRM (frappe/crm): leads, deals, email, telephony - the standalone CRM,
 # sold as the `crm` feature in subscription.py. Present in the image, installed on
 # a site only when sold, and only AFTER that site's setup wizard has finished
@@ -64,17 +83,17 @@ ENV PATH="/home/frappe/.local/bin:${PATH}"
 # step runs, is reused between builds on the same machine, and is never written to
 # a layer. uid/gid 1000 is the `frappe` user, or yarn cannot write to it.
 # (ALV-109. On 23 Sep 2026 the CRM build filled the GitHub runner's disk.)
-# ── 1. Bench + upstream apps, pinned by branch (pin by commit for prod) ─────
+# ── 1. Bench + upstream apps, pinned by release tag (ALV-156) ───────────────
 RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench init --skip-redis-config-generation \
-               --frappe-branch "${FRAPPE_BRANCH}" \
+               --frappe-branch "${FRAPPE_TAG}" \
                frappe-bench
 
 WORKDIR /home/frappe/frappe-bench
 
-RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch "${ERPNEXT_BRANCH}" erpnext
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch "${ERPNEXT_TAG}" erpnext
 
 # Declares required_apps = ["frappe/erpnext"], so it must follow erpnext.
-RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch "${INDIA_COMPLIANCE_BRANCH}" https://github.com/resilient-tech/india-compliance
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch "${INDIA_COMPLIANCE_TAG}" https://github.com/resilient-tech/india-compliance
 
 # No required_apps of its own. get-app runs its pip install (adds twilio) and the
 # frontend's yarn install; the Vite build itself happens in step 4 below.

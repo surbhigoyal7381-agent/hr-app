@@ -541,6 +541,10 @@ def withdraw_agreement(token):
 	device.flags[SERVER_FLAG] = True
 	device.flags["alvoraa_change_source"] = "The employee"
 	device.save(ignore_permissions=True)
+	# ALV-133 E-5: the app tells the person "HR will see that you stopped
+	# agreeing". The status and "Changed by: The employee" already say it; this
+	# line puts it in words on the phone record's timeline, in the same save.
+	device.add_comment("Info", _("The employee stopped agreeing to the notice in the app."))
 	frappe.db.commit()
 	return {}
 

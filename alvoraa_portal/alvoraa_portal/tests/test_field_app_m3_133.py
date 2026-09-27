@@ -12,7 +12,7 @@ test names the thing it keeps alive:
     key changes no word and no version.
   * **E-5 · HR sees a withdrawal** - after "Stop agreeing" the Employee
     form's section says "not agreed", names the employee as the one who
-    changed it, and the phone's own timeline records the change.
+    changed it, and the phone record's timeline says so in words.
 """
 
 from unittest import mock
@@ -201,8 +201,18 @@ class HrSeesAWithdrawal(DeskCase):
 		self.assertTrue(row["status_changed_on"])
 
 		frappe.set_user("Administrator")
-		versions = frappe.get_all("Version", filters={"ref_doctype": fc.DEVICE, "docname": phone},
-		                          pluck="data")
+		notes = frappe.get_all("Comment", filters={"reference_doctype": fc.DEVICE,
+		                                           "reference_name": phone,
+		                                           "comment_type": "Info"},
+		                       pluck="content")
 		frappe.set_user("Guest")
-		self.assertTrue(any('"Consent not given"' in (v or "") for v in versions),
-		                "the phone's timeline does not show the change to Consent not given")
+		self.assertIn("The employee stopped agreeing to the notice in the app.", notes,
+		              "the phone's timeline does not say the employee stopped agreeing")
+
+		# Withdrawing twice writes one line, not two (the second call changes nothing).
+		self.call(join.withdraw_agreement, {"token": answer["token"]})
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.count("Comment", {"reference_doctype": fc.DEVICE,
+		                                             "reference_name": phone,
+		                                             "comment_type": "Info"}), len(notes))
+		frappe.set_user("Guest")

@@ -96,6 +96,42 @@ permission to deploy.**
 
 ---
 
+## A new requirement goes to the product manager FIRST
+
+**Rule given 2026-09-27, after it was missed twice.**
+
+When Surbhi raises something the product does not do yet, the first action is
+`hrms-product-manager`, before any file is opened. Not after a look around, not
+after the facts are gathered, not "once I know what we are dealing with".
+
+**Why this keeps being missed:** a requirement usually arrives dressed as a
+technical problem. *"Handle that in tenant configuration and handle all the
+overriding cases"* names a file and a mechanism, so it reads like an engineering
+task. It is not. It is a decision about what we sell and to whom, and that is the
+product manager's, not the engineer's.
+
+**How to tell the difference in one question:** does answering it change WHAT the
+product does, or only HOW the existing behaviour is built? If what changes, it is
+the PM's. A bug, a regression, a refactor, a performance problem and a security
+hole are all HOW — keep those.
+
+**The agent team is not only for the three skills.** `/product-priorities`,
+`/slice-start` and `/slice-build` are the routine paths, but a requirement raised
+in the middle of other work gets the same routing. Running the skills is not what
+makes the team apply; the kind of question does.
+
+**Groundwork is not a reason to skip the handoff — it is the handoff.** Facts
+already established go INTO the brief so the agent does not start cold and does
+not re-derive them at cost. What must never happen is the orchestrating session
+quietly doing the product manager's thinking because the groundwork made it feel
+close enough to an answer.
+
+**On being told about it:** "why aren't you using my agents team" has now been
+said twice. The second time is the signal that the rule was never written down
+anywhere — so it is written here, not remembered.
+
+---
+
 ## Commands that need explicit approval before they run
 
 Never run any of these on your own initiative:

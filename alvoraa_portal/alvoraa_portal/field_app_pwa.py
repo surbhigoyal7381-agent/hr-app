@@ -11,6 +11,8 @@ carry the TENANT's name and colour - a static file could only ever be one
 customer's. The icon is drawn per request for the same reason.
 """
 
+import re
+
 import frappe
 from frappe.utils import cint
 
@@ -25,6 +27,25 @@ def _brand():
 	if len(colour) == 4:
 		colour = "#" + "".join(c * 2 for c in colour[1:])
 	return (b.get("tenant_name") or "Attendance"), colour
+
+
+_HEX_COLOUR = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+
+
+def brand_colour():
+	"""The tenant's brand colour for the phone app (ALV-133, E-1): always a
+	"#rrggbb" string. The app builds its whole palette from it, so anything in
+	site config that is not a plain hex colour gives the default instead of
+	reaching the phone. Read from `frappe.conf`, which is already in memory -
+	no query."""
+	from alvoraa_portal.tenant_context import DEFAULTS, get_branding
+	colour = get_branding().get("primary_color")
+	if not (isinstance(colour, str) and _HEX_COLOUR.match(colour.strip())):
+		colour = DEFAULTS["primary_color"]
+	colour = colour.strip().lower()
+	if len(colour) == 4:
+		colour = "#" + "".join(c * 2 for c in colour[1:])
+	return colour
 
 
 def _darker(hex_colour, factor=0.72):

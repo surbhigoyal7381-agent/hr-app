@@ -99,6 +99,7 @@ from alvoraa_portal.field_app_pwa import (  # re-exported: the browser's URLs st
 	_brand,
 	_darker,
 	app_icon,
+	brand_colour,
 	manifest,
 	service_worker,
 )
@@ -796,6 +797,14 @@ def _workplace(site):
 	return {"name": site.location_name, "radius_m": _enforced_radius(site)} if site else None
 
 
+def _check_in_rule(site):
+	""""radius" when the person must be near a workplace to check in, else
+	"anywhere" (ALV-133, E-3). A radius of 0 is Frappe HR's "no limit", so it is
+	"anywhere" too - the same rule the app's words follow ("Check in from
+	anywhere", never "within 0 m")."""
+	return "radius" if site and cint(site.checkin_radius) > 0 else "anywhere"
+
+
 def _where_it_was(employee, lat, lon, accuracy):
 	"""How far a saved punch was from the workplace, for the phone's result card.
 
@@ -1055,9 +1064,12 @@ def field_status(token):
 		"todays_checkins": rows,
 		"server_time": now(),
 		"workplace": _workplace(site),
+		"check_in_rule": _check_in_rule(site),
 		"min_version": errors.MIN_APP_VERSION,
 		"notice_version": notice.CURRENT_VERSION,
 		"joined_on": str(device.registered_on or ""),
+		# ALV-133 E-1: the app colours itself from this on every open.
+		"brand_colour": brand_colour(),
 	}
 	if device.join_method not in device_rules.APP_JOIN_METHODS:
 		# The web page's block, byte for byte what it was before slice 013.

@@ -64,7 +64,9 @@ DEPOT = "Zqx Depot 013"
 
 E4_KEYS = {"employee", "employee_name", "first_name", "designation", "company",
            "checked_in", "todays_checkins", "server_time", "workplace",
-           "min_version", "notice_version", "joined_on"}
+           "min_version", "notice_version", "joined_on",
+           # ALV-133: the check-in rule (E-3) and the company's colour (E-1).
+           "check_in_rule", "brand_colour"}
 
 
 class DailyCase(JoinCase):

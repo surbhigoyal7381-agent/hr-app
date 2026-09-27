@@ -74,6 +74,7 @@ from alvoraa_portal.field_app_limits import (  # re-exported: the step-3 tests n
 	_limited,
 	_limited_by_address,
 )
+from alvoraa_portal.field_app_pwa import brand_colour
 from alvoraa_portal.field_checkin import (
 	DEVICE,
 	MAX_TOKEN_CHARS,
@@ -470,6 +471,8 @@ def _joined_answer(emp, secret, agreed):
 		"company": emp.company,
 		"workplace": _workplace(emp.name),
 		"todays_checkins": _todays_punches(emp.name),
+		# ALV-133 E-1: so the app wears the company's colour from the welcome on.
+		"brand_colour": brand_colour(),
 	}
 
 

@@ -489,8 +489,10 @@ class AgreeAndFinish(JoinCase):
 		answer = self.joined(_code_of(out))
 		self.assertTrue(answer and answer.get("token"), self.words())
 		self.assertGreaterEqual(len(answer["token"]), 43)
+		# brand_colour: ALV-133 E-1, the company's colour for the app - not
+		# anything about the person.
 		self.assertEqual(sorted(answer), sorted(["token", "status", "first_name", "company",
-		                                         "workplace", "todays_checkins"]))
+		                                         "workplace", "todays_checkins", "brand_colour"]))
 		self.assertEqual(answer["status"], "active")
 		self.assertEqual(answer["first_name"], "Zqxthirteen")
 		self.assertEqual(answer["todays_checkins"], [])

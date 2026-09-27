@@ -91,8 +91,26 @@ NOTICE = {
 }
 
 
+# A stable name for each part of the notice, so the phone app can put the
+# right picture beside it whatever language the heading is shown in (ALV-133,
+# E-4). Keyed on the English heading as written in NOTICE, before translation.
+# This is not part of the words: adding or reading a key changes nothing a
+# person agrees to, so it needs no new version. Every heading of every version
+# must have one; a test holds that.
+ROW_KEYS = {
+	"What we record": "record",
+	"What we do not record": "not_record",
+	"Why": "why",
+	"Who can see it": "who",
+	"How long": "how_long",
+	"Your rights": "rights",
+}
+
+
 def rows_for(version=None, retention_days=None):
-	"""The notice's lines, with the retention line filled in for this tenant."""
+	"""The notice's lines, with the retention line filled in for this tenant.
+
+	Each line is {"key", "heading", "body"}; `key` is the stable name above."""
 	entry = NOTICE.get(version or CURRENT_VERSION)
 	if not entry:
 		return []
@@ -101,7 +119,7 @@ def rows_for(version=None, retention_days=None):
 	for heading, body in entry["rows"]:
 		if body is None:
 			body = retention_line(days)
-		out.append({"heading": _(heading), "body": body})
+		out.append({"key": ROW_KEYS.get(heading, ""), "heading": _(heading), "body": body})
 	return out
 
 

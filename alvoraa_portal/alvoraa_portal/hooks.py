@@ -357,4 +357,7 @@ after_install = [
     "alvoraa_portal.field_app_settings.after_migrate",
     # Slice 013 step 5: the field app section on the Employee form.
     "alvoraa_portal.field_app_desk.after_migrate",
+    # ALV-149: a new tenant's app name is "Alvora HRMS", not Frappe's default.
+    # Same once-only reasoning as brand.after_install above.
+    "alvoraa_portal.brand_text.after_install",
 ]

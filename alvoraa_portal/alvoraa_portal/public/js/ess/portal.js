@@ -12443,6 +12443,12 @@ window.pfRatingLabel = function(value, scale) {
     });
   };
 
+  window.orgSaveKraMandatory = function(enabled) {
+    window.gpFetch("alvoraa_portal.hr_api.set_org_setting", {key: "kra_link_mandatory", value: enabled ? "1" : "0"})
+      .then(function() { toast(enabled ? "KRA linking is now required" : "KRA linking is now optional", "ok"); })
+      .catch(function(e) { toast("Failed to save setting: " + e.message, "err"); });
+  };
+
   /* ── Attendance rules (26 Sep 2026) ──
      Two organisation switches, off by default. The server says whether each is
      on and, when the plan cannot support one, what it still needs; the box is
@@ -12497,12 +12503,6 @@ window.pfRatingLabel = function(value, scale) {
           gpEsc((e && e.message) || drT("The setting could not be saved. Try again, or ask your administrator.")) + "</span>");
       })
       .finally(function() { orgLoadAttendanceRules(); });
-  };
-
-  window.orgSaveKraMandatory = function(enabled) {
-    window.gpFetch("alvoraa_portal.hr_api.set_org_setting", {key: "kra_link_mandatory", value: enabled ? "1" : "0"})
-      .then(function() { toast(enabled ? "KRA linking is now required" : "KRA linking is now optional", "ok"); })
-      .catch(function(e) { toast("Failed to save setting: " + e.message, "err"); });
   };
 
   window.orgRenderValues = function(values) {

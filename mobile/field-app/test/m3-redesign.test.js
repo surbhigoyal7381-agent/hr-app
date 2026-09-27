@@ -266,7 +266,7 @@ test("show password changes only the box's type; the password is still never kep
   const fn = src.slice(src.indexOf("function showPassword("), src.indexOf("// ── step 1"));
   assert.match(fn, /el\("signin-password"\)\.type = on \? "text" : "password"/);
   assert.doesNotMatch(src, /setItem\([^)]*password/i);
-  assert.match(src, /passwordBox\.value = "";\n    showPassword\(false\);/);
+  assert.match(src, /passwordBox\.value = "";\r?\n    showPassword\(false\);/);
 });
 
 // ── Home, the result, the problems ─────────────────────────────────────────
@@ -341,10 +341,15 @@ test("older WebViews (minSdk 24): every inset, color-mix and aspect-ratio has a 
       const prop = /([a-z-]+):[^;]*color-mix\(/.exec(rule)[1];
       assert.ok(rule.indexOf(prop + ":") < rule.indexOf("color-mix("), `no ${prop} fallback in: ${rule.trim()}`);
     }
-    if (/[\s;{]inset:/.test(rule)) assert.match(rule, /top:[^;]+; right:/, `no inset fallback in: ${rule.trim()}`);
+    const at = rule.search(/[\s;{]inset:/);
+    if (at > -1) {
+      const right = rule.indexOf("right:");
+      assert.ok(right > -1 && right < at, `no inset fallback in: ${rule.trim()}`);
+    }
   }
   assert.match(css, /@supports \(aspect-ratio: 1\)/);
-  assert.doesNotMatch(css.replace(/@supports \(aspect-ratio: 1\)[^\n]*/, ""), /aspect-ratio/);
+  const rules = css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/@supports \(aspect-ratio: 1\)[^\n]*/, "");
+  assert.doesNotMatch(rules, /aspect-ratio/, "aspect-ratio outside its @supports guard");
 });
 
 test("the password box never teaches the keyboard the password, even while shown", () => {

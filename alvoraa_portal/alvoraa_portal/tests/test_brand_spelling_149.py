@@ -165,3 +165,18 @@ class TestPortalAvatarMenuHasOneDoorToTheDesk(FrappeTestCase):
 		self.assertIn('id="website-post-login"', html)
 		self.assertIn("switch-to-desk", html)
 		self.assertIn('class="dropdown-item apps', html)
+
+
+class TestTheAlvoraArtwork(FrappeTestCase):
+	def test_alv149_splash_shows_the_lockup_banner_keeps_the_mark(self):
+		"""The desk splash has 200 px for the ALVORA wordmark; the website navbar
+		caps its banner at 22 px high, where only the mark reads."""
+		from alvoraa_portal import brand
+
+		slots = {(d, f): want for d, f, want in brand.SLOTS}
+		self.assertEqual(slots[("Website Settings", "splash_image")], brand.LOGO)
+		self.assertEqual(slots[("Website Settings", "banner_image")], brand.MARK)
+
+	def test_alv149_the_patch_that_carries_it_to_live_sites_is_registered(self):
+		with open(os.path.join(APP_DIR, "patches.txt"), encoding="utf-8") as f:
+			self.assertIn("alvoraa_portal.patches.v1_0.alvora_splash_lockup", f.read())

@@ -373,13 +373,15 @@ test("the Alvora logo is in the bundle and has a name for screen readers", () =>
   assert.match(html, /Powered by Alvora</);
 });
 
-// ALV-149 D2: the lockup in the bundle still reads ALVORAA, so no screen may
-// show it until the ALVORA artwork lands. The swap is one src attribute.
-test("ALV-149: no screen shows the ALVORAA lockup, the sign-in shows the mark", () => {
-  assert.doesNotMatch(html.replace(/<!--[\s\S]*?-->/g, ""), /src="img\/alvoraa-logo\.png"/);
+// ALV-149: the sign-in shows the full ALVORA lockup (the real artwork arrived
+// on 27 Sep 2026); the top bars keep the square mark.
+test("ALV-149: the sign-in shows the ALVORA lockup, the top bars the mark", () => {
   const signin = html.match(/<img class="alv-logo"[^>]*>/);
   assert.ok(signin, "the sign-in logo is still there");
-  assert.match(signin[0], /src="img\/alvoraa-mark\.png"/);
+  assert.match(signin[0], /src="img\/alvoraa-logo\.png"/);
+  for (const m of html.matchAll(/<img[^>]*class="alv-mark"[^>]*>/g)) {
+    assert.match(m[0], /src="img\/alvoraa-mark\.png"/, m[0]);
+  }
 });
 
 // ALV-149: every word a person reads says Alvora. Code names keep alvoraa.

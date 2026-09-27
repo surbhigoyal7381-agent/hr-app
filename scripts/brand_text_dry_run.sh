@@ -59,6 +59,18 @@ FROM `tabNavbar Item`
 WHERE parent = 'Navbar Settings' AND parentfield = 'settings_dropdown'
   AND item_label = 'Switch to Employee Portal'
 UNION ALL
+SELECT IF(COALESCE(s.value,'') = '' OR s.value LIKE '/private/files/%' OR s.value LIKE '/assets/alvoraa_portal/images/%','change','leave'),
+       CONCAT(slot.dt,'.',slot.f,' (patch alvora_splash_lockup)'), COALESCE(s.value,'(not set)'),
+       IF(COALESCE(s.value,'') = '' OR s.value LIKE '/private/files/%' OR s.value LIKE '/assets/alvoraa_portal/images/%',
+          slot.want,'(left alone - the tenant set it)')
+FROM (SELECT 'Website Settings' AS dt, 'favicon' AS f, '/assets/alvoraa_portal/images/alvoraa-favicon.png' AS want
+      UNION ALL SELECT 'Website Settings','app_logo','/assets/alvoraa_portal/images/alvoraa-mark.png'
+      UNION ALL SELECT 'Website Settings','banner_image','/assets/alvoraa_portal/images/alvoraa-mark.png'
+      UNION ALL SELECT 'Website Settings','splash_image','/assets/alvoraa_portal/images/alvoraa-logo.png'
+      UNION ALL SELECT 'Navbar Settings','app_logo','/assets/alvoraa_portal/images/alvoraa-mark.png') slot
+LEFT JOIN tabSingles s ON s.doctype = slot.dt AND s.field = slot.f
+WHERE COALESCE(s.value,'') <> slot.want
+UNION ALL
 SELECT 'report', 'Emails queued, not sent (keep their old text)', COUNT(*), ''
 FROM `tabEmail Queue` WHERE status = 'Not Sent';
 SQL

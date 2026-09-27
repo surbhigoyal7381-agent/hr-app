@@ -81,23 +81,22 @@ FAVICON = ASSET_DIR + "alvoraa-favicon.png"  # 32px, on white
 # We write the second, the lowest rung, so a tenant can still override us from
 # either the Website Settings form or the Navbar Settings form.
 #
-# WHY banner_image AND splash_image POINT AT THE MARK, NOT THE LOCKUP
+# WHICH IMAGE GOES WHERE (ALV-149, 27 Sep 2026: the ALVORA artwork arrived)
 #
-# They should use LOGO - they are the two places with room to read a wordmark.
-# They use MARK for now because the master artwork is a PLACEHOLDER whose
-# wordmark reads ALVORAA, and the chosen spelling is ALVORA. The monogram has no
-# lettering in it, so it is correct either way; the lockup is visibly wrong.
+# splash_image gets the full lockup - the "A" mark over the ALVORA wordmark.
+# Frappe draws the desk's loading splash up to 200 px wide
+# (templates/includes/splash_screen.html), which is room to read the word.
 #
-# Showing a customer the wrong spelling of our own name is worse than showing
-# them nothing, so nothing that carries type is displayed until the real artwork
-# lands. `alvoraa-logo.png` is built and ready, and this is the one-line change:
-# put LOGO back in these two rows. Nothing else moves.
+# banner_image keeps the MARK. Frappe's website navbar caps a banner image at
+# 22 px high (public/scss/website/navbar.scss, .navbar-brand img); the lockup
+# squeezed into 22 px leaves a wordmark about 6 px tall, which nobody can read.
+# The mark reads at that size.
 SLOTS = (
     # (doctype, fieldname, what we put there if the slot is free)
     ("Website Settings", "favicon", FAVICON),
     ("Website Settings", "app_logo", MARK),
-    ("Website Settings", "banner_image", MARK),   # LOGO once the wordmark is right
-    ("Website Settings", "splash_image", MARK),   # LOGO once the wordmark is right
+    ("Website Settings", "banner_image", MARK),   # 22 px high: the mark reads, the lockup does not
+    ("Website Settings", "splash_image", LOGO),   # up to 200 px wide: the lockup reads
     ("Navbar Settings", "app_logo", MARK),
 )
 

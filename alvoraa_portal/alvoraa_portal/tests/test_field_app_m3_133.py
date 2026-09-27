@@ -92,6 +92,7 @@ class TheCheckInRule(DailyCase):
 				"latitude": 28.6519, "longitude": 77.1906, "checkin_radius": 200,
 			}).insert(ignore_permissions=True).name
 		cls.assignment = None
+		cls._tracking = frappe.db.get_single_value("HR Settings", "allow_geolocation_tracking")
 		frappe.db.commit()
 
 	@classmethod
@@ -99,6 +100,8 @@ class TheCheckInRule(DailyCase):
 		frappe.set_user("Administrator")
 		cls._clear_phones()
 		cls._drop_assignment()
+		frappe.db.set_single_value("HR Settings", "allow_geolocation_tracking", cls._tracking or 0)
+		frappe.clear_cache(doctype="HR Settings")
 		frappe.db.commit()
 		super().tearDownClass()
 
@@ -124,9 +127,12 @@ class TheCheckInRule(DailyCase):
 		frappe.db.commit()
 		frappe.set_user("Guest")
 
-	def radius(self, metres):
+	def radius(self, metres, tracking=1):
+		"""The radius, and whether HR Settings lets Frappe HR check it."""
 		frappe.db.set_value("Shift Location", self.depot, "checkin_radius", metres,
 		                    update_modified=False)
+		frappe.db.set_single_value("HR Settings", "allow_geolocation_tracking", tracking)
+		frappe.clear_cache(doctype="HR Settings")
 		frappe.db.commit()
 
 	def tearDown(self):
@@ -151,6 +157,18 @@ class TheCheckInRule(DailyCase):
 		out = self.status(token)
 		self.assertEqual((out["workplace"]["name"], out["check_in_rule"]), (DEPOT, "anywhere"))
 		self.radius(200)
+
+	def test_133_e3_tracking_off_is_anywhere_even_with_a_radius(self):
+		"""Review P2: with location tracking off, Frappe HR checks no radius, so
+		the rule must be "anywhere" - never "radius" beside radius_m 0."""
+		self.assign()
+		token = self.app_phone()
+		self.radius(200, tracking=0)
+		out = self.status(token)
+		self.assertEqual(out["workplace"], {"name": DEPOT, "radius_m": 0}, self.words())
+		self.assertEqual(out["check_in_rule"], "anywhere")
+		self.radius(200, tracking=1)
+		self.assertEqual(self.status(token)["check_in_rule"], "radius")
 
 
 # ── E-4 · a stable key per notice part ───────────────────────────────────────

@@ -801,8 +801,9 @@ def _check_in_rule(site):
 	""""radius" when the person must be near a workplace to check in, else
 	"anywhere" (ALV-133, E-3). A radius of 0 is Frappe HR's "no limit", so it is
 	"anywhere" too - the same rule the app's words follow ("Check in from
-	anywhere", never "within 0 m")."""
-	return "radius" if site and cint(site.checkin_radius) > 0 else "anywhere"
+	anywhere", never "within 0 m"). It uses the ENFORCED radius, so with location
+	tracking off in HR Settings it is "anywhere", matching `radius_m` 0."""
+	return "radius" if site and _enforced_radius(site) > 0 else "anywhere"
 
 
 def _where_it_was(employee, lat, lon, accuracy):

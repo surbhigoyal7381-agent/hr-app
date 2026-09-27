@@ -16,6 +16,17 @@ edit or a bad copy.
 | `jsqr.js` | `node_modules/jsqr/dist/jsQR.js` | 1.4.0 (pinned in `package.json`) | Apache-2.0 (`jsqr.LICENSE.txt`) |
 | `capacitor-core.js` | `node_modules/@capacitor/core/dist/capacitor.js` | 8.5.2 | MIT (`capacitor-core.LICENSE.txt`) |
 | `secure-storage-plugin.js` | `node_modules/capacitor-secure-storage-plugin/dist/plugin.js` | 0.13.0 | MIT (`secure-storage-plugin.LICENSE.txt`) |
+| `material-color-utilities.js` | **built**, see below | 0.3.0 | Apache-2.0 (`material-color-utilities.LICENSE.txt`) |
+
+**`material-color-utilities.js` is the one file here that is built, not copied**
+(D-M3-3, 01d-ux-redesign-m3.md §9). Google publishes the package only as ES
+modules spread over about forty files, and this app has no bundler. So
+`node scripts/vendor/build_mcu.mjs` joins the five pieces the app uses
+(`scripts/vendor/mcu-entry.mjs`) into one file that sets `window.AlvoraaMcu`,
+with the pinned esbuild (devDependencies). Measured on 27 Sep 2026: 64.5 KB,
+13.9 KB gzipped. Its SHA-256 is pinned like the others, so a new package
+version, a new esbuild or a hand edit all fail `npm run check` until the pin is
+changed on purpose. `web/js/theme.js` is its only user.
 
 **Load order matters for the last two.** `capacitor-core.js` defines the global
 `capacitorExports` (and `window.Capacitor`) that `secure-storage-plugin.js`

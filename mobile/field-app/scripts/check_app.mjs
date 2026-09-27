@@ -62,6 +62,10 @@ export const VENDORED_FILES = {
     "3333389c8cccd266c26399aaf7fc2a695c110684dd6340aea47935416be86a0c", // @capacitor/core 8.5.2, dist/capacitor.js
   "web/js/vendor/secure-storage-plugin.js":
     "aca8dcc86ceed62b299b566d3f9f796bc409f7a3909cf9e6510c866db95d8d6b", // capacitor-secure-storage-plugin 0.13.0, dist/plugin.js
+  // D-M3-3: built, not copied - @material/material-color-utilities 0.3.0 joined
+  // into one file by esbuild 0.28.2 (scripts/vendor/build_mcu.mjs).
+  "web/js/vendor/material-color-utilities.js":
+    "6e70be868a4ff28b30cccf78552c23d9faf69c851c61bc2570c50c893ad732c2",
 };
 
 // ── the checks, each returning a list of problems ───────────────────────────

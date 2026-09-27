@@ -4,8 +4,8 @@ artifact: 03-implementation-notes-m3-build
 ticket: ALV-133
 author: hrms-fullstack-engineer
 date: 2026-09-27
-branch: slice/ux-mobile-m3-build (from slice/013-checkin-fixes at 8c3305f)
-status: built and tested locally - not pushed
+branch: slice/ux-mobile-m3-build (on origin/dev 98b8618, after the review rebase)
+status: built, reviewed (Ship with fixes), fixes done - tested locally, not pushed
 ---
 
 # 013 · Field app Material 3 redesign, as built (ALV-133)
@@ -30,11 +30,23 @@ app, plus the small server changes it needs. App version **0.3.0**.
 
 ## 1. Branch and base
 
-- Branch `slice/ux-mobile-m3-build`, in my own worktree, made from
-  `slice/013-checkin-fixes` at **8c3305f** (not from `origin/dev`), as asked.
-- `origin/dev` did not move while I worked: it was and is **6411f73**.
-- The design commit **2d7f0b9** was cherry-picked (now 6886452). It also carries
-  18 lines in `.claude/context/ux-learnings.md` - the designer's, not mine.
+- Branch `slice/ux-mobile-m3-build`, in my own worktree. First made from
+  `slice/013-checkin-fixes` at 8c3305f, as asked, while `origin/dev` was 6411f73.
+- **The merge story.** After my first build the check-in fixes were rebased and
+  pushed to `dev` (8c3305f became **ee305b0**), with **98b8618** on top: old app
+  builds' photo time read as UTC, and `_enforced_radius` (radius 0 when HR
+  Settings has location tracking off). I moved my commits across with
+  `git rebase --onto origin/dev 8c3305f slice/ux-mobile-m3-build`, so the old
+  check-in commits were not replayed. It applied with no conflict.
+- What else came into `dev` with it, read and not mine: 0ecf9fa and 4f81749
+  (slice 052 brief and decisions, docs only) and 095410c (`.claude/context/
+  change-process.md`: a new requirement goes to the product manager first).
+  None touches the field app.
+- I checked 98b8618's lines survived: `_enforced_radius`, `_radius_checked`,
+  `_sends_bare_utc` and `FIRST_BUILD_WITH_OFFSET` are all in `field_checkin.py`,
+  and its 16 tests pass on this branch.
+- The design commit 2d7f0b9 was cherry-picked. It also carries 18 lines in
+  `.claude/context/ux-learnings.md` - the designer's, not mine.
 
 ## 2. What I built, file by file
 
@@ -161,7 +173,44 @@ NETWORK_LOCKED words, and the joined-answer and `field_status` key lists (+
   database, Redis and sites volume, and stopped all three when done.
   `hrlocal-013c` itself was not changed.
 
-## 10. Known gaps
+## 10. Review fixes (27 Sep 2026, verdict "Ship with fixes")
+
+| # | Fix | Where |
+|---|---|---|
+| P2 | `check_in_rule` uses the enforced radius, so with tracking off it says "anywhere" beside `radius_m` 0, never "radius". The E-3 test now turns tracking on; a new test covers tracking off | `field_checkin._check_in_rule`, `test_field_app_m3_133` |
+| P3 | The password box has `spellcheck="false" autocapitalize="none" autocorrect="off"`, so a keyboard cannot learn the password while "Show password" shows it | `index.html`, test |
+| P3 | Older WebViews (minSdk 24): a plain declaration before every `inset` (Chrome 87), `color-mix()` (111) and `aspect-ratio` (88, now inside `@supports` with a padding square before it). A test holds the rule | `app.css`, test |
+| P3 | `.gitattributes`: `mobile/field-app/web/js/vendor/*.js -text`, so a Windows checkout never breaks the hash pins. `git add --renormalize` showed no change to the committed blobs | `.gitattributes` |
+| P3 | Security's rulings on D-M3-4 and D-M3-6 written into 01d §13 (and §7.1, §14) | `01d-ux-redesign-m3.md` |
+| P3 | Two default colours, on purpose - see below | notes only |
+
+**Two default colours, intended.** Before the app knows the company (sign-in,
+joining code, problems before a company) it wears **Alvoraa's purple #5b4b8a**,
+the portal's `--primary`: the screen is Alvoraa's, not a tenant's. Once the
+company is known it wears **the tenant's own colour**, `brand_colour` from the
+server. A tenant that never set one gets the server's default, **green
+#1a7f5a** (`tenant_context.DEFAULTS`), the same colour its portal shows. So a
+person may see purple at sign-in and green after it; that is the rule, not a
+bug. The server default is not changed.
+
+**Impact of the fixes.** Functional: one field (`check_in_rule`) now agrees with
+`radius_m` when tracking is off; affects Home's rule line and Settings for every
+persona using the app; HR desk and CXO views unchanged. Callers of
+`_check_in_rule`: `field_status` only. NFR: security improves (keyboard
+learning), reliability improves (older WebViews, Windows checkouts), everything
+else neutral; one extra single-value read of HR Settings per `field_status`,
+already cached by Frappe.
+
+**Tests after the fixes:** `npm test` 202 pass, 0 fail; `npm run check` OK;
+integrity 654 OK; ruff clean on changed lines; headless Chrome 122 shots, 0
+problems; server suites in `hrlocal-133`: **194 tests OK** - ALV-133 11, check-in fixes 16, ALV-128 59, check-in location 9, check-in security 014 16, step 4 33, step 3 50;
+debug APK 0.3.0 rebuilt.
+
+**Still open for old WebViews (not fixed, cheap to leave):** flexbox `gap`
+(Chrome 84) - an older WebView loses some spacing but nothing breaks; and
+`:focus-visible` (86) - an older WebView shows the browser's own focus ring.
+
+## 11. Known gaps
 
 | Gap | Label |
 |---|---|

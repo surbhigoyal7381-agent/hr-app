@@ -12,10 +12,16 @@ WHAT IT READS
   * the phone app's bundled page (mobile/field-app/web), its Android strings.xml
     and capacitor.config.json;
   * Python in our three apps, PARSED rather than searched: every string literal
-    counts except docstrings and the arguments of a log call or print(). So a
+    counts except docstrings and the arguments of frappe.log_error, print() or a
+    LOGGER call (logger.info, frappe.logger(...).error) - unless wrapped in _(). So a
     frappe.throw, an email subject or a page title is checked, and a comment,
     docstring or Error Log title is not;
   * `app_title` in each hooks.py;
+  * exported JSON a person reads: DocType description and field labels and
+    descriptions, Notification subject and message, Email Template, Print
+    Format html, Workspace label, title, links and content blocks, Web Form
+    text and field labels, Custom Field and Property Setter labels. An exact
+    doctype/module/workspace name there is allowed - en.csv shows it as Alvora;
   * the translation files: translations/*.csv and locale/*.po must not put the
     old spelling back on screen.
 
@@ -193,7 +199,53 @@ def scan_markup(path, root, names):
 
 
 # ── Python, parsed ───────────────────────────────────────────────────────────
-LOG_CALLS = {"log_error", "error", "warning", "warn", "info", "debug", "exception", "print"}
+# A call whose text only our staff read: Frappe's Error Log, print() in a bench
+# command, and a LOGGER's level methods. `.error`/`.info`/`.warning` alone is not
+# enough - a toast or an alert helper can have those names too - so the level
+# methods count only when called on a logger (frappe.logger(...), logging, or a
+# name ending in "logger"/"log"). A string wrapped in _() is always checked:
+# translating it says a person will read it.
+ALWAYS_STAFF = {"log_error", "print"}
+LOG_LEVELS = {"error", "warning", "warn", "info", "debug", "exception", "critical"}
+LOGGER_NAMES = {"logging", "logger", "log", "_logger", "LOGGER", "LOG"}
+
+
+def _is_logger(receiver):
+	if isinstance(receiver, ast.Name):
+		return receiver.id in LOGGER_NAMES or receiver.id.lower().endswith("logger")
+	if isinstance(receiver, ast.Attribute):
+		return receiver.attr in LOGGER_NAMES or receiver.attr.lower().endswith("logger")
+	if isinstance(receiver, ast.Call):            # frappe.logger("x").info(...)
+		fn = receiver.func
+		name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
+		return name in ("logger", "getLogger")
+	return False
+
+
+def _is_staff_only_call(call):
+	fn = call.func
+	if isinstance(fn, ast.Name):
+		return fn.id in ALWAYS_STAFF
+	if isinstance(fn, ast.Attribute):
+		if fn.attr in ALWAYS_STAFF:
+			return True
+		return fn.attr in LOG_LEVELS and _is_logger(fn.value)
+	return False
+
+
+def _translated_constants(tree):
+	"""ids of string constants passed straight to _() or frappe._()."""
+	out = set()
+	for node in ast.walk(tree):
+		if isinstance(node, ast.Call):
+			fn = node.func
+			name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
+			if name == "_":
+				for arg in node.args:
+					for sub in ast.walk(arg):
+						if isinstance(sub, ast.Constant):
+							out.add(id(sub))
+	return out
 
 
 def scan_python(path, root, names):
@@ -215,7 +267,7 @@ def scan_python(path, root, names):
 		if isinstance(node, ast.Call):
 			fn = node.func
 			name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
-			if name in LOG_CALLS:
+			if _is_staff_only_call(node):
 				for sub in ast.walk(node):
 					skip.add(id(sub))
 			# refuse(...) helpers: the message a user sees is always wrapped in
@@ -225,6 +277,8 @@ def scan_python(path, root, names):
 				for arg in node.args:
 					if isinstance(arg, ast.Constant):
 						skip.add(id(arg))
+
+	skip -= _translated_constants(tree)
 
 	path_rel = rel(path, root)
 	is_hooks = path_rel.endswith("/hooks.py")
@@ -248,6 +302,76 @@ def scan_python(path, root, names):
 			continue
 		if visible_hits(value, names):
 			out.append((path_rel, node.lineno, value.strip().replace("\n", " ")[:140]))
+	return out
+
+
+# ── JSON the desk and the site show: doctypes, notifications, print formats ──
+# Which keys of which document a person reads. Everything else in these files
+# (fieldname, options, module, link_to, name) is an identifier.
+JSON_VISIBLE = {
+	"DocType": {"doc": ("description",), "child": {"fields": ("label", "description")}},
+	"Notification": {"doc": ("subject", "message"), "child": {}},
+	"Print Format": {"doc": ("html",), "child": {}},
+	"Email Template": {"doc": ("subject", "response", "response_html"), "child": {}},
+	"Workspace": {"doc": ("label", "title"),
+	              "child": {"links": ("label", "description"), "shortcuts": ("label",),
+	                        "number_cards": ("label",), "charts": ("label",)}},
+	"Web Form": {"doc": ("title", "introduction_text", "success_title", "success_message",
+	                     "button_label", "meta_title", "meta_description"),
+	             "child": {"web_form_fields": ("label", "description")}},
+	"Custom Field": {"doc": ("label", "description"), "child": {}},
+}
+
+
+def _json_texts(doc):
+	"""(where, text) pairs a person reads, from one exported document."""
+	spec = JSON_VISIBLE.get(doc.get("doctype"))
+	if not spec:
+		return
+	for key in spec["doc"]:
+		if isinstance(doc.get(key), str):
+			yield key, doc[key]
+	for table, keys in spec["child"].items():
+		for i, row in enumerate(doc.get(table) or []):
+			if not isinstance(row, dict):
+				continue
+			for key in keys:
+				if isinstance(row.get(key), str):
+					yield f"{table}[{i}].{key}", row[key]
+	if doc.get("doctype") == "Workspace" and isinstance(doc.get("content"), str):
+		try:
+			blocks = json.loads(doc["content"])
+		except ValueError:
+			blocks = []
+		for i, block in enumerate(blocks if isinstance(blocks, list) else []):
+			data = block.get("data") if isinstance(block, dict) else None
+			for key, value in (data or {}).items():
+				if isinstance(value, str) and key in ("text", "label", "shortcut_name", "card_name"):
+					yield f"content[{i}].{key}", value
+	if doc.get("doctype") == "Property Setter" and doc.get("property") in ("label", "description"):
+		yield "value", doc.get("value") or ""
+
+
+def scan_json(path, root, names):
+	text = read(path)
+	if not BRAND.search(text):
+		return []
+	try:
+		data = json.loads(text)
+	except ValueError:
+		return []
+	docs = data if isinstance(data, list) else [data]
+	out = []
+	for doc in docs:
+		if not isinstance(doc, dict):
+			continue
+		for where, value in _json_texts(doc):
+			if not BRAND.search(value) or value in names:
+				continue   # an exact doctype/module/workspace name: en.csv shows it as Alvora
+			if visible_hits(value, names):
+				pos = text.find(json.dumps(value)[1:21])
+				out.append((rel(path, root), line_of(text, pos) if pos >= 0 else 1,
+				            f"{doc.get('doctype')} {where}: {value.strip()[:100]}"))
 	return out
 
 
@@ -310,6 +434,9 @@ def scan(root):
 		for path in walk(root, top, {".py"}):
 			if rel(path, root) not in SKIP_FILES:
 				hits += scan_python(path, root, names)
+	for top in APPS:
+		for path in walk(root, top, {".json"}):
+			hits += scan_json(path, root, names)
 	hits += scan_translations(root)
 	return names, hits, missing_translations(root, names)
 
@@ -341,7 +468,18 @@ def self_test():
 	files = {
 		portal + "/modules.txt": "Alvoraa Portal\n",
 		portal + "/alvoraa_portal/doctype/alvoraa_thing/alvoraa_thing.json":
-			json.dumps({"doctype": "DocType", "name": "Alvoraa Thing"}),
+			json.dumps({"doctype": "DocType", "name": "Alvoraa Thing", "module": "Alvoraa Portal",
+			            "description": "Where Alvora keeps things.",
+			            "fields": [
+			                # an exact doctype name as a label: en.csv shows it as Alvora
+			                {"fieldname": "thing", "label": "Alvoraa Thing", "fieldtype": "Link",
+			                 "options": "Alvoraa Thing"},
+			                {"fieldname": "alvoraa_note", "label": "Note", "fieldtype": "Data"}]}),
+		portal + "/alvoraa_portal/workspace/alvoraa_portal/alvoraa_portal.json":
+			json.dumps({"doctype": "Workspace", "name": "Alvoraa Portal", "label": "Alvoraa Portal",
+			            "title": "Alvoraa Portal",
+			            "content": json.dumps([{"type": "header", "data": {"text": "Alvora HR"}}]),
+			            "links": [{"label": "Things", "link_to": "Alvoraa Thing"}]}),
 		portal + "/hooks.py": 'app_name = "alvoraa_portal"\napp_title = "Alvora HRMS"\n',
 		portal + "/good.py": (
 			'"""Docstrings may say Alvoraa."""\n'
@@ -350,6 +488,8 @@ def self_test():
 			'def f():\n'
 			'    frappe.get_all("Alvoraa Thing")\n'
 			'    frappe.log_error(title="Alvoraa: job failed")\n'
+			'    frappe.logger("x").info("Alvoraa job done")\n'
+			'    logger.warning("Alvoraa slow")\n'
 			'    print("Alvoraa operator note")\n'
 			'    return "https://x.alvoraa.co", "AlvoraaJoin", "X-Alvoraa-App-Version"\n'),
 		portal + "/www/good.html": (
@@ -375,6 +515,30 @@ def self_test():
 		"phone js": ("mobile/field-app/web/js/bad.js", 'el.textContent = "Alvoraa Attendance";\n'),
 		"translation": (EN_CSV, "Alvoraa Portal,Alvora Portal\nAlvoraa Thing,Alvoraa Thing\n"),
 		"missing row": (EN_CSV, "Alvoraa Portal,Alvora Portal\n"),
+		"a toast named .error": (portal + "/bad3.py",
+		                         'def f(toast):\n    toast.error("Alvoraa could not save")\n'),
+		"a translated log title": (portal + "/bad4.py",
+		                           'import frappe\nfrappe.log_error(title=frappe._("Alvoraa failed"))\n'),
+		"a doctype field label": (portal + "/alvoraa_portal/doctype/alvoraa_thing/alvoraa_thing.json",
+		                          json.dumps({"doctype": "DocType", "name": "Alvoraa Thing",
+		                                      "fields": [{"fieldname": "x", "label": "Alvoraa ID"}]})),
+		"a doctype description": (portal + "/alvoraa_portal/doctype/alvoraa_thing/alvoraa_thing.json",
+		                          json.dumps({"doctype": "DocType", "name": "Alvoraa Thing",
+		                                      "description": "Kept by Alvoraa."})),
+		"a notification": (portal + "/alvoraa_portal/notification/n/n.json",
+		                   json.dumps({"doctype": "Notification", "subject": "Your Alvoraa login",
+		                               "message": "Hello"})),
+		"a print format": (portal + "/alvoraa_portal/print_format/p/p.json",
+		                   json.dumps({"doctype": "Print Format", "html": "<p>Alvoraa invoice</p>"})),
+		"a workspace block": (portal + "/alvoraa_portal/workspace/alvoraa_portal/alvoraa_portal.json",
+		                      json.dumps({"doctype": "Workspace", "name": "Alvoraa Portal",
+		                                  "content": json.dumps([{"type": "header",
+		                                                          "data": {"text": "Welcome to Alvoraa"}}])})),
+		"a web form field": ("hrms/hrms/x/web_form/w/w.json",
+		                     json.dumps({"doctype": "Web Form", "title": "Apply",
+		                                 "web_form_fields": [{"fieldname": "a", "label": "Your Alvoraa ID"}]})),
+		"a custom field fixture": (portal + "/fixtures/custom_field.json",
+		                           json.dumps([{"doctype": "Custom Field", "label": "Alvoraa code"}])),
 	}
 
 	def build(extra=None):
@@ -404,7 +568,8 @@ def self_test():
 		root = build(extra)
 		try:
 			_n, hits, missing = scan(root)
-			ok = bool(hits or missing)
+			# caught by a hit on the file planted - not by a side effect elsewhere
+			ok = bool(missing) if label == "missing row" else any(h[0] == extra[0] for h in hits)
 			print(("ok   " if ok else "FAIL ") + f"'Alvoraa' in {label} is caught")
 			failed += 0 if ok else 1
 		finally:

@@ -71,6 +71,11 @@
   }
 }
 
+/* Older phones: minSdk is 24, and a WebView that has not updated may be as old
+   as Chrome 70. Wherever a newer feature is used - `inset` (Chrome 87),
+   `aspect-ratio` (88), `color-mix()` (111) - a plain declaration comes first,
+   so the old WebView draws something close instead of nothing (ALV-133 review). */
+
 /* ============================== PAGE AND SCREENS ============================== */
 * { box-sizing:border-box; }
 html, body { height:100%; }
@@ -168,7 +173,7 @@ button { font:inherit; color:inherit; }
 .btn.large:active { border-radius:var(--shape-l); }
 .btn:disabled { opacity:.5; cursor:default; }
 .btn::after, .icon-btn::after, .bar-action::after, .list-item.link::after, .check-row::after {
-  content:""; position:absolute; inset:0; border-radius:inherit; background:currentColor; opacity:0;
+  content:""; position:absolute; top:0; right:0; bottom:0; left:0; inset:0; border-radius:inherit; background:currentColor; opacity:0;
   transition:opacity 120ms; pointer-events:none; }
 .btn:active::after, .icon-btn:active::after, .bar-action:active::after, .list-item.link:active::after, .check-row:active::after { opacity:.12; }
 :focus-visible { outline:3px solid var(--md-sys-color-primary); outline-offset:2px; }
@@ -197,7 +202,7 @@ button { font:inherit; color:inherit; }
 .status .state { display:flex; align-items:center; gap:var(--sp-2); font:500 var(--title-m)/var(--title-m-lh) var(--font); }
 .status .big { font-size:var(--headline-m); line-height:var(--headline-m-lh); }
 .status .rule { display:flex; gap:var(--sp-2); align-items:flex-start; font-size:var(--body-m); line-height:var(--body-m-lh);
-                padding-top:var(--sp-3); margin-top:var(--sp-1); border-top:1px solid color-mix(in srgb,currentColor 20%,transparent); }
+                padding-top:var(--sp-3); margin-top:var(--sp-1); border-top:1px solid rgba(128,128,128,.4); border-top:1px solid color-mix(in srgb,currentColor 20%,transparent); }
 .status .rule .rule-strong { display:block; font-weight:500; }
 .status .rule .rule-note { display:block; }
 
@@ -278,10 +283,10 @@ button { font:inherit; color:inherit; }
 .spinner.sm { width:24px; height:24px; border-width:3px; }
 @keyframes spin { to { transform:rotate(360deg); } }
 .linear { height:4px; border-radius:2px; background:var(--md-sys-color-secondary-container); overflow:hidden; position:relative; margin:var(--sp-2) 0 var(--sp-6); }
-.linear::before { content:""; position:absolute; inset:0 60% 0 0; background:var(--md-sys-color-primary); border-radius:2px; animation:lin 1.6s var(--ease) infinite; }
+.linear::before { content:""; position:absolute; top:0; right:60%; bottom:0; left:0; inset:0 60% 0 0; background:var(--md-sys-color-primary); border-radius:2px; animation:lin 1.6s var(--ease) infinite; }
 @keyframes lin { 0% { transform:translateX(-100%); } 100% { transform:translateX(260%); } }
 @media (prefers-reduced-motion: reduce) {
-  .spinner { animation-duration:3s; } .linear::before { animation:none; inset:0 40% 0 0; } .btn { transition:none; }
+  .spinner { animation-duration:3s; } .linear::before { animation:none; right:40%; inset:0 40% 0 0; } .btn { transition:none; }
 }
 .step { display:flex; align-items:center; gap:var(--sp-4); min-height:48px; color:var(--md-sys-color-on-surface-variant); }
 .step .dot { width:24px; height:24px; display:flex; align-items:center; justify-content:center; flex:none; }
@@ -300,7 +305,7 @@ button { font:inherit; color:inherit; }
 .code-for-hr.left { text-align:left; }
 
 /* scrim, dialog, bottom sheet, snackbar */
-.scrim { position:fixed; inset:0; background:color-mix(in srgb,var(--md-sys-color-scrim) 40%,transparent); display:flex; z-index:20; }
+.scrim { position:fixed; top:0; right:0; bottom:0; left:0; inset:0; background:rgba(0,0,0,.4); background:color-mix(in srgb,var(--md-sys-color-scrim) 40%,transparent); display:flex; z-index:20; }
 .dialog { margin:auto var(--sp-4); background:var(--md-sys-color-surface-container-high); border-radius:var(--shape-xl); padding:var(--sp-6);
           box-shadow:var(--elev-3); max-height:85%; overflow:auto; }
 .dialog h2 { font-size:var(--headline-s); line-height:var(--headline-s-lh); font-weight:400; margin-bottom:var(--sp-4); }
@@ -318,7 +323,7 @@ button { font:inherit; color:inherit; }
 /* the cameras: scanning a code, and the check-in photo */
 .screen.cam-screen { background:#000; color:#fff; padding-top:0; }
 .cam { position:relative; flex:1; background:#000; color:#fff; overflow:hidden; display:flex; flex-direction:column; min-height:0; }
-.cam .feed { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; background:#000; }
+.cam .feed { position:absolute; top:0; right:0; bottom:0; left:0; inset:0; width:100%; height:100%; object-fit:cover; background:#000; }
 .cam .top-bar { position:relative; z-index:2; color:#fff; padding-top:calc(var(--sp-2) + env(safe-area-inset-top));
                 background:linear-gradient(rgba(0,0,0,.6),transparent); }
 .cam .hint { position:relative; z-index:2; align-self:center; margin-top:var(--sp-2); background:rgba(0,0,0,.6); color:#fff; border-radius:var(--shape-s);
@@ -332,12 +337,13 @@ button { font:inherit; color:inherit; }
 .cam .btn-row > * { flex:1; }
 .cam .bottom > .btn { width:100%; }
 .shutter { width:80px; height:80px; border-radius:50%; border:4px solid #fff; background:rgba(255,255,255,.25); cursor:pointer; position:relative; padding:0; }
-.shutter::before { content:""; position:absolute; inset:6px; border-radius:50%; background:#fff; }
-.shutter:active::before { inset:10px; }
+.shutter::before { content:""; position:absolute; top:6px; right:6px; bottom:6px; left:6px; inset:6px; border-radius:50%; background:#fff; }
+.shutter:active::before { top:10px; right:10px; bottom:10px; left:10px; inset:10px; }
 .shutter:disabled { opacity:.5; }
-.viewfinder { position:absolute; left:50%; top:44%; width:62%; aspect-ratio:1; transform:translate(-50%,-50%); z-index:1; border-radius:var(--shape-l);
+.viewfinder { position:absolute; left:50%; top:44%; width:62%; height:0; padding-bottom:62%; transform:translate(-50%,-50%); z-index:1; border-radius:var(--shape-l);
               box-shadow:0 0 0 999px rgba(0,0,0,.45); pointer-events:none; }
-.viewfinder::before { content:""; position:absolute; inset:-3px; border-radius:var(--shape-l); border:4px solid #fff;
+@supports (aspect-ratio: 1) { .viewfinder { height:auto; padding-bottom:0; aspect-ratio:1; } }
+.viewfinder::before { content:""; position:absolute; top:-3px; right:-3px; bottom:-3px; left:-3px; inset:-3px; border-radius:var(--shape-l); border:4px solid #fff;
               clip-path:polygon(0 0,28% 0,28% 6%,6% 6%,6% 28%,0 28%,0 72%,6% 72%,6% 94%,28% 94%,28% 100%,72% 100%,72% 94%,94% 94%,94% 72%,100% 72%,100% 28%,94% 28%,94% 6%,72% 6%,72% 0,100% 0,100% 100%,0 100%); }
 .btn.on-dark { background:rgba(255,255,255,.18); color:#fff; }
 .btn.on-dark-filled { background:#fff; color:#1c1b20; }

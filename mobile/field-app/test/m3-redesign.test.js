@@ -335,6 +335,25 @@ test("names and dates on screen", () => {
   assert.equal(ui.formatWhen(""), "");
 });
 
+test("older WebViews (minSdk 24): every inset, color-mix and aspect-ratio has a plain fallback first", () => {
+  for (const rule of css.split("}")) {
+    if (/color-mix\(/.test(rule)) {
+      const prop = /([a-z-]+):[^;]*color-mix\(/.exec(rule)[1];
+      assert.ok(rule.indexOf(prop + ":") < rule.indexOf("color-mix("), `no ${prop} fallback in: ${rule.trim()}`);
+    }
+    if (/[\s;{]inset:/.test(rule)) assert.match(rule, /top:[^;]+; right:/, `no inset fallback in: ${rule.trim()}`);
+  }
+  assert.match(css, /@supports \(aspect-ratio: 1\)/);
+  assert.doesNotMatch(css.replace(/@supports \(aspect-ratio: 1\)[^\n]*/, ""), /aspect-ratio/);
+});
+
+test("the password box never teaches the keyboard the password, even while shown", () => {
+  const input = /<input type="password" id="signin-password"[^>]*>/.exec(html)[0];
+  for (const attr of ['spellcheck="false"', 'autocapitalize="none"', 'autocorrect="off"']) {
+    assert.ok(input.includes(attr), attr);
+  }
+});
+
 test("inline styles are refused, because the content policy drops them on the phone", () => {
   assert.doesNotMatch(html, /<[a-z][^>]*\sstyle\s*=/i);
   assert.doesNotMatch(html, /<style\b/i);

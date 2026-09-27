@@ -265,7 +265,7 @@
       return {
         screen: "update",
         heading: "Update the app to keep marking attendance",
-        body: "This version of Alvoraa is too old to work with your company any more. "
+        body: "This version of Alvora is too old to work with your company any more. "
           + "Updating takes about a minute on Wi-Fi.",
         card: { onThisPhone: null, needed: v.min_version },
         steps: [],
@@ -427,7 +427,7 @@
       return {
         screen: "locDenied",
         heading: "This app cannot see your location",
-        body: "You said no to location. Attendance needs it. Allow location for Alvoraa, "
+        body: "You said no to location. Attendance needs it. Allow location for Alvora, "
           + "then press Check In again.",
         steps: STEPS_LOCATION_DENIED,
         buttons: ["Open phone settings", "Go back"],

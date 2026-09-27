@@ -180,7 +180,7 @@
       return {
         screen: "update",
         heading: "Update the app to keep marking attendance",
-        body: "This version of Alvoraa is too old to work with your company any more.",
+        body: "This version of Alvora is too old to work with your company any more.",
         values: { on_this_phone: null, needed: v.min_version },
         steps: [],
         buttons: [], // US-41's real update screen - not built this increment
@@ -223,7 +223,7 @@
     QR_NOT_ALVORAA: function () {
       return {
         screen: "notAlvoraa",
-        heading: "This is not an Alvoraa code",
+        heading: "This is not an Alvora code",
         body: "It may be a payment code or a website link. Scan the code HR gave you for this app. "
           + "Nothing was sent anywhere.",
         steps: [],

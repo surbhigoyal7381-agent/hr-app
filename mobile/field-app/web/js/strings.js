@@ -89,7 +89,7 @@
     removePhoneSub: "Attendance on this phone stops",
     appVersion: "App version {version}",
     connectedTo: "Connected to {host}",
-    poweredBy: "Powered by Alvoraa",
+    poweredBy: "Powered by Alvora",
 
     // What this app records
     agreedCard: "You agreed on {when}. Notice version {version}.",

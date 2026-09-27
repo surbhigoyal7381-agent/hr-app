@@ -138,7 +138,7 @@
     el("problem-alv-mark").hidden = known;
     el("problem-mark").hidden = !known;
     el("problem-mark").textContent = ui.initials(state.company);
-    el("problem-bar-title").textContent = known ? state.company : "Alvoraa Attendance";
+    el("problem-bar-title").textContent = known ? state.company : "Alvora Attendance";
   }
 
   function showProblem(code, values, opts) {
@@ -175,7 +175,7 @@
       var buildType = (window.AlvoraaBuildType && window.AlvoraaBuildType.BUILD_TYPE) || "release";
       var guidance = buildType === "debug" ? "Ask the developer."
         : buildType === "pilot" ? "Ask HR for the update link you were sent."
-        : "Open the Play Store and search for Alvoraa, or ask HR.";
+        : "Open the Play Store and search for Alvora, or ask HR.";
       buttonsBox.appendChild(textEl("p", guidance, "t-body-m muted"));
     } else {
       var actions = PROBLEM_ACTIONS[info.screen] || [];
@@ -465,7 +465,7 @@
     var message = el("camera-message");
     if (which === "denied") {
       message.textContent = "The camera is off for this app. To take your photo, allow Camera for "
-        + "Alvoraa in your phone's settings, then press Try the camera again. "
+        + "Alvora in your phone's settings, then press Try the camera again. "
         + "Or check in without a photo - your attendance still counts.";
       message.hidden = false;
     } else if (which === "unavailable") {

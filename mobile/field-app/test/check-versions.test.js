@@ -51,7 +51,7 @@ test("the committed app-version.js matches the committed build.gradle", async ()
   const jsText = fs.readFileSync(path.join(__dirname, "..", "web", "js", "app-version.js"), "utf8");
   const gradleVersion = extractVersion(gradleText);
   const jsVersion = extractAppVersionConstant(jsText);
-  assert.equal(jsVersion, "0.3.0"); // 27 Sep 2026: the Material 3 redesign (ALV-133)
+  assert.equal(jsVersion, "0.3.1"); // 27 Sep 2026: the Alvora spelling (ALV-149)
   assert.deepEqual(checkAppVersionMatchesGradle(jsVersion, gradleVersion.versionName), []);
 });
 

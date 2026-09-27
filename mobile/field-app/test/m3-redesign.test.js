@@ -364,11 +364,31 @@ test("inline styles are refused, because the content policy drops them on the ph
   assert.doesNotMatch(html, /<style\b/i);
 });
 
-test("the Alvoraa logo is in the bundle and has a name for screen readers", () => {
+test("the Alvora logo is in the bundle and has a name for screen readers", () => {
   assert.ok(fs.existsSync(path.join(WEB, "img", "alvoraa-logo.png")));
   assert.ok(fs.existsSync(path.join(WEB, "img", "alvoraa-mark.png")));
   for (const m of html.matchAll(/<img[^>]*class="alv-(mark|logo)"[^>]*>/g)) {
-    assert.match(m[0], /alt="Alvoraa"/, m[0]);
+    assert.match(m[0], /alt="Alvora"/, m[0]);
   }
-  assert.match(html, /Powered by Alvoraa/);
+  assert.match(html, /Powered by Alvora</);
+});
+
+// ALV-149 D2: the lockup in the bundle still reads ALVORAA, so no screen may
+// show it until the ALVORA artwork lands. The swap is one src attribute.
+test("ALV-149: no screen shows the ALVORAA lockup, the sign-in shows the mark", () => {
+  assert.doesNotMatch(html.replace(/<!--[\s\S]*?-->/g, ""), /src="img\/alvoraa-logo\.png"/);
+  const signin = html.match(/<img class="alv-logo"[^>]*>/);
+  assert.ok(signin, "the sign-in logo is still there");
+  assert.match(signin[0], /src="img\/alvoraa-mark\.png"/);
+});
+
+// ALV-149: every word a person reads says Alvora. Code names keep alvoraa.
+test("ALV-149: launcher label, app name and screen text say Alvora", () => {
+  const strings = fs.readFileSync(path.join(__dirname, "..", "android", "app", "src", "main", "res", "values", "strings.xml"), "utf8");
+  assert.match(strings, /<string name="app_name">Alvora Attendance<\/string>/);
+  assert.match(strings, /<string name="package_name">co\.alvoraa\.app<\/string>/);
+  const cap = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "capacitor.config.json"), "utf8"));
+  assert.equal(cap.appName, "Alvora Attendance");
+  assert.equal(cap.appId, "co.alvoraa.app");
+  assert.doesNotMatch(html.replace(/<!--[\s\S]*?-->/g, ""), /Alvoraa(?![A-Za-z])/);
 });

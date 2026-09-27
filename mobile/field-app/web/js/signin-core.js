@@ -64,21 +64,21 @@
   // because the only way on is to sign in again.
   var MESSAGES = {
     // made by this app, before any call
-    COMPANY_CODE_INVALID: ["form", "Check your company code. It is the short name HR gave you, for example the first part of your company's Alvoraa web address."],
+    COMPANY_CODE_INVALID: ["form", "Check your company code. It is the short name HR gave you, for example the first part of your company's Alvora web address."],
     EMAIL_INVALID: ["form", "Type your work email address."],
     PASSWORD_MISSING: ["form", "Type your password."],
     OTP_MISSING: ["otp", "Type the code you were sent."],
     NO_INTERNET: ["form", "No internet. Move to a place with signal and try again. Nothing was sent."],
 
     // the server's answers
-    SIGN_IN_FAILED: ["form", "That email and password do not match. Check them and try again. If you forgot your password, reset it on your company's Alvoraa website."],
+    SIGN_IN_FAILED: ["form", "That email and password do not match. Check them and try again. If you forgot your password, reset it on your company's Alvora website."],
     ACCOUNT_LOCKED: ["form", null],   // needs the wait, see below
     // Frappe's lock on the network (many failures from one address), not on
     // this account - so it must not say "your account".
     // Security's words (27 Sep 2026, D-M3-6): Frappe's per-network lock after
     // repeated wrong passwords lasts minutes; mobile data is a different network.
     NETWORK_LOCKED: ["form", "Too many wrong sign-in attempts from this network. Try again in a few minutes, or turn off Wi-Fi and use your mobile data."],
-    PASSWORD_EXPIRED: ["form", "Your password has expired. Change it on your company's Alvoraa website, then sign in here with the new one."],
+    PASSWORD_EXPIRED: ["form", "Your password has expired. Change it on your company's Alvora website, then sign in here with the new one."],
     SIGN_IN_NOT_ALLOWED: ["form", "Your login cannot be used from here or at this time. Please speak to HR."],
     NO_EMPLOYEE_RECORD: ["form", "Your login is not linked to an employee record, so this app cannot mark attendance for you. Ask HR to link your employee record to your login."],
     EMPLOYEE_NOT_ACTIVE: ["form", "Your employee record is no longer active. Please speak to HR."],

@@ -22,8 +22,10 @@ android {
         // for a radius of 0, and the photo time sent with its time zone.
         // MIN_APP_VERSION does not move.
         // scripts/check_versions.mjs enforces this on every push.
-        versionCode 30000
-        versionName "0.3.0"
+        // 0.3.1, build 0: ALV-149, the product is spelled Alvora on every
+        // screen and on the launcher; the sign-in shows the mark only.
+        versionCode 30100
+        versionName "0.3.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

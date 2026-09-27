@@ -110,7 +110,7 @@
     // screen; the picture and its tone say what kind of problem it is.
     el("problem-alv-mark").hidden = false;
     el("problem-mark").hidden = true;
-    el("problem-bar-title").textContent = "Alvoraa Attendance";
+    el("problem-bar-title").textContent = "Alvora Attendance";
     var look = window.AlvoraaUi.problemLook(info.screen);
     window.AlvoraaUi.setBubble(el("problem-bubble"), look.icon, look.tone);
     el("problem-heading").textContent = info.heading;

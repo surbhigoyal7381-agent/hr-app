@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Alvoraa Attendance</string>
-    <string name="title_activity_main">Alvoraa Attendance</string>
+    <string name="app_name">Alvora Attendance</string>
+    <string name="title_activity_main">Alvora Attendance</string>
     <string name="package_name">co.alvoraa.app</string>
     <string name="custom_url_scheme">co.alvoraa.app</string>
 </resources>

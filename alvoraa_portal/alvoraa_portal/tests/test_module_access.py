@@ -517,75 +517,98 @@ class TestModuleSidebarSuppression(FrappeTestCase):
 
 
 class TestSwitchToPortalActuallyWorks(FrappeTestCase):
-	"""The desk needs a way back to the portal, and it was silently broken.
+	"""ALV-152: the desk's "Switch to Employee Portal" must actually switch.
 
-	Frappe v16 builds the sidebar dropdown then handles a click with
-	`current_item.onClick(item)`. For the HELP dropdown it first translates the
-	item type - Route becomes a url, Action becomes an onClick. For the SETTINGS
-	dropdown, add_navbar_items() does neither: it copies the label across and
-	pushes the row.
+	Frappe 16 draws the desk user menu with frappe.ui.create_menu (ui/menu.js).
+	That renderer runs a row's `action` from an inline onclick, and for a row with
+	no url it calls `item.onClick && item.onClick()`. A Route row from Navbar
+	Settings has neither, so the click closed the menu and did nothing. The
+	26 Aug fix (portal_switch.js) bound to `data-app-route` markup that v16 never
+	puts on the page, and its tests read the script's text, so they passed.
 
-	So the item has no url and no onClick, the click throws, and nothing happens.
-	Every Navbar Settings item is inert in this version; ours was not special.
+	The fix is data Frappe's own menu runs: an Action row.
 	"""
 
-	def test_the_navbar_item_is_still_registered(self):
-		"""We keep using Navbar Settings for the label, icon and position - only
-		the behaviour is supplied by us."""
-		ma.sync_navbar_item()
+	def _rows(self):
+		return [r for r in frappe.get_doc("Navbar Settings").settings_dropdown
+		        if r.item_label == ma.NAVBAR_LABEL]
+
+	def _put_old_route_row(self):
 		settings = frappe.get_doc("Navbar Settings")
-		rows = [r for r in settings.settings_dropdown if r.item_label == ma.NAVBAR_LABEL]
-		self.assertEqual(len(rows), 1, "exactly one row, and it must not duplicate")
-		self.assertEqual(rows[0].route, "/hrms-employee")
+		settings.settings_dropdown = [r for r in settings.settings_dropdown
+		                              if r.item_label != ma.NAVBAR_LABEL]
+		settings.append("settings_dropdown", {"item_label": ma.NAVBAR_LABEL, "item_type": "Route",
+		                                      "route": "/hrms-employee", "is_standard": 0})
+		settings.save(ignore_permissions=True)
 
-	def test_the_desk_script_is_registered(self):
-		"""A fix in a file nothing loads is not a fix."""
-		includes = frappe.get_hooks("app_include_js") or []
-		self.assertTrue(
-			any("portal_switch" in str(i) for i in includes),
-			"portal_switch.js must be in app_include_js")
+	def _remove_row(self):
+		settings = frappe.get_doc("Navbar Settings")
+		settings.settings_dropdown = [r for r in settings.settings_dropdown
+		                              if r.item_label != ma.NAVBAR_LABEL]
+		settings.save(ignore_permissions=True)
 
-	def test_the_script_exists_and_targets_our_row(self):
+	def tearDown(self):
+		ma.sync_navbar_item()
+		frappe.db.commit()
+
+	def test_alv152_navbar_item_is_an_action_that_opens_the_portal(self):
+		ma.sync_navbar_item()
+		rows = self._rows()
+		self.assertEqual(len(rows), 1, "exactly one row")
+		self.assertEqual(rows[0].item_type, "Action")
+		self.assertIn("/hrms-employee", rows[0].action)
+		self.assertIn("window.location", rows[0].action)
+		self.assertFalse(rows[0].route)
+		# menu.js writes onclick="return <action>" - a double quote would end it.
+		self.assertNotIn('"', rows[0].action)
+
+	def test_alv152_an_old_route_row_is_upgraded_not_duplicated(self):
+		from alvoraa_portal.patches.v1_0 import navbar_portal_switch_as_action as patch
+
+		self._put_old_route_row()
+		patch.execute()
+		patch.execute()
+		ma.sync_navbar_item()
+		rows = self._rows()
+		self.assertEqual(len(rows), 1)
+		self.assertEqual(rows[0].item_type, "Action")
+		self.assertEqual(rows[0].action, ma.NAVBAR_ACTION)
+
+	def test_alv152_patch_never_adds_a_row(self):
+		from alvoraa_portal.patches.v1_0 import navbar_portal_switch_as_action as patch
+
+		self._remove_row()
+		patch.execute()
+		self.assertEqual(self._rows(), [], "a site without the item must not gain one")
+
+	def test_alv152_portal_switch_script_is_gone(self):
 		import os
 
 		import alvoraa_portal
 
+		includes = frappe.get_hooks("app_include_js") or []
+		self.assertFalse(any("portal_switch" in str(i) for i in includes))
 		path = os.path.join(os.path.dirname(os.path.abspath(alvoraa_portal.__file__)),
 		                    "public", "js", "portal_switch.js")
-		if not os.path.exists(path):
-			self.skipTest("script not present on this bench")
-		with open(path, encoding="utf-8") as f:
-			src = f.read()
-		# data-app-route is what the renderer writes from the item's route, so it
-		# is what identifies OUR row rather than everything in that menu.
-		self.assertIn("data-app-route", src)
-		self.assertIn("/hrms-employee", src)
-		self.assertIn("stopImmediatePropagation", src,
-		              "Frappe's own handler would still throw at the user")
+		self.assertFalse(os.path.exists(path))
 
-	def test_frappe_still_does_not_wire_settings_dropdown_items(self):
-		"""Pins the gap this works around.
-
-		If a Frappe upgrade starts translating settings_dropdown items the way it
-		already translates help_dropdown ones, this test fails - and the
-		workaround should then be deleted rather than left to rot.
-		"""
+	def test_alv152_frappe_menu_still_runs_action_items(self):
+		"""Pins what the fix relies on. If a Frappe upgrade stops running a
+		menu row's `action`, this fails before a user finds out."""
 		import os
 
 		import frappe as _f
 
 		path = os.path.join(os.path.dirname(os.path.abspath(_f.__file__)),
-		                    "public", "js", "frappe", "ui", "sidebar", "sidebar_header.js")
+		                    "public", "js", "frappe", "ui", "menu.js")
 		if not os.path.exists(path):
-			self.skipTest("sidebar_header.js not found on this bench")
+			self.skipTest("menu.js not found on this bench")
 		with open(path, encoding="utf-8") as f:
 			src = f.read()
-
-		start = src.find("add_navbar_items()")
-		self.assertGreater(start, -1, "add_navbar_items has been renamed - re-check this")
-		block = src[start:start + 400]
-		self.assertNotIn("onClick", block,
-		                 "Frappe now wires these itself - delete portal_switch.js")
+		self.assertIn("item.action ? `return ${item.action}`", src)
+		header = os.path.join(os.path.dirname(path), "sidebar", "sidebar_header.js")
+		with open(header, encoding="utf-8") as f:
+			self.assertIn("frappe.boot.navbar_settings.settings_dropdown", f.read())
 
 
 class TestRoleChangesReapplyTheProfile(FrappeTestCase):

@@ -59,14 +59,9 @@ website_route_rules = [
 jinja = {"methods": ["alvoraa_portal.ess_parts.ess_part"]}
 
 # ── Doctype event hooks ────────────────────────────────────────────────────
-# Desk-side JavaScript.
-#
-# One job: make the "Switch to Employee Portal" item in the sidebar menu work.
-# Frappe v16 renders Navbar Settings items but never gives them a url or an
-# onClick, so the click throws and nothing happens. See the file for the detail.
-app_include_js = [
-    "/assets/alvoraa_portal/js/portal_switch.js",
-]
+# No desk-side JavaScript. portal_switch.js was removed in ALV-152: it bound
+# to markup Frappe 16 never shows. "Switch to Employee Portal" is now an Action
+# row in Navbar Settings, which Frappe's own menu runs (module_access.py).
 
 # The "Field attendance app" tab on HR Settings (slice 013 step 2): the counts
 # beside the switch, the confirm before turning it off or removing a

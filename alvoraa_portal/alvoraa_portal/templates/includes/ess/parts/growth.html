@@ -1,0 +1,426 @@
+      <!-- ══ GOALS & PERFORMANCE ════════════════════════ -->
+      <div id="panel-goals" class="panel">
+        <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:20px">
+          <div>
+            <div class="page-title">Goals &amp; Performance</div>
+            <div class="page-sub">My goals, appraisals, and team performance</div>
+          </div>
+          <div style="display:flex;gap:4px;background:var(--surface2);border-radius:var(--r-sm);padding:4px;border:1px solid var(--border)">
+            <button class="gp-tab active" id="gtab-overview" onclick="gpShowTab('overview')">Overview</button>
+            <button class="gp-tab" id="gtab-tree" onclick="gpShowTab('tree')">Objectives &amp; KPIs</button>
+            <button class="gp-tab" id="gtab-reviews" onclick="gpShowTab('reviews')">Reviews</button>
+            <button class="gp-tab" id="gtab-team" onclick="gpShowTab('team')" style="display:none">Team</button>
+            <button class="gp-tab" id="gtab-hr" onclick="gpShowTab('hr')" style="display:none">HR Setup</button>
+            <button class="gp-tab" id="gtab-calibration" onclick="gpShowTab('calibration')" style="display:none">Calibration</button>
+            <button class="gp-tab" id="gtab-distribution" onclick="gpShowTab('distribution')" style="display:none">Distribution</button>
+          </div>
+        </div>
+
+        <!-- TAB: Overview -->
+        <div id="gp-tab-overview">
+          <div id="gp-cycle-banner"></div>
+          <div class="g4" id="gp-kpis" style="margin-bottom:20px"></div>
+          <div class="g2" style="margin-bottom:20px">
+            <div class="card">
+              <div class="card-header"><span class="card-title">Goal Progress by Status</span></div>
+              <div class="card-body" id="gp-traj"><div class="empty-state"><div class="empty-state-text">Loading...</div></div></div>
+            </div>
+            <div class="card">
+              <div class="card-header">
+                <span class="card-title">Upcoming Deadlines</span>
+                <span style="font-size:var(--fs-xs);color:var(--text3)">Next 30 days</span>
+              </div>
+              <div class="card-body" id="gp-deadlines"><div class="empty-state"><div class="empty-state-text">Loading...</div></div></div>
+            </div>
+          </div>
+          <!-- Review status card — shown when there is an active appraisal -->
+          <div id="gp-review-status-card" style="display:none">
+            <div class="card">
+              <div class="card-header">
+                <span class="card-title">My Appraisal Review</span>
+              </div>
+              <div class="card-body">
+                <!-- Stage bar -->
+                <div class="pms-stage-bar" id="gp-stage-bar">
+                  <div class="psb-track">
+                    <div class="psb-step" id="psb-step-0">
+                      <div class="psb-dot" id="psb-dot-0"></div>
+                      <div class="psb-label">Employee<br>Review</div>
+                    </div>
+                    <div class="psb-connector" id="psb-conn-0"></div>
+                    <div class="psb-step" id="psb-step-1">
+                      <div class="psb-dot" id="psb-dot-1"></div>
+                      <div class="psb-label">Manager<br>Review</div>
+                    </div>
+                    <div class="psb-connector" id="psb-conn-1"></div>
+                    <div class="psb-step" id="psb-step-2">
+                      <div class="psb-dot" id="psb-dot-2"></div>
+                      <div class="psb-label">HR<br>Review</div>
+                    </div>
+                    <div class="psb-connector" id="psb-conn-2"></div>
+                    <div class="psb-step" id="psb-step-3">
+                      <div class="psb-dot" id="psb-dot-3"></div>
+                      <div class="psb-label">Completed</div>
+                    </div>
+                  </div>
+                </div>
+                <div id="gp-review-status-body" style="margin-top:14px"></div>
+                <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap" id="gp-review-actions"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: Objectives & KPIs (combined, hierarchical) -->
+        <div id="gp-tab-tree" style="display:none">
+
+          <!-- One sticky control bar. Primary controls stay visible; the rest
+               live behind a disclosure so the tree starts near the top. -->
+          <div class="tv-controls">
+            <div class="tv-controls-row">
+              <div class="tv-search">
+                <svg class="tv-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.65" y2="16.65"/>
+                </svg>
+                <input id="tv-search" type="search" autocomplete="off"
+                       placeholder="Search objectives and KPIs…  (press /)"
+                       aria-label="Search objectives and KPIs"
+                       oninput="tvSearch()" onkeydown="tvSearchKey(event)">
+                <button class="tv-search-clear" id="tv-search-clear" onclick="tvClearSearch()"
+                        aria-label="Clear search" title="Clear search">&times;</button>
+              </div>
+
+              <div class="tv-seg" role="group" aria-label="Show">
+                <button class="tv-seg-btn active" id="tvf-all"  onclick="tvSetShow('all')">All</button>
+                <button class="tv-seg-btn"        id="tvf-obj"  onclick="tvSetShow('objectives')">Objectives</button>
+                <button class="tv-seg-btn"        id="tvf-kpi"  onclick="tvSetShow('kpis')">KPIs</button>
+              </div>
+
+              <input type="hidden" id="tv-scope" value="mine">
+
+              <div class="tv-seg" role="group" aria-label="View">
+                <button class="tv-seg-btn active" id="tvv-tree" onclick="tvSetView('tree')"
+                        title="Hierarchy view" aria-label="Hierarchy view">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="12" height="4" rx="1"/><rect x="12" y="10" width="9" height="4" rx="1"/><rect x="12" y="17" width="9" height="4" rx="1"/><path d="M6 4v15M6 12h6M6 19h6"/></svg>
+                </button>
+                <button class="tv-seg-btn" id="tvv-list" onclick="tvSetView('list')"
+                        title="List view" aria-label="List view">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+                </button>
+              </div>
+
+              <div class="tv-popwrap">
+                <button class="tv-ghost" id="tv-filter-btn" onclick="tvTogglePop(event)"
+                        aria-haspopup="true" aria-expanded="false">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 5h18l-7 8v5l-4 2v-7z"/></svg>
+                  Filters<span class="tv-count" id="tv-filter-count" hidden>0</span>
+                </button>
+              </div>
+              <div class="tv-pop-backdrop" id="tv-pop-backdrop" onclick="tvClosePop()"></div>
+              <div class="tv-pop" id="tv-pop" role="dialog" aria-label="Filters" aria-modal="true">
+                  <div class="tv-pop-hdr">
+                    <div class="tv-pop-title">Filter Objectives &amp; KPIs</div>
+                    <button class="tv-pop-close" onclick="tvClosePop()" aria-label="Close">&times;</button>
+                  </div>
+                  <div class="tv-pop-body">
+                    <div class="tv-pop-row">
+                      <div class="tv-pop-field" style="margin-bottom:6px">Scope</div>
+                      <div class="tv-scope-radios">
+                        <label class="tv-scope-radio"><input type="radio" name="tv-scope-radio" value="mine" checked onchange="tvSetScope(this.value)"> Only mine</label>
+                        <label class="tv-scope-radio"><input type="radio" name="tv-scope-radio" value="team" onchange="tvSetScope(this.value)"> Me &amp; my team</label>
+                        <label class="tv-scope-radio"><input type="radio" name="tv-scope-radio" value="department" onchange="tvSetScope(this.value)"> My department</label>
+                        <label class="tv-scope-radio"><input type="radio" name="tv-scope-radio" value="organisation" onchange="tvSetScope(this.value)"> Whole organisation</label>
+                      </div>
+                    </div>
+                    <div class="tv-pop-row">
+                      <label class="tv-pop-field">Appraisal cycle
+                        <select class="gp-input" id="tv-cycle" onchange="tvLoad()"></select>
+                      </label>
+                    </div>
+                    <div class="tv-pop-row tv-pop-2">
+                      <label class="tv-pop-field">From
+                        <input type="date" class="gp-input" id="tv-from" onchange="tvLoad()">
+                      </label>
+                      <label class="tv-pop-field">To
+                        <input type="date" class="gp-input" id="tv-to" onchange="tvLoad()">
+                      </label>
+                    </div>
+                    <div class="tv-pop-row">
+                      <label class="tv-pop-field">Category
+                        <select class="gp-input" id="tv-category" onchange="tvLoad()">
+                          <option value="">All categories</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div class="tv-pop-row">
+                      <div class="tv-pop-field" style="margin-bottom:6px">Status</div>
+                      <div class="tv-traj" role="group" aria-label="Status">
+                        <label class="tv-traj-opt tv-traj-on">
+                          <input type="checkbox" class="tv-traj-cb" value="On Track" onchange="tvLoad()"> On track
+                        </label>
+                        <label class="tv-traj-opt tv-traj-risk">
+                          <input type="checkbox" class="tv-traj-cb" value="At Risk" onchange="tvLoad()"> At risk
+                        </label>
+                        <label class="tv-traj-opt tv-traj-off">
+                          <input type="checkbox" class="tv-traj-cb" value="Off Track" onchange="tvLoad()"> Off track
+                        </label>
+                        <label class="tv-traj-opt">
+                          <input type="checkbox" class="tv-traj-cb" value="Not Started" onchange="tvLoad()"> Not started
+                        </label>
+                      </div>
+                      <div class="gp-hint" style="margin-top:5px">KPIs have no trajectory of
+                        their own, so theirs is read from attainment: 70%+ on track, 40&ndash;70% at risk.</div>
+                    </div>
+                    <div class="tv-pop-row">
+                      <div class="tv-pop-field" style="margin-bottom:6px">Progress %</div>
+                      <div class="tv-pop-2">
+                        <input class="gp-input" id="tv-prog-min" type="number" min="0" max="100"
+                               placeholder="Min" aria-label="Minimum progress percent" onchange="tvLoad()">
+                        <input class="gp-input" id="tv-prog-max" type="number" min="0" max="100"
+                               placeholder="Max" aria-label="Maximum progress percent" onchange="tvLoad()">
+                      </div>
+                    </div>
+                  </div>
+                  <div class="tv-pop-foot">
+                    <button class="tv-ghost" onclick="tvClearFilters()">Reset all</button>
+                    <button class="btn btn-primary btn-sm" onclick="tvClosePop()">Done</button>
+                  </div>
+                </div>
+
+              <div class="tv-controls-spacer"></div>
+
+              <button class="tv-ghost" onclick="tvExpandAll(true)" title="Expand all">Expand</button>
+              <button class="tv-ghost" onclick="tvExpandAll(false)" title="Collapse all">Collapse</button>
+              <button class="tv-ghost" onclick="tvLoad()" title="Refresh" aria-label="Refresh">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+              </button>
+
+              <div class="tv-newwrap">
+                <button class="btn btn-primary btn-sm" onclick="tvToggleNew(event)"
+                        aria-haspopup="true" aria-expanded="false" id="tv-new-btn">
+                  + New
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="tv-menu" id="tv-new-menu" role="menu">
+                  <button role="menuitem" onclick="tvCloseNew();gpOpenCreateGoal()">
+                    <span class="tv-dot tv-dot-obj"></span>
+                    <span><strong>Objective</strong><em>A goal that others can cascade from</em></span>
+                  </button>
+                  <button role="menuitem" onclick="tvCloseNew();pfOpenKpiModal('tree')">
+                    <span class="tv-dot tv-dot-kpi"></span>
+                    <span><strong>KPI</strong><em>A measurable target under an objective</em></span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Active filters stay visible once the popover closes. -->
+            <div class="tv-chips" id="tv-chips" hidden></div>
+          </div>
+
+          <div class="tv-summary" id="tv-summary"></div>
+          <div id="tv-body"><div class="tv-skeleton" aria-busy="true"><i></i><i></i><i></i></div></div>
+          <div class="tv-legend">
+            <span class="tv-key tv-key-obj">Objective</span>
+            <span class="tv-key tv-key-org">Organisational</span>
+            <span class="tv-key tv-key-kpi">KPI</span>
+            <span class="tv-hint" id="tv-dnd-hint">Drag a KPI onto any objective to re-link it.</span>
+          </div>
+          <div id="tv-msg" class="tv-toast" hidden></div>
+        </div>
+
+        <!-- TAB: Reviews (merged My Reviews + Team Reviews) -->
+        <div id="gp-tab-reviews" style="display:none">
+
+          <!-- Section: My Performance Reviews -->
+          <div class="rev-sec">
+            <div class="rev-sec-hdr" onclick="toggleRevSec('my')">
+              <div>
+                <div class="rev-sec-title">My Performance Reviews</div>
+                <div class="rev-sec-sub">Performance reviews created for you across all cycles.</div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();mrLoad(true)">&#8635; Refresh</button>
+                <svg class="rev-chev" id="rev-chev-my" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </div>
+            </div>
+            <div class="rev-sec-body" id="rev-body-my">
+              <div id="mr-body"><div class="empty-state"><div class="empty-state-text">Loading&#8230;</div></div></div>
+            </div>
+          </div>
+
+          <!-- Section: My team's reviews (managers only, hidden until pfBoot confirms).
+               Reviews opened here open as their manager; HR's reviews are on the
+               HR review list in HR Setup (decision 37). -->
+          <div class="rev-sec" id="rev-sec-team-reviews" style="display:none">
+            <div class="rev-sec-hdr" onclick="toggleRevSec('team-reviews')">
+              <div>
+                <div class="rev-sec-title">My team's reviews</div>
+                <div class="rev-sec-sub">Reviews of the people who report to you. You open them as their manager.</div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <select class="gp-input pf-cycle-select" id="pf-review-cycle" onchange="pfLoadReviews()" onclick="event.stopPropagation()"></select>
+                <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();pfLoadReviews()">&#8635; Refresh</button>
+                <svg class="rev-chev" id="rev-chev-team-reviews" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </div>
+            </div>
+            <div class="rev-sec-body" id="rev-body-team-reviews">
+              <div id="pf-review-body"><div class="empty-state"><div class="empty-state-text">Loading team...</div></div></div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- TAB: Team Goals -->
+        <div id="gp-tab-team" style="display:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+            <div style="font-size:var(--fs-md);font-weight:700">Your Team's Goals</div>
+            <button class="btn btn-outline btn-sm" onclick="gpLoadTeam(true)">&#8635; Refresh</button>
+          </div>
+          <div id="gp-team-body"><div class="empty-state"><div class="empty-state-text">Loading team...</div></div></div>
+        </div>
+
+        <!-- TAB: HR Setup -->
+        <div id="gp-tab-hr" style="display:none">
+          <div class="pf-toolbar">
+            <div>
+              <div class="pf-h">Performance Administration</div>
+              <div class="pf-sub">Run the whole review cycle from here — no desk required.</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select class="gp-input pf-cycle-select" id="pf-hr-cycle" onchange="pfLoadHrCycle()"></select>
+              <button class="btn btn-outline btn-sm" onclick="pfLoadHr(true)">&#8635; Refresh</button>
+            </div>
+          </div>
+          <div class="pf-hr-actions">
+            <button class="btn btn-primary btn-sm" onclick="pfOpenNewCycleDialog()">+ New Cycle</button>
+            <button class="btn btn-outline btn-sm" onclick="pfExportCycleCsv()">Export CSV</button>
+          </div>
+          <div id="pf-hr-msg"></div>
+          <div id="pf-hr-body"><div class="empty-state"><div class="empty-state-text">Loading setup...</div></div></div>
+        </div>
+        <!-- TAB: Calibration (HR only) -->
+        <div id="gp-tab-calibration" style="display:none">
+          <div class="cal-toolbar">
+            <div>
+              <div class="pf-h">Calibration Matrix</div>
+              <div class="pf-sub">Reviews in HR Review &amp; Completed stage, plotted by overall &amp; potential rating</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select class="gp-input" id="cal-cycle-sel" onchange="calLoad()" style="min-width:200px"></select>
+              <button class="btn btn-outline btn-sm" id="cal-filter-btn" onclick="calToggleFilters()"
+                      style="display:none;white-space:nowrap" aria-expanded="false">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="margin-right:4px;vertical-align:-1px"><path d="M3 5h18l-7 8v5l-4 2v-7z"/></svg>Filters
+                <span id="cal-filter-badge" hidden style="background:var(--primary);color:var(--surface);border-radius:var(--r);padding:0 5px;font-size:var(--fs-xs);margin-left:4px;font-weight:700"></span>
+              </button>
+              <button class="btn btn-outline btn-sm" id="cal-export-btn" onclick="calExportCsv()" style="display:none;white-space:nowrap">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="margin-right:4px;vertical-align:-1px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV
+              </button>
+              <button class="btn btn-sm" id="cal-signoff-btn" onclick="calOpenSignoff()" style="display:none;white-space:nowrap;background:var(--green);color:var(--surface);border:1px solid var(--green)">
+                <i class=ic-check></i> Sign Off
+              </button>
+            </div>
+          </div>
+
+          <!-- Cycle duration + stage tiles (populated by calLoad) -->
+          <div class="cal-cycle-info" id="cal-cycle-info" style="display:none"></div>
+          <!-- Sign-off banner (shown after sign-off) -->
+          <div id="cal-signoff-banner" style="display:none;background:rgba(76,175,80,.1);border:1px solid var(--green);border-radius:var(--r);padding:12px 16px;margin-bottom:12px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="color:var(--green);font-size:var(--fs-md)"><i class=ic-check></i></span>
+              <strong style="font-size:var(--fs-base)">Calibration Signed Off</strong>
+              <span id="cal-signoff-meta" style="color:var(--text3);font-size:var(--fs-sm);margin-left:4px"></span>
+            </div>
+            <div id="cal-signoff-summary" style="margin-top:6px;font-size:var(--fs-base);color:var(--text2)"></div>
+          </div>
+
+          <!-- Filters -->
+          <div class="cal-filters" id="cal-filters" style="display:none">
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Department</label>
+              <select class="cal-filter-sel" id="cal-f-dept" multiple onchange="calApplyFilters()"></select>
+            </div>
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Designation</label>
+              <select class="cal-filter-sel" id="cal-f-desig" multiple onchange="calApplyFilters()"></select>
+            </div>
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Employment Type</label>
+              <select class="cal-filter-sel" id="cal-f-emptype" multiple onchange="calApplyFilters()"></select>
+            </div>
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Reporting Manager</label>
+              <select class="cal-filter-sel" id="cal-f-mgr" multiple onchange="calApplyFilters()"></select>
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="calClearFilters()" style="align-self:flex-end;white-space:nowrap">Clear filters</button>
+          </div>
+          <div id="cal-filter-summary" style="display:none;font-size:var(--fs-sm);color:var(--text3);margin-bottom:12px"></div>
+
+          <!-- Matrix area -->
+          <div id="cal-body">
+            <div class="empty-state"><div class="empty-state-text">Select an appraisal cycle to view the calibration matrix.</div></div>
+          </div>
+          <!-- Sign-off modal -->
+          <div id="cal-signoff-modal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.45);align-items:center;justify-content:center">
+            <div style="background:var(--card);border-radius:var(--r);padding:28px;max-width:480px;width:90%;box-shadow:var(--sh3)">
+              <div style="font-size:var(--fs-md);font-weight:700;margin-bottom:4px">Sign Off Calibration</div>
+              <div id="cal-signoff-cycle-lbl" style="font-size:var(--fs-sm);color:var(--text3);margin-bottom:16px"></div>
+              <label style="font-size:var(--fs-base);font-weight:600;display:block;margin-bottom:6px">Summary / Notes</label>
+              <textarea id="cal-signoff-text" rows="5" class="gp-input" style="width:100%;resize:vertical" placeholder="Summarise calibration outcomes, key decisions, and any notes for the record…"></textarea>
+              <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+                <button class="btn btn-outline btn-sm" onclick="calCloseSignoff()">Cancel</button>
+                <button class="btn btn-sm" onclick="calSubmitSignoff()" style="background:var(--green);color:var(--surface);border:1px solid var(--green)">Confirm Sign Off</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: Distribution / Bell Curve (HR only) -->
+        <div id="gp-tab-distribution" style="display:none">
+          <div class="pd-toolbar">
+            <div>
+              <div class="pf-h">Performance Distribution</div>
+              <div class="pf-sub">Rating bell curves &amp; employee breakdown by review cycle</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select class="gp-input" id="pd-cycle-sel" onchange="pdLoad()" style="min-width:200px"></select>
+              <button class="btn btn-outline btn-sm" id="pd-filter-btn" onclick="pdToggleFilters()"
+                      style="display:none;white-space:nowrap" aria-expanded="false">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="margin-right:4px;vertical-align:-1px"><path d="M3 5h18l-7 8v5l-4 2v-7z"/></svg>Filters
+                <span id="pd-filter-badge" hidden style="background:var(--primary);color:var(--surface);border-radius:var(--r);padding:0 5px;font-size:var(--fs-xs);margin-left:4px;font-weight:700"></span>
+              </button>
+              <button class="btn btn-outline btn-sm" id="pd-export-btn" onclick="pdExportCSV()" style="display:none;white-space:nowrap">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="margin-right:4px;vertical-align:-1px"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV
+              </button>
+            </div>
+          </div>
+
+          <!-- Collapsible filters -->
+          <div class="cal-filters" id="pd-filters" style="display:none">
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Department</label>
+              <select class="cal-filter-sel" id="pd-f-dept" multiple onchange="pdApplyFilters()"></select>
+            </div>
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Designation</label>
+              <select class="cal-filter-sel" id="pd-f-desig" multiple onchange="pdApplyFilters()"></select>
+            </div>
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Employment Type</label>
+              <select class="cal-filter-sel" id="pd-f-emptype" multiple onchange="pdApplyFilters()"></select>
+            </div>
+            <div class="cal-filter-group">
+              <label class="cal-filter-label">Reporting Manager</label>
+              <select class="cal-filter-sel" id="pd-f-mgr" multiple onchange="pdApplyFilters()"></select>
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="pdClearFilters()" style="align-self:flex-end;white-space:nowrap">Reset all</button>
+          </div>
+
+          <!-- Dynamic body — stats + charts + table rendered here -->
+          <div id="pd-body">
+            <div class="empty-state"><div class="empty-state-text">Select an appraisal cycle to view the distribution.</div></div>
+          </div>
+        </div>
+      </div>
+

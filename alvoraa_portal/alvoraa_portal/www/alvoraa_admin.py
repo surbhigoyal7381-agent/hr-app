@@ -21,10 +21,10 @@ def get_context(context):
 
     # Must be System Manager on that control plane
     if "System Manager" not in frappe.get_roles(frappe.session.user):
-        frappe.throw("Access denied. This page is for Alvoraa administrators only.",
+        frappe.throw("Access denied. This page is for Alvora administrators only.",
                      frappe.PermissionError)
 
     context.no_cache   = 1
     context.no_header  = 1
     context.no_sidebar = 1
-    context.title      = "Tenant Admin – Alvoraa"
+    context.title      = "Tenant Admin – Alvora"

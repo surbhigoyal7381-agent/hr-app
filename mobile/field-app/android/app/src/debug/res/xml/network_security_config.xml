@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug build only (slice 013: AC-166, SEC-16). Android's own source-set rules
+  mean this file, and the manifest line that points to it, exist only under
+  src/debug/ - a pilot or release build never sees either one, so it gets
+  Android's secure default instead: HTTPS only, system CAs only, nothing here.
+
+  Plain HTTP is allowed to exactly two addresses, both meaning "the developer's
+  own machine, reached through adb", never a tenant host:
+
+    - localhost   : after `adb reverse tcp:8000 tcp:8000` (or whatever port the
+                    local bench listens on), a USB-connected phone can reach
+                    the bench at http://localhost:8000 as if it were the PC.
+    - 10.0.2.2    : the Android emulator's fixed alias for the host machine's
+                    localhost, for anyone testing in an emulator instead of a
+                    physical phone.
+
+  Nothing under *.alvoraa.co is ever listed here (OPS-7): a debug build reaches
+  a real or dev tenant only over HTTPS, exactly like pilot and release.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+    <!-- Every other domain, including every *.alvoraa.co host, keeps the
+         platform default: HTTPS only, no cleartext, no user-added CA trusted. -->
+</network-security-config>

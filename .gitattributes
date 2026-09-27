@@ -1,0 +1,6 @@
+# ALV-133: vendored app files are pinned by SHA-256 (check_app.mjs). Never let a
+# Windows checkout turn their line endings into CRLF, or the pin breaks.
+mobile/field-app/web/js/vendor/*.js -text
+
+# ALV-149: piped into a Linux container with `bash -s <`, so never CRLF.
+scripts/brand_text_dry_run.sh text eol=lf

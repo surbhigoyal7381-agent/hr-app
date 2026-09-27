@@ -1,0 +1,167 @@
+/* Slice 045, Wave 4: Growth, Team and the People rows.
+ *
+ * A fourth static file under /assets/, cached for a month by nginx's existing
+ * `location ^~ /assets/` block and stamped with the build version, exactly like
+ * next-frame.css, next-panels.css and next-time-pay.css (OPS-31, OPS-34).
+ * It is not a template and takes no cache slot, which is why Wave 4 gets its
+ * own rather than growing Wave 3's - and why two sessions building two waves
+ * never meet in one stylesheet.
+ *
+ * It uses the design system's own tokens, so a tenant's colours and both themes
+ * come for free.
+ *
+ * Four rules, kept in the styles rather than hoped for:
+ *   nothing smaller than 12px;
+ *   nothing tappable smaller than 44px - and the RATING BUTTONS are the ones
+ *     that matter, because `01b` finding N4 measured them at 32px on a phone,
+ *     on the one screen that has to finish in two minutes;
+ *   no sideways scroll at 390px;
+ *   colour is never the only signal - the chosen rating carries `aria-pressed`
+ *     and a border as well as a fill, and every trajectory chip is words.
+ */
+
+.nf-team,
+.nf-growth,
+.nf-growth-wizard { min-width: 0; }
+
+/* ── a person row that opens a sheet ─────────────────────────────────────── */
+
+.nf-person-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  /* 44px, because these are pressed with a thumb on a factory floor. */
+  min-height: 44px;
+  padding: 8px 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.nf-person-btn:hover { background: var(--hover, rgba(128, 128, 128, 0.08)); }
+
+/* A visible focus ring. A keyboard user who cannot see where they are is a
+   keyboard user who cannot use the screen at all. */
+.nf-person-btn:focus-visible,
+.nf-rate-btn:focus-visible {
+  outline: 2px solid var(--brand, currentColor);
+  outline-offset: 2px;
+}
+
+.nf-person-btn > span:nth-child(2) {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  /* A long designation, or a Hindi label, wraps rather than pushing the page
+     sideways. Hindi and Punjabi run about 30% longer than English. */
+  overflow-wrap: anywhere;
+}
+
+/* How many things the caller may do for this person. A number, not a dot:
+   a dot would be colour as the only signal. */
+.nf-person-count {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--text3, var(--text2, inherit));
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.3));
+  border-radius: 999px;
+  min-width: 24px;
+  padding: 2px 8px;
+  text-align: center;
+}
+
+.nf-person-mail {
+  font-size: 12px;
+  color: var(--brand, inherit);
+  overflow-wrap: anywhere;
+}
+
+/* ── Growth ──────────────────────────────────────────────────────────────── */
+
+.nf-goal {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border, rgba(128, 128, 128, 0.18));
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.nf-goal:last-child { border-bottom: 0; }
+
+/* The approved figure. Big, because it is the number somebody came for. */
+.nf-growth-big {
+  margin: 4px 0 0;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+/* A waiting reading. It is set apart by a rule down its side AND by its own
+   sentence - "the figure above does not move until it is approved" - so it can
+   never be mistaken for part of the figure above it. */
+.nf-growth-waiting {
+  border-inline-start: 3px solid var(--border, rgba(128, 128, 128, 0.35));
+  padding-inline-start: 8px;
+  margin-top: 6px;
+}
+
+/* ── the rating control ──────────────────────────────────────────────────── */
+
+.nf-rate {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border: 0;
+  margin: 8px 0 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.nf-rate legend {
+  padding: 0;
+  margin-bottom: 4px;
+}
+
+/* **44px, measured.** `01b` finding N4 found these at 32px on a phone, on the
+   one screen that has to finish in two minutes. They wrap onto a second line
+   rather than shrinking, because shrinking is how 44 becomes 32 again. */
+.nf-rate-btn {
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
+  border-radius: 8px;
+  background: var(--bg, transparent);
+  color: inherit;
+  font-size: var(--fs-base, 15px);
+  cursor: pointer;
+}
+
+/* The chosen one: a fill AND a heavier border AND `aria-pressed` in the markup.
+   Colour is never the only signal, and a fill alone disappears in high
+   contrast mode. */
+.nf-rate-btn.nf-rate-on {
+  background: var(--brand, rgba(128, 128, 128, 0.25));
+  border-width: 3px;
+  font-weight: 700;
+}
+
+/* ── the room-left line ──────────────────────────────────────────────────── */
+
+/* It is always there and always says a number, so it never appears suddenly as
+   a warning somebody has to interpret under pressure. Over the budget it goes
+   heavier and gains a rule - not only redder. */
+#nf-wiz-room[data-over="yes"] {
+  font-weight: 700;
+  border-inline-start: 3px solid currentColor;
+  padding-inline-start: 8px;
+}
+
+@media (min-width: 720px) {
+  .nf-rate-btn { min-width: 52px; }
+}

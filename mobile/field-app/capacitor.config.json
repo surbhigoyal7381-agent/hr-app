@@ -1,0 +1,18 @@
+{
+  "appId": "co.alvoraa.app",
+  "appName": "Alvora Attendance",
+  "webDir": "web",
+  "loggingBehavior": "none",
+  "android": {
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    },
+    "CapacitorCookies": {
+      "enabled": false
+    }
+  }
+}

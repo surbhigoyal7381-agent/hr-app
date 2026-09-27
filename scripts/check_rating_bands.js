@@ -22,11 +22,14 @@
 const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
+const { readPortalSource } = require("./lib/portal_source");
 
 const FILE = process.argv[2] || path.join(
   __dirname, "..", "alvoraa_portal", "alvoraa_portal", "www", "hrms-employee.html");
 
-const SOURCE = fs.readFileSync(FILE, "utf8");
+// Follows the page's Jinja includes (slice 034 US-10, AC-37): the band
+// helpers now live in an include file, not in the page itself.
+const SOURCE = readPortalSource(FILE);
 
 // The helpers are published as `window.pfX = function...` at page scope. Pull
 // each one out by name rather than running the whole page, which would need a

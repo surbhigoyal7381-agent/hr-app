@@ -104,6 +104,28 @@ else
     echo "      - india_compliance skipped: not part of this plan"
 fi
 
+# Frappe CRM is NOT installed here, on purpose, even when sold. Its
+# setup_wizard_complete hook seeds three fake @example.com users with Sales
+# roles plus fake leads on any site where it is present when the setup wizard
+# finishes - and the wizard runs AFTER this script (tenant_api._run_provision
+# calls complete_company_setup). tenant_api installs it once the wizard is done.
+# A manual run has no tenant_api, so it says what to do instead.
+if has_feature crm; then
+    echo "      ~ crm (sold): installed by tenant_api AFTER the setup wizard."
+    echo "        Manual run? Finish the wizard first, then:"
+    echo "        bench --site $SITE_NAME install-app crm"
+fi
+
+# Frappe WhatsApp has no setup-wizard hook and no ERPNext dependency, so it
+# can go in here like india_compliance. Its doctypes are System Manager only;
+# the tenant's administrator configures the Meta account afterwards.
+if has_feature whatsapp; then
+    echo "      + frappe_whatsapp (sold)"
+    bench --site "$SITE_NAME" install-app frappe_whatsapp
+else
+    echo "      - frappe_whatsapp skipped: not part of this plan"
+fi
+
 # ── 3. Apply per-tenant branding config ───────────────────────────────────
 echo "[3/6] Writing tenant config to site_config.json"
 bench --site "$SITE_NAME" set-config tenant_name       "$TENANT_NAME"

@@ -29,7 +29,7 @@ site name is enough isolation there.
 
 ## 2. Prerequisites
 
-- The image built from `dev` — `ghcr.io/<repo>/hr-app:dev-<sha>`. Created by CI on push.
+- The image built from `dev` — `ghcr.io/surbhigoyal7381-agent/alvoraa-app:dev-<sha>` (private package since 2026-09-22). Created by CI on push.
 - A recent dump of the site you want to mirror. `dev.alvoraa.co` is the sensible choice: same
   Alvox-era naming as production, lower stakes if the dump is mishandled.
 - `DB_ROOT_PASSWORD` from `deploy/envs/*.env` — lets `bench restore` run without prompting.

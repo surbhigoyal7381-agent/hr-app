@@ -14,7 +14,13 @@ push. It fails if a merge brings any of these back:
      `set_real_ip_from` that is not a plain IP range (a hostname or 0.0.0.0/0
      would let anybody set their own address);
   4. a server block with a `/api/` location but no login-limited location that
-     covers /api/method/login, /api/v1/method/login and /api/v2/method/login.
+     covers /api/method/login, /api/v1/method/login and /api/v2/method/login;
+  5. compression (slice 036, OPS-26) that could leak the CSRF token (BREACH):
+     with gzip on, `location /` and `location /files/` in every proxying server
+     block must say `gzip off` - they answer "page not found" pages, which
+     repeat the address next to the token. The list of pages that ARE
+     compressed must be the same in every server block. And gzip_types must
+     not list types that are compressed already (images, PDF, zip, woff).
 
 That the file actually PARSES, and behaves, is checked by
 scripts/check_nginx_forwarded.sh in throwaway containers - run it before any
@@ -30,6 +36,8 @@ from pathlib import Path
 
 DEFAULT = Path(__file__).resolve().parent.parent / "deploy" / "nginx.conf"
 LOGIN_PATHS = ("/api/method/login", "/api/v1/method/login", "/api/v2/method/login")
+# Already compressed. gzip only costs CPU on these and makes them a little bigger.
+PRECOMPRESSED = re.compile(r"^(image/(png|jpe?g|gif|webp|avif)|application/(pdf|zip|gzip|x-gzip)|font/woff2?)$")
 
 
 def _strip_comments(text):
@@ -97,12 +105,32 @@ def check(path):
 		if net.prefixlen < 8:
 			problems.append(f"set_real_ip_from {value.strip()} trusts far too much")
 
+	gzip_on = re.search(r"^\s*gzip\s+on\s*;", text, re.M) is not None
+	if gzip_on:
+		types = re.search(r"^\s*gzip_types\s+([^;]+);", text, re.M)
+		for t in (types.group(1).split() if types else []):
+			if PRECOMPRESSED.match(t):
+				problems.append(f"gzip_types lists {t}, which is compressed already")
+	compressed_pages = {}
+
 	for name, block in _server_blocks(text):
 		locations = _locations(block)
 		proxies_api = any(pattern.startswith("/api") and "proxy_pass" in body
 		                  for _, pattern, body in locations)
 		if not proxies_api:
 			continue
+		if gzip_on:
+			for modifier, pattern, body in locations:
+				if modifier == "" and pattern in ("/", "/files/") and "proxy_pass" in body \
+						and not re.search(r"\bgzip\s+off\s*;", body):
+					problems.append(f"server {name}: location {pattern} is compressed - its "
+					                "'page not found' answers repeat the address next to the "
+					                "CSRF token (BREACH). It needs `gzip off;`")
+			compressed_pages[name] = sorted(
+				pattern for modifier, pattern, body in locations
+				if modifier in ("~", "~*") and "proxy_pass" in body
+				and "zone=kinexus_login" not in body
+				and not re.search(r"\bgzip\s+off\s*;", body))
 		for login in LOGIN_PATHS:
 			covered = False
 			for modifier, pattern, body in locations:
@@ -116,6 +144,10 @@ def check(path):
 			if not covered:
 				problems.append(f"server {name}: {login} is not under the login limit")
 
+	if len({tuple(v) for v in compressed_pages.values()}) > 1:
+		detail = "; ".join(f"{n}: {v}" for n, v in compressed_pages.items())
+		problems.append(f"the compressed-page lists differ between server blocks: {detail}")
+
 	return problems
 
 
@@ -126,7 +158,7 @@ def main():
 		print(f"FAIL  {p}")
 	if problems:
 		return 1
-	print(f"OK    {path}: no caller-chosen addresses; Cloudflare ranges valid; all login paths limited")
+	print(f"OK    {path}: no caller-chosen addresses; Cloudflare ranges valid; all login paths limited; compression kept off the pages that repeat the address")
 	return 0
 
 

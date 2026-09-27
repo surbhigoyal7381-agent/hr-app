@@ -1,0 +1,109 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace = "co.alvoraa.app"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "co.alvoraa.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        // OPS-40: versionName is MAJOR.MINOR.PATCH; versionCode is
+        // MAJOR x 1,000,000 + MINOR x 10,000 + PATCH x 100 + build number.
+        // 0.1.0, build 4: review fixes on the daily-use build (M1 the shared
+        // #problem-card owner, M2 the CONSENT_REQUIRED recovery path).
+        // 0.1.0, build 5: added the missing com.google.android.material
+        // dependency - the first real Android build of this branch failed
+        // AAPT2 resource linking without it.
+        // 0.2.0, build 0: ALV-128, sign in with work email and password.
+        // A new feature, so the minor number moves; the server's
+        // MIN_APP_VERSION stays 0.1.0, so 0.1.x phones keep working.
+        // 0.2.1, build 0: check-in fixes found on a real phone on 26 Sep 2026 -
+        // a visible camera, the true distance on the result, "from anywhere"
+        // for a radius of 0, and the photo time sent with its time zone.
+        // MIN_APP_VERSION does not move.
+        // scripts/check_versions.mjs enforces this on every push.
+        // 0.3.1, build 0: ALV-149, the product is spelled Alvora on every
+        // screen and on the launcher; the sign-in shows the mark only.
+        versionCode 30100
+        versionName "0.3.1"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    buildTypes {
+        // OPS-38, AC-165: debug, pilot and release each have their own app ID
+        // suffix, so all three can sit on one phone side by side and a test
+        // build can never replace the real one. Only "release" has no suffix -
+        // it is the store app ID. None of the three holds a signing key in this
+        // file; pilot and release are signed only at build time, from a key
+        // that only exists once US-31's guard and OPS-38's two key holders are
+        // in place.
+        //
+        // Cleartext HTTP: debug alone may reach a bench over plain HTTP, and
+        // only the bench - never a tenant. That allow-list lives in
+        // src/debug/res/xml/network_security_config.xml, wired in by
+        // src/debug/AndroidManifest.xml. Android's own source-set rules mean
+        // neither file is ever merged into a pilot or release build, so this
+        // block does not have to repeat the restriction: pilot and release get
+        // Android's secure default (HTTPS only, system CAs only) by simply not
+        // setting `usesCleartextTraffic` or a network security config at all.
+        debug {
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+        }
+        // AC-165, AC-167: built only by hand, from a commit on `dev`, through
+        // the protected `mobile-pilot` environment (07 §4 gate 8) - never a
+        // push trigger. Not debuggable and not minified, the same as release:
+        // a tester's phone must behave like a real one, not a dev one.
+        pilot {
+            applicationIdSuffix ".pilot"
+            versionNameSuffix "-pilot"
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    // Not used by this app's own theme (styles.xml stays on plain AppCompat) - but
+    // @capacitor/android's own resources reference Material Components theme
+    // attributes (colorPrimaryVariant etc.) and expect the consuming app to supply
+    // this library. Missing entirely until now; surfaced only once a real Android
+    // build ran (AAPT2 resource linking: "resource attr/colorPrimaryVariant... not
+    // found"), which nothing in this sandbox or CI can do.
+    implementation "com.google.android.material:material:$materialVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+// No Firebase / Google Services plugin here on purpose. This app has no push
+// notifications and no crash-reporting tool (brief "out"; gate decision 6;
+// SEC-20, OPS-14): the Capacitor template's usual conditional google-services
+// block was removed rather than left dormant, so a google-services.json
+// dropped into this folder by accident (from another project, a copy-paste)
+// cannot silently switch a Firebase SDK on. Pilot testers are still invited
+// through Firebase App Distribution (US-48) - that uses the Firebase CLI
+// against the built APK, not this Gradle plugin, and adds nothing to the app
+// itself.

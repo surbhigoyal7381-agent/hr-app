@@ -49,7 +49,7 @@ class AlvoraaOperationsPack(Document):
 					.format(row.idx, frappe.bold(key)))
 			if not spec.get("erpnext"):
 				frappe.throw(
-					_("Row {0}: {1} is an Alvoraa HR feature, not an ERPNext module. "
+					_("Row {0}: {1} is an Alvora HR feature, not an ERPNext module. "
 					  "Operations packs carry ERPNext only; HR features are sold per "
 					  "employee, not per named user.")
 					.format(row.idx, frappe.bold(spec.get("label") or key)))

@@ -17,6 +17,9 @@
 #   4. a caller-sent CF-Connecting-IP is ignored when the caller is not Cloudflare.
 #   5. every login path (/api/method/login, /api/v1/..., /api/v2/...) is under
 #      the 5-a-minute login limit.
+#   6. compression (slice 036, OPS-26): the named pages, /api/ and /assets/ text
+#      are gzipped with "Vary: Accept-Encoding"; "page not found" addresses,
+#      /files/ and images are NOT (BREACH - see deploy/nginx.conf).
 #
 # Needs: docker, openssl. Exit code 0 = all passed.
 
@@ -44,7 +47,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$WORK/echo"
+mkdir -p "$WORK/echo" "$WORK/assets"
+# Files for /assets/: text that must be compressed, an image that must not.
+# Both well over gzip_min_length, so size is never the reason.
+awk 'BEGIN { for (i = 0; i < 200; i++) print "var line" i " = 1;" }' > "$WORK/assets/app.js"
+head -c 4096 /dev/urandom > "$WORK/assets/logo.png"
 # A config of our own, so a broken OPENSSL_CONF on this PC cannot stop the run.
 printf '[req]\ndistinguished_name = dn\n[dn]\n' > "$WORK/openssl.cnf"
 # One self-signed certificate for every certificate folder the file names
@@ -66,8 +73,10 @@ server {
     listen 8000;
     listen 9000;
     location / {
-        default_type text/plain;
-        return 200 "xff=[$http_x_forwarded_for] real=[$http_x_real_ip] peer=[$remote_addr]\n";
+        # HTML and over 1 KB, like a real Frappe page, so the proxy's gzip rules
+        # decide. The padding is on its own line; the checks read line one.
+        default_type text/html;
+        return 200 "xff=[$http_x_forwarded_for] real=[$http_x_real_ip] peer=[$remote_addr]\n<!-- padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding padding -->\n";
     }
 }
 EOF
@@ -75,6 +84,7 @@ EOF
 W_CONF="$(winpath "$WORK/default.conf")"
 W_SSL="$(winpath "$WORK/ssl")"
 W_ECHO="$(winpath "$WORK/echo/default.conf")"
+W_ASSETS="$(winpath "$WORK/assets")"
 
 # ── 1. syntax ────────────────────────────────────────────────────────────────
 T_OUT="$(docker run --rm \
@@ -106,6 +116,7 @@ docker run -d --name "$RUN_ID-echo" --network "$NET" \
 sleep 1
 docker run -d --name "$RUN_ID-proxy" --network "$NET" \
 	-v "$W_CONF:/etc/nginx/conf.d/default.conf:ro" -v "$W_SSL:/etc/nginx/ssl:ro" \
+	-v "$W_ASSETS:/home/frappe/frappe-bench/sites/assets:ro" -v "$W_ASSETS:/devstack-sites/assets:ro" \
 	"$IMAGE" >/dev/null
 sleep 2
 
@@ -142,7 +153,7 @@ for host in alvoraa.co dev.alvoraa.co; do
 	else
 		fail "$host: 11 different forged values -> $distinct rate-limit buckets"
 	fi
-	for path in /files/x /socket.io/ /some/page; do
+	for path in /files/x /socket.io/ /some/page /hrms-employee; do
 		out="$(ask "$host" "$path" --header "X-Forwarded-For: 10.66.0.1")"
 		case "$out" in
 			*10.66.0.1*) fail "$host$path: forged address reached the backend" ;;
@@ -159,6 +170,41 @@ case "$out" in
 	*xff=*) pass "CF-Connecting-IP from a non-Cloudflare caller is ignored" ;;
 	*) fail "no answer: $out" ;;
 esac
+
+# ── 6. compression: on where it is safe, off where it is not ───────────────
+# Runs before 5 on purpose: 5 uses up this address's login allowance, and
+# nothing here touches a login path.
+header_of() {  # header_of HOST PATH NAME [gzip] -> that response header's value
+	local host="$1" path="$2" name="$3" ae=""
+	[ "${4:-}" = "gzip" ] && ae="--header 'Accept-Encoding: gzip'"
+	docker run --rm --network "$NET" "$IMAGE" sh -c \
+		"wget -S -O /dev/null --no-check-certificate --header 'Host: $host' $ae 'https://$RUN_ID-proxy$path' 2>&1" \
+		| tr -d '\r' | sed -n "s/^ *$name: *//Ip" | tail -1
+}
+for host in alvoraa.co dev.alvoraa.co; do
+	# Pages named in nginx.conf, the API, and text assets: compressed.
+	for path in /hrms-employee "/hrms-employee?q=x" /desk /desk/employee/EMP-1 / /checkin /api/method/ping /assets/app.js; do
+		enc="$(header_of "$host" "$path" Content-Encoding gzip)"
+		if [ "$enc" = "gzip" ]; then pass "$host$path: compressed"
+		else fail "$host$path: NOT compressed (Content-Encoding=[$enc])"; fi
+	done
+	vary="$(header_of "$host" /hrms-employee Vary gzip)"
+	case "$vary" in
+		*Accept-Encoding*) pass "$host/hrms-employee: Vary: $vary" ;;
+		*) fail "$host/hrms-employee: no Vary: Accept-Encoding (got [$vary])" ;;
+	esac
+	# Addresses that end in "page not found" (which repeats the address next
+	# to the CSRF token), files, and images: never compressed.
+	for path in /hrms-employee/made-up /made-up-page /desk-made-up /files/x /assets/logo.png; do
+		enc="$(header_of "$host" "$path" Content-Encoding gzip)"
+		if [ -z "$enc" ]; then pass "$host$path: not compressed"
+		else fail "$host$path: compressed (Content-Encoding=[$enc]) - BREACH risk or wasted CPU"; fi
+	done
+	# A client that does not ask for gzip gets plain bytes.
+	enc="$(header_of "$host" /hrms-employee Content-Encoding)"
+	if [ -z "$enc" ]; then pass "$host/hrms-employee: plain when gzip is not asked for"
+	else fail "$host/hrms-employee: compressed although the client did not ask"; fi
+done
 
 # ── 5. every login path is under the login limit (5 a minute, burst 3) ──────
 for host in alvoraa.co dev.alvoraa.co; do

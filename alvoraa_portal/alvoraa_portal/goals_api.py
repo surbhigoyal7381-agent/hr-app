@@ -50,7 +50,32 @@ def _goals_installed():
         return False
 
 
-def _get_active_cycle():
+def _get_active_cycle(company=None):
+    """The cycle the Goals page is about.
+
+    Slice 035, takeover review: with a company this returns the SAME cycle the
+    stat chips count and the goal list shows (current_cycle_name). Without one
+    it keeps the old site-wide answer. The banner used to name a site-wide
+    cycle while the numbers under it counted the employee's company cycle - on
+    a tenant with more than one company those are different cycles, so the
+    screen named one quarter and counted another.
+    """
+    if company:
+        name = current_cycle_name(company)
+        if not name:
+            return None
+        c = frappe.db.get_value(
+            "Appraisal Cycle", name,
+            ["name", "cycle_name", "start_date", "end_date",
+             "kra_evaluation_method", "status"],
+            as_dict=True,
+        )
+        if not c:
+            return None
+        c["start_date"] = str(c["start_date"]) if c["start_date"] else ""
+        c["end_date"]   = str(c["end_date"])   if c["end_date"]   else ""
+        return c
+
     cycles = frappe.get_all(
         "Appraisal Cycle",
         filters={"status": "In Progress"},
@@ -76,30 +101,126 @@ def _get_active_cycle():
     return c
 
 
+# ── Goal percentages: one cycle at a time (slice 035) ────────────────────────
+#
+# Goal averages used to take every goal an employee ever had. At PP Jewellers
+# that blended a finished Q1 (goals averaging 97%) with the live Q2 (71%): 210
+# of 213 people showed a figure 13 points high on average, up to 50 - on the
+# chart managers look at while they rate. The appraisal's own goal score was
+# always per cycle; now the screens are too.
+
+def current_cycle_name(company):
+    """The cycle a goal percentage is about, for one company (decision Q-G1).
+
+    In Progress, else the newest not Completed - the rule get_performance_context
+    uses, but per company, since every Appraisal Cycle belongs to one. Between
+    cycles, when all are Completed, the newest one, so the figure still speaks
+    about a single cycle rather than falling back to all of them. None when the
+    company has no cycle at all: then there is nothing to separate.
+    """
+    if not company:
+        return None
+    for status in ("In Progress", ["!=", "Completed"], ["is", "set"]):
+        name = frappe.db.get_value("Appraisal Cycle", {"company": company, "status": status},
+                                   "name", order_by="start_date desc")
+        if name:
+            return name
+    return None
+
+
+def goal_average(goals):
+    """Weighted by weightage when the goals carry weights, a plain average when none do (Q-G2).
+
+    As in the appraisal's goal score, a goal with no weight counts for nothing
+    once any goal in the set has one. Cancelled goals are the caller's to drop.
+    """
+    if not goals:
+        return 0.0
+    weights = [flt(g.get("weightage")) for g in goals]
+    if sum(weights) > 0:
+        return sum(flt(g.get("progress_pct")) * w for g, w in zip(goals, weights)) / sum(weights)
+    return sum(flt(g.get("progress_pct")) for g in goals) / len(goals)
+
+
+def cycle_by_employee(emp_ids):
+    """{employee: the cycle their goals are counted in}, one lookup per company.
+
+    Slice 035, takeover review. Every screen that counts, averages or lists
+    goals must use THIS, so a chip's number always equals the list it links to.
+    """
+    emp_ids = [e for e in emp_ids if e]
+    if not emp_ids:
+        return {}
+    companies = frappe.get_all("Employee", filters={"name": ["in", emp_ids]},
+                               fields=["name", "company"])
+    cycles = {c: current_cycle_name(c) for c in {e["company"] for e in companies}}
+    return {e["name"]: cycles.get(e["company"]) for e in companies}
+
+
+def in_cycle(goals, cycle_of):
+    """Keep this quarter's goals, and goals that belong to no quarter at all.
+
+    Three cases, and the middle one is the one that matters:
+
+      * the company has no cycle      -> nothing to separate, keep everything
+      * the goal has no cycle         -> KEEP IT. It has no quarter that ended,
+                                         so it is still someone's live goal.
+                                         Dropping it would take a real goal off
+                                         the owner's own screen - PP Jewellers
+                                         has one such goal today.
+      * the goal names another cycle  -> drop it. This is the original defect:
+                                         a finished Q1 left "Active" blending
+                                         into Q2's figures.
+
+    Every screen that counts, averages or lists goals uses THIS, so a chip's
+    number always equals the list it links to.
+    """
+    out = []
+    for g in goals:
+        cycle = cycle_of.get(g.get("employee"))
+        if not cycle or not g.get("appraisal_cycle") or g.get("appraisal_cycle") == cycle:
+            out.append(g)
+    return out
+
+
 def _dashboard_stats(emp_id):
     if not _goals_installed():
         return {"total": 0, "active": 0, "completed": 0, "at_risk": 0,
-                "avg_progress": 0, "upcoming_deadlines": 0}
+                "avg_progress": 0, "upcoming_deadlines": 0, "cycle": None}
 
-    goals = frappe.get_all(
-        "Individual Goal",
-        filters={"employee": emp_id, "docstatus": ["!=", 2]},
-        fields=["status", "progress_pct", "trajectory", "end_date"],
+    cycle = current_cycle_name(frappe.db.get_value("Employee", emp_id, "company"))
+    goals = in_cycle(
+        frappe.get_all(
+            "Individual Goal",
+            filters={"employee": emp_id, "docstatus": ["!=", 2]},
+            fields=["employee", "appraisal_cycle", "status", "progress_pct",
+                    "trajectory", "end_date", "weightage"],
+        ),
+        {emp_id: cycle},
     )
     total     = len(goals)
     active    = sum(1 for g in goals if g["status"] == "Active")
     completed = sum(1 for g in goals if g["status"] == "Completed")
     at_risk   = sum(1 for g in goals if g.get("trajectory") in ("At Risk", "Off Track"))
-    avg_pct   = round(sum(flt(g["progress_pct"]) for g in goals) / total, 1) if total else 0
+    avg_pct   = round(goal_average([g for g in goals if g["status"] != "Cancelled"]), 1)
+    # "Due in 30 Days" is the count of the list the chip opens. That list
+    # (gpRenderDeadlines) takes Active goals ending between today and today+30.
+    # This count had no lower bound, so a goal whose date had already gone by
+    # was counted as "due" and then did not appear in the list beneath it.
     deadline30 = str(add_days(today(), 30))
+    td = str(today())
     upcoming  = sum(
         1 for g in goals
-        if g.get("end_date") and str(g["end_date"]) <= deadline30 and g["status"] == "Active"
+        if g.get("end_date") and td <= str(g["end_date"]) <= deadline30
+        and g["status"] == "Active"
     )
     return {
         "total": total, "active": active, "completed": completed,
         "at_risk": at_risk, "avg_progress": avg_pct,
         "upcoming_deadlines": upcoming,
+        # Which cycle every number above is about, so the page can name it and
+        # the goal list can show exactly the same goals.
+        "cycle": cycle,
     }
 
 
@@ -138,7 +259,8 @@ def get_portal_context():
         "is_manager":     _is_manager(emp_id) if emp_id else False,
         "goals_installed": _goals_installed(),
         "dashboard":      _dashboard_stats(emp_id) if emp_id else {},
-        "cycle":          _get_active_cycle(),
+        "cycle":          _get_active_cycle(
+            frappe.db.get_value("Employee", emp_id, "company") if emp_id else None),
     }
 
 
@@ -165,9 +287,16 @@ def get_my_goals(include_team=0):
             "name", "goal_name", "goal_cascade", "parent_goal", "target_value", "unit",
             "actual_progress", "progress_pct", "trajectory", "status",
             "start_date", "end_date", "docstatus", "owner", "employee", "employee_name",
+            "appraisal_cycle",
         ],
         order_by="trajectory asc, end_date asc",
     )
+    # This cycle only (slice 035, takeover review). The stat chips above this
+    # list already count one cycle; while the list showed every cycle, "Active
+    # Goals 1" sat on top of two goals and "Due in 30 Days" opened a list with
+    # a different number of rows in it. One cycle, named on the banner,
+    # counted in the chips, shown in the list.
+    goals = in_cycle(goals, cycle_by_employee(subjects))
     hr = _is_hr()
     for g in goals:
         # Editing follows the creator, not the subject — see alvoraa_goals.permissions.
@@ -176,9 +305,26 @@ def get_my_goals(include_team=0):
         # Nothing above it: an organisational objective rather than a link in
         # someone else's chain.
         g["is_organisational"] = int(not g["parent_goal"] and not g["goal_cascade"])
-        g["linked_kpi_count"] = frappe.db.count(
-            "KPI", {"individual_goal": g["name"], "status": ["!=", "Cancelled"]}
-        )
+        # **Counted through the same query path as the contributor list.**
+        #
+        # `frappe.db.count` and `frappe.get_all` do not agree on a negation.
+        # `get_all` wraps the column - `IFNULL(`status`,'') <> 'Cancelled'` -
+        # and `db.count` does not. `NULL <> 'Cancelled'` is NULL in SQL, not
+        # true, so the count dropped every KPI whose status is NULL while
+        # `goal_detail` (which uses `get_all` with this exact filter) listed
+        # them: the chip on the card came out short of the list on the
+        # detail screen. `KPI.status` is nullable and not required.
+        #
+        # `frappe.get_all` reads past the permission layer by itself, which
+        # is what `frappe.db.count` did here before, so the number this chip
+        # shows has not changed for anybody. SEC-16's ceiling on this module
+        # is a count of a STRING, so spelling the flag out again - even in a
+        # comment - raises it for no behaviour at all.
+        g["linked_kpi_count"] = len(frappe.get_all(
+            "KPI",
+            filters={"individual_goal": g["name"], "status": ["!=", "Cancelled"]},
+            pluck="name", limit_page_length=0,
+        ))
         g["evidence_count"]   = frappe.db.count("Goal Evidence", {"parent": g["name"]})
         g["pending_evidence"] = frappe.db.count(
             "Goal Evidence", {"parent": g["name"], "validation_status": "Pending"}
@@ -230,16 +376,72 @@ def _alignable_goal_ids(employee_id):
     return {g["name"] for g in _chain_goals(employee_id)}
 
 
+def _permitted_companies():
+    """The companies this caller may act for as HR.
+
+    One definition, imported - not a third copy. `approve_goal_update` and
+    `_pending_approvals_scope_query` already call this; everything else in this
+    module used to hold an HR role and reach the whole tenant.
+    """
+    from hrms.alvoraa_hr_core.access import permitted_companies
+
+    return permitted_companies()
+
+
+def _hr_may_act_for(employee_id):
+    """Is this employee inside the companies the caller looks after?
+
+    **Holding an HR role is not a company scope.** On a tenant with more than
+    one company, HR at the Delhi store could set goals for, read and rewrite the
+    goals of somebody at the Mumbai store, because every guard in this module
+    but one returned early for any HR role with no company check at all. Its one
+    scoped sibling, `approve_goal_update`, is where this rule comes from.
+
+    Fails closed, on purpose (SEC-4): an employee with no company on their
+    record, or an HR user with neither a Company user-permission nor an active
+    Employee record of their own, gets nothing rather than everything.
+    """
+    if not employee_id:
+        return False
+    company = frappe.db.get_value("Employee", employee_id, "company")
+    return bool(company) and company in _permitted_companies()
+
+
+def _refuse_other_company(employee_id, endpoint):
+    from hrms.alvoraa_hr_core.access import refuse
+
+    refuse(
+        "This employee belongs to a company you do not look after. "
+        "Ask the HR person for their company to do this.",
+        "SEC-26", endpoint, "Employee", employee_id,
+    )
+
+
 def _require_manages(employee_id):
-    """Caller must be this employee, or somewhere above them in the tree."""
-    if _is_hr():
+    """Caller must be this employee, somewhere above them in the tree, or HR
+    for their company.
+
+    The reporting line is checked FIRST, so an HR person who happens to be this
+    person's actual manager keeps working even when the two are in different
+    companies - that reach comes from the org chart, not from the role.
+    """
+    me = _employee_id()
+    if me and employee_id == me:
         return
-    me = _require_employee()
-    if employee_id != me and employee_id not in _descendants(me):
-        frappe.throw(
-            "You can only do this for yourself or someone who reports to you.",
-            frappe.PermissionError,
-        )
+    # In-company HR answers with one `get_value`, before the tree is walked -
+    # `_descendants` on a 981-person tenant is not a price to pay for the
+    # commonest caller.
+    if _is_hr() and _hr_may_act_for(employee_id):
+        return
+    if me and employee_id in _descendants(me):
+        return
+    if _is_hr():
+        _refuse_other_company(employee_id, "goals_api._require_manages")
+    _require_employee()
+    frappe.throw(
+        "You can only do this for yourself or someone who reports to you.",
+        frappe.PermissionError,
+    )
 
 
 def _is_hr(user=None):
@@ -251,8 +453,21 @@ def _is_hr(user=None):
 def get_manageable_employees():
     """Employees the caller may raise goals and KPIs for: self plus subtree."""
     if _is_hr():
+        # Scoped with the WRITE path it feeds, not left wide. A picker that
+        # offers people `create_goal` will then refuse breaks this codebase's
+        # rule that a row you can see is a row you can act on.
+        #
+        # Three ways in, as an OR: the companies this HR person looks after,
+        # anyone who reports to them, and their own record - so an HR person
+        # whose own Employee sits in a company they have no permission for can
+        # still raise a goal for themselves.
+        me = _employee_id()
+        or_filters = {"company": ["in", _permitted_companies() or [""]]}
+        if me:
+            or_filters["reports_to"] = me
+            or_filters["name"] = me
         rows = frappe.get_all(
-            "Employee", filters={"status": "Active"},
+            "Employee", filters={"status": "Active"}, or_filters=or_filters,
             fields=["name", "employee_name", "designation"], order_by="employee_name",
         )
     else:
@@ -452,7 +667,10 @@ def _require_can_edit(doc, what):
     rewrite one they wrote for themselves.
     """
     if _is_hr():
-        return
+        # HR's reach stops at the companies they look after (SEC-26).
+        if _hr_may_act_for(doc.employee):
+            return
+        _refuse_other_company(doc.employee, "goals_api._require_can_edit")
     me = _require_employee()
     if doc.employee != me and doc.employee not in _descendants(me):
         frappe.throw(
@@ -588,7 +806,11 @@ def get_goal_detail(goal_id):
     # Viewable if it is yours, one of your subordinates', or one you may align
     # to (i.e. held above you) — the last case is why a plain "is it mine"
     # check is not enough now that goals cascade.
-    if not _is_hr():
+    # An HR role on its own is not a reason to read another company's goals
+    # (SEC-26). Where the caller is genuinely in this person's reporting line,
+    # the ordinary check below still lets them through.
+    may_hr = _is_hr() and _hr_may_act_for(goal.employee)
+    if not may_hr:
         viewable = set(_manageable_employees()) | set(_manager_chain(emp_id))
         if goal.employee not in viewable:
             frappe.throw(
@@ -658,7 +880,9 @@ def get_goal_detail(goal_id):
         "docstatus":       goal.docstatus,
         "goal_type":       getattr(goal, "goal_type", "") or "",
         "company_value":   getattr(goal, "company_value", "") or "",
-        "can_edit":        int(_is_hr() or goal.owner == frappe.session.user),
+        # The flag and the gate say the same thing: `_require_can_edit` now
+        # stops HR outside the company, so the pencil must not be drawn either.
+        "can_edit":        int(may_hr or goal.owner == frappe.session.user),
         "is_mine":         int(goal.employee == emp_id),
         "is_organisational": int(not goal.parent_goal and not goal.goal_cascade),
         # Slice 010 group D (R5, PRIV-10): only "in a review" and the day after
@@ -688,7 +912,9 @@ def set_goal_progress(goal_id, actual_progress):
     """Allow HR/managers to manually override actual_progress on a goal."""
     emp_id = _require_employee()
     goal = frappe.get_doc("Individual Goal", goal_id)
-    if not (_is_hr() or goal.owner == frappe.session.user):
+    if not ((_is_hr() and _hr_may_act_for(goal.employee))
+            or goal.owner == frappe.session.user):
+        # An HR role reaches only its own companies (SEC-26).
         frappe.throw("Not permitted to update this goal", frappe.PermissionError)
     # Progress set by hand has no dated fact behind it, so while a review holds
     # the goal it would change the review's number unseen (decision 21).
@@ -816,22 +1042,39 @@ def get_team_goals():
     reportees = frappe.get_all(
         "Employee",
         filters={"reports_to": emp_id, "status": "Active"},
-        fields=["name", "employee_name", "designation", "image"],
+        fields=["name", "employee_name", "designation", "image", "company"],
     )
+    # Each report's goals for their company's current cycle (slice 035). A Q1
+    # goal left "Active" after Q1 closed no longer counts in Q2. One goal query
+    # for the whole team, one cycle lookup per company.
+    # Every goal of this cycle, not only the ones still marked Active (slice
+    # 035, takeover review). get_team_scorecard averages every non-cancelled
+    # goal in the cycle; this list averaged Active ones only. So one manager
+    # had two screens giving two different "average progress" figures for the
+    # same person, and a report who had finished all their goals showed as
+    # "0 goals, 0%" here and "100%" there.
+    cycle_of = {e["name"]: None for e in reportees}
+    if reportees:
+        cycles = {c: current_cycle_name(c) for c in {e["company"] for e in reportees}}
+        cycle_of = {e["name"]: cycles.get(e["company"]) for e in reportees}
+    goals_by_emp = {}
+    if reportees and _goals_installed():
+        for g in in_cycle(frappe.get_all(
+            "Individual Goal",
+            filters={"employee": ["in", [e["name"] for e in reportees]],
+                     "status": ["!=", "Cancelled"], "docstatus": ["!=", 2]},
+            fields=["employee", "appraisal_cycle", "progress_pct", "trajectory",
+                    "weightage", "status"],
+        ), cycle_of):
+            goals_by_emp.setdefault(g["employee"], []).append(g)
+
     result = []
     for emp in reportees:
-        if _goals_installed():
-            g_list = frappe.get_all(
-                "Individual Goal",
-                filters={"employee": emp["name"], "status": "Active", "docstatus": ["!=", 2]},
-                fields=["name", "goal_name", "progress_pct", "trajectory"],
-            )
-        else:
-            g_list = []
+        g_list = goals_by_emp.get(emp["name"], [])
 
         on_track = sum(1 for g in g_list if g.get("trajectory") == "On Track")
         at_risk  = sum(1 for g in g_list if g.get("trajectory") in ("At Risk", "Off Track"))
-        avg_pct  = round(sum(flt(g.get("progress_pct") or 0) for g in g_list) / len(g_list), 1) if g_list else 0
+        avg_pct  = round(goal_average(g_list), 1)
 
         result.append({
             "employee_id":   emp["name"],
@@ -963,38 +1206,20 @@ def submit_upward_feedback(about_employee, cycle, rating, comments=""):
     return {"name": fb.name, "message": "Feedback submitted. Thank you."}
 
 
-@frappe.whitelist()
-def get_upward_feedback(cycle, employee=None):
-    """Return aggregated upward feedback received about a manager.
-
-    Managers see their own; HR sees everyone's. Individual rater identities
-    are always anonymised.
-    """
-    emp_id = _require_employee()
-    hr_roles = {"HR Manager", "HR User", "System Manager"}
-    is_hr = bool(hr_roles.intersection(frappe.get_roles(frappe.session.user)))
-
-    target = employee or emp_id
-    if target != emp_id and not is_hr:
-        frappe.throw("Not permitted.", frappe.PermissionError)
-
-    rows = frappe.get_all(
-        "Upward Feedback",
-        filters={"about_employee": target, "appraisal_cycle": cycle},
-        fields=["rating", "comments", "submitted_on"],
-        order_by="submitted_on desc",
-        ignore_permissions=True,
-    )
-    if not rows:
-        return {"count": 0, "avg_rating": None, "comments": []}
-
-    avg = flt(sum(flt(r["rating"]) for r in rows) / len(rows), 2)
-    return {
-        "count": len(rows),
-        "avg_rating": avg,
-        "comments": [r["comments"] for r in rows if r.get("comments")],
-    }
-
+# `get_upward_feedback` used to live here. Deleted for 045 AC-35 / PRIV-6.
+#
+# It was whitelisted, read with `ignore_permissions=True`, and returned the
+# individual comment strings with NO minimum group - so a manager whose cycle
+# drew one response got that one person's words back, and in a small team the
+# author is recoverable by elimination. PRIV-12 sets a minimum group of five
+# for exactly this shape.
+#
+# It had no caller: portal.js calls `submit_upward_feedback` (the write) and
+# nothing calls the read. The manager's own aggregate is served by
+# `performance_api.get_upward_feedback_received`, which does apply a minimum.
+#
+# Do not reinstate a read here without a minimum group. `home_api._suppress`
+# with `home_api.MIN_GROUP` is the mechanism this product already uses.
 
 # ── Progress update log (Individual Goal) ────────────────────────────────
 
@@ -1004,7 +1229,9 @@ def submit_goal_update(goal_id, new_value, note="", evidence_url=None):
     emp_id = _require_employee()
     goal   = frappe.get_doc("Individual Goal", goal_id)
 
-    if goal.employee != emp_id and not _is_hr():
+    if goal.employee != emp_id and not (_is_hr() and _hr_may_act_for(goal.employee)):
+        # HR may log an update for somebody else, but only inside the companies
+        # they look after (SEC-26).
         frappe.throw("You can only update your own goals.", frappe.PermissionError)
     if goal.docstatus == 2:
         frappe.throw("Goal is cancelled.")
@@ -1086,11 +1313,11 @@ def approve_goal_update(goal_id, row_name, action, comment=""):
     if not (_is_hr() or my_emp == goal_mgr):
         frappe.throw("Only this employee's manager or HR can approve updates.",
                      frappe.PermissionError)
-    from hrms.alvoraa_hr_core.access import permitted_companies, refuse
-    if my_emp != goal_mgr and frappe.db.get_value("Employee", goal.employee, "company") not in permitted_companies():
-        # HR approves only for the companies they look after (security review m8).
-        refuse("This employee belongs to a company you do not look after.",
-               "SEC-26", "goals_api.approve_goal_update", "Individual Goal", goal.name)
+    if my_emp != goal_mgr and not _hr_may_act_for(goal.employee):
+        # HR approves only for the companies they look after (security review
+        # m8). This was the ONLY guard in the module that checked; it now shares
+        # `_hr_may_act_for` with the other seven instead of holding its own copy.
+        _refuse_other_company(goal.employee, "goals_api.approve_goal_update")
 
     for row in (goal.progress_updates or []):
         if row.name == row_name:
@@ -1116,7 +1343,8 @@ def get_goal_update_log(goal_id):
     goal   = frappe.get_doc("Individual Goal", goal_id)
 
     goal_mgr = frappe.db.get_value("Employee", goal.employee, "reports_to")
-    if not (_is_hr() or goal.employee == emp_id or emp_id == goal_mgr):
+    if not (goal.employee == emp_id or emp_id == goal_mgr
+            or (_is_hr() and _hr_may_act_for(goal.employee))):
         frappe.throw("Not permitted.", frappe.PermissionError)
 
     # Whether THIS user may action these updates - the same rule
@@ -1127,7 +1355,11 @@ def get_goal_update_log(goal_id):
     # employee sees their own updates and cannot approve them. Drawing the
     # buttons for everyone who can READ was the bug.
     # Never on your own goal, even for HR - approve_goal_update refuses it.
-    can_action = bool(goal.employee != emp_id and (_is_hr() or (goal_mgr and emp_id == goal_mgr)))
+    # Matches approve_goal_update exactly, company scope included - a button
+    # drawn here is a button the server will honour.
+    can_action = bool(goal.employee != emp_id
+                      and ((_is_hr() and _hr_may_act_for(goal.employee))
+                           or (goal_mgr and emp_id == goal_mgr)))
 
     rows = sorted(
         goal.progress_updates or [],
@@ -1159,6 +1391,69 @@ def get_goal_update_log(goal_id):
     return result
 
 
+def _pending_approvals_scope_query(emp_id, is_hr):
+    """Employees whose KPI/goal updates this caller may approve, as a SUBQUERY.
+
+    **The definition lives here, and it lives as a query** (044 R4). It used to
+    live as a list: every permitted employee id read into Python and shipped
+    back to the database by each reader as an `IN (...)` of - measured - 981
+    parameters. That was one statement, so the query count stayed flat and
+    nothing looked wrong; but the statement's cost grew with the company, and
+    it was the widest slope in the whole 044 measurement (the System Manager's
+    bell went x5.1 between 20 people and 981). There was no cap on it either,
+    so the list was as long as the tenant was large.
+
+    As a subquery the scope never leaves the database. The reader writes
+    `employee IN (SELECT name FROM tabEmployee WHERE ...)`, MariaDB uses the
+    index on `company` or `reports_to`, and the statement is the same size for
+    twenty people as for fifty thousand.
+
+    The rule itself is unchanged:
+
+    - HR: everyone in the companies you look after, plus your own direct
+      reports wherever they sit (security review m8), never yourself.
+    - Anyone else: your own active direct reports.
+
+    One difference, deliberate and safe: `name != emp_id` now applies to the
+    direct-reports half as well as the company half. Nobody reports to
+    themselves, so it removes nobody it did not already remove - and it is the
+    plainest way to say "your own updates are not yours to approve" once
+    instead of twice. `test_the_subquery_scope_matches_the_list_scope_exactly`
+    proves the two agree on the 981-person fixture rather than asserting it.
+    """
+    if not emp_id:
+        # Fail closed. `name IN ()` matches nothing in every Frappe query
+        # builder, and it is never an empty condition (SEC-4).
+        return frappe.qb.get_query("Employee", fields=["name"],
+                                   filters=[["name", "in", []]])
+    if is_hr:
+        return frappe.qb.get_query(
+            "Employee", fields=["name"],
+            filters={"status": "Active", "name": ["!=", emp_id]},
+            or_filters={"company": ["in", _permitted_companies() or [""]],
+                        "reports_to": emp_id},
+        )
+    return frappe.qb.get_query(
+        "Employee", fields=["name"],
+        filters={"reports_to": emp_id, "status": "Active"},
+    )
+
+
+def _pending_approvals_scope(emp_id, is_hr):
+    """The same employees, as a list of names.
+
+    One definition, two shapes - the pattern `permitted_employee_filters()` and
+    `permitted_employees()` already use. This runs the subquery above rather
+    than repeating its rule, so the two can never disagree about who a manager
+    or an HR person may approve for.
+
+    **Prefer the subquery.** This shape is still here for
+    `get_pending_approvals`, which walks one employee at a time. Every reader
+    that only needs the scope inside a `WHERE` should take the query.
+    """
+    return [row[0] for row in _pending_approvals_scope_query(emp_id, is_hr).run()]
+
+
 @frappe.whitelist()
 def get_pending_approvals():
     """Return all pending-approval updates across the manager's direct reports."""
@@ -1169,24 +1464,7 @@ def get_pending_approvals():
     if not is_mgr and not is_hr:
         return {"kpi_updates": [], "goal_updates": [], "total": 0}
 
-    if is_hr:
-        # Everyone but yourself, in the companies you look after, plus your own
-        # direct reports (security review m8: HR approves only there). Your own
-        # updates are not yours to approve.
-        from hrms.alvoraa_hr_core.access import permitted_companies
-        all_employees = sorted(set(frappe.get_all(
-            "Employee",
-            filters={"status": "Active", "name": ["!=", emp_id], "company": ["in", permitted_companies() or [""]]},
-            pluck="name",
-        )) | set(frappe.get_all(
-            "Employee", filters={"reports_to": emp_id, "status": "Active"}, pluck="name"
-        ) if emp_id else []))
-    else:
-        all_employees = frappe.get_all(
-            "Employee",
-            filters={"reports_to": emp_id, "status": "Active"},
-            pluck="name",
-        )
+    all_employees = _pending_approvals_scope(emp_id, is_hr)
 
     kpi_updates  = []
     goal_updates = []
@@ -1249,3 +1527,46 @@ def get_pending_approvals():
         "goal_updates": goal_updates,
         "total":        len(kpi_updates) + len(goal_updates),
     }
+
+
+@frappe.whitelist()
+def get_pending_approvals_count():
+    """Cheap total for the bell badge — same scope as get_pending_approvals, without its
+    per-employee frappe.get_doc loop (706 queries for a manager, ~15,000 projected for a
+    403-employee HR tenant; P1 in the Wave 0 assessment). Two joined counts instead."""
+    from frappe.query_builder.functions import Count
+
+    emp_id = _require_employee()
+    is_mgr = _is_manager(emp_id)
+    is_hr  = _is_hr()
+
+    if not is_mgr and not is_hr:
+        return {"total": 0}
+
+    # The scope as a subquery, never as a list of ids (044 R4).
+    scope = _pending_approvals_scope_query(emp_id, is_hr)
+
+    def _pending(field):
+        return (field == "Pending") | (field == "") | field.isnull()
+
+    KPI    = frappe.qb.DocType("KPI")
+    KPILog = frappe.qb.DocType("KPI Progress Log")
+    kpi_total = (
+        frappe.qb.from_(KPILog)
+        .join(KPI).on(KPILog.parent == KPI.name)
+        .where(KPI.employee.isin(scope) & (KPI.status != "Cancelled"))
+        .where(_pending(KPILog.approval_status))
+        .select(Count("*"))
+    ).run()[0][0]
+
+    Goal    = frappe.qb.DocType("Individual Goal")
+    GoalUpd = frappe.qb.DocType("Goal Progress Update")
+    goal_total = (
+        frappe.qb.from_(GoalUpd)
+        .join(Goal).on(GoalUpd.parent == Goal.name)
+        .where(Goal.employee.isin(scope) & (Goal.status != "Cancelled") & (Goal.docstatus != 2))
+        .where(_pending(GoalUpd.approval_status))
+        .select(Count("*"))
+    ).run()[0][0]
+
+    return {"total": int(kpi_total) + int(goal_total)}

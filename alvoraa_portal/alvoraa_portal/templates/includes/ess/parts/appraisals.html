@@ -1,0 +1,154 @@
+      <!-- ── Appraisal Setup Full Page ──────────────── -->
+    <!-- ── New Cycle choice modal ─────────────────────── -->
+    <div class="gp-backdrop" id="pf-new-cycle-modal">
+      <div class="gp-modal" style="max-width:540px">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title" id="pf-new-cycle-modal-title">New Review Cycle</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-new-cycle-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body" id="pf-new-cycle-modal-body" style="padding:20px"></div>
+      </div>
+    </div>
+
+      <div id="panel-appraisal-setup" class="panel">
+        <div class="aps-header">
+          <button class="btn btn-outline btn-sm" onclick="switchPanel('goals'); gpShowTab('hr')">← HR Setup</button>
+          <div class="aps-title">
+            <div style="font-size:var(--fs-lg);font-weight:700">Appraisal Cycle Setup</div>
+            <div style="font-size:var(--fs-base);color:var(--text3)" id="aps-cycle-subtitle">Configure the new performance review cycle</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="gp-error" id="aps-header-error" style="padding:6px 12px;margin:0"></span>
+            <button class="btn btn-outline" onclick="apsSaveAsTemplate()" title="Save current setup as a reusable template">Save as Template</button>
+            <button class="btn btn-outline" onclick="apsLaunch(false)">Save Draft</button>
+            <button class="btn btn-primary" onclick="apsLaunch(true)" id="aps-launch-btn">Launch Cycle</button>
+          </div>
+        </div>
+        <div class="aps-body">
+          <div class="aps-nav" id="aps-nav">
+            <div class="aps-nav-section">Setup</div>
+            <div class="aps-nav-item active" id="apsn-cycle-details" onclick="apsShowItem('cycle-details')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+              Cycle Details
+            </div>
+            <div class="aps-nav-item" id="apsn-emp-fields" onclick="apsShowItem('emp-fields')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+              Employee Fields
+            </div>
+            <div class="aps-nav-item" id="apsn-scoring" onclick="apsShowItem('scoring')" style="display:none">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 15l4-5 4 3 5-7"/></svg>
+              How the Score Is Built
+            </div>
+            <div class="aps-nav-item" id="apsn-select-emps" onclick="apsShowItem('select-emps')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              Select Employees
+              <span class="aps-sel-badge" id="aps-emp-badge" style="display:none">0</span>
+            </div>
+            <div class="aps-nav-section" style="margin-top:8px">
+              Appraisal Pages
+              <button class="aps-add-page-btn" title="Add page" onclick="apsTogglePageMenu(event)">+</button>
+            </div>
+            <div id="aps-page-list"></div>
+          </div>
+          <div class="aps-settings" id="aps-settings-panel"></div>
+        </div>
+      </div>
+
+    <!-- ── Employee Review Wizard Panel ──────────────── -->
+    <div class="panel" id="panel-pms-review">
+      <!-- topbar -->
+      <div class="pr-topbar">
+        <button class="pr-back-btn" onclick="switchPanel('goals');gpShowTab('reviews')">&#8592; Back</button>
+        <div>
+          <div class="pr-topbar-title" id="pr-title">My Performance Review</div>
+          <div class="pr-topbar-sub" id="pr-sub"></div>
+        </div>
+        <div id="pr-status-badge" style="margin-left:auto"></div>
+      </div>
+      <!-- stage strip -->
+      <div class="pr-stage-strip" id="pr-stage-strip">
+        <div class="pr-sst" id="pr-ss-0">
+          <div class="pr-sd" id="pr-sd-0">1</div>
+          <div class="pr-slbl">Employee<br>Review</div>
+        </div>
+        <div class="pr-sconn" id="pr-sc-0"></div>
+        <div class="pr-sst" id="pr-ss-1">
+          <div class="pr-sd" id="pr-sd-1">2</div>
+          <div class="pr-slbl">Manager<br>Review</div>
+        </div>
+        <div class="pr-sconn" id="pr-sc-1"></div>
+        <div class="pr-sst" id="pr-ss-2">
+          <div class="pr-sd" id="pr-sd-2">3</div>
+          <div class="pr-slbl">Final<br>Review</div>
+        </div>
+        <div class="pr-sconn" id="pr-sc-2"></div>
+        <div class="pr-sst" id="pr-ss-3">
+          <div class="pr-sd" id="pr-sd-3">4</div>
+          <div class="pr-slbl">HR<br>Review</div>
+        </div>
+        <div class="pr-sconn" id="pr-sc-3"></div>
+        <div class="pr-sst" id="pr-ss-4">
+          <div class="pr-sd" id="pr-sd-4">5</div>
+          <div class="pr-slbl">Completed</div>
+        </div>
+      </div>
+      <!-- A review that holds objectives or KPIs but has no page to show them
+           on is a fault, not an empty review. Say so here rather than render a
+           shorter wizard and leave the items invisible. -->
+      <div id="pr-missing-pages" role="alert" style="display:none;margin:0 16px 12px"></div>
+      <!-- body -->
+      <div class="pr-body">
+        <div class="pr-nav" id="pr-nav"></div>
+        <div class="pr-content" id="pr-content">
+          <div style="color:var(--text3);font-size:var(--fs-base);padding-top:40px;text-align:center">Loading review...</div>
+        </div>
+      </div>
+      <!-- footer -->
+      <div class="pr-footer">
+        <button class="btn btn-outline btn-sm" id="pr-prev-btn" onclick="prPrevPage()" style="display:none">&#8592; Previous</button>
+        <span class="pr-save-indicator" id="pr-save-ind"></span>
+        <button class="btn btn-primary btn-sm" id="pr-next-btn" onclick="prNextPage()" style="margin-left:auto">Save &amp; Continue</button>
+      </div>
+    </div>
+
+    <!-- ── Reviewer Feedback Full-Window Panel ────── -->
+    <div class="panel" id="panel-mr-review">
+      <div class="pr-topbar">
+        <button class="pr-back-btn" onclick="mrCloseReview()">&#8592; Back</button>
+        <div>
+          <div class="pr-topbar-title" id="mr-rv-title">Submit Feedback</div>
+          <div class="pr-topbar-sub" id="mr-rv-sub"></div>
+        </div>
+        <div id="mr-rv-status" style="margin-left:auto"></div>
+      </div>
+      <div class="pr-body">
+        <div class="pr-nav" id="mr-rv-nav"></div>
+        <div class="pr-content" id="mr-rv-content">
+          <div style="color:var(--text3);font-size:var(--fs-base);padding-top:40px;text-align:center">Loading&hellip;</div>
+        </div>
+      </div>
+      <div class="pr-footer">
+        <div id="mr-rv-msg" style="font-size:var(--fs-sm);flex:1;color:var(--text2)"></div>
+        <button id="mr-rv-submit" class="btn btn-primary btn-sm" onclick="mrSubmitFeedback()" style="margin-left:auto">Submit Feedback</button>
+      </div>
+    </div>
+
+    <!-- ── Employee Scorecard Panel ──────────────────── -->
+    <div id="panel-scorecard" class="panel">
+      <div class="sc-topbar">
+        <button class="sc-back-btn" onclick="scGoBack()">&#8592; Back</button>
+        <div class="sc-identity">
+          <div class="sc-avatar" id="sc-avatar"></div>
+          <div>
+            <div class="sc-emp-name" id="sc-emp-name"></div>
+            <div class="sc-emp-role" id="sc-emp-role"></div>
+          </div>
+        </div>
+        <div class="sc-join-badge" id="sc-join-badge"></div>
+      </div>
+      <div class="sc-body" id="sc-body">
+        <div style="padding:40px;text-align:center;color:var(--text3)">Loading…</div>
+      </div>
+    </div>
+
+    </div><!-- /main-content -->

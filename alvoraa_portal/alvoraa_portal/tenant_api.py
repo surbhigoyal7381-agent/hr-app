@@ -13,6 +13,7 @@ from frappe.utils import nowdate
 
 from alvoraa_portal.subscription import OPT_IN, PLANS, REQUIRED, requirement_error
 import os
+import shutil
 import json
 import re
 import uuid
@@ -524,8 +525,25 @@ def suspend_tenant(site_name, suspend=1):
 
 @frappe.whitelist()
 def update_tenant(site_name, tenant_name="", plan="", modules=None,
-                  primary_color="", accent_color="", support_email=""):
-    """Update an existing tenant's config; queues a background app-install if new modules need it."""
+                  primary_color="", accent_color="", support_email="",
+                  logo_url="", remove_logo=0):
+    """Update an existing tenant's config; queues a background app-install if new modules need it.
+
+    Three logo cases, and only three:
+
+    - neither `logo_url` nor `remove_logo` - the logo is not touched at all.
+      This is what every edit that is not about the logo does, and a test pins
+      it.
+    - `logo_url` - the new file goes through the same copy step as provisioning
+      (see `_stage_tenant_logo`), so the tenant holds the file before the path
+      is stored. A source that is missing or is not a picture is reported in
+      the returned message and nothing is written.
+    - `remove_logo` - `tenant_logo_url` is set to an EMPTY value. Not a path to
+      a file that is not there: empty, so the login page falls back to the
+      Alvoraa mark.
+
+    Sending both is a mistake, and it is refused rather than guessed at.
+    """
     _require_admin()
     _validate_site_name(site_name)
 
@@ -581,6 +599,30 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
             if r.returncode != 0:
                 frappe.throw(f"Failed to update {key}: {r.stderr}")
 
+    # Same rule as provisioning: a relative /files/ path is copied to the
+    # tenant before it is stored, and a missing source is reported rather
+    # than stored as a broken image.
+    notes = ""
+    drop_logo = _as_flag(remove_logo)
+    if drop_logo and logo_url:
+        frappe.throw("Choose one: upload a new logo, or remove the one that is there.")
+    if drop_logo:
+        # An EMPTY value, never a path to a file that is not there. auth.py then
+        # hands the login page logo_url: "" and the page falls back to the
+        # Alvoraa mark. The old file is left on disk on purpose - see the slice
+        # notes; one control-plane upload can be referenced elsewhere.
+        r = _bench_run(f'--site {site_name} set-config tenant_logo_url ""')
+        if r.returncode != 0:
+            frappe.throw(f"Failed to remove the logo: {r.stderr}")
+    elif logo_url:
+        stored_logo, logo_warn = _stage_tenant_logo(site_name, logo_url)
+        if stored_logo:
+            r = _bench_run(f'--site {site_name} set-config tenant_logo_url "{stored_logo}"')
+            if r.returncode != 0:
+                frappe.throw(f"Failed to update tenant_logo_url: {r.stderr}")
+        if logo_warn:
+            notes = " " + logo_warn
+
     # Update modules_enabled list
     if modules is not None:
         _MOD_MAP = {
@@ -631,8 +673,10 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
         needs_goals  = "goals"  in modules and "alvoraa_goals"          not in installed
         needs_india  = ("india_compliance" in modules
                         and "india_compliance" not in installed)
+        needs_crm    = "crm" in modules and "crm" not in installed
+        needs_whatsapp = "whatsapp" in modules and "frappe_whatsapp" not in installed
 
-        if needs_vendor or needs_goals or needs_india:
+        if needs_vendor or needs_goals or needs_india or needs_crm or needs_whatsapp:
             job_id = uuid.uuid4().hex[:12]
             cfg = _read_site_config(site_name)
             jobs = _read_jobs()
@@ -662,14 +706,16 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
                 install_vendor=needs_vendor,
                 install_goals=needs_goals,
                 install_india_compliance=needs_india,
+                install_crm=needs_crm,
+                install_whatsapp=needs_whatsapp,
             )
             return {
                 "status": "installing",
                 "job_id": job_id,
-                "message": "Configuration saved. Installing new module apps in the background.",
+                "message": "Configuration saved. Installing new module apps in the background." + notes,
             }
 
-    return {"status": "ok", "message": "Tenant configuration updated."}
+    return {"status": "ok", "message": "Tenant configuration updated." + notes}
 
 
 @frappe.whitelist()
@@ -822,6 +868,17 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
                 log += ("\n[WARN] company setup did not complete."
                         "\n--- stderr ---\n" + (rs.stderr or "(empty)") +
                         "\n--- stdout ---\n" + (rs.stdout or "(empty)") + "\n")
+
+            # Frappe CRM, when sold - HERE, after the wizard, and nowhere earlier.
+            # provision_tenant.sh deliberately skips it: the CRM's
+            # setup_wizard_complete hook seeds fake users and leads on a site
+            # where it is installed before the wizard finishes. The helper
+            # re-checks the wizard state on the site itself rather than trusting
+            # the return code above. (Slice 040.)
+            if "crm" in [m.strip() for m in (modules or "").split(",")]:
+                _installed, crm_msg = _install_crm_after_wizard(site_name)
+                log += "\n" + crm_msg + "\n"
+
             # Every tenant starts with two real logins. A fresh Frappe site has
             # only `Administrator`, which is shared and unattributable - not
             # something to hand a customer.
@@ -907,8 +964,17 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
             else:
                 log += "\n" + (rb.stdout or "").strip() + "\n"
 
-            if logo_url:
-                _bench_run(f"--site {site_name} set-config tenant_logo_url \"{logo_url}\"")
+            # The console uploads the logo to the CONTROL PLANE's public files
+            # and hands over a relative /files/<name> path. Frappe keeps public
+            # files per site, so the tenant never had the file: every tenant
+            # page showed a broken image, while the console's own tenant list
+            # rendered the same path against the control plane and looked
+            # fine - which is why nobody noticed. Copy the file across first.
+            stored_logo, logo_warn = _stage_tenant_logo(site_name, logo_url)
+            if logo_warn:
+                log += "\n" + logo_warn + "\n"
+            if stored_logo:
+                _bench_run(f"--site {site_name} set-config tenant_logo_url \"{stored_logo}\"")
 
             # Update host_name in jobs file
             jobs = _read_jobs()
@@ -924,6 +990,86 @@ def _run_provision(pjob_id, site_name, tenant_name, plan, modules,
         _update("Failed", f"\n[{now_datetime()}] ❌ Timed out after 15 minutes.\n", finished=True)
     except Exception as exc:
         _update("Failed", f"\n[{now_datetime()}] ❌ Exception: {exc}\n", finished=True)
+
+
+# A public file name as upload_file produces it: no directory part, no leading
+# dot. Anything else is refused before a path is built, so a crafted value can
+# never make the copy read outside the control plane's public/files folder.
+_PUBLIC_FILE_URL = re.compile(r"^/files/([A-Za-z0-9][A-Za-z0-9._ ()-]*)$")
+
+# The picture formats we accept for a logo, and the same list both upload
+# controls in the console offer. A logo is only ever drawn in an <img>, so
+# anything else is a mistake or an attempt - refuse it rather than store a path
+# that will never show anything. (Slice 031.)
+#
+# SVG and GIF were dropped on the user's decision, 2026-09-19. An SVG opened
+# directly at /files/<name>.svg runs its own script on the tenant's own origin,
+# and an animated logo is a behaviour nobody asked for. THIS list is the guard,
+# not the browser's `accept` attribute - `accept` only filters a file picker and
+# anyone calling the endpoint directly walks straight past it.
+_LOGO_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
+
+# An absolute logo URL is stored by handing it to `bench set-config`, and
+# `_bench_run` builds its command as a STRING and runs it with shell=True. Only
+# a control-plane System Manager can reach this, and that account can already
+# run bench commands, so this is not an escalation - but slice 031 makes the
+# value reachable from a form, so the shape is pinned here: a plain http(s) URL
+# with no quote, space, backtick, dollar, semicolon, ampersand, pipe, newline or
+# angle bracket. Anything fancier is refused, not escaped.
+_SAFE_ABSOLUTE_LOGO_URL = re.compile(r"^https?://[A-Za-z0-9._~:/?#\[\]@!*+,=%()-]+$",
+                                     re.IGNORECASE)
+
+_BAD_LOGO_TYPE = ("[WARN] Logo not applied: we accept PNG, JPG or WEBP. "
+                  "Save your logo as a PNG and upload it again.")
+
+
+def _stage_tenant_logo(site_name, logo_url, control_site=None):
+    """Make an uploaded logo reachable from the tenant's own site.
+
+    Returns (url_to_store, warning). `url_to_store` is empty when nothing
+    should be written to site_config; `warning` is a "[WARN] ..." line for the
+    job log or the API message when the logo could not be applied.
+
+    - absolute http(s) URL: stored as-is, nothing copied
+    - /files/<name>: copied from sites/<control site>/public/files to
+      sites/<tenant>/public/files and stored as the same relative path, so the
+      tenant stays self-contained
+    - source missing, or a name with a directory part: not stored, warned
+    - a file that is not a picture we can draw, or a web address with shell
+      characters in it: not stored, warned (slice 031)
+    """
+    logo_url = (logo_url or "").strip()
+    if not logo_url:
+        return "", ""
+    if re.match(r"^https?://", logo_url, re.IGNORECASE):
+        if not _SAFE_ABSOLUTE_LOGO_URL.match(logo_url):
+            return "", ("[WARN] Logo not applied: that web address has characters we "
+                        "cannot store. Use a plain https:// link to the image file.")
+        if not logo_url.lower().rsplit("?", 1)[0].endswith(_LOGO_EXTENSIONS):
+            return "", _BAD_LOGO_TYPE
+        return logo_url, ""
+
+    m = _PUBLIC_FILE_URL.match(logo_url)
+    name = m.group(1) if m else ""
+    if not name or ".." in name or os.path.basename(name) != name:
+        return "", ("[WARN] Logo not applied: the logo address must be a /files/<name> "
+                    "path from the console upload or an http(s) URL.")
+    if not name.lower().endswith(_LOGO_EXTENSIONS):
+        return "", _BAD_LOGO_TYPE
+
+    control_site = control_site or getattr(frappe.local, "site", None)
+    if not control_site:
+        return "", "[WARN] Logo not applied: could not tell which site holds the upload."
+
+    src = os.path.join(SITES_DIR, control_site, "public", "files", name)
+    if not os.path.isfile(src):
+        return "", (f"[WARN] Logo not applied: {name} was not found on the control plane. "
+                    "Upload it again from the console.")
+
+    dst_dir = os.path.join(SITES_DIR, site_name, "public", "files")
+    os.makedirs(dst_dir, exist_ok=True)
+    shutil.copy2(src, os.path.join(dst_dir, name))
+    return f"/files/{name}", ""
 
 
 def _get_installed_apps(site_name):
@@ -944,8 +1090,54 @@ def _get_installed_apps(site_name):
     return apps
 
 
+def _setup_wizard_complete(site_name):
+    """Whether the site's setup wizard has finished, asked of the site itself.
+
+    Frappe's own answer (frappe.is_setup_complete: frappe AND erpnext marked
+    complete in Installed Applications), not a guess from a return code.
+    `bench execute` prints the return value as JSON, so the last line is `true`
+    or `false` - checked on the bench (Frappe 16.33.1), not assumed; the Python
+    spelling `True` is accepted too in case that ever changes. Anything else -
+    a failed command, an empty answer - counts as NOT complete, because the cost
+    of a wrong "yes" is fake users with logins on a customer's site, and the
+    cost of a wrong "no" is one install to run by hand.
+    """
+    r = _bench_run(f"--site {site_name} execute frappe.is_setup_complete", timeout=60)
+    if r.returncode != 0:
+        return False
+    lines = [ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()]
+    return bool(lines) and lines[-1] in ("true", "True")
+
+
+def _install_crm_after_wizard(site_name):
+    """Install Frappe CRM on a site, but only once its setup wizard is done.
+
+    Returns (installed, message). Both install paths - a new tenant and a plan
+    change on an existing one - go through here, so the guard cannot be
+    forgotten on one of them. The CRM's setup_wizard_complete hook
+    (crm.demo.api.create_demo_data) seeds three fake @example.com System Users
+    with Sales roles and fake leads on any site where the app is present when
+    the wizard finishes. Installing after the wizard is the only reliable way to
+    keep that off a customer's tenant. (Slice 040.)
+    """
+    if not _setup_wizard_complete(site_name):
+        return False, ("[WARN] crm NOT installed: the setup wizard has not completed on "
+                       "this site, and the CRM seeds demo users if installed before it. "
+                       "Finish the wizard, then run: bench --site "
+                       f"{site_name} install-app crm")
+    # Long: 44 doctypes, 32 patches, default records and custom fields on
+    # Contact, Email Account and Web Form.
+    r = _bench_run(f"--site {site_name} install-app crm", timeout=900)
+    if r.returncode != 0:
+        return False, ("[WARN] crm install failed."
+                       "\n--- stderr ---\n" + (r.stderr or "(empty)") +
+                       "\n--- stdout ---\n" + (r.stdout or "(empty)"))
+    return True, (r.stdout or "").strip()
+
+
 def _run_install_modules(pjob_id, site_name, install_vendor=False, install_goals=False,
-                         install_india_compliance=False):
+                         install_india_compliance=False, install_crm=False,
+                         install_whatsapp=False):
     """Background job: install additional Frappe apps on an existing site."""
     def _update(status, log_append="", finished=False):
         jobs = _read_jobs()
@@ -999,6 +1191,23 @@ def _run_install_modules(pjob_id, site_name, install_vendor=False, install_goals
                     f"[{now_datetime()}] Audit trail "
                     + ("enabled.\n" if ra.returncode == 0
                        else "could NOT be enabled - switch it on in Accounts Settings.\n"))
+
+        if install_crm:
+            _update("Provisioning", f"[{now_datetime()}] Installing crm…\n")
+            ok, crm_msg = _install_crm_after_wizard(site_name)
+            if not ok:
+                # Not fatal for the other apps in this job, but the operator
+                # must see it: the feature is ticked and the app is not there.
+                raise RuntimeError(crm_msg)
+            _update("Provisioning", crm_msg + "\n")
+
+        if install_whatsapp:
+            # No wizard guard needed: the app seeds nothing on install.
+            _update("Provisioning", f"[{now_datetime()}] Installing frappe_whatsapp…\n")
+            r = _bench_run(f"--site {site_name} install-app frappe_whatsapp", timeout=600)
+            if r.returncode != 0:
+                raise RuntimeError(f"frappe_whatsapp install failed:\n{r.stderr}")
+            _update("Provisioning", r.stdout + "\n")
 
         _bench_run(f"--site {site_name} clear-cache")
         _update("Done", f"[{now_datetime()}] ✅ Module installation complete.\n", finished=True)
@@ -1061,6 +1270,19 @@ def _require_db_root_password():
             "be created. Add it to deploy/envs/&lt;env&gt;.env and recreate the backend."
         )
     return pw
+
+
+def _as_flag(value):
+    """Read a yes/no argument that may arrive as a bool, a number or a string.
+
+    A JSON body gives a real `True`; a form post gives the string "1", "true"
+    or "on". `cint("true")` is 0, which would silently turn a "remove the logo"
+    click into "do nothing", so the strings are named here instead of guessed
+    at. Anything unrecognised is NO - the safe answer for a destructive action.
+    """
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
 
 
 def _validate_site_name(site_name):

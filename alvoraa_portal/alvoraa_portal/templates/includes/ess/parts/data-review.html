@@ -1,0 +1,20 @@
+      <!-- ══ DATA TO REVIEW (slice 012) ═══════════════════ -->
+      <div id="panel-data-review" class="panel">
+        <div class="page-header">
+          <div class="page-title">Data to review</div>
+          <div class="page-sub">Figures whose data looks wrong or incomplete</div>
+        </div>
+        <div id="dr-body" aria-live="polite" aria-busy="true">
+          <div class="empty-state"><div class="empty-state-text">Loading...</div></div>
+        </div>
+        <div class="gp-backdrop" id="dr-confirm">
+          <div class="gp-modal" role="alertdialog" aria-modal="true" aria-labelledby="dr-confirm-title" aria-describedby="dr-confirm-text" style="max-width:520px">
+            <div class="gp-modal-hdr"><h2 class="gp-modal-title" id="dr-confirm-title"></h2></div>
+            <div class="gp-modal-body"><p id="dr-confirm-text" style="margin:0;line-height:1.5"></p></div>
+            <div class="gp-modal-footer">
+              <button type="button" class="btn btn-outline" id="dr-confirm-keep" onclick="drCloseConfirm()"></button>
+              <button type="button" class="btn btn-primary" id="dr-confirm-go" onclick="drConfirmGo()"></button>
+            </div>
+          </div>
+        </div>
+      </div>

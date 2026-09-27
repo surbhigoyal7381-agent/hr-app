@@ -23,6 +23,32 @@ import sys
 
 WWW = os.path.join("alvoraa_portal", "alvoraa_portal", "www")
 
+# The page is now a short list of Jinja includes (slice 034 US-10). Reading it
+# alone would measure a shell and pass while checking almost nothing, so this
+# uses the one shared expander. It is loaded by path because this script runs
+# from the repository root, where the app is not importable.
+def _portal_source():
+	import importlib.util
+	here = os.path.dirname(os.path.abspath(__file__))
+	helper = os.path.join(here, "..", "alvoraa_portal", "alvoraa_portal",
+	                      "tests", "portal_source.py")
+	spec = importlib.util.spec_from_file_location("_portal_source", helper)
+	mod = importlib.util.module_from_spec(spec)
+	spec.loader.exec_module(mod)
+	return mod
+
+
+PORTAL_SOURCE = _portal_source()
+
+
+def read_page_source(path):
+	"""A www page's source: expanded for hrms-employee.html, plain otherwise."""
+	if os.path.basename(path) == "hrms-employee.html":
+		return PORTAL_SOURCE.read_page(encoding="utf-8", errors="replace")
+	with open(path, encoding="utf-8") as fh:
+		return fh.read()
+
+
 # The page background and body text each theme is judged against.
 GROUNDS = {"light": "#F8F6F3", "dark": "#1A1815"}
 
@@ -41,8 +67,10 @@ LIMITS = {
 }
 
 # Pages that carry their own visual language. goals-portal is a 15-line stub.
-PAGES = ["hrms-employee.html", "driver-portal.html", "vendor-portal.html",
-         "alvoraa-admin.html", "alvoraa-login.html"]
+# hrms-employee-next.html carries Wave 1's new frame until the swap, so its
+# colours and tokens are checked now rather than after it goes live.
+PAGES = ["hrms-employee.html", "hrms-employee-next.html", "driver-portal.html",
+         "vendor-portal.html", "alvoraa-admin.html", "alvoraa-login.html"]
 
 INCLUDE = os.path.join("alvoraa_portal", "alvoraa_portal", "templates",
                        "includes", "design_system.html")
@@ -155,7 +183,7 @@ def main() -> int:
 		path = os.path.join(WWW, name)
 		if not os.path.exists(path):
 			continue
-		m = measure(open(path, encoding="utf-8").read())
+		m = measure(read_page_source(path))
 		counts = {k: len(v) for k, v in m.items()}
 		rows.append((name, counts))
 

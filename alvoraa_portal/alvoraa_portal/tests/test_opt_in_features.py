@@ -116,9 +116,19 @@ class TestNothingExistingChanged(FrappeTestCase):
 	# old one taken back off the fallback path, because the app is installed on
 	# every tenant and the provisioning script never wrote a feature list, so
 	# every site it made had the vendor and driver portal by accident.
-	SHIPPED_OPT_IN = ["late_rules", "attendance_scoring", "employee_documents",
+	# "staff_list" joined in slice 034 (W1D-21). It is the first key that is
+	# opt-in for a COMMERCIAL reason rather than a rollout one: the org chart
+	# stays paid behind `org_structure`, the plain staff list is split out, and
+	# whether it is free or paid - and on which plans - is deliberately not
+	# decided yet. Belonging to no plan bundle is what keeps that decision a
+	# tick in the console instead of another release.
+	# "late_rules" and "attendance_scoring" LEFT this list on 26 Sep 2026: they are
+	# no longer features at all but Organisation Settings switches, off by default
+	# (test_org_attendance_switches.py). Removing them from the registry withholds
+	# nothing on the fallback path, because an opt-in key was never on it.
+	SHIPPED_OPT_IN = ["employee_documents",
 	                  "screening_forms", "policy_library", "org_structure",
-	                  "field_checkin", "vendor"]
+	                  "field_checkin", "vendor", "staff_list"]
 
 	def test_only_the_named_features_are_opt_in(self):
 		"""If this ever fails, some existing feature just silently switched off

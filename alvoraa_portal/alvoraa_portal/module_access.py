@@ -1067,28 +1067,45 @@ def apply_on_user_update(doc, method=None):
 
 NAVBAR_LABEL = "Switch to Employee Portal"
 
+# ALV-152. An ACTION, not a Route. Frappe 16's desk menu (ui/menu.js) runs a
+# row's `action` from an inline onclick, and does nothing at all with a Route
+# row from Navbar Settings: it never gets a url or an onClick, so the click
+# closed the menu and left the user in the desk. Single quotes only - menu.js
+# puts this inside a double-quoted onclick attribute.
+NAVBAR_ACTION = "window.location.assign('/hrms-employee')"
+NAVBAR_ROW = {
+    "item_label": NAVBAR_LABEL,
+    "item_type": "Action",
+    "action": NAVBAR_ACTION,
+    "route": None,
+    "is_standard": 0,
+}
 
-def sync_navbar_item():
-    """Add "Switch to Employee Portal" to the desk's top-right menu.
+
+def sync_navbar_item(add_if_missing=True):
+    """Put a working "Switch to Employee Portal" in the desk's user menu.
 
     Frappe owns that menu, and it is a real doctype - Navbar Settings, with a
     `settings_dropdown` table. Adding a row is supported; injecting markup into
-    someone else's navbar with JavaScript is not, and would break the next time
-    they change it.
+    someone else's navbar with JavaScript is not.
 
-    Idempotent: called on every sync.
+    Idempotent: exactly one row. An old Route row (before ALV-152) is upgraded
+    in place, never duplicated. With add_if_missing=False only an existing row
+    is touched - the patch uses that, so a site that never had the item (the
+    control plane) does not gain one.
     """
     settings = frappe.get_doc("Navbar Settings")
-    for row in settings.settings_dropdown:
-        if row.item_label == NAVBAR_LABEL:
-            return NAVBAR_LABEL          # already there
+    row = next((r for r in settings.settings_dropdown if r.item_label == NAVBAR_LABEL), None)
+    if row is None and not add_if_missing:
+        return None
+    if row is not None and row.item_type == "Action" and row.action == NAVBAR_ACTION \
+            and not row.route:
+        return NAVBAR_LABEL              # already right
 
-    settings.append("settings_dropdown", {
-        "item_label": NAVBAR_LABEL,
-        "item_type": "Route",
-        "route": "/hrms-employee",
-        "is_standard": 0,
-    })
+    if row is None:
+        settings.append("settings_dropdown", dict(NAVBAR_ROW))
+    else:
+        row.update(NAVBAR_ROW)
     settings.flags.ignore_permissions = True
     settings.save(ignore_permissions=True)
     frappe.db.commit()

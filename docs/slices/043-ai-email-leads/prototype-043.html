@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Lead Intake Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* ------------------------------------------------------------------
+   Prototype 043 — one file, no build, no external assets except fonts.
+   Two surfaces are drawn: the Frappe DESK (settings, review queue) and
+   the Frappe CRM app (the lead page). Neither uses the Alvoraa portal
+   palette on purpose: those surfaces keep Frappe's own look.
+   Every number and name is SAMPLE data from the Sargam storyline and is
+   fictional. Nothing here is production code.
+   ------------------------------------------------------------------ */
+:root{
+  --font:"Inter",-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --font-hi:"Noto Sans Devanagari","Inter",sans-serif;
+  /* Frappe desk / CRM light tokens (approximation of frappe v15/16 desk) */
+  --bg:#F5F5F5;--surface:#FFFFFF;--surface2:#F3F3F3;--border:#E2E6E9;--border2:#C9CFD4;
+  --text:#1F272E;--text2:#4C5560;--text3:#5B6770;
+  --btn:#171717;--btn-fg:#FFFFFF;--btn-h:#2E2E2E;
+  --link:#1366AE;--focus:#1F6FD0;
+  --amber-bg:#FDF1D6;--amber-fg:#7A4B00;--amber-line:#E9C77A;
+  --green-bg:#DDF3E7;--green-fg:#0B5E3B;--green-line:#8FD3B0;
+  --red-bg:#FDECEA;--red-fg:#A8231A;--red-line:#F0A39B;
+  --blue-bg:#E4EEFA;--blue-fg:#194E86;
+  --grey-bg:#ECEFF1;--grey-fg:#3E4852;
+  --shadow:0 1px 2px rgba(0,0,0,.06),0 1px 3px rgba(0,0,0,.08);
+  --r:8px;--r-sm:6px;
+}
+[data-theme="dark"]{
+  --bg:#161616;--surface:#1E1E1E;--surface2:#262626;--border:#333333;--border2:#4A4A4A;
+  --text:#EAEAEA;--text2:#C2C2C2;--text3:#A3A3A3;
+  --btn:#F2F2F2;--btn-fg:#111111;--btn-h:#DADADA;
+  --link:#7CB8F0;--focus:#7CB8F0;
+  --amber-bg:#3A2B0A;--amber-fg:#F5C77A;--amber-line:#6B4E14;
+  --green-bg:#0F3324;--green-fg:#7EDDB0;--green-line:#1F5C40;
+  --red-bg:#3A1410;--red-fg:#F5A09A;--red-line:#6B2A24;
+  --blue-bg:#152A44;--blue-fg:#9CC4F2;
+  --grey-bg:#2E3338;--grey-fg:#D5DADF;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:var(--font);font-size:14px;line-height:1.45;color:var(--text);background:var(--bg);-webkit-font-smoothing:antialiased}
+[lang="hi"] .i18n,[data-lang="hi"] .i18n{font-family:var(--font-hi)}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--link)}
+.crumbs a,.small a,.kv a,.sec h3 a,.hint a,.crm .lhead .crumb a{display:inline-flex;align-items:center;justify-content:center;min-height:24px;min-width:24px}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+h1,h2,h3,h4{margin:0;font-weight:600;line-height:1.3}
+p{margin:0}
+.small{font-size:12px;color:var(--text3)}
+.muted{color:var(--text3)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}
+
+/* ---------- review bar (scaffolding, not the product) ---------- */
+.reviewbar{background:#2B2540;color:#F3F0FA;padding:10px 14px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;font-size:13px}
+.reviewbar .grp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.reviewbar .grp>span{opacity:.75;margin-right:2px}
+.reviewbar button,.reviewbar select{min-height:32px;border-radius:6px;border:1px solid rgba(255,255,255,.28);background:transparent;color:#F3F0FA;padding:4px 10px;cursor:pointer}
+.reviewbar button[aria-pressed="true"]{background:#F3F0FA;color:#2B2540;border-color:#F3F0FA;font-weight:600}
+.reviewbar select{background:#3A3352;max-width:calc(100vw - 30px)}
+.reviewbar .sample{background:#F5C77A;color:#3A2B0A;font-weight:700;border-radius:999px;padding:3px 10px}
+.reviewnote{background:#EFEBF7;color:#2B2540;font-size:12px;padding:6px 14px;border-bottom:1px solid #D7D0E8}
+[data-theme="dark"] .reviewnote{background:#2A2438;color:#E8E2F5;border-color:#3B3350}
+
+/* ---------- stage and phone frame ---------- */
+.stage{padding:16px;display:flex;justify-content:center}
+.frame{width:100%;max-width:1380px;background:var(--bg);border:1px solid var(--border);border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
+.stage.is-phone .frame{width:390px;max-width:390px;height:844px;overflow:auto;border-radius:28px;border:8px solid #2B2540}
+.screen{display:none}
+.screen.active{display:block}
+
+/* ---------- desk chrome ---------- */
+.navbar{height:48px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 16px}
+.navbar .brand{font-weight:700;display:flex;align-items:center;gap:8px}
+.navbar .brand i{display:inline-block;width:22px;height:22px;border-radius:6px;background:#5B4B8A}
+.navbar .search{flex:1;max-width:420px;height:32px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);display:flex;align-items:center;padding:0 10px;color:var(--text3);gap:8px}
+.navbar .spacer{flex:1}
+.navbar .ico{width:32px;height:32px;border-radius:6px;border:0;background:transparent;display:inline-flex;align-items:center;justify-content:center;position:relative;cursor:pointer}
+.navbar .ico .dot{position:absolute;top:0;right:0;min-width:18px;height:18px;border-radius:999px;background:var(--red-fg);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px}
+.navbar .who{display:flex;align-items:center;gap:8px;font-size:13px}
+.avatar{width:28px;height:28px;border-radius:50%;background:#5B4B8A;color:#fff;font-weight:600;font-size:12px;display:inline-flex;align-items:center;justify-content:center}
+.pagehead{padding:14px 20px 0;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;justify-content:space-between}
+.crumbs{font-size:12px;color:var(--text3);margin-bottom:4px}
+.crumbs a{color:var(--text3)}
+.pagehead h1{font-size:20px}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.content{padding:16px 20px 32px}
+
+/* ---------- buttons ---------- */
+.btn{min-height:32px;padding:6px 12px;border-radius:var(--r-sm);border:1px solid var(--border2);background:var(--surface);color:var(--text);cursor:pointer;font-weight:500;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap}
+.btn:hover{background:var(--surface2)}
+.btn.primary{background:var(--btn);color:var(--btn-fg);border-color:var(--btn)}
+.btn.primary:hover{background:var(--btn-h)}
+.btn.danger{color:var(--red-fg);border-color:var(--red-line)}
+.btn.danger:hover{background:var(--red-bg)}
+.btn.link{border:0;background:transparent;color:var(--link);padding:6px 4px;text-decoration:underline}
+.btn.link:hover{background:transparent}
+.btn.sm{min-height:28px;padding:3px 10px;font-size:13px}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+
+/* ---------- chips ---------- */
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid transparent;line-height:1.5}
+.chip.amber{background:var(--amber-bg);color:var(--amber-fg);border-color:var(--amber-line)}
+.chip.green{background:var(--green-bg);color:var(--green-fg);border-color:var(--green-line)}
+.chip.red{background:var(--red-bg);color:var(--red-fg);border-color:var(--red-line)}
+.chip.grey{background:var(--grey-bg);color:var(--grey-fg)}
+.chip.blue{background:var(--blue-bg);color:var(--blue-fg)}
+.chip.sampletag{background:#F5C77A;color:#3A2B0A;font-size:12px;padding:0 6px;font-weight:700;letter-spacing:.02em;vertical-align:middle}
+
+/* ---------- cards, forms ---------- */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:14px}
+.card h2{font-size:15px;margin-bottom:10px}
+.card h3{font-size:14px;margin-bottom:6px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px 24px}
+.field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.field label{font-size:13px;font-weight:500;color:var(--text2)}
+.field .val{min-height:32px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2)}
+.field input,.field select,.field textarea{min-height:32px;padding:6px 10px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);width:100%}
+.field .hint{font-size:12px;color:var(--text3)}
+.field.ro .val{background:transparent;border-style:dashed}
+.check{display:flex;gap:10px;align-items:flex-start;min-height:32px}
+.check input{width:24px;height:24px;margin-top:0;flex:none}
+.notice{border:1px solid var(--border);border-left:4px solid var(--amber-line);background:var(--surface);padding:12px 14px;border-radius:var(--r-sm);margin-bottom:14px}
+.notice.error{border-left-color:var(--red-fg)}
+.notice.info{border-left-color:var(--blue-fg)}
+.notice.ok{border-left-color:var(--green-fg)}
+.notice h3{font-size:14px;margin-bottom:4px}
+.notice p{font-size:13px;color:var(--text2)}
+.notice .btnrow{margin-top:8px;display:flex;flex-wrap:wrap;gap:8px}
+table.t{width:100%;border-collapse:collapse;font-size:13px}
+table.t th,table.t td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+table.t th{font-weight:600;color:var(--text2);font-size:12px}
+.usage{height:10px;border-radius:999px;background:var(--surface2);border:1px solid var(--border);overflow:hidden;margin:6px 0}
+.usage i{display:block;height:100%;background:var(--green-fg)}
+.usage.full i{background:var(--amber-fg)}
+.status-on{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between}
+.status-on .big{font-size:17px;font-weight:600;display:flex;align-items:center;gap:10px}
+.history li{font-size:13px;color:var(--text2);padding:4px 0;border-bottom:1px dashed var(--border)}
+.history{margin:0;padding-left:0;list-style:none}
+
+/* ---------- review queue ---------- */
+.queue{display:grid;grid-template-columns:400px 1fr;gap:16px;align-items:start}
+.qlist{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.qlist .qhead{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px}
+.qlist .qhead select{min-height:32px;border:1px solid var(--border2);border-radius:6px;background:var(--surface);padding:2px 8px}
+.qitem{width:100%;text-align:left;border:0;border-bottom:1px solid var(--border);background:transparent;padding:10px 12px;cursor:pointer;display:block}
+.qitem:hover{background:var(--surface2)}
+.qitem[aria-current="true"]{background:var(--surface2);box-shadow:inset 3px 0 0 var(--btn)}
+.qitem .l1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.qitem .org{font-weight:600}
+.qitem .age{font-size:12px;color:var(--text3);white-space:nowrap}
+.qitem .subj{font-size:13px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:2px 0 6px}
+.qitem .l3{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px}
+.detail{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;min-height:400px}
+.dhead{padding:14px 16px;border-bottom:1px solid var(--border)}
+.dhead h2{font-size:16px;margin-bottom:6px}
+.dmeta{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--text2);align-items:center}
+.dmeta .btn.link{padding:2px 4px;min-height:24px}
+.whybox{margin:12px 16px 0;padding:10px 12px;border-radius:var(--r-sm);background:var(--amber-bg);border:1px solid var(--amber-line);color:var(--amber-fg);font-size:13px}
+.whybox strong{display:block;margin-bottom:2px}
+.whybox.grey{background:var(--grey-bg);border-color:var(--border2);color:var(--grey-fg)}
+.dbody{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.dcol{padding:14px 16px;min-width:0}
+.dcol+.dcol{border-left:1px solid var(--border)}
+.dcol h3{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin-bottom:10px}
+.emailtext{white-space:pre-wrap;font-size:14px;line-height:1.55;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px}
+.emailtext mark{background:var(--amber-bg);color:inherit;padding:0 2px;border-radius:2px;outline:1px solid var(--amber-line)}
+.attach{font-size:12px;color:var(--text3);margin-top:8px}
+.frow{display:grid;grid-template-columns:130px 1fr;gap:4px 10px;padding:8px 0;border-bottom:1px solid var(--border);align-items:start}
+.frow .k{font-size:13px;color:var(--text2);padding-top:3px}
+.frow .v{font-size:14px;min-width:0}
+.frow .v input{width:100%;min-height:32px;padding:5px 8px;border:1px solid var(--border2);border-radius:6px;background:var(--surface)}
+.frow .v textarea{width:100%;min-height:72px;padding:6px 8px;border:1px solid var(--border2);border-radius:6px;background:var(--surface)}
+.conf{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text3);margin-top:3px}
+.conf .bar{width:70px;height:6px;border-radius:999px;background:var(--surface2);border:1px solid var(--border);overflow:hidden;flex:none}
+.conf .bar i{display:block;height:100%;background:var(--green-fg)}
+.conf.low .bar i{background:var(--amber-fg)}
+.conf .src{font-style:italic}
+.v .blank{color:var(--text3);font-style:italic}
+.v .removed{color:var(--red-fg);font-size:12px;display:block}
+.reasons{margin:0;padding-left:18px;font-size:13px;color:var(--text2)}
+.reasons li{margin-bottom:3px}
+.dactions{padding:12px 16px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--surface)}
+.dactions .who{font-size:12px;color:var(--text3);margin-left:auto}
+.dtabs{display:none}
+.emptybox{padding:40px 20px;text-align:center;color:var(--text2)}
+.emptybox .pic{width:64px;height:64px;border-radius:16px;background:var(--green-bg);color:var(--green-fg);margin:0 auto 12px;display:flex;align-items:center;justify-content:center;font-size:28px}
+.emptybox h2{font-size:17px;margin-bottom:6px;color:var(--text)}
+.emptybox p{max-width:460px;margin:0 auto 6px;font-size:14px}
+.skel{background:linear-gradient(90deg,var(--surface2),var(--border),var(--surface2));background-size:200% 100%;animation:sh 1.2s infinite;border-radius:6px;height:14px;margin:8px 0}
+@keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+/* ---------- CRM app chrome (Frappe CRM look) ---------- */
+.crm{display:grid;grid-template-columns:220px 1fr;min-height:720px;background:var(--surface)}
+.crm .side{border-right:1px solid var(--border);padding:10px;background:var(--surface2)}
+.crm .side .ws{display:flex;align-items:center;gap:8px;padding:8px;font-weight:600;font-size:14px;margin-bottom:8px}
+.crm .side .ws i{width:24px;height:24px;border-radius:6px;background:#5B4B8A;display:inline-block}
+.crm .side a{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;color:var(--text2);text-decoration:none;font-size:14px;min-height:32px}
+.crm .side a[aria-current="page"]{background:var(--surface);color:var(--text);font-weight:600;box-shadow:var(--shadow)}
+.crm .side .g{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding:12px 8px 4px;font-weight:600}
+.crm .main{min-width:0}
+.crm .lhead{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--border)}
+.crm .lhead .crumb{font-size:14px;color:var(--text3)}
+.crm .lhead .crumb b{color:var(--text)}
+.crm .lbody{display:grid;grid-template-columns:1fr 340px}
+.crm .activity{padding:14px 18px;border-right:1px solid var(--border);min-width:0}
+.crm .tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:12px;overflow:auto}
+.crm .tabs button{border:0;background:transparent;padding:8px 12px;min-height:36px;cursor:pointer;color:var(--text3);border-bottom:2px solid transparent}
+.crm .tabs button[aria-selected="true"]{color:var(--text);border-bottom-color:var(--text);font-weight:600}
+.crm .act{border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:12px;background:var(--surface)}
+.crm .act .ah{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:13px;color:var(--text2);margin-bottom:8px}
+.crm .act .ah b{color:var(--text)}
+.crm .panel{padding:14px 16px}
+.crm .sec{border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:10px}
+.crm .sec h3{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.crm .kv{display:grid;grid-template-columns:110px 1fr;gap:6px 8px;font-size:13px;align-items:start}
+.crm .kv .k{color:var(--text3)}
+.crm .kv .v{color:var(--text);min-width:0;overflow-wrap:anywhere}
+.crm .aisec{border:1px solid var(--amber-line);background:var(--surface);border-radius:8px;padding:10px 12px;margin-bottom:12px}
+.crm .aisec .t{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:6px;font-weight:600;font-size:13px}
+.crm .aisec .kv{grid-template-columns:96px 1fr}
+.crm .aisec .line{font-size:12px;color:var(--text2);margin-top:8px;border-top:1px dashed var(--border);padding-top:6px}
+.crm .statusbtn{display:inline-flex;align-items:center;gap:8px;min-height:32px;padding:4px 12px;border:1px solid var(--border2);border-radius:6px;background:var(--surface)}
+.crm .statusbtn i{width:10px;height:10px;border-radius:50%;background:#1F6FD0;display:inline-block}
+
+/* ---------- dialogs and toast ---------- */
+.dlg-back{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:50;padding:16px}
+.dlg-back.open{display:flex}
+.dlg{background:var(--surface);color:var(--text);border-radius:10px;width:100%;max-width:480px;box-shadow:0 10px 40px rgba(0,0,0,.35);border:1px solid var(--border)}
+.dlg header{padding:14px 16px;border-bottom:1px solid var(--border);font-weight:600;font-size:15px}
+.dlg .b{padding:14px 16px}
+.dlg footer{padding:12px 16px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.dlg .field textarea{min-height:64px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--btn);color:var(--btn-fg);padding:10px 14px;border-radius:8px;font-size:13px;display:none;gap:12px;align-items:center;z-index:60;max-width:calc(100% - 32px);box-shadow:0 6px 24px rgba(0,0,0,.3)}
+.toast.show{display:flex}
+.toast a,.toast button{color:inherit;background:transparent;border:1px solid rgba(255,255,255,.4);border-radius:6px;min-height:28px;padding:2px 8px;cursor:pointer;text-decoration:none}
+[data-theme="dark"] .toast a,[data-theme="dark"] .toast button{border-color:rgba(0,0,0,.3)}
+
+/* ---------- states screen ---------- */
+.statebar{display:flex;flex-wrap:wrap;gap:6px;padding:12px 20px 0}
+.statebar button{min-height:32px;border:1px solid var(--border2);background:var(--surface);border-radius:999px;padding:4px 12px;cursor:pointer;font-size:13px}
+.statebar button[aria-pressed="true"]{background:var(--btn);color:var(--btn-fg);border-color:var(--btn)}
+.forbid{padding:48px 20px;text-align:center}
+.forbid .pic{width:64px;height:64px;border-radius:16px;background:var(--grey-bg);color:var(--grey-fg);margin:0 auto 12px;display:flex;align-items:center;justify-content:center;font-size:28px}
+.explain{background:var(--blue-bg);color:var(--blue-fg);font-size:12px;padding:6px 20px;border-bottom:1px solid var(--border)}
+
+/* ---------- phone rules: written once under .phone; JS adds .phone at
+   narrow widths too, so the frame and a real narrow window share them ---------- */
+.phone .navbar{padding:0 10px;gap:8px}
+.phone .navbar .search{display:none}
+.phone .navbar .who span{display:none}
+.phone .pagehead{padding:12px 14px 0}
+.phone .pagehead h1{font-size:18px}
+.phone .content{padding:12px 14px 96px}
+.phone .grid2{grid-template-columns:1fr}
+.phone .btn{min-height:44px;padding:8px 14px}
+.phone .btn.sm{min-height:44px}
+.phone .field input,.phone .field select,.phone .field textarea,.phone .frow .v input,.phone .frow .v textarea{font-size:16px;min-height:44px}
+.phone .check input{width:28px;height:28px}
+.phone .crumbs a,.phone .small a,.phone .kv a,.phone .sec h3 a,.phone .hint a,.phone .crm .lhead .crumb a{min-height:44px;min-width:44px}
+.phone .navbar .ico{width:44px;height:44px}
+.phone .check{min-height:44px}
+.phone table.t thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+.phone table.t,.phone table.t tbody,.phone table.t tr,.phone table.t td{display:block;width:100%}
+.phone table.t tr{border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:8px}
+.phone table.t td{border:0;padding:4px 0;overflow-wrap:anywhere}
+.phone table.t td[data-label]::before{content:attr(data-label) ': ';color:var(--text3);font-size:12px}
+.phone .queue{grid-template-columns:1fr}
+.phone .qlist .qhead select{min-height:44px;font-size:16px}
+.phone .qitem{min-height:44px;padding:12px 14px}
+.phone .detail{display:none;position:absolute;inset:0;z-index:20;border-radius:0;border:0;overflow:auto;background:var(--surface);min-height:0}
+.phone .detail.open{display:block}
+.phone .dbody{grid-template-columns:1fr}
+.phone .dcol+.dcol{border-left:0;border-top:1px solid var(--border)}
+.phone .dtabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:12px 16px 0}
+.phone .dtabs button{border:0;background:transparent;min-height:44px;padding:8px 14px;cursor:pointer;color:var(--text3);border-bottom:2px solid transparent;font-size:15px}
+.phone .dtabs button[aria-selected="true"]{color:var(--text);border-bottom-color:var(--text);font-weight:600}
+.phone .dcol.off{display:none}
+.phone .frow{grid-template-columns:1fr}
+.phone .dactions{position:sticky;bottom:0;box-shadow:0 -2px 8px rgba(0,0,0,.08)}
+.phone .dactions .who{width:100%;margin-left:0;order:-1}
+.phone .dactions .btn{flex:1;justify-content:center}
+.phone .backbtn{display:inline-flex}
+.backbtn{display:none;min-height:44px;border:0;background:transparent;color:var(--link);padding:6px 4px;cursor:pointer;font-weight:500}
+.phone .crm{grid-template-columns:1fr}
+.phone .crm .side{display:none}
+.phone .crm .lbody{grid-template-columns:1fr}
+.phone .crm .activity{border-right:0;border-bottom:1px solid var(--border)}
+.phone .crm .panel{order:-1}
+.phone .crm .tabs button{min-height:44px}
+.phone .statebar{padding:10px 14px 0}
+.phone .statebar button{min-height:44px}
+.phone .status-on .big{font-size:16px}
+.phone .frame-inner{position:relative;min-height:100%}
+.frame-inner{position:relative}
+@media (max-width:520px){
+  .stage{padding:0}
+  .frame{border:0;border-radius:0}
+}
+</style>
+</head>
+<body>
+
+<!-- ================= REVIEW BAR (scaffolding) ================= -->
+<div class="reviewbar" role="region" aria-label="Prototype controls">
+  <span class="sample">SAMPLE DATA — all fictional</span>
+  <div class="grp" role="group" aria-label="Screen">
+    <span>Screen</span>
+    <button type="button" data-screen="settings" aria-pressed="true">1 Settings (desk)</button>
+    <button type="button" data-screen="queue" aria-pressed="false">2 Review queue (desk)</button>
+    <button type="button" data-screen="lead" aria-pressed="false">3 Lead page (CRM app)</button>
+    <button type="button" data-screen="states" aria-pressed="false">4 Empty and error states</button>
+  </div>
+  <div class="grp">
+    <label for="persona">Person</label>
+    <select id="persona">
+      <option value="admin">Priya Nair — tenant admin (System Manager)</option>
+      <option value="reviewer">Rohan Deshmukh — Sales Manager, named reviewer</option>
+      <option value="sales">Meera Iyer — Sales User</option>
+    </select>
+  </div>
+  <div class="grp" role="group" aria-label="Device">
+    <span>Device</span>
+    <button type="button" data-device="desktop" aria-pressed="true">Desktop 1440</button>
+    <button type="button" data-device="phone" aria-pressed="false">Phone 390</button>
+  </div>
+  <div class="grp" role="group" aria-label="Theme">
+    <span>Theme</span>
+    <button type="button" data-theme-btn="light" aria-pressed="true">Light</button>
+    <button type="button" data-theme-btn="dark" aria-pressed="false">Dark</button>
+  </div>
+  <div class="grp" role="group" aria-label="Language">
+    <span>Language</span>
+    <button type="button" data-lang="en" aria-pressed="true">EN</button>
+    <button type="button" data-lang="hi" aria-pressed="false">हिं (draft)</button>
+  </div>
+</div>
+<div class="reviewnote" id="reviewnote">Screen 1 lives in the Frappe <b>desk</b> (FCRM Settings form + Email Account form). The tenant admin already works there and desk forms show custom fields with no CRM code change.</div>
+
+<!-- ================= STAGE ================= -->
+<div class="stage" id="stage">
+<div class="frame"><div class="frame-inner" id="frameInner">
+
+<!-- ---------- SCREEN 1: SETTINGS (desk) ---------- -->
+<section class="screen active" id="scr-settings" aria-labelledby="h-settings">
+  <div class="navbar" role="banner">
+    <div class="brand"><i aria-hidden="true"></i><span>Sargam Metals</span></div>
+    <div class="search" aria-hidden="true">Search or type a command (Ctrl + G)</div>
+    <div class="spacer"></div>
+    <button type="button" class="ico" aria-label="Notifications, 2 unread"><span aria-hidden="true">&#128276;</span><span class="dot" aria-hidden="true">2</span></button>
+    <div class="who"><span class="avatar" data-avatar>PN</span><span data-whoname>Priya Nair</span></div>
+  </div>
+  <div class="pagehead">
+    <div>
+      <div class="crumbs"><a href="#">CRM</a> › <a href="#">CRM Settings</a></div>
+      <h1 id="h-settings">CRM Settings</h1>
+    </div>
+    <div class="actions" data-admin-only>
+      <button type="button" class="btn">Discard</button>
+      <button type="button" class="btn primary" id="saveSettings">Save</button>
+    </div>
+  </div>
+  <div class="content" id="settingsContent"></div>
+</section>
+
+<!-- ---------- SCREEN 2: REVIEW QUEUE (desk page) ---------- -->
+<section class="screen" id="scr-queue" aria-labelledby="h-queue">
+  <div class="navbar" role="banner">
+    <div class="brand"><i aria-hidden="true"></i><span>Sargam Metals</span></div>
+    <div class="search" aria-hidden="true">Search or type a command (Ctrl + G)</div>
+    <div class="spacer"></div>
+    <button type="button" class="ico" aria-label="Notifications, 3 unread"><span aria-hidden="true">&#128276;</span><span class="dot" aria-hidden="true">3</span></button>
+    <div class="who"><span class="avatar" data-avatar>RD</span><span data-whoname>Rohan Deshmukh</span></div>
+  </div>
+  <div class="pagehead">
+    <div>
+      <div class="crumbs"><a href="#">CRM</a> › <a href="#">Leads</a></div>
+      <h1 id="h-queue"><span class="i18n" data-t="queueTitle">Leads to review</span> <span class="chip amber" id="qcount">5</span></h1>
+    </div>
+    <div class="actions">
+      <a class="btn" href="#" id="openCrmList"><span class="i18n" data-t="openInCrm">Open in the CRM app</span></a>
+    </div>
+  </div>
+  <div class="content">
+    <div id="queueBanner"></div>
+    <div class="queue" id="queueWrap">
+      <div class="qlist" aria-label="Leads waiting for review">
+        <div class="qhead">
+          <label for="fMailbox" class="sr-only">Mailbox</label>
+          <select id="fMailbox"><option>All mailboxes (1)</option><option>sales@sargammetals.example.in</option></select>
+          <label for="fReason" class="sr-only">Reason</label>
+          <select id="fReason"><option>All reasons</option><option>Low confidence</option><option>Two organisations</option><option>Phone not found in email</option><option>AI unavailable</option><option>Daily limit reached</option></select>
+          <span class="small" id="qsorted">Oldest first</span>
+        </div>
+        <div id="qitems" role="list"></div>
+      </div>
+      <div class="detail" id="qdetail" role="region" aria-live="polite" aria-label="Selected email"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ---------- SCREEN 3: LEAD PAGE (CRM app) ---------- -->
+<section class="screen" id="scr-lead" aria-labelledby="h-lead">
+  <div class="explain">This is Frappe CRM's own lead page (a Vue app). Nothing here is a new component: the "AI intake" block is a group of read-only custom fields shown through the CRM's <b>Fields layout</b> setting <span class="chip sampletag">verify</span>, the summary is a normal CRM note, and the email is the normal email activity.</div>
+  <div class="crm">
+    <nav class="side" aria-label="CRM navigation">
+      <div class="ws"><i aria-hidden="true"></i>Sargam Metals</div>
+      <a href="#" aria-current="page">&#9679; Leads</a>
+      <a href="#">&#9679; Deals</a>
+      <a href="#">&#9679; Contacts</a>
+      <a href="#">&#9679; Organizations</a>
+      <a href="#">&#9679; Notes</a>
+      <a href="#">&#9679; Tasks</a>
+      <a href="#">&#9679; Call logs</a>
+      <div class="g">Views</div>
+      <a href="#" id="crmNeedsReview">&#9679; Needs review <span class="chip amber" style="margin-left:auto">5</span></a>
+    </nav>
+    <div class="main">
+      <div class="lhead">
+        <div class="crumb"><a href="#" style="color:inherit;text-decoration:none">Leads</a> › <b id="h-lead">Konkan Shipbuilders Ltd</b></div>
+        <div class="actions">
+          <button type="button" class="statusbtn" aria-haspopup="listbox"><i aria-hidden="true"></i>New ▾</button>
+          <button type="button" class="btn primary">Convert to deal</button>
+        </div>
+      </div>
+      <div class="lbody">
+        <div class="activity">
+          <div class="tabs" role="tablist">
+            <button role="tab" aria-selected="true">Activity</button>
+            <button role="tab" aria-selected="false">Emails <span class="chip grey">1</span></button>
+            <button role="tab" aria-selected="false">Notes <span class="chip grey">1</span></button>
+            <button role="tab" aria-selected="false">Calls</button>
+            <button role="tab" aria-selected="false">Tasks</button>
+          </div>
+          <div id="leadActivity"></div>
+        </div>
+        <aside class="panel" aria-label="Lead details" id="leadPanel"></aside>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ---------- SCREEN 4: STATES ---------- -->
+<section class="screen" id="scr-states" aria-labelledby="h-states">
+  <div class="navbar" role="banner">
+    <div class="brand"><i aria-hidden="true"></i><span>Sargam Metals</span></div>
+    <div class="spacer"></div>
+    <div class="who"><span class="avatar" data-avatar>RD</span><span data-whoname>Rohan Deshmukh</span></div>
+  </div>
+  <h1 id="h-states" class="sr-only">Empty and error states</h1>
+  <div class="statebar" role="group" aria-label="Pick a state" id="stateBar">
+    <button type="button" data-state="empty" aria-pressed="true">Queue empty</button>
+    <button type="button" data-state="notbought">Not switched on for this tenant</button>
+    <button type="button" data-state="nomailbox">On, but no mailbox</button>
+    <button type="button" data-state="firstrun">First switch-on (notice)</button>
+    <button type="button" data-state="aidown">AI unavailable</button>
+    <button type="button" data-state="cap">Daily limit reached</button>
+    <button type="button" data-state="loading">Loading</button>
+    <button type="button" data-state="noperm">No permission</button>
+    <button type="button" data-state="netdrop">Network dropped on Accept</button>
+  </div>
+  <div class="content" id="stateContent"></div>
+</section>
+
+</div></div>
+</div>
+
+<!-- ---------- dialogs ---------- -->
+<div class="dlg-back" id="dlgBack">
+  <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlgTitle" id="dlg">
+    <header id="dlgTitle"></header>
+    <div class="b" id="dlgBody"></div>
+    <footer id="dlgFoot"></footer>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* =====================================================================
+   SAMPLE DATA — Sargam storyline, all fictional. example.* domains only.
+   ===================================================================== */
+const T = {
+  en: {
+    queueTitle:'Leads to review', openInCrm:'Open in the CRM app', accept:'Accept', reject:'Reject',
+    editAccept:'Edit, then accept', saveAccept:'Save and accept', cancelEdit:'Cancel edit',
+    why:'Why this looked like a lead', whyYou:'Why it needs you', email:'Email', fields:'Extracted fields',
+    showAddr:'Show full address', hideAddr:'Hide full address', from:'From', mailbox:'Mailbox', received:'Received',
+    createdBy:'Created from an email by AI', confidence:'Confidence', reviewedBy:'Reviewed by', autoAccepted:'Auto-accepted (no reviewer)',
+    checkLine:'Filled from an email by an AI model. Check before you rely on it.',
+    empty:'Nothing to review', emptyP1:'Uncertain leads from the sales mailbox land here. Right now the AI was sure about every email since 22 Sep 2026: 14 became leads, 31 were not enquiries.',
+    emptyP2:'When an email needs a person, you will get a bell notification and it will appear here.',
+    seeLeads:'See today\'s AI-created leads', back:'Back to list', youAct:'You can accept or reject this one.',
+    notYours:'Only Rohan Deshmukh (reviewer) or a Sales Manager can decide this one.', found:'found in the email', notFound:'not found in the email',
+    blank:'Not in the email', removedPhone:'Removed: the number the AI gave is not in the email text.',
+    rejectTitle:'Reject this lead?', rejectP:'It moves to Junk in the CRM. The email stays on the mailbox timeline. You can reopen the lead in the CRM if this was wrong.',
+    reasonLbl:'Reason (helps us see where the AI goes wrong)', confirmReject:'Reject and move to Junk', cancel:'Cancel',
+    accepted:'Accepted. Now a New lead, assigned to', rejected:'Rejected. Moved to Junk.', openLead:'Open lead', undoNote:'Reopen in the CRM',
+    summaryTitle:'What they asked for (AI summary)'
+  },
+  hi: {
+    queueTitle:'समीक्षा के लिए लीड', openInCrm:'CRM ऐप में खोलें', accept:'स्वीकार करें', reject:'अस्वीकार करें',
+    editAccept:'बदलें, फिर स्वीकार करें', saveAccept:'सहेजें और स्वीकार करें', cancelEdit:'बदलाव रद्द करें',
+    why:'यह लीड क्यों लगी', whyYou:'आपकी ज़रूरत क्यों है', email:'ईमेल', fields:'निकाले गए फ़ील्ड',
+    showAddr:'पूरा पता दिखाएँ', hideAddr:'पूरा पता छिपाएँ', from:'भेजने वाला', mailbox:'मेलबॉक्स', received:'मिला',
+    createdBy:'AI ने ईमेल से बनाया', confidence:'भरोसा', reviewedBy:'समीक्षा की', autoAccepted:'अपने-आप स्वीकार (कोई समीक्षक नहीं)',
+    checkLine:'AI मॉडल ने ईमेल से भरा है। भरोसा करने से पहले जाँचें।',
+    empty:'समीक्षा के लिए कुछ नहीं', emptyP1:'बिक्री मेलबॉक्स की अनिश्चित लीड यहाँ आती हैं। 22 सितंबर 2026 से AI हर ईमेल पर निश्चित था: 14 लीड बनीं, 31 पूछताछ नहीं थीं।',
+    emptyP2:'जब किसी ईमेल को व्यक्ति की ज़रूरत होगी, आपको घंटी सूचना मिलेगी और वह यहाँ दिखेगी।',
+    seeLeads:'आज की AI-बनाई लीड देखें', back:'सूची पर लौटें', youAct:'इसे आप स्वीकार या अस्वीकार कर सकते हैं।',
+    notYours:'इसे केवल रोहन देशमुख (समीक्षक) या Sales Manager तय कर सकते हैं।', found:'ईमेल में मिला', notFound:'ईमेल में नहीं मिला',
+    blank:'ईमेल में नहीं है', removedPhone:'हटाया: AI का दिया नंबर ईमेल में नहीं है।',
+    rejectTitle:'यह लीड अस्वीकार करें?', rejectP:'यह CRM में Junk में चली जाएगी। ईमेल मेलबॉक्स टाइमलाइन पर रहेगा। गलती हो तो CRM में फिर खोल सकते हैं।',
+    reasonLbl:'कारण (इससे पता चलता है AI कहाँ गलत होता है)', confirmReject:'अस्वीकार कर Junk में भेजें', cancel:'रद्द करें',
+    accepted:'स्वीकार। अब नई लीड, सौंपी गई', rejected:'अस्वीकार। Junk में भेजी गई।', openLead:'लीड खोलें', undoNote:'CRM में फिर खोलें',
+    summaryTitle:'उन्होंने क्या माँगा (AI सारांश)'
+  }
+};
+const PERSONAS = {
+  admin:{name:'Priya Nair', initials:'PN', role:'Tenant admin (System Manager)', sysmgr:true, salesmgr:false, reviewer:false},
+  reviewer:{name:'Rohan Deshmukh', initials:'RD', role:'Sales Manager, named reviewer', sysmgr:false, salesmgr:true, reviewer:true},
+  sales:{name:'Meera Iyer', initials:'MI', role:'Sales User', sysmgr:false, salesmgr:false, reviewer:false}
+};
+const SETTINGS = {
+  enabled:true, reviewer:'Rohan Deshmukh', autoAccept:85, notLead:85, cap:200, used:37, cost:9.25,
+  provider:'Anthropic PBC (United States)', retention:'up to 30 days', noticeVersion:'v1',
+  acceptedBy:'Priya Nair', acceptedOn:'22 Sep 2026, 09:14',
+  mailboxes:[
+    {id:'sales@sargammetals.example.in', on:true, since:'22 Sep 2026 by Priya Nair', note:''},
+    {id:'info@sargammetals.example.in', on:false, note:'Not ticked. Several mailboxes come in the next release.'},
+    {id:'hr@sargammetals.example.in', on:false, blocked:true, note:'Cannot be used: "hr" is a protected mailbox name (HR and payroll mail must never go to the AI).'}
+  ],
+  ignore:'noreply@\n@mailchimp.com\n@indiamart.example.com',
+  history:[
+    'Switched on by Priya Nair, 22 Sep 2026 09:14. Accepted the data notice v1.',
+    'Reviewer set to Rohan Deshmukh by Priya Nair, 22 Sep 2026 09:15.',
+    'Mailbox sales@sargammetals.example.in ticked by Priya Nair, 22 Sep 2026 09:16.'
+  ]
+};
+function F(v,c,src,extra){return Object.assign({v:v,c:c,src:src||''},extra||{});}
+const QUEUE = [
+  { id:'q1', org:'Western Port Trust', person:'S. Kulkarni', senderName:'S. Kulkarni', masked:'p…@westernporttrust.example.in', full:'procurement@westernporttrust.example.in',
+    subject:'Tender WPT/CP/2026/07 – cathodic protection of jetty piling, Kandla', mailbox:'sales@sargammetals.example.in', received:'Today, 09:12', age:'2 h',
+    reasonCode:'LOW_CONFIDENCE', reasonLabel:'Low confidence', confidence:74,
+    whyYou:'Confidence 74% is below your level of 85%. The AI could not tell whether this is a direct enquiry or a public tender notice sent to many suppliers.',
+    reasons:['Asks Sargam Metals to quote for sacrificial aluminium anodes (640 nos, 25 kg).','Names a tender reference and a closing date (15 Oct 2026).','Sender is a port authority procurement address, not a person\'s free-mail account.'],
+    attachments:['Tender_WPT_CP_2026_07.pdf (1.8 MB) — not read by the AI, file name only'],
+    body:`Dear Sir/Madam,
+
+Western Port Trust invites quotations from manufacturers of sacrificial aluminium anodes for the cathodic protection of jetty piling at Berth 7, Kandla. Tender reference WPT/CP/2026/07.
+
+Estimated requirement: 640 nos. 25 kg aluminium alloy anodes to IS 8062, with mounting straps. Bids close 15 Oct 2026, 15:00 hrs. EMD Rs 2,40,000.
+
+Please confirm whether Sargam Metals will participate and send your technical catalogue.
+
+Regards,
+S. Kulkarni
+Assistant Engineer (Marine)
+Western Port Trust, Kandla
+Tel: 02836 270 118`,
+    fields:{
+      first_name:F('S.',0.71,'S. Kulkarni'), last_name:F('Kulkarni',0.71,'S. Kulkarni'),
+      organization:F('Western Port Trust',0.96,'Western Port Trust invites quotations'),
+      job_title:F('Assistant Engineer (Marine)',0.92,'Assistant Engineer (Marine)'),
+      mobile_no:F('',null,''), phone:F('02836 270 118',0.9,'Tel: 02836 270 118'),
+      industry:F('Ports & Shipping',0.84,'from your industry list'), territory:F('Gujarat',0.88,'Kandla'),
+      website:F('',null,''),
+      requirement:F('Tender for cathodic protection of jetty piling at Berth 7, Kandla: about 640 aluminium alloy anodes, 25 kg, to IS 8062 with mounting straps. Bids close 15 Oct 2026. EMD ₹2,40,000. Asks for the technical catalogue.',0.9,'')
+    }, owner:null },
+  { id:'q2', org:'Gulf Marine Services LLC', person:'Abdul Rahman', senderName:'Abdul Rahman', masked:'a…@gulfmarine.example.ae', full:'a.rahman@gulfmarine.example.ae',
+    subject:'RFQ: 120 nos aluminium anodes for Al Bahr Offshore jacket – USD pricing', mailbox:'sales@sargammetals.example.in', received:'Today, 08:40', age:'3 h',
+    reasonCode:'TWO_ORGS', reasonLabel:'Two organisations', confidence:91,
+    whyYou:'The email names two organisations: Gulf Marine Services LLC (the sender) and Al Bahr Offshore (their client). Only you can say which one is the lead. The AI never creates two leads from one email.',
+    reasons:['Asks for a quotation with quantity, alloy and delivery terms.','Wants USD pricing CIF Jebel Ali — an export enquiry.','Sender signs as Procurement Manager with a company address.'],
+    attachments:[],
+    body:`Dear Sargam Metals team,
+
+We are refitting a jacket for our client Al Bahr Offshore in the Arabian Gulf and require 120 nos aluminium alloy anodes, 25 kg each, to NACE/ISO 15589 standard.
+
+Please quote in USD, CIF Jebel Ali, with delivery within 8 weeks of order. Kindly include mill test certificates.
+
+Best regards,
+Abdul Rahman
+Procurement Manager
+Gulf Marine Services LLC, Dubai
+Mobile: +971 50 000 1234`,
+    fields:{
+      first_name:F('Abdul',0.97,'Abdul Rahman'), last_name:F('Rahman',0.97,'Abdul Rahman'),
+      organization:F('Gulf Marine Services LLC',0.9,'Gulf Marine Services LLC, Dubai',{alt:'Al Bahr Offshore (their client)'}),
+      job_title:F('Procurement Manager',0.93,'Procurement Manager'),
+      mobile_no:F('+971 50 000 1234',0.95,'Mobile: +971 50 000 1234'), phone:F('',null,''),
+      industry:F('Oil & Gas',0.86,'from your industry list'), territory:F('Middle East',0.9,'Dubai'),
+      website:F('',null,''),
+      requirement:F('120 aluminium alloy anodes, 25 kg, NACE/ISO 15589, for a jacket refit for their client Al Bahr Offshore. Wants USD pricing CIF Jebel Ali, delivery within 8 weeks, with mill test certificates.',0.92,'')
+    }, owner:null },
+  { id:'q3', org:'', person:'Suresh', senderName:'Suresh', masked:'s…@gmail.com', full:'suresh.trd.1978@gmail.com',
+    subject:'anodes price', mailbox:'sales@sargammetals.example.in', received:'Today, 07:55', age:'4 h',
+    reasonCode:'SPAN_CHECK_FAILED', reasonLabel:'Phone not found in email', confidence:50,
+    whyYou:'The AI gave a phone number that does not appear anywhere in the email, so it was removed and the lead was sent to you. Confidence was also capped at 50% by a rule: a free-mail sender with fewer than 20 words.',
+    reasons:['Mentions a price for anodes for a boat.','No organisation, no phone in the text, no signature.'],
+    attachments:[],
+    body:`need anodes price for boat. call me.`,
+    fields:{
+      first_name:F('Suresh',0.6,'Suresh (sender name)'), last_name:F('',null,''),
+      organization:F('',null,'',{note:'Never taken from a free-mail domain (gmail.com).'}),
+      job_title:F('',null,''),
+      mobile_no:F('',null,'',{removed:true}), phone:F('',null,''),
+      industry:F('',null,''), territory:F('',null,''), website:F('',null,''),
+      requirement:F('Asks for the price of anodes for a boat. No quantity or size given.',0.7,'')
+    }, owner:null },
+  { id:'q4', org:'Pipeline Infra Co', person:'Neha Trivedi', senderName:'Neha Trivedi', masked:'n…@pipelineinfra.example.in', full:'neha.trivedi@pipelineinfra.example.in',
+    subject:'Magnesium anodes for buried pipeline CP – Vadodara section', mailbox:'sales@sargammetals.example.in', received:'Yesterday, 11:42', age:'1 d',
+    reasonCode:'AI_UNAVAILABLE', reasonLabel:'AI unavailable', confidence:null,
+    whyYou:'The AI service could not be reached at 11:42 yesterday (three tries in 45 seconds). So this lead has only the sender\'s name and address from the email header. Nothing was read by the AI. Fill in what you need, or accept it as it is.',
+    reasons:[], attachments:['Route_drawing_sec_4.pdf (3.1 MB)'],
+    body:`Hello,
+
+We are laying a 14 km buried steel pipeline near Vadodara and need magnesium anodes for cathodic protection of section 4. Please send your product range for soil resistivity of 2,000 to 5,000 ohm-cm and a budget price per anode.
+
+Thanks,
+Neha Trivedi
+Design Engineer, Pipeline Infra Co
++91 265 000 8890`,
+    fields:{
+      first_name:F('Neha',null,'from the email header'), last_name:F('Trivedi',null,'from the email header'),
+      organization:F('',null,''), job_title:F('',null,''), mobile_no:F('',null,''), phone:F('',null,''),
+      industry:F('',null,''), territory:F('',null,''), website:F('',null,''), requirement:F('',null,'')
+    }, fallback:true, owner:null },
+  { id:'q5', org:'Andaman Ferries Ltd', person:'Capt. J. Roy', senderName:'Capt. J. Roy', masked:'j…@andamanferries.example.in', full:'j.roy@andamanferries.example.in',
+    subject:'Hull anodes – five ferries – annual contract', mailbox:'sales@sargammetals.example.in', received:'Yesterday, 18:03', age:'1 d',
+    reasonCode:'CAP', reasonLabel:'Daily limit reached', confidence:null,
+    whyYou:'Yesterday\'s limit of 200 emails sent to the AI was reached at 17:20, before this one arrived. It was not sent to the AI, so only the sender\'s name and address are filled. Priya Nair (tenant admin) was told once.',
+    reasons:[], attachments:[],
+    body:`Dear Sir,
+
+Andaman Ferries operates five passenger ferries out of Port Blair. We want to move hull anode replacement to an annual contract with one supplier. Each ferry takes about 60 anodes of 10 kg per dry-docking.
+
+Please share your terms and a reference from another ferry operator.
+
+Capt. J. Roy
+Technical Superintendent
+Andaman Ferries Ltd`,
+    fields:{
+      first_name:F('J.',null,'from the email header'), last_name:F('Roy',null,'from the email header'),
+      organization:F('',null,''), job_title:F('',null,''), mobile_no:F('',null,''), phone:F('',null,''),
+      industry:F('',null,''), territory:F('',null,''), website:F('',null,''), requirement:F('',null,'')
+    }, fallback:true, owner:'Meera Iyer' }
+];
+const LEAD = {
+  org:'Konkan Shipbuilders Ltd', person:'Ravi Salunkhe', job:'Purchase Head', email:'r.salunkhe@konkanship.example.com', masked:'r…@konkanship.example.com',
+  phone:'022 2756 4410', territory:'Maharashtra', industry:'Shipbuilding', source:'Email', status:'New', owner:'Meera Iyer',
+  confidence:87, reviewedBy:'Rohan Deshmukh', reviewedOn:'23 Sep 2026, 14:02', mailbox:'sales@sargammetals.example.in', model:'claude-haiku-4-5', prompt:'intake-v1',
+  reviewedWhy:'Sent for review because the phone number the AI gave was not found in the email. Rohan Deshmukh typed the number from the signature and accepted.',
+  reasons:['Asks for a sample and a price per kg for hull anodes.','Two new-build 32 m tugs, delivery Mazagaon in November.','Sender is the Purchase Head with a company address.'],
+  summary:'Hull anodes for two new-build 32 m tugs. Asks for a 25 kg sample and a price per kg, delivery to Mazagaon (Mumbai) in November 2026. Wants to know lead time from order.',
+  subject:'Hull anodes for two new-build tugs – sample and price per kg',
+  body:`Dear Sargam Metals,
+
+Konkan Shipbuilders is building two 32 m harbour tugs at our Mazagaon yard. We need hull anodes (aluminium alloy, approx. 25 kg) for both vessels, delivery in November 2026.
+
+Please send one sample anode and your price per kg, and confirm lead time from order.
+
+Regards,
+Ravi Salunkhe
+Purchase Head, Konkan Shipbuilders Ltd
+Tel 022-2756-4410`
+};
+
+/* ===================================================================== */
+let state = { screen:'settings', persona:'admin', device:'desktop', theme:'light', lang:'en', selected:'q1', editing:false, showAddr:{}, phoneDetail:false, phoneTab:'email', stateName:'empty', queue:QUEUE.slice() };
+const $ = (s,el)=> (el||document).querySelector(s);
+const $$ = (s,el)=> Array.from((el||document).querySelectorAll(s));
+const t = k => (T[state.lang][k] !== undefined ? T[state.lang][k] : T.en[k]);
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function persona(){ return PERSONAS[state.persona]; }
+function canDecide(item){ const p=persona(); return p.sysmgr || p.salesmgr || p.reviewer || (item.owner && item.owner===p.name); }
+
+/* ---------- review bar wiring ---------- */
+$$('[data-screen]').forEach(b=>b.addEventListener('click',()=>{ state.screen=b.dataset.screen; state.phoneDetail=false; render(); }));
+$$('[data-device]').forEach(b=>b.addEventListener('click',()=>{ state.device=b.dataset.device; render(); }));
+$$('[data-theme-btn]').forEach(b=>b.addEventListener('click',()=>{ state.theme=b.dataset.themeBtn; render(); }));
+$$('[data-lang]').forEach(b=>b.addEventListener('click',()=>{ state.lang=b.dataset.lang; render(); }));
+$('#persona').addEventListener('change',e=>{ state.persona=e.target.value; state.editing=false; render(); });
+$$('#stateBar button').forEach(b=>b.addEventListener('click',()=>{ state.stateName=b.dataset.state; render(); }));
+window.matchMedia('(max-width:520px)').addEventListener('change', render);
+
+const NOTES = {
+  settings:'Screen 1 lives in the Frappe <b>desk</b> (FCRM Settings form + Email Account form). The tenant admin already works there, and desk forms show custom fields with no CRM code change.',
+  queue:'Screen 2 is a <b>desk page</b> we own (a Frappe Page under /app). Reason: the CRM\'s Vue list cannot show a side-by-side email + fields view or Accept/Reject without changing CRM source. The CRM app links here from its "Needs review" view.',
+  lead:'Screen 3 is the <b>CRM app\'s own lead page</b>. We add only what its Fields layout can show: a read-only "AI intake" field group, a normal note, and the email in its timeline. No new component.',
+  states:'Screen 4: the honest states. Each one says what this area is, why it is empty or stuck, and what to do next. Use the person switcher to see the no-permission state for a Sales User.'
+};
+
+function render(){
+  document.documentElement.setAttribute('data-theme', state.theme);
+  document.documentElement.setAttribute('data-lang', state.lang);
+  document.documentElement.lang = state.lang;
+  $$('[data-screen]').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.screen===state.screen)));
+  $$('[data-device]').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.device===state.device)));
+  $$('[data-theme-btn]').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.themeBtn===state.theme)));
+  $$('[data-lang]').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.lang===state.lang)));
+  $$('#stateBar button').forEach(b=>b.setAttribute('aria-pressed', String(b.dataset.state===state.stateName)));
+  $('#persona').value = state.persona;
+  const narrow = window.matchMedia('(max-width:520px)').matches;
+  $('#stage').classList.toggle('is-phone', state.device==='phone');
+  $('#frameInner').classList.toggle('phone', state.device==='phone' || narrow);
+  $$('.screen').forEach(s=>s.classList.toggle('active', s.id==='scr-'+state.screen));
+  $('#reviewnote').innerHTML = NOTES[state.screen];
+  const p = persona();
+  $$('[data-avatar]').forEach(a=>a.textContent=p.initials);
+  $$('[data-whoname]').forEach(a=>a.textContent=p.name);
+  $$('.i18n[data-t]').forEach(el=>{ el.textContent = t(el.dataset.t); });
+  renderSettings(); renderQueue(); renderLead(); renderStates();
+}
+
+/* ===================== SCREEN 1: SETTINGS ===================== */
+function renderSettings(opts){
+  opts = opts || {};
+  const p = persona(); const s = SETTINGS; const c = $('#settingsContent');
+  $$('[data-admin-only]').forEach(el=>el.style.display = (p.sysmgr||p.salesmgr)?'':'none');
+  if(!p.sysmgr && !p.salesmgr){
+    c.innerHTML = `<div class="forbid"><div class="pic" aria-hidden="true">&#128274;</div>
+      <h2>You cannot change CRM settings</h2>
+      <p style="max-width:460px;margin:8px auto 0">AI lead intake is set up by the tenant admin. If a lead is missing or wrong, ask <b>Priya Nair</b> (tenant admin) or your Sales Manager.</p>
+      <p class="small" style="margin-top:8px">Your leads and the review list are unaffected.</p>
+      <div style="margin-top:14px"><button type="button" class="btn" data-go="queue">Go to Leads to review</button></div></div>`;
+    wireGo(c); return;
+  }
+  const pct = Math.min(100, Math.round(s.used/s.cap*100));
+  const mailboxRows = s.mailboxes.map(m=>`<tr>
+      <td class="mono" data-label="Mailbox">${esc(m.id)}</td>
+      <td data-label="AI lead intake">${m.blocked ? '<span class="chip red">Cannot be used</span>' : (m.on ? '<span class="chip green">On</span>' : '<span class="chip grey">Off</span>')}</td>
+      <td data-label="Note">${m.on ? 'Since '+esc(m.since) : esc(m.note)}</td>
+      <td>${m.blocked ? '' : (p.sysmgr ? '<a href="#" class="btn sm">Open mailbox</a>' : '<span class="small">Tenant admin only</span>')}</td>
+    </tr>`).join('');
+  c.innerHTML = `
+    ${opts.banner||''}
+    <div class="card" id="secAi">
+      <h2>AI lead intake <span class="chip sampletag">Sample</span></h2>
+      <div class="status-on">
+        <div class="big"><span class="chip green">On</span> <span>Reading 1 mailbox. Uncertain leads go to ${esc(s.reviewer)}.</span></div>
+        <div class="actions">
+          ${p.sysmgr ? '<button type="button" class="btn danger" id="btnOff">Turn off AI lead intake</button>' : '<span class="small">Only the tenant admin can turn this off.</span>'}
+        </div>
+      </div>
+      <p class="small" style="margin-top:10px">Turning it off stops every AI call at once. Emails keep arriving in the mailbox as normal; none is sent to the AI and none becomes a lead until it is turned on again.</p>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h2>Today</h2>
+        <div><b>${s.used} of ${s.cap}</b> emails sent to the AI today <span class="chip sampletag">Sample</span></div>
+        <div class="usage" role="img" aria-label="${s.used} of ${s.cap} used"><i style="width:${pct}%"></i></div>
+        <div class="small">Resets at midnight, India time. About ₹${s.cost.toFixed(2)} spent so far today (₹0.25 an email). When the limit is reached, emails still become leads marked "Needs review", without the AI reading them.</div>
+        <div class="field" style="margin-top:12px"><label for="cap">Emails per day sent to the AI</label>
+          <input id="cap" type="number" value="${s.cap}" min="0" ${p.sysmgr||p.salesmgr?'':'disabled'}>
+          <div class="hint">Cost stop, not a data stop. Alvoraa's ceiling is 500. Changing the limit is in the next release; shown here so the number is visible.</div></div>
+      </div>
+      <div class="card">
+        <h2>Who checks the doubtful ones?</h2>
+        <div class="field"><label for="reviewer">Pick a person</label>
+          <div style="position:relative"><input id="reviewer" value="${esc(s.reviewer)}" aria-describedby="revhint" role="combobox" aria-autocomplete="list" aria-expanded="false" placeholder="Start typing a name" style="padding-right:32px"><span aria-hidden="true" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--text3)">▾</span></div>
+          <div class="hint" id="revhint">A picker, like every "user" box in Frappe: type a name and choose. Only people with a sales role appear. Any Sales Manager can also decide.</div></div>
+        <div class="field"><label for="auto">How sure must the AI be to create a lead without a check? (%)</label>
+          <input id="auto" type="number" value="${s.autoAccept}" min="70" max="100">
+          <div class="hint">Less sure than this, ${esc(s.reviewer)} checks it first. Cannot go below 70.</div></div>
+        <div class="field"><label for="notlead">How sure must the AI be that an email is not an enquiry, to ignore it? (%)</label>
+          <input id="notlead" type="number" value="${s.notLead}" min="70" max="100">
+          <div class="hint">Ignored emails stay in the mailbox. Nothing is deleted.</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Mailboxes</h2>
+      <p class="small" style="margin-bottom:8px">Each mailbox is switched on in its own form (Email Account), by the tenant admin only. A mailbox used for HR or payroll mail is refused by the system, not by a warning.</p>
+      <table class="t"><thead><tr><th>Mailbox</th><th>AI lead intake</th><th>Note</th><th><span class="sr-only">Action</span></th></tr></thead><tbody>${mailboxRows}</tbody></table>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h2>Never treat as leads</h2>
+        <div class="field"><label for="ignore">Addresses or domains, one per line</label>
+          <textarea id="ignore" rows="4">${esc(s.ignore)}</textarea>
+          <div class="hint">These are skipped before the AI sees them. Newsletters, auto-replies and your own domain are skipped automatically.</div></div>
+      </div>
+      <div class="card">
+        <h2>What is sent, and to whom</h2>
+        <p style="font-size:13px;color:var(--text2)">Only the email's subject, the sender's name and domain, and its plain text (up to 6,000 characters) are sent to <b>${esc(s.provider)}</b> to read it. Attachments, other recipients and headers are not sent. The provider keeps the text for <b>${esc(s.retention)}</b> and does not train on it.</p>
+        <p class="small" style="margin-top:8px">Accepted by ${esc(s.acceptedBy)} on ${esc(s.acceptedOn)} (notice ${esc(s.noticeVersion)}). <a href="#">Read the notice</a> · <a href="#">Sub-processor list</a></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>History</h2>
+      <ul class="history">${s.history.map(h=>'<li>'+esc(h)+'</li>').join('')}</ul>
+      <p class="small" style="margin-top:8px">Every change here is recorded with who and when. Only the Administrator account can delete these records.</p>
+    </div>`;
+  const off = $('#btnOff'); if(off) off.addEventListener('click', openTurnOff);
+  const save = $('#saveSettings'); if(save) save.onclick = ()=> toast('Saved. Changes recorded under History.');
+}
+
+function openTurnOff(){
+  dialog('Turn off AI lead intake?', `
+    <p style="font-size:14px;margin-bottom:10px">All AI calls stop at once, including the 3 emails now waiting in the queue to be read. Emails keep arriving in the mailbox. Leads already created stay as they are. The 5 leads in "Leads to review" stay there for ${esc(SETTINGS.reviewer)}.</p>
+    <div class="field"><label for="offreason">Why is it being switched off? <span aria-hidden="true">*</span></label>
+      <select id="offreason" required><option value="">Choose a reason</option><option>Provider problem</option><option>Too many wrong leads</option><option>Cost</option><option>Testing</option><option>Other</option></select>
+      <div class="hint">Required. It is written into the history with your name and the time.</div></div>
+    <div class="field"><label for="offnote">Anything else (optional)</label><textarea id="offnote" rows="2"></textarea></div>`,
+    [{label:'Cancel'},{label:'Turn off', cls:'danger', keep:true, onclick:()=>{
+      const r=$('#offreason'); if(!r.value){ r.setCustomValidity('x'); r.reportValidity(); r.focus(); alert('Say why AI lead intake is being switched off.'); return false; }
+      closeDialog(); toast('AI lead intake is off. Reason recorded: '+r.value+'.'); return true; }}]);
+}
+
+/* ===================== SCREEN 2: REVIEW QUEUE ===================== */
+function reasonChipClass(code){ return {LOW_CONFIDENCE:'amber',TWO_ORGS:'amber',SPAN_CHECK_FAILED:'amber',AI_UNAVAILABLE:'grey',CAP:'grey'}[code]||'grey'; }
+function renderQueue(){
+  const list = $('#qitems'); const det = $('#qdetail'); const q = state.queue;
+  $('#qcount').textContent = q.length;
+  $('#openCrmList').innerHTML = '<span class="i18n">'+esc(t('openInCrm'))+'</span>';
+  if(!q.length){
+    list.innerHTML=''; det.innerHTML = emptyQueueHtml(); $('#queueWrap').classList.add('phone-list-only');
+  } else {
+    list.innerHTML = q.map(it=>`<button type="button" class="qitem" role="listitem" data-id="${it.id}" aria-current="${it.id===state.selected}">
+      <div class="l1"><span class="org">${esc(it.org||it.person)}</span><span class="age">${esc(it.age)}</span></div>
+      <div class="subj">${esc(it.subject)}</div>
+      <div class="l3"><span class="chip ${reasonChipClass(it.reasonCode)}">${esc(it.reasonLabel)}</span>
+        <span class="muted">${it.confidence==null?'AI: not read':'AI: '+it.confidence+'%'}</span>
+        ${it.owner?'<span class="muted">· '+esc(it.owner)+'</span>':''}</div></button>`).join('');
+    $$('.qitem',list).forEach(b=>b.addEventListener('click',()=>{ state.selected=b.dataset.id; state.editing=false; state.phoneDetail=true; state.phoneTab='email'; render(); focusDetail(); }));
+    const it = q.find(x=>x.id===state.selected) || q[0]; state.selected = it.id;
+    det.innerHTML = detailHtml(it);
+    det.classList.toggle('open', state.phoneDetail);
+    wireDetail(it);
+  }
+  $('#queueBanner').innerHTML = '';
+}
+function focusDetail(){ const h=$('#qdetail h2'); if(h){ h.setAttribute('tabindex','-1'); h.focus({preventScroll:true}); } const f=$('.frame'); if(f) f.scrollTop=0; const d=$('#qdetail'); if(d) d.scrollTop=0; }
+function emptyQueueHtml(){
+  return `<div class="emptybox"><div class="pic" aria-hidden="true">&#10003;</div>
+    <h2 class="i18n">${esc(t('empty'))}</h2><p class="i18n">${esc(t('emptyP1'))}</p><p class="i18n">${esc(t('emptyP2'))}</p>
+    <div style="margin-top:12px"><a class="btn" href="#">${esc(t('seeLeads'))}</a></div></div>`;
+}
+function confHtml(f){
+  if(f.c==null) return '';
+  const low = f.c<0.8;
+  return `<div class="conf ${low?'low':''}"><span class="bar" aria-hidden="true"><i style="width:${Math.round(f.c*100)}%"></i></span><span>${Math.round(f.c*100)}%</span>${f.src?'<span class="src">· '+esc(f.src.startsWith('from')?f.src:'"'+f.src+'" '+t('found'))+'</span>':''}</div>`;
+}
+const FIELD_LABELS = {first_name:'First name',last_name:'Last name',organization:'Organisation',job_title:'Job title',mobile_no:'Mobile',phone:'Phone',industry:'Industry',territory:'Territory',website:'Website',requirement:'What they asked for'};
+function detailHtml(it){
+  const p = persona(); const can = canDecide(it);
+  const addrShown = !!state.showAddr[it.id];
+  const rows = Object.keys(FIELD_LABELS).map(k=>{
+    const f = it.fields[k]; let v;
+    if(state.editing){
+      v = k==='requirement' ? `<textarea id="ed_${k}" aria-label="${FIELD_LABELS[k]}">${esc(f.v)}</textarea>` : `<input id="ed_${k}" value="${esc(f.v)}" aria-label="${FIELD_LABELS[k]}" ${k==='mobile_no'||k==='phone'?'inputmode="tel"':''}>`;
+      if(f.removed) v += `<span class="removed">${esc(t('removedPhone'))}</span>`;
+    } else if(f.v){
+      v = `<div>${esc(f.v)}${f.alt?' <span class="chip amber" style="margin-left:6px">or: '+esc(f.alt)+'</span>':''}</div>${confHtml(f)}`;
+    } else {
+      v = `<span class="blank">${esc(t('blank'))}</span>${f.removed?'<span class="removed">'+esc(t('removedPhone'))+'</span>':''}${f.note?'<span class="small" style="display:block">'+esc(f.note)+'</span>':''}`;
+    }
+    return `<div class="frow"><div class="k">${FIELD_LABELS[k]}</div><div class="v">${v}</div></div>`;
+  }).join('');
+  const emailRow = `<div class="frow"><div class="k">Email</div><div class="v"><div>${addrShown?esc(it.full):esc(it.masked)}</div><div class="small">Always the sender's own address from the header. The AI cannot change it.</div></div></div>`;
+  const whyBox = it.fallback
+    ? `<div class="whybox grey"><strong>${esc(t('whyYou'))}</strong>${esc(it.whyYou)}</div>`
+    : `<div class="whybox"><strong>${esc(t('whyYou'))}</strong>${esc(it.whyYou)}</div>`;
+  const reasons = it.reasons.length ? `<h3 style="margin-top:14px">${esc(t('why'))}</h3><ul class="reasons">${it.reasons.map(r=>'<li>'+esc(r)+'</li>').join('')}</ul>` : `<h3 style="margin-top:14px">${esc(t('why'))}</h3><p class="small">Not read by the AI, so no reasons. The sender wrote to the sales mailbox; that is the only signal.</p>`;
+  const actions = can ? (state.editing
+      ? `<button type="button" class="btn primary" id="actSaveAccept">${esc(t('saveAccept'))}</button><button type="button" class="btn" id="actCancelEdit">${esc(t('cancelEdit'))}</button>`
+      : `<button type="button" class="btn primary" id="actAccept">${esc(t('accept'))}</button><button type="button" class="btn" id="actEdit">${esc(t('editAccept'))}</button><button type="button" class="btn danger" id="actReject">${esc(t('reject'))}</button>`)
+    : '';
+  const who = can ? `<span class="who">${esc(t('youAct'))} ${p.name===SETTINGS.reviewer?'':'(as '+esc(p.role)+')'}</span>` : `<span class="who">${esc(t('notYours'))}</span>`;
+  return `
+    <div class="dhead">
+      <button type="button" class="backbtn" id="backToList">‹ ${esc(t('back'))}</button>
+      <h2>${esc(it.subject)}</h2>
+      <div class="dmeta">
+        <span><b>${esc(t('from'))}:</b> ${esc(it.senderName)} &lt;${addrShown?esc(it.full):esc(it.masked)}&gt; <button type="button" class="btn link sm" id="toggleAddr" aria-pressed="${addrShown}">${addrShown?esc(t('hideAddr')):esc(t('showAddr'))}</button></span>
+        <span><b>${esc(t('received'))}:</b> ${esc(it.received)}</span>
+        <span><b>${esc(t('mailbox'))}:</b> ${esc(it.mailbox)}</span>
+        ${it.confidence==null?'<span class="chip grey">AI: not read</span>':'<span class="chip '+(it.confidence>=80?'green':'amber')+'">AI '+esc(t('confidence').toLowerCase())+' '+it.confidence+'%</span>'}
+      </div>
+    </div>
+    ${whyBox}
+    <div class="dtabs" role="tablist" aria-label="Email or fields">
+      <button role="tab" data-tab="email" aria-selected="${state.phoneTab==='email'}">${esc(t('email'))}</button>
+      <button role="tab" data-tab="fields" aria-selected="${state.phoneTab==='fields'}">${esc(t('fields'))}</button>
+    </div>
+    <div class="dbody">
+      <div class="dcol ${state.phoneTab!=='email'?'off':''}" data-col="email">
+        <h3>${esc(t('email'))} (plain text, as the AI saw it)</h3>
+        <div class="emailtext">${highlight(it)}</div>
+        ${it.attachments.length?'<div class="attach">Attachments: '+it.attachments.map(esc).join('; ')+'</div>':'<div class="attach">No attachments</div>'}
+        ${reasons}
+      </div>
+      <div class="dcol ${state.phoneTab!=='fields'?'off':''}" data-col="fields">
+        <h3>${esc(t('fields'))} — will become the lead</h3>
+        ${emailRow}${rows}
+        <p class="small" style="margin-top:10px">Each percentage is how sure the AI was about that one value, and where in the email it found it. Anything you change is recorded against your name.</p>
+      </div>
+    </div>
+    <div class="dactions">${actions}${who}</div>`;
+}
+function highlight(it){
+  let text = esc(it.body);
+  Object.values(it.fields).forEach(f=>{ if(f.src && f.v && !f.src.startsWith('from')){ const s=esc(f.src); if(text.includes(s)) text = text.replace(s,'<mark>'+s+'</mark>'); } });
+  return text;
+}
+function wireDetail(it){
+  const det=$('#qdetail');
+  const back=$('#backToList',det); if(back) back.addEventListener('click',()=>{ state.phoneDetail=false; render(); });
+  const ta=$('#toggleAddr',det); if(ta) ta.addEventListener('click',()=>{ state.showAddr[it.id]=!state.showAddr[it.id]; render(); });
+  $$('.dtabs [role=tab]',det).forEach(b=>b.addEventListener('click',()=>{ state.phoneTab=b.dataset.tab; render(); }));
+  const acc=$('#actAccept',det); if(acc) acc.addEventListener('click',()=>decide(it,'accept'));
+  const ed=$('#actEdit',det); if(ed) ed.addEventListener('click',()=>{ state.editing=true; state.phoneTab='fields'; render(); const first=$('#ed_first_name'); if(first) first.focus(); });
+  const ce=$('#actCancelEdit',det); if(ce) ce.addEventListener('click',()=>{ state.editing=false; render(); });
+  const sa=$('#actSaveAccept',det); if(sa) sa.addEventListener('click',()=>{ Object.keys(FIELD_LABELS).forEach(k=>{ const el=$('#ed_'+k); if(el){ it.fields[k].v=el.value; if(el.value) it.fields[k].removed=false; } }); state.editing=false; decide(it,'accept',true); });
+  const rj=$('#actReject',det); if(rj) rj.addEventListener('click',()=>openReject(it));
+}
+function decide(it, what, edited){
+  const idx = state.queue.indexOf(it); if(idx>-1) state.queue.splice(idx,1);
+  const next = state.queue[idx] || state.queue[idx-1]; state.selected = next?next.id:null; state.phoneDetail=false;
+  const owner = it.owner || 'Meera Iyer';
+  if(what==='accept') toast(`${t('accepted')} ${owner}.${edited?' Your edits are recorded.':''}`, {label:t('openLead'), go:'lead'});
+  else toast(t('rejected'), {label:t('undoNote')});
+  render();
+}
+function openReject(it){
+  dialog(t('rejectTitle'), `<p style="font-size:14px;margin-bottom:10px">${esc(t('rejectP'))}</p>
+    <div class="field"><label for="rjreason">${esc(t('reasonLbl'))}</label>
+      <select id="rjreason"><option>Not an enquiry</option><option>Spam</option><option>Supplier or vendor offer</option><option>Duplicate of an existing lead</option><option>Other</option></select></div>
+    <div class="field"><label for="rjnote">Note (optional)</label><textarea id="rjnote" rows="2"></textarea></div>`,
+    [{label:t('cancel')},{label:t('confirmReject'), cls:'danger', onclick:()=>decide(it,'reject')}]);
+}
+
+/* ===================== SCREEN 3: LEAD PAGE (CRM) ===================== */
+function renderLead(){
+  const p = persona(); const L = LEAD;
+  $('#leadPanel').innerHTML = `
+    <div class="aisec" aria-labelledby="aiSecTitle">
+      <div class="t" id="aiSecTitle"><span class="chip amber">AI</span> <span class="i18n">${esc(t('createdBy'))}</span></div>
+      <div class="kv">
+        <div class="k">${esc(t('confidence'))}</div><div class="v">${L.confidence}%</div>
+        <div class="k">${esc(t('reviewedBy'))}</div><div class="v">${esc(L.reviewedBy)}, ${esc(L.reviewedOn)}</div>
+        <div class="k">Why reviewed</div><div class="v">${esc(L.reviewedWhy)}</div>
+        <div class="k">${esc(t('mailbox'))}</div><div class="v mono" style="font-size:12px">${esc(L.mailbox)}</div>
+        <div class="k">Email</div><div class="v"><a href="#leadEmail">${esc(L.subject)}</a></div>
+        ${p.salesmgr||p.sysmgr?'<div class="k">AI record</div><div class="v"><a href="#">Open the AI record</a> <span class="small">(model '+esc(L.model)+', prompt '+esc(L.prompt)+')</span></div>':''}
+      </div>
+      <div class="line i18n">${esc(t('checkLine'))}</div>
+    </div>
+    <div class="sec"><h3>Details <a href="#" style="font-weight:400;text-transform:none;letter-spacing:0">Edit</a></h3>
+      <div class="kv">
+        <div class="k">Organization</div><div class="v">${esc(L.org)}</div>
+        <div class="k">Website</div><div class="v muted">—</div>
+        <div class="k">Territory</div><div class="v">${esc(L.territory)}</div>
+        <div class="k">Industry</div><div class="v">${esc(L.industry)}</div>
+        <div class="k">Job title</div><div class="v">${esc(L.job)}</div>
+        <div class="k">Source</div><div class="v">${esc(L.source)}</div>
+        <div class="k">Lead owner</div><div class="v">${esc(L.owner)}</div>
+      </div></div>
+    <div class="sec"><h3>Person</h3>
+      <div class="kv">
+        <div class="k">First name</div><div class="v">Ravi</div>
+        <div class="k">Last name</div><div class="v">Salunkhe</div>
+        <div class="k">Email</div><div class="v">${esc(L.email)}</div>
+        <div class="k">Mobile</div><div class="v muted">—</div>
+        <div class="k">Phone</div><div class="v">${esc(L.phone)} <span class="small">(edited by ${esc(L.reviewedBy)})</span></div>
+      </div></div>`;
+  $('#leadActivity').innerHTML = `
+    <div class="act" id="leadEmail"><div class="ah"><b>${esc(L.person)}</b> &lt;${esc(L.email)}&gt; · to sales@sargammetals.example.in · 23 Sep 2026, 13:31 <span class="chip grey">Email</span></div>
+      <div style="font-weight:600;margin-bottom:6px">${esc(L.subject)}</div>
+      <div class="emailtext">${esc(L.body)}</div></div>
+    <div class="act"><div class="ah"><b>${esc(t('summaryTitle'))}</b> · by AI lead intake · 23 Sep 2026, 13:42 <span class="chip grey">Note</span></div>
+      <p style="font-size:14px"><i>AI-generated summary — check against the email above.</i> ${esc(L.summary)}</p>
+      <div class="small" style="margin-top:6px">${esc(t('why'))}: ${L.reasons.map(esc).join(' ')}</div></div>
+    <div class="act"><div class="ah"><b>${esc(L.reviewedBy)}</b> accepted this lead after review · ${esc(L.reviewedOn)} <span class="chip green">Accepted</span></div>
+      <p class="small">Changed Phone from blank to ${esc(L.phone)} (typed from the signature). Status set to New. Assigned to ${esc(L.owner)} by the assignment rule.</p></div>`;
+}
+
+/* ===================== SCREEN 4: STATES ===================== */
+function renderStates(){
+  const c = $('#stateContent'); const s = state.stateName; const p = persona();
+  const html = {
+    empty: `<div class="card" style="padding:0"><div class="pagehead" style="padding:14px 16px 0"><h2 style="font-size:18px">${esc(t('queueTitle'))} <span class="chip grey">0</span></h2></div>${emptyQueueHtml()}</div>`,
+    notbought: `<div class="card"><h2>AI lead intake</h2>
+      <p style="font-size:14px;color:var(--text2)">Not switched on for Sargam Metals. This add-on reads the sales mailbox, creates CRM leads from real enquiries with the person, organisation, phone and requirement filled, and sends the doubtful ones to a person you name. It needs the CRM.</p>
+      <div class="actions" style="margin-top:12px"><a class="btn primary" href="#">Ask about it</a> <a class="btn" href="#">What is sent to the AI, and to whom</a></div>
+      <p class="small" style="margin-top:10px">No mailbox is read and nothing is sent to any AI until it is switched on.</p></div>`,
+    nomailbox: `<div class="notice"><h3>AI lead intake is on, but no mailbox is ticked</h3><p>Nothing is being read yet. Open the sales mailbox (Email Account) and tick "AI lead intake for this mailbox". Only the tenant admin can do this.</p><div class="btnrow"><a class="btn primary" href="#">Open sales@sargammetals.example.in</a></div></div>
+      <div class="card"><h2>Today</h2><div><b>0 of 200</b> emails sent to the AI</div><div class="usage"><i style="width:0"></i></div><div class="small">Nothing to count until a mailbox is ticked.</div></div>`,
+    firstrun: `<div class="card"><h2>Before you switch on AI lead intake</h2>
+      <p style="font-size:14px;color:var(--text2);margin-bottom:10px">Read this once. It is recorded with your name, the time and the notice version, and asked again only if the wording changes.</p>
+      <div class="notice info"><h3>What is sent, and to whom</h3><p>For each email on a ticked mailbox that passes the basic filters, the subject, the sender's name and domain, and the plain text (up to 6,000 characters) are sent to <b>Anthropic PBC, United States</b> to read it. Attachments, other recipients and headers are not sent. Aadhaar and PAN patterns are blanked before sending. The provider keeps the text for <b>up to 30 days</b> and does not train on it. Sargam Metals is responsible for its own privacy notice to the people who email it. Point this only at shared sales addresses, never at a person's own mailbox.</p></div>
+      <label class="check" for="acc1"><input type="checkbox" id="acc1"><span>I accept this on behalf of Sargam Metals (notice v1)</span></label>
+      <div class="field" style="margin-top:10px"><label for="rv2">Reviewer for uncertain leads <span aria-hidden="true">*</span></label><input id="rv2" placeholder="Start typing a name" aria-describedby="rv2h"><div class="hint" id="rv2h">Required. Without a named person, doubtful leads would sit unread.</div></div>
+      <div class="actions"><button type="button" class="btn primary" id="btnFirstOn">Switch on AI lead intake</button> <button type="button" class="btn">Not now</button></div></div>`,
+    aidown: `<div class="notice error"><h3>The AI service cannot be reached</h3><p>Since 11:42 today. Emails are still becoming leads, marked "Needs review", with only the sender's name and address. Nothing is lost. We retry on our own every 10 minutes; ${esc(SETTINGS.reviewer)} will see the full details fill in when the service is back for new emails. Leads already created in this state keep only the header fields unless you edit them.</p><div class="btnrow"><a class="btn" href="#">See the 4 leads affected</a> <span class="small" style="align-self:center">Priya Nair was told once at 11:52. No further alert this hour.</span></div></div>
+      <div class="card"><h2>${esc(t('queueTitle'))} <span class="chip amber">4</span></h2><p class="small">Each affected row shows "AI unavailable" instead of a percentage, and its "Why it needs you" box says the email was not read.</p></div>`,
+    cap: `<div class="notice"><h3>Today's limit of 200 emails was reached at 17:20</h3><p>Emails after that still become leads marked "Needs review", without the AI reading them. They are not sent later; the reviewer fills in what is needed. The count resets at midnight, India time. If this happens often, raise the limit here (up to Alvoraa's ceiling of 500), or check "Never treat as leads" for a sender that floods the mailbox.</p><div class="btnrow"><a class="btn" href="#">See the 6 leads not read by the AI</a> <a class="btn" href="#">Change the limit</a></div></div>
+      <div class="card"><h2>Today</h2><div><b>200 of 200</b> emails sent to the AI</div><div class="usage full"><i style="width:100%"></i></div><div class="small">About ₹50 spent today. Sent to Priya Nair once today.</div></div>`,
+    loading: `<div class="card"><h2>${esc(t('queueTitle'))}</h2><p class="small" style="margin-bottom:8px">Loading the list. Shown within 300 ms; the list itself must arrive in under 1.5 s on broadband.</p><div class="skel" style="width:60%"></div><div class="skel" style="width:85%"></div><div class="skel" style="width:40%"></div><div class="skel" style="width:70%"></div><div class="skel" style="width:80%"></div></div>`,
+    noperm: p.sysmgr||p.salesmgr
+      ? `<div class="forbid"><div class="pic" aria-hidden="true">&#128274;</div><h2>Switch the person to Meera Iyer (Sales User) to see this state</h2><p class="small" style="margin-top:6px">System Managers and Sales Managers can open every screen in this slice. An Employee or HR Manager never sees any of them: the desk shows them nothing under CRM and the API answers 403.</p></div>`
+      : `<div class="forbid"><div class="pic" aria-hidden="true">&#128274;</div><h2>Only the reviewer or a Sales Manager can decide this lead</h2><p style="max-width:460px;margin:8px auto 0">You can read it because it is a lead. To accept or reject it, ask ${esc(SETTINGS.reviewer)}. Leads assigned to you that need review show the buttons.</p><div style="margin-top:14px"><button type="button" class="btn" data-go="queue">Back to Leads to review</button></div></div>`,
+    netdrop: `<div class="card"><h2>Accept — not saved yet</h2>
+      <div class="notice error"><h3>Could not reach the server</h3><p>Your decision on "Tender WPT/CP/2026/07 – cathodic protection of jetty piling, Kandla" was not saved. Nothing has changed on the lead. Check your connection and try again; your edits are kept on this screen.</p><div class="btnrow"><button type="button" class="btn primary" id="retryBtn">Try again</button> <button type="button" class="btn">Keep for later</button></div></div>
+      <p class="small">The edited fields stay in the form until the retry succeeds or you leave the page (then you are warned).</p></div>`
+  }[s];
+  c.innerHTML = html;
+  wireGo(c);
+  const fo=$('#btnFirstOn'); if(fo) fo.addEventListener('click',()=>{ const a=$('#acc1'), r=$('#rv2'); if(!a.checked){ toast('Tick the notice first. Nothing is sent until you accept it.'); a.focus(); return; } if(!r.value){ toast('Name a reviewer for uncertain leads.'); r.focus(); return; } toast('AI lead intake is on. Recorded: '+persona().name+', notice v1.'); });
+  const rb=$('#retryBtn'); if(rb) rb.addEventListener('click',()=>toast('Accepted. Now a New lead, assigned to Meera Iyer.'));
+}
+function wireGo(root){ $$('[data-go]',root).forEach(b=>b.addEventListener('click',()=>{ state.screen=b.dataset.go; render(); })); }
+
+/* ---------- dialog + toast ---------- */
+let lastFocus=null;
+function dialog(title, body, buttons){
+  lastFocus=document.activeElement;
+  $('#dlgTitle').textContent=title; $('#dlgBody').innerHTML=body;
+  const f=$('#dlgFoot'); f.innerHTML='';
+  buttons.forEach(b=>{ const el=document.createElement('button'); el.type='button'; el.className='btn '+(b.cls||''); el.textContent=b.label;
+    el.addEventListener('click',()=>{ if(b.onclick){ const r=b.onclick(); if(r===false) return; } if(!b.keep) closeDialog(); }); f.appendChild(el); });
+  $('#dlgBack').classList.add('open');
+  const first=$('#dlgBody select, #dlgBody input, #dlgBody textarea') || $('#dlgFoot button'); if(first) first.focus();
+}
+function closeDialog(){ $('#dlgBack').classList.remove('open'); if(lastFocus && lastFocus.focus) lastFocus.focus(); }
+$('#dlgBack').addEventListener('click',e=>{ if(e.target.id==='dlgBack') closeDialog(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape' && $('#dlgBack').classList.contains('open')) closeDialog();
+  if(e.key==='Tab' && $('#dlgBack').classList.contains('open')){ const els=$$('#dlg button, #dlg input, #dlg select, #dlg textarea, #dlg a').filter(x=>!x.disabled); if(!els.length) return; const i=els.indexOf(document.activeElement); if(e.shiftKey && (i<=0)){ e.preventDefault(); els[els.length-1].focus(); } else if(!e.shiftKey && i===els.length-1){ e.preventDefault(); els[0].focus(); } } });
+let toastTimer=null;
+function toast(msg, action){
+  const el=$('#toast'); el.innerHTML = esc(msg) + (action?' <button type="button" id="toastAct">'+esc(action.label)+'</button>':'') + ' <button type="button" aria-label="Dismiss" id="toastX">×</button>';
+  el.classList.add('show');
+  const a=$('#toastAct'); if(a) a.addEventListener('click',()=>{ if(action.go){ state.screen=action.go; render(); } el.classList.remove('show'); });
+  $('#toastX').addEventListener('click',()=>el.classList.remove('show'));
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'), 8000);
+}
+
+render();
+</script>
+</body>
+</html>

@@ -105,3 +105,12 @@ Everything committed while the repository was public should be treated as alread
 copied. Going private hides what happens next; it does not retrieve what is out there.
 GitHub traffic for the first half of September showed 713 clones from 190 unique
 sources.
+
+## Follow-up, 2026-09-22 — step 4 cannot be done
+
+**The package cannot be made private.** GitHub's documentation says "Once you make a
+package public, you cannot make it private again", and the switch was tried twice on
+22 Sep and stayed public. So step 4 above is replaced: the image moves to a new package,
+`alvoraa-app`, which is private from its first push, and the old `hr-app` package is
+deleted once production runs from the new one. The order, the rollback and the delete
+checks are in `2026-09-private-image-package.md`.

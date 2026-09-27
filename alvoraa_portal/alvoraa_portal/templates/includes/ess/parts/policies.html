@@ -1,0 +1,79 @@
+      <!-- ══ POLICIES (build B5) ════════════════════════════ -->
+      <div id="panel-attendance-insights" class="panel">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">Attendance Insights</h1>
+            <p class="page-sub" id="ai-sub">Who is short of their hours, and how often</p>
+          </div>
+        </div>
+
+        <div class="ai-views" id="ai-views"></div>
+        <div class="ai-bar" id="ai-bar"></div>
+        <div id="ai-body"><p class="ai-empty">Loading&hellip;</p></div>
+      </div>
+
+      <div id="panel-att-record" class="panel">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">My Attendance</h1>
+            <p class="page-sub" id="ac-sub">Every day of the month, and how to get one corrected</p>
+          </div>
+        </div>
+
+        <div class="ac-bar" id="ac-bar"></div>
+        <div id="ac-body"><p class="ac-empty">Loading&hellip;</p></div>
+
+        <div id="ac-review-wrap" style="display:none;margin-top:26px">
+          <div class="sec-divider">Waiting for you</div>
+          <div id="ac-review"></div>
+        </div>
+
+        <div id="ac-mine-wrap" style="margin-top:26px">
+          <div class="sec-divider">Corrections you have asked for</div>
+          <div id="ac-mine"></div>
+        </div>
+      </div>
+
+      <div id="panel-org-chart" class="panel">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">Organisation</h1>
+            <p class="page-sub" id="oc-sub">Where you sit, and who is around you</p>
+          </div>
+          <div class="oc-search-wrap">
+            <input id="oc-search" class="oc-search" placeholder="Find someone&hellip;"
+                   autocomplete="off" oninput="ocSearch(this.value)">
+            <div id="oc-results" class="oc-results"></div>
+          </div>
+        </div>
+        <div id="oc-stats" class="oc-stats"></div>
+        <div id="oc-drill" class="oc-drill"></div>
+        <div id="oc-legend" class="oc-legend"></div>
+        <div id="oc-crumb" class="oc-crumb"></div>
+        <div id="oc-body" class="oc-body"><p class="oc-muted">Loading&hellip;</p></div>
+      </div>
+
+      <div id="panel-policies" class="panel">
+        <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:20px">
+          <div>
+            <div class="page-title">Policies</div>
+            <div class="page-sub">The policies that apply to you, with the version you have acknowledged</div>
+          </div>
+          <div style="display:flex;gap:4px;background:var(--surface2);border-radius:var(--r-sm);padding:4px;border:1px solid var(--border)">
+            <button class="gp-tab active" id="pol-tab-read" onclick="polShowTab('read')">Read</button>
+            <button class="gp-tab" id="pol-tab-manage" onclick="polShowTab('manage')" style="display:none">Manage</button>
+            <button class="gp-tab" id="pol-tab-compliance" onclick="polShowTab('compliance')" style="display:none">Compliance</button>
+          </div>
+        </div>
+        <div id="pol-read">
+          <div class="card" style="margin-bottom:16px"><div class="card-body" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px">
+            <input class="gp-input" id="pol-search" placeholder="Search title or text…" style="flex:1;min-width:180px;height:34px;padding:6px 10px" oninput="polDebounceLoad()">
+            <select class="gp-input" id="pol-dept" style="height:34px;padding:4px 8px;width:auto" onchange="polLoad()"><option value="">All departments</option></select>
+            <select class="gp-input" id="pol-cat" style="height:34px;padding:4px 8px;width:auto" onchange="polLoad()"><option value="">All categories</option></select>
+          </div></div>
+          <div id="pol-list"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
+          <div id="pol-detail" style="display:none"></div>
+        </div>
+        <div id="pol-manage" style="display:none"></div>
+        <div id="pol-compliance" style="display:none"></div>
+      </div>

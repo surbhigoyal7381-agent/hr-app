@@ -1,0 +1,25 @@
+{
+  "name": "alvoraa-field-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Alvoraa attendance app for field workers (slice 013). Capacitor shell with a bundled page.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "check": "node scripts/check_app.mjs && node scripts/check_versions.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/core": "8.5.2",
+    "capacitor-secure-storage-plugin": "0.13.0",
+    "jsqr": "1.4.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.2",
+    "@material/material-color-utilities": "0.3.0",
+    "esbuild": "0.28.2"
+  }
+}

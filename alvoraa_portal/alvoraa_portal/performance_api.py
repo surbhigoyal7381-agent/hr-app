@@ -20,8 +20,10 @@ from alvoraa_goals.permissions import get_effective_manager, get_hr_manager_empl
 
 from alvoraa_goals.controllers.kpi import MAX_RATING, TOTAL_WEIGHTAGE, rating_from_attainment
 import alvoraa_goals.review_items as review_items
+from alvoraa_portal import growth_api
 from hrms.alvoraa_hr_core.access import (
-    permitted_companies, refuse, refuse_hr_step_in_line, refuse_own_rating, subjects_in_my_line,
+    permitted_companies, permitted_employees, refuse, refuse_hr_step_in_line, refuse_own_rating,
+    subjects_in_my_line,
 )
 
 HR_ROLES = frozenset({"HR Manager", "HR User", "System Manager"})
@@ -969,10 +971,15 @@ def get_team_reviews(cycle=None):
     if cycle:
         appraisal_filters["appraisal_cycle"] = cycle
 
+    # Oldest first, so the newest review wins in appraisal_by_emp below when no
+    # cycle is given (slice 035). Unordered, the oldest won: between cycles, when
+    # every cycle is Completed and the page's picker is blank, managers saw last
+    # quarter's rating as if it were current.
     appraisals = frappe.get_all(
         "Appraisal",
         filters=appraisal_filters,
         fields=["name", "employee", "appraisal_cycle", "start_date", "end_date"],
+        order_by="start_date asc, creation asc",
     )
 
     if not appraisals:
@@ -1614,12 +1621,13 @@ def _build_formula(cycle):
 
 def _apply_scoring(cycle, scoring):
     """Copy the wizard's "How the score is built" step onto the Appraisal Cycle.
-    Ignored unless the tenant has the attendance-scoring feature."""
+    Ignored unless HR has switched attendance in the appraisal score on in
+    Organisation Settings (an organisation switch since 26 Sep 2026)."""
     import json
     if not scoring:
         return
-    from alvoraa_portal.subscription import has_feature
-    if not has_feature("attendance_scoring"):
+    from hrms.alvoraa_hr_core.features import attendance_scoring_on
+    if not attendance_scoring_on():
         return
     if isinstance(scoring, str):
         scoring = json.loads(scoring or "{}")
@@ -2635,8 +2643,10 @@ _COPY_FIELDS = [
 def _hr_cycle_reviews(cycle, employee=None, include_cancelled=False):
     """The reviews in one cycle this HR person may list, and what each row may show.
 
-    Scope (SEC-26, decision 16): subjects of the companies the caller looks
-    after, plus the caller's own line and their own review. Each row gets
+    Scope (SEC-26, decision 16; slice 030): the people the caller looks after as
+    HR - their companies, narrowed to their store when they hold a Branch User
+    Permission (access.permitted_employees) - plus the caller's own line and
+    their own review. Each row gets
     `status`, `extension` and `viewer`, which review_items.rating_fields_for reads:
       subject  the caller's own review
       manager  someone in the caller's line
@@ -2656,7 +2666,7 @@ def _hr_cycle_reviews(cycle, employee=None, include_cancelled=False):
         "Appraisal",
         filters=filters,
         or_filters=[
-            ["company", "in", permitted_companies() or [""]],
+            ["employee", "in", sorted(permitted_employees()) or [""]],
             ["employee", "in", sorted(line | {me}) if me else [""]],
         ],
         fields=["name", "employee", "employee_name", "department", "designation", "company", "docstatus",
@@ -3824,7 +3834,12 @@ def _rating_or_none(value):
 
 @frappe.whitelist()
 def get_calibration_matrix(cycle):
-    """Return completed appraisals for the 2D calibration matrix. HR only."""
+    """Return completed appraisals for the 2D calibration matrix. HR only.
+
+    Scoped the same way as the review list: a store's HR person gets their
+    store's reviews only (slice 030). Nobody's gender leaves the server: the
+    matrix has no gender filter any more (decision 3).
+    """
     import json as _json
     _require_hr()
 
@@ -3871,18 +3886,20 @@ def get_calibration_matrix(cycle):
         "end_date":   str(ci.get("end_date") or ""),
     }
 
-    # ── The reviews this HR person may list (slice 010 group D, SEC-26) ──
+    # ── The reviews this HR person may list (slice 010 group D, SEC-26; slice 030 branch scope) ──
     appraisals = _hr_cycle_reviews(cycle)
 
     rows = []
     stage_counts = {}
-    filter_depts, filter_desig, filter_genders, filter_emp_types = set(), set(), set(), set()
+    filter_depts, filter_desig, filter_emp_types = set(), set(), set()
     filter_managers = {}  # emp_id -> employee_name
 
     plotted = [a for a in appraisals if a.status in ("HR Review", "Completed")]
+    # The Employee read takes its names from the scoped list above, so it cannot
+    # reach a person the caller may not list.
     people = {e.name: e for e in frappe.get_all(
         "Employee", filters={"name": ["in", [a.employee for a in plotted] or [""]]},
-        fields=["name", "employee_name", "department", "designation", "gender", "employment_type", "reports_to"],
+        fields=["name", "employee_name", "department", "designation", "employment_type", "reports_to"],
     )}
     manager_names = dict(frappe.get_all(
         "Employee", filters={"name": ["in", sorted({p.reports_to for p in people.values() if p.reports_to}) or [""]]},
@@ -3911,12 +3928,10 @@ def get_calibration_matrix(cycle):
 
         dept     = emp.get("department")     or ""
         desig    = emp.get("designation")    or ""
-        gender   = emp.get("gender")         or ""
         emp_type = emp.get("employment_type") or ""
 
         if dept:     filter_depts.add(dept)
         if desig:    filter_desig.add(desig)
-        if gender:   filter_genders.add(gender)
         if emp_type: filter_emp_types.add(emp_type)
 
         row = {
@@ -3926,7 +3941,6 @@ def get_calibration_matrix(cycle):
             "overall_rating":  _rating_or_none(ext.get("overall_rating")),
             "department":      dept,
             "designation":     desig,
-            "gender":          gender,
             "employment_type": emp_type,
             "reports_to":      reports_to,
             "reports_to_name": reports_to_name,
@@ -3950,7 +3964,6 @@ def get_calibration_matrix(cycle):
         "filter_options": {
             "departments":      sorted(filter_depts),
             "designations":     sorted(filter_desig),
-            "genders":          sorted(filter_genders),
             "employment_types": sorted(filter_emp_types),
             "managers": [
                 {"id": k, "name": v}
@@ -4383,11 +4396,19 @@ def save_review_page(appraisal, page_key, page_data_json):
     except: all_pd = {}
     try: new_pd = json.loads(page_data_json) if isinstance(page_data_json, str) else page_data_json
     except: new_pd = {}
-    if page_key in ("past-objectives", "past_objectives"):
+    if page_key in growth_api.OLD_PAGE_KEYS:
         # Ratings are keyed by this review's copies only; anything else refuses
         # the save before it is stored (SEC-1).
         review_items.open_review(ext)
         review_items.apply_self_review(ext, new_pd, "save_review_page", write=False)
+    elif page_key == growth_api.WIZARD_PAGE_KEY:
+        # **The same check, on the page the product is about to use (AC-92).**
+        # It ran only for the OLD screen's key, so a `wizard` save stored
+        # whatever row names it was given. Nothing was written onto a row by
+        # that path, but the guard that refuses a foreign row name - or one
+        # removed from this review - was not running at all on the new screen.
+        review_items.open_review(ext)
+        growth_api.check_wizard_keys(ext, new_pd, "save_review_page")
     all_pd[page_key] = new_pd
 
     try: done = json.loads(ext.pages_completed or "[]")
@@ -4395,13 +4416,83 @@ def save_review_page(appraisal, page_key, page_data_json):
     if page_key not in done:
         done.append(page_key)
 
-    ext.page_data       = json.dumps(all_pd)
+    # 045 / OPS-W4. `page_data` is a MariaDB TEXT - 65,535 BYTES, not
+    # characters - and `sql_mode` is strict, so an oversize write RAISES
+    # rather than truncating. Measured on this project's own bench: 21,845
+    # Devanagari characters fit, 21,846 raise DataError 1406.
+    #
+    # Throwing is the better of the two failures, but this write is an
+    # AUTOSAVE: unhandled, an employee keeps typing while nothing saves and
+    # nothing tells them. So the budget is checked first, with a sentence that
+    # says what to do next and confirms that what was already saved is safe.
+    # `ensure_ascii=False`, and it matters more than it looks.
+    #
+    # The default escapes every non-ASCII character to `\uXXXX` - **six bytes
+    # for a Devanagari character that costs three when it is written as
+    # itself**. The measurement behind the constant above (21,845 Devanagari
+    # characters fit) was taken on the raw column, so with the default this
+    # code path was quietly giving a Hindi or Punjabi writer HALF the room the
+    # ceiling allows, and an English writer no difference at all.
+    #
+    # `json.loads` reads either form, the column is utf8mb4, and what was
+    # written before still reads back the same. So this is a widening with no
+    # migration behind it.
+    serialised = json.dumps(all_pd, ensure_ascii=False)
+    used = growth_api.check_page_data_fits(serialised)
+
+    ext.page_data       = serialised
     ext.pages_completed = json.dumps(done)
     if ext.review_status == "Not Started":
         ext.review_status = "Employee Review"
     review_items.save_review_record(ext)
     frappe.db.commit()
-    return {"pages_completed": done}
+    # The room left travels back with every save, so the screen can warn while
+    # somebody is still typing. Counted on the string that was ACTUALLY
+    # written, not on the fragment this call was handed - the stored value
+    # carries every other page too, and a budget measured on one page would be
+    # a number that is only ever too generous.
+    return {
+        "pages_completed": done,
+        "used_bytes": used,
+        "budget_bytes": growth_api.PAGE_DATA_BUDGET_BYTES,
+        "room_left_characters": growth_api.room_left_characters(serialised),
+    }
+
+
+def _notify_manager_review_sent(ap, ext):
+    """One notification to the manager when a self-review is sent (AC-36).
+
+    **Through `_send_notification`, the helper this file already has**, which
+    sends an email and nothing else. Two rules hold because of that choice:
+    the server never pushes script to a browser (SEC-12, and the static check
+    that guards it), and nothing here needs a permission bypass - which is why
+    this is not a `Notification Log` row written past the caller's rights.
+
+    **Nothing from inside the review travels in it.** The subject carries the
+    person's name and the cycle; no rating, no comment, no goal title. A
+    notification is read by whoever has the manager's phone in their hand, and
+    a review's contents are not a thing to put on a lock screen.
+
+    It goes to the manager on `reports_to` only - never to HR, never to a
+    reviewer, never to a list built from anything else.
+
+    A failure never fails the send: the helper logs a traceback with no names
+    and returns.
+    """
+    reports_to = frappe.db.get_value("Employee", ap.employee, "reports_to")
+    if not reports_to:
+        return
+    manager_user = frappe.db.get_value("Employee", reports_to, "user_id")
+    if not manager_user:
+        return
+    cycle = frappe.db.get_value(
+        "Appraisal Cycle", ap.appraisal_cycle, "cycle_name") or ap.appraisal_cycle
+    _send_notification(
+        manager_user,
+        frappe._("{0} has sent you their self-review for {1}").format(
+            ap.employee_name or ap.employee, cycle),
+        frappe._("<p>Open the review to read it and add your own ratings.</p>"),
+    )
 
 
 @frappe.whitelist()
@@ -4421,7 +4512,10 @@ def submit_employee_review(appraisal, overall_comment=""):
 
     ext = _get_or_create_extension(appraisal)
     if ext.review_status not in ("Not Started", "Employee Review"):
-        frappe.throw("Review has already been submitted.")
+        # AC-95. A double tap, a retried request or a hand-made second call.
+        # Nothing is written and no second notification goes out, because the
+        # refusal happens before any of it.
+        frappe.throw(frappe._("This has already been sent. Your manager has it."))
     review_items.open_review(ext)
 
     try:
@@ -4431,9 +4525,35 @@ def submit_employee_review(appraisal, overall_comment=""):
     if not isinstance(all_pd, dict):
         all_pd = {}
 
+    # ── The wizard's block, checked BEFORE anything at all is written ──
+    #
+    # Two keys, one per screen, and both are read (AC-98). A review half-typed
+    # on the old Objectives & KPIs screen and finished in the wizard keeps
+    # both: the old block is applied first and the wizard's second, so the
+    # wizard wins wherever the two name the same row.
+    #
+    # The checks come first on purpose. A part-finished review refused halfway
+    # through writing would be this story's silent failure in another hat.
+    #
+    # **Only a review typed in the wizard is held to the wizard's rules.** The
+    # old screen still ships and has never required a rating on every goal - it
+    # rates KPIs and writes a reflection on a goal - so holding it to the new
+    # rule refused three of its own tests, which is how this was found. The
+    # KEY decides it, not the contents: an empty wizard block is a wizard that
+    # was opened, and it answers for itself.
+    from_wizard = growth_api.WIZARD_PAGE_KEY in all_pd
+    wizard = growth_api.wizard_block(all_pd)
+    if from_wizard:
+        growth_api.check_wizard_keys(ext, wizard, "submit_employee_review")
+        growth_api.refuse_if_unfinished(ext, wizard, "submit_employee_review")
+
     # ── Past Objectives: self-ratings and comments onto the copies ──
     past = all_pd.get("past-objectives") or all_pd.get("past_objectives") or {}
     review_items.apply_self_review(ext, past)
+
+    # ── The wizard: a goal's rating onto the review's own copy (AC-87) ──
+    if from_wizard:
+        growth_api.apply_wizard_self_review(ext, wizard, "submit_employee_review")
 
     # ── Past Development: copy textarea fields to extension named fields ──
     past_dev = all_pd.get("past-dev") or {}
@@ -4476,11 +4596,24 @@ def submit_employee_review(appraisal, overall_comment=""):
         ig.is_future_plan = 1
         ig.insert(ignore_permissions=True)
 
-    ext.overall_comment = overall_comment
+    # The two wizard answers that already have a home on the extension, so the
+    # manager's existing screen shows them with no new work (AC-99). The old
+    # screen's own fields win only when the wizard left the step empty -
+    # nothing typed is overwritten by a blank.
+    wizard_next = str((wizard.get("next") or {}).get("text") or "").strip()
+    if wizard_next:
+        ext.next_period_goals_text = wizard_next
+    wizard_overall = str((wizard.get("overall") or {}).get("text") or "").strip()
+    ext.overall_comment = overall_comment or wizard_overall
+
     ext.review_status   = "Manager Review"
     review_items.apply_stage(ext)
     review_items.save_review_record(ext)
     frappe.db.commit()
+    # AC-36. One notification, to the manager on `reports_to`, carrying the
+    # person's name and the cycle and NOTHING from inside the review. After the
+    # commit, so a review is never announced before it is stored.
+    _notify_manager_review_sent(ap, ext)
     return {"review_status": "Manager Review"}
 
 

@@ -1,5 +1,5 @@
 app_name = "alvoraa_goals"
-app_title = "Alvoraa Goals"
+app_title = "Alvora Goals"
 app_publisher = "AllAboutHR"
 app_description = "Cascaded goal management with evidence-based progress tracking"
 app_email = "support@alvoraa.co"

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older. Nothing this app holds may be backed up: the device
+     secret and what the phone remembers stay on the phone (SEC-16, AC-221).
+     android:allowBackup="false" already stops it; this is the second lock. -->
+<full-backup-content>
+    <exclude domain="root" />
+    <exclude domain="file" />
+    <exclude domain="database" />
+    <exclude domain="sharedpref" />
+    <exclude domain="external" />
+</full-backup-content>

@@ -1,19 +1,20 @@
 # ── Kinexus HRMS – immutable application image ──────────────────────────────
 #
-# Builds the complete Frappe bench with all five apps and pre-built assets.
+# Builds the complete Frappe bench with all seven apps and pre-built assets
+# (frappe, erpnext, india_compliance, crm, hrms, alvoraa_goals, alvoraa_portal).
 # ONE image, run with five different commands (web / socketio / scheduler /
 # worker / provisioner). See ARCHITECTURE.md §5 and §12.1.
 #
 # Build:
 #   docker buildx build --platform linux/amd64,linux/arm64 \
-#     -f deploy/Dockerfile -t ghcr.io/<org>/hr-app:sha-abc1234 .
+#     -f deploy/Dockerfile -t ghcr.io/<org>/alvoraa-app:sha-abc1234 .
 #
 # The build context is the REPO ROOT (not deploy/), because the three
 # first-party apps are copied out of this repo — that is what closes gap G4,
 # where production silently ran upstream frappe/hrms instead of this fork.
 #
-# NOTE: `hrms/frappe-ui` is a git submodule. Clone with --recurse-submodules
-# or the PWA build fails.
+# NOTE: `hrms/frappe-ui` was once a git submodule. It is not any more (there is
+# no .gitmodules), so a plain clone builds. Corrected in slice 040.
 #
 # Optimisation left on the table: a two-stage build using frappe_docker's
 # `frappe/base` as the runtime layer produces a much smaller image. It requires
@@ -29,23 +30,61 @@ ARG ERPNEXT_BRANCH=version-16
 # subscription.py - so it is present in the image but installed on a site only
 # when the plan includes it.
 ARG INDIA_COMPLIANCE_BRANCH=version-16
+# Frappe CRM (frappe/crm): leads, deals, email, telephony - the standalone CRM,
+# sold as the `crm` feature in subscription.py. Present in the image, installed on
+# a site only when sold, and only AFTER that site's setup wizard has finished
+# (its setup_wizard_complete hook seeds fake users and leads otherwise).
+#
+# Pinned to a release TAG, not a branch. Its Vue frontend links @framework/ui to
+# apps/frappe/ui, so a moving branch could break every future image build with
+# no change on our side. Bump the tag on purpose, in one place (slice 040).
+ARG CRM_TAG=v1.84.0
+# Frappe WhatsApp (shridarpatil/frappe_whatsapp): Meta's WhatsApp Cloud API,
+# sold as the `whatsapp` feature in subscription.py. Present in the image,
+# installed on a site only when sold. No setup-wizard hook, so provisioning
+# installs it directly.
+#
+# Pinned to a COMMIT on master: the newest tag (v1.0.11, Nov 2025) predates
+# multi-account support, which only master has. Bump on purpose, in one place
+# (slice 042).
+ARG WHATSAPP_COMMIT=08bc1f6af2e3
 
 USER frappe
 WORKDIR /home/frappe
 
 ENV PATH="/home/frappe/.local/bin:${PATH}"
 
+# ── yarn's download cache stays OUT of the image ──────────────────────────────
+# Five of the steps below run `yarn install` (bench init, three get-apps and
+# setup requirements --node). Each one left its downloads in
+# /home/frappe/.cache/yarn, inside its own layer: 2.6 GB across the four layers of
+# the pre-CRM image, more with the CRM. A `yarn cache clean` at the end would not
+# help - a file deleted in a later layer still costs its bytes in the earlier one.
+# A BuildKit cache mount is the right tool: the directory exists only while the
+# step runs, is reused between builds on the same machine, and is never written to
+# a layer. uid/gid 1000 is the `frappe` user, or yarn cannot write to it.
+# (ALV-109. On 23 Sep 2026 the CRM build filled the GitHub runner's disk.)
 # ── 1. Bench + upstream apps, pinned by branch (pin by commit for prod) ─────
-RUN bench init --skip-redis-config-generation \
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench init --skip-redis-config-generation \
                --frappe-branch "${FRAPPE_BRANCH}" \
                frappe-bench
 
 WORKDIR /home/frappe/frappe-bench
 
-RUN bench get-app --branch "${ERPNEXT_BRANCH}" erpnext
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch "${ERPNEXT_BRANCH}" erpnext
 
 # Declares required_apps = ["frappe/erpnext"], so it must follow erpnext.
-RUN bench get-app --branch "${INDIA_COMPLIANCE_BRANCH}" https://github.com/resilient-tech/india-compliance
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch "${INDIA_COMPLIANCE_BRANCH}" https://github.com/resilient-tech/india-compliance
+
+# No required_apps of its own. get-app runs its pip install (adds twilio) and the
+# frontend's yarn install; the Vite build itself happens in step 4 below.
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch "${CRM_TAG}" https://github.com/frappe/crm
+
+# get-app cannot take a commit, so: fetch master, then pin. The editable pip
+# install get-app already did stays valid - the checkout changes files in place.
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch master https://github.com/shridarpatil/frappe_whatsapp \
+ && git -C apps/frappe_whatsapp checkout --quiet "${WHATSAPP_COMMIT}" \
+ && git -C apps/frappe_whatsapp log -1 --format='frappe_whatsapp pinned at %h (%cs)'
 
 # ── 2. First-party apps, copied from THIS commit ────────────────────────────
 COPY --chown=frappe:frappe hrms                 apps/hrms
@@ -57,7 +96,7 @@ RUN ./env/bin/pip install --no-cache-dir \
         -e apps/hrms \
         -e apps/alvoraa_goals \
         -e apps/alvoraa_portal \
- && printf 'frappe\nerpnext\nindia_compliance\nhrms\nalvoraa_goals\nalvoraa_portal\n' > sites/apps.txt
+ && printf 'frappe\nerpnext\nindia_compliance\ncrm\nfrappe_whatsapp\nhrms\nalvoraa_goals\nalvoraa_portal\n' > sites/apps.txt
 
 # ── 3b. Node dependencies for the copied apps ───────────────────────────────
 # `bench get-app` runs yarn install for the app it fetches. COPY does not, so the
@@ -67,7 +106,7 @@ RUN ./env/bin/pip install --no-cache-dir \
 # hrms/public/js/hierarchy_chart/hierarchy_chart_desktop.js - it was simply never
 # installed. `bench setup requirements --node` covers every app in apps.txt, so this
 # stays correct if a first-party app gains JS dependencies later.
-RUN bench setup requirements --node
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench setup requirements --node
 
 # ── 4. Bake assets: sites/assets + employee PWA + roster SPA ────────────────
 # Built one app at a time, deliberately.
@@ -89,6 +128,8 @@ RUN bench setup requirements --node
 RUN bench build --production --app frappe
 RUN bench build --production --app erpnext
 RUN bench build --production --app india_compliance
+RUN bench build --production --app crm
+RUN bench build --production --app frappe_whatsapp
 RUN bench build --production --app hrms
 RUN bench build --production --app alvoraa_goals
 RUN bench build --production --app alvoraa_portal

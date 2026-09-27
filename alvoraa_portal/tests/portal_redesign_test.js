@@ -2,8 +2,12 @@
    expand/collapse, floating toast, empty states, keyboard shortcut. */
 const fs = require("fs");
 const { JSDOM } = require("jsdom");
+const { readPortalSource } = require("../../scripts/lib/portal_source");
 
-const html = fs.readFileSync(process.argv[2], "utf8");
+// Follows the page's Jinja includes (slice 034 US-10, AC-37): the page
+// itself is now a short list of includes, so reading it alone would give
+// JSDOM a shell with none of the script this test exercises.
+const html = readPortalSource(process.argv[2]);
 const tree = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
 let pass = 0, fail = 0;
 const ok  = m => { pass++; console.log("  PASS  " + m); };
@@ -291,18 +295,32 @@ const vis = el => el && window.getComputedStyle(el).display !== "none" && !el.hi
     }
   }
 
-  // ── Scope: just me / department / organisation ─────────────────────
+  // ── Scope: just me / my team / department / organisation ───────────
+  //
+  // Slice 045: this block used to read `#tv-scope` as a <select> and call
+  // `.options` on it. The control is now four RADIOS with a hidden input
+  // behind them, so the old version crashed the moment it finally ran -
+  // `undefined is not iterable`. It was written against a layout the page no
+  // longer has, which is exactly what a skipped test hides. It now drives the
+  // control that exists.
   {
-    const sc = doc.getElementById("tv-scope");
-    if (!sc) { bad("no scope selector"); }
+    const hidden = doc.getElementById("tv-scope");
+    const radios = Array.from(
+      doc.querySelectorAll("input[name='tv-scope-radio']"));
+    if (!hidden || !radios.length) { bad("no scope control"); }
     else {
-      const vals = Array.from(sc.options).map(o => o.value);
-      ["mine", "department", "organisation"].every(v => vals.includes(v))
+      const vals = radios.map(r => r.value);
+      ["mine", "team", "department", "organisation"].every(v => vals.includes(v))
         ? ok(`scope offers ${vals.join(", ")}`)
         : bad("scope missing an option; has " + vals.join(", "));
 
       for (const want of ["mine", "department", "organisation"]) {
-        sc.value = want;
+        const radio = radios.find(r => r.value === want);
+        radio.checked = true;
+        // Through the page's own handler, not by writing the hidden input -
+        // otherwise this proves the test can set a value, not that pressing
+        // the control sends it.
+        window.tvSetScope(want);
         calls.length = 0;
         window.tvLoad();
         await settle(150);
@@ -314,8 +332,11 @@ const vis = el => el && window.getComputedStyle(el).display !== "none" && !el.hi
         ? ok("a non-default scope shows as a chip") : bad("no chip for scope");
       window.tvChipClear("scope");
       await settle(150);
-      sc.value === "team" ? ok("dismissing the scope chip returns to the default")
-                          : bad(`scope chip dismissal left "${sc.value}"`);
+      // "mine" is the default the markup ships checked. The old line here
+      // wanted "team", which was the default of an earlier layout.
+      hidden.value === "mine"
+        ? ok("dismissing the scope chip returns to the default")
+        : bad(`scope chip dismissal left "${hidden.value}"`);
     }
   }
 
@@ -406,22 +427,55 @@ const vis = el => el && window.getComputedStyle(el).display !== "none" && !el.hi
       body2.querySelector(".tv-incycle")
         ? ok("items already in the review are marked") : bad("no in-review marker");
 
-      // Everyone can nominate, so the control is not gated on can_edit.
-      const cycleBtns = body2.querySelectorAll('.tv-icon[aria-label="Toggle review cycle"]');
-      cycleBtns.length
-        ? ok(`every row offers a consider-in-cycle toggle (${cycleBtns.length})`)
-        : bad("no cycle toggle on any row");
+      // Slice 045: this block used to hunt for a row button labelled "Toggle
+      // review cycle". There is no such button any more, and its absence is
+      // DELIBERATE: slice 010 group D (R5) changed what "in review" means -
+      // it now means an open review holds a copy of this record, not that it
+      // is tagged to a cycle - so the row carries a badge rather than a
+      // switch. The test was asserting a control that was retired on purpose,
+      // which is what a skipped test lets you keep doing.
+      //
+      // What is worth testing is what R5 actually decided, so that is what is
+      // tested: the marker says the item is in a review, and it carries NO
+      // rating, NO review name and NO link, because those belong inside the
+      // review and not on a list everybody can see.
+      const badge = body2.querySelector(".tv-incycle");
+      if (!badge) { bad("no in-review marker on any row"); }
+      else {
+        ok("the in-review marker is a badge, not a switch (slice 010 R5)");
+        badge.querySelector("a") === null
+          ? ok("and it carries no link into the review")
+          : bad("the in-review badge links into the review");
+        // No rating and no review name. A DATE is fine and is the point of
+        // R5's wording - "updates dated after <day> do not change it" is what
+        // the badge is for. So this looks for the things that must not be
+        // there rather than for digits, which the first version did and which
+        // went red on the date.
+        /rating|score|out of|\/5/i.test(badge.textContent)
+          ? bad(`a rating reached the in-review badge: "${badge.textContent}"`)
+          : ok("and no rating travels with it");
+        /updates dated after/i.test(badge.textContent)
+          ? ok("it says what being in a review means for the owner (R5)")
+          : bad(`the badge does not explain itself: "${badge.textContent}"`);
+      }
 
+      // The nomination call itself still exists and still posts what the
+      // server expects. Driven through the function the page exposes, because
+      // that is the part that is real - a control that was removed on purpose
+      // is not a defect, and a broken call would be.
       calls.length = 0;
-      cycleBtns[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-      await settle(200);
-      const call = calls.find(c => c.fn === "set_cycle_membership");
-      if (call) {
-        const sent = JSON.parse(call.body || "{}");
-        (sent.kind && sent.name && sent.cycle !== undefined)
-          ? ok(`toggling posts set_cycle_membership (${sent.kind}, include=${sent.include})`)
-          : bad("bad membership payload: " + JSON.stringify(sent));
-      } else bad("cycle toggle did not call set_cycle_membership");
+      const anyGoal = (marked.roots && marked.roots[0]) || null;
+      if (anyGoal) {
+        window.tvToggleCycle("goal", anyGoal.name, "");
+        await settle(200);
+        const call = calls.find(c => c.fn === "set_cycle_membership");
+        if (call) {
+          const sent = JSON.parse(call.body || "{}");
+          (sent.kind && sent.name && sent.cycle !== undefined)
+            ? ok(`nominating posts set_cycle_membership (${sent.kind}, include=${sent.include})`)
+            : bad("bad membership payload: " + JSON.stringify(sent));
+        } else bad("tvToggleCycle did not call set_cycle_membership");
+      }
 
       setTreeOverride(null);
       window.tvLoad();

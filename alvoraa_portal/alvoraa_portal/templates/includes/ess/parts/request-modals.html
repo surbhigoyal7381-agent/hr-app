@@ -1,0 +1,90 @@
+    <!-- ── Leave Application Modal ──────────────────────── -->
+    <div class="gp-backdrop" id="la-modal">
+      <div class="gp-modal" style="max-width:500px">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Apply for Leave</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('la-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="la-error" style="display:none;margin-bottom:12px;padding:10px 12px;background:var(--red-lt,var(--red-lt));color:var(--red,var(--red));border-radius:var(--r-sm);font-size:var(--fs-base)"></div>
+          <!-- HR on-behalf selector (hidden for regular employees) -->
+          <div class="gp-field" id="la-behalf-row" style="display:none">
+            <div class="gp-label">Apply on behalf of</div>
+            <div style="position:relative">
+              <input class="gp-input" id="la-behalf-search" type="text" placeholder="Search by name or employee ID…" autocomplete="off" oninput="laSearchEmployee(this.value)" style="padding-right:32px">
+              <div id="la-behalf-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);box-shadow:var(--sh2);max-height:200px;overflow-y:auto;z-index:1000"></div>
+            </div>
+            <input type="hidden" id="la-behalf-employee">
+            <div id="la-behalf-selected" style="display:none;margin-top:6px;font-size:var(--fs-sm);color:var(--text3)"></div>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Leave Type *</div>
+            <select class="gp-input" id="la-leave-type" onchange="laPreview()">
+              <option value="">Loading…</option>
+            </select>
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">From Date *</div>
+              <input class="gp-input" id="la-from-date" type="date" onchange="laPreview()">
+            </div>
+            <div class="gp-field" id="la-to-date-row">
+              <div class="gp-label">To Date *</div>
+              <input class="gp-input" id="la-to-date" type="date" onchange="laPreview()">
+            </div>
+          </div>
+          <!-- Balance preview. Filled by laPreview() from preview_leave_request, which
+               reuses Frappe HR's own day-count and balance functions. -->
+          <div id="la-preview" style="display:none;margin:2px 0 10px;padding:9px 12px;border-radius:var(--r-sm);font-size:var(--fs-sm);line-height:1.5"></div>
+          <div class="gp-field" style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+            <input type="checkbox" id="la-half-day" onchange="laToggleHalfDay(); laPreview()" style="width:16px;height:16px;accent-color:var(--primary);cursor:pointer">
+            <label for="la-half-day" style="font-size:var(--fs-base);font-weight:500;color:var(--text);cursor:pointer;margin:0">Half Day</label>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Reason</div>
+            <textarea class="gp-input" id="la-reason" rows="3" placeholder="Optional – describe the reason for your leave…" style="resize:vertical;min-height:72px"></textarea>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('la-modal')">Cancel</button>
+          <button class="btn btn-primary" id="la-submit-btn" onclick="submitLeaveApp()">Submit Application</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Expense Claim Modal ───────────────────────── -->
+    <div class="gp-backdrop" id="ec-modal">
+      <div class="gp-modal" style="max-width:480px">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">New Expense Claim</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('ec-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="ec-error" style="display:none;margin-bottom:12px;padding:10px 12px;background:var(--red-lt,var(--red-lt));color:var(--red,var(--red));border-radius:var(--r-sm);font-size:var(--fs-base)"></div>
+          <div class="gp-field">
+            <div class="gp-label">Expense Type *</div>
+            <select class="gp-input" id="ec-expense-type">
+              <option value="">Loading…</option>
+            </select>
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Expense Date *</div>
+              <input class="gp-input" id="ec-expense-date" type="date">
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Amount (₹) *</div>
+              <input class="gp-input" id="ec-amount" type="number" step="0.01" min="0.01" placeholder="0.00">
+            </div>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Purpose / Description</div>
+            <textarea class="gp-input" id="ec-description" rows="3" placeholder="Brief description of the expense…" style="resize:vertical;min-height:72px"></textarea>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('ec-modal')">Cancel</button>
+          <button class="btn btn-primary" id="ec-submit-btn" onclick="submitExpenseClaim()">Submit Claim</button>
+        </div>
+      </div>
+    </div>

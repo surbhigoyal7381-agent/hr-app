@@ -16,6 +16,8 @@ from frappe import _
 from frappe.utils import add_days, getdate, nowdate
 from frappe.utils.synchronization import filelock
 
+from hrms.alvoraa_hr_core.features import late_rules_on
+
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
@@ -238,7 +240,13 @@ def _process_week(rule, week_start, week_end, commit_every, commit):
 
 
 def process_previous_week():
-	"""Scheduler: every enabled rule, the week that ended yesterday or earlier."""
+	"""Scheduler: every enabled rule, the week that ended yesterday or earlier.
+
+	Does nothing at all unless HR has switched late coming and early exit rules on
+	in Organisation Settings. Deductions already made stay as they are.
+	"""
+	if not late_rules_on():
+		return {"skipped": "late rules are switched off"}
 	for name in frappe.get_all("Attendance Deduction Rule", filters={"enabled": 1}, pluck="name"):
 		rule = frappe.get_doc("Attendance Deduction Rule", name)
 		this_week = week_start_for(nowdate(), rule.week_start_day)
@@ -253,6 +261,12 @@ def run_for_range(rule, from_date, to_date):
 	"""HR: process every week that starts inside the range (used to catch up)."""
 	if not ({"HR Manager", "System Manager", "Administrator"} & set(frappe.get_roles())):
 		frappe.throw(_("Only HR Managers can run the attendance deduction rule."), frappe.PermissionError)
+	if not late_rules_on():
+		frappe.throw(
+			_(
+				"Late coming and early exit rules are switched off for this organisation. Switch them on in Organisation Settings, under Attendance rules, then run the rule again."
+			)
+		)
 	rule_doc = frappe.get_doc("Attendance Deduction Rule", rule)
 	if not rule_doc.enabled:
 		frappe.throw(_("Rule {0} is disabled.").format(rule))

@@ -1,0 +1,996 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alvoraa field app · Material 3 redesign · prototype v1 (27 Sep 2026)</title>
+<!--
+  PROTOTYPE, NOT PRODUCT CODE. Slice 013, UX redesign on Material Design 3.
+  Every name, time and place in here is SAMPLE data. No tenant data.
+  The block marked "APP TOKENS" and "APP COMPONENTS" is written to be lifted
+  into mobile/field-app/web/css/app.css almost as is (see 01d-ux-redesign-m3.md).
+  The block marked "REVIEW SCAFFOLDING" is only for this page.
+-->
+<style>
+/* =====================================================================
+   APP TOKENS  (Material 3 system tokens, Alvoraa values)
+   Colour roles are set per tenant and theme by script (setPalette below),
+   exactly as the app would do from the tenant's brand colour. The values
+   here are the Alvoraa default (seed #5B4B8A, the portal's --primary),
+   light theme, so the app never paints without a palette.
+   ===================================================================== */
+.app {
+  /* colour roles: Alvoraa default, light */
+  --md-sys-color-primary:#64558f; --md-sys-color-on-primary:#ffffff;
+  --md-sys-color-primary-container:#e8ddff; --md-sys-color-on-primary-container:#4c3e76;
+  --md-sys-color-secondary:#615b71; --md-sys-color-on-secondary:#ffffff;
+  --md-sys-color-secondary-container:#e8def8; --md-sys-color-on-secondary-container:#494458;
+  --md-sys-color-tertiary:#7d5261; --md-sys-color-on-tertiary:#ffffff;
+  --md-sys-color-tertiary-container:#ffd9e3; --md-sys-color-on-tertiary-container:#633b49;
+  --md-sys-color-error:#ba1a1a; --md-sys-color-on-error:#ffffff;
+  --md-sys-color-error-container:#ffdad6; --md-sys-color-on-error-container:#93000a;
+  --md-sys-color-surface:#fdf7ff; --md-sys-color-on-surface:#1c1b20; --md-sys-color-on-surface-variant:#48454e;
+  --md-sys-color-surface-container-lowest:#ffffff; --md-sys-color-surface-container-low:#f8f2fa;
+  --md-sys-color-surface-container:#f2ecf4; --md-sys-color-surface-container-high:#ece6ee;
+  --md-sys-color-surface-container-highest:#e6e1e9;
+  --md-sys-color-outline:#79757f; --md-sys-color-outline-variant:#cac4cf;
+  --md-sys-color-inverse-surface:#322f35; --md-sys-color-inverse-on-surface:#f5eff7; --md-sys-color-inverse-primary:#cebdfe;
+  --md-sys-color-scrim:#000000;
+  /* fixed meaning colours: the same for every tenant, so green always means "done" */
+  --alv-success:#216a4d; --alv-on-success:#ffffff; --alv-success-container:#a9f2cc; --alv-on-success-container:#005237;
+  --alv-warning:#815512; --alv-warning-container:#ffddb6; --alv-on-warning-container:#643f00;
+
+  /* type scale: M3, in px times the person's text size (--s). Nothing under 12 px. */
+  --s:1;
+  --font:"Roboto Flex",Roboto,"Noto Sans","Noto Sans Devanagari","Noto Sans Gurmukhi",system-ui,sans-serif;
+  --display-s:calc(36px*var(--s)); --display-s-lh:calc(44px*var(--s));
+  --headline-m:calc(28px*var(--s)); --headline-m-lh:calc(36px*var(--s));
+  --headline-s:calc(24px*var(--s)); --headline-s-lh:calc(32px*var(--s));
+  --title-l:calc(22px*var(--s)); --title-l-lh:calc(28px*var(--s));
+  --title-m:calc(16px*var(--s)); --title-m-lh:calc(24px*var(--s));
+  --title-s:calc(14px*var(--s)); --title-s-lh:calc(20px*var(--s));
+  --body-l:calc(16px*var(--s)); --body-l-lh:calc(24px*var(--s));
+  --body-m:calc(14px*var(--s)); --body-m-lh:calc(20px*var(--s));
+  --label-l:calc(14px*var(--s)); --label-m:calc(12px*var(--s));
+
+  /* shape (corner radius) */
+  --shape-xs:4px; --shape-s:8px; --shape-m:12px; --shape-l:16px; --shape-xl:28px; --shape-full:999px;
+  /* spacing: 4 px grid; 16 px screen margin on phones */
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-8:32px;
+  /* elevation: M3 levels 1-3 (M3 mostly shows depth with surface tones, not shadows) */
+  --elev-1:0 1px 2px rgba(0,0,0,.30),0 1px 3px 1px rgba(0,0,0,.15);
+  --elev-2:0 1px 2px rgba(0,0,0,.30),0 2px 6px 2px rgba(0,0,0,.15);
+  --elev-3:0 4px 8px 3px rgba(0,0,0,.15),0 1px 3px rgba(0,0,0,.30);
+  /* motion */
+  --ease:cubic-bezier(.2,0,0,1); --dur:250ms;
+  /* touch */
+  --target:48px;
+}
+
+/* =====================================================================
+   APP COMPONENTS
+   ===================================================================== */
+.app { font-family:var(--font); color:var(--md-sys-color-on-surface); background:var(--md-sys-color-surface);
+       font-size:var(--body-l); line-height:var(--body-l-lh); -webkit-font-smoothing:antialiased; }
+.app * { box-sizing:border-box; }
+.app h1,.app h2,.app h3,.app p { margin:0; }
+.app .screen { display:flex; flex-direction:column; height:100%; min-height:0; }
+.app .content { flex:1; overflow-y:auto; padding:0 var(--sp-4) var(--sp-6); min-height:0; }
+.app .content.center { display:flex; flex-direction:column; justify-content:center; }
+.app .actions { padding:var(--sp-3) var(--sp-4) var(--sp-4); display:flex; flex-direction:column; gap:var(--sp-2);
+                background:var(--md-sys-color-surface); }
+.app .actions.raised { background:var(--md-sys-color-surface-container); box-shadow:0 -1px 0 var(--md-sys-color-outline-variant); }
+.app .actions.row { flex-direction:row; } .app .actions.row > * { flex:1; }
+
+/* type roles */
+.t-display-s { font-size:var(--display-s); line-height:var(--display-s-lh); font-weight:400; letter-spacing:0; }
+.t-headline-m { font-size:var(--headline-m); line-height:var(--headline-m-lh); font-weight:400; }
+.t-headline-s { font-size:var(--headline-s); line-height:var(--headline-s-lh); font-weight:400; }
+.t-title-l { font-size:var(--title-l); line-height:var(--title-l-lh); font-weight:400; }
+.t-title-m { font-size:var(--title-m); line-height:var(--title-m-lh); font-weight:500; letter-spacing:.15px; }
+.t-title-s { font-size:var(--title-s); line-height:var(--title-s-lh); font-weight:500; letter-spacing:.1px; }
+.t-body-l { font-size:var(--body-l); line-height:var(--body-l-lh); }
+.t-body-m { font-size:var(--body-m); line-height:var(--body-m-lh); }
+.t-label-m { font-size:var(--label-m); line-height:1.35; font-weight:500; letter-spacing:.5px; }
+.muted { color:var(--md-sys-color-on-surface-variant); }
+.stack > * + * { margin-top:var(--sp-2); } .stack-4 > * + * { margin-top:var(--sp-4); }
+.gap-top { margin-top:var(--sp-4); } .gap-top-l { margin-top:var(--sp-6); }
+
+/* icons: 24 px Material Symbols shapes, inline SVG */
+.ic { width:24px; height:24px; flex:none; fill:currentColor; }
+.ic.s20 { width:20px; height:20px; } .ic.s32 { width:32px; height:32px; } .ic.s40 { width:40px; height:40px; }
+
+/* top app bar (small) */
+.top-bar { display:flex; align-items:center; gap:var(--sp-1); min-height:64px; padding:var(--sp-2) var(--sp-1); flex:none; }
+.top-bar .title { flex:1; min-width:0; padding:0 var(--sp-3); font-size:var(--title-l); line-height:var(--title-l-lh); font-weight:400;
+                  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; }
+.top-bar .title small { display:block; font-size:var(--body-m); line-height:var(--body-m-lh); font-weight:400; color:var(--md-sys-color-on-surface-variant); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.top-bar.brand .title { padding-left:var(--sp-2); }
+.brand-mark { width:40px; height:40px; border-radius:var(--shape-m); background:var(--md-sys-color-primary); color:var(--md-sys-color-on-primary);
+              display:flex; align-items:center; justify-content:center; font-weight:700; font-size:16px; flex:none; margin-left:var(--sp-3); }
+.top-bar.on-dark { color:#fff; }
+
+/* icon button: 48 px target */
+.icon-btn { position:relative; width:var(--target); height:var(--target); border:0; border-radius:var(--shape-full); background:none;
+            color:inherit; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; flex:none; }
+/* labelled action in the top bar (words beside icons, principle 2) */
+.bar-action { position:relative; min-height:var(--target); border:0; background:none; color:var(--md-sys-color-on-surface-variant); cursor:pointer;
+              display:inline-flex; align-items:center; gap:6px; padding:0 var(--sp-3); border-radius:var(--shape-full);
+              font:500 var(--label-l)/1.2 var(--font); flex:none; }
+
+/* buttons: M3 Expressive sizes. M = 56 px (every normal action). L = 96 px (Check In / Check Out only). */
+.btn { position:relative; display:inline-flex; align-items:center; justify-content:center; gap:var(--sp-2);
+       min-height:56px; padding:var(--sp-2) var(--sp-6); border-radius:var(--shape-full); border:0; cursor:pointer;
+       font:500 var(--title-m)/1.25 var(--font); letter-spacing:.15px; text-align:center; overflow:hidden;
+       transition:border-radius var(--dur) var(--ease); }
+.btn.block { width:100%; }
+.btn.filled { background:var(--md-sys-color-primary); color:var(--md-sys-color-on-primary); }
+.btn.tonal { background:var(--md-sys-color-secondary-container); color:var(--md-sys-color-on-secondary-container); }
+.btn.outlined { background:transparent; color:var(--md-sys-color-primary); box-shadow:inset 0 0 0 1px var(--md-sys-color-outline); }
+.btn.text { background:transparent; color:var(--md-sys-color-primary); padding:var(--sp-2) var(--sp-3); }
+.btn.danger { background:var(--md-sys-color-error); color:var(--md-sys-color-on-error); }
+.btn.text.danger-text { color:var(--md-sys-color-error); }
+.btn.large { min-height:96px; border-radius:var(--shape-xl); font-size:var(--headline-s); line-height:1.2; font-weight:500; gap:var(--sp-3); }
+.btn.large .ic { width:32px; height:32px; }
+.btn:active { border-radius:var(--shape-m); }            /* M3 Expressive shape morph on press */
+.btn.large:active { border-radius:var(--shape-l); }
+/* state layer */
+.btn::after,.icon-btn::after,.bar-action::after,.list-item.link::after,.check-row::after { content:""; position:absolute; inset:0;
+       border-radius:inherit; background:currentColor; opacity:0; transition:opacity 120ms; pointer-events:none; }
+.btn:hover::after,.icon-btn:hover::after,.bar-action:hover::after,.list-item.link:hover::after,.check-row:hover::after { opacity:.08; }
+.btn:active::after,.icon-btn:active::after,.list-item.link:active::after,.check-row:active::after { opacity:.12; }
+.app :focus-visible { outline:3px solid var(--md-sys-color-primary); outline-offset:2px; }
+
+/* cards */
+.card { border-radius:var(--shape-m); padding:var(--sp-4); overflow-wrap:anywhere; }
+.card.filled { background:var(--md-sys-color-surface-container-highest); }
+.card.elevated { background:var(--md-sys-color-surface-container-low); box-shadow:var(--elev-1); }
+.card.outlined { background:var(--md-sys-color-surface); box-shadow:inset 0 0 0 1px var(--md-sys-color-outline-variant); }
+.card.flush { padding:var(--sp-1) 0; }
+.card.success { background:var(--alv-success-container); color:var(--alv-on-success-container); }
+.card.warning { background:var(--alv-warning-container); color:var(--alv-on-warning-container); }
+.card.error { background:var(--md-sys-color-error-container); color:var(--md-sys-color-on-error-container); }
+.card.info { background:var(--md-sys-color-secondary-container); color:var(--md-sys-color-on-secondary-container); }
+.card.tertiary { background:var(--md-sys-color-tertiary-container); color:var(--md-sys-color-on-tertiary-container); }
+.card-row { display:flex; gap:var(--sp-3); align-items:flex-start; }
+.card-row .ic { margin-top:2px; }
+
+/* status card on Home */
+.status { border-radius:var(--shape-xl); padding:var(--sp-5); display:flex; flex-direction:column; gap:var(--sp-2); }
+.status.idle { background:var(--md-sys-color-surface-container-high); }
+.status.in { background:var(--alv-success-container); color:var(--alv-on-success-container); }
+.status.out { background:var(--md-sys-color-secondary-container); color:var(--md-sys-color-on-secondary-container); }
+.status .state { display:flex; align-items:center; gap:var(--sp-2); font:500 var(--title-m)/var(--title-m-lh) var(--font); }
+.status .big { font-size:var(--headline-m); line-height:var(--headline-m-lh); }
+.status .rule { display:flex; gap:var(--sp-2); align-items:flex-start; font-size:var(--body-m); line-height:var(--body-m-lh);
+                padding-top:var(--sp-3); margin-top:var(--sp-1); border-top:1px solid color-mix(in srgb,currentColor 20%,transparent); }
+
+/* lists */
+.list { list-style:none; margin:0; padding:0; }
+.list-item { position:relative; display:flex; align-items:center; gap:var(--sp-4); min-height:56px; padding:var(--sp-2) var(--sp-4);
+             width:100%; background:none; border:0; color:inherit; font:inherit; text-align:left; }
+.list-item.two { min-height:72px; }
+.list-item.link { cursor:pointer; }
+.list-item .lead { color:var(--md-sys-color-on-surface-variant); display:flex; }
+.list-item .txt { flex:1; min-width:0; }
+.list-item .hl { font-size:var(--body-l); line-height:var(--body-l-lh); }
+.list-item .sup { font-size:var(--body-m); line-height:var(--body-m-lh); color:var(--md-sys-color-on-surface-variant); }
+.list-item .trail { color:var(--md-sys-color-on-surface-variant); font-size:var(--body-l); flex:none; }
+.list-item.danger .hl,.list-item.danger .lead { color:var(--md-sys-color-error); }
+.list .divider { height:1px; background:var(--md-sys-color-outline-variant); margin:0 var(--sp-4); }
+.section-h { font:500 var(--title-s)/var(--title-s-lh) var(--font); color:var(--md-sys-color-primary); padding:var(--sp-4) var(--sp-4) var(--sp-1); }
+.thumb { width:40px; height:40px; border-radius:var(--shape-s); background:linear-gradient(160deg,#8d7f73,#3b322c); flex:none; }
+
+/* icon bubble: the one picture on a message screen (colour AND icon AND words) */
+.bubble { width:72px; height:72px; border-radius:var(--shape-xl); display:flex; align-items:center; justify-content:center; flex:none; }
+.bubble.sm { width:40px; height:40px; border-radius:var(--shape-full); }
+.bubble.sm .ic { width:22px; height:22px; }
+.bubble .ic { width:36px; height:36px; }
+.tone-primary { background:var(--md-sys-color-primary-container); color:var(--md-sys-color-on-primary-container); }
+.tone-secondary { background:var(--md-sys-color-secondary-container); color:var(--md-sys-color-on-secondary-container); }
+.tone-neutral { background:var(--md-sys-color-surface-container-highest); color:var(--md-sys-color-on-surface-variant); }
+.tone-success { background:var(--alv-success-container); color:var(--alv-on-success-container); }
+.tone-warning { background:var(--alv-warning-container); color:var(--alv-on-warning-container); }
+.tone-error { background:var(--md-sys-color-error-container); color:var(--md-sys-color-on-error-container); }
+
+/* outlined text field, label always shown on the border (never a placeholder-only label) */
+.field { position:relative; margin-top:var(--sp-5); }
+.field input { width:100%; min-height:56px; padding:var(--sp-4) var(--sp-4); border:0; border-radius:var(--shape-xs);
+               background:transparent; color:var(--md-sys-color-on-surface); font:400 calc(16px*var(--s))/1.4 var(--font);
+               box-shadow:inset 0 0 0 1px var(--md-sys-color-outline); outline:none; }
+.field input:focus { box-shadow:inset 0 0 0 2px var(--md-sys-color-primary); }
+.field label { position:absolute; left:12px; top:-9px; padding:0 4px; background:var(--md-sys-color-surface);
+               font:400 calc(12px*var(--s))/1.4 var(--font); color:var(--md-sys-color-on-surface-variant); }
+.field input:focus + label { color:var(--md-sys-color-primary); }
+.field.has-trail input { padding-right:56px; }
+.field .trail-btn { position:absolute; right:4px; top:4px; color:var(--md-sys-color-on-surface-variant); }
+.field.err input { box-shadow:inset 0 0 0 2px var(--md-sys-color-error); } .field.err label { color:var(--md-sys-color-error); }
+.support { font-size:var(--body-m); line-height:var(--body-m-lh); color:var(--md-sys-color-on-surface-variant); padding:var(--sp-1) var(--sp-4) 0; }
+.support.err { color:var(--md-sys-color-error); display:flex; gap:6px; }
+.field input.code { font-size:calc(28px*var(--s)); letter-spacing:.3em; text-align:center; font-variant-numeric:tabular-nums; }
+.fixed-value { display:flex; align-items:center; gap:var(--sp-3); min-height:56px; padding:0 var(--sp-2) 0 var(--sp-4); margin-top:var(--sp-5);
+               border-radius:var(--shape-m); background:var(--md-sys-color-surface-container-high); }
+
+/* checkbox row: the whole row is the target */
+.check-row { position:relative; display:flex; align-items:center; gap:var(--sp-3); min-height:56px; padding:var(--sp-1) var(--sp-3) var(--sp-1) var(--sp-1);
+             border-radius:var(--shape-m); cursor:pointer; font:500 var(--body-l)/var(--body-l-lh) var(--font); }
+.check-row .box { width:48px; height:48px; display:flex; align-items:center; justify-content:center; flex:none; }
+.check-row .box span { width:22px; height:22px; border-radius:3px; box-shadow:inset 0 0 0 2px var(--md-sys-color-on-surface-variant);
+                       display:flex; align-items:center; justify-content:center; color:var(--md-sys-color-on-primary); }
+.check-row[aria-checked="true"] .box span { background:var(--md-sys-color-primary); box-shadow:none; }
+.check-row[aria-checked="false"] .box span svg { display:none; }
+.check-row.err .box span { box-shadow:inset 0 0 0 2px var(--md-sys-color-error); }
+
+/* notice rows */
+.notice-row { display:flex; gap:var(--sp-4); padding:var(--sp-4) 0; }
+.notice-row + .notice-row { border-top:1px solid var(--md-sys-color-outline-variant); }
+.notice-row h3 { font:500 var(--title-m)/var(--title-m-lh) var(--font); }
+.notice-row p { margin-top:2px; }
+
+/* progress */
+.spinner { width:48px; height:48px; border-radius:50%; border:4px solid var(--md-sys-color-secondary-container);
+           border-top-color:var(--md-sys-color-primary); animation:spin 1s linear infinite; flex:none; }
+.spinner.sm { width:24px; height:24px; border-width:3px; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.linear { height:4px; border-radius:2px; background:var(--md-sys-color-secondary-container); overflow:hidden; position:relative; }
+.linear::before { content:""; position:absolute; inset:0 60% 0 0; background:var(--md-sys-color-primary); border-radius:2px; animation:lin 1.6s var(--ease) infinite; }
+@keyframes lin { 0% { transform:translateX(-100%); } 100% { transform:translateX(260%); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration:3s; } .linear::before { animation:none; inset:0 40% 0 0; } .btn { transition:none; } }
+.step { display:flex; align-items:center; gap:var(--sp-4); min-height:48px; }
+.step .dot { width:24px; height:24px; display:flex; align-items:center; justify-content:center; flex:none; }
+.step.done { color:var(--md-sys-color-on-surface-variant); } .step.todo { color:var(--md-sys-color-on-surface-variant); opacity:.75; }
+.step.now { font-weight:500; }
+
+/* skeleton */
+.skel { background:var(--md-sys-color-surface-container-highest); border-radius:var(--shape-s); }
+
+/* numbered steps on problem screens */
+.steps { counter-reset:st; list-style:none; padding:0; margin:0; }
+.steps li { counter-increment:st; display:flex; gap:var(--sp-3); padding:var(--sp-2) 0; }
+.steps li::before { content:counter(st); width:28px; height:28px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center;
+                    background:var(--md-sys-color-secondary-container); color:var(--md-sys-color-on-secondary-container); font:500 var(--label-l)/1 var(--font); }
+.code-for-hr { overflow-wrap:anywhere; font-size:var(--label-m); color:var(--md-sys-color-on-surface-variant); text-align:center; padding-top:var(--sp-2); letter-spacing:.3px; }
+
+/* scrim, dialog, bottom sheet, snackbar */
+.scrim { position:absolute; inset:0; background:color-mix(in srgb,var(--md-sys-color-scrim) 40%,transparent); display:flex; z-index:20; }
+.dialog { margin:auto var(--sp-6); background:var(--md-sys-color-surface-container-high); border-radius:var(--shape-xl); padding:var(--sp-6);
+          box-shadow:var(--elev-3); max-height:85%; overflow:auto; }
+.dialog h2 { font-size:var(--headline-s); line-height:var(--headline-s-lh); margin-bottom:var(--sp-4); }
+.dialog .dlg-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:var(--sp-2); margin-top:var(--sp-6); }
+.sheet { margin-top:auto; width:100%; background:var(--md-sys-color-surface-container-low); border-radius:var(--shape-xl) var(--shape-xl) 0 0;
+         padding:0 var(--sp-4) var(--sp-4); box-shadow:var(--elev-1); max-height:92%; overflow:auto; }
+.sheet .handle { width:32px; height:4px; border-radius:2px; background:var(--md-sys-color-on-surface-variant); opacity:.4; margin:var(--sp-4) auto var(--sp-5); }
+.sheet h2 { font-size:var(--headline-s); line-height:var(--headline-s-lh); margin-bottom:var(--sp-2); }
+.snackbar { position:absolute; left:var(--sp-3); right:var(--sp-3); bottom:calc(var(--sp-4) + 16px); z-index:30; min-height:48px;
+            display:flex; align-items:center; gap:var(--sp-2); padding:var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4); border-radius:var(--shape-xs);
+            background:var(--md-sys-color-inverse-surface); color:var(--md-sys-color-inverse-on-surface); box-shadow:var(--elev-3);
+            font-size:var(--body-m); line-height:var(--body-m-lh); }
+.snackbar .btn.text { color:var(--md-sys-color-inverse-primary); min-height:48px; }
+
+/* camera */
+.cam { position:relative; flex:1; background:#000; color:#fff; overflow:hidden; display:flex; flex-direction:column; }
+.cam .feed { position:absolute; inset:0; background:radial-gradient(ellipse at 50% 38%,#6b5d52 0,#3a322c 45%,#141110 100%); }
+.cam .feed svg.person { position:absolute; left:50%; top:46%; transform:translate(-50%,-50%); width:62%; opacity:.55; }
+.cam .feed.still { filter:saturate(.9) brightness(1.05); }
+.cam .top-bar { position:relative; z-index:2; background:linear-gradient(rgba(0,0,0,.55),transparent); }
+.cam .hint { position:relative; z-index:2; align-self:center; margin-top:var(--sp-2); background:rgba(0,0,0,.6); color:#fff; border-radius:var(--shape-s);
+             padding:var(--sp-2) var(--sp-4); font-size:var(--body-m); text-align:center; max-width:90%; }
+.cam .bottom { position:relative; z-index:2; margin-top:auto; padding:var(--sp-5) var(--sp-4) var(--sp-5);
+               background:linear-gradient(transparent,rgba(0,0,0,.7) 35%); display:flex; flex-direction:column; align-items:center; gap:var(--sp-3); }
+.shutter { width:80px; height:80px; border-radius:50%; border:4px solid #fff; background:rgba(255,255,255,.25); cursor:pointer; position:relative; }
+.shutter::before { content:""; position:absolute; inset:6px; border-radius:50%; background:#fff; }
+.shutter:active::before { inset:10px; }
+.cam .caption { font:500 var(--title-m)/1.3 var(--font); }
+.cam .small { font-size:var(--body-m); opacity:.9; text-align:center; }
+.viewfinder { position:absolute; left:50%; top:44%; width:62%; aspect-ratio:1; transform:translate(-50%,-50%); z-index:1; border-radius:var(--shape-l);
+              box-shadow:0 0 0 999px rgba(0,0,0,.45); }
+.viewfinder::before,.viewfinder::after { content:""; position:absolute; inset:-3px; border-radius:var(--shape-l); border:4px solid #fff;
+              clip-path:polygon(0 0,28% 0,28% 6%,6% 6%,6% 28%,0 28%,0 72%,6% 72%,6% 94%,28% 94%,28% 100%,72% 100%,72% 94%,94% 94%,94% 72%,100% 72%,100% 28%,94% 28%,94% 6%,72% 6%,72% 0,100% 0,100% 100%,0 100%); }
+.btn.on-dark { background:rgba(255,255,255,.18); color:#fff; }
+.btn.on-dark-filled { background:#fff; color:#1c1b20; }
+
+/* ============================ BEFORE (today's look, copied from web/css/app.css) ============================ */
+.old { font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; font-size:17px; line-height:1.5; color:#1c1b1a; background:#f8f6f3; padding:16px; height:100%; overflow:auto; }
+.old section { background:#fff; border:1px solid #ddd8d2; border-radius:12px; padding:14px; margin:0; }
+.old h1 { font-size:22px; margin:0; } .old h2 { font-size:18px; margin:0 0 6px; } .old p { margin:6px 0; }
+.old .small { color:#55524e; font-size:15px; }
+.old button { display:block; width:100%; min-height:60px; margin-top:10px; font-size:18px; font-weight:600; color:#fff; background:#1d4ed8; border:0; border-radius:12px; }
+.old button.primary-green { background:#1a7f37; } .old button.link { background:none; color:#1d4ed8; min-height:44px; width:auto; text-align:left; padding:0; }
+.old .card { background:#f8f6f3; border:1px solid #ddd8d2; border-radius:10px; padding:12px; margin:10px 0; }
+.old .top-bar { display:flex; justify-content:space-between; align-items:center; }
+.old .status-line { display:flex; align-items:center; gap:8px; font-size:19px; font-weight:700; margin:10px 0; color:#55524e; }
+.old .status-dot { width:12px; height:12px; border-radius:50%; background:#55524e; }
+.old .punch-row { display:flex; justify-content:space-between; font-size:15px; color:#55524e; padding:4px 0; border-top:1px solid #ddd8d2; }
+.old .tick-row { display:flex; gap:10px; margin:12px 0; } .old .tick-row input { width:24px; height:24px; }
+.old .topbar { color:#55524e; font-size:15px; }
+
+/* =====================================================================
+   REVIEW SCAFFOLDING  (this page only; wraps, never sticky)
+   ===================================================================== */
+body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:#eceae6; color:#1f1d1a; }
+body.dark-page { background:#1b1a19; color:#eee; }
+.review { display:flex; flex-wrap:wrap; gap:24px; padding:16px; align-items:flex-start; justify-content:center; }
+.panel { flex:1 1 300px; max-width:420px; min-width:0; background:#fff; border-radius:12px; padding:14px 16px; box-shadow:0 1px 3px rgba(0,0,0,.12); }
+body.dark-page .panel { background:#2a2826; }
+.panel h1 { font-size:18px; margin:0 0 4px; } .panel p { font-size:14px; margin:4px 0; line-height:1.45; }
+.panel .grp { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#6d6760; margin:14px 0 6px; }
+.panel .opts { display:flex; flex-wrap:wrap; gap:6px; }
+.panel button { font:500 14px/1.2 system-ui,sans-serif; min-height:36px; padding:6px 10px; border-radius:8px; border:1px solid #c9c3b9; background:#fff; color:#1f1d1a; cursor:pointer; }
+body.dark-page .panel button { background:#34312e; color:#eee; border-color:#555; }
+.panel button[aria-pressed="true"] { background:#5B4B8A; color:#fff; border-color:#5B4B8A; }
+.panel .scr button { min-height:32px; font-size:13px; }
+.sample-tag { display:inline-block; background:#ffddb6; color:#643f00; font:700 12px/1 system-ui; padding:4px 8px; border-radius:6px; }
+.note { margin-top:10px; padding:10px 12px; border-radius:8px; background:#f3f0fa; font-size:13.5px; line-height:1.45; }
+body.dark-page .note { background:#34304a; }
+.stage { display:flex; flex-direction:column; align-items:center; gap:8px; }
+.phone { position:relative; width:360px; height:780px; border-radius:36px; background:#111; padding:10px; box-shadow:0 10px 30px rgba(0,0,0,.25); }
+.phone .app, .phone .old { position:relative; width:100%; height:100%; border-radius:28px; overflow:hidden; display:flex; flex-direction:column; }
+.phone .old { display:block; }
+.sysbar { height:28px; flex:none; display:flex; align-items:center; justify-content:space-between; padding:0 20px; font:500 13px/1 system-ui; color:var(--md-sys-color-on-surface); }
+.sysbar.dark { color:#fff; background:#000; }
+.gesture { height:18px; flex:none; display:flex; align-items:center; justify-content:center; }
+.gesture::before { content:""; width:108px; height:4px; border-radius:2px; background:var(--md-sys-color-on-surface); opacity:.4; }
+.gesture.dark { background:#000; } .gesture.dark::before { background:#fff; }
+.appwrap { flex:1; min-height:0; position:relative; display:flex; flex-direction:column; }
+.stage .caption-under { font-size:13px; color:#6d6760; max-width:360px; text-align:center; }
+@media (max-width:420px) { .phone { width:100%; max-width:360px; padding:6px; border-radius:30px; } }
+</style>
+</head>
+<body>
+<div class="review">
+  <div class="panel" id="panel">
+    <h1>Alvoraa field app · Material 3 redesign</h1>
+    <p>Prototype v1 · 27 Sep 2026 · for Surbhi to click. Tap buttons inside the phone to move through each flow, or jump to any screen below.</p>
+    <p><span class="sample-tag">Sample data</span> Every name, time, place and colour marked "Sample" is invented. PP Jewellers' black brand colour is the real setting on the local copy.</p>
+    <div class="grp">Theme</div><div class="opts" id="opt-theme"></div>
+    <div class="grp">Company (brand colour)</div><div class="opts" id="opt-tenant"></div>
+    <div class="grp">Text size (Android font size)</div><div class="opts" id="opt-scale"></div>
+    <div class="grp">Phone width</div><div class="opts" id="opt-width"></div>
+    <div class="grp">Language (Home and check-in only)</div><div class="opts" id="opt-lang"></div>
+    <div class="grp">Compare</div><div class="opts" id="opt-before"></div>
+    <div id="screen-groups"></div>
+    <div class="note" id="screen-note"></div>
+  </div>
+  <div class="stage">
+    <div class="phone" id="phone"></div>
+    <div class="caption-under" id="caption"></div>
+  </div>
+</div>
+<script>
+(function () {
+"use strict";
+
+/* ---------- palettes: generated with Google's material-color-utilities 0.3.0
+   (SchemeTonalSpot; SchemeMonochrome when the brand colour has almost no colour,
+   e.g. PP Jewellers' black). The app does the same at runtime from brand_colour. */
+var PAL = {"alvoraa_light":{"primary":"#64558f","on-primary":"#ffffff","primary-container":"#e8ddff","on-primary-container":"#4c3e76","secondary":"#615b71","on-secondary":"#ffffff","secondary-container":"#e8def8","on-secondary-container":"#494458","tertiary":"#7d5261","on-tertiary":"#ffffff","tertiary-container":"#ffd9e3","on-tertiary-container":"#633b49","error":"#ba1a1a","on-error":"#ffffff","error-container":"#ffdad6","on-error-container":"#93000a","surface":"#fdf7ff","on-surface":"#1c1b20","on-surface-variant":"#48454e","surface-container-lowest":"#ffffff","surface-container-low":"#f8f2fa","surface-container":"#f2ecf4","surface-container-high":"#ece6ee","surface-container-highest":"#e6e1e9","outline":"#79757f","outline-variant":"#cac4cf","inverse-surface":"#322f35","inverse-on-surface":"#f5eff7","inverse-primary":"#cebdfe"},"alvoraa_dark":{"primary":"#cebdfe","on-primary":"#35275d","primary-container":"#4c3e76","on-primary-container":"#e8ddff","secondary":"#cbc3dc","on-secondary":"#332e41","secondary-container":"#494458","on-secondary-container":"#e8def8","tertiary":"#efb8c9","on-tertiary":"#492532","tertiary-container":"#633b49","on-tertiary-container":"#ffd9e3","error":"#ffb4ab","on-error":"#690005","error-container":"#93000a","on-error-container":"#ffdad6","surface":"#141218","on-surface":"#e6e1e9","on-surface-variant":"#cac4cf","surface-container-lowest":"#0f0d13","surface-container-low":"#1c1b20","surface-container":"#211f24","surface-container-high":"#2b292f","surface-container-highest":"#36343a","outline":"#938f99","outline-variant":"#48454e","inverse-surface":"#e6e1e9","inverse-on-surface":"#322f35","inverse-primary":"#64558f"},"ppj_light":{"primary":"#000000","on-primary":"#e2e2e2","primary-container":"#3b3b3b","on-primary-container":"#ffffff","secondary":"#5e5e5e","on-secondary":"#ffffff","secondary-container":"#d4d4d4","on-secondary-container":"#1b1b1b","tertiary":"#3b3b3b","on-tertiary":"#e2e2e2","tertiary-container":"#747474","on-tertiary-container":"#ffffff","error":"#ba1a1a","on-error":"#ffffff","error-container":"#ffdad6","on-error-container":"#410002","surface":"#f9f9f9","on-surface":"#1b1b1b","on-surface-variant":"#474747","surface-container-lowest":"#ffffff","surface-container-low":"#f3f3f3","surface-container":"#eeeeee","surface-container-high":"#e8e8e8","surface-container-highest":"#e2e2e2","outline":"#777777","outline-variant":"#c6c6c6","inverse-surface":"#303030","inverse-on-surface":"#f1f1f1","inverse-primary":"#c6c6c6"},"ppj_dark":{"primary":"#ffffff","on-primary":"#1b1b1b","primary-container":"#d4d4d4","on-primary-container":"#000000","secondary":"#c6c6c6","on-secondary":"#1b1b1b","secondary-container":"#474747","on-secondary-container":"#e2e2e2","tertiary":"#e2e2e2","on-tertiary":"#1b1b1b","tertiary-container":"#919191","on-tertiary-container":"#000000","error":"#ffb4ab","on-error":"#690005","error-container":"#93000a","on-error-container":"#ffdad6","surface":"#131313","on-surface":"#e2e2e2","on-surface-variant":"#c6c6c6","surface-container-lowest":"#0e0e0e","surface-container-low":"#1b1b1b","surface-container":"#1f1f1f","surface-container-high":"#2a2a2a","surface-container-highest":"#353535","outline":"#919191","outline-variant":"#474747","inverse-surface":"#e2e2e2","inverse-on-surface":"#303030","inverse-primary":"#5e5e5e"},"sargam_light":{"primary":"#2b638b","on-primary":"#ffffff","primary-container":"#cce5ff","on-primary-container":"#054b71","secondary":"#51606f","on-secondary":"#ffffff","secondary-container":"#d4e4f6","on-secondary-container":"#394857","tertiary":"#66587b","on-tertiary":"#ffffff","tertiary-container":"#ecdcff","on-tertiary-container":"#4e4162","error":"#ba1a1a","on-error":"#ffffff","error-container":"#ffdad6","on-error-container":"#93000a","surface":"#f7f9ff","on-surface":"#181c20","on-surface-variant":"#42474e","surface-container-lowest":"#ffffff","surface-container-low":"#f1f4f9","surface-container":"#ebeef3","surface-container-high":"#e6e8ee","surface-container-highest":"#e0e2e8","outline":"#72787e","outline-variant":"#c2c7ce","inverse-surface":"#2d3135","inverse-on-surface":"#eef1f6","inverse-primary":"#98ccf9"},"sargam_dark":{"primary":"#98ccf9","on-primary":"#003351","primary-container":"#054b71","on-primary-container":"#cce5ff","secondary":"#b8c8da","on-secondary":"#23323f","secondary-container":"#394857","on-secondary-container":"#d4e4f6","tertiary":"#d1bfe7","on-tertiary":"#372a4a","tertiary-container":"#4e4162","on-tertiary-container":"#ecdcff","error":"#ffb4ab","on-error":"#690005","error-container":"#93000a","on-error-container":"#ffdad6","surface":"#101418","on-surface":"#e0e2e8","on-surface-variant":"#c2c7ce","surface-container-lowest":"#0b0f12","surface-container-low":"#181c20","surface-container":"#1c2024","surface-container-high":"#272a2e","surface-container-highest":"#313539","outline":"#8c9198","outline-variant":"#42474e","inverse-surface":"#e0e2e8","inverse-on-surface":"#2d3135","inverse-primary":"#2b638b"}};
+var FIXED = {
+  light: { "alv-success":"#216a4d","alv-on-success":"#ffffff","alv-success-container":"#a9f2cc","alv-on-success-container":"#005237",
+           "alv-warning":"#815512","alv-warning-container":"#ffddb6","alv-on-warning-container":"#643f00" },
+  dark:  { "alv-success":"#8ed5b1","alv-on-success":"#003825","alv-success-container":"#005237","alv-on-success-container":"#a9f2cc",
+           "alv-warning":"#f6bc70","alv-warning-container":"#643f00","alv-on-warning-container":"#ffddb6" }
+};
+
+var TENANTS = {
+  ppj: { key:"ppj", company:"PP Jewellers", mark:"PJ", code:"ppj", seedNote:"Brand colour #000000 (black), the real setting on the local copy. Black gives a grey palette, not pink: see D-M3-5.",
+         workplace:"PPJ Head Office Chandigarh", radius:200, person:"Arjun Kumar", first:"Arjun", initial:"K", job:"Sales Executive", host:"ppj.alvoraa.co" },
+  sargam: { key:"sargam", company:"Sargam Metals", mark:"SM", code:"sargam", seedNote:"Brand colour #1A6FA3 is a Sample colour.",
+         workplace:"Sargam Works Gate 2", radius:100, person:"Ravi Singh", first:"Ravi", initial:"S", job:"Machine Operator", host:"sargam.alvoraa.co" },
+  alvoraa: { key:"alvoraa", company:"Alvoraa Demo Co", mark:"AD", code:"demo", seedNote:"Alvoraa's own purple #5B4B8A (the portal's --primary). Used before the app knows the company.",
+         workplace:"Demo Office Noida", radius:150, person:"Neha Sharma", first:"Neha", initial:"S", job:"Accounts Assistant", host:"demo.alvoraa.co" }
+};
+
+var st = { theme:"light", tenant:"ppj", scale:1, width:360, lang:"en", before:false, screen:"signin",
+           tick:false, tickErr:false, showPw:false, rule:"radius" };
+
+/* ---------- icons (Material Symbols shapes, 24 px) ---------- */
+var P = {
+  back:"M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z",
+  close:"M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
+  check:"M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
+  checkCircle:"M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z",
+  settings:"M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z",
+  pin:"M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z",
+  camera:"M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4zM9 2 7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z",
+  clock:"M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z",
+  eyeOff:"M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78 3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z",
+  eye:"M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z",
+  help:"M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z",
+  group:"M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z",
+  hourglass:"M6 2v6h.01L6 8.01 10 12l-4 4 .01.01H6V22h12v-5.99h-.01L18 16l-4-4 4-3.99-.01-.01H18V2H6zm10 14.5V20H8v-3.5l4-4 4 4zm-4-5-4-4V4h8v3.5l-4 4z",
+  shield:"M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z",
+  login:"M11 7 9.6 8.4l2.6 2.6H2v2h10.2l-2.6 2.6L11 17l5-5-5-5zm9 12h-8v2h8c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-8v2h8v14z",
+  logout:"M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z",
+  wifiOff:"M23.64 7c-.45-.34-4.93-4-11.64-4-1.5 0-2.89.19-4.15.48L18.18 13.8 23.64 7zm-6.6 8.22L3.27 1.44 2 2.72l2.05 2.06C1.91 5.76.59 6.82.36 7l11.63 14.49.01.01.01-.01 3.9-4.86 3.32 3.32 1.27-1.27-3.46-3.46z",
+  gps:"M20.94 11c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z",
+  block:"M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4 12c0-4.42 3.58-8 8-8 1.85 0 3.55.63 4.9 1.69L5.69 16.9C4.63 15.55 4 13.85 4 12zm8 8c-1.85 0-3.55-.63-4.9-1.69L18.31 7.1C19.37 8.45 20 10.15 20 12c0 4.42-3.58 8-8 8z",
+  phone:"M17 1.01 7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z",
+  update:"M17 1.01 7 1c-1.1 0-1.99.9-1.99 2v18c0 1.1.89 2 1.99 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14zm-1-6h-3V8h-2v5H8l4 4 4-4z",
+  error:"M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z",
+  lock:"M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z",
+  info:"M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z",
+  image:"M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z",
+  qr:"M9.5 6.5v3h-3v-3h3M11 5H5v6h6V5zm-1.5 9.5v3h-3v-3h3M11 13H5v6h6v-6zm6.5-6.5v3h-3v-3h3M19 5h-6v6h6V5zm-6 8h1.5v1.5H13V13zm1.5 1.5H16V16h-1.5v-1.5zM16 13h1.5v1.5H16V13zm-3 3h1.5v1.5H13V16zm1.5 1.5H16V19h-1.5v-1.5zM16 16h1.5v1.5H16V16zm1.5-1.5H19V16h-1.5v-1.5zm0 3H19V19h-1.5v-1.5zM22 7h-2V4h-3V2h5v5zm0 15v-5h-2v3h-3v2h5zM2 22h5v-2H4v-3H2v5zM2 2v5h2V4h3V2H2z",
+  chevron:"M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z",
+  store:"M12 7V3H2v18h20V7H12zM6 19H4v-2h2v2zm0-4H4v-2h2v2zm0-4H4V9h2v2zm0-4H4V5h2v2zm4 12H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V9h2v2zm0-4H8V5h2v2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8v10zm-2-8h-2v2h2v-2zm0 4h-2v2h2v-2z",
+  person:"M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z",
+  refresh:"M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z",
+  del:"M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z",
+  doc:"M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z",
+  globe:"M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z",
+  mail:"M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z",
+  key:"M12.65 10A5.99 5.99 0 0 0 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6a5.99 5.99 0 0 0 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z",
+  undo:"M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z",
+  bolt:"M7 2v11h3v9l7-12h-4l4-8z"
+};
+function ic(name, cls) { return '<svg class="ic ' + (cls || "") + '" viewBox="0 0 24 24" aria-hidden="true"><path d="' + P[name] + '"/></svg>'; }
+function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]; }); }
+
+/* ---------- words: English, and machine-drafted Hindi for Home and check-in only ---------- */
+var HI = {
+  "Settings":"सेटिंग्स", "Not checked in yet":"अभी चेक इन नहीं किया", "Checked in":"चेक इन हो गया", "Checked out":"चेक आउट हो गया",
+  "since":"से", "at":"बजे", "Check In":"चेक इन", "Check Out":"चेक आउट", "Today":"आज",
+  "No check-ins yet today.":"आज अभी कोई चेक इन नहीं।",
+  "Check in within {r} m of {w}":"{w} के {r} मीटर के अंदर चेक इन करें",
+  "Check in from anywhere":"कहीं से भी चेक इन करें",
+  "Your location is still saved with each check-in.":"हर चेक इन के साथ आपकी लोकेशन सेव होती है।",
+  "A photo and your location are taken when you press the button.":"बटन दबाने पर एक फ़ोटो और आपकी लोकेशन ली जाती है।",
+  "Good morning, {n}":"सुप्रभात, {n}", "Saturday 27 September":"शनिवार 27 सितंबर",
+  "Done":"ठीक है", "Only HR and your manager can see this.":"इसे सिर्फ़ HR और आपके मैनेजर देख सकते हैं।",
+  "Saved in your HR record":"आपके HR रिकॉर्ड में सेव हो गया", "Photo taken":"फ़ोटो ली गई",
+  "At {w}":"{w} पर", "Within {r} m · accuracy {a} m":"{r} मीटर के अंदर · सटीकता {a} मीटर"
+};
+function t(s, vars) {
+  var out = (st.lang === "hi" && HI[s]) ? HI[s] : s;
+  if (vars) Object.keys(vars).forEach(function (k) { out = out.split("{" + k + "}").join(vars[k]); });
+  return out;
+}
+function L() { return st.lang === "hi" ? ' lang="hi"' : ""; }
+function T() { return TENANTS[st.tenant]; }
+
+/* ---------- builders ---------- */
+function btn(label, o) {
+  o = o || {};
+  var cls = "btn " + (o.kind || "filled") + (o.block === false ? "" : " block") + (o.size === "large" ? " large" : "") + (o.extra ? " " + o.extra : "");
+  var act = o.go ? ' data-go="' + o.go + '"' : (o.act ? ' data-act="' + o.act + '"' : "");
+  return '<button type="button" class="' + cls + '"' + act + '>' + (o.icon ? ic(o.icon) : "") + '<span>' + esc(label) + '</span></button>';
+}
+function topBar(o) {
+  o = o || {};
+  var h = '<header class="top-bar' + (o.brand ? " brand" : "") + (o.onDark ? " on-dark" : "") + '">';
+  if (o.back) h += '<button type="button" class="icon-btn" aria-label="' + (o.backLabel || "Back") + '" data-go="' + o.back + '">' + ic("back") + '</button>';
+  if (o.close) h += '<button type="button" class="icon-btn" aria-label="' + (o.closeLabel || "Cancel") + '" data-go="' + o.close + '">' + ic("close") + '</button>';
+  if (o.brand) h += '<div class="brand-mark" aria-hidden="true">' + esc(T().mark) + '</div>';
+  h += '<h1 class="title">' + esc(o.title || "") + (o.sub ? '<small>' + esc(o.sub) + '</small>' : "") + '</h1>';
+  // At the largest text sizes the word would push the company name out, so the button keeps
+  // only its icon and its spoken name (the one documented exception to "words beside icons").
+  if (o.settings) h += st.scale >= 1.5
+    ? '<button type="button" class="icon-btn" data-go="settings" aria-label="' + t("Settings") + '">' + ic("settings") + '</button>'
+    : '<button type="button" class="bar-action" data-go="settings">' + ic("settings", "s20") + '<span' + L() + '>' + t("Settings") + '</span></button>';
+  return h + '</header>';
+}
+function bubble(icon, tone, sm) { return '<div class="bubble ' + (sm ? "sm " : "") + "tone-" + tone + '">' + ic(icon) + '</div>'; }
+function li(o) {
+  var tag = o.go || o.act ? "button" : "div";
+  var attrs = o.go ? ' type="button" data-go="' + o.go + '"' : (o.act ? ' type="button" data-act="' + o.act + '"' : "");
+  return '<li><' + tag + attrs + ' class="list-item' + (o.sup ? " two" : "") + (o.go || o.act ? " link" : "") + (o.danger ? " danger" : "") + '">'
+    + (o.lead ? '<span class="lead">' + o.lead + '</span>' : "")
+    + '<span class="txt"><span class="hl" style="display:block">' + o.hl + '</span>' + (o.sup ? '<span class="sup" style="display:block">' + o.sup + '</span>' : "") + '</span>'
+    + (o.trail ? '<span class="trail">' + o.trail + '</span>' : "") + '</' + tag + '></li>';
+}
+function codeForHr(code) { return '<p class="code-for-hr">Code for HR: ' + esc(code) + '</p>'; }
+
+/* One template for every problem screen: picture, heading, words, optional card and
+   numbered steps, then the buttons in the thumb zone and the code for HR at the very bottom. */
+function problem(o) {
+  return (o.bar ? o.bar : topBar({ brand:true, title:T().company, settings:!!o.settings }))
+    + '<div class="content"><div class="stack-4" style="padding-top:8px">'
+    + bubble(o.icon, o.tone)
+    + '<h2 class="t-headline-s">' + esc(o.heading) + '</h2>'
+    + '<p class="t-body-l">' + o.body + '</p>'
+    + (o.steps ? '<ol class="steps">' + o.steps.map(function (s) { return "<li>" + s + "</li>"; }).join("") + "</ol>" : "")
+    + (o.card || "")
+    + '</div></div>'
+    + '<div class="actions">' + (o.buttons || "") + codeForHr(o.code) + '</div>';
+}
+function photoKept(extra) {
+  return '<div class="card info card-row">' + ic("camera") + '<p class="t-body-m">Your photo is kept.' + (extra ? " " + extra : "") + '</p></div>';
+}
+function busy(label, sub) {
+  return '<div class="content center" style="align-items:center;text-align:center;gap:24px" role="status" aria-live="polite">'
+    + '<div class="spinner" aria-hidden="true"></div><p class="t-title-l">' + esc(label) + '</p>' + (sub ? '<p class="t-body-m muted">' + sub + '</p>' : "") + '</div>';
+}
+
+/* ---------- the notice: the server's words, unchanged (version 2026-09-22) ---------- */
+function noticeRows() {
+  var days = 90; // Sample: the tenant's retention setting
+  return [
+    ["camera", "What we record", "A photo of you, where you are, and the time — only when you press Check In or Check Out. When you set up: this phone's model name."],
+    ["eyeOff", "What we do not record", "Nothing between punches. You are not tracked while you work."],
+    ["help", "Why", "To mark your attendance, and to confirm you were at your workplace."],
+    ["group", "Who can see it", "HR and your manager. Not your colleagues."],
+    ["hourglass", "How long", "Check-in photos are kept for " + days + " days, then deleted."],
+    ["shield", "Your rights", "Ask HR to see what was recorded about you, or to correct it."]
+  ].map(function (r) {
+    return '<div class="notice-row">' + bubble(r[0], "secondary", true) + '<div><h3>' + r[1] + '</h3><p class="t-body-l muted">' + r[2] + '</p></div></div>';
+  }).join("");
+}
+function noticeScreen(o) {
+  var tn = T();
+  var err = st.tickErr && !st.tick;
+  return topBar({ back:o.back, title:o.title, sub: tn.company + " · " + tn.first + " " + tn.initial + ". · " + tn.job })
+    + '<div class="content">'
+    + (o.lead || "")
+    + '<p class="t-body-l">' + o.intro + '</p>'
+    + '<div class="card outlined" style="margin-top:16px;padding:0 16px">' + noticeRows() + '</div>'
+    + '<p class="t-body-m muted gap-top">Notice version 2026-09-22</p>'
+    + '</div>'
+    + '<div class="actions raised">'
+    + (err ? '<p class="support err" role="alert" style="padding:0 4px">' + ic("error", "s20") + 'Please tick the box to show you have read the notice.</p>' : "")
+    + '<div class="check-row' + (err ? " err" : "") + '" role="checkbox" tabindex="0" aria-checked="' + st.tick + '" data-act="tick"><span class="box"><span>' + ic("check", "s20") + '</span></span><span>I have read this and I understand.</span></div>'
+    + btn(o.agree, { act:o.agreeAct })
+    + '</div>';
+}
+
+/* ---------- Home ---------- */
+function homeScreen(kind) {
+  var tn = T();
+  var inside = kind === "in", out = kind === "out";
+  var rule = st.rule === "anywhere"
+    ? '<div class="rule">' + ic("globe", "s20") + '<span' + L() + '><b>' + t("Check in from anywhere") + '</b><br>' + t("Your location is still saved with each check-in.") + '</span></div>'
+    : '<div class="rule">' + ic("pin", "s20") + '<span' + L() + '>' + t("Check in within {r} m of {w}", { r: tn.radius, w: tn.workplace }) + '</span></div>';
+  var status;
+  if (kind === "idle") status = '<section class="status idle" aria-live="polite"><div class="state">' + ic("clock") + '<span' + L() + '>' + t("Today") + '</span></div><p class="big"' + L() + '>' + t("Not checked in yet") + '</p>' + rule + '</section>';
+  if (inside) status = '<section class="status in" aria-live="polite"><div class="state">' + ic("checkCircle") + '<span' + L() + '>' + t("Checked in") + '</span></div><p class="big"' + L() + '>' + (st.lang === "hi" ? "सुबह 9:12 " + t("since") : "since 9:12 am") + '</p>' + rule + '</section>';
+  if (out) status = '<section class="status out" aria-live="polite"><div class="state">' + ic("logout") + '<span' + L() + '>' + t("Checked out") + '</span></div><p class="big"' + L() + '>' + (st.lang === "hi" ? "शाम 6:14 " + t("at") : "at 6:14 pm") + '</p>' + rule + '</section>';
+  var punches = kind === "idle" ? '<p class="t-body-m muted" style="padding:8px 0"' + L() + '>' + t("No check-ins yet today.") + '</p>'
+    : '<ul class="list card outlined flush">'
+      + li({ lead: ic("login"), hl: '<span' + L() + '>' + t("Checked in") + '</span>', trail: "9:12 am" })
+      + (out ? '<li class="divider" aria-hidden="true"></li>' + li({ lead: ic("logout"), hl: '<span' + L() + '>' + t("Checked out") + '</span>', trail: "6:14 pm" }) : "")
+      + '</ul>';
+  var camOff = kind === "camoff"
+    ? '<div class="card warning card-row gap-top">' + ic("camera") + '<div><p class="t-body-m">The camera is off. You can still check in, but there will be no photo.</p>' + btn("Turn on the camera", { kind:"text", block:false, extra:"", act:"toast-cam" }) + '</div></div>' : "";
+  if (kind === "camoff") status = status || "";
+  var label = inside ? t("Check Out") : t("Check In");
+  return topBar({ brand:true, title:tn.company, sub:tn.person, settings:true })
+    + '<div class="content">'
+    + '<p class="t-title-l" style="margin:4px 0 2px"' + L() + '>' + t("Good morning, {n}", { n: tn.first }) + '</p>'
+    + '<p class="t-body-m muted" style="margin-bottom:16px"' + L() + '>' + t("Saturday 27 September") + '</p>'
+    + (kind === "camoff" ? '<section class="status idle"><div class="state">' + ic("clock") + '<span>Today</span></div><p class="big">Not checked in yet</p>' + rule + '</section>' : status)
+    + camOff
+    + '<h2 class="t-title-s muted" style="margin:20px 0 8px"' + L() + '>' + t("Today") + '</h2>'
+    + punches
+    + '<p class="t-body-m muted gap-top" style="display:flex;gap:8px"' + L() + '>' + ic("camera", "s20") + t("A photo and your location are taken when you press the button.") + '</p>'
+    + '</div>'
+    + '<div class="actions">'
+    + btn(label, { size:"large", icon: inside ? "logout" : "login", go: inside ? "camera" : (kind === "idle" ? "locExplain" : "camera") })
+    + '</div>';
+}
+
+function resultScreen(kind) {
+  var tn = T();
+  var outp = kind === "out";
+  var anywhere = kind === "anywhere";
+  var locHl = anywhere ? "About 13.2 km from " + tn.workplace : t("At {w}", { w: tn.workplace });
+  var locSup = anywhere ? "You may check in from anywhere · accuracy 14 m" : t("Within {r} m · accuracy {a} m", { r: tn.radius, a: 14 });
+  return '<div class="content" style="padding-top:24px">'
+    + '<div role="status" aria-live="polite" class="stack-4" style="text-align:center;display:flex;flex-direction:column;align-items:center">'
+    + bubble("checkCircle", "success")
+    + '<h2 class="t-headline-m"' + L() + '>' + (outp ? t("Checked out") : t("Checked in")) + '</h2>'
+    + '<p class="t-display-s" style="margin-top:0">' + (outp ? "6:14 pm" : "9:12 am") + '</p>'
+    + '<p class="t-body-l muted" style="margin-top:0"' + L() + '>' + t("Saturday 27 September") + '</p>'
+    + '</div>'
+    + '<ul class="list card outlined flush gap-top-l">'
+    + li({ lead: ic(anywhere ? "globe" : "pin"), hl: '<span' + L() + '>' + esc(locHl) + '</span>', sup: '<span' + L() + '>' + esc(locSup) + '</span>' })
+    + '<li class="divider" aria-hidden="true"></li>'
+    + li({ lead: '<span class="thumb" role="img" aria-label="Your photo"></span>', hl: '<span' + L() + '>' + t("Photo taken") + '</span>' })
+    + '<li class="divider" aria-hidden="true"></li>'
+    + li({ lead: ic("shield"), hl: '<span' + L() + '>' + t("Saved in your HR record") + '</span>' })
+    + '</ul>'
+    + '<p class="t-body-m muted gap-top" style="text-align:center"' + L() + '>' + t("Only HR and your manager can see this.") + '</p>'
+    + '</div>'
+    + '<div class="actions">' + btn(t("Done"), { go: outp ? "homeOut" : "homeIn" }) + '</div>';
+}
+
+/* ---------- every screen ---------- */
+var S = {};
+function add(id, group, label, note, render) { S[id] = { group:group, label:label, note:note, render:render }; }
+
+/* --- 1. Sign in --- */
+function signinForm(o) {
+  o = o || {};
+  var tn = T();
+  var company = o.remembered
+    ? '<div class="fixed-value">' + ic("store") + '<div style="flex:1"><div class="t-label-m muted">Company code</div><div class="t-body-l">' + tn.code + '</div></div>' + btn("Change", { kind:"text", block:false, act:"noop" }) + '</div>'
+    : '<div class="field"><input id="f-co" autocapitalize="none" spellcheck="false" value="' + (o.filled ? tn.code : "") + '" aria-describedby="h-co"><label for="f-co">Company code</label></div>'
+      + '<p class="support" id="h-co">The short name HR gave you, for example <b>' + tn.code + '</b>. You type it only once.</p>';
+  var pwErr = o.err === "pw";
+  return '<header class="top-bar"><div class="brand-mark" aria-hidden="true" style="background:var(--md-sys-color-primary)">A</div><h1 class="title t-title-m" style="font-weight:500">Alvoraa Attendance</h1></header>'
+    + '<div class="content">'
+    + '<h2 class="t-headline-m" style="margin-top:8px">Sign in</h2>'
+    + '<p class="t-body-l muted" style="margin-top:4px">Use the same email and password as your company\'s Alvoraa website.</p>'
+    + (o.banner || "")
+    + company
+    + '<div class="field"><input id="f-em" type="email" autocomplete="username" value="' + (o.filled ? "arjun.k@example.in" : "") + '"><label for="f-em">Work email</label></div>'
+    + '<div class="field has-trail' + (pwErr ? " err" : "") + '"><input id="f-pw" type="' + (st.showPw ? "text" : "password") + '" autocomplete="current-password" value=""' + (pwErr ? ' aria-invalid="true" aria-describedby="e-pw"' : "") + '><label for="f-pw">Password</label>'
+    + '<button type="button" class="icon-btn trail-btn" data-act="showpw" aria-label="' + (st.showPw ? "Hide password" : "Show password") + '" aria-pressed="' + st.showPw + '">' + ic(st.showPw ? "eyeOff" : "eye") + '</button></div>'
+    + (pwErr ? '<p class="support err" id="e-pw">' + ic("error", "s20") + 'Type your password again.</p>' : "")
+    + '<div class="stack gap-top-l">'
+    + btn("Sign in", { act: o.signAct || "signin" })
+    + '<div style="display:flex;align-items:center;gap:12px;margin:8px 0"><span style="flex:1;height:1px;background:var(--md-sys-color-outline-variant)"></span><span class="t-body-m muted">or</span><span style="flex:1;height:1px;background:var(--md-sys-color-outline-variant)"></span></div>'
+    + btn("I have a joining code", { kind: o.codeFirst ? "filled" : "outlined", icon:"qr", go:"joinFirst" })
+    + '</div></div>';
+}
+function errBanner(icon, text, code, tone) {
+  return '<div class="card ' + (tone || "error") + ' card-row gap-top" role="alert" tabindex="-1">' + ic(icon) + '<div><p class="t-body-m">' + text + '</p><p class="t-label-m" style="margin-top:6px;opacity:.85">Code for HR: ' + code + '</p></div></div>';
+}
+add("signin", "1 · Sign in", "Sign in (first time)", "The first screen. Company code, work email, password. The two ways in are both visible; sign-in leads because most staff have a login. Buttons sit in the thumb zone and scroll up with the keyboard.", function () { return signinForm(); });
+add("signinRemembered", "1 · Sign in", "Sign in (company remembered)", "Second time on this phone: the company code is shown, not asked again, with Change.", function () { return signinForm({ remembered:true }); });
+add("signinWrong", "1 · Sign in", "Wrong password", "SIGN_IN_FAILED. One message for a wrong email or a wrong password (the server says the same for both, on purpose). The password box is emptied and marked; the email stays.", function () {
+  return signinForm({ remembered:true, filled:true, err:"pw", banner: errBanner("error", "That email and password do not match. Check them and try again. If you forgot your password, reset it on your company's Alvoraa website.", "SIGN_IN_FAILED") });
+});
+add("signinLocked", "1 · Sign in", "Account locked", "ACCOUNT_LOCKED with the wait from the server. Lock icon, not the error icon: nothing is broken, it is a wait.", function () {
+  return signinForm({ remembered:true, filled:true, banner: errBanner("lock", "Too many wrong tries, so your account is locked for now. Wait 5 minutes, then try again, or reset your password on the website.", "ACCOUNT_LOCKED", "warning") });
+});
+add("signinNetLock", "1 · Sign in", "Network locked (proposed words)", "NETWORK_LOCKED. Today's words: \"Too many sign-in attempts from this network. Try again later.\" Proposed: name the likely cause (a shop Wi-Fi shared by everyone on day one) and a way out. Needs security to agree: see D-M3-6.", function () {
+  return signinForm({ remembered:true, filled:true, banner: errBanner("wifiOff", "Too many people signed in from this network in the last hour. Try again later, or turn off Wi-Fi and use your mobile data.", "NETWORK_LOCKED", "warning") });
+});
+add("signinPwOff", "1 · Sign in", "Password sign-in switched off", "PASSWORD_SIGNIN_OFF. The joining-code button becomes the main (filled) button, because it is now the only way in.", function () {
+  return signinForm({ remembered:true, filled:true, codeFirst:true, banner: errBanner("info", "Signing in with an email and password is switched off for your company. Ask HR for a joining code, then press \"I have a joining code\".", "PASSWORD_SIGNIN_OFF", "info") });
+});
+add("signingIn", "1 · Sign in", "Signing you in", "Busy state. Shows at once (under 300 ms) so a slow 3G call never looks frozen.", function () { return busy("Signing you in", "This can take a few seconds on a slow connection."); });
+add("otp", "1 · Sign in", "One-time code", "Two-factor sign-in. One large box (codes can be 6 to 12 digits, from SMS, email or an app), numbers keypad, Android autofill. The line under the heading is the server's own prompt.", function () {
+  return topBar({ back:"signin", backLabel:"Start again", title:"" })
+    + '<div class="content"><div class="stack-4">' + bubble("key", "primary")
+    + '<h2 class="t-headline-m">Type the code you were sent</h2>'
+    + '<p class="t-body-l muted">We sent a code to a•••@example.in <span class="sample-tag">Sample</span></p>'
+    + '<div class="field"><input class="code" inputmode="numeric" autocomplete="one-time-code" value="4 8 2" aria-label="Code"><label>Code</label></div>'
+    + '</div></div><div class="actions">' + btn("Continue", { go:"signinNotice" }) + btn("Start again", { kind:"text", go:"signin" }) + '</div>';
+});
+add("otpWrong", "1 · Sign in", "One-time code: wrong", "OTP_WRONG. Error under the box, box marked, focus stays in the box.", function () {
+  return topBar({ back:"signin", backLabel:"Start again", title:"" })
+    + '<div class="content"><div class="stack-4">' + bubble("key", "primary")
+    + '<h2 class="t-headline-m">Type the code you were sent</h2>'
+    + '<p class="t-body-l muted">We sent a code to a•••@example.in <span class="sample-tag">Sample</span></p>'
+    + '<div class="field err"><input class="code" inputmode="numeric" value="4 8 2 9 1 7" aria-invalid="true" aria-describedby="e-otp"><label>Code</label></div>'
+    + '<p class="support err" id="e-otp" style="margin-top:0">' + ic("error", "s20") + 'That code is not right. Check it and try again.</p>'
+    + '<p class="code-for-hr" style="text-align:left">Code for HR: OTP_WRONG</p>'
+    + '</div></div><div class="actions">' + btn("Continue", { go:"signinNotice" }) + btn("Start again", { kind:"text", go:"signin" }) + '</div>';
+});
+add("pwChanged", "1 · Sign in", "Signed out: password changed", "PASSWORD_CHANGED_SIGN_IN_AGAIN (26 Sep design change). Not red: the person did nothing wrong. The company is remembered; only email and password are asked.", function () {
+  return signinForm({ remembered:true, banner: errBanner("info", "<b>Your password was changed. Please sign in again.</b><br>Use your new password. Attendance you already marked is safe.", "PASSWORD_CHANGED_SIGN_IN_AGAIN", "info") });
+});
+
+/* --- 2. Joining code --- */
+add("joinFirst", "2 · Joining code", "Join with a code", "The QR way in, second to sign-in. Words kept from today's screen, tightened into one heading and a short list.", function () {
+  return topBar({ back:"signin", title:"" })
+    + '<div class="content"><div class="stack-4">' + bubble("qr", "primary")
+    + '<h2 class="t-headline-m">Join with a code from HR</h2>'
+    + '<p class="t-body-l">Your HR team gives you a QR code. Scan it once to join your company.</p>'
+    + '<ul class="list card filled flush">' + li({ lead: ic("check"), hl:"You do not need an email address or a password." }) + '<li class="divider" aria-hidden="true"></li>' + li({ lead: ic("help"), hl:"No QR code yet? Ask HR to invite you to the Alvoraa app." }) + '</ul>'
+    + '</div></div><div class="actions">' + btn("Scan the QR code from HR", { icon:"qr", go:"camExplain" }) + btn("Choose the QR picture from my photos", { kind:"outlined", icon:"image", go:"checking" }) + btn("Sign in with email and password instead", { kind:"text", go:"signin" }) + '</div>';
+});
+add("camExplain", "2 · Joining code", "Camera, explained", "Explain before Android asks (ux-learnings: explain before the system asks). Shown only if the camera was never asked for.", function () {
+  return topBar({ back:"joinFirst", title:"" })
+    + '<div class="content"><div class="stack-4">' + bubble("camera", "primary")
+    + '<h2 class="t-headline-s">The app needs your camera to scan the code</h2>'
+    + '<p class="t-body-l">Next, your phone will ask if Alvoraa may take pictures. Press <b>"While using the app"</b>.</p>'
+    + '<div class="card info card-row">' + ic("info") + '<p class="t-body-m">The camera is used only when you scan a code, or when you press Check In or Check Out.</p></div>'
+    + '</div></div><div class="actions">' + btn("Continue", { go:"scan" }) + btn("Choose a picture instead", { kind:"outlined", icon:"image", go:"checking" }) + '</div>';
+});
+add("scan", "2 · Joining code", "Scan the QR", "Full-screen camera with a viewfinder. Cancel top-left (Android habit), the fallback bottom (thumb). Tap the viewfinder to simulate a scan.", function () {
+  return '<div class="cam"><div class="feed" style="background:radial-gradient(ellipse at 50% 40%,#5a5f66 0,#2b2e33 55%,#0f1113 100%)"></div>'
+    + topBar({ close:"joinFirst", title:"Scan the QR code", onDark:true })
+    + '<button type="button" class="viewfinder" data-go="checking" aria-label="Simulate a scan" style="border:0;background:transparent;cursor:pointer"></button>'
+    + '<div class="bottom"><p class="caption" style="text-align:center">Point the camera at the QR code from HR</p>'
+    + btn("Choose a picture instead", { kind:"on-dark", icon:"image", go:"checking" }) + '</div></div>';
+});
+add("checking", "2 · Joining code", "Checking the code", "Busy. Every check (ran out, used, cancelled, switched off, not a field job) happens here, before a name is shown.", function () {
+  setTimeout(function () { if (st.screen === "checking") go("confirm"); }, 1400);
+  return busy("Checking the code");
+});
+add("confirm", "2 · Joining code", "Is this you?", "Least identity: first name, surname initial, job, company. Company brand colour starts here: brand_colour comes with this answer today.", function () {
+  var tn = T();
+  return topBar({ back:"joinFirst", title:"" })
+    + '<div class="content"><h2 class="t-headline-m" style="margin:8px 0 16px">Is this you?</h2>'
+    + '<div class="card elevated" style="display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;padding:24px 16px">'
+    + '<div class="bubble tone-primary" style="border-radius:50%;font:500 28px/1 var(--font)">' + tn.first[0] + tn.initial + '</div>'
+    + '<p class="t-headline-s">' + tn.first + " " + tn.initial + '.</p><p class="t-body-l muted">' + tn.job + '</p>'
+    + '<p class="t-body-l" style="display:flex;gap:8px;align-items:center">' + ic("store", "s20") + tn.company + '</p></div>'
+    + '<p class="t-body-m muted gap-top" style="display:flex;gap:8px">' + ic("info", "s20") + 'HR made this code for one person only.</p>'
+    + '<p class="t-body-m muted" style="margin-top:8px"><span class="sample-tag">Sample</span> name and job</p>'
+    + '</div><div class="actions">' + btn("Yes, this is me", { go:"notice" }) + btn("This is not me", { kind:"outlined", go:"notMe" }) + '</div>';
+});
+add("notMe", "2 · Joining code", "This is not me (dialog)", "A dialog, because cancelling the code cannot be undone. M3 puts the confirming action last (on the right); here that is Cancel this code, in the error colour. Go back is first and never red.", function () {
+  return S.confirm.render() + '<div class="scrim" role="presentation"><div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlg-h">'
+    + '<h2 id="dlg-h">This code is for someone else</h2>'
+    + '<div class="stack t-body-l muted"><p>Nothing has been set up on this phone.</p><p>If you cancel the code, it stops working. HR will see that it was cancelled on a phone, and can make a new one.</p><p>Please tell HR the code came to you by mistake.</p></div>'
+    + '<div class="dlg-actions">' + btn("Go back. It is me.", { kind:"text", block:false, go:"confirm" }) + btn("Cancel this code", { kind:"text", extra:"danger-text", block:false, go:"notMeDone" }) + '</div></div></div>';
+});
+add("notMeDone", "2 · Joining code", "Code cancelled", "The end of the \"not me\" path.", function () {
+  return topBar({ title:"" }) + '<div class="content"><div class="stack-4">' + bubble("checkCircle", "neutral")
+    + '<h2 class="t-headline-m">The code is cancelled</h2><p class="t-body-l">Nothing was set up on this phone. If you are waiting for your own code, ask HR.</p></div></div>'
+    + '<div class="actions">' + btn("Done", { go:"signin" }) + '</div>';
+});
+add("codeOff", "2 · Joining code", "Joining codes switched off", "JOIN_CODE_OFF. The way out (sign in) is the main button.", function () {
+  return problem({ bar: topBar({ back:"joinFirst", title:"" }), icon:"qr", tone:"neutral", heading:"Joining codes are switched off",
+    body:"Joining codes are switched off at your company. Sign in with your work email and password, or ask HR.",
+    buttons: btn("Sign in with email and password", { go:"signin" }) + btn("Done", { kind:"outlined", go:"signin" }), code:"JOIN_CODE_OFF" });
+});
+add("notAlvoraa", "2 · Joining code", "Not an Alvoraa code", "QR_NOT_ALVORAA: someone scanned a UPI payment code (ux-learnings checklist).", function () {
+  return problem({ bar: topBar({ back:"joinFirst", title:"" }), icon:"qr", tone:"warning", heading:"This is not an Alvoraa code",
+    body:"It may be a payment code or a website link. Scan the code HR gave you for this app. Nothing was sent anywhere.",
+    buttons: btn("Scan again", { go:"scan" }) + btn("Choose a picture instead", { kind:"outlined", go:"checking" }), code:"QR_NOT_ALVORAA" });
+});
+
+/* --- 3. Notice --- */
+add("notice", "3 · Notice", "The notice (first time)", "Same six parts, same words, same tick box, same button. Only the layout changed: an icon per part, a heading per part, and the tick box and button fixed at the bottom so they are always in reach. Try pressing Agree without ticking.", function () {
+  return noticeScreen({ back:"confirm", title:"Before you start", intro: T().company + " asks you to read this. It says what the app records about you.", agree:"Agree and finish", agreeAct:"agree" });
+});
+add("signinNotice", "3 · Notice", "The notice (after sign-in)", "The same notice after the password way in. Its own screen, so its button cannot be mixed up with the QR join's.", function () {
+  return noticeScreen({ back:"signin", title:"Before you start", intro: T().company + " asks you to read this. It says what the app records about you.", agree:"Agree and finish", agreeAct:"agree" });
+});
+add("noticeChanged", "3 · Notice", "The notice has changed", "NOTICE_CHANGED. What is new sits first, in its own card, in the server's own sentence.", function () {
+  return noticeScreen({ back:null, title:"The notice has changed", intro:"Please read it again before your next check-in.",
+    lead:'<div class="card tertiary card-row" style="margin:4px 0 16px">' + ic("info") + '<div><p class="t-title-s">What is new</p><p class="t-body-m">We now tell you that we record this phone\'s model name when you set up.</p></div></div>',
+    agree:"Agree and continue", agreeAct:"agreeHome" });
+});
+add("joining", "3 · Notice", "Setting up this phone", "Busy, after Agree.", function () {
+  setTimeout(function () { if (st.screen === "joining") go("welcome"); }, 1400);
+  return busy("Setting up this phone");
+});
+
+/* --- 4. Welcome and Home --- */
+add("welcome", "4 · Welcome and Home", "Welcome", "Before: \"Welcome, Arjun. This phone is set up.\" as one oversized wrapping heading. Now: a short heading, one sentence, and a card that says the rule the person must follow.", function () {
+  var tn = T();
+  return topBar({ brand:true, title:tn.company })
+    + '<div class="content"><div class="stack-4" style="padding-top:8px">' + bubble("checkCircle", "success")
+    + '<h2 class="t-headline-m">Welcome, ' + tn.first + '</h2>'
+    + '<p class="t-body-l">This phone is set up. You can mark attendance now. You do not need to wait for HR.</p>'
+    + '<ul class="list card outlined flush">'
+    + li({ lead: ic("store"), hl: tn.company, sup:"Company" }) + '<li class="divider" aria-hidden="true"></li>'
+    + li({ lead: ic("pin"), hl: tn.workplace, sup:"Your workplace" }) + '<li class="divider" aria-hidden="true"></li>'
+    + li({ lead: ic("gps"), hl: st.rule === "anywhere" ? "From anywhere" : "Within " + tn.radius + " m", sup:"Where you can check in" })
+    + '</ul></div></div>'
+    + '<div class="actions">' + btn("Check In", { size:"large", icon:"login", go:"locExplain" }) + btn("Not now", { kind:"text", go:"homeIdle" }) + '</div>';
+});
+add("homeLoading", "4 · Welcome and Home", "Home: loading", "Skeleton within 300 ms (nfr-budget §2). The Check In button waits for today's status so it can never say the wrong thing.", function () {
+  var tn = T();
+  return topBar({ brand:true, title:tn.company, settings:true })
+    + '<div class="content" aria-busy="true" aria-label="Loading today">'
+    + '<div class="skel" style="height:24px;width:55%;margin:6px 0 8px"></div><div class="skel" style="height:16px;width:40%;margin-bottom:18px"></div>'
+    + '<div class="skel" style="height:150px;border-radius:28px"></div><div class="skel" style="height:16px;width:25%;margin:24px 0 10px"></div><div class="skel" style="height:56px"></div></div>'
+    + '<div class="actions"><div class="skel" style="height:96px;border-radius:28px"></div></div>';
+});
+add("homeIdle", "4 · Welcome and Home", "Home: not checked in yet", "The status card answers \"where do I stand?\" in one look; the rule sits inside it; the one big button sits at the bottom, under the thumb.", function () { return homeScreen("idle"); });
+add("homeIn", "4 · Welcome and Home", "Home: checked in", "Green container, tick icon, and the words \"Checked in since 9:12 am\": three signals, not colour alone. The button turns into Check Out.", function () { return homeScreen("in"); });
+add("homeOut", "4 · Welcome and Home", "Home: checked out", "Never \"Not checked in yet\" after a check-out (FC-1). A second Check In stays possible (a split shift).", function () { return homeScreen("out"); });
+add("homeCamOff", "4 · Welcome and Home", "Home: camera off", "Degrade, do not block: check-in still works without a photo.", function () { return homeScreen("camoff"); });
+
+/* --- 5. Check-in flow --- */
+add("locExplain", "5 · Check in", "Location, explained", "First Check In only.", function () {
+  return topBar({ back:"homeIdle", title:"" })
+    + '<div class="content"><div class="stack-4">' + bubble("pin", "primary")
+    + '<h2 class="t-headline-s">The app needs your location to check you in</h2>'
+    + '<p class="t-body-l">Next, your phone will ask about location. Press <b>"While using the app"</b>, and keep <b>"Precise"</b> on.</p>'
+    + '<div class="card info card-row">' + ic("info") + '<p class="t-body-m">Your location is read only at the moment you press Check In or Check Out. Never in between.</p></div>'
+    + '</div></div><div class="actions">' + btn("Continue", { go:"camera" }) + '</div>';
+});
+add("camera", "5 · Check in", "Camera: live preview", "A visible camera screen (being fixed by the engineer). The shutter is a big round button with its words under it; Cancel is top-left.", function () {
+  return '<div class="cam"><div class="feed"><svg class="person" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="36" r="18" fill="#d9c7b8"/><path d="M14 100c0-22 16-34 36-34s36 12 36 34z" fill="#d9c7b8"/></svg></div>'
+    + topBar({ close:"homeIdle", title:"Take your photo", onDark:true })
+    + '<p class="hint">Hold the phone in front of your face</p>'
+    + '<div class="bottom"><button type="button" class="shutter" data-go="cameraReview" aria-label="Take photo"></button><p class="caption">Take photo</p>'
+    + '<p class="small">Only HR and your manager can see this photo.</p></div></div>';
+});
+add("cameraReview", "5 · Check in", "Camera: use or retake", "Use photo on the right (the thumb's side), Retake on the left.", function () {
+  return '<div class="cam"><div class="feed still"><svg class="person" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="36" r="18" fill="#e2d2c4"/><path d="M14 100c0-22 16-34 36-34s36 12 36 34z" fill="#e2d2c4"/></svg></div>'
+    + topBar({ close:"homeIdle", title:"Check your photo", onDark:true })
+    + '<div class="bottom"><p class="small">Is your face clear?</p><div style="display:flex;gap:12px;width:100%">'
+    + btn("Retake", { kind:"on-dark", icon:"refresh", go:"camera" }) + btn("Use photo", { kind:"on-dark-filled", icon:"check", go:"punching" }) + '</div></div></div>';
+});
+add("punching", "5 · Check in", "Punching (progress)", "Each step says what is happening now. After 10 seconds a second line appears (see the note in 01d).", function () {
+  setTimeout(function () { if (st.screen === "punching") go(st.rule === "anywhere" ? "resultAnywhere" : "resultIn"); }, 2200);
+  return topBar({ title:"Checking you in" })
+    + '<div class="content" role="status" aria-live="polite"><div class="linear" style="margin:8px 0 24px" aria-hidden="true"></div>'
+    + '<div class="step done"><span class="dot" style="color:var(--alv-success)">' + ic("checkCircle") + '</span>Photo taken</div>'
+    + '<div class="step now"><span class="dot"><span class="spinner sm"></span></span>Finding where you are</div>'
+    + '<div class="step todo"><span class="dot">' + ic("shield") + '</span>Saving your attendance</div>'
+    + '<p class="t-body-m muted gap-top-l">Keep the app open. This can take up to 20 seconds on a slow connection.</p></div>';
+});
+add("resultIn", "5 · Check in", "Result: checked in (inside)", "The true location, in words: at the workplace, inside the rule, and how exact the phone was.", function () { return resultScreen("in"); });
+add("resultAnywhere", "5 · Check in", "Result: checked in (anywhere)", "For people allowed to check in from anywhere: say honestly how far from the workplace they were.", function () { return resultScreen("anywhere"); });
+add("resultOut", "5 · Check in", "Result: checked out", "", function () { return resultScreen("out"); });
+add("refusedFar", "5 · Check in", "Refused: too far", "OUTSIDE_WORKPLACE. The user's sentence, with km for long distances. Photo kept, so Try again does not ask for a new one.", function () {
+  var tn = T();
+  return problem({ icon:"pin", tone:"warning", heading:"You are too far from work",
+    body:"You are <b>13.2 km</b> from your workplace. Move within " + tn.radius + " m and try again.",
+    card:'<ul class="list card outlined flush">' + li({ lead: ic("store"), hl: tn.workplace, sup:"Your workplace" }) + '</ul>' + photoKept("Nothing has been saved."),
+    buttons: btn("Try again", { icon:"refresh", go:"punching" }) + btn("Go back", { kind:"outlined", go:"homeIdle" }), code:"OUTSIDE_WORKPLACE" });
+});
+
+/* --- 6. Errors and edge states --- */
+add("gps", "6 · Problems", "GPS not exact enough", "GPS_NOT_EXACT: accuracy worse than 50 m.", function () {
+  return problem({ icon:"gps", tone:"warning", heading:"Your location is not exact enough",
+    body:"Your phone can only place you within about <b>86 m</b>. It needs to be within <b>50 m</b>. Step outside or away from buildings, wait a few seconds, and press Try again.",
+    card: photoKept("You will not need to take it again."),
+    buttons: btn("Try again", { icon:"refresh", go:"punching" }) + btn("Go back", { kind:"outlined", go:"homeIdle" }), code:"GPS_NOT_EXACT" });
+});
+add("noNet", "6 · Problems", "No internet", "NO_INTERNET during a punch.", function () {
+  return problem({ icon:"wifiOff", tone:"neutral", heading:"No internet",
+    body:"Your attendance has not been saved yet. Move to a place with signal and press Try again.",
+    card: photoKept(), buttons: btn("Try again", { icon:"refresh", go:"punching" }) + btn("Go back", { kind:"outlined", go:"homeIdle" }), code:"NO_INTERNET" });
+});
+add("blocked", "6 · Problems", "Phone blocked by HR", "DEVICE_BLOCKED. No Check In anywhere (no button where the rule says no). Settings stays reachable.", function () {
+  var tn = T();
+  return problem({ settings:true, icon:"block", tone:"error", heading:"This phone has been stopped",
+    body:"HR has stopped this phone. It cannot mark attendance for you any more. Please speak to HR.",
+    card:'<div class="card success card-row">' + ic("shield") + '<p class="t-body-m">Attendance you already marked is safe in your HR record. If you have a new phone, HR can give you a new code.</p></div>',
+    buttons: btn("Remove " + tn.company + " from this phone", { kind:"tonal", go:"removeSheet" }), code:"DEVICE_BLOCKED" });
+});
+add("replaced", "6 · Problems", "Phone replaced", "DEVICE_REPLACED.", function () {
+  var tn = T();
+  return problem({ settings:true, icon:"phone", tone:"neutral", heading:"You joined on another phone",
+    body:"Today at 8:40 am you joined " + tn.company + " on another phone. Use that phone to mark attendance. If that was not you, tell HR today.",
+    buttons: btn("Remove " + tn.company + " from this phone", { kind:"tonal", go:"removeSheet" }), code:"DEVICE_REPLACED" });
+});
+add("update", "6 · Problems", "App out of date", "APP_TOO_OLD. One button. Reassurance in a green card: nothing is lost.", function () {
+  return problem({ icon:"update", tone:"primary", heading:"Update the app to keep marking attendance",
+    body:"This version of Alvoraa is too old to work with your company any more. Updating takes about a minute on Wi-Fi.",
+    card:'<ul class="list card outlined flush">' + li({ hl:"On this phone", trail:"0.2.0" }) + '<li class="divider" aria-hidden="true"></li>' + li({ hl:"Needed", trail:"0.3.0 or newer" }) + '</ul>'
+      + '<div class="card success card-row">' + ic("shield") + '<p class="t-body-m">You stay set up. You will not need a new code. Attendance you marked before is safe.</p></div>',
+    buttons: btn("Update in Play Store", { icon:"update", act:"noop" }), code:"APP_TOO_OLD" });
+});
+add("serverError", "6 · Problems", "Something went wrong", "SERVER_ERROR, with the card HR needs when the person shows them the screen.", function () {
+  return problem({ icon:"error", tone:"error", heading:"Something went wrong",
+    body:"Your attendance was not saved. Press Try again. If it keeps happening, show this screen to HR.",
+    card:'<ul class="list card outlined flush">' + li({ hl:"For HR", trail:"SERVER_ERROR" }) + '<li class="divider" aria-hidden="true"></li>' + li({ hl:"When", trail:"27 Sep, 9:12 am" }) + '<li class="divider" aria-hidden="true"></li>' + li({ hl:"App", trail:"0.2.0 · Android" }) + '</ul>',
+    buttons: btn("Try again", { icon:"refresh", go:"punching" }) + btn("Go back", { kind:"outlined", go:"homeIdle" }), code:"SERVER_ERROR" });
+});
+
+/* --- 7. Settings and records --- */
+add("settings", "7 · Settings", "Settings", "Grouped M3 list. The two privacy actions (see what is recorded, stop agreeing) sit together; Remove is last, in the error colour.", function () {
+  var tn = T();
+  return topBar({ back:"homeIn", title:"Settings" })
+    + '<div class="content" style="padding:0">'
+    + '<div style="display:flex;gap:16px;align-items:center;padding:8px 16px 8px"><div class="bubble tone-primary" style="border-radius:50%;width:56px;height:56px;font:500 22px/1 var(--font)">' + tn.first[0] + tn.initial + '</div><div><p class="t-title-l">' + tn.person + '</p><p class="t-body-m muted">' + tn.job + ' · ' + tn.company + '</p></div></div>'
+    + '<h2 class="section-h">Your workplace</h2><ul class="list">'
+    + li({ lead: ic("pin"), hl: tn.workplace, sup: st.rule === "anywhere" ? "You may check in from anywhere" : "Check in within " + tn.radius + " m" }) + '</ul>'
+    + '<h2 class="section-h">Privacy</h2><ul class="list">'
+    + li({ lead: ic("doc"), hl:"What this app records", sup:"You agreed on 22 September 2026", trail: ic("chevron"), go:"records" })
+    + li({ lead: ic("undo"), hl:"Stop agreeing to the notice", sup:"Attendance on this phone pauses until you agree again", trail: ic("chevron"), go:"withdrawDialog" }) + '</ul>'
+    + '<h2 class="section-h">This phone</h2><ul class="list">'
+    + li({ lead: ic("del"), hl:"Remove this phone from " + tn.company, sup:"Attendance on this phone stops", go:"removeSheet", danger:true }) + '</ul>'
+    + '<h2 class="section-h">About</h2><ul class="list">'
+    + li({ lead: ic("info"), hl:"App version 0.2.0", sup:"Connected to " + tn.host }) + '</ul>'
+    + '<p class="t-body-m muted" style="padding:4px 16px 24px">For any problem, speak to HR. Tell them the app version above.</p>'
+    + '</div>';
+});
+add("records", "7 · Settings", "What this app records", "The notice as agreed, when, which version, and what this phone recorded today. Older records: ask HR (the \"Your rights\" line).", function () {
+  var tn = T();
+  return topBar({ back:"settings", title:"What this app records" })
+    + '<div class="content">'
+    + '<div class="card success card-row" style="margin-top:4px">' + ic("checkCircle") + '<p class="t-body-m">You agreed on Monday 22 September at 9:01 am. Notice version 2026-09-22.</p></div>'
+    + '<div class="card outlined" style="margin-top:16px;padding:0 16px">' + noticeRows() + '</div>'
+    + '<h2 class="t-title-s muted" style="margin:20px 0 8px">Recorded today on this phone</h2>'
+    + '<ul class="list card outlined flush">' + li({ lead: ic("login"), hl:"Checked in · 9:12 am", sup:"Photo, location (at " + tn.workplace + "), time" }) + '</ul>'
+    + '<p class="t-body-m muted gap-top">To see older records, or to correct one, ask HR.</p>'
+    + '<p class="t-body-m muted" style="margin-top:8px">If this notice changes, the app asks you to read it again before your next check-in.</p>'
+    + '</div>';
+});
+add("withdrawDialog", "7 · Settings", "Stop agreeing (dialog)", "New in the app: the server already has withdraw_agreement; no screen called it. As easy to withdraw as to agree: one dialog.", function () {
+  return S.settings.render() + '<div class="scrim" role="presentation"><div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlg-w">'
+    + '<h2 id="dlg-w">Stop agreeing to the notice?</h2>'
+    + '<div class="stack t-body-l muted"><p>This phone stops marking attendance for you until you agree again.</p><p>Nothing is deleted. Attendance you already marked stays in your HR record.</p><p>HR will see that you stopped agreeing.</p></div>'
+    + '<div class="dlg-actions">' + btn("Keep agreeing", { kind:"text", block:false, go:"settings" }) + btn("Stop agreeing", { kind:"text", block:false, go:"withdrawn" }) + '</div></div></div>';
+});
+add("withdrawn", "7 · Settings", "After stopping", "The next screen after withdrawing: the notice again, with words that fit this moment (today the app would say \"before your first check-in\", which is untrue here).", function () {
+  var html = noticeScreen({ back:null, title:"You stopped agreeing", intro:"To mark attendance with this phone again, read the notice and agree.", agree:"Agree and continue", agreeAct:"agreeHome" });
+  return html + '<div class="snackbar" role="status">You stopped agreeing. Attendance on this phone is paused.</div>';
+});
+add("removeSheet", "7 · Settings", "Remove this phone (bottom sheet)", "A bottom sheet: the consequences in five short lines with icons, the red button, and Keep it. Replaces today's screen and the extra browser pop-up after it.", function () {
+  var tn = T();
+  return S.settings.render() + '<div class="scrim" role="presentation"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sh-h"><div class="handle" aria-hidden="true"></div>'
+    + '<h2 id="sh-h">Remove this phone from ' + tn.company + '?</h2>'
+    + '<ul class="list" style="margin:0 -16px">'
+    + li({ lead: ic("block"), hl:"This phone stops marking attendance for you." })
+    + li({ lead: ic("shield"), hl:"Attendance you already marked stays in your HR record." })
+    + li({ lead: ic("hourglass"), hl:"Photos already taken are deleted as the notice says." })
+    + li({ lead: ic("group"), hl:"HR will see that you removed this phone." })
+    + li({ lead: ic("login"), hl:"To use the app again, sign in again, or ask HR for a new code." })
+    + '</ul><p class="t-body-m muted" style="margin:4px 0 16px;display:flex;gap:8px">' + ic("wifiOff", "s20") + 'You need the internet for this.</p>'
+    + '<div class="stack">' + btn("Remove this phone", { kind:"danger", icon:"del", go:"signin" }) + btn("Keep it", { kind:"outlined", go:"settings" }) + '</div></div></div>';
+});
+
+/* --- before (today's look), for comparison --- */
+var BEFORE = {
+  welcome: '<section><h2>Welcome, Arjun. This phone is set up.</h2><p>You do not need to wait for HR. You can mark attendance now.</p><div class="card"><p>Company · PP Jewellers</p><p>Your workplace · PPJ Head Office Chandigarh</p><p>Check in within · 200 m</p></div><button class="primary-green">Check In</button><button class="link">Not now</button></section>',
+  homeIdle: '<section><div class="top-bar"><h1>PP Jewellers</h1><button class="link" style="width:auto">Settings</button></div><p class="small">Arjun Kumar</p><p class="status-line"><span class="status-dot"></span>Not checked in yet today</p><p class="small">You need to be within 200 m of PPJ Head Office Chandigarh</p><button class="primary-green">Check In</button><p class="small">No punches yet today.</p></section>',
+  notice: '<section><p class="topbar">PP Jewellers · Arjun K. · Sales Executive</p><button class="link">Back</button><h2>Before you start</h2><p>PP Jewellers asks you to read this. It says what the app records about you.</p><p><b>What we record</b><br>A photo of you, where you are, and the time — only when you press Check In or Check Out. When you set up: this phone\'s model name.</p><p><b>What we do not record</b><br>Nothing between punches. You are not tracked while you work.</p><p><b>Why</b><br>To mark your attendance, and to confirm you were at your workplace.</p><p><b>Who can see it</b><br>HR and your manager. Not your colleagues.</p><p><b>How long</b><br>Check-in photos are kept for 90 days, then deleted.</p><p><b>Your rights</b><br>Ask HR to see what was recorded about you, or to correct it.</p><label class="tick-row"><input type="checkbox"><span>I have read this and I understand.</span></label><button>Agree and finish</button></section>',
+  resultIn: '<section><h2>Checked in</h2><p>9:12 am</p><div class="card"><p>Where you were · At PPJ Head Office Chandigarh</p><p>Photo · Taken</p><p>Saved · In your HR record</p></div><p class="small">Only HR and your manager can see this.</p><button>Done</button></section>'
+};
+
+/* ---------- theme ---------- */
+function setPalette(el) {
+  var mode = st.theme;
+  var pre = /^(signin|signinRemembered|signinWrong|signinLocked|signinNetLock|signinPwOff|signingIn|otp|otpWrong|joinFirst|camExplain|scan|checking|codeOff|notAlvoraa)$/.test(st.screen);
+  var pal = PAL[(pre ? "alvoraa" : st.tenant) + "_" + mode];
+  Object.keys(pal).forEach(function (k) { el.style.setProperty("--md-sys-color-" + k, pal[k]); });
+  var fx = FIXED[mode];
+  Object.keys(fx).forEach(function (k) { el.style.setProperty("--" + k, fx[k]); });
+  el.style.setProperty("--s", st.scale);
+}
+
+/* ---------- render ---------- */
+var phone = document.getElementById("phone");
+function go(id) { st.screen = id; if (id === "notice" || id === "signinNotice" || id === "noticeChanged" || id === "withdrawn") { st.tick = false; st.tickErr = false; } render(); }
+function render() {
+  phone.style.width = (st.width + 20) + "px";
+  var s = S[st.screen];
+  var dark = /^(scan|camera|cameraReview)$/.test(st.screen);
+  if (st.before && BEFORE[st.screen]) {
+    phone.innerHTML = '<div class="old">' + BEFORE[st.screen] + '</div>';
+  } else {
+    phone.innerHTML = '<div class="app" data-theme="' + st.theme + '"><div class="sysbar' + (dark ? " dark" : "") + '"><span>9:41</span><span>4G ▮▮▮ 87%</span></div><div class="appwrap"><div class="screen" id="screen"></div></div><div class="gesture' + (dark ? " dark" : "") + '"></div></div>';
+    var app = phone.querySelector(".app");
+    setPalette(app);
+    document.getElementById("screen").innerHTML = s.render();
+  }
+  document.getElementById("caption").textContent = (st.before && BEFORE[st.screen] ? "BEFORE (today's app) · " : "") + s.group + " · " + s.label;
+  document.getElementById("screen-note").innerHTML = "<b>" + esc(s.label) + ".</b> " + esc(s.note || "") + (st.before && !BEFORE[st.screen] ? " <i>(No 'before' view for this screen; showing the new one.)</i>" : "");
+  document.body.classList.toggle("dark-page", st.theme === "dark");
+  drawPanel();
+}
+
+phone.addEventListener("click", function (e) {
+  var b = e.target.closest("[data-go],[data-act]");
+  if (!b) return;
+  var g = b.getAttribute("data-go"), a = b.getAttribute("data-act");
+  if (g) { go(g); return; }
+  if (a === "tick") { st.tick = !st.tick; if (st.tick) st.tickErr = false; render(); return; }
+  if (a === "agree" || a === "agreeHome") {
+    if (!st.tick) { st.tickErr = true; render(); var r = phone.querySelector(".check-row"); if (r) r.focus(); return; }
+    go(a === "agree" ? "joining" : "homeIdle"); return;
+  }
+  if (a === "showpw") { st.showPw = !st.showPw; render(); return; }
+  if (a === "signin") { go("signingIn"); setTimeout(function () { if (st.screen === "signingIn") go("otp"); }, 1400); return; }
+});
+phone.addEventListener("keydown", function (e) {
+  if ((e.key === " " || e.key === "Enter") && e.target.classList.contains("check-row")) { e.preventDefault(); e.target.click(); }
+});
+
+/* ---------- review panel ---------- */
+function opts(id, list, key) {
+  var box = document.getElementById(id);
+  box.innerHTML = list.map(function (o) { return '<button type="button" aria-pressed="' + (st[key] === o[0]) + '" data-k="' + key + '" data-v="' + o[0] + '">' + o[1] + '</button>'; }).join("");
+}
+function drawPanel() {
+  opts("opt-theme", [["light", "Light"], ["dark", "Dark"]], "theme");
+  opts("opt-tenant", [["ppj", "PP Jewellers (black brand)"], ["sargam", "Sargam Metals (Sample blue)"], ["alvoraa", "Alvoraa default"]], "tenant");
+  opts("opt-scale", [[1, "Normal"], [1.3, "Large (130%)"], [2, "Largest (200%)"]], "scale");
+  opts("opt-width", [[360, "360 px (small Android)"], [412, "412 px"]], "width");
+  opts("opt-lang", [["en", "English"], ["hi", "हिंदी (machine draft)"]], "lang");
+  opts("opt-before", [[false, "New design"], [true, "Before (today)"]], "before");
+  var groups = {};
+  Object.keys(S).forEach(function (id) { (groups[S[id].group] = groups[S[id].group] || []).push(id); });
+  var rule = '<div class="grp">Check-in rule for this person</div><div class="opts"><button type="button" data-k="rule" data-v="radius" aria-pressed="' + (st.rule === "radius") + '">Within a distance</button><button type="button" data-k="rule" data-v="anywhere" aria-pressed="' + (st.rule === "anywhere") + '">From anywhere</button></div>';
+  document.getElementById("screen-groups").innerHTML = rule + Object.keys(groups).map(function (g) {
+    return '<div class="grp">' + g + '</div><div class="opts scr">' + groups[g].map(function (id) {
+      return '<button type="button" data-screen="' + id + '" aria-pressed="' + (st.screen === id) + '">' + S[id].label + '</button>';
+    }).join("") + '</div>';
+  }).join("") + '<p style="margin-top:10px;font-size:13px">' + esc(T().seedNote) + ' Sign-in and joining screens always use the Alvoraa purple: the app does not know the company yet.</p>';
+}
+document.getElementById("panel").addEventListener("click", function (e) {
+  var b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.screen) { go(b.dataset.screen); return; }
+  var k = b.dataset.k, v = b.dataset.v;
+  if (!k) return;
+  st[k] = (k === "scale" || k === "width") ? Number(v) : (k === "before" ? v === "true" : v);
+  render();
+});
+render();
+})();
+
+</script>
+</body>
+</html>

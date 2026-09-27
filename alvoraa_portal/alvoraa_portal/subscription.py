@@ -78,7 +78,14 @@ FEATURES = {
         "label": "Shift & Attendance",
         "required": True,
         "workspaces": ["Shift & Attendance"],
-        "module_defs": ["HR"],
+        # Alvoraa HR Core holds shared HR plumbing (access helpers, the attendance
+        # score) and one doctype, Appraisal Cycle Exempt Grade. It used to be
+        # claimed only by the opt-in `attendance_scoring` feature, so it was
+        # blocked on every tenant that had not been given that feature. Since
+        # 26 Sep 2026 attendance scoring is an Organisation Settings switch, not
+        # a feature, so the module is claimed here, by a required feature: it is
+        # never hidden by the deny-by-default sync, on any plan.
+        "module_defs": ["HR", "Alvoraa HR Core"],
     },
     "expenses": {
         "desc": "Expense claims, advances, travel",
@@ -116,7 +123,13 @@ FEATURES = {
         "desc": "Salary structures, slips, payment entries",
         "icon": "💰",
         "label": "Payroll",
-        "module_defs": ["Payroll"],
+        # Alvoraa Late Rules (the Attendance Deduction Rule and its records) is
+        # available wherever attendance, leaves and payroll are sold. Attendance
+        # and leaves are required on every plan, so payroll is the one that
+        # decides. It used to belong to the opt-in `late_rules` feature; since
+        # 26 Sep 2026 whether the rule ACTS is HR's switch in Organisation
+        # Settings (hrms.alvoraa_hr_core.features.org_switch), not a feature.
+        "module_defs": ["Payroll", "Alvoraa Late Rules"],
         "workspaces": ["Payroll"],
     },
     "tax_benefits": {
@@ -163,22 +176,13 @@ FEATURES = {
         "opt_in": True,
     },
     # ── Opt-in features (off everywhere until the console ticks them for a tenant) ──
-    "late_rules": {
-        "desc": "Late-coming and early-exit rule: quarter-day deductions from leave, then pay",
-        "icon": "⏰",
-        "label": "Late Coming Rules",
-        "module_defs": ["Alvoraa Late Rules"],
-        "opt_in": True,
-        "requires": ["attendance", "leaves", "payroll"],
-    },
-    "attendance_scoring": {
-        "desc": "Attendance as a weighted part of the appraisal score, set up from the cycle wizard",
-        "icon": "📅",
-        "label": "Attendance in Appraisals",
-        "module_defs": ["Alvoraa HR Core"],
-        "opt_in": True,
-        "requires": ["performance", "attendance"],
-    },
+    #
+    # `late_rules` and `attendance_scoring` used to be here. Surbhi, 26 Sep 2026:
+    # "Every company has their own rules", so they are not something the console
+    # sells - they are two switches HR turns on in Organisation Settings
+    # (hr_api.ALLOWED_ORG_SETTINGS), off by default. Their modules moved to
+    # `payroll` and `attendance` above. A site config that still names either key
+    # is harmless: an unknown key grants nothing.
     "field_checkin": {
         "desc": "Attendance from a phone for staff with no desk: photo, place and time, checked against the branch radius",
         "icon": "📍",
@@ -189,8 +193,8 @@ FEATURES = {
         "app": "alvoraa_portal",
         "module_defs": ["Alvoraa Portal"],
         "opt_in": True,
-        # Attendance only. Deliberately NOT late_rules: a customer can buy field
-        # punches without buying deductions, and most will start that way.
+        # Attendance only. Deliberately not the late-coming rule: a customer can
+        # have field punches without deductions, and most will start that way.
         "requires": ["attendance"],
     },
     "employee_documents": {
@@ -219,6 +223,46 @@ FEATURES = {
         # is what Frappe HR already does. This layer is what adds seats, so it
         # only needs the portal the chart is shown on.
         "requires": ["portal"],
+    },
+    "staff_list": {
+        "desc": "A plain searchable list of the people this HR person looks after: name, job title, department, photo",
+        "icon": "📇",
+        "label": "Staff List",
+        # No module_defs, no roles, no app. There is no desk workspace behind
+        # this - it is one portal screen - and the registry already allows that
+        # (`spec.get("workspaces") or []`). The gate that matters is the one in
+        # staff_api.get_staff_list, on the server.
+        "opt_in": True,
+        # A portal screen and nothing else. `portal` is required on every plan,
+        # so this dependency never refuses anyone; it is here to say what the
+        # feature actually sits on.
+        "requires": ["portal"],
+        # ── Why this key exists at all, and why it is in NO plan bundle ──
+        #
+        # Until slice 034 one flag, `plan_org_structure`, gated two different
+        # things: the org chart (positions, vacancies, seats - the paid layer)
+        # and the plain People screen. An HR person on a tenant that had not
+        # bought the org-structure layer therefore had no way to look someone
+        # up at all.
+        #
+        # Surbhi's decision of 23 September 2026 (W1D-21) splits them. The org
+        # chart STAYS behind `plan_org_structure` as a paid feature. The plain
+        # staff list gets this switch of its own.
+        #
+        # It is deliberately in no plan bundle. `plan_features()` strips opt-in
+        # keys from every bundle and `enabled_features()`'s fallback excludes
+        # them, so shipping this key hands the feature to NOBODY - it arrives
+        # only when somebody ticks it for a named tenant, which writes the key
+        # into that tenant's own `features` list.
+        #
+        # That is the point, not an oversight. The commercial question - free or
+        # paid, and on which plans - is left open on purpose, so it can be
+        # settled by configuration later instead of by another code change.
+        # When the answer comes it is either added to the bundles and loses
+        # `opt_in`, or it stays an add-on. Either way, no redesign.
+        #
+        # Do not add this key to PLANS to "fix" a tenant that cannot see the
+        # screen. Tick it on for that tenant.
     },
     "policy_library": {
         "desc": "Central policy library: department-owned, versioned, acknowledged, on the portal home page",
@@ -333,6 +377,64 @@ ERPNEXT_FEATURES["india_compliance"] = {
     "requires": ["erp_accounts"],
 }
 
+# Frappe CRM - the standalone CRM app (frappe/crm), not ERPNext's Lead and
+# Opportunity. Same catalogue as india_compliance for the same reason: it is not
+# an Alvoraa HR feature, and `enterprise` is defined as all of those.
+#
+# `app` is what makes it install only where it is sold - and the install is the
+# real gate. Deliberately NO `roles`: it reuses ERPNext's Sales User and Sales
+# Manager, and withholding those from tenants without the CRM would break
+# ERPNext Selling for them. Its two modules are claimed here so that
+# deny-by-default stops blocking them the day a tenant buys it; without this
+# entry the CRM's own page check (crm.api.check_app_permission) refuses every
+# user but Administrator, because FCRM sits in their blocked modules.
+#
+# No `requires`: it runs without any ERPNext module. Its ERPNext link (deal ->
+# Customer) is a setting on the tenant, off by default. (Slice 040.)
+ERPNEXT_FEATURES["crm"] = {
+    "desc": "Leads, deals, tenders, email — the standalone CRM",
+    "icon": "🤝",
+    "label": "Frappe CRM",
+    "app": "crm",
+    "module_defs": ["FCRM", "Lead Syncing"],
+    "erpnext": True,
+}
+
+# Frappe WhatsApp (shridarpatil/frappe_whatsapp) - Meta's WhatsApp Cloud API:
+# accounts, templates, notifications on document events, bulk sends, flows.
+# Same catalogue as the CRM for the same reason. `app` makes it install only
+# where sold. No `roles`: every one of its doctypes is System Manager only, so
+# the tenant's own administrator configures it and nobody else sees it. No
+# `requires`: it works on an HR-only tenant. In no plan bundle, so an existing
+# tenant has it unticked until someone ticks it. (Slice 042.)
+ERPNEXT_FEATURES["whatsapp"] = {
+    "desc": "WhatsApp messages, templates and notifications through Meta's Cloud API",
+    "icon": "💬",
+    "label": "WhatsApp",
+    "app": "frappe_whatsapp",
+    "module_defs": ["Frappe Whatsapp"],
+    "erpnext": True,
+}
+
+# AI lead intake (slice 043): chosen sales mailboxes read by AI, real enquiries
+# turned into Frappe CRM leads with the columns filled. An add-on to the CRM, not
+# part of it: it is priced separately, sends email text to an outside model
+# provider, and needs the tenant's acceptance of that. No app and no module of
+# its own - the code lives in alvoraa_portal and the sweep checks this key.
+ERPNEXT_FEATURES["crm_ai_intake"] = {
+    "desc": "Reads chosen sales mailboxes and turns real enquiries into CRM leads, columns filled by AI",
+    "icon": "✉️",
+    "label": "AI lead intake",
+    "module_defs": [],
+    "erpnext": True,
+    "requires": ["crm"],
+}
+
+# Two things called "CRM" in one catalogue would be confusing, so ERPNext's own
+# Lead/Opportunity module says which one it is. The KEY stays `erp_crm`: tenants
+# already hold it in their `features` list, and renaming it would lock them out.
+ERPNEXT_FEATURES["erp_crm"]["label"] = "CRM (classic ERPNext)"
+
 # ── Frappe's own framework modules ───────────────────────────────────────────
 # Clutter for an HR tenant: Website, Integrations, Automation and the rest are
 # not part of the product. Hidden from ordinary users, but NOT from the tenant's
@@ -409,6 +511,19 @@ TENANT_DOCTYPES = [
     # access derivation.
     "Alvoraa Data Review Item",
     "Alvoraa Leader View Settings",
+    # Slice 013 step 2: the field-worker designation list on HR Settings. A
+    # child table of the tenant's own HR Settings, so tenant-side.
+    "Alvoraa Field Worker Designation",
+    # Slice 013 step 3: a joining code for one of the tenant's employees, and
+    # the record of which notice they read. Both the tenant's own.
+    "Alvoraa App Invite",
+    "Alvoraa Notice Acknowledgement",
+    # Slice 013 step 6: one row a day of how the tenant's field app was used,
+    # numbers only. The tenant's own, read by its HR.
+    "Alvoraa Field App Daily Count",
+    # Slice 043: what the tenant's AI lead intake did with each of its own emails.
+    # The tenant's record, read by its System Manager - tenant-side.
+    "Alvoraa AI Call Log",
 ]
 
 REQUIRED = [k for k, v in FEATURES.items() if v.get("required")]
@@ -631,7 +746,7 @@ def blocked_module_defs(features, existing=None):
     return sorted(blocked - set(FRAPPE_ALWAYS_VISIBLE))
 
 
-def requires_feature(name):
+def requires_feature(name, message=None):
     """Refuse an endpoint the tenant's plan does not include.
 
     Wave 6 hid the portal's Goals, Analytics and Vendor panels, and hiding was
@@ -647,12 +762,24 @@ def requires_feature(name):
     Required features never refuse: has_feature() short-circuits on them, so a
     misconfigured `features` list cannot lock a tenant out of its own leave
     screen.
+
+    `message` replaces the default "<Label> is not included in your plan." for
+    the endpoints where the default would itself be a leak. The payslip
+    endpoints are the case it was added for (043 AC-31): "Payroll is not
+    included in your plan." and "That payslip is not available." are different
+    sentences, so a caller who tries a slip name can tell a tenant that never
+    bought payroll from a slip that belongs to somebody else. Four causes, one
+    sentence - which is only worth anything if it is the SAME sentence.
     """
     def decorator(fn):
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
             if not has_feature(name):
-                label = FEATURES.get(name, {}).get("label", name)
+                if message:
+                    frappe.throw(_(message), frappe.PermissionError)
+                # feature_spec, not FEATURES: a gated ERPNext-side feature (the CRM
+                # add-ons) must be named by its own label, not its key.
+                label = feature_spec(name).get("label", name)
                 frappe.throw(
                     _("{0} is not included in your plan.").format(label),
                     frappe.PermissionError,
@@ -897,7 +1024,7 @@ def get_plan_catalogue():
     # tenant custom without the admin having to pick a plan first.
     return {
         "groups": [
-            {"key": "alvoraa_hr", "label": "Alvoraa HR",
+            {"key": "alvoraa_hr", "label": "Alvora HRMS",
              "features": [_row(k, v) for k, v in FEATURES.items()]},
             {"key": "erpnext", "label": "ERPNext",
              "features": [_row(k, v) for k, v in ERPNEXT_FEATURES.items()]},

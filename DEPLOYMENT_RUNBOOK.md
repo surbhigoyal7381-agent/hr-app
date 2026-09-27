@@ -117,7 +117,7 @@ the image swap changes all four sites at once. Plan it as a production change, b
 timing is under our control — which is what makes this safe.
 
 **The image is built by CI.** `.github/workflows/build-image.yml` fires on push to `dev`, `test`
-or `main`, publishing `ghcr.io/<repo>/hr-app:dev-<sha>`. The image for this deploy therefore
+or `main`, publishing `ghcr.io/surbhigoyal7381-agent/alvoraa-app:dev-<sha>` (private package since 2026-09-22). The image for this deploy therefore
 already exists, or will as soon as `dev` is pushed.
 
 ---
@@ -245,39 +245,88 @@ No module named 'frappe.core.doctype.background_task'
 ```
 
 `Background Task` exists in Frappe `develop` but not `version-16`, so the doctype was correctly
-removed while the old bundle kept calling it. Rebuild assets into the volume after the swap:
+removed while the old bundle kept calling it.
+
+**Since 23 Sep 2026 the deploy does this itself** (ALV-112): right after the image pull,
+`scripts/refresh_bench_files.sh` copies the image's `apps.txt`, `apps.json` and built
+`sites/assets` into the sites volume. Before that step existed, nothing did, and dev was
+serving the JS/CSS built on 27 Aug while production served 19 Aug's. If a deploy was done
+by hand, run the same script by hand - never `bench build` on the server:
 
 ```bash
-docker exec compose-backend-1 bench build --production
+bash scripts/refresh_bench_files.sh ghcr.io/surbhigoyal7381-agent/alvoraa-app:<tag> compose_sites   # or devstack_sites
 ```
 
-### Symlinked assets that nginx cannot follow
+### Symlinked assets that nginx cannot follow — `bench build` is a trap here
 
-`bench build` links `sites/assets/<app>` → `apps/<app>/<app>/public`. The backend has `/apps`;
-**nginx mounts only the sites volume and does not**. It follows a dangling link and returns 404
-for every CSS and JS file.
+**Do not run `bench build` in a running container on the server. On this architecture it
+takes every portal offline, in every environment sharing that sites volume, with no error
+in any log.**
 
-The portal then renders with no styling and every panel stuck on "Loading…" — the profile menu
-drops out of the corner into the middle of the page. It looks like a broken application. It is a
-404 on a stylesheet.
+Why. `bench build` replaces each entry under `sites/assets/` with a symlink:
 
-**After any `bench build` that writes into the volume:**
+```
+sites/assets/alvoraa_portal -> /home/frappe/frappe-bench/apps/alvoraa_portal/alvoraa_portal/public
+```
+
+Three things make that fatal here:
+
+1. **It relinks EVERY app, not the one you named.** `bench build --app alvoraa_portal` on
+   `devstack-backend-1` on 2026-09-26 turned all eight entries into symlinks, all stamped
+   the same minute.
+2. **nginx cannot follow them.** `compose-nginx-1` mounts only the sites volumes -
+   `compose_sites` at `/home/frappe/frappe-bench/sites` and `devstack_sites` at
+   `/devstack-sites`. It has no `apps` folder at all, so every link dangles and every CSS
+   and JS file returns **404**.
+3. **Nothing logs it.** The page still renders its shell, no script runs, nothing reaches
+   the backend, so no backend log has a line about it.
+
+**How to recognise it.** An unstyled page with panels stuck on "Loading…", the profile
+menu falling out of the corner into the middle of the page, and 404s on `/assets/...` in
+the browser's network tab. Then, on the server:
 
 ```bash
-docker cp scripts/materialise_assets.sh compose-backend-1:/tmp/
-docker exec compose-backend-1 bash /tmp/materialise_assets.sh
-docker exec compose-nginx-1 nginx -s reload
+docker exec devstack-backend-1 ls -la /home/frappe/frappe-bench/sites/assets   # or compose-backend-1
 ```
 
-Confirm before declaring success — a 404 here is invisible from the server side:
+Entries beginning with `l` (`lrwxrwxrwx ... alvoraa_portal -> /home/frappe/...`) are the
+fault. Real directories begin with `d`.
+
+**How to recover — preferred: put the image's own files back.** This is what fixed dev on
+2026-09-26. Remove the symlinks, then copy the real directories out of the image the
+stack is pinned to:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}
-' https://<site>/assets/frappe/dist/css/website.bundle.*.css
+# 1. the tag actually running - read the pin, do not remember it
+cat /var/www/html/hr-app/deploy/compose/.image.dev.env    # production: .image.env
+
+# 2. delete the links (links only - this does not touch a real directory)
+docker exec devstack-backend-1 bash -c   'cd /home/frappe/frappe-bench/sites/assets && find . -maxdepth 1 -type l -delete'
+
+# 3. copy the real thing out of the image
+cd /var/www/html/hr-app
+bash scripts/refresh_bench_files.sh ghcr.io/surbhigoyal7381-agent/alvoraa-app:<tag> devstack_sites
+#                                                                          production: compose_sites
+
+# 4. prove it from outside, by URL - a server-side `ls` is not proof
+curl -sI -o /dev/null -w '%{http_code}
+' https://dev.alvoraa.co/assets/alvoraa_portal/js/ess/portal.js
 ```
 
-The image now dereferences these at build time (`Dockerfile` §4b), so a plain image swap is safe.
-This step is only needed when `bench build` is run **inside a live container**.
+**The fallback, `scripts/materialise_assets.sh`,** copies each link's target in place. Use
+it only when the container's `apps/` really is the source of truth - inside the image
+build (`Dockerfile` §4b does exactly this) or on a local bench you built in. On a server
+it copies whatever that container's apps folder holds, which is not necessarily what the
+pinned image shipped, so prefer `refresh_bench_files.sh`.
+
+**Getting the volume name wrong is silent.** `docker run -v <name>:/vol` creates an empty
+volume for a typo. `refresh_bench_files.sh` refuses a volume with no
+`common_site_config.json` for that reason - but read its output, do not assume it ran.
+
+**What to do instead of `bench build` on a server.** Nothing on the server. Assets are
+built in the image (`deploy/Dockerfile` §4) and the deploy copies them into the volume
+with `refresh_bench_files.sh`. If the served assets are wrong, the answer is a rebuilt
+image or a re-run of that script - never a build in a live container.
 
 ### Always restart nginx after replacing the backend
 
@@ -290,6 +339,15 @@ docker restart compose-nginx-1
 
 ---
 
+### 5.11 "Throttled" when creating users
+
+Frappe 16.35 and later refuse the 61st User created within an hour on a site, with the
+one-word error "Throttled". The configurator sets `throttle_user_limit` to 5000 in
+`common_site_config.json` (ALV-119); a site that shows "Throttled" during onboarding or a
+seed run is missing that key. Set it with a number, not text:
+`bench set-config -gp throttle_user_limit 5000` (the `p` matters - a quoted "5000" makes the
+comparison crash), then `pkill -HUP gunicorn` in the backend so the web workers reread it.
+
 ## 6. Verify — per site, not just once
 
 ```bash
@@ -300,7 +358,11 @@ docker exec compose-backend-1 bash -lc \
 ```python
 frappe.get_installed_apps()
 # expect exactly: ['frappe', 'erpnext', 'hrms', 'alvoraa_portal', 'alvoraa_goals']
-# no duplicates
+# no duplicates. Since slice 040 the list depends on the SITE: a tenant that
+# bought Indian Compliance also lists 'india_compliance', and one that bought
+# Frappe CRM also lists 'crm'. Both are in the image for every site; neither
+# runs anything on a site that did not install it. Compare against the site's
+# `features` in site_config.json, not against a fixed five.
 
 [m.name for m in frappe.get_all("Module Def", filters={"app_name": ["like", "alvoraa%"]}, fields=["name"])]
 # expect: ['Alvoraa Goals', 'Alvoraa Portal']
@@ -358,6 +420,7 @@ are not rollback triggers — fix forward.
   history rather than the source of truth.
 - **Then the objectives/KPI restructure begins**, against a green test suite and servers that
   finally match the repo.
+- **Run the permission freeze check on each tenant** — `bench --site <site> execute alvoraa_portal.permission_health.check_permission_freeze`. It is read-only, and it is the only thing that notices a doctype whose permissions stopped tracking Frappe HR, so a migrate's upstream fixes never arrived. Same command after any permission change made in the Desk. See `docs/runbooks/permission-freeze-check.md` (ALV-127).
 
 ---
 

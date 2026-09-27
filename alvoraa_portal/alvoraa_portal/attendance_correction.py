@@ -35,6 +35,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, getdate, nowdate
 
+from alvoraa_portal.call_cache import holiday_list_for
 from alvoraa_portal.attendance_analytics import (
 	DEFAULT_TOLERANCE_MINS,
 	TOLERANCE_KEY,
@@ -165,6 +166,24 @@ def install_review_fields():
 		 "label": "Decided By", "insert_after": "alvoraa_review_column", "read_only": 1},
 		{"fieldname": "alvoraa_reviewed_on", "fieldtype": "Datetime",
 		 "label": "Decided On", "insert_after": "alvoraa_reviewed_by", "read_only": 1},
+		# 045 AC-82 / SEC-19. WHO decided is already recorded. This records in
+		# WHAT CAPACITY, and no existing field can carry it.
+		#
+		# The alternative was to work the capacity out at read time, by asking
+		# whether the decider was the employee's `reports_to` user. It was
+		# rejected: `reports_to` changes, so the same record would answer
+		# differently next year - and the year in question is exactly the year
+		# somebody raises a grievance about this approval.
+		#
+		# **No default, and no backfill.** Every request decided before this
+		# ships keeps an EMPTY value, which the screen reads as "not recorded".
+		# Defaulting it to "Manager" would put a claim in the record that
+		# nobody made.
+		{"fieldname": "alvoraa_decided_as", "fieldtype": "Select",
+		 "label": "Decided As", "insert_after": "alvoraa_reviewed_on",
+		 "options": "\nManager\nHR", "read_only": 1,
+		 "description": "The capacity the decision was made in. Empty means it "
+		                "was decided before this was recorded."},
 	]}, ignore_validate=True)
 	return True
 
@@ -419,13 +438,33 @@ def month(year=None, month=None, employee=None):
 		else:
 			punches.setdefault(str(c.time)[:10], []).append(mark)
 
+	# `weekly_off` tells a Sunday apart from Diwali (043 AC-1). Both arrive as
+	# Holiday rows on the same list and only this flag says which is which, so
+	# without it the calendar has to draw them the same - and a person's week
+	# then looks like a month of public holidays. It is read here, beside the
+	# rest of the day, rather than derived from the weekday somewhere else: a
+	# tenant whose staff are off on Thursdays is the reason this is data.
 	holidays = {}
-	if me.holiday_list:
+	weekly_offs = set()
+	# WHICH list, and why this changed (043). This read used `me.holiday_list`
+	# - the field on the Employee record. Frappe HR does not: it answers
+	# "which holiday list is this person on" from Holiday List Assignment, and
+	# `hr_api._own_upcoming_holidays` was moved onto that in slice 035 after
+	# store staff at PP Jewellers were shown Head Office's holidays.
+	#
+	# So the calendar and the days-off card beside it could draw two different
+	# lists for one person, and the calendar's was the one payroll ignores. The
+	# assignment wins now; `me.holiday_list` is the fallback, so a tenant that
+	# only ever set the Employee field keeps exactly the calendar it had.
+	holiday_list = holiday_list_for(me.name, end) or me.holiday_list
+	if holiday_list:
 		for h in frappe.get_all("Holiday",
-		                        filters={"parent": me.holiday_list,
+		                        filters={"parent": holiday_list,
 		                                 "holiday_date": ("between", [start, end])},
-		                        fields=["holiday_date", "description"]):
+		                        fields=["holiday_date", "description", "weekly_off"]):
 			holidays[str(h.holiday_date)] = h.description
+			if cint(h.weekly_off):
+				weekly_offs.add(str(h.holiday_date))
 
 	# Requests already raised for these days, so a person cannot ask twice and
 	# can see where the first one got to.
@@ -454,7 +493,7 @@ def month(year=None, month=None, employee=None):
 		marks = by_attendance.get(att.name) if att else None
 		days.append(_day(date, att, holidays, leave_days, claimed, me,
 		                 shift_cache, tolerance, today,
-		                 marks or punches.get(date, [])))
+		                 marks or punches.get(date, []), weekly_offs))
 
 	return {
 		"employee": me.name, "employee_name": me.employee_name,
@@ -474,17 +513,28 @@ def month(year=None, month=None, employee=None):
 
 
 def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, today,
-         marks=()):
+         marks=(), weekly_offs=()):
 	d = getdate(date)
 	out = {
 		"date": date,
 		"weekday": _calendar.day_name[d.weekday()],
 		"future": d > today,
 		"holiday": holidays.get(date),
+		# True for a weekly off, False for a named public holiday. Kept beside
+		# `holiday` rather than replacing it: `state` stays exactly what it was,
+		# so the review screen and every existing test still read the same day
+		# the same way, and the calendar gains the one fact it was missing.
+		"weekly_off": date in weekly_offs,
 		"leave_type": leave_days.get(date),
 		"status": None, "shift": None, "in_time": None, "out_time": None,
 		"hours": None, "expected_hours": None, "short_by": 0.0,
 		"late_entry": 0, "early_exit": 0, "is_late": False, "grace_mins": 0,
+		# WHERE the grace came from (043 AC-5). The day sheet says "15 minutes
+		# of grace, set by <name>", and it can only say that truthfully if it
+		# knows whether the figure is this shift's own or the organisation's
+		# default. Without it the screen would have to guess, and a screen that
+		# guesses at a number is the thing this wave exists to stop.
+		"grace_source": None,
 		"attendance": None,
 		"punches": list(marks),
 		"shift_starts": None, "shift_ends": None,
@@ -533,6 +583,7 @@ def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, t
 	# true minutes, with the grace named beside them.
 	if begins is not None and att.in_time:
 		out["grace_mins"] = _shift_grace(shift_cache, shift)
+		out["grace_source"] = _grace_source(shift_cache, shift)
 		arrived = _minutes(str(att.in_time)[11:16])
 		if arrived is not None and arrived > begins:
 			out["late_by_mins"] = int(round(arrived - begins))
@@ -555,6 +606,22 @@ def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, t
 		if short > 0:
 			out["short_by"] = round(short, 2)
 	return out
+
+
+def _grace_source(cache, shift):
+	"""Which record the grace figure came from: this shift, or the organisation.
+
+	Exactly the order `attendance_analytics._shift_grace` uses to pick the
+	number - the shift's own `late_entry_grace_period` where it is set above
+	zero, otherwise the organisation default - so the two can never name
+	different sources for one figure. Returns None when there is no grace at
+	all, which the day sheet says in words rather than showing "0 minutes of
+	grace, set by nobody".
+	"""
+	row = _shift_row(cache, shift) if shift else None
+	if row and cint(row.late_entry_grace_period) > 0:
+		return "shift"
+	return "organisation" if org_late_grace() > 0 else None
 
 
 def _hhmm(minutes):
@@ -599,6 +666,26 @@ REQUEST_FIELDS = ["name", "employee", "employee_name", "from_date", "to_date",
                   "alvoraa_reviewed_by", "alvoraa_reviewed_on", "creation"]
 
 
+def request_fields():
+	"""REQUEST_FIELDS, plus the capacity column when the site actually has it.
+
+	045 AC-82 / the migration risk the `07` raised. `alvoraa_decided_as`
+	installs from `after_migrate`, so a deploy that skips migrations leaves the
+	column absent - and a `fields` list naming a column that is not there makes
+	the READ fail, not just the write. Every screen that lists corrections would
+	go blank.
+
+	Asking the schema costs one cached lookup and means the queue degrades to
+	"capacity not recorded" instead of to an error page.
+	"""
+	try:
+		if frappe.db.has_column(REQUEST, "alvoraa_decided_as"):
+			return REQUEST_FIELDS + ["alvoraa_decided_as"]
+	except Exception:
+		pass
+	return list(REQUEST_FIELDS)
+
+
 def _state(row):
 	"""One word for where a request has got to.
 
@@ -636,6 +723,12 @@ def _shape(row):
 	for k in ("from_date", "to_date", "half_day_date", "alvoraa_reviewed_on", "creation"):
 		if row.get(k):
 			row[k] = str(row[k])
+	# 045 AC-82(e). What the record says about the capacity, said in words the
+	# screen can print without working anything out. An empty value is "not
+	# recorded" and never "Manager" - it belongs to a decision made before this
+	# field existed, and guessing backwards would put a claim in the record
+	# that nobody made.
+	row["decided_as"] = row.get("alvoraa_decided_as") or None
 	return row
 
 
@@ -643,7 +736,7 @@ def _my_requests_between(employee, start, end):
 	return [_shape(r) for r in frappe.get_list(
 		REQUEST, filters={"employee": employee, "docstatus": ("!=", 2),
 		                  "from_date": ("<=", end), "to_date": (">=", start)},
-		fields=REQUEST_FIELDS, limit_page_length=0)]
+		fields=request_fields(), limit_page_length=0)]
 
 
 @frappe.whitelist()
@@ -651,7 +744,7 @@ def my_requests(limit=20):
 	"""Every request this person raised, newest first, with its real state."""
 	me = _me()
 	return [_shape(r) for r in frappe.get_list(
-		REQUEST, filters={"employee": me.name}, fields=REQUEST_FIELDS,
+		REQUEST, filters={"employee": me.name}, fields=request_fields(),
 		order_by="creation desc", limit_page_length=cint(limit) or 20)]
 
 
@@ -718,25 +811,242 @@ def withdraw(name):
 
 # ── HR's side ────────────────────────────────────────────────────────────────
 
+# The states that mean a correction has stopped waiting. `_state` reads them
+# too; they are named here so a query can ask the same question the screen asks
+# without re-deriving it row by row.
+DONE_STATES = ("Declined", "Withdrawn")
+
+
+def review_queue_filters(user=None):
+	"""The filters for "corrections waiting on this caller" (W1D-05, SEC-5).
+
+	One definition, used by the queue itself and by the frame's count, so the
+	bell and the screen can never disagree (AC-51, AC-52).
+
+	Two things it gets right that a hand-written filter dict would not:
+
+	**Waiting is asked in the database, not in Python.** `to_review` used to
+	read 50 rows by creation date and then drop the ones that were declined or
+	withdrawn, so the screen could show 41 of a "50". Asking for
+	`alvoraa_review_status not in (Declined, Withdrawn)` puts the state filter
+	below the cap, where it belongs. A row that was never labelled - NULL or
+	empty, on a site migrated before that field existed - is still waiting;
+	Frappe coalesces the column for a `not in`, and a test pins it.
+
+	**The scope depends on the caller, on purpose.** For an HR caller the queue
+	is `permitted_employees()` minus themselves, so a store's HR person gets
+	their store and not head office. For a reviewer who is NOT HR - a Shift
+	Supervisor a tenant has given the submit permission to - nothing is
+	narrowed, because they hold no HR entitlement, so an HR filter would return
+	the empty set and silently kill a working flow (W1D-14, AC-52 row 4).
+
+	Returns (filters, is_hr_scope). `filters` is never empty of conditions.
+	"""
+	user = user or frappe.session.user
+	filters = {"docstatus": 0, "alvoraa_review_status": ["not in", list(DONE_STATES)]}
+	me = _employee_for(user)
+	my_name = me.name if me else None
+	if my_name:
+		# Your own request is not yours to decide, so it is not in your queue.
+		filters["employee"] = ["!=", my_name]
+
+	from hrms.alvoraa_hr_core.access import permitted_companies, permitted_employees
+
+	if not permitted_companies(user):
+		# Not an HR caller. Today's scope, unchanged.
+		return filters, False
+
+	names = permitted_employees(user)
+	if my_name:
+		names = names - {my_name}
+	if not names:
+		# Entitled to nobody. An empty `in` list matches nothing, which is the
+		# fail-closed answer; it is NEVER left as "no condition" (SEC-4).
+		filters["employee"] = ["in", []]
+		return filters, True
+	filters["employee"] = ["in", sorted(names)]
+	return filters, True
+
+
+# ── who may decide, in what capacity, and from when (045 D-12) ──────────────
+#
+# 042's D-2 was never built: Wave 2 left "who may decide an attendance
+# correction, and from when" open, and the fail-closed behaviour shipped - HR
+# was offered nothing on a covered row at all. Surbhi answered it on
+# 24 September 2026, and this is the answer:
+#
+#   * **HR sees a covered person's correction from day one.** They already did,
+#     through `review_queue_filters`' HR scope; what was missing was the
+#     labelling, so the row now says who it is with and until when.
+#   * **HR may act from day three**, counted as two working days on the
+#     REQUESTER'S OWN holiday list - not the decider's, and not the company's
+#     default. A shop assistant in a store that closes Tuesdays gets their own
+#     Tuesdays, because the clock is about how long their manager has had.
+#   * **When HR acts, the record says HR decided**, not the manager.
+
+HR_WAIT_WORKING_DAYS = 2
+
+
+def hr_may_act_from(doc):
+	"""The date an HR caller may first decide somebody else's manager's request.
+
+	Two WORKING days after the request was raised, counted on the requester's
+	own holiday list. Returns a date string.
+
+	**When the employee has no holiday list at all** the count falls back to
+	calendar days and this function says so through `basis`, rather than
+	throwing or silently picking the company default. A store that has not been
+	set up yet should not make an approval unreachable, and it should not
+	pretend a weekend was counted either.
+	"""
+	raised = getdate(doc.get("creation") or nowdate())
+	window_end = frappe.utils.add_days(raised, 30)
+	holidays = set()
+	basis = _("calendar days, because this person has no holiday list")
+	try:
+		# This app's own cached helper, so a screen that asks twice pays once.
+		# `raise_exception=False` inside it is what stops an unset store making
+		# a correction undecidable.
+		hlist = holiday_list_for(doc.employee, raised)
+		if hlist:
+			holidays = {
+				str(getdate(d)) for d in frappe.get_all(
+					"Holiday",
+					filters={"parent": hlist, "parenttype": "Holiday List",
+					         "holiday_date": ["between", [raised, window_end]]},
+					pluck="holiday_date",
+				)
+			}
+			basis = _("working days on this person's own holiday list")
+	except Exception:
+		# A missing or malformed holiday list must not make a correction
+		# undecidable. Logged WITHOUT personal content: the document name is
+		# enough for an authorised human to open it, and no name, id or reason
+		# goes into a log line.
+		frappe.log_error(
+			title="attendance_correction: holiday list unreadable",
+			message=f"request={doc.get('name')} while working out the HR wait window",
+		)
+
+	counted, day = 0, raised
+	while counted < HR_WAIT_WORKING_DAYS:
+		day = frappe.utils.add_days(day, 1)
+		if str(getdate(day)) not in holidays:
+			counted += 1
+	return str(getdate(day)), basis
+
+
+def _manager_user_for(employee):
+	"""The login of this employee's own `reports_to`, or None.
+
+	`reports_to` is the single source of truth for who somebody's manager is
+	(045 AC-25). The org chart is not asked, and neither is
+	`get_effective_manager`, which falls back to the first active HR Manager
+	when `reports_to` is empty - a helper written to answer "who do we notify"
+	must not decide "who may read" (045 AC-83 / SEC-7).
+	"""
+	if not employee:
+		return None
+	mgr = frappe.db.get_value("Employee", employee, "reports_to")
+	return frappe.db.get_value("Employee", mgr, "user_id") if mgr else None
+
+
+def _manager_name_for(employee):
+	"""What to call this person's manager on screen, or None.
+
+	**A refusal that names nobody is a bad refusal.** "This is still with their
+	manager" tells an HR person to wait for somebody the product will not name,
+	and nobody can chase a blank. So the name is read from the manager's own
+	Employee row first - that is the name the rest of the product prints - and
+	from the login's full name second.
+
+	Only the manager's NAME comes back. No contact detail, no id, nothing else
+	off that row: a refusal needs one word, not a record.
+	"""
+	mgr = frappe.db.get_value("Employee", employee, "reports_to")
+	if not mgr:
+		return None
+	row = frappe.db.get_value("Employee", mgr, ["employee_name", "user_id"],
+	                          as_dict=True) or {}
+	return (row.get("employee_name")
+	        or frappe.db.get_value("User", row.get("user_id"), "full_name")
+	        or None)
+
+
+def decided_as(doc, user=None):
+	"""`Manager`, `HR`, or **None** - derived by the server, never declared.
+
+	045 SEC-19. The value is worked out here from the caller's real
+	relationship to the employee at the moment of the decision. There is no
+	argument for it on any endpoint, and a `decided_as` in a request body
+	changes nothing - a test supplies one and asserts the stored value is
+	unmoved.
+
+	The order matters: being the employee's own manager wins. Somebody who is
+	both a manager and HR, deciding their own report's request, decided as the
+	manager - that is the act they performed.
+	"""
+	user = user or frappe.session.user
+	if user and user == _manager_user_for(doc.employee):
+		return "Manager"
+
+	# **Not everybody who is not the manager is HR.** W1D-14: a tenant may give
+	# the submit permission on Attendance Request to a Shift Supervisor, who
+	# holds no HR entitlement at all and whose queue is deliberately NOT
+	# narrowed. Calling them "HR" would be a false claim in an audit field, and
+	# - worse - it would put them behind the two-working-day wait and silently
+	# kill a flow that works today. Wave 4 was not asked to narrow that.
+	#
+	# So they get None, which reads as "not recorded". That is the honest
+	# answer: the record does not know in what capacity they acted, because the
+	# product has never had a word for it.
+	from hrms.alvoraa_hr_core.access import permitted_companies
+
+	return "HR" if permitted_companies(user) else None
+
+
+def _decided_as_is_storable():
+	"""Is there a column to write the capacity into?
+
+	**This is the difference between a degraded feature and a broken one.**
+	`alvoraa_decided_as` installs from `after_migrate`, so a deploy that skips
+	migrations leaves the column absent. Writing to it then fails with "Unknown
+	column" - and because that write is on the path EVERY decision takes, every
+	attendance correction would fail, managers included, not only HR overrides.
+
+	So the write is guarded. With no column the approval still works and only
+	the capacity is lost, which reads afterwards as "not recorded" - the same
+	thing a pre-existing record says.
+	"""
+	try:
+		return bool(frappe.db.has_column(REQUEST, "alvoraa_decided_as"))
+	except Exception:
+		return False
+
+
 @frappe.whitelist()
 def to_review(limit=50):
-	"""What is waiting on HR.
+	"""What is waiting on this caller to decide.
 
 	`get_list` under the caller's own permissions, so an organisation that has
-	scoped Attendance Request by department gets that scoping here for free.
+	scoped Attendance Request by department gets that scoping here for free,
+	on top of the scope in `review_queue_filters`.
+
+	The return shape is unchanged - a plain list - because today's page reads it
+	as one. The frame's bell counts the SAME filters without the cap, so when
+	there are more waiting than the cap, the bell's number is the true total and
+	the new Inbox page says "showing the first 50 of 60" beside it (N3).
 	"""
 	if not _may_review():
 		frappe.throw(_("You do not review attendance corrections."), frappe.PermissionError)
-	filters = {"docstatus": 0}
-	# Your own requests are not yours to decide, so they are not in your queue.
-	me = _employee_for(frappe.session.user)
-	if me:
-		filters["employee"] = ["!=", me.name]
+	filters, _is_hr = review_queue_filters()
 	rows = frappe.get_list(
-		REQUEST, filters=filters, fields=REQUEST_FIELDS,
+		REQUEST, filters=filters, fields=request_fields(),
 		order_by="creation asc", limit_page_length=cint(limit) or 50)
-	out = [_shape(r) for r in rows]
-	return [r for r in out if r["state"] == "waiting"]
+	# The state filter is in the query now, so nothing should fall out here.
+	# The line stays as a second lock: `_state` is the screen's own definition
+	# of waiting, and if the two ever disagree the screen must win.
+	return [r for r in (_shape(x) for x in rows) if r["state"] == "waiting"]
 
 
 @frappe.whitelist()
@@ -761,9 +1071,68 @@ def decide(name, approve, note=None):
 	if doc.get("alvoraa_review_status") in ("Declined", "Withdrawn"):
 		frappe.throw(_("This one has already been decided."))
 
+	# 045 AC-81 / AC-82 / D-12. The capacity is derived here, from the caller's
+	# real relationship to the employee at this moment. Nothing in the request
+	# body can influence it - `decide()` takes no `decided_as` argument, and
+	# adding one later would be a change somebody has to make on purpose.
+	capacity = decided_as(doc)
+	# **The wait applies only where there is a manager who could act.**
+	#
+	# 045 AC-81, the no-manager clause. The two working days exist to give
+	# the employee's own manager first refusal. Somebody with no
+	# `reports_to`, or whose `reports_to` has no login, has nobody to give
+	# it to - so there is nothing to wait for, and HR decides straight
+	# away, which is what HR does today. Most people in a shop have no
+	# manager recorded; without this clause the window stops a working flow
+	# for all of them and tells them to wait for a person the product
+	# cannot name.
+	#
+	# **This restores what HR does today. It is not a new policy.** The
+	# answer behind the window was "HR sees from day one, acts from day
+	# three", and it was about waiting for a MANAGER. It was never about
+	# waiting for nobody.
+	#
+	# `_manager_user_for` is the same derivation `decided_as` uses, so the
+	# two cannot drift: whoever counts as the manager for the capacity is
+	# exactly whoever the wait is for.
+	mgr_user = _manager_user_for(doc.employee) if capacity == "HR" else None
+	if capacity == "HR" and mgr_user:
+		may_act_from, basis = hr_may_act_from(doc)
+		if frappe.utils.getdate(frappe.utils.nowdate()) < frappe.utils.getdate(may_act_from):
+			mgr = _manager_name_for(doc.employee)
+			# Says what happened, why, and what to do next - never "not
+			# allowed". The date is the one the row shows, so the screen and
+			# the refusal agree. **And it names the person.** Where the
+			# record holds no name at all it says plainly who to go to,
+			# instead of leaving the reader with an anonymous "their manager".
+			if mgr:
+				frappe.throw(
+					_("This is still with {0} until {1}. You can decide it as HR "
+					  "from then, counted as two {2}.").format(
+						mgr,
+						frappe.utils.formatdate(may_act_from),
+						basis),
+					frappe.PermissionError)
+			frappe.throw(
+				_("This is still with the manager on this person's record until "
+				  "{0} - the record has no name for them. You can decide it as HR "
+				  "from then, counted as two {1}. To act sooner, ask HR to check "
+				  "who this person reports to.").format(
+					frappe.utils.formatdate(may_act_from), basis),
+				frappe.PermissionError)
+
 	stamp = {"alvoraa_review_note": (note or "").strip() or None,
 	         "alvoraa_reviewed_by": frappe.session.user,
 	         "alvoraa_reviewed_on": frappe.utils.now()}
+	# Guarded on the column existing. A deploy that skipped migrations must
+	# lose the capacity, not the approval - see `_decided_as_is_storable`.
+	#
+	# `capacity` is None for a reviewer who is neither the manager nor HR - a
+	# Shift Supervisor a tenant has given the submit permission to (W1D-14).
+	# Nothing is written for them, so the record says "not recorded" rather
+	# than making a claim the product has no word for.
+	if capacity and _decided_as_is_storable():
+		stamp["alvoraa_decided_as"] = capacity
 
 	if cint(approve):
 		doc.update(stamp)

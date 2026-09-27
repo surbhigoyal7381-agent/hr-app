@@ -4,10 +4,116 @@ import frappe
 from frappe import _
 
 from alvoraa_portal.attendance_analytics import LATE_GRACE_KEY
+from alvoraa_portal.goals_api import current_cycle_name, goal_average, in_cycle
 from alvoraa_portal.subscription import requires_feature
 import calendar as _calendar
 from frappe.utils import cint, flt, today, get_first_day, get_last_day, getdate, add_days, now
 from alvoraa_goals.permissions import get_effective_manager
+from hrms.alvoraa_hr_core.access import permitted_employee_filters
+# A module import, not `from ... import`: the two switch KEYS are constants, and
+# scripts/check_app_integrity.py only recognises functions and classes across apps.
+import hrms.alvoraa_hr_core.features as org_features
+from alvoraa_portal.frame_api import ME_FIELDS
+
+# The Team screen's ceiling. Company-wide HR on a thousand-person tenant would
+# otherwise draw a thousand cards and push a thousand ids into the attendance
+# and leave queries below. The same 50 the Inbox uses (SEC-13, AC-72).
+TEAM_LIST_CAP = 50
+
+
+def me_block(row):
+    """The caller's own six keys, cut from an Employee row already read.
+
+    **The six names are `frame_api.ME_FIELDS` and they are not re-typed here**
+    (045 AC-6). Wave 1 decided which fields describe the caller and named what
+    must never join them - date_of_birth, gender, cell_number, date_of_joining,
+    reports_to, branch. A second list in a second module is how the two come to
+    disagree, and the disagreement is always in the direction of more.
+
+    `_get_employee()` reads twelve fields because other callers need them. This
+    takes the six, and the Employee id arrives as `name` and leaves as
+    `employee`, so a payload never carries two things called name - the same
+    rename `frame_api._me` does.
+
+    Returns None when there is no Active record, which is persona rule 6.
+    """
+    if not row:
+        return None
+    src = dict(row)
+    src["employee"] = src.get("name")
+    return {k: src.get(k) for k in ME_FIELDS}
+
+
+def direct_reports_query(emp_id):
+    """This person's own Active direct reports, **as a subquery**.
+
+    Never a list of ids read into Python and shipped back as an `IN (...)`.
+    That shape is one statement, so the query count stays flat and nothing
+    looks wrong, while the statement's cost grows with the company - slice 044
+    measured a x5 slope on it and `nfr-budget.md` now bans it.
+
+    Fails closed on a caller with no Employee id: `name IN ()` matches nobody
+    in every Frappe query builder, and it is never an empty condition (SEC-4).
+    """
+    if not emp_id:
+        return frappe.qb.get_query("Employee", fields=["name"],
+                                   filters=[["name", "in", []]])
+    return frappe.qb.get_query("Employee", fields=["name"],
+                               filters={"reports_to": emp_id, "status": "Active"})
+
+
+# The approval row's own fields, and the two that describe WHY somebody is off.
+# Split into two names so that "what can this query return" is answerable by
+# reading the query (045 AC-76e).
+LEAVE_ROW_FIELDS = ("name", "employee", "employee_name", "department",
+                    "from_date", "to_date", "total_leave_days")
+LEAVE_WHY_FIELDS = ("leave_type", "description")
+
+
+def _pending_leave_for_approver(user, emp_id):
+    """Open leave requests this person approves, in **two reads**.
+
+    The difference between the two reads is the whole of 045 AC-76.
+
+    `leave_type` is the category - "Sick Leave". `description` is what the
+    employee typed - "father in hospital" - and it is the more personal of the
+    two, so a rule written about the category alone would leak the worse half
+    and look like it had been followed.
+
+    Both travel on ONE kind of row: the approval row for the caller's own
+    direct report, where the caller is deciding that request and needs to know
+    what they are deciding. Everywhere else, for everybody, **neither field is
+    read at all**.
+
+    **The case an engineer will meet, and the rule does not soften for it**
+    (045 Q4a): an HR person who is the named `leave_approver` for somebody who
+    is NOT their direct report decides that request **without seeing either
+    field**. The decided rule is `reports_to`-based; the approval duty is
+    `leave_approver`-based; the two do not always coincide. They see the dates,
+    the days and the person - "why" stays withheld, in both its forms.
+
+    **Two reads rather than one read and a blank-out afterwards**, because the
+    fields must be absent from the `fields` list. A field removed after the
+    query is a field that was read, and the next person to touch this function
+    re-adds it to the payload without noticing they widened anything.
+    """
+    LA = frappe.qb.DocType("Leave Application")
+    mine = ((LA.leave_approver == user) & (LA.status == "Open") & (LA.docstatus == 0))
+    scope = direct_reports_query(emp_id)
+
+    def _read(fields, own):
+        cond = LA.employee.isin(scope) if own else LA.employee.notin(scope)
+        q = frappe.qb.from_(LA).where(mine & cond).orderby(LA.creation)
+        for f in fields:
+            q = q.select(getattr(LA, f))
+        rows = q.run(as_dict=True)
+        for row in rows:
+            row["is_own_report"] = own
+        return rows
+
+    return (_read(LEAVE_ROW_FIELDS + LEAVE_WHY_FIELDS, True)
+            + _read(LEAVE_ROW_FIELDS, False))
+
 
 # ── Cache invalidation helpers (called by doc_events hooks in hooks.py) ──────
 
@@ -82,6 +188,70 @@ def _leave_year_start(date_=None, company=None):
         # No Fiscal Year for this date/company, or erpnext unavailable.
         pass
     return frappe.utils.get_year_start(date_)
+
+
+def _ledger_leave_balances(employee, date_=None):
+    """Leave per type from Frappe HR's leave ledger (slice 035, decision Q-e).
+
+    The portal used to work leave out for itself: allocated minus approved Leave
+    Applications. That missed every other kind of ledger entry - days the
+    late-coming rule took, encashments, expiries - so on PP Jewellers 97 people
+    were shown 76 days of Casual Leave they did not have, while the apply form's
+    preview, the leave check and the late rule all read the ledger and said less.
+
+    This is the figure Frappe HR's own screens show (get_leave_details), worked
+    out the same way: get_leave_balance_on with
+    consider_all_leaves_in_the_allocation_period, so leave already approved for
+    later in the period counts as used.
+
+    It calls Frappe HR's lower functions rather than get_leave_details or
+    get_leave_balance_on, because those begin with validate_leave_access. That
+    refuses a manager who is the reporting manager but not the named leave
+    approver, and a store HR person whose desk read is branch-scoped - people the
+    portal already lets see this figure. So EVERY CALLER MUST CHECK WHO MAY SEE
+    THIS EMPLOYEE FIRST. test_leave_ledger_035 compares this with
+    get_leave_balance_on, so an upstream change to that shape fails a test.
+
+    Returns [{leave_type, total, taken, pending, balance}], sorted by leave type.
+    """
+    from hrms.hr.doctype.leave_application.leave_application import (
+        get_allocation_expiry_for_cf_leaves,
+        get_leave_allocation_records,
+        get_leaves_for_period,
+        get_leaves_pending_approval_for_period,
+        get_manually_expired_leaves,
+        get_remaining_leaves,
+    )
+
+    date_ = getdate(date_ or today())
+    precision = cint(frappe.db.get_single_value("System Settings", "float_precision")) or 2
+    rows = []
+    for leave_type, alloc in sorted(get_leave_allocation_records(employee, date_).items()):
+        start, end = alloc.from_date, alloc.to_date
+        cf_expiry = get_allocation_expiry_for_cf_leaves(employee, leave_type, end, start)
+        used = get_leaves_for_period(employee, leave_type, start, end)  # negative
+        expired = get_manually_expired_leaves(employee, leave_type, start, end)
+        balance = get_remaining_leaves(alloc, used, date_, cf_expiry, expired).leave_balance
+        total = flt(alloc.total_leaves_allocated)
+        taken = flt(-used)
+        # Days that were allocated, not taken, and are gone anyway: carry
+        # forward that lapsed, or an allocation expired by hand. Frappe HR's own
+        # screen works it out the same way (get_leave_details). Without it
+        # total - taken does not equal the balance, so a screen would say
+        # "3 of 8 used" and "3 left" and leave the employee to wonder about the
+        # other 2. Nothing on PP Jewellers expires today; a tenant that carries
+        # leave forward will.
+        lapsed = total - (balance + taken)
+        rows.append({
+            "leave_type": leave_type,
+            "total": flt(total, precision),
+            "taken": flt(taken, precision),
+            "expired": flt(lapsed, precision) if lapsed > 0 else 0.0,
+            "pending": flt(get_leaves_pending_approval_for_period(employee, leave_type, start, end),
+                           precision),
+            "balance": flt(balance, precision),
+        })
+    return rows
 
 
 def _get_employee(user=None):
@@ -178,43 +348,24 @@ def get_employee_dashboard():
         return {"no_employee": True}
 
     td       = today()
-    yr_start = _leave_year_start(td, emp.company)
     mo_start = get_first_day(td)
 
-    # ── Leave balances ────────────────────────────────────────────────────
-    allocations = frappe.get_all(
-        "Leave Allocation",
-        filters={
-            "employee": emp.name, "docstatus": 1,
-            "from_date": ["<=", td], "to_date": [">=", td],
-        },
-        fields=["leave_type", "total_leaves_allocated"],
-        ignore_permissions=True,
-    )
-
-    taken_map = {}
-    if allocations:
-        apps = frappe.get_all(
-            "Leave Application",
-            filters={"employee": emp.name, "docstatus": 1, "status": "Approved",
-                     "from_date": [">=", yr_start]},
-            fields=["leave_type", "total_leave_days"],
-            ignore_permissions=True,
-        )
-        for a in apps:
-            taken_map[a.leave_type] = taken_map.get(a.leave_type, 0) + a.total_leave_days
-
+    # ── Leave balances: Frappe HR's ledger (slice 035) ───────────────────
+    # The caller's own record, so no one else's figure can be reached here.
     leave_balances = []
-    for al in allocations:
-        lt    = al.leave_type
-        total = float(al.total_leaves_allocated)
-        taken = float(taken_map.get(lt, 0))
+    for b in _ledger_leave_balances(emp.name, td):
+        total, taken = b["total"], b["taken"]
         leave_balances.append({
-            "leave_type": lt,
+            "leave_type": b["leave_type"],
             "total":      total,
             "taken":      taken,
-            "balance":    max(total - taken, 0),
-            "color":      LEAVE_COLORS.get(lt, "#64748b"),
+            "expired":    b["expired"],
+            # The ledger's own figure, negative and all. A leave type set to
+            # allow a negative balance can genuinely be below zero; clamping it
+            # to 0 told the employee they had none left when they were two in
+            # debt, and the leave gate would have said otherwise.
+            "balance":    b["balance"],
+            "color":      LEAVE_COLORS.get(b["leave_type"], "#64748b"),
             "pct_used":   round(taken / total * 100) if total else 0,
         })
 
@@ -249,26 +400,7 @@ def get_employee_dashboard():
         ignore_permissions=True,
     )
 
-    # ── Upcoming holidays (full year, no Sundays, deduped across lists) ──
-    _mo_start  = get_first_day(td)
-    _year_end  = "{0}-12-31".format(getdate(td).year)
-    _raw_hols  = frappe.get_all(
-        "Holiday",
-        filters={
-            "holiday_date": ["between", [_mo_start, _year_end]],
-            "weekly_off":   0,
-        },
-        fields=["holiday_date", "description"],
-        order_by="holiday_date asc",
-        limit=200,
-        ignore_permissions=True,
-    )
-    _seen = set()
-    holidays = []
-    for _h in _raw_hols:
-        if _h.holiday_date not in _seen:
-            _seen.add(_h.holiday_date)
-            holidays.append(_h)
+    holidays, holiday_note = _own_upcoming_holidays(emp.name, td)
 
     return {
         "employee":        emp,
@@ -277,8 +409,55 @@ def get_employee_dashboard():
         "recent_leaves":   recent_leaves,
         "pending_approvals": pending,
         "holidays":        holidays,
+        "holiday_note":    holiday_note,
         "month_days":      len(att_rows),
     }
+
+
+def _own_upcoming_holidays(employee, date_):
+    """The employee's own named holidays, this month to the end of their list.
+
+    Slice 035. Home used to read EVERY holiday list on the site, so store staff
+    at PP Jewellers were told Diwali, Dussehra, Guru Nanak Jayanti and Christmas
+    were holidays - Head Office's, not theirs. It also stopped at 31 December,
+    hiding January to March of an April-March list.
+
+    The list is found exactly as payroll and leave find it: ERPNext's
+    get_holiday_list_for_employee, which Frappe HR takes over through its
+    employee_holiday_list hook and answers from Holiday List Assignment only
+    (never Employee.holiday_list or the company default). So this card can
+    never show a calendar that payroll ignores. When payroll has no list for
+    this person, the card says so plainly - on a new tenant that is a setup gap
+    HR must close, and a quiet empty card would hide it.
+
+    Returns (holidays, note). note is None when a list was found.
+    """
+    # `holiday_list_for` is ERPNext's `get_holiday_list_for_employee` with a
+    # memo that lives for one call and only when a call opened one (044 R1).
+    # Home asks this question twice - the attendance-gap rule and this card -
+    # for the same person on the same day. Every other caller behaves exactly
+    # as before: with no memo open the lookup simply runs.
+    from alvoraa_portal.call_cache import holiday_list_for
+
+    holiday_list = holiday_list_for(employee, date_)
+    if not holiday_list:
+        return [], _("No holiday list is assigned to you yet. Ask HR to set one up.")
+
+    list_end = frappe.db.get_value("Holiday List", holiday_list, "to_date")
+    holidays = frappe.get_all(
+        "Holiday",
+        filters={
+            "parent": holiday_list,
+            "weekly_off": 0,
+            "holiday_date": ["between", [get_first_day(date_), list_end]],
+        },
+        fields=["holiday_date", "description"],
+        order_by="holiday_date asc",
+        # No cap. This is one list's own named holidays now, not every list on
+        # the site, so it is already small - and a cap here would silently drop
+        # a real holiday off the end of the card. get_all is unlimited by default.
+    )
+    return holidays, None
 
 
 @frappe.whitelist()
@@ -288,28 +467,99 @@ def get_manager_dashboard():
     if not emp:
         return {"no_employee": True}
 
-    # Direct reports
+    fields = ["name", "employee_name", "designation", "department", "user_id", "image"]
+
+    # Their own direct reports. Theirs whatever else they are.
     team = frappe.get_all(
         "Employee",
         filters={"reports_to": emp.name, "status": "Active"},
-        fields=["name", "employee_name", "designation", "department", "user_id", "image"],
+        fields=fields,
         ignore_permissions=True,
     )
-    # HR managers also own employees who have no reporting manager set
+    team_total = len(team)
+    team_capped = False
+    is_hr_scope = False
+
+    # SEC-13 / AC-72 / W1D-20. For an HR caller the Team screen is their HR
+    # SCOPE, not "everybody in the tenant who has no manager".
+    #
+    # What was here before added every Active employee in the tenant whose
+    # reports_to was empty, with ignore_permissions and NO company or branch
+    # filter, to anyone holding HR Manager or HR User. A store's HR person in
+    # Ludhiana therefore saw head office and every other store's unassigned
+    # people. That block is deleted, not filtered - the replacement is a scope,
+    # which is a different question with a different answer.
+    #
+    # Three things this keeps, each of which would be a regression if dropped:
+    #   * status = "Active" stays. permitted_employee_filters returns every
+    #     status on purpose, so without this the screen would start listing
+    #     leavers - WIDER than before, not narrower.
+    #   * the caller's own record stays out, as it always was.
+    #   * their direct reports stay in even when they fall outside their HR
+    #     scope - an HR person for one company who manages somebody in another
+    #     must not lose them off their own team screen.
+    # And the list is capped, because company-wide HR on a thousand-person
+    # tenant would otherwise draw a thousand cards and push a thousand ids into
+    # the attendance query below. The true total goes with it, so the screen can
+    # say what it is not showing (AC-72).
     roles = frappe.get_roles()
     if {"HR Manager", "HR User"} & set(roles):
-        orphans = frappe.get_all(
-            "Employee",
-            filters={"reports_to": ("is", "not set"), "status": "Active", "name": ["!=", emp.name]},
-            fields=["name", "employee_name", "designation", "department", "user_id", "image"],
+        is_hr_scope = True
+        scope = [[f, c[0], c[1]]
+                 for f, c in permitted_employee_filters(user).items()]
+        scope += [["status", "=", "Active"], ["name", "!=", emp.name]]
+
+        scoped = frappe.get_all(
+            "Employee", filters=scope, fields=fields,
+            order_by="employee_name asc", limit=TEAM_LIST_CAP,
             ignore_permissions=True,
         )
-        existing = {t.name for t in team}
-        team.extend(o for o in orphans if o.name not in existing)
+        scoped_total = frappe.db.count("Employee", filters=scope)
 
-    # Indirect reports (L2 only) — single query instead of one per manager
+        # The direct reports that the scope does not already cover. Asked of the
+        # database rather than worked out here, so the scope rule has exactly one
+        # definition (SEC-4).
+        outside = []
+        if team:
+            covered = set(frappe.get_all(
+                "Employee",
+                filters=scope + [["name", "in", [t.name for t in team]]],
+                pluck="name", ignore_permissions=True,
+            ))
+            outside = [t for t in team if t.name not in covered]
+
+        team_total = scoped_total + len(outside)
+        seen = {s.name for s in scoped}
+        team = scoped + [t for t in outside if t.name not in seen]
+        if len(team) > TEAM_LIST_CAP:
+            team = team[:TEAM_LIST_CAP]
+        team_capped = team_total > len(team)
+
+    # Indirect reports (L2 only) - single query instead of one per manager.
+    #
+    # NOT for an HR caller (review finding F5, decided 2026-09-24).
+    #
+    # For a manager, "L2" means their own indirect reports and the word means
+    # something. For an HR caller `team` is the first 50 people of their HR
+    # scope in alphabetical order, so "the reports of those 50" is an arbitrary
+    # set of people nobody asked for. It did three unhelpful things:
+    #
+    #   * it was the one UNCAPPED query on this screen. The notes claimed the
+    #     cap "passes 50 ids to the queries below"; it did not - it passed 50
+    #     plus all of their reports, and that list went into the attendance
+    #     query, the raw-SQL IN (...) and the month-leaves query.
+    #   * it put people who are NOT on the screen into the "Present" tile, the
+    #     "on leave today" list and the month table. A number that does not
+    #     match the list beside it is the exact fault AC-20 and AC-51 exist to
+    #     stop.
+    #   * nothing reads what it returns. `l2_reports` and `l2_size` have no
+    #     consumer anywhere in this repository - not the portal, not the frame,
+    #     not the mobile app.
+    #
+    # A manager's Team screen is untouched, which is where L2 earns its place.
+    # For HR the screen now answers about exactly the people it is showing.
     l2 = []
-    if team:
+    if team and not is_hr_scope:
         team_names = [t.name for t in team]
         mgr_name_map = {t.name: t.employee_name for t in team}
         all_l2 = frappe.get_all(
@@ -338,53 +588,147 @@ def get_manager_dashboard():
         for r in rows:
             today_att[r.employee] = r.status
 
-    # Who is on leave today
+    # Who is on leave today - PRESENCE ONLY.
+    #
+    # 045 AC-76 / PRIV-2 / D-1, and `01b` §14 rule 9: no screen shows a
+    # colleague the reason for an absence. `leave_type` used to be selected
+    # here. For a manager about their own report that was arguable - they
+    # approve the request. W1D-20 then widened `team_ids` from a manager's
+    # direct reports to an HR person's whole scope, up to 50 people, and the
+    # leave type went with it. Nobody asked for that; it arrived with a scope
+    # change. This takes it back.
+    #
+    # The field is gone from the SELECT, not from the renderer. A field
+    # filtered in JavaScript is still in the response and still in the
+    # browser's cache.
+    # 045 AC-14, the second live instance of the banned shape. This was raw SQL
+    # with one bound parameter per person - `employee IN (%s,%s,...)` built from
+    # `team_ids`. For a company-wide HR caller that was up to fifty, and before
+    # Wave 1 capped the list it was the whole tenant.
+    #
+    # **What this fix does and does not do, said plainly.** The raw SQL is
+    # gone and `leave_type` is gone. The id list is NOT gone: it is now a
+    # `filters={"employee": ["in", team_ids]}`, which is the same `IN (...)`
+    # shape written in the query builder instead of by hand.
+    #
+    # That is a declared trade-off, not an oversight. AC-14 asks for a
+    # subquery, and the reason a subquery cannot simply be dropped in here is
+    # that this read must match the list the screen DRAWS, which is capped at
+    # TEAM_LIST_CAP - a subquery over the caller's scope would count people who
+    # are not on the page, and a number that does not equal the list beside it
+    # is the fault AC-12 exists to stop. MariaDB's support for `LIMIT` inside
+    # an `IN (SELECT ...)` is not something to build a privacy-relevant read
+    # on.
+    #
+    # The list is bounded at fifty by construction, so the x5 slope slice 044
+    # measured cannot appear here. **AC-14's subquery lands with the Team
+    # rewrite**, where `direct` and `covered` are each their own scope with
+    # their own count and the question "which list must this equal" has an
+    # answer. This function is replaced there.
     on_leave_today = []
     if team_ids:
-        # .format() only inserts "%s" placeholders — no user data in the format string; safe.
-        on_leave_today = frappe.db.sql("""
-            SELECT employee, employee_name, leave_type
-            FROM `tabLeave Application`
-            WHERE employee IN ({placeholders})
-              AND docstatus = 1 AND status = 'Approved'
-              AND from_date <= %s AND to_date >= %s
-        """.format(placeholders=",".join(["%s"] * len(team_ids))),
-            tuple(team_ids) + (td, td), as_dict=True,
+        on_leave_today = frappe.get_all(
+            "Leave Application",
+            filters={"employee": ["in", team_ids], "docstatus": 1,
+                     "status": "Approved",
+                     "from_date": ["<=", td], "to_date": [">=", td]},
+            fields=["employee", "employee_name"],
+            ignore_permissions=True,
         )
 
-    # Pending leave approvals (from all in org for this approver)
-    pending = frappe.get_all(
-        "Leave Application",
-        filters={"leave_approver": user, "status": "Open", "docstatus": 0},
-        fields=["name", "employee", "employee_name", "department", "leave_type",
-                "from_date", "to_date", "total_leave_days", "description"],
-        order_by="creation asc",
-        ignore_permissions=True,
-    )
+    # Pending leave approvals, in TWO reads, and the difference between them is
+    # the whole of AC-76.
+    #
+    # `leave_type` is the category - "Sick Leave". `description` is what the
+    # employee typed - "father in hospital" - and it is the more personal of
+    # the two, so a rule written about the category alone would leak the worse
+    # half and look like it had been followed.
+    #
+    # Both travel on ONE row only: the approval row for the caller's OWN direct
+    # report, where the caller is deciding that request and needs to know what
+    # they are deciding. Everywhere else, for everybody, neither field is read.
+    #
+    # The case an engineer will meet, and the rule does not soften for it
+    # (045 Q4a): an HR person who is the named `leave_approver` for somebody who
+    # is NOT their direct report decides that request WITHOUT seeing either
+    # field. The decided rule is reports_to-based; the approval duty is
+    # leave_approver-based; the two do not always coincide. They see the dates,
+    # the days and the person - "why" stays withheld, in both its forms.
+    #
+    # Two reads rather than one read and a blank-out in Python: the fields must
+    # be absent from the `fields` list, not removed after the fact, so that
+    # "what can this query return" is answerable by reading the query.
+    pending = _pending_leave_for_approver(user, emp.name)
 
-    # Approved leaves for the month (team)
+    # Approved leaves that TOUCH this month.
+    #
+    # 045 AC-21. This asked `from_date >= mo_start`, which is not the question
+    # the card asks. Two ways it was wrong, and it has been wrong since it was
+    # written (Appendix D B18/TM-05):
+    #
+    #   * leave that BEGAN last month and is still running was missing. Somebody
+    #     off from 28 August to 3 September did not appear on the September
+    #     card at all, which is the person a manager most needs to see.
+    #   * leave that starts NEXT month was included. A request for 2-4 October
+    #     appeared on the September card.
+    #
+    # The right test is overlap: it starts on or before the last day of the
+    # month AND ends on or after the first. Still one query.
+    #
+    # `leave_type` is also gone from the `fields` list - AC-76. This is a card,
+    # not an approval row, so it carries presence and dates and nothing about
+    # why.
     mo_start = get_first_day(td)
+    mo_end = get_last_day(td)
     month_leaves = []
     if team_ids:
         month_leaves = frappe.get_all(
             "Leave Application",
             filters={"employee": ["in", team_ids], "docstatus": 1,
-                     "status": "Approved", "from_date": [">=", mo_start]},
-            fields=["employee_name", "leave_type", "from_date", "to_date", "total_leave_days"],
+                     "status": "Approved",
+                     "from_date": ["<=", mo_end], "to_date": [">=", mo_start]},
+            fields=["employee_name", "from_date", "to_date", "total_leave_days"],
             order_by="from_date asc",
             ignore_permissions=True,
         )
 
     return {
-        "manager":         emp,
+        # 045 AC-6 / US-12. This was `"manager": emp` - the WHOLE Employee row
+        # that `_get_employee()` reads, which carries date_of_birth, gender,
+        # cell_number, branch, date_of_joining and reports_to. Every browser
+        # that drew a Team screen was handed all of them, and nothing on the
+        # screen ever used one. The key is renamed as well as narrowed: this
+        # block describes the CALLER, and calling it "manager" is what made a
+        # whole record look like a reasonable thing to put there.
+        "me":              me_block(emp),
         "team":            team,
-        "l2_reports":      l2,
         "today_att":       today_att,
         "on_leave_today":  on_leave_today,
         "pending_approvals": pending,
         "month_leaves":    month_leaves,
         "team_size":       len(team),
-        "l2_size":         len(l2),
+        # What the list really holds, and what it would hold uncapped. The
+        # screen must say so when they differ: a count that does not match the
+        # list beside it is worse than no count.
+        "team_total":      team_total,
+        "team_capped":     team_capped,
+        # Whether this list is an HR scope or a manager's own reports, so the
+        # screen can name what it is showing instead of calling every row a
+        # "direct report" when most of them are not.
+        "is_hr_scope":     is_hr_scope,
+        "team_cap":        TEAM_LIST_CAP,
+        # 045 AC-16 / US-16. `l2_reports` and `l2_size` are GONE. Wave 1
+        # recorded at hr_api.py:441-460 that nothing reads them, and a grep
+        # across alvoraa_portal, alvoraa_goals, hrms and mobile/ on this branch
+        # agrees: the only reader anywhere was Wave 1's own test asserting they
+        # were empty. A payload key nobody reads cannot grow a reader later if
+        # it is not there.
+        #
+        # `l2` itself is still worked out for a manager, because it still feeds
+        # `team_ids` and so the presence and leave reads. That is the remaining
+        # question - a person in team_ids who is not drawn on the screen makes a
+        # count disagree with its list - and it belongs to the Team rewrite and
+        # its per-section counts (AC-12, AC-74), not to this deletion.
     }
 
 
@@ -833,35 +1177,14 @@ def get_employee_scorecard(employee_id):
             hrs.append(float(a.working_hours))
     avg_hours = round(sum(hrs) / len(hrs), 1) if hrs else 0
 
-    # Leave balances
-    alloc_rows = frappe.db.sql("""
-        SELECT leave_type, SUM(total_leaves_allocated) as allocated
-        FROM `tabLeave Allocation`
-        WHERE employee = %s AND docstatus = 1
-          AND from_date <= %s AND to_date >= %s
-        GROUP BY leave_type ORDER BY leave_type
-    """, (employee_id, td, td), as_dict=True)
-    yr_start = _leave_year_start(td)
-    taken_rows = frappe.get_all(
-        "Leave Application",
-        filters={"employee": employee_id, "docstatus": 1, "status": "Approved",
-                 "from_date": [">=", yr_start]},
-        fields=["leave_type", "total_leave_days"],
-        ignore_permissions=True,
-    )
-    taken_map = {}
-    for r in taken_rows:
-        taken_map[r.leave_type] = taken_map.get(r.leave_type, 0) + float(r.total_leave_days or 0)
-    leave_balances = []
-    for a in alloc_rows:
-        alloc = float(a.allocated or 0)
-        taken = taken_map.get(a.leave_type, 0)
-        leave_balances.append({
-            "leave_type": a.leave_type,
-            "allocated": alloc,
-            "taken": round(taken, 1),
-            "balance": max(alloc - taken, 0),
-        })
+    # Leave balances: Frappe HR's ledger (slice 035). Access to this employee
+    # was checked at the top of this function.
+    leave_balances = [
+        {"leave_type": b["leave_type"], "allocated": b["total"],
+         "taken": round(b["taken"], 1), "expired": b["expired"],
+         "balance": b["balance"]}
+        for b in _ledger_leave_balances(employee_id, td)
+    ]
 
     # Pending leave requests
     pending_leaves = frappe.get_all(
@@ -881,10 +1204,20 @@ def get_employee_scorecard(employee_id):
         goals = frappe.get_all(
             "Individual Goal",
             filters={"employee": employee_id, "docstatus": ["!=", 2]},
-            fields=["name", "goal_name", "progress_pct", "status", "trajectory"],
-            order_by="creation desc", limit=15,
+            fields=["name", "goal_name", "progress_pct", "status", "trajectory", "appraisal_cycle"],
+            order_by="creation desc", limit=30,
             ignore_permissions=True,
         )
+        # The current cycle's goals first (slice 035), so a finished quarter's
+        # 100% does not sit at the top of this quarter's list. Newest first
+        # within each group, as before; still 15 at most.
+        cycle = current_cycle_name(frappe.db.get_value("Employee", employee_id, "company"))
+        # This quarter's goals, and undated ones, before older quarters'.
+        goals.sort(key=lambda g: bool(cycle) and bool(g.get("appraisal_cycle"))
+                   and g["appraisal_cycle"] != cycle)
+        for g in goals:
+            g.pop("appraisal_cycle", None)   # ordering only; not sent to the page
+        goals = goals[:15]
 
     # Appraisal history
     appraisal_history = []
@@ -957,7 +1290,7 @@ def get_team_scorecard():
     team = frappe.get_all(
         "Employee",
         filters={"reports_to": mgr_emp.name, "status": "Active"},
-        fields=["name", "employee_name", "designation"],
+        fields=["name", "employee_name", "designation", "company"],
         ignore_permissions=True,
     )
     if not team:
@@ -981,48 +1314,94 @@ def get_team_scorecard():
         if r.working_hours:
             att_by_emp[e]["hrs"].append(float(r.working_hours))
 
-    # Goals per team member
+    # Goals per team member: their company's current cycle only (slice 035).
+    # This used to average every goal the person ever had, so the comparison
+    # chart managers rate beside blended last quarter into this one.
     goals_by_emp = {}
     if frappe.db.exists("DocType", "Individual Goal"):
+        cycles = {c: current_cycle_name(c) for c in {m.company for m in team}}
+        cycle_of = {m.name: cycles.get(m.company) for m in team}
         goal_rows = frappe.get_all(
             "Individual Goal",
             filters={"employee": ["in", emp_ids], "docstatus": ["!=", 2]},
-            fields=["employee", "progress_pct", "status"],
+            fields=["employee", "appraisal_cycle", "progress_pct", "status", "weightage"],
             ignore_permissions=True,
         )
-        for g in goal_rows:
-            e = g.employee
-            if e not in goals_by_emp:
-                goals_by_emp[e] = {"total": 0, "pct_sum": 0, "completed": 0}
-            goals_by_emp[e]["total"] += 1
-            goals_by_emp[e]["pct_sum"] += float(g.progress_pct or 0)
-            if g.status == "Completed":
-                goals_by_emp[e]["completed"] += 1
-        for e, gd in goals_by_emp.items():
-            gd["avg"] = round(gd["pct_sum"] / gd["total"]) if gd["total"] else 0
+        rows_by_emp = {}
+        # in_cycle is goals_api's one rule - this quarter's goals plus goals
+        # that belong to no quarter. A second copy of it here is how the team
+        # list and this chart came to disagree in the first place.
+        for g in in_cycle(goal_rows, cycle_of):
+            if g.status == "Cancelled":
+                # Dropped here rather than only from the average: counted in
+                # "total" but not in "avg", the two numbers on one card
+                # described different sets of goals.
+                continue
+            rows_by_emp.setdefault(g.employee, []).append(g)
+        for e, rows in rows_by_emp.items():
+            goals_by_emp[e] = {
+                "total": len(rows),
+                "completed": sum(1 for g in rows if g.status == "Completed"),
+                # One decimal, the same as the team goals list (slice 035,
+                # takeover review). Rounded to whole numbers here and to one
+                # decimal there, two manager screens printed 67 and 66.7 for
+                # one person's goals.
+                "avg": round(goal_average(rows), 1),
+            }
 
-    # Latest appraisal score per team member
+    # Latest released appraisal score per team member.
+    #
+    # 045 AC-14. Three things were wrong with the statement this replaces, and
+    # they were wrong together:
+    #
+    #   * **the scope was an `IN (...)` with one bound parameter per person.**
+    #     That is one statement, so the query count stayed flat and nothing
+    #     looked wrong, while the statement's cost grew with the company.
+    #     Slice 044 measured a x5 slope on this shape and `nfr-budget.md` now
+    #     bans it. The scope goes into the database as a subquery instead, and
+    #     the statement is the same size for four reports as for four hundred.
+    #   * **`ORDER BY ae.creation DESC` with no `LIMIT`.** Every extension row
+    #     every report ever had came back, sorted, so a team that had been
+    #     through twelve cycles fetched twelve times the rows needed.
+    #   * **the privacy filter ran in Python**, so unreleased ratings were read
+    #     out of the database and into this process before being dropped. The
+    #     `review_status` test is the whole of slice 010's PRIV-1, and a filter
+    #     that runs after the read is a filter that the next refactor forgets.
+    #     It is now in the `WHERE`: an unreleased rating is never fetched.
+    #
+    # The correlated `MAX(creation)` is what makes it one row per person rather
+    # than all of them sorted - the same answer the Python loop was working out
+    # by taking the first of each employee it met.
     score_by_emp = {}
     if frappe.db.exists("DocType", "Alvoraa Appraisal Extension"):
-        # .format() only inserts "%s" placeholders — no user data in the format string; safe.
-        placeholders = ",".join(["%s"] * len(emp_ids))
+        # .format() only inserts "%s" placeholders and a fixed-length list of
+        # them for the three released statuses — no user data, and no
+        # per-person placeholder, in the format string.
+        released = ",".join(["%s"] * len(_REVIEW_RATING_RELEASED))
         rows = frappe.db.sql("""
-            SELECT ae.employee, ae.overall_rating, ae.review_status,
-                   (SELECT a2.total_score FROM `tabAppraisal` a2 WHERE a2.name = ae.name LIMIT 1) AS score
+            SELECT ae.employee, ae.overall_rating, a2.total_score AS score
             FROM `tabAlvoraa Appraisal Extension` ae
-            WHERE ae.employee IN ({})
+            LEFT JOIN `tabAppraisal` a2 ON a2.name = ae.name
+            WHERE ae.employee IN (
+                    SELECT e.name FROM `tabEmployee` e
+                    WHERE e.reports_to = %s AND e.status = 'Active')
               AND ae.docstatus != 2
-            ORDER BY ae.creation DESC
-        """.format(placeholders), emp_ids, as_dict=True)
+              AND ae.review_status IN ({released})
+              AND ae.creation = (
+                    SELECT MAX(x.creation) FROM `tabAlvoraa Appraisal Extension` x
+                    WHERE x.employee = ae.employee
+                      AND x.docstatus != 2
+                      AND x.review_status IN ({released}))
+        """.format(released=released),
+            (mgr_emp.name,) + tuple(_REVIEW_RATING_RELEASED)
+            + tuple(_REVIEW_RATING_RELEASED),
+            as_dict=True,
+        )
         for r in rows:
-            # The latest review whose rating has been released (slice 010, PRIV-1).
-            if r.review_status not in _REVIEW_RATING_RELEASED:
-                continue
-            if r.employee not in score_by_emp:
-                score_by_emp[r.employee] = {
-                    "score": float(r.score or 0),
-                    "rating": r.overall_rating or "",
-                }
+            score_by_emp[r.employee] = {
+                "score": float(r.score or 0),
+                "rating": r.overall_rating or "",
+            }
 
     members = []
     for m in team:
@@ -1109,30 +1488,16 @@ def get_employee_detail_for_manager(employee_id):
     for a in month_att:
         att_summary[a.status] = att_summary.get(a.status, 0) + 1
 
-    # Leave balances — allocations minus approved applications (leaves_taken column removed in newer HRMS)
-    alloc_rows = frappe.db.sql("""
-        SELECT leave_type, SUM(total_leaves_allocated) as allocated
-        FROM `tabLeave Allocation`
-        WHERE employee = %s AND docstatus = 1
-          AND from_date <= %s AND to_date >= %s
-        GROUP BY leave_type ORDER BY leave_type
-    """, (employee_id, td, td), as_dict=True)
-    yr_start = _leave_year_start(td)
-    taken_rows = frappe.get_all(
-        "Leave Application",
-        filters={"employee": employee_id, "docstatus": 1, "status": "Approved",
-                 "from_date": [">=", yr_start]},
-        fields=["leave_type", "total_leave_days"],
-        ignore_permissions=True,
-    )
-    taken_map = {}
-    for r in taken_rows:
-        taken_map[r.leave_type] = taken_map.get(r.leave_type, 0) + float(r.total_leave_days or 0)
+    # Leave balances: Frappe HR's ledger (slice 035). Access to this employee
+    # was checked at the top of this function.
     leave_balances = [
-        {"leave_type": a.leave_type,
-         "allocated": float(a.allocated or 0),
-         "balance": max(float(a.allocated or 0) - taken_map.get(a.leave_type, 0), 0)}
-        for a in alloc_rows
+        # No "expired" here: this screen shows allocated and balance only, so
+        # the figure has nothing to reconcile and a manager does not need it.
+        # Adding a field to a screen the slice did not ask for is a visibility
+        # change, even when the field is harmless.
+        {"leave_type": b["leave_type"], "allocated": b["total"],
+         "balance": b["balance"]}
+        for b in _ledger_leave_balances(employee_id, td)
     ]
 
     # Pending leave requests from this employee
@@ -1296,6 +1661,12 @@ def get_available_features():
         frappe.log_error(title="hr_api: could not read plan entitlement",
                          message=frappe.get_traceback())
 
+    # Organisation switches (26 Sep 2026). Not plan entitlements: HR turns them on
+    # in Organisation Settings. Read live, never from the cached block above, so
+    # a switch HR just changed shows on the next page load.
+    features["org_late_rules"] = org_features.late_rules_on()
+    features["org_attendance_scoring"] = org_features.attendance_scoring_on()
+
     # `goals` already meant "is the app installed", which wave 5 makes plan-aware
     # anyway. AND them so a site that still has the app from an earlier plan does
     # not keep showing the panel after a downgrade.
@@ -1452,21 +1823,142 @@ def get_attendance_calendar(year, month):
     }
 
 
+# ── The one sentence every payslip refusal gives ─────────────────────────────
+#
+# 043 AC-31. Four different causes, one sentence, byte for byte:
+#
+#   1. the slip belongs to somebody else
+#   2. the slip does not exist
+#   3. the slip is still a draft
+#   4. the tenant never bought payroll
+#
+# A refusal that varies is an oracle. "Payroll is not included in your plan."
+# tells the caller what the tenant bought; "That payslip is not available."
+# told for cause 1 and a different sentence for cause 4 lets somebody walk a
+# list of slip names and learn which tenants run payroll and whose slips exist.
+#
+# It is a module constant rather than four copies of the literal so that
+# changing one of them is impossible. There is no translation catalogue in this
+# app yet (Hindi and Punjabi are Wave 5), so nothing is lost by the extractor
+# not seeing a literal here; when the catalogue arrives this string goes into it
+# by hand, once, which is the point of there being one of it.
+PAYSLIP_UNAVAILABLE = "That payslip is not available."
+
+
+# ── The only Employee fields that leave a Wave 3 payload ─────────────────────
+#
+# 043 AC-6, and Wave 1's biggest finding, live until this commit.
+#
+# `get_payslips` returned `{"payslips": [...], "employee": emp}` where `emp` is
+# `_get_employee()`'s WHOLE row: date_of_birth, gender, cell_number, branch,
+# reports_to and date_of_joining along with the rest. That is the payload behind
+# the screen people screenshot and attach to a support ticket, and send to a
+# bank. Nothing on the screen ever read it - `portal.js:2593` uses
+# `data.payslips` and nothing else - so seven fields of the most sensitive data
+# in the product travelled on every Pay load for no reason at all.
+#
+# The same six fields Wave 1 fixed on the frame (`frame_api.ME_FIELDS`), and the
+# same discipline: a FIXED KEY LIST, so adding a field is a decision somebody
+# makes on purpose rather than something that arrives by passing a row through.
+ME_FIELDS = ("employee", "employee_name", "designation", "department", "image", "company")
+
+
+def _me_block(emp):
+    """The six-key `me` block, built key by key from an Employee row.
+
+    Deliberately not `{k: emp[k] for k in ME_FIELDS}` over a row - the point is
+    that this function names what it returns, so a reviewer reads the payload
+    here rather than working out what `_get_employee` happens to select today.
+    """
+    if not emp:
+        return None
+    return {
+        "employee": emp.name,
+        "employee_name": emp.employee_name,
+        "designation": emp.designation,
+        "department": emp.department,
+        "image": emp.image,
+        "company": emp.company,
+    }
+
+
 @frappe.whitelist()
+@requires_feature("payroll", message=PAYSLIP_UNAVAILABLE)
 def get_payslips():
+    """The caller's own submitted payslips.
+
+    The gate is 043 AC-30 / ALV-114. This endpoint carried `@frappe.whitelist()`
+    and nothing else while `get_payslip` and `download_payslip` beside it both
+    carried `@requires_feature("payroll")`. W1D-01 hides the salary parts of the
+    menu on a tenant without payroll, and a hidden menu is not a permission: the
+    list behind it answered anyone who called it by hand, so the entitlement
+    claim was false for as long as it shipped.
+
+    ORDER, and a correction to the spec. 043 AC-30(c) asks for
+    `@requires_feature` to sit textually ABOVE `@frappe.whitelist()`. Written
+    that way the endpoint stops working altogether, for everybody, on every
+    tenant. `frappe.whitelist()` does `whitelisted.add(fn)` on the object it is
+    handed (frappe/__init__.py:465) and `is_whitelisted` tests the object the
+    module name resolves to (:483). Put the gate outermost and the module name
+    resolves to the gate's wrapper, which was never added, so every call is
+    refused with "You are not permitted to access this resource."
+
+    So the order here is `@frappe.whitelist()` then `@requires_feature(...)` -
+    byte for byte the order `get_payslip` and `download_payslip` already use.
+    The gate still runs before the body, which is what the requirement is
+    actually about. The check that enforces it asserts SAMENESS with the two
+    endpoints beside it rather than a fixed line order.
+    """
     emp = _get_employee()
     if not emp:
         return {"no_employee": True}
-    slips = frappe.get_all(
+    return {"payslips": _own_slips(emp.name), "me": _me_block(emp)}
+
+
+# The fields the payslip LIST carries. `rounded_total` joined them in 043: the
+# Pay screen calls the rounded figure the take-home (§20 D-2), because that is
+# what the bank paid, and a list that carried only `net_pay` would disagree
+# with the hero above it by a rupee on 555 of PP Jewellers' 800 slips.
+SLIP_LIST_FIELDS = ("name", "posting_date", "start_date", "end_date",
+                    "gross_pay", "total_deduction", "net_pay", "rounded_total",
+                    "currency")
+
+# Twelve months. A year of slips is what a person needs to show a bank, and an
+# uncapped read of a long-serving employee's whole history is a list nobody
+# scrolls.
+SLIP_LIST_LIMIT = 12
+
+
+def _own_slips(employee):
+    """The employee's own submitted payslips, newest first.
+
+    **Why the flag is here and not in `pay_api`.** The Employee role no longer
+    holds read on Salary Slip at all - that permission was a back door, because
+    wherever the narrowing User Permission was wider or missing, other people's
+    pay showed. So every payslip read in this product is an ownership check
+    followed by a deliberate `ignore_permissions`, and that pattern is declared
+    and tested HERE, in `hr_api`. 043 AC-43 forbids the flag in `time_api.py`
+    and `pay_api.py` outright, so the Pay screen calls this rather than
+    carrying a second copy of the query - which also means the list and the
+    payslip page can never disagree about which slips exist.
+
+    The ownership check is the filter itself: `employee` is resolved from the
+    session by the caller, never taken from the browser. A cancelled slip
+    (`docstatus 2`) is excluded here, which is what keeps it off the screen and
+    out of the download (043 AC-53).
+    """
+    return frappe.get_all(
         "Salary Slip",
-        filters={"employee": emp.name, "docstatus": 1},
-        fields=["name", "posting_date", "start_date", "end_date",
-                "gross_pay", "total_deduction", "net_pay", "currency"],
-        order_by="posting_date desc",
-        limit=12,
+        filters={"employee": employee, "docstatus": 1},
+        fields=list(SLIP_LIST_FIELDS),
+        # Newest PERIOD first, with the posting date only breaking a tie. Two
+        # slips posted on the same day - a re-run, or a correction - would
+        # otherwise come back in an order the database chose, and the Pay
+        # screen reads slips[0] as "the latest".
+        order_by="start_date desc, posting_date desc",
+        limit=SLIP_LIST_LIMIT,
         ignore_permissions=True,
     )
-    return {"payslips": slips, "employee": emp}
 
 
 # ── One payslip, shown in the portal ─────────────────────────────────────────
@@ -1495,19 +1987,58 @@ def _own_payslip(name):
     if name and isinstance(name, str):
         row = frappe.db.get_value("Salary Slip", name, ["name", "employee", "docstatus"], as_dict=True)
     if not emp or not row or row.docstatus != 1 or row.employee != emp.name:
-        frappe.throw(frappe._("That payslip is not available."), frappe.PermissionError)
+        frappe.throw(frappe._(PAYSLIP_UNAVAILABLE), frappe.PermissionError)
     return frappe.get_doc("Salary Slip", row.name)
 
 
 @frappe.whitelist()
-@requires_feature("payroll")
+@requires_feature("payroll", message=PAYSLIP_UNAVAILABLE)
 def get_payslip(name):
     """One of the caller's own payslips, for the portal to draw."""
-    slip = _own_payslip(name)
+    return _payslip_payload(_own_payslip(name))
+
+
+def _payslip_payload(slip):
+    """One payslip's payload, in ONE place.
+
+    043: Wave 3's Pay screen shows the newest slip in full on the first load,
+    so two callers now build this - `get_payslip` and `pay_api.get_pay`. Two
+    copies would drift, and the one that drifts is the one nobody is looking
+    at: the Why? control hangs off `additional_salary`, so a copy that forgot
+    it would leave a person with a deduction and no way to ask about it.
+
+    Takes an already-checked Salary Slip document. Ownership is `_own_payslip`'s
+    job and it happens before this is reached, every time - this function does
+    no checking of its own and must never be given a slip that has not been
+    through it.
+    """
 
     def lines(rows):
-        return [{"component": r.salary_component, "amount": flt(r.amount)}
-                for r in (rows or []) if flt(r.amount)]
+        """One line per non-zero salary component.
+
+        043 AC-26 adds `additional_salary` - and only where Frappe HR set one.
+        It is the first link in the chain the "Why?" sheet follows:
+
+            Salary Detail.additional_salary
+              -> Additional Salary.ref_doctype / ref_docname
+                -> Attendance Deduction
+                  -> its violation rows
+
+        A line with no link does not carry the key at all, so the client can
+        ask "is there a Why? control on this line" by asking whether the key is
+        there, rather than by guessing from the component's name. A component
+        called "Late Coming Deduction" that HR typed in by hand has no link,
+        and AC-29 is the sentence for that case.
+        """
+        out = []
+        for r in (rows or []):
+            if not flt(r.amount):
+                continue
+            line = {"component": r.salary_component, "amount": flt(r.amount)}
+            if r.get("additional_salary"):
+                line["additional_salary"] = r.additional_salary
+            out.append(line)
+        return out
 
     return {
         "name": slip.name,
@@ -1527,13 +2058,21 @@ def get_payslip(name):
         "total_deduction": flt(slip.total_deduction),
         "net_pay": flt(slip.net_pay),
         "rounded_total": flt(slip.rounded_total),
+        # 051. The year so far, READ off the slip, never added up. Frappe HR's
+        # payroll run works these out against the payroll period and stores
+        # them here. Summing the slips the screen happens to list would give a
+        # different number for a mid-year joiner and for anyone whose list is
+        # capped - and it would be the portal's number rather than payroll's,
+        # which is the one Form 16 will agree with.
+        "year_to_date": flt(slip.get("year_to_date")),
+        "gross_year_to_date": flt(slip.get("gross_year_to_date")),
         "earnings": lines(slip.earnings),
         "deductions": lines(slip.deductions),
     }
 
 
 @frappe.whitelist()
-@requires_feature("payroll")
+@requires_feature("payroll", message=PAYSLIP_UNAVAILABLE)
 def download_payslip(name):
     """The caller's own payslip as a PDF, in the organisation's print format.
 
@@ -1633,46 +2172,21 @@ def get_leave_summary(employee_id=None):
     if not emp:
         return {"no_employee": True}
     td = today()
-    yr_start = _leave_year_start(td, emp.company)
 
-    allocations = frappe.get_all(
-        "Leave Allocation",
-        filters={
-            "employee": emp.name, "docstatus": 1,
-            "from_date": ["<=", td], "to_date": [">=", td],
-        },
-        fields=["leave_type", "total_leaves_allocated", "from_date", "to_date"],
-        ignore_permissions=True,
-    )
-
-    taken_map = {}
-    pending_map = {}
-    if allocations:
-        apps = frappe.get_all(
-            "Leave Application",
-            filters={"employee": emp.name, "from_date": [">=", yr_start]},
-            fields=["leave_type", "total_leave_days", "status", "docstatus"],
-            ignore_permissions=True,
-        )
-        for a in apps:
-            if a.docstatus == 1 and a.status == "Approved":
-                taken_map[a.leave_type] = taken_map.get(a.leave_type, 0) + a.total_leave_days
-            elif a.status == "Open":
-                pending_map[a.leave_type] = pending_map.get(a.leave_type, 0) + a.total_leave_days
-
+    # Frappe HR's ledger (slice 035). emp is the caller, or someone HR may act
+    # for - _hr_target_employee refused anyone else above.
     balances = []
-    for al in allocations:
-        lt = al.leave_type
-        total = float(al.total_leaves_allocated)
-        taken = float(taken_map.get(lt, 0))
-        pending = float(pending_map.get(lt, 0))
+    for b in _ledger_leave_balances(emp.name, td):
+        total, taken = b["total"], b["taken"]
         balances.append({
-            "leave_type": lt,
+            "leave_type": b["leave_type"],
             "total": total,
             "taken": taken,
-            "pending": pending,
-            "balance": max(total - taken, 0),
-            "color": LEAVE_COLORS.get(lt, "#64748b"),
+            "pending": b["pending"],
+            "expired": b["expired"],
+            # The ledger's figure, negative included - see get_employee_dashboard.
+            "balance": b["balance"],
+            "color": LEAVE_COLORS.get(b["leave_type"], "#64748b"),
             "pct_used": round(taken / total * 100) if total else 0,
         })
 
@@ -1844,10 +2358,72 @@ def preview_leave_request(leave_type, from_date, to_date, half_day=0, half_day_d
 
 @frappe.whitelist()
 def get_shift_types():
+    """The shift types a caller may ask to be moved to.
+
+    043 AC-52 (`01c` SEC-7). What was live: `@frappe.whitelist()` and nothing
+    else, `ignore_permissions=True`, no caller check and no scope - so EVERY
+    Shift Type in the tenant went to anybody with a login, including somebody
+    who had left and whose account was still open. A tenant's shift names
+    ("Karol Bagh Night", "Warehouse C 22:00") are a map of its operation.
+
+    **The scope, and why it is this one.** The spec first asked for "the
+    caller's company's shift types". `Shift Type` has **no `company` field** -
+    verified in `hrms/hrms/hr/doctype/shift_type/shift_type.json`, which has no
+    company fieldname at all - so there is nothing to filter on, and an
+    engineer meeting that sentence at 11pm would invent a custom field or
+    quietly drop the check. `Shift Assignment` DOES carry a company. So the
+    scope is D-6's recommendation:
+
+        the Shift Types in use in the caller's own company, through submitted
+        Shift Assignments, plus the caller's own `Employee.default_shift`
+
+    That is a scope that exists in the data and needs no schema change. It also
+    reads correctly: a shift you could actually be moved to is one somebody in
+    your company is already working.
+
+    **Fail closed.** No Active Employee record, no answer. An empty scope
+    returns an EMPTY LIST, never an unfiltered one - no filter dict this
+    function builds is ever allowed to be empty, because an empty filter dict
+    means "everything" to `frappe.get_all` and that is exactly the defect being
+    fixed. The screen must say "no shifts are set up for your company" rather
+    than draw an empty dropdown.
+    """
+    emp = _get_employee()
+    if not emp:
+        # The same shape the other self-service reads use: a caller with no
+        # Active Employee record has nothing to be moved between.
+        return []
+
+    # The shift types somebody in this company is actually assigned to.
+    in_use = frappe.get_all(
+        "Shift Assignment",
+        filters={"company": emp.company, "docstatus": 1},
+        pluck="shift_type",
+        distinct=True,
+    )
+
+    # Read on its own rather than added to `_get_employee`'s field list.
+    # Widening that row would put `default_shift` into the five older payloads
+    # that still hand the whole row to the browser (AC-6's pinned debt), and
+    # adding a field to a payload is a visibility change even when the field is
+    # dull. One cheap query instead.
+    default_shift = frappe.db.get_value("Employee", emp.name, "default_shift")
+
+    names = {s for s in in_use if s}
+    if default_shift:
+        # Their own shift is always offered, even in a company that has never
+        # made a Shift Assignment - otherwise the one person whose shift is set
+        # on the Employee record sees a list that does not contain it.
+        names.add(default_shift)
+
+    if not names:
+        return []
+
     return frappe.get_all(
         "Shift Type",
+        filters={"name": ["in", sorted(names)]},
         fields=["name", "start_time", "end_time"],
-        ignore_permissions=True,
+        order_by="name asc",
     )
 
 
@@ -1946,16 +2522,65 @@ def submit_advance_request(purpose, amount):
 
 @frappe.whitelist()
 def submit_leave_encashment(leave_type, encashment_date=None):
+    """Ask to encash leave. 043 AC-55.
+
+    **This never worked**, and for two different reasons - the second of which
+    I got wrong the first time and `test_encashment_043` corrected.
+
+    `leave_period` and `currency` are both `reqd` on Leave Encashment (checked
+    field by field in `leave_encashment.json`) and this endpoint set neither.
+
+      * **`leave_period` crashed it.** Nothing fetches it and nothing defaults
+        it, so every claim an employee sent failed on a mandatory field and
+        the portal showed a generic error. Nobody on either client tenant has
+        a successful Leave Encashment; appendix C F-5 recorded the button as
+        never proven end to end, and this is why.
+      * **`currency` did something quieter.** It is `read_only` AND `reqd`, so
+        Frappe fills it from the site's Global Defaults before the mandatory
+        check ever runs - meaning the claim was stamped with the SITE's
+        currency, not the one the employee is paid in, and that figure goes
+        into a payroll component.
+
+    Both are set on the SERVER, not asked of the browser. A currency the
+    caller can choose is a currency the caller can get wrong.
+    """
     emp = _get_employee()
     if not emp:
-        frappe.throw("No employee record found for this user.")
+        frappe.throw(_("No employee record found for this user."))
+
+    date_ = encashment_date or today()
+
+    # The period the date falls in, for this employee's own company. Leave
+    # Period is per company, so a group with two companies has two, and picking
+    # the first one on the site would file the claim against the wrong year.
+    period = frappe.db.get_value("Leave Period", {
+        "company": emp.company,
+        "from_date": ("<=", date_),
+        "to_date": (">=", date_),
+    }, "name")
+    if not period:
+        # Says what happened, why, and what to do next. "Mandatory field
+        # Leave Period" tells an employee nothing they can act on.
+        frappe.throw(_("Leave cannot be encashed for {0} yet, because no leave "
+                       "period covers that date. Ask HR to set one up.")
+                     .format(frappe.format(date_, "Date")))
+
+    from hrms.payroll.doctype.salary_structure_assignment.salary_structure_assignment import (
+        get_employee_currency,
+    )
+
     doc = frappe.get_doc({
         "doctype": "Leave Encashment",
         "employee": emp.name,
         "employee_name": emp.employee_name,
         "department": emp.department,
         "leave_type": leave_type,
-        "encashment_date": encashment_date or today(),
+        "encashment_date": date_,
+        "leave_period": period,
+        # Throws its own plain sentence when the employee has no salary
+        # structure - which is a real setup gap, not something to paper over
+        # with a default currency that would then be wrong on the component.
+        "currency": get_employee_currency(emp.name),
     })
     doc.insert(ignore_permissions=True)
     frappe.db.commit()
@@ -2275,10 +2900,53 @@ def reject_kpi_progress(kpi_name, log_idx, comment=None):
 # and still an allow-list, just an arithmetic one. It grants no visibility: it
 # moves a threshold on a screen the person can already see, and it does not
 # touch the deduction rule, which keeps its own per-organisation threshold.
+#
+# 26 Sep 2026 (Surbhi): late coming rules and attendance in the appraisal score
+# stop being tenant features in the admin console and become these two switches.
+# Every company sets its own rules, so HR decides; both are off until HR turns
+# them on. Neither grants visibility - each only lets a rule the company already
+# writes for itself start acting. Turning one on also needs the modules it works
+# on to be sold (ORG_SWITCH_NEEDS below); turning one off is always allowed.
 ALLOWED_ORG_SETTINGS = {
     "kra_link_mandatory": ("0", "1"),
     LATE_GRACE_KEY: range(0, 241),          # up to four hours; nothing sensible is longer
+    org_features.LATE_RULES_SWITCH: ("0", "1"),
+    org_features.ATTENDANCE_SCORING_SWITCH: ("0", "1"),
 }
+
+# What each switch needs the tenant to have bought before it may be turned on.
+# Late rules take days from leave and then from pay, and read attendance; the
+# appraisal score reads attendance into an appraisal. Checked with the same
+# has_feature() every other entitlement uses.
+ORG_SWITCH_NEEDS = {
+    org_features.LATE_RULES_SWITCH: ("attendance", "leaves", "payroll"),
+    org_features.ATTENDANCE_SCORING_SWITCH: ("performance", "attendance"),
+}
+
+
+def _open_cycles_using_attendance():
+    """Appraisal cycles, not yet Completed, that count attendance in the score.
+
+    Switching attendance scoring off under them breaks them: their formula still
+    multiplies a stored attendance score, and completing the cycle saves it, which
+    the switched-off check then refuses. So HR finishes or changes them first.
+    Cycle names only - never a person.
+    """
+    if not frappe.db.has_column("Appraisal Cycle", "include_attendance_score"):
+        return []
+    return frappe.get_all(
+        "Appraisal Cycle",
+        filters={"include_attendance_score": 1, "status": ["!=", "Completed"]},
+        pluck="name", order_by="name asc", limit=20, ignore_permissions=True,
+    )
+
+
+def _switch_missing(key):
+    """Labels of the sold features this switch still needs, or []."""
+    from alvoraa_portal.subscription import feature_spec, has_feature
+
+    return [_(feature_spec(f).get("label", f)) for f in ORG_SWITCH_NEEDS.get(key, ())
+            if not has_feature(f)]
 
 
 def _refuse_org_setting(endpoint):
@@ -2299,6 +2967,7 @@ def get_org_setting(key):
 @frappe.whitelist()
 def set_org_setting(key, value):
     _require_hr()
+    _refuse_store_hr("hr_api.set_org_setting")
     if not isinstance(key, str) or key not in ALLOWED_ORG_SETTINGS:
         _refuse_org_setting("hr_api.set_org_setting")
     value = str(value) if value is not None else ""
@@ -2311,9 +2980,46 @@ def set_org_setting(key, value):
             _refuse_org_setting("hr_api.set_org_setting")
     elif value not in allowed:
         _refuse_org_setting("hr_api.set_org_setting")
+    if value == "0" and key == org_features.ATTENDANCE_SCORING_SWITCH:
+        open_cycles = _open_cycles_using_attendance()
+        if open_cycles:
+            frappe.throw(
+                _("Finish or change these appraisal cycles first: {0}. They count attendance in the score, and switching it off would stop them completing.").format(", ".join(open_cycles)),
+                frappe.ValidationError,
+            )
+    if value == "1" and key in ORG_SWITCH_NEEDS:
+        missing = _switch_missing(key)
+        if missing:
+            frappe.throw(
+                _("This can be switched on only when your plan includes {0}. Ask your Alvora account contact to add it.").format(", ".join(missing)),
+                frappe.ValidationError,
+            )
     frappe.db.set_default(key, value)
     frappe.db.commit()
     return {"ok": True}
+
+
+@frappe.whitelist()
+def get_attendance_rule_switches():
+    """The Organisation Settings card "Attendance rules": both switches, whether
+    each is on, and - when the plan does not allow one - what it still needs.
+
+    HR only, like the settings it describes. Returns labels, never another
+    tenant's data or any person's record.
+    """
+    _require_hr()
+    # Whether THIS caller may save them: the same rule set_org_setting applies
+    # (a store's HR person reads, never saves). Computed without calling the
+    # guard, which would log a refusal just for opening the page.
+    from alvoraa_portal.frame_api import _may_save_settings
+
+    can_edit = _may_save_settings(set(frappe.get_roles()))
+    out = []
+    for key in org_features.ORG_SWITCHES:
+        missing = _switch_missing(key)
+        out.append({"key": key, "on": org_features.org_switch(key),
+                    "available": not missing, "needs": missing})
+    return {"switches": out, "can_edit": can_edit}
 
 
 def _require_hr():
@@ -2322,6 +3028,24 @@ def _require_hr():
     # "Company Values" among them - for everybody including HR.
     if not {"HR Manager", "System Manager"} & set(frappe.get_roles()):
         frappe.throw("Not permitted", frappe.PermissionError)
+
+
+def _refuse_store_hr(endpoint):
+    """An organisation-wide setting is changed by HR with company-wide reach,
+    never by a store's HR person (slice 030, decision 4).
+
+    A store's HR Manager holds a Branch User Permission. The same read that
+    limits what they see (access.permitted_employees, through
+    permitted_branches) decides here, so "limited to a store" has one
+    definition. Reads are not guarded by this; System Manager is not limited.
+    """
+    from hrms.alvoraa_hr_core.access import permitted_branches, refuse
+
+    if "System Manager" in frappe.get_roles():
+        return
+    if permitted_branches() is not None:
+        refuse(_("Organisation-wide settings are changed by HR with company-wide permission, "
+                 "not by a store's HR."), "030-D4", endpoint)
 
 
 @frappe.whitelist()
@@ -2664,6 +3388,13 @@ def _late_rule_for(employee, emp_row=None, cache=None):
     """
     if cache is None:
         cache = {}
+    # Switched off in Organisation Settings: no rule acts on anybody, so every
+    # screen built on this (my deductions, the team list, the Time tab) is
+    # hidden. Recorded deductions are kept; they are simply not drawn here.
+    if "_switched_on" not in cache:
+        cache["_switched_on"] = org_features.late_rules_on()
+    if not cache["_switched_on"]:
+        return None
     if "_have_doctype" not in cache:
         cache["_have_doctype"] = bool(frappe.db.exists("DocType", "Attendance Deduction Rule"))
     if not cache["_have_doctype"]:
@@ -2727,10 +3458,18 @@ def get_my_attendance_deductions(months=3):
     if not emp:
         return {"no_employee": True}
     rule = _late_rule_for(emp.name)
+    since = frappe.utils.add_months(frappe.utils.nowdate(), -int(months))
     if not rule:
+        # Switched off in Organisation Settings: nothing new is deducted, but
+        # days already taken stay on the person's screen, read-only. Only the
+        # forward-looking parts (this week so far, the rule's terms) go.
+        if not org_features.late_rules_on():
+            rows = _deduction_rows({"employee": emp.name, "docstatus": 1, "week_start": [">=", since]})
+            if rows:
+                return {"enabled": True, "switched_on": False, "rule": None,
+                        "rows": rows, "this_week": None}
         return {"enabled": False, "rows": [], "this_week": None}
     from hrms.alvoraa_late_rules.late_rules import current_week_projection
-    since = frappe.utils.add_months(frappe.utils.nowdate(), -int(months))
     rows = _deduction_rows({"employee": emp.name, "docstatus": 1, "week_start": [">=", since]})
     projection = current_week_projection(rule, emp.name)
     for v in projection["violations"]:
@@ -3093,89 +3832,24 @@ def get_policy_compliance(branch=None):
 
 
 # ── This week, at a glance ───────────────────────────────────────────────────
-
-@frappe.whitelist()
-def get_week_presence(offset=0):
-    """Who on my team or in my department is in this week.
-
-    Presence ONLY. Never why somebody is away, never a leave type, never a
-    running absence count. Absence can reveal a pregnancy, a diagnosis or a
-    family crisis, and a colleague has no business inferring any of that from a
-    home page. A manager's analytics view may go further because they carry a
-    duty of care; a peer's must not.
-
-    That is why this returns four states and nothing else:
-        in       marked present, or working from home
-        away     not at work - approved leave and absence look identical
-        due      a working day still to come
-        off      a holiday or a non-working day
-    """
-    from frappe.utils import add_days, get_first_day_of_week, getdate, nowdate
-
-    me = _get_employee()
-    if not me:
-        return {"no_employee": True}
-
-    start = getdate(add_days(get_first_day_of_week(nowdate()), 7 * cint(offset)))
-    days = [add_days(start, i) for i in range(7)]
-    today = getdate(nowdate())
-
-    # My people if I have any, otherwise the people I sit with. A department can
-    # be large, so it is capped - this is a glance, not a report.
-    team = frappe.get_all("Employee",
-                          filters={"reports_to": me.name, "status": "Active"},
-                          fields=["name", "employee_name", "designation", "image"],
-                          order_by="employee_name asc", limit=40)
-    basis = "team"
-    if not team and me.department:
-        team = frappe.get_all("Employee",
-                              filters={"department": me.department, "status": "Active",
-                                       "name": ("!=", me.name)},
-                              fields=["name", "employee_name", "designation", "image"],
-                              order_by="employee_name asc", limit=40)
-        basis = "department"
-    if not team:
-        return {"rows": [], "basis": "none", "days": [str(d) for d in days]}
-
-    ids = [e.name for e in team]
-    marked = {}
-    for r in frappe.get_all("Attendance",
-                            filters={"employee": ("in", ids), "docstatus": 1,
-                                     "attendance_date": ("between", [days[0], days[-1]])},
-                            fields=["employee", "attendance_date", "status"]):
-        marked[(r.employee, str(r.attendance_date))] = r.status
-
-    holidays = _holiday_dates(me, days)
-
-    rows = []
-    for e in team:
-        cells = []
-        for d in days:
-            ds = str(d)
-            status = marked.get((e.name, ds))
-            if status in ("Present", "Work From Home"):
-                cells.append("in")
-            elif status:                       # On Leave, Absent, Half Day
-                cells.append("away")
-            elif ds in holidays:
-                cells.append("off")
-            else:
-                cells.append("due" if getdate(d) >= today else "away")
-        rows.append({"employee": e.name, "name": e.employee_name,
-                     "title": e.designation or "", "image": e.image, "week": cells})
-
-    return {"rows": rows, "basis": basis, "start": str(days[0]),
-            "days": [str(d) for d in days], "today": str(today)}
-
-
-def _holiday_dates(employee, days):
-    """A weekend is not an absence, and neither is Diwali."""
-    hl = frappe.db.get_value("Employee", employee.name, "holiday_list")
-    if not hl:
-        hl = frappe.db.get_value("Company", employee.company, "default_holiday_list")
-    if not hl:
-        return set()
-    return {str(h.holiday_date) for h in frappe.get_all(
-        "Holiday", filters={"parent": hl,
-                            "holiday_date": ("between", [days[0], days[-1]])},
-        fields=["holiday_date"])}
+#
+# The old week-presence endpoint USED TO LIVE HERE, and slice 042 (Wave 2,
+# SEC-9 / AC-59) deleted it in the same commit that stopped calling it. Its
+# name is not written anywhere in this app on purpose - the static check that
+# keeps it gone is absolute, so there is nothing for a search to trip over.
+#
+# It was whitelisted, and it returned NAMED rows - employee_name, designation
+# and photo - with a per-day in/away/due/off state for each. When the caller had
+# no direct reports it fell back to their whole DEPARTMENT, capped at 40. So any
+# signed-in person could ask it, by hand, for forty colleagues' week of
+# absences.
+#
+# Wave 2 replaces the card it fed with `home_api._team_today`: three numbers,
+# no names, a minimum group size, and peers defined as people with the same
+# manager - no department fallback at all.
+#
+# Retiring the card is not retiring the endpoint. Leaving a whitelisted function
+# in place because a screen stopped calling it is "a hidden menu is not a
+# permission" in a different hat, so it is gone, and
+# `test_week_presence_retired_042` fails if the name comes back anywhere in
+# this app's source.

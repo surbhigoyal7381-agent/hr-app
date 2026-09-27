@@ -307,6 +307,18 @@ class Appraisal(Document, AppraisalMixin):
 
 @frappe.whitelist()
 def get_feedback_history(employee: str, appraisal: str) -> dict:
+	# ALV-117 finding F1. The list below is filtered by the row condition on
+	# Employee Performance Feedback, but the six db.count calls and the
+	# db.get_value on Appraisal are not - db.count and db.get_value do not go
+	# through permissions at all. Without this gate any logged-in user who
+	# knows an employee id and an appraisal id could read that person's star
+	# distribution and average feedback score.
+	#
+	# The only caller is the Appraisal desk form, which already needs Appraisal
+	# read - a permission the plain Employee role does not hold - so this
+	# refuses nobody who could legitimately use it.
+	frappe.has_permission("Appraisal", "read", doc=appraisal, throw=True)
+
 	data = frappe._dict()
 	data.feedback_history = frappe.get_list(
 		"Employee Performance Feedback",

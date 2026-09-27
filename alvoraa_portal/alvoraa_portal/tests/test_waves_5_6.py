@@ -154,13 +154,12 @@ class TestWave6IsWiredIntoTheUi(FrappeTestCase):
 	"""The payload is useless if the page ignores it."""
 
 	def setUp(self):
-		import alvoraa_portal
+		from alvoraa_portal.tests import portal_source
 
-		page = os.path.join(os.path.dirname(os.path.abspath(alvoraa_portal.__file__)),
-		                    "www", "hrms-employee.html")
-		if not os.path.exists(page):
+		if not os.path.exists(portal_source.PORTAL_PAGE):
 			self.skipTest("portal page not found on this bench")
-		self.html = io.open(page, encoding="utf-8-sig").read()
+		# Follows the page's Jinja includes (slice 034 US-10, AC-37).
+		self.html = portal_source.read_page(encoding="utf-8-sig")
 
 	def _plan_nav(self):
 		"""The body of applyPlanNav().

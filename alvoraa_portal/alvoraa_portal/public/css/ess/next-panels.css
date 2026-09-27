@@ -1,0 +1,229 @@
+/* Slice 042, Wave 2: Home and the Inbox.
+ *
+ * A static file under /assets/, cached for a month by nginx's existing
+ * `location ^~ /assets/` block and stamped with the build version, exactly like
+ * next-frame.css (OPS-31, OPS-34). It is not a template and takes no cache slot.
+ *
+ * It uses the design system's own tokens - --text, --bg, --border, --brand and
+ * the rest - so a tenant's colours and both themes come for free. No colour is
+ * written out here except through a token.
+ *
+ * Three rules from section 16, kept in the styles rather than hoped for:
+ *   nothing smaller than 12px;
+ *   nothing tappable smaller than 44px;
+ *   no sideways scroll at 390px.
+ */
+
+/* ── cards ───────────────────────────────────────────────────────────────── */
+
+.nf-home,
+.nf-inbox {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  /* The gutter a phone needs. `min-width: 0` on a flex child is what actually
+     stops a long word forcing the page sideways. */
+  min-width: 0;
+}
+
+.nf-card {
+  background: var(--bg2, var(--bg));
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
+  border-radius: 12px;
+  padding: 16px;
+  min-width: 0;
+}
+
+.nf-card-title {
+  margin: 0 0 12px;
+  font-size: var(--fs-sm, 14px);
+  font-weight: 600;
+  color: var(--text, inherit);
+}
+
+/* 042 review F6. The card title is a link to the screen that can act on the
+   part. It has to look like a link and be reachable by keyboard, and its target
+   has to be big enough for a thumb on a factory floor - so the whole heading is
+   the hit area, not the arrow. The arrow is aria-hidden: the link's own text
+   already says where it goes, and "Policies →" read aloud as "Policies right
+   arrow" is worse than "Policies". */
+.nf-card-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.nf-card-link:hover,
+.nf-card-link:focus-visible {
+  text-decoration: underline;
+}
+
+.nf-card-link:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.nf-card-link-go {
+  color: var(--text3, var(--text2, inherit));
+}
+
+.nf-card-note {
+  margin: 8px 0 0;
+  font-size: 12px;                 /* the floor, never below it */
+  color: var(--text3, var(--text2, inherit));
+}
+
+/* ── the check-in hero ───────────────────────────────────────────────────── */
+
+.nf-hero {
+  text-align: center;
+}
+
+.nf-hero-shift {
+  margin: 0 0 4px;
+  font-size: var(--fs-lg, 20px);
+  font-weight: 600;
+}
+
+.nf-hero-line {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--text2, inherit);
+}
+
+.nf-btn-big {
+  width: 100%;
+  min-height: 52px;
+  font-size: var(--fs-md, 16px);
+}
+
+/* ── rows ────────────────────────────────────────────────────────────────── */
+
+.nf-rows,
+.nf-needs,
+.nf-counts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.nf-row,
+.nf-need {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  /* 44px, because a lot of these are pressed with a thumb on a factory floor. */
+  min-height: 44px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border, rgba(128, 128, 128, 0.18));
+  min-width: 0;
+}
+
+.nf-row:last-child,
+.nf-need:last-child { border-bottom: 0; }
+
+.nf-row-main,
+.nf-need-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  /* A long designation or a Hindi label wraps rather than pushing the page
+     sideways. Hindi and Punjabi run about 30% longer than English. */
+  overflow-wrap: anywhere;
+}
+
+.nf-row-title { font-size: var(--fs-sm, 14px); }
+
+.nf-row-sub,
+.nf-need-sub {
+  font-size: 12px;
+  color: var(--text3, var(--text2, inherit));
+}
+
+.nf-row-val {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.nf-row-acts {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.nf-btn-small {
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+/* ── the presence counts ─────────────────────────────────────────────────── */
+
+.nf-counts {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.nf-count {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.nf-count-n {
+  font-size: var(--fs-lg, 20px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Colour is never the only signal (section 16). The word is always there, in
+   the markup, beside the number - there is no colour-only state here to fix. */
+.nf-count-w {
+  font-size: 12px;
+  color: var(--text3, var(--text2, inherit));
+}
+
+/* ── the skeleton ────────────────────────────────────────────────────────── */
+
+.nf-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 0;
+}
+
+.nf-sk {
+  background: var(--border, rgba(128, 128, 128, 0.18));
+  border-radius: 12px;
+}
+
+.nf-sk-hero { height: 140px; }
+.nf-sk-card { height: 96px; }
+.nf-sk-row  { height: 56px; }
+
+/* A skeleton that pulses is a skeleton that moves, and movement is a problem
+   for some people. It is offered, and taken away the moment the system is
+   asked to stop moving things. */
+@media (prefers-reduced-motion: no-preference) {
+  .nf-sk { animation: nf-sk-pulse 1.4s ease-in-out infinite; }
+  @keyframes nf-sk-pulse { 50% { opacity: 0.45; } }
+}
+
+/* ── the phone ───────────────────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .nf-row,
+  .nf-need {
+    flex-wrap: wrap;
+  }
+  .nf-row-acts { width: 100%; }
+  .nf-row-acts .nf-btn-small { flex: 1 1 0; }
+}

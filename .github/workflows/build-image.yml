@@ -1,8 +1,8 @@
 name: Build Image
 
-# Builds ONE image containing the full Frappe bench: frappe + erpnext + the
-# hrms fork from this repo + alvoraa_goals + alvoraa_portal, with assets
-# pre-built. The same image runs every process role (web, socketio, scheduler,
+# Builds ONE image containing the full Frappe bench: frappe + erpnext +
+# india_compliance + Frappe CRM (pinned tag, slice 040) + the hrms fork from this
+# repo + alvoraa_goals + alvoraa_portal, with assets pre-built. The same image runs every process role (web, socketio, scheduler,
 # worker) — see ARCHITECTURE.md §5.
 #
 # Fires on a push to any of the three environment branches. The resulting tag
@@ -133,6 +133,21 @@ jobs:
             echo "main_tag=prod-$(git rev-parse FETCH_HEAD | cut -c1-7)" >> "$GITHUB_OUTPUT"
           fi
 
+      # ── Room to build ─────────────────────────────────────────────────────
+      # The hosted runner has about 14 GB free on its root disk, and the builder
+      # keeps every layer of this image plus its export to the GitHub cache
+      # there. The pre-CRM image fitted; the CRM build (23 Sep 2026) died with
+      # "ResourceExhausted ... failed to write compressed diff". The runner also
+      # ships toolchains this build never touches - .NET, Android, Haskell,
+      # CodeQL - which is the space we take back. Runner-only: nothing here
+      # changes what goes into the image.
+      - name: Free disk on the runner
+        run: |
+          df -h / | tail -1 | awk '{print "free before: " $4}'
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc                       /usr/local/share/boost /opt/hostedtoolcache/CodeQL                       /usr/local/.ghcup 2>/dev/null || true
+          docker image prune -af >/dev/null 2>&1 || true
+          df -h / | tail -1 | awk '{print "free after:  " $4}'
+
       - name: Image metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -165,6 +180,41 @@ jobs:
           build-args: |
             FRAPPE_BRANCH=version-16
             ERPNEXT_BRANCH=version-16
+            CRM_TAG=v1.84.0
+            WHATSAPP_COMMIT=08bc1f6af2e3
+
+      # ── Copy the old releases into the new package, for rollback ─────────
+      #
+      # Without this, a rollback to prod-65878e8 after the change would look for
+      # that tag in alvoraa-app, where it was never built, and fail at the pull.
+      # Copied here, a rollback to an old release is the same one-line dispatch
+      # as any other rollback, before AND after the old package is deleted.
+      #
+      # `imagetools create` copies inside the registry: same manifest, same
+      # digest, no rebuild, nothing downloaded to this runner. It runs only
+      # during the changeover (see the step above), skips a tag that is already
+      # there, and only warns about one it cannot find - a missing rollback copy
+      # must not block a dev build. The runbook checks the copies by hand
+      # before the old package is deleted.
+      - name: Copy old releases into the new package
+        if: steps.changeover.outputs.also_old == 'true'
+        env:
+          MAIN_TAG: ${{ steps.changeover.outputs.main_tag }}
+        run: |
+          set -uo pipefail
+          NEW="${REGISTRY}/${IMAGE_NAME}"
+          OLD="${REGISTRY}/${OLD_IMAGE_NAME}"
+          for tag in $(printf '%s\n' $CARRY_TAGS "$MAIN_TAG" | sort -u); do
+            if docker buildx imagetools inspect "${NEW}:${tag}" >/dev/null 2>&1; then
+              echo "${tag}: already in ${IMAGE_NAME}"
+            elif ! docker buildx imagetools inspect "${OLD}:${tag}" >/dev/null 2>&1; then
+              echo "::warning::${tag}: not found in ${OLD_IMAGE_NAME} either - NOT copied. A rollback to it will not work from ${IMAGE_NAME}."
+            elif docker buildx imagetools create --tag "${NEW}:${tag}" "${OLD}:${tag}"; then
+              echo "${tag}: copied from ${OLD_IMAGE_NAME}"
+            else
+              echo "::warning::${tag}: copy FAILED - a rollback to it will not work from ${IMAGE_NAME}."
+            fi
+          done
 
       # ── Copy the old releases into the new package, for rollback ─────────
       #

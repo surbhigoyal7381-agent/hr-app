@@ -1,0 +1,934 @@
+    <!-- ── Rating Scale Modal ───────────────────────── -->
+    <div class="gp-backdrop" id="rs-modal">
+      <div class="gp-modal" style="max-width:520px;width:95vw">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title" id="rs-modal-title">New Rating Scale</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('rs-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="rs-error"></div>
+          <input type="hidden" id="rs-existing-name">
+          <div class="gp-field">
+            <div class="gp-label">Scale Name *</div>
+            <input class="gp-input" id="rs-name" placeholder="e.g. 5-Point Performance Scale">
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Description</div>
+            <input class="gp-input" id="rs-desc" placeholder="Optional — e.g. Used for all objective ratings">
+          </div>
+          <div style="font-size:var(--fs-xs);font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:8px">Scale Points</div>
+          <div id="rs-items" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
+          <button class="btn btn-outline btn-sm" onclick="rsAddPoint()" style="width:100%">+ Add Point</button>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('rs-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="rsSubmit()">Save Scale</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Create Goal Modal ──────────────────────────── -->
+    <div class="gp-backdrop" id="gp-create-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title" id="gp-modal-title">Create New Goal</div>
+          <button class="gp-modal-close" onclick="gpCloseCreateGoal()">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="gp-create-error"></div>
+          <input type="hidden" id="gp-edit-id">
+          <input type="hidden" id="gp-c-cycle">
+          <div class="gp-field" id="gp-creator-field" style="display:none">
+            <div class="gp-label">Created by</div>
+            <div id="gp-creator-display" style="font-size:var(--fs-base);color:var(--text2);padding:6px 0;font-weight:500"></div>
+          </div>
+          <div class="gp-field" id="gp-employee-field">
+            <div class="gp-label">Goal for *</div>
+            <select class="gp-input" id="gp-c-employee" onchange="gpReloadAlignment()"></select>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Align this goal to *</div>
+            <div class="gp-hint" id="gp-align-chain" style="margin-bottom:6px"></div>
+            <div class="gp-cascade-wrap" id="gp-cascade-wrap">
+              <input class="gp-input" id="gp-align-search" autocomplete="off"
+                     placeholder="Select an objective to align to…"
+                     oninput="gpFilterAlignList()"
+                     onfocus="gpOpenCascadeDropdown()"
+                     onclick="gpOpenCascadeDropdown()">
+              <div class="cascade-grid" id="gp-cascade-list" style="display:none"></div>
+            </div>
+            <input type="hidden" id="gp-sel-cascade">
+            <input type="hidden" id="gp-sel-parent">
+            <input type="hidden" id="gp-sel-standalone">
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Goal Name *</div>
+            <input class="gp-input" id="gp-c-name" placeholder="e.g. Achieve 120 Orders in Q3">
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Target Value *</div>
+              <input class="gp-input" id="gp-c-target" type="number" min="1" placeholder="100">
+              <div class="gp-hint" id="gp-c-unit-hint"></div>
+            </div>
+            <div></div>
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Start Date *</div>
+              <input class="gp-input" id="gp-c-start" type="date">
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">End Date *</div>
+              <input class="gp-input" id="gp-c-end" type="date">
+            </div>
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Key Result Area <span id="gp-kra-req" style="color:var(--red);display:none">*</span></div>
+              <select class="gp-input" id="gp-c-kra">
+                <option value="">— None —</option>
+              </select>
+              <div id="gp-kra-hint" style="font-size:var(--fs-xs);color:var(--text3);margin-top:6px;display:none"></div>
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Goal Type</div>
+              <select class="gp-input" id="gp-c-goal-type">
+                <option value="Business">Business</option>
+                <option value="Development">Development</option>
+              </select>
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Company Value</div>
+              <select class="gp-input" id="gp-c-company-value">
+                <option value="">— None —</option>
+              </select>
+            </div>
+          </div>
+          <div class="gp-field">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 0">
+              <input type="checkbox" id="gp-c-stretch">
+              <span>Extra Initiative / Stretch goal</span>
+            </label>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="gpCloseCreateGoal()">Cancel</button>
+          <button class="btn btn-primary" id="gp-create-btn" onclick="gpSubmitCreateGoal()">
+            <span id="gp-create-label">Create Goal</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Log KPI Progress Modal ─────────────────────── -->
+    <div class="gp-backdrop" id="pf-log-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Log KPI Progress</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-log-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="pf-log-error"></div>
+          <input type="hidden" id="pf-log-kpi">
+          <div class="pf-modal-context" id="pf-log-context"></div>
+          <div class="gp-field">
+            <label class="gp-label" id="pf-log-value-label" for="pf-log-value">Amount since your last update *</label>
+            <input class="gp-input" id="pf-log-value" type="number" step="any" placeholder="e.g. 32">
+            <div class="gp-hint" id="pf-log-hint"></div>
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="pf-log-date">Which day is this reading for?</label>
+            <input class="gp-input" id="pf-log-date" type="date">
+            <div class="gp-hint">Leave it as today unless the reading is for an earlier day. It cannot be in the future.</div>
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="pf-log-note">Comment <span style="font-weight:400;color:var(--text3)">(required)</span></label>
+            <input class="gp-input" id="pf-log-note" placeholder="What changed since the last update?">
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Evidence <span style="font-weight:400;color:var(--text3)">(optional — updates without evidence will be flagged)</span></div>
+            <label class="ev-upload-zone" onclick="document.getElementById('pf-log-file').click()">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span id="pf-log-file-name" style="font-size:var(--fs-sm);color:var(--text3)">Click to attach image or document…</span>
+            </label>
+            <input type="file" id="pf-log-file" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" style="display:none" onchange="pfLogFileChanged()">
+          </div>
+          <div style="margin-top:18px">
+            <div style="font-size:var(--fs-xs);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Update History</div>
+            <div id="pf-log-history" class="upd-timeline"></div>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-log-modal')">Cancel</button>
+          <button class="btn btn-primary" id="pf-log-submit-btn" onclick="pfSubmitLog()">Save Progress</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Past-Objectives / KPI Selector Modal ──────── -->
+    <div class="gp-backdrop" id="pr-sel-modal">
+      <div class="gp-modal" style="max-width:500px">
+        <div class="gp-modal-hdr">
+          <div>
+            <div class="gp-modal-title" id="pr-sel-title">Add / Remove Objectives</div>
+            <div style="font-size:var(--fs-sm);color:var(--text3);margin-top:2px" id="pr-sel-subtitle"></div>
+          </div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pr-sel-modal')">&times;</button>
+        </div>
+        <div class="pr-sel-body">
+          <div class="gp-error" id="pr-sel-error"></div>
+          <div class="sel-list" id="pr-sel-list"></div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pr-sel-modal')">Cancel</button>
+          <button class="btn btn-primary" id="pr-sel-confirm">Confirm</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Review item: change the definition inside the review (slice 010 D) ── -->
+    <div class="gp-backdrop" id="ri-edit-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div>
+            <div class="gp-modal-title">Change this item in the review</div>
+            <div style="font-size:var(--fs-sm);color:var(--text3);margin-top:2px" id="ri-edit-sub"></div>
+          </div>
+          <button class="gp-modal-close" onclick="pfCloseModal('ri-edit-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="ri-edit-error"></div>
+          <input type="hidden" id="ri-edit-row">
+          <div class="pf-modal-context">The change stays inside this review until it is completed. The live record is not touched now.</div>
+          <div class="gp-field">
+            <label class="gp-label" for="ri-edit-title">Name</label>
+            <input class="gp-input" id="ri-edit-title" type="text">
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="ri-edit-target">Target</label>
+            <input class="gp-input" id="ri-edit-target" type="number" step="any">
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="ri-edit-weight">Weight (%)</label>
+            <input class="gp-input" id="ri-edit-weight" type="number" step="any" min="0" max="100">
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="ri-edit-from">Period from</label>
+            <input class="gp-input" id="ri-edit-from" type="date">
+          </div>
+          <div class="gp-field">
+            <label class="gp-label" for="ri-edit-to">Period to</label>
+            <input class="gp-input" id="ri-edit-to" type="date">
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('ri-edit-modal')">Cancel</button>
+          <button class="btn btn-primary" id="ri-edit-save" onclick="riSaveEditItem()">Save change</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Review item: take it out of the review (slice 010 D, R12) ── -->
+    <div class="gp-backdrop" id="ri-remove-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title" id="ri-remove-title">Remove from this review</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('ri-remove-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="ri-remove-error"></div>
+          <input type="hidden" id="ri-remove-row">
+          <input type="hidden" id="ri-remove-mode">
+          <div class="pf-modal-context" id="ri-remove-warning"></div>
+          <div class="gp-field" id="ri-remove-reason-field">
+            <label class="gp-label" for="ri-remove-reason">Why is it being removed? <span id="ri-remove-reason-req" style="font-weight:400;color:var(--text3)"></span></label>
+            <input class="gp-input" id="ri-remove-reason" type="text" placeholder="The employee will see this reason.">
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('ri-remove-modal')">Keep it</button>
+          <button class="btn btn-primary" id="ri-remove-confirm" onclick="riConfirmRemove()">Remove it</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Self-Review Narrative Modal ──────────────── -->
+    <div class="gp-backdrop" id="pf-narrative-modal">
+      <div class="gp-modal" style="max-width:600px">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Write Self-Review Narrative</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-narrative-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="pf-narrative-error"></div>
+          <input type="hidden" id="pf-narrative-appraisal">
+          <div class="gp-field">
+            <div class="gp-label">Key Achievements</div>
+            <textarea class="gp-input" id="pf-narrative-achievements" rows="3"
+              placeholder="What did you accomplish this period?"></textarea>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Challenges Faced</div>
+            <textarea class="gp-input" id="pf-narrative-challenges" rows="3"
+              placeholder="What obstacles did you encounter, and how did you address them?"></textarea>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Development Needs</div>
+            <textarea class="gp-input" id="pf-narrative-devneeds" rows="3"
+              placeholder="What skills or areas do you want to develop?"></textarea>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Support Needed from Manager</div>
+            <textarea class="gp-input" id="pf-narrative-support" rows="2"
+              placeholder="What specific support do you need from your manager?"></textarea>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Goals for Next Period</div>
+            <textarea class="gp-input" id="pf-narrative-forward" rows="3"
+              placeholder="What do you want to focus on next?"></textarea>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-narrative-modal')">Cancel</button>
+          <button class="btn btn-primary" id="pf-narrative-btn" onclick="pfSubmitNarrative()">Save Narrative</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Action Item Modal ─────────────────────────── -->
+    <div class="gp-backdrop" id="pf-action-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Add Action Item</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-action-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="pf-action-error"></div>
+          <input type="hidden" id="pf-action-appraisal">
+          <div class="gp-field">
+            <div class="gp-label">Description *</div>
+            <input class="gp-input" id="pf-action-desc" placeholder="e.g. Complete leadership training by Q3">
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Assigned To</div>
+              <select class="gp-input" id="pf-action-assignee"></select>
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Due Date</div>
+              <input class="gp-input" id="pf-action-due" type="date">
+            </div>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-action-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="pfSubmitActionItem()">Add Action Item</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Check-In Modal ────────────────────────────── -->
+    <!-- No KRAs assigned: a blocked employee must never be left without a way out -->
+    <div class="gp-backdrop" id="gp-nokra-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">You need a Key Result Area first</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('gp-nokra-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div style="font-size:var(--fs-base);line-height:1.6;color:var(--text2)">
+            Your organisation requires every objective to sit under a
+            <strong>Key Result Area</strong> &mdash; the part of your role it contributes to.
+            <br><br>
+            No Key Result Areas have been assigned to you yet. These come from your
+            appraisal template, which HR sets up for your role, so this is not
+            something you can fix yourself.
+            <br><br>
+            You can still save your objective as a <strong>draft</strong> and attach a
+            Key Result Area once HR has set them up.
+          </div>
+          <div class="gp-field" style="margin-top:16px">
+            <div class="gp-label">Anything to add for HR? (optional)</div>
+            <textarea class="gp-input" id="gp-nokra-note" rows="2"
+              placeholder="e.g. I have just moved to a new role"></textarea>
+          </div>
+        </div>
+        <div class="gp-modal-ftr">
+          <button class="btn btn-outline" onclick="pfCloseModal('gp-nokra-modal')">Continue as draft</button>
+          <button class="btn btn-primary" id="gp-nokra-report" onclick="gpReportMissingKra()">Report to HR</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="gp-backdrop" id="gp-checkin-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Goal Check-In</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('gp-checkin-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="gp-checkin-error"></div>
+          <input type="hidden" id="gp-checkin-goal">
+          <div class="pf-modal-context" id="gp-checkin-context"></div>
+          <div class="gp-field">
+            <div class="gp-label">Note *</div>
+            <textarea class="gp-input" id="gp-checkin-note" rows="3"
+              placeholder="What progress did you make? Any blockers?"></textarea>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">% Complete <span style="color:var(--text3)">(optional)</span></div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input class="gp-input" id="gp-checkin-pct" type="number" min="0" max="100" step="1" placeholder="0 – 100" style="flex:1">
+              <span style="font-size:var(--fs-base);font-weight:600;color:var(--text3)">%</span>
+            </div>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Outlook <span style="color:var(--text3)">(optional)</span></div>
+            <div style="display:flex;gap:8px">
+              <button type="button" id="gp-checkin-traj-likely" class="btn btn-outline btn-sm checkin-traj-btn"
+                onclick="gpSetCheckinTraj('On Track')">Likely to Succeed</button>
+              <button type="button" id="gp-checkin-traj-unlikely" class="btn btn-outline btn-sm checkin-traj-btn"
+                onclick="gpSetCheckinTraj('At Risk')">Unlikely to Succeed</button>
+            </div>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('gp-checkin-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="gpSubmitCheckin()">Save Check-In</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Company Value Modal (HR) ─────────────────── -->
+    <div class="gp-backdrop" id="pf-value-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Company Value</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-value-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="pf-value-error"></div>
+          <input type="hidden" id="pf-val-name">
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Value Name *</div>
+              <input class="gp-input" id="pf-val-value-name" placeholder="e.g. Integrity">
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Icon / Emoji</div>
+              <input class="gp-input" id="pf-val-emoji" placeholder="e.g. <i class=ic-award></i>">
+            </div>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Description</div>
+            <textarea class="gp-input" id="pf-val-desc" rows="2"
+              placeholder="What this value means at {{ tenant_name }}"></textarea>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-value-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="pfSubmitValue()">Save Value</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Upward Feedback Modal ─────────────────────── -->
+    <div class="gp-backdrop" id="pf-upward-modal">
+      <div class="gp-modal" style="max-width:540px">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Upward Feedback</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-upward-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="pf-upward-error"></div>
+          <input type="hidden" id="pf-upward-about">
+          <input type="hidden" id="pf-upward-cycle">
+          <div class="pf-modal-context" id="pf-upward-context"
+            style="font-size:var(--fs-sm);color:var(--text2);margin-bottom:12px">
+          </div>
+          <div id="pf-upward-principles">
+            <!-- Populated dynamically with principle rating inputs -->
+          </div>
+          <div class="gp-field" style="margin-top:12px">
+            <div class="gp-label">Overall Rating (0–5)</div>
+            <input class="gp-input" id="pf-upward-rating" type="number"
+              min="0" max="5" step="0.5" placeholder="e.g. 4">
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Comments <span style="color:var(--text3)">(optional)</span></div>
+            <textarea class="gp-input" id="pf-upward-comments" rows="3"
+              placeholder="Share any specific observations…"></textarea>
+          </div>
+          <p style="font-size:var(--fs-xs);color:var(--text3);margin:8px 0 0">
+            Your response is anonymous. Results are only shown to your manager once a minimum number of responses are received.
+          </p>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-upward-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="pfSubmitUpwardFeedback()">Submit Feedback</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Additional Reviewer Modal ─────────────────── -->
+    <div class="gp-backdrop" id="pf-reviewer-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Add Additional Reviewer</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-reviewer-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="pf-reviewer-error"></div>
+          <input type="hidden" id="pf-reviewer-kpi">
+          <div class="pf-modal-context" id="pf-reviewer-context"></div>
+          <div class="gp-field">
+            <div class="gp-label">Reviewer (Employee ID) *</div>
+            <input class="gp-input" id="pf-reviewer-emp" placeholder="e.g. EMP-001">
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Role / Relationship</div>
+            <input class="gp-input" id="pf-reviewer-role" placeholder="e.g. Dotted-line manager, Project lead">
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-reviewer-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="pfSubmitAdditionalReviewer()">Add Reviewer</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Leadership Principle Modal (HR) ───────────── -->
+    <div class="gp-backdrop" id="pf-principle-modal">
+      <div class="gp-modal" style="max-width:540px">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Leadership Principle</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-principle-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="pf-principle-error"></div>
+          <input type="hidden" id="pf-principle-name">
+          <div class="gp-field">
+            <div class="gp-label">Principle Name *</div>
+            <input class="gp-input" id="pf-principle-title" placeholder="e.g. Customer First">
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Description</div>
+            <textarea class="gp-input" id="pf-principle-desc" rows="2"
+              placeholder="Brief description of this principle"></textarea>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Expected Behaviours</div>
+            <textarea class="gp-input" id="pf-principle-behaviours" rows="4"
+              placeholder="One behaviour per line, e.g.:&#10;Actively listens to customer concerns&#10;Resolves complaints within 24 hours"></textarea>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-principle-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="pfSubmitPrinciple()">Save Principle</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Calibration Note Modal (HR) ──────────────────── -->
+    <div class="gp-backdrop" id="pf-calib-note-modal">
+      <div class="gp-modal" style="max-width:480px">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">Calibration Note</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-calib-note-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div id="pf-calib-note-context" style="margin-bottom:12px;font-size:var(--fs-base);color:var(--text2)"></div>
+          <div class="gp-field">
+            <label class="gp-label">Calibration Notes</label>
+            <textarea id="pf-calib-note-text" class="gp-input" rows="4" placeholder="Notes on this employee's calibration…" style="width:100%;resize:vertical"></textarea>
+          </div>
+          <div class="gp-field">
+            <label class="gp-label">Calibrated Rating (optional, 0–5)</label>
+            <input type="number" id="pf-calib-rating" class="gp-input" min="0" max="5" step="0.1" placeholder="e.g. 3.5" style="width:120px">
+          </div>
+          <div id="pf-calib-note-error" class="callout callout-warn" style="display:none;margin-top:8px"></div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-calib-note-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="pfSubmitCalibNote()">Save Note</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Appraisal Setup Wizard (HR) ───────────────── -->
+    <div class="gp-backdrop" id="pf-cycle-modal">
+      <div class="gp-modal" style="max-width:600px;width:95vw">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title" id="wiz-title">Appraisal Setup</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-cycle-modal')">&times;</button>
+        </div>
+
+        <!-- Step indicator -->
+        <div style="display:flex;align-items:center;gap:0;padding:16px 24px 0;border-bottom:1px solid var(--border)">
+          <div class="wiz-step" id="wiz-ind-1" style="display:flex;align-items:center;gap:6px">
+            <div class="wiz-dot" id="wiz-dot-1">1</div>
+            <span style="font-size:var(--fs-xs);font-weight:500" id="wiz-lbl-1">Cycle Details</span>
+          </div>
+          <div style="height:1px;background:var(--border);flex:1;margin:0 4px"></div>
+          <div class="wiz-step" id="wiz-ind-2" style="display:flex;align-items:center;gap:6px">
+            <div class="wiz-dot" id="wiz-dot-2">2</div>
+            <span style="font-size:var(--fs-xs);font-weight:500" id="wiz-lbl-2">Profile Fields</span>
+          </div>
+          <div style="height:1px;background:var(--border);flex:1;margin:0 4px"></div>
+          <div class="wiz-step" id="wiz-ind-3" style="display:flex;align-items:center;gap:6px">
+            <div class="wiz-dot" id="wiz-dot-3">3</div>
+            <span style="font-size:var(--fs-xs);font-weight:500" id="wiz-lbl-3">Appraisal Pages</span>
+          </div>
+          <div style="height:1px;background:var(--border);flex:1;margin:0 4px"></div>
+          <div class="wiz-step" id="wiz-ind-4" style="display:flex;align-items:center;gap:6px">
+            <div class="wiz-dot" id="wiz-dot-4">4</div>
+            <span style="font-size:var(--fs-xs);font-weight:500" id="wiz-lbl-4">Select Employees</span>
+          </div>
+        </div>
+
+        <div class="gp-modal-body" style="min-height:320px">
+          <div class="gp-error" id="pf-cycle-error"></div>
+
+          <!-- Step 1: Cycle Details -->
+          <div id="wiz-step-1">
+            <div class="gp-field">
+              <div class="gp-label">Appraisal Cycle Name *</div>
+              <input class="gp-input" id="pf-cy-name" placeholder="e.g. H2 2026 Performance Review">
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Description</div>
+              <textarea class="gp-input" id="pf-cy-desc" rows="2"
+                placeholder="Brief overview of this review cycle — its purpose and scope"></textarea>
+            </div>
+            <div class="gp-row2">
+              <div class="gp-field">
+                <div class="gp-label">Start Date *</div>
+                <input class="gp-input" id="pf-cy-start" type="date">
+              </div>
+              <div class="gp-field">
+                <div class="gp-label">End Date *</div>
+                <input class="gp-input" id="pf-cy-end" type="date">
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 2: Employee Profile Fields -->
+          <div id="wiz-step-2" style="display:none">
+            <p style="font-size:var(--fs-base);color:var(--text2);margin:0 0 16px">
+              Choose which employee details appear at the top of each appraisal form.
+            </p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <label class="wiz-check"><input type="checkbox" id="wf-designation" checked> Designation</label>
+              <label class="wiz-check"><input type="checkbox" id="wf-department" checked> Department</label>
+              <label class="wiz-check"><input type="checkbox" id="wf-branch"> Branch / Location</label>
+              <label class="wiz-check"><input type="checkbox" id="wf-grade"> Grade / Level</label>
+              <label class="wiz-check"><input type="checkbox" id="wf-joining_date"> Date of Joining</label>
+              <label class="wiz-check"><input type="checkbox" id="wf-years_of_service" checked> Years of Service</label>
+              <label class="wiz-check"><input type="checkbox" id="wf-reports_to" checked> Reporting Manager</label>
+              <label class="wiz-check"><input type="checkbox" id="wf-employment_type"> Employment Type</label>
+            </div>
+          </div>
+
+          <!-- Step 3: Appraisal Pages -->
+          <div id="wiz-step-3" style="display:none">
+            <p style="font-size:var(--fs-base);color:var(--text2);margin:0 0 16px">
+              Select the sections to include in each employee's appraisal form. Drag to reorder (coming soon).
+            </p>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <label class="wiz-page-check">
+                <div style="display:flex;align-items:flex-start;gap:10px">
+                  <input type="checkbox" id="pg-past-objectives" checked style="margin-top:3px">
+                  <div>
+                    <div style="font-weight:600;font-size:var(--fs-base)">Past Objectives &amp; KPIs</div>
+                    <div style="font-size:var(--fs-sm);color:var(--text3)">Review targets set for this period — actual vs target, self-rating and manager rating</div>
+                  </div>
+                </div>
+              </label>
+              <label class="wiz-page-check">
+                <div style="display:flex;align-items:flex-start;gap:10px">
+                  <input type="checkbox" id="pg-past-dev" checked style="margin-top:3px">
+                  <div>
+                    <div style="font-weight:600;font-size:var(--fs-base)">Past Development Goals</div>
+                    <div style="font-size:var(--fs-sm);color:var(--text3)">Reflect on learning and growth goals from this period</div>
+                  </div>
+                </div>
+              </label>
+              <label class="wiz-page-check">
+                <div style="display:flex;align-items:flex-start;gap:10px">
+                  <input type="checkbox" id="pg-future-objectives" style="margin-top:3px">
+                  <div>
+                    <div style="font-weight:600;font-size:var(--fs-base)">Future Objectives &amp; KPIs</div>
+                    <div style="font-size:var(--fs-sm);color:var(--text3)">Set performance targets for the next review period</div>
+                  </div>
+                </div>
+              </label>
+              <label class="wiz-page-check">
+                <div style="display:flex;align-items:flex-start;gap:10px">
+                  <input type="checkbox" id="pg-future-dev" style="margin-top:3px">
+                  <div>
+                    <div style="font-weight:600;font-size:var(--fs-base)">Future Development Goals</div>
+                    <div style="font-size:var(--fs-sm);color:var(--text3)">Plan skills and learning goals for the next period</div>
+                  </div>
+                </div>
+              </label>
+              <label class="wiz-page-check">
+                <div style="display:flex;align-items:flex-start;gap:10px">
+                  <input type="checkbox" id="pg-manager-feedback" checked style="margin-top:3px">
+                  <div>
+                    <div style="font-weight:600;font-size:var(--fs-base)">Manager's Feedback</div>
+                    <div style="font-size:var(--fs-sm);color:var(--text3)">Structured commentary: overall assessment, strengths, development areas, and action plan</div>
+                  </div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Step 4: Select Employees -->
+          <div id="wiz-step-4" style="display:none">
+            <p style="font-size:var(--fs-base);color:var(--text2);margin:0 0 14px">
+              Filter and select the employees to include in this appraisal cycle. An appraisal form will be generated for each selected employee.
+            </p>
+            <!-- Filters -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+              <div>
+                <div class="gp-label" style="margin-bottom:4px">Department</div>
+                <select class="gp-input" id="wiz-f-dept" style="padding:6px 8px;height:34px" onchange="wizApplyFilters()">
+                  <option value="">All Departments</option>
+                </select>
+              </div>
+              <div>
+                <div class="gp-label" style="margin-bottom:4px">Manager</div>
+                <select class="gp-input" id="wiz-f-mgr" style="padding:6px 8px;height:34px" onchange="wizApplyFilters()">
+                  <option value="">All Managers</option>
+                </select>
+              </div>
+              <div>
+                <div class="gp-label" style="margin-bottom:4px">Designation</div>
+                <select class="gp-input" id="wiz-f-desig" style="padding:6px 8px;height:34px" onchange="wizApplyFilters()">
+                  <option value="">All Designations</option>
+                </select>
+              </div>
+              <div>
+                <div class="gp-label" style="margin-bottom:4px">Date of Joining</div>
+                <div style="display:flex;gap:4px;align-items:center">
+                  <input type="date" class="gp-input" id="wiz-f-join-from" style="padding:6px 8px;height:34px;flex:1" placeholder="From" onchange="wizApplyFilters()">
+                  <span style="font-size:var(--fs-xs);color:var(--text3)">–</span>
+                  <input type="date" class="gp-input" id="wiz-f-join-to" style="padding:6px 8px;height:34px;flex:1" placeholder="To" onchange="wizApplyFilters()">
+                </div>
+              </div>
+            </div>
+            <!-- Search -->
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px">
+              <input class="gp-input" id="wiz-emp-search" placeholder="Search by name…" style="flex:1;height:34px;padding:6px 10px" oninput="wizRenderEmpList()">
+              <div id="wiz-emp-loading" style="font-size:var(--fs-sm);color:var(--text3);display:none">Loading…</div>
+            </div>
+            <!-- Select all / deselect -->
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <div style="font-size:var(--fs-sm);color:var(--text3)">
+                <span id="wiz-sel-count">0</span> of <span id="wiz-emp-count">0</span> selected
+              </div>
+              <div style="display:flex;gap:12px">
+                <button class="btn" style="font-size:var(--fs-sm);padding:2px 10px;background:none;border:1px solid var(--border);border-radius:var(--r-sm)" onclick="wizToggleAll(true)">Select All</button>
+                <button class="btn" style="font-size:var(--fs-sm);padding:2px 10px;background:none;border:1px solid var(--border);border-radius:var(--r-sm)" onclick="wizToggleAll(false)">Deselect All</button>
+              </div>
+            </div>
+            <!-- Employee list -->
+            <div id="wiz-emp-list" style="border:1px solid var(--border);border-radius:var(--r-sm);max-height:220px;overflow-y:auto">
+              <div class="empty-state" style="padding:24px">
+                <div class="empty-state-text">Click a filter or type to load employees</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="gp-modal-footer" style="justify-content:space-between">
+          <button class="btn btn-outline" id="wiz-back-btn" onclick="wizStep(-1)" style="display:none">← Back</button>
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-cycle-modal')" id="wiz-cancel-btn">Cancel</button>
+          <button class="btn btn-primary" id="wiz-next-btn" onclick="wizStep(1)">Next →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── New Appraisal Process Modal (HR) ───────────── -->
+    <div class="gp-backdrop" id="ap-process-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">New Appraisal Process</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('ap-process-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="ap-process-error"></div>
+          <div class="gp-field">
+            <div class="gp-label">Process / cycle name *</div>
+            <input class="gp-input" id="ap-p-name" placeholder="e.g. H1 2027 Performance Review">
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Start date *</div>
+              <input class="gp-input" id="ap-p-start" type="date">
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">End date *</div>
+              <input class="gp-input" id="ap-p-end" type="date">
+            </div>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Description</div>
+            <input class="gp-input" id="ap-p-desc" placeholder="Optional">
+          </div>
+          <div class="gp-field">
+            <label class="pf-toggle">
+              <input type="checkbox" id="ap-p-generate" checked>
+              Generate appraisals now for everyone with KPIs in this cycle
+            </label>
+            <div class="gp-hint">Scored on manager-rated KPIs. Each employee's KPI weightages
+              must total 100% before their appraisal can be generated — anyone short is
+              listed back to you rather than silently skipped.</div>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('ap-process-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="apSubmitProcess()">Start Process</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── New Cascade Modal (HR) ─────────────────────── -->
+    <div class="gp-backdrop" id="pf-cascade-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title">New Goal Cascade</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-cascade-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="pf-cascade-error"></div>
+          <div class="gp-field">
+            <div class="gp-label">Cascade Name *</div>
+            <input class="gp-input" id="pf-ca-name" placeholder="e.g. Revenue FY26">
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Company Target *</div>
+              <input class="gp-input" id="pf-ca-target" type="number" step="any" placeholder="250">
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Unit *</div>
+              <select class="gp-input" id="pf-ca-unit">
+                <option>Orders</option><option>Revenue</option>
+                <option>Skill Score</option><option>Units Sold</option>
+              </select>
+            </div>
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Period Start *</div>
+              <input class="gp-input" id="pf-ca-start" type="date">
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Period End *</div>
+              <input class="gp-input" id="pf-ca-end" type="date">
+            </div>
+          </div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-cascade-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="pfSubmitCascade()">Create Cascade</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Assign KPI Modal (HR) ──────────────────────── -->
+    <div class="gp-backdrop" id="pf-kpi-modal">
+      <div class="gp-modal">
+        <div class="gp-modal-hdr">
+          <div class="gp-modal-title" id="pf-kpi-modal-title">Assign KPI</div>
+          <button class="gp-modal-close" onclick="pfCloseModal('pf-kpi-modal')">&times;</button>
+        </div>
+        <div class="gp-modal-body">
+          <div class="gp-error" id="pf-kpi-error"></div>
+          <input type="hidden" id="pf-k-id">
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Employee *</div>
+              <select class="gp-input" id="pf-k-employee" onchange="pfReloadObjectives()"></select>
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Cycle *</div>
+              <select class="gp-input" id="pf-k-cycle"></select>
+            </div>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Linked objective</div>
+            <div class="cbx" id="pf-k-objective-cbx">
+              <input class="gp-input" id="pf-k-objective-search" autocomplete="off"
+                     placeholder="Type to search objectives…"
+                     oninput="cbxFilter('pf-k-objective')"
+                     onfocus="cbxFilter('pf-k-objective')"
+                     onkeydown="cbxKey(event,'pf-k-objective')">
+              <input type="hidden" id="pf-k-objective">
+              <div class="cbx-list" id="pf-k-objective-list"></div>
+            </div>
+            <div class="gp-hint">Their own objective, or one held above them. Several people can
+              contribute KPIs to the same objective. Leave blank for none.</div>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">KPI Name *</div>
+            <input class="gp-input" id="pf-k-name" placeholder="e.g. New accounts opened">
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Target *</div>
+              <input class="gp-input" id="pf-k-target" type="number" step="any" placeholder="40">
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Weightage % *</div>
+              <input class="gp-input" id="pf-k-weightage" type="number" step="any" min="0" max="100" placeholder="60">
+              <div class="gp-hint" id="pf-k-weight-hint"></div>
+            </div>
+          </div>
+          <div class="gp-row2">
+            <div class="gp-field">
+              <div class="gp-label">Unit</div>
+              <select class="gp-input" id="pf-k-unit">
+                <optgroup label="Count &amp; value">
+                  <option>Number</option><option>Percent</option><option>Currency</option>
+                  <option>Crore</option><option>Lakh</option><option>Cases</option><option>Score</option>
+                </optgroup>
+                <optgroup label="Time">
+                  <option>Days</option><option>Hours</option>
+                </optgroup>
+                <optgroup label="Weight">
+                  <option>Grams</option><option>Kilograms</option><option>Quintals</option>
+                  <option>Tonnes</option><option>Pounds</option>
+                </optgroup>
+                <optgroup label="Volume">
+                  <option>Litres</option>
+                </optgroup>
+              </select>
+            </div>
+            <div class="gp-field">
+              <div class="gp-label">Direction</div>
+              <select class="gp-input" id="pf-k-direction">
+                <option>Higher is Better</option><option>Lower is Better</option>
+              </select>
+            </div>
+          </div>
+          <div class="gp-field">
+            <div class="gp-label">Category</div>
+            <select class="gp-input" id="pf-k-category">
+              <option>Financial</option><option>Customer</option><option>Process</option>
+              <option>People</option><option>Learning &amp; Growth</option>
+            </select>
+          </div>
+          <!-- The company cascade is derived from the linked objective above,
+               so there is nothing to ask for here. -->
+          <div class="gp-hint" id="pf-k-cascade-note" style="margin-top:-4px"></div>
+        </div>
+        <div class="gp-modal-footer">
+          <button class="btn btn-outline" onclick="pfCloseModal('pf-kpi-modal')">Cancel</button>
+          <button class="btn btn-primary" onclick="pfSubmitKpi()">Save KPI</button>
+        </div>
+      </div>
+    </div>
+

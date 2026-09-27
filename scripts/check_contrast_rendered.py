@@ -18,8 +18,15 @@ by hand after any change to colour or background:
 import io, os, re, sys
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-ROOT = r"c:\Surbhi-Git\hr-app\alvoraa_portal\alvoraa_portal"
-PAGES = ["hrms-employee", "driver-portal", "vendor-portal", "alvoraa-admin", "alvoraa-login"]
+# Resolved from this file, not hard-coded, so the check reads the checkout or
+# worktree it was actually run from (slice 034 US-10).
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                    "alvoraa_portal", "alvoraa_portal")
+# The preview page is in the list because it is where Wave 1's new frame
+# lives until the swap. A frame whose colours are only checked after it
+# becomes the live page is checked too late.
+PAGES = ["hrms-employee", "hrms-employee-next", "driver-portal", "vendor-portal",
+         "alvoraa-admin", "alvoraa-login"]
 
 JS = """() => {
   const lum = (r,g,b) => {
@@ -61,12 +68,72 @@ JS = """() => {
 }"""
 
 
+# Every include, not just the first. The page used to carry one include tag
+# (design_system.html); since slice 034 US-10 it carries several more, and the
+# blanket "strip every {% %}" below would have deleted them - leaving this check
+# measuring an empty page and passing. Expanding them all is the whole guard.
+# OPS-31. The portal's styles left the Jinja includes and became static files
+# under public/, loaded with <link href="/assets/...">. Stripping those, as the
+# blanket Jinja strip below once did to the include tags, would leave this check
+# measuring an unstyled page - every colour would come out 1.00:1 and the check
+# would report a disaster that is not real, or a healthy page as broken. So the
+# asset tags are pasted back in as <style> blocks, the same way the shared
+# expander does it for the tests.
+ASSET_LINK_RE = re.compile(
+	r'<link[^>]*href="/assets/alvoraa_portal/(css/ess/[^"?]+)(?:\?[^"]*)?"[^>]*>')
+ASSET_SCRIPT_RE = re.compile(
+	r'<script[^>]*src="/assets/alvoraa_portal/(js/ess/[^"?]+)(?:\?[^"]*)?"[^>]*>\s*</script>')
+
+
+# The markup is split by area into parts that hold no Jinja and are pasted in by
+# {{ ess_part("home") }} rather than compiled (alvoraa_portal/ess_parts.py). The
+# blanket "{{ ... }} becomes empty" substitution below would delete every one of
+# them and leave this check measuring a page with no content - which is exactly
+# what it did for one run: it reported nought unreadable elements on a page that
+# was not there. The parts are pasted back in first.
+PART_RE = re.compile(r'\{\{\s*ess_part\(\s*"([a-z0-9-]+)"\s*\)\s*\}\}')
+
+
+def _expand_parts(src):
+	def swap(m):
+		path = os.path.join(ROOT, "templates", "includes", "ess", "parts",
+		                    m.group(1) + ".html")
+		with open(path, encoding="utf-8") as fh:
+			return fh.read()
+
+	out = PART_RE.sub(swap, src)
+	if "hrms-employee" in src and out == src and "ess_part(" in src:
+		raise RuntimeError("markup parts were not expanded")
+	return out
+
+
+def _expand_assets(src):
+	def swap(m, tag):
+		path = os.path.join(ROOT, "public", *m.group(1).split("/"))
+		with open(path, encoding="utf-8") as fh:
+			return "<%s>%s</%s>" % (tag, fh.read(), tag)
+
+	src = ASSET_LINK_RE.sub(lambda m: swap(m, "style"), src)
+	return ASSET_SCRIPT_RE.sub(lambda m: swap(m, "script"), src)
+
+
+# Thirty, not eight: driver-portal.html includes design_system.html four times
+# and each copy pulls in brand_color.html, which is eight substitutions on its
+# own - the old limit fired on a healthy page.
+def _expand_includes(src):
+	for _ in range(30):
+		m = re.search(r'\{%\s*include\s*"([^"]+)"\s*%\}', src)
+		if not m:
+			return src
+		path = os.path.join(ROOT, *m.group(1).split("/"))
+		with open(path, encoding="utf-8") as fh:
+			src = src[:m.start()] + fh.read() + src[m.end():]
+	raise RuntimeError("include files are nested too deep")
+
+
 def prep(page):
 	src = open(os.path.join(ROOT, "www", page + ".html"), encoding="utf-8").read()
-	m = re.search(r'\{%\s*include\s*"([^"]+)"\s*%\}', src)
-	if m:
-		src = src[:m.start()] + open(os.path.join(ROOT, *m.group(1).split("/")),
-		                             encoding="utf-8").read() + src[m.end():]
+	src = _expand_parts(_expand_assets(_expand_includes(src)))
 	src = re.sub(r"\{%\s*extends[^%]*%\}|\{%\s*block\s+\w+\s*%\}|\{%\s*endblock[^%]*%\}", "", src)
 	src = re.sub(r"\{#[\s\S]*?#\}", "", src)
 	V = {"tenant_name": "PP Jewellers", "primary_color": "#5B4B8A",

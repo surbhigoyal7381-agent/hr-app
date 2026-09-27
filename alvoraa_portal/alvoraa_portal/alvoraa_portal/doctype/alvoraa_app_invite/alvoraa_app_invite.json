@@ -1,0 +1,177 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-09-19 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "employee",
+  "employee_name",
+  "status",
+  "column_break_who",
+  "lifetime_hours",
+  "expires_at",
+  "token_hash",
+  "retired_token_hash",
+  "outcome_section",
+  "used_at",
+  "used_device",
+  "column_break_outcome",
+  "cancel_reason",
+  "cancelled_by",
+  "cancelled_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Employee",
+   "options": "Employee",
+   "reqd": 1,
+   "search_index": 1,
+   "set_only_once": 1,
+   "description": "Who this code was made for. It can never be changed."
+  },
+  {
+   "fetch_from": "employee.employee_name",
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Employee Name",
+   "read_only": 1
+  },
+  {
+   "default": "Waiting",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Waiting\nUsed\nCancelled\nRan out",
+   "read_only": 1,
+   "reqd": 1,
+   "description": "Set by the server only. Waiting is the only state a code can leave; Used, Cancelled and Ran out are final."
+  },
+  {
+   "fieldname": "column_break_who",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "lifetime_hours",
+   "fieldtype": "Int",
+   "label": "Works for (hours)",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "expires_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Works until",
+   "read_only": 1,
+   "reqd": 1,
+   "description": "Server time when the code was made, plus its lifetime. The phone's clock is never used."
+  },
+  {
+   "fieldname": "token_hash",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Token Hash",
+   "no_copy": 1,
+   "read_only": 1,
+   "search_index": 1,
+   "description": "SHA-256 of the code while it is waiting. The code itself is shown once, to the HR person who made it, and never stored. Emptied the moment the code stops waiting."
+  },
+  {
+   "fieldname": "retired_token_hash",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Retired Token Hash",
+   "no_copy": 1,
+   "read_only": 1,
+   "search_index": 1,
+   "description": "The hash, moved here when the code stopped waiting. Lets a used or cancelled code be recognised and answered with its own reason instead of \"not recognised\"."
+  },
+  {
+   "fieldname": "outcome_section",
+   "fieldtype": "Section Break",
+   "label": "What happened to it"
+  },
+  {
+   "fieldname": "used_at",
+   "fieldtype": "Datetime",
+   "label": "Used at",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "used_device",
+   "fieldtype": "Link",
+   "label": "Phone it set up",
+   "options": "Alvoraa Field Device",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "column_break_outcome",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "cancel_reason",
+   "fieldtype": "Select",
+   "label": "How it was cancelled",
+   "options": "\nBy HR\nThis is not me (on a phone)\nNewer code made\nEmployee left",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "cancelled_by",
+   "fieldtype": "Link",
+   "label": "Cancelled by",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "The HR user, or empty when a phone or the system cancelled it."
+  },
+  {
+   "fieldname": "cancelled_at",
+   "fieldtype": "Datetime",
+   "label": "Cancelled at",
+   "read_only": 1,
+   "no_copy": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-09-19 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa App Invite",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "HR Manager"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "HR User"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "employee_name",
+ "track_changes": 1
+}

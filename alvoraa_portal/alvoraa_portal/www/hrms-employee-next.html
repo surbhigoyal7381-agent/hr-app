@@ -1,0 +1,85 @@
+{% extends "templates/web.html" %}
+{# no-sitemap #}
+{% block title %}{{ tenant_name }} — {{ _("Employee portal") }}{% endblock %}
+
+{# Frappe's base template renders a "Standard Footer" web block that prints
+   "Powered by ERPNext" from Website Settings. Overriding the block is the only
+   thing that suppresses it - context.no_footer is a dead flag in v16. #}
+{% block footer %}{% endblock %}
+
+{% block head_include %}
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+
+{# AC-19. This runs BEFORE the design system's stylesheet, so the very first
+   paint is already the right colour. With it after, a person who chose dark
+   sees a white page flash first, every single time. It is inline and tiny for
+   the same reason: a separate file would be a second round trip before the
+   first paint.
+
+   It is wrapped in try/catch because localStorage throws rather than returning
+   null in a private window and where site data is blocked, and a theme
+   preference is not worth a blank page. #}
+<script>
+(function () {
+  try {
+    var t = window.localStorage.getItem("alvoraa-theme");
+    if (t === "light" || t === "dark") {
+      document.documentElement.setAttribute("data-theme", t);
+    }
+  } catch (e) { /* no stored choice: "match my phone" is the right default */ }
+})();
+</script>
+{% include "templates/includes/design_system.html" %}
+
+{# The frame's styles are a static file, served from /assets/ and cached for a
+   month by nginx's existing `location ^~ /assets/` block. The `?v=` is the
+   build version (OPS-34), so a phone cannot keep last release's stylesheet.
+   Release gates OPS-35 and OPS-36 are what prove this address answers. #}
+<link rel="stylesheet" href="/assets/alvoraa_portal/css/ess/next-frame.css?v={{ asset_version | e }}">
+{# Slice 042: the panels' own stylesheet. A second static file, cached for a
+   month by the same nginx rule, stamped by the same build version. OPS-31 made
+   this free - it is not a template and costs no cache slot. #}
+<link rel="stylesheet" href="/assets/alvoraa_portal/css/ess/next-panels.css?v={{ asset_version | e }}">
+{# Slice 043: Time and Pay. A third static file on the same terms - cached for
+   a month by the same nginx rule, stamped by the same build version, and
+   costing no template cache slot. Its own file rather than an addition to
+   next-panels.css, so that two sessions building two waves do not meet in one
+   stylesheet. #}
+<link rel="stylesheet" href="/assets/alvoraa_portal/css/ess/next-time-pay.css?v={{ asset_version | e }}">
+{# Slice 045: Growth, Team and the People rows. A fourth static file on the
+   same terms - cached for a month by the same nginx rule, stamped by the same
+   build version, and costing no template cache slot. Its own file rather than
+   an addition to Wave 3's, so that two sessions building two waves do not meet
+   in one stylesheet. #}
+<link rel="stylesheet" href="/assets/alvoraa_portal/css/ess/next-growth-team.css?v={{ asset_version | e }}">
+{% endblock %}
+
+{% block page_content %}
+{# The tenant's name reaches the frame through an attribute rather than a
+   script tag, so the page carries no inline JavaScript holding data. #}
+<script>document.body.setAttribute("data-tenant-name", {{ tenant_name | tojson }});</script>
+
+{% include "templates/includes/ess/next/frame.html" %}
+
+{# `defer`: parsed while the page is, run once the markup exists. The frame
+   asks for `get_frame` and `get_nav_counts` the moment it runs - two calls, no
+   timers (AC-7). #}
+<script src="/assets/alvoraa_portal/js/ess/next-frame.js?v={{ asset_version | e }}" defer></script>
+{# Slice 042: one file per panel. `defer` keeps them in order, so the frame has
+   registered its panel seam before these ask for it. Home and Inbox are
+   separate files on purpose - two sessions building two panels should not meet
+   in one file, and OPS-31 made the split cost nothing. #}
+<script src="/assets/alvoraa_portal/js/ess/next-home.js?v={{ asset_version | e }}" defer></script>
+<script src="/assets/alvoraa_portal/js/ess/next-inbox.js?v={{ asset_version | e }}" defer></script>
+{# Slice 043: one file per panel, still. `defer` keeps them in order behind
+   next-frame.js, so the panel seam exists before these register with it. #}
+<script src="/assets/alvoraa_portal/js/ess/next-time.js?v={{ asset_version | e }}" defer></script>
+<script src="/assets/alvoraa_portal/js/ess/next-pay.js?v={{ asset_version | e }}" defer></script>
+{# Slice 045: one file per panel, still. `defer` keeps them in order behind
+   next-frame.js, so the panel seam exists before these register with it.
+   People is NOT a file here: the frame already draws the staff list, and Wave 4
+   widened who may open it rather than building a second one beside it. #}
+<script src="/assets/alvoraa_portal/js/ess/next-team.js?v={{ asset_version | e }}" defer></script>
+<script src="/assets/alvoraa_portal/js/ess/next-growth.js?v={{ asset_version | e }}" defer></script>
+{% endblock %}

@@ -1,0 +1,185 @@
+      <!-- ══ TEAM VIEW ════════════════════════════════════ -->
+      <div id="panel-team" class="panel">
+        <div class="page-header" style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+          <div>
+            <div class="page-title">Team View</div>
+            <div class="page-sub" id="team-sub">Your direct reports and pending approvals</div>
+          </div>
+        </div>
+
+        <div class="team-view-tabs">
+          <div class="tvtab active" id="tvtab-attendance" onclick="switchTeamTab('attendance')">Team Attendance</div>
+          <div class="tvtab" id="tvtab-notes" onclick="switchTeamTab('notes')">Manager Notes</div>
+        </div>
+        <div id="tv-attendance-panel">
+        <!-- Summary -->
+        <div class="stat-chips">
+          <div class="stat-chip"><div class="stat-chip-icon"><i class=ic-users></i></div><div class="stat-chip-val num" id="t-size">—</div><div class="stat-chip-lbl">Direct Reports</div></div>
+          <div class="stat-chip"><div class="stat-chip-icon"><i class=ic-check></i></div><div class="stat-chip-val num" id="t-present">—</div><div class="stat-chip-lbl">Present Today</div></div>
+          <div class="stat-chip"><div class="stat-chip-icon"><i class=ic-leave></i></div><div class="stat-chip-val num" id="t-on-leave">—</div><div class="stat-chip-lbl">On Leave</div></div>
+          <div class="stat-chip"><div class="stat-chip-icon"><i class=ic-clipboard></i></div><div class="stat-chip-val num" id="t-pending-count">—</div><div class="stat-chip-lbl">Pending Approvals</div></div>
+        </div>
+
+        <!-- Today's attendance grid -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header"><span><i class=ic-calendar></i></span><span class="card-title">Today's Team Attendance</span></div>
+          <div class="card-body">
+            <div class="team-grid" id="team-grid">
+              <div class="empty-state"><div class="empty-state-text">Loading team...</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- On leave today -->
+        <div class="card" style="margin-bottom:20px" id="on-leave-card">
+          <div class="card-header"><span><i class=ic-leave></i></span><span class="card-title">On Leave Today</span></div>
+          <div class="card-body" id="on-leave-body">
+            <div class="empty-state"><div class="empty-state-text">Loading...</div></div>
+          </div>
+        </div>
+
+        <!-- Late list (build B1): this week so far, per direct report -->
+        <div class="card" style="margin-bottom:20px;display:none" id="team-late-card">
+          <div class="card-header"><span>⏰</span><span class="card-title">Late List</span>
+            <span id="team-late-week" style="margin-left:auto;font-size:var(--fs-xs);color:var(--text3)"></span></div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Employee</th><th>This week</th><th>Counted</th><th>Projected</th><th>Detail</th></tr></thead>
+              <tbody id="team-late-tbody"><tr><td colspan="5" style="text-align:center;color:var(--text3)">Loading...</td></tr></tbody>
+            </table>
+          </div>
+          <div class="card-body" id="team-late-recent" style="padding:10px 16px;border-top:1px solid var(--border);font-size:var(--fs-sm)"></div>
+        </div>
+
+        <!-- Pending leave approvals -->
+        <div class="sec-divider">Pending Leave Approvals</div>
+        <div id="team-pending-list">
+          <div class="empty-state"><div class="empty-state-text">Loading...</div></div>
+        </div>
+
+        <!-- Pending progress approvals (goals + KPIs) -->
+        <div class="sec-divider">Pending Progress Approvals</div>
+        <div id="team-progress-approvals">
+          <div class="empty-state"><div class="empty-state-text">Loading…</div></div>
+        </div>
+
+        <!-- Month leaves -->
+        <div class="sec-divider">Team Leaves This Month</div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Employee</th><th>Leave Type</th><th>From</th><th>To</th><th>Days</th></tr></thead>
+            <tbody id="team-month-tbody">
+              <tr><td colspan="5" style="text-align:center;color:var(--text3)">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        </div>
+        <div id="tv-notes-panel" style="display:none">
+          <div class="notes-filter-row">
+            <input type="date" class="form-control" id="tn-from" placeholder="From date">
+            <input type="date" class="form-control" id="tn-to" placeholder="To date">
+            <select class="form-control" id="tn-emp" style="max-width:200px">
+              <option value="">All team members</option>
+            </select>
+            <button class="btn btn-outline btn-sm" onclick="loadTeamNotes()">Filter</button>
+            <button class="btn btn-primary btn-sm" onclick="tnShowAdd()">+ Add Note</button>
+            <button class="btn btn-outline btn-sm" onclick="printTeamNotes()">Print</button>
+          </div>
+
+          <!-- Writing a note was previously only reachable from an employee's
+               drawer, so this tab could show notes but never take one. -->
+          <div class="note-add-form" id="tn-add-form" style="display:none">
+            <div class="note-add-title">New note</div>
+            <div class="tn-add-grid">
+              <label class="tn-field">Employee *
+                <select class="form-control" id="tn-new-emp"></select>
+              </label>
+              <label class="tn-field">Date *
+                <input type="date" class="form-control" id="tn-new-date">
+              </label>
+            </div>
+            <textarea class="form-control" id="tn-new-text" rows="3"
+                      placeholder="What happened? Keep it factual — these are your private notes."></textarea>
+            <div class="form-err" id="tn-new-err"></div>
+            <div class="tn-add-actions">
+              <button class="btn btn-primary btn-sm" id="tn-save-btn" onclick="tnSaveNote()">Save Note</button>
+              <button class="btn btn-outline btn-sm" onclick="tnHideAdd()">Cancel</button>
+              <span class="tn-add-hint">Only you can see these.</span>
+            </div>
+          </div>
+
+          <div id="tn-list"><div class="notes-empty">Select a date range and click Filter to view notes.</div></div>
+        </div>
+      </div>
+
+      <!-- ══ ANALYTICS ══════════════════════════════════ -->
+      <div id="panel-analytics" class="panel">
+        <div class="page-header">
+          <div class="page-title">HR Analytics</div>
+          <div class="page-sub">Organisation health &amp; workforce data</div>
+        </div>
+        <!-- Slice 012: "data up to", doubtful days, figures that need review, not linked -->
+        <div id="ana-dr-notes" aria-live="polite"></div>
+
+        <!-- KPI grid -->
+        <div class="kpi-grid">
+          <div class="kpi-card" onclick="window.open('/app/employee?status=Active','_blank')" style="cursor:pointer" title="View active employees in Frappe HR"><div class="kpi-icon"><i class=ic-user></i><i class=ic-briefcase></i></div><div class="kpi-val" id="kpi-active" style="color:var(--text)">—</div><div class="kpi-lbl">Active Employees</div></div>
+          <div class="kpi-card" onclick="window.open('/app/employee','_blank')" style="cursor:pointer" title="View employees in Frappe HR"><div class="kpi-icon">🆕</div><div class="kpi-val" id="kpi-joiners" style="color:var(--green)">—</div><div class="kpi-lbl">New Joiners (Month)</div></div>
+          <div class="kpi-card" onclick="window.open('/app/attendance','_blank')" style="cursor:pointer" title="View attendance records in Frappe HR"><div class="kpi-icon"><i class=ic-calendar></i></div><div class="kpi-val" id="kpi-att-rate" style="color:var(--primary)">—%</div><div class="kpi-lbl">Attendance Rate</div></div>
+          <div class="kpi-card" onclick="window.open('/app/leave-application?status=Open','_blank')" style="cursor:pointer" title="View pending leave applications in Frappe HR"><div class="kpi-icon"><i class=ic-clipboard></i></div><div class="kpi-val" id="kpi-pend-leaves" style="color:var(--amber)">—</div><div class="kpi-lbl">Pending Approvals</div></div>
+          <div class="kpi-card" onclick="window.open('/app/employee','_blank')" style="cursor:pointer" title="View employees pending confirmation in Frappe HR"><div class="kpi-icon"><i class=ic-graduation></i></div><div class="kpi-val" id="kpi-confirmations" style="color:var(--purple)">—</div><div class="kpi-lbl">Confirmations Due</div></div>
+          <div class="kpi-card" onclick="window.open('/app/leave-allocation','_blank')" style="cursor:pointer" title="View leave allocations in Frappe HR"><div class="kpi-icon"><i class=ic-leave></i></div><div class="kpi-val" id="kpi-leave-util" style="color:var(--red)">—%</div><div class="kpi-lbl">Leave Utilisation</div></div>
+        </div>
+
+        <!-- Dept + Gender -->
+        <div class="g2" style="margin-bottom:20px">
+          <div class="card">
+            <div class="card-header"><span><i class=ic-building></i></span><span class="card-title">Department Distribution</span></div>
+            <div class="card-body bar-chart" id="dept-chart"><div class="empty-state"><div class="empty-state-text">Loading...</div></div></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><span><i class=ic-user></i></span><span class="card-title">Gender Ratio</span></div>
+            <div class="card-body"><div class="gender-rows" id="gender-chart"></div></div>
+          </div>
+        </div>
+
+        <!-- Attendance breakdown + Leave util -->
+        <div class="g2" style="margin-bottom:20px">
+          <div class="card">
+            <div class="card-header"><span><i class=ic-trend></i></span><span class="card-title">Org Health (Month)</span></div>
+            <div class="card-body">
+              <div class="att-summary" style="grid-template-columns:repeat(2,1fr);margin-bottom:0" id="org-health-grid">
+                <div class="att-sum-box"><div class="att-sum-val num" id="oh-present" style="color:var(--green)">—</div><div class="att-sum-lbl">Days Present</div></div>
+                <div class="att-sum-box"><div class="att-sum-val num" id="oh-absent" style="color:var(--red)">—</div><div class="att-sum-lbl">Days Absent</div></div>
+                <div class="att-sum-box"><div class="att-sum-val num" id="oh-pending" style="color:var(--amber)">—</div><div class="att-sum-lbl">Pending Leaves</div></div>
+                <div class="att-sum-box"><div class="att-sum-val num" id="oh-conf" style="color:var(--purple)">—</div><div class="att-sum-lbl">Confirmations Due</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><span><i class=ic-chart></i></span><span class="card-title">Designation Mix (Top 10)</span></div>
+            <div class="card-body bar-chart" id="desig-chart"><div class="empty-state"><div class="empty-state-text">Loading...</div></div></div>
+          </div>
+        </div>
+
+        <!-- Confirmations due -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header"><span><i class=ic-graduation></i></span><span class="card-title">Confirmations Due This Month</span></div>
+          <div class="card-body" id="confirmations-list">
+            <div class="empty-state"><div class="empty-state-text">Loading...</div></div>
+          </div>
+        </div>
+
+        <!-- Recent joiners -->
+        <div class="card">
+          <div class="card-header"><span>🆕</span><span class="card-title">Recent Joiners</span></div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Name</th><th>Designation</th><th>Department</th><th>Joined</th></tr></thead>
+              <tbody id="recent-emp-tbody">
+                <tr><td colspan="4" style="text-align:center;color:var(--text3)">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>

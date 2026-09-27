@@ -59,3 +59,30 @@ scripts/_c_*.html
 
 # NOT ignored on purpose: docs/product/legal/ — those templates are meant to
 # be committed once they are ready.
+
+# Signing keys and app secrets - NEVER in git (slice 013, OPS-37, OPS-71).
+# A key committed here is a key handed out: the image is built from this repo
+# and everything published so far is already copied. `git add -f`
+# walks past these rules, so scripts/check_tracked_keys.py checks what git
+# actually tracks, in CI and before every push. Keep both lists in step.
+*.jks
+*.keystore
+*.p12
+*.p8
+*.cer
+*.mobileprovision
+keystore.properties
+local.properties
+google-services.json
+GoogleService-Info.plist
+ExportOptions.plist
+xcuserdata/
+*.local.xcconfig
+*.apk
+*.aab
+android/app/release/
+android/app/build/
+# Android and Gradle build output for the phone app (slice 013)
+.gradle/
+android/build/
+android/capacitor-cordova-android-plugins/build/

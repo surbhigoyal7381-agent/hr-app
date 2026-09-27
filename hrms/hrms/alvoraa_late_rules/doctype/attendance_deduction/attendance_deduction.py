@@ -179,32 +179,83 @@ class AttendanceDeduction(Document):
 		self.db_set({"lwp_days": 0, "lwp_amount": 0, "additional_salary": None})
 
 	# ── Notifications ────────────────────────────────────────────────────
+	#
+	# ALV-113 / 043 AC-17. Until this change one `sendmail` put the employee's
+	# and the manager's user_id in ONE recipients list and sent both the
+	# identical stored `explanation`. That text carries no rupee figure - it
+	# never did - but it names the LEAVE TYPE the days came from:
+	#
+	#     "Taken: 0.5 from Sick Leave, 0.5 as loss of pay"
+	#
+	# So a manager whose report had half a day taken from Sick Leave read that
+	# in his inbox, about a leave type the product hides on every screen. A
+	# colleague's leave type is the one thing slice 002's one-way rule and the
+	# design's section 9 both forbid, and it was going out by email.
+	#
+	# The fix is four rules, not "remove the number":
+	#
+	#   1. separate bodies    - the employee's is byte-identical to before
+	#   2. days only          - no amount, no minutes, no per-day list
+	#   3. no leave type      - the real leak
+	#   4. separate sends     - one recipient each, so a later change to one
+	#                           body cannot reach the other person
+	#
+	# Rule 4 is the one that makes the other three hold a year from now. Two
+	# people on one `recipients` list share a body by construction, and the
+	# next person to add a helpful line to "the email" adds it to both.
+
+	def manager_body(self):
+		"""What a manager may read: days, and nothing that names a leave type.
+
+		Whole sentences with placeholders, never fragments joined up, because
+		the figures move in word order between English, Hindi and Punjabi.
+		"""
+		total = flt(self.deduction_days)
+		return _(
+			"{0} lost {1} day(s) of paid time for late coming in the week of {2}, "
+			"under your organisation's late-coming rule. The details are between "
+			"{0} and HR."
+		).format(
+			self.employee_name,
+			total,
+			frappe.format(self.week_start, "Date"),
+		)
+
 	def notify(self):
 		rule = frappe.get_cached_doc("Attendance Deduction Rule", self.rule)
 		if not (rule.notify_employee or rule.notify_manager):
 			return
-		recipients = []
 		emp = frappe.db.get_value("Employee", self.employee, ["user_id", "reports_to"], as_dict=True)
+		subject = _("Attendance deduction for {0}, week of {1}").format(
+			self.employee_name, frappe.format(self.week_start, "Date")
+		)
+
+		# One send per recipient, each with its own body. The employee's body
+		# is `self.explanation` exactly as it always was.
+		sends = []
 		if rule.notify_employee and emp.user_id:
-			recipients.append(emp.user_id)
+			sends.append((emp.user_id, self.explanation))
 		if rule.notify_manager and emp.reports_to:
 			mgr = frappe.db.get_value("Employee", emp.reports_to, "user_id")
-			if mgr:
-				recipients.append(mgr)
-		if not recipients:
-			return
-		try:
-			frappe.sendmail(
-				recipients=recipients,
-				subject=_("Attendance deduction for {0}, week of {1}").format(
-					self.employee_name, frappe.format(self.week_start, "Date")
-				),
-				message=self.explanation,
-				reference_doctype=self.doctype,
-				reference_name=self.name,
-			)
-		except Exception:
-			frappe.log_error(frappe.get_traceback(), "Attendance Deduction notification failed")
+			# Nobody is their own manager's audience twice. If reports_to points
+			# back at the employee's own login, the manager send is dropped
+			# rather than sent a second, different body about themselves.
+			if mgr and mgr != emp.user_id:
+				sends.append((mgr, self.manager_body()))
+
+		for recipient, message in sends:
+			try:
+				frappe.sendmail(
+					recipients=[recipient],
+					subject=subject,
+					message=message,
+					reference_doctype=self.doctype,
+					reference_name=self.name,
+				)
+			except Exception:
+				# One failed send must not stop the other. The employee's
+				# notification is the one that matters most, and it goes first.
+				frappe.log_error(frappe.get_traceback(), "Attendance Deduction notification failed")
 
 
 def on_doctype_update():

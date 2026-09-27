@@ -1,0 +1,11 @@
+{
+  "name": "alvoraa-repo-checks",
+  "private": true,
+  "description": "Only the Node packages the repository's own checks need. The apps' own front ends (hrms/frontend, hrms/roster, mobile/field-app) keep their own package.json and are not affected by this one.",
+  "scripts": {
+    "test:dom": "node scripts/run_dom_tests.js"
+  },
+  "devDependencies": {
+    "jsdom": "27.1.0"
+  }
+}

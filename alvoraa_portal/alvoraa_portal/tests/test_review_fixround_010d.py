@@ -389,6 +389,100 @@ class TestCrM2LiveNumberMovesOnApproval(_Screens):
 			self.assertTrue(entry["logged_on"].startswith(str(frappe.utils.getdate(today()))))
 
 
+# ── ALV-17 · P1: the bell badge uses a cheap count, not the full list ───────
+
+
+class TestP1PendingApprovalsCountIsCheap(_Screens):
+	"""get_pending_approvals_count() must agree with the full get_pending_approvals(),
+	in a fixed handful of queries — not one per employee, KPI and Goal (706 measured
+	for a manager, ~15,000 projected for a 403-employee HR tenant; Wave 0 assessment,
+	appendix D). The boot-time bell call was pointed at this count, not the full list."""
+
+	def _make_one_pending_kpi_and_goal(self):
+		import alvoraa_portal.goals_api as goals_api
+		import alvoraa_portal.performance_api as pa
+		from frappe.utils import add_days, today
+
+		start, end = add_days(today(), -30), add_days(today(), 30)
+		cycle = self._cycle(start, end)
+		kpi = self._kpi(self.subject, cycle, target=10, start=start, end=end)
+		goal = self._goal(self.subject, cycle, start, end, target=10)
+		self._as(self.subject_user)
+		pa.log_kpi_progress(kpi, 3)
+		goals_api.submit_goal_update(goal, 4)
+
+	def test_count_matches_the_full_list_for_a_manager(self):
+		import alvoraa_portal.goals_api as goals_api
+		from alvoraa_portal.tests import leader_fixtures_012 as fx
+
+		self._make_one_pending_kpi_and_goal()
+		self._as(self.manager_user)
+		full = goals_api.get_pending_approvals()
+		with fx.QueryCounter() as q:
+			cheap = goals_api.get_pending_approvals_count()
+
+		self.assertEqual(cheap["total"], full["total"])
+		self.assertGreaterEqual(full["total"], 2)
+		self.assertLessEqual(q.count, 10, "must not grow with employee/KPI/goal count")
+
+	def test_count_matches_the_full_list_for_hr(self):
+		import alvoraa_portal.goals_api as goals_api
+		from alvoraa_portal.tests import leader_fixtures_012 as fx
+
+		self._make_one_pending_kpi_and_goal()
+		self._as(self.hr_user)
+		full = goals_api.get_pending_approvals()
+		with fx.QueryCounter() as q:
+			cheap = goals_api.get_pending_approvals_count()
+
+		self.assertEqual(cheap["total"], full["total"])
+		self.assertGreaterEqual(full["total"], 2)
+		self.assertLessEqual(q.count, 10, "must not grow with employee/KPI/goal count")
+
+	def test_count_excludes_a_pending_item_outside_hrs_companies(self):
+		"""The scoping the count shares with the full list (security review m8):
+		HR only sees the companies they look after, not every company."""
+		import alvoraa_portal.goals_api as goals_api
+		import alvoraa_portal.performance_api as pa
+		from frappe.utils import add_days, today
+
+		start, end = add_days(today(), -30), add_days(today(), 30)
+		cycle = self._cycle(start, end, company=self.company_b)
+		kpi = self._kpi(self.subject_b, cycle, target=10, start=start, end=end)
+		self._as(self.subject_b_user)
+		pa.log_kpi_progress(kpi, 3)
+
+		self._as(self.hr_user)
+		full  = goals_api.get_pending_approvals()
+		cheap = goals_api.get_pending_approvals_count()
+		self.assertEqual(cheap["total"], full["total"])
+		self.assertEqual(cheap["total"], 0, "hr_user does not look after company_b")
+
+	def test_count_excludes_hrs_own_pending_item(self):
+		"""HR's own updates are not HR's to approve — same rule as the full list."""
+		import alvoraa_portal.goals_api as goals_api
+		import alvoraa_portal.performance_api as pa
+		from frappe.utils import add_days, today
+
+		start, end = add_days(today(), -30), add_days(today(), 30)
+		cycle = self._cycle(start, end)
+		kpi = self._kpi(self.hr, cycle, target=10, start=start, end=end)
+		self._as(self.hr_user)
+		pa.log_kpi_progress(kpi, 3)
+
+		full  = goals_api.get_pending_approvals()
+		cheap = goals_api.get_pending_approvals_count()
+		self.assertEqual(cheap["total"], full["total"])
+		self.assertEqual(cheap["total"], 0, "HR's own pending update is not theirs to approve")
+
+	def test_neither_manager_nor_hr_gets_zero(self):
+		import alvoraa_portal.goals_api as goals_api
+
+		self._make_one_pending_kpi_and_goal()
+		self._as(self.stranger_user)
+		self.assertEqual(goals_api.get_pending_approvals_count(), {"total": 0})
+
+
 # ── Code review M1 · the add/remove dialog removes only what it listed ──────
 
 

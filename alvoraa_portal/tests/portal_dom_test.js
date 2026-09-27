@@ -3,8 +3,12 @@
    reading the source does not. */
 const fs = require("fs");
 const { JSDOM } = require("jsdom");
+const { readPortalSource } = require("../../scripts/lib/portal_source");
 
-const html = fs.readFileSync(process.argv[2], "utf8");
+// Follows the page's Jinja includes (slice 034 US-10, AC-37): the page
+// itself is now a short list of includes, so reading it alone would give
+// JSDOM a shell with none of the script this test exercises.
+const html = readPortalSource(process.argv[2]);
 let pass = 0, fail = 0;
 const ok  = m => { pass++; console.log("  PASS  " + m); };
 const bad = m => { fail++; console.log("  FAIL  " + m); };

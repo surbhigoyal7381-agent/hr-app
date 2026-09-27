@@ -1,0 +1,16 @@
+<!-- Slice 042, Wave 2: the Inbox's skeleton.
+
+     Same rules as next-home.html: server-rendered (AC-31), no Jinja tag, no
+     template cache slot (AC-44), and no number in it. A skeleton that carried a
+     count would be a second source of the one number this slice exists to make
+     single.
+
+     A skeleton, never a spinner on a blank screen - a blank screen with a
+     spinner on it reads as "you have nothing", which is the single most
+     expensive wrong message this page can send. -->
+<div class="nf-skeleton" id="nf-skeleton-inbox" aria-hidden="true" hidden>
+  <div class="nf-sk nf-sk-card"></div>
+  <div class="nf-sk nf-sk-row"></div>
+  <div class="nf-sk nf-sk-row"></div>
+  <div class="nf-sk nf-sk-row"></div>
+</div>

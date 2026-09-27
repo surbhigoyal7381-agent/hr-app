@@ -22,7 +22,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, date_diff, flt, getdate
 
-from hrms.alvoraa_hr_core.features import feature_enabled
+from hrms.alvoraa_hr_core.features import attendance_scoring_on
 from hrms.hr.utils import get_holidays_for_employee
 from hrms.utils.holiday_list import get_holiday_list_for_employee
 
@@ -36,8 +36,14 @@ def apply_cycle_settings(doc, method=None):
 	if not cint(doc.get("include_attendance_score")):
 		check_formula(doc)
 		return
-	if not feature_enabled("attendance_scoring"):
-		frappe.throw(_("Attendance in the appraisal score is not switched on for this site."))
+	# An organisation switch since 26 Sep 2026, no longer a tenant feature: HR turns it
+	# on in Organisation Settings. Off, a cycle cannot ask for it.
+	if not attendance_scoring_on():
+		frappe.throw(
+			_(
+				"Attendance in the appraisal score is switched off for this organisation. HR can switch it on in Organisation Settings, under Attendance rules."
+			)
+		)
 	total = flt(doc.get("goal_weight")) + flt(doc.get("feedback_weight")) + flt(doc.get("attendance_weight"))
 	if abs(total - 100) > 0.01:
 		frappe.throw(
@@ -254,7 +260,7 @@ def compute(doc, method=None):
 	if not doc.appraisal_cycle:
 		return
 	cycle = frappe.get_cached_doc("Appraisal Cycle", doc.appraisal_cycle)
-	if not cint(cycle.get("include_attendance_score")) or not feature_enabled("attendance_scoring"):
+	if not cint(cycle.get("include_attendance_score")) or not attendance_scoring_on():
 		return
 
 	reason = exempt_reason(cycle, doc.employee)

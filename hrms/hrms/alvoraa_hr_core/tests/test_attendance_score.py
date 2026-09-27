@@ -11,11 +11,14 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, getdate
 
 from hrms.alvoraa_hr_core.attendance_score import (
+	apply_cycle_settings,
 	attendance_numbers,
 	build_formula,
+	compute,
 	precompute,
 	score_for,
 )
+from hrms.alvoraa_hr_core.features import ATTENDANCE_SCORING_SWITCH
 from hrms.alvoraa_hr_core.setup import make_custom_fields
 
 START, END = "2026-06-01", "2026-06-14"
@@ -44,8 +47,11 @@ class TestAttendanceScore(IntegrationTestCase):
 		super().setUpClass()
 		make_custom_fields()
 		frappe.clear_cache()
-		# the hooks ask the subscription registry; this process says yes
-		frappe.conf.features = list(frappe.conf.get("features") or []) + ["attendance_scoring"]
+		# The hooks ask the Organisation Settings switch (26 Sep 2026). On for this
+		# class, and put back afterwards - defaults are cached, so a rollback alone
+		# would leave the cache saying "on" for the next suite.
+		cls._switch_before = frappe.db.get_default(ATTENDANCE_SCORING_SWITCH)
+		frappe.db.set_default(ATTENDANCE_SCORING_SWITCH, "1")
 		cls.company = _company()
 		existing = frappe.db.get_value("Employee", {"first_name": "Score", "last_name": "Tester"}, "name")
 		cls.employee = frappe.get_doc("Employee", existing) if existing else _ensure(
@@ -119,6 +125,27 @@ class TestAttendanceScore(IntegrationTestCase):
 		ap.flags.ignore_permissions = True
 		ap.insert()
 		return ap
+
+	@classmethod
+	def tearDownClass(cls):
+		frappe.db.set_default(ATTENDANCE_SCORING_SWITCH, cls._switch_before or "")
+		super().tearDownClass()
+
+	def test_switched_off_means_no_score_and_no_cycle_with_attendance(self):
+		"""Off in Organisation Settings: an appraisal gets no attendance score,
+		and a cycle cannot be saved asking for one."""
+		frappe.db.set_default(ATTENDANCE_SCORING_SWITCH, "0")
+		try:
+			appraisal = frappe._dict(appraisal_cycle=self.cycle.name, employee=self.employee.name,
+			                         start_date="2026-03-01", end_date="2026-03-31")
+			compute(appraisal)
+			self.assertNotIn("attendance_score", appraisal)
+			cycle = frappe.get_doc("Appraisal Cycle", self.cycle.name)
+			cycle.include_attendance_score = 1
+			with self.assertRaises(frappe.ValidationError):
+				apply_cycle_settings(cycle)
+		finally:
+			frappe.db.set_default(ATTENDANCE_SCORING_SWITCH, "1")
 
 	def test_cycle_writes_the_formula_from_its_weights(self):
 		self.assertEqual(self.cycle.final_score_formula,

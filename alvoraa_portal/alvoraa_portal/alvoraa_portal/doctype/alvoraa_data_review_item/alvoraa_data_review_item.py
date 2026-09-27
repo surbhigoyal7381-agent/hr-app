@@ -93,7 +93,7 @@ class AlvoraaDataReviewItem(Document):
 		from hrms.alvoraa_hr_core.access import refuse
 
 		refuse(
-			_("Data review records are kept by Alvoraa's morning check. Fix the data behind "
+			_("Data review records are kept by Alvora's morning check. Fix the data behind "
 			  "them, or confirm them from Data to review in the portal."),
 			"SEC-13", "Alvoraa Data Review Item save", DOCTYPE, self.name,
 		)

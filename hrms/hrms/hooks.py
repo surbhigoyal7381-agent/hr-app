@@ -157,6 +157,9 @@ permission_query_conditions = {
 	"PMS Upward Feedback":     "hrms.pms.permissions.upward_feedback_query",
 	"PMS Calibration Session": "hrms.pms.permissions.calibration_session_query",
 	"PMS Talent Flag":         "hrms.pms.permissions.talent_flag_query",
+	# ALV-117: Frappe HR ships this doctype with read AND export for every
+	# Employee and no row filter at all. Lists, reports and exports.
+	"Employee Performance Feedback": "hrms.alvoraa_hr_core.feedback_access.feedback_query_conditions",
 }
 
 has_permission = {
@@ -166,6 +169,10 @@ has_permission = {
 	"PMS Check In":        "hrms.pms.permissions.has_checkin_permission",
 	"PMS Upward Feedback": "hrms.pms.permissions.has_upward_feedback_permission",
 	"PMS Talent Flag":     "hrms.pms.permissions.has_talent_flag_permission",
+	# ALV-117, and the other half of the pair: the query condition above filters
+	# lists, this guards one record at its own URL, and when it is printed,
+	# emailed, shared or written to.
+	"Employee Performance Feedback": "hrms.alvoraa_hr_core.feedback_access.has_feedback_permission",
 }
 
 # DocType Class

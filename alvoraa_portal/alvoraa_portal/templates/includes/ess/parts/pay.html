@@ -1,0 +1,59 @@
+      <!-- ══ MY FINANCES ═══════════════════════════════════ -->
+      <div id="panel-finances" class="panel">
+        <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:20px">
+          <div>
+            <div class="page-title">My Finances</div>
+            <div class="page-sub">Salary slips, expenses &amp; leave encashment</div>
+          </div>
+          <div class="fin-tabs-bar" style="display:flex;gap:4px;background:var(--surface2);border-radius:var(--r-sm);padding:4px;border:1px solid var(--border)">
+            <button class="gp-tab active" id="fin-tab-salary" onclick="showFinTab('salary')">Salary Slips</button>
+            <button class="gp-tab" id="fin-tab-expenses" onclick="showFinTab('expenses')">Expenses</button>
+            <button class="gp-tab" id="fin-tab-leave-enc" onclick="showFinTab('leave-enc')" style="display:none">Leave Encashment</button>
+          </div>
+        </div>
+
+        <!-- ── Salary Slips ── -->
+        <div id="fin-body-salary">
+          <div class="payslip-list" id="payslip-list">
+            <div class="empty-state"><div class="empty-state-icon"><i class=ic-money></i></div><div class="empty-state-text">Loading payslips...</div></div>
+          </div>
+        </div>
+
+        <!-- ── Expense Claims ── -->
+        <div id="fin-body-expenses" style="display:none">
+          <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+            <button class="btn btn-primary" onclick="openExpenseModal()">+ New Claim</button>
+          </div>
+          <div id="expense-list">
+            <div class="empty-state"><div class="empty-state-icon"><i class=ic-file></i></div><div class="empty-state-text">Loading...</div></div>
+          </div>
+        </div>
+
+        <!-- ── Leave Encashment ── -->
+        <div id="fin-body-leave-enc" style="display:none">
+          <div class="card" style="margin-bottom:20px">
+            <div class="card-header"><span><i class=ic-money></i></span><span class="card-title">New Encashment Request</span></div>
+            <div class="card-body">
+              <div class="callout callout-info">Encashment is available only for leave types that permit it. Processing time may vary — HR will confirm the encashed amount.</div>
+              <div class="form-group">
+                <label class="form-label">Leave Type *</label>
+                <select class="form-control" id="le-leave-type">
+                  <option value="">Loading eligible leave types...</option>
+                </select>
+                <div class="form-err" id="le-type-err">Please select a leave type.</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Encashment Date</label>
+                <input type="date" class="form-control" id="le-date">
+                <div class="form-hint">Defaults to today if left blank.</div>
+              </div>
+              <div class="form-actions">
+                <button class="btn btn-primary" onclick="submitLeaveEncashment()">Submit Encashment</button>
+                <button class="btn btn-outline" onclick="showFinTab('salary')">Cancel</button>
+              </div>
+            </div>
+          </div>
+          <div class="sec-divider">Previous Encashments</div>
+          <div id="le-history"></div>
+        </div>
+      </div>

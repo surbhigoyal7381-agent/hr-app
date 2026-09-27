@@ -1,0 +1,22 @@
+<!-- Slice 045, Wave 4: the Team screen's skeleton.
+
+     Server-rendered, so somebody on a slow phone sees the shape of the page
+     while `get_team` is still in the air. A skeleton, never a spinner on a
+     blank screen.
+
+     The shape matches what replaces it: TWO cards, because the Team screen has
+     two sections. A skeleton with one card would make the page jump the moment
+     the second heading arrived, which is the thing a skeleton exists to stop.
+
+     This is an `ess_part`, not a Jinja include: it holds no template tag at
+     all, so it is pasted rather than compiled and takes none of Frappe's 32
+     template cache slots.
+
+     No number and no name is in here. Every box is decorative and hidden from
+     a screen reader; the state box above it is what announces "Loading". -->
+<div class="nf-skeleton" id="nf-skeleton-team" aria-hidden="true" hidden>
+  <div class="nf-sk nf-sk-row"></div>
+  <div class="nf-sk nf-sk-card"></div>
+  <div class="nf-sk nf-sk-row"></div>
+  <div class="nf-sk nf-sk-card"></div>
+</div>

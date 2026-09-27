@@ -1,0 +1,103 @@
+name: Worker health
+
+# Somebody has to look between deploys.
+#
+# On 2026-09-10 both production workers stopped. The site stayed up, every screen
+# looked normal, and 700 background jobs quietly piled up on the `default` queue -
+# scheduled jobs, emails, tenant tidy-up. It was found by hand on 2026-09-19.
+# Nine days.
+#
+# The deploy now gates on worker health, but there were no deploys in those nine
+# days, and that is exactly the shape of the problem: the check only ran when
+# somebody was already paying attention.
+#
+# So this runs on its own, every fifteen minutes, on the self-hosted runner that
+# already sits on the same box. It is deliberately the smallest thing that gets a
+# human told:
+#
+#   • no new service to install, no agent, no host configuration, nothing to
+#     renew. The runner and the notification path already exist and already work -
+#     this is how a failed deploy reaches an inbox today.
+#   • a failed scheduled run appears in the Actions tab AND GitHub emails it.
+#     ⚠ CONFIRM ONCE: Settings → Notifications → "Send notifications for failed
+#     workflows only" must be on for the account that owns this repository.
+#     Until that is confirmed, this is a check you have to go and look at.
+#   • self-hosted, so it costs no Actions minutes even with the repository private.
+#
+# Two things to know about scheduled workflows:
+#   • GitHub disables them after 60 days with no repository activity. Not a
+#     concern while work is happening; it is a concern over a long quiet holiday.
+#   • The schedule is best-effort. A run can be late by several minutes under
+#     load. That is fine for a check whose job is to catch nine days, not nine
+#     minutes.
+#
+# The check itself changes NOTHING. It reports. Deciding what to restart is a
+# person's job - see scripts/check_workers.sh.
+
+on:
+  schedule:
+    # Hourly, the user's choice on 2026-09-19. Every 15 minutes was offered; she
+    # picked hourly, and it is enough: the failure this exists for lasted nine
+    # days, so an hourly check would have reported it 215 times before anyone
+    # noticed. An hour of a dead queue is also cheap - the jobs wait, they are
+    # not lost.
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+# A health run must never queue up behind another health run. If one is somehow
+# still going when the next is due, the newer answer is the one worth having.
+concurrency:
+  group: worker-health
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Queues have live workers
+    runs-on: [self-hosted, contabo]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      # The checker comes out of the repository, not out of the server's deployed
+      # checkout. /var/www/html/hr-app is detached at whatever was last released,
+      # so the script might not be there at all - and it is read-only to us by
+      # CLAUDE.md §3 anyway.
+      - uses: actions/checkout@v4
+
+      - name: Check both stacks
+        run: |
+          set -uo pipefail
+          rc=0
+
+          # A deploy recreates the worker containers, and for a few seconds in the
+          # middle of that there is genuinely no live worker. Reporting that would
+          # train everyone to ignore this. So: fail only if it is STILL wrong
+          # three minutes later. A deploy's worker swap is well inside that;
+          # 10 September lasted nine days.
+          check() {
+            echo "::group::$1"
+            if bash scripts/check_workers.sh "$1"; then
+              echo "::endgroup::"
+              return 0
+            fi
+            echo "first pass failed on '$1' - waiting 180s in case a deploy is mid-swap"
+            sleep 180
+            if bash scripts/check_workers.sh "$1"; then
+              echo "::endgroup::"
+              echo "::warning::'$1' recovered by itself within three minutes - probably a deploy."
+              return 0
+            fi
+            echo "::endgroup::"
+            echo "::error::'$1': a queue has no live worker. Background jobs are not running."
+            return 1
+          }
+
+          check compose  || rc=1
+          check devstack || rc=1
+
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::Read the FAIL lines above. Nothing has been changed."
+            echo "::error::Runbook: docs/slices/026-worker-health/07-devops-inputs.md"
+          fi
+          exit $rc

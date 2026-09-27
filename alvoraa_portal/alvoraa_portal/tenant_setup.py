@@ -27,7 +27,8 @@ import frappe
 
 def _make_user(email, first_name, password, roles):
     """Create the user if absent, then set roles and password. Idempotent."""
-    if frappe.db.exists("User", email):
+    existed = bool(frappe.db.exists("User", email))
+    if existed:
         user = frappe.get_doc("User", email)
     else:
         user = frappe.get_doc({
@@ -58,6 +59,8 @@ def _make_user(email, first_name, password, roles):
         # Make them choose their own on first login. The generated one is shown
         # on a provisioning screen and may be written down or pasted around.
         frappe.db.set_value("User", email, "reset_password_key", None)
+        # ALV-128: a field app phone this login signed in is signed out on its
+        # next call, because the password fingerprint no longer matches.
 
     return user.name
 

@@ -1,0 +1,153 @@
+{#- Slice 034, Wave 1: the portal frame.
+
+     The rail, the top bar, the bottom bar, the shared sheet, the toast strip
+     and the five states. Everything a person sees around a screen, and nothing
+     that belongs to a screen.
+
+     This is an ordinary Jinja include rather than an `ess_part`, for one
+     reason: two lines in it need Jinja - the tenant's name and the tenant's
+     brand mark. `ess_part` refuses a file holding a template tag, on purpose,
+     so a piece that genuinely needs one stays a template. It is the only new
+     template this slice adds to the page's chain, and OPS-31 freed three slots.
+
+     The shell and the skeleton are HERE, in server-rendered HTML, not built by
+     JavaScript (AC-31). A person on a slow phone sees the frame while the two
+     start-up calls are still in the air. What JavaScript fills in is which
+     entries the rail holds - never whether there is a rail.
+
+     Nothing in this file decides what anybody may see. Every list below is
+     empty until `get_frame` answers, and every screen behind it checks its own
+     caller on the server. -#}
+
+<a class="nf-skip" href="#nf-main">{{ _("Skip to the page") }}</a>
+
+<div class="nf" id="nf-root" data-nf-booting="1">
+
+  {#- The scrim behind the rail on a phone. A button, not a div: it closes the
+      rail, so it is a control, and a control has to be reachable by keyboard. -#}
+  <button type="button" class="nf-scrim" id="nf-scrim" hidden
+          aria-label="{{ _("Close the menu") }}"></button>
+
+  <nav class="nf-rail" id="nf-rail" aria-label="{{ _("Main menu") }}">
+    <div class="nf-brand">
+      {#- `| e` is not decoration. Frappe's Jinja environment is built without
+          autoescape (frappe/utils/jinja.py: FrappeSandboxedEnvironment takes no
+          autoescape argument), so nothing escapes this for us. The value can
+          only be set by a platform operator today, so it is not
+          attacker-controlled - but it lands inside an attribute, and the day
+          somebody lets a tenant admin upload their own logo through a form is
+          the day this line decides whether that is a stored-XSS hole. -#}
+      <span class="nf-brand-mark" aria-hidden="true">{{ tenant_name[0] | upper }}{% if brand_mark_url %}<img src="{{ brand_mark_url | e }}" alt="" onerror="this.remove()">{% endif %}</span>
+      <span class="nf-brand-text">
+        <span class="nf-brand-name" title="{{ tenant_name }}">{{ tenant_name }}</span>
+        <span class="nf-brand-sub">{{ _("Employee portal") }}</span>
+      </span>
+    </div>
+    {#- Filled by the frame from `get_frame.allowed_pages`. Empty markup, never
+        a full menu that JavaScript then takes items out of: an entry that
+        flashes on screen and disappears has already told somebody something. -#}
+    <div class="nf-menu" id="nf-menu"></div>
+  </nav>
+
+  <header class="nf-top" id="nf-top">
+    <button type="button" class="nf-icon-btn nf-menu-btn" id="nf-menu-btn"
+            aria-controls="nf-rail" aria-expanded="false">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      <span class="nf-sr">{{ _("Menu") }}</span>
+    </button>
+
+    <button type="button" class="nf-icon-btn nf-back" id="nf-back" hidden>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+      <span class="nf-sr">{{ _("Back") }}</span>
+    </button>
+
+    <div class="nf-where">
+      {#- Group then page, in words. Never the tenant's name: a person knows
+          which company they work for, and it is the one thing a title bar can
+          say that tells them nothing (AC-13). -#}
+      <a class="nf-group" id="nf-group" href="#home"></a>
+      <h1 class="nf-page" id="nf-page" tabindex="-1">{{ _("Loading") }}</h1>
+    </div>
+
+    <button type="button" class="nf-icon-btn" id="nf-search-btn">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span class="nf-sr">{{ _("Search") }}</span>
+    </button>
+
+    {#- The bell's accessible name is written by the frame, because "Inbox" and
+        "Inbox, 3 waiting" and "Inbox, nothing waiting" are three different
+        things to hear and only one of them is true at a time (AC-61). -#}
+    <button type="button" class="nf-icon-btn nf-bell" id="nf-bell">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+      <span class="nf-badge" id="nf-bell-badge" hidden></span>
+      <span class="nf-sr" id="nf-bell-label">{{ _("Inbox") }}</span>
+    </button>
+
+    <button type="button" class="nf-avatar-btn" id="nf-profile-btn">
+      <span class="nf-avatar" id="nf-avatar" aria-hidden="true"></span>
+      <span class="nf-sr">{{ _("Your account") }}</span>
+    </button>
+  </header>
+
+  <main class="nf-main" id="nf-main">
+    {#- One state box, five states, one at a time. Written as markup rather
+        than built in JavaScript so that the page-error state can be shown even
+        when almost nothing else has worked (AC-33). -#}
+    <div class="nf-state" id="nf-state" role="status" hidden>
+      <p class="nf-state-say" id="nf-state-say"></p>
+      <button type="button" class="nf-btn" id="nf-state-retry" hidden>{{ _("Try again") }}</button>
+    </div>
+
+    {#- Slice 042: Home's and the Inbox's skeletons, server-rendered so the
+        shape of the page is on screen before `get_home` answers (AC-31). They
+        are `ess_part`s - files holding no Jinja at all - so they are pasted in
+        rather than compiled and take none of Frappe's 32 template cache slots
+        (AC-44). The frame shows the right one while it is booting and the
+        panel replaces it. -#}
+    {{ ess_part("next-home") }}
+    {{ ess_part("next-inbox") }}
+    {#- Slice 043: Time's and Pay's skeletons, on the same terms. Two more
+        parts cost nothing - OPS-31 measured twelve of them rendering FASTER
+        than one include file - so the page does not have to choose between
+        being split and being quick (AC-44). -#}
+    {{ ess_part("next-time") }}
+    {{ ess_part("next-pay") }}
+    {#- Slice 045: Team's and Growth's skeletons, on the same terms. Team's has
+        TWO cards in it, because the Team screen has two sections and a
+        skeleton whose shape is wrong is a page that jumps. -#}
+    {{ ess_part("next-team") }}
+    {{ ess_part("next-growth") }}
+
+    <div class="nf-screens" id="nf-screens" hidden></div>
+  </main>
+
+  {#- Up to four buttons plus More, written by the frame from
+      `get_frame.bottom_bar`. Phones only; the rail is the menu on a desktop. -#}
+  <nav class="nf-bottom" id="nf-bottom" aria-label="{{ _("Quick links") }}"></nav>
+
+  {#- One sheet, used by search, the profile menu and anything a later wave
+      adds. A dialog, with a title, a focus trap and Escape (AC-34, AC-9). -#}
+  <div class="nf-sheet-wrap" id="nf-sheet-wrap" hidden>
+    <button type="button" class="nf-sheet-scrim" data-nf-sheet-close
+            aria-label="{{ _("Close") }}"></button>
+    <div class="nf-sheet" id="nf-sheet" role="dialog" aria-modal="true"
+         aria-labelledby="nf-sheet-title">
+      <header class="nf-sheet-head">
+        <h2 class="nf-sheet-title" id="nf-sheet-title" tabindex="-1"></h2>
+        <button type="button" class="nf-icon-btn" data-nf-sheet-close>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <span class="nf-sr">{{ _("Close") }}</span>
+        </button>
+      </header>
+      <div class="nf-sheet-body" id="nf-sheet-body"></div>
+    </div>
+  </div>
+
+  {#- `role="status"`, so a toast is read out rather than only seen (AC-35). -#}
+  <div class="nf-toasts" id="nf-toasts" role="status" aria-live="polite"></div>
+</div>

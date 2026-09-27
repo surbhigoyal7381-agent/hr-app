@@ -12,7 +12,10 @@ approved: Surbhi, 27 Sep 2026, "go ahead as recommended" (answers 1-8 in section
 
 1. **The dry-run has NOT been run on dev or production.** It is a server command,
    so it waits for Surbhi's word. It ran read-only on the two local sites only
-   (section 5).
+   (section 5). **Pushing to dev runs these patches at `migrate` on every dev site,
+   and merging to main runs them on every production site.** So the dry-run must run
+   on the dev server before the push to dev, and on the production server before the
+   merge to main. Each run needs Surbhi's word, and she reads each list first.
 2. **One change from the plan: the website banner keeps the MARK, not the new
    lockup.** Frappe caps a navbar banner image at 22 px high
    (`public/scss/website/navbar.scss`), so the ALVORA wordmark would be about 6 px
@@ -116,6 +119,13 @@ report  Emails queued, not sent (keep their old text)    780
 
 `test_site` showed the same four changes and 3 queued emails. The 780 on ppj are
 local demo mail that was never sent (mail is muted locally).
+
+### Waiting for Surbhi (not built)
+
+**alvoraa.co's sending account "Alvoraa HR Admin"** - and any similar real From
+name - is not an exact old default, so the patch leaves it, and the dry-run lists it
+as "leave". The coordinator has asked Surbhi whether to add it to the patch as a
+named rename. Nothing is built for it until she answers.
 
 ## 6 · The ALVORA artwork (D2) — done, commit 7a4ff3c
 
@@ -229,3 +239,21 @@ dry-run list goes to her before any server. 4. The portal avatar menu: hide "App
 and "Switch To Desk". 5. "My Account" stays. 6. Hide "Frappe Support" on every
 tenant. 7. Invoice item codes and Module Profile names stay "alvoraa". 8. Change
 `alvoraa_goals` `app_title`.
+
+## 10 · Review fixes (verdict: SHIP WITH FIXES)
+
+`git fetch` before the fixes: nothing new on `origin/dev`.
+
+| Finding | Fix | Commit |
+|---|---|---|
+| P3 - the dry-run could list changes the patch never makes: MariaDB's `IN` ignores case and trailing spaces; no control-plane skip or "new name exists" rule for Email Accounts | every comparison `BINARY`; `@alvoraa_cp` set per site from `site_config.json`; the same "new name exists" check; the navbar row and image slots use the patches' exact tests. `brand_text`'s text fields also match exactly now (no `strip`) | 2868db0 |
+| P3 test | `test_review_p3_dry_run_equals_the_patches_on_near_miss_values` and `..._control_plane_never_renames_an_email_account` run the script's own SQL on a site holding 'frappe', 'ERPNext ', '(c) Alvoraa ', an 'alvoraa' account and a taken new name, and compare its change rows with what the patches would do. **Against the old SQL the first one fails**; with the new SQL both pass | 2868db0 |
+| P4 - wrong test path in the script header | now `alvoraa_portal/alvoraa_portal/tests/test_brand_spelling_149.py` | 2868db0 |
+| P2 - the guard did not read JSON, and skipped every `.error`/`.info`/`.warning` call | reads DocType, Notification, Email Template, Print Format, Workspace, Web Form, Custom Field and Property Setter text; skips only `frappe.log_error`, `print()` and logger level calls, and always checks a `_()` string. Nine new self-test cases, each required to be caught on the planted file | 3d43640 |
+
+Reruns: `test_brand_spelling_149` **17 of 17 pass** on my own site `test149`
+(container recreated with `scripts/` mounted read-only, so the dry-run tests run
+instead of skipping); guard self-test OK (19 cases) and repository scan clean;
+integrity OK; ruff clean; dry-run on the two local sites (read-only) unchanged in
+content. No full suite: the fixes touch only the dry-run script, the guard,
+`brand_text.py`'s one comparison and the test file.

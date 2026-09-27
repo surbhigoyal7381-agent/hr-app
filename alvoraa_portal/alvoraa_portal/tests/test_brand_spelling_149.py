@@ -180,3 +180,95 @@ class TestTheAlvoraArtwork(FrappeTestCase):
 	def test_alv149_the_patch_that_carries_it_to_live_sites_is_registered(self):
 		with open(os.path.join(APP_DIR, "patches.txt"), encoding="utf-8") as f:
 			self.assertIn("alvoraa_portal.patches.v1_0.alvora_splash_lockup", f.read())
+
+
+def _dry_run_sql():
+	"""The SELECT from scripts/brand_text_dry_run.sh, exactly as Surbhi runs it."""
+	path = os.path.join(REPO, "scripts", "brand_text_dry_run.sh")
+	with open(path, encoding="utf-8") as f:
+		text = f.read()
+	start = text.index("read -r -d '' SQL <<'SQL' || true\n") + len("read -r -d '' SQL <<'SQL' || true\n")
+	return text[start:text.index("\nSQL\n", start)]
+
+
+class TestTheDryRunListsWhatThePatchesDo(FrappeTestCase):
+	"""Review P3: the list Surbhi approves must be the list that runs.
+
+	MariaDB's default collation says 'frappe' = 'Frappe' = 'Frappe ', and the
+	patch (Python) does not. So the site here holds near misses on purpose, and
+	the dry-run's "change" rows must equal what brand_text, brand and the navbar
+	patch would actually change - no more, no fewer.
+	"""
+
+	SINGLES = (("Website Settings", "app_name"), ("System Settings", "app_name"),
+	           ("Website Settings", "copyright"), ("Website Settings", "footer_powered"),
+	           ("Website Settings", "splash_image"), ("Website Settings", "favicon"))
+	ACCOUNTS = ("alvoraa", "Alvoraa HR", "Alvora HR", "Alvoraa HRMS", "Alvora HRMS")
+
+	def setUp(self):
+		if not os.path.exists(os.path.join(REPO, "scripts", "brand_text_dry_run.sh")):
+			self.skipTest("scripts/ is not on this bench")
+		self.saved = {f: _single(*f) for f in self.SINGLES}
+		self.addCleanup(self._restore)
+		frappe.db.set_single_value("Website Settings", "app_name", "frappe")          # wrong case
+		frappe.db.set_single_value("System Settings", "app_name", "ERPNext ")         # trailing space
+		frappe.db.set_single_value("Website Settings", "copyright", "© Alvoraa ")      # trailing space
+		frappe.db.set_single_value("Website Settings", "footer_powered", "Powered by Alvoraa")  # exact
+		frappe.db.set_single_value("Website Settings", "splash_image", "/ASSETS/alvoraa_portal/images/x.png")
+		frappe.db.set_single_value("Website Settings", "favicon", "/private/files/f.png")
+		for name in self.ACCOUNTS[:4]:
+			if not frappe.db.exists("Email Account", name):
+				frappe.get_doc({"doctype": "Email Account", "email_account_name": name,
+				                "email_id": frappe.scrub(name).replace("_", ".") + ".dry149@example.com",
+				                "enable_incoming": 0, "enable_outgoing": 0,
+				                "awaiting_password": 1}).insert(ignore_permissions=True)
+
+	def _restore(self):
+		for (doctype, field), value in self.saved.items():
+			frappe.db.set_single_value(doctype, field, value)
+		for name in self.ACCOUNTS:
+			if frappe.db.exists("Email Account", name):
+				frappe.delete_doc("Email Account", name, force=True, ignore_permissions=True)
+		frappe.local.conf.pop("alvoraa_control_plane", None)
+		frappe.clear_cache()
+
+	def _sql_changes(self, control_plane):
+		frappe.db.sql("SET @alvoraa_cp = %s", (1 if control_plane else 0,))
+		rows = frappe.db.sql(_dry_run_sql())
+		return {(r[1], r[3]) for r in rows if r[0] == "change"}
+
+	def _patch_changes(self):
+		from alvoraa_portal import brand, module_access
+
+		out = {(r["setting"], r["proposed"]) for r in brand_text.plan() if r["action"] == "change"}
+		for doctype, field, want in brand.SLOTS:
+			current = frappe.db.get_single_value(doctype, field, cache=False)
+			verdict = brand._verdict(current)
+			if verdict and not (verdict == "ours" and current == want):
+				out.add((f"{doctype}.{field} (patch alvora_splash_lockup)", want))
+		row = next((r for r in frappe.get_doc("Navbar Settings").settings_dropdown
+		            if r.item_label == module_access.NAVBAR_LABEL), None)
+		if row and not (row.item_type == "Action" and row.action == module_access.NAVBAR_ACTION
+		                and not row.route):
+			out.add(("Desk menu: Switch to Employee Portal (ALV-152)",
+			         "Action " + module_access.NAVBAR_ACTION))
+		return out
+
+	def test_review_p3_dry_run_equals_the_patches_on_near_miss_values(self):
+		sql, patch = self._sql_changes(False), self._patch_changes()
+		self.assertEqual(sql, patch)
+		# and the near misses are really left alone, the exact ones really change
+		settings = {s for s, _ in sql}
+		self.assertNotIn("Website Settings.app_name", settings)
+		self.assertNotIn("System Settings.app_name", settings)
+		self.assertNotIn("Website Settings.copyright", settings)
+		self.assertIn(("Website Settings.footer_powered", "Powered by Alvora"), sql)
+		self.assertIn(("Email Account (From name)", "Alvora HRMS"), sql)
+		self.assertNotIn(("Email Account (From name)", "alvora"), sql)
+		self.assertNotIn(("Email Account (From name)", "Alvora HR"), sql, "the new name exists")
+
+	def test_review_p3_control_plane_never_renames_an_email_account(self):
+		frappe.local.conf["alvoraa_control_plane"] = 1
+		sql, patch = self._sql_changes(True), self._patch_changes()
+		self.assertEqual(sql, patch)
+		self.assertFalse([s for s in sql if s[0].startswith("Email Account")])

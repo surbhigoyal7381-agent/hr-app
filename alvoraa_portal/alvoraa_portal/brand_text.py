@@ -74,7 +74,7 @@ def plan():
 		current = frappe.db.get_single_value("Website Settings", field, cache=False) or ""
 		if "Alvoraa" not in current and "ALVORAA" not in current:
 			continue
-		ours = current.strip() in TEXT_DEFAULTS
+		ours = current in TEXT_DEFAULTS           # exact: case and spaces count
 		rows.append({"setting": f"Website Settings.{field}", "current": current,
 		             "proposed": _respell(current) if ours else current,
 		             "action": "change" if ours else "leave"})

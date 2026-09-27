@@ -73,7 +73,9 @@ test("the refusal outside the radius shows the distance in words a person can re
 test("checkin.js builds the result line from the server's location, not the workplace name", () => {
   const src = fs.readFileSync(path.join(WEB, "checkin.js"), "utf8");
   assert.doesNotMatch(src, /"Where you were · At " \+ state\.workplaceName/);
-  assert.match(src, /whereLine\(data\.location, phoneAccuracy\)/);
+  // ALV-133: the result is now a list; its location row comes from whereLines().
+  assert.match(src, /screens\.whereLines\(data\.location, phoneAccuracy\)/);
+  assert.doesNotMatch(src, /resultAt", \{ workplace: state\.workplaceName/);
 });
 
 // ── the rule line: radius 0 or none means no limit ─────────────────────────
@@ -92,12 +94,24 @@ test("radius 0, empty, missing, or no workplace at all: 'from anywhere', never '
   }
 });
 
-test("welcome (join.js and signin.js) and home (checkin.js) all use the shared rule line", () => {
-  for (const f of ["join.js", "signin.js", "checkin.js"]) {
+test("welcome (join.js and signin.js) and home (checkin.js) all use the shared rule", () => {
+  // ALV-133: welcome shows the short form ("Within 200 m" / "From anywhere"),
+  // home the full line inside the status card - both from checkin-screens.js.
+  for (const f of ["join.js", "signin.js"]) {
     const src = fs.readFileSync(path.join(WEB, f), "utf8");
-    assert.match(src, /AlvoraaCheckinScreens\.ruleLine\(/, f);
+    assert.match(src, /AlvoraaCheckinScreens\.whereShort\(data\.workplace\)/, f);
     assert.doesNotMatch(src, /"Check in within · "/, f);
   }
+  const home = fs.readFileSync(path.join(WEB, "checkin.js"), "utf8");
+  assert.match(home, /screens\.homeRule\(data\)/);
+  const { homeRule, whereShort } = screens;
+  assert.equal(homeRule({ workplace: { name: "X", radius_m: 0 } }).line, "Check in from anywhere");
+  assert.equal(homeRule({ workplace: { name: "X", radius_m: 200 } }).line, "Check in within 200 m of X");
+  // The server's own rule (E-3) wins over the radius.
+  assert.equal(homeRule({ check_in_rule: "anywhere", workplace: { name: "X", radius_m: 200 } }).kind, "anywhere");
+  assert.equal(whereShort({ name: "X", radius_m: 0 }), "From anywhere");
+  assert.equal(whereShort({ name: "X", radius_m: 150 }), "Within 150 m");
+  assert.doesNotMatch(whereShort({ name: "X", radius_m: "" }), /0 m/);
 });
 
 // ── the photo time: local wall clock WITH its offset ─────────────────────────

@@ -49,13 +49,17 @@
     storage = storage || realStorage();
     if (!storage || !entry || typeof entry !== "object") return false;
     try {
-      storage.setItem(KEY, JSON.stringify({
+      var kept = {
         version: entry.version || "",
         rows: Array.isArray(entry.rows) ? entry.rows : [],
         agree: entry.agree || "",
         retentionDays: entry.retentionDays,
         agreedAt: entry.agreedAt || "",
-      }));
+      };
+      // ALV-133: set only after "Stop agreeing" - the notice then says "You
+      // stopped agreeing", not "has changed" or "your first check-in".
+      if (entry.withdrawn === true) kept.withdrawn = true;
+      storage.setItem(KEY, JSON.stringify(kept));
       return true;
     } catch (e) {
       return false;
@@ -101,7 +105,20 @@
     }
   }
 
-  var api = { KEY: KEY, save: save, load: load, clear: clear };
+  /*
+   * markWithdrawn(storage) -> boolean
+   * The person stopped agreeing (ALV-133). The words they agreed to stay, so
+   * the next open can tell a withdrawal from a first time; agreeing again
+   * saves a fresh entry without the mark.
+   */
+  function markWithdrawn(storage) {
+    var entry = load(storage);
+    if (!entry) return save({ withdrawn: true }, storage);
+    entry.withdrawn = true;
+    return save(entry, storage);
+  }
+
+  var api = { KEY: KEY, save: save, load: load, clear: clear, markWithdrawn: markWithdrawn };
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;

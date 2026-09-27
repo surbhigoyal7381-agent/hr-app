@@ -11,330 +11,599 @@
 -->
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src https://*.alvoraa.co; object-src 'none'; base-uri 'none'; form-action 'none'">
-<meta name="color-scheme" content="light">
+<!-- ALV-133, D-M3-1: the theme follows the phone's light or dark setting. -->
+<meta name="color-scheme" content="light dark">
 <title>Alvoraa Attendance</title>
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
+<!--
+  Material 3 redesign (ALV-133, 01d-ux-redesign-m3.md). Every screen is a
+  <section class="screen"> shown one at a time; the element ids and
+  data-action names are the ones join.js, signin.js and checkin.js fill.
+  <span data-icon="name"> is drawn as an SVG icon by ui.js on start.
+-->
 <main id="app">
 
-  <!-- ============================== first launch: sign in (ALV-128) ==============================
-       The first screen since ALV-128. Anyone whose employee record has a login
-       signs in with their work email and password; "I have a joining code"
-       leads to the QR screen below, unchanged. The password is read from the
-       box once, sent once, and the box is emptied - it is never stored. -->
-  <section class="screen" data-screen="signin">
-    <h1>Alvoraa</h1>
-    <h2>Sign in with your work email and password</h2>
-    <p class="small">The same email and password you use on your company's Alvoraa website.</p>
-    <form id="signin-form" novalidate>
-      <label class="field" for="signin-company">Company code
-        <input type="text" id="signin-company" autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="url" aria-describedby="signin-company-help">
-      </label>
-      <p class="small" id="signin-company-help">The short name HR gave you. You type it only once.</p>
-      <label class="field" for="signin-email">Work email
-        <input type="email" id="signin-email" autocomplete="username" autocapitalize="none" spellcheck="false">
-      </label>
-      <label class="field" for="signin-password">Password
-        <input type="password" id="signin-password" autocomplete="current-password">
-      </label>
-      <p class="error" id="signin-error" role="alert" hidden></p>
-      <p class="small" id="signin-error-code" hidden></p>
-      <button type="submit">Sign in</button>
+  <section class="screen" data-screen="boot" aria-busy="true"></section>
+
+  <!-- ============================== sign in (ALV-128) ============================== -->
+  <section class="screen" data-screen="signin" hidden>
+    <form id="signin-form" class="screen-body" novalidate>
+      <div class="content">
+        <img class="alv-logo" src="img/alvoraa-logo.png" alt="Alvoraa">
+        <h1 class="t-headline-m pad-top">Sign in</h1>
+        <p class="t-body-l muted u-mt-4">The same email and password you use on your company's Alvoraa website.</p>
+
+        <div class="card error card-row gap-top" id="signin-error-card" role="alert" tabindex="-1" hidden>
+          <span id="signin-error-icon" data-icon="error"></span>
+          <div>
+            <p class="t-body-m" id="signin-error"></p>
+            <p class="t-body-m" id="signin-error-note" hidden></p>
+            <p class="t-label-m u-mt-6" id="signin-error-code"></p>
+          </div>
+        </div>
+
+        <div class="fixed-value" id="signin-company-fixed" hidden>
+          <span data-icon="store"></span>
+          <div>
+            <p class="t-label-m muted">Company code</p>
+            <p class="t-body-l" id="signin-company-shown"></p>
+          </div>
+          <button type="button" class="btn text" data-action="signin-change-company">Change</button>
+        </div>
+        <div id="signin-company-box">
+          <div class="field">
+            <input type="text" id="signin-company" autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="url" aria-describedby="signin-company-help">
+            <label for="signin-company">Company code</label>
+          </div>
+          <p class="support" id="signin-company-help">The short name HR gave you. You type it only once.</p>
+        </div>
+        <div class="field">
+          <input type="email" id="signin-email" autocomplete="username" autocapitalize="none" spellcheck="false">
+          <label for="signin-email">Work email</label>
+        </div>
+        <div class="field has-trail" id="signin-password-field">
+          <input type="password" id="signin-password" autocomplete="current-password">
+          <label for="signin-password">Password</label>
+          <button type="button" class="icon-btn trail-btn" id="signin-show-password" data-action="signin-toggle-password"
+                  aria-label="Show password" aria-pressed="false"><span data-icon="eye"></span></button>
+        </div>
+        <p class="support err" id="signin-password-error" hidden><span data-icon="error" data-icon-class="s20"></span>Type your password again.</p>
+
+        <div class="stack gap-top-l">
+          <button type="submit" class="btn filled block">Sign in</button>
+          <p class="or-line t-body-m muted">or</p>
+          <button type="button" class="btn outlined block" id="signin-use-code" data-action="signin-use-code"><span data-icon="qr"></span><span>I have a joining code</span></button>
+        </div>
+      </div>
     </form>
-    <button type="button" class="secondary" data-action="signin-use-code">I have a joining code</button>
   </section>
 
-  <!-- ============================== two-factor sign-in: the one-time code (ALV-128) ============================== -->
-  <section class="screen" data-screen="signinOtp">
-    <h2>Type the code you were sent</h2>
-    <p id="signin-otp-prompt"></p>
-    <form id="signin-otp-form" novalidate>
-      <label class="field" for="signin-otp">Code
-        <input type="text" id="signin-otp" inputmode="numeric" autocomplete="one-time-code" maxlength="12">
-      </label>
-      <p class="error" id="signin-otp-error" role="alert" hidden></p>
-      <p class="small" id="signin-otp-error-code" hidden></p>
-      <button type="submit">Continue</button>
+  <!-- ============================== the one-time code (ALV-128) ============================== -->
+  <section class="screen" data-screen="signinOtp" hidden>
+    <header class="top-bar">
+      <button type="button" class="icon-btn" data-action="signin-start-again" aria-label="Start again"><span data-icon="back"></span></button>
+      <img class="alv-mark" src="img/alvoraa-mark.png" alt="Alvoraa">
+      <h1 class="title small-title">Alvoraa Attendance</h1>
+    </header>
+    <form id="signin-otp-form" class="screen-body" novalidate>
+      <div class="content">
+        <div class="stack-4">
+          <div class="bubble tone-primary"><span data-icon="key"></span></div>
+          <h2 class="t-headline-m">Type the code you were sent</h2>
+          <p class="t-body-l muted" id="signin-otp-prompt"></p>
+          <div class="field" id="signin-otp-field">
+            <input type="text" class="code" id="signin-otp" inputmode="numeric" autocomplete="one-time-code" maxlength="12">
+            <label for="signin-otp">Code</label>
+          </div>
+        </div>
+        <p class="support err" id="signin-otp-error" role="alert" hidden></p>
+        <p class="code-for-hr left" id="signin-otp-error-code" hidden></p>
+      </div>
+      <div class="actions">
+        <button type="submit" class="btn filled block">Continue</button>
+        <button type="button" class="btn text block" data-action="signin-start-again">Start again</button>
+      </div>
     </form>
-    <button type="button" class="link" data-action="signin-start-again">Start again</button>
   </section>
 
-  <section class="screen" data-screen="signingIn">
-    <p class="busy">Signing you in</p>
+  <section class="screen" data-screen="signingIn" hidden>
+    <div class="content center" role="status" aria-live="polite">
+      <div class="spinner" aria-hidden="true"></div>
+      <p class="t-title-l">Signing you in</p>
+      <p class="t-body-m muted">This can take a few seconds on a slow connection.</p>
+    </div>
   </section>
 
-  <!-- ============================== the notice, after signing in (ALV-128) ==============================
-       The same words as the QR join's notice, from the server. Its own screen
-       so its buttons cannot be mistaken for the QR join's "Agree and finish". -->
-  <section class="screen" data-screen="signinNotice">
-    <p class="topbar" id="signin-notice-topbar"></p>
-    <h2>Before you start</h2>
-    <p id="signin-notice-intro"></p>
-    <div id="signin-notice-rows"></div>
-    <p class="error" id="signin-notice-error" role="alert" hidden></p>
-    <label class="tick-row">
-      <input type="checkbox" id="signin-notice-tick">
-      <span id="signin-notice-agree-words"></span>
-    </label>
-    <button type="button" data-action="signin-agree">Agree and finish</button>
+  <!-- ============================== the notice, after signing in (ALV-128) ============================== -->
+  <section class="screen" data-screen="signinNotice" hidden>
+    <header class="top-bar">
+      <h1 class="title">Before you start<span class="sub" id="signin-notice-topbar"></span></h1>
+    </header>
+    <div class="content notice-scroll">
+      <p class="t-body-l" id="signin-notice-intro"></p>
+      <div class="card outlined notice-card" id="signin-notice-rows"></div>
+      <p class="t-body-m muted gap-top" id="signin-notice-version"></p>
+    </div>
+    <div class="actions raised">
+      <p class="support err" id="signin-notice-error" role="alert" hidden></p>
+      <label class="check-row" id="signin-notice-row">
+        <span class="box"><input type="checkbox" id="signin-notice-tick"></span>
+        <span id="signin-notice-agree-words"></span>
+      </label>
+      <button type="button" class="btn filled block" data-action="signin-agree">Agree and finish</button>
+    </div>
   </section>
 
-  <!-- ============================== first launch with a code from HR (US-35, 01b §7.1) ============================== -->
-  <section class="screen" data-screen="first">
-    <h1>Alvoraa</h1>
-    <h2>Mark your attendance with this phone</h2>
-    <p>Your HR team gives you a QR code. Scan it once to join your company.</p>
-    <p>You do not need an email address or a password.</p>
-    <p class="small">No QR code yet? Ask HR to invite you to the Alvoraa app.</p>
-    <button type="button" data-action="scan-pressed">Scan the QR code from HR</button>
-    <button type="button" class="secondary" data-action="choose-picture">Choose the QR picture from my photos</button>
-    <button type="button" class="link" data-action="signin-open">Sign in with email and password instead</button>
+  <!-- ============================== join with a code from HR (US-35) ============================== -->
+  <section class="screen" data-screen="first" hidden>
+    <header class="top-bar">
+      <button type="button" class="icon-btn" data-action="signin-open" aria-label="Back"><span data-icon="back"></span></button>
+      <img class="alv-mark" src="img/alvoraa-mark.png" alt="Alvoraa">
+      <h1 class="title small-title">Alvoraa Attendance</h1>
+    </header>
+    <div class="content">
+      <div class="stack-4">
+        <div class="bubble tone-primary"><span data-icon="qr"></span></div>
+        <h2 class="t-headline-m">Join with a code from HR</h2>
+        <p class="t-body-l">Your HR team gives you a QR code. Scan it once to join your company.</p>
+        <ul class="list card filled flush">
+          <li><div class="list-item"><span class="lead"><span data-icon="check"></span></span><span class="txt"><span class="hl">You do not need an email address or a password.</span></span></div></li>
+          <li class="divider" aria-hidden="true"></li>
+          <li><div class="list-item"><span class="lead"><span data-icon="help"></span></span><span class="txt"><span class="hl">No QR code yet? Ask HR to invite you to the Alvoraa app.</span></span></div></li>
+        </ul>
+      </div>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn filled block" data-action="scan-pressed"><span data-icon="qr"></span><span>Scan the QR code from HR</span></button>
+      <button type="button" class="btn outlined block" data-action="choose-picture"><span data-icon="image"></span><span>Choose the QR picture from my photos</span></button>
+      <button type="button" class="btn text block" data-action="signin-open">Sign in with email and password instead</button>
+    </div>
   </section>
 
-  <!-- ============================== camera explained (01b §7.2) - shown only if the camera has never been asked for ============================== -->
-  <section class="screen" data-screen="camExplain">
-    <h2>The app needs your camera to scan the code</h2>
-    <p>Next, your phone will ask if Alvoraa may take pictures. Press &quot;While using the app&quot;.</p>
-    <p class="card">The camera is used only when you scan a code, or when you press Check In or Check Out.</p>
-    <button type="button" data-action="open-scanner">Continue</button>
-    <button type="button" class="secondary" data-action="choose-picture">Choose a picture instead</button>
+  <!-- ============================== camera explained (01b §7.2) ============================== -->
+  <section class="screen" data-screen="camExplain" hidden>
+    <header class="top-bar">
+      <button type="button" class="icon-btn" data-action="done-to-first" aria-label="Back"><span data-icon="back"></span></button>
+      <img class="alv-mark" src="img/alvoraa-mark.png" alt="Alvoraa">
+      <h1 class="title small-title">Alvoraa Attendance</h1>
+    </header>
+    <div class="content">
+      <div class="stack-4">
+        <div class="bubble tone-primary"><span data-icon="camera"></span></div>
+        <h2 class="t-headline-s">The app needs your camera to scan the code</h2>
+        <p class="t-body-l">Next, your phone will ask if Alvoraa may take pictures. Press <b>&quot;While using the app&quot;</b>.</p>
+        <div class="card info card-row"><span data-icon="info"></span><p class="t-body-m">The camera is used only when you scan a code, or when you press Check In or Check Out.</p></div>
+      </div>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn filled block" data-action="open-scanner">Continue</button>
+      <button type="button" class="btn outlined block" data-action="choose-picture"><span data-icon="image"></span><span>Choose a picture instead</span></button>
+    </div>
   </section>
 
   <!-- ============================== scanner (01b §7.3) ============================== -->
-  <section class="screen" data-screen="scan">
-    <p>Point the camera at the QR code</p>
-    <video id="scan-video" playsinline muted></video>
-    <canvas id="scan-canvas" hidden></canvas>
-    <button type="button" class="secondary" data-action="choose-picture">Choose a picture instead</button>
-    <button type="button" class="secondary" data-action="cancel-scan">Cancel</button>
+  <section class="screen cam-screen" data-screen="scan" hidden>
+    <div class="cam">
+      <video id="scan-video" class="feed" playsinline muted></video>
+      <canvas id="scan-canvas" hidden></canvas>
+      <div class="viewfinder" aria-hidden="true"></div>
+      <header class="top-bar">
+        <button type="button" class="icon-btn" data-action="cancel-scan" aria-label="Cancel"><span data-icon="close"></span></button>
+        <h1 class="title">Scan the QR code</h1>
+      </header>
+      <div class="bottom">
+        <p class="caption">Point the camera at the QR code from HR</p>
+        <button type="button" class="btn on-dark block" data-action="choose-picture"><span data-icon="image"></span><span>Choose a picture instead</span></button>
+      </div>
+    </div>
   </section>
 
-  <!-- Hidden file input for "choose a picture" - the system photo/gallery picker,
-       a plain web control, needs no Capacitor plugin and no storage permission
-       (AC-184). Never has `capture`, which would open the camera instead. -->
+  <!-- Hidden file input for "choose a picture" - the system picker, no plugin
+       and no storage permission (AC-184). Never has `capture`. -->
   <input type="file" id="photo-picker" accept="image/*" hidden>
 
-  <!-- ============================== checking the code (01b §7.4) ============================== -->
-  <section class="screen" data-screen="checking">
-    <p class="busy">Checking the code</p>
-  </section>
-
-  <!-- ============================== is this you? (01b §7.5, WOW part 1) ============================== -->
-  <section class="screen" data-screen="confirm">
-    <h2>Is this you?</h2>
-    <div class="card person">
-      <div class="initials" id="confirm-initials" aria-hidden="true"></div>
-      <p class="name" id="confirm-name"></p>
-      <p id="confirm-designation"></p>
-      <p class="company" id="confirm-company"></p>
+  <section class="screen" data-screen="checking" hidden>
+    <div class="content center" role="status" aria-live="polite">
+      <div class="spinner" aria-hidden="true"></div>
+      <p class="t-title-l">Checking the code</p>
     </div>
-    <p class="small">HR made this code for one person only.</p>
-    <button type="button" class="primary-green" data-action="confirm-yes">Yes, this is me</button>
-    <button type="button" class="secondary" data-action="confirm-not-me">This is not me</button>
   </section>
 
-  <!-- ============================== this is not me (01b §7.6) ============================== -->
-  <section class="screen" data-screen="notMe">
-    <h2>This code is for someone else</h2>
-    <p>Nothing has been set up on this phone.</p>
-    <p>If you cancel the code, it stops working. HR will see that it was cancelled on a phone, and can make a new one.</p>
-    <p>Please tell HR the code came to you by mistake.</p>
-    <button type="button" data-action="cancel-code">Cancel this code</button>
-    <button type="button" class="secondary" data-action="not-me-go-back">Go back. It is me.</button>
-  </section>
-
-  <section class="screen" data-screen="notMeDone">
-    <h2>The code is cancelled</h2>
-    <p>Nothing was set up on this phone. If you are waiting for your own code, ask HR.</p>
-    <button type="button" data-action="done-to-first">Done</button>
-  </section>
-
-  <!-- ============================== the notice (01b §7.7) - rendered from the server's own words, never hardcoded ============================== -->
-  <section class="screen" data-screen="notice">
-    <p class="topbar" id="notice-topbar"></p>
-    <button type="button" class="link" data-action="notice-back">Back</button>
-    <h2>Before you start</h2>
-    <p id="notice-intro"></p>
-    <div id="notice-rows"></div>
-    <p class="error" id="notice-tick-error" role="alert" hidden>Please tick the box to show you have read the notice.</p>
-    <label class="tick-row">
-      <input type="checkbox" id="notice-tick">
-      <span id="notice-agree-words"></span>
-    </label>
-    <button type="button" data-action="agree-and-finish">Agree and finish</button>
-  </section>
-
-  <section class="screen" data-screen="joining">
-    <p class="busy">Setting up this phone</p>
-  </section>
-
-  <!-- ============================== welcome (01b §7.8, WOW part 2) ============================== -->
-  <section class="screen" data-screen="welcome">
-    <h2 id="welcome-heading"></h2>
-    <p>You do not need to wait for HR. You can mark attendance now.</p>
-    <div class="card" id="welcome-card"></div>
-    <button type="button" class="primary-green" data-action="welcome-check-in">Check In</button>
-    <button type="button" class="link" data-action="welcome-not-now">Not now</button>
-  </section>
-
-  <!-- ============================== one generic problem screen (01b §7.12, D11) ==============================
-       Shared by both join.js's own dead-code/permission screens and
-       checkin.js's daily-use ones (US-39-42) - only one of the two flows is
-       ever active at a time, so there is no collision. #problem-card is new
-       in the daily-use build; join.js's screens never set `card`, so it stays
-       empty and hidden for them. -->
-  <section class="screen" data-screen="problem">
-    <h2 id="problem-heading"></h2>
-    <p id="problem-body"></p>
-    <div class="card" id="problem-card" hidden></div>
-    <ol id="problem-steps" hidden></ol>
-    <div id="problem-buttons"></div>
-    <p class="small" id="problem-footer"></p>
-  </section>
-
-  <!-- ============================== the Attendance screen (US-39, 01b §7.9) ============================== -->
-  <section class="screen" data-screen="home">
-    <div class="top-bar">
-      <h1 id="home-company"></h1>
-      <button type="button" class="link settings-btn" data-action="checkin-open-settings">Settings</button>
+  <!-- ============================== is this you? (01b §7.5) ============================== -->
+  <section class="screen" data-screen="confirm" hidden>
+    <header class="top-bar">
+      <button type="button" class="icon-btn" data-action="done-to-first" aria-label="Back"><span data-icon="back"></span></button>
+      <img class="alv-mark" src="img/alvoraa-mark.png" alt="Alvoraa">
+      <h1 class="title small-title">Alvoraa Attendance</h1>
+    </header>
+    <div class="content">
+      <h2 class="t-headline-m u-m-8-16">Is this you?</h2>
+      <div class="card elevated u-person-card">
+        <div class="bubble avatar tone-primary" id="confirm-initials" aria-hidden="true"></div>
+        <p class="t-headline-s" id="confirm-name"></p>
+        <p class="t-body-l muted" id="confirm-designation"></p>
+        <p class="t-body-l inline-note"><span data-icon="store" data-icon-class="s20"></span><span id="confirm-company"></span></p>
+      </div>
+      <p class="t-body-m muted gap-top inline-note"><span data-icon="info" data-icon-class="s20"></span><span>HR made this code for one person only.</span></p>
     </div>
-    <p class="small" id="home-person"></p>
-    <p class="status-line" id="home-status"><span class="status-dot" aria-hidden="true"></span><span id="home-status-text"></span></p>
-    <div class="card" id="home-camera-off" hidden>
-      <p>The camera is off. You can still check in, but there will be no photo.</p>
-      <button type="button" class="link" data-action="checkin-camera-retry">Turn on the camera</button>
+    <div class="actions">
+      <button type="button" class="btn filled block" data-action="confirm-yes">Yes, this is me</button>
+      <button type="button" class="btn outlined block" data-action="confirm-not-me">This is not me</button>
     </div>
-    <p class="small" id="home-rule" hidden></p>
-    <button type="button" id="home-punch-button" class="primary-green" data-action="checkin-punch">Check In</button>
-    <div id="home-punch-list"></div>
   </section>
 
-  <!-- ============================== location, explained (01b §7.10, first Check In only) ============================== -->
-  <section class="screen" data-screen="locExplain">
-    <h2>The app needs your location to check you in</h2>
-    <p>Next, your phone will ask about location. Press &quot;While using the app&quot;, and keep &quot;Precise&quot; on.</p>
-    <p class="card">Your location is read only at the moment you press Check In or Check Out. Never in between.</p>
-    <button type="button" data-action="checkin-loc-continue">Continue</button>
+  <section class="screen" data-screen="notMeDone" hidden>
+    <div class="content">
+      <div class="stack-4 u-pt-24">
+        <div class="bubble tone-neutral"><span data-icon="checkCircle"></span></div>
+        <h2 class="t-headline-m">The code is cancelled</h2>
+        <p class="t-body-l">Nothing was set up on this phone. If you are waiting for your own code, ask HR.</p>
+      </div>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn filled block" data-action="done-to-first">Done</button>
+    </div>
   </section>
 
-  <!-- ============================== the check-in camera (fix of 27 Sep 2026) ==============================
-       The person sees the preview and takes the photo themselves; nothing is
-       sent until "Use photo". checkin.js shows or hides the buttons for the
-       camera's state (camera.js). Plain markup on purpose: the redesign
-       restyles it. -->
-  <section class="screen" data-screen="camera">
-    <h2 id="camera-heading">Take your photo</h2>
-    <p class="small" id="camera-status" aria-live="polite"></p>
-    <div class="camera-frame">
-      <video id="camera-video" playsinline muted aria-label="Camera preview"></video>
-      <img id="camera-still" alt="The photo you took" hidden>
+  <!-- ============================== the notice (01b §7.7) - the server's own words ============================== -->
+  <section class="screen" data-screen="notice" hidden>
+    <header class="top-bar">
+      <button type="button" class="icon-btn" data-action="notice-back" aria-label="Back"><span data-icon="back"></span></button>
+      <h1 class="title">Before you start<span class="sub" id="notice-topbar"></span></h1>
+    </header>
+    <div class="content notice-scroll">
+      <p class="t-body-l" id="notice-intro"></p>
+      <div class="card outlined notice-card" id="notice-rows"></div>
+      <p class="t-body-m muted gap-top" id="notice-version"></p>
     </div>
-    <p class="error" id="camera-message" role="alert" hidden></p>
-    <button type="button" class="primary-green" id="camera-take" data-action="checkin-camera-take">Take photo</button>
-    <button type="button" class="primary-green" id="camera-use" data-action="checkin-camera-use" hidden>Use photo</button>
-    <button type="button" class="secondary" id="camera-retake" data-action="checkin-camera-retake" hidden>Retake</button>
-    <button type="button" id="camera-try-again" data-action="checkin-camera-try-again" hidden>Try the camera again</button>
-    <button type="button" class="secondary" id="camera-no-photo" data-action="checkin-camera-no-photo" hidden>Check in without a photo</button>
-    <button type="button" class="link" data-action="checkin-camera-cancel">Cancel</button>
+    <div class="actions raised">
+      <p class="support err" id="notice-tick-error" role="alert" hidden>Please tick the box to show you have read the notice.</p>
+      <label class="check-row" id="notice-row">
+        <span class="box"><input type="checkbox" id="notice-tick"></span>
+        <span id="notice-agree-words"></span>
+      </label>
+      <button type="button" class="btn filled block" data-action="agree-and-finish">Agree and finish</button>
+    </div>
   </section>
 
-  <!-- ============================== saving the punch (01b §7.11) ============================== -->
-  <section class="screen" data-screen="punching">
-    <p class="busy" id="punching-status">Taking your photo</p>
+  <section class="screen" data-screen="joining" hidden>
+    <div class="content center" role="status" aria-live="polite">
+      <div class="spinner" aria-hidden="true"></div>
+      <p class="t-title-l">Setting up this phone</p>
+    </div>
   </section>
 
-  <!-- ============================== the punch result (01b §7.11) ============================== -->
-  <section class="screen" data-screen="result">
-    <h2 id="result-heading"></h2>
-    <p id="result-time"></p>
-    <div class="card" id="result-card"></div>
-    <p class="small">Only HR and your manager can see this.</p>
-    <button type="button" data-action="checkin-result-done">Done</button>
+  <!-- ============================== welcome (01b §7.8) ============================== -->
+  <section class="screen" data-screen="welcome" hidden>
+    <header class="top-bar brand">
+      <div class="brand-mark" id="welcome-mark" aria-hidden="true"></div>
+      <h1 class="title" id="welcome-company-bar"></h1>
+    </header>
+    <div class="content">
+      <div class="stack-4 pad-top">
+        <div class="bubble tone-success"><span data-icon="checkCircle"></span></div>
+        <h2 class="t-headline-m" id="welcome-heading"></h2>
+        <p class="t-body-l">This phone is set up. You can mark attendance now. You do not need to wait for HR.</p>
+        <ul class="list card outlined flush" id="welcome-card"></ul>
+      </div>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn filled block large" data-action="welcome-check-in"><span data-icon="login"></span><span>Check In</span></button>
+      <button type="button" class="btn text block" data-action="welcome-not-now">Not now</button>
+    </div>
   </section>
 
-  <!-- ============================== the notice changed, mid-daily-use (US-42, 01b §7.12 noticeAgain) ============================== -->
-  <section class="screen" data-screen="noticeAgain">
-    <!-- ALV-128: checkin.js swaps these two lines for "Before you start" when
-         this phone has never agreed (the app was closed on the first notice). -->
-    <h2 id="notice-again-heading">The notice has changed</h2>
-    <p id="notice-again-intro">Please read it again before your next check-in.</p>
-    <p id="notice-again-changed"></p>
-    <div id="notice-again-rows"></div>
-    <p class="error" id="notice-again-tick-error" role="alert" hidden>Please tick the box to show you have read the notice.</p>
-    <label class="tick-row">
-      <input type="checkbox" id="notice-again-tick">
-      <span id="notice-again-agree-words"></span>
-    </label>
-    <button type="button" data-action="checkin-notice-agree">Agree and continue</button>
+  <!-- ============================== one problem screen for every refusal (01b §7.12, 01d §7.7) ============================== -->
+  <section class="screen" data-screen="problem" hidden>
+    <header class="top-bar" id="problem-bar">
+      <img class="alv-mark" id="problem-alv-mark" src="img/alvoraa-mark.png" alt="Alvoraa">
+      <div class="brand-mark" id="problem-mark" aria-hidden="true" hidden></div>
+      <h1 class="title" id="problem-bar-title">Alvoraa Attendance</h1>
+    </header>
+    <div class="content">
+      <div class="stack-4 pad-top">
+        <div class="bubble tone-error" id="problem-bubble"><span data-icon="error"></span></div>
+        <h2 class="t-headline-s" id="problem-heading" tabindex="-1"></h2>
+        <p class="t-body-l" id="problem-body"></p>
+        <ol class="steps" id="problem-steps" hidden></ol>
+        <div class="card info" id="problem-card" hidden></div>
+      </div>
+    </div>
+    <div class="actions">
+      <div class="stack" id="problem-buttons"></div>
+      <p class="code-for-hr" id="problem-footer"></p>
+    </div>
   </section>
 
-  <!-- ============================== Settings (US-43, 01b §7.13) ============================== -->
-  <section class="screen" data-screen="settings">
-    <div class="top-bar">
-      <button type="button" class="link" data-action="checkin-settings-back">Back</button>
-      <h2>Settings</h2>
+  <!-- ============================== Home (US-39, 01d §7.5) ============================== -->
+  <section class="screen" data-screen="homeLoading" hidden>
+    <header class="top-bar brand">
+      <div class="brand-mark" aria-hidden="true"></div>
+      <div class="title"><span class="skel u-skel-title"></span></div>
+    </header>
+    <div class="content" aria-busy="true">
+      <p class="visually-hidden" role="status">Loading today</p>
+      <div class="skel u-skel-greet"></div>
+      <div class="skel u-skel-date"></div>
+      <div class="skel u-skel-status"></div>
+      <div class="skel u-skel-h"></div>
+      <div class="skel u-skel-row"></div>
     </div>
-    <div class="settings-group">
-      <h3>You</h3>
-      <p id="settings-you"></p>
+    <div class="actions"><div class="skel u-skel-button"></div></div>
+  </section>
+
+  <section class="screen" data-screen="home" hidden>
+    <header class="top-bar brand">
+      <div class="brand-mark" id="home-mark" aria-hidden="true"></div>
+      <h1 class="title"><span id="home-company"></span><span class="sub" id="home-person"></span></h1>
+      <button type="button" class="bar-action" data-action="checkin-open-settings" aria-label="Settings">
+        <span data-icon="settings" data-icon-class="s20"></span><span class="bar-word" aria-hidden="true">Settings</span>
+      </button>
+    </header>
+    <div class="content">
+      <p class="t-title-l u-greet" id="home-greeting"></p>
+      <p class="t-body-m muted u-mb-16" id="home-date"></p>
+      <section class="status idle" id="home-status" aria-live="polite">
+        <div class="state"><span id="home-status-icon" data-icon="clock"></span><span id="home-status-label"></span></div>
+        <p class="big" id="home-status-text"></p>
+        <div class="rule" id="home-rule-box">
+          <span id="home-rule-icon" data-icon="pin" data-icon-class="s20"></span>
+          <span><span id="home-rule"></span><span class="rule-note" id="home-rule-note" hidden></span></span>
+        </div>
+      </section>
+      <div class="card warning card-row gap-top" id="home-camera-off" hidden>
+        <span data-icon="camera"></span>
+        <div>
+          <p class="t-body-m">The camera is off. You can still check in, but there will be no photo.</p>
+          <button type="button" class="btn text" data-action="checkin-camera-retry">Turn on the camera</button>
+        </div>
+      </div>
+      <h2 class="t-title-s muted u-list-h">Today</h2>
+      <div id="home-punch-list"></div>
+      <p class="t-body-m muted gap-top inline-note"><span data-icon="camera" data-icon-class="s20"></span><span>A photo and your location are taken when you press the button.</span></p>
     </div>
-    <!-- D15/AC-224: populated by checkin.js only in a debug build - not
-         merely hidden by CSS, so pilot and release never put it in the DOM. -->
-    <div class="settings-group" id="settings-language"></div>
-    <div class="settings-group">
-      <h3>Privacy</h3>
-      <button type="button" class="row-link" data-action="checkin-open-records">What this app records</button>
-      <p class="small" id="settings-agreed-on"></p>
+    <div class="actions">
+      <button type="button" id="home-punch-button" class="btn filled block large" data-action="checkin-punch">
+        <span id="home-punch-icon" data-icon="login"></span><span id="home-punch-label">Check In</span>
+      </button>
     </div>
-    <div class="settings-group">
-      <h3>This phone</h3>
-      <button type="button" class="row-link danger-text" data-action="checkin-open-leave-confirm">Remove this phone from <span id="settings-company-a"></span></button>
-      <p class="small">Attendance on this phone stops.</p>
+  </section>
+
+  <!-- ============================== location, explained (first Check In only) ============================== -->
+  <section class="screen" data-screen="locExplain" hidden>
+    <header class="top-bar">
+      <button type="button" class="icon-btn" data-action="checkin-go-home" aria-label="Back"><span data-icon="back"></span></button>
+    </header>
+    <div class="content">
+      <div class="stack-4">
+        <div class="bubble tone-primary"><span data-icon="pin"></span></div>
+        <h2 class="t-headline-s">The app needs your location to check you in</h2>
+        <p class="t-body-l">Next, your phone will ask about location. Press <b>&quot;While using the app&quot;</b>, and keep <b>&quot;Precise&quot;</b> on.</p>
+        <div class="card info card-row"><span data-icon="info"></span><p class="t-body-m">Your location is read only at the moment you press Check In or Check Out. Never in between.</p></div>
+      </div>
     </div>
-    <div class="settings-group">
-      <h3>About</h3>
-      <p class="small" id="settings-about"></p>
-      <p class="small">For any problem, speak to HR. Tell them the app version above.</p>
+    <div class="actions">
+      <button type="button" class="btn filled block" data-action="checkin-loc-continue">Continue</button>
+    </div>
+  </section>
+
+  <!-- ============================== the check-in camera (fix of 27 Sep 2026, restyled) ============================== -->
+  <section class="screen cam-screen" data-screen="camera" hidden>
+    <div class="cam">
+      <video id="camera-video" class="feed" playsinline muted aria-label="Camera preview"></video>
+      <img id="camera-still" class="feed" alt="The photo you took" hidden>
+      <header class="top-bar">
+        <button type="button" class="icon-btn" data-action="checkin-camera-cancel" aria-label="Cancel"><span data-icon="close"></span></button>
+        <h1 class="title" id="camera-heading">Take your photo</h1>
+      </header>
+      <p class="hint" id="camera-status" aria-live="polite"></p>
+      <div class="bottom">
+        <p class="cam-message" id="camera-message" role="alert" hidden></p>
+        <button type="button" class="shutter" id="camera-take" data-action="checkin-camera-take" aria-label="Take photo"></button>
+        <p class="caption" id="camera-take-caption" aria-hidden="true">Take photo</p>
+        <div class="btn-row">
+          <button type="button" class="btn on-dark" id="camera-retake" data-action="checkin-camera-retake" hidden><span data-icon="refresh"></span><span>Retake</span></button>
+          <button type="button" class="btn on-dark-filled" id="camera-use" data-action="checkin-camera-use" hidden><span data-icon="check"></span><span>Use photo</span></button>
+        </div>
+        <button type="button" class="btn on-dark-filled" id="camera-try-again" data-action="checkin-camera-try-again" hidden>Try the camera again</button>
+        <button type="button" class="btn on-dark" id="camera-no-photo" data-action="checkin-camera-no-photo" hidden>Check in without a photo</button>
+        <p class="small" id="camera-who-sees">Only HR and your manager can see this photo.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== saving the punch ============================== -->
+  <section class="screen" data-screen="punching" hidden>
+    <header class="top-bar">
+      <h1 class="title" id="punching-title">Checking you in</h1>
+    </header>
+    <div class="content" role="status" aria-live="polite">
+      <div class="linear" aria-hidden="true"></div>
+      <p class="visually-hidden" id="punching-status"></p>
+      <div class="step" id="punch-step-photo"><span class="dot" data-icon="checkCircle"></span><span id="punch-step-photo-words">Photo taken</span></div>
+      <div class="step" id="punch-step-where"><span class="dot"><span class="spinner sm" aria-hidden="true"></span></span><span>Finding where you are</span></div>
+      <div class="step" id="punch-step-save"><span class="dot" data-icon="shield"></span><span>Saving your attendance</span></div>
+      <p class="t-body-m muted gap-top-l">Keep the app open. This can take up to 20 seconds on a slow connection.</p>
+      <p class="t-body-m muted gap-top" id="punching-slow" hidden></p>
+    </div>
+  </section>
+
+  <!-- ============================== the result (01d §7.6) ============================== -->
+  <section class="screen" data-screen="result" hidden>
+    <div class="content u-pt-24">
+      <div role="status" aria-live="polite" class="stack-4 u-center-col">
+        <div class="bubble tone-success"><span data-icon="checkCircle"></span></div>
+        <h2 class="t-headline-m" id="result-heading"></h2>
+        <p class="t-display-s u-mt-0" id="result-time"></p>
+        <p class="t-body-l muted u-mt-0" id="result-date"></p>
+      </div>
+      <ul class="list card outlined flush gap-top-l" id="result-card"></ul>
+      <p class="t-body-m muted gap-top u-center">Only HR and your manager can see this.</p>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn filled block" data-action="checkin-result-done">Done</button>
+    </div>
+  </section>
+
+  <!-- ============================== the notice again: changed, never agreed, or withdrawn (US-42) ============================== -->
+  <section class="screen" data-screen="noticeAgain" hidden>
+    <header class="top-bar">
+      <h1 class="title" id="notice-again-heading">The notice has changed</h1>
+    </header>
+    <div class="content notice-scroll">
+      <div class="card tertiary card-row u-m-4-16" id="notice-again-changed-card">
+        <span data-icon="info"></span>
+        <div><p class="t-title-s">What is new</p><p class="t-body-m" id="notice-again-changed"></p></div>
+      </div>
+      <p class="t-body-l" id="notice-again-intro">Please read it again before your next check-in.</p>
+      <div class="card outlined notice-card" id="notice-again-rows"></div>
+      <p class="t-body-m muted gap-top" id="notice-again-version"></p>
+    </div>
+    <div class="actions raised">
+      <p class="support err" id="notice-again-tick-error" role="alert" hidden>Please tick the box to show you have read the notice.</p>
+      <label class="check-row" id="notice-again-row">
+        <span class="box"><input type="checkbox" id="notice-again-tick"></span>
+        <span id="notice-again-agree-words"></span>
+      </label>
+      <button type="button" class="btn filled block" data-action="checkin-notice-agree">Agree and continue</button>
+    </div>
+  </section>
+
+  <!-- ============================== Settings (US-43, 01d §7.8) ============================== -->
+  <section class="screen" data-screen="settings" hidden>
+    <header class="top-bar">
+      <button type="button" class="icon-btn" data-action="checkin-settings-back" aria-label="Back"><span data-icon="back"></span></button>
+      <h1 class="title">Settings</h1>
+    </header>
+    <div class="content flush">
+      <div class="u-settings-head">
+        <div class="bubble avatar md tone-primary" id="settings-avatar" aria-hidden="true"></div>
+        <div class="u-minw0"><p class="t-title-l" id="settings-name"></p><p class="t-body-m muted" id="settings-you"></p></div>
+      </div>
+      <h2 class="section-h">Your workplace</h2>
+      <ul class="list" id="settings-workplace"></ul>
+      <div id="settings-language"></div>
+      <h2 class="section-h">Privacy</h2>
+      <ul class="list">
+        <li><button type="button" class="list-item two link" data-action="checkin-open-records">
+          <span class="lead"><span data-icon="doc"></span></span>
+          <span class="txt"><span class="hl">What this app records</span><span class="sup" id="settings-agreed-on"></span></span>
+          <span class="trail"><span data-icon="chevron"></span></span>
+        </button></li>
+        <li><button type="button" class="list-item two link" data-action="checkin-open-withdraw">
+          <span class="lead"><span data-icon="undo"></span></span>
+          <span class="txt"><span class="hl">Stop agreeing to the notice</span><span class="sup">Attendance on this phone pauses until you agree again</span></span>
+          <span class="trail"><span data-icon="chevron"></span></span>
+        </button></li>
+      </ul>
+      <h2 class="section-h">This phone</h2>
+      <ul class="list">
+        <li><button type="button" class="list-item two link danger" data-action="checkin-open-leave-confirm">
+          <span class="lead"><span data-icon="del"></span></span>
+          <span class="txt"><span class="hl">Remove this phone from <span id="settings-company-a"></span></span><span class="sup">Attendance on this phone stops</span></span>
+        </button></li>
+      </ul>
+      <h2 class="section-h">About</h2>
+      <ul class="list" id="settings-about"></ul>
+      <p class="t-body-m muted u-help-line">For any problem, speak to HR. Tell them the app version above.</p>
+      <p class="powered t-body-m muted"><img src="img/alvoraa-mark.png" alt=""><span>Powered by Alvoraa</span></p>
     </div>
   </section>
 
   <!-- ============================== what this app records (US-43, AC-215) ============================== -->
-  <section class="screen" data-screen="records">
-    <div class="top-bar">
-      <button type="button" class="link" data-action="checkin-records-back">Back</button>
-      <h2>What this app records</h2>
+  <section class="screen" data-screen="records" hidden>
+    <header class="top-bar">
+      <button type="button" class="icon-btn" data-action="checkin-records-back" aria-label="Back"><span data-icon="back"></span></button>
+      <h1 class="title">What this app records</h1>
+    </header>
+    <div class="content">
+      <div class="card success card-row u-mt-4" id="records-agreed-card">
+        <span data-icon="checkCircle"></span><p class="t-body-m" id="records-agreed"></p>
+      </div>
+      <div class="card outlined notice-card" id="records-rows"></div>
+      <h2 class="t-title-s muted u-list-h">Recorded today on this phone</h2>
+      <ul class="list card outlined flush" id="records-today"></ul>
+      <p class="t-body-m muted gap-top">To see older records, or to correct one, ask HR.</p>
+      <p class="t-body-m muted u-mt-8">If this notice changes, the app asks you to read it again before your next check-in.</p>
     </div>
-    <div id="records-rows"></div>
-    <p class="small" id="records-agreed"></p>
-    <p class="small">If this notice changes, the app asks you to read it again before your next check-in.</p>
   </section>
 
-  <!-- ============================== remove this phone (US-43, D10) ============================== -->
-  <section class="screen" data-screen="leaveConfirm">
-    <h2>Remove this phone from <span id="leave-company"></span>?</h2>
-    <p>This phone stops marking attendance for you.</p>
-    <p>Attendance you already marked stays in your HR record.</p>
-    <p>Photos already taken are deleted as the notice says.</p>
-    <p>HR will see that you removed this phone.</p>
-    <p>To use the app again, sign in again, or ask HR for a new code.</p>
-    <p class="small">You need the internet for this.</p>
-    <p class="error" id="leave-error" role="alert" hidden></p>
-    <button type="button" class="danger" data-action="checkin-remove-confirm">Remove this phone</button>
-    <button type="button" class="secondary" data-action="checkin-remove-keep">Keep it</button>
-  </section>
+  <!-- ============================== dialogs and the bottom sheet ============================== -->
+
+  <!-- This is not me (01b §7.6): a dialog, because cancelling the code cannot be undone. -->
+  <div class="scrim" id="dialog-not-me" hidden>
+    <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dialog-not-me-h">
+      <h2 id="dialog-not-me-h">This code is for someone else</h2>
+      <div class="stack t-body-l muted">
+        <p>Nothing has been set up on this phone.</p>
+        <p>If you cancel the code, it stops working. HR will see that it was cancelled on a phone, and can make a new one.</p>
+        <p>Please tell HR the code came to you by mistake.</p>
+      </div>
+      <div class="dlg-actions">
+        <button type="button" class="btn text" data-action="not-me-go-back" data-overlay-cancel>Go back. It is me.</button>
+        <button type="button" class="btn text danger-text" data-action="cancel-code">Cancel this code</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stop agreeing (ALV-133, 01d §7.8): as easy to withdraw as to agree. -->
+  <div class="scrim" id="dialog-withdraw" hidden>
+    <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dialog-withdraw-h">
+      <h2 id="dialog-withdraw-h">Stop agreeing to the notice?</h2>
+      <div class="stack t-body-l muted">
+        <p>This phone stops marking attendance for you until you agree again.</p>
+        <p>Nothing is deleted. Attendance you already marked stays in your HR record.</p>
+        <p>HR will see that you stopped agreeing.</p>
+      </div>
+      <p class="support err" id="withdraw-error" role="alert" hidden></p>
+      <div class="dlg-actions">
+        <button type="button" class="btn text" data-action="checkin-withdraw-keep" data-overlay-cancel>Keep agreeing</button>
+        <button type="button" class="btn text" data-action="checkin-withdraw-confirm">Stop agreeing</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Remove this phone (US-43, D10): one confirmation, this sheet - no browser pop-up after it. -->
+  <div class="scrim" id="sheet-remove" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-remove-h">
+      <div class="handle" aria-hidden="true"></div>
+      <h2 id="sheet-remove-h">Remove this phone from <span id="leave-company"></span>?</h2>
+      <ul class="list">
+        <li><div class="list-item"><span class="lead"><span data-icon="block"></span></span><span class="txt"><span class="hl">This phone stops marking attendance for you.</span></span></div></li>
+        <li><div class="list-item"><span class="lead"><span data-icon="shield"></span></span><span class="txt"><span class="hl">Attendance you already marked stays in your HR record.</span></span></div></li>
+        <li><div class="list-item"><span class="lead"><span data-icon="hourglass"></span></span><span class="txt"><span class="hl">Photos already taken are deleted as the notice says.</span></span></div></li>
+        <li id="sheet-remove-hr"><div class="list-item"><span class="lead"><span data-icon="group"></span></span><span class="txt"><span class="hl">HR will see that you removed this phone.</span></span></div></li>
+        <li><div class="list-item"><span class="lead"><span data-icon="login"></span></span><span class="txt"><span class="hl">To use the app again, sign in again, or ask HR for a new code.</span></span></div></li>
+      </ul>
+      <p class="t-body-m muted inline-note u-m-4-16" id="sheet-remove-internet"><span data-icon="wifiOff" data-icon-class="s20"></span><span>You need the internet for this.</span></p>
+      <p class="support err" id="leave-error" role="alert" hidden></p>
+      <div class="stack">
+        <button type="button" class="btn danger block" data-action="checkin-remove-confirm"><span data-icon="del"></span><span>Remove this phone</span></button>
+        <button type="button" class="btn outlined block" data-action="checkin-remove-keep" data-overlay-cancel>Keep it</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="snackbar" id="snackbar" role="status" hidden></div>
 
 </main>
 
 <!-- Vendored third-party code (web/js/vendor/README.md): capacitor-core.js
-     must load before secure-storage-plugin.js. jsqr.js has no such ordering
-     requirement. -->
+     must load before secure-storage-plugin.js. jsqr.js and the colour code
+     have no ordering requirement. -->
 <script src="js/vendor/capacitor-core.js"></script>
 <script src="js/vendor/secure-storage-plugin.js"></script>
 <script src="js/vendor/jsqr.js"></script>
+<script src="js/vendor/material-color-utilities.js"></script>
 
 <script src="js/build-type.js"></script>
 <script src="js/app-version.js"></script>
+<!-- ALV-133: the new words, the company's colours, and the shared screen parts. -->
+<script src="js/strings.js"></script>
+<script src="js/theme.js"></script>
+<script src="js/ui.js"></script>
 <script src="js/host-check.js"></script>
 <script src="js/photo.js"></script>
 <script src="js/camera.js"></script>
@@ -343,17 +612,14 @@
 <script src="js/notice-cache.js"></script>
 <script src="js/api.js"></script>
 <script src="js/join-screens.js"></script>
-<!-- checkin-screens.js reuses join-screens.js's date helpers (window.AlvoraaJoinScreens),
-     so it must load after it. -->
+<!-- checkin-screens.js reuses join-screens.js's date helpers, so it must load after it. -->
 <script src="js/checkin-screens.js"></script>
 <!-- problem-card.js is the one shared owner of #problem-card - both join.js and
      checkin.js call it, so it must load before either (05-review-daily-use.md, M1). -->
 <script src="js/problem-card.js"></script>
 <script src="js/gate-refusal.js"></script>
 <script src="js/join.js"></script>
-<!-- ALV-128: the sign-in screen. signin-core.js decides, signin.js draws. Loads
-     after join.js (it shows join.js's "first" and "welcome" screens) and before
-     main.js. -->
+<!-- ALV-128: the sign-in screen. signin-core.js decides, signin.js draws. -->
 <script src="js/signin-core.js"></script>
 <script src="js/signin.js"></script>
 <script src="js/checkin.js"></script>

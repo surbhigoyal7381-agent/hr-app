@@ -70,13 +70,21 @@
 
   // ── where and when (fix of 27 Sep 2026) ──────────────────────────────────
 
-  // 740 -> "740 m"; 13216 -> "13.2 km". Metres under 1 km, so a person near
-  // the gate reads a number they can walk; kilometres above, so 13 km is not
-  // written as "13216 m".
+  // 740 -> "740 m"; 13216 -> "13.2 km"; 140400 -> "140 km" (01d §7.6).
+  // Metres under 1 km, so a person near the gate reads a number they can
+  // walk; one decimal up to 99.9 km, so 13 km is not written as "13216 m";
+  // whole kilometres from 100 km, where a decimal says nothing.
   function formatDistance(metres) {
     var m = Math.max(0, Math.round(Number(metres) || 0));
     if (m < 1000) return m + " m";
-    return (Math.round(m / 100) / 10).toFixed(1) + " km";
+    var km = Math.round(m / 100) / 10;
+    if (km >= 100) return Math.round(m / 1000) + " km";
+    return km.toFixed(1) + " km";
+  }
+
+  function strings() {
+    if (typeof module !== "undefined" && module.exports) return require("./strings.js");
+    return root.AlvoraaStrings;
   }
 
   // A radius of 0, or none at all, is Frappe HR's "no limit". Never "0 m".
@@ -91,6 +99,86 @@
       return "Check in within " + Math.round(Number(workplace.radius_m)) + " m of " + workplace.name;
     }
     return "Check in from anywhere";
+  }
+
+  // The short rule for the welcome list and Settings: "Within 200 m" or
+  // "From anywhere" (radius 0 or none is Frappe HR's "no limit").
+  function whereShort(workplace) {
+    var t = strings().t;
+    if (workplace && workplace.name && hasRadius(workplace.radius_m)) {
+      return t("whereWithin", { radius: Math.round(Number(workplace.radius_m)) });
+    }
+    return t("whereAnywhere");
+  }
+
+  /*
+   * Home's rule, inside the status card (01d §7.5). The server's own
+   * check_in_rule (E-3) wins when it is sent; an older server's answer falls
+   * back to the radius, the same rule ruleLine() follows.
+   * Returns { kind: "radius" | "anywhere", line, note }.
+   */
+  function homeRule(data) {
+    var t = strings().t;
+    data = data || {};
+    var wp = data.workplace;
+    var radius = data.check_in_rule === "anywhere" ? false
+      : (wp && wp.name && hasRadius(wp.radius_m));
+    if (radius) {
+      return { kind: "radius", line: ruleLine(wp), note: "" };
+    }
+    return { kind: "anywhere", line: t("ruleAnywhere"), note: t("ruleAnywhereNote") };
+  }
+
+  /*
+   * The status card: where the person stands today, from today's punches.
+   * Returns { kind: "idle" | "in" | "out", time } - FC-1: after a
+   * check-out it is "out", never "not checked in yet".
+   */
+  function statusOf(rows) {
+    var last = rows && rows.length ? rows[rows.length - 1] : null;
+    if (!last) return { kind: "idle", time: null };
+    return { kind: last.log_type === "IN" ? "in" : "out", time: last.time };
+  }
+
+  /*
+   * The result list's location row (01d §7.6), from the server's measurement.
+   * Returns { icon, headline, detail }. "At <workplace>" only when the
+   * server measured the person inside its radius - never from the name alone.
+   */
+  function whereLines(loc, phoneAccuracy) {
+    var t = strings().t;
+    loc = loc || {};
+    var acc = loc.accuracy_m !== undefined && loc.accuracy_m !== null ? loc.accuracy_m : phoneAccuracy;
+    var hasAcc = acc !== undefined && acc !== null && acc !== "" && isFinite(Number(acc));
+    var accuracy = hasAcc ? Math.round(Number(acc)) : null;
+    var hasDistance = loc.distance_m !== undefined && loc.distance_m !== null && loc.distance_m !== "";
+    if (loc.workplace && loc.within === true) {
+      return {
+        icon: "pin",
+        headline: t("resultAt", { workplace: loc.workplace }),
+        detail: hasAcc
+          ? t("resultWithinDetail", { radius: Math.round(Number(loc.radius_m)), accuracy: accuracy })
+          : t("whereWithin", { radius: Math.round(Number(loc.radius_m)) }),
+      };
+    }
+    if (loc.workplace && hasDistance) {
+      // "You may check in from anywhere" only when there really is no radius;
+      // a radius the server did not enforce (within false) is not "anywhere".
+      var anywhere = !hasRadius(loc.radius_m);
+      var detail = anywhere
+        ? (hasAcc ? t("resultAnywhereDetail", { accuracy: accuracy }) : t("resultAnywhereNoAccuracy"))
+        : (hasAcc ? t("resultAccuracy", { accuracy: accuracy }) : "");
+      return {
+        icon: anywhere ? "globe" : "pin",
+        headline: t("resultAbout", { distance: formatDistance(loc.distance_m), workplace: loc.workplace }),
+        detail: detail,
+      };
+    }
+    return {
+      icon: "pin",
+      headline: t("resultSaved"),
+      detail: hasAcc ? t("resultAccuracy", { accuracy: accuracy }) : "",
+    };
   }
 
   // The result card's "where you were" line. `loc` is field_checkin's
@@ -407,7 +495,11 @@
     friendlyWait: friendlyWait,
     formatDistance: formatDistance,
     ruleLine: ruleLine,
+    whereShort: whereShort,
+    homeRule: homeRule,
+    statusOf: statusOf,
     whereLine: whereLine,
+    whereLines: whereLines,
     localTimeWithOffset: localTimeWithOffset,
   };
 

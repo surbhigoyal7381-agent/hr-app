@@ -63,7 +63,8 @@ test("the punch, the start screen and the notice all route to signInAgain", () =
   assert.match(signInAgain, /origin: oldOrigin/);
   // status/home flow (handleGateRefusal), the punch, the notice and its probe
   assert.match(checkin, /plan\.action === "signInAgain"\) \{\s*signInAgain\(\);/);
-  assert.equal((checkin.match(/isSignedOut\((result|probePlan)\.code\)/g) || []).length, 3);
+  // the punch, the notice, its probe, and (ALV-133) Stop agreeing
+  assert.equal((checkin.match(/isSignedOut\((result|probePlan)\.code\)/g) || []).length, 4);
 });
 
 test("the sign-in keeps the old secret in memory only, and sends it as token", () => {

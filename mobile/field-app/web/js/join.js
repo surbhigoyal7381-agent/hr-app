@@ -26,6 +26,7 @@
   function el(id) { return document.getElementById(id); }
 
   function show(name) {
+    window.AlvoraaUi.closeAllOverlays();
     var sections = app.querySelectorAll(".screen");
     for (var i = 0; i < sections.length; i++) {
       sections[i].hidden = sections[i].getAttribute("data-screen") !== name;
@@ -68,6 +69,9 @@
 
   function resetJoinState() {
     stopCamera();
+    // The company's colour started at "Is this you?"; back at the start the
+    // app is nobody's yet, so it wears Alvoraa's own colours again.
+    if (state.checkResult) window.AlvoraaTheme.reset();
     state.origin = null;
     state.code = null;
     state.lastAction = null;
@@ -102,6 +106,13 @@
   function showProblem(code, values, opts) {
     stopCamera();
     var info = window.AlvoraaJoinScreens.screenFor(code, values, opts || {});
+    // ALV-133: before the app knows the company, the Alvoraa mark heads the
+    // screen; the picture and its tone say what kind of problem it is.
+    el("problem-alv-mark").hidden = false;
+    el("problem-mark").hidden = true;
+    el("problem-bar-title").textContent = "Alvoraa Attendance";
+    var look = window.AlvoraaUi.problemLook(info.screen);
+    window.AlvoraaUi.setBubble(el("problem-bubble"), look.icon, look.tone);
     el("problem-heading").textContent = info.heading;
     el("problem-body").textContent = info.body;
     // 05-review-daily-use.md, M1: this file's own screens never set `card`,
@@ -123,7 +134,7 @@
     clearChildren(buttonsBox);
     var actions = PROBLEM_ACTIONS[info.screen] || [];
     (info.buttons || []).forEach(function (label, i) {
-      var b = textEl("button", label);
+      var b = textEl("button", label, "btn block " + (i === 0 ? "filled" : "outlined"));
       b.type = "button";
       b.setAttribute("data-action", actions[i] || "done-to-first");
       buttonsBox.appendChild(b);
@@ -241,6 +252,8 @@
   }
 
   function renderConfirm(data) {
+    // 01d §7.2: the company's colour starts here - this answer carries it.
+    window.AlvoraaTheme.applyBrand(data.brand_colour);
     var initial = (data.surname_initial || "").toUpperCase();
     el("confirm-initials").textContent = ((data.first_name || "?")[0] || "?").toUpperCase() + initial;
     el("confirm-name").textContent = data.first_name + (initial ? " " + initial + "." : "");
@@ -275,27 +288,31 @@
     el("notice-intro").textContent = (data.company || "Your company")
       + " asks you to read this. It says what the app records about you.";
 
-    var rowsBox = el("notice-rows");
-    clearChildren(rowsBox);
     var notice = data.notice || {};
-    (notice.rows || []).forEach(function (row) {
-      rowsBox.appendChild(textEl("h3", row.heading));
-      rowsBox.appendChild(textEl("p", row.body));
-    });
+    window.AlvoraaUi.renderNoticeRows(el("notice-rows"), notice.rows);
+    el("notice-version").textContent = notice.version
+      ? window.AlvoraaStrings.t("noticeVersion", { version: notice.version }) : "";
 
     el("notice-agree-words").textContent = notice.agree || "I have read this and I understand.";
     el("notice-tick").checked = false;
-    el("notice-tick-error").hidden = true;
+    tickError(false);
     show("notice");
+  }
+
+  // The error line sits above the tick box row, and the box turns red; the
+  // Agree button is never greyed out, because a grey button says nothing.
+  function tickError(on) {
+    el("notice-tick-error").hidden = !on;
+    el("notice-row").classList.toggle("err", on);
   }
 
   function agreeAndFinish() {
     if (!el("notice-tick").checked) {
-      el("notice-tick-error").hidden = false;
+      tickError(true);
       el("notice-tick").focus();
       return;
     }
-    el("notice-tick-error").hidden = true;
+    tickError(false);
 
     state.lastAction = "join";
     show("joining");
@@ -359,15 +376,9 @@
   }
 
   function renderWelcome(data) {
-    el("welcome-heading").textContent = "Welcome, " + data.first_name + ". This phone is set up.";
-    var card = el("welcome-card");
-    clearChildren(card);
-    card.appendChild(textEl("p", "Company · " + (data.company || "")));
-    if (data.workplace && data.workplace.name) {
-      card.appendChild(textEl("p", "Your workplace · " + data.workplace.name));
-    }
-    // A radius of 0 or none means no limit - never "Check in within 0 m" (27 Sep 2026).
-    card.appendChild(textEl("p", window.AlvoraaCheckinScreens.ruleLine(data.workplace)));
+    window.AlvoraaTheme.applyBrand(data.brand_colour);
+    // A radius of 0 or none means no limit - never "within 0 m" (27 Sep 2026).
+    window.AlvoraaUi.renderWelcome(data, window.AlvoraaCheckinScreens.whereShort(data.workplace));
     show("welcome");
   }
 
@@ -390,9 +401,10 @@
     "choose-picture": choosePicture,
     "cancel-scan": function () { stopCamera(); show("first"); },
     "confirm-yes": function () { renderNotice(state.checkResult); },
-    "confirm-not-me": function () { show("notMe"); },
-    "not-me-go-back": function () { show("confirm"); },
-    "cancel-code": refuseCode,
+    // 01d §7.2: a dialog over "Is this you?", same words as the old screen.
+    "confirm-not-me": function () { window.AlvoraaUi.openOverlay("dialog-not-me"); },
+    "not-me-go-back": function () { window.AlvoraaUi.closeOverlay("dialog-not-me"); },
+    "cancel-code": function () { window.AlvoraaUi.closeOverlay("dialog-not-me"); refuseCode(); },
     "done-to-first": function () { resetJoinState(); show("first"); },
     "notice-back": function () { show("confirm"); },
     "agree-and-finish": agreeAndFinish,
@@ -418,6 +430,10 @@
     if (!target) return;
     var action = ACTIONS[target.getAttribute("data-action")];
     if (action) action();
+  });
+
+  el("notice-tick").addEventListener("change", function () {
+    if (el("notice-tick").checked) tickError(false);
   });
 
   el("photo-picker").addEventListener("change", function (event) {

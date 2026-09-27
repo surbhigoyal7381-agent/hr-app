@@ -75,7 +75,9 @@
     ACCOUNT_LOCKED: ["form", null],   // needs the wait, see below
     // Frappe's lock on the network (many failures from one address), not on
     // this account - so it must not say "your account".
-    NETWORK_LOCKED: ["form", "Too many sign-in attempts from this network. Try again later."],
+    // Security's words (27 Sep 2026, D-M3-6): Frappe's per-network lock after
+    // repeated wrong passwords lasts minutes; mobile data is a different network.
+    NETWORK_LOCKED: ["form", "Too many wrong sign-in attempts from this network. Try again in a few minutes, or turn off Wi-Fi and use your mobile data."],
     PASSWORD_EXPIRED: ["form", "Your password has expired. Change it on your company's Alvoraa website, then sign in here with the new one."],
     SIGN_IN_NOT_ALLOWED: ["form", "Your login cannot be used from here or at this time. Please speak to HR."],
     NO_EMPLOYEE_RECORD: ["form", "Your login is not linked to an employee record, so this app cannot mark attendance for you. Ask HR to link your employee record to your login."],
@@ -113,6 +115,31 @@
       text = "Something went wrong. This app may be out of date. Check for an update, then try again.";
     }
     return { step: step, text: text, footerCode: code };
+  }
+
+  /*
+   * How an answer looks on the form (ALV-133, 01d §7.1). Red only for wrong
+   * details; amber with a lock or a clock for a wait, which is not a mistake;
+   * the calm info tone when the person did nothing wrong. Colour is never the
+   * only signal: each has its own icon, and the words say it all.
+   *   { tone: "error" | "warning" | "info", icon, markPassword }
+   * markPassword: the password box is emptied and marked "Type your password
+   * again." - only when the password itself may be what was wrong.
+   */
+  var LOOKS = {
+    ACCOUNT_LOCKED: ["warning", "lock"],
+    NETWORK_LOCKED: ["warning", "lock"],
+    TOO_MANY_TRIES: ["warning", "clock"],
+    NO_INTERNET: ["warning", "wifiOff"],
+    PASSWORD_SIGNIN_OFF: ["info", "info"],
+    PASSWORD_CHANGED_SIGN_IN_AGAIN: ["info", "info"],
+    OTP_EXPIRED: ["info", "clock"],
+    NOTICE_CHANGED: ["info", "info"],
+  };
+
+  function lookFor(code) {
+    var look = LOOKS[code] || ["error", "error"];
+    return { tone: look[0], icon: look[1], markPassword: code === "SIGN_IN_FAILED" };
   }
 
   // ── remembering the company code (not a secret, a convenience) ─────────
@@ -157,6 +184,7 @@
     checkForm: checkForm,
     checkOtp: checkOtp,
     messageFor: messageFor,
+    lookFor: lookFor,
     rememberCompany: rememberCompany,
     rememberedCompany: rememberedCompany,
     companyFromOrigin: companyFromOrigin,

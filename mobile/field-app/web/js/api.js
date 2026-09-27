@@ -170,6 +170,13 @@
       { token: token, notice_version: noticeVersion }, opts);
   }
 
+  // ALV-133: "Stop agreeing to the notice" in Settings. The phone keeps its
+  // secret and moves to "Consent not given"; reading the notice again and
+  // agreeing (acknowledgeNotice) is the way back, with no new code.
+  function withdrawAgreement(origin, token, opts) {
+    return callMethod(origin, "alvoraa_portal.field_app_join.withdraw_agreement", { token: token }, opts);
+  }
+
   // ── ALV-128: signing in with a work email and password ──────────────────
   //
   // The password travels in this one POST body and nowhere else: not in a
@@ -201,6 +208,7 @@
     punch: punch,
     removeMyPhone: removeMyPhone,
     acknowledgeNotice: acknowledgeNotice,
+    withdrawAgreement: withdrawAgreement,
   };
 
   if (typeof module !== "undefined" && module.exports) {

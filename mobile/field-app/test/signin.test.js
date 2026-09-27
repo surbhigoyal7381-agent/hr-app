@@ -117,7 +117,10 @@ test("the lock and the limit say how long to wait", () => {
 
 test("a locked network is never called a locked account (review fix)", () => {
   const text = core.messageFor("NETWORK_LOCKED", { retry_after_s: 300 }).text;
-  assert.equal(text, "Too many sign-in attempts from this network. Try again later.");
+  // Security's words, 27 Sep 2026 (D-M3-6): the per-network lock lasts
+  // minutes, and mobile data is another network.
+  assert.equal(text, "Too many wrong sign-in attempts from this network. Try again in a few minutes, "
+    + "or turn off Wi-Fi and use your mobile data.");
   assert.doesNotMatch(text, /account/i);
 });
 

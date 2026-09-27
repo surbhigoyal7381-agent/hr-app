@@ -1,48 +1,40 @@
 /*
  * The sign-in screens (ALV-128): company code, work email and password; the
  * one-time code when two-factor sign-in is on; then the notice, then the
- * existing Welcome and Attendance screens.
+ * existing Welcome and Attendance screens. Restyled on Material 3 (ALV-133).
  *
  * DOM only. Every decision - is the form filled in, is the company code a real
- * Alvoraa address, what does a server code mean - is in signin-core.js and
- * host-check.js, which have tests. Like join.js, every value from the server
- * is written with textContent, never as HTML.
+ * Alvoraa address, what does a server code mean and how should it look - is in
+ * signin-core.js and host-check.js, which have tests. Like join.js, every value
+ * from the server is written with textContent, never as HTML.
  *
  * The password: read from its box when Sign in is pressed, put in that one
  * request body, and the box is emptied as soon as the answer comes back. It
  * is never written to storage, never kept in `state`, never logged. The
  * two-factor step does not send it again - the server's one-time id stands in
- * for it.
+ * for it. "Show password" only changes the box's type; it keeps nothing.
  *
  * After a good sign-in the phone holds its device secret, exactly as after a
  * QR join, and every later call (the punch, the start screen) is the same
- * token-based call a code-joined phone makes. The My HR tab can later be
- * unlocked by the same secret; nothing here needs to change for that.
+ * token-based call a code-joined phone makes.
  */
 (function () {
   "use strict";
 
   var BUILD_TYPE = (window.AlvoraaBuildType && window.AlvoraaBuildType.BUILD_TYPE) || "release";
   var core = window.AlvoraaSigninCore;
+  var ui = window.AlvoraaUi;
+  var t = window.AlvoraaStrings.t;
   var app = document.getElementById("app");
 
   function el(id) { return document.getElementById(id); }
 
   function show(name) {
+    ui.closeAllOverlays();
     var sections = app.querySelectorAll(".screen");
     for (var i = 0; i < sections.length; i++) {
       sections[i].hidden = sections[i].getAttribute("data-screen") !== name;
     }
-  }
-
-  function clearChildren(node) {
-    while (node.firstChild) node.removeChild(node.firstChild);
-  }
-
-  function textEl(tag, text) {
-    var node = document.createElement(tag);
-    node.textContent = text;
-    return node;
   }
 
   // Memory only, for the length of one sign-in. Never the password.
@@ -69,27 +61,105 @@
     state.previousToken = null;
     el("signin-password").value = "";
     el("signin-otp").value = "";
+    showPassword(false);
     hideError("signin");
     hideError("signin-otp");
+    codeButtonFirst(false);
   }
 
-  // ── errors under the form, in words, with the code for HR ────────────────
+  // ── errors: a card on the form, a line under the one-time code box ──────
+
+  function markPassword(on) {
+    el("signin-password-field").classList.toggle("err", on);
+    el("signin-password-error").hidden = !on;
+    if (on) {
+      el("signin-password").setAttribute("aria-invalid", "true");
+      el("signin-password").setAttribute("aria-describedby", "signin-password-error");
+    } else {
+      el("signin-password").removeAttribute("aria-invalid");
+      el("signin-password").removeAttribute("aria-describedby");
+    }
+  }
 
   function hideError(prefix) {
-    el(prefix + "-error").hidden = true;
-    el(prefix + "-error-code").hidden = true;
+    if (prefix === "signin") {
+      el("signin-error-card").hidden = true;
+      el("signin-error-note").hidden = true;
+      markPassword(false);
+      return;
+    }
+    el("signin-otp-error").hidden = true;
+    el("signin-otp-error-code").hidden = true;
+    el("signin-otp-field").classList.remove("err");
+    el("signin-otp").removeAttribute("aria-invalid");
   }
 
+  // PASSWORD_SIGNIN_OFF: the joining code is now the only way in, so it
+  // becomes the main button (01d §7.1).
+  function codeButtonFirst(on) {
+    var b = el("signin-use-code");
+    b.classList.toggle("filled", on);
+    b.classList.toggle("outlined", !on);
+  }
+
+  /*
+   * focusField: the box to put the cursor in for a mistake the app found
+   * itself. A server answer moves focus to the error card instead, so a
+   * screen reader reads it first (01d §7.1).
+   */
   function showError(code, values, focusField) {
     var msg = core.messageFor(code, values);
-    var prefix = msg.step === "otp" ? "signin-otp" : "signin";
-    show(msg.step === "otp" ? "signinOtp" : "signin");
-    el(prefix + "-error").textContent = msg.text;
-    el(prefix + "-error").hidden = false;
-    el(prefix + "-error-code").textContent = "Code for HR: " + msg.footerCode;
-    el(prefix + "-error-code").hidden = false;
+    if (msg.step === "otp") {
+      show("signinOtp");
+      el("signin-otp-error").textContent = msg.text;
+      el("signin-otp-error").hidden = false;
+      el("signin-otp-error-code").textContent = t("codeForHr", { code: msg.footerCode });
+      el("signin-otp-error-code").hidden = false;
+      el("signin-otp-field").classList.add("err");
+      el("signin-otp").setAttribute("aria-invalid", "true");
+      el("signin-otp").focus();
+      return;
+    }
+    show("signin");
+    var look = core.lookFor(code);
+    var card = el("signin-error-card");
+    card.className = "card card-row gap-top " + look.tone;
+    ui.setIcon(el("signin-error-icon"), look.icon);
+    el("signin-error").textContent = msg.text;
+    var note = el("signin-error-note");
+    note.hidden = code !== "PASSWORD_CHANGED_SIGN_IN_AGAIN";
+    note.textContent = note.hidden ? "" : t("passwordChangedNote");
+    el("signin-error-code").textContent = t("codeForHr", { code: msg.footerCode });
+    card.hidden = false;
+    markPassword(look.markPassword);
+    codeButtonFirst(code === "PASSWORD_SIGNIN_OFF");
+    if (focusField === "company") showCompanyBox();
     var field = focusField ? el("signin-" + focusField) : null;
-    if (field) field.focus();
+    if (field && field.offsetParent !== null) field.focus();
+    else card.focus();
+  }
+
+  // ── the company code: typed once, then shown with "Change" ──────────────
+
+  function showCompanyBox() {
+    el("signin-company-fixed").hidden = true;
+    el("signin-company-box").hidden = false;
+  }
+
+  function showCompany(code) {
+    el("signin-company").value = code || "";
+    var known = !!code;
+    el("signin-company-shown").textContent = code || "";
+    el("signin-company-fixed").hidden = !known;
+    el("signin-company-box").hidden = known;
+  }
+
+  function showPassword(on) {
+    el("signin-password").type = on ? "text" : "password";
+    var b = el("signin-show-password");
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+    b.setAttribute("aria-label", on ? t("hidePassword") : t("showPassword"));
+    ui.setIcon(b, on ? "eyeOff" : "eye");
   }
 
   // ── step 1: company code, email, password ────────────────────────────────
@@ -119,10 +189,11 @@
     });
     // Emptied now: the request already holds its own copy, and nothing else may.
     passwordBox.value = "";
+    showPassword(false);
     request.then(function (result) {
       state.busy = false;
       if (!result.ok) {
-        showError(result.code, result.values, result.code === "COMPANY_CODE_INVALID" ? "company" : "password");
+        showError(result.code, result.values, result.code === "COMPANY_CODE_INVALID" ? "company" : null);
         return;
       }
       // The company code was right - remember it, so next time it is filled in.
@@ -169,7 +240,7 @@
       el("signin-otp").value = "";
       if (!result.ok) {
         if (result.code === "OTP_EXPIRED") state.tmpId = null;
-        showError(result.code, result.values, result.code === "OTP_WRONG" ? "otp" : "password");
+        showError(result.code, result.values, result.code === "OTP_WRONG" ? "otp" : null);
         return;
       }
       signedIn(result.data);
@@ -181,6 +252,8 @@
   function signedIn(data) {
     state.answer = data;
     state.token = data.token;
+    // ALV-133 E-1: from here on the app wears the company's colour.
+    window.AlvoraaTheme.applyBrand(data.brand_colour);
     // The server has set the phone up; keep its secret and its company now,
     // in the same order join.js does (secret first, then the origin). If the
     // app is closed before the notice is agreed, the next open finds the
@@ -199,34 +272,35 @@
       });
   }
 
+  function noticeError(message) {
+    var error = el("signin-notice-error");
+    error.textContent = message;
+    error.hidden = !message;
+    el("signin-notice-row").classList.toggle("err", !!message);
+  }
+
   function renderNotice() {
     var data = state.answer || {};
     var notice = data.notice || {};
     el("signin-notice-topbar").textContent = [data.company, data.first_name].filter(Boolean).join(" · ");
     el("signin-notice-intro").textContent = (data.company || "Your company")
       + " asks you to read this. It says what the app records about you.";
-    var rows = el("signin-notice-rows");
-    clearChildren(rows);
-    (notice.rows || []).forEach(function (row) {
-      rows.appendChild(textEl("h3", row.heading));
-      rows.appendChild(textEl("p", row.body));
-    });
+    ui.renderNoticeRows(el("signin-notice-rows"), notice.rows);
+    el("signin-notice-version").textContent = notice.version ? t("noticeVersion", { version: notice.version }) : "";
     el("signin-notice-agree-words").textContent = notice.agree || "I have read this and I understand.";
     el("signin-notice-tick").checked = false;
-    el("signin-notice-error").hidden = true;
+    noticeError("");
     show("signinNotice");
   }
 
   function agree() {
     if (state.busy) return;
-    var error = el("signin-notice-error");
     if (!el("signin-notice-tick").checked) {
-      error.textContent = "Please tick the box to show you have read the notice.";
-      error.hidden = false;
+      noticeError("Please tick the box to show you have read the notice.");
       el("signin-notice-tick").focus();
       return;
     }
-    error.hidden = true;
+    noticeError("");
     var notice = (state.answer && state.answer.notice) || {};
     state.busy = true;
     window.AlvoraaApi.acknowledgeNotice(state.origin, state.token, notice.version).then(function (result) {
@@ -235,13 +309,11 @@
         if (result.code === "NOTICE_CHANGED" && result.values && result.values.rows) {
           state.answer.notice = Object.assign({}, notice, result.values);
           renderNotice();
-          error.textContent = "The notice has just changed. Please read it again.";
-          error.hidden = false;
+          noticeError("The notice has just changed. Please read it again.");
           return;
         }
-        error.textContent = core.messageFor(result.code, result.values).text
-          + " (Code for HR: " + result.code + ")";
-        error.hidden = false;
+        noticeError(core.messageFor(result.code, result.values).text
+          + " (Code for HR: " + result.code + ")");
         return;
       }
       finish();
@@ -259,15 +331,8 @@
       // The phone's own clock, for display only (as in join.js).
       agreedAt: new Date().toISOString().replace("T", " ").slice(0, 19),
     });
-    el("welcome-heading").textContent = "Welcome, " + (data.first_name || "") + ". This phone is set up.";
-    var card = el("welcome-card");
-    clearChildren(card);
-    card.appendChild(textEl("p", "Company · " + (data.company || "")));
-    if (data.workplace && data.workplace.name) {
-      card.appendChild(textEl("p", "Your workplace · " + data.workplace.name));
-    }
-    // A radius of 0 or none means no limit - never "Check in within 0 m" (27 Sep 2026).
-    card.appendChild(textEl("p", window.AlvoraaCheckinScreens.ruleLine(data.workplace)));
+    // A radius of 0 or none means no limit - never "within 0 m" (27 Sep 2026).
+    ui.renderWelcome(data, window.AlvoraaCheckinScreens.whereShort(data.workplace));
     // Nothing from this sign-in stays in memory past this point.
     state.answer = null;
     state.token = null;
@@ -280,12 +345,22 @@
 
   el("signin-form").addEventListener("submit", submitSignIn);
   el("signin-otp-form").addEventListener("submit", submitOtp);
+  el("signin-notice-tick").addEventListener("change", function () {
+    if (el("signin-notice-tick").checked) noticeError("");
+  });
 
   var ACTIONS = {
     "signin-use-code": function () { reset(); window.AlvoraaJoin.startQr(); },
     "signin-open": function () { start(); },
     "signin-start-again": function () { start(); },
     "signin-agree": agree,
+    "signin-toggle-password": function () {
+      showPassword(el("signin-password").type === "password");
+    },
+    "signin-change-company": function () {
+      showCompanyBox();
+      el("signin-company").focus();
+    },
   };
 
   app.addEventListener("click", function (event) {
@@ -307,11 +382,13 @@
   function start(opts) {
     opts = opts || {};
     reset();
+    // Before a company is known, the app wears Alvoraa's own colours.
+    window.AlvoraaTheme.reset();
     state.previousToken = typeof opts.previousToken === "string" ? opts.previousToken : null;
-    el("signin-company").value = core.rememberedCompany() || core.companyFromOrigin(opts.origin);
+    showCompany(core.rememberedCompany() || core.companyFromOrigin(opts.origin));
     show("signin");
     if (opts.reason) {
-      showError(opts.reason, {}, el("signin-company").value ? "password" : "company");
+      showError(opts.reason, {}, el("signin-company").value ? null : "company");
     }
   }
 

@@ -2,7 +2,8 @@
  * The daily-use flow, wired up for real: the Attendance screen and the punch
  * (US-39), the punch's own problem screens (US-40), the gate the app runs
  * through on every open (the "on open" half of US-41), the changed-notice
- * screen (US-42), and Settings (US-43). Slice 013, daily use.
+ * screen (US-42), and Settings (US-43). Slice 013, daily use. Restyled on
+ * Material 3 and given "Stop agreeing to the notice" in ALV-133.
  *
  * Same division of labour as join.js: this file is the DOM/camera/geolocation
  * layer and makes no decisions of its own about what a code means - that
@@ -19,10 +20,14 @@
   "use strict";
 
   var app = document.getElementById("app");
+  var ui = window.AlvoraaUi;
+  var t = window.AlvoraaStrings.t;
+  var screens = window.AlvoraaCheckinScreens;
 
   function el(id) { return document.getElementById(id); }
 
   function show(name) {
+    ui.closeAllOverlays();
     var sections = app.querySelectorAll(".screen");
     for (var i = 0; i < sections.length; i++) {
       sections[i].hidden = sections[i].getAttribute("data-screen") !== name;
@@ -41,10 +46,8 @@
   }
 
   // ── a tiny, local, non-sensitive flag: has this phone shown locExplain
-  //    before? (AC-198: only the FIRST check-in ever shows it.) Not worth a
-  //    module of its own - one boolean, wrapped the same fail-soft way
-  //    notice-cache.js wraps localStorage, so a WebView that blocks storage
-  //    just asks again every time rather than crashing.
+  //    before? (AC-198: only the FIRST check-in ever shows it.) Wrapped the
+  //    same fail-soft way notice-cache.js wraps localStorage.
   var LOCATION_EXPLAINED_KEY = "alvoraa_location_explained";
   function hasSeenLocationExplain() {
     try { return localStorage.getItem(LOCATION_EXPLAINED_KEY) === "1"; } catch (e) { return false; }
@@ -53,17 +56,18 @@
     try { localStorage.setItem(LOCATION_EXPLAINED_KEY, "1"); } catch (e) { /* fail soft */ }
   }
 
-  // ── state - nothing here is written to disk except through the two
-  //    modules that are meant to (device-secret.js, notice-cache.js) ───────
+  // ── state - nothing here is written to disk except through the modules
+  //    that are meant to (device-secret.js, notice-cache.js, theme.js) ──────
   var state = {
     origin: null,
     secret: null,
+    status: null,            // the last field_status answer, for Settings and Records
     company: null,
     workplaceName: null,
     radiusM: null,
     checkedIn: false,
     minVersion: null,
-    lastAction: null,        // "status" | "punch" | "remove" | "notice"
+    lastAction: null,        // "status" | "punch" | "remove" | "notice" | "withdraw"
     pendingLogType: null,    // "IN" or "OUT" - what Try again resends
     photoDataUrl: null,      // kept across Try again (AC-205)
     photoTakenAt: null,      // the phone's clock when the photo was taken
@@ -71,7 +75,8 @@
     camera: null,            // camera.js's instance, made on first use
     cameraReopen: false,     // the preview was stopped because the app was paused
     noticeAgainValues: null, // the six rows to re-render on noticeAgain
-    removeReason: null,      // "settings" | "gate" - which screen asked for E6
+    removeLocal: false,      // the sheet removes this phone here only (a final state)
+    slowTimer: null,
   };
 
   function stopCamera() {
@@ -86,8 +91,7 @@
   }
 
   // ── the shared problem screen (reuses index.html's #problem, exactly as
-  //    join.js's own showProblem does - only one of the two ever runs at a
-  //    time, so there is no collision in practice) ─────────────────────────
+  //    join.js's own showProblem does - only one of the two ever runs) ──────
 
   var PROBLEM_ACTIONS = {
     appOff: ["checkin-open-leave-confirm-from-gate"],
@@ -105,16 +109,16 @@
     serverError: ["checkin-retry-last", "checkin-go-home"],
     duplicate: ["checkin-go-home"],
     unknownCode: ["checkin-check-update", "checkin-retry-last"],
-    update: [], // its one button is built dynamically below, by build type
+    update: [], // its one line is built below, by build type
   };
+
+  // A "Remove ... from this phone" button is not the main action: it is
+  // tonal, never the brand colour (01d §7.7).
+  var TONAL_FIRST = { appOff: true, notField: true, blocked: true, replaced: true, left: true };
 
   // 05-review-daily-use.md, M1: the card is rendered through the SAME shared
   // helper join.js uses (problem-card.js), so there is one place, not two,
-  // that decides what #problem-card shows - and every call clears it first,
-  // so a card this file showed earlier can never survive into a screen the
-  // OTHER file (join.js) shows next. `appVersion`/`when` are filled in here
-  // (not inside the shared helper) because those come from this file's own
-  // globals/clock, and the helper stays a pure function of its arguments.
+  // that decides what #problem-card shows - and every call clears it first.
   function renderCard(info) {
     var card = Object.assign({}, info.card);
     if (info.card && info.card.onThisPhone !== undefined) {
@@ -125,16 +129,29 @@
       card.appVersion = window.AlvoraaVersion ? window.AlvoraaVersion.APP_VERSION : "";
     }
     window.AlvoraaProblemCard.render(el("problem-card"), textEl, info.card ? card : undefined);
+    // The blocked screen's "you are safe" note is good news: green (01d §7.7).
+    el("problem-card").className = "card " + (info.screen === "blocked" ? "success" : "info");
+  }
+
+  function problemBar() {
+    var known = !!state.company;
+    el("problem-alv-mark").hidden = known;
+    el("problem-mark").hidden = !known;
+    el("problem-mark").textContent = ui.initials(state.company);
+    el("problem-bar-title").textContent = known ? state.company : "Alvoraa Attendance";
   }
 
   function showProblem(code, values, opts) {
     stopCamera();
-    // Remembered so "Keep it" on a Remove-confirm opened FROM one of these
-    // gate screens (appOff/notField) returns to the exact right one, not a
-    // guess (see openLeaveConfirm/ "checkin-remove-keep" below).
+    clearSlowTimer();
+    // Remembered so "Keep it" on the Remove sheet opened FROM one of these
+    // gate screens simply closes the sheet over the exact same screen.
     state.lastGateCode = code;
     state.lastGateValues = values;
-    var info = window.AlvoraaCheckinScreens.screenFor(code, values, Object.assign({ company: state.company }, opts || {}));
+    var info = screens.screenFor(code, values, Object.assign({ company: state.company }, opts || {}));
+    problemBar();
+    var look = ui.problemLook(info.screen);
+    ui.setBubble(el("problem-bubble"), look.icon, look.tone);
     el("problem-heading").textContent = info.heading;
     el("problem-body").textContent = info.body;
     renderCard(info);
@@ -152,32 +169,26 @@
     clearChildren(buttonsBox);
 
     if (info.screen === "update") {
-      // OPS-58 asks for a live "Update in Play Store"/tester link per build
-      // type. This app's own bundle rules (SEC-16/OPS-22, enforced by
-      // scripts/check_app.mjs's outside-URL check) refuse ANY hardcoded
-      // address outside *.alvoraa.co, and no real Play listing or Firebase
-      // tester link exists yet to embed even if that rule did not apply.
-      // Rather than fabricate a URL that would either fail that guardrail or
-      // silently point nowhere, this build gives plain instructions instead
-      // of a button - a declared, deliberate gap against OPS-58, not a
-      // silent one. Testers already receive their own download link by email
-      // (AC-230), so pilot does not need one embedded here either.
+      // OPS-58: no Play listing or tester link exists yet to embed, and the
+      // bundle may hold no outside address (SEC-16/OPS-22), so this build
+      // gives plain instructions instead of a button - a declared gap.
       var buildType = (window.AlvoraaBuildType && window.AlvoraaBuildType.BUILD_TYPE) || "release";
       var guidance = buildType === "debug" ? "Ask the developer."
         : buildType === "pilot" ? "Ask HR for the update link you were sent."
         : "Open the Play Store and search for Alvoraa, or ask HR.";
-      buttonsBox.appendChild(textEl("p", guidance, "small"));
+      buttonsBox.appendChild(textEl("p", guidance, "t-body-m muted"));
     } else {
       var actions = PROBLEM_ACTIONS[info.screen] || [];
       (info.buttons || []).forEach(function (btnLabel, i) {
-        var button = textEl("button", btnLabel);
+        var kind = i === 0 ? (TONAL_FIRST[info.screen] ? "tonal" : "filled") : "outlined";
+        var button = textEl("button", btnLabel, "btn block " + kind);
         button.type = "button";
         button.setAttribute("data-action", actions[i] || "checkin-go-home");
         buttonsBox.appendChild(button);
       });
     }
 
-    el("problem-footer").textContent = "Code for HR: " + info.footerCode;
+    el("problem-footer").textContent = t("codeForHr", { code: info.footerCode });
     show("problem");
   }
 
@@ -186,6 +197,7 @@
     else if (state.lastAction === "punch") doPunch(state.pendingLogType);
     else if (state.lastAction === "remove") doRemove();
     else if (state.lastAction === "notice") agreeToNoticeAgain();
+    else if (state.lastAction === "withdraw") doWithdraw();
     else show("home");
   }
 
@@ -193,10 +205,9 @@
 
   /*
    * opts.autoPunch: true when the join flow's own "Check In" button (01b's
-   * `welcome` screen) sent us here - the flow is welcome -> Check In ->
-   * locExplain -> punching directly, not via home first (01b §6's flow
-   * diagram). "Not now" calls start() with no options, landing on home
-   * unchecked-in, which is also exactly what a normal app open does.
+   * `welcome` screen) sent us here - welcome -> Check In -> locExplain ->
+   * punching directly, not via home first. "Not now" calls start() with no
+   * options, landing on home, which is also what a normal app open does.
    */
   function start(opts) {
     state.autoPunch = !!(opts && opts.autoPunch);
@@ -208,11 +219,13 @@
       state.origin = results[1];
       if (!state.secret || !state.origin) {
         // A half-set-up phone (one key present, not the other) is not set up
-        // at all from the person's point of view - never guess, go back to
-        // the join flow's own first launch.
+        // at all from the person's point of view - back to first launch.
         window.AlvoraaJoin.start();
         return;
       }
+      // The colour this phone last wore, so the loading screen is already
+      // the company's; field_status then confirms it (E-1).
+      window.AlvoraaTheme.applyRemembered();
       loadStatus();
     });
   }
@@ -221,6 +234,9 @@
     stopCamera();
     return window.AlvoraaDeviceSecret.clear().then(function () {
       window.AlvoraaNoticeCache.clear();
+      window.AlvoraaTheme.reset();
+      state.company = null;
+      state.status = null;
     });
   }
 
@@ -249,6 +265,9 @@
 
   function loadStatus() {
     state.lastAction = "status";
+    // A skeleton at once (nfr-budget §2): the Check In button waits for the
+    // real status, so it can never say the wrong thing.
+    show("homeLoading");
     window.AlvoraaApi.fieldStatus(state.origin, state.secret).then(function (result) {
       if (result.ok) {
         renderHome(result.data);
@@ -258,15 +277,32 @@
     });
   }
 
+  // The full notice words for a phone in "Consent not given": its own refusal
+  // carries only the version (05-review-daily-use.md, M2), so the rows are
+  // fetched by sending acknowledge_notice a version it cannot match - the
+  // server refuses with NOTICE_CHANGED and the rows attached. No new endpoint.
+  function probeNotice(mode) {
+    state.lastAction = "status";
+    window.AlvoraaApi.acknowledgeNotice(state.origin, state.secret, "").then(function (result) {
+      var probePlan = window.AlvoraaGateRefusal.planForConsentRequiredProbe(result);
+      if (probePlan.action === "noticeAgain") {
+        state.noticeAgainValues = probePlan.values;
+        renderNoticeAgain(probePlan.values, mode);
+      } else if (probePlan.action === "reloadStatus") {
+        loadStatus();
+      } else if (isSignedOut(probePlan.code)) {
+        signInAgain();
+      } else {
+        showProblem(probePlan.code, probePlan.values);
+      }
+    });
+  }
+
   function handleGateRefusal(code, values) {
     var plan = window.AlvoraaGateRefusal.planForGateRefusal(code, values);
     if (plan.action === "forgetAndFirst") {
       forgetPhoneLocally().then(function () {
         window.AlvoraaJoin.start();
-        // DEVICE_REMOVED's own line ("This phone is no longer linked to
-        // {company}.") needs a place on the first-launch screen to sit; that
-        // markup is join.js's, so the exact line is left for whoever adds it
-        // there (see 03-implementation-notes.md's declared gaps).
       });
       return;
     }
@@ -280,91 +316,85 @@
       return;
     }
     if (plan.action === "probeConsentRequired") {
-      // 05-review-daily-use.md, M2: CONSENT_REQUIRED's own values carry only
-      // `version`, not the six rows (field_app_errors.CODES), so the full
-      // text is fetched the same way a stale notice_version already is: send
-      // acknowledge_notice a version it cannot possibly match, which makes
-      // the server refuse with NOTICE_CHANGED and the full rows attached -
-      // no new server endpoint, no client-side guess at the words. See
-      // gate-refusal.js for exactly why this state needs recovering at all.
-      state.lastAction = "status";
-      window.AlvoraaApi.acknowledgeNotice(state.origin, state.secret, "").then(function (result) {
-        var probePlan = window.AlvoraaGateRefusal.planForConsentRequiredProbe(result);
-        if (probePlan.action === "noticeAgain") {
-          state.noticeAgainValues = probePlan.values;
-          renderNoticeAgain(probePlan.values);
-        } else if (probePlan.action === "reloadStatus") {
-          loadStatus();
-        } else if (isSignedOut(probePlan.code)) {
-          signInAgain();
-        } else {
-          showProblem(probePlan.code, probePlan.values);
-        }
-      });
+      probeNotice();
       return;
     }
     showProblem(plan.code, plan.values);
   }
 
-  // ── the Attendance screen (US-39, AC-197) ────────────────────────────────
+  // ── the Attendance screen (US-39, AC-197; 01d §7.5) ─────────────────────
 
   function renderHome(data) {
+    state.status = data;
     state.company = data.company || "";
     state.checkedIn = !!data.checked_in;
     state.workplaceName = data.workplace && data.workplace.name;
     state.radiusM = data.workplace && data.workplace.radius_m;
     state.minVersion = data.min_version;
+    window.AlvoraaTheme.applyBrand(data.brand_colour);
 
-    el("home-company").textContent = state.company;
-    el("home-person").textContent = data.employee_name || data.first_name || "";
+    ui.setBrandBar(el("home-mark"), el("home-company"), el("home-person"), state.company,
+      data.employee_name || data.first_name || "");
+
+    var now = new Date();
+    el("home-greeting").textContent = t(window.AlvoraaTheme.greetingKey(now),
+      { name: data.first_name || "" });
+    el("home-date").textContent = ui.dayDate(now);
 
     var rows = data.todays_checkins || [];
-    var last = rows.length ? rows[rows.length - 1] : null;
-    var statusLine = el("home-status");
-    var statusText = el("home-status-text");
-    statusLine.classList.remove("in");
-    if (!last) {
-      statusText.textContent = "Not checked in yet today";
-    } else if (last.log_type === "IN") {
-      statusText.textContent = "Checked in since " + clockOnly(last.time);
-      statusLine.classList.add("in");
+    var status = screens.statusOf(rows);
+    var card = el("home-status");
+    card.className = "status " + status.kind;
+    if (status.kind === "in") {
+      ui.setIcon(el("home-status-icon"), "checkCircle");
+      el("home-status-label").textContent = t("statusIn");
+      el("home-status-text").textContent = t("statusInSince", { time: clockOnly(status.time) });
+    } else if (status.kind === "out") {
+      // FC-1: an "out" state never claims "not checked in yet today".
+      ui.setIcon(el("home-status-icon"), "logout");
+      el("home-status-label").textContent = t("statusOut");
+      el("home-status-text").textContent = t("statusOutAt", { time: clockOnly(status.time) });
     } else {
-      // FC-1, built correctly the first time: an "out" state never claims
-      // "not checked in yet today" - it says what actually happened.
-      statusText.textContent = "Checked out at " + clockOnly(last.time);
+      ui.setIcon(el("home-status-icon"), "clock");
+      el("home-status-label").textContent = t("statusToday");
+      el("home-status-text").textContent = t("statusNotYet");
     }
 
     // Always shown since 27 Sep 2026: a radius of 0 or none is "Check in from
     // anywhere", never hidden and never "0 m".
-    var ruleLine = el("home-rule");
-    ruleLine.textContent = window.AlvoraaCheckinScreens.ruleLine(data.workplace);
-    ruleLine.hidden = false;
+    var rule = screens.homeRule(data);
+    ui.setIcon(el("home-rule-icon"), rule.kind === "radius" ? "pin" : "globe", "s20");
+    el("home-rule").textContent = rule.line;
+    el("home-rule").className = rule.kind === "anywhere" ? "rule-strong" : "";
+    el("home-rule-note").textContent = rule.note;
+    el("home-rule-note").hidden = !rule.note;
 
     var button = el("home-punch-button");
-    button.textContent = state.checkedIn ? "Check Out" : "Check In";
-    button.className = state.checkedIn ? "primary-purple" : "primary-green";
+    el("home-punch-label").textContent = state.checkedIn ? t("checkOut") : t("checkIn");
+    ui.setIcon(el("home-punch-icon"), state.checkedIn ? "logout" : "login");
+    // D-M3-2: one brand colour for both; the state is in the status card.
+    button.className = "btn filled block large";
 
     var list = el("home-punch-list");
     clearChildren(list);
     if (!rows.length) {
-      list.appendChild(textEl("p", "No punches yet today.", "small"));
+      list.appendChild(textEl("p", t("noPunchesYet"), "t-body-m muted"));
     } else {
-      rows.forEach(function (row) {
-        var line = document.createElement("div");
-        line.className = "punch-row";
-        line.appendChild(textEl("span", row.log_type === "IN" ? "Checked in" : "Checked out"));
-        line.appendChild(textEl("span", clockOnly(row.time)));
-        list.appendChild(line);
-      });
+      var ul = document.createElement("ul");
+      ul.className = "list card outlined flush";
+      ui.fillList(ul, rows.map(function (row) {
+        var isIn = row.log_type === "IN";
+        return { lead: isIn ? "login" : "logout", hl: isIn ? t("punchIn") : t("punchOut"),
+                 trail: clockOnly(row.time) };
+      }));
+      list.appendChild(ul);
     }
 
     el("home-camera-off").hidden = state.cameraAvailable !== false;
 
     if (state.autoPunch) {
-      // 01b §6: welcome's own "Check In" goes straight into the punch, not
-      // through a first tap on home. Only ever fires once per start() call,
-      // and only when there is really something to check in to (a blocked/
-      // replaced/etc. phone never reaches renderHome at all).
+      // 01b §6: welcome's own "Check In" goes straight into the punch. Only
+      // ever fires once per start() call.
       state.autoPunch = false;
       pressPunch();
       return;
@@ -375,11 +405,7 @@
   function clockOnly(value) {
     var d = new Date(String(value).replace(" ", "T"));
     if (isNaN(d.getTime())) return String(value || "");
-    var h = d.getHours();
-    var ampm = h < 12 ? "am" : "pm";
-    var h12 = h % 12 || 12;
-    var m = d.getMinutes();
-    return h12 + ":" + (m < 10 ? "0" + m : m) + " " + ampm;
+    return ui.clock(d);
   }
 
   // ── Check In / Check Out ─────────────────────────────────────────────────
@@ -402,25 +428,26 @@
     doPunch(state.pendingLogType);
   }
 
-  // ── the camera screen (fix of 27 Sep 2026) ──────────────────────────────
+  // ── the camera screen (fix of 27 Sep 2026; restyled in ALV-133) ─────────
   //
-  // Until 0.2.1 the photo was grabbed from a hidden <video> with no screen at
-  // all. Now the person sees the preview, presses "Take photo", sees the
-  // still, and chooses "Use photo" or "Retake". "Cancel" goes home and sends
-  // nothing. camera.js holds the steps and stops the stream on every way out;
-  // this part only draws the screen for the state it returns.
+  // The person sees the preview, presses "Take photo", sees the still, and
+  // chooses "Use photo" or "Retake". "Cancel" goes home and sends nothing.
+  // camera.js holds the steps and stops the stream on every way out.
 
   function cameraView(which) {
     // which: "opening" | "live" | "still" | "denied" | "unavailable"
     var live = which === "live" || which === "opening";
+    var failed = which === "denied" || which === "unavailable";
     el("camera-video").hidden = !live;
     el("camera-still").hidden = which !== "still";
     el("camera-take").hidden = !live;
+    el("camera-take-caption").hidden = !live;
     el("camera-take").disabled = which !== "live";
     el("camera-use").hidden = which !== "still";
     el("camera-retake").hidden = which !== "still";
-    el("camera-try-again").hidden = which !== "denied" && which !== "unavailable";
-    el("camera-no-photo").hidden = which !== "denied" && which !== "unavailable";
+    el("camera-try-again").hidden = !failed;
+    el("camera-no-photo").hidden = !failed;
+    el("camera-who-sees").hidden = failed;
     var message = el("camera-message");
     if (which === "denied") {
       message.textContent = "The camera is off for this app. To take your photo, allow Camera for "
@@ -435,10 +462,12 @@
       message.textContent = "";
       message.hidden = true;
     }
-    if (which === "opening") el("camera-status").textContent = "Opening the camera";
-    else if (which === "live") el("camera-status").textContent = "Look at the camera, then press Take photo.";
-    else if (which === "still") el("camera-status").textContent = "Is your face clear?";
-    else el("camera-status").textContent = "";
+    var status = el("camera-status");
+    if (which === "opening") status.textContent = "Opening the camera";
+    else if (which === "live") status.textContent = t("cameraHint");
+    else if (which === "still") status.textContent = "Is your face clear?";
+    else status.textContent = "";
+    status.hidden = !status.textContent;
   }
 
   function camera() {
@@ -562,11 +591,35 @@
     openCameraScreen();
   }
 
+  // The progress steps (01d §7.6): the photo, where you are, saving.
+  function punchStep(which) {
+    var order = ["photo", "where", "save"];
+    var now = order.indexOf(which);
+    order.forEach(function (name, i) {
+      var step = el("punch-step-" + name);
+      step.className = "step " + (i < now ? "done" : i === now ? "now" : "todo");
+    });
+    el("punching-status").textContent = which === "where" ? t("stepWhere") : t("stepSave");
+  }
+
+  function clearSlowTimer() {
+    if (state.slowTimer) clearTimeout(state.slowTimer);
+    state.slowTimer = null;
+  }
+
   function sendPunch(logType) {
     state.lastAction = "punch";
+    el("punching-title").textContent = logType === "OUT" ? t("checkingOut") : t("checkingIn");
+    el("punch-step-photo-words").textContent = state.photoDataUrl ? t("stepPhoto") : t("stepNoPhoto");
+    el("punching-slow").hidden = true;
+    punchStep("where");
     show("punching");
     var photoDataUrl = state.photoDataUrl;
-    el("punching-status").textContent = "Finding where you are";
+    clearSlowTimer();
+    state.slowTimer = setTimeout(function () {
+      el("punching-slow").textContent = photoDataUrl ? t("stillWorking") : t("stillWorkingNoPhoto");
+      el("punching-slow").hidden = false;
+    }, 10000);
 
     getPosition().then(function (coords) {
       return { photoDataUrl: photoDataUrl, coords: coords };
@@ -577,7 +630,7 @@
         showProblem(found.locErr.code, {});
         return;
       }
-      el("punching-status").textContent = "Saving your attendance";
+      punchStep("save");
       window.AlvoraaApi.punch(state.origin, {
         token: state.secret,
         log_type: logType,
@@ -589,21 +642,16 @@
         // put it in the site's time zone (before 0.2.1: UTC with no mark,
         // stored 5 h 30 min early). The photo's own moment when there is one.
         captured_at: window.AlvoraaCheckinScreens.localTimeWithOffset(state.photoTakenAt || new Date()),
-        // SEC-21 wants Android's own "is this a fake GPS provider" flag.
-        // The standard `navigator.geolocation` Web API this file uses has no
-        // such field - GeolocationCoordinates never carries one - so this is
-        // always 0 here. Reading the real flag needs a native call (a
-        // Capacitor Geolocation plugin, or a small bridge of our own), which
-        // this build deliberately does not add (00-impact-analysis-daily-use.md
-        // chose plain Web APIs to keep the dependency and permission surface
-        // at what US-39 already needs). Declared as a known gap against
-        // SEC-21/AC-204, not something this code pretends to do.
+        // SEC-21 wants Android's own "is this a fake GPS provider" flag. The
+        // Web API this file uses has no such field, so this is always 0 here -
+        // a declared gap against SEC-21/AC-204, not something it pretends to do.
         mock_location: 0,
       }).then(function (result) {
+        clearSlowTimer();
         if (result.ok) {
-          var hadPhoto = !!found.photoDataUrl;
+          var photo = found.photoDataUrl;
           resetPunchState();
-          showResult(result.data, logType, hadPhoto, found.coords.accuracy);
+          showResult(result.data, logType, photo, found.coords.accuracy);
         } else if (result.code === "NOTICE_CHANGED") {
           state.noticeAgainValues = result.values;
           renderNoticeAgain(result.values);
@@ -617,53 +665,65 @@
     });
   }
 
-  function showResult(data, logType, hadPhoto, phoneAccuracy) {
-    el("result-heading").textContent = logType === "IN" ? "Checked in" : "Checked out";
+  function showResult(data, logType, photo, phoneAccuracy) {
+    el("result-heading").textContent = logType === "IN" ? t("statusIn") : t("statusOut");
     el("result-time").textContent = clockOnly(data.time);
-    var card = el("result-card");
-    clearChildren(card);
+    var when = new Date(String(data.time).replace(" ", "T"));
+    el("result-date").textContent = isNaN(when.getTime()) ? "" : ui.dayDate(when);
     // 27 Sep 2026: from the server's measurement, never the workplace's name
     // alone - "At <workplace>" only when the person was inside its radius.
-    card.appendChild(textEl("p", "Where you were · "
-      + window.AlvoraaCheckinScreens.whereLine(data.location, phoneAccuracy)));
-    card.appendChild(textEl("p", hadPhoto ? "Photo · Taken" : "Photo · Not taken"));
-    if (!hadPhoto) {
-      card.appendChild(textEl("p", "The camera was not on. Your attendance still counts."));
+    var where = screens.whereLines(data.location, phoneAccuracy);
+    var items = [{ lead: where.icon, hl: where.headline, sup: where.detail }];
+    if (photo) {
+      var thumb = document.createElement("img");
+      thumb.className = "thumb";
+      thumb.alt = t("yourPhoto");
+      thumb.src = photo;
+      items.push({ lead: thumb, hl: t("resultPhotoTaken") });
+    } else {
+      items.push({ lead: "camera", hl: t("resultPhotoNotTaken"), sup: t("resultNoPhotoNote") });
     }
-    card.appendChild(textEl("p", "Saved · In your HR record"));
+    items.push({ lead: "shield", hl: t("resultInRecord") });
+    ui.fillList(el("result-card"), items);
     show("result");
   }
 
-  // ── the changed notice, mid-daily-use (US-42) ────────────────────────────
+  // ── the notice again: changed, never agreed, or withdrawn (US-42) ───────
 
-  function renderNoticeAgain(values) {
-    // ALV-128: a phone that has never agreed on this phone (closed on the first
-    // notice after signing in) is reading it for the FIRST time - it must not
-    // be told the notice "has changed". The notice cache is written only once
-    // the person has agreed, so an empty cache is the sign.
-    var firstTime = !window.AlvoraaNoticeCache.load();
-    el("notice-again-heading").textContent = firstTime
-      ? "Before you start" : "The notice has changed";
-    el("notice-again-intro").textContent = firstTime
-      ? "Please read this and agree before your first check-in."
-      : "Please read it again before your next check-in.";
-    el("notice-again-changed").hidden = firstTime;
-    el("notice-again-changed").textContent = "What is new: " + (values.what_changed || "") + ".";
-    var rowsBox = el("notice-again-rows");
-    clearChildren(rowsBox);
-    (values.rows || []).forEach(function (row) {
-      rowsBox.appendChild(textEl("h3", row.heading));
-      rowsBox.appendChild(textEl("p", row.body));
-    });
+  function tickError(on) {
+    el("notice-again-tick-error").hidden = !on;
+    el("notice-again-row").classList.toggle("err", on);
+  }
+
+  function renderNoticeAgain(values, mode) {
+    values = values || {};
+    // Which moment is this? The notice cache is written only once the person
+    // has agreed, and marked after "Stop agreeing" (ALV-133, M3-10):
+    //   withdrawn  "You stopped agreeing" - never "before your first check-in";
+    //   first      never agreed on this phone (closed on the first notice);
+    //   changed    agreed before, and the words have moved on.
+    var cached = window.AlvoraaNoticeCache.load();
+    var kind = mode || (!cached ? "first" : cached.withdrawn ? "withdrawn" : "changed");
+    var heading = { first: "Before you start", changed: "The notice has changed",
+                    withdrawn: t("withdrawnHeading") }[kind];
+    var intro = { first: "Please read this and agree before your first check-in.",
+                  changed: "Please read it again before your next check-in.",
+                  withdrawn: t("withdrawnIntro") }[kind];
+    el("notice-again-heading").textContent = heading;
+    el("notice-again-intro").textContent = intro;
+    el("notice-again-changed-card").hidden = kind !== "changed" || !values.what_changed;
+    el("notice-again-changed").textContent = values.what_changed || "";
+    ui.renderNoticeRows(el("notice-again-rows"), values.rows);
+    el("notice-again-version").textContent = values.version ? t("noticeVersion", { version: values.version }) : "";
     el("notice-again-agree-words").textContent = "I have read this and I understand.";
     el("notice-again-tick").checked = false;
-    el("notice-again-tick-error").hidden = true;
+    tickError(false);
     show("noticeAgain");
   }
 
   function agreeToNoticeAgain() {
     if (!el("notice-again-tick").checked) {
-      el("notice-again-tick-error").hidden = false;
+      tickError(true);
       el("notice-again-tick").focus();
       return;
     }
@@ -689,50 +749,93 @@
     });
   }
 
-  // ── Settings (US-43) ──────────────────────────────────────────────────────
+  // ── Stop agreeing to the notice (ALV-133, 01d §7.8) ─────────────────────
+  //
+  // As easy to withdraw as to agree: one row in Settings, one dialog. The
+  // server keeps the phone and every record, moves it to "Consent not given"
+  // and writes it on the phone's timeline for HR (E-5). The notice then
+  // opens with its own words; agreeing again is the way back, no new code.
+
+  function openWithdraw() {
+    el("withdraw-error").hidden = true;
+    ui.openOverlay("dialog-withdraw");
+  }
+
+  function doWithdraw() {
+    state.lastAction = "withdraw";
+    window.AlvoraaApi.withdrawAgreement(state.origin, state.secret).then(function (result) {
+      if (result.ok) {
+        ui.closeOverlay("dialog-withdraw");
+        window.AlvoraaNoticeCache.markWithdrawn();
+        probeNotice("withdrawn");
+        ui.snackbar(t("withdrawnSnackbar"));
+        return;
+      }
+      if (result.code === "NO_INTERNET") {
+        // Nothing changed on the server; say so inside the dialog.
+        el("withdraw-error").textContent = "Connect to the internet to stop agreeing. Nothing has changed.";
+        el("withdraw-error").hidden = false;
+        return;
+      }
+      if (isSignedOut(result.code)) {
+        signInAgain();
+        return;
+      }
+      handleGateRefusal(result.code, result.values);
+    });
+  }
+
+  // ── Settings (US-43, 01d §7.8) ──────────────────────────────────────────
 
   function renderSettings() {
-    el("settings-you").textContent = (el("home-person").textContent || "")
-      + (state.workplaceName ? " · " + state.company + " · " + state.workplaceName : " · " + state.company)
-      + " · " + (Math.round(Number(state.radiusM) || 0) > 0
-        ? "Check in within " + Math.round(Number(state.radiusM)) + " m" : "Check in from anywhere");
+    var data = state.status || {};
+    var name = data.employee_name || data.first_name || "";
+    el("settings-avatar").textContent = ui.initials(name);
+    el("settings-name").textContent = name;
+    el("settings-you").textContent = [data.designation, state.company].filter(Boolean).join(" · ");
+
+    var rule = screens.homeRule(data);
+    ui.fillList(el("settings-workplace"), [{
+      lead: "pin",
+      hl: state.workplaceName || t("noWorkplace"),
+      sup: rule.kind === "radius"
+        ? t("rulePlainWithin", { radius: Math.round(Number(state.radiusM)) })
+        : t("rulePlainAnywhere"),
+    }]);
 
     // D15/AC-224: the language row exists in the DOM only in a debug build -
-    // not merely hidden, so it cannot be reached in pilot or release by any
-    // input method. No screen in this app (or the already-shipped join
-    // screens) has Hindi text yet, so this is a build-type-gated scaffold,
-    // not a working translation - declared honestly in the implementation
-    // notes, not left to be discovered later.
+    // not merely hidden, so it cannot be reached in pilot or release. No
+    // screen has Hindi text yet (Hindi is not in ALV-133's scope).
     var languageBox = el("settings-language");
     clearChildren(languageBox);
     var buildType = (window.AlvoraaBuildType && window.AlvoraaBuildType.BUILD_TYPE) || "release";
     if (buildType === "debug") {
-      languageBox.appendChild(textEl("h3", "Language"));
+      languageBox.appendChild(textEl("h2", "Language", "section-h"));
       languageBox.appendChild(textEl("p",
-        "Debug only. No screen has Hindi text yet, so this does not change anything visible.", "small"));
-      var en = document.createElement("label");
-      en.className = "radio-row";
-      var enInput = document.createElement("input");
-      enInput.type = "radio"; enInput.name = "alvoraa-language"; enInput.checked = true; enInput.disabled = true;
-      en.appendChild(enInput);
-      en.appendChild(document.createTextNode("English"));
-      var hi = document.createElement("label");
-      hi.className = "radio-row";
-      var hiInput = document.createElement("input");
-      hiInput.type = "radio"; hiInput.name = "alvoraa-language"; hiInput.disabled = true;
-      hi.appendChild(hiInput);
-      hi.appendChild(document.createTextNode("हिंदी"));
-      languageBox.appendChild(en);
-      languageBox.appendChild(hi);
+        "Debug only. No screen has Hindi text yet, so this does not change anything visible.",
+        "t-body-m muted u-help-line"));
+      [["English", true], ["हिंदी", false]].forEach(function (pair) {
+        var row = document.createElement("label");
+        row.className = "radio-row";
+        var input = document.createElement("input");
+        input.type = "radio"; input.name = "alvoraa-language"; input.checked = pair[1]; input.disabled = true;
+        row.appendChild(input);
+        row.appendChild(document.createTextNode(pair[0]));
+        languageBox.appendChild(row);
+      });
     }
 
     var cached = window.AlvoraaNoticeCache.load();
-    el("settings-agreed-on").textContent = cached && cached.agreedAt
-      ? "You agreed on " + cached.agreedAt : "";
+    el("settings-agreed-on").textContent = cached && cached.agreedAt && !cached.withdrawn
+      ? t("agreedOn", { when: ui.formatWhen(cached.agreedAt) }) : "";
+    el("settings-agreed-on").hidden = !el("settings-agreed-on").textContent;
     el("settings-company-a").textContent = state.company;
 
-    el("settings-about").textContent = "App version · " + (window.AlvoraaVersion ? window.AlvoraaVersion.APP_VERSION : "")
-      + " · Connected to · " + (state.origin || "").replace(/^https:\/\//, "");
+    ui.fillList(el("settings-about"), [{
+      lead: "info",
+      hl: t("appVersion", { version: window.AlvoraaVersion ? window.AlvoraaVersion.APP_VERSION : "" }),
+      sup: t("connectedTo", { host: (state.origin || "").replace(/^https:\/\//, "") }),
+    }]);
 
     show("settings");
   }
@@ -740,30 +843,55 @@
   function renderRecords() {
     var cached = window.AlvoraaNoticeCache.load();
     var rowsBox = el("records-rows");
-    clearChildren(rowsBox);
     if (cached && cached.rows && cached.rows.length) {
-      cached.rows.forEach(function (row) {
-        rowsBox.appendChild(textEl("h3", row.heading));
-        rowsBox.appendChild(textEl("p", row.body));
-      });
-      el("records-agreed").textContent = "You agreed on " + (cached.agreedAt || "unknown")
-        + ". Notice version " + (cached.version || "unknown") + ".";
+      ui.renderNoticeRows(rowsBox, cached.rows);
+      el("records-agreed").textContent = t("agreedCard", {
+        when: ui.formatWhen(cached.agreedAt) || "unknown", version: cached.version || "unknown" });
+      el("records-agreed-card").hidden = false;
     } else {
       // The one honest fallback when the cache is empty (a WebView that
-      // clears localStorage, or a phone joined before this cache existed):
-      // still name the version from the last field_status answer rather than
-      // showing nothing.
+      // clears localStorage, or a phone joined before this cache existed).
+      clearChildren(rowsBox);
       rowsBox.appendChild(textEl("p",
-        "The full notice text is not saved on this phone. Ask HR to show you what was agreed."));
+        "The full notice text is not saved on this phone. Ask HR to show you what was agreed.",
+        "t-body-l notice-row"));
+      el("records-agreed-card").hidden = true;
+    }
+    var rows = (state.status && state.status.todays_checkins) || [];
+    var today = el("records-today");
+    if (rows.length) {
+      ui.fillList(today, rows.map(function (row) {
+        var isIn = row.log_type === "IN";
+        return { lead: isIn ? "login" : "logout",
+                 hl: (isIn ? t("punchIn") : t("punchOut")) + " · " + clockOnly(row.time),
+                 sup: t("recordedTodayLine") };
+      }));
+    } else {
+      ui.fillList(today, [{ lead: "clock", hl: t("nothingToday") }]);
     }
     show("records");
   }
 
-  function openLeaveConfirm(reason) {
-    state.removeReason = reason || "settings";
+  // ── Remove this phone: one bottom sheet, one confirmation (01d §7.8) ────
+
+  function openRemoveSheet(local) {
+    // local: a final, dead-end phone state (blocked/replaced/left, AC-210).
+    // The server has already refused this phone, so removing is local only:
+    // no internet needed, and there is nothing new for HR to see.
+    state.removeLocal = !!local;
     el("leave-company").textContent = state.company || "";
     el("leave-error").hidden = true;
-    show("leaveConfirm");
+    el("sheet-remove-hr").hidden = !!local;
+    el("sheet-remove-internet").hidden = !!local;
+    ui.openOverlay("sheet-remove");
+  }
+
+  function confirmRemove() {
+    if (state.removeLocal) {
+      forgetPhoneLocally().then(function () { window.AlvoraaJoin.start(); });
+      return;
+    }
+    doRemove();
   }
 
   function doRemove() {
@@ -784,20 +912,11 @@
     });
   }
 
-  function localRemoveFromGate() {
-    // AC-210: for a final, dead-end phone state (blocked/replaced/left) the
-    // server has already refused the phone - calling E6 here would only be
-    // refused again. Remove is local-only, after a confirm (kept as the
-    // platform's own confirm dialog rather than a new screen, a declared
-    // shortcut - see the implementation notes).
-    if (!window.confirm("Remove this phone from " + (state.company || "your company") + "? "
-      + "You will need a new code from HR to use the app again.")) {
-      return;
-    }
-    forgetPhoneLocally().then(function () { window.AlvoraaJoin.start(); });
-  }
-
   // ── wiring ────────────────────────────────────────────────────────────────
+
+  el("notice-again-tick").addEventListener("change", function () {
+    if (el("notice-again-tick").checked) tickError(false);
+  });
 
   var ACTIONS = {
     "checkin-punch": pressPunch,
@@ -814,25 +933,22 @@
     "checkin-settings-back": loadStatus,
     "checkin-open-records": renderRecords,
     "checkin-records-back": renderSettings,
-    "checkin-open-leave-confirm": function () { openLeaveConfirm("settings"); },
-    "checkin-open-leave-confirm-from-gate": function () { openLeaveConfirm("gate"); },
-    "checkin-remove-confirm": doRemove,
-    "checkin-remove-keep": function () {
-      if (state.removeReason === "gate") { showProblem(state.lastGateCode, state.lastGateValues); }
-      else { renderSettings(); }
-    },
-    "checkin-local-remove": localRemoveFromGate,
+    "checkin-open-withdraw": openWithdraw,
+    "checkin-withdraw-keep": function () { ui.closeOverlay("dialog-withdraw"); },
+    "checkin-withdraw-confirm": doWithdraw,
+    "checkin-open-leave-confirm": function () { openRemoveSheet(false); },
+    "checkin-open-leave-confirm-from-gate": function () { openRemoveSheet(false); },
+    "checkin-remove-confirm": confirmRemove,
+    "checkin-remove-keep": function () { ui.closeOverlay("sheet-remove"); },
+    "checkin-local-remove": function () { openRemoveSheet(true); },
     "checkin-notice-agree": agreeToNoticeAgain,
     "checkin-retry-status": loadStatus,
     "checkin-retry-last": retryLast,
     "checkin-go-home": loadStatus,
     "checkin-check-update": loadStatus,
-    // "Open phone settings" for a location denial: same best-effort join.js
-    // already uses for the camera (no vetted plugin opens Android's own
-    // per-app settings page in this increment - see
-    // 03-implementation-notes.md §8). Retrying the same call re-shows the OS
-    // prompt on some WebViews unless "don't ask again" was chosen; if not,
-    // "Go back" still works.
+    // "Open phone settings" for a location denial: the same best effort
+    // join.js uses for the camera (no vetted plugin opens Android's per-app
+    // settings page yet). Retrying re-shows the prompt on some WebViews.
     "checkin-open-os-settings": retryLast,
   };
 

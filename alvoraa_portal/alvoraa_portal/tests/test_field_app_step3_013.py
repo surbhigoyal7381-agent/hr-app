@@ -1114,7 +1114,7 @@ class TheEnrolPageUsesNothing(FrappeTestCase):
 	def test_013_ac123_the_words_the_noindex_and_the_fragment_removal(self):
 		page = self.page()
 		self.assertIn("Open the Alvora app to use this code", page)
-		self.assertIn("This code sets up the Alvoraa attendance app.", page)
+		self.assertIn("This code sets up the Alvora attendance app.", page)
 		self.assertIn('name="robots" content="noindex', page)
 		self.assertIn("history.replaceState", page)
 		self.assertIn("window.location.pathname", page)

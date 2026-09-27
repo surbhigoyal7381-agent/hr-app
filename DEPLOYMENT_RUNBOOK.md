@@ -120,6 +120,14 @@ timing is under our control — which is what makes this safe.
 or `main`, publishing `ghcr.io/surbhigoyal7381-agent/alvoraa-app:dev-<sha>` (private package since 2026-09-22). The image for this deploy therefore
 already exists, or will as soon as `dev` is pushed.
 
+**Upgrading Frappe, ERPNext or India Compliance is a DIFFERENT job, with its own page.**
+See `docs/runbooks/framework-upgrade.md`. Her rule, 2026-09-27: dev first, tested, then
+production — and **a framework upgrade is never combined with a code release**, because if
+both move at once and something breaks you cannot tell which caused it. Until 2026-09-27
+that rule could not be followed at all: the build pulled whatever `version-16` pointed at
+that morning, which is how production came to run Frappe v16.34.0 while dev ran v16.35.0
+from the same branch name (ALV-156).
+
 ---
 
 ## 3. The hazard — read before doing anything

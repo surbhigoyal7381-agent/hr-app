@@ -249,7 +249,7 @@ Every word not listed here stays exactly as it is in the app today (`index.html`
 | Error as red text above the button | Error card at the top of the form with icon, message and "Code for HR"; focus moves to it; password box emptied and marked, "Type your password again." (NEW) | Seen first, read out to HR easily |
 | All errors red | **Red** only for wrong details; **amber** with a lock icon for ACCOUNT_LOCKED and NETWORK_LOCKED (a wait, not a mistake); **tonal info** for PASSWORD_SIGNIN_OFF and PASSWORD_CHANGED_SIGN_IN_AGAIN | Colour means something (principle 9) |
 | PASSWORD_SIGNIN_OFF: joining-code button stays outlined | It becomes the filled (main) button | It is now the only way in |
-| NETWORK_LOCKED: "Too many sign-in attempts from this network. Try again later." | **Proposed (NEW, D-M3-6):** "Too many people signed in from this network in the last hour. Try again later, or turn off Wi-Fi and use your mobile data." | Day one at a shop: 30 people on one Wi-Fi |
+| NETWORK_LOCKED: "Too many sign-in attempts from this network. Try again later." | **Security's words (27 Sep 2026, D-M3-6):** "Too many wrong sign-in attempts from this network. Try again in a few minutes, or turn off Wi-Fi and use your mobile data." (NETWORK_LOCKED is Frappe's per-network lock after repeated wrong passwords, which lasts minutes; the 500-an-hour limit is TOO_MANY_TRIES) | Day one at a shop: one Wi-Fi for everyone |
 | Password changed | Sign-in screen with a tonal card: **"Your password was changed. Please sign in again."** + "Use your new password. Attendance you already marked is safe." (NEW second line) | Not the person's fault, so not red |
 
 **One-time code:** app bar with Back ("Start again"); key picture; "Type the code you were sent";
@@ -488,9 +488,9 @@ Five people: three PPJ store staff, two Sargam workers; at least two Hindi-first
 | D-M3-1 | Theme (reopens D9, "pinned light") | Pinned light · follow the phone · a switch in Settings | **Follow the phone.** Most cheap phones are in light mode, so sunlight is unchanged; people who chose dark get dark. No extra setting. | Surbhi | CSS build |
 | D-M3-2 | Check In / Check Out colour | Brand colour for both (prototype) · keep green-in / purple-out | **Brand colour for both.** The state is in the status card; two fixed colours clash with a tenant's brand | Surbhi | Home |
 | D-M3-3 | Where the palette is made | App vendors Google's colour code (14 KB gzip) · server makes the palette once and sends the roles · reuse `brand_color.html`'s lightness clamp (not Material colours) | **App vendors it**, caching per company. Honest cost: a fourth place turning a brand colour into colours, which `brand_color.html` warns about; the portal and app shades will differ slightly | Surbhi, engineer | Palette code |
-| D-M3-4 | Agree always reachable on the notice | Fixed at the bottom (prototype) · at the end of the scroll (today) · appears after scrolling to the end | **Fixed at the bottom.** Six short parts; nothing requires forced scrolling; words unchanged | Security / compliance | Notice layout |
+| D-M3-4 | Agree always reachable on the notice | Fixed at the bottom (prototype) · at the end of the scroll (today) · appears after scrolling to the end | **Decided: OK with a change (security, 27 Sep 2026).** Fixed at the bottom, no forced scroll, parts not collapsed - and the fixed Agree bar never covers the notice (the last part scrolls fully clear of it), and at 360 × 640 the first part's heading and body show above the bar. Words unchanged | Security / compliance | Notice layout |
 | D-M3-5 | Black or grey brand colours | Monochrome palette (prototype) · refuse and use Alvoraa purple | **Monochrome.** It is the tenant's choice and stays readable | Surbhi | Palette code |
-| D-M3-6 | NETWORK_LOCKED words | Today's · proposed "…or turn off Wi-Fi and use your mobile data" | **Proposed**, if security agrees it does not weaken the limit (the per-account limit and lockout still apply) | Security | Sign-in copy |
+| D-M3-6 | NETWORK_LOCKED words | Today's · proposed "…or turn off Wi-Fi and use your mobile data" | **Decided: OK with new words (security, 27 Sep 2026):** "Too many wrong sign-in attempts from this network. Try again in a few minutes, or turn off Wi-Fi and use your mobile data." The designer's first words described the wrong limit | Security | Sign-in copy |
 | D-M3-7 | Greeting by time of day | "Good morning, Arjun" · "Hello, Arjun" · none | **Good morning / afternoon / evening.** Warm, costs three strings per language | Surbhi | Home copy |
 
 ## 14. What the business analyst must turn into acceptance criteria
@@ -506,7 +506,7 @@ Five people: three PPJ store staff, two Sargam workers; at least two Hindi-first
 6. The notice's words, tick-box words and button words match the server byte for byte; only the
    layout changes; the tick box is never pre-ticked; Agree unticked shows the existing error and
    moves focus.
-7. The tick box and Agree stay visible without scrolling at 360 × 640 (if D-M3-4 is accepted).
+7. The tick box and Agree stay visible without scrolling; the bar never covers the notice; at 360 × 640 the first part's heading and body are above it (D-M3-4 as decided).
 8. "Stop agreeing" calls `withdraw_agreement`, then shows the notice with the §7.3 words; the
    notice then works as the way back in.
 9. Remove this phone has exactly one confirmation (the sheet), no `window.confirm`.

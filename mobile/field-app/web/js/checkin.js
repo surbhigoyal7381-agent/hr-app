@@ -226,8 +226,20 @@
       // The colour this phone last wore, so the loading screen is already
       // the company's; field_status then confirms it (E-1).
       window.AlvoraaTheme.applyRemembered();
+      state.company = state.company || rememberedCompanyName();
       loadStatus();
     });
+  }
+
+  // The company's name, kept on the phone so a refusal on open (blocked,
+  // replaced, left) can still say "Remove PP Jewellers from this phone" and
+  // show the company's mark. A company name is not personal data.
+  var COMPANY_NAME_KEY = "alvoraa_company_name";
+  function rememberCompanyName(name) {
+    try { if (name) localStorage.setItem(COMPANY_NAME_KEY, name); } catch (e) { /* fail soft */ }
+  }
+  function rememberedCompanyName() {
+    try { return localStorage.getItem(COMPANY_NAME_KEY) || null; } catch (e) { return null; }
   }
 
   function forgetPhoneLocally() {
@@ -235,6 +247,7 @@
     return window.AlvoraaDeviceSecret.clear().then(function () {
       window.AlvoraaNoticeCache.clear();
       window.AlvoraaTheme.reset();
+      try { localStorage.removeItem(COMPANY_NAME_KEY); } catch (e) { /* nothing kept */ }
       state.company = null;
       state.status = null;
     });
@@ -327,6 +340,7 @@
   function renderHome(data) {
     state.status = data;
     state.company = data.company || "";
+    rememberCompanyName(state.company);
     state.checkedIn = !!data.checked_in;
     state.workplaceName = data.workplace && data.workplace.name;
     state.radiusM = data.workplace && data.workplace.radius_m;

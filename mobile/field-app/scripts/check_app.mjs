@@ -132,6 +132,17 @@ export function checkWebFile(path, text) {
     }
   }
   const lines = text.split(/\r?\n/);
+  // ALV-133: the content policy is style-src 'self' with no 'unsafe-inline',
+  // so a style="" attribute or a <style> block in the page is silently
+  // dropped on the phone. Styles belong in css/app.css (or, for a value only
+  // known at run time, CSSOM setProperty, which the policy allows).
+  if (/\.html$/i.test(path)) {
+    lines.forEach((line, i) => {
+      if (/<[a-z][^>]*\sstyle\s*=/i.test(line) || /<style\b/i.test(line)) {
+        problems.push(`${path}:${i + 1}: inline style. The content policy (style-src 'self') blocks it on the phone - use a class in css/app.css.`);
+      }
+    });
+  }
   lines.forEach((line, i) => {
     if (OUTSIDE_HOST.test(line)) {
       problems.push(`${path}:${i + 1}: names an outside or local host (CDN, fonts or a development address) (OPS-22, OPS-84).`);

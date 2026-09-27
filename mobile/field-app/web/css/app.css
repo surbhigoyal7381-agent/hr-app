@@ -301,16 +301,16 @@ button { font:inherit; color:inherit; }
 
 /* scrim, dialog, bottom sheet, snackbar */
 .scrim { position:fixed; inset:0; background:color-mix(in srgb,var(--md-sys-color-scrim) 40%,transparent); display:flex; z-index:20; }
-.dialog { margin:auto var(--sp-6); background:var(--md-sys-color-surface-container-high); border-radius:var(--shape-xl); padding:var(--sp-6);
+.dialog { margin:auto var(--sp-4); background:var(--md-sys-color-surface-container-high); border-radius:var(--shape-xl); padding:var(--sp-6);
           box-shadow:var(--elev-3); max-height:85%; overflow:auto; }
-.dialog h2 { font-size:var(--headline-s); line-height:var(--headline-s-lh); margin-bottom:var(--sp-4); }
+.dialog h2 { font-size:var(--headline-s); line-height:var(--headline-s-lh); font-weight:400; margin-bottom:var(--sp-4); }
 .dlg-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:var(--sp-2); margin-top:var(--sp-6); }
 .sheet { margin-top:auto; width:100%; background:var(--md-sys-color-surface-container-low); border-radius:var(--shape-xl) var(--shape-xl) 0 0;
          padding:0 var(--sp-4) calc(var(--sp-4) + env(safe-area-inset-bottom)); box-shadow:var(--elev-1); max-height:92%; overflow:auto; }
 .sheet .handle { width:32px; height:4px; border-radius:2px; background:var(--md-sys-color-on-surface-variant); opacity:.4; margin:var(--sp-4) auto var(--sp-5); }
-.sheet h2 { font-size:var(--headline-s); line-height:var(--headline-s-lh); margin-bottom:var(--sp-2); }
+.sheet h2 { font-size:var(--headline-s); line-height:var(--headline-s-lh); font-weight:400; margin-bottom:var(--sp-2); }
 .sheet .list { margin:0 calc(-1 * var(--sp-4)); }
-.snackbar { position:fixed; left:var(--sp-3); right:var(--sp-3); bottom:calc(var(--sp-4) + 120px + env(safe-area-inset-bottom)); z-index:30; min-height:48px;
+.snackbar { position:fixed; left:var(--sp-3); right:var(--sp-3); bottom:calc(var(--sp-4) + 168px + env(safe-area-inset-bottom)); z-index:30; min-height:48px;
             display:flex; align-items:center; padding:var(--sp-3) var(--sp-4); border-radius:var(--shape-xs);
             background:var(--md-sys-color-inverse-surface); color:var(--md-sys-color-inverse-on-surface); box-shadow:var(--elev-3);
             font-size:var(--body-m); line-height:var(--body-m-lh); }

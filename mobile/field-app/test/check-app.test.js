@@ -176,3 +176,13 @@ test("bundled files: outside URLs, CDNs, local addresses and HTML sinks fail", a
   assert.deepEqual(checkWebFile("a.js", 'el.innerHTML = ""; // safe-html: clearing a node, no data'), []);
   assert.deepEqual(checkWebFile("a.js", "el.textContent = serverText;"), []);
 });
+
+// ALV-133: style-src 'self' drops inline styles on the phone, silently.
+test("an inline style in the page fails the check; a class does not", async () => {
+  const { checkWebFile } = await load();
+  assert.equal(checkWebFile("web/index.html", '<p class="x" style="margin:0">a</p>').length, 1);
+  assert.equal(checkWebFile("web/index.html", "<style>p{}</style>").length, 1);
+  assert.deepEqual(checkWebFile("web/index.html", '<p class="u-mt-4">a</p>'), []);
+  // a script that sets a style property through the CSSOM is allowed
+  assert.deepEqual(checkWebFile("web/js/x.js", 'el.style.setProperty("--s", "2");'), []);
+});

@@ -64,6 +64,11 @@ SKIP_DIRS = {
 	"frontend", "roster", "dist", ".git",
 }
 
+# Files that hold the OLD spelling on purpose, because finding it is their job.
+SKIP_FILES = {
+	"alvoraa_portal/alvoraa_portal/brand_text.py",   # the tenant patch's list of old defaults
+}
+
 # Record names we keep on purpose. (path suffix, exact string, reason)
 NAMED = (
 	("alvoraa_portal/invoicing.py", "Alvoraa Platform Fee",
@@ -100,7 +105,7 @@ def walk(root, top, exts):
 
 
 def read(path):
-	return io.open(path, encoding="utf-8-sig", errors="ignore").read()
+	return open(path, encoding="utf-8-sig", errors="ignore").read()
 
 
 # ── The names code is allowed to use ─────────────────────────────────────────
@@ -140,8 +145,8 @@ def visible_hits(text, names):
 	"""Positions of brand matches that are not an identifier and not a quoted name."""
 	masked = text
 	if names:
-		pattern = re.compile(r"""(['"`])(%s)\1""" % "|".join(
-			re.escape(n) for n in sorted(names, key=len, reverse=True)))
+		alternatives = "|".join(re.escape(n) for n in sorted(names, key=len, reverse=True))
+		pattern = re.compile(r"""(['"`])(""" + alternatives + r""")\1""")
 		masked = pattern.sub(lambda m: " " * len(m.group(0)), masked)
 	hits = []
 	for m in BRAND.finditer(masked):
@@ -303,7 +308,8 @@ def scan(root):
 			hits += scan_markup(path, root, names)
 	for top in APPS:
 		for path in walk(root, top, {".py"}):
-			hits += scan_python(path, root, names)
+			if rel(path, root) not in SKIP_FILES:
+				hits += scan_python(path, root, names)
 	hits += scan_translations(root)
 	return names, hits, missing_translations(root, names)
 
@@ -379,7 +385,7 @@ def self_test():
 		for path, body in content.items():
 			full = os.path.join(root, path)
 			os.makedirs(os.path.dirname(full), exist_ok=True)
-			io.open(full, "w", encoding="utf-8").write(body)
+			open(full, "w", encoding="utf-8").write(body)
 		return root
 
 	failed = 0

@@ -234,6 +234,17 @@ jobs:
           python scripts/check_min_app_version.py --self-test
           python scripts/check_min_app_version.py
 
+      # ALV-149. The product is spelled "Alvora" wherever a person reads it;
+      # "alvoraa" stays in addresses, ids and code. Reads the portal pages, the
+      # browser JS, the phone app's page and Android strings, and the Python
+      # string literals (parsed - docstrings and log titles are skipped), and
+      # needs an en.csv row for every "Alvoraa ..." doctype, module and
+      # workspace. The first line proves the check can fail. Text only.
+      - name: Every screen says Alvora
+        run: |
+          python scripts/check_brand_spelling.py --self-test
+          python scripts/check_brand_spelling.py
+
   # ── Key guard (slice 013, OPS-37, OPS-71, SEC-23) ─────────────────────────
   # A signing key is handed out the moment it is pushed: the image is built from
   # this repo, and everything published while it was public is already copied.

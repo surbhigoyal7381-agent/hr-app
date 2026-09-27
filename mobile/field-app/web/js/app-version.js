@@ -11,7 +11,7 @@
 (function (root) {
   "use strict";
 
-  var APP_VERSION = "0.2.1";
+  var APP_VERSION = "0.3.0";
 
   var api = { APP_VERSION: APP_VERSION };
 

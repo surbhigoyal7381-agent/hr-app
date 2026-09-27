@@ -178,7 +178,7 @@ def _remarks(site, period, out):
 	than by ringing us. The headcount is the number they will ask about, so it
 	goes on first.
 	"""
-	lines = [f"Alvoraa subscription for {period}.", f"Tenant: {site}."]
+	lines = [f"Alvora subscription for {period}.", f"Tenant: {site}."]
 	if out.get("billable_employees") is not None:
 		lines.append(f"Billable employees counted at month end: "
 		             f"{out['billable_employees']}.")
@@ -298,7 +298,7 @@ def _company():
 		return companies[0]
 	frappe.throw(
 		_("There is more than one company on this site, so the invoice has no "
-		  "obvious sender. Set 'Invoice From' in Alvoraa Pricing Settings."),
+		  "obvious sender. Set 'Invoice From' in Alvora Pricing Settings."),
 		title=_("Which company is billing?"))
 
 

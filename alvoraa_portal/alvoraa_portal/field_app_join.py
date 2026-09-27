@@ -696,7 +696,7 @@ def _refuse_sign_in_failed():
 	frappe.clear_messages()
 	refuse("SIGN_IN_FAILED",
 	       _("That email and password do not match. Check them and try again. If you "
-	         "forgot your password, reset it on your company's Alvoraa website."))
+	         "forgot your password, reset it on your company's Alvora website."))
 
 
 def _address_is_locked():
@@ -798,7 +798,7 @@ def _check_password(email, password):
 
 	if lm.force_user_to_reset_password():
 		refuse("PASSWORD_EXPIRED",
-		       _("Your password has expired. Change it on your company's Alvoraa "
+		       _("Your password has expired. Change it on your company's Alvora "
 		         "website, then sign in here with the new one."))
 	return lm
 
@@ -900,8 +900,8 @@ def _tell_the_person_a_new_phone_signed_in(user, phone, replaced):
 		if address:
 			frappe.sendmail(
 				recipients=[address],
-				subject=_("A new phone signed in to the Alvoraa app as you"),
-				message=_("A new phone signed in to the Alvoraa attendance app as you, and your "
+				subject=_("A new phone signed in to the Alvora app as you"),
+				message=_("A new phone signed in to the Alvora attendance app as you, and your "
 				          "earlier phone stopped working. If this was not you, tell HR and change "
 				          "your password."),
 				reference_doctype=DEVICE,

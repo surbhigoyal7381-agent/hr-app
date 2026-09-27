@@ -4080,7 +4080,7 @@ function drAsk(i, trigger) {
   } else if (c.kind === "leave") {
     action = "figure_right";
     title = drT("Show leave used to leaders?");
-    text = drT("Leaders will see leave used as {0}%. Only do this if leave really is recorded in Alvoraa. This is recorded with your name.", [c.used_pct == null ? 0 : c.used_pct]);
+    text = drT("Leaders will see leave used as {0}%. Only do this if leave really is recorded in Alvora. This is recorded with your name.", [c.used_pct == null ? 0 : c.used_pct]);
     keep = drT("Keep 'Needs review'"); go = drT("Show it");
   } else {
     action = "figure_right";
@@ -12475,7 +12475,7 @@ window.pfRatingLabel = function(value, scale) {
         if (box) { box.checked = !!sw.on; box.disabled = !canEdit || (!sw.available && !sw.on); }
         var needs = document.getElementById(ids.needs);
         if (needs) needs.textContent = sw.available ? "" :
-          drT("Not available yet: your plan does not include {0}. Ask your Alvoraa account contact to add it.",
+          drT("Not available yet: your plan does not include {0}. Ask your Alvora account contact to add it.",
               [(sw.needs || []).join(", ")]);
       });
       if (card) card.style.display = "";

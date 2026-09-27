@@ -1024,7 +1024,7 @@ def get_plan_catalogue():
     # tenant custom without the admin having to pick a plan first.
     return {
         "groups": [
-            {"key": "alvoraa_hr", "label": "Alvoraa HR",
+            {"key": "alvoraa_hr", "label": "Alvora HRMS",
              "features": [_row(k, v) for k, v in FEATURES.items()]},
             {"key": "erpnext", "label": "ERPNext",
              "features": [_row(k, v) for k, v in ERPNEXT_FEATURES.items()]},

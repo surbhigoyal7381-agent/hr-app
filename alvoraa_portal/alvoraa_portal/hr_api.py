@@ -2991,7 +2991,7 @@ def set_org_setting(key, value):
         missing = _switch_missing(key)
         if missing:
             frappe.throw(
-                _("This can be switched on only when your plan includes {0}. Ask your Alvoraa account contact to add it.").format(", ".join(missing)),
+                _("This can be switched on only when your plan includes {0}. Ask your Alvora account contact to add it.").format(", ".join(missing)),
                 frappe.ValidationError,
             )
     frappe.db.set_default(key, value)

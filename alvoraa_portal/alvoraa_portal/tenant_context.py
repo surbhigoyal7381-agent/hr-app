@@ -19,7 +19,7 @@ from alvoraa_portal import brand
 DEFAULTS = {
     "primary_color": "#1a7f5a",
     "accent_color": "#f59e0b",
-    "tenant_name": "Alvoraa",
+    "tenant_name": "Alvora",
     "tenant_logo_url": "",
     "support_email": "",
 }

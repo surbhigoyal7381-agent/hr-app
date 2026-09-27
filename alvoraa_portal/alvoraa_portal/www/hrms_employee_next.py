@@ -63,7 +63,7 @@ def get_context(context):
     # The portal's own is_hr would be wrong here: this is not an HR screen, it
     # is an unfinished build of one.
     if "System Manager" not in frappe.get_roles(frappe.session.user):
-        frappe.throw("This preview is for Alvoraa engineers only.", frappe.PermissionError)
+        frappe.throw("This preview is for Alvora engineers only.", frappe.PermissionError)
 
     # The real page gives the session its CSRF token before the page is built,
     # because Frappe only mints one when a desk page loads. Without it every open

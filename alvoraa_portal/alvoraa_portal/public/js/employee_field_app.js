@@ -323,7 +323,7 @@
 		}
 		frm._alvfe = info;
 		$box.html(alvfeStyle() + `<div class="alvfe">
-			<p class="alvfe-sub">${esc(__("The Alvoraa phone app for field workers: photo check-in with place and time."))}</p>
+			<p class="alvfe-sub">${esc(__("The Alvora phone app for field workers: photo check-in with place and time."))}</p>
 			${alvfeStatusLine(info)}
 			${alvfeActions(info)}
 			${alvfePhones(info)}
@@ -354,7 +354,7 @@
 			fields: [
 				{
 					fieldtype: "HTML", fieldname: "intro",
-					options: alvfeStyle() + `<div class="alvfe"><p>${esc(__("This makes a QR code that only {0} can use, once. When {0} scans it with the Alvoraa app and confirms the name, the phone is set up straight away.", [first]))} <b>${esc(__("You do not need to approve it."))}</b></p></div>`,
+					options: alvfeStyle() + `<div class="alvfe"><p>${esc(__("This makes a QR code that only {0} can use, once. When {0} scans it with the Alvora app and confirms the name, the phone is set up straight away.", [first]))} <b>${esc(__("You do not need to approve it."))}</b></p></div>`,
 				},
 				{
 					fieldtype: "Select", fieldname: "hours", label: __("The code works for"),
@@ -395,7 +395,7 @@
 		const link = made.link;
 		const svg = window.AlvoraaQR.svg(link, 4, 4);
 		const steps = `<ol>
-			<li>${__("Install <b>Alvoraa</b> from the Play Store.")}</li>
+			<li>${__("Install <b>Alvora</b> from the Play Store.")}</li>
 			<li>${__("Open it and press <b>Scan the QR code from HR</b>.")}</li>
 			<li>${__("Check the name and press <b>Yes, this is me</b>.")}</li></ol>`;
 		const d = new frappe.ui.Dialog({
@@ -458,7 +458,7 @@
 	// sent to the server to be laid out.
 	function alvfePrint(info, made, svg) {
 		const e = info.employee;
-		const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${esc(__("Your Alvoraa app code"))}</title>
+		const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${esc(__("Your Alvora app code"))}</title>
 			<style>
 				body { font-family: sans-serif; margin: 20mm; color: #111; }
 				h1 { font-size: 22pt; margin: .2em 0; } .co { color: #555; font-size: 11pt; }
@@ -468,10 +468,10 @@
 				@page { size: A4; margin: 15mm; }
 			</style></head><body>
 			<div class="co">${esc(e.company)}</div>
-			<h1>${esc(__("Your Alvoraa app code"))}</h1>
+			<h1>${esc(__("Your Alvora app code"))}</h1>
 			<div>${__("For <b>{0}</b>", [esc(e.employee_name)])}${e.designation ? " · " + esc(e.designation) : ""}</div>
 			<div class="row">${svg}<ol>
-				<li>${__("Install <b>Alvoraa</b> from the Play Store.")}</li>
+				<li>${__("Install <b>Alvora</b> from the Play Store.")}</li>
 				<li>${__("Open it and press <b>Scan the QR code from HR</b>.")}</li>
 				<li>${__("Check your name and press <b>Yes, this is me</b>.")}</li></ol></div>
 			<div class="foot">${__("This code works <b>once</b>, until <b>{0}</b>. Do not share it. If this sheet is lost, tell HR.", [esc(alvfeFull(made.expires_at))])}</div>

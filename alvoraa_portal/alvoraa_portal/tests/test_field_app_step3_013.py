@@ -860,7 +860,7 @@ class HrIsTold(JoinCase):
 		out = self.make()
 		answer = self.joined(_code_of(out))
 		sent = [n for n in self.notifications() if n.document_name == out["invite"]
-		        and "joined the Alvoraa app" in n.subject]
+		        and "joined the Alvora app" in n.subject]
 		self.assertEqual({n.for_user for n in sent}, {self.maker})
 		body = sent[0].subject + sent[0].email_content
 		self.assertIn("Redmi 12", body)
@@ -1113,7 +1113,7 @@ class TheEnrolPageUsesNothing(FrappeTestCase):
 
 	def test_013_ac123_the_words_the_noindex_and_the_fragment_removal(self):
 		page = self.page()
-		self.assertIn("Open the Alvoraa app to use this code", page)
+		self.assertIn("Open the Alvora app to use this code", page)
 		self.assertIn("This code sets up the Alvoraa attendance app.", page)
 		self.assertIn('name="robots" content="noindex', page)
 		self.assertIn("history.replaceState", page)

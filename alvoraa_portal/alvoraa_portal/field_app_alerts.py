@@ -83,7 +83,7 @@ def code_used(invite_name):
 	model = frappe.db.get_value(DEVICE, inv.used_device, "device_label") or _("a phone")
 	_send(
 		[to],
-		_("{0} joined the Alvoraa app").format(inv.employee_name),
+		_("{0} joined the Alvora app").format(inv.employee_name),
 		_("{0} set up {1} at {2} with the code you made on {3}. If this was not {4}, "
 		  "block the phone from their employee record.").format(
 			inv.employee_name, model, format_datetime(inv.used_at), formatdate(inv.creation),

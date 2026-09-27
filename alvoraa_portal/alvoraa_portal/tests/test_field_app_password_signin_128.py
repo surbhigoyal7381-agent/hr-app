@@ -321,7 +321,7 @@ class SigningIn(PasswordCase):
 		self.assertEqual(recipients, [PW_EMAIL])
 		# The queued message is MIME, wrapped at 76 characters; unwrap it to read.
 		body = mails[0].message.replace("=\r\n", "")
-		self.assertIn("Subject: A new phone signed in to the Alvoraa app as you", body)
+		self.assertIn("Subject: A new phone signed in to the Alvora app as you", body)
 		self.assertIn("If this was not you, tell HR and change your password", body)
 		# ...and it is on the new phone's timeline.
 		notes = frappe.get_all("Comment", filters={"reference_doctype": fc.DEVICE,

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex">
-<title>Tenant Admin – Alvoraa</title>
+<title>Tenant Admin – Alvora</title>
 {% include "templates/includes/design_system.html" %}
 <style>
 /* ── Reset ───────────────────────────────────────────────────────────── */
@@ -468,7 +468,7 @@ html, body {
         </svg>
       </div>
       <div>
-        <div class="ka-brand-name">Alvoraa</div>
+        <div class="ka-brand-name">Alvora</div>
         <div class="ka-brand-sub">Admin Console</div>
       </div>
     </div>
@@ -487,7 +487,7 @@ html, body {
       <a class="ka-nav-item" href="/app" target="_blank"><span class="ka-nav-icon">&#x1F5A5;&#xFE0F;</span> Frappe Desk</a>
       <a class="ka-nav-item" href="/hrms-employee"><span class="ka-nav-icon">&#x1F464;</span> HRMS Portal</a>
     </div>
-    <div class="ka-sidebar-footer">Alvoraa &nbsp;&middot;&nbsp; Super Admin</div>
+    <div class="ka-sidebar-footer">Alvora &nbsp;&middot;&nbsp; Super Admin</div>
   </nav>
 
   <!-- Main -->
@@ -796,7 +796,7 @@ html, body {
           <img id="ke-logo-img" alt="" style="display:none;max-height:44px;max-width:110px;object-fit:contain;border-radius:var(--r-sm);border:1px solid var(--border)">
           <div style="flex:1;min-width:150px">
             <div id="ke-logo-state" style="font-size:.84rem;font-weight:600;color:var(--text)">No logo set</div>
-            <div id="ke-logo-detail" style="font-size:.76rem;color:var(--muted);margin-top:2px">The login page shows the Alvoraa mark instead.</div>
+            <div id="ke-logo-detail" style="font-size:.76rem;color:var(--muted);margin-top:2px">The login page shows the Alvora mark instead.</div>
           </div>
           <input type="file" id="edit-logo" accept="image/png,image/jpeg,image/webp"
                  style="display:none" onchange="keChooseLogo(this)">
@@ -2066,10 +2066,10 @@ html, body {
       // otherwise show a broken picture here. Say so in words instead.
       document.getElementById('ke-logo-img').onerror = function() {
         keSetLogoState('The saved logo could not be loaded',
-          'Upload it again, or remove it so the Alvoraa mark is used.', '', false);
+          'Upload it again, or remove it so the Alvora mark is used.', '', false);
       };
     } else {
-      keSetLogoState('No logo set', 'The login page shows the Alvoraa mark instead.', '', false);
+      keSetLogoState('No logo set', 'The login page shows the Alvora mark instead.', '', false);
     }
   }
 
@@ -2123,7 +2123,7 @@ html, body {
     keLogoFile   = null;
     document.getElementById('edit-logo').value = '';
     keSetLogoState('The logo will be removed',
-      'Saved when you click Save Changes. The login page will show the Alvoraa mark.', '', true);
+      'Saved when you click Save Changes. The login page will show the Alvora mark.', '', true);
   };
 
   window.keUndoLogo = function() { keResetLogo(keLogoCurrent); };

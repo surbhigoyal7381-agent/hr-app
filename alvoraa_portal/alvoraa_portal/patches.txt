@@ -10,3 +10,4 @@ alvoraa_portal.patches.v1_0.resync_access_after_attendance_switches
 alvoraa_portal.patches.v1_0.alvora_brand_text
 alvoraa_portal.patches.v1_0.navbar_portal_switch_as_action
 alvoraa_portal.patches.v1_0.alvora_splash_lockup
+alvoraa_portal.patches.v1_0.alvora_email_brand

@@ -245,6 +245,16 @@ jobs:
           python scripts/check_brand_spelling.py --self-test
           python scripts/check_brand_spelling.py
 
+      # ALV-174. A narrow guard on top of the one above: our own email-template
+      # overrides (alvoraa_portal/templates/emails, alvoraa_portal/overrides)
+      # exist specifically to replace an upstream app's "Frappe"/"ERPNext"
+      # wording, so a future hand-copy from the upgraded upstream file that
+      # forgets to re-apply the fix fails here instead of reaching a tenant.
+      - name: Our own email overrides do not say Frappe or ERPNext
+        run: |
+          python scripts/check_email_template_overrides.py --self-test
+          python scripts/check_email_template_overrides.py
+
   # ── Key guard (slice 013, OPS-37, OPS-71, SEC-23) ─────────────────────────
   # A signing key is handed out the moment it is pushed: the image is built from
   # this repo, and everything published while it was public is already copied.

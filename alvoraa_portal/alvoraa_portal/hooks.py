@@ -364,4 +364,18 @@ after_install = [
     # ALV-149: a new tenant's app name is "Alvora HRMS", not Frappe's default.
     # Same once-only reasoning as brand.after_install above.
     "alvoraa_portal.brand_text.after_install",
+    # ALV-174: outgoing email stops saying "Sent via ERPNext" and gets the
+    # Alvora lockup in its header, from a tenant's first email onward. Safe to
+    # run again later (a patch does, on migrate) if the sending Email Account
+    # is set up after this point - apply() is idempotent either way.
+    "alvoraa_portal.email_brand.after_install",
 ]
+
+# ── Replace one upstream method wholesale, not monkeypatch it (ALV-174) ────
+# CRM's own invitation email hardcodes "Frappe CRM" in the SUBJECT (Python, not
+# a template) and in the body (a template that never reads the `title` it is
+# passed) - see overrides/crm_invitation.py for why a template override cannot
+# fix this and `override_doctype_class` is the right mechanism instead.
+override_doctype_class = {
+    "CRM Invitation": "alvoraa_portal.overrides.crm_invitation.AlvoraCRMInvitation",
+}

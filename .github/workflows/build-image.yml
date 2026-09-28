@@ -177,11 +177,17 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: |
-            FRAPPE_BRANCH=version-16
-            ERPNEXT_BRANCH=version-16
-            CRM_TAG=v1.84.0
-            WHATSAPP_COMMIT=08bc1f6af2e3
+          # ── No build-args on purpose (ALV-156, slice 055) ──────────────────
+          #
+          # These four used to be repeated here: FRAPPE_BRANCH, ERPNEXT_BRANCH,
+          # CRM_TAG and WHATSAPP_COMMIT. A build-arg WINS over the Dockerfile's
+          # ARG default, so a pin written in deploy/Dockerfile and not repeated
+          # here would have been ignored by every CI build - a change that looks
+          # applied and is not. INDIA_COMPLIANCE_BRANCH was never listed here,
+          # which is how two files came to disagree without anyone noticing.
+          #
+          # deploy/Dockerfile is now the ONE place the versions live. Pass a
+          # build-arg here only to try a version bump, and never leave it in.
 
       # ── Copy the old releases into the new package, for rollback ─────────
       #

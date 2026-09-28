@@ -300,7 +300,7 @@ jobs:
     runs-on: ubuntu-latest
     # 90, not 60: a COLD build clones frappe and erpnext and runs yarn install for both,
     # which alone reaches 30-50 minutes on a standard runner. The cache key includes
-    # FRAPPE_BRANCH, so any version bump forces exactly that cold path. Warm runs are
+    # FRAPPE_TAG, so any version bump forces exactly that cold path. Warm runs are
     # minutes. The per-step timeout bounds the slow part on its own.
     timeout-minutes: 90
 
@@ -321,8 +321,14 @@ jobs:
         ports: ["11000:6379"]
 
     env:
-      FRAPPE_BRANCH: version-16
-      ERPNEXT_BRANCH: version-16
+      # Pinned to the SAME release tags as deploy/Dockerfile, so the tests run on
+      # the framework the image ships (ALV-156, slice 055). While these said
+      # `version-16` - a moving branch - a red CI run could be caused by an
+      # upstream commit nobody here made, and a green one proved nothing about
+      # the image. Change these two and the Dockerfile's three ARGs together;
+      # scripts/check_version_pins.py checks that they agree.
+      FRAPPE_TAG: v16.35.0
+      ERPNEXT_TAG: v16.36.0
 
     steps:
       - uses: actions/checkout@v4
@@ -350,7 +356,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/frappe-bench
-          key: bench-${{ runner.os }}-${{ env.FRAPPE_BRANCH }}-${{ hashFiles('hrms/pyproject.toml', 'alvoraa_goals/requirements.txt', 'alvoraa_portal/requirements.txt') }}
+          key: bench-${{ runner.os }}-${{ env.FRAPPE_TAG }}-${{ hashFiles('hrms/pyproject.toml', 'alvoraa_goals/requirements.txt', 'alvoraa_portal/requirements.txt') }}
 
       - name: System dependencies
         run: |
@@ -380,9 +386,9 @@ jobs:
         timeout-minutes: 45
         run: |
           cd ~
-          bench init --skip-redis-config-generation --skip-assets --frappe-branch "$FRAPPE_BRANCH" --python "$(which python)" frappe-bench < /dev/null
+          bench init --skip-redis-config-generation --skip-assets --frappe-branch "$FRAPPE_TAG" --python "$(which python)" frappe-bench < /dev/null
           cd frappe-bench
-          bench get-app --branch "$ERPNEXT_BRANCH" erpnext < /dev/null
+          bench get-app --branch "$ERPNEXT_TAG" erpnext < /dev/null
 
       # All three first-party apps come from THIS repo — including the hrms fork,
       # so the PMS module is exercised in CI exactly as it ships to production.

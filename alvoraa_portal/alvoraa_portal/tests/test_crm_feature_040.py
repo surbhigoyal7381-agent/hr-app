@@ -383,7 +383,7 @@ class TestTheImageCarriesItPinned(unittest.TestCase):
 		self.assertIn('bench get-app --branch "${CRM_TAG}" https://github.com/frappe/crm', self.df)
 
 	def test_it_comes_after_erpnext_and_before_the_first_party_apps(self):
-		self.assertLess(self.df.index("get-app --branch \"${ERPNEXT_BRANCH}\""),
+		self.assertLess(self.df.index("get-app --branch \"${ERPNEXT_TAG}\""),
 		                self.df.index("github.com/frappe/crm"))
 		self.assertLess(self.df.index("github.com/frappe/crm"),
 		                self.df.index("COPY --chown=frappe:frappe hrms"))

@@ -918,9 +918,19 @@ def _leave_approver_for(doc):
     if doc.leave_approver:
         return doc.leave_approver
     try:
-        from hrms.hr.doctype.leave_application.leave_application import get_leave_approver
+        # ALV-173. The UNGUARDED helper, deliberately. `get_leave_approver` is
+        # the web entry point and now refuses anyone who is not the employee,
+        # their approver, or someone with read access to them. This call runs
+        # server-side inside our own already-checked endpoint, and it asks a
+        # question ABOUT a third party on purpose: "who is allowed to approve
+        # this?". Going through the web guard would make the `except` below
+        # swallow a PermissionError and return None, and the caller would then
+        # tell HR that no approver is set when one is.
+        from hrms.hr.doctype.leave_application.leave_application import (
+            get_employee_leave_approver,
+        )
 
-        return get_leave_approver(doc.employee)
+        return get_employee_leave_approver(doc.employee)
     except Exception:
         return None
 

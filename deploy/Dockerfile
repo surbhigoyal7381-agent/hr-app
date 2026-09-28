@@ -32,6 +32,12 @@ FROM frappe/bench:latest
 # v16.34.0 / ERPNext v16.35.0 / India Compliance v16.9.1, while dev (dev-3bb22ac,
 # built 27 Sep) ran v16.35.0 / v16.36.0 / v16.10.0 from the same branch names.
 #
+# 2026-09-28, after the release: production now runs prod-a9fc88f, and its three
+# versions are v16.35.0 / v16.36.0 / v16.10.0 - EXACTLY the three pinned below.
+# So this pin changes nothing that is running. It records what is already there,
+# which is the whole point: rebuild this commit in a month and you get the same
+# software back. Checked on the server, not inferred.
+#
 # So: a tag, like CRM_TAG below. Frappe and ERPNext tag every release on
 # version-16 and the branch tip sits on the newest tag, so a tag costs nothing in
 # freshness and buys a build you can reproduce. Raised on purpose, never by

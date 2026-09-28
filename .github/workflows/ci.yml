@@ -457,6 +457,15 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           BENCH_APPS_PATH=~/frappe-bench/apps python scripts/check_app_integrity.py
 
+      # ALV-175. Our own email overrides no-bench check (job above) proves the
+      # text is clean; this one needs a real bench, because it compares our
+      # standard.html override against Frappe's ACTUAL installed copy, not a
+      # hash typed by hand and trusted forever.
+      - name: Our email overrides still match the upstream shape they were copied from
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          BENCH_APPS_PATH=~/frappe-bench/apps python scripts/check_email_template_overrides.py --check-upstream-shape
+
       # Tenant isolation is enforced entirely by these tests. Blocking.
       - name: Run tests
         run: |

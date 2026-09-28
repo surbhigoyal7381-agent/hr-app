@@ -29,6 +29,14 @@ Two things a recipient sees, from two different Frappe mechanisms:
     so it fails to load there. `frappe.utils.get_url()` gives each tenant's
     own domain, so the logo in an email is served from the tenant's own site.
 
+    ALV-175: this only reaches Email Accounts with `enable_outgoing = 1`. A
+    tenant with none (mail resolves to the server's virtual "Notifications"
+    account instead) never gets a `brand_logo` set at all, so
+    `get_brand_logo()` falls back to the relative `Website Settings.app_logo`
+    regardless. `resolve_header_logo()` below closes that gap from our own
+    copy of `templates/emails/standard.html`, at the one place every email's
+    header logo is actually drawn, whichever Email Account sent it.
+
 Applied per site - the control plane included, same as brand.py and
 brand_text.py - from `after_install` (new tenant) and a patch (existing one).
 Safe to run twice. Never fails an install or a migrate over a footer.
@@ -217,3 +225,30 @@ def after_install():
 	except Exception:
 		frappe.log_error(title="email_brand: could not set site branding",
 		                 message=frappe.get_traceback())
+
+
+def resolve_header_logo(brand_logo):
+	"""ALV-175: the header logo in Frappe's OWN template, closing the gap
+	`apply()` above cannot reach on its own.
+
+	`apply()` only sets `brand_logo` on Email Accounts with
+	`enable_outgoing = 1`. A tenant with no such account (Sargam, 28 Sep
+	2026: dev-6dec8b6) has mail resolve to the server's virtual
+	"Notifications" account instead, which has no `brand_logo` field to set
+	at all - `get_brand_logo()` then falls back to `Website
+	Settings.app_logo`, a RELATIVE path (deliberately left alone by
+	`apply()` - see its own module docstring: the desk navbar reads that
+	same field and a 320px lockup there would resize it).
+
+	Called from our own `templates/emails/standard.html`
+	(`alvoraa_portal/templates/emails/standard.html`), not Frappe's, with
+	whatever `get_brand_logo()` already resolved. Same "ours or theirs" rule
+	as everywhere else in this module: empty, or one of our own known asset
+	paths (relative OR absolute - covers both the gap above and any leftover
+	relative write from before this fix) - use the absolute lockup. Anything
+	else is a tenant's own deliberately-set logo (an Email Account's own
+	`brand_logo`, or a custom `Website Settings.app_logo`) - left exactly as
+	given, never overridden."""
+	if _logo_is_ours(brand_logo):
+		return _logo_url()
+	return brand_logo

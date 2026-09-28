@@ -56,7 +56,12 @@ website_route_rules = [
 # one file per area with `{% include %}` runs into the cache and costs +33 %.
 # A part holds no Jinja, so it is read and pasted rather than compiled, and the
 # number of parts stops mattering. See ess_parts.py for the rules it keeps.
-jinja = {"methods": ["alvoraa_portal.ess_parts.ess_part"]}
+jinja = {"methods": [
+    "alvoraa_portal.ess_parts.ess_part",
+    # ALV-175: our own templates/emails/standard.html calls this to close the
+    # gap where no outgoing Email Account has our lockup set at all.
+    "alvoraa_portal.email_brand.resolve_header_logo",
+]}
 
 # ── Doctype event hooks ────────────────────────────────────────────────────
 # No desk-side JavaScript. portal_switch.js was removed in ALV-152: it bound

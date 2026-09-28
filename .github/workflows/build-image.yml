@@ -134,13 +134,15 @@ jobs:
           fi
 
       # ── Room to build ─────────────────────────────────────────────────────
-      # The hosted runner has about 14 GB free on its root disk, and the builder
-      # keeps every layer of this image plus its export to the GitHub cache
-      # there. The pre-CRM image fitted; the CRM build (23 Sep 2026) died with
-      # "ResourceExhausted ... failed to write compressed diff". The runner also
-      # ships toolchains this build never touches - .NET, Android, Haskell,
-      # CodeQL - which is the space we take back. Runner-only: nothing here
-      # changes what goes into the image.
+      # The pre-CRM image fitted the runner's disk; the CRM build (23 Sep 2026)
+      # died with "ResourceExhausted ... failed to write compressed diff" before
+      # the yarn-cache-mount fix landed. This comment used to say "about 14 GB
+      # free" - stale. Measured on a normal run (36323595557, 27 Sep 2026, after
+      # the fix): 86 GB free before this step, 109 GB after. Re-measure at the
+      # time you rely on this number; don't carry it forward blind either. The
+      # runner also ships toolchains this build never touches - .NET, Android,
+      # Haskell, CodeQL - which is the space we take back. Runner-only: nothing
+      # here changes what goes into the image.
       - name: Free disk on the runner
         run: |
           df -h / | tail -1 | awk '{print "free before: " $4}'

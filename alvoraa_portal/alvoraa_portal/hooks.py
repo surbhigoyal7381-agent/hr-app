@@ -330,6 +330,15 @@ after_migrate = [
     "alvoraa_portal.field_app_settings.after_migrate",
     # Slice 013 step 5: the field app section on the Employee form.
     "alvoraa_portal.field_app_desk.after_migrate",
+    # Slice 166/167: LMS and Helpdesk ship with public defaults (guest course
+    # access, a public jobs board, guest ticket creation). provision_tenant.sh
+    # already applies the safe values right after each app installs, but this
+    # is the safety net for a site where either app reaches a site by some
+    # other path - a no-op on every site until the app is actually installed,
+    # and a no-op forever after the one-time write. See lms_defaults.py and
+    # helpdesk_defaults.py for why this never flips a value HR chose back.
+    "alvoraa_portal.lms_defaults.after_migrate",
+    "alvoraa_portal.helpdesk_defaults.after_migrate",
 ]
 
 # And on a fresh install, which never runs a migrate. Without this a brand new

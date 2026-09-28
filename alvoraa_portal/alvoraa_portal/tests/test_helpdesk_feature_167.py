@@ -261,7 +261,8 @@ class TestHelpdeskDefaults(unittest.TestCase):
 			return False
 
 		doc = MagicMock()
-		with patch.object(helpdesk_defaults.frappe, "db") as fake_db, \
+		fake_db = MagicMock()
+		with patch.object(helpdesk_defaults.frappe, "db", new=fake_db), \
 				patch.object(helpdesk_defaults.frappe, "get_single", return_value=doc) as fake_single:
 			fake_db.exists.side_effect = fake_exists
 			fake_db.get_default.return_value = "1" if already_applied else None

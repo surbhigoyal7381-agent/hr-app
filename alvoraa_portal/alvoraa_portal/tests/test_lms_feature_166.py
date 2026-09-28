@@ -28,8 +28,8 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(
 
 BASE = ["hrms", "portal", "leaves", "attendance", "expenses", "hr_setup"]
 THEIRS = ["LMS", "Job"]
-LMS_COMMIT = "87168fc7"
-PAYMENTS_COMMIT = "cca07d9f"
+LMS_COMMIT = "87168fc7b2f24559e474ea4702cf1aa63b0db4e8"
+PAYMENTS_COMMIT = "cca07d9f9392e2ea0e521c5975151db9e4b6c321"
 
 
 class _Result:

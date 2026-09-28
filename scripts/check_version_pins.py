@@ -1,7 +1,9 @@
 """Every upstream app in the image is pinned, and the three files agree (ALV-156, slice 055).
 
-`deploy/Dockerfile` fetches five upstream apps: frappe, erpnext,
-india_compliance, crm and frappe_whatsapp. Until 2026-09-27 three of them were
+`deploy/Dockerfile` fetches upstream apps: frappe, erpnext, india_compliance,
+crm, frappe_whatsapp, and - added by slice 166/167 - payments, lms and
+telephony (helpdesk is already pinned by release tag, `HELPDESK_TAG`, so it
+needs no separate entry here). Until 2026-09-27 three of the original five were
 fetched from `version-16` - a MOVING branch - so two builds of the same commit
 of our code could contain different framework code, and nothing recorded which
 one an image got. Measured that day: production ran Frappe v16.34.0 while dev
@@ -41,7 +43,8 @@ BUILD_YML = os.path.join(REPO, ".github", "workflows", "build-image.yml")
 TAG = re.compile(r"^v\d+(\.\d+)*$")
 COMMIT = re.compile(r"^[0-9a-f]{12,40}$")
 
-PINS = ("FRAPPE_TAG", "ERPNEXT_TAG", "INDIA_COMPLIANCE_TAG", "CRM_TAG", "WHATSAPP_COMMIT")
+PINS = ("FRAPPE_TAG", "ERPNEXT_TAG", "INDIA_COMPLIANCE_TAG", "CRM_TAG", "WHATSAPP_COMMIT",
+        "PAYMENTS_COMMIT", "LMS_COMMIT", "TELEPHONY_COMMIT")
 
 # ARG name in the Dockerfile -> env name in ci.yml's test-python job.
 MUST_MATCH_CI = {"FRAPPE_TAG": "FRAPPE_TAG", "ERPNEXT_TAG": "ERPNEXT_TAG"}
@@ -111,6 +114,9 @@ def self_test():
 		"INDIA_COMPLIANCE_TAG": "v16.10.0",
 		"CRM_TAG": "v1.84.0",
 		"WHATSAPP_COMMIT": "08bc1f6af2e3",
+		"PAYMENTS_COMMIT": "cca07d9f9392e2ea0e521c5975151db9e4b6c321",
+		"LMS_COMMIT": "87168fc7b2f24559e474ea4702cf1aa63b0db4e8",
+		"TELEPHONY_COMMIT": "039cf39f245d6818ead03cf94eea6ce7f9c1e1f7",
 	}
 	good_ci = {"FRAPPE_TAG": "v16.35.0", "ERPNEXT_TAG": "v16.36.0"}
 	cases = [

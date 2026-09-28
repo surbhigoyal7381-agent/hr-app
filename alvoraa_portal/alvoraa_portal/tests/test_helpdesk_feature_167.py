@@ -27,7 +27,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(
 BASE = ["hrms", "portal", "leaves", "attendance", "expenses", "hr_setup"]
 THEIRS = ["Helpdesk"]
 HELPDESK_TAG = "v1.30.1"
-TELEPHONY_COMMIT = "039cf39f"
+TELEPHONY_COMMIT = "039cf39f245d6818ead03cf94eea6ce7f9c1e1f7"
 
 
 class _Result:

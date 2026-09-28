@@ -86,7 +86,7 @@ ARG WHATSAPP_COMMIT=08bc1f6af2e3
 #
 # Pinned to a COMMIT on `version-16`, the WhatsApp treatment: get-app cannot
 # take a bare commit, so fetch the branch, then checkout it.
-ARG PAYMENTS_COMMIT=cca07d9f
+ARG PAYMENTS_COMMIT=cca07d9f9392e2ea0e521c5975151db9e4b6c321
 # Frappe LMS (frappe/lms): courses, lessons, quizzes, certificates - sold as the
 # `lms` feature in subscription.py (ALV-167), off by default, internal training
 # only. Present in the image, installed on a site only when sold.
@@ -96,14 +96,14 @@ ARG PAYMENTS_COMMIT=cca07d9f
 # `version-16` itself declares no Frappe bound at all, so re-verify it still
 # matches our Frappe pin before ever bumping this. Bump on purpose, in one
 # place (slice 166/167).
-ARG LMS_COMMIT=87168fc7
+ARG LMS_COMMIT=87168fc7b2f24559e474ea4702cf1aa63b0db4e8
 # Telephony (frappe/telephony): required by Helpdesk for its call log doctype.
 # No required_apps of its own.
 #
 # No release has ever been cut - one branch, `develop`, no tag - the thinnest
 # supply chain in this image. Pinned to a COMMIT on `develop`, the WhatsApp
 # treatment. Re-check this before every future bump, not just this one.
-ARG TELEPHONY_COMMIT=039cf39f
+ARG TELEPHONY_COMMIT=039cf39f245d6818ead03cf94eea6ce7f9c1e1f7
 # Frappe Helpdesk (frappe/helpdesk): tickets, SLAs, a customer portal, email-to-
 # ticket - sold as the `helpdesk` feature in subscription.py (ALV-166), off by
 # default. A resold customer-support desk, not an internal HR tool - Surbhi's

@@ -71,10 +71,32 @@ class TestLeaveEndpointsRefuseAStranger(FrappeTestCase):
 		cls.stranger_login = fx.user("alv173stranger", ["Employee"])
 		cls.stranger = fx.employee("Alv173Stranger", branch=fx.STORE_B, login=cls.stranger_login)
 
+		# Everyone needs a holiday list, or two of the three endpoints fail on
+		# their own account before the guard is ever reached - which would make
+		# this file green for the wrong reason.
+		fx.holiday_list([cls.subject, cls.approver_emp, cls.stranger])
+
 		frappe.db.commit()
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
+
+	def test_the_guard_itself_refuses_a_stranger(self):
+		"""The guard on its own, before any endpoint is involved.
+
+		Tested separately because an endpoint can raise PermissionError for a
+		reason that has nothing to do with this guard - our own row-level
+		scoping, for one - and that would make the endpoint tests below pass
+		while the guard did nothing.
+		"""
+		from hrms.hr.doctype.leave_application.leave_application import validate_leave_access
+
+		frappe.set_user(self.stranger_login)
+		may_read = frappe.has_permission("Employee", "read", self.subject)
+		with self.assertRaises(frappe.PermissionError,
+		                       msg=f"the guard let a stranger through; "
+		                           f"has_permission(Employee, read) was {may_read}"):
+			validate_leave_access(self.subject)
 
 	def test_a_stranger_is_refused_by_every_one_of_the_three(self):
 		frappe.set_user(self.stranger_login)

@@ -1,9 +1,10 @@
 # ── Kinexus HRMS – immutable application image ──────────────────────────────
 #
-# Builds the complete Frappe bench with all seven apps and pre-built assets
-# (frappe, erpnext, india_compliance, crm, hrms, alvoraa_goals, alvoraa_portal).
-# ONE image, run with five different commands (web / socketio / scheduler /
-# worker / provisioner). See ARCHITECTURE.md §5 and §12.1.
+# Builds the complete Frappe bench with all twelve apps and pre-built assets
+# (frappe, erpnext, india_compliance, crm, frappe_whatsapp, payments, lms,
+# telephony, helpdesk, hrms, alvoraa_goals, alvoraa_portal). ONE image, run with
+# five different commands (web / socketio / scheduler / worker / provisioner).
+# See ARCHITECTURE.md §5 and §12.1.
 #
 # Build:
 #   docker buildx build --platform linux/amd64,linux/arm64 \
@@ -74,6 +75,44 @@ ARG CRM_TAG=v1.84.0
 # (slice 042).
 ARG WHATSAPP_COMMIT=08bc1f6af2e3
 
+# Frappe Payments (frappe/payments): infrastructure only. It exists here because
+# LMS declares `required_apps = ["frappe/payments"]` in its own hooks.py - a
+# tenant never buys Payments on its own and no course or batch is ever given a
+# price, so LMS Settings' "Payments installed, no gateway configured" state is
+# never exercised (checked, not just read: docs/slices/166-167-helpdesk-lms/
+# 01d-devops-first-look.md §2). Installed unconditionally inside the `has_feature
+# lms` branch in provision_tenant.sh, same as india_compliance's own ERPNext
+# prerequisites, not sold as its own feature.
+#
+# Pinned to a COMMIT on `version-16`, the WhatsApp treatment: get-app cannot
+# take a bare commit, so fetch the branch, then checkout it.
+ARG PAYMENTS_COMMIT=cca07d9f9392e2ea0e521c5975151db9e4b6c321
+# Frappe LMS (frappe/lms): courses, lessons, quizzes, certificates - sold as the
+# `lms` feature in subscription.py (ALV-167), off by default, internal training
+# only. Present in the image, installed on a site only when sold.
+#
+# Pinned to a COMMIT on `version-16`, not `develop`/the numbered `v2.6x` tags -
+# those track `frappe = ">=17.0.0-dev,<18.0.0"`, a Frappe version we do not run.
+# `version-16` itself declares no Frappe bound at all, so re-verify it still
+# matches our Frappe pin before ever bumping this. Bump on purpose, in one
+# place (slice 166/167).
+ARG LMS_COMMIT=87168fc7b2f24559e474ea4702cf1aa63b0db4e8
+# Telephony (frappe/telephony): required by Helpdesk for its call log doctype.
+# No required_apps of its own.
+#
+# No release has ever been cut - one branch, `develop`, no tag - the thinnest
+# supply chain in this image. Pinned to a COMMIT on `develop`, the WhatsApp
+# treatment. Re-check this before every future bump, not just this one.
+ARG TELEPHONY_COMMIT=039cf39f245d6818ead03cf94eea6ce7f9c1e1f7
+# Frappe Helpdesk (frappe/helpdesk): tickets, SLAs, a customer portal, email-to-
+# ticket - sold as the `helpdesk` feature in subscription.py (ALV-166), off by
+# default. A resold customer-support desk, not an internal HR tool - Surbhi's
+# decision, 28 Sep 2026.
+#
+# Pinned to the release TAG v1.30.1, like CRM: it exists, it is legible in a
+# diff, and a tag is preferred over a branch+commit whenever one exists.
+ARG HELPDESK_TAG=v1.30.1
+
 USER frappe
 WORKDIR /home/frappe
 
@@ -111,6 +150,34 @@ RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench g
  && git -C apps/frappe_whatsapp checkout --quiet "${WHATSAPP_COMMIT}" \
  && git -C apps/frappe_whatsapp log -1 --format='frappe_whatsapp pinned at %h (%cs)'
 
+# Declares required_apps = ["frappe/payments"] in LMS's hooks.py, so this must
+# come before it. No frontend of its own.
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch version-16 https://github.com/frappe/payments \
+ && git -C apps/payments checkout --quiet "${PAYMENTS_COMMIT}" \
+ && git -C apps/payments log -1 --format='payments pinned at %h (%cs)'
+
+# Both LMS and this app's own Helpdesk (below) declare a `frappe-ui` git
+# submodule in their `.gitmodules`. It is deliberately left uninitialised - no
+# `git submodule update` runs here. Neither app's Vite build reads it: each
+# `frontend`/`desk` package.json lists `frappe-ui` as a normal npm dependency,
+# and `yarn install` pulls a real, populated copy into its own node_modules.
+# The empty submodule folder is silently irrelevant. Proven on a throwaway
+# build, not assumed: docs/slices/166-167-helpdesk-lms/01e-test-build-results.md
+# §3. A future engineer bumping either pin should not "fix" this - there is
+# nothing to fix.
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch version-16 https://github.com/frappe/lms \
+ && git -C apps/lms checkout --quiet "${LMS_COMMIT}" \
+ && git -C apps/lms log -1 --format='lms pinned at %h (%cs)'
+
+# Declares required_apps = ["telephony"] in Helpdesk's hooks.py, so this must
+# come before it. No frontend of its own.
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch develop https://github.com/frappe/telephony \
+ && git -C apps/telephony checkout --quiet "${TELEPHONY_COMMIT}" \
+ && git -C apps/telephony log -1 --format='telephony pinned at %h (%cs)'
+
+# See the frappe-ui note on the LMS get-app step above - it applies here too.
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch "${HELPDESK_TAG}" https://github.com/frappe/helpdesk
+
 # ── 2. First-party apps, copied from THIS commit ────────────────────────────
 COPY --chown=frappe:frappe hrms                 apps/hrms
 COPY --chown=frappe:frappe alvoraa_goals          apps/alvoraa_goals
@@ -121,7 +188,7 @@ RUN ./env/bin/pip install --no-cache-dir \
         -e apps/hrms \
         -e apps/alvoraa_goals \
         -e apps/alvoraa_portal \
- && printf 'frappe\nerpnext\nindia_compliance\ncrm\nfrappe_whatsapp\nhrms\nalvoraa_goals\nalvoraa_portal\n' > sites/apps.txt
+ && printf 'frappe\nerpnext\nindia_compliance\ncrm\nfrappe_whatsapp\npayments\nlms\ntelephony\nhelpdesk\nhrms\nalvoraa_goals\nalvoraa_portal\n' > sites/apps.txt
 
 # ── 3b. Node dependencies for the copied apps ───────────────────────────────
 # `bench get-app` runs yarn install for the app it fetches. COPY does not, so the
@@ -155,6 +222,13 @@ RUN bench build --production --app erpnext
 RUN bench build --production --app india_compliance
 RUN bench build --production --app crm
 RUN bench build --production --app frappe_whatsapp
+RUN bench build --production --app payments
+# LMS and Helpdesk both build a real Vue/Vite frontend, the biggest of which
+# still downloads and links packages the way CRM and WhatsApp's own builds do -
+# the yarn cache mount is needed here too, not just at get-app time.
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench build --production --app lms
+RUN bench build --production --app telephony
+RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench build --production --app helpdesk
 RUN bench build --production --app hrms
 RUN bench build --production --app alvoraa_goals
 RUN bench build --production --app alvoraa_portal

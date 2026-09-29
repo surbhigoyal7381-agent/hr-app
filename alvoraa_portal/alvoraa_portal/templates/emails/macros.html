@@ -1,0 +1,63 @@
+{# ALV-174: Frappe Helpdesk's own templates/emails/macros.html signs its
+   verification email "Team Frappe" (the signature() macro below). Surbhi asked
+   for this overridden now, so it is - same file path, same macro names, so
+   whichever of the two Frappe's Jinja loader picks still renders correctly.
+
+   HONESTLY, TWO THINGS LIMIT THIS TODAY (read before assuming it is live):
+
+   1. In the installed Helpdesk (this image, 28 Sep 2026), nothing in the
+      Python source calls the template that imports this file
+      (templates/emails/email_verification.html - grepped, zero Python
+      callers anywhere in helpdesk/). It looks unreachable in this version.
+      This override is precautionary, not a proven live fix - the test for it
+      says so.
+
+   2. EVEN IF it becomes reachable: Frappe's Jinja loader searches installed
+      apps in REVERSED install order (frappe/utils/jinja.py:_get_jloader), and
+      alvoraa_portal installs BEFORE helpdesk on every tenant
+      (provision_tenant.sh, tenant_api.py) - so Helpdesk's own copy of this
+      path currently wins the lookup, not this one. That install-order
+      question is provisioning, not a template, and needs its own decision -
+      see docs/slices/ALV-149-brand-spelling/04-alv174-email-branding-plan.md
+      and the implementation notes for this fix.
+
+   CRM's invitation email did not get this treatment (overrides/crm_invitation.py
+   instead) exactly because its subject line is built in Python, not a
+   template, so a template override could never have fixed it regardless of
+   install order. #}
+{% macro button(label, link, primary = true) %}
+<table cellpadding="0" cellspacing="0" role="presentation">
+  <tbody>
+    <tr>
+      <td class="button {{ 'button-primary' if primary else '' }}">
+        <a href="{{ link }}" rel="nofollow"> {{ label }} </a>
+      </td>
+    </tr>
+  </tbody>
+</table>
+{% endmacro %} {% macro link(label, link) %}
+<a class="link" href="{{ link }}">{{ label }}</a>
+{% endmacro %} {% macro separator() %}
+<table class="w-full" cellpadding="0" cellspacing="0" role="presentation">
+  <tbody>
+    <tr>
+      <td class="py-8">
+        <div class="leading-px h-px bg-gray-300"></div>
+      </td>
+    </tr>
+  </tbody>
+</table>
+{% endmacro %} {% macro signature() %}
+<p class="m-0">
+  {#- Static, not `frappe.db...`: this file is not passed a tenant-name
+      variable by Helpdesk's own render call (out of our control, and this
+      path is unreachable in the installed version anyway - see the comment
+      at the top), and email/print Jinja templates only expose the methods
+      `get_safe_globals()` allow-lists - `frappe.db` is not one of them, so a
+      live lookup here would risk failing to render at all, silently or not,
+      on the day this ever does become reachable. "Alvora HRMS" is what
+      every other email already says by default (brand_text.py). -#}
+  Thanks,<br />
+  Alvora HRMS
+</p>
+{% endmacro %}

@@ -1,0 +1,106 @@
+{#
+ALV-175: overrides frappe/frappe/templates/emails/standard.html (Frappe v16.35.0).
+A Jinja comment, not an HTML one - Jinja strips this before rendering, so
+none of it ever reaches a real email; only the file needs it.
+
+Identical to the upstream file except ONE line, marked below: the header
+logo goes through `resolve_header_logo()` (alvoraa_portal/email_brand.py)
+instead of the raw `brand_logo` context variable, so a tenant with no
+outgoing Email Account (mail resolving to the server's virtual
+"Notifications" account) still gets the absolute ALVORA lockup in the
+header, not a broken relative-URL image or nothing at all.
+
+Frappe's own template resolves this: `alvoraa_portal` is installed on every
+site AFTER `frappe` (frappe is always the very first app on any site -
+enforced by Frappe itself, not a provisioning choice we could get wrong),
+and Frappe's Jinja loader searches installed apps in REVERSED install order
+(frappe/utils/jinja.py:_get_jloader) - so this copy is always found before
+frappe's own. Proven by rendering a real email against a fresh site, not
+assumed - see test_alv175_our_copy_wins_the_template_search
+(test_email_logo_175.py).
+
+UPSTREAM SHAPE GUARD - do not edit this comment casually
+---------------------------------------------------------
+sha256 of the unmodified frappe/frappe/templates/emails/standard.html this file was
+copied from (v16.35.0): fd3e883de26cc12aa10f723e36bdc5ab9ebae160fcaa91fd62913a8c4f0ddf88
+
+check_email_template_overrides.py --check-upstream-shape compares that hash
+against the ACTUAL installed frappe/frappe/templates/emails/standard.html and fails
+if Frappe's own file has changed shape since this override was last hand-
+verified against it. A hash failure means: read the new upstream file, decide
+whether the header-logo block still looks like this, and update both this
+file and the hash comment above together.
+#}
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+	<meta name="viewport" content="width=device-width" />
+	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+	<title>{{ subject or "" }}</title>
+</head>
+
+<body>
+	{% set resolved_logo = resolve_header_logo(brand_logo) %}
+	<table class="body-table {% if header or with_container %} with-container {% endif %}" cellpadding="0" cellspacing="0">
+		<tr>
+			<td class="body-content" align="center" valign="top">
+				<table class="email-container" border="0" cellpadding="0" cellspacing="0"
+					width="{% if header or with_container %} 600 {% else %} 100% {% endif %}">
+					{% if resolved_logo or brand_name %}
+					<tr>
+						<td align="left" valign="middle" class="email-masthead">
+							<a href="{{ site_url or 'https://frappeframework.com' }}">
+								{% if resolved_logo %}
+								<img
+									src="{{ resolved_logo or '/assets/frappe/images/frappe-framework-logo.svg' }}"
+									height="28"
+									class="brand-logo"
+								/>
+								{% endif %}
+								{% if brand_name %}
+								<span class="brand-name">{{ brand_name }}</span>
+								{% endif %}
+							</a>
+						</td>
+					</tr>
+					{% endif %}
+					<tr>
+						<td valign="top" class="email-title-cell">
+							{{ header or "" }}
+						</td>
+					</tr>
+					<tr>
+						<td valign="top" class="email-body-cell">
+							<table class="email-body" border="0" cellpadding="0" cellspacing="0" width="100%">
+								<tr>
+									<td valign="top">
+										<div>{{ content }}</div>
+									</td>
+								</tr>
+							</table>
+						</td>
+					</tr>
+					<tr>
+						<td valign="top" class="email-footer-cell {% if footer and 'with-divider' in footer %}filled{% endif %}">
+							<table class="email-footer" border="0" cellpadding="0" cellspacing="0" width="100%">
+								<tr>
+									<td valign="top" data-email-footer="true">
+										{{ footer }}
+									</td>
+								</tr>
+								<tr>
+									<td valign="top">
+										<div class="print-html">{{ print_html or "" }}</div>
+									</td>
+								</tr>
+							</table>
+						</td>
+					</tr>
+				</table>
+			</td>
+		</tr>
+	</table>
+</body>
+
+</html>

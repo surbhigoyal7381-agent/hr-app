@@ -430,6 +430,72 @@ ERPNEXT_FEATURES["crm_ai_intake"] = {
     "requires": ["crm"],
 }
 
+# Frappe LMS (frappe/lms) - courses, lessons, quizzes, certificates. Same
+# catalogue as CRM/WhatsApp for the same reason: not an Alvoraa HR feature, so
+# it does not count towards `enterprise`.
+#
+# `app` makes it install only where sold. No `roles`: every doctype is either
+# System Manager/Moderator only (LMS Settings, course authoring) or governed by
+# the app's own enrolment logic, not a Frappe role we would otherwise withhold.
+#
+# `requires: ["hr_setup"]` - internal training only (Surbhi's decision, 28 Sep
+# 2026): a tenant buying LMS with no Employee records has nothing to attach a
+# course completion to, the same reasoning india_compliance uses for
+# `erp_accounts`. hr_setup is the one HR feature every plan already carries, so
+# in practice this never blocks a real tenant - it exists so a bare custom plan
+# cannot tick LMS with no HR underneath it.
+#
+# Off by default (no `opt_in` - it is simply absent from every PLANS list below,
+# the same "not sold" state as CRM and WhatsApp; see test_it_is_in_no_standard_plan
+# in test_whatsapp_feature_042 for the pattern this mirrors).
+#
+# Requires Frappe Payments installed first (its own `required_apps`), but
+# Payments is infrastructure, not a second thing to buy - provision_tenant.sh
+# installs it unconditionally inside `has_feature lms`, the same way
+# india_compliance's ERPNext prerequisites are installed inline.
+#
+# Privacy: it ships open (`allow_guest_access=1`, `allow_job_posting=1` by
+# default). alvoraa_portal.lms_defaults applies safe values once, right after
+# install - see that module for the "never flip back" rule. (Slice 166/167.)
+ERPNEXT_FEATURES["lms"] = {
+    "desc": "Courses, lessons, quizzes and certificates for internal training",
+    "icon": "🎓",
+    "label": "Learning & Certification",
+    "app": "lms",
+    # LMS ships TWO module defs - `LMS` (courses) and `Job` (the public jobs
+    # board, `lms/modules.txt`). Both are claimed here: `allow_job_posting=0`
+    # (lms_defaults.py) turns off the board's public page, but the Job module
+    # itself would still show in the desk sidebar for anyone who has it.
+    "module_defs": ["LMS", "Job"],
+    "erpnext": True,
+    "requires": ["hr_setup"],
+}
+
+# Frappe Helpdesk (frappe/helpdesk) - tickets, SLAs, a customer portal, email-to-
+# ticket. Same catalogue as CRM/WhatsApp for the same reason: not an Alvoraa HR
+# feature.
+#
+# `app` makes it install only where sold. No `roles`: Helpdesk defines its own
+# "Agent" and "Agent Manager" roles inside the app rather than reusing an
+# ERPNext one, so withholding a shared role would not touch it either way.
+#
+# No `requires`: a resold customer-support desk (Surbhi's decision, 28 Sep
+# 2026), not an internal HR tool, so it works on an HR-only tenant the same way
+# WhatsApp does. It needs Telephony installed first (its own `required_apps`),
+# installed unconditionally inside `has_feature helpdesk`, the same way LMS
+# carries Payments.
+#
+# Privacy: its customer portal, guest ticket creation and sign-up defaults are
+# set safely on install by alvoraa_portal.helpdesk_defaults - see that module.
+ERPNEXT_FEATURES["helpdesk"] = {
+    "desc": "Tickets, SLAs, a customer portal, email-to-ticket - a resold support desk",
+    "icon": "🎫",
+    "label": "Customer Helpdesk",
+    "app": "helpdesk",
+    "module_defs": ["Helpdesk"],
+    "erpnext": True,
+}
+
 # Two things called "CRM" in one catalogue would be confusing, so ERPNext's own
 # Lead/Opportunity module says which one it is. The KEY stays `erp_crm`: tenants
 # already hold it in their `features` list, and renaming it would lock them out.

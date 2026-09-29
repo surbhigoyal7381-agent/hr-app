@@ -126,6 +126,40 @@ else
     echo "      - frappe_whatsapp skipped: not part of this plan"
 fi
 
+# Frappe LMS. No setup-wizard hook, so - like india_compliance and WhatsApp -
+# it can go in here directly. It declares required_apps = ["frappe/payments"];
+# Payments is infrastructure for it, not a separate purchase, so it is
+# installed here too, unconditionally inside this branch, never on its own.
+# Once both apps are on the site, alvoraa_portal.lms_defaults.apply_safe_defaults
+# turns off guest access, self sign-up and the public jobs board - see that
+# module for why this must run before anyone can reach the site.
+if has_feature lms; then
+    echo "      + payments (infrastructure for lms)"
+    bench --site "$SITE_NAME" install-app payments
+    echo "      + lms (sold)"
+    bench --site "$SITE_NAME" install-app lms
+    echo "      + applying LMS privacy defaults"
+    bench --site "$SITE_NAME" execute alvoraa_portal.lms_defaults.apply_safe_defaults
+else
+    echo "      - lms skipped: not part of this plan"
+fi
+
+# Frappe Helpdesk. No setup-wizard hook of its own, so it can go in here
+# directly, the same as LMS above. It declares required_apps = ["telephony"];
+# Telephony is infrastructure for it, installed here too, never sold on its
+# own. alvoraa_portal.helpdesk_defaults turns off the public defaults its
+# customer portal ships with - see that module.
+if has_feature helpdesk; then
+    echo "      + telephony (infrastructure for helpdesk)"
+    bench --site "$SITE_NAME" install-app telephony
+    echo "      + helpdesk (sold)"
+    bench --site "$SITE_NAME" install-app helpdesk
+    echo "      + applying Helpdesk privacy defaults"
+    bench --site "$SITE_NAME" execute alvoraa_portal.helpdesk_defaults.apply_safe_defaults
+else
+    echo "      - helpdesk skipped: not part of this plan"
+fi
+
 # ── 3. Apply per-tenant branding config ───────────────────────────────────
 echo "[3/6] Writing tenant config to site_config.json"
 bench --site "$SITE_NAME" set-config tenant_name       "$TENANT_NAME"

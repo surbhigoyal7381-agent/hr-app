@@ -675,8 +675,11 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
                         and "india_compliance" not in installed)
         needs_crm    = "crm" in modules and "crm" not in installed
         needs_whatsapp = "whatsapp" in modules and "frappe_whatsapp" not in installed
+        needs_lms    = "lms" in modules and "lms" not in installed
+        needs_helpdesk = "helpdesk" in modules and "helpdesk" not in installed
 
-        if needs_vendor or needs_goals or needs_india or needs_crm or needs_whatsapp:
+        if (needs_vendor or needs_goals or needs_india or needs_crm or needs_whatsapp
+                or needs_lms or needs_helpdesk):
             job_id = uuid.uuid4().hex[:12]
             cfg = _read_site_config(site_name)
             jobs = _read_jobs()
@@ -708,6 +711,8 @@ def update_tenant(site_name, tenant_name="", plan="", modules=None,
                 install_india_compliance=needs_india,
                 install_crm=needs_crm,
                 install_whatsapp=needs_whatsapp,
+                install_lms=needs_lms,
+                install_helpdesk=needs_helpdesk,
             )
             return {
                 "status": "installing",
@@ -1137,7 +1142,8 @@ def _install_crm_after_wizard(site_name):
 
 def _run_install_modules(pjob_id, site_name, install_vendor=False, install_goals=False,
                          install_india_compliance=False, install_crm=False,
-                         install_whatsapp=False):
+                         install_whatsapp=False, install_lms=False,
+                         install_helpdesk=False):
     """Background job: install additional Frappe apps on an existing site."""
     def _update(status, log_append="", finished=False):
         jobs = _read_jobs()
@@ -1208,6 +1214,46 @@ def _run_install_modules(pjob_id, site_name, install_vendor=False, install_goals
             if r.returncode != 0:
                 raise RuntimeError(f"frappe_whatsapp install failed:\n{r.stderr}")
             _update("Provisioning", r.stdout + "\n")
+
+        if install_lms:
+            # No wizard guard needed. Payments is its required_apps dependency,
+            # not a separate purchase, so it goes in first, unconditionally.
+            _update("Provisioning", f"[{now_datetime()}] Installing payments…\n")
+            r = _bench_run(f"--site {site_name} install-app payments", timeout=300)
+            if r.returncode != 0:
+                raise RuntimeError(f"payments install failed:\n{r.stderr}")
+            _update("Provisioning", f"[{now_datetime()}] Installing lms…\n")
+            r = _bench_run(f"--site {site_name} install-app lms", timeout=600)
+            if r.returncode != 0:
+                raise RuntimeError(f"lms install failed:\n{r.stderr}")
+            _update("Provisioning", r.stdout + "\n")
+            r = _bench_run(
+                f"--site {site_name} execute alvoraa_portal.lms_defaults.apply_safe_defaults",
+                timeout=120)
+            _update("Provisioning",
+                    f"[{now_datetime()}] LMS privacy defaults "
+                    + ("applied.\n" if r.returncode == 0
+                       else "could NOT be applied - check LMS Settings by hand.\n"))
+
+        if install_helpdesk:
+            # No wizard guard needed. Telephony is its required_apps dependency,
+            # not a separate purchase, so it goes in first, unconditionally.
+            _update("Provisioning", f"[{now_datetime()}] Installing telephony…\n")
+            r = _bench_run(f"--site {site_name} install-app telephony", timeout=300)
+            if r.returncode != 0:
+                raise RuntimeError(f"telephony install failed:\n{r.stderr}")
+            _update("Provisioning", f"[{now_datetime()}] Installing helpdesk…\n")
+            r = _bench_run(f"--site {site_name} install-app helpdesk", timeout=600)
+            if r.returncode != 0:
+                raise RuntimeError(f"helpdesk install failed:\n{r.stderr}")
+            _update("Provisioning", r.stdout + "\n")
+            r = _bench_run(
+                f"--site {site_name} execute alvoraa_portal.helpdesk_defaults.apply_safe_defaults",
+                timeout=120)
+            _update("Provisioning",
+                    f"[{now_datetime()}] Helpdesk privacy defaults "
+                    + ("applied.\n" if r.returncode == 0
+                       else "could NOT be applied - check Helpdesk Settings by hand.\n"))
 
         _bench_run(f"--site {site_name} clear-cache")
         _update("Done", f"[{now_datetime()}] ✅ Module installation complete.\n", finished=True)

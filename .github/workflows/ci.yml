@@ -245,6 +245,16 @@ jobs:
           python scripts/check_brand_spelling.py --self-test
           python scripts/check_brand_spelling.py
 
+      # ALV-174. A narrow guard on top of the one above: our own email-template
+      # overrides (alvoraa_portal/templates/emails, alvoraa_portal/overrides)
+      # exist specifically to replace an upstream app's "Frappe"/"ERPNext"
+      # wording, so a future hand-copy from the upgraded upstream file that
+      # forgets to re-apply the fix fails here instead of reaching a tenant.
+      - name: Our own email overrides do not say Frappe or ERPNext
+        run: |
+          python scripts/check_email_template_overrides.py --self-test
+          python scripts/check_email_template_overrides.py
+
   # ── Key guard (slice 013, OPS-37, OPS-71, SEC-23) ─────────────────────────
   # A signing key is handed out the moment it is pushed: the image is built from
   # this repo, and everything published while it was public is already copied.
@@ -446,6 +456,15 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE"
           BENCH_APPS_PATH=~/frappe-bench/apps python scripts/check_app_integrity.py
+
+      # ALV-175. Our own email overrides no-bench check (job above) proves the
+      # text is clean; this one needs a real bench, because it compares our
+      # standard.html override against Frappe's ACTUAL installed copy, not a
+      # hash typed by hand and trusted forever.
+      - name: Our email overrides still match the upstream shape they were copied from
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          BENCH_APPS_PATH=~/frappe-bench/apps python scripts/check_email_template_overrides.py --check-upstream-shape
 
       # Tenant isolation is enforced entirely by these tests. Blocking.
       - name: Run tests

@@ -56,7 +56,12 @@ website_route_rules = [
 # one file per area with `{% include %}` runs into the cache and costs +33 %.
 # A part holds no Jinja, so it is read and pasted rather than compiled, and the
 # number of parts stops mattering. See ess_parts.py for the rules it keeps.
-jinja = {"methods": ["alvoraa_portal.ess_parts.ess_part"]}
+jinja = {"methods": [
+    "alvoraa_portal.ess_parts.ess_part",
+    # ALV-175: our own templates/emails/standard.html calls this to close the
+    # gap where no outgoing Email Account has our lockup set at all.
+    "alvoraa_portal.email_brand.resolve_header_logo",
+]}
 
 # ── Doctype event hooks ────────────────────────────────────────────────────
 # No desk-side JavaScript. portal_switch.js was removed in ALV-152: it bound
@@ -330,6 +335,15 @@ after_migrate = [
     "alvoraa_portal.field_app_settings.after_migrate",
     # Slice 013 step 5: the field app section on the Employee form.
     "alvoraa_portal.field_app_desk.after_migrate",
+    # Slice 166/167: LMS and Helpdesk ship with public defaults (guest course
+    # access, a public jobs board, guest ticket creation). provision_tenant.sh
+    # already applies the safe values right after each app installs, but this
+    # is the safety net for a site where either app reaches a site by some
+    # other path - a no-op on every site until the app is actually installed,
+    # and a no-op forever after the one-time write. See lms_defaults.py and
+    # helpdesk_defaults.py for why this never flips a value HR chose back.
+    "alvoraa_portal.lms_defaults.after_migrate",
+    "alvoraa_portal.helpdesk_defaults.after_migrate",
 ]
 
 # And on a fresh install, which never runs a migrate. Without this a brand new
@@ -355,4 +369,18 @@ after_install = [
     # ALV-149: a new tenant's app name is "Alvora HRMS", not Frappe's default.
     # Same once-only reasoning as brand.after_install above.
     "alvoraa_portal.brand_text.after_install",
+    # ALV-174: outgoing email stops saying "Sent via ERPNext" and gets the
+    # Alvora lockup in its header, from a tenant's first email onward. Safe to
+    # run again later (a patch does, on migrate) if the sending Email Account
+    # is set up after this point - apply() is idempotent either way.
+    "alvoraa_portal.email_brand.after_install",
 ]
+
+# ── Replace one upstream method wholesale, not monkeypatch it (ALV-174) ────
+# CRM's own invitation email hardcodes "Frappe CRM" in the SUBJECT (Python, not
+# a template) and in the body (a template that never reads the `title` it is
+# passed) - see overrides/crm_invitation.py for why a template override cannot
+# fix this and `override_doctype_class` is the right mechanism instead.
+override_doctype_class = {
+    "CRM Invitation": "alvoraa_portal.overrides.crm_invitation.AlvoraCRMInvitation",
+}

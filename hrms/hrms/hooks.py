@@ -186,10 +186,13 @@ has_permission = {
 
 # ALV-178: restored from upstream Frappe HR v16 (removed by 48f5439). Without it a
 # Payment Entry for an Employee may only reference a Journal Entry, so it cannot pay
-# an Expense Claim, Employee Advance, Leave Encashment or Gratuity. Employee,
-# Timesheet and Project come back in the full restore (step B).
+# an Expense Claim, Employee Advance, Leave Encashment or Gratuity. Project comes
+# with it because a submitted expense claim updates its project's costing, and
+# only this class counts claims in it. Employee and Timesheet come back in the full
+# restore (step B).
 override_doctype_class = {
 	"Payment Entry": "hrms.overrides.employee_payment_entry.EmployeePaymentEntry",
+	"Project": "hrms.overrides.employee_project.EmployeeProject",
 }
 
 # Document Events

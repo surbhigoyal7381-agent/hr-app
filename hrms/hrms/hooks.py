@@ -46,6 +46,11 @@ app_include_css = "hrms.bundle.css"
 
 # include js in doctype views
 doctype_js = {
+	# ALV-178: restored from upstream Frappe HR v16 (removed by 48f5439). Employee,
+	# Company, Department, Timesheet, Delivery Trip and Bank Transaction follow in
+	# the full restore (step B).
+	"Payment Entry": "public/js/erpnext/payment_entry.js",
+	"Journal Entry": "public/js/erpnext/journal_entry.js",
 	# ── PMS ──────────────────────────────────────────────────────────────────
 	"PMS Review Record": "public/js/pms_review_record.js",
 	"PMS Calibration Session": "public/js/pms_calibration_session.js",
@@ -179,6 +184,14 @@ has_permission = {
 # ---------------
 # Override standard doctype classes
 
+# ALV-178: restored from upstream Frappe HR v16 (removed by 48f5439). Without it a
+# Payment Entry for an Employee may only reference a Journal Entry, so it cannot pay
+# an Expense Claim, Employee Advance, Leave Encashment or Gratuity. Employee,
+# Timesheet and Project come back in the full restore (step B).
+override_doctype_class = {
+	"Payment Entry": "hrms.overrides.employee_payment_entry.EmployeePaymentEntry",
+}
+
 # Document Events
 # ---------------
 # Hook on document methods and events
@@ -195,12 +208,41 @@ doc_events = {
 		"on_update": [
 			"hrms.overrides.company.make_company_fixtures",
 			"hrms.overrides.company.set_default_hr_accounts",
+			# ALV-178 / upstream v16: give every Expense Claim Type an expense
+			# account for this company, so claims can post to the ledger.
+			"hrms.overrides.company.set_expense_claim_type_accounts",
 		],
 		"on_trash": "hrms.overrides.company.handle_linked_docs",
 	},
 	"Holiday List": {
 		"on_update": "hrms.utils.holiday_list.invalidate_cache",
 		"on_trash": "hrms.utils.holiday_list.invalidate_cache",
+	},
+	# ── ALV-178: restored from upstream Frappe HR v16 (removed by 48f5439) ──
+	# These are what mark an Expense Claim, Full and Final Statement or Salary
+	# Withholding as paid, and unlink salary slips when a payroll entry is cancelled.
+	"Payment Entry": {
+		"on_submit": "hrms.hr.doctype.expense_claim.expense_claim.update_payment_for_expense_claim",
+		"on_cancel": "hrms.hr.doctype.expense_claim.expense_claim.update_payment_for_expense_claim",
+		"on_update_after_submit": "hrms.hr.doctype.expense_claim.expense_claim.update_payment_for_expense_claim",
+	},
+	"Unreconcile Payment": {
+		"on_submit": "hrms.hr.doctype.expense_claim.expense_claim.update_payment_for_expense_claim",
+	},
+	"Journal Entry": {
+		"validate": "hrms.hr.doctype.expense_claim.expense_claim.validate_expense_claim_in_jv",
+		"on_submit": [
+			"hrms.hr.doctype.expense_claim.expense_claim.update_payment_for_expense_claim",
+			"hrms.hr.doctype.full_and_final_statement.full_and_final_statement.update_full_and_final_statement_status",
+			"hrms.payroll.doctype.salary_withholding.salary_withholding.update_salary_withholding_payment_status",
+		],
+		"on_update_after_submit": "hrms.hr.doctype.expense_claim.expense_claim.update_payment_for_expense_claim",
+		"on_cancel": [
+			"hrms.hr.doctype.expense_claim.expense_claim.update_payment_for_expense_claim",
+			"hrms.payroll.doctype.salary_slip.salary_slip.unlink_ref_doc_from_salary_slip",
+			"hrms.hr.doctype.full_and_final_statement.full_and_final_statement.update_full_and_final_statement_status",
+			"hrms.payroll.doctype.salary_withholding.salary_withholding.update_salary_withholding_payment_status",
+		],
 	},
 	"Employee": {
 		"validate": [
@@ -311,6 +353,21 @@ scheduler_events = {
 	"weekly": ["hrms.controllers.employee_reminders.send_reminders_in_advance_weekly"],
 	"monthly": ["hrms.controllers.employee_reminders.send_reminders_in_advance_monthly"],
 }
+
+# ── ALV-178: restored from upstream Frappe HR v16 (removed by 48f5439) ──────
+# ERPNext reads these lists. advance_payment_payable_doctypes is how an Employee
+# Advance learns it was paid; invoice_doctypes lets a Payment Entry allocate against
+# an Expense Claim; repost_allowed_doctypes lets Repost Accounting Ledger rebuild a
+# claim's ledger (the ALV-178 data repair uses it). accounting_dimension_doctypes,
+# period_closing_doctypes and bank_reconciliation_doctypes follow in step B.
+advance_payment_payable_doctypes = ["Leave Encashment", "Gratuity", "Employee Advance"]
+
+invoice_doctypes = ["Expense Claim"]
+
+repost_allowed_doctypes = ["Expense Claim"]
+
+# Upstream v16, adopted 29 Sep 2026 (ALV-178 decision D9).
+audit_trail_doctypes = ["Expense Claim", "Payroll Entry", "Salary Slip", "Leave Encashment", "Gratuity"]
 
 # Testing
 # -------

@@ -32,6 +32,32 @@ from alvoraa_portal.tests import fixtures_043 as fx
 ENDPOINTS = ("get_holidays", "get_number_of_leave_days", "get_leave_approver")
 
 
+def _restrict_to_own_record(login, employee):
+	"""What a real tenant gives every employee, and `test_site` does not.
+
+	On ppj.localhost each staff login carries one User Permission row -
+	`allow=Employee, for_value=<their own id>, apply_to_all_doctypes=1` - so
+	`frappe.has_permission("Employee", "read", <a colleague>)` is False for
+	them. That row is the whole reason the upstream guard bites: the guard's
+	last clause lets anyone through who can read the Employee record, and the
+	Employee ROLE has read on the doctype (checked on ppj.localhost).
+
+	Without this, a bare test site says every employee may read every other
+	employee, the guard waves everyone through, and this file reports a hole
+	that does not exist on a real tenant.
+	"""
+	if frappe.db.exists("User Permission", {"user": login, "allow": "Employee",
+	                                        "for_value": employee}):
+		return
+	frappe.get_doc({
+		"doctype": "User Permission",
+		"user": login,
+		"allow": "Employee",
+		"for_value": employee,
+		"apply_to_all_doctypes": 1,
+	}).insert(ignore_permissions=True)
+
+
 def _call(name, employee):
 	"""Call one endpoint the way the web would, with only `employee` varying."""
 	from hrms.hr.doctype.leave_application.leave_application import (
@@ -75,6 +101,11 @@ class TestLeaveEndpointsRefuseAStranger(FrappeTestCase):
 		# their own account before the guard is ever reached - which would make
 		# this file green for the wrong reason.
 		fx.holiday_list([cls.subject, cls.approver_emp, cls.stranger])
+
+		# Scope every login to its own Employee record, as a real tenant does.
+		_restrict_to_own_record(cls.subject_login, cls.subject)
+		_restrict_to_own_record(cls.approver_login, cls.approver_emp)
+		_restrict_to_own_record(cls.stranger_login, cls.stranger)
 
 		frappe.db.commit()
 

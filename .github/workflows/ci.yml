@@ -77,10 +77,14 @@ jobs:
       # user clicks. This makes it a build-time check.
       #
       # Since the Phase 4 rename the repo directories and the installed app names finally
-      # agree (alvoraa_goals / alvoraa_portal), so no --alias is needed. --max 2 is the
-      # known debt: two pre-existing upstream hrms paths. Never raise it.
+      # agree (alvoraa_goals / alvoraa_portal), so no --alias is needed.
+      #
+      # --max 0. It was --max 2 from 18 Aug, "two pre-existing upstream hrms paths".
+      # They were not upstream debt: they were ALV-178, the payment function 48f5439
+      # deleted, which broke "Create Payment" for two months. Never raise it again;
+      # fix the path instead.
       - name: Front-end API paths resolve
-        run: python scripts/check_api_paths.py --max 2
+        run: python scripts/check_api_paths.py --max 0
 
       # Structural checks that need no bench or database: doctype name/folder/file agree,
       # controller class matches the doctype name (a mismatch makes bench migrate DELETE
@@ -472,6 +476,33 @@ jobs:
           cd ~/frappe-bench
           bench --site test_site run-tests --app alvoraa_goals
           bench --site test_site run-tests --app alvoraa_portal
+
+      # ALV-178. The hrms fork's own tests never ran in CI, so when one commit
+      # removed Frappe HR's payment and ledger code (48f5439, 31 Jul) nothing failed.
+      # These are the doctypes that pay people and post to the accounts.
+      #
+      # Their own site, with only ERPNext and Frappe HR: ERPNext's test bootstrap
+      # creates calendar-year "_Test Fiscal Year"s, which overlap the April-March
+      # years our own tests create on test_site and stop test discovery.
+      - name: Frappe HR payment and payroll tests
+        run: |
+          cd ~/frappe-bench
+          bench new-site hrms_test_site --force --db-root-password root                 --admin-password admin --no-mariadb-socket
+          bench --site hrms_test_site install-app erpnext
+          bench --site hrms_test_site install-app hrms
+          bench --site hrms_test_site set-config allow_tests true
+          bench --site hrms_test_site set-config -p throttle_user_limit 1000
+          # Submitting a salary slip emails it as a PDF, and wkhtmltopdf fetches the
+          # page's styles from the site's own URL. So the site needs a name that
+          # resolves and a web server answering on it - what upstream Frappe HR's CI
+          # does too. Without it gratuity and leave encashment tests fail with
+          # "wkhtmltopdf ... HostNotFoundError", which has nothing to do with them.
+          echo "127.0.0.1 hrms_test_site" | sudo tee -a /etc/hosts
+          bench --site hrms_test_site set-config host_name http://hrms_test_site:8000
+          nohup bench serve --port 8000 > ~/frappe-bench/serve.log 2>&1 &
+          for doctype in "Expense Claim" "Employee Advance" "Leave Encashment"                          "Gratuity" "Full and Final Statement" "Salary Withholding"; do
+            bench --site hrms_test_site run-tests --doctype "$doctype"
+          done
 
       - name: Bench logs on failure
         if: failure()

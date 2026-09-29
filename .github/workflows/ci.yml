@@ -487,7 +487,8 @@ jobs:
       - name: Frappe HR payment and payroll tests
         run: |
           cd ~/frappe-bench
-          bench new-site hrms_test_site --force --db-root-password root                 --admin-password admin --no-mariadb-socket
+          bench new-site hrms_test_site --force --db-root-password root \
+            --admin-password admin --no-mariadb-socket
           bench --site hrms_test_site install-app erpnext
           bench --site hrms_test_site install-app hrms
           bench --site hrms_test_site set-config allow_tests true
@@ -500,7 +501,8 @@ jobs:
           echo "127.0.0.1 hrms_test_site" | sudo tee -a /etc/hosts
           bench --site hrms_test_site set-config host_name http://hrms_test_site:8000
           nohup bench serve --port 8000 > ~/frappe-bench/serve.log 2>&1 &
-          for doctype in "Expense Claim" "Employee Advance" "Leave Encashment"                          "Gratuity" "Full and Final Statement" "Salary Withholding"; do
+          for doctype in "Expense Claim" "Employee Advance" "Leave Encashment" \
+                         "Gratuity" "Full and Final Statement" "Salary Withholding"; do
             bench --site hrms_test_site run-tests --doctype "$doctype"
           done
 

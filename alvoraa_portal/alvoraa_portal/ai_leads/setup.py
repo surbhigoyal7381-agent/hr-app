@@ -24,6 +24,8 @@ from frappe.utils import now_datetime
 
 import alvoraa_portal.ai_leads.guards as guards
 import alvoraa_portal.ai_leads.intake as intake
+import alvoraa_portal.ai_leads.text as text_mod
+import alvoraa_portal.ai_leads.whatsapp as whatsapp
 
 LEAD_FIELDS = [
     {"fieldname": "alvoraa_ai_section", "label": "AI intake", "fieldtype": "Section Break",
@@ -50,6 +52,12 @@ ACCOUNT_FIELDS = [
                     "Refused for HR, payroll and default mailboxes."},
     {"fieldname": guards.SINCE_FIELD, "label": "Read for leads since", "fieldtype": "Datetime",
      "insert_after": guards.INTAKE_FIELD, "read_only": 1},
+]
+WHATSAPP_ACCOUNT_FIELDS = [
+    {"fieldname": whatsapp.SECRET_FIELD, "label": "Meta app secret", "fieldtype": "Password",
+     "insert_after": "webhook_verify_token",
+     "description": "From Meta: App settings > Basic > App secret. Forwarded messages become "
+                    "leads only when Meta's signature matches this secret."},
 ]
 VIEW_LABEL = "Needs review"
 
@@ -145,3 +153,43 @@ def switch_off():
     """The kill switch (SEC-21). Stops every model call from the next sweep on."""
     update_site_config("ai_lead_intake_enabled", 0)
     return {"enabled": False}
+
+
+def switch_on_whatsapp(forwarders):
+    """Slice 057: forwarded WhatsApp messages into CRM leads. Safe to run twice.
+
+        bench --site <site> execute alvoraa_portal.ai_leads.setup.switch_on_whatsapp \
+            --kwargs "{'forwarders': {'919800000001': 'vinda@example.com'}}"
+
+    Replaces the whole forwarder list. The app secret is typed by a person into the
+    WhatsApp Account form, never passed through here. An empty list turns it off.
+    """
+    _require()
+    if "frappe_whatsapp" not in frappe.get_installed_apps():
+        frappe.throw(_("Frappe WhatsApp is not installed on this site."))
+    clean = {}
+    for number, user in (forwarders or {}).items():
+        digits = text_mod.digits(number)
+        if len(digits) < 11:
+            frappe.throw(_("{0}: write the number with its country code, for example 919800000001.").format(number))
+        if not frappe.db.get_value("User", user, "enabled"):
+            frappe.throw(_("{0} is not an enabled user.").format(user))
+        clean[digits] = user
+    ensure_fields()
+    create_custom_fields({"WhatsApp Account": WHATSAPP_ACCOUNT_FIELDS}, ignore_validate=True, update=True)
+    ensure_status()
+    ensure_view()
+    service_user = ensure_service_user()
+    if not frappe.db.exists("CRM Lead Source", "WhatsApp"):
+        frappe.get_doc({"doctype": "CRM Lead Source", "source_name": "WhatsApp"}).insert(ignore_permissions=True)
+    update_site_config(whatsapp.FORWARDERS, clean)
+    update_site_config("ai_lead_intake_enabled", 1)
+    update_site_config("ai_lead_intake_user", service_user)
+    frappe.db.commit()
+    return {
+        "forwarders": len(clean),
+        "app_secret_set": any(
+            frappe.get_doc("WhatsApp Account", a).get_password(whatsapp.SECRET_FIELD, raise_exception=False)
+            for a in frappe.get_all("WhatsApp Account", pluck="name")),
+        "api_key_set": bool((frappe.get_site_config().get("ai_lead_intake_api_key") or "").strip()),
+    }

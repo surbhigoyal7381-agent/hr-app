@@ -1,0 +1,119 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-10-02 12:00:00.000000",
+ "description": "When a CRM lead or deal of this lead type moves to this status, a CRM Task is created for the named person, due in the given number of days. Optionally an email from a template goes to the lead's own address.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "applies_to",
+  "lead_type",
+  "status",
+  "column_break_task",
+  "task_title",
+  "assign_to",
+  "due_in_days",
+  "email_template"
+ ],
+ "fields": [
+  {
+   "default": "CRM Lead",
+   "fieldname": "applies_to",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Applies to",
+   "options": "CRM Lead\nCRM Deal",
+   "reqd": 1
+  },
+  {
+   "description": "Exactly as written in the Lead Type field's options, for example Client Project.",
+   "fieldname": "lead_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Lead type",
+   "reqd": 1
+  },
+  {
+   "description": "The lead status or deal status that starts this step, exactly as named in the CRM.",
+   "fieldname": "status",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Status",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_task",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "task_title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Task title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "assign_to",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Assign to",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "0 means due today.",
+   "fieldname": "due_in_days",
+   "fieldtype": "Int",
+   "label": "Due in days"
+  },
+  {
+   "description": "Optional. Sent to the lead's email address when the step starts, and shown on the lead's email tab.",
+   "fieldname": "email_template",
+   "fieldtype": "Link",
+   "label": "Email template",
+   "options": "Email Template"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-02 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa CRM Step Task",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Sales User"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "task_title",
+ "track_changes": 1
+}

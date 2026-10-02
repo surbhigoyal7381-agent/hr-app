@@ -229,10 +229,12 @@ def retry_failed(limit, deadline=None):
     """Failed or interrupted emails: try again, or after three tries / 24 hours make the
     header-only lead (SEC-26). Returns how many it actually worked on."""
     fields = ["name", "communication", "email_account", "attempts", "creation"]
-    rows = frappe.get_all(LOG, filters={"outcome": "Failed"}, fields=fields,
+    # Emails only: a forwarded WhatsApp row (slice 057) has no mailbox to read again.
+    email = ["communication", "is", "set"]
+    rows = frappe.get_all(LOG, filters=[["outcome", "=", "Failed"], email], fields=fields,
                           order_by="creation asc", limit=limit)
     stuck_before = add_to_date(now_datetime(), minutes=-STUCK_MINUTES)
-    rows += frappe.get_all(LOG, filters={"outcome": "Queued", "modified": ["<", stuck_before]},
+    rows += frappe.get_all(LOG, filters=[["outcome", "=", "Queued"], ["modified", "<", stuck_before], email],
                            fields=fields, order_by="creation asc", limit=limit)
     stale_before = add_to_date(now_datetime(), hours=-STALE_HOURS)
     worked = 0

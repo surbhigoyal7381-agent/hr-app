@@ -235,6 +235,20 @@ doc_events = {
     "Communication": {
         "after_insert": "alvoraa_portal.ai_leads.intake.on_new_email",
     },
+    # Slice 057 (A): a lead or deal reaching a status creates that step's CRM
+    # Tasks (rows of Alvoraa CRM Step Task). No query unless the status changed.
+    "CRM Lead": {
+        "on_update": "alvoraa_portal.crm_steps.on_status_change",
+    },
+    "CRM Deal": {
+        "on_update": "alvoraa_portal.crm_steps.on_status_change",
+    },
+    # Slice 057 (B): a message forwarded by a listed salesperson goes to AI lead
+    # intake (a queued job, only after Meta's signature is checked). A site-config
+    # read and nothing more for any other message.
+    "WhatsApp Message": {
+        "after_insert": "alvoraa_portal.ai_leads.whatsapp.on_whatsapp_message",
+    },
 }
 
 # ── Row-level security ───────────────────────────────────────────────────────
@@ -309,6 +323,11 @@ scheduler_events = {
         # Returns before any query on a site that has not switched intake on.
         "* * * * *": [
             "alvoraa_portal.ai_leads.intake.pull_intake_mailboxes",
+        ],
+        # Slice 057 (C): the founders' CRM summary, 09:00 site time. Returns
+        # before any query unless the site config names a recipient.
+        "0 9 * * *": [
+            "alvoraa_portal.crm_summary.send_daily",
         ],
     },
 }

@@ -174,6 +174,69 @@ def validate_expense_claim_payable_account(doc, method=None):
 		)
 
 
+def set_expense_claim_type_account(doc, method=None):
+	"""`doc_events` hook on Expense Claim Type: give a NEW type its accounts.
+
+	The other half of the same gap. A claim needs two things: a payable account
+	on the company (above), and an expense account on the claim TYPE.
+
+	ALV-178 restored `hrms.overrides.company.set_expense_claim_type_accounts`,
+	which fills the second one - but it is hooked on **Company** events, so it
+	only runs when a company is saved. A tenant who adds a new expense type
+	afterwards ("Client Travel", say) gets a type with no account, and every
+	claim against it is refused with a message about HR setup.
+
+	This fills it at the moment the type is created, for every company. Same
+	reasoning as the payable account: never overwrite, and stay quiet when
+	there is no chart of accounts to draw on.
+	"""
+	if frappe.local.flags.get("ignore_chart_of_accounts"):
+		return
+	if not frappe.db.exists("DocType", "Expense Claim Account"):
+		return
+
+	fill_claim_type_accounts(doc.name)
+
+
+def fill_claim_type_accounts(claim_type):
+	"""Give one Expense Claim Type a default account for every company.
+
+	Reuses Frappe HR's own `get_or_create_expense_claim_account`, so the account
+	picked here is the same one a Company save would have picked. Two code paths
+	choosing different accounts for the same purpose is how a chart of accounts
+	becomes untrustworthy.
+	"""
+	from hrms.overrides.company import get_or_create_expense_claim_account
+
+	added = []
+	for company in frappe.get_all("Company", pluck="name"):
+		if frappe.db.exists("Expense Claim Account",
+		                    {"parent": claim_type, "company": company}):
+			continue
+
+		company_doc = frappe.get_cached_doc("Company", company)
+		account = get_or_create_expense_claim_account(company_doc)
+		if not account:
+			continue
+
+		doc = frappe.get_doc("Expense Claim Type", claim_type)
+		doc.append("accounts", {"company": company, "default_account": account})
+		doc.save(ignore_permissions=True)
+		added.append(company)
+
+	return added
+
+
+def backfill_claim_types():
+	"""Every existing Expense Claim Type, for tenants that already have some."""
+	result = {}
+	for claim_type in frappe.get_all("Expense Claim Type", pluck="name"):
+		added = fill_claim_type_accounts(claim_type)
+		if added:
+			result[claim_type] = added
+	return result
+
+
 def backfill(companies=None):
 	"""Fill the field on companies that already exist. Safe to run repeatedly.
 

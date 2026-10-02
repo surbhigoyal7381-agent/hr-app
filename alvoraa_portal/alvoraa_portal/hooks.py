@@ -212,6 +212,12 @@ doc_events = {
         "on_update":    "alvoraa_portal.expense_accounts.set_expense_claim_payable_account",
         "validate":     "alvoraa_portal.expense_accounts.validate_expense_claim_payable_account",
     },
+    # The other half of the same gap. A claim needs an expense account on its
+    # TYPE as well. ALV-178 fills that, but only when a COMPANY is saved - so a
+    # type added later has none, and every claim against it is refused.
+    "Expense Claim Type": {
+        "after_insert": "alvoraa_portal.expense_accounts.set_expense_claim_type_account",
+    },
     # ── Nobody approves their own leave ───────────────────────────────────
     # Submitting a Leave Application is what approves or rejects it. Hung off
     # the document so the desk and REST API get the same rule as the portal,

@@ -22,6 +22,13 @@ def execute():
 
 	result = expense_accounts.backfill()
 
+	# The other half: an Expense Claim Type needs an expense account per
+	# company. ALV-178 fills it on a Company save only, so types that already
+	# exist on a tenant were never covered.
+	types = expense_accounts.backfill_claim_types()
+	if types:
+		frappe.logger().info("slice 058 claim type accounts: %s" % types)
+
 	frappe.logger().info(
 		"slice 058 employee payable account: filled=%s already_set=%s no_chart=%s"
 		% (result["filled"], result["already_set"], result["no_chart_of_accounts"])

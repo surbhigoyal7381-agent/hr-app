@@ -201,6 +201,17 @@ doc_events = {
     "Delivery Performance Scorecard": {
         "before_save": "alvoraa_portal.controllers.scorecard.before_save",
     },
+    # ── The account an expense claim is owed from (slice 058) ─────────────
+    # Frappe HR reads `Company.default_expense_claim_payable_account` and never
+    # fills it; upstream expects a human to choose. Nobody did, so when ALV-178
+    # restored ledger posting every claim hit "Payable Account is mandatory".
+    # Filled from here rather than from `hrms.overrides.company` so no new edit
+    # lands inside the vendored Frappe HR tree (ALV-169).
+    "Company": {
+        "after_insert": "alvoraa_portal.expense_accounts.set_expense_claim_payable_account",
+        "on_update":    "alvoraa_portal.expense_accounts.set_expense_claim_payable_account",
+        "validate":     "alvoraa_portal.expense_accounts.validate_expense_claim_payable_account",
+    },
     # ── Nobody approves their own leave ───────────────────────────────────
     # Submitting a Leave Application is what approves or rejects it. Hung off
     # the document so the desk and REST API get the same rule as the portal,

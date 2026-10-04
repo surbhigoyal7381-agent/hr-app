@@ -405,3 +405,9 @@ the Tasks page can only show fields that exist on CRM Task.
   existed, those tasks are filled only if the patch runs after the field exists. The
   install hook above closes this for new installs; acceptable simplification.
 
+
+**Decision (Surbhi, 4 Oct 2026):** accepted. Every Sales User may see the Lead / Deal
+label (person and company) on every CRM Task, including tasks on leads they cannot open.
+Fine for small teams where everyone sees all leads. Revisit before a tenant that uses CRM's
+team-based lead limits: restrict CRM Task the same way, or show the column to Sales
+Managers only.

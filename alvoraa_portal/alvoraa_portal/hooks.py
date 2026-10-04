@@ -243,6 +243,11 @@ doc_events = {
     "CRM Deal": {
         "on_update": "alvoraa_portal.crm_steps.on_status_change",
     },
+    # Slice 057, 4 Oct: the "Lead / Deal" column on every CRM Task, ours or made by
+    # hand. One read of the lead or deal, only when the task is new or re-pointed.
+    "CRM Task": {
+        "validate": "alvoraa_portal.crm_steps.set_task_label",
+    },
     # Slice 057 (B): a message forwarded by a listed salesperson goes to AI lead
     # intake (a queued job, only after Meta's signature is checked). A site-config
     # read and nothing more for any other message.
@@ -363,6 +368,8 @@ after_migrate = [
     # helpdesk_defaults.py for why this never flips a value HR chose back.
     "alvoraa_portal.lms_defaults.after_migrate",
     "alvoraa_portal.helpdesk_defaults.after_migrate",
+    # Slice 057, 4 Oct: the "Lead / Deal" column on CRM Task. A no-op without CRM.
+    "alvoraa_portal.crm_steps.ensure_task_label_field",
 ]
 
 # And on a fresh install, which never runs a migrate. Without this a brand new

@@ -8,6 +8,11 @@ becomes a standard CRM Task - CRM itself assigns it and notifies the person.
 
 A broken step never stops a salesperson changing a status: its error goes to the
 Error Log with the record name only, and the status change goes through.
+
+Also here: the "Lead / Deal" column on CRM Task (4 Oct). Every task, ours or made by
+hand, carries a readable "<person> – <company>" for the lead or deal it is about, so the
+CRM Tasks list can show it. One read of the lead or deal, and only when the task is new
+or its reference changed.
 """
 import frappe
 from frappe.core.doctype.communication.email import make as make_email
@@ -18,6 +23,10 @@ RULE = "Alvoraa CRM Step Task"
 # so CRM copies it across when a lead is converted.
 LEAD_TYPE_FIELD = "custom_lead_type"
 DUE_TIME = "18:00:00"   # end of the working day, so a task due today is not overdue at 9 am
+TASK_LABEL = "alvoraa_lead_deal"
+TASK_LABEL_FIELD = {"fieldname": TASK_LABEL, "label": "Lead / Deal", "fieldtype": "Data", "read_only": 1,
+					"in_list_view": 1, "in_standard_filter": 1, "insert_after": "reference_docname"}
+NAME_FIELDS = ["name", "lead_name", "first_name", "last_name", "organization"]   # on both lead and deal
 
 
 def on_status_change(doc, method=None):
@@ -77,6 +86,11 @@ def _make_task(doc, step):
 	# then makes them the Lead/Deal Owner; earlier owners keep access through their own
 	# assignment (Surbhi, 2 Oct: option b).
 	doc.assign_agent(step.assign_to)
+	# The lead page's task list does not reload on a status change. CRM's own socket
+	# listener reloads the cached resource with this key, for whoever has the page open
+	# (Activities.vue joins this record's room, after a permission check).
+	frappe.publish_realtime("refetch_resource", {"cache_key": ["activity", doc.name]},
+							doctype=doc.doctype, docname=doc.name, after_commit=True)
 	return True
 
 
@@ -85,3 +99,59 @@ def _send_email(doc, step):
 	# make() checks that the person changing the status may email this record.
 	make_email(doctype=doc.doctype, name=doc.name, subject=mail["subject"], content=mail["message"],
 			   recipients=doc.email, send_email=True, email_template=step.email_template)
+
+
+# ── the "Lead / Deal" column on CRM Task ─────────────────────────────────────
+
+def set_task_label(task, method=None):
+	"""doc_events validate for CRM Task. Harmless before the field exists."""
+	if not (task.is_new() or task.has_value_changed("reference_doctype")
+			or task.has_value_changed("reference_docname")):
+		return
+	row = None
+	if task.reference_doctype in ("CRM Lead", "CRM Deal") and task.reference_docname:
+		row = frappe.db.get_value(task.reference_doctype, task.reference_docname, NAME_FIELDS, as_dict=True)
+	task.set(TASK_LABEL, task_label(task.reference_doctype, row))
+
+
+def task_label(reference_doctype, row):
+	"""'<person> – <company>' for a lead, '<company> – <person>' for a deal; empty parts dropped."""
+	if not row or reference_doctype not in ("CRM Lead", "CRM Deal"):
+		return ""
+	person = row.lead_name or " ".join(p for p in (row.first_name, row.last_name) if p)
+	parts = [person, row.organization] if reference_doctype == "CRM Lead" else [row.organization, person]
+	parts = [p for i, p in enumerate(parts) if p and p not in parts[:i]]   # CRM may copy the company into lead_name
+	return (" – ".join(parts) or row.name)[:140]   # a Data column holds 140
+
+
+def ensure_task_label_field():
+	"""after_migrate: the column on every site with CRM; a no-op without it. Safe to run twice."""
+	if not frappe.db.exists("DocType", "CRM Task"):
+		return False
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+	create_custom_fields({"CRM Task": [TASK_LABEL_FIELD]}, ignore_validate=True, update=True)
+	return True
+
+
+def backfill_task_labels(batch=500):
+	"""Fill the column on tasks made before it existed. Writes only rows whose label differs."""
+	last = ""
+	while True:
+		tasks = frappe.get_all("CRM Task", filters={"name": [">", last],
+													 "reference_doctype": ["in", ["CRM Lead", "CRM Deal"]]},
+							   fields=["name", "reference_doctype", "reference_docname", TASK_LABEL],
+							   order_by="name asc", limit=batch)
+		if not tasks:
+			return
+		rows = {}
+		for dt in ("CRM Lead", "CRM Deal"):
+			names = list({t.reference_docname for t in tasks if t.reference_doctype == dt and t.reference_docname})
+			if names:
+				for r in frappe.get_all(dt, filters={"name": ["in", names]}, fields=NAME_FIELDS):
+					rows[(dt, r.name)] = r
+		for t in tasks:
+			label = task_label(t.reference_doctype, rows.get((t.reference_doctype, t.reference_docname)))
+			if label != (t.get(TASK_LABEL) or ""):
+				frappe.db.set_value("CRM Task", t.name, TASK_LABEL, label, update_modified=False)
+		frappe.db.commit()
+		last = tasks[-1].name

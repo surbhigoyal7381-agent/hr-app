@@ -307,6 +307,28 @@ for it in the code.
 
 ---
 
+## Part 8b — The "Lead / Deal" column on the Tasks page
+
+Nothing to set up on the server: the deploy's migrate adds the field to CRM Task and
+fills it in on the tasks that already exist. New tasks, ours and hand-made, get it as
+they are saved. It shows the lead as "person – company" and a deal as "company – person".
+
+1. Open `/crm/tasks`.
+2. **Columns** (top right) → **Add column** → **Lead / Deal**.
+3. To keep it for everyone, save the view as a public view (or set it on your public
+   "My open tasks" view). Otherwise it is kept for you only.
+
+The same field also appears as a quick filter box above the list.
+
+**Check it worked:** a task made for a lead shows the person and company in the new
+column. Change a lead's status so a step fires, with the lead open in another tab: the
+new task appears on that lead's page without a reload.
+
+**Good to know:** the column is filled when the task is made or moved to another
+lead or deal. If the lead's name or company is edited later, old tasks keep the old text.
+
+---
+
 ## Part 9 — Turning each part off
 
 | To stop | Do this |

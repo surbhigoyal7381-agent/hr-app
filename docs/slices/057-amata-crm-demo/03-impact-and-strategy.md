@@ -356,3 +356,33 @@ silently outside 24 hours); an "enabled" tick on step rules (delete the row inst
 - **Settings page** (06): approved, to be built **after** the Monday demo.
 - **M3** (import fires every step): approved - a Data Import starts no steps.
 - **Tasks view:** a public "My open tasks" view in the CRM (no code), in the demo plan.
+
+## 11. Added 4 Oct 2026 — instant refresh and the "Lead / Deal" column (ALV-181)
+
+Approved by Surbhi on 4 Oct (option A plus the refresh fix). Rung: new code, in the
+existing `crm_steps.py`, plus one Custom Field. Configuration alone could not do it:
+the Tasks page can only show fields that exist on CRM Task.
+
+- **Instant refresh.** After a step makes a task, `crm_steps._make_task` sends CRM's
+  own `refetch_resource` event with the key `["activity", <lead or deal>]`, after
+  commit, to the record's room. The lead page joins that room (Activities.vue,
+  `doc_subscribe`, which checks permission), so everyone with the page open sees the
+  task at once. Sent only when a task is actually made.
+- **The column.** Custom Field `alvoraa_lead_deal` ("Lead / Deal", Data, read only,
+  in list view, in standard filter) on CRM Task. Added by `after_migrate`
+  (`crm_steps.ensure_task_label_field`, a no-op without CRM) and by the patch
+  `crm_task_lead_deal_label`, which also fills existing tasks (page of 500, writes only
+  rows that differ, so it is safe to run twice). A `validate` hook on CRM Task fills it
+  on every task: one read of the lead or deal, only when the task is new or its
+  reference changed. CRM's Columns button lists any visible field of the doctype's meta,
+  so no CRM setting is needed; the CRM's default columns for tasks are fixed in its code,
+  so each person (or a public view) adds the column once.
+- **Privacy, for Surbhi to decide before the push.** CRM lets every Sales User read
+  every CRM Task, but only their own (or assigned) leads and deals. Today the Tasks page
+  shows another person's task with a lead *number*. With this column it shows that
+  lead's **person and company** too. For a small team who all see all leads this changes
+  nothing; where sales users must not see each other's leads, it does.
+- **Known gaps.** The text is not refreshed when a lead's name or company is edited
+  later (acceptable simplification). The column is added on the next migrate, not at
+  `install-app` time, on a brand new site (deploys always migrate).
+

@@ -67,6 +67,9 @@ class TestStepTasks(FrappeTestCase):
 							"subject": "Welcome, {{ first_name }}",
 							"response": "<p>Dear {{ first_name }}, our partner pack is attached.</p>"}).insert()
 		cls.outgoing = ensure_outgoing_account()
+		crm_steps.ensure_task_label_field()   # what after_migrate does on a real site
+		cls.org = f"S057 Builders {frappe.generate_hash(length=4)}"
+		frappe.get_doc({"doctype": "CRM Organization", "organization_name": cls.org}).insert()
 		cls.rules = [
 			cls.rule("CRM Lead", "Partner Onboarding", "Qualified", "Send partner pack", 2, TEMPLATE),
 			cls.rule("CRM Lead", "Client Project", "Qualified", "Schedule site visit", 3),
@@ -83,6 +86,8 @@ class TestStepTasks(FrappeTestCase):
 			frappe.db.delete("Communication", {"reference_doctype": dt, "reference_name": ["in", names or ["-"]]})
 			frappe.db.delete(dt, {"name": ["in", names or ["-"]]})
 		frappe.db.delete(RULE, {"task_title": ["in", [r.task_title for r in cls.rules]]})
+		frappe.db.delete("CRM Task", {"title": "S057 hand-made"})
+		frappe.db.delete("CRM Organization", {"name": cls.org})
 		if cls.outgoing:
 			frappe.db.after_commit.reset()   # the step emails' send-on-commit needs the account
 			frappe.db.delete("Email Account", {"name": cls.outgoing})
@@ -259,3 +264,99 @@ class TestStepTasks(FrappeTestCase):
 				self.rule("CRM Lead", "Client Project", "Contacted", "x", 0)
 		finally:
 			frappe.set_user("Administrator")
+
+	# ── 4 Oct: a new step task shows on the open lead page at once ──────────
+
+	def refetch_calls(self, mock):
+		return [c for c in mock.call_args_list if c.args and c.args[0] == "refetch_resource"]
+
+	def test_a_new_task_asks_the_open_page_to_reload_after_commit(self):
+		lead = self.lead("Client Project")
+		with patch("frappe.publish_realtime") as pub:
+			self.move(lead, "Qualified")
+		calls = self.refetch_calls(pub)
+		self.assertEqual(len(calls), 1)
+		self.assertEqual(calls[0].args[1], {"cache_key": ["activity", lead.name]})
+		self.assertEqual(calls[0].kwargs, {"doctype": "CRM Lead", "docname": lead.name, "after_commit": True})
+
+	def test_no_task_no_reload(self):
+		lead = self.move(self.lead("Client Project"), "Qualified")
+		with patch("frappe.publish_realtime") as pub:
+			self.move(lead, "Contacted")                         # no step for Contacted
+			self.move(lead, "Qualified")                         # the open task is still there
+		self.assertEqual(self.refetch_calls(pub), [])
+
+	# ── 4 Oct: every CRM Task carries '<person> – <company>' for its lead or deal
+
+	def task(self, ref_dt=None, ref_name=None, title="S057 hand-made"):
+		return frappe.get_doc({"doctype": "CRM Task", "title": title, "status": "Todo",
+							   "reference_doctype": ref_dt, "reference_docname": ref_name}).insert()
+
+	def label(self, task):
+		return frappe.db.get_value("CRM Task", task.name, crm_steps.TASK_LABEL)
+
+	def test_the_field_is_on_crm_task_and_shows_in_the_columns_list(self):
+		field = frappe.get_meta("CRM Task").get_field(crm_steps.TASK_LABEL)
+		self.assertEqual((field.label, field.fieldtype, field.read_only, field.in_list_view, field.hidden),
+						 ("Lead / Deal", "Data", 1, 1, 0))
+		self.assertTrue(crm_steps.ensure_task_label_field(), "safe to run twice")
+
+	def test_a_step_task_gets_person_and_company(self):
+		lead = self.lead("Client Project")
+		frappe.db.set_value("CRM Lead", lead.name, "organization", "S057 Hill View")
+		self.move(lead, "Qualified")
+		self.assertEqual(frappe.db.get_value("CRM Task", {"reference_docname": lead.name}, crm_steps.TASK_LABEL),
+						 f"{lead.lead_name} – S057 Hill View")
+
+	def test_a_hand_made_task_gets_it_too(self):
+		lead = self.lead(None)
+		self.assertEqual(self.label(self.task("CRM Lead", lead.name)), lead.lead_name)   # no company: no dash
+
+	def test_the_deal_puts_the_company_first(self):
+		deal = frappe.get_doc({"doctype": "CRM Deal", "status": "Qualification", "organization": self.org,
+							   "lead_name": "S057 Ravi"}).insert(ignore_permissions=True)
+		self.deals.append(deal.name)
+		self.assertEqual(self.label(self.task("CRM Deal", deal.name)), f"{self.org} – S057 Ravi")
+		bare = frappe.get_doc({"doctype": "CRM Deal", "status": "Qualification"}).insert(ignore_permissions=True)
+		self.deals.append(bare.name)
+		self.assertEqual(self.label(self.task("CRM Deal", bare.name)), bare.name)          # nothing else to show
+
+	def test_empty_parts_and_repeats_are_dropped(self):
+		row = frappe._dict
+		self.assertEqual(crm_steps.task_label("CRM Lead", row(name="L", lead_name="", first_name="Asha",
+															  last_name=None, organization="")), "Asha")
+		self.assertEqual(crm_steps.task_label("CRM Lead", row(name="L", lead_name="Acme", first_name=None,
+															  last_name=None, organization="Acme")), "Acme")
+		self.assertEqual(crm_steps.task_label("CRM Lead", None), "")
+		self.assertEqual(len(crm_steps.task_label("CRM Lead", row(name="L", lead_name="x" * 200,
+																   organization=None))), 140)
+
+	def test_other_or_no_reference_leaves_it_empty(self):
+		self.assertFalse(self.label(self.task()))
+		self.assertEqual(crm_steps.task_label("Contact", frappe._dict(name="x", lead_name="y")), "")
+
+	def test_a_changed_reference_refreshes_it_and_other_saves_read_nothing(self):
+		a, b = self.lead(None), self.lead(None)
+		task = self.task("CRM Lead", a.name)
+		task.reference_docname = b.name
+		task.save()
+		self.assertEqual(self.label(task), b.lead_name)
+		task.reload()
+		task.status = "Done"
+		with patch("frappe.db.get_value", wraps=frappe.db.get_value) as gv:
+			task.save()
+		# Frappe's own link check reads ('name',); ours would read NAME_FIELDS.
+		self.assertFalse([c for c in gv.call_args_list if crm_steps.NAME_FIELDS in c.args])
+
+	def test_the_backfill_fills_old_rows_and_runs_twice_safely(self):
+		import alvoraa_portal.patches.v1_0.crm_task_lead_deal_label as patch_mod
+		lead = self.lead(None)
+		task = self.task("CRM Lead", lead.name)
+		frappe.db.set_value("CRM Task", task.name, crm_steps.TASK_LABEL, "", update_modified=False)
+		patch_mod.execute()
+		self.assertEqual(self.label(task), lead.lead_name)
+		modified = frappe.db.get_value("CRM Task", task.name, "modified")
+		with patch("frappe.db.set_value") as sv:
+			crm_steps.backfill_task_labels(batch=1)               # second run, one row a page
+		self.assertFalse([c for c in sv.call_args_list if c.args[1] == task.name], "nothing rewritten")
+		self.assertEqual(frappe.db.get_value("CRM Task", task.name, "modified"), modified)

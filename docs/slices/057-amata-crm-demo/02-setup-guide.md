@@ -318,14 +318,19 @@ they are saved. It shows the lead as "person – company" and a deal as "company
 3. To keep it for everyone, save the view as a public view (or set it on your public
    "My open tasks" view). Otherwise it is kept for you only.
 
-The same field also appears as a quick filter box above the list.
+To filter by it, use the **Filter** button and pick **Lead / Deal**. (CRM's quick
+filter boxes come from its own fixed list, so it does not appear there.)
 
 **Check it worked:** a task made for a lead shows the person and company in the new
 column. Change a lead's status so a step fires, with the lead open in another tab: the
 new task appears on that lead's page without a reload.
 
 **Good to know:** the column is filled when the task is made or moved to another
-lead or deal. If the lead's name or company is edited later, old tasks keep the old text.
+lead or deal, and again whenever that lead's name or company is edited. It stays empty
+when the person saving the task cannot open that lead or deal.
+
+To hide the column from the list again, use Desk → **Customize Form** → CRM Task →
+untick **In List View** on Lead / Deal. A later deploy does not turn it back on.
 
 ---
 

@@ -238,10 +238,18 @@ doc_events = {
     # Slice 057 (A): a lead or deal reaching a status creates that step's CRM
     # Tasks (rows of Alvoraa CRM Step Task). No query unless the status changed.
     "CRM Lead": {
-        "on_update": "alvoraa_portal.crm_steps.on_status_change",
+        "on_update": [
+            "alvoraa_portal.crm_steps.on_status_change",
+            # 4 Oct: a changed name or company reaches the "Lead / Deal" column on its tasks.
+            "alvoraa_portal.crm_steps.refresh_task_labels",
+        ],
     },
     "CRM Deal": {
-        "on_update": "alvoraa_portal.crm_steps.on_status_change",
+        "on_update": [
+            "alvoraa_portal.crm_steps.on_status_change",
+            # 4 Oct: a changed name or company reaches the "Lead / Deal" column on its tasks.
+            "alvoraa_portal.crm_steps.refresh_task_labels",
+        ],
     },
     # Slice 057, 4 Oct: the "Lead / Deal" column on every CRM Task, ours or made by
     # hand. One read of the lead or deal, only when the task is new or re-pointed.
@@ -371,6 +379,9 @@ after_migrate = [
     # Slice 057, 4 Oct: the "Lead / Deal" column on CRM Task. A no-op without CRM.
     "alvoraa_portal.crm_steps.ensure_task_label_field",
 ]
+
+# Slice 057, 4 Oct: CRM installed after this app gets the "Lead / Deal" column at once.
+after_app_install = ["alvoraa_portal.crm_steps.on_app_install"]
 
 # And on a fresh install, which never runs a migrate. Without this a brand new
 # tenant has no review columns at all, and every correction fails on "Unknown

@@ -353,10 +353,60 @@ class TestStepTasks(FrappeTestCase):
 		lead = self.lead(None)
 		task = self.task("CRM Lead", lead.name)
 		frappe.db.set_value("CRM Task", task.name, crm_steps.TASK_LABEL, "", update_modified=False)
-		patch_mod.execute()
+		with patch("frappe.db.commit"):                          # keep the test's rows rolled back
+			patch_mod.execute()
 		self.assertEqual(self.label(task), lead.lead_name)
 		modified = frappe.db.get_value("CRM Task", task.name, "modified")
-		with patch("frappe.db.set_value") as sv:
+		with patch("frappe.db.set_value") as sv, patch("frappe.db.commit"):
 			crm_steps.backfill_task_labels(batch=1)               # second run, one row a page
 		self.assertFalse([c for c in sv.call_args_list if c.args[1] == task.name], "nothing rewritten")
 		self.assertEqual(frappe.db.get_value("CRM Task", task.name, "modified"), modified)
+
+	# ── 4 Oct, review fixes ──────────────────────────────────────────────────
+
+	def test_a_task_pointed_at_a_lead_you_cannot_open_shows_nothing(self):
+		"""Review P1: no reading a stranger's lead by pointing a task at its number."""
+		other = self.lead(None)                                          # SALES cannot open this
+		frappe.set_user(SALES)
+		try:
+			self.assertFalse(frappe.has_permission("CRM Lead", "read", other.name))
+			blind = self.task("CRM Lead", other.name)
+			own = frappe.get_doc({"doctype": "CRM Lead", "first_name": f"{TAG} {frappe.generate_hash(length=5)}",
+								  "lead_owner": SALES}).insert()
+			mine = self.task("CRM Lead", own.name)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertFalse(self.label(blind))
+		self.assertEqual(self.label(mine), own.lead_name)
+
+	def test_a_changed_name_or_company_reaches_its_tasks(self):
+		"""Review P2: a corrected or erased name does not linger on the task."""
+		lead = self.lead(None)
+		task = self.task("CRM Lead", lead.name)
+		lead.reload()
+		lead.organization = self.org
+		lead.save(ignore_permissions=True)
+		self.assertEqual(self.label(task), f"{lead.lead_name} – {self.org}")
+		lead.reload()
+		lead.job_title = "Owner"                                         # not a name: no task write
+		with patch("frappe.db.set_value", wraps=frappe.db.set_value) as sv:
+			lead.save(ignore_permissions=True)
+		self.assertFalse([c for c in sv.call_args_list if c.args and c.args[0] == "CRM Task"])
+
+	def test_a_migrate_keeps_a_column_hr_hid(self):
+		"""Review P3: hiding the column in Customize Form survives the next migrate."""
+		cf = frappe.db.get_value("Custom Field", {"dt": "CRM Task", "fieldname": crm_steps.TASK_LABEL})
+		frappe.db.set_value("Custom Field", cf, "in_list_view", 0)
+		try:
+			crm_steps.ensure_task_label_field()
+			self.assertEqual(frappe.db.get_value("Custom Field", cf, "in_list_view"), 0)
+		finally:
+			frappe.db.set_value("Custom Field", cf, "in_list_view", 1)
+
+	def test_installing_crm_adds_the_column_at_once(self):
+		with patch("alvoraa_portal.crm_steps.ensure_task_label_field") as ensure:
+			crm_steps.on_app_install("helpdesk")
+			ensure.assert_not_called()
+			crm_steps.on_app_install("crm")
+			ensure.assert_called_once_with()
+		self.assertIn("alvoraa_portal.crm_steps.on_app_install", frappe.get_hooks("after_app_install"))

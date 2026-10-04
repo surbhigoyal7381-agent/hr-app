@@ -111,7 +111,22 @@ def set_task_label(task, method=None):
 	row = None
 	if task.reference_doctype in ("CRM Lead", "CRM Deal") and task.reference_docname:
 		row = frappe.db.get_value(task.reference_doctype, task.reference_docname, NAME_FIELDS, as_dict=True)
+		# Only a record the person saving may open: otherwise anyone could point a task at
+		# a guessed lead number and read its person and company off the task (review, 4 Oct).
+		if row and not frappe.has_permission(task.reference_doctype, "read", doc=task.reference_docname):
+			row = None
 	task.set(TASK_LABEL, task_label(task.reference_doctype, row))
+
+
+def refresh_task_labels(doc, method=None):
+	"""doc_events on_update for CRM Lead and CRM Deal: a corrected or erased name or company
+	reaches its tasks too. One update, only when one of those fields changed."""
+	if not doc.get_doc_before_save() or not frappe.get_meta("CRM Task").has_field(TASK_LABEL):
+		return  # new record (no tasks yet), or the column is not on this site yet
+	if not any(doc.has_value_changed(f) for f in NAME_FIELDS[1:]):
+		return
+	frappe.db.set_value("CRM Task", {"reference_doctype": doc.doctype, "reference_docname": doc.name},
+						TASK_LABEL, task_label(doc.doctype, doc), update_modified=False)
 
 
 def task_label(reference_doctype, row):
@@ -129,8 +144,17 @@ def ensure_task_label_field():
 	if not frappe.db.exists("DocType", "CRM Task"):
 		return False
 	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
-	create_custom_fields({"CRM Task": [TASK_LABEL_FIELD]}, ignore_validate=True, update=True)
+	# update=False: made where missing, never changed after - a choice HR makes in
+	# Customize Form (say, hiding the column) is not undone by the next migrate.
+	create_custom_fields({"CRM Task": [TASK_LABEL_FIELD]}, ignore_validate=True, update=False)
 	return True
+
+
+def on_app_install(app_name):
+	"""after_app_install: the column arrives with CRM, not at the next migrate, so tasks
+	made in between are labelled too (the backfill patch has already run by then)."""
+	if app_name == "crm":
+		ensure_task_label_field()
 
 
 def backfill_task_labels(batch=500):

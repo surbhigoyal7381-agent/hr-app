@@ -382,7 +382,26 @@ the Tasks page can only show fields that exist on CRM Task.
   shows another person's task with a lead *number*. With this column it shows that
   lead's **person and company** too. For a small team who all see all leads this changes
   nothing; where sales users must not see each other's leads, it does.
-- **Known gaps.** The text is not refreshed when a lead's name or company is edited
-  later (acceptable simplification). The column is added on the next migrate, not at
-  `install-app` time, on a brand new site (deploys always migrate).
+- **Review fixes, 4 Oct.**
+  - The hook fills the column only if the person saving the task may open that lead or
+    deal (`frappe.has_permission`). Before, anyone could point a task at a guessed lead
+    number and read its person and company off the task.
+  - A CRM Lead / CRM Deal `on_update` hook (`refresh_task_labels`) rewrites the column
+    on that record's tasks when `lead_name`, `first_name`, `last_name` or `organization`
+    changes, so a corrected or erased name does not linger. One update, and only then.
+    `reference_docname` has no index; fine at today's volumes, measure before adding one.
+  - `ensure_task_label_field` uses `update=False`, so a migrate never undoes a choice
+    made in Customize Form (for example, hiding the column).
+  - `after_app_install` adds the column the moment CRM is installed after our app.
+  - The setup guide no longer promises a quick filter box: CRM's quick filters come
+    from its own fixed list in CRM Global Settings. Use the Filter button.
+- **Still open: the list itself (finding 1a).** Every Sales User can read every CRM
+  Task, so the column shows the person and company of leads they cannot open, in the
+  list and in exports. **Surbhi decides before the push:** accept it (small team, all
+  see all leads), or hide the column (Customize Form, untick In List View — kept across
+  deploys now), or ask for a CRM Task permission rule that copies the lead and deal
+  rules (a larger change).
+- **Known gap.** On a site where CRM was installed and tasks made before the field
+  existed, those tasks are filled only if the patch runs after the field exists. The
+  install hook above closes this for new installs; acceptable simplification.
 

@@ -6,6 +6,14 @@ app_email = "support@alvoraa.co"
 app_license = "MIT"
 required_apps = ["frappe/erpnext"]
 
+# ── Alvora colours on the desk ────────────────────────────────────────────
+# `app_include_css` is served on DESK pages only (/app/*). It does NOT reach
+# the employee portal: `hrms-employee.html` and the other www pages are website
+# pages, they carry their own design system, and `scripts/check_design_system.py`
+# counts the colours on them in CI. So this changes what HR and admins see, and
+# leaves what an employee sees exactly as it was.
+app_include_css = "/assets/alvoraa_portal/css/alvora_theme.css"
+
 # ── Post-login redirect: portal users → their portal; admins → /app ───────
 on_login = "alvoraa_portal.auth.on_login"
 

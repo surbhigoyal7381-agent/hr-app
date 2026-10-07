@@ -426,15 +426,56 @@ input[type="radio"]:checked::before {
    survives an upgrade where an edit to their JavaScript would not.
    -------------------------------------------------------------------------- */
 
-.link-content > svg.icon,
-.shortcut-widget-box .widget-head svg.icon.ml-2,
+/* Any svg inside a link label is the arrow - it is the only one there. Matched
+   without relying on the `icon` class, because the class list on Frappe's icon
+   helper is not something to depend on across upgrades. */
+.link-content > svg,
+.link-content svg.icon,
+.shortcut-widget-box .widget-head svg.icon,
 .number-widget-box .widget-head svg.icon {
   display: none !important;
 }
 
 
 /* --------------------------------------------------------------------------
-   17. LOGIN PAGE — branded gradient background
+   17. CHART LEGENDS — stop long labels colliding
+   --------------------------------------------------------------------------
+
+   frappe-charts lays its legend out in fixed-width cells. A pie of branches or
+   grades has labels far longer than the cell ("PPJ Delhi Karol Bagh",
+   "G3 Senior Executive"), so each one runs under its neighbour and the row
+   reads as one smeared string: "G3 Senior ExecutieG1 Support".
+
+   Nothing here changes a colour. It gives each legend entry room, lets the row
+   wrap instead of overflowing, and stops a long label eating the next one.
+   -------------------------------------------------------------------------- */
+
+.chart-legend {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 4px 18px !important;
+  align-items: flex-start !important;
+}
+
+.chart-legend .legend-dataset-label,
+.chart-legend .legend-dataset-text {
+  display: inline-flex !important;
+  align-items: baseline !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  max-width: 220px !important;
+  line-height: 1.3 !important;
+}
+
+/* The count under each label belongs to that label, not to the one after it. */
+.chart-legend .legend-dataset-value {
+  margin-left: 6px !important;
+  white-space: nowrap !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   18. LOGIN PAGE — branded gradient background
    -------------------------------------------------------------------------- */
 
 .login-content.page-card {

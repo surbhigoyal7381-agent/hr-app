@@ -408,7 +408,33 @@ input[type="radio"]:checked::before {
 
 
 /* --------------------------------------------------------------------------
-   16. LOGIN PAGE — branded gradient background
+   16. WORKSPACE LINKS — drop the ↗ after every label
+   --------------------------------------------------------------------------
+
+   Frappe v16 appends an "open in new place" arrow to every workspace link.
+   Four widgets draw it, all with the same icon:
+
+     links_widget.js:84        the card links  (Company ↗, Branch ↗ ...)
+     shortcut_widget.js:72,117 the shortcut tiles
+     number_card_widget.js:303 the number cards
+
+   Every one of those links opens in the SAME tab, so the arrow promises
+   something that does not happen - and repeated down a card it is most of
+   what the eye sees. The label is the thing being read.
+
+   Hidden rather than removed: this is Frappe's own markup, and a CSS rule
+   survives an upgrade where an edit to their JavaScript would not.
+   -------------------------------------------------------------------------- */
+
+.link-content > svg.icon,
+.shortcut-widget-box .widget-head svg.icon.ml-2,
+.number-widget-box .widget-head svg.icon {
+  display: none !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   17. LOGIN PAGE — branded gradient background
    -------------------------------------------------------------------------- */
 
 .login-content.page-card {

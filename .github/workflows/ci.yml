@@ -382,7 +382,10 @@ jobs:
           # Ubuntu's archive alone.
           sudo rm -f /etc/apt/sources.list.d/google-chrome.list                      /etc/apt/sources.list.d/google-chrome.sources
           sudo apt-get update
-          sudo apt-get install -y libcups2-dev redis-tools mariadb-client libmariadb-dev
+          # wkhtmltopdf: Frappe HR's Leave Encashment and Gratuity tests submit a
+          # salary slip, which renders a PDF (ALV-178). Without it they fail with
+          # "No wkhtmltopdf executable found" - a missing tool, not a code fault.
+          sudo apt-get install -y libcups2-dev redis-tools mariadb-client libmariadb-dev wkhtmltopdf
           pip install frappe-bench
 
       - name: MariaDB settings required by Frappe

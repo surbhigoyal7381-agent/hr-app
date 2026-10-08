@@ -510,6 +510,10 @@ jobs:
           # "wkhtmltopdf ... HostNotFoundError", which has nothing to do with them.
           echo "127.0.0.1 hrms_test_site" | sudo tee -a /etc/hosts
           bench --site hrms_test_site set-config host_name http://hrms_test_site:8000
+          # The PDF loads print.bundle.css from the site. The bench was made with
+          # --skip-assets, so build Frappe's assets here or wkhtmltopdf stops with
+          # ContentNotFound (Leave Encashment's salary-slip PDF, 8 Oct 2026).
+          bench build --app frappe
           nohup bench serve --port 8000 > ~/frappe-bench/serve.log 2>&1 &
           for doctype in "Expense Claim" "Employee Advance" "Leave Encashment" \
                          "Gratuity" "Full and Final Statement" "Salary Withholding"; do

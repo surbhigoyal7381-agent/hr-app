@@ -594,7 +594,7 @@ Already implemented in [`deploy/nginx.conf`](deploy/nginx.conf): `X-Frame-Option
 | Network | DB and Redis in private subnets; security groups allow the app tier only |
 | DB least privilege | App tier DML-only; root confined to provisioning |
 | `developer_mode` | `0` in test and production |
-| `server_script_enabled` | `0` — Server Scripts are arbitrary Python execution from the UI |
+| `server_script_enabled` | **`1` from 6 Oct 2026** (Surbhi's decision, reversing the earlier `0`). A Server Script is Python run on our server, written through the UI. What guards it is the ROLE, not the flag: `Script Manager` is the only role with write or create on Server Script, and it is held by Administrator alone — checked, not assumed. Two things must stay true: that role is never granted to another, and Administrator stays a controlled login (ALV-93). The residual risk is a sandbox escape, which would not stop at one site because every tenant shares the bench. Reasoning in full at `deploy/compose/docker-compose.app.yml`. |
 | Image scanning | Trivy in `build-image.yml`; escalate HIGH/CRITICAL to blocking once the baseline is clean |
 | SAST | semgrep rules in `hrms/semgrep/`, wired into `ci.yml` |
 | Dependency scanning | Dependabot for `pyproject.toml`, `package.json`, base image |

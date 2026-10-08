@@ -2,11 +2,12 @@
  "actions": [],
  "autoname": "hash",
  "creation": "2026-09-24 20:00:00.000000",
- "description": "One row per email the AI lead intake looked at: what happened and why. Holds no email text, no model answer and no key - only the outcome, the model, the token counts and a short reason.",
+ "description": "One row per email or forwarded WhatsApp message the AI lead intake looked at: what happened and why. Holds no email text, no model answer and no key - only the outcome, the model, the token counts and a short reason.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "communication",
+  "whatsapp_message",
   "email_account",
   "outcome",
   "reason",
@@ -34,7 +35,14 @@
    "label": "Email",
    "options": "Communication",
    "read_only": 1,
-   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "description": "Meta's id (wamid) of the forwarded WhatsApp message this row is about (slice 057). One row per Meta message, however often Meta delivers it.",
+   "fieldname": "whatsapp_message",
+   "fieldtype": "Data",
+   "label": "WhatsApp message",
+   "read_only": 1,
    "unique": 1
   },
   {
@@ -157,7 +165,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-09-25 18:00:00.000000",
+ "modified": "2026-10-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Portal",
  "name": "Alvoraa AI Call Log",

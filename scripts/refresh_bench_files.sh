@@ -53,7 +53,16 @@ docker run --rm --user 0:0 -v "${VOLUME}:/vol" --entrypoint bash "$IMAGE" -c '
   cd "$src/assets"
   for entry in *; do
     case "$entry" in assets.json|assets-rtl.json) continue ;; esac
-    cp -a "$entry" /vol/assets/
+    # Copy beside, then swap. A plain `cp -a "$entry" /vol/assets/` cannot put
+    # a directory where the volume still holds a symlink of the same name
+    # ("cannot overwrite non-directory"): after ALV-112 the image carries real
+    # directories (e.g. crm/node_modules) where older deploys left links, and
+    # every deploy from 6 Oct 2026 failed on it. The old entry is served until
+    # the rename, so no window opens with those files missing.
+    rm -rf "/vol/assets/.$entry.new"
+    cp -a "$entry" "/vol/assets/.$entry.new"
+    rm -rf "/vol/assets/$entry"
+    mv "/vol/assets/.$entry.new" "/vol/assets/$entry"
   done
   cp -p assets.json /vol/assets/.assets.json.new && mv -f /vol/assets/.assets.json.new /vol/assets/assets.json
   [ -f assets-rtl.json ] && cp -p assets-rtl.json /vol/assets/assets-rtl.json

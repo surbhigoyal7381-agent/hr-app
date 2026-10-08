@@ -77,10 +77,14 @@ jobs:
       # user clicks. This makes it a build-time check.
       #
       # Since the Phase 4 rename the repo directories and the installed app names finally
-      # agree (alvoraa_goals / alvoraa_portal), so no --alias is needed. --max 2 is the
-      # known debt: two pre-existing upstream hrms paths. Never raise it.
+      # agree (alvoraa_goals / alvoraa_portal), so no --alias is needed.
+      #
+      # --max 0. It was --max 2 from 18 Aug, "two pre-existing upstream hrms paths".
+      # They were not upstream debt: they were ALV-178, the payment function 48f5439
+      # deleted, which broke "Create Payment" for two months. Never raise it again;
+      # fix the path instead.
       - name: Front-end API paths resolve
-        run: python scripts/check_api_paths.py --max 2
+        run: python scripts/check_api_paths.py --max 0
 
       # Structural checks that need no bench or database: doctype name/folder/file agree,
       # controller class matches the doctype name (a mismatch makes bench migrate DELETE
@@ -350,7 +354,8 @@ jobs:
       # requires-python ">=3.10,<3.15", but its source uses PEP 695 `type X = ...`,
       # which needs 3.12 - so the declaration is optimistic and 3.11 fails at build.
       # Matching production also means CI finally tests the interpreter the servers use.
-      - uses: actions/setup-python@v5
+      - id: py
+        uses: actions/setup-python@v5
         with:
           python-version: "3.14"
 
@@ -363,10 +368,13 @@ jobs:
       # A cold `bench init` is 15-25 min. Cache it, keyed on what can change it.
       - name: Cache bench
         id: bench-cache
+        # The Python patch version is in the key: on 8 Oct 2026 the runner's Python changed (now
+        # 3.14.8), the cached env still pointed at the old interpreter, and
+        # every run died with "./env/bin/pip: cannot execute" before a test ran.
         uses: actions/cache@v4
         with:
           path: ~/frappe-bench
-          key: bench-${{ runner.os }}-${{ env.FRAPPE_TAG }}-${{ hashFiles('hrms/pyproject.toml', 'alvoraa_goals/requirements.txt', 'alvoraa_portal/requirements.txt') }}
+          key: bench-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-${{ env.FRAPPE_TAG }}-${{ hashFiles('hrms/pyproject.toml', 'alvoraa_goals/requirements.txt', 'alvoraa_portal/requirements.txt') }}
 
       - name: System dependencies
         run: |
@@ -379,6 +387,12 @@ jobs:
           sudo rm -f /etc/apt/sources.list.d/google-chrome.list                      /etc/apt/sources.list.d/google-chrome.sources
           sudo apt-get update
           sudo apt-get install -y libcups2-dev redis-tools mariadb-client libmariadb-dev
+          # wkhtmltopdf: Frappe HR's Leave Encashment and Gratuity tests submit a
+          # salary slip, which renders a PDF (ALV-178). Ubuntu's own package lacks
+          # the patched Qt and fails ("wkhtmltopdf reported an error"); Frappe
+          # needs the 0.12.6.1 build with patched Qt, as upstream Frappe HR's CI uses.
+          wget -q https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-3/wkhtmltox_0.12.6.1-3.jammy_amd64.deb
+          sudo apt-get install -y ./wkhtmltox_0.12.6.1-3.jammy_amd64.deb
           pip install frappe-bench
 
       - name: MariaDB settings required by Frappe
@@ -472,6 +486,39 @@ jobs:
           cd ~/frappe-bench
           bench --site test_site run-tests --app alvoraa_goals
           bench --site test_site run-tests --app alvoraa_portal
+
+      # ALV-178. The hrms fork's own tests never ran in CI, so when one commit
+      # removed Frappe HR's payment and ledger code (48f5439, 31 Jul) nothing failed.
+      # These are the doctypes that pay people and post to the accounts.
+      #
+      # Their own site, with only ERPNext and Frappe HR: ERPNext's test bootstrap
+      # creates calendar-year "_Test Fiscal Year"s, which overlap the April-March
+      # years our own tests create on test_site and stop test discovery.
+      - name: Frappe HR payment and payroll tests
+        run: |
+          cd ~/frappe-bench
+          bench new-site hrms_test_site --force --db-root-password root \
+            --admin-password admin --no-mariadb-socket
+          bench --site hrms_test_site install-app erpnext
+          bench --site hrms_test_site install-app hrms
+          bench --site hrms_test_site set-config allow_tests true
+          bench --site hrms_test_site set-config -p throttle_user_limit 1000
+          # Submitting a salary slip emails it as a PDF, and wkhtmltopdf fetches the
+          # page's styles from the site's own URL. So the site needs a name that
+          # resolves and a web server answering on it - what upstream Frappe HR's CI
+          # does too. Without it gratuity and leave encashment tests fail with
+          # "wkhtmltopdf ... HostNotFoundError", which has nothing to do with them.
+          echo "127.0.0.1 hrms_test_site" | sudo tee -a /etc/hosts
+          bench --site hrms_test_site set-config host_name http://hrms_test_site:8000
+          # The PDF loads print.bundle.css from the site. The bench was made with
+          # --skip-assets, so build Frappe's assets here or wkhtmltopdf stops with
+          # ContentNotFound (Leave Encashment's salary-slip PDF, 8 Oct 2026).
+          bench build --app frappe
+          nohup bench serve --port 8000 > ~/frappe-bench/serve.log 2>&1 &
+          for doctype in "Expense Claim" "Employee Advance" "Leave Encashment" \
+                         "Gratuity" "Full and Final Statement" "Salary Withholding"; do
+            bench --site hrms_test_site run-tests --doctype "$doctype"
+          done
 
       - name: Bench logs on failure
         if: failure()

@@ -688,6 +688,41 @@ jobs:
             echo "::error::human fixes deploy/nginx.conf and restarts compose-nginx-1."
           fi
 
+      # ALV-112, 6 Oct 2026. `bench build` links each app's public directory
+      # rather than copying it, and `refresh_bench_files.sh` faithfully copies
+      # those links into the sites volume. nginx mounts ONLY that volume and has
+      # no /apps, so every link that points outside it is a 404.
+      #
+      # Nothing ran the fix. `scripts/materialise_assets.sh` existed from the
+      # start but only as a hand step in DEPLOYMENT_RUNBOOK.md, so it happened
+      # when somebody remembered. It also only walked the top level, which left
+      # the one that bites:
+      #
+      #     frappe/public/node_modules -> apps/frappe/node_modules   (~324 MB)
+      #
+      # Most of the desk survives that, because its CSS and JS are real files.
+      # What dies is anything served straight from node_modules - and the one
+      # people meet is the code editor, so every Code field renders as a label
+      # with no editable box and the console says "Cannot read properties of
+      # undefined (reading 'config')". Found on dtc.alvoraa.co, where it made
+      # the Server Script form unusable.
+      #
+      # Runs in the backend container because only it has BOTH the sites volume
+      # and /apps - the link targets live under /apps. After the containers are
+      # up, before the asset check below, so that check sees the finished state.
+      - name: Assets must be real files, not links out of the volume
+        run: |
+          set -uo pipefail
+          cd /var/www/html/hr-app/deploy/compose
+          export COMPOSE_PROJECT_NAME="$PROJECT"
+          DC="docker compose -f docker-compose.app.yml -f $OVERLAY --env-file ../envs/${ENV_NAME}.env --env-file $PIN_FILE"
+          # Fed on stdin so nothing has to be copied into the container.
+          if ! $DC exec -T backend bash -s \
+               < /var/www/html/hr-app/scripts/materialise_assets.sh; then
+            echo "::error::materialise_assets.sh failed - assets may 404"
+            exit 1
+          fi
+
       - name: Smoke test
         run: |
           set -euo pipefail
@@ -726,7 +761,8 @@ jobs:
           for path in \
             /assets/alvoraa_portal/css/ess/frame.css \
             /assets/alvoraa_portal/css/ess/panels.css \
-            /assets/alvoraa_portal/js/ess/portal.js
+            /assets/alvoraa_portal/js/ess/portal.js \
+            /assets/frappe/node_modules/ace-builds/src-min-noconflict/ace.js
           do
             # `|| echo "000 0"` is not swallowing anything: a curl that cannot
             # connect becomes a status of 000, which fails the check below. The

@@ -235,6 +235,33 @@ doc_events = {
     "Communication": {
         "after_insert": "alvoraa_portal.ai_leads.intake.on_new_email",
     },
+    # Slice 057 (A): a lead or deal reaching a status creates that step's CRM
+    # Tasks (rows of Alvoraa CRM Step Task). No query unless the status changed.
+    "CRM Lead": {
+        "on_update": [
+            "alvoraa_portal.crm_steps.on_status_change",
+            # 4 Oct: a changed name or company reaches the "Lead / Deal" column on its tasks.
+            "alvoraa_portal.crm_steps.refresh_task_labels",
+        ],
+    },
+    "CRM Deal": {
+        "on_update": [
+            "alvoraa_portal.crm_steps.on_status_change",
+            # 4 Oct: a changed name or company reaches the "Lead / Deal" column on its tasks.
+            "alvoraa_portal.crm_steps.refresh_task_labels",
+        ],
+    },
+    # Slice 057, 4 Oct: the "Lead / Deal" column on every CRM Task, ours or made by
+    # hand. One read of the lead or deal, only when the task is new or re-pointed.
+    "CRM Task": {
+        "validate": "alvoraa_portal.crm_steps.set_task_label",
+    },
+    # Slice 057 (B): a message forwarded by a listed salesperson goes to AI lead
+    # intake (a queued job, only after Meta's signature is checked). A site-config
+    # read and nothing more for any other message.
+    "WhatsApp Message": {
+        "after_insert": "alvoraa_portal.ai_leads.whatsapp.on_whatsapp_message",
+    },
 }
 
 # ── Row-level security ───────────────────────────────────────────────────────
@@ -310,6 +337,11 @@ scheduler_events = {
         "* * * * *": [
             "alvoraa_portal.ai_leads.intake.pull_intake_mailboxes",
         ],
+        # Slice 057 (C): the founders' CRM summary, 09:00 site time. Returns
+        # before any query unless the site config names a recipient.
+        "0 9 * * *": [
+            "alvoraa_portal.crm_summary.send_daily",
+        ],
     },
 }
 
@@ -344,7 +376,12 @@ after_migrate = [
     # helpdesk_defaults.py for why this never flips a value HR chose back.
     "alvoraa_portal.lms_defaults.after_migrate",
     "alvoraa_portal.helpdesk_defaults.after_migrate",
+    # Slice 057, 4 Oct: the "Lead / Deal" column on CRM Task. A no-op without CRM.
+    "alvoraa_portal.crm_steps.ensure_task_label_field",
 ]
+
+# Slice 057, 4 Oct: CRM installed after this app gets the "Lead / Deal" column at once.
+after_app_install = ["alvoraa_portal.crm_steps.on_app_install"]
 
 # And on a fresh install, which never runs a migrate. Without this a brand new
 # tenant has no review columns at all, and every correction fails on "Unknown

@@ -85,6 +85,7 @@ Deploy commands that require explicit approval before running:
 - Before proposing any change, ask: does Frappe HR or ERPNext already handle this? What is the cross-module impact?
 - Think from three personas: **CXO** (sees all companies), **HR Manager** (single/multi company), **Employee** (own company only).
 - No backwards-compatibility shims, no feature flags, no abstractions beyond what the task requires.
+- **Never over-engineer.** Build the smallest thing that fully meets the approved requirement, and nothing else. The full rules — the cost ladder (already there → configuration → customisation → new code → new DocType → new app), the banned list, and the subtract pass — are in `.claude/context/no-over-engineering.md`, and they bind every agent.
 
 ---
 
@@ -151,6 +152,8 @@ Shared context they all read, in `.claude/context/`:
 - `change-process.md` — §2 above, expanded so every agent applies it the same way
 - `frappe-conventions.md` — §1, §3, §4 and §5 above, expanded
 - `product-context.md` — who we serve, build status, competitive frame
+- `no-over-engineering.md` — §4's "never over-engineer" rule in full: the cost ladder,
+  the banned list, what is never a plan, and the mandatory subtract pass
 - `nfr-budget.md` — the numbers behind §2's non-functional dimensions
 - `security-compliance-baseline.md` — DPDP, CERT-In, ISO, SOC 2, GDPR, EU AI Act
 - `compliance-feature-map.md` — the features that make those obligations real

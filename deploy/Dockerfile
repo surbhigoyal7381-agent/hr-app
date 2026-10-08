@@ -113,6 +113,16 @@ ARG TELEPHONY_COMMIT=039cf39f245d6818ead03cf94eea6ce7f9c1e1f7
 # diff, and a tag is preferred over a branch+commit whenever one exists.
 ARG HELPDESK_TAG=v1.30.1
 
+# The database client must not demand TLS. frappe/bench:latest moved to the
+# MariaDB 11.8 client (prod-b4b0eff had 10.11), which requires TLS by default;
+# our MariaDB 10.8 servers offer none, so `bench backup` failed with
+#   mariadb-dump: TLS/SSL error: SSL is required, but the server does not support it
+# and the 8 Oct 2026 dev deploy stopped at its backup step. Proven on dev: the
+# same dump works with this setting, as the frappe user. The database is only
+# reached on the private Docker network.
+USER root
+RUN printf '\n[client]\nskip-ssl\n' >> /etc/my.cnf && chmod 644 /etc/my.cnf
+
 USER frappe
 WORKDIR /home/frappe
 

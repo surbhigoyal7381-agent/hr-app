@@ -210,8 +210,41 @@ services:
           bench set-config -gp http_port 443
         fi
         bench set-config -gp mute_emails     "$$MUTE_EMAILS"
-        # Server Scripts are arbitrary Python execution from the UI. Off. (§20)
-        bench set-config -gp server_script_enabled 0
+        # Server Scripts: ON, from 6 Oct 2026, on Surbhi's decision. This
+        # REVERSES the earlier choice to keep them off (§20), so the reasoning
+        # is written here rather than left to a git blame.
+        #
+        # WHY it was off: a Server Script is Python executed on our server,
+        # written through the web UI. It lives only in that site's database -
+        # not in git, not reviewed, not tested, and silently older or absent
+        # after a restore from backup.
+        #
+        # WHY it is on: some rules belong to one client and should not become
+        # product features. DTC's red/green payroll calculation is the first.
+        # Building every one-tenant rule into the shared app is the kind of
+        # over-engineering §4 now forbids.
+        #
+        # WHAT ACTUALLY GUARDS IT - checked, not assumed, 6 Oct 2026:
+        # `Script Manager` is the ONLY role with write or create on Server
+        # Script, and on a seeded site that role is held by Administrator
+        # alone. No System Manager, no HR role. So this hands nothing to a
+        # tenant's HR team; it hands it to whoever holds that tenant's
+        # Administrator login. Administrator can already do nearly anything on
+        # their own site through the desk, so the new risk inside one tenant is
+        # small.
+        #
+        # THE RISK THAT IS REAL: Frappe runs these through a restricted
+        # sandbox. An escape would not stop at one site - every tenant shares
+        # this bench, and one of them is a paying client. That is low
+        # probability and high impact, and it is the reason this line is worth
+        # reading before anyone widens the role.
+        #
+        # TWO THINGS THAT MUST STAY TRUE for the guard above to hold:
+        #   1. `Script Manager` is never granted to another role.
+        #   2. Administrator stays a controlled login (ALV-93 wants named
+        #      support logins instead of the shared account - that work matters
+        #      more now than it did before this line changed).
+        bench set-config -gp server_script_enabled 1
         # Frappe 16.35 refuses the 61st User created within an hour on a site
         # ("Throttled", frappe 012667b, 22 Sep 2026). Fine against abuse, fatal
         # for a tenant onboarding 100 employees with logins. Raised, not removed

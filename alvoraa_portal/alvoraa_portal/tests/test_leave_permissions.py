@@ -129,12 +129,23 @@ class TestOnlyTheApproverMayApprove(FrappeTestCase):
 		self.assertNotIn('"HR Manager", "HR User", "Administrator"', src)
 
 	def test_the_approver_comes_from_frappe_hrs_own_lookup(self):
+		"""And from the UNGUARDED helper, not the whitelisted entry point.
+
+		ALV-173 put a permission check on `get_leave_approver`, because any
+		logged-in user could ask it who approves anybody. This helper asks that
+		same question about a THIRD PARTY on purpose - "who is allowed to
+		approve this?" - from inside our own already-checked endpoint. Routed
+		through the guarded version it would raise, the `except` below it would
+		swallow the error, and the caller would tell HR no approver is set when
+		one is.
+		"""
 		import inspect
 
 		from alvoraa_portal import hr_api
 
-		self.assertIn("get_leave_approver",
-		              inspect.getsource(hr_api._leave_approver_for))
+		src = inspect.getsource(hr_api._leave_approver_for)
+		self.assertIn("get_employee_leave_approver(doc.employee)", src)
+		self.assertNotIn("return get_leave_approver(", src)
 
 	def test_it_falls_back_to_the_department_approver(self):
 		"""An employee with no personal approver still has their department's."""
@@ -144,7 +155,7 @@ class TestOnlyTheApproverMayApprove(FrappeTestCase):
 
 		src = inspect.getsource(hr_api._leave_approver_for)
 		self.assertIn("doc.leave_approver", src)
-		self.assertIn("get_leave_approver", src)
+		self.assertIn("get_employee_leave_approver", src)
 
 	def test_a_missing_approver_says_so_plainly(self):
 		"""The most likely real-world case, and a bare PermissionError would send

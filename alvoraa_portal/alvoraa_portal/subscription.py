@@ -590,6 +590,8 @@ TENANT_DOCTYPES = [
     # Slice 043: what the tenant's AI lead intake did with each of its own emails.
     # The tenant's record, read by its System Manager - tenant-side.
     "Alvoraa AI Call Log",
+    # Slice 057: the tenant's own CRM steps (status -> task), set by its sales manager.
+    "Alvoraa CRM Step Task",
 ]
 
 REQUIRED = [k for k, v in FEATURES.items() if v.get("required")]

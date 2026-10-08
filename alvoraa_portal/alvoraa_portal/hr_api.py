@@ -918,9 +918,19 @@ def _leave_approver_for(doc):
     if doc.leave_approver:
         return doc.leave_approver
     try:
-        from hrms.hr.doctype.leave_application.leave_application import get_leave_approver
+        # ALV-173. The UNGUARDED helper, deliberately. `get_leave_approver` is
+        # the web entry point and now refuses anyone who is not the employee,
+        # their approver, or someone with read access to them. This call runs
+        # server-side inside our own already-checked endpoint, and it asks a
+        # question ABOUT a third party on purpose: "who is allowed to approve
+        # this?". Going through the web guard would make the `except` below
+        # swallow a PermissionError and return None, and the caller would then
+        # tell HR that no approver is set when one is.
+        from hrms.hr.doctype.leave_application.leave_application import (
+            get_employee_leave_approver,
+        )
 
-        return get_leave_approver(doc.employee)
+        return get_employee_leave_approver(doc.employee)
     except Exception:
         return None
 
@@ -2226,6 +2236,42 @@ def get_expense_types():
     )
 
 
+def _expense_claim_accounts(company, expense_type):
+    """The accounts a portal expense claim needs, from the company's own settings.
+
+    ALV-178: an Expense Claim books to the ledger again. Without these the employee
+    got a raw "Payable Account is mandatory" at approval, or "Set the default account
+    for the Expense Claim Type" when filing. Both are HR set-up, so say that plainly,
+    and say it before anything is saved.
+    """
+    payable_account, cost_center = frappe.db.get_value(
+        "Company", company, ["default_expense_claim_payable_account", "cost_center"]
+    ) or (None, None)
+    if not payable_account:
+        frappe.throw(
+            _("Your expense claim could not be filed because {0} has no account set for "
+              "paying expense claims. Please ask HR to set the Default Expense Claim "
+              "Payable Account on the company, then try again.").format(company),
+            title=_("Expense claims are not set up yet"),
+        )
+    if not cost_center:
+        frappe.throw(
+            _("Your expense claim could not be filed because {0} has no default cost "
+              "centre. Please ask HR to set the Default Cost Center on the company, then "
+              "try again.").format(company),
+            title=_("Expense claims are not set up yet"),
+        )
+    if not frappe.db.exists("Expense Claim Account",
+                            {"parent": expense_type, "company": company}):
+        frappe.throw(
+            _("Your expense claim could not be filed because the expense type {0} has no "
+              "expense account for {1}. Please ask HR to set one on the Expense Claim "
+              "Type, then try again.").format(expense_type, company),
+            title=_("Expense claims are not set up yet"),
+        )
+    return {"payable_account": payable_account, "cost_center": cost_center}
+
+
 @frappe.whitelist()
 def apply_expense_claim(expense_type, expense_date, amount, description=None):
     emp = _get_employee()
@@ -2243,6 +2289,7 @@ def apply_expense_claim(expense_type, expense_date, amount, description=None):
     # `currency` and `exchange_rate` are required too. Same-currency claims are
     # rate 1; a claim in another currency is not something this portal offers.
     currency = frappe.db.get_value("Company", emp.company, "default_currency")
+    accounts = _expense_claim_accounts(emp.company, expense_type)
 
     doc = frappe.get_doc({
         "doctype": "Expense Claim",
@@ -2251,6 +2298,11 @@ def apply_expense_claim(expense_type, expense_date, amount, description=None):
         "posting_date": today(),
         "currency": currency,
         "exchange_rate": 1,
+        # ALV-178: the claim posts to the ledger again, so it needs the account the
+        # employee is owed from and a cost centre. The desk form fills these from
+        # the company defaults in JavaScript; the portal has to do it here.
+        "payable_account": accounts["payable_account"],
+        "cost_center": accounts["cost_center"],
         "expenses": [{
             "doctype": "Expense Claim Detail",
             "expense_date": expense_date,
@@ -2258,6 +2310,7 @@ def apply_expense_claim(expense_type, expense_date, amount, description=None):
             "description": description or "",
             "amount": amount,
             "sanctioned_amount": amount,
+            "cost_center": accounts["cost_center"],
         }],
     })
     doc.insert(ignore_permissions=True)

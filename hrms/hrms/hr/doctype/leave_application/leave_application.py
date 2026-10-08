@@ -983,6 +983,7 @@ def get_number_of_leave_days(
 ) -> float:
 	"""Returns number of leave days between 2 dates after considering half day and holidays
 	(Based on the include_holiday setting in Leave Type)"""
+	validate_leave_access(employee)
 	number_of_days = date_diff(to_date, from_date) + 1
 
 	if cint(half_day) == 1:
@@ -1037,7 +1038,9 @@ def get_leave_details(employee: str, date: str | datetime.date, for_salary_slip:
 
 	return {
 		"leave_allocation": leave_allocation,
-		"leave_approver": get_leave_approver(employee),
+		# This function already called `validate_leave_access` at its start, so
+		# the unguarded helper - the guarded one would repeat the whole check.
+		"leave_approver": get_employee_leave_approver(employee),
 		"lwps": lwp,
 	}
 
@@ -1360,6 +1363,7 @@ def get_leave_entries(employee, leave_type, from_date, to_date):
 @frappe.whitelist()
 def get_holidays(employee: str, from_date: str | datetime.date, to_date: str | datetime.date) -> int:
 	"""get holidays between two dates for the given employee"""
+	validate_leave_access(employee)
 	holidays = get_holiday_dates_between_range(employee, from_date, to_date)
 	return len(holidays)
 
@@ -1546,8 +1550,14 @@ def get_approved_leaves_for_period(employee, leave_type, from_date, to_date):
 	return leave_days
 
 
-@frappe.whitelist()
-def get_leave_approver(employee: str) -> str:
+def get_employee_leave_approver(employee: str) -> str:
+	"""The rule itself, with NO permission check. Internal callers only.
+
+	Split out of `get_leave_approver` so the whitelisted entry point can be
+	guarded without the guard calling back into it - `validate_leave_access`
+	needs to know who the approver is in order to decide, so a guard on
+	`get_leave_approver` would recurse until the request died.
+	"""
 	leave_approver, department = frappe.db.get_value("Employee", employee, ["leave_approver", "department"])
 
 	if not leave_approver and department:
@@ -1558,6 +1568,13 @@ def get_leave_approver(employee: str) -> str:
 		)
 
 	return leave_approver
+
+
+@frappe.whitelist()
+def get_leave_approver(employee: str) -> str:
+	"""The web entry point, guarded. Server-side callers want the function above."""
+	validate_leave_access(employee)
+	return get_employee_leave_approver(employee)
 
 
 def on_doctype_update():
@@ -1571,13 +1588,16 @@ def get_leave_approver_and_mandatory(employee: str) -> dict:
 
 	return {
 		"is_mandatory": 1 if mandatory else 0,
-		"leave_approver": get_leave_approver(employee),
+		# Already permission-checked on the line above, so the unguarded helper.
+		"leave_approver": get_employee_leave_approver(employee),
 	}
 
 
 def validate_leave_access(employee):
 	employee_user = frappe.db.get_value("Employee", employee, "user_id")
-	leave_approver = get_leave_approver(employee)
+	# The UNGUARDED helper on purpose. Calling the whitelisted
+	# `get_leave_approver` here would call this function again, forever.
+	leave_approver = get_employee_leave_approver(employee)
 
 	if frappe.session.user not in (employee_user, leave_approver) and (
 		not frappe.has_permission("Employee", "read", employee)

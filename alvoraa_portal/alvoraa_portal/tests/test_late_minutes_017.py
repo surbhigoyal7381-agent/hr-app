@@ -512,10 +512,17 @@ class TheGracePeriod(LateCase):
 		"""The number that has to agree with the deduction card beside it."""
 		frappe.db.set_default(aa.LATE_GRACE_KEY, "15")
 		p, email = self.person("LMGraceTotals")
-		self.day(p, self.d(3), 9.0, in_time=self.d(3) + " 09:40:00")   # 10 late, forgiven
-		self.day(p, self.d(4), 9.0, in_time=self.d(4) + " 10:05:00")   # 35 late, counted
+		# Two days in the SAME month. d(3) and d(4) are a day apart and fall in
+		# different months on some dates (8 Oct 2026 was one), which left the
+		# counted day outside the month this test reads.
+		first = getdate(self.d(4))
+		if getdate(add_days(first, 1)).month != first.month:
+			first = getdate(add_days(first, -2))
+		a, b = str(first), str(add_days(first, 1))
+		self.day(p, a, 9.0, in_time=a + " 09:40:00")   # 10 late, forgiven
+		self.day(p, b, 9.0, in_time=b + " 10:05:00")   # 35 late, counted
 		frappe.set_user(email)
-		y, m = self.ym(3)
+		y, m = first.year, first.month
 		month = ac.month(y, m)
 		self.assertEqual(month["totals"]["late_days"], 1)
 		self.assertEqual(month["late_grace_mins"], 15)

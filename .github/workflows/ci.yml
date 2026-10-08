@@ -354,7 +354,8 @@ jobs:
       # requires-python ">=3.10,<3.15", but its source uses PEP 695 `type X = ...`,
       # which needs 3.12 - so the declaration is optimistic and 3.11 fails at build.
       # Matching production also means CI finally tests the interpreter the servers use.
-      - uses: actions/setup-python@v5
+      - id: py
+        uses: actions/setup-python@v5
         with:
           python-version: "3.14"
 
@@ -367,10 +368,13 @@ jobs:
       # A cold `bench init` is 15-25 min. Cache it, keyed on what can change it.
       - name: Cache bench
         id: bench-cache
+        # The Python patch version is in the key: on 8 Oct 2026 the runner's Python changed (now
+        # 3.14.8), the cached env still pointed at the old interpreter, and
+        # every run died with "./env/bin/pip: cannot execute" before a test ran.
         uses: actions/cache@v4
         with:
           path: ~/frappe-bench
-          key: bench-${{ runner.os }}-${{ env.FRAPPE_TAG }}-${{ hashFiles('hrms/pyproject.toml', 'alvoraa_goals/requirements.txt', 'alvoraa_portal/requirements.txt') }}
+          key: bench-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-${{ env.FRAPPE_TAG }}-${{ hashFiles('hrms/pyproject.toml', 'alvoraa_goals/requirements.txt', 'alvoraa_portal/requirements.txt') }}
 
       - name: System dependencies
         run: |

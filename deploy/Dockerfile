@@ -173,6 +173,14 @@ RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench g
 # this fix failed silently inside the `|| true` and the build broke in the
 # same place, with the same message, for the same reason.
 #
+# The checkout is --force because get-app has just run `yarn install`, which
+# rewrites the app's `frontend/yarn.lock`. Git then refuses to move off the
+# tip - "your local changes would be overwritten" - which never showed while
+# a pin WAS the tip, because that checkout did nothing. Throwing the lock away
+# is right: `bench build --production --app <name>` runs further down and
+# installs again from whichever lock the pinned commit carries, so the pin
+# decides the dependencies rather than the branch tip deciding them.
+#
 # The fetch is allowed to fail. A server will not serve an ABBREVIATED commit
 # by name - `WHATSAPP_COMMIT` is twelve characters, and asking for it returns
 # "couldn't find remote ref" (checked, 2026-10-15). In that case the checkout
@@ -184,14 +192,14 @@ RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench g
 # checkout changes files in place.
 RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch master https://github.com/shridarpatil/frappe_whatsapp \
  && (git -C apps/frappe_whatsapp fetch --quiet --depth=1 https://github.com/shridarpatil/frappe_whatsapp "${WHATSAPP_COMMIT}" || true) \
- && git -C apps/frappe_whatsapp checkout --quiet "${WHATSAPP_COMMIT}" \
+ && git -C apps/frappe_whatsapp checkout --quiet --force "${WHATSAPP_COMMIT}" \
  && git -C apps/frappe_whatsapp log -1 --format='frappe_whatsapp pinned at %h (%cs)'
 
 # Declares required_apps = ["frappe/payments"] in LMS's hooks.py, so this must
 # come before it. No frontend of its own.
 RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch version-16 https://github.com/frappe/payments \
  && (git -C apps/payments fetch --quiet --depth=1 https://github.com/frappe/payments "${PAYMENTS_COMMIT}" || true) \
- && git -C apps/payments checkout --quiet "${PAYMENTS_COMMIT}" \
+ && git -C apps/payments checkout --quiet --force "${PAYMENTS_COMMIT}" \
  && git -C apps/payments log -1 --format='payments pinned at %h (%cs)'
 
 # Both LMS and this app's own Helpdesk (below) declare a `frappe-ui` git
@@ -205,14 +213,14 @@ RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench g
 # nothing to fix.
 RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch version-16 https://github.com/frappe/lms \
  && (git -C apps/lms fetch --quiet --depth=1 https://github.com/frappe/lms "${LMS_COMMIT}" || true) \
- && git -C apps/lms checkout --quiet "${LMS_COMMIT}" \
+ && git -C apps/lms checkout --quiet --force "${LMS_COMMIT}" \
  && git -C apps/lms log -1 --format='lms pinned at %h (%cs)'
 
 # Declares required_apps = ["telephony"] in Helpdesk's hooks.py, so this must
 # come before it. No frontend of its own.
 RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch develop https://github.com/frappe/telephony \
  && (git -C apps/telephony fetch --quiet --depth=1 https://github.com/frappe/telephony "${TELEPHONY_COMMIT}" || true) \
- && git -C apps/telephony checkout --quiet "${TELEPHONY_COMMIT}" \
+ && git -C apps/telephony checkout --quiet --force "${TELEPHONY_COMMIT}" \
  && git -C apps/telephony log -1 --format='telephony pinned at %h (%cs)'
 
 # See the frappe-ui note on the LMS get-app step above - it applies here too.

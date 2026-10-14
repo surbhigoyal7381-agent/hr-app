@@ -416,6 +416,11 @@ after_migrate = [
     # helpdesk_defaults.py for why this never flips a value HR chose back.
     "alvoraa_portal.lms_defaults.after_migrate",
     "alvoraa_portal.helpdesk_defaults.after_migrate",
+    # Slice 059: the columns the pay-rule engine writes each day's verdict
+    # into. The engine and its tests were committed without them, and nothing
+    # noticed because both its hooks return early on a company with no rule
+    # set - which, until DTC's exists, is every company. See payroll_fields.py.
+    "alvoraa_portal.payroll_fields.after_migrate",
     # Slice 057, 4 Oct: the "Lead / Deal" column on CRM Task. A no-op without CRM.
     "alvoraa_portal.crm_steps.ensure_task_label_field",
 ]
@@ -450,6 +455,11 @@ after_install = [
     # Alvora lockup in its header, from a tenant's first email onward. Safe to
     # run again later (a patch does, on migrate) if the sending Email Account
     # is set up after this point - apply() is idempotent either way.
+    # Slice 059: the columns the pay-rule engine writes each day's verdict
+    # into. The engine and its tests were committed without them, and nothing
+    # noticed because both its hooks return early on a company with no rule
+    # set - which, until DTC's exists, is every company. See payroll_fields.py.
+    "alvoraa_portal.payroll_fields.after_migrate",
     "alvoraa_portal.email_brand.after_install",
 ]
 

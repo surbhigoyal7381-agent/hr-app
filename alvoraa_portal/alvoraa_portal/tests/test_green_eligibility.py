@@ -1,8 +1,9 @@
 """Green eligibility is dated, because DTC change it with the seasons.
 
 The resolution itself - given an employee and a day, which grant applies - is
-pure, so it is tested here without a site. The database side (overlap refusal,
-bulk grant) needs a bench and lives in the integration class below.
+pure, so it is tested here without a site. The database side - which grant wins
+on a shared day, the one-grant-per-start-date rule, and the bulk grant - needs a
+bench and lives in the integration class below.
 
 WHY THIS EXISTS AT ALL. Eligibility used to be one field on Employee. That
 field says what is true today and forgets what was true in October. Re-running
@@ -94,11 +95,20 @@ class TestResolvingAGrantByDate(unittest.TestCase):
 class TestGreenEligibilityRecords(FrappeTestCase):
 	"""Needs a site: the overlap refusal and the bulk grant."""
 
-	EMP = None
+	def setUp(self):
+		self.emp = None
 
 	def _employee(self):
-		if TestGreenEligibilityRecords.EMP:
-			return TestGreenEligibilityRecords.EMP
+		"""One fresh employee per test, deliberately not shared.
+
+		A grant is named after the employee and its start date, so two tests
+		that use the same person and the same date collide on the record name
+		- and the failure then looks like the rule under test rather than the
+		fixture. It cost an hour to see that once; a new person each time
+		costs one insert.
+		"""
+		if self.emp:
+			return self.emp
 		company = frappe.db.get_value("Company", {}, "name")
 		doc = frappe.get_doc({
 			"doctype": "Employee", "first_name": "Green", "last_name": "Test",
@@ -107,7 +117,7 @@ class TestGreenEligibilityRecords(FrappeTestCase):
 		})
 		doc.flags.ignore_permissions = True
 		doc.insert()
-		TestGreenEligibilityRecords.EMP = doc.name
+		self.emp = doc.name
 		return doc.name
 
 	def _grant(self, from_date, to_date, eligibility="Both"):
@@ -121,12 +131,36 @@ class TestGreenEligibilityRecords(FrappeTestCase):
 		doc.insert()
 		return doc
 
-	def test_two_periods_that_overlap_are_refused(self):
-		"""A day covered twice has two answers, and which applies would depend
-		on the order the rows were read in."""
-		self._grant("2026-10-01", "2026-10-31")
-		with self.assertRaises(frappe.ValidationError):
-			self._grant("2026-10-15", "2026-11-15")
+	def test_two_periods_that_overlap_are_allowed_and_the_later_start_wins(self):
+		"""The first design refused an overlap. That was wrong for the way DTC
+		actually work: they keep one standing grant per person and widen it for
+		a festive season, so refusing would make Diwali three edits each for
+		two hundred and fifty people.
+
+		A day covered twice is still unambiguous, because two grants cannot
+		share a start date - the record is named after the employee and that
+		day - so "the later start applies" always picks exactly one."""
+		from alvoraa_portal.alvoraa_portal.doctype \
+			.alvoraa_green_eligibility.alvoraa_green_eligibility \
+			import eligibility_on
+		emp = self._employee()
+		self._grant("2026-10-01", "2026-10-31", "None")
+		self._grant("2026-10-15", "2026-11-15", "Both")
+
+		# inside the season, the season applies
+		self.assertEqual(eligibility_on(emp, "2026-10-20"), "Both")
+		# before it, the standing grant still does
+		self.assertEqual(eligibility_on(emp, "2026-10-05"), "None")
+		# after both, nothing is granted and the caller's fallback is used
+		self.assertEqual(eligibility_on(emp, "2026-12-01", "fell back"),
+		                 "fell back")
+
+	def test_two_grants_cannot_share_a_start_date(self):
+		"""What makes the rule above unambiguous. It is enforced by the record
+		name, so it holds for Data Import and the API as well as the form."""
+		self._grant("2026-10-01", "2026-10-31", "None")
+		with self.assertRaises(frappe.DuplicateEntryError):
+			self._grant("2026-10-01", "2026-11-15", "Both")
 
 	def test_periods_that_touch_are_allowed(self):
 		self._grant("2026-01-01", "2026-01-31")
@@ -141,17 +175,38 @@ class TestGreenEligibilityRecords(FrappeTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			self._grant("2026-06-30", "2026-06-01")
 
-	def test_a_bulk_grant_skips_rather_than_rewrites(self):
-		"""Changing somebody's existing grant is a decision, not a side effect
-		of a bulk action."""
-		from alvoraa_portal.alvoraa_portal.doctype.alvoraa_green_eligibility \
-			.alvoraa_green_eligibility import grant_window
+	def test_a_bulk_grant_skips_a_same_day_rewrite_and_names_who(self):
+		"""Overwriting a decision somebody already made is not a side effect a
+		bulk action gets to have. The same start date means a straight rewrite,
+		so it is skipped and reported rather than applied quietly.
+
+		This used to fail open. The collision raises DuplicateEntryError, which
+		is not a ValidationError, so the catch missed it: the whole run died on
+		the first such employee, with nobody listed as skipped."""
+		from alvoraa_portal.alvoraa_portal.doctype \
+			.alvoraa_green_eligibility.alvoraa_green_eligibility \
+			import grant_window
 		emp = self._employee()
-		self._grant("2026-08-01", "2026-08-31")
-		out = grant_window([emp], "2026-08-15", "2026-09-15", "Both", "Diwali")
+		self._grant("2026-08-01", "2026-08-31", "None")
+		out = grant_window([emp], "2026-08-01", "2026-09-15", "Both", "Diwali")
 		self.assertEqual(out["created"], 0)
 		self.assertEqual(len(out["skipped"]), 1)
 		self.assertEqual(out["skipped"][0]["employee"], emp)
+
+	def test_a_bulk_grant_adds_a_season_over_a_standing_grant(self):
+		"""The case it exists for. A later start is not a rewrite, so it is
+		created and simply wins on the days the two share."""
+		from alvoraa_portal.alvoraa_portal.doctype \
+			.alvoraa_green_eligibility.alvoraa_green_eligibility \
+			import eligibility_on, grant_window
+		emp = self._employee()
+		self._grant("2026-08-01", None, "None")
+		out = grant_window([emp], "2026-08-15", "2026-09-15", "Both", "Diwali")
+		self.assertEqual(out["created"], 1)
+		self.assertEqual(out["skipped"], [])
+		self.assertEqual(eligibility_on(emp, "2026-08-20"), "Both")
+		self.assertEqual(eligibility_on(emp, "2026-08-10"), "None")
+		self.assertEqual(eligibility_on(emp, "2026-10-01"), "None")
 
 
 if __name__ == "__main__":

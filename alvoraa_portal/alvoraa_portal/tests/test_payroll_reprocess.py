@@ -66,8 +66,10 @@ def _ensure_rule_set():
 			{"percent_from": 98.9, "percent_to": 100, "quarters_off": 0, "raises_red": 0},
 		],
 		"mark_rates": [{"grade": "Junior", "amount_per_mark": 100}],
-		"leave_classes": [{"leave_class": "A", "period_days": 7.5,
-		                   "credit_per_period": 1, "monthly_credits": 4}],
+		# No leave classes. Leave is credited once a month from the roll-up,
+		# which this file does not touch - it reprocesses days. Listing a class
+		# here would oblige the rule set to name the Employee field that holds
+		# it, and that field does not exist on a throwaway test company.
 	})
 	doc.flags.ignore_permissions = True
 	doc.insert()
@@ -84,12 +86,21 @@ def setUpModule():
 class TestReprocess(FrappeTestCase):
 	def setUp(self):
 		self.date = getdate(add_days(nowdate(), -3))
-		self.emp = self._employee("reprocess.one@example.com")
+		self.emp = self._employee()
 
-	def _employee(self, email):
-		name = frappe.db.get_value("Employee", {"user_id": email})
-		if name:
-			return name
+	def _employee(self):
+		"""A FRESH employee for each test, and every call below scoped to them.
+
+		`apply` commits - it writes a trail on purpose - so nothing in this
+		file is rolled back. Sharing one person then makes the tests fight:
+		the same two punches at the same two times collide, and a test that
+		counts a company's days counts the days another test left behind.
+		Reading that failure as a bug in the engine cost an hour once.
+
+		One person per test, and every preview and apply told which employee
+		it is about, makes each test independent of the others and of whatever
+		earlier runs left on the site.
+		"""
 		doc = frappe.get_doc({
 			"doctype": "Employee", "first_name": "Reprocess", "last_name": "One",
 			"company": COMPANY, "date_of_joining": add_days(nowdate(), -200),
@@ -134,7 +145,7 @@ class TestReprocess(FrappeTestCase):
 		self._punch("17:42")
 		before = frappe.db.get_value("Attendance", att, list(VERDICT_FIELDS),
 		                             as_dict=True)
-		out = rp.preview(COMPANY, self.date, self.date)
+		out = rp.preview(COMPANY, self.date, self.date, employees=[self.emp])
 		self.assertTrue(out["ok"])
 		after = frappe.db.get_value("Attendance", att, list(VERDICT_FIELDS),
 		                            as_dict=True)
@@ -143,7 +154,8 @@ class TestReprocess(FrappeTestCase):
 	def test_apply_refuses_without_a_confirmation(self):
 		self._attendance()
 		with self.assertRaises(frappe.ValidationError):
-			rp.apply(COMPANY, self.date, self.date, confirmed=0)
+			rp.apply(COMPANY, self.date, self.date, employees=[self.emp],
+			         confirmed=0)
 
 	def test_running_it_twice_gives_the_same_answer(self):
 		"""Idempotence, and the reason the verdict lives on the Attendance row
@@ -152,10 +164,12 @@ class TestReprocess(FrappeTestCase):
 		att = self._attendance()
 		self._punch("11:00")
 		self._punch("17:42")
-		rp.apply(COMPANY, self.date, self.date, confirmed=1)
+		rp.apply(COMPANY, self.date, self.date, employees=[self.emp],
+		         confirmed=1)
 		once = frappe.db.get_value("Attendance", att, list(VERDICT_FIELDS),
 		                           as_dict=True)
-		rp.apply(COMPANY, self.date, self.date, confirmed=1)
+		rp.apply(COMPANY, self.date, self.date, employees=[self.emp],
+		         confirmed=1)
 		twice = frappe.db.get_value("Attendance", att, list(VERDICT_FIELDS),
 		                            as_dict=True)
 		self.assertEqual(once["alvoraa_slab_quarters"],
@@ -168,8 +182,9 @@ class TestReprocess(FrappeTestCase):
 		self._attendance()
 		self._punch("11:00")
 		self._punch("17:42")
-		rp.apply(COMPANY, self.date, self.date, confirmed=1)
-		out = rp.preview(COMPANY, self.date, self.date)
+		rp.apply(COMPANY, self.date, self.date, employees=[self.emp],
+		         confirmed=1)
+		out = rp.preview(COMPANY, self.date, self.date, employees=[self.emp])
 		self.assertEqual(out["totals"]["changed"], 0)
 		self.assertEqual(out["moved"], [])
 
@@ -179,12 +194,13 @@ class TestReprocess(FrappeTestCase):
 		lands and it becomes a measured day."""
 		att = self._attendance()
 		self._punch("11:00")
-		rp.apply(COMPANY, self.date, self.date, confirmed=1)
+		rp.apply(COMPANY, self.date, self.date, employees=[self.emp],
+		         confirmed=1)
 		self.assertEqual(
 			frappe.db.get_value("Attendance", att, "alvoraa_held"), 1)
 
 		self._punch("17:42")
-		out = rp.preview(COMPANY, self.date, self.date)
+		out = rp.preview(COMPANY, self.date, self.date, employees=[self.emp])
 		self.assertEqual(out["totals"]["changed"], 1)
 		moved = out["moved"][0]
 		self.assertEqual(moved["held_before"], 1)
@@ -204,14 +220,23 @@ class TestReprocess(FrappeTestCase):
 		})
 		slip.flags.ignore_permissions = True
 		slip.db_insert()
+		# A submitted slip is the one fixture here that outlives the test: it
+		# is written straight to the table, and `apply` below commits. Left
+		# behind it would make this employee look paid in every later run, and
+		# every other test in this file would then skip instead of reprocess.
+		self.addCleanup(lambda: frappe.db.delete("Salary Slip", {"name": slip.name}))
 
-		out = rp.preview(COMPANY, self.date, self.date)
+		# Scoped to this employee on purpose. The company's other rows are not
+		# what this test is about, and counting them made the assertion below
+		# depend on what the rest of the file had left lying around.
+		out = rp.preview(COMPANY, self.date, self.date, employees=[self.emp])
 		skipped = {s["employee"] for s in out["skipped_paid"]}
 		self.assertIn(self.emp, skipped)
 		self.assertEqual(out["totals"]["days"], 0)
 
 		before = frappe.db.get_value("Attendance", att, "alvoraa_evaluated_on")
-		rp.apply(COMPANY, self.date, self.date, confirmed=1)
+		rp.apply(COMPANY, self.date, self.date, employees=[self.emp],
+		         confirmed=1)
 		self.assertEqual(
 			frappe.db.get_value("Attendance", att, "alvoraa_evaluated_on"), before)
 
@@ -229,7 +254,8 @@ class TestReprocess(FrappeTestCase):
 		self._attendance()
 		self._punch("11:00")
 		self._punch("17:42")
-		out = rp.apply(COMPANY, self.date, self.date, confirmed=1)
+		out = rp.apply(COMPANY, self.date, self.date, employees=[self.emp],
+		         confirmed=1)
 		log = frappe.get_doc("Alvoraa Payroll Reprocess Log", out["log"])
 		self.assertEqual(log.company, COMPANY)
 		self.assertEqual(log.run_by, frappe.session.user)
@@ -240,7 +266,8 @@ class TestReprocess(FrappeTestCase):
 		self._attendance()
 		self._punch("11:00")
 		self._punch("17:42")
-		out = rp.apply(COMPANY, self.date, self.date, confirmed=1)
+		out = rp.apply(COMPANY, self.date, self.date, employees=[self.emp],
+		         confirmed=1)
 		with self.assertRaises(frappe.ValidationError):
 			frappe.delete_doc("Alvoraa Payroll Reprocess Log", out["log"],
 			                  ignore_permissions=True)

@@ -123,8 +123,27 @@ def grant_window(employees, from_date, to_date, eligibility, reason=None):
 		import json
 		employees = json.loads(employees)
 
+	# Asked before inserting, not caught afterwards. A same-day grant collides
+	# on the record name, and that raises DuplicateEntryError, which is NOT a
+	# ValidationError - so catching ValidationError let the whole run die on
+	# the first employee who already had one, with nobody reported as skipped.
+	# Asking first also keeps the transaction clean.
+	#
+	# One query for the whole list, not one per employee. A festive grant is
+	# two hundred and fifty people, and this runs in a web request.
+	already = {r.employee: r.name for r in frappe.get_all(
+		"Alvoraa Green Eligibility",
+		filters={"employee": ("in", list(employees)), "from_date": from_date},
+		fields=["employee", "name"])} if employees else {}
+
 	created, skipped = [], []
 	for employee in employees:
+		if employee in already:
+			skipped.append({
+				"employee": employee,
+				"why": _("already has a grant starting on this day ({0})")
+				.format(already[employee])})
+			continue
 		doc = frappe.get_doc({
 			"doctype": "Alvoraa Green Eligibility",
 			"employee": employee,
@@ -139,5 +158,6 @@ def grant_window(employees, from_date, to_date, eligibility, reason=None):
 		except frappe.ValidationError as e:
 			skipped.append({"employee": employee, "why": str(e)})
 
-	frappe.db.commit()
+	# No commit here. The request commits itself when it succeeds, and
+	# committing midway would also defeat the rollback the tests rely on.
 	return {"created": len(created), "skipped": skipped}

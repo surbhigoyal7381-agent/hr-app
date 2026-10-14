@@ -22,7 +22,8 @@ from alvoraa_portal.payroll_rules_apply import VERDICT_FIELDS
 
 COMPANY = "Reprocess Test Co"
 ABBR = "RTC"
-SHIFT = "Reprocess Test Shift"          # 10:30-20:30, 600 minutes
+SHIFT = "Reprocess Test Shift"          # 10:30-20:30, 600 minutes, no own grace
+GENEROUS_SHIFT = "Reprocess Generous Shift"   # same hours, 45 minutes' grace
 RULE_SET = None
 
 
@@ -35,8 +36,21 @@ def _ensure_company():
 
 def _ensure_shift():
 	if not frappe.db.exists("Shift Type", SHIFT):
+		# Late entry marking deliberately OFF, so this shift says nothing about
+		# grace and the rule set's own number applies. That is the fallback
+		# path, and every other test in this file runs on it.
 		frappe.get_doc({"doctype": "Shift Type", "name": SHIFT,
 		                "start_time": "10:30:00", "end_time": "20:30:00"}
+		               ).insert(ignore_permissions=True)
+	if not frappe.db.exists("Shift Type", GENEROUS_SHIFT):
+		# The same hours, but this one sets its own grace - and a much longer
+		# one, so a day is late under the rule set's 6 minutes and on time
+		# under the shift's 45. One number cannot produce both answers, which
+		# is what makes the test prove which one was used.
+		frappe.get_doc({"doctype": "Shift Type", "name": GENEROUS_SHIFT,
+		                "start_time": "10:30:00", "end_time": "20:30:00",
+		                "enable_late_entry_marking": 1,
+		                "late_entry_grace_period": 45}
 		               ).insert(ignore_permissions=True)
 
 
@@ -66,6 +80,15 @@ def _ensure_rule_set():
 			{"percent_from": 98.9, "percent_to": 100, "quarters_off": 0, "raises_red": 0},
 		],
 		"mark_rates": [{"grade": "Junior", "amount_per_mark": 100}],
+		# Contract staff get a longer grace because of their contract, not
+		# their shift. Needed here to prove a shift cannot overrule it.
+		#
+		# category_field is what makes the table reachable at all. Without it
+		# the rows sit there matching nobody, which looks exactly like the
+		# engine ignoring them.
+		"category_field": "employment_type",
+		"categories": [{"category": "Contract", "grace_minutes": 90,
+		                "earns_marks": 0, "earns_leave_credits": 0}],
 		# No leave classes. Leave is credited once a month from the roll-up,
 		# which this file does not touch - it reprocesses days. Listing a class
 		# here would oblige the rule set to name the Employee field that holds
@@ -88,7 +111,7 @@ class TestReprocess(FrappeTestCase):
 		self.date = getdate(add_days(nowdate(), -3))
 		self.emp = self._employee()
 
-	def _employee(self):
+	def _employee(self, shift=None, employment_type=None):
 		"""A FRESH employee for each test, and every call below scoped to them.
 
 		`apply` commits - it writes a trail on purpose - so nothing in this
@@ -105,31 +128,35 @@ class TestReprocess(FrappeTestCase):
 			"doctype": "Employee", "first_name": "Reprocess", "last_name": "One",
 			"company": COMPANY, "date_of_joining": add_days(nowdate(), -200),
 			"date_of_birth": "1990-01-01", "gender": "Female",
-			"status": "Active", "default_shift": SHIFT,
+			"status": "Active", "default_shift": shift or SHIFT,
+			"employment_type": employment_type,
 		})
 		doc.flags.ignore_permissions = True
 		doc.insert()
 		return doc.name
 
-	def _attendance(self, status="Present"):
+	def _attendance(self, status="Present", shift=None, employee=None):
+		employee = employee or self.emp
 		existing = frappe.db.get_value(
-			"Attendance", {"employee": self.emp, "attendance_date": self.date,
+			"Attendance", {"employee": employee, "attendance_date": self.date,
 			               "docstatus": 1})
 		if existing:
 			return existing
 		doc = frappe.get_doc({
-			"doctype": "Attendance", "employee": self.emp, "company": COMPANY,
-			"attendance_date": self.date, "status": status, "shift": SHIFT,
+			"doctype": "Attendance", "employee": employee, "company": COMPANY,
+			"attendance_date": self.date, "status": status,
+			"shift": shift or SHIFT,
 		})
 		doc.flags.ignore_permissions = True
 		doc.insert()
 		doc.submit()
 		return doc.name
 
-	def _punch(self, hhmm):
+	def _punch(self, hhmm, shift=None, employee=None):
 		doc = frappe.get_doc({
-			"doctype": "Employee Checkin", "employee": self.emp,
-			"time": "{0} {1}:00".format(self.date, hhmm), "shift": SHIFT,
+			"doctype": "Employee Checkin", "employee": employee or self.emp,
+			"time": "{0} {1}:00".format(self.date, hhmm),
+			"shift": shift or SHIFT,
 		})
 		doc.flags.ignore_permissions = True
 		doc.insert()
@@ -261,6 +288,54 @@ class TestReprocess(FrappeTestCase):
 		self.assertEqual(log.run_by, frappe.session.user)
 		self.assertTrue(log.days_reprocessed >= 1)
 		self.assertTrue(log.detail)
+
+	# ── where the grace comes from ───────────────────────────────────────────
+	#
+	# One number, in the place HR actually maintains it. The rule set used to
+	# hold its own copy, and Frappe's Late Entry tick held another, so the two
+	# could drift apart: edit a shift and only half the behaviour moved.
+	#
+	# Arriving at 11:00 on a 10:30 shift is 30 minutes late. That is late under
+	# the rule set's 6 minutes, on time under the generous shift's 45, and on
+	# time under a contract employee's 90. No single number gives all three, so
+	# each test can only pass if the right source was used.
+
+	def _late_flag(self, att):
+		return frappe.db.get_value("Attendance", att, "alvoraa_late_arrival")
+
+	def test_a_shift_that_sets_its_own_grace_is_the_one_that_counts(self):
+		emp = self._employee(shift=GENEROUS_SHIFT)
+		att = self._attendance(shift=GENEROUS_SHIFT, employee=emp)
+		self._punch("11:00", shift=GENEROUS_SHIFT, employee=emp)
+		self._punch("20:30", shift=GENEROUS_SHIFT, employee=emp)
+		rp.apply(COMPANY, self.date, self.date, employees=[emp], confirmed=1)
+		# 30 minutes late, inside the shift's 45. Not late.
+		self.assertEqual(self._late_flag(att), 0)
+
+	def test_a_shift_that_sets_none_falls_back_to_the_rule_set(self):
+		"""The path every other test in this file runs on, stated once."""
+		att = self._attendance()
+		self._punch("11:00")
+		self._punch("20:30")
+		rp.apply(COMPANY, self.date, self.date, employees=[self.emp],
+		         confirmed=1)
+		# 30 minutes late, past the rule set's 6. Late.
+		self.assertEqual(self._late_flag(att), 1)
+
+	def test_a_contract_grace_beats_the_shift_it_is_worked_on(self):
+		"""Contract staff get a longer grace because of their contract, not
+		their shift - they work the same shifts as everybody else. A shift
+		overruling that would take the concession away the first time somebody
+		edited the shift."""
+		emp = self._employee(shift=GENEROUS_SHIFT, employment_type="Contract")
+		att = self._attendance(shift=GENEROUS_SHIFT, employee=emp)
+		self._punch("11:00", shift=GENEROUS_SHIFT, employee=emp)
+		self._punch("20:30", shift=GENEROUS_SHIFT, employee=emp)
+		rp.apply(COMPANY, self.date, self.date, employees=[emp], confirmed=1)
+		self.assertEqual(self._late_flag(att), 0)
+		# And the contract rule as a whole still applies, not just its grace.
+		self.assertEqual(
+			frappe.db.get_value("Attendance", att, "alvoraa_reds"), 0)
 
 	def test_the_trail_cannot_be_deleted(self):
 		self._attendance()

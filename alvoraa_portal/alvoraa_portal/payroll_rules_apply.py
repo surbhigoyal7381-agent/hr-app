@@ -126,11 +126,25 @@ def prepare(rule_set, from_date=None, to_date=None):
 				pluck="holiday_date")
 		}
 
+	# (start, end, grace) per shift. Grace is None when the shift has nothing
+	# to say about it.
+	#
+	# `enable_late_entry_marking` is what separates "this shift allows no
+	# grace" from "nobody set this shift up". Both leave the minutes at 0 and
+	# Frappe has no other way to tell them apart, so without reading the tick
+	# every unconfigured shift would silently mean zero grace - a red mark for
+	# arriving one minute late, for everybody on that shift.
 	shifts = {}
-	for s in frappe.get_all("Shift Type", fields=["name", "start_time", "end_time"]):
+	for s in frappe.get_all("Shift Type",
+	                        fields=["name", "start_time", "end_time",
+	                                "enable_late_entry_marking",
+	                                "late_entry_grace_period"]):
 		start, end = _minutes(s.start_time), _minutes(s.end_time)
 		if start is not None and end is not None:
-			shifts[s.name] = (start, end)
+			shifts[s.name] = (
+				start, end,
+				int(s.late_entry_grace_period or 0)
+				if s.enable_late_entry_marking else None)
 
 	return {
 		"rule_set": rule_set,
@@ -167,7 +181,7 @@ def prepare(rule_set, from_date=None, to_date=None):
 	}
 
 
-def _employee_flags(employee, date, ctx):
+def _employee_flags(employee, date, ctx, shift_grace=None):
 	"""The per-employee switches, read through the field names the rule set
 	names rather than field names written into this file.
 
@@ -175,6 +189,9 @@ def _employee_flags(employee, date, ctx):
 	depends on it simply does not fire. That is deliberate: DTC have not sent
 	the employee-category mapping, so the CAT-06 exemption cannot be applied
 	yet, and guessing it would be worse than leaving it off.
+
+	`shift_grace` is the grace the employee's shift allows on arrival, or None
+	where that shift does not set one. See the grace note below.
 	"""
 	wanted = [f for f in (ctx["window_field"], ctx["double_field"],
 	                      ctx["green_field"], ctx["category_field"]) if f]
@@ -196,8 +213,29 @@ def _employee_flags(employee, date, ctx):
 	# category keeps its marks rather than silently losing them.
 	override = ctx["categories"].get(raw(ctx["category_field"]), {})
 
+	# ── grace comes from the most specific place that has an answer ──────────
+	#
+	# 1. The employee's CATEGORY. Contract staff get a longer grace because of
+	#    their contract, not because of their shift - they work the same shifts
+	#    as everybody else, so letting a shift overrule it would quietly take
+	#    the concession away the first time somebody edited that shift. A
+	#    category grace of 0 means "no override", which is how an ordinary
+	#    category leaves the decision to the shift.
+	# 2. The employee's SHIFT, where it sets one. This is the number HR
+	#    actually maintains, and the same number Frappe uses for its own Late
+	#    Entry tick - so the two can no longer drift apart.
+	# 3. The rule set's own number, as the fallback for a shift that sets none
+	#    and for any tenant not using shift-level grace at all.
+	#
+	# Only arrival. Leaving early carries no grace in these rules (GBL-04
+	# grants it on arrival only), so Shift Type's early exit grace is read
+	# nowhere - using it would change DTC's rules rather than tidy them.
+	grace = override.get("grace_minutes")
+	if not grace:
+		grace = ctx["grace"] if shift_grace is None else shift_grace
+
 	return {
-		"grace_minutes": override.get("grace_minutes") or ctx["grace"],
+		"grace_minutes": grace,
 		"earns_marks": override.get("earns_marks", True),
 		"late_window_flagged": bool(values.get(ctx["window_field"]))
 		if ctx["window_field"] else False,
@@ -288,7 +326,8 @@ def judge(attendance, ctx):
 	if (attendance.get("alvoraa_held_confirmed")
 			and attendance.get("alvoraa_confirmed_out_time")):
 		confirmed_out = _minutes(attendance.get("alvoraa_confirmed_out_time"))
-	flags = _employee_flags(attendance.employee, date, ctx)
+	flags = _employee_flags(attendance.employee, date, ctx,
+	                        shift_grace=shift[2])
 
 	return evaluate_day(
 		shift_start=shift[0],

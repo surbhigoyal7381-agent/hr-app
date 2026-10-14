@@ -122,6 +122,11 @@ PINNED_DEPTH = {
 	"org-settings.html": 0,
 	"pay.html": 0,
 	"policies.html": 0,
+	# ALV-194. One panel and one modal, each opening and closing inside this
+	# file. It closes nothing the frame opened and leaves nothing for the frame
+	# to close, so 0 is the shape the file is rather than the number that made
+	# the check pass.
+	"positions.html": 0,
 	"request-modals.html": 0,
 	"requests.html": 0,
 	"team.html": 0,

@@ -1,0 +1,105 @@
+      <!-- ── Positions Panel ─────────────────────────── -->
+      <div id="panel-positions" class="panel">
+        <div class="pf-toolbar" style="margin-bottom:24px">
+          <div>
+            <div class="pf-h">Positions</div>
+            <div class="pf-sub">Every seat in the organisation, who is in it, and which are empty.</div>
+          </div>
+          <button class="btn btn-primary btn-sm" id="pos-add-btn"
+                  onclick="posOpenEditor(null)" style="display:none">+ Add a seat</button>
+        </div>
+
+        <div class="pf-card" style="margin-bottom:16px">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+            <div>
+              <div class="gp-label">Branch</div>
+              <select class="gp-input" id="pos-f-branch" style="height:32px;padding:4px 8px;width:auto"
+                      onchange="posLoad()"><option value="">All branches</option></select>
+            </div>
+            <div>
+              <div class="gp-label">Department</div>
+              <select class="gp-input" id="pos-f-dept" style="height:32px;padding:4px 8px;width:auto"
+                      onchange="posLoad()"><option value="">All departments</option></select>
+            </div>
+            <div>
+              <div class="gp-label">Show</div>
+              <select class="gp-input" id="pos-f-open" style="height:32px;padding:4px 8px;width:auto"
+                      onchange="posPaint()">
+                <option value="">Every seat</option>
+                <option value="open">Only seats with a vacancy</option>
+                <option value="key">Only key seats</option>
+              </select>
+            </div>
+            <div style="margin-left:auto"><div class="pf-card-meta" id="pos-count"></div></div>
+          </div>
+        </div>
+
+        <div class="pf-card">
+          <div id="pos-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
+        </div>
+      </div>
+
+      <!-- Add or change one seat. A seat with nobody in it is how a vacancy
+           becomes visible, so creating an empty one is the normal case. -->
+      <div class="gp-backdrop" id="pos-editor">
+        <div class="gp-modal" style="max-width:560px">
+          <div class="gp-modal-hdr">
+            <div class="gp-modal-title" id="pos-editor-title">Add a seat</div>
+            <button class="gp-modal-close" onclick="posCloseEditor()" aria-label="Close">&times;</button>
+          </div>
+          <div class="gp-modal-body">
+            <div class="gp-error" id="pos-editor-err" style="display:none;margin-bottom:12px"></div>
+            <input type="hidden" id="pos-e-name">
+
+            <div class="gp-field">
+              <div class="gp-label">What the seat is called</div>
+              <input class="gp-input" id="pos-e-title" placeholder="Cashier">
+            </div>
+
+            <div class="gp-field">
+              <div class="gp-label">Reports to</div>
+              <select class="gp-input" id="pos-e-parent"><option value="">Nobody &mdash; top of the chart</option></select>
+            </div>
+
+            <div style="display:flex;gap:12px">
+              <div class="gp-field" style="flex:1">
+                <div class="gp-label">Branch</div>
+                <select class="gp-input" id="pos-e-branch"><option value="">None</option></select>
+              </div>
+              <div class="gp-field" style="flex:1">
+                <div class="gp-label">Department</div>
+                <select class="gp-input" id="pos-e-dept"><option value="">None</option></select>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:12px">
+              <div class="gp-field" style="flex:1">
+                <div class="gp-label">How many people it holds</div>
+                <input class="gp-input" id="pos-e-seats" type="number" min="0" step="0.5" value="1">
+              </div>
+              <div class="gp-field" style="flex:1">
+                <div class="gp-label">Status</div>
+                <select class="gp-input" id="pos-e-status">
+                  <option value="Active">Active</option>
+                  <option value="Frozen">Frozen &mdash; no hiring just now</option>
+                  <option value="Closed">Closed</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="gp-field">
+              <div style="display:flex;gap:8px;align-items:flex-start">
+                <input type="checkbox" id="pos-e-key" style="width:16px;height:16px;margin-top:3px;accent-color:var(--primary);cursor:pointer">
+                <label for="pos-e-key" style="margin:0;cursor:pointer">
+                  <strong>A key seat</strong>
+                  <span class="pf-card-meta" style="display:block">An empty one is flagged red rather than amber.</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="gp-modal-footer">
+            <button class="btn btn-outline" onclick="posCloseEditor()">Cancel</button>
+            <button class="btn btn-primary" id="pos-save-btn" onclick="posSave()">Save</button>
+          </div>
+        </div>
+      </div>

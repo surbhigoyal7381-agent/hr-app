@@ -185,6 +185,217 @@ function ocRender(n, isRoot) {
   return '<div class="oc-branch">' + ocNodeCard(n, isRoot) + kids + "</div>";
 }
 
+/* ── the position register, as a list ──────────────────────────────────
+   The chart answers what the company looks like. This answers what seats we
+   have, which are empty, and what needs changing - and that is a table.
+
+   Whether the buttons appear is the SERVER's answer (may_edit), never a guess
+   from the roles in the browser: the endpoint refuses either way, and a button
+   that appears and then fails is worse than one that was never there. */
+
+var POS = { rows: [], may_edit: false };
+
+function posEsc(s) { return ocEsc(s); }
+
+function posNum(n) {
+  // 2 rather than 2.0, but 1.5 kept - half seats are the point of the column.
+  return (Math.round(n * 100) / 100).toString();
+}
+
+window.posLoad = async function () {
+  var body = document.getElementById("pos-body");
+  if (!body) return;
+  body.innerHTML = '<div class="empty-state"><div class="empty-state-text">Loading&hellip;</div></div>';
+  var branch = (document.getElementById("pos-f-branch") || {}).value || "";
+  var dept = (document.getElementById("pos-f-dept") || {}).value || "";
+  var out;
+  try {
+    out = await gpFetch("hrms.alvoraa_org_structure.register.position_table",
+                        { branch: branch, department: dept });
+  } catch (e) {
+    body.innerHTML = '<div class="empty-state"><div class="empty-state-text">'
+      + posEsc(e && e.message ? e.message : e) + "</div></div>";
+    return;
+  }
+  POS.rows = (out && out.rows) || [];
+  POS.may_edit = !!(out && out.may_edit);
+  var add = document.getElementById("pos-add-btn");
+  if (add) add.style.display = POS.may_edit ? "" : "none";
+  posFillFilters();
+  posPaint();
+};
+
+/* The filter lists come from the rows themselves, so they can only ever offer
+   what this person is allowed to see. */
+function posFillFilters() {
+  [["pos-f-branch", "branch", "All branches"],
+   ["pos-f-dept", "department", "All departments"]].forEach(function (f) {
+    var el = document.getElementById(f[0]);
+    if (!el) return;
+    var keep = el.value;
+    var seen = {};
+    POS.rows.forEach(function (r) { if (r[f[1]]) seen[r[f[1]]] = 1; });
+    var opts = Object.keys(seen).sort();
+    // Rebuilding would drop a choice that filtered the rows down in the first
+    // place, so the current one is kept even when nothing left matches it.
+    if (keep && opts.indexOf(keep) === -1) opts.push(keep);
+    el.innerHTML = '<option value="">' + f[2] + "</option>"
+      + opts.map(function (o) {
+          return '<option value="' + posEsc(o) + '"'
+            + (o === keep ? " selected" : "") + ">" + posEsc(o) + "</option>";
+        }).join("");
+  });
+}
+
+function posPaint() {
+  var body = document.getElementById("pos-body");
+  if (!body) return;
+  var show = (document.getElementById("pos-f-open") || {}).value || "";
+  var rows = POS.rows.filter(function (r) {
+    if (show === "open") return r.open >= 0.5;
+    if (show === "key") return r.key;
+    return true;
+  });
+
+  var count = document.getElementById("pos-count");
+  if (count) {
+    var open = POS.rows.reduce(function (a, r) { return a + r.open; }, 0);
+    count.textContent = POS.rows.length + " seats"
+      + (open ? ", " + posNum(open) + " open" : ", all filled")
+      + (rows.length !== POS.rows.length ? " — showing " + rows.length : "");
+  }
+
+  if (!rows.length) {
+    body.innerHTML = '<div class="empty-state"><div class="empty-state-text">'
+      + (POS.rows.length ? "Nothing matches that filter."
+                         : "No positions yet.") + "</div></div>";
+    return;
+  }
+
+  var head = "<tr><th>Position</th><th>Reports to</th><th>Branch</th>"
+    + "<th>Department</th><th>Who is in it</th>"
+    + '<th style="text-align:right">Seats</th>'
+    + '<th style="text-align:right">Open</th>'
+    + (POS.may_edit ? "<th></th>" : "") + "</tr>";
+
+  var out = rows.map(function (r) {
+    var who = r.people.length
+      ? r.people.map(function (p) {
+          return posEsc(p.name)
+            + (p.weight < 100 ? ' <span class="pf-card-meta">' + posNum(p.weight) + "%</span>" : "")
+            + (p.covering ? ' <span class="pf-card-meta">covering</span>' : "");
+        }).join("<br>")
+      : '<span class="pf-card-meta">Nobody in this seat</span>';
+    // The vacancy is the thing somebody opened this screen for, so it is said
+    // in words as well as a number - a bare 1 in a column reads as nothing.
+    var open = r.open >= 0.5
+      ? '<strong>' + posNum(r.open) + "</strong>"
+      : '<span class="pf-card-meta">&mdash;</span>';
+    return "<tr>"
+      + "<td>" + posEsc(r.title)
+        + (r.key ? ' <span class="pf-card-meta">key seat</span>' : "")
+        + (r.status !== "Active" ? ' <span class="pf-card-meta">' + posEsc(r.status) + "</span>" : "")
+      + "</td>"
+      + "<td>" + (r.reports_to_title
+          ? posEsc(r.reports_to_title)
+          : '<span class="pf-card-meta">&mdash;</span>') + "</td>"
+      + "<td>" + posEsc(r.branch) + "</td>"
+      + "<td>" + posEsc(r.department) + "</td>"
+      + "<td>" + who + "</td>"
+      + '<td style="text-align:right">' + posNum(r.seats) + "</td>"
+      + '<td style="text-align:right">' + open + "</td>"
+      + (POS.may_edit
+          ? '<td style="text-align:right"><button class="btn btn-outline btn-sm" onclick="posOpenEditor(\''
+            + posEsc(r.id) + '\')">Change</button></td>'
+          : "")
+      + "</tr>";
+  }).join("");
+
+  body.innerHTML = '<div style="overflow-x:auto"><table class="pf-table">'
+    + "<thead>" + head + "</thead><tbody>" + out + "</tbody></table></div>";
+}
+
+/* ── adding a seat, and moving one ─────────────────────────────────── */
+
+window.posOpenEditor = function (id) {
+  if (!POS.may_edit) return;
+  var r = POS.rows.filter(function (x) { return x.id === id; })[0] || null;
+  document.getElementById("pos-editor-title").textContent =
+    r ? "Change this seat" : "Add a seat";
+  document.getElementById("pos-e-name").value = r ? r.id : "";
+  document.getElementById("pos-e-title").value = r ? r.title : "";
+  document.getElementById("pos-e-seats").value = r ? r.seats : 1;
+  document.getElementById("pos-e-status").value = r ? r.status : "Active";
+  document.getElementById("pos-e-key").checked = r ? !!r.key : false;
+
+  // A seat may not be its own parent, so it is left out of its own list.
+  posFillSelect("pos-e-parent", POS.rows
+    .filter(function (x) { return !r || x.id !== r.id; })
+    .map(function (x) { return [x.id, x.title]; }),
+    r ? r.reports_to : "", "Nobody — top of the chart");
+  posFillSelect("pos-e-branch", posValues("branch"), r ? r.branch : "", "None");
+  posFillSelect("pos-e-dept", posValues("department"), r ? r.department : "", "None");
+
+  posErr("");
+  document.getElementById("pos-editor").classList.add("open");
+};
+
+function posValues(field) {
+  var seen = {};
+  POS.rows.forEach(function (r) { if (r[field]) seen[r[field]] = 1; });
+  return Object.keys(seen).sort().map(function (v) { return [v, v]; });
+}
+
+function posFillSelect(id, pairs, chosen, blank) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = '<option value="">' + posEsc(blank) + "</option>"
+    + pairs.map(function (p) {
+        return '<option value="' + posEsc(p[0]) + '"'
+          + (p[0] === chosen ? " selected" : "") + ">" + posEsc(p[1]) + "</option>";
+      }).join("");
+}
+
+function posErr(msg) {
+  var el = document.getElementById("pos-editor-err");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.style.display = msg ? "" : "none";
+}
+
+window.posCloseEditor = function () {
+  document.getElementById("pos-editor").classList.remove("open");
+};
+
+window.posSave = async function () {
+  var title = (document.getElementById("pos-e-title").value || "").trim();
+  if (!title) { posErr("Give the seat a name."); return; }
+  var seats = parseFloat(document.getElementById("pos-e-seats").value);
+  if (!(seats >= 0)) { posErr("How many people it holds must be zero or more."); return; }
+
+  var btn = document.getElementById("pos-save-btn");
+  btn.disabled = true;
+  try {
+    await gpFetch("hrms.alvoraa_org_structure.register.save_position", {
+      name: document.getElementById("pos-e-name").value || null,
+      position_title: title,
+      reports_to_position: document.getElementById("pos-e-parent").value || "",
+      branch: document.getElementById("pos-e-branch").value || "",
+      department: document.getElementById("pos-e-dept").value || "",
+      seats: seats,
+      status: document.getElementById("pos-e-status").value,
+      is_key_position: document.getElementById("pos-e-key").checked ? 1 : 0,
+    });
+  } catch (e) {
+    posErr(e && e.message ? e.message : String(e));
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  posCloseEditor();
+  posLoad();
+};
+
 /* ── moving around ─────────────────────────────────────────────────── */
 
 function ocFind(node, id) {
@@ -432,6 +643,7 @@ function switchPanel(name, triggerEl) {
   if (name === "attendance-insights") { aiOpen(); }
   if (name === "att-record")         { acOpen(); }
   if (name === "org-chart") { ocLoad(); }
+  if (name === "positions")          { posLoad(); }
   if (name === "data-review")        { drLoad(); }
 
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
@@ -2945,6 +3157,13 @@ function applyPlanNav() {
   var navPolicies = document.getElementById("nav-policies");
   if (navPolicies) navPolicies.style.display =
     f.plan_policy_library ? "flex" : "none";
+
+  // The register is a management screen, so it needs the position layer AND
+  // somebody with a reason to open it. A manager gets it read-only; whether
+  // they may change anything is a setting the server answers, not this line.
+  var navPositions = document.getElementById("nav-positions");
+  if (navPositions) navPositions.style.display =
+    (f.plan_org_structure && (roles.is_hr || roles.is_manager)) ? "flex" : "none";
 
   var navOrgChart = document.getElementById("nav-org-chart");
   if (navOrgChart) navOrgChart.style.display =

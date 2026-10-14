@@ -58,6 +58,15 @@ DEFAULTS = {
 	# who cannot see past their own team cannot plan around the one next door.
 	"alvoraa_org_managers_see_all": 1,
 
+	# Who owns the shape of the organisation - who may create a seat, change how
+	# many it holds, or move it under a different one. HR by default, because
+	# that is the common case, but it genuinely differs: at the first customer
+	# the owners keep the structure themselves and HR does not touch it. Reading
+	# the list is deliberately wider than changing it, so a branch head can see
+	# the empty seats in their store without being able to restructure the
+	# company.
+	"alvoraa_org_position_editor_roles": "HR Manager,System Manager",
+
 	# Span of control. Past about nine, a manager cannot give anybody real
 	# attention - one-to-ones stop and appraisals become a form to fill in.
 	# Usually the sign that a layer is missing rather than that anybody is lazy.
@@ -74,18 +83,22 @@ DEFAULTS = {
 	"alvoraa_cover_allow_over_cap": 1,
 }
 
-# Slice 012 F1 (SEC-18): the keys that decide who sees whom on the org chart.
+# Slice 012 F1 (SEC-18): the keys that hand out privilege on the org chart.
 # Changing any of them can show people parts of the company they could not see
-# before, so only a System Manager changes them, and every change leaves a record.
+# before, or let them rewrite its structure, so only a System Manager changes
+# them, and every change leaves a record.
 # The reach levels are here too: raising them to 99 gives every employee close to
-# the whole chart, just as adding "Employee" to the roles does.
+# the whole chart, just as adding "Employee" to the roles does. The editor roles
+# are here because somebody who can move seats can redraw the company, which is
+# as serious as being able to read it.
 # The cover and span keys stay with HR - they change alerts and pay rules, not
-# who can see anybody.
+# who can see or change anybody.
 ACCESS_GRANTING = frozenset({
 	"alvoraa_org_full_reach_roles",
 	"alvoraa_org_managers_see_all",
 	"alvoraa_org_reach_up",
 	"alvoraa_org_reach_down",
+	"alvoraa_org_position_editor_roles",
 })
 
 # Kept apart from the numbers so the Org Setup page can render a label and an
@@ -113,6 +126,9 @@ LABELS = {
 		"Comma separated. HR and system administrators by default."),
 	"alvoraa_org_managers_see_all": ("Anybody with direct reports sees the whole chart",
 		"Off means a manager is bounded like everybody else."),
+	"alvoraa_org_position_editor_roles": ("Roles that may change the position structure",
+		"Comma separated. Who may add a seat, change how many it holds, or move "
+		"it. Seeing the list is wider than changing it."),
 	"alvoraa_org_span_wide": ("Flag a manager with this many reports or more",
 		"Past about nine, one-to-ones stop happening. Usually a missing layer."),
 	"alvoraa_org_span_narrow": ("Flag a manager with this many reports",

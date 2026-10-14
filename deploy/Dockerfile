@@ -154,15 +154,37 @@ RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench g
 # frontend's yarn install; the Vite build itself happens in step 4 below.
 RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch "${CRM_TAG}" https://github.com/frappe/crm
 
-# get-app cannot take a commit, so: fetch master, then pin. The editable pip
-# install get-app already did stays valid - the checkout changes files in place.
+# get-app cannot take a commit, so: fetch the branch, then pin.
+#
+# ALV-196. `bench get-app` clones SHALLOWLY, so the only commit it brings back
+# is the branch tip. Checking out a pin that is no longer the tip then fails
+# with "unable to read tree" - which is what happened on 2026-10-15, when
+# frappe/lms moved `version-16` past our pin and every build on every branch
+# stopped. The commit had not gone anywhere; our fetch was simply too narrow.
+#
+# So each pinned app now asks for its own commit by name before checking it
+# out. That is the point of a pin: the commit decides what we ship, not
+# whatever the branch happens to point at this morning. Without this line a pin
+# is honoured only while it IS the tip, which is not a pin at all.
+#
+# The fetch is allowed to fail. A server will not serve an ABBREVIATED commit
+# by name - `WHATSAPP_COMMIT` is twelve characters, and asking for it returns
+# "couldn't find remote ref" (checked, 2026-10-15). In that case the checkout
+# falls back to whatever get-app already brought, which is exactly today's
+# behaviour. So this line can only ever help: it never fails a build that would
+# otherwise have passed.
+#
+# The editable pip install get-app already did stays valid either way - a
+# checkout changes files in place.
 RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch master https://github.com/shridarpatil/frappe_whatsapp \
+ && (git -C apps/frappe_whatsapp fetch --quiet --depth=1 origin "${WHATSAPP_COMMIT}" || true) \
  && git -C apps/frappe_whatsapp checkout --quiet "${WHATSAPP_COMMIT}" \
  && git -C apps/frappe_whatsapp log -1 --format='frappe_whatsapp pinned at %h (%cs)'
 
 # Declares required_apps = ["frappe/payments"] in LMS's hooks.py, so this must
 # come before it. No frontend of its own.
 RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch version-16 https://github.com/frappe/payments \
+ && (git -C apps/payments fetch --quiet --depth=1 origin "${PAYMENTS_COMMIT}" || true) \
  && git -C apps/payments checkout --quiet "${PAYMENTS_COMMIT}" \
  && git -C apps/payments log -1 --format='payments pinned at %h (%cs)'
 
@@ -176,12 +198,14 @@ RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench g
 # §3. A future engineer bumping either pin should not "fix" this - there is
 # nothing to fix.
 RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch version-16 https://github.com/frappe/lms \
+ && (git -C apps/lms fetch --quiet --depth=1 origin "${LMS_COMMIT}" || true) \
  && git -C apps/lms checkout --quiet "${LMS_COMMIT}" \
  && git -C apps/lms log -1 --format='lms pinned at %h (%cs)'
 
 # Declares required_apps = ["telephony"] in Helpdesk's hooks.py, so this must
 # come before it. No frontend of its own.
 RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch develop https://github.com/frappe/telephony \
+ && (git -C apps/telephony fetch --quiet --depth=1 origin "${TELEPHONY_COMMIT}" || true) \
  && git -C apps/telephony checkout --quiet "${TELEPHONY_COMMIT}" \
  && git -C apps/telephony log -1 --format='telephony pinned at %h (%cs)'
 

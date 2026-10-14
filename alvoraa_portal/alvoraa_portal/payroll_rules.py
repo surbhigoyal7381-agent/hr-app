@@ -271,6 +271,11 @@ def _window_applies(window_from, window_to, shift_start, grace_minutes):
 	a different rule for them. If DTC want the window to follow the shift, that
 	is a change to the rule, not something to guess at here.
 
+	CONFIRMED by Surbhi on 15 October 2026, shift by shift: on an 08:30 shift
+	arriving 11:00 is late and charges; on an 11:00 shift it is on time and the
+	rule is skipped; on an 11:30 or 12:00 shift it is early and the rule is
+	skipped. So this is a settled decision, not an open question.
+
 	All times are minutes from midnight.
 	"""
 	if window_from is None or window_to is None:

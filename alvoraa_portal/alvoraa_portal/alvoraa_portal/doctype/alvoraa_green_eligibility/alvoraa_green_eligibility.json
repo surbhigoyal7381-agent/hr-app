@@ -1,0 +1,39 @@
+{
+ "actions": [], "allow_rename": 0,
+ "autoname": "format:GREEN-{employee}-{from_date}",
+ "creation": "2026-10-09 16:00:00.000000", "doctype": "DocType", "engine": "InnoDB",
+ "field_order": ["employee","employee_name","company","col_dates","from_date",
+                 "to_date","settings_section","eligibility","reason"],
+ "fields": [
+  {"fieldname":"employee","fieldtype":"Link","options":"Employee","label":"Employee",
+   "reqd":1,"in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"employee_name","fieldtype":"Data","label":"Name","read_only":1,
+   "fetch_from":"employee.employee_name","in_list_view":1},
+  {"fieldname":"company","fieldtype":"Link","options":"Company","label":"Company",
+   "fetch_from":"employee.company","read_only":1},
+  {"fieldname":"col_dates","fieldtype":"Column Break"},
+  {"fieldname":"from_date","fieldtype":"Date","label":"From","reqd":1,
+   "in_list_view":1,"in_standard_filter":1},
+  {"fieldname":"to_date","fieldtype":"Date","label":"To","in_list_view":1,
+   "description":"Leave blank for open-ended. A festive window should have an end date, or it quietly becomes permanent."},
+  {"fieldname":"settings_section","fieldtype":"Section Break","label":"What Is Allowed"},
+  {"fieldname":"eligibility","fieldtype":"Select",
+   "options":"None\nMorning Green\nNight Green\nBoth","default":"None",
+   "label":"Eligibility","reqd":1,"in_list_view":1,
+   "description":"Morning Green is awarded for arriving two hours or more early. Night Green for staying an hour or more after shift end."},
+  {"fieldname":"reason","fieldtype":"Data","label":"Why",
+   "description":"Plain words, for whoever reads this in six months. For example: Diwali season, extended hours."}
+ ],
+ "index_web_pages_for_search":1, "links": [],
+ "modified": "2026-10-09 16:00:00.000000", "modified_by": "Administrator",
+ "module": "Alvoraa Portal", "name": "Alvoraa Green Eligibility",
+ "owner": "Administrator",
+ "permissions": [
+  {"create":1,"delete":1,"email":1,"export":1,"import":1,"print":1,"read":1,
+   "report":1,"role":"System Manager","share":1,"write":1},
+  {"create":1,"delete":1,"email":1,"export":1,"import":1,"print":1,"read":1,
+   "report":1,"role":"HR Manager","share":1,"write":1},
+  {"read":1,"report":1,"role":"HR User"}
+ ],
+ "sort_field": "from_date", "sort_order": "DESC", "states": [], "track_changes": 1
+}

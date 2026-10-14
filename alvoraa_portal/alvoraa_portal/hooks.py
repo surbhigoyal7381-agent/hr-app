@@ -88,6 +88,10 @@ doctype_js = {
     # history. The QR encoder loads first; the section draws the code from E7's
     # answer in the browser, so no other request ever carries it (AC-47).
     "Employee": ["public/js/alvoraa_qr.js", "public/js/employee_field_app.js"],
+    # ATT-07: the "Reprocess Attendance" button, offered where the employees and
+    # the dates are already chosen. The first click only previews - it writes
+    # nothing until the numbers have been seen and agreed.
+    "Payroll Entry": "public/js/payroll_entry_reprocess.js",
 }
 
 # The phone list (slice 013 step 5, US-18): default "joined in the last 7
@@ -98,6 +102,17 @@ doctype_list_js = {
 }
 
 doc_events = {
+    # The payroll rules engine prices the slip from attendance (slice 059).
+    # It runs AFTER Frappe's own validate, replaces payment_days with the
+    # engine's paid days, and re-runs the calculation over them. It swallows
+    # its own errors: a slip that cannot be produced is a person who cannot
+    # be paid.
+    "Salary Slip": {
+        "validate": "alvoraa_portal.payroll_slip.on_salary_slip_validate",
+    },
+    "Attendance": {
+        "on_submit": "alvoraa_portal.payroll_rules_apply.on_attendance_submit",
+    },
     # ── Objectives must sit under a Key Result Area, when HR requires it ───
     # Enforced on the document, not only in the portal form: the rule is about
     # what the organisation accepts, so it has to hold for the desk, the API and

@@ -1,0 +1,27 @@
+{
+ "actions": [], "allow_rename": 0, "creation": "2026-10-09 12:00:00.000000",
+ "doctype": "DocType", "editable_grid": 1, "engine": "InnoDB",
+ "field_order": ["category", "grace_minutes", "earns_marks", "earns_leave_credits"],
+ "fields": [
+  {"columns": 3,
+   "description": "The value held on the employee's category field, spelt exactly as it is stored. For DTC these are the Employment Type records, Regular and Contract.",
+   "fieldname": "category", "fieldtype": "Data", "in_list_view": 1,
+   "label": "Category", "reqd": 1},
+  {"columns": 2, "default": "0",
+   "description": "Arriving within this many minutes of shift start counts as on time, for this category only. Contract staff are given 15 where regular staff get 6.",
+   "fieldname": "grace_minutes", "fieldtype": "Int", "in_list_view": 1,
+   "label": "Grace Minutes"},
+  {"columns": 2, "default": "1",
+   "description": "Whether this category earns red and green marks. Off for contract staff: they still lose quarters for time missed, but carry no marks either way.",
+   "fieldname": "earns_marks", "fieldtype": "Check", "in_list_view": 1,
+   "label": "Earns Marks"},
+  {"columns": 2, "default": "1",
+   "description": "Whether this category earns the monthly leave class. Off for contract staff, who are paid pro-rata on days present.",
+   "fieldname": "earns_leave_credits", "fieldtype": "Check", "in_list_view": 1,
+   "label": "Earns Leave Credits"}
+ ],
+ "istable": 1, "links": [], "modified": "2026-10-09 12:00:00.000000",
+ "modified_by": "Administrator", "module": "Alvoraa Portal",
+ "name": "Alvoraa Employee Category", "owner": "Administrator",
+ "permissions": [], "sort_field": "idx", "sort_order": "ASC", "states": []
+}

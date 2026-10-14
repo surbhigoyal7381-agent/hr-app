@@ -1,0 +1,66 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-09 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "leave_class",
+  "period_days",
+  "credit_per_period",
+  "monthly_credits"
+ ],
+ "fields": [
+  {
+   "columns": 3,
+   "description": "The value held on the employee's leave-class field, spelt exactly as it is stored. For DTC these are A, B and C.",
+   "fieldname": "leave_class",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Leave Class",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "precision": "2",
+   "reqd": 1,
+   "description": "Days ATTENDED before one credit is earned. A quarter of a 30-day month is 7.5. Periods are periods of attendance, not calendar time.",
+   "fieldname": "period_days",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Credit Every (Days Present)"
+  },
+  {
+   "columns": 2,
+   "precision": "2",
+   "reqd": 1,
+   "description": "What one closed period credits. Class C earns half a day per period.",
+   "fieldname": "credit_per_period",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Credit Per Period"
+  },
+  {
+   "columns": 3,
+   "description": "The most this class can earn in a month, and the figure the cadence is checked against on save. Reached at full attendance.",
+   "fieldname": "monthly_credits",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Monthly Cap",
+   "precision": "2",
+   "reqd": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-09 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa Leave Class",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "idx",
+ "sort_order": "ASC",
+ "states": []
+}

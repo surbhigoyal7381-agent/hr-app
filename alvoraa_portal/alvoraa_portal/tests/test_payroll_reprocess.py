@@ -1,0 +1,246 @@
+"""ATT-07: re-running the rules over a period that has already been judged.
+
+The daily engine and the monthly roll-up are pure and tested without a site.
+This file covers the part that cannot be: reading attendance out of the
+database, writing verdicts back, and the four promises the reprocess makes.
+
+  It is safe to click twice.
+  It never touches an employee whose slip is already submitted.
+  It shows the numbers before it writes anything.
+  It leaves a trail that outlives an error log.
+
+The third is the one worth stating plainly: `preview` must write NOTHING. A
+preview with a side effect is not a preview, and nobody would ever find out.
+"""
+
+import frappe
+from frappe.tests.utils import FrappeTestCase
+from frappe.utils import add_days, getdate, nowdate
+
+from alvoraa_portal import payroll_reprocess as rp
+from alvoraa_portal.payroll_rules_apply import VERDICT_FIELDS
+
+COMPANY = "Reprocess Test Co"
+ABBR = "RTC"
+SHIFT = "Reprocess Test Shift"          # 10:30-20:30, 600 minutes
+RULE_SET = None
+
+
+def _ensure_company():
+	if not frappe.db.exists("Company", COMPANY):
+		frappe.get_doc({"doctype": "Company", "company_name": COMPANY,
+		                "abbr": ABBR, "default_currency": "INR",
+		                "country": "India"}).insert(ignore_permissions=True)
+
+
+def _ensure_shift():
+	if not frappe.db.exists("Shift Type", SHIFT):
+		frappe.get_doc({"doctype": "Shift Type", "name": SHIFT,
+		                "start_time": "10:30:00", "end_time": "20:30:00"}
+		               ).insert(ignore_permissions=True)
+
+
+def _ensure_rule_set():
+	"""DTC's table, on a throwaway company, switched on."""
+	name = frappe.db.get_value("Alvoraa Payroll Rule Set", {"company": COMPANY})
+	if name:
+		return frappe.get_doc("Alvoraa Payroll Rule Set", name)
+	doc = frappe.get_doc({
+		"doctype": "Alvoraa Payroll Rule Set",
+		"company": COMPANY,
+		"enabled": 1,
+		"grace_minutes": 6,
+		"free_reds_per_month": 2,
+		"special_day_multiplier": 2,
+		"leave_threshold_days": 15,
+		"accrual_month_days": 30,
+		"slabs": [
+			{"percent_from": 0, "percent_to": 20, "quarters_off": 4, "raises_red": 0},
+			{"percent_from": 20, "percent_to": 24, "quarters_off": 3, "raises_red": 1},
+			{"percent_from": 24, "percent_to": 40, "quarters_off": 3, "raises_red": 0},
+			{"percent_from": 40, "percent_to": 44, "quarters_off": 2, "raises_red": 1},
+			{"percent_from": 44, "percent_to": 65, "quarters_off": 2, "raises_red": 0},
+			{"percent_from": 65, "percent_to": 68, "quarters_off": 1, "raises_red": 1},
+			{"percent_from": 68, "percent_to": 90, "quarters_off": 1, "raises_red": 0},
+			{"percent_from": 90, "percent_to": 98.9, "quarters_off": 0, "raises_red": 1},
+			{"percent_from": 98.9, "percent_to": 100, "quarters_off": 0, "raises_red": 0},
+		],
+		"mark_rates": [{"grade": "Junior", "amount_per_mark": 100}],
+		"leave_classes": [{"leave_class": "A", "period_days": 7.5,
+		                   "credit_per_period": 1, "monthly_credits": 4}],
+	})
+	doc.flags.ignore_permissions = True
+	doc.insert()
+	return doc
+
+
+def setUpModule():
+	_ensure_company()
+	_ensure_shift()
+	_ensure_rule_set()
+	frappe.db.commit()
+
+
+class TestReprocess(FrappeTestCase):
+	def setUp(self):
+		self.date = getdate(add_days(nowdate(), -3))
+		self.emp = self._employee("reprocess.one@example.com")
+
+	def _employee(self, email):
+		name = frappe.db.get_value("Employee", {"user_id": email})
+		if name:
+			return name
+		doc = frappe.get_doc({
+			"doctype": "Employee", "first_name": "Reprocess", "last_name": "One",
+			"company": COMPANY, "date_of_joining": add_days(nowdate(), -200),
+			"date_of_birth": "1990-01-01", "gender": "Female",
+			"status": "Active", "default_shift": SHIFT,
+		})
+		doc.flags.ignore_permissions = True
+		doc.insert()
+		return doc.name
+
+	def _attendance(self, status="Present"):
+		existing = frappe.db.get_value(
+			"Attendance", {"employee": self.emp, "attendance_date": self.date,
+			               "docstatus": 1})
+		if existing:
+			return existing
+		doc = frappe.get_doc({
+			"doctype": "Attendance", "employee": self.emp, "company": COMPANY,
+			"attendance_date": self.date, "status": status, "shift": SHIFT,
+		})
+		doc.flags.ignore_permissions = True
+		doc.insert()
+		doc.submit()
+		return doc.name
+
+	def _punch(self, hhmm):
+		doc = frappe.get_doc({
+			"doctype": "Employee Checkin", "employee": self.emp,
+			"time": "{0} {1}:00".format(self.date, hhmm), "shift": SHIFT,
+		})
+		doc.flags.ignore_permissions = True
+		doc.insert()
+		return doc.name
+
+	# ── the promises ─────────────────────────────────────────────────────────
+
+	def test_preview_writes_nothing(self):
+		"""The whole point of a preview. A side effect here would never be
+		noticed, because the next call writes the same thing anyway."""
+		att = self._attendance()
+		self._punch("11:00")
+		self._punch("17:42")
+		before = frappe.db.get_value("Attendance", att, list(VERDICT_FIELDS),
+		                             as_dict=True)
+		out = rp.preview(COMPANY, self.date, self.date)
+		self.assertTrue(out["ok"])
+		after = frappe.db.get_value("Attendance", att, list(VERDICT_FIELDS),
+		                            as_dict=True)
+		self.assertEqual(before, after)
+
+	def test_apply_refuses_without_a_confirmation(self):
+		self._attendance()
+		with self.assertRaises(frappe.ValidationError):
+			rp.apply(COMPANY, self.date, self.date, confirmed=0)
+
+	def test_running_it_twice_gives_the_same_answer(self):
+		"""Idempotence, and the reason the verdict lives on the Attendance row
+		rather than in a ledger of adjustments. Two clicks must not cost an
+		employee twice."""
+		att = self._attendance()
+		self._punch("11:00")
+		self._punch("17:42")
+		rp.apply(COMPANY, self.date, self.date, confirmed=1)
+		once = frappe.db.get_value("Attendance", att, list(VERDICT_FIELDS),
+		                           as_dict=True)
+		rp.apply(COMPANY, self.date, self.date, confirmed=1)
+		twice = frappe.db.get_value("Attendance", att, list(VERDICT_FIELDS),
+		                            as_dict=True)
+		self.assertEqual(once["alvoraa_slab_quarters"],
+		                 twice["alvoraa_slab_quarters"])
+		self.assertEqual(once["alvoraa_reds"], twice["alvoraa_reds"])
+
+	def test_the_second_run_reports_nothing_changed(self):
+		"""Once the verdicts are current, a preview should show an empty
+		movement - which is how somebody knows the data has settled."""
+		self._attendance()
+		self._punch("11:00")
+		self._punch("17:42")
+		rp.apply(COMPANY, self.date, self.date, confirmed=1)
+		out = rp.preview(COMPANY, self.date, self.date)
+		self.assertEqual(out["totals"]["changed"], 0)
+		self.assertEqual(out["moved"], [])
+
+	def test_a_late_punch_moves_the_day_and_the_preview_says_so(self):
+		"""The case this exists for: attendance arrives after payroll was
+		prepared. First judged with one punch, so held; then the check-out
+		lands and it becomes a measured day."""
+		att = self._attendance()
+		self._punch("11:00")
+		rp.apply(COMPANY, self.date, self.date, confirmed=1)
+		self.assertEqual(
+			frappe.db.get_value("Attendance", att, "alvoraa_held"), 1)
+
+		self._punch("17:42")
+		out = rp.preview(COMPANY, self.date, self.date)
+		self.assertEqual(out["totals"]["changed"], 1)
+		moved = out["moved"][0]
+		self.assertEqual(moved["held_before"], 1)
+		self.assertEqual(moved["held_after"], 0)
+		self.assertEqual(moved["quarters_after"], 1)      # 67% -> one quarter
+
+	def test_an_employee_with_a_submitted_slip_is_skipped_and_named(self):
+		"""A submitted slip is a paid slip. Correcting it is a decision for
+		next month, not a recalculation."""
+		att = self._attendance()
+		self._punch("11:00")
+		self._punch("17:42")
+		slip = frappe.get_doc({
+			"doctype": "Salary Slip", "employee": self.emp, "company": COMPANY,
+			"start_date": self.date, "end_date": self.date,
+			"docstatus": 1, "posting_date": self.date,
+		})
+		slip.flags.ignore_permissions = True
+		slip.db_insert()
+
+		out = rp.preview(COMPANY, self.date, self.date)
+		skipped = {s["employee"] for s in out["skipped_paid"]}
+		self.assertIn(self.emp, skipped)
+		self.assertEqual(out["totals"]["days"], 0)
+
+		before = frappe.db.get_value("Attendance", att, "alvoraa_evaluated_on")
+		rp.apply(COMPANY, self.date, self.date, confirmed=1)
+		self.assertEqual(
+			frappe.db.get_value("Attendance", att, "alvoraa_evaluated_on"), before)
+
+	def test_a_company_with_no_rule_set_is_left_alone(self):
+		"""Every other tenant on this image. Not an error, and not a write."""
+		other = frappe.db.get_value("Company", {"name": ("!=", COMPANY)})
+		if not other:
+			self.skipTest("only one company on this site")
+		out = rp.preview(other, self.date, self.date)
+		self.assertFalse(out["ok"])
+		self.assertIn("rule set", out["reason"])
+
+	def test_the_run_is_recorded(self):
+		"""This changes pay, so it needs a trail that outlives an Error Log."""
+		self._attendance()
+		self._punch("11:00")
+		self._punch("17:42")
+		out = rp.apply(COMPANY, self.date, self.date, confirmed=1)
+		log = frappe.get_doc("Alvoraa Payroll Reprocess Log", out["log"])
+		self.assertEqual(log.company, COMPANY)
+		self.assertEqual(log.run_by, frappe.session.user)
+		self.assertTrue(log.days_reprocessed >= 1)
+		self.assertTrue(log.detail)
+
+	def test_the_trail_cannot_be_deleted(self):
+		self._attendance()
+		self._punch("11:00")
+		self._punch("17:42")
+		out = rp.apply(COMPANY, self.date, self.date, confirmed=1)
+		with self.assertRaises(frappe.ValidationError):
+			frappe.delete_doc("Alvoraa Payroll Reprocess Log", out["log"],
+			                  ignore_permissions=True)

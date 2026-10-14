@@ -1,0 +1,257 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:company",
+ "creation": "2026-10-08 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "company",
+  "enabled",
+  "column_break_head",
+  "grade_field",
+  "double_deduction_field",
+  "green_eligibility_field",
+  "leave_class_field",
+  "category_field",
+  "basics_section",
+  "grace_minutes",
+  "free_reds_per_month",
+  "column_break_basics",
+  "special_day_multiplier",
+  "special_day_holiday_list",
+  "late_window_section",
+  "late_window_from",
+  "late_window_to",
+  "column_break_late",
+  "late_window_extra_quarters",
+  "late_window_employee_field",
+  "slabs_section",
+  "slabs",
+  "rates_section",
+  "mark_rates",
+  "leave_section",
+  "column_break_leave",
+  "leave_threshold_days",
+  "accrual_month_days",
+  "leave_classes",
+  "category_section",
+  "categories"
+ ],
+ "fields": [
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "0",
+   "description": "Off until a human turns it on. A rule set that exists is not a rule set that runs.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "column_break_head",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The Employee field holding the grade that the rates below are keyed on. For DTC this is dtc_grade.",
+   "fieldname": "grade_field",
+   "fieldtype": "Data",
+   "label": "Grade Field On Employee"
+  },
+  {
+   "description": "The Employee field saying whether special-day deductions are doubled for this person. A value of Yes or 1 means doubled. For DTC this is dtc_double_deduction. Leave blank to double for everybody.",
+   "fieldname": "double_deduction_field",
+   "fieldtype": "Data",
+   "label": "Double Deduction Field On Employee"
+  },
+  {
+   "description": "The Employee field saying which marks this person can earn. Blank or Morning Green or Both allows a morning green; Night Green or Both allows a night green. For DTC this is dtc_green_eligibility. Leave blank and everyone earns both.",
+   "fieldname": "green_eligibility_field",
+   "fieldtype": "Data",
+   "label": "Green Eligibility Field On Employee"
+  },
+  {
+   "fieldname": "basics_section",
+   "fieldtype": "Section Break",
+   "label": "Basics"
+  },
+  {
+   "default": "0",
+   "description": "Arriving within this many minutes of shift start counts as on time.",
+   "fieldname": "grace_minutes",
+   "fieldtype": "Int",
+   "label": "Grace Minutes"
+  },
+  {
+   "default": "0",
+   "description": "Reds up to this count cost nothing. Only those beyond it are deducted.",
+   "fieldname": "free_reds_per_month",
+   "fieldtype": "Int",
+   "label": "Free Reds Per Month"
+  },
+  {
+   "fieldname": "column_break_basics",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "description": "Quarter deductions are multiplied by this on a special day. Red marks are never multiplied.",
+   "fieldname": "special_day_multiplier",
+   "fieldtype": "Int",
+   "label": "Special Day Multiplier"
+  },
+  {
+   "description": "A marker list of high-footfall days. It must NOT be set as anyone's holiday list - that would make these days non-working, which is the opposite of the rule.",
+   "fieldname": "special_day_holiday_list",
+   "fieldtype": "Link",
+   "label": "Special Day List",
+   "options": "Holiday List"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "late_window_section",
+   "fieldtype": "Section Break",
+   "label": "Late Arrival Window"
+  },
+  {
+   "description": "Checking in inside this window costs extra quarters, for flagged employees only. Leave blank to switch the rule off.",
+   "fieldname": "late_window_from",
+   "fieldtype": "Time",
+   "label": "From"
+  },
+  {
+   "fieldname": "late_window_to",
+   "fieldtype": "Time",
+   "label": "To"
+  },
+  {
+   "fieldname": "column_break_late",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Added on top of whatever the slab already gave. It penalises the window of arrival, not the minutes missed, which is why it does not double-charge.",
+   "fieldname": "late_window_extra_quarters",
+   "fieldtype": "Int",
+   "label": "Extra Quarters"
+  },
+  {
+   "description": "The Employee check field that flags who this applies to. For DTC this is dtc_11am_quarter_deduction.",
+   "fieldname": "late_window_employee_field",
+   "fieldtype": "Data",
+   "label": "Employee Flag Field"
+  },
+  {
+   "fieldname": "slabs_section",
+   "fieldtype": "Section Break",
+   "label": "Attendance Slabs"
+  },
+  {
+   "description": "Attendance percentage to quarters off and red marks. Rows must cover 0 to 100 without gaps or overlaps - the rule set refuses to save otherwise.",
+   "fieldname": "slabs",
+   "fieldtype": "Table",
+   "label": "Slabs",
+   "options": "Alvoraa Attendance Slab"
+  },
+  {
+   "fieldname": "rates_section",
+   "fieldtype": "Section Break",
+   "label": "Mark Rates"
+  },
+  {
+   "description": "What one red or one green is worth, per grade.",
+   "fieldname": "mark_rates",
+   "fieldtype": "Table",
+   "label": "Mark Rates",
+   "options": "Alvoraa Mark Rate"
+  },
+  {
+   "description": "The Employee field holding the leave class the accrual rates below are keyed on. For DTC this is dtc_leave_class.",
+   "fieldname": "leave_class_field",
+   "fieldtype": "Data",
+   "label": "Leave Class Field On Employee"
+  },
+  {
+   "fieldname": "leave_section",
+   "fieldtype": "Section Break",
+   "label": "Compensatory Leave Accrual"
+  },
+  {
+   "fieldname": "column_break_leave",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The Employee field holding the category the overrides below are keyed on. For DTC this is employment_type, a standard ERPNext field that was sitting unused.",
+   "fieldname": "category_field",
+   "fieldtype": "Data",
+   "label": "Category Field On Employee"
+  },
+  {
+   "default": "15",
+   "description": "Days present in the month before the leave class is credited. Below it the employee is paid for the days they worked and nothing else. Nothing is pro-rated either side of the line.",
+   "fieldname": "leave_threshold_days",
+   "fieldtype": "Int",
+   "label": "Leave Threshold (Days Present)"
+  },
+  {
+   "description": "What a full month is worth per class, credited whole once the threshold is reached.",
+   "fieldname": "leave_classes",
+   "fieldtype": "Table",
+   "label": "Leave Classes",
+   "options": "Alvoraa Leave Class"
+  },
+  {
+   "fieldname": "category_section",
+   "fieldtype": "Section Break",
+   "label": "Category Overrides"
+  },
+  {
+   "description": "Per-category exceptions to the rules above. A category not listed here takes the defaults: the standard grace, marks on, leave credits on.",
+   "fieldname": "categories",
+   "fieldtype": "Table",
+   "label": "Categories",
+   "options": "Alvoraa Employee Category"
+  },
+  {
+   "default": "30",
+   "description": "The policy calendar for the accrual, which is NOT the real length of the month. At 30, a 31-day month closes no extra period.",
+   "fieldname": "accrual_month_days",
+   "fieldtype": "Int",
+   "label": "Accrual Month Days"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-08 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa Payroll Rule Set",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "HR Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

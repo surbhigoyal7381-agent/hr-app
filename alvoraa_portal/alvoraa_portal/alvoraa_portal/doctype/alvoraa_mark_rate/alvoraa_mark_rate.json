@@ -1,0 +1,43 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-08 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "grade",
+  "amount_per_mark"
+ ],
+ "fields": [
+  {
+   "columns": 4,
+   "description": "The value held on the employee's grade field, spelt exactly as it is stored.",
+   "fieldname": "grade",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Grade",
+   "reqd": 1
+  },
+  {
+   "columns": 4,
+   "description": "A flat amount per mark. It does not scale with salary. The same figure is deducted for a red and added for a green.",
+   "fieldname": "amount_per_mark",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount Per Mark",
+   "reqd": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-08 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa Mark Rate",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "idx",
+ "sort_order": "ASC",
+ "states": []
+}

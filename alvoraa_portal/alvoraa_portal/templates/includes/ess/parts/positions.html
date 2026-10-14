@@ -14,12 +14,12 @@
             <div>
               <div class="gp-label">Branch</div>
               <select class="gp-input" id="pos-f-branch" style="height:32px;padding:4px 8px;width:auto"
-                      onchange="posLoad()"><option value="">All branches</option></select>
+                      onchange="posPaint()"><option value="">All branches</option></select>
             </div>
             <div>
               <div class="gp-label">Department</div>
               <select class="gp-input" id="pos-f-dept" style="height:32px;padding:4px 8px;width:auto"
-                      onchange="posLoad()"><option value="">All departments</option></select>
+                      onchange="posPaint()"><option value="">All departments</option></select>
             </div>
             <div>
               <div class="gp-label">Show</div>
@@ -30,7 +30,21 @@
                 <option value="key">Only key seats</option>
               </select>
             </div>
-            <div style="margin-left:auto"><div class="pf-card-meta" id="pos-count"></div></div>
+            <div>
+              <div class="gp-label">View</div>
+              <select class="gp-input" id="pos-f-view" style="height:32px;padding:4px 8px;width:auto"
+                      onchange="posPaint()">
+                <option value="list">As a list</option>
+                <option value="tree">As a structure</option>
+              </select>
+            </div>
+            <div style="margin-left:auto">
+              <div class="pf-card-meta" id="pos-count"></div>
+              <div class="pf-card-meta" id="pos-filter-note" style="display:none">
+                In this view the filters grey out what does not match, so the
+                shape of the organisation stays whole.
+              </div>
+            </div>
           </div>
         </div>
 

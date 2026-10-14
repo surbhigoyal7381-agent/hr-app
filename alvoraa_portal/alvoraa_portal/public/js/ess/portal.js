@@ -193,7 +193,14 @@ function ocRender(n, isRoot) {
    from the roles in the browser: the endpoint refuses either way, and a button
    that appears and then fails is worse than one that was never there. */
 
-var POS = { rows: [], may_edit: false };
+var POS = { rows: [], may_edit: false, collapsed: {} };
+
+/* A reporting line deeper than this is bad data, not a tall company. The
+   doctype refuses a seat that reports into its own chain, twice over - a
+   nested set and an explicit walk up the parents - so this should be
+   unreachable. It is here because a tree is exactly where a browser freezes
+   on data nobody expected, and a frozen portal is a poor way to find out. */
+var POS_MAX_DEPTH = 40;
 
 function posEsc(s) { return ocEsc(s); }
 
@@ -206,12 +213,14 @@ window.posLoad = async function () {
   var body = document.getElementById("pos-body");
   if (!body) return;
   body.innerHTML = '<div class="empty-state"><div class="empty-state-text">Loading&hellip;</div></div>';
-  var branch = (document.getElementById("pos-f-branch") || {}).value || "";
-  var dept = (document.getElementById("pos-f-dept") || {}).value || "";
+  /* Deliberately unfiltered. The structure view greys out what does not match
+     instead of dropping it, so it needs every seat this person may see - and
+     one fetch then serves both views, with the dropdowns only repainting.
+     The server still scopes the rows to their companies and branches; that is
+     what decides what they may see, and it has not moved. */
   var out;
   try {
-    out = await gpFetch("hrms.alvoraa_org_structure.register.position_table",
-                        { branch: branch, department: dept });
+    out = await gpFetch("hrms.alvoraa_org_structure.register.position_table", {});
   } catch (e) {
     body.innerHTML = '<div class="empty-state"><div class="empty-state-text">'
       + posEsc(e && e.message ? e.message : e) + "</div></div>";
@@ -247,15 +256,32 @@ function posFillFilters() {
   });
 }
 
-function posPaint() {
+function posVal(id) { return (document.getElementById(id) || {}).value || ""; }
+
+/* Does this seat match what the filters ask for? The list drops the ones that
+   do not; the structure view greys them. Same question, two answers, so it is
+   asked in one place. */
+function posMatches(r) {
+  var b = posVal("pos-f-branch"), d = posVal("pos-f-dept"),
+      show = posVal("pos-f-open");
+  if (b && r.branch !== b) return false;
+  if (d && r.department !== d) return false;
+  if (show === "open") return r.open >= 0.5;
+  if (show === "key") return r.key;
+  return true;
+}
+
+window.posPaint = function () {
+  var note = document.getElementById("pos-filter-note");
+  var tree = posVal("pos-f-view") === "tree";
+  if (note) note.style.display = tree ? "" : "none";
+  if (tree) { posPaintTree(); } else { posPaintList(); }
+};
+
+function posPaintList() {
   var body = document.getElementById("pos-body");
   if (!body) return;
-  var show = (document.getElementById("pos-f-open") || {}).value || "";
-  var rows = POS.rows.filter(function (r) {
-    if (show === "open") return r.open >= 0.5;
-    if (show === "key") return r.key;
-    return true;
-  });
+  var rows = POS.rows.filter(posMatches);
 
   var count = document.getElementById("pos-count");
   if (count) {
@@ -278,41 +304,210 @@ function posPaint() {
     + '<th style="text-align:right">Open</th>'
     + (POS.may_edit ? "<th></th>" : "") + "</tr>";
 
-  var out = rows.map(function (r) {
-    var who = r.people.length
-      ? r.people.map(function (p) {
-          return posEsc(p.name)
-            + (p.weight < 100 ? ' <span class="pf-card-meta">' + posNum(p.weight) + "%</span>" : "")
-            + (p.covering ? ' <span class="pf-card-meta">covering</span>' : "");
-        }).join("<br>")
-      : '<span class="pf-card-meta">Nobody in this seat</span>';
-    // The vacancy is the thing somebody opened this screen for, so it is said
-    // in words as well as a number - a bare 1 in a column reads as nothing.
-    var open = r.open >= 0.5
-      ? '<strong>' + posNum(r.open) + "</strong>"
-      : '<span class="pf-card-meta">&mdash;</span>';
-    return "<tr>"
-      + "<td>" + posEsc(r.title)
-        + (r.key ? ' <span class="pf-card-meta">key seat</span>' : "")
-        + (r.status !== "Active" ? ' <span class="pf-card-meta">' + posEsc(r.status) + "</span>" : "")
-      + "</td>"
-      + "<td>" + (r.reports_to_title
-          ? posEsc(r.reports_to_title)
-          : '<span class="pf-card-meta">&mdash;</span>') + "</td>"
-      + "<td>" + posEsc(r.branch) + "</td>"
-      + "<td>" + posEsc(r.department) + "</td>"
-      + "<td>" + who + "</td>"
-      + '<td style="text-align:right">' + posNum(r.seats) + "</td>"
-      + '<td style="text-align:right">' + open + "</td>"
-      + (POS.may_edit
-          ? '<td style="text-align:right"><button class="btn btn-outline btn-sm" onclick="posOpenEditor(\''
-            + posEsc(r.id) + '\')">Change</button></td>'
-          : "")
-      + "</tr>";
-  }).join("");
+  var out = rows.map(function (r) { return "<tr>" + posCells(r) + "</tr>"; }).join("");
 
   body.innerHTML = '<div style="overflow-x:auto"><table class="pf-table">'
     + "<thead>" + head + "</thead><tbody>" + out + "</tbody></table></div>";
+}
+
+/* The cells both views share. `lead` is whatever goes in front of the title -
+   the indent and the open/close arrow in the structure view, nothing in the
+   list. Written once so the two views cannot drift into saying different
+   things about the same seat. */
+function posCells(r, lead, tail) {
+  var who = r.people.length
+    ? r.people.map(function (p) {
+        return posEsc(p.name)
+          + (p.weight < 100 ? ' <span class="pf-card-meta">' + posNum(p.weight) + "%</span>" : "")
+          + (p.covering ? ' <span class="pf-card-meta">covering</span>' : "");
+      }).join("<br>")
+    : '<span class="pf-card-meta">Nobody in this seat</span>';
+  // The vacancy is the thing somebody opened this screen for, so it is said
+  // in words as well as a number - a bare 1 in a column reads as nothing.
+  var open = r.open >= 0.5
+    ? '<strong>' + posNum(r.open) + "</strong>"
+    : '<span class="pf-card-meta">&mdash;</span>';
+  return "<td>" + (lead || "") + posEsc(r.title)
+      + (r.key ? ' <span class="pf-card-meta">key seat</span>' : "")
+      + (r.status !== "Active" ? ' <span class="pf-card-meta">' + posEsc(r.status) + "</span>" : "")
+      + (tail || "")
+    + "</td>"
+    + "<td>" + (r.reports_to_title
+        ? posEsc(r.reports_to_title)
+        : '<span class="pf-card-meta">&mdash;</span>') + "</td>"
+    + "<td>" + posEsc(r.branch) + "</td>"
+    + "<td>" + posEsc(r.department) + "</td>"
+    + "<td>" + who + "</td>"
+    + '<td style="text-align:right">' + posNum(r.seats) + "</td>"
+    + '<td style="text-align:right">' + open + "</td>"
+    + (POS.may_edit
+        ? '<td style="text-align:right"><button class="btn btn-outline btn-sm" onclick="posOpenEditor(\''
+          + posEsc(r.id) + '\')">Change</button></td>'
+        : "");
+}
+
+
+/* ── the same seats, as a structure ────────────────────────────────────
+ *
+ * Built in the browser from `reports_to`, which every row already carries, so
+ * the server is untouched and no second request is made.
+ *
+ * NOTHING IS HIDDEN HERE. The filters grey out what does not match instead of
+ * dropping it (Surbhi, 15 Oct 2026), because a tree with its middle removed
+ * stops being a tree: a seat whose parent was filtered away would read as the
+ * top of the company. Greying keeps the shape whole and still answers "which
+ * of these is in Noida".
+ */
+
+function posKids() {
+  var byId = {}, kids = {}, roots = [];
+  POS.rows.forEach(function (r) { byId[r.id] = r; });
+  POS.rows.forEach(function (r) {
+    // A parent outside what this reader may see is not a parent they can be
+    // shown, so the seat stands at the top - flagged, because otherwise a
+    // branch head's every seat would look like the head of the company.
+    if (r.reports_to && byId[r.reports_to]) {
+      (kids[r.reports_to] = kids[r.reports_to] || []).push(r);
+    } else {
+      roots.push(r);
+    }
+  });
+  var cmp = function (a, b) {
+    return a.title < b.title ? -1 : (a.title > b.title ? 1 : 0);
+  };
+  roots.sort(cmp);
+  Object.keys(kids).forEach(function (k) { kids[k].sort(cmp); });
+  return { byId: byId, kids: kids, roots: roots };
+}
+
+/* How many seats sit under each one, and how many of them are open. A closed
+   branch has to say what it is covering up, or this view would hide a vacancy
+   on the one screen built for finding vacancies. */
+function posBelow(t) {
+  var seats = {}, open = {}, reached = {};
+  function walk(r, depth) {
+    var n = 0, o = 0;
+    reached[r.id] = true;
+    if (depth < POS_MAX_DEPTH) {
+      (t.kids[r.id] || []).forEach(function (c) {
+        var got = walk(c, depth + 1);
+        n += 1 + got[0];
+        o += c.open + got[1];
+      });
+    }
+    seats[r.id] = n;
+    open[r.id] = o;
+    return [n, o];
+  }
+  t.roots.forEach(function (r) { walk(r, 0); });
+  // Reached by WALKING the tree, not by being drawn. A seat inside a branch
+  // somebody closed up has a place on the chart; it is simply not on screen.
+  // Working this out from what was drawn listed every collapsed child as
+  // having no place at all, which was alarming and wrong.
+  return { seats: seats, open: open, reached: reached };
+}
+
+window.posToggle = function (id) {
+  POS.collapsed[id] = !POS.collapsed[id];
+  posPaint();
+};
+
+function posPaintTree() {
+  var body = document.getElementById("pos-body");
+  if (!body) return;
+
+  var t = posKids();
+  var below = posBelow(t);
+  var matched = POS.rows.filter(posMatches).length;
+
+  var count = document.getElementById("pos-count");
+  if (count) {
+    var openAll = POS.rows.reduce(function (a, r) { return a + r.open; }, 0);
+    count.textContent = POS.rows.length + " seats"
+      + (openAll ? ", " + posNum(openAll) + " open" : ", all filled")
+      + (matched !== POS.rows.length ? " — " + matched + " match" : "");
+  }
+
+  if (!POS.rows.length) {
+    body.innerHTML = '<div class="empty-state"><div class="empty-state-text">'
+      + "No positions yet.</div></div>";
+    return;
+  }
+
+  var head = "<tr><th>Position</th><th>Reports to</th><th>Branch</th>"
+    + "<th>Department</th><th>Who is in it</th>"
+    + '<th style="text-align:right">Seats</th>'
+    + '<th style="text-align:right">Open</th>'
+    + (POS.may_edit ? "<th></th>" : "") + "</tr>";
+
+  // One column narrower for a reader who cannot edit, so the two notices
+  // below span the table instead of leaving a cell adrift.
+  var cols = POS.may_edit ? 8 : 7;
+  var out = [], drawn = {};
+
+  function draw(r, depth) {
+    if (drawn[r.id]) return;          // belt and braces against a loop
+    drawn[r.id] = true;
+    var kids = t.kids[r.id] || [];
+    var shut = !!POS.collapsed[r.id];
+    var pad = 12 + depth * 18;
+
+    /* The indent is the only thing on the row that says "under". It is one
+       number on one element so it can be measured - two nested spacers read
+       the same whatever the depth, which is how the first version drew a flat
+       list with arrows on it. */
+    var lead = '<span style="display:inline-block;padding-left:' + pad + 'px">'
+      + (kids.length
+          ? '<span style="cursor:pointer;user-select:none;display:inline-block;'
+            + 'width:16px" onclick="posToggle(\'' + posEsc(r.id) + '\')">'
+            + (shut ? "▸" : "▾") + "</span>"
+          : '<span style="display:inline-block;width:16px"></span>')
+      + "</span>";
+
+    var tail = "";
+    if (shut && below.seats[r.id]) {
+      tail = ' <span class="pf-card-meta">' + below.seats[r.id] + " below"
+        + (below.open[r.id] >= 0.5
+            ? ", " + posNum(below.open[r.id]) + " open" : "") + "</span>";
+    }
+    // A seat whose parent this reader cannot see. Said out loud, or every one
+    // of a branch head's seats reads as the top of the organisation.
+    if (depth === 0 && r.reports_to && !t.byId[r.reports_to]) {
+      tail += ' <span class="pf-card-meta">reports above your view</span>';
+    }
+
+    out.push("<tr" + (posMatches(r) ? "" : ' style="opacity:.45"') + ">"
+      + posCells(r, lead, tail)
+      + "</tr>");
+
+    if (shut) return;
+    if (depth + 1 >= POS_MAX_DEPTH) {
+      out.push('<tr><td colspan="' + cols + '"><span class="pf-card-meta">'
+        + "This reporting line goes deeper than makes sense, so it is not drawn"
+        + " any further. Somebody should look at it.</span></td></tr>");
+      return;
+    }
+    kids.forEach(function (c) { draw(c, depth + 1); });
+  }
+
+  t.roots.forEach(function (r) { draw(r, 0); });
+
+  // Anything a loop kept off the chart. Unreachable with clean data - the
+  // doctype refuses a seat that reports into its own chain - but a seat that
+  // is invisible is worse than one in the wrong place.
+  var stranded = POS.rows.filter(function (r) { return !below.reached[r.id]; });
+  if (stranded.length) {
+    out.push('<tr><td colspan="' + cols + '"><strong>'
+      + "These seats report in a circle, so they have no place on the chart:"
+      + "</strong></td></tr>");
+    stranded.forEach(function (r) {
+      out.push("<tr" + (posMatches(r) ? "" : ' style="opacity:.45"') + ">"
+        + posCells(r) + "</tr>");
+    });
+  }
+
+  body.innerHTML = '<div style="overflow-x:auto"><table class="pf-table">'
+    + "<thead>" + head + "</thead><tbody>" + out.join("") + "</tbody></table></div>";
 }
 
 /* ── adding a seat, and moving one ─────────────────────────────────── */

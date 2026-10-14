@@ -29,8 +29,9 @@ plus the addendum of 8 Oct 2026):
                  forbids. In practice two reds are reachable only in the
                  90-98.9% band, which is the one red band with zero quarters.
 
-  ATT-04         A flagged employee checking in inside the late window loses an
-                 extra quarter. GBL-09 says plainly this is NOT an overlap: it
+  ATT-04         An employee checking in inside the late window loses an extra
+                 quarter. It applies to everybody (15 Oct 2026); whether it
+                 bites depends on their own shift, below. GBL-09 says plainly this is NOT an overlap: it
                  charges the window of arrival, not the minutes missed, so it
                  stacks on the slab quarter and suppresses no red. It is never
                  doubled on a special day (confirmed 8 Oct 2026).
@@ -56,8 +57,10 @@ plus the addendum of 8 Oct 2026):
   WSD-01/02      On a special day the SLAB quarters are multiplied. Reds are
                  never multiplied, and neither is the ATT-04 quarter.
 
-  WSD-05/06      Doubling applies only to an employee flagged for it. Field
-                 staff and exempt categories take the single deduction.
+  WSD-05/06      Doubling applies to everybody except contract staff, who take
+                 the single deduction (15 Oct 2026). It is read from the
+                 employee's CATEGORY, so it follows employment type rather than
+                 a box kept in step by hand.
 
   GRN-02/03      Morning green: in two hours or more early, open to everyone.
                  Night green: out an hour or more late, flagged staff only.

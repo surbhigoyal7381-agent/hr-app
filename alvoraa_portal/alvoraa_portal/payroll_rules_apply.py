@@ -175,6 +175,7 @@ def prepare(rule_set, from_date=None, to_date=None):
 				"grace_minutes": int(r.grace_minutes or 0),
 				"earns_marks": bool(r.earns_marks),
 				"earns_leave_credits": bool(r.earns_leave_credits),
+				"doubles_deduction": bool(r.doubles_deduction),
 			}
 			for r in rule_set.categories
 		},
@@ -234,14 +235,37 @@ def _employee_flags(employee, date, ctx, shift_grace=None):
 	if not grace:
 		grace = ctx["grace"] if shift_grace is None else shift_grace
 
+	# ── WSD-05/06: whose quarters are doubled on a special day ───────────────
+	#
+	# The CATEGORY decides first. Settled 15 October 2026: nobody is exempt
+	# except contract staff, and that follows from their employment type, which
+	# every employee already carries. A yes/no box on each of 363 records would
+	# be a second copy of a fact we hold correctly once.
+	#
+	# A category that says no means no, whatever any per-employee field says.
+	# Otherwise the field decides, and a tenant that names no field doubles for
+	# everybody.
+	doubles = override.get("doubles_deduction", True)
+	if doubles and ctx["double_field"]:
+		doubles = raw(ctx["double_field"]) in DOUBLE_YES
+
 	return {
 		"grace_minutes": grace,
 		"earns_marks": override.get("earns_marks", True),
+		# ── ATT-04: who the late window applies to ───────────────────────────
+		#
+		# No field named means EVERYBODY, which is how the doubling above has
+		# always behaved. These two read the same blank and used to answer it
+		# oppositely - the window fired for nobody - so a tenant who set a
+		# window and no field got a rule that silently did nothing.
+		#
+		# Surbhi, 15 October 2026: it applies to everyone, and the employee's
+		# shift timing is what decides whether it bites. That gate is
+		# `_window_applies`, which skips any shift starting at or after the
+		# window. Naming a field still narrows it, if a tenant ever wants to.
 		"late_window_flagged": bool(values.get(ctx["window_field"]))
-		if ctx["window_field"] else False,
-		# No field named means the tenant doubles for everybody.
-		"double_deduction_applies": (raw(ctx["double_field"]) in DOUBLE_YES)
-		if ctx["double_field"] else True,
+		if ctx["window_field"] else True,
+		"double_deduction_applies": doubles,
 		"morning_green_eligible": (green in GREEN_MORNING)
 		if ctx["green_field"] else True,
 		"night_green_eligible": (green in GREEN_NIGHT)

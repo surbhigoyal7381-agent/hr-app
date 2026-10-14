@@ -162,11 +162,14 @@ class AlvoraaPayrollRuleSet(Document):
 			return
 		if str(self.late_window_to) <= str(self.late_window_from):
 			frappe.throw(_("The late arrival window ends before it starts."))
-		if not self.late_window_employee_field:
-			frappe.throw(
-				_("The late arrival window applies to flagged employees only, so it "
-				  "needs the Employee field that carries the flag. Without it the rule "
-				  "would charge everybody."))
+		# No employee field is fine, and means the window applies to everybody.
+		# This used to be refused, on the grounds that the rule was for flagged
+		# staff only - but it is not: Surbhi settled on 15 October 2026 that it
+		# applies to everyone, and the employee's own shift timing is what
+		# decides whether it bites. A shift starting at or after the window is
+		# skipped, so a person arriving 11:00 for an 11:00 shift is on time.
+		#
+		# Naming a field still narrows it, for a tenant that wants a subset.
 		if not self.late_window_extra_quarters:
 			frappe.throw(_("The late arrival window is set but adds no quarters, so it "
 			               "would do nothing. Clear the window or set the quarters."))

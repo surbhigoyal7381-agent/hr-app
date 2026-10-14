@@ -167,6 +167,12 @@ RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench g
 # whatever the branch happens to point at this morning. Without this line a pin
 # is honoured only while it IS the tip, which is not a pin at all.
 #
+# The remote is named by URL, never as `origin`. bench get-app leaves no
+# remote called origin behind, so asking it for anything returns "'origin'
+# does not appear to be a git repository" - which is how the first attempt at
+# this fix failed silently inside the `|| true` and the build broke in the
+# same place, with the same message, for the same reason.
+#
 # The fetch is allowed to fail. A server will not serve an ABBREVIATED commit
 # by name - `WHATSAPP_COMMIT` is twelve characters, and asking for it returns
 # "couldn't find remote ref" (checked, 2026-10-15). In that case the checkout
@@ -177,14 +183,14 @@ RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench g
 # The editable pip install get-app already did stays valid either way - a
 # checkout changes files in place.
 RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch master https://github.com/shridarpatil/frappe_whatsapp \
- && (git -C apps/frappe_whatsapp fetch --quiet --depth=1 origin "${WHATSAPP_COMMIT}" || true) \
+ && (git -C apps/frappe_whatsapp fetch --quiet --depth=1 https://github.com/shridarpatil/frappe_whatsapp "${WHATSAPP_COMMIT}" || true) \
  && git -C apps/frappe_whatsapp checkout --quiet "${WHATSAPP_COMMIT}" \
  && git -C apps/frappe_whatsapp log -1 --format='frappe_whatsapp pinned at %h (%cs)'
 
 # Declares required_apps = ["frappe/payments"] in LMS's hooks.py, so this must
 # come before it. No frontend of its own.
 RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch version-16 https://github.com/frappe/payments \
- && (git -C apps/payments fetch --quiet --depth=1 origin "${PAYMENTS_COMMIT}" || true) \
+ && (git -C apps/payments fetch --quiet --depth=1 https://github.com/frappe/payments "${PAYMENTS_COMMIT}" || true) \
  && git -C apps/payments checkout --quiet "${PAYMENTS_COMMIT}" \
  && git -C apps/payments log -1 --format='payments pinned at %h (%cs)'
 
@@ -198,14 +204,14 @@ RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench g
 # §3. A future engineer bumping either pin should not "fix" this - there is
 # nothing to fix.
 RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch version-16 https://github.com/frappe/lms \
- && (git -C apps/lms fetch --quiet --depth=1 origin "${LMS_COMMIT}" || true) \
+ && (git -C apps/lms fetch --quiet --depth=1 https://github.com/frappe/lms "${LMS_COMMIT}" || true) \
  && git -C apps/lms checkout --quiet "${LMS_COMMIT}" \
  && git -C apps/lms log -1 --format='lms pinned at %h (%cs)'
 
 # Declares required_apps = ["telephony"] in Helpdesk's hooks.py, so this must
 # come before it. No frontend of its own.
 RUN --mount=type=cache,target=/home/frappe/.cache/yarn,uid=1000,gid=1000 bench get-app --branch develop https://github.com/frappe/telephony \
- && (git -C apps/telephony fetch --quiet --depth=1 origin "${TELEPHONY_COMMIT}" || true) \
+ && (git -C apps/telephony fetch --quiet --depth=1 https://github.com/frappe/telephony "${TELEPHONY_COMMIT}" || true) \
  && git -C apps/telephony checkout --quiet "${TELEPHONY_COMMIT}" \
  && git -C apps/telephony log -1 --format='telephony pinned at %h (%cs)'
 

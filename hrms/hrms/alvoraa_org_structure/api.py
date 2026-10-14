@@ -45,6 +45,45 @@ def _enabled():
 		return False
 
 
+def _my_company():
+	"""The company on the caller's own employee record, if they have one."""
+	me = _me()
+	return frappe.db.get_value("Employee", me, "company") if me else None
+
+
+def _positions_kept(company=None):
+	"""Whether THIS company keeps a position register.
+
+	The question used to be asked of the whole site - "are there any Active
+	positions at all?" - which is only the same question when the site carries
+	one company. With two, the first company to create a seat switched the other
+	one's chart into seat mode as well, and its headline numbers counted seats
+	nobody there owns.
+
+	`company` is the caller's own unless one is named. A login with no Employee
+	record - Administrator during a migration, a vendor, a website user - has no
+	company to compare against, so the question falls back to the whole site,
+	which is what it has always done for them.
+
+	Cached for the request, the same way and for the same reason as
+	_has_people_under_them: it is asked once per box while a tree renders, and a
+	company does not take up or abandon positions in the middle of one request.
+	"""
+	if not _enabled():
+		return False
+	if not company or company == "All Companies":
+		company = _my_company()
+	cache = getattr(frappe.local, "_alvoraa_positions_kept", None)
+	if cache is None:
+		cache = frappe.local._alvoraa_positions_kept = {}
+	if company not in cache:
+		filters = {"status": "Active"}
+		if company:
+			filters["company"] = company
+		cache[company] = bool(frappe.db.count("Alvoraa Position", filters))
+	return cache[company]
+
+
 def _may_see_vacancies():
 	roles = set(frappe.get_roles())
 	return bool({"HR Manager", "HR User", "System Manager"} & roles)
@@ -65,7 +104,7 @@ def get_children(parent=None, company=None, as_at=None):
 	node = parent if (parent and parent != company) else None
 	if not (_within_reach(node, as_at) if node else reach()["unlimited"]):
 		_refuse_outside_reach("api.get_children", node)
-	if _enabled() and frappe.db.count("Alvoraa Position", {"status": "Active"}):
+	if _positions_kept(company):
 		return _position_children(parent, company, as_at)
 	return _people_children(parent, company)
 
@@ -411,7 +450,7 @@ def my_view(employee=None, as_at=None):
 	"""
 	as_at = as_at or nowdate()
 	me = _me()
-	positions = _enabled() and frappe.db.count("Alvoraa Position", {"status": "Active"})
+	positions = _positions_kept()
 	# Somebody else's view obeys the same reach rule as the chart (slice 010,
 	# SEC-8). Their seat is what reach compares on a positions tenant.
 	if employee and employee != me:
@@ -788,7 +827,7 @@ def _within_reach(root, as_at):
 	me = _me()
 	if not me:
 		return False
-	positions = _enabled() and frappe.db.count("Alvoraa Position", {"status": "Active"})
+	positions = _positions_kept()
 	mine = _my_position_of(me, as_at) if positions else me
 	if not mine:
 		return False
@@ -844,7 +883,7 @@ def subtree(root=None, depth=None, as_at=None, kind=None):
 	if not r["unlimited"]:
 		depth = min(depth, r["down"] + 1)
 
-	positions = _enabled() and frappe.db.count("Alvoraa Position", {"status": "Active"})
+	positions = _positions_kept()
 
 	if positions:
 		root = root or _my_position(as_at)
@@ -1040,7 +1079,7 @@ def chain_to_top(node=None, as_at=None):
 	# Somebody else's chain obeys the reach rule, exactly as subtree does (SEC-8).
 	if node and not _within_reach(node, as_at):
 		_refuse_outside_reach("api.chain_to_top", node)
-	positions = _enabled() and frappe.db.count("Alvoraa Position", {"status": "Active"})
+	positions = _positions_kept()
 	chain, guard = [], 0
 
 	if positions:

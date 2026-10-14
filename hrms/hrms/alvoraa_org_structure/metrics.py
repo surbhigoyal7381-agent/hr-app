@@ -19,17 +19,44 @@ from hrms.alvoraa_org_structure import settings
 
 
 def _positions(as_at):
+	"""Only the seats this reader may act for.
+
+	Scoped the same way as every other HR reader since slice 030: the companies
+	they may act for, and - for a store-level HR person - their branches. Until
+	this was added the function read every position on the site, so one
+	company's HR saw another company's vacancies and a single store's HR saw
+	all six stores'. The role check on org_health was the only gate, and a role
+	says what somebody does, not who they do it for.
+	"""
+	from hrms.alvoraa_hr_core.access import permitted_branches, permitted_companies
+
+	filters = {"status": ("!=", "Closed"),
+	           "company": ("in", permitted_companies())}
+	branches = permitted_branches()
+	if branches is not None:
+		# A seat with no branch is outside every store, which is the rule every
+		# other reader follows (DEF-6). Head office is not a store's business.
+		filters["branch"] = ("in", branches)
 	return frappe.get_all(
 		"Alvoraa Position",
-		filters={"status": ("!=", "Closed")},
+		filters=filters,
 		fields=["name", "position_title", "seats", "status", "is_key_position",
 		        "reports_to_position", "department", "company", "modified"])
 
 
-def _assignments(as_at):
+def _assignments(as_at, positions=None):
+	"""The people in those seats, and nobody else's.
+
+	Narrowed to the seats _positions returned, or the counts would describe a
+	population the reader is not allowed to see - someone over capacity in a
+	company or a store that is not theirs.
+	"""
+	filters = {"from_date": ("<=", as_at)}
+	if positions is not None:
+		filters["position"] = ("in", [p.name for p in positions])
 	rows = frappe.get_all(
 		"Alvoraa Position Assignment",
-		filters={"from_date": ("<=", as_at)},
+		filters=filters,
 		fields=["employee", "employee_name", "position", "weight",
 		        "assignment_type", "from_date", "to_date"])
 	return [r for r in rows if not r.to_date or str(r.to_date) >= str(as_at)]
@@ -42,7 +69,7 @@ def org_health(as_at=None):
 	as_at = as_at or nowdate()
 
 	positions = _positions(as_at)
-	assignments = _assignments(as_at)
+	assignments = _assignments(as_at, positions)
 	by_position, by_person = {}, {}
 	for a in assignments:
 		by_position.setdefault(a.position, []).append(a)

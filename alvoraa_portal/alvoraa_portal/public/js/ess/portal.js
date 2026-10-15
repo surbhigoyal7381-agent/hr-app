@@ -499,7 +499,14 @@ function posPaintTree() {
   POS.rows.forEach(function (r) { by[r.id] = r; });
   var opts = {
     toggle: "posToggle",
-    focus: "posToggle",
+    // For somebody who may edit, clicking the box opens the seat - folding it
+    // away has its own button with its own count, so the click is free for
+    // what they came to do.
+    //
+    // For a reader it still folds. `posOpenEditor` refuses a non-editor, so
+    // pointing their click at it would mean clicking a box did NOTHING, which
+    // is worse than the behaviour it replaced.
+    focus: POS.may_edit ? "posOpenEditor" : "posToggle",
     action: POS.may_edit ? { label: "Change", fn: "posOpenEditor" } : null,
     // Greyed, never dropped. `dim` is asked per card so the filter can change
     // without the tree being rebuilt.
@@ -530,6 +537,274 @@ function posPaintTree() {
     + html + "</div></div>";
 }
 
+/* ── who is in a seat, and the two ways to fill it ─────────────────────
+ *
+ * Creating a seat and filling it are different acts: the second can rewrite
+ * who approves an employee's leave and expenses. So the delegate option is
+ * worded plainly, defaulted off, and never implied by adding somebody.
+ *
+ * "Internal" here means a person already in the company who suits the role
+ * (Surbhi, 15 Oct 2026), so the picker lists people and says how much of each
+ * one is already committed. "External" is the job opening, which goes through
+ * the recruitment this product already has.
+ */
+
+function posSeat() {
+  var id = (document.getElementById("pos-e-name") || {}).value || "";
+  return id ? (POS.rows.filter(function (r) { return r.id === id; })[0] || null)
+            : null;
+}
+
+/* The people in the open seat, with a way to take each one out. */
+function posPaintPeople() {
+  var box = document.getElementById("pos-people");
+  var wrap = document.getElementById("pos-people-wrap");
+  if (!box || !wrap) return;
+  var r = posSeat();
+
+  // A seat that does not exist yet holds nobody, and offering to fill it
+  // before it is saved would be a button that cannot work.
+  wrap.style.display = r ? "" : "none";
+  if (!r) return;
+
+  box.innerHTML = r.people.length
+    ? r.people.map(function (p) {
+        return '<div style="display:flex;gap:8px;align-items:center;'
+          + 'justify-content:space-between;padding:4px 0">'
+          + "<span>" + posEsc(p.name)
+          + (p.weight < 100
+              ? ' <span class="pf-card-meta">' + posNum(p.weight)
+                + "% of the seat</span>" : "")
+          + (p.covering
+              ? ' <span class="pf-card-meta">' + posEsc(p.type) + "</span>" : "")
+          + "</span>"
+          + (POS.may_edit
+              ? '<button class="btn btn-outline btn-sm" onclick="posTakeOut('
+                + "'" + posEsc(p.assignment) + "'" + ')">Take out</button>'
+              : "")
+          + "</div>";
+      }).join("")
+    : '<div class="pf-card-meta">Nobody is in this seat.</div>';
+}
+
+window.posTakeOut = async function (assignment) {
+  if (!confirm("Take this person out of the seat from today? The record of "
+               + "them having held it is kept.")) return;
+  try {
+    await gpFetch("hrms.alvoraa_org_structure.register.end_assignment",
+                  { name: assignment });
+  } catch (e) {
+    posErr(e && e.message ? e.message : e);
+    return;
+  }
+  await posLoad();
+  posPaintPeople();
+};
+
+/* ── naming the manager instead of the position ────────────────────── */
+
+window.posFromManager = async function () {
+  var sel = document.getElementById("pos-e-mgr");
+  var note = document.getElementById("pos-mgr-note");
+  if (!sel || !sel.value) { if (note) note.style.display = "none"; return; }
+  var out;
+  try {
+    out = await gpFetch(
+      "hrms.alvoraa_org_structure.register.where_does_this_person_sit",
+      { employee: sel.value });
+  } catch (e) {
+    posErr(e && e.message ? e.message : e);
+    return;
+  }
+  if (out.position) {
+    document.getElementById("pos-e-parent").value = out.position;
+    if (out.branch) document.getElementById("pos-e-branch").value = out.branch;
+  }
+  if (note) {
+    // Says what it did, including when it could not. A silent no-op reads as
+    // "this person has no manager", which is a different thing entirely.
+    note.textContent = out.position
+      ? "Reports to " + (out.position_title || out.position)
+        + (out.branch ? ", " + out.branch : "")
+        + (out.why ? " - " + out.why : "")
+      : (out.why || "Nothing found for that person.");
+    note.style.display = "";
+  }
+};
+
+/* ── putting somebody in ───────────────────────────────────────────── */
+
+window.posPickPerson = function () {
+  if (!POS.may_edit || !posSeat()) return;
+  document.getElementById("pos-p-q").value = "";
+  document.getElementById("pos-p-weight").value = 100;
+  document.getElementById("pos-p-type").value = "Permanent";
+  document.getElementById("pos-p-until").value = "";
+  document.getElementById("pos-p-delegate").checked = false;
+  POS.picked = null;
+  posPickType();
+  posPickErr("");
+  document.getElementById("pos-person").classList.add("open");
+  posPickSearch();
+};
+
+window.posPickClose = function () {
+  document.getElementById("pos-person").classList.remove("open");
+};
+
+function posPickErr(msg) {
+  var el = document.getElementById("pos-person-err");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.style.display = msg ? "" : "none";
+}
+
+/* Cover needs a last day, and the field only appears when it is needed. */
+window.posPickType = function () {
+  var t = (document.getElementById("pos-p-type") || {}).value || "Permanent";
+  var wrap = document.getElementById("pos-p-until-wrap");
+  if (wrap) wrap.style.display = t === "Permanent" ? "none" : "";
+};
+
+window.posPickSearch = async function () {
+  var seat = posSeat();
+  if (!seat) return;
+  var list = document.getElementById("pos-p-list");
+  if (!list) return;
+  var q = (document.getElementById("pos-p-q") || {}).value || "";
+  list.innerHTML = '<div class="pf-card-meta">Looking&hellip;</div>';
+  var out;
+  try {
+    out = await gpFetch("hrms.alvoraa_org_structure.register.candidates_for",
+                        { position: seat.id, q: q });
+  } catch (e) {
+    list.innerHTML = '<div class="pf-card-meta">'
+      + posEsc(e && e.message ? e.message : e) + "</div>";
+    return;
+  }
+  var rows = (out && out.rows) || [];
+  if (!rows.length) {
+    list.innerHTML = '<div class="pf-card-meta">'
+      + (q ? "Nobody of that name that you can see."
+           : "Nobody here already does this job. Search by name instead.")
+      + "</div>";
+    return;
+  }
+  list.innerHTML = rows.map(function (r) {
+    // How committed somebody already is, said in words. At the first tenant
+    // everybody is at 100%, and that IS the answer: they would have to leave
+    // something first. A bare number would not say that.
+    var load = r.free >= 100
+      ? "free"
+      : (r.free <= 0 ? "already fully committed"
+                     : posNum(r.free) + "% of their time free");
+    var where = [r.designation, r.branch].filter(Boolean).join(" - ");
+    return '<div class="pos-cand" style="padding:6px 0;cursor:pointer;'
+      + 'border-bottom:1px solid var(--border)" onclick="posPickOne('
+      + "'" + posEsc(r.employee) + "'" + ')" id="pos-cand-'
+      + posEsc(r.employee) + '">'
+      + "<strong>" + posEsc(r.name) + "</strong>"
+      + '<div class="pf-card-meta">'
+      + (where ? posEsc(where) + " - " : "") + load
+      + "</div></div>";
+  }).join("");
+  if (POS.picked) posPickOne(POS.picked);
+};
+
+window.posPickOne = function (employee) {
+  POS.picked = employee;
+  var list = document.getElementById("pos-p-list");
+  if (!list) return;
+  Array.prototype.forEach.call(list.children, function (el) {
+    el.style.background = (el.id === "pos-cand-" + employee)
+      ? "var(--surface2)" : "";
+  });
+};
+
+window.posPickSave = async function () {
+  if (!POS.picked) { posPickErr("Choose somebody from the list first."); return; }
+  var seat = posSeat();
+  if (!seat) return;
+  var btn = document.getElementById("pos-p-save");
+  btn.disabled = true;
+  try {
+    await gpFetch("hrms.alvoraa_org_structure.register.assign_person", {
+      position: seat.id,
+      employee: POS.picked,
+      weight: document.getElementById("pos-p-weight").value || 100,
+      assignment_type: document.getElementById("pos-p-type").value,
+      to_date: document.getElementById("pos-p-until").value || null,
+      delegate_authority:
+        document.getElementById("pos-p-delegate").checked ? 1 : 0,
+    });
+  } catch (e) {
+    // The server refuses an over-filled seat, a person at more than one
+    // person, and cover with no end date. Those messages say more than
+    // anything this screen could invent, so they are shown as they come.
+    posPickErr(e && e.message ? e.message : e);
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  posPickClose();
+  await posLoad();
+  posPaintPeople();
+};
+
+/* ── advertising it ────────────────────────────────────────────────── */
+
+window.posPostOpen = function () {
+  var seat = posSeat();
+  if (!POS.may_edit || !seat) return;
+  document.getElementById("pos-j-vac").value =
+    Math.max(1, Math.ceil(seat.open || 1));
+  document.getElementById("pos-j-closes").value = "";
+  document.getElementById("pos-j-publish").checked = false;
+  posJobErr("");
+  document.getElementById("pos-job").classList.add("open");
+};
+
+window.posPostClose = function () {
+  document.getElementById("pos-job").classList.remove("open");
+};
+
+function posJobErr(msg) {
+  var el = document.getElementById("pos-job-err");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.style.display = msg ? "" : "none";
+}
+
+window.posPostSave = async function () {
+  var seat = posSeat();
+  if (!seat) return;
+  var btn = document.getElementById("pos-j-save");
+  btn.disabled = true;
+  var out;
+  try {
+    out = await gpFetch("hrms.alvoraa_org_structure.register.post_job", {
+      position: seat.id,
+      vacancies: document.getElementById("pos-j-vac").value || 1,
+      publish: document.getElementById("pos-j-publish").checked ? 1 : 0,
+      closes_on: document.getElementById("pos-j-closes").value || null,
+    });
+  } catch (e) {
+    posJobErr(e && e.message ? e.message : e);
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  posPostClose();
+  posErr("");
+  var note = document.getElementById("pos-mgr-note");
+  if (note) {
+    note.textContent = "Opening " + (out.name || "") + " created"
+      + (out.published ? " and put on the careers page."
+                       : ", kept with HR for now.");
+    note.style.display = "";
+  }
+};
+
 /* ── adding a seat, and moving one ─────────────────────────────────── */
 
 window.posOpenEditor = function (id) {
@@ -551,9 +826,36 @@ window.posOpenEditor = function (id) {
   posFillSelect("pos-e-branch", posValues("branch"), r ? r.branch : "", "None");
   posFillSelect("pos-e-dept", posValues("department"), r ? r.department : "", "None");
 
+  // Everybody who already holds a seat, so a new one can be placed by naming
+  // its manager instead of hunting for a position in a list of hundreds.
+  var mgrs = {};
+  POS.rows.forEach(function (x) {
+    (x.people || []).forEach(function (pp) {
+      mgrs[pp.employee] = pp.name + " — " + x.title;
+    });
+  });
+  posFillSelect("pos-e-mgr",
+    Object.keys(mgrs).sort(function (a, b) {
+      return mgrs[a] < mgrs[b] ? -1 : 1;
+    }).map(function (k) { return [k, mgrs[k]]; }),
+    "", "Pick a person instead of a position");
+  var note = document.getElementById("pos-mgr-note");
+  if (note) { note.textContent = ""; note.style.display = "none"; }
+
+  // The seat count is asked for only where it is genuinely in use. A job is
+  // one job; asking on every new seat made people answer a question they did
+  // not have, and the answer was always 1.
+  var seatsWrap = document.getElementById("pos-seats-wrap");
+  if (seatsWrap) {
+    seatsWrap.style.display = (r && flt_(r.seats) > 1) ? "" : "none";
+  }
+
+  posPaintPeople();
   posErr("");
   document.getElementById("pos-editor").classList.add("open");
 };
+
+function flt_(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
 
 function posValues(field) {
   var seen = {};

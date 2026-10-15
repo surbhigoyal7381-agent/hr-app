@@ -127,9 +127,11 @@ function render(rows, values, collapsed) {
 {
   const out = render(ROWS);
   ROWS.forEach((r) => {
-    // By id, not by title: a parent's title legitimately appears again in
-    // each child's "Reports to" cell, so counting titles counted those too.
-    const n = out.html.split("posOpenEditor('" + r.id + "')").length - 1;
+    // Counted by the card's own title span, which renders exactly once per
+    // card. Counting the id double-counts now that an editor's card carries
+    // it twice - once on the click, once on the Change button - and counting
+    // a bare title caught the "Reports to" text as well.
+    const n = out.html.split('<span class="ti">' + r.title + "</span>").length - 1;
     ok("every seat appears exactly once", n === 1,
        r.title + " appears " + n + " time(s)");
   });
@@ -240,6 +242,17 @@ function render(rows, values, collapsed) {
   ok("a reader who may not edit gets no Change button",
      !html.includes("posOpenEditor"));
   ok("but still sees the chart", html.includes('class="oc-box'));
+  // And clicking a box must still DO something for them. Pointing their click
+  // at an editor-only handler would mean it silently did nothing.
+  ok("a reader's click still folds the branch",
+     html.includes("posToggle("));
+}
+
+/* ── 10. an editor's click opens the seat ───────────────────────────────── */
+{
+  const out = render(ROWS);
+  ok("an editor's click opens the seat", out.html.includes("posOpenEditor("));
+  ok("and the Change button is there too", out.html.includes(">Change<"));
 }
 
 if (problems.length) {

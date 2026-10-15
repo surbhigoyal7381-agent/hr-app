@@ -65,9 +65,33 @@
             <div class="gp-error" id="pos-editor-err" style="display:none;margin-bottom:12px"></div>
             <input type="hidden" id="pos-e-name">
 
+            <!-- Who is in it comes first. It is what somebody opened the
+                 seat to find out, and the seat's own details are rarely why
+                 they are here. -->
+            <div class="gp-field" id="pos-people-wrap">
+              <div class="gp-label">Who is in it</div>
+              <div id="pos-people"></div>
+              <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+                <button class="btn btn-outline btn-sm" id="pos-add-person"
+                        onclick="posPickPerson()">+ Put somebody in it</button>
+                <button class="btn btn-outline btn-sm" id="pos-post-job"
+                        onclick="posPostOpen()">Advertise it</button>
+              </div>
+            </div>
+
             <div class="gp-field">
               <div class="gp-label">What the seat is called</div>
               <input class="gp-input" id="pos-e-title" placeholder="Cashier">
+            </div>
+
+            <!-- The other way in: name the manager and the next two answers
+                 fill themselves. Either route sets the same two fields. -->
+            <div class="gp-field">
+              <div class="gp-label">Or name the manager it reports to</div>
+              <select class="gp-input" id="pos-e-mgr" onchange="posFromManager()">
+                <option value="">Pick a person instead of a position</option>
+              </select>
+              <div class="pf-card-meta" id="pos-mgr-note" style="display:none"></div>
             </div>
 
             <div class="gp-field">
@@ -87,7 +111,11 @@
             </div>
 
             <div style="display:flex;gap:12px">
-              <div class="gp-field" style="flex:1">
+              <!-- Hidden unless this seat really does hold more than one.
+                   A job is one job; asking for a number on every new seat
+                   made people answer a question they did not have. -->
+              <div class="gp-field" id="pos-seats-wrap"
+                   style="flex:1;display:none">
                 <div class="gp-label">How many people it holds</div>
                 <input class="gp-input" id="pos-e-seats" type="number" min="0" step="0.5" value="1">
               </div>
@@ -114,6 +142,106 @@
           <div class="gp-modal-footer">
             <button class="btn btn-outline" onclick="posCloseEditor()">Cancel</button>
             <button class="btn btn-primary" id="pos-save-btn" onclick="posSave()">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Who should take this seat. The list is people who already do this
+           job, and it says how much of each one is already committed -
+           "internal" means somebody already here, not an unpublished advert. -->
+      <div class="gp-backdrop" id="pos-person">
+        <div class="gp-modal" style="max-width:560px">
+          <div class="gp-modal-hdr">
+            <div class="gp-modal-title">Put somebody in this seat</div>
+            <button class="gp-modal-close" onclick="posPickClose()" aria-label="Close">&times;</button>
+          </div>
+          <div class="gp-modal-body">
+            <div class="gp-error" id="pos-person-err" style="display:none;margin-bottom:12px"></div>
+
+            <div class="gp-field">
+              <div class="gp-label">Search by name, or leave it to see people already doing this job</div>
+              <input class="gp-input" id="pos-p-q" oninput="posPickSearch()"
+                     placeholder="Start typing a name">
+            </div>
+            <div id="pos-p-list" style="max-height:220px;overflow-y:auto"></div>
+
+            <div style="display:flex;gap:12px;margin-top:12px">
+              <div class="gp-field" style="flex:1">
+                <div class="gp-label">How much of the seat</div>
+                <input class="gp-input" id="pos-p-weight" type="number"
+                       min="1" max="100" step="5" value="100">
+              </div>
+              <div class="gp-field" style="flex:1">
+                <div class="gp-label">For how long</div>
+                <select class="gp-input" id="pos-p-type" onchange="posPickType()">
+                  <option value="Permanent">Permanently</option>
+                  <option value="Acting">Acting</option>
+                  <option value="Interim">Interim</option>
+                  <option value="Additional Charge">Additional charge</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="gp-field" id="pos-p-until-wrap" style="display:none">
+              <div class="gp-label">Until</div>
+              <input class="gp-input" id="pos-p-until" type="date">
+              <div class="pf-card-meta">Cover needs a last day. Without one it
+                quietly becomes permanent, and the chart only says so months later.</div>
+            </div>
+
+            <div class="gp-field">
+              <div style="display:flex;gap:8px;align-items:flex-start">
+                <input type="checkbox" id="pos-p-delegate" style="width:16px;height:16px;margin-top:3px;accent-color:var(--primary);cursor:pointer">
+                <label for="pos-p-delegate" style="margin:0;cursor:pointer">
+                  <strong>Also move approvals to this seat</strong>
+                  <span class="pf-card-meta" style="display:block">Changes who
+                    approves leave and expenses for the people under it. Leave
+                    this alone unless that is what you mean to do.</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="gp-modal-footer">
+            <button class="btn btn-outline" onclick="posPickClose()">Cancel</button>
+            <button class="btn btn-primary" id="pos-p-save" onclick="posPickSave()">Put them in</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Advertising it: the external route, through the recruitment that
+           already exists. Nothing about hiring is rebuilt here. -->
+      <div class="gp-backdrop" id="pos-job">
+        <div class="gp-modal" style="max-width:480px">
+          <div class="gp-modal-hdr">
+            <div class="gp-modal-title">Advertise this seat</div>
+            <button class="gp-modal-close" onclick="posPostClose()" aria-label="Close">&times;</button>
+          </div>
+          <div class="gp-modal-body">
+            <div class="gp-error" id="pos-job-err" style="display:none;margin-bottom:12px"></div>
+            <div style="display:flex;gap:12px">
+              <div class="gp-field" style="flex:1">
+                <div class="gp-label">How many people</div>
+                <input class="gp-input" id="pos-j-vac" type="number" min="1" value="1">
+              </div>
+              <div class="gp-field" style="flex:1">
+                <div class="gp-label">Closes on</div>
+                <input class="gp-input" id="pos-j-closes" type="date">
+              </div>
+            </div>
+            <div class="gp-field">
+              <div style="display:flex;gap:8px;align-items:flex-start">
+                <input type="checkbox" id="pos-j-publish" style="width:16px;height:16px;margin-top:3px;accent-color:var(--primary);cursor:pointer">
+                <label for="pos-j-publish" style="margin:0;cursor:pointer">
+                  <strong>Put it on the careers page</strong>
+                  <span class="pf-card-meta" style="display:block">Leave it off
+                    to keep the opening with HR until you are ready.</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="gp-modal-footer">
+            <button class="btn btn-outline" onclick="posPostClose()">Cancel</button>
+            <button class="btn btn-primary" id="pos-j-save" onclick="posPostSave()">Create the opening</button>
           </div>
         </div>
       </div>

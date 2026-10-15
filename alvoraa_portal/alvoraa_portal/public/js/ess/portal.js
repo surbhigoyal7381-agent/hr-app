@@ -1139,6 +1139,7 @@ function posPaintPeople() {
   // A seat that does not exist yet holds nobody, and offering to fill it
   // before it is saved would be a button that cannot work.
   wrap.style.display = r ? "" : "none";
+  posPeopleActions();
   if (!r) return;
 
   box.innerHTML = r.people.length
@@ -1163,6 +1164,81 @@ function posPaintPeople() {
       }).join("")
     : '<div class="pf-card-meta">Nobody is in this seat.</div>';
 }
+
+/* What a seat offers, and only what it can actually do.
+ *
+ * Surbhi, 15 Oct 2026: "start with minimal buttons and controls, and show
+ * controls like advertise it etc only when all the conditions for that button
+ * are fulfilled." So there is no disabled button with a sentence under it
+ * explaining why - the control is simply not there, which says the same thing
+ * in no words at all.
+ *
+ *   room in the seat, nothing advertised  -> Advertise it
+ *   an opening already open               -> a way into that opening
+ *   seat full                             -> neither
+ */
+function posPeopleActions() {
+  var box = document.getElementById("pos-people-actions");
+  if (!box) return;
+  var r = posSeat();
+  if (!r || !POS.may_edit) { box.innerHTML = ""; return; }
+
+  var out = "";
+  if (r.open >= 0.5) {
+    out += '<button class="btn btn-outline btn-sm" onclick="posPickPerson()">'
+      + "+ Put somebody in it</button>";
+  }
+  if (r.opening) {
+    // Already being recruited for. Offering to advertise it again is how two
+    // openings for one job appear without anybody meaning it.
+    out += '<a class="btn btn-outline btn-sm" target="_blank" rel="noopener"'
+      + ' href="/app/job-opening/' + encodeURIComponent(r.opening) + '">'
+      + "Job opening " + posEsc(r.opening) + "</a>";
+  } else if (r.open >= 0.5 && r.designation) {
+    // Needs a job role, because Job Opening does. Without one the button is
+    // absent rather than present-and-refusing.
+    out += '<button class="btn btn-outline btn-sm" onclick="posAdvertise()">'
+      + "Advertise it</button>";
+  }
+  box.innerHTML = out;
+}
+
+/* Create the opening and go and finish it.
+ *
+ * The three fields a modal used to ask for - how many, closing date, publish -
+ * are on Frappe's own Job Opening form along with everything else it needs.
+ * Asking for a subset here and then leaving somebody to find the rest was two
+ * places to fill in one thing. */
+window.posAdvertise = async function () {
+  var r = posSeat();
+  if (!r) return;
+  var out;
+  try {
+    out = await gpFetch("hrms.alvoraa_org_structure.register.post_job", {
+      position: r.id,
+      vacancies: Math.max(1, Math.ceil(r.open || 1)),
+    });
+  } catch (e) {
+    posErr(e && e.message ? e.message : e);
+    return;
+  }
+  await posLoad();
+  posPaintPeople();
+  window.open("/app/job-opening/" + encodeURIComponent(out.name), "_blank",
+              "noopener");
+};
+
+/* Reports to, given either way. Naming the person fills the position in, so
+   the two answers can never disagree with each other. */
+window.posReportsBy = function () {
+  var byPerson = (document.getElementById("pos-e-by-person") || {}).checked;
+  var pos = document.getElementById("pos-e-parent");
+  var mgr = document.getElementById("pos-e-mgr");
+  if (pos) pos.style.display = byPerson ? "none" : "";
+  if (mgr) mgr.style.display = byPerson ? "" : "none";
+  var note = document.getElementById("pos-mgr-note");
+  if (note && !byPerson) note.style.display = "none";
+};
 
 window.posTakeOut = async function (assignment) {
   if (!confirm("Take this person out of the seat from today? The record of "
@@ -1327,59 +1403,6 @@ window.posPickSave = async function () {
   await posLoad();
   posPaintPeople();
 };
-
-/* ── advertising it ────────────────────────────────────────────────── */
-
-window.posPostOpen = function () {
-  var seat = posSeat();
-  if (!POS.may_edit || !seat) return;
-  document.getElementById("pos-j-vac").value =
-    Math.max(1, Math.ceil(seat.open || 1));
-  document.getElementById("pos-j-closes").value = "";
-  document.getElementById("pos-j-publish").checked = false;
-  posJobErr("");
-  document.getElementById("pos-job").classList.add("open");
-};
-
-window.posPostClose = function () {
-  document.getElementById("pos-job").classList.remove("open");
-};
-
-function posJobErr(msg) {
-  var el = document.getElementById("pos-job-err");
-  if (!el) return;
-  el.textContent = msg || "";
-  el.style.display = msg ? "" : "none";
-}
-
-window.posPostSave = async function () {
-  var seat = posSeat();
-  if (!seat) return;
-  var btn = document.getElementById("pos-j-save");
-  btn.disabled = true;
-  var out;
-  try {
-    out = await gpFetch("hrms.alvoraa_org_structure.register.post_job", {
-      position: seat.id,
-      vacancies: document.getElementById("pos-j-vac").value || 1,
-      publish: document.getElementById("pos-j-publish").checked ? 1 : 0,
-      closes_on: document.getElementById("pos-j-closes").value || null,
-    });
-  } catch (e) {
-    posJobErr(e && e.message ? e.message : e);
-    btn.disabled = false;
-    return;
-  }
-  btn.disabled = false;
-  posPostClose();
-  // Said where somebody is looking, not under the manager-picker hint three
-  // fields away, which is where it used to land.
-  var said = "Opening created for " + (posSeat() ? posSeat().title : "this seat")
-    + (out.published ? ". It is on the careers page."
-                     : ". It is kept with HR for now.");
-  if (window.toast) { toast(said); } else { posErr(said); }
-};
-
 /* ── setting the chart up in the first place ───────────────────────────
  *
  * `propose_positions` has existed since this module was written and has never
@@ -1500,7 +1523,6 @@ window.posOpenEditor = function (id) {
     r ? "Change this seat" : "Add a seat";
   document.getElementById("pos-e-name").value = r ? r.id : "";
   document.getElementById("pos-e-title").value = r ? r.title : "";
-  document.getElementById("pos-e-seats").value = r ? r.seats : 1;
   document.getElementById("pos-e-status").value = r ? r.status : "Active";
   document.getElementById("pos-e-key").checked = r ? !!r.key : false;
 
@@ -1529,18 +1551,22 @@ window.posOpenEditor = function (id) {
     "", "Pick a person instead of a position");
   var note = document.getElementById("pos-mgr-note");
   if (note) { note.textContent = ""; note.style.display = "none"; }
+  var byPos = document.getElementById("pos-e-by-position");
+  if (byPos) byPos.checked = true;
+  posReportsBy();
 
-  // The seat count is asked for only where it is genuinely in use. A job is
-  // one job; asking on every new seat made people answer a question they did
-  // not have, and the answer was always 1.
-  var seatsWrap = document.getElementById("pos-seats-wrap");
-  var seatsDoor = document.getElementById("pos-seats-door");
-  var many = !!(r && flt_(r.seats) > 1);
-  if (seatsWrap) seatsWrap.style.display = many ? "" : "none";
-  // The field was hidden unless the number was ALREADY above one, so a
-  // one-person seat could never become a job share - and 59 of 120 seats at
-  // the first tenant hold more than one person. Hidden by default, with a door.
-  if (seatsDoor) seatsDoor.style.display = many ? "none" : "";
+  // Nothing to add somebody to until the seat exists, so the two buttons
+  // only appear once it does.
+  var another = document.getElementById("pos-save-another");
+  if (another) another.style.display = r ? "none" : "";
+
+  // No seat count. Surbhi, 15 Oct 2026: "One dialog should only talk about
+  // one position." Several of the same job are several seats, made with
+  // "Save and add another" - a number on one seat made a dialog that was
+  // about one thing pretend to be about several.
+  //
+  // A seat that already holds more than one keeps its count; the chart still
+  // says "24 of 25 filled". Changing that number is a desk job now.
 
   posPaintPeople();
   posErr("");
@@ -1549,12 +1575,7 @@ window.posOpenEditor = function (id) {
 
 function flt_(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
 
-window.posShowSeats = function () {
-  var w = document.getElementById("pos-seats-wrap");
-  var d = document.getElementById("pos-seats-door");
-  if (w) w.style.display = "";
-  if (d) d.style.display = "none";
-};
+
 
 function posValues(field) {
   var seen = {};
@@ -1583,14 +1604,20 @@ window.posCloseEditor = function () {
   document.getElementById("pos-editor").classList.remove("open");
 };
 
-window.posSave = async function () {
+/* `then` is "close" or "another".
+ *
+ * "Save and add another" keeps the branch, department, job role and parent
+ * and clears the name, because five Cashiers in one shop differ by nothing
+ * else - and making five of them used to mean typing a number into one seat,
+ * which made one dialog pretend to be about five. */
+window.posSave = async function (then) {
   var title = (document.getElementById("pos-e-title").value || "").trim();
   if (!title) { posErr("Give the seat a name."); return; }
-  var seats = parseFloat(document.getElementById("pos-e-seats").value);
-  if (!(seats >= 0)) { posErr("How many people it holds must be zero or more."); return; }
 
   var btn = document.getElementById("pos-save-btn");
+  var other = document.getElementById("pos-save-another");
   btn.disabled = true;
+  if (other) other.disabled = true;
   try {
     await gpFetch("hrms.alvoraa_org_structure.register.save_position", {
       name: document.getElementById("pos-e-name").value || null,
@@ -1599,16 +1626,30 @@ window.posSave = async function () {
       designation: document.getElementById("pos-e-role").value || "",
       branch: document.getElementById("pos-e-branch").value || "",
       department: document.getElementById("pos-e-dept").value || "",
-      seats: seats,
       status: document.getElementById("pos-e-status").value,
       is_key_position: document.getElementById("pos-e-key").checked ? 1 : 0,
     });
   } catch (e) {
     posErr(e && e.message ? e.message : String(e));
     btn.disabled = false;
+    if (other) other.disabled = false;
     return;
   }
   btn.disabled = false;
+  if (other) other.disabled = false;
+
+  if (then === "another") {
+    await posLoad();
+    // Everything but the name is kept, and the name is emptied and focused,
+    // so the next one is one field away.
+    document.getElementById("pos-e-name").value = "";
+    var t = document.getElementById("pos-e-title");
+    t.value = "";
+    posErr("");
+    posPaintPeople();
+    t.focus();
+    return;
+  }
   posCloseEditor();
   posLoad();
 };

@@ -44,6 +44,18 @@
                 <option value="leaving">Only seats where somebody is leaving</option>
               </select>
             </div>
+            <!-- The chart is one representation of three relationships, and
+                 the reader chooses which. Only shown with the structure view,
+                 because a list has no spine to change. -->
+            <div id="pos-arrange-wrap" style="display:none">
+              <div class="gp-label">Arrange by</div>
+              <select class="gp-input" id="pos-f-arrange" style="height:32px;padding:4px 8px;width:auto"
+                      onchange="posPaint()">
+                <option value="reporting">Who reports to whom</option>
+                <option value="branch">Branch</option>
+                <option value="department">Department</option>
+              </select>
+            </div>
             <div>
               <div class="gp-label">View</div>
               <select class="gp-input" id="pos-f-view" style="height:32px;padding:4px 8px;width:auto"

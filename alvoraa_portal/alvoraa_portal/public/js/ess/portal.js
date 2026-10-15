@@ -152,8 +152,13 @@ function ocNodeCard(n, isRoot, opts) {
         return '<div class="oc-who">' + ocAvatar(p)
           + "<span>" + ocEsc(p.name) + tags + "</span></div>";
       }).join("")
-    : '<div class="oc-who oc-empty"><span class="av">&mdash;</span>'
-      + "<span>Nobody in this seat</span></div>";
+    // `null` means this card is not a seat at all - a branch or a department
+    // holds seats, and telling somebody that a branch has nobody in it is
+    // just wrong. An empty ARRAY still means an empty seat, which is the
+    // thing this chart exists to show.
+    : (n.people === null ? ""
+       : '<div class="oc-who oc-empty"><span class="av">&mdash;</span>'
+         + "<span>Nobody in this seat</span></div>");
 
   var open = "";
   if (n.open >= 0.5) {
@@ -305,6 +310,7 @@ window.posLoad = async function () {
   }
   POS.rows = (out && out.rows) || [];
   POS.may_edit = !!(out && out.may_edit);
+  POS.departments = (out && out.departments) || {};
   var add = document.getElementById("pos-add-btn");
   if (add) add.style.display = POS.may_edit ? "" : "none";
   // The offer to build a chart lives in the empty state, where somebody is
@@ -482,6 +488,10 @@ window.posPaint = function () {
   var note = document.getElementById("pos-filter-note");
   var tree = posVal("pos-f-view") === "tree";
   if (note) note.style.display = tree ? "" : "none";
+  // A list has no spine to rearrange, so the control only belongs with the
+  // structure view.
+  var arr = document.getElementById("pos-arrange-wrap");
+  if (arr) arr.style.display = tree ? "" : "none";
   if (tree) { posPaintTree(); } else { posPaintList(); }
 };
 
@@ -598,10 +608,16 @@ function posCells(r, lead, tail) {
  * seat whose parent was filtered away reads as the top of the company.
  */
 
-function posKids() {
+/* The reporting tree over WHICHEVER rows it is given - every seat on the
+   reporting spine, or just one branch's seats when the chart is arranged by
+   branch or department. Defaulting to all of them kept the old callers
+   working; passing a subset is what lets a branch hold its own lines without
+   dragging another branch's in behind them. */
+function posKids(rows) {
+  rows = rows || POS.rows;
   var byId = {}, kids = {}, roots = [];
-  POS.rows.forEach(function (r) { byId[r.id] = r; });
-  POS.rows.forEach(function (r) {
+  rows.forEach(function (r) { byId[r.id] = r; });
+  rows.forEach(function (r) {
     // A parent outside what this reader may see is not a parent they can be
     // shown, so the seat stands at the top - said out loud on the card, or a
     // branch head's every seat would look like the head of the company.
@@ -791,6 +807,176 @@ window.posUngroup = function (id) {
   posPaint();
 };
 
+/* ── the same seats, arranged three different ways ─────────────────────
+ *
+ * Surbhi, 15 Oct 2026: "organogram or this position heirarchy is just a
+ * representation - a representation of: 1. reporting heirarchy of all the
+ * employees reporting to their manager 2. branch reporting 3. Department
+ * reporting, grouped by their job positions."
+ *
+ * That is the right way round, and it costs almost nothing: every seat
+ * already carries its manager, its branch, its department and its job role.
+ * Only the spine changes.
+ *
+ *   reporting  - seat reports to seat. What the chart has always drawn.
+ *   branch     - one layer of branches. ERPNext's Branch is a flat list with
+ *                no parent, so pretending otherwise would be a lie.
+ *   department - a REAL tree. Department carries parent_department, so this
+ *                nests properly and a department can hold departments.
+ *
+ * In the branch and department views the seats inside each node are grouped
+ * by job role, which is the grouping that already exists - five Cashiers in
+ * one branch are one box, as they are anywhere else.
+ *
+ * NOTHING IS DROPPED. A seat with no branch, or no department, lands in a
+ * node that says so rather than falling off the chart.
+ */
+
+function posArrange() { return posVal("pos-f-arrange") || "reporting"; }
+
+/* A branch or department node, which is not a seat: it holds them. */
+function posHolderNode(id, title, subtitle, children, head) {
+  var open = 0, seats = 0;
+  children.forEach(function (c) {
+    open += c.open || 0;
+    seats += c._seats || 1;
+  });
+
+  // A branch or department starts CLOSED, with its count on the toggle.
+  // "Arrange by branch" is a request to see the branches; opening all of
+  // them at once lays every seat in the company across one row, which a
+  // screenshot showed is already too wide at fifteen seats.
+  //
+  // This is not the same decision as "open to start", which Surbhi made
+  // about the REPORTING tree and which stands - that spine is unchanged.
+  var shut = !POS.expanded[id];
+  var flags = [];
+  if (open >= 0.5) {
+    flags.push({ severity: "medium", label: posNum(open) + " to fill",
+                 why: "Added up across everything in " + title + "." });
+  }
+  return {
+    id: id, title: title,
+    subtitle: subtitle + (seats ? " · " + posNum(seats) + " seat"
+                                  + (seats === 1 ? "" : "s") : ""),
+    open: open, flags: flags,
+    child_count: children.length,
+    has_more: shut && children.length > 0,
+    // The head is a person, so it reads like one. A branch has none in
+    // ERPNext; a department does.
+    people: head ? [{ name: head }] : null,
+    children: shut ? [] : children,
+    _holder: true,
+    _seats: seats,
+  };
+}
+
+/* Seats inside one holder, grouped by job role the same way siblings are
+   grouped anywhere else on this chart. */
+/* The seats inside one branch or department - as a REPORTING TREE, not a
+   flat list.
+
+   Surbhi, 15 Oct 2026: "branch and department will show reporting heirarchy
+   if there are any within that branch or department." Which is right:
+   arranging by branch changes what the TOP of the chart is, not whether the
+   shop has a manager.
+
+   The tree is built from that holder's own rows alone, so a seat whose
+   manager sits in another branch stands at the top of this one rather than
+   dragging somebody else's line in behind it. Identical siblings group
+   exactly as they do on the reporting spine, because posNode does that
+   itself - there is no second idea of grouping here.
+*/
+function posSeatsIn(rows) {
+  var t = posKids(rows);
+  return posGroupSiblings(t.roots, t).map(function (g) {
+    var n = g.group ? posGroupNode(g.group, g.members) : posNode(g.solo, t, 1);
+    n._seats = g.group ? g.members.length : posCountSeats(g.solo, t);
+    return n;
+  });
+}
+
+/* How many seats a line holds, itself included, so a folded branch can say
+   what is under it rather than only how many lines start there. */
+function posCountSeats(r, t) {
+  var n = 1;
+  (t.kids[r.id] || []).forEach(function (c) { n += posCountSeats(c, t); });
+  return n;
+}
+
+/* One seat with no children of its own - which is every seat in these two
+   views, because the spine here is not the reporting line. */
+
+/* ── by branch: one flat layer, because that is what a Branch is ────── */
+function posByBranch(rows) {
+  var by = {}, order = [];
+  rows.forEach(function (r) {
+    var b = r.branch || "";
+    if (!(b in by)) { by[b] = []; order.push(b); }
+    by[b].push(r);
+  });
+  order.sort(function (a, b) {
+    // Seats belonging to no branch go last, named rather than dropped.
+    if (!a) return 1;
+    if (!b) return -1;
+    return a < b ? -1 : 1;
+  });
+  return order.map(function (b) {
+    return posHolderNode("br:" + b, b || "No branch",
+                         b ? "Branch" : "These seats belong to no branch",
+                         posSeatsIn(by[b]), null);
+  });
+}
+
+/* ── by department: a real tree, because Department is one ──────────── */
+function posByDepartment(rows) {
+  var meta = POS.departments || {};
+  var byDept = {}, used = {};
+  rows.forEach(function (r) {
+    var d = r.department || "";
+    if (!(d in byDept)) byDept[d] = [];
+    byDept[d].push(r);
+    if (d) used[d] = true;
+  });
+
+  // Every ancestor has to exist as a node, or a child department would hang
+  // off nothing and the tree would start halfway up.
+  Object.keys(used).forEach(function (d) {
+    var at = (meta[d] || {}).parent, hops = 0;
+    while (at && !used[at] && hops < 12) {
+      used[at] = true;
+      at = (meta[at] || {}).parent;
+      hops += 1;
+    }
+  });
+
+  var kids = {}, roots = [];
+  Object.keys(used).sort().forEach(function (d) {
+    var parent = (meta[d] || {}).parent;
+    if (parent && used[parent]) { (kids[parent] = kids[parent] || []).push(d); }
+    else { roots.push(d); }
+  });
+
+  function build(d, depth) {
+    var children = (kids[d] || []).map(function (c) {
+      return build(c, depth + 1);
+    });
+    // Seats sit under their own department, after any sub-departments.
+    children = children.concat(posSeatsIn(byDept[d] || []));
+    var short = d.split(" - ")[0];
+    return posHolderNode("dp:" + d, short, "Department", children,
+                         (meta[d] || {}).head || null);
+  }
+
+  var out = roots.map(function (d) { return build(d, 0); });
+  if ((byDept[""] || []).length) {
+    out.push(posHolderNode("dp:", "No department",
+                           "These seats belong to no department",
+                           posSeatsIn(byDept[""]), null));
+  }
+  return out;
+}
+
 window.posToggle = function (id) {
   // Which of the two to write depends on what the default would be, so a
   // deliberate choice always beats the default whichever way it goes.
@@ -832,7 +1018,12 @@ function posPaintTree() {
     });
   }
 
-  var nodes = t.roots.map(function (r) { return posNode(r, t, 0); });
+  var how = posArrange();
+  var nodes = how === "branch"
+    ? posByBranch(POS.rows)
+    : (how === "department"
+        ? posByDepartment(POS.rows)
+        : t.roots.map(function (r) { return posNode(r, t, 0); }));
 
   var by = {};
   POS.rows.forEach(function (r) { by[r.id] = r; });
@@ -848,12 +1039,15 @@ function posPaintTree() {
     focus: function (n) {
       // A group has no single seat to open, so clicking it opens the group.
       if (n && n._group) return "posUngroup";
+      // A branch or department is not a seat either - it holds them.
+      if (n && n._holder) return "posToggle";
       return POS.may_edit ? "posOpenEditor" : "posToggle";
     },
     action: function (n) {
       // Only a group gets a button. For a seat, clicking the card IS Change -
       // a separate button said the same thing twice and, once the card became
       // a real button, had to sit outside it and floated below the card.
+      if (n && n._holder) return null;
       return (n && n._group && POS.may_edit)
         ? { label: "Show the " + n._members, fn: "posUngroup" }
         : null;
@@ -861,6 +1055,7 @@ function posPaintTree() {
     // Greyed, never dropped. `dim` is asked per card so the filter can change
     // without the tree being rebuilt.
     dim: function (n) {
+      if (n && n._holder) return false;
       if (n && n._group) {
         // Greyed only when NOTHING in it matches. A group holding one Noida
         // seat is relevant to a Noida filter even if the other four are not.
@@ -878,13 +1073,17 @@ function posPaintTree() {
   // Anything a reporting loop kept off the chart. Unreachable with clean data
   // - the doctype refuses a seat that reports into its own chain, twice over -
   // but a seat that is invisible is worse than one drawn in the wrong place.
-  if (reach.cut) {
+  if (reach.cut && how === "reporting") {
     html += '<div class="pf-card" style="margin-top:16px">'
       + "A reporting line here goes deeper than makes sense, so it is not drawn"
       + " all the way down. Somebody should look at it.</div>";
   }
 
-  var stranded = POS.rows.filter(function (r) { return !reach.seen[r.id]; });
+  // Only meaningful on the reporting spine. Arranged by branch or department
+  // every seat has a place by definition, so the question does not arise.
+  var stranded = how === "reporting"
+    ? POS.rows.filter(function (r) { return !reach.seen[r.id]; })
+    : [];
   if (stranded.length) {
     html += '<div class="pf-card" style="margin-top:16px"><strong>'
       + "These seats report in a circle, so they have no place on the chart:"

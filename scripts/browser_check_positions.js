@@ -129,6 +129,29 @@ async function main() {
   ok(grouped > 0, "identical seats are grouped into one box",
      "found " + grouped + " group box(es)");
 
+  // ── the other two spines ─────────────────────────────────────────────────
+  for (const how of ["branch", "department"]) {
+    await page.evaluate((h) => {
+      document.getElementById("pos-f-arrange").value = h;
+      posPaint();
+    }, how);
+    await new Promise((r) => setTimeout(r, 900));
+    const got = await page.evaluate(() => ({
+      boxes: document.querySelectorAll("#pos-body .oc-box").length,
+      body: document.getElementById("pos-body").innerHTML,
+    }));
+    ok(got.boxes > 1, "arranged by " + how + ", the chart still draws",
+       "got " + got.boxes + " boxes");
+    ok(!/undefined|NaN/.test(got.body),
+       "arranged by " + how + ", nothing reads undefined");
+    await shot(page, "05-by-" + how);
+  }
+  await page.evaluate(() => {
+    document.getElementById("pos-f-arrange").value = "reporting";
+    posPaint();
+  });
+  await new Promise((r) => setTimeout(r, 700));
+
   // ── the seat dialog ───────────────────────────────────────────────────────
   await page.evaluate(() => {
     const id = POS.rows.filter((r) => r.people.length)[0].id;

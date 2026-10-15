@@ -50,7 +50,7 @@ function makeContext(values) {
   });
   ["pos-body", "pos-count", "pos-filter-note", "pos-f-branch", "pos-f-dept",
    "pos-f-role", "pos-f-open", "pos-f-view", "pos-add-btn",
-   "pos-tiles"].forEach(el);
+   "pos-tiles", "pos-f-arrange", "pos-arrange-wrap"].forEach(el);
 
   const ctx = { console: { log() {}, warn() {}, error() {} } };
   ctx.window = ctx; ctx.globalThis = ctx; ctx.self = ctx; ctx.top = ctx;
@@ -120,6 +120,7 @@ function render(rows, values, collapsed, expanded) {
   ctx.POS.collapsed = collapsed || {};
   ctx.POS.expanded = expanded || {};
   ctx.POS.onPath = {};
+  ctx.POS.departments = (values && values.__departments) || {};
   ctx.posPaint();
   return {
     html: ctx.__els["pos-body"].innerHTML,
@@ -406,6 +407,116 @@ function render(rows, values, collapsed, expanded) {
      "three settled people must not hide the fourth");
   ok("the person is still named with their date",
      out.html.includes("leaving 15 Dec"));
+}
+
+/* ── 17. arranged by branch ─────────────────────────────────────────────── */
+{
+  // The same seats, a different spine. Surbhi: the chart "is just a
+  // representation" of reporting, branch or department.
+  const mixed = [
+    seat("P-Top5", "Director", "", { branch: "Ambala", department: "Head" }),
+    seat("P-C1", "Cashier", "P-Top5", { branch: "Ambala", department: "Sales" }),
+    seat("P-C2", "Cashier", "P-Top5", { branch: "Noida", department: "Sales" }),
+    seat("P-NB", "Floating Seat", "P-Top5", { branch: "", department: "" }),
+  ];
+  const out = render(mixed, { "pos-f-view": "tree", "pos-f-arrange": "branch" });
+
+  ok("branches become the top layer", out.html.includes(">Ambala<"));
+  ok("every branch is there", out.html.includes(">Noida<"));
+  ok("a seat with no branch is named, not dropped",
+     out.html.includes("No branch"),
+     "nothing is allowed to fall off the chart");
+  // Branches start closed - "arrange by branch" is a request to see the
+  // branches, and opening all of them lays every seat across one row. What
+  // is folded says how much it holds.
+  ok("a closed branch says how many seats it holds",
+     /<span class="c">\d+<\/span>/.test(out.html),
+     "folded is only acceptable when it says how much");
+
+  const opened = render(mixed,
+    { "pos-f-view": "tree", "pos-f-arrange": "branch" },
+    {}, { "br:Ambala": true });
+  ok("opening a branch shows its seats",
+     opened.html.includes(">Cashier<"));
+  // A branch is not a seat, so it must not offer to be edited.
+  ok("a branch cannot be opened as a seat",
+     !/posOpenEditor\('br:/.test(out.html));
+}
+
+/* ── 18. arranged by department, which IS a tree ────────────────────────── */
+{
+  // Branch is a flat list in ERPNext; Department carries parent_department.
+  // So this one nests for real, and the ancestors have to be built even
+  // where no seat sits directly in them.
+  const rows = [
+    seat("P-D1", "Analyst", "", { branch: "Ambala", department: "Payroll - X" }),
+    seat("P-D2", "Clerk", "", { branch: "Ambala", department: "Accounts - X" }),
+  ];
+  const out = render(rows, {
+    "pos-f-view": "tree", "pos-f-arrange": "department",
+    __departments: {
+      "Payroll - X": { parent: "Finance - X", head: null },
+      "Accounts - X": { parent: "Finance - X", head: "Asha Head" },
+      "Finance - X": { parent: null, head: null },
+    },
+  });
+
+  ok("the parent department is built even with no seat in it",
+     out.html.includes(">Finance<"),
+     "otherwise the tree starts halfway up");
+
+  const open2 = render(rows, {
+    "pos-f-view": "tree", "pos-f-arrange": "department",
+    __departments: {
+      "Payroll - X": { parent: "Finance - X", head: null },
+      "Accounts - X": { parent: "Finance - X", head: "Asha Head" },
+      "Finance - X": { parent: null, head: null },
+    },
+  }, {}, { "dp:Finance - X": true, "dp:Accounts - X": true,
+           "dp:Payroll - X": true });
+  ok("its children are under it", open2.html.includes(">Payroll<")
+     && open2.html.includes(">Accounts<"));
+  ok("the seats are under those", open2.html.includes(">Analyst<"));
+  ok("a department head is shown as a person",
+     open2.html.includes("Asha Head"));
+}
+
+/* ── 19. a branch keeps its own reporting lines ─────────────────────────── */
+{
+  // Arranging by branch changes what the TOP of the chart is, not whether
+  // the shop has a manager. A flat list of seats inside a branch would
+  // throw away the thing the chart is for.
+  const inside = [
+    seat("P-HO", "Head Office Boss", "", { branch: "Head Office" }),
+    seat("P-SM", "Store Manager", "P-HO", { branch: "Ambala" }),
+    seat("P-CA", "Cashier", "P-SM", { branch: "Ambala" }),
+    seat("P-CB", "Cleaner", "P-SM", { branch: "Ambala" }),
+  ];
+  const out = render(inside,
+    { "pos-f-view": "tree", "pos-f-arrange": "branch" },
+    {}, { "br:Ambala": true });
+
+  ok("the branch is a top-level box", out.html.includes(">Ambala<"));
+  ok("its manager is inside it", out.html.includes(">Store Manager<"));
+  ok("and the manager's people are under the MANAGER, not loose in the branch",
+     out.html.indexOf('class="oc-kids"', out.html.indexOf(">Store Manager<")) > 0
+     && out.html.includes(">Cashier<"),
+     "a flat list inside a branch throws away the reporting line");
+
+  // The manager's own boss is in another branch, so this branch starts at
+  // the manager rather than dragging Head Office in behind him.
+  const ambala = out.html.slice(out.html.indexOf(">Ambala<"));
+  ok("a manager whose own boss is elsewhere starts this branch",
+     !ambala.slice(0, ambala.indexOf(">Head Office<") + 1 || undefined)
+            .includes(">Head Office Boss<"),
+     "another branch's line must not be dragged in");
+
+  ok("a folded branch counts every seat in the line, not just the top one",
+     /<span class="c">3<\/span>/.test(
+       render(inside, { "pos-f-view": "tree", "pos-f-arrange": "branch" }).html)
+     || /3 seats/.test(
+       render(inside, { "pos-f-view": "tree", "pos-f-arrange": "branch" }).html),
+     "Ambala holds a manager and two people under him");
 }
 
 if (problems.length) {

@@ -248,7 +248,41 @@ def position_table(branch=None, department=None, as_at=None):
 			"reports_to_title": titles.get(s.reports_to_position, ""),
 			"people": people.get(s.name, []),
 		})
-	return {"rows": rows, "may_edit": may_edit(), "as_at": as_at}
+	# The chart is one representation of three different relationships, and the
+	# reader chooses which. Reporting is on the rows already; branch is flat so
+	# it needs nothing; department IS a tree in ERPNext, so its parent links
+	# come along or the department view would be one flat layer pretending to
+	# be a hierarchy.
+	depts = sorted({s.department for s in seats if s.department})
+	parents = {}
+	if depts:
+		for d in frappe.get_all("Department",
+		                        filters={"name": ("in", depts)},
+		                        fields=["name", "parent_department",
+		                                "department_head"],
+		                        limit_page_length=0):
+			parents[d.name] = {"parent": d.parent_department or None,
+			                   "head": d.department_head or None}
+		# A department whose parent is outside the seats we hold still needs
+		# its ancestors, or the tree would start halfway up.
+		seen, edge = set(parents), [p["parent"] for p in parents.values()
+		                            if p["parent"]]
+		for _ in range(8):
+			edge = [e for e in edge if e and e not in seen]
+			if not edge:
+				break
+			for d in frappe.get_all("Department",
+			                        filters={"name": ("in", edge)},
+			                        fields=["name", "parent_department",
+			                                "department_head"],
+			                        limit_page_length=0):
+				parents[d.name] = {"parent": d.parent_department or None,
+				                   "head": d.department_head or None}
+				seen.add(d.name)
+			edge = [parents[e]["parent"] for e in edge if e in parents]
+
+	return {"rows": rows, "may_edit": may_edit(), "as_at": as_at,
+	        "departments": parents}
 
 
 @frappe.whitelist()

@@ -122,7 +122,23 @@ function ocTone(flags) {
 }
 
 /* One box. Several people when a seat is shared; a dashed box when empty. */
-function ocNodeCard(n, isRoot) {
+/* The card and the tree below it are shared by the organisation chart and the
+   Positions screen. `opts` is how the second one borrows them without the two
+   screens having to agree about anything else:
+
+     toggle  the function name the open/close button calls
+     focus   the function name clicking the box calls
+     action  {label, fn} for one extra button on the card, or nothing
+     dim     true to grey this card out, for a filter that must not hide
+
+   Left out entirely, it behaves exactly as the chart always has. There is one
+   drawing of a hierarchy in this app, not two - the Positions screen had its
+   own indented table for a few hours and it read as a list, which is what a
+   second renderer gets you. */
+var OC_DEFAULT_OPTS = { toggle: "ocToggle", focus: "ocFocus" };
+
+function ocNodeCard(n, isRoot, opts) {
+  opts = opts || OC_DEFAULT_OPTS;
   var who = n.people && n.people.length
     ? n.people.map(function (p) {
         var tags = "";
@@ -145,7 +161,8 @@ function ocNodeCard(n, isRoot) {
   var toggle = "";
   if (n.child_count) {
     var isOpen = !!(n.children && n.children.length);
-    toggle = '<button class="oc-toggle" onclick="event.stopPropagation();ocToggle(\''
+    toggle = '<button class="oc-toggle" onclick="event.stopPropagation();'
+      + (opts.toggle || "ocToggle") + '(\''
       + ocEsc(n.id) + '\')" aria-label="Expand">'
       + (isOpen ? "&minus;" : "+") + '<span class="c">' + n.child_count + "</span></button>";
   }
@@ -162,27 +179,38 @@ function ocNodeCard(n, isRoot) {
       }).join("") + "</div>"
     : "";
 
-  return '<div class="oc-node' + (isRoot ? " root" : "") + '">'
+  // One extra control, used by the Positions screen for "Change". Stops the
+  // click reaching the box, or editing a seat would also re-root the chart.
+  var action = opts.action
+    ? '<button class="btn btn-outline btn-sm" style="margin-top:8px" '
+      + 'onclick="event.stopPropagation();' + opts.action.fn + '(\''
+      + ocEsc(n.id) + '\')">' + ocEsc(opts.action.label) + "</button>"
+    : "";
+
+  return '<div class="oc-node' + (isRoot ? " root" : "") + '"'
+    + (opts.dim && opts.dim(n) ? ' style="opacity:.45"' : "") + ">"
     + '<div class="oc-box' + (tone ? " tone-" + tone : "")
-    + '" onclick="ocFocus(\'' + ocEsc(n.id) + '\')">'
+    + '" onclick="' + (opts.focus || "ocFocus") + '(\'' + ocEsc(n.id) + '\')">'
     + '<div class="oc-box-hd"><span class="ti">' + ocEsc(n.title) + "</span>" + open + "</div>"
     + (n.subtitle ? '<div class="sub">' + ocEsc(n.subtitle) + "</div>" : "")
-    + who + chips + "</div>" + toggle + "</div>";
+    + who + chips + action + "</div>" + toggle + "</div>";
 }
 
-function ocRender(n, isRoot) {
+function ocRender(n, isRoot, opts) {
   if (!n) return "";
+  opts = opts || OC_DEFAULT_OPTS;
   var kids = "";
   if (n.children && n.children.length) {
     kids = '<div class="oc-kids">'
-      + n.children.map(function (c) { return ocRender(c, false); }).join("")
+      + n.children.map(function (c) { return ocRender(c, false, opts); }).join("")
       + "</div>";
   } else if (n.has_more) {
     // Without this the last row reads as the bottom of the organisation.
-    kids = '<div class="oc-kids"><button class="oc-more" onclick="ocToggle(\''
+    kids = '<div class="oc-kids"><button class="oc-more" onclick="'
+      + (opts.toggle || "ocToggle") + '(\''
       + ocEsc(n.id) + '\')">' + n.child_count + " more below&hellip;</button></div>";
   }
-  return '<div class="oc-branch">' + ocNodeCard(n, isRoot) + kids + "</div>";
+  return '<div class="oc-branch">' + ocNodeCard(n, isRoot, opts) + kids + "</div>";
 }
 
 /* ── the position register, as a list ──────────────────────────────────
@@ -347,16 +375,21 @@ function posCells(r, lead, tail) {
 }
 
 
-/* ── the same seats, as a structure ────────────────────────────────────
+/* ── the same seats, drawn as the organisation ─────────────────
  *
- * Built in the browser from `reports_to`, which every row already carries, so
- * the server is untouched and no second request is made.
+ * Drawn by `ocRender`, the same boxes and connectors the organisation chart
+ * uses. This screen had its own indented table for a few hours; it read as a
+ * list with arrows on it, which is what a second renderer gets you when the
+ * app already has one. Surbhi, 15 Oct 2026: "it should ideally look like
+ * Organisation heirarchy."
  *
- * NOTHING IS HIDDEN HERE. The filters grey out what does not match instead of
- * dropping it (Surbhi, 15 Oct 2026), because a tree with its middle removed
- * stops being a tree: a seat whose parent was filtered away would read as the
- * top of the company. Greying keeps the shape whole and still answers "which
- * of these is in Noida".
+ * The chart fetches each branch from the server as you open it. This screen
+ * already holds every seat the reader may see, so its toggle is local and the
+ * tree is built once from `reports_to`.
+ *
+ * NOTHING IS HIDDEN. The filters grey out what does not match rather than
+ * dropping it, because a tree with its middle removed stops being a tree: a
+ * seat whose parent was filtered away reads as the top of the company.
  */
 
 function posKids() {
@@ -364,7 +397,7 @@ function posKids() {
   POS.rows.forEach(function (r) { byId[r.id] = r; });
   POS.rows.forEach(function (r) {
     // A parent outside what this reader may see is not a parent they can be
-    // shown, so the seat stands at the top - flagged, because otherwise a
+    // shown, so the seat stands at the top - said out loud on the card, or a
     // branch head's every seat would look like the head of the company.
     if (r.reports_to && byId[r.reports_to]) {
       (kids[r.reports_to] = kids[r.reports_to] || []).push(r);
@@ -380,31 +413,57 @@ function posKids() {
   return { byId: byId, kids: kids, roots: roots };
 }
 
-/* How many seats sit under each one, and how many of them are open. A closed
-   branch has to say what it is covering up, or this view would hide a vacancy
-   on the one screen built for finding vacancies. */
-function posBelow(t) {
-  var seats = {}, open = {}, reached = {};
+/* Which seats have a place on the chart at all, and where a chain was cut.
+   Walked STRUCTURALLY, with no regard to what is open or closed - working it
+   out from what got drawn listed every collapsed child as having no place,
+   which is alarming and wrong. That mistake has now been made twice in this
+   file; the walk and the drawing are deliberately separate so it cannot be
+   made a third time. */
+function posReach(t) {
+  var seen = {}, cut = false;
   function walk(r, depth) {
-    var n = 0, o = 0;
-    reached[r.id] = true;
-    if (depth < POS_MAX_DEPTH) {
-      (t.kids[r.id] || []).forEach(function (c) {
-        var got = walk(c, depth + 1);
-        n += 1 + got[0];
-        o += c.open + got[1];
-      });
-    }
-    seats[r.id] = n;
-    open[r.id] = o;
-    return [n, o];
+    seen[r.id] = true;
+    if (depth + 1 >= POS_MAX_DEPTH) { cut = true; return; }
+    (t.kids[r.id] || []).forEach(function (c) { walk(c, depth + 1); });
   }
   t.roots.forEach(function (r) { walk(r, 0); });
-  // Reached by WALKING the tree, not by being drawn. A seat inside a branch
-  // somebody closed up has a place on the chart; it is simply not on screen.
-  // Working this out from what was drawn listed every collapsed child as
-  // having no place at all, which was alarming and wrong.
-  return { seats: seats, open: open, reached: reached };
+  return { seen: seen, cut: cut };
+}
+
+/* One seat as the chart's card wants it. The shapes almost match already -
+   only `covering` has to become `cover`. */
+function posNode(r, t, depth) {
+  var kids = t.kids[r.id] || [];
+  var shut = !!POS.collapsed[r.id];
+  var sub = [r.branch, r.department].filter(Boolean).join(" · ");
+  if (!t.byId[r.reports_to] && r.reports_to) {
+    sub = sub ? sub + " · reports above your view" : "reports above your view";
+  }
+
+  var flags = [];
+  if (r.key) {
+    flags.push({ severity: r.open >= 0.5 ? "high" : "low", label: "key seat",
+                 why: "An empty key seat is flagged red rather than amber." });
+  }
+  if (r.status !== "Active") {
+    flags.push({ severity: "low", label: r.status, why: "Not an active seat." });
+  }
+
+  return {
+    id: r.id,
+    title: r.title,
+    subtitle: sub,
+    open: r.open,
+    flags: flags,
+    child_count: kids.length,
+    has_more: shut && kids.length > 0,
+    people: r.people.map(function (p) {
+      return { name: p.name, weight: p.weight, cover: p.covering };
+    }),
+    children: (shut || depth + 1 >= POS_MAX_DEPTH)
+      ? []
+      : kids.map(function (c) { return posNode(c, t, depth + 1); }),
+  };
 }
 
 window.posToggle = function (id) {
@@ -417,7 +476,6 @@ function posPaintTree() {
   if (!body) return;
 
   var t = posKids();
-  var below = posBelow(t);
   var matched = POS.rows.filter(posMatches).length;
 
   var count = document.getElementById("pos-count");
@@ -434,80 +492,42 @@ function posPaintTree() {
     return;
   }
 
-  var head = "<tr><th>Position</th><th>Reports to</th><th>Branch</th>"
-    + "<th>Department</th><th>Who is in it</th>"
-    + '<th style="text-align:right">Seats</th>'
-    + '<th style="text-align:right">Open</th>'
-    + (POS.may_edit ? "<th></th>" : "") + "</tr>";
+  var reach = posReach(t);
+  var nodes = t.roots.map(function (r) { return posNode(r, t, 0); });
 
-  // One column narrower for a reader who cannot edit, so the two notices
-  // below span the table instead of leaving a cell adrift.
-  var cols = POS.may_edit ? 8 : 7;
-  var out = [], drawn = {};
+  var by = {};
+  POS.rows.forEach(function (r) { by[r.id] = r; });
+  var opts = {
+    toggle: "posToggle",
+    focus: "posToggle",
+    action: POS.may_edit ? { label: "Change", fn: "posOpenEditor" } : null,
+    // Greyed, never dropped. `dim` is asked per card so the filter can change
+    // without the tree being rebuilt.
+    dim: function (n) { return by[n.id] ? !posMatches(by[n.id]) : false; },
+  };
 
-  function draw(r, depth) {
-    if (drawn[r.id]) return;          // belt and braces against a loop
-    drawn[r.id] = true;
-    var kids = t.kids[r.id] || [];
-    var shut = !!POS.collapsed[r.id];
-    var pad = 12 + depth * 18;
+  var html = nodes.map(function (n) { return ocRender(n, true, opts); }).join("");
 
-    /* The indent is the only thing on the row that says "under". It is one
-       number on one element so it can be measured - two nested spacers read
-       the same whatever the depth, which is how the first version drew a flat
-       list with arrows on it. */
-    var lead = '<span style="display:inline-block;padding-left:' + pad + 'px">'
-      + (kids.length
-          ? '<span style="cursor:pointer;user-select:none;display:inline-block;'
-            + 'width:16px" onclick="posToggle(\'' + posEsc(r.id) + '\')">'
-            + (shut ? "▸" : "▾") + "</span>"
-          : '<span style="display:inline-block;width:16px"></span>')
-      + "</span>";
-
-    var tail = "";
-    if (shut && below.seats[r.id]) {
-      tail = ' <span class="pf-card-meta">' + below.seats[r.id] + " below"
-        + (below.open[r.id] >= 0.5
-            ? ", " + posNum(below.open[r.id]) + " open" : "") + "</span>";
-    }
-    // A seat whose parent this reader cannot see. Said out loud, or every one
-    // of a branch head's seats reads as the top of the organisation.
-    if (depth === 0 && r.reports_to && !t.byId[r.reports_to]) {
-      tail += ' <span class="pf-card-meta">reports above your view</span>';
-    }
-
-    out.push("<tr" + (posMatches(r) ? "" : ' style="opacity:.45"') + ">"
-      + posCells(r, lead, tail)
-      + "</tr>");
-
-    if (shut) return;
-    if (depth + 1 >= POS_MAX_DEPTH) {
-      out.push('<tr><td colspan="' + cols + '"><span class="pf-card-meta">'
-        + "This reporting line goes deeper than makes sense, so it is not drawn"
-        + " any further. Somebody should look at it.</span></td></tr>");
-      return;
-    }
-    kids.forEach(function (c) { draw(c, depth + 1); });
+  // Anything a reporting loop kept off the chart. Unreachable with clean data
+  // - the doctype refuses a seat that reports into its own chain, twice over -
+  // but a seat that is invisible is worse than one drawn in the wrong place.
+  if (reach.cut) {
+    html += '<div class="pf-card" style="margin-top:16px">'
+      + "A reporting line here goes deeper than makes sense, so it is not drawn"
+      + " all the way down. Somebody should look at it.</div>";
   }
 
-  t.roots.forEach(function (r) { draw(r, 0); });
-
-  // Anything a loop kept off the chart. Unreachable with clean data - the
-  // doctype refuses a seat that reports into its own chain - but a seat that
-  // is invisible is worse than one in the wrong place.
-  var stranded = POS.rows.filter(function (r) { return !below.reached[r.id]; });
+  var stranded = POS.rows.filter(function (r) { return !reach.seen[r.id]; });
   if (stranded.length) {
-    out.push('<tr><td colspan="' + cols + '"><strong>'
+    html += '<div class="pf-card" style="margin-top:16px"><strong>'
       + "These seats report in a circle, so they have no place on the chart:"
-      + "</strong></td></tr>");
-    stranded.forEach(function (r) {
-      out.push("<tr" + (posMatches(r) ? "" : ' style="opacity:.45"') + ">"
-        + posCells(r) + "</tr>");
-    });
+      + "</strong><ul>"
+      + stranded.map(function (r) { return "<li>" + posEsc(r.title) + "</li>"; }).join("")
+      + "</ul></div>";
   }
 
-  body.innerHTML = '<div style="overflow-x:auto"><table class="pf-table">'
-    + "<thead>" + head + "</thead><tbody>" + out.join("") + "</tbody></table></div>";
+  body.innerHTML = '<div style="overflow-x:auto"><div class="oc-tree">'
+    + html + "</div></div>";
 }
 
 /* ── adding a seat, and moving one ─────────────────────────────────── */

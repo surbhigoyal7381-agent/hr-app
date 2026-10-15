@@ -135,21 +135,24 @@ function render(rows, values, collapsed) {
   });
 }
 
-/* ── 2. children are indented under their parent ────────────────────────── */
+/* ── 2. it is drawn as the organisation chart, not as a table ───────────── */
 {
   const out = render(ROWS);
-  const at = (t) => out.html.indexOf(">" + t);
-  ok("a child is drawn after its parent", at("Cashier") > at("Store Manager"));
-  // The indent is the only thing that says "under". Depth 2 must be wider
-  // than depth 1, or the tree reads as a flat list with arrows on it.
-  const width = (t) => {
-    const seg = out.html.slice(0, at(t));
-    const m = [...seg.matchAll(/padding-left:(\d+)px/g)];
-    return m.length ? Number(m[m.length - 1][1]) : -1;
-  };
-  ok("a child is indented further than its parent",
-     width("Cashier") > width("Store Manager"),
-     "child " + width("Cashier") + "px vs parent " + width("Store Manager") + "px");
+  // The point of the rewrite. An indented table read as a list with arrows on
+  // it; these are the chart's own classes, so the two screens cannot drift
+  // into drawing a hierarchy two different ways.
+  ok("drawn with the chart's boxes", out.html.includes('class="oc-box'));
+  ok("drawn with the chart's connectors", out.html.includes('class="oc-kids"'));
+  ok("wrapped as a chart", out.html.includes('class="oc-tree"'));
+  ok("not a table", !out.html.includes("<table"));
+
+  // Nesting is now structural: a child's markup sits INSIDE its parent's
+  // branch, so "under" is in the document rather than in a padding number.
+  const parent = out.html.indexOf(">Store Manager<");
+  const kids = out.html.indexOf('class="oc-kids"', parent);
+  const child = out.html.indexOf(">Cashier<");
+  ok("a child sits inside its parent's branch",
+     kids > parent && child > kids);
 }
 
 /* ── 3. a seat whose parent is out of view says so ──────────────────────── */
@@ -179,12 +182,14 @@ function render(rows, values, collapsed) {
 {
   const out = render(ROWS, {}, { "P-Sector34": true });
   ok("a closed branch hides its children",
-     !out.html.includes(">Cashier"));
-  ok("a closed branch reports the seats below it",
-     out.html.includes("2 below"), "expected '2 below'");
-  ok("a closed branch reports the vacancies below it",
-     /2 below, 1 open/.test(out.html),
-     "a collapsed branch must not hide a vacancy");
+     !out.html.includes(">Cashier<"));
+  // The chart puts the count on the toggle itself, which is better than the
+  // text the old table appended - it is visible without reading the row.
+  ok("a closed branch says how many are below it",
+     /<span class="c">2<\/span>/.test(out.html),
+     "expected the toggle to carry the count 2");
+  ok("a closed branch offers a way back in",
+     out.html.includes("oc-more") || out.html.includes("oc-toggle"));
 }
 
 /* ── 6. the list view still filters rather than greys ───────────────────── */
@@ -234,8 +239,7 @@ function render(rows, values, collapsed) {
   const html = ctx.__els["pos-body"].innerHTML;
   ok("a reader who may not edit gets no Change button",
      !html.includes("posOpenEditor"));
-  // The notices span the table, so a narrower table needs a narrower span.
-  ok("a notice spans the narrower table", !html.includes('colspan="8"'));
+  ok("but still sees the chart", html.includes('class="oc-box'));
 }
 
 if (problems.length) {

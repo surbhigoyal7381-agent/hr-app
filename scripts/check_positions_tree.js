@@ -113,11 +113,13 @@ function ok(what, cond, detail) {
   if (!cond) problems.push(what + (detail ? " - " + detail : ""));
 }
 
-function render(rows, values, collapsed) {
+function render(rows, values, collapsed, expanded) {
   const ctx = makeContext(Object.assign({ "pos-f-view": "tree" }, values || {}));
   ctx.POS.rows = rows;
   ctx.POS.may_edit = true;
   ctx.POS.collapsed = collapsed || {};
+  ctx.POS.expanded = expanded || {};
+  ctx.POS.onPath = {};
   ctx.posPaint();
   return {
     html: ctx.__els["pos-body"].innerHTML,
@@ -173,6 +175,9 @@ function render(rows, values, collapsed) {
 /* ── 4. a filter greys, it does not hide ────────────────────────────────── */
 {
   const out = render(ROWS, { "pos-f-branch": "Ambala" });
+  // A filter must not make a MATCH disappear. Seats it does not match are
+  // greyed where they are drawn and folded where they are deep - folded is
+  // not hidden, because the card that holds them says how many it has.
   ROWS.forEach((r) => {
     ok("a filter hides nothing", out.html.includes(">" + r.title),
        r.title + " disappeared when filtering to Ambala");
@@ -257,7 +262,12 @@ function render(rows, values, collapsed) {
 {
   const out = render(ROWS);
   ok("an editor's click opens the seat", out.html.includes("posOpenEditor("));
-  ok("and the Change button is there too", out.html.includes(">Change<"));
+  // There is no separate Change button any more. The card IS the button, so
+  // a second one said the same thing twice - and once the card became a real
+  // <button>, the nested one was invalid HTML and the browser hoisted it out
+  // to float below the card. A screenshot showed that; nothing else could.
+  ok("and there is no second button saying the same thing",
+     !out.html.includes(">Change<"));
 }
 
 /* ── 11. identical siblings draw as one box ─────────────────────────────── */

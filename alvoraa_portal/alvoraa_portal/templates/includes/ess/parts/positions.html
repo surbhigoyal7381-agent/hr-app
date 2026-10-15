@@ -5,12 +5,12 @@
             <div class="pf-h">Positions</div>
             <div class="pf-sub">Every seat in the organisation, who is in it, and which are empty.</div>
           </div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-outline btn-sm" id="pos-setup-btn"
-                    onclick="posSetupOpen()" style="display:none">Set up the chart</button>
-            <button class="btn btn-primary btn-sm" id="pos-add-btn"
-                    onclick="posOpenEditor(null)" style="display:none">+ Add a seat</button>
-          </div>
+          <!-- "Set up the chart" used to live here as well, and a screenshot
+               showed it beside the same offer in the empty state - two buttons
+               for one action, one of them far from where the eye is. The empty
+               state keeps it; the toolbar does not. -->
+          <button class="btn btn-primary btn-sm" id="pos-add-btn"
+                  onclick="posOpenEditor(null)" style="display:none">+ Add a seat</button>
         </div>
 
         <!-- The three questions this screen is opened with, answered before

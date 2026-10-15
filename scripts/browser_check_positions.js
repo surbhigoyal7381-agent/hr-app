@@ -62,13 +62,16 @@ async function main() {
   page.on("pageerror", (e) => errors.push(String(e)));
 
   // ── sign in ───────────────────────────────────────────────────────────────
-  await page.goto(BASE + "/login", { waitUntil: "networkidle2" });
-  await page.type("#login_email", USR);
-  await page.type("#login_password", PWD);
+  // The branded login, not Frappe's own - /login redirects here, and the
+  // field ids are ours.
+  await page.goto(BASE + "/alvoraa-login", { waitUntil: "networkidle2" });
+  await page.type("#kx-email", USR);
+  await page.type("#kx-password", PWD);
   await Promise.all([
-    page.waitForNavigation({ waitUntil: "networkidle2" }),
-    page.click(".btn-login"),
+    page.waitForNavigation({ waitUntil: "networkidle2" }).catch(() => {}),
+    page.click("#kx-login-form button[type=submit]"),
   ]);
+  await new Promise((r) => setTimeout(r, 2000));
 
   // ── the portal, then the Positions panel ──────────────────────────────────
   await page.goto(BASE + "/hrms-employee", { waitUntil: "networkidle2" });

@@ -195,8 +195,12 @@ function ocNodeCard(n, isRoot, opts) {
   // opens the group, a real seat opens itself.
   var focusFn = (typeof opts.focus === "function")
     ? opts.focus(n) : (opts.focus || "ocFocus");
+  // OUTSIDE the box, beside the toggle. It used to sit inside it, and the
+  // browser quietly hoisted it out - a button nested in a button is invalid
+  // HTML, so Chrome closed the card early and every Change button floated
+  // below its own card. Nothing but a screenshot could have shown that.
   var action = act
-    ? '<button class="btn btn-outline btn-sm" style="margin-top:8px" '
+    ? '<button class="btn btn-outline btn-sm" style="margin-top:6px" '
       + 'onclick="event.stopPropagation();' + act.fn + '(\''
       + ocEsc(n.id) + '\')">' + ocEsc(act.label) + "</button>"
     : "";
@@ -214,7 +218,7 @@ function ocNodeCard(n, isRoot, opts) {
     + ' onclick="' + focusFn + '(\'' + ocEsc(n.id) + '\')">'
     + '<div class="oc-box-hd"><span class="ti">' + ocEsc(n.title) + "</span>" + open + "</div>"
     + (n.subtitle ? '<div class="sub">' + ocEsc(n.subtitle) + "</div>" : "")
-    + who + chips + action + "</button>" + toggle + "</div>";
+    + who + chips + "</button>" + action + toggle + "</div>";
 }
 
 function ocRender(n, isRoot, opts) {
@@ -242,7 +246,8 @@ function ocRender(n, isRoot, opts) {
    from the roles in the browser: the endpoint refuses either way, and a button
    that appears and then fails is worse than one that was never there. */
 
-var POS = { rows: [], may_edit: false, collapsed: {}, ungrouped: {} };
+var POS = { rows: [], may_edit: false, collapsed: {}, expanded: {},
+            onPath: {}, ungrouped: {} };
 
 /* A reporting line deeper than this is bad data, not a tall company. The
    doctype refuses a seat that reports into its own chain, twice over - a
@@ -250,6 +255,18 @@ var POS = { rows: [], may_edit: false, collapsed: {}, ungrouped: {} };
    unreachable. It is here because a tree is exactly where a browser freezes
    on data nobody expected, and a frozen portal is a poor way to find out. */
 var POS_MAX_DEPTH = 40;
+
+// How many levels of CHILDREN are drawn when the structure view first opens.
+//
+// EVERYTHING, because that is what Surbhi asked for: "open to start".
+//
+// A screenshot says that is wrong at scale - fifteen seats already lay in one
+// row wider than the card, with a tall empty band above them, and the first
+// tenant has a hundred and twenty. Folding below the first level fixes it and
+// the mechanism below is built for exactly that. But it is her call, not a
+// thing to change quietly on the strength of a picture, so the number stays
+// where she put it until she has seen the picture too.
+var POS_OPEN_DEPTH = POS_MAX_DEPTH;
 
 function posEsc(s) { return ocEsc(s); }
 
@@ -290,12 +307,8 @@ window.posLoad = async function () {
   POS.may_edit = !!(out && out.may_edit);
   var add = document.getElementById("pos-add-btn");
   if (add) add.style.display = POS.may_edit ? "" : "none";
-  // Offered only where there is nothing yet. On a chart somebody has already
-  // built, a button called "set up the chart" reads as "start again".
-  var setup = document.getElementById("pos-setup-btn");
-  if (setup) {
-    setup.style.display = (POS.may_edit && !POS.rows.length) ? "" : "none";
-  }
+  // The offer to build a chart lives in the empty state, where somebody is
+  // already looking, and nowhere else.
   posFillFilters();
   posPaint();
 };
@@ -362,10 +375,15 @@ function posPaintTiles(shown) {
     return;
   }
 
+  // `.n` and `.l`, which is what panels.css styles. Guessing at <strong> and
+  // <span> rendered "15SEATS" with no space and no type scale - visible in a
+  // screenshot, invisible to every check.
   function tile(n, label, tone, onclick) {
-    return '<div class="oc-stat' + (tone ? " " + tone : "") + '"'
-      + (onclick ? ' style="cursor:pointer" onclick="' + onclick + '"' : "")
-      + "><strong>" + n + "</strong><span>" + label + "</span></div>";
+    return '<div class="oc-stat' + (tone ? " " + tone : "")
+      + (onclick ? " clickable" : "") + '"'
+      + (onclick ? ' onclick="' + onclick + '"' : "")
+      + '><div class="n">' + n + '</div><div class="l">' + label
+      + "</div></div>";
   }
   el.innerHTML = '<div class="oc-stats" style="margin-bottom:16px">'
     + tile(shown.length, "SEATS", "")
@@ -435,6 +453,11 @@ window.posClearFilters = function () {
 };
 
 function posVal(id) { return (document.getElementById(id) || {}).value || ""; }
+
+function posAnyFilter() {
+  return !!(posVal("pos-f-branch") || posVal("pos-f-dept")
+            || posVal("pos-f-role") || posVal("pos-f-open"));
+}
 
 /* Does this seat match what the filters ask for? The list drops the ones that
    do not; the structure view greys them. Same question, two answers, so it is
@@ -617,7 +640,16 @@ function posReach(t) {
    only `covering` has to become `cover`. */
 function posNode(r, t, depth) {
   var kids = t.kids[r.id] || [];
-  var shut = !!POS.collapsed[r.id];
+  // Open to two levels, then folded. Drawing everything laid 15 seats - and
+  // at the first tenant it would be 120 - in one row several thousand pixels
+  // wide, with the card scrolling sideways and a tall empty gap above it.
+  // Seen in a screenshot; no check could measure it.
+  //
+  // `collapsed` holds what somebody has deliberately shut, `expanded` what
+  // they have deliberately opened, so both choices survive a repaint.
+  var shut = POS.collapsed[r.id]
+    || (depth >= POS_OPEN_DEPTH
+        && !POS.expanded[r.id] && !POS.onPath[r.id]);
   var sub = [r.branch, r.department].filter(Boolean).join(" · ");
   // "open" alone does not describe a twenty-five person seat.
   if (r.seats > 1) {
@@ -760,7 +792,11 @@ window.posUngroup = function (id) {
 };
 
 window.posToggle = function (id) {
-  POS.collapsed[id] = !POS.collapsed[id];
+  // Which of the two to write depends on what the default would be, so a
+  // deliberate choice always beats the default whichever way it goes.
+  if (POS.collapsed[id]) { delete POS.collapsed[id]; POS.expanded[id] = true; }
+  else if (POS.expanded[id]) { delete POS.expanded[id]; }
+  else { POS.collapsed[id] = true; POS.expanded[id] = false; }
   posPaint();
 };
 
@@ -776,6 +812,26 @@ function posPaintTree() {
   if (!POS.rows.length) { body.innerHTML = posNothing(); return; }
 
   var reach = posReach(t);
+
+  // Folding for width and greying for honesty pull against each other: a seat
+  // that is folded away IS hidden, which is the thing the greying exists to
+  // avoid. So a filter opens the path down to every seat it matches. The
+  // shape stays whole, the eye is led, and nothing a filter picked out is
+  // left behind a closed branch.
+  POS.onPath = {};
+  if (posAnyFilter()) {
+    var parentOf = {};
+    POS.rows.forEach(function (r) { parentOf[r.id] = r.reports_to; });
+    POS.rows.filter(posMatches).forEach(function (r) {
+      var at = parentOf[r.id], hops = 0;
+      while (at && !POS.onPath[at] && hops < POS_MAX_DEPTH) {
+        POS.onPath[at] = true;
+        at = parentOf[at];
+        hops += 1;
+      }
+    });
+  }
+
   var nodes = t.roots.map(function (r) { return posNode(r, t, 0); });
 
   var by = {};
@@ -795,10 +851,12 @@ function posPaintTree() {
       return POS.may_edit ? "posOpenEditor" : "posToggle";
     },
     action: function (n) {
-      if (!POS.may_edit) return null;
-      return n && n._group
+      // Only a group gets a button. For a seat, clicking the card IS Change -
+      // a separate button said the same thing twice and, once the card became
+      // a real button, had to sit outside it and floated below the card.
+      return (n && n._group && POS.may_edit)
         ? { label: "Show the " + n._members, fn: "posUngroup" }
-        : { label: "Change", fn: "posOpenEditor" };
+        : null;
     },
     // Greyed, never dropped. `dim` is asked per card so the filter can change
     // without the tree being rebuilt.

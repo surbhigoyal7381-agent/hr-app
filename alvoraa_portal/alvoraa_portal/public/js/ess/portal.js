@@ -146,6 +146,9 @@ function ocNodeCard(n, isRoot, opts) {
           tags += '<span class="oc-tag w">' + Math.round(p.weight) + "%</span>";
         }
         if (p.cover) tags += '<span class="oc-tag c">covering</span>';
+        // A short note on the person rather than the seat. Used for "leaving
+        // 30 Nov", which is a fact about them, not about the job.
+        if (p.note) tags += '<span class="oc-tag v">' + ocEsc(p.note) + "</span>";
         return '<div class="oc-who">' + ocAvatar(p)
           + "<span>" + ocEsc(p.name) + tags + "</span></div>";
       }).join("")
@@ -239,6 +242,17 @@ var POS = { rows: [], may_edit: false, collapsed: {}, ungrouped: {} };
 var POS_MAX_DEPTH = 40;
 
 function posEsc(s) { return ocEsc(s); }
+
+/* A date as a person reads it. The full date stays in the hover text, where
+   somebody checking a leaving date wants the year as well. */
+function posDay(iso) {
+  if (!iso) return "";
+  var MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+             "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  var p = String(iso).split("-");
+  if (p.length < 3) return String(iso);
+  return parseInt(p[2], 10) + " " + (MON[parseInt(p[1], 10) - 1] || p[1]);
+}
 
 function posNum(n) {
   // 2 rather than 2.0, but 1.5 kept - half seats are the point of the column.
@@ -472,6 +486,16 @@ function posNode(r, t, depth) {
   }
 
   var flags = [];
+  // Said before the vacancy flags, because it is the earlier warning: a seat
+  // losing its only person in three weeks is not yet empty and will be.
+  if (r.leaving_on) {
+    flags.push({
+      severity: r.key ? "high" : "medium",
+      label: "leaving " + posDay(r.leaving_on),
+      why: "Somebody in this seat is working their notice. Their last day is "
+           + r.leaving_on + ".",
+    });
+  }
   if (r.key) {
     flags.push({ severity: r.open >= 0.5 ? "high" : "low", label: "key seat",
                  why: "An empty key seat is flagged red rather than amber." });
@@ -489,7 +513,8 @@ function posNode(r, t, depth) {
     child_count: kids.length,
     has_more: shut && kids.length > 0,
     people: r.people.map(function (p) {
-      return { name: p.name, weight: p.weight, cover: p.covering };
+      return { name: p.name, weight: p.weight, cover: p.covering,
+               note: p.leaving ? "leaving " + posDay(p.leaving) : null };
     }),
     children: (shut || depth + 1 >= POS_MAX_DEPTH)
       ? []
@@ -547,13 +572,25 @@ function posGroupNode(key, members) {
   var people = [];
   members.forEach(function (r) {
     r.people.forEach(function (p) {
-      people.push({ name: p.name, weight: p.weight, cover: p.covering });
+      people.push({ name: p.name, weight: p.weight, cover: p.covering,
+                    note: p.leaving ? "leaving " + posDay(p.leaving) : null });
     });
   });
   var sub = [first.branch, first.department].filter(Boolean).join(" · ");
   sub = (sub ? sub + " · " : "") + members.length + " of these";
 
   var flags = [];
+  // A group must not hide the one person leaving. Twenty-four settled people
+  // and one on notice is the single fact worth knowing about that box.
+  var going = members.filter(function (r) { return r.leaving_on; });
+  if (going.length) {
+    var soonest = going.map(function (r) { return r.leaving_on; }).sort()[0];
+    flags.push({
+      severity: members.some(function (r) { return r.key; }) ? "high" : "medium",
+      label: going.length === 1 ? "1 leaving" : going.length + " leaving",
+      why: "The first last day among them is " + soonest + ".",
+    });
+  }
   if (open >= 0.5) {
     flags.push({
       severity: members.some(function (r) { return r.key; }) ? "high" : "medium",
@@ -714,6 +751,9 @@ function posPaintPeople() {
                 + "% of the seat</span>" : "")
           + (p.covering
               ? ' <span class="pf-card-meta">' + posEsc(p.type) + "</span>" : "")
+          + (p.leaving
+              ? ' <span class="pf-card-meta">leaving ' + posEsc(posDay(p.leaving))
+                + "</span>" : "")
           + "</span>"
           + (POS.may_edit
               ? '<button class="btn btn-outline btn-sm" onclick="posTakeOut('

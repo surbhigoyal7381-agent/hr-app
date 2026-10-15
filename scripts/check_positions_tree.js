@@ -345,6 +345,51 @@ function render(rows, values, collapsed) {
      "a list that filtered itself could never be changed back");
 }
 
+/* ── 15. somebody working their notice ──────────────────────────────────── */
+{
+  // Nothing is stored for this. Somebody is on notice when they are still
+  // Active and their last day is already known - so the chart can tell "full"
+  // apart from "full until the 30th", which it could not before.
+  const notice = [
+    seat("P-Mgr", "Store Manager", "", {
+      leaving_on: "2026-11-30",
+      people: [{ employee: "E9", name: "Leaving Soon",
+                 weight: 100, covering: false, leaving: "2026-11-30" }],
+    }),
+    seat("P-Staff", "Counter Staff", "P-Mgr"),
+  ];
+  const out = render(notice);
+  ok("the person is marked as leaving", out.html.includes("leaving 30 Nov"));
+  ok("and the seat carries it as a flag",
+     (out.html.match(/leaving 30 Nov/g) || []).length >= 2,
+     "expected it on the person AND on the seat");
+  ok("the full date is kept for hovering", out.html.includes("2026-11-30"));
+  ok("a seat nobody is leaving says nothing about it",
+     out.html.indexOf(">Counter Staff<") > 0
+     && !/Counter Staff[\s\S]{0,400}leaving/.test(out.html));
+}
+
+/* ── 16. a group must not hide the one person leaving ───────────────────── */
+{
+  const many = [seat("P-B3", "Head", "")];
+  for (let i = 1; i <= 4; i++) {
+    many.push(seat("P-G" + i, "Packer", "P-B3", {
+      people: [{ employee: "G" + i, name: "Packer " + i,
+                 weight: 100, covering: false,
+                 leaving: i === 2 ? "2026-12-15" : null }],
+      leaving_on: i === 2 ? "2026-12-15" : null,
+    }));
+  }
+  const out = render(many);
+  ok("the four draw as one box",
+     out.html.split('<span class="ti">Packer</span>').length - 1 === 1);
+  ok("and the box says somebody is leaving",
+     out.html.includes("1 leaving"),
+     "three settled people must not hide the fourth");
+  ok("the person is still named with their date",
+     out.html.includes("leaving 15 Dec"));
+}
+
 if (problems.length) {
   console.error("positions tree: " + problems.length + " problem(s)");
   problems.forEach((p) => console.error("  FAIL " + p));

@@ -129,6 +129,25 @@ def position_table(branch=None, department=None, as_at=None):
 			"type": a.assignment_type or "Permanent",
 			"covering": (a.assignment_type or "Permanent") != "Permanent"})
 
+	# Who is working their notice. Nothing new is stored for this: somebody is
+	# on notice when they are still Active and their last day is already known.
+	# A seat whose only occupant leaves in three weeks is a different problem
+	# from a seat that is full, and the chart could not tell them apart.
+	#
+	# One query for everybody in these seats, not one per person.
+	leaving = {}
+	holders = {a["employee"] for rows_ in people.values() for a in rows_} 		if people else set()
+	if holders:
+		for e in frappe.get_all(
+				"Employee",
+				filters={"name": ("in", list(holders)), "status": "Active",
+				         "relieving_date": (">=", as_at)},
+				fields=["name", "relieving_date"], limit_page_length=0):
+			leaving[e.name] = str(e.relieving_date)
+	for rows_ in people.values():
+		for a in rows_:
+			a["leaving"] = leaving.get(a["employee"])
+
 	titles = {s.name: s.position_title for s in seats}
 	rows = []
 	for s in seats:
@@ -148,6 +167,12 @@ def position_table(branch=None, department=None, as_at=None):
 			# What the table is for. Half-seats are real: two people at 50% of a
 			# one-seat role leave nothing open, one of them leaves half.
 			"open": max(0.0, flt(s.seats) - got),
+			# The soonest last day among the people in it, or None. A seat
+			# losing somebody is not the same as an empty one, and it is the
+			# earlier warning of the two.
+			"leaving_on": min([p["leaving"] for p in people.get(s.name, [])
+			                   if p.get("leaving")] or [None],
+			                  key=lambda d: d or "9999-12-31"),
 			"reports_to": s.reports_to_position or "",
 			# The parent's title, so the table reads without a second lookup.
 			# Blank when the parent sits outside what this reader may see.

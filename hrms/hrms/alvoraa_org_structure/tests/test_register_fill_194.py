@@ -283,3 +283,64 @@ class TestWhereSomebodySits(FillCase):
 		                 "function can go back to trusting it")
 		self.assertEqual(
 			register.where_does_this_person_sit(who)["position"], big.name)
+
+
+class TestSomebodyWorkingTheirNotice(FillCase):
+	"""Nothing new is stored for this.
+
+	Somebody is on notice when they are still Active and their last day is
+	already known - `relieving_date` and `status` are on every Employee
+	record and always have been. The chart could not tell "full" apart from
+	"full until the 30th", which is the earlier of the two warnings and the
+	one there is still time to act on.
+	"""
+
+	def setUp(self):
+		super().setUp()
+		self.seat = self.pos("Store Manager", seats=1).name
+
+	def _in_seat(self, name, relieving=None, status="Active"):
+		who = self.person(name)
+		register.assign_person(self.seat, who)
+		frappe.db.set_value("Employee", who,
+		                    {"relieving_date": relieving, "status": status})
+		return who
+
+	def _row(self):
+		return [r for r in register.position_table()["rows"]
+		        if r["id"] == self.seat][0]
+
+	def test_somebody_with_a_last_day_ahead_of_them_is_on_notice(self):
+		self._in_seat("Going Soon", relieving="2026-12-31")
+		row = self._row()
+		self.assertEqual(row["leaving_on"], "2026-12-31")
+		self.assertEqual(row["people"][0]["leaving"], "2026-12-31")
+
+	def test_somebody_staying_is_not(self):
+		self._in_seat("Staying Put")
+		row = self._row()
+		self.assertIsNone(row["leaving_on"])
+		self.assertIsNone(row["people"][0]["leaving"])
+
+	def test_somebody_already_gone_is_not_on_notice(self):
+		"""A date in the past is not notice, it is history - and if they are
+		still Active with it set, that is a data problem for the data review
+		to raise, not a warning on the chart."""
+		self._in_seat("Left Already", relieving="2020-01-01")
+		self.assertIsNone(self._row()["leaving_on"])
+
+	def test_the_seat_reports_the_soonest_last_day(self):
+		"""Two people leaving is one problem with two dates. The nearer one is
+		the one there is least time to do anything about."""
+		wide = self.pos("Two Of These", seats=2).name
+		for name, day in (("Going Later", "2026-12-31"),
+		                  ("Going Sooner", "2026-11-01")):
+			who = self.person(name)
+			register.assign_person(wide, who)
+			frappe.db.set_value("Employee", who, "relieving_date", day)
+		row = [r for r in register.position_table()["rows"]
+		       if r["id"] == wide][0]
+		self.assertEqual(row["leaving_on"], "2026-11-01")
+		self.assertEqual(
+			sorted(p["leaving"] for p in row["people"]),
+			["2026-11-01", "2026-12-31"])

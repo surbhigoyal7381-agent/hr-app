@@ -198,8 +198,12 @@ class TestAdvertisingASeat(FillCase):
 
 	def setUp(self):
 		super().setUp()
-		self.seat = self.pos("Sales Executive", seats=1,
-		                     designation=_designation()).name
+		# A seat of its own per test. A position is named by its title, so a
+		# shared one is the SAME record in every test - and `post_job` commits,
+		# so the openings from one test were still hanging off the seat in the
+		# next. The same shape of pollution the reprocess tests paid for.
+		self.seat = self.pos("Sales Executive " + self._testMethodName[:40],
+		                     seats=1, designation=_designation()).name
 
 	def test_an_opening_is_filled_in_from_the_seat(self):
 		got = register.post_job(self.seat, vacancies=2)
@@ -231,6 +235,27 @@ class TestAdvertisingASeat(FillCase):
 		bare = self.pos("No Role On It", seats=1).name
 		with self.assertRaises(frappe.ValidationError):
 			register.post_job(bare)
+
+	def test_the_seat_says_it_is_already_advertised(self):
+		"""So the screen can offer a way INTO the opening instead of offering
+		to make a second one. Without this an owner raises two openings for
+		one job and is never told about the first."""
+		row = [r for r in register.position_table()["rows"]
+		       if r["id"] == self.seat][0]
+		self.assertIsNone(row["opening"], "nothing advertised yet")
+
+		got = register.post_job(self.seat)
+		row = [r for r in register.position_table()["rows"]
+		       if r["id"] == self.seat][0]
+		self.assertEqual(row["opening"], got["name"])
+
+	def test_a_closed_opening_stops_counting(self):
+		"""A seat whose advert has been closed is advertisable again."""
+		got = register.post_job(self.seat)
+		frappe.db.set_value("Job Opening", got["name"], "status", "Closed")
+		row = [r for r in register.position_table()["rows"]
+		       if r["id"] == self.seat][0]
+		self.assertIsNone(row["opening"])
 
 	def test_somebody_who_may_not_edit_cannot_advertise(self):
 		self.editors("A Role Nobody Holds")

@@ -217,6 +217,18 @@ def position_table(branch=None, department=None, as_at=None):
 		for a in rows_:
 			a["leaving"] = leaving.get(a["employee"])
 
+	# Is this seat already being recruited for? Without it the screen offers
+	# "Advertise it" on a seat that is already advertised, and somebody raises
+	# a second opening for the same job without ever being told about the
+	# first. One query for the lot.
+	openings = {}
+	if frappe.get_meta(JOB_OPENING).has_field(POSITION_LINK):
+		for o in frappe.get_all(
+				JOB_OPENING,
+				filters={POSITION_LINK: ("in", names), "status": "Open"},
+				fields=["name", POSITION_LINK], limit_page_length=0):
+			openings[o.get(POSITION_LINK)] = o.name
+
 	titles = {s.name: s.position_title for s in seats}
 	rows = []
 	for s in seats:
@@ -239,6 +251,9 @@ def position_table(branch=None, department=None, as_at=None):
 			# The soonest last day among the people in it, or None. A seat
 			# losing somebody is not the same as an empty one, and it is the
 			# earlier warning of the two.
+			# The opening that is filling this seat, if one is. The screen shows
+			# a way into it instead of offering to make another.
+			"opening": openings.get(s.name),
 			"leaving_on": min([p["leaving"] for p in people.get(s.name, [])
 			                   if p.get("leaving")] or [None],
 			                  key=lambda d: d or "9999-12-31"),

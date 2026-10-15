@@ -1,0 +1,63 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-08 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "percent_from",
+  "percent_to",
+  "quarters_off",
+  "raises_red"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "percent_from",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "From %",
+   "precision": "2",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "description": "Exclusive. A row of 20 to 24 matches 20 up to but not including 24, so the rows meet without overlapping.",
+   "fieldname": "percent_to",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "To %",
+   "precision": "2",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "description": "A quarter is a quarter of a day's pay. Four is a whole day.",
+   "fieldname": "quarters_off",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Quarters Off"
+  },
+  {
+   "columns": 2,
+   "default": "0",
+   "description": "A red mark for approaching a threshold without reaching it.",
+   "fieldname": "raises_red",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Raises Red"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-08 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Alvoraa Portal",
+ "name": "Alvoraa Attendance Slab",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "idx",
+ "sort_order": "ASC",
+ "states": []
+}

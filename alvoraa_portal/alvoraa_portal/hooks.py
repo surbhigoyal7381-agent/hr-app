@@ -6,6 +6,14 @@ app_email = "support@alvoraa.co"
 app_license = "MIT"
 required_apps = ["frappe/erpnext"]
 
+# ── Alvora colours on the desk ────────────────────────────────────────────
+# `app_include_css` is served on DESK pages only (/app/*). It does NOT reach
+# the employee portal: `hrms-employee.html` and the other www pages are website
+# pages, they carry their own design system, and `scripts/check_design_system.py`
+# counts the colours on them in CI. So this changes what HR and admins see, and
+# leaves what an employee sees exactly as it was.
+app_include_css = "/assets/alvoraa_portal/css/alvora_theme.css"
+
 # ── Post-login redirect: portal users → their portal; admins → /app ───────
 on_login = "alvoraa_portal.auth.on_login"
 
@@ -80,6 +88,10 @@ doctype_js = {
     # history. The QR encoder loads first; the section draws the code from E7's
     # answer in the browser, so no other request ever carries it (AC-47).
     "Employee": ["public/js/alvoraa_qr.js", "public/js/employee_field_app.js"],
+    # ATT-07: the "Reprocess Attendance" button, offered where the employees and
+    # the dates are already chosen. The first click only previews - it writes
+    # nothing until the numbers have been seen and agreed.
+    "Payroll Entry": "public/js/payroll_entry_reprocess.js",
 }
 
 # The phone list (slice 013 step 5, US-18): default "joined in the last 7
@@ -90,6 +102,17 @@ doctype_list_js = {
 }
 
 doc_events = {
+    # The payroll rules engine prices the slip from attendance (slice 059).
+    # It runs AFTER Frappe's own validate, replaces payment_days with the
+    # engine's paid days, and re-runs the calculation over them. It swallows
+    # its own errors: a slip that cannot be produced is a person who cannot
+    # be paid.
+    "Salary Slip": {
+        "validate": "alvoraa_portal.payroll_slip.on_salary_slip_validate",
+    },
+    "Attendance": {
+        "on_submit": "alvoraa_portal.payroll_rules_apply.on_attendance_submit",
+    },
     # ── Objectives must sit under a Key Result Area, when HR requires it ───
     # Enforced on the document, not only in the portal form: the rule is about
     # what the organisation accepts, so it has to hold for the desk, the API and
@@ -200,6 +223,23 @@ doc_events = {
     },
     "Delivery Performance Scorecard": {
         "before_save": "alvoraa_portal.controllers.scorecard.before_save",
+    },
+    # ── The account an expense claim is owed from (slice 058) ─────────────
+    # Frappe HR reads `Company.default_expense_claim_payable_account` and never
+    # fills it; upstream expects a human to choose. Nobody did, so when ALV-178
+    # restored ledger posting every claim hit "Payable Account is mandatory".
+    # Filled from here rather than from `hrms.overrides.company` so no new edit
+    # lands inside the vendored Frappe HR tree (ALV-169).
+    "Company": {
+        "after_insert": "alvoraa_portal.expense_accounts.set_expense_claim_payable_account",
+        "on_update":    "alvoraa_portal.expense_accounts.set_expense_claim_payable_account",
+        "validate":     "alvoraa_portal.expense_accounts.validate_expense_claim_payable_account",
+    },
+    # The other half of the same gap. A claim needs an expense account on its
+    # TYPE as well. ALV-178 fills that, but only when a COMPANY is saved - so a
+    # type added later has none, and every claim against it is refused.
+    "Expense Claim Type": {
+        "after_insert": "alvoraa_portal.expense_accounts.set_expense_claim_type_account",
     },
     # ── Nobody approves their own leave ───────────────────────────────────
     # Submitting a Leave Application is what approves or rejects it. Hung off
@@ -376,7 +416,16 @@ after_migrate = [
     # helpdesk_defaults.py for why this never flips a value HR chose back.
     "alvoraa_portal.lms_defaults.after_migrate",
     "alvoraa_portal.helpdesk_defaults.after_migrate",
+    # Slice 059: the columns the pay-rule engine writes each day's verdict
+    # into. The engine and its tests were committed without them, and nothing
+    # noticed because both its hooks return early on a company with no rule
+    # set - which, until DTC's exists, is every company. See payroll_fields.py.
+    "alvoraa_portal.payroll_fields.after_migrate",
     # Slice 057, 4 Oct: the "Lead / Deal" column on CRM Task. A no-op without CRM.
+    # ALV-194: the link from a Job Opening back to the seat it is filling, so
+    # the chart can say "this hole is being recruited for" rather than only
+    # "this hole". A no-op until Frappe HR is installed. See org_job_link.py.
+    "alvoraa_portal.org_job_link.after_migrate",
     "alvoraa_portal.crm_steps.ensure_task_label_field",
 ]
 
@@ -410,6 +459,15 @@ after_install = [
     # Alvora lockup in its header, from a tenant's first email onward. Safe to
     # run again later (a patch does, on migrate) if the sending Email Account
     # is set up after this point - apply() is idempotent either way.
+    # Slice 059: the columns the pay-rule engine writes each day's verdict
+    # into. The engine and its tests were committed without them, and nothing
+    # noticed because both its hooks return early on a company with no rule
+    # set - which, until DTC's exists, is every company. See payroll_fields.py.
+    "alvoraa_portal.payroll_fields.after_migrate",
+    # ALV-194: the link from a Job Opening back to the seat it is filling, so
+    # the chart can say "this hole is being recruited for" rather than only
+    # "this hole". A no-op until Frappe HR is installed. See org_job_link.py.
+    "alvoraa_portal.org_job_link.after_migrate",
     "alvoraa_portal.email_brand.after_install",
 ]
 

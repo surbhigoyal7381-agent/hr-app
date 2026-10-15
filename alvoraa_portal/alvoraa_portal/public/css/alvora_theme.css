@@ -1,0 +1,493 @@
+/* ==========================================================================
+   Alvora HRMS Theme — Frappe v16 (Espresso) Override
+   ==========================================================================
+
+   Brand colors extracted from the Alvora logo:
+     Primary Purple:  #8B3A8E
+     Secondary Teal:  #1882A5
+
+   WHERE THIS APPLIES. Loaded through `app_include_css`, which Frappe serves on
+   DESK pages only - /app/*. It does NOT reach the employee portal
+   (`hrms-employee.html` and the other www pages); those are website pages and
+   would need `web_include_css`, and they already carry their own design system
+   guarded by `scripts/check_design_system.py`. So this themes what HR and
+   admins see, not what an employee sees.
+   ========================================================================== */
+
+
+/* --------------------------------------------------------------------------
+   1. ALVORA PURPLE PALETTE (replaces Frappe's default blue as the primary)
+   -------------------------------------------------------------------------- */
+
+:root,
+[data-theme="light"] {
+  /* --- Raw purple scale (mapped from Alvora logo purple #8B3A8E) --- */
+  --alvora-50:  #faf5fa;
+  --alvora-100: #f3e8f4;
+  --alvora-200: #e6cfe7;
+  --alvora-300: #d4aed6;
+  --alvora-400: #be85c0;
+  --alvora-500: #a25da5;
+  --alvora-600: #8b3a8e;  /* ← logo purple */
+  --alvora-700: #742f76;
+  --alvora-800: #5e2660;
+  --alvora-900: #4a1e4c;
+  --alvora-950: #331436;
+
+  /* --- Raw teal scale (mapped from Alvora logo teal #1882A5) --- */
+  --alvora-teal-50:  #f0f9fc;
+  --alvora-teal-100: #ddf2f8;
+  --alvora-teal-200: #b3e1ef;
+  --alvora-teal-300: #7ccbe3;
+  --alvora-teal-400: #3dafc9;
+  --alvora-teal-500: #1e96b3;
+  --alvora-teal-600: #1882a5;  /* ← logo teal */
+  --alvora-teal-700: #146b88;
+  --alvora-teal-800: #10556c;
+  --alvora-teal-900: #0d4458;
+  --alvora-teal-950: #092e3d;
+}
+
+[data-theme="dark"],
+.dark {
+  /* --- Purple scale (dark mode — lighter tints for readability) --- */
+  --alvora-50:  #e0c4e1;
+  --alvora-100: #d4aed6;
+  --alvora-200: #c693c8;
+  --alvora-300: #b377b5;
+  --alvora-400: #a25da5;
+  --alvora-500: #8b3a8e;
+  --alvora-600: #742f76;
+  --alvora-700: #5e2660;
+  --alvora-800: #4a1e4c;
+  --alvora-900: #3a1740;
+  --alvora-950: #2a1030;
+
+  /* --- Teal scale (dark mode) --- */
+  --alvora-teal-50:  #b3e1ef;
+  --alvora-teal-100: #7ccbe3;
+  --alvora-teal-200: #3dafc9;
+  --alvora-teal-300: #1e96b3;
+  --alvora-teal-400: #1882a5;
+  --alvora-teal-500: #146b88;
+  --alvora-teal-600: #10556c;
+  --alvora-teal-700: #0d4458;
+  --alvora-teal-800: #0a3548;
+  --alvora-teal-900: #092e3d;
+  --alvora-teal-950: #071f2a;
+}
+
+
+/* --------------------------------------------------------------------------
+   2. PRIMARY COLOR OVERRIDES
+      Frappe v16 uses --btn-primary for primary buttons and --primary for
+      accents (checkboxes, links, active filters). We remap both.
+   -------------------------------------------------------------------------- */
+
+:root,
+[data-theme="light"] {
+  --primary: var(--alvora-600);
+  --primary-color: var(--alvora-600);
+  --brand-color: var(--alvora-600);
+  --btn-primary: var(--alvora-600);
+  --progress-bar-bg: var(--alvora-600);
+  --checkbox-gradient: linear-gradient(180deg, var(--alvora-600) -124.51%, var(--alvora-700) 100%);
+  --highlight-shadow: 1px 1px 10px var(--alvora-100), 0px 0px 4px var(--alvora-600);
+}
+
+[data-theme="dark"],
+.dark {
+  --primary: var(--alvora-400);
+  --primary-color: var(--alvora-400);
+  --brand-color: var(--alvora-400);
+  --btn-primary: var(--alvora-500);
+  --progress-bar-bg: var(--alvora-500);
+  --checkbox-gradient: linear-gradient(180deg, var(--alvora-400) -124.51%, var(--alvora-500) 100%);
+  --highlight-shadow: 1px 1px 10px var(--alvora-900), 0px 0px 4px var(--alvora-400);
+}
+
+
+/* --------------------------------------------------------------------------
+   3. LINK COLORS
+      Override the default blue links with Alvora teal for a cohesive feel.
+   -------------------------------------------------------------------------- */
+
+:root,
+[data-theme="light"] {
+  --ink-blue-link: var(--alvora-teal-600);
+}
+
+[data-theme="dark"],
+.dark {
+  --ink-blue-link: var(--alvora-teal-300);
+}
+
+/* Desk links (sidebar, card links, breadcrumbs) */
+a {
+  color: var(--ink-blue-link);
+}
+
+a:hover {
+  color: var(--alvora-teal-700);
+}
+
+[data-theme="dark"] a:hover,
+.dark a:hover {
+  color: var(--alvora-teal-200);
+}
+
+
+/* --------------------------------------------------------------------------
+   4. SIDEBAR — active item highlight in purple
+   -------------------------------------------------------------------------- */
+
+:root,
+[data-theme="light"] {
+  --sidebar-select-color: var(--alvora-100);
+}
+
+[data-theme="dark"],
+.dark {
+  --sidebar-select-color: var(--alvora-950);
+}
+
+.active-sidebar {
+  background: var(--alvora-100) !important;
+}
+
+.active-sidebar .sidebar-item-label,
+.active-sidebar .item-anchor {
+  color: var(--alvora-700) !important;
+  font-weight: 600;
+}
+
+[data-theme="dark"] .active-sidebar,
+.dark .active-sidebar {
+  background: var(--alvora-950) !important;
+}
+
+[data-theme="dark"] .active-sidebar .sidebar-item-label,
+[data-theme="dark"] .active-sidebar .item-anchor,
+.dark .active-sidebar .sidebar-item-label,
+.dark .active-sidebar .item-anchor {
+  color: var(--alvora-200) !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   5. BUTTONS
+   -------------------------------------------------------------------------- */
+
+/* Primary button */
+.btn.btn-primary {
+  background-color: var(--alvora-600) !important;
+  border-color: var(--alvora-600) !important;
+  color: #ffffff !important;
+}
+
+.btn.btn-primary:hover {
+  background-color: var(--alvora-700) !important;
+  border-color: var(--alvora-700) !important;
+}
+
+.btn.btn-primary:active,
+.btn.btn-primary:focus {
+  background-color: var(--alvora-800) !important;
+  border-color: var(--alvora-800) !important;
+  box-shadow: 0 0 0 0.2rem rgba(139, 58, 142, 0.25) !important;
+}
+
+[data-theme="dark"] .btn.btn-primary,
+.dark .btn.btn-primary {
+  background-color: var(--alvora-500) !important;
+  border-color: var(--alvora-500) !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .btn.btn-primary:hover,
+.dark .btn.btn-primary:hover {
+  background-color: var(--alvora-400) !important;
+  border-color: var(--alvora-400) !important;
+}
+
+/* Primary-light button (outline style) */
+.btn-primary-light {
+  background-color: var(--alvora-50) !important;
+  color: var(--alvora-700) !important;
+}
+
+.btn-primary-light:hover {
+  background-color: var(--alvora-100) !important;
+}
+
+[data-theme="dark"] .btn-primary-light,
+.dark .btn-primary-light {
+  background-color: var(--alvora-950) !important;
+  color: var(--alvora-200) !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   6. FORM CONTROLS — focus ring in Alvora purple
+   -------------------------------------------------------------------------- */
+
+.form-control:focus,
+.frappe-control .ql-editor:focus,
+.frappe-control .ace_editor.ace_focus {
+  border-color: var(--alvora-400) !important;
+  box-shadow: 0 0 0 0.2rem rgba(139, 58, 142, 0.15) !important;
+}
+
+/* Active filter tags */
+.active-tag-link {
+  color: var(--alvora-600) !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   7. NAVBAR / AWESOMEBAR accent
+   -------------------------------------------------------------------------- */
+
+/* Awesomebar focus highlight */
+:root,
+[data-theme="light"] {
+  --awesomebar-focus-bg: var(--alvora-50);
+}
+
+[data-theme="dark"],
+.dark {
+  --awesomebar-focus-bg: var(--alvora-950);
+}
+
+
+/* --------------------------------------------------------------------------
+   8. DATA TABLES — selected row highlight
+   -------------------------------------------------------------------------- */
+
+.dt-cell--highlight,
+.dt-row--highlight .dt-cell {
+  background-color: var(--alvora-50) !important;
+}
+
+[data-theme="dark"] .dt-cell--highlight,
+[data-theme="dark"] .dt-row--highlight .dt-cell,
+.dark .dt-cell--highlight,
+.dark .dt-row--highlight .dt-cell {
+  background-color: var(--alvora-950) !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   9. LIST VIEW — indicator overrides
+      Keeps red/green/yellow standard but makes blue indicators use teal.
+   -------------------------------------------------------------------------- */
+
+.indicator-pill.blue,
+.indicator-pill[data-color="blue"] {
+  --indicator-color: var(--alvora-teal-600);
+  background-color: var(--alvora-teal-50);
+  color: var(--alvora-teal-700);
+}
+
+.indicator-pill.purple,
+.indicator-pill[data-color="purple"] {
+  --indicator-color: var(--alvora-600);
+  background-color: var(--alvora-50);
+  color: var(--alvora-700);
+}
+
+[data-theme="dark"] .indicator-pill.blue,
+[data-theme="dark"] .indicator-pill[data-color="blue"],
+.dark .indicator-pill.blue,
+.dark .indicator-pill[data-color="blue"] {
+  background-color: var(--alvora-teal-950);
+  color: var(--alvora-teal-200);
+}
+
+
+/* --------------------------------------------------------------------------
+   10. WORKSPACE CARDS — subtle branded touches
+   -------------------------------------------------------------------------- */
+
+/* Card section title icon color */
+.widget-head .widget-title .icon {
+  color: var(--alvora-600);
+}
+
+/* Shortcut tile count pill */
+.shortcut-widget-box .pill {
+  background-color: var(--alvora-100);
+  color: var(--alvora-700);
+}
+
+[data-theme="dark"] .shortcut-widget-box .pill,
+.dark .shortcut-widget-box .pill {
+  background-color: var(--alvora-950);
+  color: var(--alvora-200);
+}
+
+
+/* --------------------------------------------------------------------------
+   11. NUMBER CARDS — branded accent bar
+   -------------------------------------------------------------------------- */
+
+.number-widget-box .widget-head .number {
+  color: var(--alvora-600);
+}
+
+[data-theme="dark"] .number-widget-box .widget-head .number,
+.dark .number-widget-box .widget-head .number {
+  color: var(--alvora-300);
+}
+
+
+/* --------------------------------------------------------------------------
+   12. CHECKBOX & RADIO — purple fill
+   -------------------------------------------------------------------------- */
+
+input[type="checkbox"]:checked,
+.checkbox .input-with-feedback:checked {
+  background-color: var(--alvora-600);
+  border-color: var(--alvora-600);
+}
+
+input[type="radio"]:checked {
+  border-color: var(--alvora-600);
+}
+
+input[type="radio"]:checked::before {
+  background-color: var(--alvora-600);
+}
+
+
+/* --------------------------------------------------------------------------
+   13. SCROLLBAR — subtle purple tint (webkit browsers)
+   -------------------------------------------------------------------------- */
+
+:root,
+[data-theme="light"] {
+  --scrollbar-thumb-color: var(--alvora-200);
+  --scrollbar-track-color: var(--alvora-50);
+}
+
+[data-theme="dark"],
+.dark {
+  --scrollbar-thumb-color: var(--alvora-800);
+  --scrollbar-track-color: var(--alvora-950);
+}
+
+
+/* --------------------------------------------------------------------------
+   14. SWITCH / TOGGLE — purple when on
+   -------------------------------------------------------------------------- */
+
+.switch input:checked + .slider {
+  background-color: var(--alvora-600) !important;
+}
+
+.switch input:checked + .slider::before {
+  border-color: var(--alvora-600) !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   15. TIMELINE & ACTIVITY — branded accents
+   -------------------------------------------------------------------------- */
+
+:root,
+[data-theme="light"] {
+  --timeline-badge-bg: var(--alvora-100);
+  --timeline-badge-color: var(--alvora-700);
+}
+
+[data-theme="dark"],
+.dark {
+  --timeline-badge-bg: var(--alvora-900);
+  --timeline-badge-color: var(--alvora-200);
+}
+
+
+/* --------------------------------------------------------------------------
+   16. WORKSPACE LINKS — drop the ↗ after every label
+   --------------------------------------------------------------------------
+
+   Frappe v16 appends an "open in new place" arrow to every workspace link.
+   Four widgets draw it, all with the same icon:
+
+     links_widget.js:84        the card links  (Company ↗, Branch ↗ ...)
+     shortcut_widget.js:72,117 the shortcut tiles
+     number_card_widget.js:303 the number cards
+
+   Every one of those links opens in the SAME tab, so the arrow promises
+   something that does not happen - and repeated down a card it is most of
+   what the eye sees. The label is the thing being read.
+
+   Hidden rather than removed: this is Frappe's own markup, and a CSS rule
+   survives an upgrade where an edit to their JavaScript would not.
+   -------------------------------------------------------------------------- */
+
+/* Any svg inside a link label is the arrow - it is the only one there. Matched
+   without relying on the `icon` class, because the class list on Frappe's icon
+   helper is not something to depend on across upgrades. */
+.link-content > svg,
+.link-content svg.icon,
+.shortcut-widget-box .widget-head svg.icon,
+.number-widget-box .widget-head svg.icon {
+  display: none !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   17. CHART LEGENDS — stop long labels colliding
+   --------------------------------------------------------------------------
+
+   frappe-charts lays its legend out in fixed-width cells. A pie of branches or
+   grades has labels far longer than the cell ("PPJ Delhi Karol Bagh",
+   "G3 Senior Executive"), so each one runs under its neighbour and the row
+   reads as one smeared string: "G3 Senior ExecutieG1 Support".
+
+   Nothing here changes a colour. It gives each legend entry room, lets the row
+   wrap instead of overflowing, and stops a long label eating the next one.
+   -------------------------------------------------------------------------- */
+
+.chart-legend {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 4px 18px !important;
+  align-items: flex-start !important;
+}
+
+.chart-legend .legend-dataset-label,
+.chart-legend .legend-dataset-text {
+  display: inline-flex !important;
+  align-items: baseline !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  max-width: 220px !important;
+  line-height: 1.3 !important;
+}
+
+/* The count under each label belongs to that label, not to the one after it. */
+.chart-legend .legend-dataset-value {
+  margin-left: 6px !important;
+  white-space: nowrap !important;
+}
+
+
+/* --------------------------------------------------------------------------
+   18. LOGIN PAGE — branded gradient background
+   -------------------------------------------------------------------------- */
+
+.login-content.page-card {
+  border-top: 4px solid var(--alvora-600);
+}
+
+.for-login .page-card .btn-primary {
+  background: linear-gradient(135deg, var(--alvora-600), var(--alvora-teal-600)) !important;
+  border: none !important;
+  color: #ffffff !important;
+}
+
+.for-login .page-card .btn-primary:hover {
+  background: linear-gradient(135deg, var(--alvora-700), var(--alvora-teal-700)) !important;
+}

@@ -1,0 +1,303 @@
+      <!-- ── Positions Panel ─────────────────────────── -->
+      <div id="panel-positions" class="panel">
+        <div class="pf-toolbar" style="margin-bottom:24px">
+          <div>
+            <div class="pf-h">Positions</div>
+            <div class="pf-sub">Every seat in the organisation, who is in it, and which are empty.</div>
+          </div>
+          <!-- "Set up the chart" used to live here as well, and a screenshot
+               showed it beside the same offer in the empty state - two buttons
+               for one action, one of them far from where the eye is. The empty
+               state keeps it; the toolbar does not. -->
+          <button class="btn btn-primary btn-sm" id="pos-add-btn"
+                  onclick="posOpenEditor(null)" style="display:none">+ Add a seat</button>
+        </div>
+
+        <!-- The three questions this screen is opened with, answered before
+             the filters rather than in grey text beside them. -->
+        <div id="pos-tiles"></div>
+
+        <div class="pf-card" style="margin-bottom:16px">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+            <div>
+              <div class="gp-label">Branch</div>
+              <select class="gp-input" id="pos-f-branch" style="height:32px;padding:4px 8px;width:auto"
+                      onchange="posPaint()"><option value="">All branches</option></select>
+            </div>
+            <div>
+              <div class="gp-label">Department</div>
+              <select class="gp-input" id="pos-f-dept" style="height:32px;padding:4px 8px;width:auto"
+                      onchange="posPaint()"><option value="">All departments</option></select>
+            </div>
+            <div>
+              <div class="gp-label">Job role</div>
+              <select class="gp-input" id="pos-f-role" style="height:32px;padding:4px 8px;width:auto"
+                      onchange="posPaint()"><option value="">All job roles</option></select>
+            </div>
+            <div>
+              <div class="gp-label">Show</div>
+              <select class="gp-input" id="pos-f-open" style="height:32px;padding:4px 8px;width:auto"
+                      onchange="posPaint()">
+                <option value="">Every seat</option>
+                <option value="open">Only seats with a vacancy</option>
+                <option value="key">Only key seats</option>
+                <option value="leaving">Only seats where somebody is leaving</option>
+              </select>
+            </div>
+            <!-- The chart is one representation of three relationships, and
+                 the reader chooses which. Only shown with the structure view,
+                 because a list has no spine to change. -->
+            <div id="pos-arrange-wrap" style="display:none">
+              <div class="gp-label">Arrange by</div>
+              <select class="gp-input" id="pos-f-arrange" style="height:32px;padding:4px 8px;width:auto"
+                      onchange="posPaint()">
+                <option value="reporting">Who reports to whom</option>
+                <option value="branch">Branch</option>
+                <option value="department">Department</option>
+              </select>
+            </div>
+            <div>
+              <div class="gp-label">View</div>
+              <select class="gp-input" id="pos-f-view" style="height:32px;padding:4px 8px;width:auto"
+                      onchange="posPaint()">
+                <option value="list">As a list</option>
+                <option value="tree">As a structure</option>
+              </select>
+            </div>
+            <div style="margin-left:auto">
+              <div class="pf-card-meta" id="pos-filter-note" style="display:none">
+                In this view the filters grey out what does not match, so the
+                shape of the organisation stays whole.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pf-card">
+          <div id="pos-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
+        </div>
+      </div>
+
+      <!-- Add or change one seat. A seat with nobody in it is how a vacancy
+           becomes visible, so creating an empty one is the normal case. -->
+      <div class="gp-backdrop" id="pos-editor">
+        <div class="gp-modal" style="max-width:560px">
+          <div class="gp-modal-hdr">
+            <div class="gp-modal-title" id="pos-editor-title">Add a seat</div>
+            <button class="gp-modal-close" onclick="posCloseEditor()" aria-label="Close">&times;</button>
+          </div>
+          <div class="gp-modal-body">
+            <div class="gp-error" id="pos-editor-err" style="display:none;margin-bottom:12px"></div>
+            <input type="hidden" id="pos-e-name">
+
+            <!-- Who is in it comes first. It is what somebody opened the
+                 seat to find out, and the seat's own details are rarely why
+                 they are here. -->
+            <div class="gp-field" id="pos-people-wrap">
+              <div class="gp-label">Who is in it</div>
+              <div id="pos-people" style="max-height:260px;overflow-y:auto"></div>
+              <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+                <button class="btn btn-outline btn-sm" id="pos-add-person"
+                        onclick="posPickPerson()">+ Put somebody in it</button>
+                <button class="btn btn-outline btn-sm" id="pos-post-job"
+                        onclick="posPostOpen()">Advertise it</button>
+              </div>
+            </div>
+
+            <div class="gp-field">
+              <div class="gp-label">What the seat is called</div>
+              <input class="gp-input" id="pos-e-title" placeholder="Cashier">
+            </div>
+
+            <!-- Advertising a seat refuses without this, and the people we
+                 offer for it are found by it. There was no way to set it. -->
+            <div class="gp-field">
+              <div class="gp-label">Job role</div>
+              <select class="gp-input" id="pos-e-role"><option value="">Not set</option></select>
+              <div class="pf-card-meta">Needed before you can advertise this
+                seat, and it is how we find people already doing this job.</div>
+            </div>
+
+            <!-- The other way in: name the manager and the next two answers
+                 fill themselves. Either route sets the same two fields. -->
+            <div class="gp-field">
+              <div class="gp-label">Or name the manager it reports to</div>
+              <select class="gp-input" id="pos-e-mgr" onchange="posFromManager()">
+                <option value="">Pick a person instead of a position</option>
+              </select>
+              <div class="pf-card-meta" id="pos-mgr-note" style="display:none"></div>
+            </div>
+
+            <div class="gp-field">
+              <div class="gp-label">Reports to</div>
+              <select class="gp-input" id="pos-e-parent"><option value="">Nobody &mdash; top of the chart</option></select>
+            </div>
+
+            <div style="display:flex;gap:12px">
+              <div class="gp-field" style="flex:1">
+                <div class="gp-label">Branch</div>
+                <select class="gp-input" id="pos-e-branch"><option value="">None</option></select>
+              </div>
+              <div class="gp-field" style="flex:1">
+                <div class="gp-label">Department</div>
+                <select class="gp-input" id="pos-e-dept"><option value="">None</option></select>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:12px">
+              <!-- Hidden unless this seat really does hold more than one.
+                   A job is one job; asking for a number on every new seat
+                   made people answer a question they did not have. -->
+              <div class="gp-field" id="pos-seats-wrap"
+                   style="flex:1;display:none">
+                <div class="gp-label">How many people it holds</div>
+                <input class="gp-input" id="pos-e-seats" type="number" min="0" step="0.5" value="1">
+              </div>
+              <div class="gp-field" style="flex:1">
+                <div class="gp-label">Status</div>
+                <select class="gp-input" id="pos-e-status">
+                  <option value="Active">Active</option>
+                  <option value="Frozen">Frozen &mdash; no hiring just now</option>
+                  <option value="Closed">Closed</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="gp-field" id="pos-seats-door">
+              <button class="btn btn-outline btn-sm" onclick="posShowSeats()">
+                More than one person holds this seat</button>
+            </div>
+
+            <div class="gp-field">
+              <div style="display:flex;gap:8px;align-items:flex-start">
+                <input type="checkbox" id="pos-e-key" style="width:16px;height:16px;margin-top:3px;accent-color:var(--primary);cursor:pointer">
+                <label for="pos-e-key" style="margin:0;cursor:pointer">
+                  <strong>A key seat</strong>
+                  <span class="pf-card-meta" style="display:block">A seat the
+                    shop cannot run without. We flag an empty one urgently.</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="gp-modal-footer">
+            <button class="btn btn-outline" onclick="posCloseEditor()">Cancel</button>
+            <button class="btn btn-primary" id="pos-save-btn" onclick="posSave()">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Who should take this seat. The list is people who already do this
+           job, and it says how much of each one is already committed -
+           "internal" means somebody already here, not an unpublished advert. -->
+      <div class="gp-backdrop" id="pos-person">
+        <div class="gp-modal" style="max-width:560px">
+          <div class="gp-modal-hdr">
+            <div class="gp-modal-title">Put somebody in this seat</div>
+            <button class="gp-modal-close" onclick="posPickClose()" aria-label="Close">&times;</button>
+          </div>
+          <div class="gp-modal-body">
+            <div class="gp-error" id="pos-person-err" style="display:none;margin-bottom:12px"></div>
+
+            <div class="gp-field">
+              <div class="gp-label">Search by name, or leave it to see people already doing this job</div>
+              <input class="gp-input" id="pos-p-q" oninput="posPickSearch()"
+                     placeholder="Start typing a name">
+            </div>
+            <div id="pos-p-list" style="max-height:220px;overflow-y:auto"></div>
+
+            <div style="display:flex;gap:12px;margin-top:12px">
+              <div class="gp-field" style="flex:1">
+                <div class="gp-label">How much of the seat</div>
+                <input class="gp-input" id="pos-p-weight" type="number"
+                       min="1" max="100" step="5" value="100">
+              </div>
+              <div class="gp-field" style="flex:1">
+                <div class="gp-label">For how long</div>
+                <select class="gp-input" id="pos-p-type" onchange="posPickType()">
+                  <option value="Permanent">Permanently</option>
+                  <option value="Acting">Acting</option>
+                  <option value="Interim">Interim</option>
+                  <option value="Additional Charge">Additional charge</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="gp-field" id="pos-p-until-wrap" style="display:none">
+              <div class="gp-label">Until</div>
+              <input class="gp-input" id="pos-p-until" type="date">
+              <div class="pf-card-meta">Cover needs a last day. Without one it
+                quietly becomes permanent, and the chart only says so months later.</div>
+            </div>
+
+            <div class="gp-field">
+              <div style="display:flex;gap:8px;align-items:flex-start">
+                <input type="checkbox" id="pos-p-delegate" style="width:16px;height:16px;margin-top:3px;accent-color:var(--primary);cursor:pointer">
+                <label for="pos-p-delegate" style="margin:0;cursor:pointer">
+                  <strong>Also move approvals to this seat</strong>
+                  <span class="pf-card-meta" style="display:block">Changes who
+                    approves leave and expenses for the people under it. Leave
+                    this alone unless that is what you mean to do.</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="gp-modal-footer">
+            <button class="btn btn-outline" onclick="posPickClose()">Cancel</button>
+            <button class="btn btn-primary" id="pos-p-save" onclick="posPickSave()">Put them in</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Advertising it: the external route, through the recruitment that
+           already exists. Nothing about hiring is rebuilt here. -->
+      <div class="gp-backdrop" id="pos-job">
+        <div class="gp-modal" style="max-width:480px">
+          <div class="gp-modal-hdr">
+            <div class="gp-modal-title">Advertise this seat</div>
+            <button class="gp-modal-close" onclick="posPostClose()" aria-label="Close">&times;</button>
+          </div>
+          <div class="gp-modal-body">
+            <div class="gp-error" id="pos-job-err" style="display:none;margin-bottom:12px"></div>
+            <div style="display:flex;gap:12px">
+              <div class="gp-field" style="flex:1">
+                <div class="gp-label">How many people</div>
+                <input class="gp-input" id="pos-j-vac" type="number" min="1" value="1">
+              </div>
+              <div class="gp-field" style="flex:1">
+                <div class="gp-label">Closes on</div>
+                <input class="gp-input" id="pos-j-closes" type="date">
+              </div>
+            </div>
+            <div class="gp-field">
+              <div style="display:flex;gap:8px;align-items:flex-start">
+                <input type="checkbox" id="pos-j-publish" style="width:16px;height:16px;margin-top:3px;accent-color:var(--primary);cursor:pointer">
+                <label for="pos-j-publish" style="margin:0;cursor:pointer">
+                  <strong>Put it on the careers page</strong>
+                  <span class="pf-card-meta" style="display:block">Leave it off
+                    to keep the opening with HR until you are ready.</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="gp-modal-footer">
+            <button class="btn btn-outline" onclick="posPostClose()">Cancel</button>
+            <button class="btn btn-primary" id="pos-j-save" onclick="posPostSave()">Create the opening</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Building the chart from the people already on the books. It
+           proposes; nothing is written until somebody has read it. -->
+      <div class="gp-backdrop" id="pos-setup">
+        <div class="gp-modal" style="max-width:760px">
+          <div class="gp-modal-hdr">
+            <div class="gp-modal-title">Set up the chart from your people</div>
+            <button class="gp-modal-close" onclick="posSetupClose()" aria-label="Close">&times;</button>
+          </div>
+          <div class="gp-modal-body" id="pos-setup-body"></div>
+          <div class="gp-modal-footer">
+            <button class="btn btn-outline" onclick="posSetupClose()">Cancel</button>
+            <button class="btn btn-primary" id="pos-setup-go" onclick="posSetupGo()" disabled>Create these seats</button>
+          </div>
+        </div>
+      </div>

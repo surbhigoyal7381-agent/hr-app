@@ -111,6 +111,10 @@ Each one was seen on a real screen. Check new designs against this list.
 | Greyed-out tabs — **seen a second time** (store in-charge, "Organisation") | Attendance Insights | AI2, LV11 |
 | Red for an ordinary number — **seen a second time** (0.1% leave use; "Female" bar) | HR Analytics | PF4, LV9 |
 | One idea under two names — **seen a second time** ("manager" in the notice, "supervisor" on the result) | Field check-in page (read in code, not on screen) | MA2, FC-2 (slice 013) |
+| A success message written into an unrelated field's hint ("Opening created" lands under "Or name the manager it reports to") | Positions, Advertise this seat (read in code) | P11 (slice 059) |
+| A total beside a filter counted over **all** rows, not the filtered ones ("7 open" stays company-wide after picking one branch) | Positions, count line (read in code) | P4 (slice 059) |
+| A field hidden by a condition with no route to reveal it — the seat count shows only when it is already above 1, so a one-person seat can never become a six-person one | Positions, seat dialog (read in code) | P3 (slice 059) |
+| A clickable box that is not a button: the whole hierarchy is unreachable by keyboard, and the modals have no role, no Escape and no focus move | Organisation chart and Positions (read in code) | P7 (slice 059) |
 
 ---
 
@@ -152,6 +156,12 @@ Items learned the hard way. Add these to the standard pre-handoff check.
 - [ ] A label about where someone was must come from the measured value the server returns, not from the configured place name.
 - [ ] Before recommending a component library, check it is still maintained and measure its size. `@material/web` has been in maintenance mode since June 2024; 9 components = 173 KB minified / 35.5 KB gzip (27 Sep 2026).
 - [ ] Test every phone design at 200% text as well as 360 px. Two faults showed only there: a truncated company name and an unbreakable error code.
+- [ ] When a record can hold many of something (25 people in one seat, 403 people in 120 seats), draw the **many** case, not the one case. A cell that joins names with a line break is a 25-line cell.
+- [ ] A field shown only when a condition is already true needs a way to make it true. Ask: how does somebody reach this field the first time?
+- [ ] A confirmation or error must appear where the action was taken. Check which element the code actually writes it into.
+- [ ] A total shown next to a filter is computed over the filtered rows, or it says out loud that it is the whole.
+- [ ] A tree or chart that opens fully expanded has been tried at the real number of nodes. Default a deep level closed, and say what is folded.
+- [ ] A filter that greys rather than hides still has to lead the eye: fold the branches with no match and open the ancestors of every match.
 
 ---
 
@@ -183,6 +193,9 @@ Items learned the hard way. Add these to the standard pre-handoff check.
 | Slice 013 M3 redesign: decisions D-M3-1 to D-M3-7 in `01d-ux-redesign-m3.md` §13. D-M3-1 reopens D9 (pinned light); D-M3-4 and D-M3-6 need security. | Surbhi; security | CSS build, notice layout, sign-in copy |
 | Slice 013 M3 redesign: prototype v1 not yet published (no artifact tool in that run) and not yet reacted to. The designer did not see her phone screenshots, only her description. | Lead session to publish; then Surbhi | Promoting any M3 pattern |
 | Slice 013 M3 redesign: server needs E-1 to E-5 (`01d` §8): brand colour after sign-in, true distance and accuracy on a saved punch, the rule, notice part keys. | Engineer; E-4 with security | Brand colour, result screen, notice icons |
+| Slice 059 Positions: a pending relieving date (`leaving_on`) reaches every full-reach manager, and company-wide for anyone not tied to a branch. Is an unannounced resignation acceptable there? | Surbhi, security | The leaving flag, the "who is leaving" filter |
+| Slice 059 Positions: `candidates_for` needs `may_edit`, so a branch head cannot answer "who could cover" at all. Read-only candidates for a reader is a permission decision, not a design one. | Surbhi, security | A branch head's third question |
+| Slice 059 Positions: nothing was seen in a browser (no local admin password). Every layout and measurement finding needs eyes on dev before it is trusted. | Surbhi / designer on dev | Confidence in findings 5, 6, 13 |
 
 ---
 
@@ -190,6 +203,7 @@ Items learned the hard way. Add these to the standard pre-handoff check.
 
 | Date | Source | What was said | What it teaches | What changed | Status |
 |---|---|---|---|---|---|
+| 2026-10-15 | Surbhi, Positions screen review (slice 059) | "As the UX expert, thinking of the pain of the persona of this application, review the design of this page and do necessary updates to make it more intuitive, easy to use and value adding." Read from markup and endpoints only; no browser | The three questions a shop owner opens this with — where are we short, who is leaving, who could cover — were each answerable only by hunting. The default list view never showed a leaving date at all; the key numbers sat in 11 px grey text in a corner of the filter card; the empty state named no action while the button to act sat in the toolbar | 18 ranked findings; six checklist items; four anti-patterns. No code changed (she implements) | heard |
 | 2026-09-27 | Own look (Playwright, measured), M3 prototype v1 | 48 screens at 360 px light, dark and 200% text: clean at the end; the first pass found an 11 px Sample tag, an unbreakable `PASSWORD_CHANGED_SIGN_IN_AGAIN` at 200%, and "PP J…" in the top bar at 200% | Large text is its own device size; long codes need a break rule | Two checklist items; a pattern for icon-only actions at 150%+ | applied |
 | 2026-09-27 | Own measurement, M3 palette | PPJ's local brand colour is `#000000`; Material's tonal-spot recipe made it pink (`#8c4a60`) | The tenant's real setting can be the edge case; generate the palette, do not assume it | Monochrome rule under chroma 8; checklist item; D-M3-5 | applied |
 | 2026-09-27 | Own reading of code, M3 redesign | The app ignores `brand_colour`; the result says "At {site}" whatever the distance; `withdraw_agreement` has no screen; Remove asks twice (screen + `window.confirm`) | A restyle brief hides behaviour gaps; read what each screen claims, not only how it looks | Findings M3-5, M3-6, M3-8, M3-9 in `01d`; two checklist items | heard |

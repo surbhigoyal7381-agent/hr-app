@@ -592,6 +592,18 @@ TENANT_DOCTYPES = [
     "Alvoraa AI Call Log",
     # Slice 057: the tenant's own CRM steps (status -> task), set by its sales manager.
     "Alvoraa CRM Step Task",
+    # Slice 059, the pay-rule engine. All seven are the TENANT's own: its pay
+    # rules as data (one record per company), the day-by-day verdicts those
+    # rules produce, and the trail of who re-ran them. None of it is our
+    # billing or provisioning plumbing - it is how that tenant pays its own
+    # staff, read and written inside the tenant by its HR.
+    "Alvoraa Payroll Rule Set",
+    "Alvoraa Attendance Slab",
+    "Alvoraa Mark Rate",
+    "Alvoraa Leave Class",
+    "Alvoraa Employee Category",
+    "Alvoraa Green Eligibility",
+    "Alvoraa Payroll Reprocess Log",
 ]
 
 REQUIRED = [k for k, v in FEATURES.items() if v.get("required")]

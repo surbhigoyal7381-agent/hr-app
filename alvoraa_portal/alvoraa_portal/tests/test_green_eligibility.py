@@ -92,6 +92,22 @@ class TestResolvingAGrantByDate(unittest.TestCase):
 		self.assertEqual(_green_on("E", D(2026, 5, 5), c), "night green")
 
 
+def _gender():
+	"""Whatever this site calls a gender.
+
+	Hard-coding "Female" fails on a bench that has never had the Gender
+	fixtures loaded, which is exactly how CI builds its site. The same lesson
+	is already written down in `hrms/alvoraa_org_structure/tests/
+	test_org_structure.py`; this file repeated the mistake anyway, which is
+	why it is spelled out again here rather than left as a one-liner.
+	"""
+	existing = frappe.db.get_value("Gender", {}, "name")
+	if existing:
+		return existing
+	return frappe.get_doc({"doctype": "Gender", "gender": "Other"}
+	                      ).insert(ignore_permissions=True).name
+
+
 class TestGreenEligibilityRecords(FrappeTestCase):
 	"""Needs a site: the overlap refusal and the bulk grant."""
 
@@ -113,7 +129,7 @@ class TestGreenEligibilityRecords(FrappeTestCase):
 		doc = frappe.get_doc({
 			"doctype": "Employee", "first_name": "Green", "last_name": "Test",
 			"company": company, "date_of_joining": "2026-01-01",
-			"date_of_birth": "1990-01-01", "gender": "Female", "status": "Active",
+			"date_of_birth": "1990-01-01", "gender": _gender(), "status": "Active",
 		})
 		doc.flags.ignore_permissions = True
 		doc.insert()

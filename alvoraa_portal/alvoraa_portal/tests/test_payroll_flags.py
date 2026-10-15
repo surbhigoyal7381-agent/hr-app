@@ -29,6 +29,22 @@ COMPANY = "Flags Test Co"
 ABBR = "FLGT"
 
 
+def _gender():
+	"""Whatever this site calls a gender.
+
+	Hard-coding "Female" fails on a bench that has never had the Gender
+	fixtures loaded, which is exactly how CI builds its site. The same lesson
+	is already written down in `hrms/alvoraa_org_structure/tests/
+	test_org_structure.py`; this file repeated the mistake anyway, which is
+	why it is spelled out again here rather than left as a one-liner.
+	"""
+	existing = frappe.db.get_value("Gender", {}, "name")
+	if existing:
+		return existing
+	return frappe.get_doc({"doctype": "Gender", "gender": "Other"}
+	                      ).insert(ignore_permissions=True).name
+
+
 def _ensure_company():
 	if not frappe.db.exists("Company", COMPANY):
 		frappe.get_doc({"doctype": "Company", "company_name": COMPANY,
@@ -68,7 +84,7 @@ def _employee(employment_type=None):
 		"doctype": "Employee", "first_name": "Flags", "last_name": "Test",
 		"company": COMPANY,
 		"date_of_joining": add_days(nowdate(), -200),
-		"date_of_birth": "1990-01-01", "gender": "Female",
+		"date_of_birth": "1990-01-01", "gender": _gender(),
 		"status": "Active", "employment_type": employment_type,
 	})
 	doc.flags.ignore_permissions = True

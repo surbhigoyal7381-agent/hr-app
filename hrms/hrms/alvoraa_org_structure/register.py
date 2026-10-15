@@ -63,6 +63,59 @@ def may_edit():
 	return bool(allowed & set(frappe.get_roles()))
 
 
+def _may_see_who_is_leaving():
+	"""Whether this reader may be told that somebody is working their notice.
+
+	A pending resignation is the person's own news and is often not announced.
+	Reading the organisation's SHAPE and reading who is about to leave it are
+	different permissions, and this screen had been treating them as one.
+
+	HR and leadership by role - they cannot plan a replacement otherwise. Plus
+	anybody the leaver reports to, which `_my_reporting_line` decides.
+	"""
+	roles = set(frappe.get_roles())
+	allowed = {r.strip() for r in
+	           str(settings.get("alvoraa_org_full_reach_roles") or "").split(",")
+	           if r.strip()}
+	return bool(roles & allowed) or bool(_my_reporting_line())
+
+
+def _my_reporting_line(depth=6):
+	"""Every employee below this caller, however far down, or None for "all".
+
+	None means a full-reach role, which is the only thing that may see the
+	whole company's leavers. An empty set means they manage nobody.
+
+	Walked a level at a time with a cap, rather than recursively per employee:
+	a six-level company is six queries whatever its size, and a reporting loop
+	in bad data stops at the cap instead of running for ever.
+	"""
+	roles = set(frappe.get_roles())
+	allowed = {r.strip() for r in
+	           str(settings.get("alvoraa_org_full_reach_roles") or "").split(",")
+	           if r.strip()}
+	if roles & allowed:
+		return None
+
+	me = frappe.db.get_value("Employee", {"user_id": frappe.session.user,
+	                                      "status": "Active"}, "name")
+	if not me:
+		return set()
+
+	seen, edge = set(), [me]
+	for _ in range(depth):
+		if not edge:
+			break
+		nxt = frappe.get_all("Employee",
+		                     filters={"reports_to": ("in", edge),
+		                              "status": "Active"},
+		                     pluck="name", limit_page_length=0)
+		nxt = [n for n in nxt if n not in seen]
+		seen.update(nxt)
+		edge = nxt
+	return seen
+
+
 def _refuse(endpoint, name=None):
 	from hrms.alvoraa_hr_core.access import refuse
 
@@ -134,16 +187,32 @@ def position_table(branch=None, department=None, as_at=None):
 	# A seat whose only occupant leaves in three weeks is a different problem
 	# from a seat that is full, and the chart could not tell them apart.
 	#
-	# One query for everybody in these seats, not one per person.
+	# BUT IT IS NOT SHOWN TO EVERYONE WHO CAN READ THIS SCREEN. Everything else
+	# here is structure; this one field is a person's private news, often before
+	# it has been announced. `_may_read` lets in anybody with people under them
+	# once `alvoraa_org_managers_see_all` is on, and `permitted_branches` is
+	# None - meaning every branch - for anybody not tied to a store. Without
+	# this check a peer manager in another city would read every pending
+	# resignation in the company, by name, the day it was entered.
+	#
+	# So: HR and leadership, who cannot plan without it, and the person's own
+	# reporting line, who are the ones who have to cover the gap. Nobody else.
+	#
+	# Suppressed rather than blurred. "Somebody in this seat is leaving" on a
+	# one-person seat names them exactly, so a count is not a weaker disclosure
+	# than a date - it is the same one, worded vaguely.
 	leaving = {}
-	holders = {a["employee"] for rows_ in people.values() for a in rows_} 		if people else set()
-	if holders:
-		for e in frappe.get_all(
-				"Employee",
-				filters={"name": ("in", list(holders)), "status": "Active",
-				         "relieving_date": (">=", as_at)},
-				fields=["name", "relieving_date"], limit_page_length=0):
-			leaving[e.name] = str(e.relieving_date)
+	if _may_see_who_is_leaving():
+		holders = {a["employee"] for rows_ in people.values() for a in rows_} 			if people else set()
+		mine = _my_reporting_line()
+		if holders:
+			for e in frappe.get_all(
+					"Employee",
+					filters={"name": ("in", list(holders)), "status": "Active",
+					         "relieving_date": (">=", as_at)},
+					fields=["name", "relieving_date"], limit_page_length=0):
+				if mine is None or e.name in mine:
+					leaving[e.name] = str(e.relieving_date)
 	for rows_ in people.values():
 		for a in rows_:
 			a["leaving"] = leaving.get(a["employee"])

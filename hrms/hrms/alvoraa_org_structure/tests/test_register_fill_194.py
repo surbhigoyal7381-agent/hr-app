@@ -344,3 +344,83 @@ class TestSomebodyWorkingTheirNotice(FillCase):
 		self.assertEqual(
 			sorted(p["leaving"] for p in row["people"]),
 			["2026-11-01", "2026-12-31"])
+
+	def test_their_own_manager_is_told(self):
+		"""The people who have to cover the gap are exactly the people who
+		need to know. This runs as a full-reach role, which is the half of the
+		rule HR relies on."""
+		going = self.person("Leaving Under Me")
+		register.assign_person(self.seat, going)
+		frappe.db.set_value("Employee", going, "relieving_date", "2026-12-31")
+		row = [r for r in register.position_table()["rows"]
+		       if r["id"] == self.seat][0]
+		self.assertEqual(row["leaving_on"], "2026-12-31")
+
+
+class TestWhoMayBeToldSomebodyIsLeaving(FillCase):
+	"""Reading the organisation's SHAPE and reading who is about to leave it
+	are different permissions, and this screen had been treating them as one.
+
+	The decision itself is tested here rather than through the whole endpoint.
+	Who may read which seats already has eight tests of its own in
+	`test_company_scope_194`; what is new is which of those readers may be
+	told a date, and that is one function.
+	"""
+
+	def _full_reach(self, roles):
+		frappe.db.set_default("alvoraa_org_full_reach_roles", roles)
+
+	def setUp(self):
+		super().setUp()
+		self._saved_reach = frappe.db.get_default("alvoraa_org_full_reach_roles")
+
+	def tearDown(self):
+		self._full_reach(self._saved_reach if self._saved_reach is not None else "")
+		super().tearDown()
+
+	def test_a_full_reach_role_sees_the_whole_company(self):
+		"""None means "no limit" - HR cannot plan a replacement otherwise."""
+		self._full_reach("System Manager")
+		self.assertIsNone(register._my_reporting_line())
+		self.assertTrue(register._may_see_who_is_leaving())
+
+	def test_a_manager_sees_only_their_own_line(self):
+		self._full_reach("A Role Nobody Holds")
+		me = frappe.db.get_value("Employee",
+		                         {"user_id": frappe.session.user}, "name")
+		if not me:
+			self.skipTest("the test user has no Employee record")
+		mine = self.person("Under Me")
+		frappe.db.set_value("Employee", mine, "reports_to", me)
+		theirs = self.person("Somebody Else's")
+		line = register._my_reporting_line()
+		self.assertIn(mine, line)
+		self.assertNotIn(theirs, line,
+		                 "a peer's people are not this manager's to know about")
+
+	def test_it_reaches_down_the_whole_line_not_just_one_level(self):
+		"""A manager covers for their whole line, not only their direct
+		reports."""
+		self._full_reach("A Role Nobody Holds")
+		me = frappe.db.get_value("Employee",
+		                         {"user_id": frappe.session.user}, "name")
+		if not me:
+			self.skipTest("the test user has no Employee record")
+		mid = self.person("In The Middle")
+		frappe.db.set_value("Employee", mid, "reports_to", me)
+		deep = self.person("Two Levels Down")
+		frappe.db.set_value("Employee", deep, "reports_to", mid)
+		self.assertIn(deep, register._my_reporting_line())
+
+	def test_somebody_who_manages_nobody_is_told_nothing(self):
+		"""Which is the case the whole rule exists for: this screen is open to
+		any manager once `alvoraa_org_managers_see_all` is on, and reading the
+		shape of the company is not a reason to be told who is resigning."""
+		self._full_reach("A Role Nobody Holds")
+		me = frappe.db.get_value("Employee",
+		                         {"user_id": frappe.session.user}, "name")
+		if me:
+			frappe.db.sql("""UPDATE tabEmployee SET reports_to = NULL
+			                 WHERE reports_to = %s""", me)
+		self.assertEqual(register._my_reporting_line(), set())
+		self.assertFalse(register._may_see_who_is_leaving())

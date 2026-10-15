@@ -49,7 +49,7 @@ function makeContext(values) {
     style: {}, checked: false,
   });
   ["pos-body", "pos-count", "pos-filter-note", "pos-f-branch", "pos-f-dept",
-   "pos-f-open", "pos-f-view", "pos-add-btn"].forEach(el);
+   "pos-f-role", "pos-f-open", "pos-f-view", "pos-add-btn"].forEach(el);
 
   const ctx = { console: { log() {}, warn() {}, error() {} } };
   ctx.window = ctx; ctx.globalThis = ctx; ctx.self = ctx; ctx.top = ctx;
@@ -106,7 +106,9 @@ const ROWS = [
 ];
 
 const problems = [];
+let checks = 0;
 function ok(what, cond, detail) {
+  checks++;
   if (!cond) problems.push(what + (detail ? " - " + detail : ""));
 }
 
@@ -255,10 +257,99 @@ function render(rows, values, collapsed) {
   ok("and the Change button is there too", out.html.includes(">Change<"));
 }
 
+/* ── 11. identical siblings draw as one box ─────────────────────────────── */
+{
+  // Five Sales Executives in one shop under one manager. At the first tenant
+  // this is twenty-five, which is twenty-five boxes saying one thing.
+  const many = [seat("P-Boss", "Store Manager", "")];
+  for (let i = 1; i <= 5; i++) {
+    many.push(seat("P-SE" + i, "Sales Executive", "P-Boss", {
+      people: [{ employee: "E" + i, name: "Person " + i,
+                 weight: 100, covering: false }],
+    }));
+  }
+  const out = render(many);
+
+  ok("the five draw as one box",
+     out.html.split('<span class="ti">Sales Executive</span>').length - 1 === 1,
+     "expected one card, not five");
+  ok("the box says how many it stands for",
+     out.html.includes("5 of these"));
+
+  // The whole risk of grouping: somebody vanishing into a tidy box.
+  for (let i = 1; i <= 5; i++) {
+    ok("nobody disappears into the group",
+       out.html.includes("Person " + i), "Person " + i + " is not drawn");
+  }
+  ok("a group offers a way into its seats", out.html.includes("posUngroup("));
+  ok("and no Change button, because there is no single seat to change",
+     !/posOpenEditor\('P-SE/.test(out.html));
+}
+
+/* ── 12. a role with people under it is never folded in with another ────── */
+{
+  // Two "Supervisor" seats, one of which has a report. Merging them would
+  // merge their teams, which is a different organisation from the real one.
+  const risky = [
+    seat("P-Top", "Director", ""),
+    seat("P-S1", "Supervisor", "P-Top"),
+    seat("P-S2", "Supervisor", "P-Top"),
+    seat("P-Under", "Their Report", "P-S1"),
+  ];
+  const out = render(risky);
+  ok("the one with a team is drawn on its own",
+     out.html.split('<span class="ti">Supervisor</span>').length - 1 === 2,
+     "both Supervisors must be separate cards");
+  ok("and its report is still under it", out.html.includes(">Their Report<"));
+}
+
+/* ── 13. a group a filter does not touch is greyed, not emptied ─────────── */
+{
+  const mixed = [
+    seat("P-Boss2", "Store Manager", ""),
+    seat("P-A1", "Clerk", "P-Boss2", { branch: "Ambala" }),
+    seat("P-A2", "Clerk", "P-Boss2", { branch: "Ambala" }),
+  ];
+  const out = render(mixed, { "pos-f-branch": "Noida" });
+  ok("a group matching nothing is greyed", out.html.includes("opacity:.45"));
+  ok("but it is still drawn", out.html.includes(">Clerk<"));
+}
+
+/* ── 14. the three filters narrow each other ────────────────────────────── */
+{
+  // A filter that can be set to a combination returning nothing teaches
+  // people not to trust it.
+  const mix = [
+    seat("P-H", "Head", "", { branch: "Ambala", designation: "Head" }),
+    seat("P-C", "Clerk", "P-H", { branch: "Ambala", designation: "Clerk" }),
+    seat("P-D", "Driver", "P-H", { branch: "Noida", designation: "Driver" }),
+  ];
+
+  const ctx = makeContext({ "pos-f-view": "tree", "pos-f-branch": "Ambala" });
+  ctx.POS.rows = mix;
+  ctx.POS.may_edit = true;
+  ctx.POS.collapsed = {};
+  ctx.POS.ungrouped = {};
+  ctx.posPaint();
+
+  const roles = ctx.__els["pos-f-role"].innerHTML;
+  ok("picking a branch narrows the job roles",
+     roles.includes("Clerk") && !roles.includes("Driver"),
+     "the role list must only offer roles that exist in Ambala");
+
+  // And the branch list must NOT narrow itself, or it would offer exactly
+  // the one option already chosen and could never be changed back.
+  const branches = ctx.__els["pos-f-branch"].innerHTML;
+  ok("the branch list does not narrow itself",
+     branches.includes("Noida"),
+     "a list that filtered itself could never be changed back");
+}
+
 if (problems.length) {
   console.error("positions tree: " + problems.length + " problem(s)");
   problems.forEach((p) => console.error("  FAIL " + p));
   process.exit(1);
 }
-console.log("positions tree: every seat drawn, filters grey, loops and deep "
-            + "chains survive");
+console.log("positions tree: " + checks + " checks - every seat drawn, "
+            + "identical siblings grouped without losing anybody, filters "
+            + "grey, loops and deep chains survive");

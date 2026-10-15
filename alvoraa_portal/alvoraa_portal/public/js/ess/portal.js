@@ -162,7 +162,8 @@ function ocNodeCard(n, isRoot, opts) {
   if (n.child_count) {
     var isOpen = !!(n.children && n.children.length);
     toggle = '<button class="oc-toggle" onclick="event.stopPropagation();'
-      + (opts.toggle || "ocToggle") + '(\''
+      + ((typeof opts.toggle === "function" ? opts.toggle(n) : opts.toggle)
+         || "ocToggle") + '(\''
       + ocEsc(n.id) + '\')" aria-label="Expand">'
       + (isOpen ? "&minus;" : "+") + '<span class="c">' + n.child_count + "</span></button>";
   }
@@ -181,16 +182,23 @@ function ocNodeCard(n, isRoot, opts) {
 
   // One extra control, used by the Positions screen for "Change". Stops the
   // click reaching the box, or editing a seat would also re-root the chart.
-  var action = opts.action
+  // Asked per card rather than set once: a box standing for several seats
+  // has no single seat to change, so it must be able to say "not me".
+  var act = (typeof opts.action === "function") ? opts.action(n) : opts.action;
+  // Same per-card question for the click: a box standing for several seats
+  // opens the group, a real seat opens itself.
+  var focusFn = (typeof opts.focus === "function")
+    ? opts.focus(n) : (opts.focus || "ocFocus");
+  var action = act
     ? '<button class="btn btn-outline btn-sm" style="margin-top:8px" '
-      + 'onclick="event.stopPropagation();' + opts.action.fn + '(\''
-      + ocEsc(n.id) + '\')">' + ocEsc(opts.action.label) + "</button>"
+      + 'onclick="event.stopPropagation();' + act.fn + '(\''
+      + ocEsc(n.id) + '\')">' + ocEsc(act.label) + "</button>"
     : "";
 
   return '<div class="oc-node' + (isRoot ? " root" : "") + '"'
     + (opts.dim && opts.dim(n) ? ' style="opacity:.45"' : "") + ">"
     + '<div class="oc-box' + (tone ? " tone-" + tone : "")
-    + '" onclick="' + (opts.focus || "ocFocus") + '(\'' + ocEsc(n.id) + '\')">'
+    + '" onclick="' + focusFn + '(\'' + ocEsc(n.id) + '\')">'
     + '<div class="oc-box-hd"><span class="ti">' + ocEsc(n.title) + "</span>" + open + "</div>"
     + (n.subtitle ? '<div class="sub">' + ocEsc(n.subtitle) + "</div>" : "")
     + who + chips + action + "</div>" + toggle + "</div>";
@@ -221,7 +229,7 @@ function ocRender(n, isRoot, opts) {
    from the roles in the browser: the endpoint refuses either way, and a button
    that appears and then fails is worse than one that was never there. */
 
-var POS = { rows: [], may_edit: false, collapsed: {} };
+var POS = { rows: [], may_edit: false, collapsed: {}, ungrouped: {} };
 
 /* A reporting line deeper than this is bad data, not a tall company. The
    doctype refuses a seat that reports into its own chain, twice over - a
@@ -258,20 +266,38 @@ window.posLoad = async function () {
   POS.may_edit = !!(out && out.may_edit);
   var add = document.getElementById("pos-add-btn");
   if (add) add.style.display = POS.may_edit ? "" : "none";
+  // Offered only where there is nothing yet. On a chart somebody has already
+  // built, a button called "set up the chart" reads as "start again".
+  var setup = document.getElementById("pos-setup-btn");
+  if (setup) {
+    setup.style.display = (POS.may_edit && !POS.rows.length) ? "" : "none";
+  }
   posFillFilters();
   posPaint();
 };
 
 /* The filter lists come from the rows themselves, so they can only ever offer
-   what this person is allowed to see. */
+   what this person is allowed to see.
+
+   AND THEY NARROW EACH OTHER. Pick a branch and the job role list offers only
+   the roles in that branch; pick a role and the branch list offers only the
+   branches that have it. Surbhi, 15 Oct 2026: "All the three can work as
+   filters for each other." Without it the lists promise combinations that
+   return nothing, and a filter that can be set to an empty answer teaches
+   people not to trust it. */
 function posFillFilters() {
   [["pos-f-branch", "branch", "All branches"],
-   ["pos-f-dept", "department", "All departments"]].forEach(function (f) {
+   ["pos-f-dept", "department", "All departments"],
+   ["pos-f-role", "designation", "All job roles"]].forEach(function (f) {
     var el = document.getElementById(f[0]);
     if (!el) return;
     var keep = el.value;
     var seen = {};
-    POS.rows.forEach(function (r) { if (r[f[1]]) seen[r[f[1]]] = 1; });
+    // Narrowed by the OTHER filters, never by itself - a list that filtered
+    // itself would offer exactly one option, the one already chosen.
+    POS.rows.filter(function (r) {
+      return posMatches(r, f[0]);
+    }).forEach(function (r) { if (r[f[1]]) seen[r[f[1]]] = 1; });
     var opts = Object.keys(seen).sort();
     // Rebuilding would drop a choice that filtered the rows down in the first
     // place, so the current one is kept even when nothing left matches it.
@@ -289,17 +315,22 @@ function posVal(id) { return (document.getElementById(id) || {}).value || ""; }
 /* Does this seat match what the filters ask for? The list drops the ones that
    do not; the structure view greys them. Same question, two answers, so it is
    asked in one place. */
-function posMatches(r) {
+function posMatches(r, ignore) {
   var b = posVal("pos-f-branch"), d = posVal("pos-f-dept"),
-      show = posVal("pos-f-open");
-  if (b && r.branch !== b) return false;
-  if (d && r.department !== d) return false;
+      role = posVal("pos-f-role"), show = posVal("pos-f-open");
+  if (b && r.branch !== b && ignore !== "pos-f-branch") return false;
+  if (d && r.department !== d && ignore !== "pos-f-dept") return false;
+  if (role && r.designation !== role && ignore !== "pos-f-role") return false;
+  if (ignore === "pos-f-open") return true;
   if (show === "open") return r.open >= 0.5;
   if (show === "key") return r.key;
   return true;
 }
 
 window.posPaint = function () {
+  // Refilled on every paint, because choosing one filter changes what the
+  // others may honestly offer.
+  posFillFilters();
   var note = document.getElementById("pos-filter-note");
   var tree = posVal("pos-f-view") === "tree";
   if (note) note.style.display = tree ? "" : "none";
@@ -462,9 +493,96 @@ function posNode(r, t, depth) {
     }),
     children: (shut || depth + 1 >= POS_MAX_DEPTH)
       ? []
-      : kids.map(function (c) { return posNode(c, t, depth + 1); }),
+      : posGroupSiblings(kids, t).map(function (g) {
+          return g.group
+            ? posGroupNode(g.group, g.members)
+            : posNode(g.solo, t, depth + 1);
+        }),
   };
 }
+
+/* Twenty-five people doing the same job in the same shop are twenty-five
+   boxes saying one thing. Identical siblings are drawn as ONE box with the
+   people listed in it - Surbhi, 15 Oct 2026: "group by job role where if it
+   is occupied a person the name of the persons shown below".
+
+   ONLY SEATS WITH NO CHILDREN ARE GROUPED. Merging two boxes that have
+   different people reporting to them would merge their teams, which is a
+   different organisation from the real one. So a role with reports is always
+   drawn on its own, however many of it there are.
+
+   A group opens on click into the seats it stands for, because changing one
+   of them needs one of them - and a box standing for several has no single
+   seat to change. */
+
+function posGroupKey(r) {
+  return [r.title, r.branch || "", r.department || ""].join("\u0000");
+}
+
+function posGroupSiblings(kids, t) {
+  var groups = {}, order = [], out = [];
+  kids.forEach(function (r) {
+    // A seat with reports under it is never folded in with another.
+    if ((t.kids[r.id] || []).length) { out.push({ solo: r }); return; }
+    var k = posGroupKey(r);
+    if (!groups[k]) { groups[k] = []; order.push(k); }
+    groups[k].push(r);
+  });
+  order.forEach(function (k) {
+    var members = groups[k];
+    if (members.length < 2 || POS.ungrouped[k]) {
+      members.forEach(function (r) { out.push({ solo: r }); });
+    } else {
+      out.push({ group: k, members: members });
+    }
+  });
+  return out;
+}
+
+/* A group as the chart's card wants it: one title, everybody in it, and the
+   vacancies added up so a hole cannot hide behind a tidy box. */
+function posGroupNode(key, members) {
+  var first = members[0];
+  var open = members.reduce(function (a, r) { return a + r.open; }, 0);
+  var people = [];
+  members.forEach(function (r) {
+    r.people.forEach(function (p) {
+      people.push({ name: p.name, weight: p.weight, cover: p.covering });
+    });
+  });
+  var sub = [first.branch, first.department].filter(Boolean).join(" · ");
+  sub = (sub ? sub + " · " : "") + members.length + " of these";
+
+  var flags = [];
+  if (open >= 0.5) {
+    flags.push({
+      severity: members.some(function (r) { return r.key; }) ? "high" : "medium",
+      label: posNum(open) + " to fill",
+      why: "Added up across the " + members.length + " seats in this group.",
+    });
+  }
+  return {
+    id: "grp:" + key,
+    title: first.title,
+    subtitle: sub,
+    open: open,
+    flags: flags,
+    // Not a parent: it stands for seats that have no reports of their own.
+    // The count on the toggle would otherwise promise a tree that is not there.
+    child_count: 0,
+    has_more: false,
+    people: people,
+    children: [],
+    _group: key,
+    _members: members.length,
+  };
+}
+
+window.posUngroup = function (id) {
+  var key = String(id).replace(/^grp:/, "");
+  POS.ungrouped[key] = true;
+  posPaint();
+};
 
 window.posToggle = function (id) {
   POS.collapsed[id] = !POS.collapsed[id];
@@ -506,11 +624,30 @@ function posPaintTree() {
     // For a reader it still folds. `posOpenEditor` refuses a non-editor, so
     // pointing their click at it would mean clicking a box did NOTHING, which
     // is worse than the behaviour it replaced.
-    focus: POS.may_edit ? "posOpenEditor" : "posToggle",
-    action: POS.may_edit ? { label: "Change", fn: "posOpenEditor" } : null,
+    focus: function (n) {
+      // A group has no single seat to open, so clicking it opens the group.
+      if (n && n._group) return "posUngroup";
+      return POS.may_edit ? "posOpenEditor" : "posToggle";
+    },
+    action: function (n) {
+      if (!POS.may_edit) return null;
+      return n && n._group
+        ? { label: "Show the " + n._members, fn: "posUngroup" }
+        : { label: "Change", fn: "posOpenEditor" };
+    },
     // Greyed, never dropped. `dim` is asked per card so the filter can change
     // without the tree being rebuilt.
-    dim: function (n) { return by[n.id] ? !posMatches(by[n.id]) : false; },
+    dim: function (n) {
+      if (n && n._group) {
+        // Greyed only when NOTHING in it matches. A group holding one Noida
+        // seat is relevant to a Noida filter even if the other four are not.
+        var members = POS.rows.filter(function (r) {
+          return posGroupKey(r) === n._group;
+        });
+        return members.length > 0 && !members.some(posMatches);
+      }
+      return by[n.id] ? !posMatches(by[n.id]) : false;
+    },
   };
 
   var html = nodes.map(function (n) { return ocRender(n, true, opts); }).join("");
@@ -803,6 +940,117 @@ window.posPostSave = async function () {
                        : ", kept with HR for now.");
     note.style.display = "";
   }
+};
+
+/* ── setting the chart up in the first place ───────────────────────────
+ *
+ * `propose_positions` has existed since this module was written and has never
+ * had a caller, so every tenant so far was set up by somebody running it by
+ * hand. This is the button, and it is the difference between a feature that
+ * is bought and a feature that is used.
+ *
+ * IT PROPOSES, AND THE PROPOSAL IS READ BEFORE ANYTHING IS WRITTEN. It will
+ * be wrong in places - two people with the same job title in one department
+ * who genuinely do different work collapse into one seat - so the draft is a
+ * list somebody checks, not a thing that happens to them.
+ *
+ * THE ROWS IT IS UNSURE ABOUT ARE PUT FIRST. The server already works out
+ * where the managers of a group disagree about who they report to, and says
+ * so in `note`. At the first tenant six positions had a guessed parent and
+ * the list of them lived in a ticket; here they are at the top of the screen
+ * somebody is already looking at.
+ */
+
+window.posSetupOpen = async function () {
+  if (!POS.may_edit) return;
+  var body = document.getElementById("pos-setup-body");
+  if (!body) return;
+  document.getElementById("pos-setup").classList.add("open");
+  document.getElementById("pos-setup-go").disabled = true;
+  body.innerHTML = '<div class="pf-card-meta">Reading the people already'
+    + " here&hellip;</div>";
+  POS.proposal = null;
+
+  var out;
+  try {
+    out = await gpFetch("hrms.alvoraa_org_structure.api.propose_positions", {});
+  } catch (e) {
+    body.innerHTML = '<div class="gp-error">'
+      + posEsc(e && e.message ? e.message : e) + "</div>";
+    return;
+  }
+  var rows = (out && out.positions) || [];
+  POS.proposal = rows;
+  if (!rows.length) {
+    body.innerHTML = '<div class="pf-card-meta">Nothing to propose. Either'
+      + " there is nobody on the books yet, or they have no job titles to"
+      + " work from.</div>";
+    return;
+  }
+
+  // Unsure first. Somebody reading a long list reads the top of it.
+  var sorted = rows.slice().sort(function (a, b) {
+    return (b.note ? 1 : 0) - (a.note ? 1 : 0);
+  });
+  var unsure = rows.filter(function (r) { return r.note; }).length;
+
+  body.innerHTML =
+    "<p>This would create <strong>" + rows.length + "</strong> seat(s) from <strong>"
+    + (out.employees || 0) + "</strong> people, with "
+    + (out.roots || 0) + " at the top.</p>"
+    + (unsure
+        ? '<p><strong>' + unsure + " need a look</strong> before you accept"
+          + " this: the people in them report to managers sitting in different"
+          + " places, so the parent below is the commonest answer rather than"
+          + " a certain one. They are first in the list.</p>"
+        : "")
+    + '<p class="pf-card-meta">Two people with the same job title in one'
+    + " department land in the same seat, which is right most of the time and"
+    + " wrong some of it. Anything wrong here is far easier to fix now than"
+    + " after the rest of the chart is built on top of it.</p>"
+    + '<div style="max-height:260px;overflow-y:auto;overflow-x:auto">'
+    + '<table class="pf-table"><thead><tr><th>Seat</th><th>Reports to</th>'
+    + "<th>Branch</th><th>Department</th>"
+    + '<th style="text-align:right">People</th></tr></thead><tbody>'
+    + sorted.map(function (r) {
+        return "<tr><td>" + posEsc(r.position_title)
+          + (r.note ? '<div class="pf-card-meta">' + posEsc(r.note) + "</div>" : "")
+          + "</td>"
+          + "<td>" + (r.reports_to_position
+              ? posEsc(r.reports_to_position)
+              : '<span class="pf-card-meta">top of the chart</span>') + "</td>"
+          + "<td>" + posEsc(r.branch || "") + "</td>"
+          + "<td>" + posEsc(r.department || "") + "</td>"
+          + '<td style="text-align:right">' + posNum(r.seats || 0) + "</td>"
+          + "</tr>";
+      }).join("")
+    + "</tbody></table></div>";
+  document.getElementById("pos-setup-go").disabled = false;
+};
+
+window.posSetupClose = function () {
+  document.getElementById("pos-setup").classList.remove("open");
+};
+
+window.posSetupGo = async function () {
+  if (!POS.proposal || !POS.proposal.length) return;
+  var btn = document.getElementById("pos-setup-go");
+  var body = document.getElementById("pos-setup-body");
+  btn.disabled = true;
+  try {
+    // The whole proposal, in the order the server gave it. It writes parents
+    // before children itself, so re-ordering here for the screen must not
+    // reach the server.
+    await gpFetch("hrms.alvoraa_org_structure.api.create_proposed_positions",
+                  { positions: JSON.stringify(POS.proposal) });
+  } catch (e) {
+    body.innerHTML = '<div class="gp-error">'
+      + posEsc(e && e.message ? e.message : e) + "</div>";
+    btn.disabled = false;
+    return;
+  }
+  posSetupClose();
+  await posLoad();
 };
 
 /* ── adding a seat, and moving one ─────────────────────────────────── */

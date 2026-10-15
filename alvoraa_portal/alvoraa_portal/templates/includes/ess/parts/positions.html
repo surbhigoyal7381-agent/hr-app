@@ -5,8 +5,12 @@
             <div class="pf-h">Positions</div>
             <div class="pf-sub">Every seat in the organisation, who is in it, and which are empty.</div>
           </div>
-          <button class="btn btn-primary btn-sm" id="pos-add-btn"
-                  onclick="posOpenEditor(null)" style="display:none">+ Add a seat</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-outline btn-sm" id="pos-setup-btn"
+                    onclick="posSetupOpen()" style="display:none">Set up the chart</button>
+            <button class="btn btn-primary btn-sm" id="pos-add-btn"
+                    onclick="posOpenEditor(null)" style="display:none">+ Add a seat</button>
+          </div>
         </div>
 
         <div class="pf-card" style="margin-bottom:16px">
@@ -20,6 +24,11 @@
               <div class="gp-label">Department</div>
               <select class="gp-input" id="pos-f-dept" style="height:32px;padding:4px 8px;width:auto"
                       onchange="posPaint()"><option value="">All departments</option></select>
+            </div>
+            <div>
+              <div class="gp-label">Job role</div>
+              <select class="gp-input" id="pos-f-role" style="height:32px;padding:4px 8px;width:auto"
+                      onchange="posPaint()"><option value="">All job roles</option></select>
             </div>
             <div>
               <div class="gp-label">Show</div>
@@ -242,6 +251,22 @@
           <div class="gp-modal-footer">
             <button class="btn btn-outline" onclick="posPostClose()">Cancel</button>
             <button class="btn btn-primary" id="pos-j-save" onclick="posPostSave()">Create the opening</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Building the chart from the people already on the books. It
+           proposes; nothing is written until somebody has read it. -->
+      <div class="gp-backdrop" id="pos-setup">
+        <div class="gp-modal" style="max-width:760px">
+          <div class="gp-modal-hdr">
+            <div class="gp-modal-title">Set up the chart from your people</div>
+            <button class="gp-modal-close" onclick="posSetupClose()" aria-label="Close">&times;</button>
+          </div>
+          <div class="gp-modal-body" id="pos-setup-body"></div>
+          <div class="gp-modal-footer">
+            <button class="btn btn-outline" onclick="posSetupClose()">Cancel</button>
+            <button class="btn btn-primary" id="pos-setup-go" onclick="posSetupGo()" disabled>Create these seats</button>
           </div>
         </div>
       </div>

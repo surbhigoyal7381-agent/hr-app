@@ -422,6 +422,10 @@ after_migrate = [
     # set - which, until DTC's exists, is every company. See payroll_fields.py.
     "alvoraa_portal.payroll_fields.after_migrate",
     # Slice 057, 4 Oct: the "Lead / Deal" column on CRM Task. A no-op without CRM.
+    # ALV-194: the link from a Job Opening back to the seat it is filling, so
+    # the chart can say "this hole is being recruited for" rather than only
+    # "this hole". A no-op until Frappe HR is installed. See org_job_link.py.
+    "alvoraa_portal.org_job_link.after_migrate",
     "alvoraa_portal.crm_steps.ensure_task_label_field",
 ]
 
@@ -460,6 +464,10 @@ after_install = [
     # noticed because both its hooks return early on a company with no rule
     # set - which, until DTC's exists, is every company. See payroll_fields.py.
     "alvoraa_portal.payroll_fields.after_migrate",
+    # ALV-194: the link from a Job Opening back to the seat it is filling, so
+    # the chart can say "this hole is being recruited for" rather than only
+    # "this hole". A no-op until Frappe HR is installed. See org_job_link.py.
+    "alvoraa_portal.org_job_link.after_migrate",
     "alvoraa_portal.email_brand.after_install",
 ]
 

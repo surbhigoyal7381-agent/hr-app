@@ -167,7 +167,9 @@ function ocNodeCard(n, isRoot, opts) {
     toggle = '<button class="oc-toggle" onclick="event.stopPropagation();'
       + ((typeof opts.toggle === "function" ? opts.toggle(n) : opts.toggle)
          || "ocToggle") + '(\''
-      + ocEsc(n.id) + '\')" aria-label="Expand">'
+      + ocEsc(n.id) + '\')" aria-expanded="' + (isOpen ? "true" : "false")
+      + '" aria-label="' + (isOpen ? "Hide the " : "Show the ")
+      + n.child_count + ' under ' + ocEsc(n.title) + '">'
       + (isOpen ? "&minus;" : "+") + '<span class="c">' + n.child_count + "</span></button>";
   }
 
@@ -179,6 +181,7 @@ function ocNodeCard(n, isRoot, opts) {
   var chips = flags.length
     ? '<div class="oc-flags">' + flags.map(function (f) {
         return '<span class="oc-flag ' + ocEsc(f.severity) + '" title="'
+          + ocEsc(f.why) + '" aria-label="' + ocEsc(f.label) + ". "
           + ocEsc(f.why) + '">' + ocEsc(f.label) + "</span>";
       }).join("") + "</div>"
     : "";
@@ -198,13 +201,20 @@ function ocNodeCard(n, isRoot, opts) {
       + ocEsc(n.id) + '\')">' + ocEsc(act.label) + "</button>"
     : "";
 
+  // A REAL BUTTON, not a div with a click on it. On the Positions screen
+  // this click IS the main action - it opens the seat - so a div left an
+  // owner working on a keyboard with no way in at all. A button brings focus,
+  // Enter and Space for free, with no key handler to write and keep right.
+  // Done here so the Organisation chart gets it too: one drawing of a
+  // hierarchy, one set of semantics.
   return '<div class="oc-node' + (isRoot ? " root" : "") + '"'
     + (opts.dim && opts.dim(n) ? ' style="opacity:.45"' : "") + ">"
-    + '<div class="oc-box' + (tone ? " tone-" + tone : "")
-    + '" onclick="' + focusFn + '(\'' + ocEsc(n.id) + '\')">'
+    + '<button type="button" class="oc-box' + (tone ? " tone-" + tone : "")
+    + '" style="text-align:left;font:inherit;width:100%;cursor:pointer"'
+    + ' onclick="' + focusFn + '(\'' + ocEsc(n.id) + '\')">'
     + '<div class="oc-box-hd"><span class="ti">' + ocEsc(n.title) + "</span>" + open + "</div>"
     + (n.subtitle ? '<div class="sub">' + ocEsc(n.subtitle) + "</div>" : "")
-    + who + chips + action + "</div>" + toggle + "</div>";
+    + who + chips + action + "</button>" + toggle + "</div>";
 }
 
 function ocRender(n, isRoot, opts) {
@@ -324,6 +334,106 @@ function posFillFilters() {
   });
 }
 
+/* The three questions this screen is opened with - how many seats, where are
+   we short, who is leaving - answered above the table instead of in 11px grey
+   text in the corner of the filter card.
+
+   EVERY FIGURE IS OVER THE FILTERED ROWS. The old line counted vacancies over
+   the whole company whatever the filter said, so filtering to Noida still
+   reported the company's seven. A number that quietly answers a different
+   question from the one on screen is worse than no number. */
+function posPaintTiles(shown) {
+  var el = document.getElementById("pos-tiles");
+  if (!el) return;
+  var open = shown.reduce(function (a, r) { return a + r.open; }, 0);
+  var soon = posSoon();
+  var going = shown.filter(function (r) {
+    return r.leaving_on && r.leaving_on <= soon;
+  }).length;
+
+  if (!shown.length) { el.innerHTML = ""; return; }
+
+  // Two noughts read as a broken screen. One sentence reads as good news.
+  if (!open && !going) {
+    el.innerHTML = '<div class="pf-card" style="margin-bottom:16px">'
+      + "<strong>" + shown.length + " seat" + (shown.length === 1 ? "" : "s")
+      + ".</strong> Every one is filled and nobody is working their notice."
+      + "</div>";
+    return;
+  }
+
+  function tile(n, label, tone, onclick) {
+    return '<div class="oc-stat' + (tone ? " " + tone : "") + '"'
+      + (onclick ? ' style="cursor:pointer" onclick="' + onclick + '"' : "")
+      + "><strong>" + n + "</strong><span>" + label + "</span></div>";
+  }
+  el.innerHTML = '<div class="oc-stats" style="margin-bottom:16px">'
+    + tile(shown.length, "SEATS", "")
+    + tile(posNum(open), "TO FILL", open ? "tone-medium" : "",
+           open ? "posShowOnly('open')" : "")
+    + tile(going, "LEAVING IN 60 DAYS", going ? "tone-medium" : "",
+           going ? "posShowOnly('leaving')" : "")
+    + "</div>";
+}
+
+/* Sixty days out, as a date string the rows can be compared against. */
+function posSoon() {
+  var d = new Date();
+  d.setDate(d.getDate() + 60);
+  return d.toISOString().slice(0, 10);
+}
+
+window.posShowOnly = function (what) {
+  var el = document.getElementById("pos-f-open");
+  if (!el) return;
+  el.value = what;
+  posPaint();
+};
+
+/* What the screen says when it has nothing to show, and - the part that was
+   missing - what to do about it.
+
+   Both states were dead ends. A new tenant read "No positions yet." with the
+   one button that helps sitting in the toolbar, and for a reader not there at
+   all. A filter that matched nothing offered no way back. */
+function posNothing() {
+  if (POS.rows.length) {
+    return '<div class="empty-state"><div class="empty-state-text">'
+      + "<strong>No seat matches those filters</strong></div>"
+      + '<button class="btn btn-outline btn-sm" style="margin-top:12px"'
+      + ' onclick="posClearFilters()">Clear the filters</button></div>';
+  }
+  if (!POS.may_edit) {
+    // A branch head cannot fix this and should not be given a button that
+    // refuses them. Told who can, instead.
+    return '<div class="empty-state"><div class="empty-state-text">'
+      + "<strong>No seats yet</strong><br>Nobody has set up your"
+      + " organisation's structure yet. Whoever maintains it in your"
+      + " organisation does that - ask them.</div></div>";
+  }
+  return '<div class="empty-state"><div class="empty-state-text">'
+    + "<strong>No seats yet</strong><br>A seat is a job in your organisation"
+    + " &mdash; “Cashier, Noida” &mdash; whether somebody is in it"
+    + " or not. An empty seat is how a vacancy shows up here instead of in"
+    + " somebody’s head.</div>"
+    + '<div style="display:flex;gap:8px;justify-content:center;margin-top:12px">'
+    + '<button class="btn btn-primary btn-sm" onclick="posSetupOpen()">'
+    + "Build it from your people</button>"
+    + '<button class="btn btn-outline btn-sm" onclick="posOpenEditor(null)">'
+    + "Add one seat myself</button></div>"
+    + '<div class="pf-card-meta" style="margin-top:8px">We read the people'
+    + " already on your books and propose the seats, for you to check before"
+    + " anything is saved.</div></div>";
+}
+
+window.posClearFilters = function () {
+  ["pos-f-branch", "pos-f-dept", "pos-f-role", "pos-f-open"].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+  posPaint();
+};
+
 function posVal(id) { return (document.getElementById(id) || {}).value || ""; }
 
 /* Does this seat match what the filters ask for? The list drops the ones that
@@ -338,6 +448,7 @@ function posMatches(r, ignore) {
   if (ignore === "pos-f-open") return true;
   if (show === "open") return r.open >= 0.5;
   if (show === "key") return r.key;
+  if (show === "leaving") return !!r.leaving_on;
   return true;
 }
 
@@ -356,23 +467,12 @@ function posPaintList() {
   if (!body) return;
   var rows = POS.rows.filter(posMatches);
 
-  var count = document.getElementById("pos-count");
-  if (count) {
-    var open = POS.rows.reduce(function (a, r) { return a + r.open; }, 0);
-    count.textContent = POS.rows.length + " seats"
-      + (open ? ", " + posNum(open) + " open" : ", all filled")
-      + (rows.length !== POS.rows.length ? " — showing " + rows.length : "");
-  }
+  posPaintTiles(rows);
 
-  if (!rows.length) {
-    body.innerHTML = '<div class="empty-state"><div class="empty-state-text">'
-      + (POS.rows.length ? "Nothing matches that filter."
-                         : "No positions yet.") + "</div></div>";
-    return;
-  }
+  if (!rows.length) { body.innerHTML = posNothing(); return; }
 
   var head = "<tr><th>Position</th><th>Reports to</th><th>Branch</th>"
-    + "<th>Department</th><th>Who is in it</th>"
+    + "<th>Department</th><th>Who is in it</th><th>Notice period</th>"
     + '<th style="text-align:right">Seats</th>'
     + '<th style="text-align:right">Open</th>'
     + (POS.may_edit ? "<th></th>" : "") + "</tr>";
@@ -387,13 +487,48 @@ function posPaintList() {
    the indent and the open/close arrow in the structure view, nothing in the
    list. Written once so the two views cannot drift into saying different
    things about the same seat. */
+// Three names, then a count. One PPJ seat holds twenty-five people, which
+// drew twenty-five lines inside one table cell and a chart box tall enough to
+// wreck its siblings' connectors. The rest are in the dialog, which is the one
+// place that can hold them.
+var POS_NAMES_SHOWN = 3;
+
+/* One person as the chart's card wants them, with the facts a reader needs
+   about them rather than about the job. */
+function posOne(p) {
+  return { name: p.name, weight: p.weight, cover: p.covering,
+           note: p.leaving ? "leaving " + posDay(p.leaving) : null };
+}
+
+function posFew(people) {
+  var out = people.slice(0, POS_NAMES_SHOWN).map(posOne);
+  var rest = people.length - out.length;
+  if (rest > 0) {
+    // Said as a person, not as a cut-off list. Clicking the box opens the
+    // seat, which is where all of them are.
+    out.push({ name: "+" + rest + " more in this seat" });
+  }
+  return out;
+}
+
 function posCells(r, lead, tail) {
+  var shown = r.people.slice(0, POS_NAMES_SHOWN);
+  var rest = r.people.length - shown.length;
   var who = r.people.length
-    ? r.people.map(function (p) {
+    ? shown.map(function (p) {
         return posEsc(p.name)
           + (p.weight < 100 ? ' <span class="pf-card-meta">' + posNum(p.weight) + "%</span>" : "")
-          + (p.covering ? ' <span class="pf-card-meta">covering</span>' : "");
+          + (p.covering ? ' <span class="pf-card-meta">covering</span>' : "")
+          // "Who is leaving" was invisible in the view this screen opens on,
+          // so one of the three questions it exists for had no answer here.
+          + (p.leaving ? ' <span class="pf-card-meta">leaving '
+             + posEsc(posDay(p.leaving)) + "</span>" : "");
       }).join("<br>")
+      + (rest > 0
+          ? '<br><button class="btn btn-outline btn-sm" style="margin-top:4px"'
+            + ' onclick="posOpenEditor(\'' + posEsc(r.id) + '\')">and '
+            + rest + " more</button>"
+          : "")
     : '<span class="pf-card-meta">Nobody in this seat</span>';
   // The vacancy is the thing somebody opened this screen for, so it is said
   // in words as well as a number - a bare 1 in a column reads as nothing.
@@ -411,6 +546,9 @@ function posCells(r, lead, tail) {
     + "<td>" + posEsc(r.branch) + "</td>"
     + "<td>" + posEsc(r.department) + "</td>"
     + "<td>" + who + "</td>"
+    + "<td>" + (r.leaving_on
+        ? "<strong>" + posEsc(posDay(r.leaving_on)) + "</strong>"
+        : '<span class="pf-card-meta">&mdash;</span>') + "</td>"
     + '<td style="text-align:right">' + posNum(r.seats) + "</td>"
     + '<td style="text-align:right">' + open + "</td>"
     + (POS.may_edit
@@ -481,6 +619,11 @@ function posNode(r, t, depth) {
   var kids = t.kids[r.id] || [];
   var shut = !!POS.collapsed[r.id];
   var sub = [r.branch, r.department].filter(Boolean).join(" · ");
+  // "open" alone does not describe a twenty-five person seat.
+  if (r.seats > 1) {
+    sub = (sub ? sub + " · " : "")
+      + posNum(r.filled) + " of " + posNum(r.seats) + " filled";
+  }
   if (!t.byId[r.reports_to] && r.reports_to) {
     sub = sub ? sub + " · reports above your view" : "reports above your view";
   }
@@ -512,10 +655,7 @@ function posNode(r, t, depth) {
     flags: flags,
     child_count: kids.length,
     has_more: shut && kids.length > 0,
-    people: r.people.map(function (p) {
-      return { name: p.name, weight: p.weight, cover: p.covering,
-               note: p.leaving ? "leaving " + posDay(p.leaving) : null };
-    }),
+    people: posFew(r.people),
     children: (shut || depth + 1 >= POS_MAX_DEPTH)
       ? []
       : posGroupSiblings(kids, t).map(function (g) {
@@ -569,13 +709,11 @@ function posGroupSiblings(kids, t) {
 function posGroupNode(key, members) {
   var first = members[0];
   var open = members.reduce(function (a, r) { return a + r.open; }, 0);
-  var people = [];
+  var all = [];
   members.forEach(function (r) {
-    r.people.forEach(function (p) {
-      people.push({ name: p.name, weight: p.weight, cover: p.covering,
-                    note: p.leaving ? "leaving " + posDay(p.leaving) : null });
-    });
+    r.people.forEach(function (p) { all.push(p); });
   });
+  var people = posFew(all);
   var sub = [first.branch, first.department].filter(Boolean).join(" · ");
   sub = (sub ? sub + " · " : "") + members.length + " of these";
 
@@ -633,19 +771,9 @@ function posPaintTree() {
   var t = posKids();
   var matched = POS.rows.filter(posMatches).length;
 
-  var count = document.getElementById("pos-count");
-  if (count) {
-    var openAll = POS.rows.reduce(function (a, r) { return a + r.open; }, 0);
-    count.textContent = POS.rows.length + " seats"
-      + (openAll ? ", " + posNum(openAll) + " open" : ", all filled")
-      + (matched !== POS.rows.length ? " — " + matched + " match" : "");
-  }
+  posPaintTiles(POS.rows.filter(posMatches));
 
-  if (!POS.rows.length) {
-    body.innerHTML = '<div class="empty-state"><div class="empty-state-text">'
-      + "No positions yet.</div></div>";
-    return;
-  }
+  if (!POS.rows.length) { body.innerHTML = posNothing(); return; }
 
   var reach = posReach(t);
   var nodes = t.roots.map(function (r) { return posNode(r, t, 0); });
@@ -707,9 +835,24 @@ function posPaintTree() {
       + "</ul></div>";
   }
 
-  body.innerHTML = '<div style="overflow-x:auto"><div class="oc-tree">'
+  // Ungrouping was one way: click a twenty-five seat group once and you had
+  // twenty-five boxes until you reloaded the page.
+  var opened = Object.keys(POS.ungrouped).length;
+  var back = opened
+    ? '<div class="pf-card" style="margin-bottom:12px">Showing '
+      + opened + " group" + (opened === 1 ? "" : "s")
+      + ' of seats separately. <button class="btn btn-outline btn-sm"'
+      + ' onclick="posRegroup()">Group them again</button></div>'
+    : "";
+
+  body.innerHTML = back + '<div style="overflow-x:auto"><div class="oc-tree">'
     + html + "</div></div>";
 }
+
+window.posRegroup = function () {
+  POS.ungrouped = {};
+  posPaint();
+};
 
 /* ── who is in a seat, and the two ways to fill it ─────────────────────
  *
@@ -972,14 +1115,12 @@ window.posPostSave = async function () {
   }
   btn.disabled = false;
   posPostClose();
-  posErr("");
-  var note = document.getElementById("pos-mgr-note");
-  if (note) {
-    note.textContent = "Opening " + (out.name || "") + " created"
-      + (out.published ? " and put on the careers page."
-                       : ", kept with HR for now.");
-    note.style.display = "";
-  }
+  // Said where somebody is looking, not under the manager-picker hint three
+  // fields away, which is where it used to land.
+  var said = "Opening created for " + (posSeat() ? posSeat().title : "this seat")
+    + (out.published ? ". It is on the careers page."
+                     : ". It is kept with HR for now.");
+  if (window.toast) { toast(said); } else { posErr(said); }
 };
 
 /* ── setting the chart up in the first place ───────────────────────────
@@ -1111,6 +1252,8 @@ window.posOpenEditor = function (id) {
     .filter(function (x) { return !r || x.id !== r.id; })
     .map(function (x) { return [x.id, x.title]; }),
     r ? r.reports_to : "", "Nobody — top of the chart");
+  posFillSelect("pos-e-role", posValues("designation"),
+                r ? r.designation : "", "Not set");
   posFillSelect("pos-e-branch", posValues("branch"), r ? r.branch : "", "None");
   posFillSelect("pos-e-dept", posValues("department"), r ? r.department : "", "None");
 
@@ -1134,9 +1277,13 @@ window.posOpenEditor = function (id) {
   // one job; asking on every new seat made people answer a question they did
   // not have, and the answer was always 1.
   var seatsWrap = document.getElementById("pos-seats-wrap");
-  if (seatsWrap) {
-    seatsWrap.style.display = (r && flt_(r.seats) > 1) ? "" : "none";
-  }
+  var seatsDoor = document.getElementById("pos-seats-door");
+  var many = !!(r && flt_(r.seats) > 1);
+  if (seatsWrap) seatsWrap.style.display = many ? "" : "none";
+  // The field was hidden unless the number was ALREADY above one, so a
+  // one-person seat could never become a job share - and 59 of 120 seats at
+  // the first tenant hold more than one person. Hidden by default, with a door.
+  if (seatsDoor) seatsDoor.style.display = many ? "none" : "";
 
   posPaintPeople();
   posErr("");
@@ -1144,6 +1291,13 @@ window.posOpenEditor = function (id) {
 };
 
 function flt_(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+window.posShowSeats = function () {
+  var w = document.getElementById("pos-seats-wrap");
+  var d = document.getElementById("pos-seats-door");
+  if (w) w.style.display = "";
+  if (d) d.style.display = "none";
+};
 
 function posValues(field) {
   var seen = {};
@@ -1185,6 +1339,7 @@ window.posSave = async function () {
       name: document.getElementById("pos-e-name").value || null,
       position_title: title,
       reports_to_position: document.getElementById("pos-e-parent").value || "",
+      designation: document.getElementById("pos-e-role").value || "",
       branch: document.getElementById("pos-e-branch").value || "",
       department: document.getElementById("pos-e-dept").value || "",
       seats: seats,

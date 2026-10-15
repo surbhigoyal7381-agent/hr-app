@@ -13,6 +13,10 @@
           </div>
         </div>
 
+        <!-- The three questions this screen is opened with, answered before
+             the filters rather than in grey text beside them. -->
+        <div id="pos-tiles"></div>
+
         <div class="pf-card" style="margin-bottom:16px">
           <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
             <div>
@@ -37,6 +41,7 @@
                 <option value="">Every seat</option>
                 <option value="open">Only seats with a vacancy</option>
                 <option value="key">Only key seats</option>
+                <option value="leaving">Only seats where somebody is leaving</option>
               </select>
             </div>
             <div>
@@ -48,7 +53,6 @@
               </select>
             </div>
             <div style="margin-left:auto">
-              <div class="pf-card-meta" id="pos-count"></div>
               <div class="pf-card-meta" id="pos-filter-note" style="display:none">
                 In this view the filters grey out what does not match, so the
                 shape of the organisation stays whole.
@@ -79,7 +83,7 @@
                  they are here. -->
             <div class="gp-field" id="pos-people-wrap">
               <div class="gp-label">Who is in it</div>
-              <div id="pos-people"></div>
+              <div id="pos-people" style="max-height:260px;overflow-y:auto"></div>
               <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
                 <button class="btn btn-outline btn-sm" id="pos-add-person"
                         onclick="posPickPerson()">+ Put somebody in it</button>
@@ -91,6 +95,15 @@
             <div class="gp-field">
               <div class="gp-label">What the seat is called</div>
               <input class="gp-input" id="pos-e-title" placeholder="Cashier">
+            </div>
+
+            <!-- Advertising a seat refuses without this, and the people we
+                 offer for it are found by it. There was no way to set it. -->
+            <div class="gp-field">
+              <div class="gp-label">Job role</div>
+              <select class="gp-input" id="pos-e-role"><option value="">Not set</option></select>
+              <div class="pf-card-meta">Needed before you can advertise this
+                seat, and it is how we find people already doing this job.</div>
             </div>
 
             <!-- The other way in: name the manager and the next two answers
@@ -138,12 +151,18 @@
               </div>
             </div>
 
+            <div class="gp-field" id="pos-seats-door">
+              <button class="btn btn-outline btn-sm" onclick="posShowSeats()">
+                More than one person holds this seat</button>
+            </div>
+
             <div class="gp-field">
               <div style="display:flex;gap:8px;align-items:flex-start">
                 <input type="checkbox" id="pos-e-key" style="width:16px;height:16px;margin-top:3px;accent-color:var(--primary);cursor:pointer">
                 <label for="pos-e-key" style="margin:0;cursor:pointer">
                   <strong>A key seat</strong>
-                  <span class="pf-card-meta" style="display:block">An empty one is flagged red rather than amber.</span>
+                  <span class="pf-card-meta" style="display:block">A seat the
+                    shop cannot run without. We flag an empty one urgently.</span>
                 </label>
               </div>
             </div>

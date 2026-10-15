@@ -49,7 +49,8 @@ function makeContext(values) {
     style: {}, checked: false,
   });
   ["pos-body", "pos-count", "pos-filter-note", "pos-f-branch", "pos-f-dept",
-   "pos-f-role", "pos-f-open", "pos-f-view", "pos-add-btn"].forEach(el);
+   "pos-f-role", "pos-f-open", "pos-f-view", "pos-add-btn",
+   "pos-tiles"].forEach(el);
 
   const ctx = { console: { log() {}, warn() {}, error() {} } };
   ctx.window = ctx; ctx.globalThis = ctx; ctx.self = ctx; ctx.top = ctx;
@@ -120,7 +121,7 @@ function render(rows, values, collapsed) {
   ctx.posPaint();
   return {
     html: ctx.__els["pos-body"].innerHTML,
-    count: ctx.__els["pos-count"].textContent,
+    tiles: ctx.__els["pos-tiles"].innerHTML,
     note: ctx.__els["pos-filter-note"].style.display,
   };
 }
@@ -177,8 +178,10 @@ function render(rows, values, collapsed) {
        r.title + " disappeared when filtering to Ambala");
   });
   ok("non-matching seats are greyed", out.html.includes("opacity:.45"));
-  ok("the count says how many match", /\bmatch\b/.test(out.count),
-     "count read: " + out.count);
+  // The count used to be grey text counting the WHOLE company whatever the
+  // filter said. It is three tiles now, computed over the filtered rows.
+  ok("the tiles are drawn", /oc-stat|pf-card/.test(out.tiles),
+     "tiles read: " + out.tiles.slice(0, 80));
   ok("the greying is explained on screen", out.note !== "none");
 }
 
@@ -276,11 +279,16 @@ function render(rows, values, collapsed) {
   ok("the box says how many it stands for",
      out.html.includes("5 of these"));
 
-  // The whole risk of grouping: somebody vanishing into a tidy box.
-  for (let i = 1; i <= 5; i++) {
-    ok("nobody disappears into the group",
+  // The whole risk of grouping: somebody vanishing into a tidy box. Only
+  // three names are drawn now - a 25-person seat was 25 lines - so what has
+  // to hold is that the rest are COUNTED, never silently dropped.
+  for (let i = 1; i <= 3; i++) {
+    ok("the first names are drawn",
        out.html.includes("Person " + i), "Person " + i + " is not drawn");
   }
+  ok("and the rest are counted, not dropped",
+     out.html.includes("+2 more in this seat"),
+     "five people, three shown, so two must be counted");
   ok("a group offers a way into its seats", out.html.includes("posUngroup("));
   ok("and no Change button, because there is no single seat to change",
      !/posOpenEditor\('P-SE/.test(out.html));

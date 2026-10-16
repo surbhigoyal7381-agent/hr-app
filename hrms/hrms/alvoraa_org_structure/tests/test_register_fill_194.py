@@ -663,3 +663,70 @@ class TestMovingSomebodyWhoAlreadyHoldsASeat(FillCase):
 			frappe.db.exists(register.ASSIGNMENT,
 			                 {"employee": self.who, "position": self.old}),
 			"a seat they were never really in leaves no record")
+
+
+class TestChangingHowManySeats(FillCase):
+	"""Surbhi, 16 Oct 2026: "allow to edit number of seats for each position
+	from the UI."
+
+	A shop that takes on two more cashiers should not need a developer. The
+	one rule is that it cannot go below what is already filled, or the seat
+	reads as over-full the moment it saves.
+	"""
+
+	def setUp(self):
+		super().setUp()
+		self.seat = self.pos("Cashier Seats 194d", seats=2).name
+		self.a = self.person("Seat Taker A")
+		self.b = self.person("Seat Taker B")
+
+	def test_the_count_can_be_raised(self):
+		register.save_position(name=self.seat, position_title=self.seat, seats=5)
+		self.assertEqual(self.seat_row(self.seat)["seats"], 5.0)
+
+	def test_raising_it_opens_the_new_seats(self):
+		register.assign_person(self.seat, self.a, weight=100)
+		register.save_position(name=self.seat, position_title=self.seat, seats=4)
+		self.assertEqual(self.seat_row(self.seat)["open"], 3.0)
+
+	def test_it_can_be_lowered_to_what_is_filled(self):
+		register.assign_person(self.seat, self.a, weight=100)
+		register.save_position(name=self.seat, position_title=self.seat, seats=1)
+		row = self.seat_row(self.seat)
+		self.assertEqual(row["seats"], 1.0)
+		self.assertEqual(row["open"], 0)
+
+	def test_it_cannot_be_lowered_below_what_is_filled(self):
+		"""Two people in it and one seat left would make the chart say the
+		position is over-full for ever."""
+		register.assign_person(self.seat, self.a, weight=100)
+		register.assign_person(self.seat, self.b, weight=100)
+		with self.assertRaises(frappe.ValidationError):
+			register.save_position(name=self.seat, position_title=self.seat,
+			                       seats=1)
+
+	def test_a_negative_count_is_refused(self):
+		with self.assertRaises(frappe.ValidationError):
+			register.save_position(name=self.seat, position_title=self.seat,
+			                       seats=-1)
+
+	def test_leaving_it_out_does_not_change_it(self):
+		"""Saving the dialog without touching the count must not reset it."""
+		register.save_position(name=self.seat, position_title=self.seat,
+		                       status="Active")
+		self.assertEqual(self.seat_row(self.seat)["seats"], 2.0)
+
+	def test_the_count_is_the_same_whichever_way_the_chart_is_grouped(self):
+		"""Surbhi: "the same positions can be identified in two different
+		reporting heirarchies."
+
+		Branch and department are arrangements OF one position record, not
+		copies of it. So there is one answer to "how many cashiers does this
+		branch have", not one per way of looking at it.
+		"""
+		register.save_position(name=self.seat, position_title=self.seat, seats=7)
+		plain = self.seat_row(self.seat)["seats"]
+		rows = register.position_table()["rows"]
+		everywhere = {r["seats"] for r in rows if r["id"] == self.seat}
+		self.assertEqual(everywhere, {plain},
+		                 "one seat count, however the chart is grouped")

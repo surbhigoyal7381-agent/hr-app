@@ -44,6 +44,18 @@
                 <option value="leaving">Only seats where somebody is leaving</option>
               </select>
             </div>
+            <!-- The way back. There was none: `posClearFilters` existed but
+                 was only reachable from the "nothing matches" empty state, so
+                 a filter that narrowed the view without emptying it left the
+                 reader stuck (Surbhi, 16 Oct 2026). Shown only when something
+                 is actually set, so it is never a dead control. -->
+            <div id="pos-reset-wrap" style="display:none">
+              <div class="gp-label">&nbsp;</div>
+              <button class="btn btn-outline" id="pos-reset-btn"
+                      style="height:32px;padding:4px 12px"
+                      onclick="posClearFilters()">Reset view</button>
+            </div>
+
             <!-- The chart is one representation of three relationships, and
                  the reader chooses which. Only shown with the structure view,
                  because a list has no spine to change. -->
@@ -138,6 +150,20 @@
               <div class="gp-field" style="flex:1">
                 <div class="gp-label">Department</div>
                 <select class="gp-input" id="pos-e-dept"><option value="">None</option></select>
+              </div>
+            </div>
+
+            <!-- How many people this seat is for. Editable, because a shop
+                 that takes on two more cashiers should not need a developer.
+                 It cannot go below what is already filled - the seat would
+                 read as over-full the moment it saved. -->
+            <div class="gp-field">
+              <div class="gp-label">How many people</div>
+              <div style="display:flex;gap:10px;align-items:center">
+                <input class="gp-input" id="pos-e-seats" type="number"
+                       min="0" step="1" value="1" style="max-width:120px"
+                       oninput="posSeatsNote()">
+                <span class="pf-card-meta" id="pos-seats-note"></span>
               </div>
             </div>
 

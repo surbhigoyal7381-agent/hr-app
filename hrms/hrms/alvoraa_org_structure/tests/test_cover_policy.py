@@ -12,7 +12,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, nowdate
 
-from hrms.alvoraa_org_structure import settings
+from hrms.alvoraa_org_structure import register, settings
 from hrms.alvoraa_org_structure.tests.test_org_structure import OrgCase
 
 
@@ -209,6 +209,50 @@ class TestDelegatedAuthority(CoverCase):
 		row.restore_delegation()
 		self.assertEqual(frappe.db.get_value("Employee", under, "leave_approver"),
 		                 "before@example.com")
+
+	def test_taking_the_cover_out_of_the_seat_hands_the_approvals_back(self):
+		"""THE HOLE THIS CLOSES (Surbhi, 15 Oct 2026: "fix it").
+
+		"Take out" writes one date with `db_set`, and `db_set` runs no hooks. So
+		`on_update` never fired, `_apply_delegation` never noticed the cover had
+		ended, and the approvals were never given back. A stand-in who had been
+		taken out of the seat went on approving leave and expenses for a team
+		that was no longer theirs, and nothing anywhere said so.
+		"""
+		boss, under = self._store_with_staff()
+		frappe.db.set_value("Employee", under, "leave_approver",
+		                    "before@example.com")
+		ravi, email = self._ravi_with_login()
+		row = self._cover(boss, ravi, delegate_authority=1)
+
+		# While they are covering, the approvals are genuinely theirs.
+		self.assertEqual(frappe.db.get_value("Employee", under, "leave_approver"),
+		                 email, "the cover should hold the approvals to begin with")
+
+		frappe.db.set_default(register.EDITOR_ROLES_KEY, "System Manager")
+		out = register.end_assignment(row.name)
+
+		self.assertEqual(out["approvals_handed_back"], 1)
+		self.assertEqual(frappe.db.get_value("Employee", under, "leave_approver"),
+		                 "before@example.com",
+		                 "the real manager must get their approvals back")
+
+	def test_a_cover_ending_next_month_keeps_its_approvals_until_then(self):
+		"""Ending it ON a future date is not ending it today. They are still
+		standing in until that day comes, so the approvals are still theirs -
+		taking them away early would queue the team behind somebody who is not
+		yet back."""
+		boss, under = self._store_with_staff()
+		ravi, email = self._ravi_with_login()
+		row = self._cover(boss, ravi, delegate_authority=1)
+
+		frappe.db.set_default(register.EDITOR_ROLES_KEY, "System Manager")
+		out = register.end_assignment(row.name,
+		                              on_date=add_days(nowdate(), 30))
+
+		self.assertEqual(out["approvals_handed_back"], 0)
+		self.assertEqual(frappe.db.get_value("Employee", under, "leave_approver"),
+		                 email, "still covering, so still theirs")
 
 	def test_nothing_moves_unless_it_is_asked_for(self):
 		boss, under = self._store_with_staff()

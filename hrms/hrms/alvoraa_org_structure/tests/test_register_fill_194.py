@@ -126,14 +126,51 @@ class TestPuttingSomebodyInASeat(FillCase):
 		got = register.assign_person(self.seat, self.who, from_date="2026-01-01")
 		register.end_assignment(got["name"], on_date="2026-06-30")
 		self.assertTrue(frappe.db.exists(register.ASSIGNMENT, got["name"]))
+		# Out FROM the 30th, so the 29th was the last day they held it. The two
+		# are one day apart on purpose; see `end_assignment`.
 		self.assertEqual(str(frappe.db.get_value(register.ASSIGNMENT,
 		                                         got["name"], "to_date")),
-		                 "2026-06-30")
+		                 "2026-06-29")
 
 	def test_somebody_cannot_leave_a_seat_before_they_were_in_it(self):
 		got = register.assign_person(self.seat, self.who, from_date="2026-05-01")
 		with self.assertRaises(frappe.ValidationError):
 			register.end_assignment(got["name"], on_date="2026-04-01")
+
+	def test_the_seat_is_empty_the_same_day_somebody_is_taken_out(self):
+		"""THE BUG THIS EXISTS FOR. Surbhi, 15 Oct 2026: "currently the take out
+		is not doing anything... the seat should be shown empty".
+
+		It was writing today as the last day held, and every reader keeps a
+		person whose last day has not yet passed. So the click worked, the
+		record changed, and the screen stayed exactly the same until midnight -
+		indistinguishable from a button wired to nothing.
+		"""
+		got = register.assign_person(self.seat, self.who, from_date="2026-01-01")
+
+		before = self._seat_row()
+		self.assertEqual(len(before["people"]), 1,
+		                 "they should be in the seat to begin with")
+
+		register.end_assignment(got["name"])        # out from today
+
+		after = self._seat_row()
+		self.assertEqual(after["people"], [],
+		                 "the seat must read as empty the same day, not tomorrow")
+		self.assertEqual(after["open"], after["seats"],
+		                 "and the whole seat must read as open again")
+
+	def test_taking_somebody_out_the_day_they_went_in_is_refused(self):
+		"""Otherwise `db_set` writes to_date before from_date - which the
+		doctype itself forbids - and the next person to open the form gets the
+		error instead of whoever caused it."""
+		got = register.assign_person(self.seat, self.who)   # from today
+		with self.assertRaises(frappe.ValidationError):
+			register.end_assignment(got["name"])            # out from today
+
+	def _seat_row(self):
+		table = register.position_table()
+		return [r for r in table["rows"] if r["id"] == self.seat][0]
 
 
 class TestFillingItFromInside(FillCase):
@@ -204,6 +241,22 @@ class TestAdvertisingASeat(FillCase):
 		# next. The same shape of pollution the reprocess tests paid for.
 		self.seat = self.pos("Sales Executive " + self._testMethodName[:40],
 		                     seats=1, designation=_designation()).name
+
+		# A seat per test was not enough. The seat is named after the test, so
+		# the SAME record comes back on the next run of the suite, and
+		# `post_job` commits - so an opening created on Monday was still hanging
+		# off it on Tuesday. `test_the_seat_says_it_is_already_advertised` opens
+		# with "nothing advertised yet", and that was false on every run but the
+		# first. A test that only passes once is worse than one that never
+		# passes: it teaches everybody to ignore the red.
+		if frappe.get_meta("Job Opening").has_field(register.POSITION_LINK):
+			for stale in frappe.get_all(
+					"Job Opening",
+					filters={register.POSITION_LINK: self.seat}, pluck="name"):
+				frappe.delete_doc("Job Opening", stale, force=True,
+				                  ignore_permissions=True,
+				                  delete_permanently=True)
+			frappe.db.commit()
 
 	def test_an_opening_is_filled_in_from_the_seat(self):
 		got = register.post_job(self.seat, vacancies=2)

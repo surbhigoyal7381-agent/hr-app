@@ -22,7 +22,7 @@ they may.
 
 import frappe
 from frappe import _
-from frappe.utils import flt, nowdate
+from frappe.utils import add_days, flt, getdate, nowdate
 
 from hrms.alvoraa_org_structure import settings
 
@@ -440,15 +440,62 @@ def end_assignment(name, on_date=None):
 	Ended rather than deleted. Deleting would erase that they ever held it,
 	which is the thing a chart is asked about a year later - "who was running
 	Ambala in October" has to stay answerable.
+
+	`on_date` IS THE FIRST DAY THEY ARE OUT, and `to_date` is the LAST DAY THEY
+	HELD IT - so what gets stored is the day before. The two are not the same
+	day and the difference was a visible bug (Surbhi, 15 Oct 2026: "currently
+	the take out is not doing anything... the seat should be shown empty").
+
+	Everything that reads a seat keeps anybody whose `to_date` has not yet
+	passed - `if a.to_date and str(a.to_date) < str(as_at): continue`, in three
+	places. So storing today meant the person stayed in the seat for the rest
+	of the day: the click worked, the record changed, and the screen did not
+	move. Nothing distinguished that from a dead button.
+
+	This does NOT say anything about whether they left the company. It ends one
+	person's hold on one seat, and touches no Employee field. They may have
+	moved to another seat in the same hour.
 	"""
 	a = frappe.get_doc(ASSIGNMENT, name)
 	_position_in_scope(a.position, "register.end_assignment")
 
-	on_date = on_date or nowdate()
-	if str(on_date) < str(a.from_date):
-		frappe.throw(_("Somebody cannot leave a seat before they were in it."))
-	a.db_set("to_date", on_date)
-	return {"name": a.name, "to_date": str(on_date)}
+	out_from = getdate(on_date or nowdate())
+	last_day = add_days(out_from, -1)
+
+	# The doctype refuses an assignment that ends before it starts, but this
+	# writes with `db_set` and so skips that check. Refuse it here, or the
+	# record saves and then throws at whoever next opens the form.
+	if a.from_date and str(last_day) < str(a.from_date):
+		frappe.throw(
+			_("{0} went into this seat on {1}. Taking them out from {2} would "
+			  "mean they never held it at all. Delete the assignment instead - "
+			  "there is no history worth keeping.")
+			.format(frappe.bold(a.employee_name or a.employee),
+			        a.from_date, out_from))
+
+	a.db_set("to_date", last_day)
+
+	# GIVE THE APPROVALS BACK. Cover borrows the leave and expense approvals of
+	# the team being covered, and handing them back is half of ending it.
+	#
+	# `db_set` writes one column and runs no hooks, so `on_update` - which is
+	# where `_apply_delegation` would notice the cover had ended and restore
+	# them - never fires. A stand-in taken out of a seat therefore kept
+	# approving leave and expenses for a team that was no longer theirs, with
+	# nothing anywhere saying so. Asked for explicitly here rather than by
+	# switching to `save()`, because a full save re-runs every rule on the
+	# doctype and would start refusing old records on a path whose only job is
+	# to write one date.
+	#
+	# Only once the cover is genuinely over: an end date still in the future
+	# means they are covering until then, and the approvals are still theirs.
+	restored = 0
+	if str(last_day) < str(nowdate()) and a.get("delegated_approvals"):
+		restored = len(a.delegated_approvals)
+		a.restore_delegation()
+
+	return {"name": a.name, "to_date": str(last_day), "out_from": str(out_from),
+	        "approvals_handed_back": restored}
 
 
 # ── advertising a seat ───────────────────────────────────────────────────────

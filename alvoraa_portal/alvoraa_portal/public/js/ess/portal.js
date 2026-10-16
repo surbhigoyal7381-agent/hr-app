@@ -1295,6 +1295,11 @@ window.posPickPerson = function () {
   document.getElementById("pos-p-until").value = "";
   document.getElementById("pos-p-delegate").checked = false;
   POS.picked = null;
+  POS.holds = null;
+  // Left over from the last person who was looked at, this would read as a
+  // warning about the one being chosen now.
+  var holds = document.getElementById("pos-p-holds");
+  if (holds) { holds.innerHTML = ""; holds.style.display = "none"; }
   posPickType();
   posPickErr("");
   document.getElementById("pos-person").classList.add("open");
@@ -1372,7 +1377,110 @@ window.posPickOne = function (employee) {
     el.style.background = (el.id === "pos-cand-" + employee)
       ? "var(--surface2)" : "";
   });
+  posShowWhatTheyHold();
 };
+
+/* What this person is already in, shown the moment they are picked.
+ *
+ * Surbhi, 16 Oct 2026: "when I assigned a person in full time to a position,
+ * and he was in some other position earlier, it should be visible in the
+ * warning and confirmation box."
+ *
+ * Before this, the only sign was the save being refused afterwards, with a
+ * message listing seats the person had never heard of and no way to act on it
+ * without closing the dialog and going to find them. The facts belong here,
+ * while there is still a choice.
+ */
+window.posShowWhatTheyHold = async function () {
+  var box = document.getElementById("pos-p-holds");
+  if (!box) return;
+  POS.holds = null;
+  if (!POS.picked) { box.style.display = "none"; return; }
+  var seat = posSeat();
+  box.style.display = "";
+  box.innerHTML = '<div class="pf-card-meta">Checking what they already do&hellip;</div>';
+  var out;
+  try {
+    out = await gpFetch("hrms.alvoraa_org_structure.register.what_they_hold",
+                        { employee: POS.picked, ignore_position: seat ? seat.id : "" });
+  } catch (e) {
+    box.innerHTML = '<div class="pf-card-meta">'
+      + posEsc(e && e.message ? e.message : e) + "</div>";
+    return;
+  }
+  POS.holds = out;
+  posPickRoom();
+};
+
+/* The warning, and the choice - redrawn whenever the share changes, because
+   50% of a seat and 100% of it are different questions. */
+window.posPickRoom = function () {
+  var box = document.getElementById("pos-p-holds");
+  if (!box) return;
+  var out = POS.holds;
+  if (!out || !out.rows || !out.rows.length) {
+    box.style.display = "none";
+    return;
+  }
+  var want = flt0(((document.getElementById("pos-p-weight") || {}).value) || 100);
+  var type = ((document.getElementById("pos-p-type") || {}).value) || "Permanent";
+
+  // Cover is extra duty on top of their own job, so nothing has to give.
+  if (type !== "Permanent") {
+    box.style.display = "";
+    box.innerHTML = '<div class="pf-card-meta">They already hold '
+      + posNum(out.held) + "% elsewhere. Cover sits on top of that, so nothing "
+      + "is taken away.</div>";
+    return;
+  }
+
+  var over = out.held + want > 100.001;
+  var list = out.rows.map(function (r) {
+    return "<li>" + posEsc(r.title) + " &mdash; " + posNum(r.weight) + "%</li>";
+  }).join("");
+
+  var html = "<div><strong>Already in "
+    + (out.rows.length === 1 ? "another seat" : out.rows.length + " other seats")
+    + "</strong></div><ul style=\"margin:4px 0 8px 18px;padding:0\">" + list + "</ul>";
+
+  if (!over) {
+    html += '<div class="pf-card-meta">They have ' + posNum(out.free)
+      + "% free, so " + posNum(want) + "% here fits. Nothing else changes.</div>";
+    box.style.display = "";
+    box.innerHTML = html;
+    return;
+  }
+
+  // What each choice would actually do, in the numbers of this case, so the
+  // decision is not made from a word like "adjust".
+  var room = Math.max(0, 100 - want);
+  var after = out.rows.map(function (r) {
+    var now = out.held ? Math.round(room * (r.weight / out.held) * 100) / 100 : 0;
+    return posEsc(r.title) + " &rarr; " + (now < 1 ? "out" : posNum(now) + "%");
+  }).join(", ");
+
+  html += '<div style="margin-bottom:6px">A person is one person, and '
+    + posNum(out.held) + "% + " + posNum(want) + "% is more than that. "
+    + "Choose what happens to the rest:</div>";
+  html += '<label style="display:flex;gap:6px;align-items:flex-start;margin:0 0 4px">'
+    + '<input type="radio" name="pos-p-resolve" value="reduce" checked'
+    + ' style="margin-top:3px;accent-color:var(--primary)">'
+    + "<span>Shrink the others to fit &mdash; " + after + "</span></label>";
+  html += '<label style="display:flex;gap:6px;align-items:flex-start;margin:0">'
+    + '<input type="radio" name="pos-p-resolve" value="end"'
+    + ' style="margin-top:3px;accent-color:var(--primary)">'
+    + "<span>Take them out of the others altogether</span></label>";
+
+  box.style.display = "";
+  box.innerHTML = html;
+};
+
+function flt0(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+function posChosenResolve() {
+  var el = document.querySelector('input[name="pos-p-resolve"]:checked');
+  return el ? el.value : null;
+}
 
 window.posPickSave = async function () {
   if (!POS.picked) { posPickErr("Choose somebody from the list first."); return; }
@@ -1389,6 +1497,10 @@ window.posPickSave = async function () {
       to_date: document.getElementById("pos-p-until").value || null,
       delegate_authority:
         document.getElementById("pos-p-delegate").checked ? 1 : 0,
+      // Only sent when the warning above offered a choice and somebody made
+      // it. Absent, the server behaves as it always did and refuses to put
+      // one person in more than one person's worth of work.
+      resolve: posChosenResolve(),
     });
   } catch (e) {
     // The server refuses an over-filled seat, a person at more than one

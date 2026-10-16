@@ -22,7 +22,7 @@ they may.
 
 import frappe
 from frappe import _
-from frappe.utils import flt, nowdate
+from frappe.utils import add_days, flt, getdate, nowdate
 
 from hrms.alvoraa_org_structure import settings
 
@@ -384,9 +384,112 @@ def _position_in_scope(position, endpoint):
 
 
 @frappe.whitelist()
+def what_they_hold(employee, ignore_position=None):
+	"""Every seat this person is permanently in today, and how full they are.
+
+	Asked BEFORE anybody is put in a seat, so the screen can say "Kamal is
+	already 100% in Floor Manager" while there is still a choice to make,
+	rather than refusing the save afterwards and leaving somebody to work out
+	what to undo.
+
+	Permanent only. Cover is carried on top of a person's own job by design -
+	it is extra duty, not a reallocation - so it never needs making room for.
+	"""
+	rows = []
+	for a in frappe.get_all(
+			ASSIGNMENT,
+			filters={"employee": employee, "assignment_type": "Permanent",
+			         "from_date": ("<=", nowdate())},
+			fields=["name", "position", "weight", "from_date", "to_date"],
+			limit_page_length=0):
+		if a.to_date and str(a.to_date) < str(nowdate()):
+			continue
+		if ignore_position and a.position == ignore_position:
+			continue
+		rows.append({
+			"assignment": a.name,
+			"position": a.position,
+			"title": frappe.db.get_value("Alvoraa Position", a.position,
+			                             "position_title") or a.position,
+			"weight": flt(a.weight),
+			"since": str(a.from_date),
+		})
+	held = sum(r["weight"] for r in rows)
+	return {"rows": rows, "held": held, "free": max(0.0, 100.0 - held)}
+
+
+def _make_room(employee, position, weight, how):
+	"""Take the person out of what they already hold, or shrink it to fit.
+
+	Surbhi, 16 Oct 2026: "if the user confirms the person should be removed
+	from the previous position or adjusted (e.g. if the person is only holding
+	the new position for 50% then the previous position should show 100-50 =50%
+	occupency)."
+
+	  "end"    - they leave the other seats entirely
+	  "reduce" - the other seats shrink in proportion so everything sums to 100
+
+	With one previous seat at 100 and 50 wanted here, "reduce" leaves it at 50,
+	which is her example exactly. With several, each gives up the same share of
+	itself rather than the first one giving up everything.
+
+	A seat that would be left holding less than one per cent is ENDED instead.
+	A weight of zero is not a smaller assignment, it is somebody who is not in
+	the seat, and the doctype refuses it for that reason.
+	"""
+	held = what_they_hold(employee, ignore_position=position)
+	if not held["rows"]:
+		return []
+
+	# Everything being changed must be something this editor could change on
+	# its own. Quietly skipping another branch's seat would leave the person
+	# over-committed with nothing saying so.
+	for r in held["rows"]:
+		_position_in_scope(r["position"], "register.assign_person")
+
+	room = 100.0 - flt(weight)
+	done = []
+	for r in held["rows"]:
+		if how == "end" or room <= 0:
+			_let_go_of(r["assignment"])
+			done.append({"title": r["title"], "to": 0.0})
+			continue
+		share = r["weight"] / held["held"] if held["held"] else 0
+		now = round(room * share, 2)
+		if now < 1:
+			_let_go_of(r["assignment"])
+			done.append({"title": r["title"], "to": 0.0})
+		else:
+			frappe.db.set_value(ASSIGNMENT, r["assignment"], "weight", now)
+			done.append({"title": r["title"], "to": now})
+	return done
+
+
+def _let_go_of(assignment):
+	"""End the assignment, or delete it if they were only put in it today.
+
+	`end_assignment` records the day BEFORE they left as their last day, and
+	refuses when that would fall before the day they started - a record that
+	ends before it begins. For somebody clicking "Take out" that refusal is
+	right, and it says to delete the assignment instead.
+
+	Here it would be wrong to refuse. Putting somebody in the wrong seat and
+	moving them the same hour is ordinary work, not an error to argue with, so
+	this does what that message advises: there is no history worth keeping in
+	a seat nobody ever sat in.
+	"""
+	started = frappe.db.get_value(ASSIGNMENT, assignment, "from_date")
+	if started and str(started) >= str(nowdate()):
+		frappe.delete_doc(ASSIGNMENT, assignment, force=True,
+		                  ignore_permissions=True, delete_permanently=True)
+		return
+	end_assignment(assignment)
+
+
+@frappe.whitelist()
 def assign_person(position, employee, weight=100, assignment_type="Permanent",
                   from_date=None, to_date=None, delegate_authority=0,
-                  covering_for=None, reason=None):
+                  covering_for=None, reason=None, resolve=None):
 	"""Put somebody in a seat, for a share of it.
 
 	`weight` is what makes part time expressible: two people at 50 each fill a
@@ -414,6 +517,21 @@ def assign_person(position, employee, weight=100, assignment_type="Permanent",
 		               "becomes permanent by neglect, which is what the chart "
 		               "flags months later."))
 
+	# MAKE ROOM FIRST, and only when asked. Without `resolve` this behaves
+	# exactly as it always did - the doctype refuses anybody who would be at
+	# more than one person, and that refusal is the right default, because
+	# moving somebody out of a job is not a side effect of filling another one.
+	moved = []
+	if resolve:
+		if resolve not in ("end", "reduce"):
+			frappe.throw(_("{0} is not a way to make room.").format(resolve))
+		if assignment_type != "Permanent":
+			# Cover sits on top of the person's own job, so there is nothing to
+			# clear - and clearing it would take away the job they go back to.
+			frappe.throw(_("Cover is carried on top of somebody's own job, so "
+			               "there is nothing to move them out of."))
+		moved = _make_room(employee, doc.name, weight, resolve)
+
 	a = frappe.new_doc(ASSIGNMENT)
 	a.update({
 		"position": doc.name,
@@ -430,7 +548,7 @@ def assign_person(position, employee, weight=100, assignment_type="Permanent",
 	# this is a real check and not a formality - and if a tenant has not given
 	# it, the refusal is the correct answer rather than something to work past.
 	a.insert()
-	return {"name": a.name, "position": doc.name}
+	return {"name": a.name, "position": doc.name, "moved": moved}
 
 
 @frappe.whitelist()
@@ -440,15 +558,62 @@ def end_assignment(name, on_date=None):
 	Ended rather than deleted. Deleting would erase that they ever held it,
 	which is the thing a chart is asked about a year later - "who was running
 	Ambala in October" has to stay answerable.
+
+	`on_date` IS THE FIRST DAY THEY ARE OUT, and `to_date` is the LAST DAY THEY
+	HELD IT - so what gets stored is the day before. The two are not the same
+	day and the difference was a visible bug (Surbhi, 15 Oct 2026: "currently
+	the take out is not doing anything... the seat should be shown empty").
+
+	Everything that reads a seat keeps anybody whose `to_date` has not yet
+	passed - `if a.to_date and str(a.to_date) < str(as_at): continue`, in three
+	places. So storing today meant the person stayed in the seat for the rest
+	of the day: the click worked, the record changed, and the screen did not
+	move. Nothing distinguished that from a dead button.
+
+	This does NOT say anything about whether they left the company. It ends one
+	person's hold on one seat, and touches no Employee field. They may have
+	moved to another seat in the same hour.
 	"""
 	a = frappe.get_doc(ASSIGNMENT, name)
 	_position_in_scope(a.position, "register.end_assignment")
 
-	on_date = on_date or nowdate()
-	if str(on_date) < str(a.from_date):
-		frappe.throw(_("Somebody cannot leave a seat before they were in it."))
-	a.db_set("to_date", on_date)
-	return {"name": a.name, "to_date": str(on_date)}
+	out_from = getdate(on_date or nowdate())
+	last_day = add_days(out_from, -1)
+
+	# The doctype refuses an assignment that ends before it starts, but this
+	# writes with `db_set` and so skips that check. Refuse it here, or the
+	# record saves and then throws at whoever next opens the form.
+	if a.from_date and str(last_day) < str(a.from_date):
+		frappe.throw(
+			_("{0} went into this seat on {1}. Taking them out from {2} would "
+			  "mean they never held it at all. Delete the assignment instead - "
+			  "there is no history worth keeping.")
+			.format(frappe.bold(a.employee_name or a.employee),
+			        a.from_date, out_from))
+
+	a.db_set("to_date", last_day)
+
+	# GIVE THE APPROVALS BACK. Cover borrows the leave and expense approvals of
+	# the team being covered, and handing them back is half of ending it.
+	#
+	# `db_set` writes one column and runs no hooks, so `on_update` - which is
+	# where `_apply_delegation` would notice the cover had ended and restore
+	# them - never fires. A stand-in taken out of a seat therefore kept
+	# approving leave and expenses for a team that was no longer theirs, with
+	# nothing anywhere saying so. Asked for explicitly here rather than by
+	# switching to `save()`, because a full save re-runs every rule on the
+	# doctype and would start refusing old records on a path whose only job is
+	# to write one date.
+	#
+	# Only once the cover is genuinely over: an end date still in the future
+	# means they are covering until then, and the approvals are still theirs.
+	restored = 0
+	if str(last_day) < str(nowdate()) and a.get("delegated_approvals"):
+		restored = len(a.delegated_approvals)
+		a.restore_delegation()
+
+	return {"name": a.name, "to_date": str(last_day), "out_from": str(out_from),
+	        "approvals_handed_back": restored}
 
 
 # ── advertising a seat ───────────────────────────────────────────────────────

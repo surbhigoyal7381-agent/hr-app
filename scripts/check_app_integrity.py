@@ -92,6 +92,76 @@ for app_dir, app_pkg in APPS.items():
 				err("doctype %r: controller class %r missing in %s.py (found: %s)" % (
 					name, want, scrub, ", ".join(sorted(names_)) or "nothing"))
 
+	# 2b. report name <-> folder <-> filename <-> module <-> execute()
+	#
+	# THE MISS THIS EXISTS FOR (15-16 Oct 2026). The salary report shipped to
+	# PRODUCTION at `alvoraa_portal/report/...` - one level above the module
+	# folder - and was named "Salary Components and Workings" inside a folder
+	# called `salary_components_workings`. Frappe looks under
+	# `<app>/<module>/report/<scrubbed report name>/`; it found nothing, and
+	# `bench migrate` finished without a word of complaint. The report simply
+	# did not exist on the site.
+	#
+	# Eight unit tests passed the whole time. They imported the module directly
+	# (`from ...report.x import x`), which is exactly the path that was NOT
+	# broken - the folder layout and the name-to-script lookup are the two
+	# things a direct import skips. Nothing short of opening the report, or
+	# this check, could have caught it.
+	checks += 1
+	if os.path.isdir(os.path.join(base, "report")):
+		err("%s/%s/report/ exists - reports must live under a MODULE directory "
+		    "(%s/%s/<module>/report/), or Frappe never registers them and "
+		    "migrate says nothing"
+		    % (app_dir, app_pkg, app_dir, app_pkg))
+
+	for p in glob.glob(os.path.join(base, "*", "report", "*", "*.json")):
+		try:
+			j = json.load(io.open(p, encoding="utf-8"))
+		except Exception as e:
+			err("unparseable JSON: %s (%s)" % (p, e)); continue
+		if not isinstance(j, dict) or j.get("doctype") != "Report":
+			continue
+		checks += 1
+		name = j.get("name") or j.get("report_name") or ""
+		folder = os.path.basename(os.path.dirname(p))
+		fname = os.path.basename(p)[:-5]
+		scrub = name.lower().replace(" ", "_").replace("-", "_")
+		rel = os.path.relpath(p, REPO).replace("\\", "/")
+		mod_dir = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(p))))
+
+		if folder != scrub:
+			err("report %r: folder is %r, expected %r - Frappe builds the path to "
+			    "the script from the REPORT NAME  (%s)" % (name, folder, scrub, rel))
+		if fname != scrub:
+			err("report %r: file is %r.json, expected %r.json  (%s)"
+			    % (name, fname, scrub, rel))
+		if j.get("report_name") and j.get("report_name") != name:
+			err("report %r: report_name is %r - the two must agree  (%s)"
+			    % (name, j.get("report_name"), rel))
+		if j.get("module") not in mods:
+			err("report %r: module %r not in modules.txt %s  (%s)"
+			    % (name, j.get("module"), mods, rel))
+		else:
+			want_dir = j["module"].lower().replace(" ", "_").replace("-", "_")
+			if mod_dir != want_dir:
+				err("report %r: sits in module folder %r but declares module %r, "
+				    "whose folder is %r  (%s)"
+				    % (name, mod_dir, j["module"], want_dir, rel))
+
+		if j.get("report_type") == "Script Report":
+			checks += 1
+			script = os.path.join(os.path.dirname(p), scrub + ".py")
+			if not os.path.isfile(script):
+				err("report %r: a Script Report needs %s.py beside its json  (%s)"
+				    % (name, scrub, rel))
+			else:
+				names_ = defined_names(script)
+				if names_ is None:
+					err("report %r: script does not parse  (%s)" % (name, rel))
+				elif "execute" not in names_:
+					err("report %r: %s.py defines no execute()  (%s)"
+					    % (name, scrub, rel))
+
 	# 3. hooks.py dotted handlers must resolve
 	hooks = os.path.join(base, "hooks.py")
 	if os.path.isfile(hooks):

@@ -18,6 +18,7 @@ selection of an employee suitable for that role within the company".
 """
 
 import frappe
+from frappe.utils import add_days, nowdate
 
 from hrms.alvoraa_org_structure import register
 from hrms.alvoraa_org_structure.tests.test_register_194 import RegisterCase
@@ -126,14 +127,51 @@ class TestPuttingSomebodyInASeat(FillCase):
 		got = register.assign_person(self.seat, self.who, from_date="2026-01-01")
 		register.end_assignment(got["name"], on_date="2026-06-30")
 		self.assertTrue(frappe.db.exists(register.ASSIGNMENT, got["name"]))
+		# Out FROM the 30th, so the 29th was the last day they held it. The two
+		# are one day apart on purpose; see `end_assignment`.
 		self.assertEqual(str(frappe.db.get_value(register.ASSIGNMENT,
 		                                         got["name"], "to_date")),
-		                 "2026-06-30")
+		                 "2026-06-29")
 
 	def test_somebody_cannot_leave_a_seat_before_they_were_in_it(self):
 		got = register.assign_person(self.seat, self.who, from_date="2026-05-01")
 		with self.assertRaises(frappe.ValidationError):
 			register.end_assignment(got["name"], on_date="2026-04-01")
+
+	def test_the_seat_is_empty_the_same_day_somebody_is_taken_out(self):
+		"""THE BUG THIS EXISTS FOR. Surbhi, 15 Oct 2026: "currently the take out
+		is not doing anything... the seat should be shown empty".
+
+		It was writing today as the last day held, and every reader keeps a
+		person whose last day has not yet passed. So the click worked, the
+		record changed, and the screen stayed exactly the same until midnight -
+		indistinguishable from a button wired to nothing.
+		"""
+		got = register.assign_person(self.seat, self.who, from_date="2026-01-01")
+
+		before = self._seat_row()
+		self.assertEqual(len(before["people"]), 1,
+		                 "they should be in the seat to begin with")
+
+		register.end_assignment(got["name"])        # out from today
+
+		after = self._seat_row()
+		self.assertEqual(after["people"], [],
+		                 "the seat must read as empty the same day, not tomorrow")
+		self.assertEqual(after["open"], after["seats"],
+		                 "and the whole seat must read as open again")
+
+	def test_taking_somebody_out_the_day_they_went_in_is_refused(self):
+		"""Otherwise `db_set` writes to_date before from_date - which the
+		doctype itself forbids - and the next person to open the form gets the
+		error instead of whoever caused it."""
+		got = register.assign_person(self.seat, self.who)   # from today
+		with self.assertRaises(frappe.ValidationError):
+			register.end_assignment(got["name"])            # out from today
+
+	def _seat_row(self):
+		table = register.position_table()
+		return [r for r in table["rows"] if r["id"] == self.seat][0]
 
 
 class TestFillingItFromInside(FillCase):
@@ -204,6 +242,22 @@ class TestAdvertisingASeat(FillCase):
 		# next. The same shape of pollution the reprocess tests paid for.
 		self.seat = self.pos("Sales Executive " + self._testMethodName[:40],
 		                     seats=1, designation=_designation()).name
+
+		# A seat per test was not enough. The seat is named after the test, so
+		# the SAME record comes back on the next run of the suite, and
+		# `post_job` commits - so an opening created on Monday was still hanging
+		# off it on Tuesday. `test_the_seat_says_it_is_already_advertised` opens
+		# with "nothing advertised yet", and that was false on every run but the
+		# first. A test that only passes once is worse than one that never
+		# passes: it teaches everybody to ignore the red.
+		if frappe.get_meta("Job Opening").has_field(register.POSITION_LINK):
+			for stale in frappe.get_all(
+					"Job Opening",
+					filters={register.POSITION_LINK: self.seat}, pluck="name"):
+				frappe.delete_doc("Job Opening", stale, force=True,
+				                  ignore_permissions=True,
+				                  delete_permanently=True)
+			frappe.db.commit()
 
 	def test_an_opening_is_filled_in_from_the_seat(self):
 		got = register.post_job(self.seat, vacancies=2)
@@ -449,3 +503,163 @@ class TestWhoMayBeToldSomebodyIsLeaving(FillCase):
 			                 WHERE reports_to = %s""", me)
 		self.assertEqual(register._my_reporting_line(), set())
 		self.assertFalse(register._may_see_who_is_leaving())
+
+
+class TestASeatWithPeopleUnderItCanStillBeEdited(FillCase):
+	"""Surbhi, 16 Oct 2026: "when I made changes in the rporting of a position,
+	it didnt allow me to save it usin Save and close button."
+
+	`Alvoraa Position` is a NestedSet, and `NestedSet.validate_ledger` refuses
+	to save a node that has children while `is_group` is 0:
+
+	    Alvoraa Position <name> cannot be a leaf node as it has children
+
+	Nothing ever set `is_group`, so a seat became uneditable the moment another
+	seat was pointed at it. On the PPJ tenant that was 38 of 120 positions -
+	every manager seat in the company - and the message named a field the
+	dialog does not even show.
+	"""
+
+	def setUp(self):
+		super().setUp()
+		self.boss = self.pos("Regional Head 194b").name
+		self.under = self.pos("Shop Assistant 194b", parent=self.boss).name
+		self.elsewhere = self.pos("Another Branch Head 194b").name
+
+	def test_a_seat_that_others_report_to_can_be_saved(self):
+		"""THE BUG. Nothing about the save is unusual - it is the same call the
+		dialog makes when somebody changes the reporting line."""
+		register.save_position(name=self.boss, position_title=self.boss,
+		                       status="Active")
+		self.assertTrue(frappe.db.exists("Alvoraa Position", self.boss))
+
+	def test_a_seat_with_children_is_marked_as_a_group(self):
+		"""Derived from the data, never typed: it is not a decision somebody
+		makes about a seat, it is whether anything reports to it."""
+		self.assertTrue(
+			frappe.db.get_value("Alvoraa Position", self.boss, "is_group"))
+
+	def test_a_seat_with_nobody_under_it_is_not_a_group(self):
+		self.assertFalse(
+			frappe.db.get_value("Alvoraa Position", self.under, "is_group"))
+
+	def test_moving_a_seat_makes_its_new_parent_a_group(self):
+		"""Otherwise the seat it moved under becomes the next one that cannot
+		be saved, and the person who finds out is whoever edits it."""
+		self.assertFalse(
+			frappe.db.get_value("Alvoraa Position", self.elsewhere, "is_group"))
+		register.save_position(name=self.under, position_title=self.under,
+		                       reports_to_position=self.elsewhere)
+		self.assertTrue(
+			frappe.db.get_value("Alvoraa Position", self.elsewhere, "is_group"),
+			"the new parent must become a group, or it cannot be saved either")
+
+
+class TestMovingSomebodyWhoAlreadyHoldsASeat(FillCase):
+	"""Surbhi, 16 Oct 2026: "when I assigned a person in full time to a
+	position, and he was in some other position earlier, it should be visible
+	in the warning and confirmation box... the person should be removed from
+	the previous position or adjusted (e.g. if the person is only holding te
+	new position for 50% then the previous position should show 100-50 =50%
+	occupency)."
+	"""
+
+	def setUp(self):
+		super().setUp()
+		self.old = self.pos("Old Seat 194c", seats=1).name
+		self.new = self.pos("New Seat 194c", seats=1).name
+		self.spare = self.pos("Spare Seat 194c", seats=1).name
+		self.who = self.person("Mover")
+		register.assign_person(self.old, self.who, weight=100)
+
+	def test_it_says_what_they_already_hold(self):
+		"""Asked while there is still a choice, not after the save is refused."""
+		held = register.what_they_hold(self.who)
+		self.assertEqual([r["position"] for r in held["rows"]], [self.old])
+		self.assertEqual(held["held"], 100.0)
+		self.assertEqual(held["free"], 0.0)
+
+	def test_the_seat_being_filled_is_left_out_of_the_count(self):
+		"""Otherwise topping somebody up in a seat they are already in reads as
+		a clash with themselves."""
+		held = register.what_they_hold(self.who, ignore_position=self.old)
+		self.assertEqual(held["rows"], [])
+
+	def test_without_a_choice_it_is_still_refused(self):
+		"""The default does not change. Moving somebody out of a job is not a
+		side effect of filling another one."""
+		with self.assertRaises(frappe.ValidationError):
+			register.assign_person(self.new, self.who, weight=50)
+
+	def test_shrinking_the_old_seat_to_fit_the_new_one(self):
+		"""Her example exactly: 100%, then 50% wanted here, so 100 - 50 = 50."""
+		register.assign_person(self.new, self.who, weight=50, resolve="reduce")
+		held = {r["position"]: r["weight"] for r in
+		        register.what_they_hold(self.who)["rows"]}
+		self.assertEqual(held[self.old], 50.0)
+		self.assertEqual(held[self.new], 50.0)
+
+	def test_taking_them_out_of_the_old_seat_altogether(self):
+		register.assign_person(self.new, self.who, weight=100, resolve="end")
+		held = {r["position"]: r["weight"] for r in
+		        register.what_they_hold(self.who)["rows"]}
+		self.assertNotIn(self.old, held)
+		self.assertEqual(held[self.new], 100.0)
+
+	def test_the_old_seat_reads_as_half_open_afterwards(self):
+		"""The point of the whole thing: the seat they left shows the hole."""
+		register.assign_person(self.new, self.who, weight=50, resolve="reduce")
+		self.assertEqual(self.seat_row(self.old)["open"], 0.5)
+
+	def test_more_than_two_seats_all_give_up_a_share(self):
+		"""Surbhi: "a person can be assigned more than two positions as well."
+		Each gives up the same share of itself rather than the first one giving
+		up everything."""
+		# Two seats first: the 100% from setUp shrinks to 60 to let 40 in.
+		register.assign_person(self.spare, self.who, weight=40, resolve="reduce")
+		held = {r["position"]: r["weight"] for r in
+		        register.what_they_hold(self.who)["rows"]}
+		self.assertEqual(held[self.old], 60.0)
+		self.assertEqual(held[self.spare], 40.0)
+
+		# Now a third, and BOTH of the others give up the same share of
+		# themselves - 60 and 40 become 30 and 20, not 10 and 40.
+		register.assign_person(self.new, self.who, weight=50, resolve="reduce")
+		held = {r["position"]: r["weight"] for r in
+		        register.what_they_hold(self.who)["rows"]}
+		self.assertEqual(held[self.new], 50.0)
+		self.assertAlmostEqual(held[self.old] + held[self.spare], 50.0, 1)
+		self.assertGreater(held[self.old], held[self.spare],
+		                   "the bigger seat keeps the bigger share")
+
+	def test_cover_needs_no_room_made_and_says_so(self):
+		"""Cover is extra duty on top of their own job. Clearing it would take
+		away the job they go back to."""
+		with self.assertRaises(frappe.ValidationError):
+			register.assign_person(self.new, self.who, weight=50,
+			                       assignment_type="Acting",
+			                       to_date=add_days(nowdate(), 30),
+			                       resolve="reduce")
+
+	def test_a_made_up_way_to_make_room_is_refused(self):
+		with self.assertRaises(frappe.ValidationError):
+			register.assign_person(self.new, self.who, weight=50,
+			                       resolve="delete_everything")
+
+	def test_moving_somebody_the_same_day_they_were_put_in_a_seat(self):
+		"""Ordinary work, not an error. HR puts somebody in the wrong seat and
+		moves them an hour later.
+
+		`end_assignment` refuses this - the day before today is before the day
+		they started, which would be a record that ends before it begins - and
+		for a human pressing "Take out" that refusal is right. Here it is not:
+		there is no history worth keeping in a seat nobody ever sat in, so the
+		assignment goes rather than the move being blocked.
+		"""
+		register.assign_person(self.new, self.who, weight=100, resolve="end")
+		held = register.what_they_hold(self.who)
+		self.assertEqual([r["position"] for r in held["rows"]], [self.new])
+		self.assertFalse(
+			frappe.db.exists(register.ASSIGNMENT,
+			                 {"employee": self.who, "position": self.old}),
+			"a seat they were never really in leaves no record")

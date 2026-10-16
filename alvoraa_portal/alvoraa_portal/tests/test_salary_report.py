@@ -12,12 +12,18 @@ the part the report owns:
   and it writes nothing, because it will be run against months that are closed.
 """
 
+import io
+import json
+import os
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, getdate, nowdate
 
-from alvoraa_portal.report.salary_components_workings import (
-	salary_components_workings as report,
+from alvoraa_portal.tests.utils import ensure_fiscal_years
+
+from alvoraa_portal.alvoraa_portal.report.salary_components_and_workings import (
+	salary_components_and_workings as report,
 )
 
 COMPANY = "Salary Report Test Co"
@@ -36,7 +42,43 @@ def _gender():
 	                      ).insert(ignore_permissions=True).name
 
 
+def _early_this_year():
+	"""A date inside the fiscal year, which `setUpModule` makes sure exists.
+
+	TWO WRONG ANSWERS BEFORE THIS ONE, and the right one was already in the
+	repo. A Salary Structure Assignment refuses a date outside an active
+	fiscal year.
+
+	First attempt hard-coded "2024-01-01". That passed on a bench with years
+	of fiscal years and errored on every CI run.
+
+	Second attempt read the active year instead of assuming one - and failed
+	worse, 8 errors instead of 4, because it ran per test rather than once:
+
+	    FiscalYearError: Date 2026-10-16 is not in any active Fiscal Year
+
+	A brand-new CI site has NO fiscal year at all. Not a missing 2024 - none.
+	So reading the active year cannot work either; the year has to be MADE.
+
+	`tests/utils.ensure_fiscal_years()` has done exactly that since 24 Sep
+	2026, and its docstring names this error and this cause. It was there the
+	whole time.
+	"""
+	from erpnext.accounts.utils import get_fiscal_year
+
+	fy = get_fiscal_year(nowdate(), as_dict=True)
+	# Far enough back that the salary and the period both sit inside it, and
+	# never before the year starts.
+	return max(getdate(fy.year_start_date), getdate(add_days(nowdate(), -60)))
+
+
 def setUpModule():
+	# BEFORE ANYTHING ELSE. A brand-new CI site has no Fiscal Year at all, and
+	# a Salary Structure Assignment will not save without one. Making it here
+	# costs one query when it already exists, and is the difference between
+	# this module running and every test in it erroring in setUp.
+	ensure_fiscal_years()
+
 	if not frappe.db.exists("Company", COMPANY):
 		frappe.get_doc({"doctype": "Company", "company_name": COMPANY,
 		                "abbr": ABBR, "default_currency": "INR",
@@ -75,7 +117,7 @@ class SalaryReportCase(FrappeTestCase):
 		doc = frappe.get_doc({
 			"doctype": "Employee", "first_name": "Report Subject",
 			"company": COMPANY, "date_of_birth": "1990-01-01",
-			"date_of_joining": "2024-01-01", "gender": _gender(),
+			"date_of_joining": str(_early_this_year()), "gender": _gender(),
 			"status": "Active", "default_shift": SHIFT,
 		})
 		doc.flags.ignore_permissions = True
@@ -105,7 +147,7 @@ class SalaryReportCase(FrappeTestCase):
 			ss = d.name
 		a = frappe.get_doc({"doctype": "Salary Structure Assignment",
 		                    "employee": self.emp, "salary_structure": ss,
-		                    "from_date": "2024-01-01", "base": base,
+		                    "from_date": str(_early_this_year()), "base": base,
 		                    "company": COMPANY})
 		a.flags.ignore_permissions = True
 		a.insert()
@@ -133,6 +175,67 @@ class SalaryReportCase(FrappeTestCase):
 		args.update(kw)
 		out = report.execute(args)
 		return out[0], out[1], out[2]
+
+
+class TestFrappeCanActuallyFindIt(FrappeTestCase):
+	"""THE TEST THAT WAS MISSING, and the reason the report reached production
+	unusable (16 Oct 2026).
+
+	Every other test here does `report.execute(...)` on a module imported at the
+	top of the file. That proves the arithmetic and proves nothing about whether
+	Frappe can FIND the report - and the folder layout and the name-to-script
+	lookup were both wrong. Eight green tests, and opening the report would have
+	failed on the first click.
+
+	So this one deliberately does NOT import anything. It builds the path the
+	way Frappe builds it, from the report's own json, and follows it.
+	"""
+
+	JSON = os.path.join(
+		os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+		"alvoraa_portal", "report", "salary_components_and_workings",
+		"salary_components_and_workings.json")
+
+	def setUp(self):
+		with io.open(self.JSON, encoding="utf-8") as fh:
+			self.spec = json.load(fh)
+
+	def test_the_json_sits_where_its_own_name_says_it_should(self):
+		"""Frappe derives the folder from the report name. Disagree, and migrate
+		registers nothing and reports no error."""
+		name = self.spec["name"]
+		folder = os.path.basename(os.path.dirname(self.JSON))
+		self.assertEqual(folder, frappe.scrub(name),
+		                 "the folder must be the scrubbed report name")
+		self.assertEqual(os.path.basename(self.JSON),
+		                 frappe.scrub(name) + ".json")
+
+	def test_it_sits_under_its_declared_module(self):
+		"""`<app>/<module>/report/...`. One level too high is where it was, and
+		nothing anywhere complained."""
+		module_dir = os.path.basename(
+			os.path.dirname(os.path.dirname(os.path.dirname(self.JSON))))
+		self.assertEqual(module_dir, frappe.scrub(self.spec["module"]))
+
+	def test_the_dotted_path_frappe_builds_actually_resolves(self):
+		"""The lookup itself. `frappe.get_attr` on the path Frappe assembles -
+		which is what fails, at the moment somebody clicks the report, when any
+		of the names above disagree."""
+		dotted = "%s.%s.report.%s.%s.execute" % (
+			"alvoraa_portal",
+			frappe.scrub(self.spec["module"]),
+			frappe.scrub(self.spec["name"]),
+			frappe.scrub(self.spec["name"]))
+		fn = frappe.get_attr(dotted)
+		self.assertTrue(callable(fn), "%s is not callable" % dotted)
+
+	def test_a_script_report_declares_the_roles_that_may_read_it(self):
+		"""Payroll workings are salary data. A report with no roles is readable
+		by anybody who can reach the report list."""
+		self.assertEqual(self.spec.get("report_type"), "Script Report")
+		roles = [r["role"] for r in self.spec.get("roles", [])]
+		self.assertTrue(roles, "no roles - this is salary data")
+		self.assertNotIn("All", roles)
 
 
 class TestItRuns(SalaryReportCase):

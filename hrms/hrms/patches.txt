@@ -53,3 +53,4 @@ hrms.patches.v16_0.add_attendance_score_fields
 hrms.patches.v16_0.add_employee_document_fields
 hrms.patches.v16_0.add_screening_fields
 hrms.patches.v16_0.add_policy_library_fields
+hrms.patches.v16_0.mark_position_groups

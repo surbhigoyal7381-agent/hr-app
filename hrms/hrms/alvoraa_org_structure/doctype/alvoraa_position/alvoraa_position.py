@@ -24,12 +24,51 @@ class AlvoraaPosition(NestedSet):
 
 	def validate(self):
 		self._check_not_its_own_ancestor()
+		self._set_is_group()
 		self._check_seats()
 		self._check_dates()
 
 	def on_update(self):
 		super().on_update()
+		self._make_the_parent_a_group()
 		self.validate_recursion()
+
+	def _set_is_group(self):
+		"""A seat with anybody reporting to it IS a group, and must say so.
+
+		THE BUG THIS FIXES (Surbhi, 16 Oct 2026: "when I made changes in the
+		reporting of a position, it didnt allow me to save it"). Nothing here
+		ever set `is_group`, and `NestedSet.validate_ledger` - which runs from
+		`on_update` - refuses to save a node that has children while it is 0:
+
+		    Alvoraa Position <name> cannot be a leaf node as it has children
+
+		So the moment one seat was pointed at another, the seat above it could
+		never be edited again. On PPJ that was 38 of 120 positions - every
+		manager seat in the company - and the dialog showed the raw message,
+		which names a field the dialog does not even have.
+
+		Derived, never typed. `is_group` is not a decision somebody makes about
+		a seat; it is a fact about whether anything reports to it, and the only
+		way it stays true is to work it out on every save.
+		"""
+		self.is_group = 1 if frappe.db.exists(
+			"Alvoraa Position", {"reports_to_position": self.name}) else 0
+
+	def _make_the_parent_a_group(self):
+		"""The seat we now report to has a child - this one - so it is a group.
+
+		Without this, moving a seat under a childless one leaves THAT seat
+		unsaveable, and the person who finds out is whoever edits it next.
+		`db_set` rather than a save: it is one derived column, and saving the
+		parent here would cascade up the whole chain on every edit.
+		"""
+		if not self.reports_to_position:
+			return
+		if not frappe.db.get_value("Alvoraa Position",
+		                           self.reports_to_position, "is_group"):
+			frappe.db.set_value("Alvoraa Position", self.reports_to_position,
+			                    "is_group", 1, update_modified=False)
 
 	def on_trash(self):
 		# A position with people in it must not vanish - the chart would hold an

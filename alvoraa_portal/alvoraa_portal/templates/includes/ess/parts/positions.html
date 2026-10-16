@@ -202,15 +202,24 @@
             </div>
             <div id="pos-p-list" style="max-height:220px;overflow-y:auto"></div>
 
+            <!-- What the person already does, and what would happen to it.
+                 Filled the moment somebody is picked, so the clash is a
+                 decision taken here rather than a refusal afterwards. -->
+            <div id="pos-p-holds" style="display:none;margin-top:12px;
+                 padding:10px;border:1px solid var(--border);border-radius:6px;
+                 background:var(--surface2)"></div>
+
             <div style="display:flex;gap:12px;margin-top:12px">
               <div class="gp-field" style="flex:1">
                 <div class="gp-label">How much of the seat</div>
                 <input class="gp-input" id="pos-p-weight" type="number"
-                       min="1" max="100" step="5" value="100">
+                       min="1" max="100" step="5" value="100"
+                       oninput="posPickRoom()">
               </div>
               <div class="gp-field" style="flex:1">
                 <div class="gp-label">For how long</div>
-                <select class="gp-input" id="pos-p-type" onchange="posPickType()">
+                <select class="gp-input" id="pos-p-type"
+                        onchange="posPickType();posPickRoom()">
                   <option value="Permanent">Permanently</option>
                   <option value="Acting">Acting</option>
                   <option value="Interim">Interim</option>

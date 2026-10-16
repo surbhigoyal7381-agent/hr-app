@@ -1882,16 +1882,26 @@ body.panel-fullscreen{overflow:hidden}
 /* ── Organisation chart: the tree ──────────────────────────────────
    Boxes and elbows drawn with borders rather than SVG, so it reflows on a
    narrow screen instead of needing a canvas to pan around. */
-.oc-tree{overflow-x:auto;padding:4px 2px 24px;display:flex;justify-content:center}
+/* NOT `justify-content:center`. A centred flex row that overflows its
+   scroll container cannot be scrolled to on the LEFT - the browser gives you
+   the right-hand overflow and silently keeps the rest out of reach. That is
+   why the leftmost branches read as "URA" and "eter - Sales" with no way to
+   get to them (Surbhi, 16 Oct 2026). An auto margin on the child centres it
+   when it fits and leaves both ends reachable when it does not. */
+.oc-tree{overflow-x:auto;padding:4px 2px 24px;display:flex;justify-content:flex-start}
+.oc-tree > .oc-branch{margin-inline:auto}
 .oc-branch{display:flex;flex-direction:column;align-items:center;position:relative}
 .oc-kids{display:flex;gap:18px;padding-top:22px;position:relative}
 .oc-kids::before{content:"";position:absolute;top:0;left:50%;width:1px;height:22px;
   background:var(--border)}
 .oc-kids > .oc-branch::before{content:"";position:absolute;top:-22px;left:50%;
   width:1px;height:22px;background:var(--border)}
-.oc-kids > .oc-branch:first-child::after,
-.oc-kids > .oc-branch:last-child::after{content:"";position:absolute;top:-22px;
-  width:50%;height:1px;background:var(--border)}
+/* One continuous bar across the row. It used to be drawn as two half-widths
+   from the first and last child, which only meets in the middle when every
+   child is the same width - otherwise the line breaks. Each child now draws
+   its own span, reaching half the 18px gap on each side so neighbours join. */
+.oc-kids > .oc-branch::after{content:"";position:absolute;top:-22px;
+  left:-9px;right:-9px;height:1px;background:var(--border)}
 .oc-kids > .oc-branch:first-child::after{left:50%}
 .oc-kids > .oc-branch:last-child::after{right:50%}
 .oc-kids > .oc-branch:only-child::after{display:none}

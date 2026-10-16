@@ -325,3 +325,72 @@ class TestTheNumbers(SalaryReportCase):
 		self.assertEqual(
 			(frappe.db.count("Salary Slip"), frappe.db.count("Attendance")),
 			before)
+
+
+class TestAReportYouCanReadBeforeYouCommit(SalaryReportCase):
+	"""Surbhi, 17 Oct 2026, on why the report could not be used for its own
+	purpose: it only read a rule set with `enabled = 1`, which is the same flag
+	the hooks wake up on. So the only way to CHECK the rules was to START them
+	- judging attendance and changing payslips for real.
+
+	That is backwards. The report exists so somebody can put the figures beside
+	a spreadsheet before committing to them.
+	"""
+
+	def _disable(self):
+		name = frappe.db.get_value("Alvoraa Payroll Rule Set", {"company": COMPANY})
+		frappe.db.set_value("Alvoraa Payroll Rule Set", name, "enabled", 0)
+		frappe.clear_cache(doctype="Alvoraa Payroll Rule Set")
+		return name
+
+	def _enable(self, name):
+		frappe.db.set_value("Alvoraa Payroll Rule Set", name, "enabled", 1)
+		frappe.clear_cache(doctype="Alvoraa Payroll Rule Set")
+
+	def test_it_shows_the_figures_from_a_rule_set_that_is_switched_off(self):
+		self._paid()
+		self._days()
+		name = self._disable()
+		try:
+			_cols, rows, msg = self.run_it()
+			self.assertTrue([r for r in rows if r["employee"] == self.emp],
+			                "a switched-off rule set must still produce figures")
+			self.assertIn("not switched on", msg)
+		finally:
+			self._enable(name)
+
+	def test_the_engine_stays_asleep_while_the_report_reads_it(self):
+		"""THE WHOLE SAFETY OF THIS. Everything except the report still goes
+		through `rule_set_for`, which finds nothing without `enabled = 1`. A
+		company can be read and still have no rules applied to it."""
+		from alvoraa_portal.payroll_rules_apply import rule_set_for
+		from alvoraa_portal.payroll_slip import month_summary
+		name = self._disable()
+		try:
+			self.assertIsNone(rule_set_for(COMPANY),
+			                  "the engine must not see a disabled rule set")
+			self.assertIsNone(
+				month_summary(self.emp, COMPANY, str(self.start), nowdate()),
+				"the month summary must do nothing without an enabled set")
+		finally:
+			self._enable(name)
+
+	def test_a_live_rule_set_is_not_announced_as_dormant(self):
+		"""The warning must not cry wolf on a company that IS running."""
+		self._paid()
+		self._days()
+		_cols, _rows, msg = self.run_it()
+		self.assertNotIn("not switched on", msg)
+		self.assertNotIn("not live", msg)
+
+	def test_no_rule_set_at_all_still_says_so_plainly(self):
+		"""Reading a disabled set must not turn "this company has no rules"
+		into an empty grid."""
+		with_any = set(frappe.get_all("Alvoraa Payroll Rule Set", pluck="company"))
+		other = next((c for c in frappe.get_all("Company", pluck="name")
+		              if c not in with_any and c != COMPANY), None)
+		if not other:
+			self.skipTest("every company on this site has a rule set")
+		_cols, rows, msg = self.run_it(company=other)
+		self.assertEqual(rows, [])
+		self.assertIn("no payroll rule set", msg)

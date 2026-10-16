@@ -263,15 +263,18 @@ var POS_MAX_DEPTH = 40;
 
 // How many levels of CHILDREN are drawn when the structure view first opens.
 //
-// EVERYTHING, because that is what Surbhi asked for: "open to start".
+// TWO. Surbhi saw it at DTC's scale and said so on 16 Oct 2026: "keep it
+// collapsed. after two levels."
 //
-// A screenshot says that is wrong at scale - fifteen seats already lay in one
-// row wider than the card, with a tall empty band above them, and the first
-// tenant has a hundred and twenty. Folding below the first level fixes it and
-// the mechanism below is built for exactly that. But it is her call, not a
-// thing to change quietly on the strength of a picture, so the number stays
-// where she put it until she has seen the picture too.
-var POS_OPEN_DEPTH = POS_MAX_DEPTH;
+// It opened fully before, because she had asked for "open to start" when the
+// only chart anybody had seen was a small one. At ninety seats that puts
+// thirty-one children in a single row and the reader loses the parent the
+// moment they scroll sideways to find the end of it.
+//
+// Two levels is the organisation at a glance - the top, and what sits under
+// it - with everything below one click away and counted on the fold, so
+// nothing is hidden without saying how much.
+var POS_OPEN_DEPTH = 2;
 
 function posEsc(s) { return ocEsc(s); }
 
@@ -450,13 +453,36 @@ function posNothing() {
     + " anything is saved.</div></div>";
 }
 
+/* Back to how the page opened: no filters, and the tree folded as it starts.
+ *
+ * It used to clear the four dropdowns only, and it was reachable only from
+ * the "nothing matches" empty state - so a filter that narrowed the view
+ * without emptying it left the reader with no way back (Surbhi, 16 Oct 2026:
+ * "there is no way to reset the view").
+ *
+ * The folds go too. Somebody who has opened nine branches hunting for a seat
+ * wants the chart back, not the same sprawl with the dropdowns blanked.
+ */
 window.posClearFilters = function () {
   ["pos-f-branch", "pos-f-dept", "pos-f-role", "pos-f-open"].forEach(function (id) {
     var el = document.getElementById(id);
     if (el) el.value = "";
   });
+  POS.collapsed = {};
+  POS.expanded = {};
   posPaint();
 };
+
+/* The button only exists while there is something to undo. A reset that is
+   always there, and does nothing most of the time, teaches people to ignore
+   it. */
+function posPaintReset() {
+  var wrap = document.getElementById("pos-reset-wrap");
+  if (!wrap) return;
+  var folded = POS.collapsed && Object.keys(POS.collapsed).length;
+  var opened = POS.expanded && Object.keys(POS.expanded).length;
+  wrap.style.display = (posAnyFilter() || folded || opened) ? "" : "none";
+}
 
 function posVal(id) { return (document.getElementById(id) || {}).value || ""; }
 
@@ -492,6 +518,7 @@ window.posPaint = function () {
   // structure view.
   var arr = document.getElementById("pos-arrange-wrap");
   if (arr) arr.style.display = tree ? "" : "none";
+  posPaintReset();
   if (tree) { posPaintTree(); } else { posPaintList(); }
 };
 
@@ -1637,6 +1664,8 @@ window.posOpenEditor = function (id) {
   document.getElementById("pos-e-title").value = r ? r.title : "";
   document.getElementById("pos-e-status").value = r ? r.status : "Active";
   document.getElementById("pos-e-key").checked = r ? !!r.key : false;
+  document.getElementById("pos-e-seats").value = r ? posNum(r.seats) : 1;
+  posSeatsNote();
 
   // A seat may not be its own parent, so it is left out of its own list.
   posFillSelect("pos-e-parent", POS.rows
@@ -1705,6 +1734,43 @@ function posFillSelect(id, pairs, chosen, blank) {
       }).join("");
 }
 
+/* How many are already in the seat, said next to the box you are typing in.
+ *
+ * The server refuses a seat count below what is filled - it would read as
+ * over-full the moment it saved - and that refusal arrives after the click.
+ * Saying the floor here means nobody meets it by surprise.
+ *
+ * THE SEAT COUNT BELONGS TO THE POSITION, NOT TO A VIEW OF IT. The chart
+ * draws the same position three ways - by reporting line, by branch, by
+ * department - and all three are arrangements of one record. So a change here
+ * shows in all three, which is the point: there is one answer to "how many
+ * cashiers does Sector 22 have", not one per way of looking at it.
+ */
+window.posSeatsNote = function () {
+  var note = document.getElementById("pos-seats-note");
+  var box = document.getElementById("pos-e-seats");
+  if (!note || !box) return;
+  var r = posSeat();
+  if (!r) { note.textContent = ""; return; }
+
+  var filled = flt0(r.filled);
+  var want = flt0(box.value);
+  if (!filled) {
+    note.textContent = "Nobody is in it yet.";
+    note.style.color = "";
+    return;
+  }
+  if (want < filled) {
+    note.textContent = posNum(filled) + " already in it - this will be refused.";
+    note.style.color = "var(--red)";
+    return;
+  }
+  note.style.color = "";
+  var open = want - filled;
+  note.textContent = posNum(filled) + " filled"
+    + (open > 0 ? ", " + posNum(open) + " open" : ", none open");
+};
+
 function posErr(msg) {
   var el = document.getElementById("pos-editor-err");
   if (!el) return;
@@ -1739,6 +1805,7 @@ window.posSave = async function (then) {
       branch: document.getElementById("pos-e-branch").value || "",
       department: document.getElementById("pos-e-dept").value || "",
       status: document.getElementById("pos-e-status").value,
+      seats: document.getElementById("pos-e-seats").value || 0,
       is_key_position: document.getElementById("pos-e-key").checked ? 1 : 0,
     });
   } catch (e) {

@@ -162,6 +162,51 @@ for app_dir, app_pkg in APPS.items():
 					err("report %r: %s.py defines no execute()  (%s)"
 					    % (name, scrub, rel))
 
+	# 2c. every HTML comment opens once and closes once
+	#
+	# THE MISS THIS EXISTS FOR (16 Oct 2026). Rewriting a comment left its old
+	# first line behind, so the file held two `<!--` for one `-->`:
+	#
+	#     <!-- Add or change one seat. A seat with nobody in it is how a vacancy
+	#     <!-- One dialog, one seat.
+	#
+	# A browser closes at the first `-->` it meets, which left the TAIL of the
+	# second comment rendering as ordinary text on the page - outside any
+	# panel, so it appeared on whatever screen the reader happened to open:
+	#
+	#     "internal" means somebody already here, not an unpublished advert. -->
+	#
+	# Surbhi found it on the attendance analytics page, which does not contain
+	# it. Nothing else would have: the template parses, the tests pass, and the
+	# stray words only show in a browser.
+	for p in glob.glob(os.path.join(REPO, app_dir, app_pkg, "**", "*.html"),
+	                   recursive=True):
+		checks += 1
+		try:
+			html = io.open(p, encoding="utf-8").read()
+		except OSError as e:
+			err("unreadable template: %s (%s)" % (p, e)); continue
+		rel = os.path.relpath(p, REPO).replace("\\", "/")
+		depth = 0
+		for m in re.finditer(r"<!--|-->", html):
+			line = html[:m.start()].count("\n") + 1
+			if m.group() == "<!--":
+				depth += 1
+				if depth > 1:
+					err("%s line %d: a second '<!--' inside an open comment - the "
+					    "browser closes at the first '-->' and the rest renders "
+					    "as text" % (rel, line))
+					depth = 1
+			else:
+				depth -= 1
+				if depth < 0:
+					err("%s line %d: '-->' with no comment open - these words "
+					    "show on the page" % (rel, line))
+					depth = 0
+		if depth:
+			err("%s: a comment is never closed - everything after it is "
+			    "swallowed" % rel)
+
 	# 3. hooks.py dotted handlers must resolve
 	hooks = os.path.join(base, "hooks.py")
 	if os.path.isfile(hooks):

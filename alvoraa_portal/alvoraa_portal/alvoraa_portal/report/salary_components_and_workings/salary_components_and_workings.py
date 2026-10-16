@@ -35,7 +35,7 @@ def execute(filters=None):
 	from_date = filters.get("from_date") or get_first_day(nowdate())
 	to_date = filters.get("to_date") or get_last_day(from_date)
 
-	rule_set = rule_set_for(company)
+	rule_set, live = _rules_for_reading(company)
 	if not rule_set:
 		return _columns(), [], _no_rules(company)
 
@@ -58,7 +58,35 @@ def execute(filters=None):
 			continue
 		rows.append(_row(emp, summary))
 
-	return _columns(), rows, _message(rule_set, from_date, to_date, skipped), None
+	return _columns(), rows, _message(rule_set, from_date, to_date, skipped, live), None
+
+
+def _rules_for_reading(company):
+	"""The rule set to show, and whether it is actually live.
+
+	READING IS NOT THE SAME ACT AS SWITCHING ON, and the report used to make it
+	so. `rule_set_for` finds only a set with `enabled = 1` - the same flag the
+	hooks wake up on - so the only way to see these figures was to start the
+	engine judging attendance and changing payslips for real.
+
+	That is backwards. This report exists so somebody can check the rules
+	BEFORE committing to them, against a spreadsheet, with nothing at stake.
+	Making them commit first to look is how a wrong figure reaches a payslip
+	before anybody has seen it.
+
+	So a rule set that is SAVED BUT SWITCHED OFF is read here, and the message
+	says plainly that it is not live. Nothing else in the product does this:
+	every other path still goes through `rule_set_for` and still does nothing
+	without an enabled set. The engine stays asleep.
+	"""
+	live = rule_set_for(company)
+	if live:
+		return live, True
+	name = frappe.db.get_value("Alvoraa Payroll Rule Set", {"company": company},
+	                           "name")
+	if not name:
+		return None, False
+	return frappe.get_cached_doc("Alvoraa Payroll Rule Set", name), False
 
 
 def _employees(company, filters):
@@ -148,12 +176,23 @@ def _no_rules(company):
 	).format(frappe.bold(company))
 
 
-def _message(rule_set, from_date, to_date, skipped):
-	bits = [
+def _message(rule_set, from_date, to_date, skipped, live=True):
+	bits = []
+	if not live:
+		# FIRST, and said plainly. A reader who assumes these figures are
+		# already being applied will not chase a wrong one, because they will
+		# think it is somebody else's job now.
+		bits.append(_(
+			"<b>These rules are not switched on.</b> The figures below are what "
+			"they WOULD produce. No attendance has been judged and no salary "
+			"slip carries any of it. Tick <b>Enabled</b> on the rule set when "
+			"the numbers are right."))
+	bits += [
 		_("Every figure here comes from the same calculation the salary slip "
 		  "uses, so the two cannot disagree. Nothing is written by running it."),
-		_("Period: {0} to {1}. Rule set: {2}.").format(
-			from_date, to_date, frappe.bold(rule_set.name)),
+		_("Period: {0} to {1}. Rule set: {2}{3}.").format(
+			from_date, to_date, frappe.bold(rule_set.name),
+			"" if live else _(" (not live)")),
 	]
 	if skipped:
 		bits.append(_(

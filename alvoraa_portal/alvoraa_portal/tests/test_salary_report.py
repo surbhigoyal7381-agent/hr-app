@@ -20,6 +20,8 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, getdate, nowdate
 
+from alvoraa_portal.tests.utils import ensure_fiscal_years
+
 from alvoraa_portal.alvoraa_portal.report.salary_components_and_workings import (
 	salary_components_and_workings as report,
 )
@@ -41,16 +43,26 @@ def _gender():
 
 
 def _early_this_year():
-	"""A date inside the ACTIVE fiscal year, not a fixed one.
+	"""A date inside the fiscal year, which `setUpModule` makes sure exists.
 
-	The same lesson as `_gender` above, and I did not apply it. "2024-01-01"
-	passed on this bench, which has fiscal years going back years, and errored
-	on every CI run - a freshly built site has only the current fiscal year,
-	and a Salary Structure Assignment refuses a date outside it:
+	TWO WRONG ANSWERS BEFORE THIS ONE, and the right one was already in the
+	repo. A Salary Structure Assignment refuses a date outside an active
+	fiscal year.
 
-	    FiscalYearError: Date 2024-01-01 is not in any active Fiscal Year
+	First attempt hard-coded "2024-01-01". That passed on a bench with years
+	of fiscal years and errored on every CI run.
 
-	Not a fault in the report. The setup failed before a single assertion ran.
+	Second attempt read the active year instead of assuming one - and failed
+	worse, 8 errors instead of 4, because it ran per test rather than once:
+
+	    FiscalYearError: Date 2026-10-16 is not in any active Fiscal Year
+
+	A brand-new CI site has NO fiscal year at all. Not a missing 2024 - none.
+	So reading the active year cannot work either; the year has to be MADE.
+
+	`tests/utils.ensure_fiscal_years()` has done exactly that since 24 Sep
+	2026, and its docstring names this error and this cause. It was there the
+	whole time.
 	"""
 	from erpnext.accounts.utils import get_fiscal_year
 
@@ -61,6 +73,12 @@ def _early_this_year():
 
 
 def setUpModule():
+	# BEFORE ANYTHING ELSE. A brand-new CI site has no Fiscal Year at all, and
+	# a Salary Structure Assignment will not save without one. Making it here
+	# costs one query when it already exists, and is the difference between
+	# this module running and every test in it erroring in setUp.
+	ensure_fiscal_years()
+
 	if not frappe.db.exists("Company", COMPANY):
 		frappe.get_doc({"doctype": "Company", "company_name": COMPANY,
 		                "abbr": ABBR, "default_currency": "INR",

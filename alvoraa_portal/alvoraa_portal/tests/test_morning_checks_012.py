@@ -14,13 +14,28 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
-from frappe.utils import add_days, getdate
+from frappe.utils import add_days, getdate, today
 
 from alvoraa_portal import data_review as dr
 from alvoraa_portal.tests import leader_fixtures_012 as fx
 
-AS_OF = getdate("2026-09-14")
-DAY = getdate("2026-09-08")
+# RELATIVE, NOT FIXED. These were "2026-09-14" and "2026-09-08", and they
+# worked until they did not.
+#
+# `run_morning_checks` takes no date - it uses today - and only looks back
+# WINDOW_DAYS (35). So a fixture built on a hard-coded day is inside the window
+# while the calendar agrees and outside it afterwards, with nothing changing in
+# the code. 8 September fell out of range on 13 October 2026, and from then on
+# the two tests that call `run_morning_checks` failed every run and would never
+# have passed again:
+#
+#     AssertionError: 0 != 1
+#
+# Six days apart is what the fixtures assume, and a day at least one day old is
+# what the window requires, so both are expressed that way instead of written
+# down.
+AS_OF = getdate(today())
+DAY = getdate(add_days(today(), -6))
 
 
 def setUpModule():

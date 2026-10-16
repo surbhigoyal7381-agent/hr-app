@@ -1762,7 +1762,7 @@ window.posSeatsNote = function () {
   }
   if (want < filled) {
     note.textContent = posNum(filled) + " already in it - this will be refused.";
-    note.style.color = "var(--danger, #c0392b)";
+    note.style.color = "var(--red)";
     return;
   }
   note.style.color = "";

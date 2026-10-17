@@ -732,9 +732,12 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# 88 at 4e3ba28; 68 after slice 010 group D phase 2 moved review writes
 		# to the one review-record save in review_items.py; 64 after phase 3's HR
 		# cycle screens stopped reading live KPIs around permissions.
-		("alvoraa_portal", "performance_api.py"): 64,
+		# 64 -> 63 on 17 Oct 2026: counted in code rather than prose.
+		("alvoraa_portal", "performance_api.py"): 63,
 		# 77 until slice 012 G1 moved HR Analytics' two name lists to get_list.
-		("alvoraa_portal", "hr_api.py"): 75,
+		# 75 -> 69 on 17 Oct 2026: three of the six were only mentioned in
+		# comments, so the ceiling had been carrying prose as headroom.
+		("alvoraa_portal", "hr_api.py"): 69,
 		# Slice 012 (OPS-75): new files start at zero, so "no new ignore_permissions"
 		# is proven for them too, not only for files already listed.
 		("alvoraa_portal", "org_figures.py"): 0,
@@ -742,8 +745,13 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		("alvoraa_portal", "attendance_analytics.py"): 0,
 		("alvoraa_portal", "alvoraa_portal/doctype/alvoraa_data_review_item/alvoraa_data_review_item.py"): 0,
 		("alvoraa_portal", "alvoraa_portal/doctype/alvoraa_leader_view_settings/alvoraa_leader_view_settings.py"): 0,
-		("alvoraa_portal", "goals_api.py"): 15,
-		("alvoraa_portal", "attendance_correction.py"): 2,
+		# 15 -> 13 on 17 Oct 2026: counted in code rather than prose.
+		("alvoraa_portal", "goals_api.py"): 13,
+		# 2 -> 0 on 17 Oct 2026. This module bypasses permissions NOWHERE, and
+		# the ceiling now says so. It was failing CI on four prose mentions
+		# while containing no bypass at all; 0 is both the truth and the
+		# tightest the gate can be, so a future use has to be argued for here.
+		("alvoraa_portal", "attendance_correction.py"): 0,
 		("alvoraa_goals", "api/goal_api.py"): 0,
 		("alvoraa_goals", "controllers/evidence.py"): 0,
 		# 2 at 4e3ba28; +1 on purpose in slice 010: recalculate_progress saves a
@@ -800,12 +808,39 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):
+		"""Counted in CODE, not in prose.
+
+		This used to search the whole file for the word, comments and docstrings
+		included - so a module that documented "no bypass here" was accused of
+		doing exactly that. `attendance_correction.py` has NO bypass anywhere in
+		it and was failing on four mentions, three of which promise not to use
+		one and the fourth of which describes a call that was removed.
+
+		A comment cannot bypass a permission. So the docstrings are blanked and
+		the tree is unparsed, which drops comments entirely - the same method
+		`NoQuietBypass` in test_attendance_correction already uses, for the same
+		reason. The ceilings were re-baselined to the code counts at the same
+		time, so no gate became looser in the move: the prose was inflating four
+		of them.
+		"""
+		import ast
 		import importlib
 
 		for (app, rel), ceiling in self.CEILINGS.items():
 			root = os.path.dirname(importlib.import_module(app).__file__)
-			with open(os.path.join(root, rel), encoding="utf-8") as f:
-				count = len(re.findall(r"ignore_permissions", f.read()))
+			# utf-8-sig: performance_api.py carries a byte-order mark, and
+			# ast.parse refuses it as a non-printable character.
+			with open(os.path.join(root, rel), encoding="utf-8-sig") as f:
+				tree = ast.parse(f.read())
+			for node in ast.walk(tree):
+				if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+				                     ast.AsyncFunctionDef)):
+					first = node.body[0] if node.body else None
+					if (isinstance(first, ast.Expr)
+							and isinstance(first.value, ast.Constant)
+							and isinstance(first.value.value, str)):
+						first.value.value = ""
+			count = len(re.findall(r"ignore_permissions", ast.unparse(tree)))
 			self.assertLessEqual(count, ceiling, f"{app}/{rel}")
 
 

@@ -708,6 +708,71 @@ class AManagersWholeTeamOnOnePage(CorrectionCase):
 		finally:
 			frappe.set_user("Administrator")
 
+	def test_the_page_opens_on_the_direct_reports_not_the_whole_line(self):
+		"""Surbhi, 17 Oct 2026: "direct reports only". The page opens on the
+		people a manager can actually DO something about, because acting stops
+		at the direct reports - offering a skip-level day with a button that
+		then refuses would be worse than not offering it."""
+		below, _ = self.person("Tddeep%d" % CorrectionCase._slot)
+		frappe.db.set_value("Employee", below, "reports_to", self.a)
+		self.day(below, self.d(1), 9)
+		self.day(self.a, self.d(1), 9)
+		seen = {r["employee"] for r in self.team()["rows"]}
+		self.assertIn(self.a, seen)
+		self.assertNotIn(below, seen, "a grandchild is not a direct report")
+
+	def test_the_whole_line_is_there_when_it_is_asked_for(self):
+		"""The same choice Attendance Insights already offers, so a manager can
+		still see what they are accountable for."""
+		below, _ = self.person("Tdwide%d" % CorrectionCase._slot)
+		frappe.db.set_value("Employee", below, "reports_to", self.a)
+		self.day(below, self.d(1), 9)
+		seen = {r["employee"] for r in self.team(depth="all")["rows"]}
+		self.assertIn(below, seen)
+
+	def test_a_page_says_how_many_there_were_altogether(self):
+		"""Without a total, somebody reaching the end of page one cannot tell
+		whether they are finished."""
+		for i in range(1, 5):
+			self.day(self.a, self.d(i), 9)
+		out = self.team(page_length=2)
+		self.assertEqual(len(out["rows"]), 2)
+		self.assertGreaterEqual(out["total"], 4)
+		self.assertEqual(out["page_length"], 2)
+
+	def test_the_second_page_carries_on_where_the_first_stopped(self):
+		for i in range(1, 5):
+			self.day(self.a, self.d(i), 9)
+		first = self.team(page_length=2)
+		second = self.team(page_length=2, start=2)
+		self.assertEqual(second["start"], 2)
+		keys = lambda o: {(r["employee"], r["date"]) for r in o["rows"]}
+		self.assertFalse(keys(first) & keys(second), "a page must not repeat rows")
+
+	def test_the_counts_are_for_the_whole_period_not_the_page(self):
+		"""A chip reading "4 need a look" has to mean four altogether. Counting
+		only the page would tell a manager they were done at the end of page
+		one."""
+		for i in range(1, 5):
+			day = self.d(i)
+			self.day(self.a, day, 0, status="Absent", in_time=day + " 09:04:00")
+			self.punch(self.a, day + " 09:04:00", "IN")
+		out = self.team(page_length=1)
+		self.assertEqual(len(out["rows"]), 1)
+		self.assertGreaterEqual(out["counts"].get("no_clock_out", 0), 4)
+
+	def test_a_page_cannot_be_asked_to_exceed_the_safety_net(self):
+		self.day(self.a, self.d(1), 9)
+		self.assertLessEqual(self.team(page_length=99999, limit=5)["page_length"], 5)
+
+	def test_narrowing_by_branch_empties_the_person_filter_too(self):
+		"""The picker and the rows must agree. A branch filter that left every
+		colleague in the picker would read as a broken page."""
+		self.day(self.a, self.d(1), 9)
+		out = self.team(branch="No Such Branch")
+		self.assertEqual(out["rows"], [])
+		self.assertEqual(out["people"], [])
+
 	def test_a_manager_sees_both_reports_and_not_the_outsider(self):
 		self.day(self.a, self.d(1), 9, in_time=self.d(1) + " 09:00:00",
 		         out_time=self.d(1) + " 18:00:00")
@@ -823,6 +888,46 @@ class AManagerRaisingItForSomebodyElse(CorrectionCase):
 		e = frappe.get_doc("Employee", self.report)
 		e.reports_to = self.boss
 		e.save(ignore_permissions=True)
+
+	def test_a_skip_level_report_is_refused_and_told_whose_job_it_is(self):
+		"""Surbhi, 17 Oct 2026: "direct reports only."
+
+		This also closes a real gap rather than only narrowing a rule.
+		`manager_scope` grants the Frappe permission for DIRECT reports only, so
+		before this a request for somebody further down passed our own check and
+		then failed on the document's permission check - a confusing refusal,
+		and only ever for skip-level reports, which is the case nobody tries by
+		hand. The refusal now happens here, in words that say what to do.
+		"""
+		below, _ = self.person("Rfdeep%d" % CorrectionCase._slot)
+		e = frappe.get_doc("Employee", below)
+		e.reports_to = self.report
+		e.save(ignore_permissions=True)
+
+		frappe.set_user(self.boss_email)
+		try:
+			with self.assertRaises(frappe.PermissionError) as caught:
+				ac.raise_for_report(below, self.d(1), reason="On Duty")
+		finally:
+			frappe.set_user("Administrator")
+		self.assertIn("report directly", str(caught.exception))
+
+	def test_reading_a_skip_level_month_still_works(self):
+		"""Narrowing who a manager may ACT for must not take away a screen they
+		already use. Reading the whole line is a different question, and
+		`_subject` still answers yes to it."""
+		below, _ = self.person("Rfread%d" % CorrectionCase._slot)
+		e = frappe.get_doc("Employee", below)
+		e.reports_to = self.report
+		e.save(ignore_permissions=True)
+
+		frappe.set_user(self.boss_email)
+		try:
+			y, m = self.ym(1)
+			out = ac.month(year=y, month=m, employee=below)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(out["employee"], below)
 
 	def test_a_manager_can_raise_one_for_a_report(self):
 		frappe.set_user(self.boss_email)

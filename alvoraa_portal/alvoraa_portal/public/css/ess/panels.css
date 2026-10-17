@@ -2067,3 +2067,65 @@ body.panel-fullscreen{overflow:hidden}
   .dr-actions .btn{width:100%;justify-content:center;white-space:normal}
   .dr-chip{margin-left:0}
 }
+
+/* ── Attendance Review (Team View, third tab) ─────────────────────────────
+   The team's days, worst first, with a way to ask HR to fix one. Built from
+   the same pieces as Attendance Insights' bar and the correction form, so
+   the two screens a manager moves between do not look like two products. */
+.tr-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:12px}
+.tr-f{display:flex;flex-direction:column;gap:3px}
+.tr-f>span{font-size:var(--fs-xs);color:var(--text3);font-weight:700;
+  letter-spacing:.04em;text-transform:uppercase}
+.tr-f .form-control{font:inherit;font-size:var(--fs-sm);padding:6px 10px;
+  border:1px solid var(--border);border-radius:var(--r-sm);
+  background:var(--surface);color:var(--text)}
+
+.tr-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.tr-chip{font-size:var(--fs-xs);font-weight:600;padding:4px 11px;
+  border-radius:var(--r-full);border:1px solid var(--border);
+  background:var(--surface);color:var(--text2);cursor:pointer}
+.tr-chip b{font-weight:700}
+.tr-chip.on{background:var(--primary);border-color:var(--primary);color:var(--surface)}
+.tr-chip.bad:not(.on){border-color:var(--red);color:var(--red)}
+.tr-chip.warn:not(.on){border-color:var(--amber);color:var(--amber)}
+.tr-chip.ok:not(.on){border-color:var(--green);color:var(--green)}
+
+.tr-group{border:1px solid var(--border);border-radius:var(--r-sm);
+  margin-bottom:10px;background:var(--surface);overflow:hidden}
+.tr-group-hdr{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;
+  padding:9px 14px;background:var(--surface2);border-bottom:1px solid var(--border)}
+.tr-group-name{font-size:var(--fs-base);font-weight:700;color:var(--text)}
+.tr-group-sub{font-size:var(--fs-xs);color:var(--text3)}
+.tr-group-n{margin-left:auto;font-size:var(--fs-xs);color:var(--text3);
+  font-variant-numeric:tabular-nums}
+
+.tr-day{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;
+  border-bottom:1px solid var(--border)}
+.tr-day:last-child{border-bottom:0}
+.tr-day-main{flex:1;min-width:0}
+.tr-day-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  font-size:var(--fs-sm);color:var(--text)}
+.tr-day-sub{font-size:var(--fs-xs);color:var(--text3);margin-top:3px}
+.tr-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:7px}
+.tr-dot.bad{background:var(--red)}
+.tr-dot.warn{background:var(--amber)}
+.tr-dot.ok{background:var(--green)}
+.tr-status{font-size:var(--fs-xs);color:var(--text3)}
+.tr-need{font-size:var(--fs-xs);font-weight:700;padding:2px 8px;
+  border-radius:var(--r-full)}
+.tr-need.bad{background:var(--red-lt);color:var(--red)}
+.tr-need.warn{background:var(--amber-lt);color:var(--amber)}
+.tr-need.ok{background:var(--green-lt);color:var(--green)}
+.tr-ask{flex-shrink:0;white-space:nowrap}
+.tr-form{max-width:460px}
+
+.tr-pager{display:flex;align-items:center;gap:8px;margin-top:12px}
+.tr-count{font-size:var(--fs-xs);color:var(--text3);margin-right:auto;
+  font-variant-numeric:tabular-nums}
+
+@media(max-width:700px){
+  .tr-bar{gap:8px}
+  .tr-f{flex:1 1 140px}
+  .tr-day{flex-wrap:wrap}
+  .tr-ask{width:100%}
+}

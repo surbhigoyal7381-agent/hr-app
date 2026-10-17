@@ -1212,11 +1212,29 @@ def _punch_counts(people_ids, from_date, to_date):
 
 @frappe.whitelist()
 def team_days(from_date=None, to_date=None, employee=None, only=None,
-              limit=2000):
-	"""Every day across the caller's reports, with what needs a look first.
+              depth="direct", department=None, branch=None,
+              start=0, page_length=50, limit=2000):
+	"""Every day across the caller's team, with what needs a look first.
 
-	`employee` narrows to one person; without it the page shows the whole
-	reporting tree. `only` keeps a single flag, for the filter chips.
+	`employee` narrows to one person. `only` keeps a single flag, for the
+	filter chips. `department` and `branch` narrow the people.
+
+	`depth` is "direct" or "all". Surbhi, 17 Oct 2026: a manager may only ACT
+	for a direct report, so the page opens on the people they can actually do
+	something about. "all" shows the whole line they are accountable for, which
+	is the same choice Attendance Insights already offers. HR sees everybody
+	either way, so it does nothing for them.
+
+	ONE PAGE AT A TIME. HR opens this across the whole company - 363 people on
+	DTC - so `start` and `page_length` return a slice, and `total` says how many
+	there were. The counts are deliberately for the WHOLE period and not the
+	page: a chip reading "4 need a look" has to mean four altogether, or a
+	manager stops at the end of page one believing they are done.
+
+	Paging bounds the payload, NOT the server's reading. The flags depend on
+	punch counts worked out after the query, so the window has to be read and
+	flagged before it can be sliced. What bounds the reading is the period: a
+	fortnight by default, three months at most.
 
 	PERMISSION IS DECIDED HERE, NOT LEFT TO A FILTER. A manager holds no
 	blanket read on Attendance, so a `get_list` would return an empty page that
@@ -1226,15 +1244,17 @@ def team_days(from_date=None, to_date=None, employee=None, only=None,
 	read is explicit.
 	"""
 	me = _employee_for(frappe.session.user)
-	if _may_review():
+	may_review = _may_review()
+	if may_review:
 		team = None                       # HR: anybody, narrowed below if asked
 	else:
 		if not me:
 			frappe.throw(_("Your user is not linked to an employee record, so "
 			               "there is nobody you can open."), frappe.PermissionError)
-		team = _reports_to(me.name, deep=True)
+		team = _reports_to(me.name, deep=(str(depth) == "all"))
 		if not team:
 			return {"people": [], "rows": [], "counts": {}, "nobody": True,
+			        "total": 0, "start": 0, "page_length": cint(page_length) or 50,
 			        "from_date": str(getdate(from_date or nowdate())),
 			        "to_date": str(getdate(to_date or nowdate()))}
 
@@ -1257,10 +1277,19 @@ def team_days(from_date=None, to_date=None, employee=None, only=None,
 	if (to_date - from_date).days > 92:
 		frappe.throw(_("Please choose a period of three months or less."))
 
+	# Narrowed on the PEOPLE rather than on their days, so a department filter
+	# empties the person picker too and the page stays self-consistent.
+	who_filters = {"name": ("in", people_ids or [""])}
+	if department:
+		who_filters["department"] = department
+	if branch:
+		who_filters["branch"] = branch
 	people = {p.name: p for p in frappe.get_all(
-		"Employee", filters={"name": ("in", people_ids or [""])},
+		"Employee", filters=who_filters,
 		fields=["name", "employee_name", "designation", "department", "branch"],
 		order_by="employee_name asc", limit_page_length=0)}
+	if department or branch:
+		people_ids = list(people.keys())
 
 	rows = frappe.get_all(
 		"Attendance",
@@ -1271,6 +1300,14 @@ def team_days(from_date=None, to_date=None, employee=None, only=None,
 		order_by="attendance_date desc", limit_page_length=0)
 
 	punch_count = _punch_counts(people_ids, from_date, to_date)
+
+	# Which rows this caller may actually ACT on. Acting stops at the direct
+	# reports, so with the whole line showing a manager sees days they cannot
+	# raise - and a button that refuses when pressed is worse than no button.
+	# The screen reads this instead of working the reporting line out again.
+	can_raise_all = bool(may_review)
+	direct_ids = set() if can_raise_all else set(
+		_reports_to(me.name, deep=False) if me else [])
 
 	out, counts = [], {}
 	for r in rows:
@@ -1299,19 +1336,33 @@ def team_days(from_date=None, to_date=None, employee=None, only=None,
 			"flag": flag,
 			"late": bool(r.late_entry),
 			"early": bool(r.early_exit),
+			"can_raise": can_raise_all or r.employee in direct_ids,
 		})
 
 	order = {f: i for i, f in enumerate(NEEDS)}
 	out.sort(key=lambda d: (order.get(d["flag"], 99), d["date"], d["employee_name"]))
-	cap = cint(limit) or 2000
+
+	# The page. `limit` stays as the outer safety net it always was; a caller
+	# cannot ask for a page bigger than it.
+	total = len(out)
+	size = min(cint(page_length) or 50, cint(limit) or 2000)
+	begin = max(0, cint(start))
+	page = out[begin:begin + size]
 
 	return {
 		"from_date": str(from_date),
 		"to_date": str(to_date),
 		"people": sorted(people.values(), key=lambda p: p.employee_name or ""),
-		"rows": out[:cap],
+		"rows": page,
 		"counts": counts,
-		"truncated": len(out) > cap,
+		"total": total,
+		"start": begin,
+		"page_length": size,
+		# HR sees everybody, so `depth` does nothing for them. Said here so the
+		# screen can leave out a control that would change nothing - an option
+		# that visibly does nothing reads as a broken page.
+		"everybody": bool(may_review),
+		"depth": "all" if str(depth) == "all" else "direct",
 	}
 
 
@@ -1342,6 +1393,31 @@ def raise_for_report(employee, from_date, to_date=None, reason=None,
 		# Their own day: the ordinary endpoint, with its ordinary rules.
 		return raise_correction(from_date, to_date, reason, explanation,
 		                        half_day, half_day_date)
+
+	# ── ACTING STOPS AT THE DIRECT REPORTS ───────────────────────────────────
+	#
+	# Surbhi, 17 Oct 2026, asked whether a manager may act for somebody two
+	# levels down: "direct reports only."
+	#
+	# `_subject` allows the whole line, because READING a month is a different
+	# question and managers already have that - narrowing it there would take
+	# away a screen they use today. Acting is narrowed here instead.
+	#
+	# It also closes a real gap. `manager_scope` grants the Frappe permission
+	# for DIRECT reports only, so a request for somebody further down passed
+	# this function and then failed on the document's own permission check -
+	# a confusing refusal, and only ever for skip-level reports, which is
+	# exactly the case nobody tries by hand. Now the refusal is here, in words
+	# that say what to do instead.
+	if not _may_review():
+		me_now = _employee_for(frappe.session.user)
+		direct = _reports_to(me_now.name, deep=False) if me_now else []
+		if subject.name not in direct:
+			frappe.throw(
+				_("{0} does not report directly to you, so this is their own "
+				  "manager's to raise. You can still open their attendance to "
+				  "see what happened.").format(subject.employee_name or subject.name),
+				frappe.PermissionError)
 
 	to_date = to_date or from_date
 	if getdate(to_date) < getdate(from_date):

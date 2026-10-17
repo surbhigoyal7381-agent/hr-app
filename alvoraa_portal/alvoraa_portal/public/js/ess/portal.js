@@ -6447,10 +6447,14 @@ function renderDrawerGoals(goals, empId) {
 let _teamMemberMap = {};   // empId → empName, populated from portal context
 
 function switchTeamTab(tab) {
-  document.getElementById("tv-attendance-panel").style.display = tab === "attendance" ? "" : "none";
-  document.getElementById("tv-notes-panel").style.display = tab === "notes" ? "" : "none";
-  document.getElementById("tvtab-attendance").classList.toggle("active", tab === "attendance");
-  document.getElementById("tvtab-notes").classList.toggle("active", tab === "notes");
+  var tabs = ["attendance", "review", "notes"];
+  tabs.forEach(function (t) {
+    var panel = document.getElementById("tv-" + t + "-panel");
+    if (panel) panel.style.display = tab === t ? "" : "none";
+    var btn = document.getElementById("tvtab-" + t);
+    if (btn) btn.classList.toggle("active", tab === t);
+  });
+  if (tab === "review") { trOpen(); }
   if (tab === "notes") {
     populateTeamNoteEmpFilter();
     tnFillEmployeeSelect();
@@ -6458,6 +6462,354 @@ function switchTeamTab(tab) {
     loadTeamNotes();
   }
 }
+
+/* ── Attendance Review: the team's days, worst first ─────────────────────
+   Surbhi, 17 Oct 2026: "we would need one page with filter for all the
+   reporting persons first", and "only attendance facts" - not pay
+   consequences. So nothing here shows money, and a test asserts it stays
+   that way.
+
+   A THIRD TAB ON TEAM VIEW, not a new page. The first tab is today and this
+   month at a glance; this one is the day-by-day record somebody works
+   through. Same job, so the same door.
+
+   THE SERVER DECIDES WHO MAY BE SEEN AND ACTED ON. `can_raise` comes back
+   per row, because acting stops at the direct reports while the whole line
+   may be viewed - so the button is simply absent where it would refuse.
+   This screen never works the reporting line out for itself. */
+var trState = {
+  from: null, to: null, employee: "", only: "", depth: "direct",
+  department: "", branch: "", group: "person", start: 0, size: 50,
+  data: null, open: null
+};
+
+/* The server's flags, in words, with how loudly to say them. Worst first,
+   the same order the server sorts by. */
+var TR_FLAGS = [
+  ["no_clock_out", "No clock-out", "bad"],
+  ["absent_but_punched", "Absent but badged in", "bad"],
+  ["absent", "Absent", "warn"],
+  ["short", "Short hours", "warn"],
+  ["ok", "Fine", "ok"]
+];
+
+/* The server refuses in words worth showing - "nobody reports to you", a
+   period longer than three months, "does not report directly to you". Note
+   `gpErr` is private to a closure further down this file, so it cannot be
+   used here: calling it would throw a ReferenceError at the exact moment
+   something had already gone wrong. */
+function trErr(e) {
+  return (e && e.message) ? e.message : "Could not load that.";
+}
+
+function trFlag(key) {
+  for (var i = 0; i < TR_FLAGS.length; i++) {
+    if (TR_FLAGS[i][0] === key) return TR_FLAGS[i];
+  }
+  return [key, key, "warn"];
+}
+
+function trDaysAgo(n) {
+  var d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+window.trOpen = async function () {
+  if (!trState.from) {
+    /* A fortnight. Long enough to catch last week's missing clock-out,
+       short enough that the first screen is not a wall. */
+    trState.to = trDaysAgo(0);
+    trState.from = trDaysAgo(13);
+  }
+  if (!acState.reasons) {
+    try { acState.reasons = await acApi("reasons"); } catch (e) { acState.reasons = []; }
+  }
+  trLoad();
+};
+
+window.trLoad = async function () {
+  var body = document.getElementById("tr-body");
+  if (body) body.innerHTML = '<p class="ac-empty">Loading&hellip;</p>';
+  try {
+    trState.data = await acApi("team_days", {
+      from_date: trState.from,
+      to_date: trState.to,
+      employee: trState.employee || null,
+      only: trState.only || null,
+      depth: trState.depth,
+      department: trState.department || null,
+      branch: trState.branch || null,
+      start: trState.start,
+      page_length: trState.size
+    });
+  } catch (e) {
+    /* The server refuses in words - "nobody reports to you", a period too
+       long - so show what it said rather than a generic failure. */
+    if (body) body.innerHTML = '<p class="ac-empty">' + gpEsc(trErr(e)) + "</p>";
+    trBar();
+    return;
+  }
+  trBar();
+  trChips();
+  trRows();
+  trPager();
+};
+
+/* ── the filters ──────────────────────────────────────────────────────── */
+
+function trPicks(values, chosen, blank) {
+  return '<option value="">' + gpEsc(blank) + "</option>"
+    + values.filter(Boolean).map(function (v) {
+        return '<option value="' + gpEsc(v) + '"'
+          + (String(v) === String(chosen) ? " selected" : "") + ">"
+          + gpEsc(v) + "</option>";
+      }).join("");
+}
+
+function trBar() {
+  var bar = document.getElementById("tr-bar");
+  if (!bar) return;
+  var d = trState.data || {};
+  var people = d.people || [];
+  var depts = [], branches = [];
+  people.forEach(function (p) {
+    if (p.department && depts.indexOf(p.department) < 0) depts.push(p.department);
+    if (p.branch && branches.indexOf(p.branch) < 0) branches.push(p.branch);
+  });
+  depts.sort();
+  branches.sort();
+
+  var html = '<label class="tr-f"><span>From</span>'
+    + '<input type="date" class="form-control" value="' + gpEsc(trState.from || "")
+    + '" onchange="trSet(&quot;from&quot;,this.value)"></label>'
+    + '<label class="tr-f"><span>To</span>'
+    + '<input type="date" class="form-control" value="' + gpEsc(trState.to || "")
+    + '" onchange="trSet(&quot;to&quot;,this.value)"></label>'
+    + '<label class="tr-f"><span>Person</span>'
+    + '<select class="form-control" onchange="trSet(&quot;employee&quot;,this.value)">'
+    + '<option value="">Everyone</option>'
+    + people.map(function (p) {
+        return '<option value="' + gpEsc(p.name) + '"'
+          + (p.name === trState.employee ? " selected" : "") + ">"
+          + gpEsc(p.employee_name || p.name) + "</option>";
+      }).join("")
+    + "</select></label>";
+
+  /* Offered only where there is a choice to make. One department is not a
+     filter, it is a control that does nothing. */
+  if (depts.length > 1) {
+    html += '<label class="tr-f"><span>Department</span>'
+      + '<select class="form-control" onchange="trSet(&quot;department&quot;,this.value)">'
+      + trPicks(depts, trState.department, "All") + "</select></label>";
+  }
+  if (branches.length > 1) {
+    html += '<label class="tr-f"><span>Branch</span>'
+      + '<select class="form-control" onchange="trSet(&quot;branch&quot;,this.value)">'
+      + trPicks(branches, trState.branch, "All") + "</select></label>";
+  }
+
+  html += '<label class="tr-f"><span>Group by</span>'
+    + '<select class="form-control" onchange="trSet(&quot;group&quot;,this.value)">'
+    + '<option value="person"' + (trState.group === "person" ? " selected" : "")
+    + ">Person</option>"
+    + '<option value="date"' + (trState.group === "date" ? " selected" : "")
+    + ">Date</option></select></label>";
+
+  /* HR already sees everybody, so depth changes nothing for them. */
+  if (!d.everybody) {
+    html += '<label class="tr-f"><span>Show</span>'
+      + '<select class="form-control" onchange="trSet(&quot;depth&quot;,this.value)">'
+      + '<option value="direct"' + (trState.depth === "direct" ? " selected" : "")
+      + ">My direct reports</option>"
+      + '<option value="all"' + (trState.depth === "all" ? " selected" : "")
+      + ">Everyone below me</option></select></label>";
+  }
+
+  bar.innerHTML = html;
+}
+
+window.trSet = function (key, value) {
+  trState[key] = value;
+  trState.open = null;
+  /* Grouping only rearranges what is already here, so it needs no round
+     trip. Everything else changes what is being asked for and starts again
+     at the first page - keeping the offset would land somebody on an empty
+     page three. */
+  if (key === "group") { trRows(); return; }
+  trState.start = 0;
+  trLoad();
+};
+
+/* ── the chips ────────────────────────────────────────────────────────── */
+
+function trChips() {
+  var el = document.getElementById("tr-chips");
+  if (!el) return;
+  var counts = (trState.data || {}).counts || {};
+  var html = '<span class="tr-chip' + (trState.only ? "" : " on")
+    + '" onclick="trSet(&quot;only&quot;,&quot;&quot;)">Everything</span>';
+  TR_FLAGS.forEach(function (f) {
+    var n = counts[f[0]] || 0;
+    if (!n) return;
+    html += '<span class="tr-chip ' + f[2] + (trState.only === f[0] ? " on" : "")
+      + '" onclick="trSet(&quot;only&quot;,&quot;' + f[0] + '&quot;)">'
+      + gpEsc(f[1]) + " <b>" + n + "</b></span>";
+  });
+  el.innerHTML = html;
+}
+
+/* ── the days ─────────────────────────────────────────────────────────── */
+
+function trRows() {
+  var body = document.getElementById("tr-body");
+  if (!body) return;
+  var d = trState.data || {};
+  if (d.nobody) {
+    body.innerHTML = '<p class="ac-empty">Nobody reports to you, so there is '
+      + "nothing to review here.</p>";
+    return;
+  }
+  var rows = d.rows || [];
+  if (!rows.length) {
+    body.innerHTML = '<p class="ac-empty">'
+      + (trState.only
+          ? "Nothing in this period needs that."
+          : "No attendance recorded for this period.")
+      + "</p>";
+    return;
+  }
+
+  var byPerson = trState.group === "person";
+  var groups = [], index = {};
+  rows.forEach(function (r) {
+    var key = byPerson ? r.employee : r.date;
+    if (!(key in index)) {
+      index[key] = groups.length;
+      groups.push({
+        label: byPerson ? (r.employee_name || r.employee) : fmtDate(r.date),
+        sub: byPerson
+          ? [r.designation, r.department, r.branch].filter(Boolean).join(" · ")
+          : "",
+        items: []
+      });
+    }
+    groups[index[key]].items.push(r);
+  });
+
+  body.innerHTML = groups.map(function (g) {
+    return '<div class="tr-group"><div class="tr-group-hdr">'
+      + '<span class="tr-group-name">' + gpEsc(g.label) + "</span>"
+      + (g.sub ? '<span class="tr-group-sub">' + gpEsc(g.sub) + "</span>" : "")
+      /* Grouped by person these are days; grouped by date they are people.
+         Saying "1 day" under a date heading reads as nonsense. */
+      + '<span class="tr-group-n">' + g.items.length + " "
+      + (byPerson ? (g.items.length === 1 ? "day" : "days")
+                  : (g.items.length === 1 ? "person" : "people")) + "</span></div>"
+      + g.items.map(function (r) { return trDay(r, byPerson); }).join("")
+      + "</div>";
+  }).join("");
+}
+
+function trDay(r, byPerson) {
+  var f = trFlag(r.flag);
+  var key = r.employee + "|" + r.date;
+  var who = byPerson ? fmtDate(r.date) : (r.employee_name || r.employee);
+  var bits = [];
+  if (r.shift) bits.push(r.shift);
+  bits.push(r.hours ? r.hours + "h" : "no hours");
+  bits.push(r.punches + (r.punches === 1 ? " punch" : " punches"));
+  if (r.late) bits.push("late in");
+  if (r.early) bits.push("left early");
+  var times = (r.in_time || "--:--") + " – " + (r.out_time || "--:--");
+
+  return '<div class="tr-day"><span class="tr-dot ' + f[2] + '"></span>'
+    + '<div class="tr-day-main"><div class="tr-day-top"><b>' + gpEsc(who) + "</b>"
+    + '<span class="tr-status">' + gpEsc(r.status || "") + "</span>"
+    + '<span class="tr-need ' + f[2] + '">' + gpEsc(f[1]) + "</span></div>"
+    + '<div class="tr-day-sub">' + gpEsc(times) + " · "
+    + gpEsc(bits.join(" · ")) + "</div>"
+    + (trState.open === key ? trAskForm(r) : "")
+    + "</div>"
+    /* No button where the server says this is not ours to raise. Acting
+       stops at the direct reports, and a button that refuses when pressed
+       is worse than no button. */
+    + (r.can_raise
+        ? '<button class="btn btn-outline btn-sm tr-ask" onclick="trAsk(&quot;'
+          + gpEsc(key) + '&quot;)">'
+          + (trState.open === key ? "Cancel" : "Ask HR to fix") + "</button>"
+        : "")
+    + "</div>";
+}
+
+window.trAsk = function (key) {
+  trState.open = trState.open === key ? null : key;
+  trRows();
+};
+
+function trAskForm(r) {
+  var opts = (acState.reasons || []).map(function (o) {
+    return '<option value="' + gpEsc(o.value) + '">' + gpEsc(o.value) + "</option>";
+  }).join("");
+  return '<div class="ac-form tr-form">'
+    + '<label class="form-label">What happened on this day?</label>'
+    + '<select id="tr-reason"><option value="">Choose a reason&hellip;</option>'
+    + opts + "</select>"
+    + '<label class="form-label">Anything HR should know</label>'
+    + '<textarea id="tr-explain" placeholder="Say briefly what happened."></textarea>'
+    + '<p class="ac-help">HR decides this. Your name goes on the request, so '
+    + "they know you are standing behind it.</p>"
+    + '<div class="ac-acts"><button class="btn btn-primary" onclick="trSubmit(&quot;'
+    + gpEsc(r.employee) + '&quot;,&quot;' + r.date + '&quot;)">Send to HR</button>'
+    + "</div></div>";
+}
+
+window.trSubmit = async function (employee, date) {
+  var reason = (document.getElementById("tr-reason") || {}).value;
+  var explain = (document.getElementById("tr-explain") || {}).value;
+  if (!reason) { toast("Please choose a reason.", "err"); return; }
+  showLoad();
+  try {
+    await acApi("raise_for_report", {
+      employee: employee, from_date: date, reason: reason, explanation: explain
+    });
+    toast("Sent to HR. They will confirm or reject it.", "ok");
+    trState.open = null;
+    await trLoad();
+  } catch (e) {
+    toast(trErr(e), "err");
+  } finally {
+    hideLoad();
+  }
+};
+
+/* ── the pager ────────────────────────────────────────────────────────── */
+
+function trPager() {
+  var el = document.getElementById("tr-pager");
+  if (!el) return;
+  var d = trState.data || {};
+  var total = d.total || 0;
+  var start = d.start || 0;
+  if (!total) { el.innerHTML = ""; return; }
+  var last = Math.min(start + (d.rows || []).length, total);
+  /* The total counts the whole period, not this page, so somebody can tell
+     whether they have finished. */
+  el.innerHTML = '<span class="tr-count">Showing ' + (start + 1) + "–" + last
+    + " of " + total + "</span>"
+    + '<button class="btn btn-outline btn-sm" ' + (start <= 0 ? "disabled" : "")
+    + ' onclick="trPage(-1)">Previous</button>'
+    + '<button class="btn btn-outline btn-sm" ' + (last >= total ? "disabled" : "")
+    + ' onclick="trPage(1)">Next</button>';
+}
+
+window.trPage = function (direction) {
+  var d = trState.data || {};
+  var size = d.page_length || trState.size;
+  trState.start = Math.max(0, (d.start || 0) + direction * size);
+  trState.open = null;
+  trLoad();
+};
 
 function populateTeamNoteEmpFilter() {
   const sel = document.getElementById("tn-emp");

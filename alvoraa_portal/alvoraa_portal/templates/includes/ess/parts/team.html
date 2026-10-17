@@ -9,6 +9,7 @@
 
         <div class="team-view-tabs">
           <div class="tvtab active" id="tvtab-attendance" onclick="switchTeamTab('attendance')">Team Attendance</div>
+          <div class="tvtab" id="tvtab-review" onclick="switchTeamTab('review')">Attendance Review</div>
           <div class="tvtab" id="tvtab-notes" onclick="switchTeamTab('notes')">Manager Notes</div>
         </div>
         <div id="tv-attendance-panel">
@@ -74,6 +75,15 @@
           </table>
         </div>
         </div>
+        <!-- Attendance Review: every day across the team, worst first, with a
+             way to ask HR to fix one. Attendance facts only - no pay. -->
+        <div id="tv-review-panel" style="display:none">
+          <div class="tr-bar" id="tr-bar"></div>
+          <div class="tr-chips" id="tr-chips"></div>
+          <div id="tr-body"><p class="ac-empty">Loading&hellip;</p></div>
+          <div class="tr-pager" id="tr-pager"></div>
+        </div>
+
         <div id="tv-notes-panel" style="display:none">
           <div class="notes-filter-row">
             <input type="date" class="form-control" id="tn-from" placeholder="From date">

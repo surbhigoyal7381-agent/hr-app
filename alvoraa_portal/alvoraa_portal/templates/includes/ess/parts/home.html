@@ -36,13 +36,17 @@
           <!-- LEFT: Activity + Goals -->
           <div class="home-left-col">
 
+            <!-- Today against your own shift: the quarters, the half-day
+                 line and the day's marks. Drawn by paintDayMarks from the
+                 same payload as the banner's one-line summary. -->
+            <div id="day-widget"></div>
+
             <div class="card">
               <div class="card-header">
                 <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" style="opacity:.6"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                 <span class="card-title" style="margin-left:6px">Activity</span>
               </div>
               <div class="card-body" style="padding:12px 20px">
-                <div class="act-marks" id="act-marks"></div>
                 <div id="home-activity-feed"><div class="empty-state"><div class="empty-state-text">Loading&hellip;</div></div></div>
               </div>
             </div>

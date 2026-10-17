@@ -27,7 +27,7 @@ engine reads.
 """
 
 import frappe
-from frappe.utils import flt, getdate
+from frappe.utils import flt, getdate, now_datetime
 
 from alvoraa_portal.payroll_rules import (
 	MORNING_GREEN_EARLY_MINUTES,
@@ -121,6 +121,13 @@ def marks_today(employee, employee_row, shift, checkin_rows, date_):
 		"absent_before": None,
 		"green": None,
 		"red": None,
+		# The ladder: what leaving at each time would cost. None on a tenant
+		# with no rule set, because quarters are a rule-set idea.
+		"ladder": None,
+		# The SITE's clock, sent so the page can place "now" on the ladder
+		# without trusting the device's own. A phone an hour out would
+		# otherwise light the wrong rung (042 AC-53).
+		"now": _clock(_mins(now_datetime())),
 	}
 
 	half = flt(row.get("working_hours_threshold_for_half_day") or 0)
@@ -142,7 +149,87 @@ def marks_today(employee, employee_row, shift, checkin_rows, date_):
 	out["green"] = _green(employee, rule_set, start, end, checkin_rows,
 	                      getdate(date_))
 	out["red"] = _red(row, rule_set, start, end, grace, first_in)
+	out["ladder"] = _ladder(rule_set, start, end, anchor,
+	                        (out["red"] or {}).get("in_late_window"))
 	return out
+
+
+def _ladder(rule_set, start, end, anchor, in_late_window):
+	"""What leaving at each time would cost, as clock times.
+
+	The whole thing rests on one line of the engine:
+
+	    percent = (last_out - first_in) / shift_minutes * 100
+
+	The band depends only on how long somebody was here against how long their
+	shift is - so every boundary is a DEPARTURE CLOCK TIME measured from when
+	they actually arrived. "Leave before 16:58 and it costs you a quarter" is
+	something a person can act on at 16:45. A percentage is not.
+
+	BANDS WITH THE SAME COST ARE MERGED. DTC's table has twelve rows and only
+	five distinct costs: 68-75% and 75-90% both take one quarter, so showing
+	them apart is noise somebody has to read past. What survives the merge is
+	one rung per cost, plus the narrow window just after each cliff where the
+	band ALSO raises a red - which is worth keeping, because those are the
+	minutes where leaving costs twice.
+
+	THE ROWS COME FROM THE RULE SET, never from a copy here. This module got
+	green eligibility wrong once by working the rules out a second time, and a
+	ladder that disagrees with the payslip is that same bug with more at stake:
+	somebody stays two hours on the strength of it.
+	"""
+	length = end - start
+	if length <= 0:
+		return None
+	rows = sorted(rule_set.get("slabs") or [], key=lambda r: flt(r.percent_from))
+	if not rows:
+		return None
+
+	# Walked from the best band downwards, so the first rung is the best case
+	# and a merge only ever joins a band onto the rung above it.
+	rungs = []
+	for r in reversed(rows):
+		quarters = int(r.quarters_off or 0)
+		raises_red = bool(r.raises_red)
+		if rungs and rungs[-1]["quarters"] == quarters:
+			top = rungs[-1]
+			top["percent_from"] = flt(r.percent_from)
+			if raises_red:
+				# The red sub-band sits at the bottom of the merged rung: it is
+				# the first stretch somebody enters when they drop into it.
+				top["red_from"] = flt(r.percent_from)
+				top["red_to"] = flt(r.percent_to)
+			continue
+		rungs.append({
+			"quarters": quarters,
+			"percent_from": flt(r.percent_from),
+			"red_from": flt(r.percent_from) if raises_red else None,
+			"red_to": flt(r.percent_to) if raises_red else None,
+		})
+
+	steps = []
+	for rung in rungs:
+		step = {
+			"leave_after": _clock(anchor + rung["percent_from"] / 100.0 * length),
+			"quarters": rung["quarters"],
+			"percent_from": rung["percent_from"],
+			"red_from": None,
+			"red_to": None,
+		}
+		if rung["red_from"] is not None:
+			step["red_from"] = _clock(anchor + rung["red_from"] / 100.0 * length)
+			step["red_to"] = _clock(anchor + rung["red_to"] / 100.0 * length)
+		steps.append(step)
+
+	return {
+		"anchor": _clock(anchor),
+		"shift_minutes": int(length),
+		"steps": steps,
+		# ATT-04 stacks on whatever the band decides and is never doubled, so it
+		# cannot be folded into a rung: that would make every rung wrong by one
+		# for the people it applies to, and right for everybody else.
+		"extra_quarter": bool(in_late_window),
+	}
 
 
 def _green(employee, rule_set, start, end, checkin_rows, date_):

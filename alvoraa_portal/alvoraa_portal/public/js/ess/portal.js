@@ -3447,83 +3447,322 @@ window.toggleHomeApprovals = function() {
   if (chip) chip.textContent = open ? "Tap to review" : "Tap to hide";
 };
 
-/* ── Today's marks, beside the banner and in Activity ──────────────
-   Surbhi, 17 Oct 2026: show, against THEIR shift, whether a green or a red
-   is in play today and when their half day falls.
+/* ── Today, against your own shift ────────────────────────────────────────
+   Surbhi, 17 Oct 2026: "Every employee should see what time are their
+   quarters, half day, according to the shift timing, compared to their
+   current arrival time. Also there has been any red, or green for that day."
 
-   CLOCK TIMES, NOT RULES, and NOTHING PROMISED. "Leave after 21:30" is
-   something somebody can act on at 21:15. And a green reads as "if you
-   leave after 21:30", never "you have earned one" - the day is judged when
-   it is complete, by the payroll engine, from the punches. This strip says
-   what the rules will look for.
+   ONE SOURCE, ONE PLACE. The check-in banner keeps a single summary line and
+   every figure lives in the widget below it. Two places showing the same
+   times drift apart the first time somebody edits one of them.
 
-   WHAT IS LEFT OUT ON PURPOSE. A chip for a mark already missed is a
-   reproach, not information - there is nothing left to do about it - so a
-   mark is shown only while it is still reachable, or once it is earned.
-   Money is shown nowhere: these are the day's facts, not a payslip. */
-function dayMarksHtml(m) {
+   CLOCK TIMES, NOT RULES, AND NOTHING PROMISED. "Leave after 16:58" can be
+   acted on at 16:45; "65% of your shift" cannot. And every line reads as "if
+   you left now" - the day is judged when it is complete, by the engine, from
+   the punches.
+
+   THE LADDER COMES FROM THE SERVER. Its rungs are the rule set's own slab
+   rows, merged where the cost is equal. This file places "now" on them and
+   says nothing about what a band is worth. */
+
+/* The site's clock, not the device's. The server sends its own `now` with the
+   payload; we measure the gap once and apply it, so a phone an hour out still
+   lights the right rung (042 AC-53). */
+var dmDrift = 0;
+
+function dmMinsOfDay(d) {
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+function dmParse(hhmm) {
+  if (!hhmm) return null;
+  var p = String(hhmm).split(":");
+  if (p.length < 2) return null;
+  var h = parseInt(p[0], 10), m = parseInt(p[1], 10);
+  if (isNaN(h) || isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+function dmNow() {
+  return dmMinsOfDay(new Date()) + dmDrift;
+}
+
+/* A night shift's ladder runs past midnight, so a rung can read 01:30 while
+   the anchor reads 22:00. Unwrapped against the anchor, the comparison works
+   for both kinds of shift instead of only the day ones. */
+function dmUnwrap(mins, anchor) {
+  if (mins === null) return null;
+  return mins < anchor ? mins + 1440 : mins;
+}
+
+function dmClock(mins) {
+  var m = Math.round(mins) % 1440;
+  if (m < 0) m += 1440;
+  var h = Math.floor(m / 60), r = m % 60;
+  return (h < 10 ? "0" : "") + h + ":" + (r < 10 ? "0" : "") + r;
+}
+
+function dmSpan(mins) {
+  var m = Math.max(0, Math.round(mins));
+  var h = Math.floor(m / 60), r = m % 60;
+  if (!h) return r + "m";
+  return r ? h + "h " + r + "m" : h + "h";
+}
+
+function dmCost(q) {
+  if (!q) return "A full day";
+  if (q === 1) return "A quarter of a day off";
+  if (q === 2) return "Half a day off";
+  if (q === 3) return "Three quarters off";
+  return "The whole day off";
+}
+
+/* Where the day stands this minute: the rung reached, the one above it, and
+   what the two of them cost. Returns null before anybody has arrived, because
+   nothing has been worked yet. */
+function dmWhere(m) {
+  var lad = m && m.ladder;
+  if (!lad || !lad.steps || !lad.steps.length) return null;
+  var anchor = dmParse(lad.anchor);
+  var arrived = dmParse(m.arrived);
+  if (anchor === null) return null;
+
+  /* BEFORE THEY ARRIVE THERE IS NO POSITION ON THE LADDER, and saying there
+     is was a real bug: the unwrap reads a time earlier than the anchor as
+     tomorrow, so 10:14 counted as later than 19:28 and the top rung lit up
+     "you are here" for somebody who had not worked a minute. The rungs are
+     still worth showing - they are the shape of the day ahead - but nothing
+     is standing on one. */
+  if (arrived === null) {
+    return {now: dmNow(), worked: null, arrived: null, anchor: anchor,
+            at: null, next: null, lost: null,
+            extra: lad.extra_quarter ? 1 : 0, inRedWindow: false,
+            percent: null, notArrived: true};
+  }
+
+  var now = dmUnwrap(dmNow(), anchor);
+  var worked = Math.max(0, now - dmUnwrap(arrived, anchor));
+
+  /* Steps arrive best-first, so the first rung already reached is the best
+     one reached. */
+  var at = null, next = null;
+  for (var i = 0; i < lad.steps.length; i++) {
+    var t = dmUnwrap(dmParse(lad.steps[i].leave_after), anchor);
+    if (t !== null && now >= t) { at = lad.steps[i]; break; }
+    next = lad.steps[i];
+    next.when = t;
+  }
+  var extra = lad.extra_quarter ? 1 : 0;
+  var lost = at ? at.quarters + extra : 4 + extra;
+
+  var inRedWindow = false;
+  if (at && at.red_from && at.red_to) {
+    var rf = dmUnwrap(dmParse(at.red_from), anchor);
+    var rt = dmUnwrap(dmParse(at.red_to), anchor);
+    inRedWindow = now >= rf && now <= rt;
+  }
+
+  return {
+    now: now, worked: worked, arrived: arrived, anchor: anchor,
+    at: at, next: next, lost: lost, extra: extra,
+    inRedWindow: inRedWindow,
+    percent: (worked === null || !lad.shift_minutes)
+      ? null : Math.min(100, worked / lad.shift_minutes * 100)
+  };
+}
+
+/* ── the banner: ONE line ─────────────────────────────────────────────────
+   Not a strip of chips. The banner says where the day stands and points at
+   the next thing that changes it; the widget holds the rest. */
+function dayMarksLine(m) {
   if (!m) return "";
-  var out = [];
-
-  function chip(tone, text) {
-    out.push('<span class="dm-chip"><span class="dm-dot ' + tone + '"></span>' +
-             esc(text) + "</span>");
-  }
-
-  /* Arrival. "Not in yet" and "in, on time" both leave `late` false and want
-     opposite sentences, which is what `arrived` is for. */
-  var red = m.red;
+  var w = dmWhere(m);
   if (!m.arrived) {
-    if (m.on_time_until) chip("ok", "On time until " + m.on_time_until);
-  } else if (red && red.late) {
-    chip("bad", "In at " + m.arrived + " — late by " +
-                red.late_by_minutes + " min");
-  } else if (red) {
-    chip("ok", "In at " + m.arrived + " — on time");
-  } else {
-    /* No rule set, so nothing here judges lateness. State the arrival and
-       claim nothing about it: "on time" would be this screen's own opinion
-       rather than a rule anybody is held to. */
-    chip("ok", "In at " + m.arrived);
+    return m.on_time_until
+      ? '<span class="dm-dot ok"></span>On time until ' + esc(m.on_time_until)
+      : "";
+  }
+  if (!w) {
+    /* No ladder on this tenant: the shift's own half-day line is all there is
+       to say, and it is worth saying. */
+    return '<span class="dm-dot ok"></span>In at ' + esc(m.arrived)
+      + (m.half_day_before
+          ? ' &middot; half day if you leave before ' + esc(m.half_day_before)
+          : "");
+  }
+  var tone = w.lost ? (w.lost === 1 ? "warn" : "bad") : "ok";
+  var line = '<span class="dm-dot ' + tone + '"></span>'
+    + esc(dmCost(w.lost)) + " if you left now";
+  if (w.next && w.next.when !== null) {
+    line += ' &middot; next line ' + esc(dmClock(w.next.when));
+  }
+  return line;
+}
+
+/* ── the widget ───────────────────────────────────────────────────────────
+   Collapsed to the rung you are on and the one above it; the rest open on
+   request. Five rungs plus the marks is a long card on a handset, and the two
+   that matter are the one you are standing on and the next one up. */
+var dmLadderOpen = false;
+
+window.dmToggleLadder = function () {
+  dmLadderOpen = !dmLadderOpen;
+  paintDayMarks(window._dmMarks);
+};
+
+function dmWidget(m) {
+  if (!m) return "";
+  var w = dmWhere(m);
+  var head = '<div class="dw-head">'
+    + '<div class="dw-title">Your day</div>'
+    + '<div class="dw-shift">' + esc(m.shift.start) + "&ndash;" + esc(m.shift.end)
+    + (m.shift.name ? " &middot; " + esc(m.shift.name) : "") + "</div>"
+    + "</div>";
+
+  var facts = '<div class="dw-facts">'
+    + dmFact("In", m.arrived || "--:--",
+             m.arrived ? (m.red && m.red.late ? "late" : "on time") : "not yet")
+    + (w && w.worked !== null
+        ? dmFact("Worked", dmSpan(w.worked),
+                 w.percent === null ? "" : w.percent.toFixed(1) + "% of your shift")
+        : "")
+    + dmFact("Half day", m.half_day_before || "--:--", "if you leave before this")
+    + "</div>";
+
+  var verdict = "";
+  if (w && m.arrived) {
+    var tone = w.lost ? (w.lost === 1 ? "warn" : "bad") : "ok";
+    var why = "";
+    if (w.percent !== null) {
+      why = "You have worked " + dmSpan(w.worked) + " of a "
+        + dmSpan(m.ladder.shift_minutes) + " shift, which is "
+        + w.percent.toFixed(1) + "%.";
+    }
+    if (w.extra) {
+      why += " One of those quarters is the late window, not the hours.";
+    }
+    if (w.inRedWindow) {
+      why += " This stretch also carries a red mark.";
+    }
+    verdict = '<div class="dw-verdict ' + tone + '">'
+      + "<b>" + esc(dmCost(w.lost)) + " if you left now</b>"
+      + (why ? "<span>" + esc(why) + "</span>" : "") + "</div>";
   }
 
-  /* Only when it actually bit. The window is a clock time, so it cannot
-     apply to a shift starting inside it - the server decides that. */
-  if (red && red.in_late_window && red.late_window) {
-    chip("warn", "Inside the " + red.late_window.from + "–" +
-                 red.late_window.to + " late window");
+  var nextUp = "";
+  if (w && w.next && w.next.when !== null) {
+    nextUp = '<div class="dw-next"><b>' + esc(dmClock(w.next.when)) + "</b>"
+      + "<span>Stay " + esc(dmSpan(w.next.when - w.now))
+      + " more and you are down to "
+      + esc(dmCost(w.next.quarters + w.extra).toLowerCase()) + ".</span></div>";
   }
 
-  if (m.half_day_before) {
-    chip("warn", "Half day if you leave before " + m.half_day_before);
+  return head + facts + verdict + nextUp + dmLadder(m, w) + dmMarks(m);
+}
+
+function dmFact(label, value, note) {
+  return '<div class="dw-fact"><span class="dw-f-l">' + esc(label) + "</span>"
+    + '<span class="dw-f-v">' + esc(value) + "</span>"
+    + '<span class="dw-f-n">' + esc(note || "") + "</span></div>";
+}
+
+function dmLadder(m, w) {
+  var lad = m.ladder;
+  if (!lad || !lad.steps || !lad.steps.length) return "";
+  var steps = lad.steps;
+  var shown = steps;
+  if (!dmLadderOpen && w) {
+    shown = steps.filter(function (s) {
+      return s === w.at || s === w.next;
+    });
+    if (!shown.length) shown = steps.slice(0, 2);
   }
 
+  var rows = shown.map(function (s) {
+    var here = w && s === w.at;
+    var tone = s.quarters === 0 ? "ok" : (s.quarters === 1 ? "warn" : "bad");
+    return '<div class="dw-rung' + (here ? " here" : "") + '">'
+      + '<span class="dw-r-t">' + esc(s.leave_after) + "</span>"
+      + '<span class="dm-dot ' + tone + '"></span>'
+      + '<span class="dw-r-c">' + esc(dmCost(s.quarters + (w ? w.extra : 0)))
+      + (s.red_from
+          ? '<span class="dw-r-red">Leaving ' + esc(s.red_from) + "&ndash;"
+            + esc(s.red_to) + " also costs a red mark.</span>"
+          : "")
+      + "</span>"
+      + (here ? '<span class="dw-r-now">you are here</span>' : "")
+      + "</div>";
+  }).join("");
+
+  var note = (w && w.notArrived)
+    ? '<div class="dw-note">Measured from your shift start until you clock in.</div>'
+    : "";
+  return '<div class="dw-ladder">'
+    + '<div class="dw-sec">Leave after&hellip;</div>' + note + rows
+    + '<button type="button" class="dw-more" onclick="dmToggleLadder()">'
+    + (dmLadderOpen ? "Show less" : "Show all " + steps.length) + "</button>"
+    + "</div>";
+}
+
+function dmMarks(m) {
+  var out = [];
   var g = m.green;
   if (g && g.eligible) {
     if (g.morning) {
-      if (g.morning.earned) chip("ok", "Morning green earned");
+      if (g.morning.earned) out.push(["ok", "Morning green earned", ""]);
       else if (g.morning.still_possible)
-        chip("ok", "Morning green if you are in by " + g.morning.by);
+        out.push(["ok", "Morning green", "Be in by " + g.morning.by + "."]);
+      else out.push(["none", "Morning green missed", "It needed " + g.morning.by + "."]);
     }
     if (g.night) {
-      if (g.night.earned) chip("ok", "Night green earned");
+      if (g.night.earned) out.push(["ok", "Night green earned", ""]);
       else if (g.night.still_possible)
-        chip("ok", "Night green if you leave after " + g.night.after);
+        out.push(["ok", "Night green", "Leave after " + g.night.after + "."]);
+      else out.push(["none", "Night green missed", "It needed " + g.night.after + "."]);
     }
   }
-
-  return out.join("");
+  var r = m.red;
+  if (r && r.late) {
+    out.push(["bad", "Late by " + r.late_by_minutes + " min",
+              "On time meant " + r.on_time_until + "."
+              + (r.free_per_month
+                  ? " The first " + r.free_per_month + " a month are free."
+                  : "")]);
+  }
+  if (r && r.in_late_window && r.late_window) {
+    out.push(["bad", "Inside the late window",
+              "Arriving " + r.late_window.from + "–" + r.late_window.to
+              + " costs one extra quarter."]);
+  }
+  if (!out.length) return "";
+  return '<div class="dw-marks"><div class="dw-sec">Marks today</div>'
+    + out.map(function (o) {
+        return '<div class="dw-mark"><span class="dm-dot ' + o[0] + '"></span>'
+          + "<span><b>" + esc(o[1]) + "</b>"
+          + (o[2] ? "<span>" + esc(o[2]) + "</span>" : "") + "</span></div>";
+      }).join("")
+    + "</div>";
 }
 
-/* One strip, two places. The Activity card gets the same facts because
-   somebody reading their week there should not have to go back up the page
-   to find out what today is still worth. */
+/* One payload, two places: the banner's line and the widget's detail. */
 function paintDayMarks(m) {
-  var html = dayMarksHtml(m);
-  var hero = document.getElementById("ci-marks");
-  if (hero) hero.innerHTML = html;
-  var act = document.getElementById("act-marks");
-  if (act) act.innerHTML = html ? '<div class="day-marks">' + html + "</div>" : "";
+  window._dmMarks = m;
+  if (m && m.now) {
+    var sent = dmParse(m.now);
+    if (sent !== null) {
+      var gap = sent - dmMinsOfDay(new Date());
+      /* Only a real gap is worth correcting; a minute either way is the
+         request in flight, not a wrong clock. */
+      dmDrift = Math.abs(gap) > 2 ? gap : 0;
+    }
+  }
+  var line = document.getElementById("ci-marks");
+  if (line) line.innerHTML = dayMarksLine(m);
+  var card = document.getElementById("day-widget");
+  if (card) {
+    var body = dmWidget(m);
+    card.innerHTML = body ? '<section class="dw">' + body + "</section>" : "";
+  }
 }
 
 function updateCheckinUI(checkedIn, lastAction) {

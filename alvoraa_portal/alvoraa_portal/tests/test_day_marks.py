@@ -33,21 +33,43 @@ def setUpModule():
 		                "working_hours_threshold_for_half_day": 4.5,
 		                "working_hours_threshold_for_absent": 2.0}
 		               ).insert(ignore_permissions=True)
-	if not frappe.db.get_value("Alvoraa Payroll Rule Set", {"company": COMPANY}):
-		doc = frappe.get_doc({
-			"doctype": "Alvoraa Payroll Rule Set", "company": COMPANY,
-			"enabled": 0, "grace_minutes": 6, "free_reds_per_month": 2,
-			"special_day_multiplier": 2, "leave_threshold_days": 15,
-			"accrual_month_days": 30,
-			"late_window_from": "11:00:00", "late_window_to": "11:30:00",
-			"late_window_extra_quarters": 1,
-			"green_eligibility_field": "dtc_green_eligibility",
-			"slabs": [{"percent_from": 0, "percent_to": 100, "quarters_off": 0,
-			           "raises_red": 0}],
-			"mark_rates": [{"grade": "Junior", "amount_per_mark": 100}],
-		})
-		doc.flags.ignore_permissions = True
-		doc.insert()
+	# The rule set is REPLACED, not merely created when absent. A test site
+	# outlives a run, so an "only if missing" fixture quietly keeps the
+	# figures from whenever it was first written - which is how the slab
+	# table below went in and never took effect.
+	existing = frappe.db.get_value("Alvoraa Payroll Rule Set",
+	                               {"company": COMPANY}, "name")
+	if existing:
+		frappe.delete_doc("Alvoraa Payroll Rule Set", existing, force=True,
+		                  ignore_permissions=True)
+	doc = frappe.get_doc({
+		"doctype": "Alvoraa Payroll Rule Set", "company": COMPANY,
+		"enabled": 0, "grace_minutes": 6, "free_reds_per_month": 2,
+		"special_day_multiplier": 2, "leave_threshold_days": 15,
+		"accrual_month_days": 30,
+		"late_window_from": "11:00:00", "late_window_to": "11:30:00",
+		"late_window_extra_quarters": 1,
+		"green_eligibility_field": "dtc_green_eligibility",
+		# DTC's real table, all twelve bands. A placeholder single band would
+		# let the ladder tests pass while proving nothing about the merge.
+		"slabs": [
+			{"percent_from": 0, "percent_to": 20, "quarters_off": 4, "raises_red": 0},
+			{"percent_from": 20, "percent_to": 24, "quarters_off": 3, "raises_red": 1},
+			{"percent_from": 24, "percent_to": 25, "quarters_off": 3, "raises_red": 0},
+			{"percent_from": 25, "percent_to": 40, "quarters_off": 3, "raises_red": 0},
+			{"percent_from": 40, "percent_to": 44, "quarters_off": 2, "raises_red": 1},
+			{"percent_from": 44, "percent_to": 50, "quarters_off": 2, "raises_red": 0},
+			{"percent_from": 50, "percent_to": 65, "quarters_off": 2, "raises_red": 0},
+			{"percent_from": 65, "percent_to": 68, "quarters_off": 1, "raises_red": 1},
+			{"percent_from": 68, "percent_to": 75, "quarters_off": 1, "raises_red": 0},
+			{"percent_from": 75, "percent_to": 90, "quarters_off": 1, "raises_red": 0},
+			{"percent_from": 90, "percent_to": 98.9, "quarters_off": 0, "raises_red": 1},
+			{"percent_from": 98.9, "percent_to": 100, "quarters_off": 0, "raises_red": 0},
+		],
+		"mark_rates": [{"grade": "Junior", "amount_per_mark": 100}],
+	})
+	doc.flags.ignore_permissions = True
+	doc.insert()
 	frappe.db.commit()
 
 
@@ -333,3 +355,123 @@ class WhatTheBannerActuallyReceives(MarksCase):
 			self.assertTrue(hr_api.get_checkin_status().get("no_employee"))
 		finally:
 			frappe.set_user("Administrator")
+
+
+class WhatLeavingNowWouldCost(MarksCase):
+	"""The ladder: every band boundary as a departure clock time.
+
+	Surbhi, 17 Oct 2026: "Every employee should see what time are their
+	quarters, half day, according to the shift timing, compared to their
+	current arrival time."
+
+	A 10:30-20:30 shift is 600 minutes, so a band starting at P% becomes a
+	clock time at arrival + P% of 600. All the figures below were worked out
+	from the real DTC table by hand before the code was written.
+	"""
+
+	def rungs(self, *punches):
+		out = self.marks(self.at(*punches))["ladder"]
+		self.assertIsNotNone(out, "a tenant with a rule set has a ladder")
+		return out
+
+	def test_the_twelve_bands_become_five_rungs(self):
+		"""68-75% and 75-90% both cost one quarter. Showing them apart is noise
+		an employee has to read past, so bands with equal cost are merged."""
+		steps = self.rungs("10:28:00")["steps"]
+		self.assertEqual([s["quarters"] for s in steps], [0, 1, 2, 3, 4])
+
+	def test_each_rung_is_a_clock_time_from_when_they_arrived(self):
+		"""The percentage is span-over-shift, so 90% of 600 minutes is nine
+		hours after their own first punch - 19:28 for somebody in at 10:28."""
+		steps = self.rungs("10:28:00")["steps"]
+		at = {s["quarters"]: s["leave_after"] for s in steps}
+		self.assertEqual(at[0], "19:28")   # 90% of 600 = 540m
+		self.assertEqual(at[1], "16:58")   # 65% of 600 = 390m
+		self.assertEqual(at[2], "14:28")   # 40% of 600 = 240m
+		self.assertEqual(at[3], "12:28")   # 20% of 600 = 120m
+		self.assertEqual(at[4], "10:28")   # 0%
+
+	def test_arriving_late_moves_every_rung_with_them(self):
+		"""THE REASON THIS IS NOT A TABLE OF FIXED TIMES. Somebody in at 11:12
+		has to stay 44 minutes later for the same money. A ladder pinned to the
+		shift start would tell them the opposite."""
+		at = {s["quarters"]: s["leave_after"]
+		      for s in self.rungs("11:12:00")["steps"]}
+		self.assertEqual(at[0], "20:12")
+		self.assertEqual(at[1], "17:42")
+		self.assertEqual(at[2], "15:12")
+
+	def test_before_anybody_arrives_it_is_measured_from_the_shift_start(self):
+		"""The same anchor the half-day line uses, so the two agree."""
+		at = {s["quarters"]: s["leave_after"] for s in self.rungs()["steps"]}
+		self.assertEqual(at[2], "14:30")   # 10:30 + 240m
+
+	def test_the_red_window_just_after_a_cliff_is_named(self):
+		"""The dangerous minutes are the ones straight after each drop: the
+		40-44% band costs two quarters AND a red, so leaving at 14:30 costs
+		twice while leaving at 15:00 costs once."""
+		steps = {s["quarters"]: s for s in self.rungs("10:28:00")["steps"]}
+		self.assertEqual(steps[2]["red_from"], "14:28")
+		self.assertEqual(steps[2]["red_to"], "14:52")
+
+	def test_the_top_rung_carries_its_own_red_window(self):
+		"""90-98.9% takes no quarters but does raise a red, so a full day's pay
+		with a mark against it is reachable - and has to be said."""
+		steps = {s["quarters"]: s for s in self.rungs("10:28:00")["steps"]}
+		self.assertEqual(steps[0]["red_from"], "19:28")
+		self.assertEqual(steps[0]["red_to"], "20:21")
+
+	def test_a_rung_with_no_red_band_says_so_rather_than_guessing(self):
+		steps = {s["quarters"]: s for s in self.rungs("10:28:00")["steps"]}
+		self.assertIsNone(steps[4]["red_from"], "0-20% raises no red")
+
+	def test_the_late_window_quarter_is_kept_separate(self):
+		"""ATT-04 stacks on whatever the band decides and is never doubled.
+		Folding it into the rungs would make every rung wrong by one for the
+		people it applies to, and right for everybody else."""
+		self.assertTrue(self.rungs("11:12:00")["extra_quarter"])
+		self.assertFalse(self.rungs("10:28:00")["extra_quarter"])
+
+	def test_it_carries_the_shift_length_it_measured_against(self):
+		out = self.rungs("10:28:00")
+		self.assertEqual(out["shift_minutes"], 600)
+		self.assertEqual(out["anchor"], "10:28")
+
+	def test_the_site_clock_is_sent_not_the_browser_s(self):
+		"""The page places "you are here" against this, so a device an hour out
+		does not light the wrong rung."""
+		out = self.marks(self.at("10:28:00"))
+		self.assertRegex(out["now"], r"^\d\d:\d\d$")
+
+	def test_no_money_appears_anywhere_in_the_payload(self):
+		"""Quarters are a fraction of a day, never an amount. Putting rupees on
+		the home page would turn it into a payslip."""
+		import json
+		blob = json.dumps(self.marks(self.at("10:28:00")))
+		for money in ("amount", "rupee", "mark_rate", "basic", "gross", "net",
+		              "deduction", "earning"):
+			self.assertNotIn(money, blob.lower(),
+			                 "%s is pay, and this screen is not a payslip" % money)
+
+
+class ATenantWithNoQuarters(MarksCase):
+	def setUp(self):
+		super().setUp()
+		self.row = {"company": self._bare_company()}
+
+	def _bare_company(self):
+		with_rules = set(frappe.get_all("Alvoraa Payroll Rule Set", pluck="company"))
+		for c in frappe.get_all("Company", pluck="name"):
+			if c not in with_rules:
+				return c
+		return None
+
+	def test_no_rule_set_means_no_ladder_at_all(self):
+		"""Quarters are a rule-set idea. An empty ladder, or one invented from
+		nothing, would be worse than showing the half-day line alone."""
+		if not self.row["company"]:
+			self.skipTest("every company on this site has a rule set")
+		self.assertIsNone(self.marks(self.at("10:28:00"))["ladder"])
+
+	def test_somebody_with_no_shift_still_gets_nothing(self):
+		self.assertIsNone(marks_today(self.emp, self.row, None, [], DAY))

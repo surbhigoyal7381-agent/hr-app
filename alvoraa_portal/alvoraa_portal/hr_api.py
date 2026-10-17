@@ -1710,12 +1710,42 @@ def get_checkin_status():
         ["status", "in_time", "out_time", "working_hours"],
         as_dict=True,
     )
+    # ── What today's shift is worth to this person (Surbhi, 17 Oct 2026) ────
+    #
+    # "show, according to their alloted shift whether the employee is eligible
+    # for green pay / red pay for that day, what is their half day according to
+    # their shift timing".
+    #
+    # Built from the SAME punches the status above is built from, so the banner
+    # and the marks beside it cannot disagree inside one page. None where there
+    # is nothing true to say - somebody with no shift, or a tenant with no
+    # payroll rule set - and the banner then draws without it.
+    marks = None
+    try:
+        from alvoraa_portal.day_marks import marks_today
+        from alvoraa_portal.home_api import _shift_today
+
+        # Read here rather than added to `_get_employee`: that query feeds a
+        # cached context used all over the portal, and this is the only caller
+        # that wants the shift.
+        shift = _shift_today(
+            emp.name,
+            frappe.db.get_value("Employee", emp.name, "default_shift"), td)
+        marks = marks_today(
+            emp.name, emp, shift,
+            [{"time": str(c.time), "log_type": c.log_type} for c in checkins],
+            td)
+    except Exception:
+        # The check-in button must never fail to draw because of a banner.
+        frappe.log_error(title="day_marks: could not work out today's marks")
+
     return {
         "employee": emp,
         "checked_in": checked_in,
         "last_action": last,
         "todays_checkins": checkins,
         "attendance": att,
+        "marks": marks,
         # Tells the page whether to ask the browser for a position before it
         # calls do_checkin. Sent with the status so the button knows before it
         # is ever pressed, rather than finding out from a failure.

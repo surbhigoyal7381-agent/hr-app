@@ -83,14 +83,18 @@ def _minutes(value):
 	return int(parts[0]) * 60 + int(parts[1])
 
 
-def _green_windows(from_date=None, to_date=None):
+def _green_windows(from_date=None, to_date=None, employee=None):
 	"""Every dated green grant that could touch this period, by employee.
 
 	Loaded once. Resolving per day would be a query per employee per day -
 	9,000 of them for a month of 312 people - and the table is small enough to
 	hold whole.
 	"""
-	filters = {}
+	# ONE person, for the home banner. This table has a row per employee, so
+	# the unfiltered load is the whole headcount - 363 rows on DTC - fetched
+	# to answer a question about one of them, on the page every employee
+	# opens. A batch still asks for all of them by leaving it out.
+	one = " AND employee = %(employee)s" if employee else ""
 	if from_date and to_date:
 		# A grant overlaps the window if it starts before the window ends and
 		# ends after the window starts. An open-ended grant has no to_date, so
@@ -98,11 +102,15 @@ def _green_windows(from_date=None, to_date=None):
 		rows = frappe.db.sql("""
 			SELECT employee, from_date, to_date, eligibility
 			FROM `tabAlvoraa Green Eligibility`
-			WHERE from_date <= %s AND (to_date IS NULL OR to_date >= %s)
-			ORDER BY employee, from_date""", (to_date, from_date), as_dict=True)
+			WHERE from_date <= %(to_date)s
+			  AND (to_date IS NULL OR to_date >= %(from_date)s)""" + one + """
+			ORDER BY employee, from_date""",
+			{"to_date": to_date, "from_date": from_date,
+			 "employee": employee}, as_dict=True)
 	else:
 		rows = frappe.get_all(
 			"Alvoraa Green Eligibility",
+			filters={"employee": employee} if employee else None,
 			fields=["employee", "from_date", "to_date", "eligibility"],
 			order_by="employee asc, from_date asc", limit_page_length=0)
 
@@ -115,8 +123,13 @@ def _green_windows(from_date=None, to_date=None):
 	return windows
 
 
-def prepare(rule_set, from_date=None, to_date=None):
-	"""Everything the per-day calls would otherwise look up 9,000 times."""
+def prepare(rule_set, from_date=None, to_date=None, employee=None):
+	"""Everything the per-day calls would otherwise look up 9,000 times.
+
+	`employee` narrows the dated green grants to one person. Leave it out
+	for a batch; pass it where the caller only ever asks about one, so a
+	per-employee table is not read whole on a page every employee loads.
+	"""
 	special = set()
 	if rule_set.special_day_holiday_list:
 		special = {
@@ -159,7 +172,7 @@ def prepare(rule_set, from_date=None, to_date=None):
 		"window_field": (rule_set.late_window_employee_field or "").strip(),
 		"double_field": (rule_set.double_deduction_field or "").strip(),
 		"green_field": (rule_set.green_eligibility_field or "").strip(),
-		"green_windows": _green_windows(from_date, to_date),
+		"green_windows": _green_windows(from_date, to_date, employee),
 		"class_field": (rule_set.leave_class_field or "").strip(),
 		"category_field": (rule_set.category_field or "").strip(),
 		"leave_threshold": int(rule_set.leave_threshold_days or 0),
@@ -295,6 +308,29 @@ def _green_on(employee, date, ctx):
 			if best_start is None or start > best_start:
 				best, best_start = value, start
 	return best
+
+
+def green_eligibility_on(employee, date, rule_set):
+	"""Which green marks this person can earn on this day: morning, night, both
+	or neither.
+
+	THE HOME BANNER ASKS THIS. It tells somebody what is still worth doing
+	today, so it has to be the same answer the engine will pay on - and that is
+	why it is answered here instead of worked out again beside the banner. Four
+	rules decide it, and a second copy got all four wrong: a blank field earns a
+	morning green but NOT a night one, a rule set naming no field earns both,
+	the stored values are compared folded to lower case, and a dated grant beats
+	the Employee field. Somebody told "no green marks" who could in fact have
+	earned one by arriving early loses money on the strength of our screen.
+
+	Three queries for one person on one day. The caller is a page every employee
+	loads, so this must never grow a loop over people - `prepare` exists to be
+	built once and reused for a batch.
+	"""
+	ctx = prepare(rule_set, date, date, employee=employee)
+	flags = _employee_flags(employee, date, ctx)
+	return {"morning": bool(flags["morning_green_eligible"]),
+	        "night": bool(flags["night_green_eligible"])}
 
 
 def _punches(employee, date):

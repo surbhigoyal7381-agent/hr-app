@@ -3273,6 +3273,7 @@ function loadHome() {
     ht.dataset.name = (emp.employee_name || "").split(" ")[0];
 
     updateCheckinUI(data.checked_in, data.last_action);
+    paintDayMarks(data.marks);
     loadMyDocuments();
     loadHomePolicies();
   }, function() {
@@ -3446,6 +3447,85 @@ window.toggleHomeApprovals = function() {
   if (chip) chip.textContent = open ? "Tap to review" : "Tap to hide";
 };
 
+/* ── Today's marks, beside the banner and in Activity ──────────────
+   Surbhi, 17 Oct 2026: show, against THEIR shift, whether a green or a red
+   is in play today and when their half day falls.
+
+   CLOCK TIMES, NOT RULES, and NOTHING PROMISED. "Leave after 21:30" is
+   something somebody can act on at 21:15. And a green reads as "if you
+   leave after 21:30", never "you have earned one" - the day is judged when
+   it is complete, by the payroll engine, from the punches. This strip says
+   what the rules will look for.
+
+   WHAT IS LEFT OUT ON PURPOSE. A chip for a mark already missed is a
+   reproach, not information - there is nothing left to do about it - so a
+   mark is shown only while it is still reachable, or once it is earned.
+   Money is shown nowhere: these are the day's facts, not a payslip. */
+function dayMarksHtml(m) {
+  if (!m) return "";
+  var out = [];
+
+  function chip(tone, text) {
+    out.push('<span class="dm-chip"><span class="dm-dot ' + tone + '"></span>' +
+             esc(text) + "</span>");
+  }
+
+  /* Arrival. "Not in yet" and "in, on time" both leave `late` false and want
+     opposite sentences, which is what `arrived` is for. */
+  var red = m.red;
+  if (!m.arrived) {
+    if (m.on_time_until) chip("ok", "On time until " + m.on_time_until);
+  } else if (red && red.late) {
+    chip("bad", "In at " + m.arrived + " — late by " +
+                red.late_by_minutes + " min");
+  } else if (red) {
+    chip("ok", "In at " + m.arrived + " — on time");
+  } else {
+    /* No rule set, so nothing here judges lateness. State the arrival and
+       claim nothing about it: "on time" would be this screen's own opinion
+       rather than a rule anybody is held to. */
+    chip("ok", "In at " + m.arrived);
+  }
+
+  /* Only when it actually bit. The window is a clock time, so it cannot
+     apply to a shift starting inside it - the server decides that. */
+  if (red && red.in_late_window && red.late_window) {
+    chip("warn", "Inside the " + red.late_window.from + "–" +
+                 red.late_window.to + " late window");
+  }
+
+  if (m.half_day_before) {
+    chip("warn", "Half day if you leave before " + m.half_day_before);
+  }
+
+  var g = m.green;
+  if (g && g.eligible) {
+    if (g.morning) {
+      if (g.morning.earned) chip("ok", "Morning green earned");
+      else if (g.morning.still_possible)
+        chip("ok", "Morning green if you are in by " + g.morning.by);
+    }
+    if (g.night) {
+      if (g.night.earned) chip("ok", "Night green earned");
+      else if (g.night.still_possible)
+        chip("ok", "Night green if you leave after " + g.night.after);
+    }
+  }
+
+  return out.join("");
+}
+
+/* One strip, two places. The Activity card gets the same facts because
+   somebody reading their week there should not have to go back up the page
+   to find out what today is still worth. */
+function paintDayMarks(m) {
+  var html = dayMarksHtml(m);
+  var hero = document.getElementById("ci-marks");
+  if (hero) hero.innerHTML = html;
+  var act = document.getElementById("act-marks");
+  if (act) act.innerHTML = html ? '<div class="day-marks">' + html + "</div>" : "";
+}
+
 function updateCheckinUI(checkedIn, lastAction) {
   const dot = document.getElementById("ci-dot");
   const txt = document.getElementById("ci-status-txt");
@@ -3560,6 +3640,7 @@ function ciSend(action, pos) {
       ciNeedsLocation = !!d.needs_location;
       updateCheckinUI(d.checked_in, d.last_action);
       renderTimeline(d.todays_checkins || []);
+      paintDayMarks(d.marks);
     }, function() { btn.disabled = false; });
   }, function(err) {
     btn.disabled = false;

@@ -662,6 +662,43 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
 .act-sbadge.approved{background:var(--green-lt,var(--green-lt));color:var(--green,var(--green))}
 .act-sbadge.rejected{background:var(--red-lt,var(--red-lt));color:var(--red,var(--red))}
 
+/* ── Today's marks ────────────────────────────────────
+   Surbhi, 17 Oct 2026: on the check-in banner show "whether the employee is
+   eligible for green pay / red pay for that day, what is their half day
+   according to their shift timing", and the same in the Activity widget.
+
+   CLOCK TIMES, NOT RULES. "Leave after 21:30" is something somebody can act
+   on at 21:15. "An hour past shift end" is arithmetic at the end of a
+   ten-hour day.
+
+   TWO GROUNDS, ONE COMPONENT. In the hero the chips sit on a panel that is
+   dark in BOTH themes, so they take the same translucent white as the status
+   pill beside them - a theme token whose light variant goes dark would
+   disappear there. In the Activity card they sit on the page surface and use
+   the ordinary tokens. */
+.day-marks{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.dm-chip{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:var(--fs-xs);font-weight:600;line-height:1.4;
+  padding:4px 11px;border-radius:var(--r-full);
+}
+.dm-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.dm-dot.ok{background:var(--green)}
+.dm-dot.warn{background:var(--amber)}
+.dm-dot.bad{background:var(--red)}
+
+/* On the hero's dark panel, beside the status pill. */
+.checkin-left .dm-chip{
+  background:rgba(255,255,255,.09);
+  border:1px solid rgba(255,255,255,.14);
+  color:rgba(255,255,255,.88);
+}
+
+/* In the Activity card, on the page surface. */
+.act-marks{margin:0 0 14px}
+.act-marks .day-marks{margin-top:0}
+.act-marks .dm-chip{border:1px solid var(--border);color:var(--text)}
+
 /* ── Home goals section ──────────────────────────── */
 .home-goals-section{margin-bottom:24px}
 .home-goals-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}

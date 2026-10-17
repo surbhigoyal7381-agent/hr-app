@@ -176,19 +176,62 @@ def _shift_today(employee, default_shift, date_):
 	}
 
 
+def _today_block(me, me_row, date_, checkin_needs_location):
+	"""Today, as the banner needs it: the shift, the punches, and what the
+	day's rules are looking for.
+
+	`marks` is what Surbhi asked for on 17 Oct 2026 - green and red eligibility
+	and the half-day time, against THEIR shift rather than a company default.
+	It is None on a tenant with no payroll rule set, and None for somebody with
+	no shift, because in both cases there is nothing true to say.
+	"""
+	from alvoraa_portal.day_marks import marks_today
+
+	shift = _shift_today(me["employee"], me_row.get("default_shift"), date_)
+	punches = _punches_today(me["employee"], date_)
+	last = punches[-1] if punches else None
+
+	try:
+		marks = marks_today(me["employee"], me_row, shift, punches, date_)
+	except Exception:
+		# A banner must never be the thing that empties the home page. The
+		# check-in button and the shift still draw without it.
+		frappe.log_error(title="day_marks: could not work out today's marks")
+		marks = None
+
+	return {
+		"date": str(date_),
+		"shift": shift,
+		"checkin": ({"time": last["time"], "type": last["log_type"]}
+		            if last else None),
+		"needs_location": bool(checkin_needs_location()),
+		"marks": marks,
+	}
+
+
 def _checkin_today(employee, date_):
 	"""The last check-in of the site's day, or None.
 
 	`time` is the site's clock, not the browser's (042 AC-53).
 	"""
-	rows = frappe.get_all(
-		"Employee Checkin",
-		filters={"employee": employee, "time": [">=", str(date_) + " 00:00:00"]},
-		fields=["log_type", "time"], order_by="time asc", limit_page_length=0)
+	rows = _punches_today(employee, date_)
 	if not rows:
 		return None
 	last = rows[-1]
-	return {"time": str(last.time), "type": last.log_type}
+	return {"time": str(last["time"]), "type": last["log_type"]}
+
+
+def _punches_today(employee, date_):
+	"""Every punch of the site's day, earliest first.
+
+	Read once and handed to both the banner's status and the day's marks.
+	Reading it twice would be two queries for one fact, and two chances for
+	them to disagree inside one page.
+	"""
+	return [{"time": str(r.time), "log_type": r.log_type} for r in frappe.get_all(
+		"Employee Checkin",
+		filters={"employee": employee, "time": [">=", str(date_) + " 00:00:00"]},
+		fields=["log_type", "time"], order_by="time asc", limit_page_length=0)]
 
 
 # ── The attendance-gap rule (042 section 11) ─────────────────────────────────
@@ -720,13 +763,11 @@ def _build_home(user):
 
 	is_hr = bool(_card("hr_scope", permitted_companies, default=None))
 
-	home["today"] = _card("today", lambda: {
-		"date": str(date_),
-		"shift": _shift_today(me["employee"], me_row.get("default_shift"), date_),
-		"checkin": _checkin_today(me["employee"], date_),
-		"needs_location": bool(checkin_needs_location()),
-	}, default={"date": str(date_), "shift": None, "checkin": None,
-	            "needs_location": False})
+	home["today"] = _card("today", lambda: _today_block(me, me_row, date_,
+	                                                    checkin_needs_location),
+	                      default={"date": str(date_), "shift": None,
+	                               "checkin": None, "needs_location": False,
+	                               "marks": None})
 
 	home["needs"] = _card("needs", lambda: _needs(me, me_row, features, date_),
 	                      default=[])

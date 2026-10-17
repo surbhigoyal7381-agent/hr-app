@@ -204,7 +204,13 @@ class CorrectionCase(FrappeTestCase):
 		# same day - DuplicateAttendanceError. Real employees have one.
 		frappe.get_doc({
 			"doctype": "Shift Assignment", "employee": e.name, "shift_type": SHIFT,
-			"company": self.company, "start_date": add_days(nowdate(), -2000),
+			# Covers THIS test's own window. A fixed -2000 was fine until
+			# enough classes existed to push `offset` past it, and then the
+			# day fell outside the assignment, the request carried no shift,
+			# the match missed and a SECOND attendance row was inserted -
+			# surfacing as DuplicateAttendanceError on an unrelated test.
+			"company": self.company,
+			"start_date": add_days(nowdate(), -(self.offset + 200)),
 			"end_date": add_days(nowdate(), 400),
 		}).insert(ignore_permissions=True).submit()
 		return e.name, email
@@ -674,3 +680,207 @@ class NoQuietBypass(CorrectionCase):
 						and isinstance(first.value.value, str)):
 					first.value.value = ""
 		self.assertNotIn("ignore_permissions", ast.unparse(tree))
+
+
+class AManagersWholeTeamOnOnePage(CorrectionCase):
+	"""Surbhi, 17 Oct 2026: "we would need one page with filter for all the
+	reporting persons first", and "only attendance facts".
+
+	Before this, a manager could open ONE report's month if they knew to look -
+	there was no screen that showed the team at once, and nothing surfaced the
+	days somebody has to act on.
+	"""
+
+	def setUp(self):
+		super().setUp()
+		tag = CorrectionCase._slot
+		self.boss, self.boss_email = self.person("Tdboss%d" % tag, roles=("Employee",))
+		self.a, self.a_email = self.person("Tdone%d" % tag, roles=("Employee",))
+		self.b, self.b_email = self.person("Tdtwo%d" % tag)
+		self.outsider, _ = self.person("Tdout%d" % tag)
+		for who in (self.a, self.b):
+			frappe.db.set_value("Employee", who, "reports_to", self.boss)
+
+	def team(self, **kw):
+		frappe.set_user(self.boss_email)
+		try:
+			return ac.team_days(from_date=self.d(5), to_date=self.d(0), **kw)
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_a_manager_sees_both_reports_and_not_the_outsider(self):
+		self.day(self.a, self.d(1), 9, in_time=self.d(1) + " 09:00:00",
+		         out_time=self.d(1) + " 18:00:00")
+		self.day(self.b, self.d(1), 9, in_time=self.d(1) + " 09:00:00",
+		         out_time=self.d(1) + " 18:00:00")
+		self.day(self.outsider, self.d(1), 9)
+		out = self.team()
+		seen = {r["employee"] for r in out["rows"]}
+		self.assertIn(self.a, seen)
+		self.assertIn(self.b, seen)
+		self.assertNotIn(self.outsider, seen,
+		                 "a manager must not see somebody outside their line")
+
+	def test_the_people_filter_lists_only_the_team(self):
+		out = self.team()
+		ids = {p["name"] for p in out["people"]}
+		self.assertEqual(ids, {self.a, self.b})
+
+	def test_one_punch_reads_as_no_clock_out_not_as_a_short_day(self):
+		"""ATT-06. A day with one punch is unfinished, not short - and it is
+		the commonest thing a manager is asked about."""
+		day = self.d(2)
+		self.day(self.a, day, 0, status="Absent", in_time=day + " 09:04:00")
+		self.punch(self.a, day + " 09:04:00", "IN")
+		row = [r for r in self.team()["rows"] if r["employee"] == self.a][0]
+		self.assertEqual(row["flag"], "no_clock_out")
+		self.assertEqual(row["punches"], 1)
+
+	def test_absent_with_punches_is_told_apart_from_absent(self):
+		"""Two people marked Absent, one of whom badged in twice. They need
+		opposite answers, and on the attendance row alone they look alike."""
+		day = self.d(3)
+		self.day(self.a, day, 0, status="Absent")
+		self.day(self.b, day, 0, status="Absent")
+		self.punch(self.b, day + " 09:02:00", "IN")
+		self.punch(self.b, day + " 18:05:00", "OUT")
+		rows = {r["employee"]: r for r in self.team()["rows"] if r["date"] == day}
+		self.assertEqual(rows[self.a]["flag"], "absent")
+		self.assertEqual(rows[self.b]["flag"], "absent_but_punched")
+
+	def test_the_days_needing_a_look_come_first(self):
+		"""The ordering IS the value of the page. A manager should meet the
+		days somebody must act on, not scroll to them."""
+		self.day(self.a, self.d(1), 9, in_time=self.d(1) + " 09:00:00",
+		         out_time=self.d(1) + " 18:00:00")
+		bad = self.d(2)
+		self.day(self.b, bad, 0, status="Absent", in_time=bad + " 09:04:00")
+		self.punch(self.b, bad + " 09:04:00", "IN")
+		flags = [r["flag"] for r in self.team()["rows"]]
+		self.assertEqual(flags[0], "no_clock_out",
+		                 "the unfinished day must be at the top")
+
+	def test_it_can_be_narrowed_to_one_person(self):
+		self.day(self.a, self.d(1), 9)
+		self.day(self.b, self.d(1), 9)
+		out = self.team(employee=self.a)
+		self.assertEqual({r["employee"] for r in out["rows"]}, {self.a})
+
+	def test_narrowing_to_somebody_outside_the_team_is_refused(self):
+		"""Naming an employee must not be a way around the reporting line."""
+		frappe.set_user(self.boss_email)
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				ac.team_days(from_date=self.d(5), to_date=self.d(0),
+				             employee=self.outsider)
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_it_carries_no_pay_figures(self):
+		"""Surbhi, 17 Oct 2026: "only attendance facts". A manager confirming
+		what happened on a Tuesday does not need their team's pay, and this
+		screen must not become a way to see it."""
+		self.day(self.a, self.d(1), 9)
+		row = self.team()["rows"][0]
+		for money in ("quarters", "quarter_days", "paid_days", "basic", "gross",
+		              "net", "green_pay", "red_deduction", "greens", "reds",
+		              "daily_rate", "base"):
+			self.assertNotIn(money, row, "%s is pay, not an attendance fact" % money)
+
+	def test_somebody_who_manages_nobody_gets_an_empty_page_that_says_so(self):
+		frappe.set_user(self.a_email)
+		try:
+			out = ac.team_days(from_date=self.d(5), to_date=self.d(0))
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(out["rows"], [])
+		self.assertTrue(out.get("nobody"))
+
+	def test_a_period_longer_than_three_months_is_refused(self):
+		frappe.set_user(self.boss_email)
+		try:
+			with self.assertRaises(frappe.ValidationError):
+				ac.team_days(from_date=add_days(nowdate(), -200), to_date=nowdate())
+		finally:
+			frappe.set_user("Administrator")
+
+
+class AManagerRaisingItForSomebodyElse(CorrectionCase):
+	"""Surbhi, 15 Oct 2026: "let's get the manager request the changes and the
+	HR to confirm or reject it."
+	"""
+
+	def setUp(self):
+		super().setUp()
+		tag = CorrectionCase._slot
+		self.boss, self.boss_email = self.person("Rfboss%d" % tag, roles=("Employee",))
+		self.report, self.report_email = self.person("Rfrep%d" % tag, roles=("Employee",))
+		self.outsider, _ = self.person("Rfout%d" % tag)
+		# The reporting line, and the permission that goes with it. Saving the
+		# employee is what fires the hook in production; set_value alone would
+		# leave the line without its permission, which is a state the product
+		# never reaches.
+		e = frappe.get_doc("Employee", self.report)
+		e.reports_to = self.boss
+		e.save(ignore_permissions=True)
+
+	def test_a_manager_can_raise_one_for_a_report(self):
+		frappe.set_user(self.boss_email)
+		try:
+			out = ac.raise_for_report(self.report, self.d(1), reason="On Duty")
+		finally:
+			frappe.set_user("Administrator")
+		doc = frappe.get_doc("Attendance Request", out["name"])
+		self.assertEqual(doc.employee, self.report)
+		self.assertEqual(doc.alvoraa_review_status, "Waiting")
+
+	def test_it_records_who_vouched_for_the_day(self):
+		"""HR should read a request that says a manager is standing behind it,
+		not one that appears to have come from the employee."""
+		frappe.set_user(self.boss_email)
+		try:
+			out = ac.raise_for_report(self.report, self.d(1), reason="On Duty")
+		finally:
+			frappe.set_user("Administrator")
+		doc = frappe.get_doc("Attendance Request", out["name"])
+		self.assertIn("Raised by", doc.explanation or "")
+
+	def test_raising_one_for_somebody_who_does_not_report_to_you_is_refused(self):
+		"""THE WHOLE GUARD. `raise_correction` refuses to take an employee from
+		the request at all, because a field naming somebody else would let
+		anyone rewrite anyone's attendance. Here the name is CHECKED."""
+		frappe.set_user(self.boss_email)
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				ac.raise_for_report(self.outsider, self.d(1), reason="On Duty")
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_naming_yourself_goes_through_the_ordinary_path(self):
+		"""Their own day keeps its own rules, and is not stamped as raised on
+		somebody's behalf."""
+		frappe.set_user(self.report_email)
+		try:
+			out = ac.raise_for_report(self.report, self.d(1), reason="On Duty")
+		finally:
+			frappe.set_user("Administrator")
+		doc = frappe.get_doc("Attendance Request", out["name"])
+		self.assertEqual(doc.employee, self.report)
+		self.assertNotIn("Raised by", doc.explanation or "")
+
+	def test_a_day_that_has_not_happened_is_refused(self):
+		frappe.set_user(self.boss_email)
+		try:
+			with self.assertRaises(frappe.ValidationError):
+				ac.raise_for_report(self.report, add_days(nowdate(), 3),
+				                    reason="On Duty")
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_a_reason_the_field_would_refuse_is_caught_here_first(self):
+		frappe.set_user(self.boss_email)
+		try:
+			with self.assertRaises(frappe.ValidationError):
+				ac.raise_for_report(self.report, self.d(1), reason="Made Up")
+		finally:
+			frappe.set_user("Administrator")

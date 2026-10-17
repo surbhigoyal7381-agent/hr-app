@@ -158,6 +158,10 @@ doc_events = {
             "alvoraa_portal.field_checkin.block_devices_for_leaver",
             # ALV-128 SEC-28: an unlinked login stops the app phones it signed in.
             "alvoraa_portal.field_app_device.block_phones_for_unlinked_login",
+            # A manager may act for their own reports and nobody else. Moving
+            # somebody's reporting line moves the permission with it, in the
+            # same save, so the two can never disagree. See manager_scope.py.
+            "alvoraa_portal.manager_scope.on_employee_update",
         ],
         "on_trash":  "alvoraa_portal.hr_api.invalidate_portal_context_cache",
     },
@@ -407,6 +411,15 @@ after_migrate = [
     "alvoraa_portal.field_app_settings.after_migrate",
     # Slice 013 step 5: the field app section on the Employee form.
     "alvoraa_portal.field_app_desk.after_migrate",
+    # 059: the salary working's link in the Payroll menu. The Payroll
+    # workspace is a STANDARD one shipped by Frappe HR, so every upgrade
+    # re-imports its file and replaces the record - a link added by hand
+    # disappears silently at the next upgrade. Re-applied here instead.
+    "alvoraa_portal.payroll_menu.after_migrate",
+    # The reporting lines that already existed when manager review arrived, and
+    # any that drifted through a direct database write. The doc_event above
+    # keeps them right from here on.
+    "alvoraa_portal.manager_scope.after_migrate",
     # Slice 166/167: LMS and Helpdesk ship with public defaults (guest course
     # access, a public jobs board, guest ticket creation). provision_tenant.sh
     # already applies the safe values right after each app installs, but this
@@ -452,6 +465,15 @@ after_install = [
     "alvoraa_portal.field_app_settings.after_migrate",
     # Slice 013 step 5: the field app section on the Employee form.
     "alvoraa_portal.field_app_desk.after_migrate",
+    # 059: the salary working's link in the Payroll menu. The Payroll
+    # workspace is a STANDARD one shipped by Frappe HR, so every upgrade
+    # re-imports its file and replaces the record - a link added by hand
+    # disappears silently at the next upgrade. Re-applied here instead.
+    "alvoraa_portal.payroll_menu.after_migrate",
+    # The reporting lines that already existed when manager review arrived, and
+    # any that drifted through a direct database write. The doc_event above
+    # keeps them right from here on.
+    "alvoraa_portal.manager_scope.after_migrate",
     # ALV-149: a new tenant's app name is "Alvora HRMS", not Frappe's default.
     # Same once-only reasoning as brand.after_install above.
     "alvoraa_portal.brand_text.after_install",

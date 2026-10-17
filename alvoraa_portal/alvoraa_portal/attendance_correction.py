@@ -27,6 +27,10 @@ NO ignore_permissions ANYWHERE IN THIS MODULE, deliberately. Every read is a
 `frappe.get_list` under the caller's own permissions AND narrowed to the
 employee it is about; every write goes through the document's own permission
 check. See `_me()` and `_may_review()`.
+
+A manager raising a correction for a report is permitted by the permission
+system rather than past it: `manager_scope` grants one User Permission per
+manager, per report, scoped to four doctypes and never to all of them.
 """
 
 import calendar as _calendar
@@ -1146,3 +1150,242 @@ def decide(name, approve, note=None):
 	stamp["alvoraa_review_status"] = "Declined"
 	doc.db_set(stamp, update_modified=False)
 	return _shape(frappe.get_doc(REQUEST, name).as_dict())
+
+
+# ── a manager's whole team, one page ─────────────────────────────────────────
+#
+# Surbhi, 17 Oct 2026: "we would need one page with filter for all the
+# reporting persons first", and "only attendance facts".
+#
+# ATTENDANCE FACTS ONLY. No quarters, no marks, no money. A manager confirming
+# what happened on a Tuesday does not need to know what their team earns, and
+# putting it on the screen would hand every manager their reports' pay as a
+# side effect of a correction workflow.
+#
+# The day's SHAPE is what a manager needs: who has no clock-out, who is absent
+# on a day they badged in, who is simply absent. Those three are the whole job.
+
+# What a day needs, worst first. The order IS the value of the page: a manager
+# opening it should meet the days somebody must act on, not scroll to them.
+NEEDS = ("no_clock_out", "absent_but_punched", "absent", "short", "ok")
+
+
+def _flag(row, punches):
+	"""What is wrong with this day, in one word.
+
+	Judged from the attendance record and the punch count, NOT from the pay
+	engine - this screen reads the same whether or not a rule set is switched
+	on.
+	"""
+	status = (row.get("status") or "").strip()
+	if punches == 1:
+		# ATT-06. One punch is not a short day, it is an unfinished one, and it
+		# is the single commonest thing a manager is asked about.
+		return "no_clock_out"
+	if status == "Absent":
+		return "absent_but_punched" if punches else "absent"
+	if status == "Half Day":
+		return "short"
+	return "ok"
+
+
+def _punch_counts(people_ids, from_date, to_date):
+	"""How many times each person badged on each day.
+
+	One punch is the signal this page exists for, and it cannot be read off the
+	Attendance row: a day with one punch and a day with none both show no
+	out-time and nought hours, and they need opposite answers from a manager.
+	"""
+	counts = {}
+	if not people_ids:
+		return counts
+	for p in frappe.get_all(
+			"Employee Checkin",
+			filters={"employee": ("in", people_ids),
+			         "time": ("between", [str(from_date) + " 00:00:00",
+			                              str(to_date) + " 23:59:59"])},
+			fields=["employee", "time"], limit_page_length=0):
+		key = (p.employee, str(p.time)[:10])
+		counts[key] = counts.get(key, 0) + 1
+	return counts
+
+
+@frappe.whitelist()
+def team_days(from_date=None, to_date=None, employee=None, only=None,
+              limit=2000):
+	"""Every day across the caller's reports, with what needs a look first.
+
+	`employee` narrows to one person; without it the page shows the whole
+	reporting tree. `only` keeps a single flag, for the filter chips.
+
+	PERMISSION IS DECIDED HERE, NOT LEFT TO A FILTER. A manager holds no
+	blanket read on Attendance, so a `get_list` would return an empty page that
+	looks broken rather than a refusal that explains itself - the same reason
+	`whose_months_i_can_open` reads with `get_all` once it has settled who the
+	caller may see. The team is settled first, every row is inside it, and the
+	read is explicit.
+	"""
+	me = _employee_for(frappe.session.user)
+	if _may_review():
+		team = None                       # HR: anybody, narrowed below if asked
+	else:
+		if not me:
+			frappe.throw(_("Your user is not linked to an employee record, so "
+			               "there is nobody you can open."), frappe.PermissionError)
+		team = _reports_to(me.name, deep=True)
+		if not team:
+			return {"people": [], "rows": [], "counts": {}, "nobody": True,
+			        "from_date": str(getdate(from_date or nowdate())),
+			        "to_date": str(getdate(to_date or nowdate()))}
+
+	if employee:
+		# One person: the same gate the month view uses, so a manager cannot
+		# reach outside their tree by naming somebody.
+		subject, _is_self = _subject(employee)
+		people_ids = [subject.name]
+	elif team is None:
+		people_ids = frappe.get_all("Employee", filters={"status": "Active"},
+		                            pluck="name", limit_page_length=0)
+	else:
+		people_ids = list(team)
+
+	today = getdate(nowdate())
+	to_date = getdate(to_date or today)
+	from_date = getdate(from_date or frappe.utils.add_days(to_date, -13))
+	if from_date > to_date:
+		frappe.throw(_("The last day cannot be before the first day."))
+	if (to_date - from_date).days > 92:
+		frappe.throw(_("Please choose a period of three months or less."))
+
+	people = {p.name: p for p in frappe.get_all(
+		"Employee", filters={"name": ("in", people_ids or [""])},
+		fields=["name", "employee_name", "designation", "department", "branch"],
+		order_by="employee_name asc", limit_page_length=0)}
+
+	rows = frappe.get_all(
+		"Attendance",
+		filters={"employee": ("in", people_ids or [""]), "docstatus": 1,
+		         "attendance_date": ("between", [str(from_date), str(to_date)])},
+		fields=["name", "employee", "attendance_date", "status", "working_hours",
+		        "shift", "in_time", "out_time", "late_entry", "early_exit"],
+		order_by="attendance_date desc", limit_page_length=0)
+
+	punch_count = _punch_counts(people_ids, from_date, to_date)
+
+	out, counts = [], {}
+	for r in rows:
+		who = people.get(r.employee)
+		if not who:
+			continue
+		n = punch_count.get((r.employee, str(r.attendance_date)), 0)
+		flag = _flag(r, n)
+		counts[flag] = counts.get(flag, 0) + 1
+		if only and flag != only:
+			continue
+		out.append({
+			"attendance": r.name,
+			"employee": r.employee,
+			"employee_name": who.employee_name,
+			"designation": who.designation,
+			"department": who.department,
+			"branch": who.branch,
+			"date": str(r.attendance_date),
+			"status": r.status,
+			"hours": flt(r.working_hours, 2),
+			"shift": r.shift,
+			"in_time": str(r.in_time)[11:16] if r.in_time else None,
+			"out_time": str(r.out_time)[11:16] if r.out_time else None,
+			"punches": n,
+			"flag": flag,
+			"late": bool(r.late_entry),
+			"early": bool(r.early_exit),
+		})
+
+	order = {f: i for i, f in enumerate(NEEDS)}
+	out.sort(key=lambda d: (order.get(d["flag"], 99), d["date"], d["employee_name"]))
+	cap = cint(limit) or 2000
+
+	return {
+		"from_date": str(from_date),
+		"to_date": str(to_date),
+		"people": sorted(people.values(), key=lambda p: p.employee_name or ""),
+		"rows": out[:cap],
+		"counts": counts,
+		"truncated": len(out) > cap,
+	}
+
+
+@frappe.whitelist()
+def raise_for_report(employee, from_date, to_date=None, reason=None,
+                     explanation=None, half_day=0, half_day_date=None):
+	"""A manager asks HR to fix a day for somebody who reports to them.
+
+	Surbhi, 15 Oct 2026: "let's get the manager request the changes and the HR
+	to confirm or reject it." The manager raises; HR decides. This endpoint
+	does the first half and nothing more - it creates a request in the same
+	Waiting state an employee's own request starts in, and `decide` is
+	unchanged.
+
+	WHY THIS IS NOT A PARAMETER ON `raise_correction`. That endpoint says, in
+	its own docstring, that the employee is never taken from the request
+	because "a field that named somebody else would let anyone rewrite anyone's
+	attendance". That is right, and it stays right. The difference here is that
+	the named employee is CHECKED: `_subject` refuses anybody outside the
+	caller's reporting tree before a document is built.
+
+	WHO ASKED IS RECORDED, in the explanation, so HR reads a request that says
+	who is vouching for the day rather than one that appears to have come from
+	the employee themselves.
+	"""
+	subject, is_self = _subject(employee)
+	if is_self:
+		# Their own day: the ordinary endpoint, with its ordinary rules.
+		return raise_correction(from_date, to_date, reason, explanation,
+		                        half_day, half_day_date)
+
+	to_date = to_date or from_date
+	if getdate(to_date) < getdate(from_date):
+		frappe.throw(_("The last day cannot be before the first day."))
+	if getdate(from_date) > getdate(nowdate()):
+		frappe.throw(_("You cannot raise a correction for a day that has not "
+		               "happened yet."))
+
+	allowed = {r["value"] for r in reasons()}
+	if reason not in allowed:
+		frappe.throw(_("{0} is not one of the reasons on offer.").format(reason or ""))
+	if reason == "Other" and not (explanation or "").strip():
+		frappe.throw(_("Please say what happened, so HR can act on it."))
+
+	me = _employee_for(frappe.session.user)
+	note = (explanation or "").strip()
+	if me:
+		stamp = _("Raised by {0} on behalf of the employee.").format(
+			me.employee_name or me.name)
+		note = (note + "\n\n" + stamp).strip() if note else stamp
+
+	doc = frappe.get_doc({
+		"doctype": REQUEST,
+		"employee": subject.name,
+		"employee_name": subject.employee_name,
+		"company": subject.company,
+		"from_date": from_date,
+		"to_date": to_date,
+		"reason": reason,
+		"explanation": note,
+		"half_day": cint(half_day),
+		"half_day_date": half_day_date if cint(half_day) else None,
+		"alvoraa_review_status": "Waiting",
+	})
+	# No ignore_permissions. A manager raising this for a report is allowed by
+	# the permission system itself: `manager_scope` holds one User Permission
+	# per manager, per report, scoped to Attendance Request and three other
+	# doctypes. So Frappe permits the insert because the manager genuinely is
+	# permitted, and the decision lives in data somebody can list rather than
+	# in a line of Python nobody can audit.
+	#
+	# An earlier version called `insert(ignore_permissions=True)` after
+	# checking the reporting line here. It worked, and
+	# `NoQuietBypass.test_this_module_never_ignores_permissions` caught it -
+	# which is exactly what that test is for.
+	doc.insert()
+	return _shape(doc.as_dict())

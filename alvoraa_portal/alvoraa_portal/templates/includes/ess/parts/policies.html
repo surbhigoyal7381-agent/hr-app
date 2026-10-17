@@ -15,13 +15,24 @@
       <div id="panel-att-record" class="panel">
         <div class="page-head">
           <div>
-            <h1 class="page-title">My Attendance</h1>
-            <p class="page-sub" id="ac-sub">Every day of the month, and how to get one corrected</p>
+            <h1 class="page-title">Attendance</h1>
+            <p class="page-sub" id="ac-sub">Your record</p>
           </div>
         </div>
 
         <div class="ac-bar" id="ac-bar"></div>
         <div id="ac-body"><p class="ac-empty">Loading&hellip;</p></div>
+
+        <!-- The whole team's days, worst first, shown when "Whole team" is
+             chosen in the picker above. Moved here from Team View's third tab
+             on 17 Oct 2026: checking one person's month and checking the
+             team's are the same job, so they are behind the same door. -->
+        <div id="ac-team" style="display:none">
+          <div class="tr-bar" id="tr-bar"></div>
+          <div class="tr-chips" id="tr-chips"></div>
+          <div id="tr-body"><p class="ac-empty">Loading&hellip;</p></div>
+          <div class="tr-pager" id="tr-pager"></div>
+        </div>
 
         <div id="ac-review-wrap" style="display:none;margin-top:26px">
           <div class="sec-divider">Waiting for you</div>

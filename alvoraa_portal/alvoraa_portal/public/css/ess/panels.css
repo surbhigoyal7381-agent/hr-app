@@ -2123,10 +2123,14 @@ body.panel-fullscreen{overflow:hidden}
   .dr-chip{margin-left:0}
 }
 
-/* ── Attendance Review (Team View, third tab) ─────────────────────────────
+/* ── The team's days (Attendance page, "Whole team") ──────────────────────
    The team's days, worst first, with a way to ask HR to fix one. Built from
    the same pieces as Attendance Insights' bar and the correction form, so
-   the two screens a manager moves between do not look like two products. */
+   the two screens a manager moves between do not look like two products.
+
+   This was Team View's third tab until 17 Oct 2026. The markup moved to the
+   Attendance page; the styles did not have to move with it, and only this
+   heading needed correcting - it named a tab that no longer exists. */
 .tr-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:12px}
 .tr-f{display:flex;flex-direction:column;gap:3px}
 .tr-f>span{font-size:var(--fs-xs);color:var(--text3);font-weight:700;
@@ -2173,6 +2177,13 @@ body.panel-fullscreen{overflow:hidden}
 .tr-need.ok{background:var(--green-lt);color:var(--green)}
 .tr-ask{flex-shrink:0;white-space:nowrap}
 .tr-form{max-width:460px}
+/* The person or date that opens that month. A real button, so it is reachable
+   by keyboard and shows its focus; underlined, so the affordance is not
+   carried by colour alone. */
+.tr-open{font:inherit;font-weight:700;color:var(--text);background:none;
+  border:0;padding:0;cursor:pointer;text-align:left;text-decoration:underline;
+  text-decoration-color:var(--border);text-underline-offset:3px}
+.tr-open:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
 
 .tr-pager{display:flex;align-items:center;gap:8px;margin-top:12px}
 .tr-count{font-size:var(--fs-xs);color:var(--text3);margin-right:auto;

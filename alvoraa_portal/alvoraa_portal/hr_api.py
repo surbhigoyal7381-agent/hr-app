@@ -3,7 +3,7 @@ import re
 import frappe
 from frappe import _
 
-from alvoraa_portal.attendance_analytics import LATE_GRACE_KEY
+from alvoraa_portal.attendance_analytics import LATE_GRACE_KEY, _may_see_organisation
 from alvoraa_portal.goals_api import current_cycle_name, goal_average, in_cycle
 from alvoraa_portal.subscription import requires_feature
 import calendar as _calendar
@@ -286,9 +286,11 @@ def get_portal_context():
     is_hr = is_system_manager or bool({"HR Manager", "HR User"} & set(roles))
     is_manager = False
     manager_name = None
+    has_reports = False
 
     if emp:
-        is_manager = frappe.db.count("Employee", {"reports_to": emp.name, "status": "Active"}) > 0
+        has_reports = frappe.db.count("Employee", {"reports_to": emp.name, "status": "Active"}) > 0
+        is_manager = has_reports
         if not is_manager and is_hr:
             is_manager = frappe.db.count(
                 "Employee", {"reports_to": ("is", "not set"), "status": "Active",
@@ -315,6 +317,23 @@ def get_portal_context():
         # Read from site config, so it costs nothing and cannot drift from the
         # check /alvoraa-admin itself performs.
         "is_control_plane": bool(frappe.conf.get("alvoraa_control_plane")),
+        # Is there anything behind the Attendance Insights item?
+        #
+        # It had no gate at all, so every employee was shown it with two of its
+        # three views greyed out - a door advertised to people who may not open
+        # it, which is the same mistake the Tenant Admin link above made.
+        #
+        # The page itself answers this question in `attendance_analytics.views()`
+        # and enforces it in `_population()`. This is the SAME answer, from the
+        # same two sources, so the two cannot drift: a direct-report count, which
+        # is the count already taken two lines up for `is_manager`, and
+        # `_may_see_organisation()`, imported rather than re-written. So this
+        # costs no extra query - the role test reads Frappe's defaults cache,
+        # not the database.
+        #
+        # `is_manager` is not the test. It is wider - it is also true for HR when
+        # somebody has no manager set - and the team view needs real reports.
+        "att_insights": has_reports or _may_see_organisation(),
         "manager_name": manager_name,
         "roles": roles,
     }

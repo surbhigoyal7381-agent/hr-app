@@ -391,6 +391,9 @@ def month(year=None, month=None, employee=None):
 	caller, and `_subject` refuses anybody they may not open.
 	"""
 	me, is_self = _subject(employee)
+	# Whoever is asking, when that is not the subject. Only `can_request`
+	# below needs it, so somebody's own month does not pay for the read.
+	asker = None if is_self else _employee_for(frappe.session.user)
 	today = getdate(nowdate())
 	year = cint(year) or today.year
 	month = cint(month) or today.month
@@ -508,11 +511,34 @@ def month(year=None, month=None, employee=None):
 		"totals": _totals(days),
 		"is_self": is_self,
 		"can_review": _may_review(),
-		# Only the person themselves may ask for a correction. A manager or HR
-		# looking at somebody else's month fixes it directly instead, and
-		# showing them a button that raises a request in that person's name
-		# would put words in their mouth.
-		"can_request": is_self,
+		# Who may ask HR to fix a day on this record: the person themselves, or
+		# their DIRECT manager.
+		#
+		# This was `is_self` alone, under a comment saying that a manager
+		# raising one in somebody's name would put words in their mouth.
+		# Surbhi settled the question the other way on 15 Oct 2026 - "let's get
+		# the manager request the changes and the HR to confirm or reject it" -
+		# and `raise_for_report` stamps "Raised by X on behalf of the employee"
+		# on what it creates, so HR reads a request that says who is vouching
+		# for the day instead of one that looks like the employee's own. The
+		# words are no longer in anybody's mouth, so the reason for the old
+		# answer has gone.
+		#
+		# DIRECT reports only, the same bound `raise_for_report` enforces
+		# (Surbhi, 17 Oct 2026: "direct reports only"). It is worked out with
+		# the same call for that reason: a flag that disagreed with the guard
+		# would show a button that refuses when pressed. READING still reaches
+		# the whole line, so a skip-level month opens as before - it is simply
+		# read-only, and the screen says whose job it is.
+		#
+		# HR is NOT given it. They decide corrections; a reviewer who could
+		# raise one as well would be deciding their own request, which SEC-9
+		# forbids and `decide` already refuses.
+		#
+		# `asker` is read only on the path that needs it, so an employee
+		# opening their own month still costs exactly the queries it did.
+		"can_request": is_self or bool(
+			asker and me.name in _reports_to(asker.name, deep=False)),
 	}
 
 

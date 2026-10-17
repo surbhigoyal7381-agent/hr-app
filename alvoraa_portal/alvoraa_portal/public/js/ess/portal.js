@@ -1,7 +1,6 @@
 /* ── Helpers ─────────────────────────────────────── */
 const MOD = "alvoraa_portal.hr_api";
 const loadedPanels = new Set(["home"]);
-let calYear, calMonth;
 
 function api(fn, args, cb, ecb) {
   frappe.call({
@@ -2757,7 +2756,7 @@ function acApi(fn, args) {
 }
 
 var acState = {year: 0, month: 0, employee: null, data: null,
-               reasons: null, people: null, open: null};
+               reasons: null, people: null, open: null, team: false};
 
 window.acOpen = async function () {
   if (!acState.year) {
@@ -2776,14 +2775,52 @@ window.acNav = function (step) {
   acLoad();
 };
 
+/* The picker answers one question - whose days am I looking at - and
+   "Whole team" is one of its answers. `AC_TEAM` is not an employee id, so
+   acState.employee never holds it. */
+var AC_TEAM = "*team";
+
 window.acPick = function (employee) {
-  acState.employee = employee || null;
+  acState.team = employee === AC_TEAM;
+  acState.employee = acState.team ? null : (employee || null);
   acState.open = null;
+  acLoad();
+};
+
+/* A row in the team list opens that person's month, at that day. Clicking a
+   day you are worried about should land you on the day, not on a month you
+   then have to find it in. */
+window.acFromTeam = function (employee, date) {
+  acState.team = false;
+  acState.employee = employee;
+  acState.year = parseInt(date.slice(0, 4), 10);
+  acState.month = parseInt(date.slice(5, 7), 10);
+  acState.open = date;
   acLoad();
 };
 
 async function acLoad() {
   var body = document.getElementById("ac-body");
+  var team = document.getElementById("ac-team");
+
+  if (acState.team) {
+    /* The whole team's days instead of one person's month - the list that
+       was Team View's third tab until 17 Oct 2026, behind this page's own
+       picker. Nothing below belongs to it: one person's corrections and HR's
+       queue are both about one person. */
+    body.style.display = "none";
+    document.getElementById("ac-mine-wrap").style.display = "none";
+    document.getElementById("ac-review-wrap").style.display = "none";
+    team.style.display = "";
+    document.getElementById("ac-sub").textContent =
+      "Whole team · days that need a look";
+    acBar();
+    await trOpen();
+    return;
+  }
+
+  team.style.display = "none";
+  body.style.display = "";
   body.innerHTML = '<p class="ac-empty">Loading&hellip;</p>';
   try {
     var d = await acApi("month", {year: acState.year, month: acState.month,
@@ -2804,25 +2841,37 @@ var AC_MONTHS = ["January","February","March","April","May","June","July",
                  "August","September","October","November","December"];
 
 function acBar() {
-  var d = acState.data;
-  var html = '<button class="btn btn-outline" onclick="acNav(-1)">&lsaquo;</button>'
-    + '<select onchange="acJump(this.value)">'
-    + acMonthOptions().map(function (o) {
-        return '<option value="' + o.v + '"' + (o.on ? " selected" : "") + ">"
-          + gpEsc(o.l) + "</option>";
-      }).join("")
-    + "</select>"
-    + '<button class="btn btn-outline" onclick="acNav(1)">&rsaquo;</button>';
+  var d = acState.data || {};
+  var html = "";
+
+  /* The month buttons belong to one person's record. The team list has its
+     own From and To, so a month selector beside it would be a second answer
+     to the same question, and the two would disagree. */
+  if (!acState.team) {
+    html += '<button class="btn btn-outline" onclick="acNav(-1)">&lsaquo;</button>'
+      + '<select onchange="acJump(this.value)">'
+      + acMonthOptions().map(function (o) {
+          return '<option value="' + o.v + '"' + (o.on ? " selected" : "") + ">"
+            + gpEsc(o.l) + "</option>";
+        }).join("")
+      + "</select>"
+      + '<button class="btn btn-outline" onclick="acNav(1)">&rsaquo;</button>';
+  }
 
   /* The picker only appears for somebody who has people to look at. An
      empty dropdown is the clearest possible sign a screen was built for
-     somebody else. */
+     somebody else. Having people is also what makes "Whole team" worth
+     offering, so the two appear together. */
   if (acState.people && acState.people.length) {
+    var own = !acState.team && !acState.employee;
     html += '<select onchange="acPick(this.value)" style="min-width:180px">'
-      + '<option value="">' + gpEsc(d.is_self ? "Me" : "Choose a person") + "</option>"
+      + '<option value="' + AC_TEAM + '"' + (acState.team ? " selected" : "")
+      + ">Whole team</option>"
+      + '<option value=""' + (own ? " selected" : "") + ">"
+      + gpEsc(d.is_self ? "Me" : "Choose a person") + "</option>"
       + acState.people.map(function (p) {
           return '<option value="' + gpEsc(p.name) + '"'
-            + (p.name === d.employee ? " selected" : "") + ">"
+            + (!acState.team && p.name === d.employee ? " selected" : "") + ">"
             + gpEsc(p.employee_name) + (p.designation ? " · " + gpEsc(p.designation) : "")
             + "</option>";
         }).join("")
@@ -2830,7 +2879,9 @@ function acBar() {
   }
 
   html += '<span class="sp ac-who">'
-    + (d.is_self ? "Your record" : "Viewing <b>" + gpEsc(d.employee_name) + "</b>")
+    + (acState.team ? "Whole team"
+                    : (d.is_self ? "Your record"
+                                 : "Viewing <b>" + gpEsc(d.employee_name) + "</b>"))
     + "</span>";
   document.getElementById("ac-bar").innerHTML = html;
 
@@ -2892,8 +2943,12 @@ function acPaint() {
     + "— there is nothing to be short of.</p>";
 
   document.getElementById("ac-body").innerHTML = html;
+  /* The heading is the constant word "Attendance", so this line is the only
+     thing that says WHOSE record is on screen. It leads with the person for
+     that reason. */
   document.getElementById("ac-sub").textContent =
-    AC_MONTHS[d.month - 1] + " " + d.year + (d.is_self ? "" : " · " + d.employee_name);
+    (d.is_self ? "Your record" : d.employee_name) + " · "
+    + AC_MONTHS[d.month - 1] + " " + d.year;
 }
 
 /* One row per day. Weekends and days still to come are drawn quietly
@@ -3070,8 +3125,11 @@ function acDetail(x) {
   } else if (d.can_request) {
     html += acForm(x);
   } else {
+    /* Reading reaches the whole reporting line; asking stops at the direct
+       reports. So say whose job it is rather than leaving somebody looking
+       for a button that was never there for them. */
     html += '<p class="ac-help">Only ' + gpEsc(d.employee_name)
-      + " can ask for a correction on their own record.</p>";
+      + " or their own manager can ask HR to fix a day on this record.</p>";
   }
   return html + "</div></td></tr>";
 }
@@ -3089,7 +3147,8 @@ function acForm(x) {
     + '<label class="form-label">Anything HR should know</label>'
     + '<textarea id="ac-explain" placeholder="Say briefly what happened."></textarea>'
     + '<div class="ac-acts">'
-    + '<button class="btn btn-primary" onclick="acSubmit(&quot;' + x.date + '&quot;)">Ask HR to correct this day</button>'
+    + '<button class="btn btn-primary" onclick="acSubmit(&quot;' + x.date
+    + '&quot;)">Ask HR to fix this day</button>'
     + '<button class="btn btn-outline" onclick="acToggle(&quot;' + x.date + '&quot;)">Cancel</button>'
     + "</div></div>";
 }
@@ -4001,12 +4060,13 @@ function holNavMonth(delta) {
   _renderHolMonth();
 }
 
-/* ── ATTENDANCE ──────────────────────────────────── */
+/* ── LEAVE ───────────────────────────────────────── */
+/* This panel used to carry a month calendar and four status tiles as well.
+   They went on 17 Oct 2026: the Attendance page shows the same month with the
+   punches, the hours and the shift on it, so this was the poorer of two
+   answers to one question. `fetchCalendar` and `renderCalendar` went with
+   them, and `get_attendance_calendar` now has no caller in the portal. */
 function loadAttendance() {
-  const now = new Date();
-  calYear = now.getFullYear();
-  calMonth = now.getMonth() + 1;
-  fetchCalendar();
   loadMyLateDeductions();
 }
 
@@ -4060,97 +4120,6 @@ function loadTeamLateList() {
   }, function() {});
 }
 
-function calNav(dir) {
-  calMonth += dir;
-  if (calMonth > 12) { calMonth = 1; calYear++; }
-  if (calMonth < 1)  { calMonth = 12; calYear--; }
-  fetchCalendar();
-}
-
-var _calCache = {};
-function fetchCalendar() {
-  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-  document.getElementById("cal-label").textContent = months[calMonth-1] + " " + calYear;
-  document.getElementById("att-sub").textContent = months[calMonth-1] + " " + calYear + " attendance";
-
-  var cacheKey = calYear + "-" + calMonth;
-  if (_calCache[cacheKey]) { renderCalendar(_calCache[cacheKey]); return; }
-
-  api("get_attendance_calendar", {year: calYear, month: calMonth}, function(data) {
-    _calCache[cacheKey] = data;
-    renderCalendar(data);
-  }, function() { toast("Failed to load attendance", "err"); });
-}
-
-function renderCalendar(data) {
-  const gridEl = document.getElementById("cal-grid-main");
-  const dayNames = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-  // Headers and cells share one grid so columns always align
-  let html = dayNames.map(d => '<div class="cal-day-head" style="font-size:var(--fs-xs);font-weight:700;text-align:center;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;padding:4px 0">' + d + '</div>').join("");
-
-  const attMap = {};
-  (data.records || []).forEach(function(r) { attMap[r.attendance_date] = r; });
-
-  const leaveSet = new Set();
-  (data.leaves || []).forEach(function(l) {
-    let d = new Date(l.from_date);
-    const end = new Date(l.to_date);
-    while (d <= end) {
-      leaveSet.add(d.toISOString().slice(0,10));
-      d.setDate(d.getDate()+1);
-    }
-  });
-
-  const holidaySet = new Set((data.holidays || []).map(h => h.holiday_date));
-  const today = new Date().toISOString().slice(0,10);
-  const nowDate = new Date();
-
-  const firstDay = new Date(data.year, data.month-1, 1);
-  let startDow = firstDay.getDay(); // 0=Sun
-  startDow = startDow === 0 ? 6 : startDow - 1; // convert to Mon=0
-
-  for (let i = 0; i < startDow; i++) html += '<div class="cal-cell empty" style="background:transparent;border:none"></div>';
-
-  let present=0, absent=0, leaveCount=0, wfh=0;
-
-  for (let day = 1; day <= data.last_day; day++) {
-    const dateStr = data.year + "-" + String(data.month).padStart(2,"0") + "-" + String(day).padStart(2,"0");
-    const dow = (startDow + day - 1) % 7; // 0=Mon, 5=Sat, 6=Sun
-    const isWeekend = dow >= 5;
-    const isHoliday = holidaySet.has(dateStr);
-    const isToday = dateStr === today;
-    const isFuture = dateStr > today;
-    const att = attMap[dateStr];
-    const isLeave = leaveSet.has(dateStr);
-
-    let cls = "cal-cell";
-    let statusShort = "";
-    if (isToday) cls += " today";
-    if (isFuture) { cls += " future"; }
-    else if (isHoliday) { cls += " holiday"; statusShort = "HOL"; }
-    else if (att) {
-      if (att.status === "Present") { cls += " present"; statusShort = "P"; present++; }
-      else if (att.status === "Absent") { cls += " absent"; statusShort = "A"; absent++; }
-      else if (att.status === "Half Day") { cls += " half"; statusShort = "½"; }
-      else if (att.status === "Work From Home") { cls += " wfh"; statusShort = "WFH"; wfh++; }
-      else if (att.status === "On Leave") { cls += " leave"; statusShort = "L"; leaveCount++; }
-      else { cls += " present"; statusShort = "P"; present++; }
-    } else if (isLeave) { cls += " leave"; statusShort = "L"; leaveCount++; }
-    else if (isWeekend) { cls += " weekend"; }
-    else if (!isFuture) { cls += " absent"; statusShort = "A"; absent++; }
-
-    html += '<div class="' + cls + '" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:28px;border-radius:var(--r-sm);font-size:var(--fs-xs);font-weight:500">'
-          + '<span class="cn" style="font-size:var(--fs-xs);font-weight:600;line-height:1">' + day + '</span>'
-          + (statusShort ? '<span class="cs" style="font-size:var(--fs-xs);margin-top:1px;font-weight:500">' + statusShort + '</span>' : '')
-          + '</div>';
-  }
-
-  gridEl.innerHTML = html;
-  document.getElementById("att-present").textContent = present;
-  document.getElementById("att-absent").textContent = absent;
-  document.getElementById("att-leave").textContent = leaveCount;
-  document.getElementById("att-wfh").textContent = wfh;
-}
 
 /* ── LEAVES ──────────────────────────────────────── */
 var _leaveSummaryCache = null;
@@ -4836,7 +4805,9 @@ function loadPortalContext() {
     window._me = ctx.employee || null;
     window._roles.is_hr      = !!ctx.is_hr;
 
-    const showMgmt = ctx.is_manager || ctx.is_hr;
+    /* Attendance Insights counts towards the Management heading too, so the
+       item can never end up under a heading that is hidden. */
+    const showMgmt = ctx.is_manager || ctx.is_hr || ctx.att_insights;
 
     // Sidebar management section
     const mgmtHdr = document.getElementById("mgmt-section-hdr");
@@ -4844,6 +4815,13 @@ function loadPortalContext() {
     const navAna  = document.getElementById("nav-analytics");
     if (mgmtHdr) mgmtHdr.style.display = showMgmt ? "block" : "none";
     if (navTeam) navTeam.style.display  = ctx.is_manager ? "flex" : "none";
+    /* Attendance Insights had NO gate: every employee was shown it with two
+       of its three views greyed out. The server says whether there is
+       anything behind it - a team, or the organisation view - and an absent
+       flag (an old cached context) reads as "no", which is the safe way
+       round. */
+    const navAttIns = document.getElementById("nav-att-insights");
+    if (navAttIns) navAttIns.style.display = ctx.att_insights ? "flex" : "none";
     // Role AND plan. Being HR says you may see Analytics; the plan says
     // whether this tenant bought it. Until wave 6 only the first was
     // checked, so every tenant got the panel.
@@ -6686,14 +6664,16 @@ function renderDrawerGoals(goals, empId) {
 let _teamMemberMap = {};   // empId → empName, populated from portal context
 
 function switchTeamTab(tab) {
-  var tabs = ["attendance", "review", "notes"];
+  /* Two tabs again. "Attendance Review" was the third until 17 Oct 2026,
+     when the team's day-by-day list moved to the Attendance page's own
+     picker - the same job, reached through one door instead of two. */
+  var tabs = ["attendance", "notes"];
   tabs.forEach(function (t) {
     var panel = document.getElementById("tv-" + t + "-panel");
     if (panel) panel.style.display = tab === t ? "" : "none";
     var btn = document.getElementById("tvtab-" + t);
     if (btn) btn.classList.toggle("active", tab === t);
   });
-  if (tab === "review") { trOpen(); }
   if (tab === "notes") {
     populateTeamNoteEmpFilter();
     tnFillEmployeeSelect();
@@ -6702,15 +6682,16 @@ function switchTeamTab(tab) {
   }
 }
 
-/* ── Attendance Review: the team's days, worst first ─────────────────────
+/* ── The team's days, worst first ────────────────────────────────────────
    Surbhi, 17 Oct 2026: "we would need one page with filter for all the
    reporting persons first", and "only attendance facts" - not pay
    consequences. So nothing here shows money, and a test asserts it stays
    that way.
 
-   A THIRD TAB ON TEAM VIEW, not a new page. The first tab is today and this
-   month at a glance; this one is the day-by-day record somebody works
-   through. Same job, so the same door.
+   REACHED FROM THE ATTENDANCE PAGE'S OWN PICKER, as "Whole team". It was a
+   third tab on Team View for one day. Checking one person's month and
+   checking the team's are the same job, and they were behind two different
+   doors - which is the duplication the 17 Oct consolidation removed.
 
    THE SERVER DECIDES WHO MAY BE SEEN AND ACTED ON. `can_raise` comes back
    per row, because acting stops at the direct reports while the whole line
@@ -6962,8 +6943,13 @@ function trDay(r, byPerson) {
   if (r.early) bits.push("left early");
   var times = (r.in_time || "--:--") + " – " + (r.out_time || "--:--");
 
+  /* The name is a button, not a bolded label, because clicking it opens that
+     person's month at that day - so it has to be reachable by keyboard and
+     show its focus. */
   return '<div class="tr-day"><span class="tr-dot ' + f[2] + '"></span>'
-    + '<div class="tr-day-main"><div class="tr-day-top"><b>' + gpEsc(who) + "</b>"
+    + '<div class="tr-day-main"><div class="tr-day-top">'
+    + '<button class="tr-open" onclick="acFromTeam(&quot;' + gpEsc(r.employee)
+    + '&quot;,&quot;' + r.date + '&quot;)">' + gpEsc(who) + "</button>"
     + '<span class="tr-status">' + gpEsc(r.status || "") + "</span>"
     + '<span class="tr-need ' + f[2] + '">' + gpEsc(f[1]) + "</span></div>"
     + '<div class="tr-day-sub">' + gpEsc(times) + " · "

@@ -625,9 +625,17 @@ class ReviewingSomebodyElse(CorrectionCase):
 		frappe.set_user("Administrator")
 		self.assertEqual(ac.month(*self.ym(3), employee=p)["employee"], p)
 
-	def test_reviewing_somebody_else_offers_no_request_button(self):
-		"""Raising a correction in another person's name would put words in
-		their mouth. HR fixes the record directly instead."""
+	def test_hr_reviewing_somebody_offers_no_request_button(self):
+		"""HR DECIDES corrections, so HR is not offered the button that asks
+		for one. A reviewer who could also raise one would be deciding their
+		own request, which `decide` refuses - the button would be a dead end
+		dressed up as an action.
+
+		Changed on 17 Oct 2026 only in what it claims: this used to be the
+		rule for everybody who was not the employee. A direct manager now gets
+		the button (see `AManagerRaisingItForSomebodyElse`); HR still does
+		not.
+		"""
 		p, _e = self.person("ACNoButton")
 		frappe.set_user("Administrator")
 		out = ac.month(*self.ym(3), employee=p)
@@ -653,6 +661,69 @@ class ReviewingSomebodyElse(CorrectionCase):
 		names = [r["name"] for r in ac.whose_months_i_can_open(limit=500)]
 		self.assertIn(report, names)
 		self.assertNotIn(outsider, names)
+
+
+class WhoMayAskFromSomebodyElsesMonth(CorrectionCase):
+	"""`can_request` is what puts the button on a day, so it has to agree with
+	`raise_for_report` exactly.
+
+	Surbhi, 15 Oct 2026: "let's get the manager request the changes and the HR
+	to confirm or reject it." Surbhi, 17 Oct 2026: "direct reports only." The
+	flag used to be `is_self` alone, so the manager's route existed in the
+	endpoint with no way to reach it from the day it is about.
+
+	A flag that said yes where the endpoint says no would show a button that
+	refuses when pressed, so each case below checks BOTH.
+	"""
+
+	def setUp(self):
+		super().setUp()
+		tag = CorrectionCase._slot
+		self.boss, self.boss_email = self.person("Cqboss%d" % tag, roles=("Employee",))
+		self.report, self.report_email = self.person("Cqrep%d" % tag, roles=("Employee",))
+		self.deep, _ = self.person("Cqdeep%d" % tag, roles=("Employee",))
+		# Saved rather than set_value: saving is what fires the hook that
+		# grants the manager's User Permission in production, and the document
+		# check inside `raise_for_report` depends on it.
+		for who, boss in ((self.report, self.boss), (self.deep, self.report)):
+			e = frappe.get_doc("Employee", who)
+			e.reports_to = boss
+			e.save(ignore_permissions=True)
+
+	def as_boss(self, fn):
+		frappe.set_user(self.boss_email)
+		try:
+			return fn()
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_a_direct_report_gets_the_button(self):
+		y, m = self.ym(1)
+		out = self.as_boss(lambda: ac.month(year=y, month=m, employee=self.report))
+		self.assertTrue(out["can_request"],
+		                "a manager must be able to ask from the day itself")
+
+	def test_and_the_button_works(self):
+		"""The flag is only honest if the endpoint behind it says yes too."""
+		req = self.as_boss(
+			lambda: ac.raise_for_report(self.report, self.d(1), reason="On Duty"))
+		self.assertEqual(frappe.db.get_value("Attendance Request", req["name"],
+		                                     "employee"), self.report)
+
+	def test_a_skip_level_month_opens_but_offers_nothing(self):
+		"""Reading reaches the whole line; asking stops at the direct reports.
+		So the month still opens - taking that away would remove a screen
+		managers use - and it opens read-only."""
+		y, m = self.ym(1)
+		out = self.as_boss(lambda: ac.month(year=y, month=m, employee=self.deep))
+		self.assertEqual(out["employee"], self.deep, "reading must still work")
+		self.assertFalse(out["can_request"], "acting stops at the direct reports")
+
+	def test_and_the_endpoint_agrees_about_the_skip_level(self):
+		with self.assertRaises(frappe.PermissionError):
+			self.as_boss(
+				lambda: ac.raise_for_report(self.deep, self.d(1), reason="On Duty"))
+
 
 
 class NoQuietBypass(CorrectionCase):

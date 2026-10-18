@@ -1230,18 +1230,31 @@ class TheManagersFilingWindow(CorrectionCase):
 		self.assertEqual(doc.employee, self.report)
 
 	def test_the_setting_refuses_a_value_outside_its_range(self):
+		"""The endpoint HR saves it through holds the same range the server
+		counts with.
+
+		`frappe.db.commit` is stubbed out for this one test. `set_org_setting`
+		commits, which would take this test's own employees and users out of
+		the rollback and leave them on the site for the next run to trip over -
+		which is exactly what happened the first time this was run.
+		"""
+		from unittest.mock import patch
+
 		from alvoraa_portal import hr_api
 
 		hr = self.person("Fwhr%d" % CorrectionCase._slot, roles=("HR Manager",))[1]
 		frappe.set_user(hr)
 		try:
-			self.assertEqual(
-				hr_api.set_org_setting(ac.MANAGER_FILING_WINDOW_KEY, "3"), {"ok": True})
-			self.assertEqual(
-				hr_api.get_org_setting(ac.MANAGER_FILING_WINDOW_KEY), "3")
-			for bad in ("31", "-1", "2.5", "two", "999", ""):
-				with self.assertRaises(frappe.PermissionError, msg=bad):
-					hr_api.set_org_setting(ac.MANAGER_FILING_WINDOW_KEY, bad)
-			self.assertEqual(frappe.db.get_default(ac.MANAGER_FILING_WINDOW_KEY), "3")
+			with patch("frappe.db.commit"):
+				self.assertEqual(
+					hr_api.set_org_setting(ac.MANAGER_FILING_WINDOW_KEY, "3"),
+					{"ok": True})
+				self.assertEqual(
+					hr_api.get_org_setting(ac.MANAGER_FILING_WINDOW_KEY), "3")
+				for bad in ("31", "-1", "2.5", "two", "999", ""):
+					with self.assertRaises(frappe.PermissionError, msg=bad):
+						hr_api.set_org_setting(ac.MANAGER_FILING_WINDOW_KEY, bad)
+				self.assertEqual(
+					frappe.db.get_default(ac.MANAGER_FILING_WINDOW_KEY), "3")
 		finally:
 			frappe.set_user("Administrator")

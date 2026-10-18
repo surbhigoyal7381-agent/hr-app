@@ -917,33 +917,45 @@ def review_queue_filters(user=None):
 HR_WAIT_WORKING_DAYS = 2
 
 
-def hr_may_act_from(doc):
-	"""The date an HR caller may first decide somebody else's manager's request.
+def _working_days_away(employee, start, days, step):
+	"""Walk `days` working days from `start` - forward (step 1) or back (step -1).
 
-	Two WORKING days after the request was raised, counted on the requester's
-	own holiday list. Returns a date string.
+	ONE counter, two callers: the HR wait walks forward from the day a request
+	was raised, the manager's filing window walks back from today. A second
+	counter is how the two would come to disagree about what a working day is.
 
-	**When the employee has no holiday list at all** the count falls back to
-	calendar days and this function says so through `basis`, rather than
-	throwing or silently picking the company default. A store that has not been
-	set up yet should not make an approval unreachable, and it should not
-	pretend a weekend was counted either.
+	Working days are counted on the EMPLOYEE'S OWN holiday list, which in Frappe
+	carries the weekly offs as Holiday rows too - so a store that closes on
+	Tuesdays gets its own Tuesdays, and a weekend is never assumed to be
+	Saturday and Sunday.
+
+	**When the employee has no readable holiday list** the count falls back to
+	calendar days and says so through `basis`, rather than throwing or quietly
+	borrowing the company default. Walking back, that fallback is the TIGHTER
+	answer - skipping a day can only push the far end further away - so missing
+	configuration narrows the window rather than opening it.
+
+	Returns (date string, basis).
 	"""
-	raised = getdate(doc.get("creation") or nowdate())
-	window_end = frappe.utils.add_days(raised, 30)
+	start = getdate(start)
+	# Far enough that a run of holidays cannot leave the loop short, and a hard
+	# stop so a holiday list full of holidays cannot spin for ever.
+	span = days * 2 + 30
+	edge = frappe.utils.add_days(start, span * step)
+	first, last = sorted([str(start), str(getdate(edge))])
 	holidays = set()
 	basis = _("calendar days, because this person has no holiday list")
 	try:
 		# This app's own cached helper, so a screen that asks twice pays once.
 		# `raise_exception=False` inside it is what stops an unset store making
 		# a correction undecidable.
-		hlist = holiday_list_for(doc.employee, raised)
+		hlist = holiday_list_for(employee, start)
 		if hlist:
 			holidays = {
 				str(getdate(d)) for d in frappe.get_all(
 					"Holiday",
 					filters={"parent": hlist, "parenttype": "Holiday List",
-					         "holiday_date": ["between", [raised, window_end]]},
+					         "holiday_date": ["between", [first, last]]},
 					pluck="holiday_date",
 				)
 			}
@@ -955,15 +967,84 @@ def hr_may_act_from(doc):
 		# goes into a log line.
 		frappe.log_error(
 			title="attendance_correction: holiday list unreadable",
-			message=f"request={doc.get('name')} while working out the HR wait window",
+			message=f"employee={employee} while counting a working-day window",
 		)
 
-	counted, day = 0, raised
-	while counted < HR_WAIT_WORKING_DAYS:
-		day = frappe.utils.add_days(day, 1)
+	counted, day, walked = 0, start, 0
+	while counted < days and walked < span:
+		day = frappe.utils.add_days(day, step)
+		walked += 1
 		if str(getdate(day)) not in holidays:
 			counted += 1
 	return str(getdate(day)), basis
+
+
+def hr_may_act_from(doc):
+	"""The date an HR caller may first decide somebody else's manager's request.
+
+	Two WORKING days after the request was raised, counted on the requester's
+	own holiday list. Returns (date string, basis).
+	"""
+	return _working_days_away(doc.employee, doc.get("creation") or nowdate(),
+	                          HR_WAIT_WORKING_DAYS, 1)
+
+
+# ── how far back a MANAGER may file (SEC-9a, SEC-10, SEC-11) ────────────────
+#
+# Surbhi, 15 Oct 2026: "let's keep it a customizable window default to 48 hrs.
+# else HR will do the manual adjustments themselves in case of some genuine
+# case." Settled the same day as TWO WHOLE WORKING DAYS, per tenant.
+#
+# Stored as a Frappe default and read per request - the idiom
+# `alvoraa_attendance_late_grace_mins` already uses, so there is no migration
+# and no new DocType, and an existing tenant needs nobody to touch their site.
+#
+# WHO IT BINDS, AND WHO IT MUST NOT. The window is on the MANAGER's filing path
+# only. HR's own manual route is deliberately not bounded by it, because that
+# route is the way out when a day is older than the window - which is what
+# Surbhi's answer says. An employee raising their OWN day (`raise_correction`)
+# is not bounded by it either: narrowing what somebody may ask about their own
+# attendance was never asked for, and would take away something they have now.
+MANAGER_FILING_WINDOW_KEY = "alvoraa_manager_filing_window_days"
+DEFAULT_FILING_WINDOW_DAYS = 2
+
+
+def manager_filing_window_days():
+	"""How many working days back a manager may file for, on this tenant.
+
+	NOT read as `get_default(KEY) or DEFAULT`, which is the idiom next door and
+	the trap here: a stored "0" is falsy, so it would fall through the `or` and
+	silently become 2 - turning the tightest setting a tenant can choose into
+	the default one. Nothing stored means 2; something stored is used, 0
+	included.
+	"""
+	raw = frappe.db.get_default(MANAGER_FILING_WINDOW_KEY)
+	if raw is None or str(raw).strip() == "":
+		return DEFAULT_FILING_WINDOW_DAYS
+	return max(0, cint(raw))
+
+
+def _refuse_outside_filing_window(employee, from_date):
+	"""Refuse a manager-filed day that is older than the tenant's window.
+
+	0 MEANS "TODAY ONLY", not "no limit". Walking back zero working days from
+	today lands on today, so the oldest filable day is today - the tightest
+	setting on offer, and the reading that cannot be arrived at by accident. "No
+	limit" would make the tightest-looking number the loosest behaviour, which
+	is how a control gets switched off by somebody trying to tighten it.
+	"""
+	days = manager_filing_window_days()
+	earliest, basis = _working_days_away(employee, nowdate(), days, -1)
+	if getdate(from_date) >= getdate(earliest):
+		return
+	if days == 0:
+		frappe.throw(_("Your organisation only lets a manager file for today. "
+		               "Ask HR to correct an earlier day."))
+	frappe.throw(
+		_("This day is more than {0} working days old, so it is outside the "
+		  "filing window - ask HR to correct it. The oldest day you can file "
+		  "for is {1}, counted in {2}.").format(
+			days, frappe.utils.formatdate(earliest), basis))
 
 
 def _manager_user_for(employee):
@@ -1457,6 +1538,11 @@ def raise_for_report(employee, from_date, to_date=None, reason=None,
 		frappe.throw(_("{0} is not one of the reasons on offer.").format(reason or ""))
 	if reason == "Other" and not (explanation or "").strip():
 		frappe.throw(_("Please say what happened, so HR can act on it."))
+
+	# The filing window (SEC-9a). Checked AFTER the shape of the request, so a
+	# manager who got the reason wrong is told about the reason, and checked on
+	# `from_date` because that is the oldest day being asked about.
+	_refuse_outside_filing_window(subject.name, from_date)
 
 	me = _employee_for(frappe.session.user)
 	note = (explanation or "").strip()

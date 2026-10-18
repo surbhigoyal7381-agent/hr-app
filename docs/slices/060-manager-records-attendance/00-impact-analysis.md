@@ -169,3 +169,77 @@ slice and have not been built on either path. Item 7 adds a **second door to the
 same endpoint**, so it widens no rule and bypasses no control that exists; the
 gap is the same size before and after. Building the window here would be work
 nobody approved in this list. Flagged for Surbhi to schedule.
+
+---
+
+# Addendum, 18 October 2026 — SEC-9(a), the filing window, now built
+
+Surbhi approved this on 18 Oct 2026, with one decision attached: **no
+paid-period guard.** Salaries are paid in the first week of the following month
+*after* a thorough attendance review, so a correction filed in that window is
+what the review is for. SEC-9(b) therefore stays unbuilt **by decision**, not by
+oversight, and the "Known gap" above shrinks to that one half.
+
+## Rung on the cost ladder
+
+**Rung 2 for the number, rung 4 for the rule.** The number is a Frappe default
+(`alvoraa_manager_filing_window_days`), the idiom
+`alvoraa_attendance_late_grace_mins` already uses — no migration, no new
+DocType, nothing for an existing tenant to touch. The rule is one `if` in the
+endpoint that already exists.
+
+Cheaper rungs rejected, with the reason:
+
+| Rung | Why not |
+|---|---|
+| 1 — already there | Frappe HR's `Attendance Request` bounds nothing but the future. There is no setting, anywhere, for how far back a filing may reach |
+| 2 — configuration alone | A number nobody reads changes nothing. The number needs the one `if` |
+| 3 — a Server Script | It would have to re-derive "is this the manager's path or HR's", which the endpoint already knows. A rule in two places is the way the two come to disagree |
+| 5 — a new DocType | Nothing to store but one integer per tenant |
+
+## Functional impact
+
+**Cross-module.** None. No `hrms`, `erpnext`, `alvoraa_goals` or
+`alvox_compensation` file is touched. Three files change, all in
+`alvoraa_portal`.
+
+**Callers grepped.** `raise_for_report` — `portal.js` (two entry points) and
+`test_attendance_correction.py`. `hr_may_act_from` — `decide()` at
+`attendance_correction.py:1211` and `test_decided_as_045.py` (four places); its
+signature and its answer are unchanged, only its body moved into the shared
+counter. `ALLOWED_ORG_SETTINGS` — the two org-setting endpoints and
+`test_org_settings_allowlist_012.py`.
+
+**Personas.**
+
+| Persona | What changes |
+|---|---|
+| **Employee** | Nothing. `raise_correction` is untouched, and `raise_for_report` still hands a self-named request straight to it. An employee may still ask about any past day of their own — narrowing that was never approved and would be a regression |
+| **HR Manager** | Gains the number on Org Settings. Their own filing path is **not** bounded: HR is the way out when a day is too old, so the guard sits in the manager's endpoint and never on the document |
+| **CXO** | Nothing beyond what HR sees. The setting is HR's, deliberately not in `ACCESS_GRANTING`: it changes *when* a bounded actor may file, never *who* they may file for |
+
+**HRMS domain.** Attendance only. Leave is untouched — the slice's optional
+leave-notice rule is not in this change.
+
+## Non-functional verdict
+
+| Dimension | Verdict | Why |
+|---|---|---|
+| Performance | neutral | One extra `get_default` (cached by Frappe) and at most one `Holiday` query per manager filing, both on a path a human presses by hand |
+| Security | **improves** | A bounded actor's reach shrinks from "any past day" to a configured window, server side, on the only endpoint that path has. No new endpoint, no new permission concept, no `ignore_permissions` |
+| Reliability | **improves** | The working-day walk gains a hard stop, so a holiday list full of holidays can no longer spin. An unreadable holiday list still falls back to calendar days, which is the tighter answer |
+| Scalability | neutral | Nothing grows with headcount |
+| Maintainability | **improves** | Two working-day counters became one, used forwards by the HR wait and backwards by the window. They can no longer disagree about what a working day is |
+| Data integrity | neutral | No stored data changes; the setting is read per request, never cached by us |
+| Compliance / privacy | neutral | No new field is read or shown. The one log line carries the Employee document name and nothing about the person |
+
+## Parallel-work check
+
+Files changed: `attendance_correction.py`, `hr_api.py` (one import, one
+allowlist row), `templates/includes/ess/parts/org-settings.html`,
+`public/js/ess/portal.js`, `tests/test_attendance_correction.py`. `hr_api.py`
+and `portal.js` are hot files; both additions are self-contained blocks at the
+end of an existing section, which is the shape that merges cleanly. The main
+checkout was clean of modified tracked files and `dev` was an ancestor of this
+branch, so the work came in by fast-forward with nobody else's commits in
+between.

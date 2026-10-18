@@ -704,9 +704,15 @@ class WhoMayAskFromSomebodyElsesMonth(CorrectionCase):
 		                "a manager must be able to ask from the day itself")
 
 	def test_and_the_button_works(self):
-		"""The flag is only honest if the endpoint behind it says yes too."""
+		"""The flag is only honest if the endpoint behind it says yes too.
+
+		Yesterday, not this test's own window 400-odd days back: the manager's
+		path has a filing window now (SEC-9a), and this test is about who may
+		ask, not about how far back they may ask.
+		"""
 		req = self.as_boss(
-			lambda: ac.raise_for_report(self.report, self.d(1), reason="On Duty"))
+			lambda: ac.raise_for_report(self.report, add_days(nowdate(), -1),
+			                            reason="On Duty"))
 		self.assertEqual(frappe.db.get_value("Attendance Request", req["name"],
 		                                     "employee"), self.report)
 
@@ -1001,9 +1007,12 @@ class AManagerRaisingItForSomebodyElse(CorrectionCase):
 		self.assertEqual(out["employee"], below)
 
 	def test_a_manager_can_raise_one_for_a_report(self):
+		# Yesterday: the manager's path is bounded by the filing window
+		# (SEC-9a), which has its own class below.
 		frappe.set_user(self.boss_email)
 		try:
-			out = ac.raise_for_report(self.report, self.d(1), reason="On Duty")
+			out = ac.raise_for_report(self.report, add_days(nowdate(), -1),
+			                          reason="On Duty")
 		finally:
 			frappe.set_user("Administrator")
 		doc = frappe.get_doc("Attendance Request", out["name"])
@@ -1015,7 +1024,8 @@ class AManagerRaisingItForSomebodyElse(CorrectionCase):
 		not one that appears to have come from the employee."""
 		frappe.set_user(self.boss_email)
 		try:
-			out = ac.raise_for_report(self.report, self.d(1), reason="On Duty")
+			out = ac.raise_for_report(self.report, add_days(nowdate(), -1),
+			                          reason="On Duty")
 		finally:
 			frappe.set_user("Administrator")
 		doc = frappe.get_doc("Attendance Request", out["name"])
@@ -1058,5 +1068,150 @@ class AManagerRaisingItForSomebodyElse(CorrectionCase):
 		try:
 			with self.assertRaises(frappe.ValidationError):
 				ac.raise_for_report(self.report, self.d(1), reason="Made Up")
+		finally:
+			frappe.set_user("Administrator")
+
+
+class TheManagersFilingWindow(CorrectionCase):
+	"""SEC-9a: a manager files for a recent day, and an old one goes to HR.
+
+	Surbhi, 15 Oct 2026: "let's keep it a customizable window default to 48
+	hrs. else HR will do the manual adjustments themselves in case of some
+	genuine case." Settled the same day as two whole WORKING days, per tenant.
+
+	Every day used here is counted from today on purpose. The rest of this file
+	works in a window 400-odd days back so two tests cannot collide on the same
+	attendance row, and the window is exactly the rule that cares what today is.
+	"""
+
+	def setUp(self):
+		super().setUp()
+		tag = CorrectionCase._slot
+		self.boss, self.boss_email = self.person("Fwboss%d" % tag, roles=("Employee",))
+		self.report, self.report_email = self.person("Fwrep%d" % tag, roles=("Employee",))
+		e = frappe.get_doc("Employee", self.report)
+		e.reports_to = self.boss
+		e.save(ignore_permissions=True)
+		self._saved_window = frappe.db.get_default(ac.MANAGER_FILING_WINDOW_KEY)
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		frappe.db.set_default(ac.MANAGER_FILING_WINDOW_KEY, self._saved_window or "")
+		super().tearDown()
+
+	def window(self, days):
+		frappe.db.set_default(ac.MANAGER_FILING_WINDOW_KEY, str(days))
+
+	def back(self, i):
+		return add_days(nowdate(), -i)
+
+	def file_for(self, date, employee=None):
+		frappe.set_user(self.boss_email)
+		try:
+			return ac.raise_for_report(employee or self.report, date, reason="On Duty")
+		finally:
+			frappe.set_user("Administrator")
+
+	def day_off(self, date, weekly_off=0):
+		"""Make one day a non-working day on this employee's own holiday list."""
+		hl = frappe.get_doc("Holiday List", self.holidays)
+		hl.append("holidays", {"holiday_date": date, "description": "Closed",
+		                       "weekly_off": weekly_off})
+		hl.save(ignore_permissions=True)
+
+	def test_nothing_stored_means_two_working_days(self):
+		frappe.db.set_default(ac.MANAGER_FILING_WINDOW_KEY, "")
+		self.assertEqual(ac.manager_filing_window_days(), 2)
+
+	def test_a_stored_zero_is_not_read_as_unset(self):
+		"""The trap next door: `get_default(KEY) or DEFAULT` would turn the
+		tightest setting a tenant can choose into the default one."""
+		self.window(0)
+		self.assertEqual(ac.manager_filing_window_days(), 0)
+
+	def test_a_day_inside_the_window_goes_through(self):
+		out = self.file_for(self.back(1))
+		self.assertEqual(frappe.db.get_value("Attendance Request", out["name"],
+		                                     "employee"), self.report)
+
+	def test_a_day_outside_the_window_is_refused_and_sent_to_hr(self):
+		with self.assertRaises(frappe.ValidationError) as caught:
+			self.file_for(self.back(20))
+		self.assertIn("ask HR", str(caught.exception))
+
+	def test_the_refusal_carries_the_configured_number(self):
+		"""Not a hardcoded two, or the message stops being true the day a
+		tenant changes the setting."""
+		self.window(5)
+		with self.assertRaises(frappe.ValidationError) as caught:
+			self.file_for(self.back(20))
+		said = str(caught.exception)
+		self.assertIn("5 working days", said)
+		self.assertNotIn("2 working days", said)
+
+	def test_a_holiday_in_the_range_pushes_the_reach_further_back(self):
+		"""The count is working days, so a day the store was shut does not use
+		the window up. If this ever stops being true the range was built the
+		wrong way round and the refusal is lying about how it counted."""
+		with self.assertRaises(frappe.ValidationError):
+			self.file_for(self.back(3))          # two working days reach day -2
+		self.day_off(self.back(1))
+		self.file_for(self.back(3))              # now day -1 is skipped, so -3 counts
+
+	def test_a_weekly_off_counts_the_same_way(self):
+		"""Frappe keeps the weekly offs as rows on the same holiday list, so
+		there is no Monday-to-Friday assumption anywhere in the count."""
+		self.day_off(self.back(1), weekly_off=1)
+		self.file_for(self.back(3))
+
+	def test_zero_means_today_only(self):
+		self.window(0)
+		self.file_for(nowdate())
+		with self.assertRaises(frappe.ValidationError) as caught:
+			self.file_for(self.back(1))
+		self.assertIn("today", str(caught.exception))
+
+	def test_an_employees_own_old_day_is_not_touched_by_the_window(self):
+		"""The window bounds a MANAGER filing for somebody else. Narrowing what
+		a person may ask about their own attendance was never asked for."""
+		frappe.set_user(self.report_email)
+		try:
+			out = ac.raise_correction(self.d(1), reason="On Duty")
+			through_the_other_door = ac.raise_for_report(self.report, self.d(2),
+			                                            reason="On Duty")
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Attendance Request", out["name"],
+		                                     "employee"), self.report)
+		self.assertEqual(frappe.db.get_value("Attendance Request",
+		                                     through_the_other_door["name"],
+		                                     "employee"), self.report)
+
+	def test_hr_is_never_bounded_by_it(self):
+		"""HR's manual route is the way out when a day is too old, so the
+		window must not reach it. HR files on the desk, which is the document,
+		and the window lives in the manager's endpoint."""
+		self.window(1)
+		doc = frappe.get_doc({
+			"doctype": ac.REQUEST, "employee": self.report,
+			"company": self.company, "from_date": self.d(1), "to_date": self.d(1),
+			"reason": "On Duty", "alvoraa_review_status": "Waiting",
+		}).insert(ignore_permissions=True)
+		self.assertEqual(doc.employee, self.report)
+
+	def test_the_setting_refuses_a_value_outside_its_range(self):
+		from alvoraa_portal import hr_api
+
+		hr = self.person("Fwhr%d" % CorrectionCase._slot, roles=("HR Manager",))[1]
+		frappe.set_user(hr)
+		try:
+			self.assertEqual(
+				hr_api.set_org_setting(ac.MANAGER_FILING_WINDOW_KEY, "3"), {"ok": True})
+			self.assertEqual(
+				hr_api.get_org_setting(ac.MANAGER_FILING_WINDOW_KEY), "3")
+			for bad in ("31", "-1", "2.5", "two", "999", ""):
+				with self.assertRaises(frappe.PermissionError, msg=bad):
+					hr_api.set_org_setting(ac.MANAGER_FILING_WINDOW_KEY, bad)
+			self.assertEqual(frappe.db.get_default(ac.MANAGER_FILING_WINDOW_KEY), "3")
 		finally:
 			frappe.set_user("Administrator")

@@ -4,6 +4,7 @@ import frappe
 from frappe import _
 
 from alvoraa_portal.attendance_analytics import LATE_GRACE_KEY, _may_see_organisation
+from alvoraa_portal.attendance_correction import MANAGER_FILING_WINDOW_KEY
 from alvoraa_portal.goals_api import current_cycle_name, goal_average, in_cycle
 from alvoraa_portal.subscription import requires_feature
 import calendar as _calendar
@@ -3012,6 +3013,11 @@ def reject_kpi_progress(kpi_name, log_idx, comment=None):
 ALLOWED_ORG_SETTINGS = {
     "kra_link_mandatory": ("0", "1"),
     LATE_GRACE_KEY: range(0, 241),          # up to four hours; nothing sensible is longer
+    # Slice 060 SEC-9a/SEC-11: how many WORKING days back a manager may file an
+    # attendance correction. Up to 30 working days - about six calendar weeks,
+    # which already reaches a month whose pay has run; past that it is HR's own
+    # route, which this window never binds. 0 means today only.
+    MANAGER_FILING_WINDOW_KEY: range(0, 31),
     org_features.LATE_RULES_SWITCH: ("0", "1"),
     org_features.ATTENDANCE_SCORING_SWITCH: ("0", "1"),
 }

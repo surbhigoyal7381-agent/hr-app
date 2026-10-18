@@ -14792,11 +14792,52 @@ window.pfRatingLabel = function(value, scale) {
           drT("Not available yet: your plan does not include {0}. Ask your Alvora account contact to add it.",
               [(sw.needs || []).join(", ")]);
       });
+      var win = document.getElementById("org-filing-window");
+      if (win) win.disabled = !canEdit;
+      orgLoadFilingWindow();
       if (card) card.style.display = "";
     }).catch(function() {
       /* Not HR for this site: the card simply is not there. */
       if (card) card.style.display = "none";
     });
+  };
+
+  /* ── How far back a manager may file (slice 060, SEC-9a) ──
+     Working days, counted on the employee's own holiday list. The server
+     checks the same number again on the manager's path, so this box is where
+     HR sets it, not where it is enforced. Nothing stored means two days. */
+  window.orgLoadFilingWindow = function() {
+    var box = document.getElementById("org-filing-window");
+    if (!box) return;
+    window.gpFetch("alvoraa_portal.hr_api.get_org_setting", {key: "alvoraa_manager_filing_window_days"})
+      .then(function(v) {
+        var n = (v === null || v === undefined || String(v).trim() === "") ? 2 : parseInt(v, 10);
+        box.value = isNaN(n) ? 2 : n;
+      })
+      .catch(function() { /* Not HR: the card is hidden anyway. */ });
+  };
+
+  window.orgSaveFilingWindow = function(box) {
+    var n = parseInt(box.value, 10);
+    if (isNaN(n) || n < 0 || n > 30) {
+      pfSetHtml("org-attrules-msg", "<span style=\"color:var(--danger,var(--red))\">" +
+        gpEsc(drT("Give a whole number of working days between 0 and 30.")) + "</span>");
+      orgLoadFilingWindow();
+      return;
+    }
+    box.disabled = true;
+    window.gpFetch("alvoraa_portal.hr_api.set_org_setting", {key: "alvoraa_manager_filing_window_days", value: String(n)})
+      .then(function() {
+        pfSetHtml("org-attrules-msg", "<span style=\"color:var(--green)\">" +
+          gpEsc(n === 0 ? drT("Saved. A manager can now ask about today only; HR can still fix any day.")
+                        : drT("Saved. A manager can now ask about the last {0} working days; HR can still fix any day.", [n])) +
+          "</span>");
+      })
+      .catch(function(e) {
+        pfSetHtml("org-attrules-msg", "<span style=\"color:var(--danger,var(--red))\">" +
+          gpEsc((e && e.message) || drT("The setting could not be saved. Try again, or ask your administrator.")) + "</span>");
+      })
+      .finally(function() { box.disabled = false; orgLoadFilingWindow(); });
   };
 
   window.orgSaveAttendanceSwitch = function(key, box) {

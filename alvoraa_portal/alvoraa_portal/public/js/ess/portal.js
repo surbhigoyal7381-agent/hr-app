@@ -3167,9 +3167,28 @@ window.acSubmit = async function (date) {
   var reason = (document.getElementById("ac-reason") || {}).value;
   var explain = (document.getElementById("ac-explain") || {}).value;
   if (!reason) { toast("Please choose a reason.", "err"); return; }
+
+  /* WHOSE DAY IS THIS? `raise_correction` raises for the CALLER and refuses
+     to take anybody else's name - deliberately, so a field naming somebody
+     else cannot rewrite their attendance. A manager's on-behalf request is a
+     different endpoint, `raise_for_report`, which checks the reporting line
+     and stamps who vouched for the day.
+
+     The button was widened to a report's day before this was: it appeared,
+     sent the caller's own endpoint, and came back 403 with the message
+     hidden behind a dialog. Both halves are fixed together. */
+  var other = (acState.data && acState.data.is_self === false)
+    ? (acState.employee || (acState.data && acState.data.employee))
+    : null;
+
   showLoad();
   try {
-    await acApi("raise_correction", {from_date: date, reason: reason, explanation: explain});
+    if (other) {
+      await acApi("raise_for_report", {
+        employee: other, from_date: date, reason: reason, explanation: explain});
+    } else {
+      await acApi("raise_correction", {from_date: date, reason: reason, explanation: explain});
+    }
     hideLoad();
     toast("Sent to HR.", "ok");
     acState.open = null;

@@ -3122,6 +3122,15 @@ function acDetail(x) {
 
   if (x.request) {
     html += acReqCard(x.request, d.is_self);
+  } else if (d.can_request && acOutsideWindow(x.date, d)) {
+    /* The day is older than this tenant's filing window, so the server would
+       refuse it. Say so instead of offering a form that cannot work: an
+       explained absence is better than a button that dies when pressed. */
+    html += '<p class="ac-help">This day is outside the window a manager can '
+      + "file within, so it is HR's to correct. The oldest day you can raise "
+      + "here is <b>" + gpEsc(acNice(d.can_request_from)) + "</b>"
+      + (acWindowWords(d) ? ", counted in " + gpEsc(acWindowWords(d)) : "")
+      + ".</p>";
   } else if (d.can_request) {
     html += acForm(x);
   } else {
@@ -3132,6 +3141,33 @@ function acDetail(x) {
       + " or their own manager can ask HR to fix a day on this record.</p>";
   }
   return html + "</div></td></tr>";
+}
+
+/* Is this day older than the window a MANAGER may file within?
+
+   `can_request_from` is the server's own boundary, worked out with the same
+   call `raise_for_report` enforces with. Null means no window binds this
+   caller - their own month, or HR - and then nothing is hidden. */
+function acOutsideWindow(date, d) {
+  return !!(d && d.can_request_from && date && date < d.can_request_from);
+}
+
+function acWindowWords(d) {
+  /* The server sends the basis as a finished, translated sentence - "working
+     days on this person's own holiday list", or the calendar-day fallback
+     where no list could be read. Repeat it as written: picking the wording
+     here would eventually disagree with the refusal the server gives, and
+     "working days" where the count was calendar days is a small lie about
+     somebody's pay. */
+  return (d && d.can_request_basis) ? String(d.can_request_basis) : "";
+}
+
+function acNice(iso) {
+  if (!iso) return "";
+  var p = String(iso).split("-");
+  var m = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return (+p[2]) + " " + m[+p[1] - 1] + " " + p[0];
 }
 
 function acForm(x) {

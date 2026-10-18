@@ -502,6 +502,17 @@ def month(year=None, month=None, employee=None):
 		                 shift_cache, tolerance, today,
 		                 marks or punches.get(date, []), weekly_offs))
 
+	can_request = is_self or bool(
+		asker and me.name in _reports_to(asker.name, deep=False))
+
+	# Only a MANAGER filing for somebody else is bound by the window. Their own
+	# month is not, and HR is not - `raise_for_report` says the same, and this
+	# must not invent a limit the guard would not enforce.
+	filing_from, filing_basis = None, None
+	if can_request and not is_self:
+		days = manager_filing_window_days()
+		filing_from, filing_basis = _working_days_away(me.name, nowdate(), days, -1)
+		filing_from = str(filing_from)
 	return {
 		"employee": me.name, "employee_name": me.employee_name,
 		"year": year, "month": month, "last_day": last,
@@ -537,8 +548,27 @@ def month(year=None, month=None, employee=None):
 		#
 		# `asker` is read only on the path that needs it, so an employee
 		# opening their own month still costs exactly the queries it did.
-		"can_request": is_self or bool(
-			asker and me.name in _reports_to(asker.name, deep=False)),
+		"can_request": can_request,
+		# THE OLDEST DAY THAT CALLER MAY FILE FOR, or None where no window
+		# binds them. Returned so the screen can stop OFFERING a day it would
+		# then refuse.
+		#
+		# `can_request` answers "may this person raise here at all", which is
+		# a question about the MONTH. The filing window is a question about
+		# the DAY, and the two were not the same: the form appeared on every
+		# day of a report's month and the server refused the old ones with a
+		# 417 - correctly, and invisibly, so it read as a dead button.
+		# Surbhi, 18 Oct 2026: "if that is the case manager shouldn't be
+		# allowed to raise request for that day, meaning the form shouldn't
+		# be visible to them."
+		#
+		# One value, not a flag per day: the window is a single boundary, so
+		# the screen compares each date against it. Worked out with the SAME
+		# call the guard uses, for the same reason `can_request` is - a
+		# boundary that disagreed with the guard would just move the dead
+		# button rather than remove it.
+		"can_request_from": filing_from,
+		"can_request_basis": filing_basis,
 	}
 
 

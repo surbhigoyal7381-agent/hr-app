@@ -315,14 +315,18 @@ jobs:
             # tar exits 2 - which failed the backup and correctly skipped the whole
             # deploy. bench is unaffected because it locates the bench root itself,
             # which is why every other command in this job worked.
+            # NOT into sites/ itself: every bench command that loops over the sites
+            # folder saw each tarball as a site and asked bench about it ("404 Not
+            # Found: site-configs-2026-09-18-1901.tgz does not exist"), once per
+            # tarball per loop, fifteen of them by 23 Sep. Own folder, next to the dumps.
             $DC exec -T backend bash -c \
-              "cd /home/frappe/frappe-bench && tar czf sites/site-configs-${STAMP}.tgz \
+              "cd /home/frappe/frappe-bench && mkdir -p sites/.config-backups && tar czf sites/.config-backups/site-configs-${STAMP}.tgz \
                  sites/*/site_config.json sites/common_site_config.json"
 
             if [ -n "${{ secrets.BACKUP_BUCKET }}" ]; then
               $DC exec -T backend bash -c \
                 "cd /home/frappe/frappe-bench && aws s3 sync sites/ s3://${{ secrets.BACKUP_BUCKET }}/pre-deploy/${STAMP}/ \
-                   --exclude '*' --include '*/private/backups/*' --include 'site-configs-*.tgz'" \
+                   --exclude '*' --include '*/private/backups/*' --include '.config-backups/site-configs-*.tgz'" \
                 || echo "::warning::Offsite backup sync failed — verify before continuing"
             else
               echo "::warning::BACKUP_BUCKET not set — backups exist only on the server"
@@ -437,10 +441,14 @@ jobs:
               fi
             }
 
+            # A site is a directory holding site_config.json - nothing else. The old
+            # exclusion list named the files it knew about and missed the
+            # site-configs-*.tgz tarballs the backup step used to leave here; bench
+            # was then asked about each one and printed a 404 for it.
             list_sites() {
-              $DC exec -T backend bash -c 'ls -1 /home/frappe/frappe-bench/sites' \
-                | tr -d '\r' \
-                | grep -vE '^(assets|apps[.]txt|apps[.]json|.*[.]json|currentsite[.]txt)$'
+              $DC exec -T backend bash -c \
+                'cd /home/frappe/frappe-bench/sites && for d in */; do [ -f "$d/site_config.json" ] && echo "${d%/}"; done' \
+                | tr -d '\r'
             }
 
             # Whatever happens below, the site must not be left in maintenance and

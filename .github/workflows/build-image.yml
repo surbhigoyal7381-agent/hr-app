@@ -224,6 +224,39 @@ jobs:
             fi
           done
 
+      # ── Copy the old releases into the new package, for rollback ─────────
+      #
+      # Without this, a rollback to prod-65878e8 after the change would look for
+      # that tag in alvoraa-app, where it was never built, and fail at the pull.
+      # Copied here, a rollback to an old release is the same one-line dispatch
+      # as any other rollback, before AND after the old package is deleted.
+      #
+      # `imagetools create` copies inside the registry: same manifest, same
+      # digest, no rebuild, nothing downloaded to this runner. It runs only
+      # during the changeover (see the step above), skips a tag that is already
+      # there, and only warns about one it cannot find - a missing rollback copy
+      # must not block a dev build. The runbook checks the copies by hand
+      # before the old package is deleted.
+      - name: Copy old releases into the new package
+        if: steps.changeover.outputs.also_old == 'true'
+        env:
+          MAIN_TAG: ${{ steps.changeover.outputs.main_tag }}
+        run: |
+          set -uo pipefail
+          NEW="${REGISTRY}/${IMAGE_NAME}"
+          OLD="${REGISTRY}/${OLD_IMAGE_NAME}"
+          for tag in $(printf '%s\n' $CARRY_TAGS "$MAIN_TAG" | sort -u); do
+            if docker buildx imagetools inspect "${NEW}:${tag}" >/dev/null 2>&1; then
+              echo "${tag}: already in ${IMAGE_NAME}"
+            elif ! docker buildx imagetools inspect "${OLD}:${tag}" >/dev/null 2>&1; then
+              echo "::warning::${tag}: not found in ${OLD_IMAGE_NAME} either - NOT copied. A rollback to it will not work from ${IMAGE_NAME}."
+            elif docker buildx imagetools create --tag "${NEW}:${tag}" "${OLD}:${tag}"; then
+              echo "${tag}: copied from ${OLD_IMAGE_NAME}"
+            else
+              echo "::warning::${tag}: copy FAILED - a rollback to it will not work from ${IMAGE_NAME}."
+            fi
+          done
+
       - name: Summary
         run: |
           {

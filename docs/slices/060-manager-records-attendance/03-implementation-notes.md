@@ -351,3 +351,117 @@ Removed: a `days_off()` test helper with exactly one caller, inlined into it.
 Resisted: a per-day `can_request` answer, a window check in `decide()`, a
 paid-period guard, a second counter, and a "window" DocType. Nothing else came
 out — the change is one `if`, one read, one shared counter and one input.
+
+---
+
+# Addendum — 18 October 2026: two tenant settings, and the phantom second request
+
+## What was built, file by file
+
+| File | What changed | Mechanism, and why |
+|---|---|---|
+| `alvoraa_portal/alvoraa_portal/attendance_correction.py` | `MANAGER_ON_BEHALF_KEY` and `manager_on_behalf_on()` (unset = ON); `manager_filing_window_days()` now returns `None` for blank; new `manager_filing_from()`, the single derivation of the boundary; `_refuse_outside_filing_window` returns early on no limit; the switch is checked inline in `raise_for_report`; `month()` gates on both settings and sends `on_behalf_enabled`; `team_days()` answers `can_raise` per person **and per day**; `raise_for_report` refuses a call that arrives without an employee or a date | **Configure, plus the readers.** Both settings are Frappe defaults, the idiom the late-coming grace period already uses, so there is no new DocType, no migration and nothing for an existing tenant to touch |
+| `alvoraa_portal/alvoraa_portal/hr_api.py` | both keys on `ALLOWED_ORG_SETTINGS`; blank accepted for the window key only | **Configure.** The endpoints and their HR guard already existed |
+| `.../templates/includes/ess/parts/org-settings.html` | the switch, and the window field indented under it as its sub-setting | **Extend** the Attendance rules card that was already there |
+| `.../public/js/ess/portal.js` | load and save both settings; the window box is blank for "no limit" and inert while the switch is off; the day detail explains a switched-off tenant; one request per press; nothing incomplete is sent | **Extend** |
+| `.../tests/test_attendance_correction.py` | the window class reworked for the new default, plus 12 new tests | |
+| `alvoraa_portal/tests/portal_correction_test.js` | 6 new assertions in the jsdom test | |
+
+## The acceptance criteria, as given in the brief
+
+| Asked for | How it is satisfied |
+|---|---|
+| A master switch, named for the capability | `alvoraa_manager_on_behalf_enabled`, covering attendance now and leave later |
+| Default ON, with the reason in a comment | `manager_on_behalf_on()` — unset is on; the comment says a closed default would take a working screen away from DTC silently |
+| Blank = no limit, and it is the default | `manager_filing_window_days()` returns `None`; `test_nothing_stored_means_no_limit` |
+| `0` = today only, unchanged | `test_zero_means_today_only`, kept |
+| Blank and `0` stay distinguishable | `test_blank_and_zero_are_never_confused` proves it on behaviour, not just on the reader |
+| The doc no longer contradicts the code | `01c-security-privacy-requirements.md` gains "SEC-9(a) reworked", with her words and the date, and the two reversed decisions are marked where they stood |
+| All three places agree | `raise_for_report`, `month()`, `team_days()` — all read the same two functions, and the boundary comes from `manager_filing_from()` alone |
+| The existing disagreement about HR | Settled as **direct reports only, for everybody**; `test_hr_gets_the_same_answer_on_both_screens` |
+| Both settings on the Org Settings screen, the sub-setting subordinate and inert | Indented under the switch, disabled and dimmed while it is off |
+| `d1f0638a` finished, and `None` must mean "offer it" | Finished, and the shadowing bug in it fixed — see below. `test_no_limit_means_the_month_view_hides_nothing` and the jsdom "no limit offers the form on an old day" |
+| A day the server would refuse is never offered | `test_the_month_views_boundary_is_the_one_the_guard_enforces`, `test_the_team_list_drops_the_button_on_a_day_too_old` |
+| An employee's own old day still works | `test_neither_setting_narrows_an_employees_own_day`, with the switch off **and** the window at 0 |
+| Refuse an incomplete request on the page | `acSubmit` and `trSubmit` both check, and the server refuses one too |
+
+## A real bug inside `d1f0638a`
+
+That commit assigned the window's day count to `days` — the same name as the list of days
+built just above it. For **every manager viewing a report's month**, the payload came back
+with `days` as an integer instead of the month, so the calendar could not draw at all. It
+was committed untested and never run. Fixed, and pinned by
+`test_the_month_view_returns_the_days_and_not_the_window`.
+
+## The phantom second request — what I found, and what I did
+
+**I could not find a code path in the portal that sends a second, bodyless call, and I am
+not going to guess one.** What I did establish:
+
+* Driving the real page in jsdom with the server refusing exactly as it did on `ppj.dev`
+  (417 `ValidationError`), **one press makes exactly one call**. `gpFetch`'s retry is not
+  involved: it fires only on a CSRF failure (`exc_type === "CSRFTokenError"`, or a 400
+  saying "invalid request"), and a `frappe.throw` is neither.
+* `raise_for_report` is called from two places in `portal.js`, both with a full argument
+  object, and no version in this repository's history ever called it without one.
+* Nothing in the page re-issues a request: there is one retry path, no offline queue, no
+  `sendBeacon`, no service worker, and no global handler that re-invokes a button.
+* A call whose form data is only `cmd` means the body never arrived. From the page that
+  needs `args` to be `undefined` or `{}`, which no call site does. Two explanations remain
+  open, and both sit outside this file: a second press (nothing stopped one), or a proxy
+  redirect, which turns a `POST` into a bodyless `GET` and drops the body — and dev's
+  assets are known to go stale, so the browser may not have been running this code at all.
+
+So I made both harmless rather than claiming a cause:
+
+1. `acSending` — while a request is in flight, a second press does nothing. Pinned: "two
+   presses send one request".
+2. Nothing incomplete leaves the page. Pinned: "a request with nobody named is never sent".
+   **Reintroducing the fault showed something worse than an ugly error:** with the guard
+   removed and the employee id lost, the press fell through to `raise_correction` and would
+   have filed a correction against *the manager's own* attendance.
+3. The server answers an empty call with a sentence. Checked **before** `_subject`, which
+   would otherwise read a missing employee as "my own month".
+
+## The seven dimensions, against the code actually written
+
+| Dimension | Before → after | Why |
+|---|---|---|
+| Performance | **improves slightly** | Blank reads no holiday list at all. The per-person boundary is worked out only for the caller's direct reports, only when a window is set — so HR's 363-row page does none of it, and a manager's page does one small read per report |
+| Security | **improves** | The capability can be switched off per tenant; an empty on-behalf call cannot become "my own day"; HR no longer gets a button that lets them raise and then answer themselves. `ignore_permissions` ceiling still 0 (`test_sec16_ignore_permissions_does_not_grow` passes) |
+| Reliability | **improves** | One press, one request; the `days` shadowing bug fixed; a correct refusal reads as a refusal |
+| Scalability | **neutral** | No query that grows with headcount |
+| Maintainability | **improves** | One boundary derivation, one rule for who may raise; a helper with a single caller was inlined in the subtract pass |
+| Data integrity | **neutral** | Nothing stored changes; blank and `0` kept apart in the reader and in a test |
+| Compliance / privacy | **neutral** | No new field, no new visibility, nothing personal logged. The only movement is narrowing |
+
+## NFR notes
+
+* **Queries.** `month()`: unchanged on no limit; one `Holiday` read when a window is set
+  (as before). `team_days()`: unchanged for HR; for a manager with a window set, one
+  `Holiday` read per direct report on the page, cached by `holiday_list_for`.
+* **Indexes, jobs, caches.** None added. None measured as needed.
+* **Permission enforcement.** Server side in `raise_for_report` (`_subject`, the direct-report
+  check, the switch, the window) and in `hr_api._require_hr` + `_refuse_store_hr` for the
+  settings. The screens only avoid offering what the server would refuse.
+* **Sensitive fields.** None touched. No name, id or reason enters a log line.
+* **Fallbacks.** An unreadable holiday list already falls back to calendar days, which is
+  the tighter answer; unset settings fall back to today's behaviour.
+
+## Known gaps and shortcuts
+
+* **Leave is not wired to the switch** — *acceptable simplification.* Her words cover leave,
+  and the key is named for it, but no leave on-behalf path exists yet. The day one is built
+  it reads `manager_on_behalf_on()` and nothing else changes.
+* **`raise_for_report` still lets an HR caller through its direct-report check** —
+  *intentional trade-off.* No portal screen offers it to them any more, so narrowing the
+  endpoint as well would change behaviour nobody can reach, for no gain. Said out loud so
+  the next person does not read the endpoint as the whole rule.
+* **The window still binds an HR caller on that endpoint**, although the requirements say
+  the window must not bind HR — *pre-existing, unchanged, and now unreachable* from the
+  portal, because HR has no button. Left alone deliberately rather than widened as a
+  side effect.
+* **The cause of the bodyless second call is not known** — *temporary debt.* What removes
+  it: the next time it happens, the browser's own network log, or an nginx access log for
+  the same second, will say whether a redirect or a second press was behind it. Both are
+  now harmless.

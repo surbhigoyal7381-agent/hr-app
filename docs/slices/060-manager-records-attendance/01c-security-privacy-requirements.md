@@ -1465,6 +1465,10 @@ where to argue it out.
 Two things in SEC-9(a) could not both be built as written. Both are now decided, and the
 code already matches. **Do not reopen either without her.**
 
+> **Reopened and re-decided the same evening, after she tested it live. Read
+> "SEC-9(a) reworked" at the end of this section before acting on anything
+> below: the default window changed, and so did what a blank one means.**
+
 ### 1. A filing window of `0` means TODAY ONLY, not "nobody may file"
 
 This file said *"0 means nobody may file on behalf"*. It does not. `0` is the tightest
@@ -1477,7 +1481,8 @@ A number box that silently becomes a permission is a trap, and the person who se
 have no way of knowing.
 
 Turning the capability off for a tenant is a separate switch with its own label, if it is
-ever wanted. It is not a `0` hidden in a day count.
+ever wanted. It is not a `0` hidden in a day count. **It was wanted the same evening —
+that switch is built, and the rework below describes it.**
 
 Pinned by tests: `0` accepts today and refuses yesterday, and a **stored** `0` is not read
 as unset — `0` is falsy in Python, so `get_default(KEY) or DEFAULT` would have silently
@@ -1507,3 +1512,75 @@ is unchanged and must stay unchanged.
 **No paid-period guard**, decided the same day. DTC pay in the first week of the following
 month *after* a thorough attendance review, so a correction filed in that window is exactly
 what the review is for. The guard is not built and must not be added as a precaution.
+
+---
+
+## SEC-9(a) reworked — Surbhi, 18 October 2026, after testing it live
+
+**This section wins over anything earlier in this file about the filing window's default.**
+It reverses two decisions taken that same day: the default of two working days, and
+blank meaning two. Her words:
+
+> "it should be a setting per tenant in the organisation setting. First setting: allow
+> manager to approve request for attendance and leaves on behalf of their reporting
+> [staff]. with sub setting - how many working days is allowed for manager to raise
+> approval request, default to blank meaning no limit. this will keep it flexible for an
+> organisation to decide."
+
+### What a tenant now has
+
+| Setting | Key | Values | Default |
+|---|---|---|---|
+| **The switch** — may a manager raise a request on behalf of their direct reports at all | `alvoraa_manager_on_behalf_enabled` | `1` on, `0` off | **ON**, and unset counts as on |
+| **Its sub-setting** — how far back that manager may reach | `alvoraa_manager_filing_window_days` | blank = **no limit**, `0` = today only, `N` = N working days back | **blank** |
+
+Both are set by HR with company-wide permission in Organisation Settings → Attendance
+rules, through `hr_api.set_org_setting`, which holds them on its allow-list. Neither is a
+new DocType and neither is a new endpoint.
+
+### Why the switch defaults to ON
+
+The capability already ships and DTC's managers use it. A switch that failed closed would
+take a working screen away from every existing tenant the moment it was added, silently,
+with nobody having chosen that. So the reader treats unset as on, and only a stored `0`
+switches it off. This is deliberately **not** `org_features.org_switch`, which fails closed
+— right for a rule that deducts pay and starts off, wrong for something people already have.
+
+### Why blank means no limit
+
+Her words, and the reason behind them: the tenant decides. Two working days was the
+product imposing a policy on organisations that never asked for one. HR remains the way
+round an old day either way.
+
+**`0` still means today only.** That part of the earlier decision stands, and blank and `0`
+are now at opposite ends of the same box — so the reader must keep them apart. It does:
+`frappe.db.get_default(KEY) or DEFAULT` is still banned here, because a stored `0` is falsy
+and would be read as "no limit", which is the loosest answer there is. Pinned by
+`test_blank_and_zero_are_never_confused`.
+
+### Where the two settings are enforced, and they must agree
+
+| Place | What it answers | How |
+|---|---|---|
+| `raise_for_report` | the guard | the switch is checked inline, then `_refuse_outside_filing_window()` |
+| `month()` | may this screen offer a form, and from which day | `can_request`, `on_behalf_enabled`, `can_request_from` |
+| `team_days()` | may this row offer a button | `can_raise`, per person **and per day** |
+
+All three read the same two functions, and the boundary comes from one call,
+`manager_filing_from()`. A boundary worked out twice is one that drifts, and then the screen
+offers a day the server throws on — which is exactly what happened on 18 October.
+
+### One more thing settled here: HR does not raise, on either screen
+
+`month()` withheld the form from HR; `team_days()` handed HR a button on every row. The same
+HR user got two different answers, found by pressing it live. **Settled as direct reports
+only, for everybody, HR included.** HR decides every request, and their own route — the
+Attendance Request itself — is deliberately outside the window. `decide()` refuses a person
+deciding their *own* record, not a person deciding what they themselves raised, so the only
+thing keeping HR's two hats apart is not offering the button.
+
+### Still not included
+
+**No paid-period guard.** Unchanged, and still her decision. **`raise_correction` is
+untouched**: neither setting may narrow what somebody asks about their own attendance, and a
+test says so.

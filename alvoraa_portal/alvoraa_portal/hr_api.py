@@ -4,7 +4,8 @@ import frappe
 from frappe import _
 
 from alvoraa_portal.attendance_analytics import LATE_GRACE_KEY, _may_see_organisation
-from alvoraa_portal.attendance_correction import MANAGER_FILING_WINDOW_KEY
+from alvoraa_portal.attendance_correction import (MANAGER_FILING_WINDOW_KEY,
+                                                 MANAGER_ON_BEHALF_KEY)
 from alvoraa_portal.goals_api import current_cycle_name, goal_average, in_cycle
 from alvoraa_portal.subscription import requires_feature
 import calendar as _calendar
@@ -3013,10 +3014,19 @@ def reject_kpi_progress(kpi_name, log_idx, comment=None):
 ALLOWED_ORG_SETTINGS = {
     "kra_link_mandatory": ("0", "1"),
     LATE_GRACE_KEY: range(0, 241),          # up to four hours; nothing sensible is longer
-    # Slice 060 SEC-9a/SEC-11: how many WORKING days back a manager may file an
-    # attendance correction. Up to 30 working days - about six calendar weeks,
-    # which already reaches a month whose pay has run; past that it is HR's own
-    # route, which this window never binds. 0 means today only.
+    # Slice 060 SEC-9a/SEC-11, reworked 18 Oct 2026 into a switch and its
+    # sub-setting.
+    #
+    # The SWITCH: may a manager raise a request on behalf of their direct
+    # reports at all - attendance today, leave when that is built. It grants no
+    # visibility: a manager already reads their team's attendance, and this only
+    # says whether they may ask for a day to be fixed. **Unset means ON**, see
+    # `manager_on_behalf_on`.
+    MANAGER_ON_BEHALF_KEY: ("0", "1"),
+    # Its SUB-SETTING: how many WORKING days back that manager may reach. Up to
+    # 30 working days - about six calendar weeks, which already reaches a month
+    # whose pay has run; past that it is HR's own route, which this window never
+    # binds. Blank means no limit and is the default; 0 means today only.
     MANAGER_FILING_WINDOW_KEY: range(0, 31),
     org_features.LATE_RULES_SWITCH: ("0", "1"),
     org_features.ATTENDANCE_SCORING_SWITCH: ("0", "1"),
@@ -3080,7 +3090,14 @@ def set_org_setting(key, value):
         _refuse_org_setting("hr_api.set_org_setting")
     value = str(value) if value is not None else ""
     allowed = ALLOWED_ORG_SETTINGS[key]
-    if isinstance(allowed, range):
+    # BLANK IS A REAL ANSWER FOR THE FILING WINDOW, and it is its default: no
+    # limit (Surbhi, 18 Oct 2026). Stored as an empty string, which
+    # `manager_filing_window_days` reads as None and keeps apart from a stored
+    # "0" - the two now mean opposite things. No other numeric setting takes a
+    # blank, so this is spelt out for the one key rather than loosened for all.
+    if key == MANAGER_FILING_WINDOW_KEY and value == "":
+        pass
+    elif isinstance(allowed, range):
         # Whole minutes, no sign, no spaces, and inside the range. Anything else
         # is refused rather than coerced - a silently clamped threshold is worse
         # than an error, because nobody finds out what was actually saved.

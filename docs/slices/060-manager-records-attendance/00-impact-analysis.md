@@ -243,3 +243,75 @@ end of an existing section, which is the shape that merges cleanly. The main
 checkout was clean of modified tracked files and `dev` was an ancestor of this
 branch, so the work came in by fast-forward with nobody else's commits in
 between.
+
+---
+
+# Addendum — 18 October 2026: the on-behalf capability becomes two tenant settings
+
+Written after Surbhi tested the manager's on-behalf path on `ppj.dev` and asked for it to
+be a per-tenant setting with a sub-setting. Her words are in
+`01c-security-privacy-requirements.md`, "SEC-9(a) reworked".
+
+## Where on the cost ladder
+
+**Configuration, plus the code that reads it.** Rung by rung:
+
+| Rung | Verdict |
+|---|---|
+| Already there | No. There was one control, the filing window, and no way to switch the capability off. |
+| Configuration | **Yes, for the storage.** Both settings are Frappe defaults on the existing `hr_api.set_org_setting` allow-list, written from the Org Settings screen that already exists. No new DocType, no new endpoint, no migration, and nothing for an existing tenant to touch. |
+| Customisation / new code | Only the readers and the three places that gate on them. |
+| New DocType / new app | Rejected: two values do not need a document, and HR Settings is not per-capability. |
+
+## Functional impact
+
+**Cross-module.** None. `alvoraa_goals`, `alvox_compensation`, `hrms` and `erpnext` are
+untouched; nothing outside `attendance_correction.py` reads either key, proved by grep.
+Frappe HR's Attendance Request is unchanged, and HR's Desk route past the window is
+unchanged.
+
+**Callers of what changed.**
+
+| Changed | Callers | Effect |
+|---|---|---|
+| `manager_filing_window_days()` | `_refuse_outside_filing_window`, `manager_filing_from`, `team_days`, tests | now returns `None` for blank, which every caller handles explicitly |
+| `_refuse_outside_filing_window()` | `raise_for_report` only | no limit returns early |
+| `month()` payload | `portal.js` day detail | two new keys, `on_behalf_enabled` and the existing `can_request_from`, now usually `None` |
+| `team_days()` `can_raise` | `portal.js` row | HR no longer gets it on every row; a day outside the window no longer gets it either |
+| `raise_for_report()` signature | `portal.js`, tests | `employee` and `from_date` are optional and refused in plain words, so an empty call cannot become "my own day" |
+
+**Personas.**
+
+* **CXO** — nothing. They read; they never raised.
+* **HR Manager** — gains both settings. **Loses the raise button on the team list**, which
+  disagreed with the month view. They still decide every request and still fix any day from
+  the Desk.
+* **Employee** — nothing changes, by design and by test. Their own day keeps its form with
+  either setting off or at `0`.
+* **Manager** — on an unset tenant: the same capability as today, with *more* reach, because
+  blank now means no limit instead of two working days. On a tenant that sets a window:
+  exactly what HR chose, and the screen stops offering days the server would refuse.
+
+**HRMS domain.** Attendance only today. The switch is named for the capability so leave can
+join it without a second switch or a second answer to one question.
+
+## Non-functional verdict
+
+| Dimension | Verdict | Why |
+|---|---|---|
+| Performance | **neutral**, mildly better on the common path | Blank costs no holiday read at all. The per-person boundary in `team_days` is computed only for the caller's direct reports and only when a window is set, so HR's 363-person page does none of it. |
+| Security | **improves** | The capability can be switched off per tenant. An empty call to `raise_for_report` is refused before `_subject` could read it as "my own month". `ignore_permissions` ceiling stays 0. |
+| Reliability | **improves** | One press sends one request. Nothing incomplete leaves the page. A correct refusal is no longer masked by a Python error about arguments. |
+| Scalability | **neutral** | No new query that grows with headcount. |
+| Maintainability | **improves** | One derivation of the boundary for the guard and both screens, and one rule for who may raise instead of two that disagreed. |
+| Data integrity | **neutral** | No stored data changes. Blank and `0` are kept apart in the reader and in a test. |
+| Compliance / privacy | **neutral** | No new field, no new visibility, nothing personal in any log line. Switching the capability off narrows visibility; nothing widens it. |
+
+## Parallel-work check
+
+Files changed: `attendance_correction.py`, `hr_api.py`, `portal.js`,
+`parts/org-settings.html`, `tests/test_attendance_correction.py`,
+`tests/portal_correction_test.js`. Worked in the worktree
+`.claude/worktrees/060-manager-review` on `slice/060-manager-review`, from `d1f0638a`.
+Nothing came in from anybody else during this change, and nothing was merged or rebased.
+`hooks.py`, `patches.txt` and the DocType JSON — the hot files — were not touched.

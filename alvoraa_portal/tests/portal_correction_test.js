@@ -135,6 +135,82 @@ function putForm(reason) {
     ? bad("my own day was sent on-behalf, which names me as my own manager")
     : ok("my own day is not sent on-behalf");
 
+  // ── One press, one request (18 Oct 2026) ───────────────────────────
+  // The error log held two calls 35ms apart, and the second arrived with no
+  // body at all - so a correct refusal reached the screen as a Python error
+  // about missing arguments. Nothing in this file sent twice, but nothing
+  // stopped a second press either. Now a press while one is in flight does
+  // nothing.
+  putForm("Marked Absent by Mistake");
+  window.acState.employee = REPORT;
+  window.acState.data = { employee: REPORT, employee_name: "Neha Kumar",
+                          is_self: false, can_request: true, days: [] };
+  calls.length = 0;
+  window.acSubmit("2026-10-14");
+  window.acSubmit("2026-10-14");
+  await settle(250);
+  const pressed = calls.filter(c => c.fn === "raise_for_report").length;
+  pressed === 1 ? ok("two presses send one request")
+                : bad("two presses sent " + pressed + " requests");
+
+  // Nothing incomplete leaves the page: JSON.stringify drops an undefined
+  // value silently, which is how a missing employee became an unhelpful
+  // server error.
+  putForm("Marked Absent by Mistake");
+  window.acState.employee = null;
+  window.acState.data = { employee: null, employee_name: "Neha Kumar",
+                          is_self: false, can_request: true, days: [] };
+  calls.length = 0;
+  window.acSubmit("2026-10-14");
+  await settle(250);
+  calls.length === 0
+    ? ok("a request with nobody named is never sent")
+    : bad("an incomplete request was sent: " + JSON.stringify(calls));
+
+  // ── The form is offered exactly where the server would accept it ───
+  // `can_request_from` is the oldest day a manager may file for. Blank now
+  // means NO LIMIT, so it comes back as null far more often than it did -
+  // and null must mean "offer every day", never "hide everything".
+  const day = (date) => ({
+    date: date, weekday: "Wed", status: "Present", hours: 8, expected_hours: 8,
+    short_by: 0, late_by_mins: 0, grace_mins: 0, punches: [], attendance: "A1",
+    missing_punch: false, request: null, holiday: null, leave_type: null,
+    shift_starts: "09:00", shift_ends: "18:00", in_time: "09:00",
+    out_time: "18:00", is_future: false,
+  });
+  const totals = { present: 1, hours_worked: 8, short_days: 0,
+                   missing_punches: 0, late_days: 0, leave: 0 };
+  const paint = (extra) => {
+    window.acState.open = null;
+    window.acState.employee = REPORT;
+    window.acState.data = Object.assign(
+      { employee: REPORT, employee_name: "Neha Kumar", is_self: false,
+        can_request: true, tolerance_mins: 15, totals: totals,
+        days: [day("2026-10-01"), day("2026-10-14")] }, extra);
+    window.acToggle("2026-10-01");
+    return (doc.getElementById("ac-body") || {}).innerHTML || "";
+  };
+
+  const noLimit = paint({ can_request_from: null, can_request_basis: null });
+  /ac-form/.test(noLimit)
+    ? ok("no limit offers the form on an old day")
+    : bad("no limit hid the form - null must mean 'offer every day'");
+
+  const bounded = paint({ can_request_from: "2026-10-10",
+                          can_request_basis: "working days on this person's own holiday list" });
+  !/ac-form/.test(bounded)
+    ? ok("a day older than the window is not offered a form")
+    : bad("the form was offered on a day the server would refuse");
+  /10 Oct 2026/.test(bounded)
+    ? ok("and the page says which day is the oldest they can ask about")
+    : bad("the oldest day was not named: " + bounded.slice(0, 400));
+
+  const switchedOff = paint({ can_request: false, can_request_from: null,
+                              on_behalf_enabled: false });
+  /does not let a manager/.test(switchedOff)
+    ? ok("with the setting off the page says so, in plain words")
+    : bad("the switched-off page did not explain itself");
+
   console.log(`### correction DOM test: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

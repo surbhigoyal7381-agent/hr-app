@@ -3133,6 +3133,13 @@ function acDetail(x) {
       + ".</p>";
   } else if (d.can_request) {
     html += acForm(x);
+  } else if (d.is_self === false && d.on_behalf_enabled === false) {
+    /* The tenant has switched the on-behalf path off, so saying "their own
+       manager can ask" would be untrue - with the switch off, nobody but the
+       employee can. */
+    html += '<p class="ac-help">Your organisation does not let a manager ask '
+      + "for somebody else's day to be fixed. " + gpEsc(d.employee_name)
+      + " can ask about their own day, and HR can fix any day.</p>";
   } else {
     /* Reading reaches the whole reporting line; asking stops at the direct
        reports. So say whose job it is rather than leaving somebody looking
@@ -3199,10 +3206,25 @@ window.acReasonHelp = function () {
     : "Pick the one that matches. It decides what the day becomes if HR agrees.";
 };
 
+/* ONE REQUEST PER PRESS.
+
+   On 18 Oct 2026 pressing "Ask HR to fix this day" put two calls in the error
+   log 35ms apart: the real one, correctly refused, and a second with no body at
+   all, which the server could only answer with a Python error about missing
+   arguments - and that uglier message is the one that reached the screen, so a
+   correct refusal read as a crash.
+
+   Nothing in this file sent twice (one press makes one call, refusal path
+   included - pinned in portal_correction_test.js), so the second press was not
+   ours to see. This flag makes it impossible either way: while a request is in
+   flight, a second press does nothing. */
+var acSending = false;
+
 window.acSubmit = async function (date) {
   var reason = (document.getElementById("ac-reason") || {}).value;
   var explain = (document.getElementById("ac-explain") || {}).value;
   if (!reason) { toast("Please choose a reason.", "err"); return; }
+  if (acSending) return;
 
   /* WHOSE DAY IS THIS? `raise_correction` raises for the CALLER and refuses
      to take anybody else's name - deliberately, so a field naming somebody
@@ -3217,6 +3239,16 @@ window.acSubmit = async function (date) {
     ? (acState.employee || (acState.data && acState.data.employee))
     : null;
 
+  /* NOTHING INCOMPLETE LEAVES THIS PAGE. `JSON.stringify` drops an undefined
+     value without a word, so a missing employee or day would travel as an
+     absent field and come back as a server error about arguments. Said here,
+     in words somebody can act on, instead. */
+  if (!date || (acState.data && acState.data.is_self === false && !other)) {
+    toast("This page has lost track of whose day this is. Reload it and try again.", "err");
+    return;
+  }
+
+  acSending = true;
   showLoad();
   try {
     if (other) {
@@ -3232,6 +3264,8 @@ window.acSubmit = async function (date) {
   } catch (e) {
     hideLoad();
     toast(e.message || "Could not send that.", "err");
+  } finally {
+    acSending = false;
   }
 };
 
@@ -7048,6 +7082,14 @@ window.trSubmit = async function (employee, date) {
   var reason = (document.getElementById("tr-reason") || {}).value;
   var explain = (document.getElementById("tr-explain") || {}).value;
   if (!reason) { toast("Please choose a reason.", "err"); return; }
+  /* One request per press, and nothing incomplete - the same two rules as
+     `acSubmit`, for the same reason. */
+  if (acSending) return;
+  if (!employee || !date) {
+    toast("This row has lost track of whose day this is. Reload the page and try again.", "err");
+    return;
+  }
+  acSending = true;
   showLoad();
   try {
     await acApi("raise_for_report", {
@@ -7059,6 +7101,7 @@ window.trSubmit = async function (employee, date) {
   } catch (e) {
     toast(trErr(e), "err");
   } finally {
+    acSending = false;
     hideLoad();
   }
 };
@@ -14849,6 +14892,9 @@ window.pfRatingLabel = function(value, scale) {
       });
       var win = document.getElementById("org-filing-window");
       if (win) win.disabled = !canEdit;
+      var onBehalf = document.getElementById("org-on-behalf-on");
+      if (onBehalf) onBehalf.disabled = !canEdit;
+      orgLoadOnBehalf(canEdit);
       orgLoadFilingWindow();
       if (card) card.style.display = "";
     }).catch(function() {
@@ -14857,35 +14903,86 @@ window.pfRatingLabel = function(value, scale) {
     });
   };
 
-  /* ── How far back a manager may file (slice 060, SEC-9a) ──
-     Working days, counted on the employee's own holiday list. The server
-     checks the same number again on the manager's path, so this box is where
-     HR sets it, not where it is enforced. Nothing stored means two days. */
+  /* ── May a manager ask on behalf, and how far back (slice 060, SEC-9a) ──
+     Reworked 18 Oct 2026 into a switch and its sub-setting.
+
+     NOTHING STORED MEANS ON. The capability already ships, so an unset tenant
+     must keep exactly what it has today; only a stored "0" switches it off.
+     The window box under it is disabled while the switch is off, because a
+     limit on something nobody may do reads as a contradiction. */
+  function orgOnBehalfApply(on, canEdit) {
+    var box = document.getElementById("org-on-behalf-on");
+    if (box) box.checked = !!on;
+    var win = document.getElementById("org-filing-window");
+    if (win) win.disabled = !canEdit || !on;
+    var field = document.getElementById("org-filing-window-field");
+    if (field) field.style.opacity = on ? "" : "0.55";
+  }
+
+  window.orgLoadOnBehalf = function(canEdit) {
+    if (!document.getElementById("org-on-behalf-on")) return;
+    window.gpFetch("alvoraa_portal.hr_api.get_org_setting", {key: "alvoraa_manager_on_behalf_enabled"})
+      .then(function(v) {
+        orgOnBehalfApply(String(v === null || v === undefined ? "" : v).trim() !== "0",
+                         canEdit !== false);
+      })
+      .catch(function() { /* Not HR: the card is hidden anyway. */ });
+  };
+
+  window.orgSaveOnBehalf = function(box) {
+    var on = !!box.checked;
+    box.disabled = true;
+    window.gpFetch("alvoraa_portal.hr_api.set_org_setting", {key: "alvoraa_manager_on_behalf_enabled", value: on ? "1" : "0"})
+      .then(function() {
+        pfSetHtml("org-attrules-msg", "<span style=\"color:var(--green)\">" +
+          gpEsc(on ? drT("Saved. A manager can ask for a day to be fixed for the people who report to them. HR still decides.")
+                   : drT("Saved. Only an employee can ask about their own day now. HR can still fix any day.")) +
+          "</span>");
+        orgOnBehalfApply(on, true);
+      })
+      .catch(function(e) {
+        box.checked = !on;
+        pfSetHtml("org-attrules-msg", "<span style=\"color:var(--danger,var(--red))\">" +
+          gpEsc((e && e.message) || drT("The setting could not be saved. Try again, or ask your administrator.")) + "</span>");
+      })
+      .finally(function() { box.disabled = false; });
+  };
+
+  /* The sub-setting. Working days, counted on the employee's own holiday list.
+     The server checks the same number again on the manager's path, so this box
+     is where HR sets it, not where it is enforced.
+
+     EMPTY MEANS NO LIMIT, and it is the default (Surbhi, 18 Oct 2026). Empty
+     and 0 are opposite answers here - 0 is today only - so the box is left
+     empty rather than filled in with a number nobody chose. */
   window.orgLoadFilingWindow = function() {
     var box = document.getElementById("org-filing-window");
     if (!box) return;
     window.gpFetch("alvoraa_portal.hr_api.get_org_setting", {key: "alvoraa_manager_filing_window_days"})
       .then(function(v) {
-        var n = (v === null || v === undefined || String(v).trim() === "") ? 2 : parseInt(v, 10);
-        box.value = isNaN(n) ? 2 : n;
+        var raw = (v === null || v === undefined) ? "" : String(v).trim();
+        var n = parseInt(raw, 10);
+        box.value = (raw === "" || isNaN(n)) ? "" : n;
       })
       .catch(function() { /* Not HR: the card is hidden anyway. */ });
   };
 
   window.orgSaveFilingWindow = function(box) {
-    var n = parseInt(box.value, 10);
-    if (isNaN(n) || n < 0 || n > 30) {
+    var raw = String(box.value === null || box.value === undefined ? "" : box.value).trim();
+    var n = parseInt(raw, 10);
+    if (raw !== "" && (isNaN(n) || n < 0 || n > 30)) {
       pfSetHtml("org-attrules-msg", "<span style=\"color:var(--danger,var(--red))\">" +
-        gpEsc(drT("Give a whole number of working days between 0 and 30.")) + "</span>");
+        gpEsc(drT("Give a whole number of working days between 0 and 30, or leave it empty for no limit.")) + "</span>");
       orgLoadFilingWindow();
       return;
     }
     box.disabled = true;
-    window.gpFetch("alvoraa_portal.hr_api.set_org_setting", {key: "alvoraa_manager_filing_window_days", value: String(n)})
+    window.gpFetch("alvoraa_portal.hr_api.set_org_setting", {key: "alvoraa_manager_filing_window_days", value: raw === "" ? "" : String(n)})
       .then(function() {
         pfSetHtml("org-attrules-msg", "<span style=\"color:var(--green)\">" +
-          gpEsc(n === 0 ? drT("Saved. A manager can now ask about today only; HR can still fix any day.")
-                        : drT("Saved. A manager can now ask about the last {0} working days; HR can still fix any day.", [n])) +
+          gpEsc(raw === "" ? drT("Saved. There is no limit: a manager can ask about any past day.")
+                : n === 0 ? drT("Saved. A manager can now ask about today only; HR can still fix any day.")
+                          : drT("Saved. A manager can now ask about the last {0} working days; HR can still fix any day.", [n])) +
           "</span>");
       })
       .catch(function(e) {

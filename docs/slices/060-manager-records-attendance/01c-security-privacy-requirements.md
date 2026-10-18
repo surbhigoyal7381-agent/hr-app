@@ -1457,3 +1457,53 @@ refusals logged in one shape. Not `hr_api.apply_leave`, whose on-behalf insert u
 I disagree with nothing above me, because nothing is above me yet — the brief is being written in
 parallel. If the brief asks for anything that lets one person both raise and confirm, SEC-1 is
 where to argue it out.
+
+---
+
+## SEC-9(a) settled — Surbhi, 18 October 2026
+
+Two things in SEC-9(a) could not both be built as written. Both are now decided, and the
+code already matches. **Do not reopen either without her.**
+
+### 1. A filing window of `0` means TODAY ONLY, not "nobody may file"
+
+This file said *"0 means nobody may file on behalf"*. It does not. `0` is the tightest
+window: the manager may still correct **today's** day, and nothing older.
+
+**Why.** The setting is a count of days, and the smallest number must mean the smallest
+window. If `0` meant "switched off", somebody tightening 5 → 2 → 1 → 0 would expect each
+step to be stricter and instead fall off a cliff into a different kind of rule altogether.
+A number box that silently becomes a permission is a trap, and the person who sets it would
+have no way of knowing.
+
+Turning the capability off for a tenant is a separate switch with its own label, if it is
+ever wanted. It is not a `0` hidden in a day count.
+
+Pinned by tests: `0` accepts today and refuses yesterday, and a **stored** `0` is not read
+as unset — `0` is falsy in Python, so `get_default(KEY) or DEFAULT` would have silently
+turned it back into 2.
+
+### 2. The window is checked when the manager RAISES, and never when HR CONFIRMS
+
+This file asked for the window to be checked at the raise **and** at the confirmation,
+while also saying the window must not bind HR. Those contradict, and following both
+literally produces requests that can be raised but never approved:
+
+> Monday — the manager raises Friday's missing punch. Inside the window, accepted.
+> Thursday — HR opens the queue. Friday is now more than two working days old, so a check
+> at confirmation refuses it. The manager did nothing wrong and has no way to fix it.
+
+That would punish HR's queue time, not the thing the window exists to prevent.
+
+**Surbhi, 18 Oct 2026:** *"the window doesn't apply to HR. This actually takes care of any
+worst case scenario and also management discretion in some edge cases."*
+
+So the window is a limit on the **manager's** reach, and HR is the deliberate way round it
+— the escape hatch for a genuine old correction and for management discretion. `decide()`
+is unchanged and must stay unchanged.
+
+### What this does NOT include
+
+**No paid-period guard**, decided the same day. DTC pay in the first week of the following
+month *after* a thorough attendance review, so a correction filed in that window is exactly
+what the review is for. The guard is not built and must not be added as a precaution.

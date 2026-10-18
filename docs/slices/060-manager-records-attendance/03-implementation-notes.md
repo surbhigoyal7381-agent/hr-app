@@ -213,3 +213,141 @@ is pre-existing and nothing to do with this change.
 Build SEC-9's window and the paid-period guard. Prune the dead `.cal-*` CSS
 properly, after separating the nine-box grid's use of `.cal-cell` from the
 calendar's. Remove `get_attendance_calendar`. None of it belongs in this commit.
+
+---
+
+# Addendum, 18 October 2026 — SEC-9(a), the filing window
+
+Approved by Surbhi on 18 Oct 2026, with the paid-period guard explicitly **out**.
+
+## What was built, file by file
+
+| File | What changed | Mechanism, and why |
+|---|---|---|
+| `alvoraa_portal/alvoraa_portal/attendance_correction.py` | `_working_days_away()` (the old `hr_may_act_from` body, now walking either way); `hr_may_act_from()` is three lines calling it; `MANAGER_FILING_WINDOW_KEY`, `DEFAULT_FILING_WINDOW_DAYS`, `manager_filing_window_days()`, `_refuse_outside_filing_window()`; one call in `raise_for_report` | **Extend.** The endpoint and the counter both existed. SEC-10 said reuse the counter and reverse the range, so the counter took a direction rather than gaining a twin |
+| `alvoraa_portal/alvoraa_portal/hr_api.py` | One import, one row in `ALLOWED_ORG_SETTINGS`: `range(0, 31)` | **Configure.** The allowlist already takes a numeric range for the late grace. Nothing else needed changing: `get_org_setting` / `set_org_setting` and `_require_hr` are untouched |
+| `templates/includes/ess/parts/org-settings.html` | A number field in the existing **Attendance rules** card, with a label and help text | **Configure.** No new card, no new panel, no new endpoint |
+| `public/js/ess/portal.js` | `orgLoadFilingWindow()`, `orgSaveFilingWindow()`, and two lines in `orgLoadAttendanceRules()` | **Extend**, following `orgSaveAttendanceSwitch` next to it |
+| `tests/test_attendance_correction.py` | New class `TheManagersFilingWindow` (12 tests); three existing manager tests now pick a recent working day | — |
+
+## How the decisions landed
+
+- **Working days, not calendar days.** Counted by `_working_days_away`, on the
+  employee's **own** holiday list, which in Frappe carries the weekly offs as
+  Holiday rows — so there is no Monday-to-Friday assumption anywhere. The
+  holiday query range is reversed with the walk, which is the trap SEC-10
+  named: get it wrong and the count silently becomes the calendar answer while
+  `basis` still claims it used the holiday list. A test asserts a holiday in
+  the range **actually extends the reach**, which is what catches that.
+- **No readable holiday list** falls back to calendar days and says so in the
+  refusal. That is the tighter answer, so missing configuration narrows the
+  window instead of opening it.
+- **0 means today only**, and the code says so in a comment. "No limit" was
+  rejected: it would make the tightest-looking number the loosest behaviour,
+  which is how a control gets switched off by somebody trying to tighten it.
+  **This differs from the brief**, which says 0 should mean "nobody may file on
+  behalf" — see "Where the brief and the code differ" below.
+- **A stored 0 is not read as unset.** `manager_filing_window_days()`
+  deliberately does **not** use `get_default(KEY) or DEFAULT`, the idiom next
+  door, because a stored "0" is falsy and would silently become 2. Two tests
+  pin both halves.
+- **The ceiling is 30 working days** — about six calendar weeks, which already
+  reaches a month whose pay has run. Past that it is HR's own route, which this
+  window never binds.
+- **Manager path only.** The check sits after `raise_for_report`'s self-check,
+  so a self-named request still goes straight to `raise_correction` untouched,
+  and it is **not** on the document, so HR's desk route and an employee's own
+  request are unaffected. Three tests pin that.
+
+## Acceptance criteria
+
+| From the spec | How it is met |
+|---|---|
+| SEC-9(a) — the day filed for is inside the configured window | `_refuse_outside_filing_window` in `raise_for_report` |
+| SEC-9(a) — the refusal names the route out | "…ask HR to correct it", with the configured number and the oldest filable day |
+| SEC-9(a) — checked at the raise **and** at the confirmation | **Only at the raise.** Not met; see the gaps below |
+| SEC-9(b) — the paid-period guard | **Not built, by decision** (Surbhi, 18 Oct 2026) |
+| SEC-10 — one counter, the employee's own holiday list, a true `basis` | `_working_days_away`, used by both callers; `basis` is in the refusal |
+| SEC-11 — HR may change it, not only a System Manager | `ALLOWED_ORG_SETTINGS` + `_require_hr`, the existing mechanism. Not added to `ACCESS_GRANTING`, per the security engineer's ruling |
+
+## The seven dimensions, against the code as written
+
+| Dimension | Before to after | Why |
+|---|---|---|
+| Performance | neutral | One cached `get_default` and at most one `Holiday` query per manager filing. No change to any list or report |
+| Security | **improves** | A bounded actor's reach went from every past day to a configured window, enforced server side on the one endpoint that path has. The `ignore_permissions` count in this module is still 0 |
+| Reliability | **improves** | The walk now has a hard stop, so a holiday list full of holidays cannot spin. The unreadable-list fallback is the tighter side |
+| Scalability | neutral | Nothing scales with headcount |
+| Maintainability | **improves** | Two counters became one with a direction; the HR wait and the window can no longer disagree about a working day |
+| Data integrity | neutral | No stored data changes |
+| Compliance / privacy | neutral | No new field read or shown. The one log line carries the Employee document name and nothing about the person |
+
+## NFR notes
+
+- **Queries added per manager filing:** one `get_default` (Frappe caches
+  defaults per request) and one `Holiday` read through the app's own
+  `holiday_list_for` cache. Nothing in a loop.
+- **No index, no job, no cache added.** Nothing measured says one is needed.
+- **Permission enforcement point:** `raise_for_report`, server side, after the
+  reporting-line check. The screen's number is HR-only through `_require_hr`.
+- **Sensitive fields touched:** none. The refusal names a date and a number.
+- **Fallback:** no holiday list means calendar days, stated in the message.
+
+## Where the brief and the code differ — said rather than chosen quietly
+
+1. **What 0 means.** The brief (section 7, item 3) says *"0 means nobody may
+   file on behalf"*. The code makes 0 mean **today only**: walking back zero
+   working days from today lands on today, and today is still a day a manager
+   may file for. The task approved on 18 Oct asked for a choice between "same
+   day only" and "no limit", and this is the first. **Nobody-at-all is a
+   different rule** — it switches the capability off, which is a permission
+   question rather than a window — and it is not built. If Surbhi wants 0 to
+   mean "off", that is one more line and should be its own decision.
+2. **Checked at the confirmation too.** SEC-9(a) asks for the window to be
+   re-checked at `decide()`, because a request filed inside the window ages
+   while it waits. Not built: the approved task names `raise_for_report` only,
+   and `decide()` is HR's path, which the same requirement says the window must
+   not bind. **The two halves of SEC-9(a) disagree with each other here**, and
+   that needs Surbhi's answer rather than my guess.
+
+## Known gaps and shortcuts
+
+- **Intentional trade-off — the button can still refuse when pressed.**
+  `month()`'s `can_request` flag is per month, not per day, and it does not know
+  about the window. A manager opening an old month still sees the ask button and
+  now gets a refusal that explains itself. Making the flag honest means a
+  per-day answer, which is a UX change nobody has approved. Flagged, not built.
+- **Declared, not built — SEC-9(b), the paid-period guard.** Surbhi's decision
+  of 18 Oct 2026: pay runs in the first week of the following month *after* a
+  thorough attendance review, so a correction filed in that window is what the
+  review is for.
+- **Temporary debt — a test that leaked onto the site.** The first run of the
+  settings test called `set_org_setting`, which commits, so that test's
+  employees and users escaped Frappe's rollback and broke the next run. Fixed by
+  stubbing the commit in that one test, and the 21 leaked Employee rows and 21
+  Users were deleted from `test_site`. **The same pattern is live in
+  `test_late_minutes_017.py`**, which calls the same endpoint without the stub.
+  Not touched here — it is not this slice — but it will leak the same way.
+
+## Commands run, and what they said
+
+| Command | Result |
+|---|---|
+| `bench --site test_site run-tests --app alvoraa_portal --module ...test_attendance_correction` | **82 OK** (integration) + **9 OK** (unit). Both batches read |
+| `... --module ...test_portal_security_010` | **45 OK** + **5 OK** |
+| `... --module ...test_org_settings_allowlist_012` | **10 OK** |
+| `... --module ...test_nav_consolidation_060` | **15 OK** |
+| `... --module ...test_decided_as_045` | **20 OK** — the counter refactor's other caller |
+| `... --module ...test_ess_parts_034` | **8 OK** — the page's includes |
+| `python scripts/check_app_integrity.py` | 774 checks, OK |
+| `python scripts/check_design_system.py` | OK — the visual system holds |
+| `node scripts/check_portal_handlers.js` | all reachable and callable |
+| `node scripts/check_undefined_js.js` | none |
+| `python scripts/check_tag_balance.py` | OK |
+
+## Subtract pass
+
+Removed: a `days_off()` test helper with exactly one caller, inlined into it.
+Resisted: a per-day `can_request` answer, a window check in `decide()`, a
+paid-period guard, a second counter, and a "window" DocType. Nothing else came
+out — the change is one `if`, one read, one shared counter and one input.

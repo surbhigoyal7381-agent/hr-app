@@ -184,14 +184,6 @@ class CorrectionCase(FrappeTestCase):
 		day = frappe.utils.getdate(self.d(i))
 		return day.year, day.month
 
-	def days_off(self, back=12):
-		"""The days off on this test's holiday list, from `back` days ago."""
-		return {str(frappe.utils.getdate(d)) for d in frappe.get_all(
-			"Holiday",
-			filters={"parent": self.holidays, "parenttype": "Holiday List",
-			         "holiday_date": ["between", [add_days(nowdate(), -back), nowdate()]]},
-			pluck="holiday_date")}
-
 	def recent(self):
 		"""The newest day that is not a day off, so inside the filing window.
 
@@ -201,7 +193,11 @@ class CorrectionCase(FrappeTestCase):
 		The newest non-holiday day is inside any window of one working day or
 		more, which is every setting but the tightest.
 		"""
-		off = self.days_off()
+		off = {str(frappe.utils.getdate(d)) for d in frappe.get_all(
+			"Holiday",
+			filters={"parent": self.holidays, "parenttype": "Holiday List",
+			         "holiday_date": ["between", [add_days(nowdate(), -12), nowdate()]]},
+			pluck="holiday_date")}
 		for i in range(12):
 			day = add_days(nowdate(), -i)
 			if str(frappe.utils.getdate(day)) not in off:

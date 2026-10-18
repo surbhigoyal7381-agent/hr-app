@@ -184,6 +184,30 @@ class CorrectionCase(FrappeTestCase):
 		day = frappe.utils.getdate(self.d(i))
 		return day.year, day.month
 
+	def days_off(self, back=12):
+		"""The days off on this test's holiday list, from `back` days ago."""
+		return {str(frappe.utils.getdate(d)) for d in frappe.get_all(
+			"Holiday",
+			filters={"parent": self.holidays, "parenttype": "Holiday List",
+			         "holiday_date": ["between", [add_days(nowdate(), -back), nowdate()]]},
+			pluck="holiday_date")}
+
+	def recent(self):
+		"""The newest day that is not a day off, so inside the filing window.
+
+		Picked, not assumed. Frappe HR refuses an Attendance Request that
+		covers only holidays, and the shared list has a day off on the day it
+		was built - so "yesterday" is not always a day a request can exist for.
+		The newest non-holiday day is inside any window of one working day or
+		more, which is every setting but the tightest.
+		"""
+		off = self.days_off()
+		for i in range(12):
+			day = add_days(nowdate(), -i)
+			if str(frappe.utils.getdate(day)) not in off:
+				return day
+		return nowdate()
+
 	def person(self, first, roles=()):
 		email = "%s.ac@example.com" % first.lower()
 		if not frappe.db.exists("User", email):
@@ -711,7 +735,7 @@ class WhoMayAskFromSomebodyElsesMonth(CorrectionCase):
 		ask, not about how far back they may ask.
 		"""
 		req = self.as_boss(
-			lambda: ac.raise_for_report(self.report, add_days(nowdate(), -1),
+			lambda: ac.raise_for_report(self.report, self.recent(),
 			                            reason="On Duty"))
 		self.assertEqual(frappe.db.get_value("Attendance Request", req["name"],
 		                                     "employee"), self.report)
@@ -1011,7 +1035,7 @@ class AManagerRaisingItForSomebodyElse(CorrectionCase):
 		# (SEC-9a), which has its own class below.
 		frappe.set_user(self.boss_email)
 		try:
-			out = ac.raise_for_report(self.report, add_days(nowdate(), -1),
+			out = ac.raise_for_report(self.report, self.recent(),
 			                          reason="On Duty")
 		finally:
 			frappe.set_user("Administrator")
@@ -1024,7 +1048,7 @@ class AManagerRaisingItForSomebodyElse(CorrectionCase):
 		not one that appears to have come from the employee."""
 		frappe.set_user(self.boss_email)
 		try:
-			out = ac.raise_for_report(self.report, add_days(nowdate(), -1),
+			out = ac.raise_for_report(self.report, self.recent(),
 			                          reason="On Duty")
 		finally:
 			frappe.set_user("Administrator")
@@ -1093,6 +1117,12 @@ class TheManagersFilingWindow(CorrectionCase):
 		e.reports_to = self.boss
 		e.save(ignore_permissions=True)
 		self._saved_window = frappe.db.get_default(ac.MANAGER_FILING_WINDOW_KEY)
+		# The shared holiday list carries a day off on the day it was built,
+		# which moves with the calendar and would make the arithmetic below
+		# depend on which day the suite happens to run. Cleared for this test
+		# only - Frappe rolls it back - so each case puts its own days off in.
+		frappe.db.delete("Holiday", {"parent": self.holidays,
+		                             "holiday_date": [">=", add_days(nowdate(), -40)]})
 
 	def tearDown(self):
 		frappe.set_user("Administrator")

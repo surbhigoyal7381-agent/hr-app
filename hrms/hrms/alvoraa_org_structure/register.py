@@ -81,6 +81,101 @@ def may_edit():
 	return bool(frappe.has_permission(POSITION, "write"))
 
 
+AUDITED = (POSITION, "Alvoraa Position Assignment")
+
+
+def record_permission_change(doc, method=None):
+	"""A readable record of every change to who may use the Positions page,
+	and the menu brought up to date at once. Hooked on Custom DocPerm, which
+	is what Role Permissions Manager adds, ticks and removes.
+
+	THE RECORD is a Version on the doctype, written in the same transaction as
+	the change, like the org chart's access settings (SEC-18). Frappe's own
+	Permission Log was not enough on its own: a ticked box does not name the
+	role, and the first change to a doctype copies every shipped row, which it
+	logs as rows "Added" - an auditor would read that as HR being given rights.
+	Here a copy says it is a copy.
+
+	Skipped on purpose during a migrate, install or patch: nobody chose those
+	changes on the screen, and the code that makes them is reviewed in git.
+	Frappe's Permission Log skips them for the same reason.
+
+	THE MENU: the Positions item is cached per user for an hour. Clearing it
+	for the holders of the changed role makes it follow within the time of a
+	page load. The server's own refusal never depended on this cache.
+	"""
+	if doc.parent not in AUDITED:
+		return
+	if frappe.flags.in_migrate or frappe.flags.in_install or frappe.flags.in_patch:
+		return
+
+	removed = method == "on_trash"
+	before = None if removed else doc.get_doc_before_save()
+	rights = [(df.fieldname, df.label) for df in frappe.get_meta("Custom DocPerm").fields
+	          if df.fieldtype == "Check"]
+	who = doc.role if not doc.permlevel else "{0} (level {1})".format(doc.role, doc.permlevel)
+	yes_no = lambda v: "Yes" if v else "No"  # noqa: E731
+
+	others = frappe.get_all("Custom DocPerm",
+	                        filters={"parent": doc.parent, "name": ("!=", doc.name)},
+	                        fields=["role", "permlevel"] + [f for f, _l in rights])
+	if not removed and not before and _is_shipped_copy(doc, others, rights):
+		changed = [["Role row: " + who, "shipped table",
+		            "copied as it was - nobody gained or lost a right"]]
+		roles = set()
+	elif removed:
+		changed = [["Role row: " + who, "on the list", "removed"]]
+		changed += [[who + ": " + label, "Yes", "No"] for f, label in rights if doc.get(f)]
+		roles = {doc.role}
+		if not others:
+			# The last row of the doctype's own gone: Frappe goes back to the
+			# shipped table, which gives its roles their rights back.
+			shipped = frappe.get_all("DocPerm", filters={"parent": doc.parent}, pluck="role")
+			changed.append(["Permission table", "this organisation's own rows",
+			                "the shipped rows apply again: " + ", ".join(sorted(set(shipped)))])
+			roles |= set(shipped)
+	elif not before:
+		changed = [["Role row: " + who, "not on the list", "added"]]
+		changed += [[who + ": " + label, "No", "Yes"] for f, label in rights if doc.get(f)]
+		roles = {doc.role}
+	else:
+		changed = [[who + ": " + label, yes_no(before.get(f)), yes_no(doc.get(f))]
+		           for f, label in rights if bool(before.get(f)) != bool(doc.get(f))]
+		roles = {doc.role}
+		if not changed:
+			return
+
+	frappe.get_doc({
+		"doctype": "Version", "ref_doctype": "DocType", "docname": doc.parent,
+		"data": frappe.as_json({"changed": changed}, indent=None, separators=(",", ":")),
+	}).insert(ignore_permissions=True)  # Version has no create permission for anyone; Frappe writes its own the same way
+
+	if doc.parent == POSITION and roles:
+		holders = frappe.get_all("Has Role", filters={"parenttype": "User", "role": ("in", list(roles))},
+		                         pluck="parent", distinct=True)
+		if holders:
+			keys = ["portal_ctx_" + u for u in holders]
+			# After the commit, or a page load in between could cache the old answer again.
+			frappe.db.after_commit.add(lambda: frappe.cache.delete_value(keys))
+
+
+def _is_shipped_copy(doc, others, rights):
+	"""True when Frappe is copying the shipped table, which it does the first
+	time anything on a doctype is changed. The row matches a shipped row
+	exactly, and so does every row of the doctype's own so far - so the rights
+	in force do not change."""
+	fields = ["role", "permlevel"] + [f for f, _l in rights]
+	shipped = [tuple(_box(r.get(f)) for f in fields) for r in frappe.get_all(
+		"DocPerm", filters={"parent": doc.parent}, fields=fields)]
+	key = lambda r: tuple(_box(r.get(f)) for f in fields)  # noqa: E731
+	return key(doc) in shipped and all(key(o) in shipped for o in others)
+
+
+def _box(value):
+	"""0, None and "" all mean an unticked box; a role name stays a name."""
+	return value if isinstance(value, str) and value else int(value or 0)
+
+
 def _may_see_who_is_leaving():
 	"""Whether this reader may be told that somebody is working their notice.
 

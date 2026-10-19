@@ -17,19 +17,35 @@ from hrms.alvoraa_org_structure.tests.test_company_scope_194 import CompanyScope
 from hrms.alvoraa_org_structure.tests.test_org_structure import _company
 
 ASSIGNMENT = "Alvoraa Position Assignment"
+# Not one of the two: a change here must leave no record.
+OTHER = "Alvoraa Reporting Line"
+TOUCHED = (register.POSITION, ASSIGNMENT, OTHER)
 
 
 def _forget_permissions():
 	"""Make Frappe re-read who may do what, as Role Permissions Manager does."""
-	for dt in (register.POSITION, ASSIGNMENT):
+	for dt in TOUCHED:
 		frappe.clear_cache(doctype=dt)
 	frappe.local.role_permissions = {}
+
+
+def _trail():
+	"""Every row a permission change on these doctypes can leave behind: the
+	rows themselves, our Version record, and Frappe's own Permission Log."""
+	return {
+		"Custom DocPerm": set(frappe.get_all("Custom DocPerm",
+		                                     filters={"parent": ("in", TOUCHED)}, pluck="name")),
+		"Version": set(frappe.get_all("Version", filters={"ref_doctype": "DocType",
+		                                                  "docname": ("in", TOUCHED)}, pluck="name")),
+		"Permission Log": set(frappe.get_all("Permission Log",
+		                                     filters={"for_document": ("in", TOUCHED)}, pluck="name")),
+	}
 
 
 class RegisterCase(CompanyScopeCase):
 	def setUp(self):
 		super().setUp()
-		self._perm_rows = []
+		self._before = _trail()
 		# These tests are about scope and editing, and they run as an HR User.
 		# The shipped table gives HR User nothing, so they say exactly what the
 		# HR User may do here - the way an administrator would, in Role
@@ -38,35 +54,39 @@ class RegisterCase(CompanyScopeCase):
 		self.rows(("HR User", "read"))
 
 	def tearDown(self):
-		self.no_rows()
+		"""Everything this test added to the permission trail goes, committed,
+		or it leaks onto test_site and changes the next run."""
+		frappe.set_user("Administrator")
+		for doctype, names in _trail().items():
+			for name in names - self._before[doctype]:
+				frappe.db.delete(doctype, {"name": name})
+		frappe.db.commit()
+		_forget_permissions()
 		super().tearDown()
 
 	def rows(self, *grants, doctype=None):
 		"""Replace the permission table with exactly these rows, as Custom
 		DocPerm - which Frappe then uses INSTEAD OF the shipped rows.
 
-		Each grant is (role, "read") or (role, "write"). Removed in tear-down
-		and committed, or they would leak into the next test run.
+		Each grant is (role, "read") or (role, "write").
 		"""
-		self.no_rows(doctype)
+		self.no_rows(doctype or register.POSITION)
 		for role, level in grants:
-			self._perm_rows.append(frappe.get_doc({
+			frappe.get_doc({
 				"doctype": "Custom DocPerm", "parent": doctype or register.POSITION,
 				"parenttype": "DocType", "parentfield": "permissions",
 				"role": role, "permlevel": 0, "read": 1,
 				"write": int(level == "write"), "create": int(level == "write"),
-			}).insert(ignore_permissions=True).name)
+			}).insert(ignore_permissions=True)
 		frappe.db.commit()
 		_forget_permissions()
 
 	def no_rows(self, doctype=None):
-		"""Back to the shipped table."""
-		for name in list(self._perm_rows):
-			parent = frappe.db.get_value("Custom DocPerm", name, "parent")
-			if doctype and parent != doctype:
+		"""Back to the shipped table, for one doctype or all of them."""
+		for name in _trail()["Custom DocPerm"] - self._before["Custom DocPerm"]:
+			if doctype and frappe.db.get_value("Custom DocPerm", name, "parent") != doctype:
 				continue
 			frappe.db.delete("Custom DocPerm", {"name": name})
-			self._perm_rows.remove(name)
 		frappe.db.commit()
 		_forget_permissions()
 
@@ -392,3 +412,106 @@ class TestWhoMayOpenThePage(RegisterCase):
 		frappe.set_user("open061.hrm5@example.com")
 		self.assertIn("positions", api.propose_positions())
 		self.assertEqual(api.create_proposed_positions([])["positions_created"], 0)
+
+
+class TestEveryPermissionChangeLeavesARecord(RegisterCase):
+	"""Surbhi, 19 Oct 2026: yes to a change record. The old settings left a
+	Version row for each change (SEC-18); Custom DocPerm leaves none of its own
+	that an auditor could read.
+
+	Driven through Role Permissions Manager's own functions - add, update,
+	remove - so this proves the screen's real path fires the hook.
+	"""
+
+	def setUp(self):
+		super().setUp()
+		self.no_rows()          # the shipped table: the next change is the first
+		self._seen = _trail()["Version"]
+
+	def new_records(self):
+		"""What was written since the last call, oldest first, as readable rows."""
+		names = _trail()["Version"] - self._seen
+		self._seen |= names
+		out = []
+		for v in frappe.get_all("Version", filters={"name": ("in", list(names))},
+		                        fields=["docname", "owner", "data"], order_by="creation asc"):
+			out.append((v.docname, v.owner, frappe.parse_json(v.data)["changed"]))
+		return out
+
+	def label(self, fieldname):
+		return frappe.get_meta("Custom DocPerm").get_label(fieldname)
+
+	def test_adding_ticking_and_removing_each_leave_one_readable_record(self):
+		from frappe.core.page.permission_manager import permission_manager as screen
+
+		screen.add(register.POSITION, "HR User", 0)
+		got = self.new_records()
+		added = [r for r in got if r[2][0][2] == "added"]
+		self.assertEqual(len(added), 1, got)
+		docname, owner, changed = added[0]
+		self.assertEqual((docname, owner), (register.POSITION, "Administrator"))
+		# Frappe gives a new row Export as well as Read, and the record says so.
+		self.assertEqual(changed, [["Role row: HR User", "not on the list", "added"],
+		                           ["HR User: " + self.label("read"), "No", "Yes"],
+		                           ["HR User: " + self.label("export"), "No", "Yes"]])
+
+		screen.update(register.POSITION, "HR User", 0, "write", 1)
+		self.assertEqual(self.new_records(), [(register.POSITION, "Administrator",
+		                 [["HR User: " + self.label("write"), "No", "Yes"]])])
+
+		screen.remove(register.POSITION, "HR User", 0)
+		got = self.new_records()
+		self.assertEqual(len(got), 1, got)
+		self.assertEqual(got[0][2], [["Role row: HR User", "on the list", "removed"],
+		                             ["HR User: " + self.label("read"), "Yes", "No"],
+		                             ["HR User: " + self.label("write"), "Yes", "No"],
+		                             ["HR User: " + self.label("export"), "Yes", "No"]])
+
+	def test_the_first_change_copies_do_not_read_as_grants(self):
+		"""Frappe copies every shipped row the first time anything changes.
+		Its own Permission Log calls those rows "Added"; ours must not."""
+		from frappe.core.page.permission_manager import permission_manager as screen
+
+		screen.add(register.POSITION, "HR User", 0)
+		copies = [r for r in self.new_records() if r[2][0][2] != "added"]
+		self.assertEqual(sorted(c[2][0][0] for c in copies),
+		                 ["Role row: HR Manager", "Role row: System Manager"])
+		for c in copies:
+			self.assertEqual(c[2], [[c[2][0][0], "shipped table",
+			                         "copied as it was - nobody gained or lost a right"]])
+
+	def test_resetting_says_the_shipped_rows_apply_again(self):
+		"""Reset deletes every row of the doctype's own. Read one by one that
+		looks like HR losing everything; in fact the shipped table is back."""
+		from frappe.core.page.permission_manager import permission_manager as screen
+
+		screen.add(register.POSITION, "HR User", 0)
+		self.new_records()
+		screen.reset(register.POSITION)
+		last = self.new_records()[-1][2][-1]
+		self.assertEqual(last, ["Permission table", "this organisation's own rows",
+		                        "the shipped rows apply again: HR Manager, System Manager"])
+
+	def test_the_assignment_doctype_is_recorded_too(self):
+		from frappe.core.page.permission_manager import permission_manager as screen
+
+		screen.add(ASSIGNMENT, "HR User", 0)
+		self.assertIn(ASSIGNMENT, {r[0] for r in self.new_records()})
+
+	def test_a_change_on_another_doctype_writes_nothing(self):
+		from frappe.core.page.permission_manager import permission_manager as screen
+
+		screen.add(OTHER, "HR User", 0)
+		screen.update(OTHER, "HR User", 0, "write", 1)
+		self.assertEqual(self.new_records(), [])
+
+	def test_a_migrate_writes_nothing(self):
+		"""Skipped on purpose: nobody chose it on the screen."""
+		from frappe.core.page.permission_manager import permission_manager as screen
+
+		frappe.flags.in_migrate = True
+		try:
+			screen.add(register.POSITION, "HR User", 0)
+		finally:
+			frappe.flags.in_migrate = False
+		self.assertEqual(self.new_records(), [])

@@ -314,6 +314,13 @@ doc_events = {
 	"PMS Review Template": {
 		"before_save": "hrms.pms.pms_config.before_template_save",
 	},
+	# Role Permissions Manager on the two position doctypes: a readable record
+	# of each change, and the Positions menu item follows at once (slice 061).
+	# on_update fires for a new row as well as a ticked box.
+	"Custom DocPerm": {
+		"on_update": "hrms.alvoraa_org_structure.register.record_permission_change",
+		"on_trash": "hrms.alvoraa_org_structure.register.record_permission_change",
+	},
 }
 
 # Scheduled Tasks

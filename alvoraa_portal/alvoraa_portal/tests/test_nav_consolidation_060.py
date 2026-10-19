@@ -18,9 +18,11 @@ short list of Jinja includes: reading it alone would check a shell.
 
 import re
 
+import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from alvoraa_portal.tests import portal_source as PS
+from alvoraa_portal.tests.leave_fixtures import ensure_user
 
 
 def _page():
@@ -168,3 +170,83 @@ class TestThePhoneBarPointsAtTheRightPage(FrappeTestCase):
 		                 page, re.S)
 		self.assertIsNotNone(item, "the phone bar has no Attendance item")
 		self.assertEqual(item.group(1), "att-record")
+
+
+class TestThePositionsItemFollowsTheServer(FrappeTestCase):
+	"""Surbhi, 19 Oct 2026: "positions page access should also be permission
+	based. not all should be able to see this page. for them the organisation
+	page is there." HR Manager by default.
+
+	The menu showed Positions to every manager. The server now refuses them,
+	and the menu reads the server's answer rather than a copy of the rule.
+	"""
+
+	VIEW_KEY = "alvoraa_org_positions_view_roles"
+
+	def setUp(self):
+		self._saved = {k: frappe.db.get_default(k) for k in
+		               (self.VIEW_KEY, "alvoraa_org_position_editor_roles",
+		                "alvoraa_org_managers_see_all")}
+		for k in self._saved:
+			frappe.db.set_default(k, "")   # blank reads as the shipped default
+		self._made = []
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		for doctype, name in reversed(self._made):
+			try:
+				frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
+			except Exception:
+				pass
+		for k, v in self._saved.items():
+			frappe.db.set_default(k, v if v is not None else "")
+		frappe.db.commit()
+
+	def _employee(self, name, user=None, reports_to=None):
+		doc = frappe.get_doc({
+			"doctype": "Employee", "first_name": name,
+			"company": frappe.db.get_value("Company", {}, "name"),
+			"gender": frappe.db.get_value("Gender", {}, "name"),
+			"date_of_birth": "1990-01-01", "date_of_joining": "2020-01-01",
+			"status": "Active", "user_id": user, "reports_to": reports_to,
+		}).insert(ignore_permissions=True)
+		self._made.append(("Employee", doc.name))
+		return doc.name
+
+	def _context_as(self, user):
+		from alvoraa_portal import hr_api
+
+		frappe.set_user(user)
+		frappe.local._alvoraa_leads = {}
+		frappe.cache().delete_value(f"portal_ctx_{user}")
+		return hr_api.get_portal_context()
+
+	def test_the_menu_reads_the_flag_not_the_manager_role(self):
+		plan = _page()
+		plan = plan[plan.index("function applyPlanNav()"):plan.index("function loadAvailableFeatures()")]
+		line = plan[plan.index('getElementById("nav-positions")'):]
+		line = line[:line.index(";", line.index("style.display"))]
+		self.assertIn("roles.positions", line)
+		self.assertIn("plan_org_structure", line)
+		self.assertNotIn("is_manager", line)
+		self.assertNotIn("is_hr", line)
+		self.assertIn("window._roles.positions  = !!ctx.positions", _page())
+
+	def test_a_plain_employee_gets_no_flag(self):
+		user = ensure_user("nav060.plain@example.com", roles=("Employee",))
+		self._employee("Nav060 Plain", user=user)
+		self.assertIs(self._context_as(user)["positions"], False)
+
+	def test_a_manager_with_direct_reports_gets_no_flag(self):
+		frappe.db.set_default("alvoraa_org_managers_see_all", 1)
+		user = ensure_user("nav060.boss@example.com", roles=("Employee",))
+		boss = self._employee("Nav060 Boss", user=user)
+		self._employee("Nav060 Report", reports_to=boss)
+		ctx = self._context_as(user)
+		self.assertTrue(ctx["is_manager"], "the case needs a real manager")
+		self.assertIs(ctx["positions"], False)
+
+	def test_an_hr_manager_gets_the_flag(self):
+		user = ensure_user("nav060.hrm@example.com", roles=("Employee", "HR Manager"))
+		self._employee("Nav060 HRM", user=user)
+		self.assertIs(self._context_as(user)["positions"], True)

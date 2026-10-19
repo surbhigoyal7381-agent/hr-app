@@ -21,6 +21,10 @@ class RegisterCase(CompanyScopeCase):
 	def setUp(self):
 		super().setUp()
 		self._saved = {k: frappe.db.get_default(k) for k in settings.DEFAULTS}
+		# These tests are about scope and editing, and they run as an HR User.
+		# Who may open the page at all is pinned in TestWhoMayOpenThePage,
+		# which puts the shipped default back.
+		self.viewers("HR Manager,HR User")
 
 	def tearDown(self):
 		for k, v in self._saved.items():
@@ -29,6 +33,9 @@ class RegisterCase(CompanyScopeCase):
 
 	def editors(self, roles):
 		frappe.db.set_default(register.EDITOR_ROLES_KEY, roles)
+
+	def viewers(self, roles):
+		frappe.db.set_default(register.VIEWER_ROLES_KEY, roles)
 
 	def titles(self, result):
 		return sorted(r["title"] for r in result["rows"])
@@ -161,3 +168,124 @@ class TestWhoMayChangeIt(RegisterCase):
 		frappe.set_user(self.hr_user("reg194.store4@example.com", branch=here))
 		with self.assertRaises(frappe.PermissionError):
 			register.save_position(name=theirs.name, seats=9)
+
+
+class TestWhoMayOpenThePage(RegisterCase):
+	"""Surbhi, 19 Oct 2026: "positions page access should also be permission
+	based. not all should be able to see this page. for them the organisation
+	page is there." And: "set the positions page default to HR Manager".
+
+	Until then the page followed the org chart's reach, which lets in anybody
+	with a direct report. Every endpoint behind the page now asks `may_view`.
+	"""
+
+	def setUp(self):
+		super().setUp()
+		# The shipped defaults: a blank setting reads as its default.
+		self.viewers("")
+		self.editors("")
+		self.seat = self.pos("Counter Staff Here", seats=1).name
+
+	def user(self, email, roles=(), employee=None):
+		if not frappe.db.exists("User", email):
+			frappe.get_doc({"doctype": "User", "email": email, "first_name": "Open",
+			                "enabled": 1, "send_welcome_email": 0}).insert(ignore_permissions=True)
+			self._cleanup.append(("User", email))
+		if employee:
+			frappe.db.set_value("Employee", employee, "user_id", email)
+		u = frappe.get_doc("User", email)
+		u.flags.ignore_permissions = True
+		if roles:
+			u.add_roles(*roles)
+		frappe.db.commit()
+		return email
+
+	def refused_everywhere(self, employee):
+		for call in (lambda: register.position_table(),
+		             lambda: register.where_does_this_person_sit(employee),
+		             lambda: register.what_they_hold(employee)):
+			with self.assertRaises(frappe.PermissionError):
+				call()
+
+	def test_the_default_is_hr_manager(self):
+		self.assertEqual(settings.DEFAULTS[register.VIEWER_ROLES_KEY], "HR Manager")
+
+	def test_the_setting_is_one_only_a_system_manager_may_change(self):
+		"""It decides who sees the company's structure, so it is SEC-18."""
+		self.assertIn(register.VIEWER_ROLES_KEY, settings.ACCESS_GRANTING)
+
+	def test_an_hr_manager_sees_and_loads_the_register(self):
+		email = self.hr_user("open060.hrm@example.com")
+		self.user(email, roles=("HR Manager",))
+		frappe.set_user(email)
+		self.assertTrue(register.may_view())
+		self.assertIn("Counter Staff Here", self.titles(register.position_table()))
+
+	def test_a_plain_employee_is_refused(self):
+		emp = self.person("Open060 Plain")
+		frappe.set_user(self.user("open060.plain@example.com", employee=emp))
+		self.assertFalse(register.may_view())
+		self.refused_everywhere(emp)
+
+	def test_a_manager_with_direct_reports_is_refused(self):
+		"""THE CASE THAT CHANGED. Such a manager still sees the whole org
+		chart - `reach()` is untouched - but not this page."""
+		from hrms.alvoraa_org_structure.api import reach
+
+		frappe.db.set_default("alvoraa_org_managers_see_all", 1)
+		boss = self.person("Open060 Boss")
+		report = self.person("Open060 Report")
+		frappe.db.set_value("Employee", report, "reports_to", boss)
+		try:
+			frappe.set_user(self.user("open060.boss@example.com", employee=boss))
+			frappe.local._alvoraa_leads = {}
+			self.assertTrue(reach()["unlimited"], "the chart must still be open to them")
+			self.assertFalse(register.may_view())
+			self.refused_everywhere(report)
+		finally:
+			# The tear-down deletes people in the order they were made, and a
+			# manager cannot be deleted while somebody reports to them.
+			frappe.db.set_value("Employee", report, "reports_to", None)
+
+	def test_an_hr_user_is_refused_by_default(self):
+		"""HR Manager, as she said - not every HR role."""
+		frappe.set_user(self.hr_user("open060.hru@example.com"))
+		self.assertFalse(register.may_view())
+		with self.assertRaises(frappe.PermissionError):
+			register.position_table()
+
+	def test_a_role_added_to_the_setting_gains_access(self):
+		self.viewers("HR Manager,HR User")
+		frappe.set_user(self.hr_user("open060.hru2@example.com"))
+		self.assertTrue(register.may_view())
+		self.assertIn("Counter Staff Here", self.titles(register.position_table()))
+
+	def test_an_editor_may_always_view(self):
+		"""A role in the editor list but not the view list could otherwise
+		change seats it cannot see."""
+		self.viewers("HR Manager")
+		self.editors("HR User")
+		frappe.set_user(self.hr_user("open060.hru3@example.com"))
+		self.assertTrue(register.may_view())
+		self.assertTrue(register.position_table()["may_edit"])
+
+	def test_the_shipped_editor_default_can_view(self):
+		"""System Manager is a default editor and not in "HR Manager"."""
+		email = self.user("open060.sm@example.com", roles=("System Manager",))
+		frappe.set_user(email)
+		self.assertTrue(register.may_view())
+
+	def test_the_proposal_endpoints_follow_the_page(self):
+		"""Offered only on the Positions page. An HR Manager left out of
+		both lists may not use them either."""
+		from hrms.alvoraa_org_structure import api
+
+		self.viewers("Some Role Nobody Has")
+		self.editors("Some Role Nobody Has")
+		email = self.hr_user("open060.hrm2@example.com")
+		self.user(email, roles=("HR Manager",))
+		frappe.set_user(email)
+		with self.assertRaises(frappe.PermissionError):
+			api.propose_positions()
+		with self.assertRaises(frappe.PermissionError):
+			api.create_proposed_positions([])

@@ -257,6 +257,11 @@ def propose_positions(company=None):
 	that is bought and a feature that is used.
 	"""
 	frappe.only_for(["HR Manager", "System Manager"])
+	# Offered only on the Positions page, so it follows that page's setting too.
+	from hrms.alvoraa_org_structure.register import _refuse_view, may_view
+
+	if not may_view():
+		_refuse_view("api.propose_positions")
 	filters = {"status": "Active"}
 	if company:
 		filters["company"] = company
@@ -335,6 +340,10 @@ def propose_positions(company=None):
 def create_proposed_positions(positions):
 	"""Write a reviewed proposal, and put the people in the seats."""
 	frappe.only_for(["HR Manager", "System Manager"])
+	from hrms.alvoraa_org_structure.register import _refuse_view, may_view
+
+	if not may_view():
+		_refuse_view("api.create_proposed_positions")
 	positions = frappe.parse_json(positions) if isinstance(positions, str) else positions
 
 	# Parents before children, or the tree link points at nothing yet - and

@@ -5063,7 +5063,7 @@ const _origSwitch = switchPanel;
 // (patched below — closeSidebar called inside switchPanel directly)
 
 /* ── Role-based visibility ───────────────────────── */
-window._roles = { is_manager: false, is_hr: false };
+window._roles = { is_manager: false, is_hr: false, positions: false };
 
 function loadPortalContext() {
   api("get_portal_context", {}, function(ctx) {
@@ -5071,10 +5071,11 @@ function loadPortalContext() {
     // kept for the leave modal "apply on behalf of" default
     window._me = ctx.employee || null;
     window._roles.is_hr      = !!ctx.is_hr;
+    window._roles.positions  = !!ctx.positions;
 
     /* Attendance Insights counts towards the Management heading too, so the
        item can never end up under a heading that is hidden. */
-    const showMgmt = ctx.is_manager || ctx.is_hr || ctx.att_insights;
+    const showMgmt = ctx.is_manager || ctx.is_hr || ctx.att_insights || ctx.positions;
 
     // Sidebar management section
     const mgmtHdr = document.getElementById("mgmt-section-hdr");
@@ -5160,12 +5161,13 @@ function applyPlanNav() {
   if (navPolicies) navPolicies.style.display =
     f.plan_policy_library ? "flex" : "none";
 
-  // The register is a management screen, so it needs the position layer AND
-  // somebody with a reason to open it. A manager gets it read-only; whether
-  // they may change anything is a setting the server answers, not this line.
+  // The register needs the position layer AND the server's yes. Who may open
+  // it is a setting, HR Manager by default (Surbhi, 19 Oct 2026); everybody
+  // else has the Organisation page. An absent flag (an old cached context)
+  // reads as no.
   var navPositions = document.getElementById("nav-positions");
   if (navPositions) navPositions.style.display =
-    (f.plan_org_structure && (roles.is_hr || roles.is_manager)) ? "flex" : "none";
+    (f.plan_org_structure && roles.positions) ? "flex" : "none";
 
   var navOrgChart = document.getElementById("nav-org-chart");
   if (navOrgChart) navOrgChart.style.display =

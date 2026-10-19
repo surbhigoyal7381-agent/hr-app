@@ -12,6 +12,7 @@ import calendar as _calendar
 from frappe.utils import cint, flt, today, get_first_day, get_last_day, getdate, add_days, now
 from alvoraa_goals.permissions import get_effective_manager
 from hrms.alvoraa_hr_core.access import permitted_employee_filters
+from hrms.alvoraa_org_structure.register import may_view as _may_view_positions
 # A module import, not `from ... import`: the two switch KEYS are constants, and
 # scripts/check_app_integrity.py only recognises functions and classes across apps.
 import hrms.alvoraa_hr_core.features as org_features
@@ -336,6 +337,11 @@ def get_portal_context():
         # `is_manager` is not the test. It is wider - it is also true for HR when
         # somebody has no manager set - and the team view needs real reports.
         "att_insights": has_reports or _may_see_organisation(),
+        # May this person open the Positions page? The page's own endpoints
+        # refuse anybody this says no to (`register.may_view`), so the menu is
+        # the same answer, not a second copy of the rule. It reads two settings
+        # and the role list, all from Frappe's caches: no extra query.
+        "positions": _may_view_positions(),
         "manager_name": manager_name,
         "roles": roles,
     }

@@ -14,10 +14,13 @@ the other way round. `alvoraa_org_position_editor_roles` decides, and like the
 other keys that hand out privilege it can only be changed by a System Manager,
 and leaves a record when it is.
 
+WHO MAY OPEN IT AT ALL IS A SETTING TOO: `alvoraa_org_positions_view_roles`,
+HR Manager by default (Surbhi, 19 Oct 2026). Everybody else has the
+Organisation page. Until then any manager could read it, because reading
+followed the org chart's reach.
+
 READING IS SCOPED THE SAME WAY AS EVERY OTHER HR READER (slice 030): the
 companies somebody may act for, and their branches if they are tied to a store.
-A branch head reads their own store and changes nothing unless the setting says
-they may.
 """
 
 import frappe
@@ -27,6 +30,7 @@ from frappe.utils import add_days, flt, getdate, nowdate
 from hrms.alvoraa_org_structure import settings
 
 EDITOR_ROLES_KEY = "alvoraa_org_position_editor_roles"
+VIEWER_ROLES_KEY = "alvoraa_org_positions_view_roles"
 
 
 def _scope():
@@ -40,16 +44,23 @@ def _scope():
 	return permitted_companies(), permitted_branches()
 
 
-def _may_read():
-	"""Anybody who may see the whole chart, and any manager, may read the list.
+def may_view():
+	"""Whether this person may open the Positions page at all.
 
-	Deliberately wider than who may change it. A branch head planning next
-	month's cover needs to see the empty seats in their store; letting them
-	change the company's structure is a different decision.
+	The roles in `alvoraa_org_positions_view_roles`, HR Manager by default.
+	This used to be `reach()`, the org chart's rule, which lets in anybody with
+	a direct report. `reach()` still decides the chart; it no longer decides
+	this page.
+
+	ANYBODY WHO MAY EDIT MAY ALSO VIEW. Otherwise the two settings could
+	contradict each other: a role in the editor list but not in this one could
+	change seats it cannot see. With the shipped defaults that is exactly the
+	System Manager, so the editor roles count here too.
+
+	A blank setting reads as the default, so clearing it cannot lock HR out.
 	"""
-	from hrms.alvoraa_org_structure.api import reach
-
-	return bool(reach().get("unlimited"))
+	allowed = {r.strip() for r in str(settings.get(VIEWER_ROLES_KEY)).split(",") if r.strip()}
+	return bool(allowed & set(frappe.get_roles())) or may_edit()
 
 
 def may_edit():
@@ -116,11 +127,21 @@ def _my_reporting_line(depth=6):
 	return seen
 
 
+def _refuse_view(endpoint, name=None):
+	from hrms.alvoraa_hr_core.access import refuse
+
+	refuse(
+		_("The Positions page is open only to the roles your organisation has "
+		  "chosen. To see who works where, use the Organisation page. If you "
+		  "need this page, ask your HR team."),
+		"SEC-8", endpoint, "Alvoraa Position", name)
+
+
 def _refuse(endpoint, name=None):
 	from hrms.alvoraa_hr_core.access import refuse
 
 	refuse(
-		_("You can look at the position list, but changing it is not yours to do. "
+		_("Changing the position list is not yours to do. "
 		  "Ask whoever maintains the structure in your organisation."),
 		"SEC-8", endpoint, "Alvoraa Position", name)
 
@@ -133,8 +154,8 @@ def position_table(branch=None, department=None, as_at=None):
 	eighty-nine seats that is eighty-nine round trips for a table that renders
 	in a single screen.
 	"""
-	if not _may_read():
-		_refuse("register.position_table")
+	if not may_view():
+		_refuse_view("register.position_table")
 	as_at = as_at or nowdate()
 	companies, branches = _scope()
 
@@ -189,11 +210,11 @@ def position_table(branch=None, department=None, as_at=None):
 	#
 	# BUT IT IS NOT SHOWN TO EVERYONE WHO CAN READ THIS SCREEN. Everything else
 	# here is structure; this one field is a person's private news, often before
-	# it has been announced. `_may_read` lets in anybody with people under them
-	# once `alvoraa_org_managers_see_all` is on, and `permitted_branches` is
-	# None - meaning every branch - for anybody not tied to a store. Without
-	# this check a peer manager in another city would read every pending
-	# resignation in the company, by name, the day it was entered.
+	# it has been announced. Who may open this screen is a setting a tenant may
+	# open to its managers, and `permitted_branches` is None - meaning every
+	# branch - for anybody not tied to a store. Without this check a peer
+	# manager in another city would read every pending resignation in the
+	# company, by name, the day it was entered.
 	#
 	# So: HR and leadership, who cannot plan without it, and the person's own
 	# reporting line, who are the ones who have to cover the gap. Nobody else.
@@ -394,7 +415,12 @@ def what_they_hold(employee, ignore_position=None):
 
 	Permanent only. Cover is carried on top of a person's own job by design -
 	it is extra duty, not a reallocation - so it never needs making room for.
+
+	It had no guard at all, so any login could ask what seats anybody holds.
 	"""
+	if not may_view():
+		_refuse_view("register.what_they_hold", employee)
+
 	rows = []
 	for a in frappe.get_all(
 			ASSIGNMENT,
@@ -690,8 +716,8 @@ def where_does_this_person_sit(employee):
 	or failing that the one they hold most of - guessing silently would put a
 	new seat under the wrong parent, so the caller is told which was used.
 	"""
-	if not _may_read():
-		_refuse("register.where_does_this_person_sit", employee)
+	if not may_view():
+		_refuse_view("register.where_does_this_person_sit", employee)
 
 	as_at = nowdate()
 	rows = frappe.get_all(

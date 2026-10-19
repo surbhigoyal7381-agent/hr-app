@@ -19,6 +19,7 @@
               <span class="checkin-status-txt" id="ci-status-txt">Loading...</span>
             </div>
             <div class="checkin-time-txt" id="ci-last-time"></div>
+            <div class="day-marks" id="ci-marks"></div>
           </div>
           <div class="checkin-right">
             <div>
@@ -34,6 +35,11 @@
 
           <!-- LEFT: Activity + Goals -->
           <div class="home-left-col">
+
+            <!-- Today against your own shift: the quarters, the half-day
+                 line and the day's marks. Drawn by paintDayMarks from the
+                 same payload as the banner's one-line summary. -->
+            <div id="day-widget"></div>
 
             <div class="card">
               <div class="card-header">

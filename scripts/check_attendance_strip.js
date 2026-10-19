@@ -30,7 +30,12 @@ const blocks = [...raw.matchAll(/<script(?![^>]*src=)[^>]*>([\s\S]*?)<\/script>/
 // Only the attendance-record functions are pulled out. Loading the whole page
 // would drag in every unrelated global it touches.
 const want = ["AC_MONTHS", "acState", "acMinutes", "acMins", "acSay", "acPairs",
-              "acStrip", "acReqCard", "acForm", "acRow", "acDetail"];
+              "acStrip", "acReqCard", "acForm", "acRow", "acDetail",
+              /* What acDetail calls to decide whether to offer the form. They
+                 were added to portal.js without being added here, so this
+                 script died on "acOutsideWindow is not defined" - and, not
+                 being part of CI, nobody noticed. */
+              "acOutsideWindow", "acWindowWords", "acNice"];
 /* Extracted by counting braces, not by looking for the next blank line.
    Several of these functions have a blank line inside them, and the blank-line
    version cut them in half - which showed up as a syntax error rather than as

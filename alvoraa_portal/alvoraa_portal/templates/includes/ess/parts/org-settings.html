@@ -1,4 +1,4 @@
-      <!-- ── Org Settings Panel ──────────────────────── -->
+﻿      <!-- ── Org Settings Panel ──────────────────────── -->
       <div id="panel-org-settings" class="panel">
         <div class="pf-toolbar" style="margin-bottom:24px">
           <div>
@@ -80,7 +80,7 @@
              cannot support. -->
         <div class="pf-card" style="margin-bottom:24px;display:none" id="org-attrules-card">
           <div style="font-weight:600;font-size:var(--fs-md);margin-bottom:4px">Attendance rules</div>
-          <div style="font-size:var(--fs-sm);color:var(--text3);margin-bottom:16px">Every company sets its own rules. Both are off until HR switches them on.</div>
+          <div style="font-size:var(--fs-sm);color:var(--text3);margin-bottom:16px">Every company sets its own rules. The first two switches are off until HR switches them on.</div>
           <div id="org-attrules-msg" role="status" aria-live="polite" style="font-size:var(--fs-sm);margin-bottom:10px"></div>
           <div class="gp-field">
             <label style="display:flex;align-items:center;gap:10px;cursor:pointer" for="org-late-rules-on">
@@ -97,6 +97,23 @@
             </label>
             <div class="gp-hint" id="org-att-scoring-help">When on, each appraisal cycle can include attendance with its own weight.</div>
             <div class="gp-hint" id="org-att-scoring-needs"></div>
+          </div>
+          <!-- Slice 060 (SEC-9a), reworked 18 Oct 2026: a switch and its
+               sub-setting. The switch says whether a manager may ask on behalf
+               of their team at all; the box under it says how far back. The box
+               is indented and switched off with the switch, because a limit on
+               something nobody may do reads as a contradiction. -->
+          <div class="gp-field">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer" for="org-on-behalf-on">
+              <input type="checkbox" id="org-on-behalf-on" aria-describedby="org-on-behalf-help" style="width:16px;height:16px;accent-color:var(--primary)" onchange="orgSaveOnBehalf(this)">
+              <span style="font-size:var(--fs-base)">Let a manager ask for a day to be fixed for their team</span>
+            </label>
+            <div class="gp-hint" id="org-on-behalf-help">When on, a manager can ask HR to fix attendance &mdash; and later leave &mdash; for the people who report directly to them. HR still decides every request. When off, only the employee can ask about their own day, and HR can fix any day.</div>
+          </div>
+          <div class="gp-field" id="org-filing-window-field" style="margin-left:26px;border-left:2px solid var(--border);padding-left:14px">
+            <label class="gp-label" for="org-filing-window">How far back a manager can ask</label>
+            <input class="gp-input" id="org-filing-window" type="number" min="0" max="30" step="1" placeholder="No limit" aria-describedby="org-filing-window-help" onchange="orgSaveFilingWindow(this)">
+            <div class="gp-hint" id="org-filing-window-help">Leave this empty for no limit. Counted in working days, using the employee's own holiday list, so weekends and holidays do not use up the time. A manager who asks later than this is told to go to HR instead. <strong>It does not limit HR, and it does not limit an employee asking about their own day</strong> &mdash; HR can still fix any day. Use 0 to let a manager ask about today only.</div>
           </div>
         </div>
 

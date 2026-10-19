@@ -1,51 +1,23 @@
-      <!-- ══ ATTENDANCE ═════════════════════════════════ -->
-      <!-- ══ ATTENDANCE & LEAVE (merged) ══════════════════ -->
+      <!-- ══ LEAVE ══════════════════════ -->
+      <!-- Leave only, since 17 Oct 2026. The month calendar and the four
+           Present/Absent/On Leave/WFH tiles used to sit here and said less
+           than the Attendance page's own month, which carries the punches,
+           the hours and the shift. -->
       <div id="panel-attendance" class="panel">
         <div class="page-header" style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
           <div>
-            <div class="page-title">Attendance &amp; Leave</div>
-            <div class="page-sub" id="att-sub">This month's record</div>
+            <div class="page-title">Leave</div>
+            <div class="page-sub" id="att-sub">Your balance, your applications, and what lateness has cost</div>
           </div>
           <button class="btn btn-primary" style="margin-left:auto" onclick="openLeaveModal()">+ Apply Leave</button>
         </div>
 
-        <div class="att-summary">
-          <div class="att-sum-box"><div class="att-sum-val num" id="att-present" style="color:var(--green)">—</div><div class="att-sum-lbl">Present</div></div>
-          <div class="att-sum-box"><div class="att-sum-val num" id="att-absent" style="color:var(--red)">—</div><div class="att-sum-lbl">Absent</div></div>
-          <div class="att-sum-box"><div class="att-sum-val num" id="att-leave" style="color:var(--amber)">—</div><div class="att-sum-lbl">On Leave</div></div>
-          <div class="att-sum-box"><div class="att-sum-val num" id="att-wfh" style="color:var(--primary)">—</div><div class="att-sum-lbl">WFH</div></div>
-        </div>
-
-        <div class="att-leave-grid">
-          <!-- Mini calendar widget -->
-          <div class="card">
-            <div class="card-header">
-              <div class="cal-nav" style="flex:1">
-                <button class="cal-nav-btn" onclick="calNav(-1)">‹</button>
-                <div class="cal-month-label" id="cal-label">...</div>
-                <button class="cal-nav-btn" onclick="calNav(1)">›</button>
-              </div>
-            </div>
-            <div class="card-body" style="padding:10px">
-              <div class="cal-grid cal-mini" id="cal-grid-main"></div>
-              <div class="cal-legend" style="margin-top:6px;gap:6px">
-                <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--green-lt);border:1px solid var(--green)"></div>Present</div>
-                <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--red-lt);border:1px solid var(--red)"></div>Absent</div>
-                <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--amber-lt);border:1px solid var(--amber)"></div>Leave</div>
-                <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--primary-lt);border:1px solid var(--primary)"></div>WFH</div>
-                <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--purple-lt);border:1px solid var(--purple)"></div>Holiday</div>
-                <div class="cal-legend-item"><div class="cal-legend-dot" style="background:var(--surface2);border:1px solid var(--border)"></div>Weekend</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Leave balances -->
-          <div class="card">
-            <div class="card-header"><span><i class=ic-leave></i></span><span class="card-title">Leave Balance</span></div>
-            <div class="card-body">
-              <div class="leave-rings" id="leave-rings">
-                <div class="empty-state"><div class="empty-state-text">Loading...</div></div>
-              </div>
+        <!-- Leave balances -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header"><span><i class=ic-leave></i></span><span class="card-title">Leave Balance</span></div>
+          <div class="card-body">
+            <div class="leave-rings" id="leave-rings">
+              <div class="empty-state"><div class="empty-state-text">Loading...</div></div>
             </div>
           </div>
         </div>

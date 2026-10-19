@@ -66,6 +66,11 @@ const RUN = [
   /* Slice 051: the salary drawer on the EXISTING portal - both pay figures,
      the year so far, and the Why? behind a deduction. */
   { file: "portal_salary_test.js", args: [PAGE] },
+  /* Slice 060: which endpoint "Ask HR to fix this day" sends to. A
+     manager's on-behalf request went to the caller's own endpoint and
+     came back 403; nothing in the suite noticed, because the arguments
+     were right and only the method was wrong. */
+  { file: "portal_correction_test.js", args: [PAGE] },
   /* Slice 045, Wave 4: the two that needed a get_performance_tree payload. */
   { file: "portal_tree_test.js", args: [PAGE, TREE_FIXTURE] },
   { file: "portal_redesign_test.js", args: [PAGE, TREE_FIXTURE] },
@@ -77,7 +82,7 @@ const SKIP = {};
 
 /* AC-64. A number, so a test that disappears is a failure rather than a
    shorter run nobody reads. Raise it deliberately when you add one. */
-const EXPECTED_BROWSER_TESTS = 9;
+const EXPECTED_BROWSER_TESTS = 10;
 
 const onDisk = fs.readdirSync(DIR).filter((f) => f.endsWith("_test.js")).sort();
 const known = [...RUN.map((r) => r.file), ...Object.keys(SKIP)].sort();

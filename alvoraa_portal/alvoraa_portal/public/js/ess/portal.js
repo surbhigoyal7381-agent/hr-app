@@ -1,7 +1,6 @@
 /* ── Helpers ─────────────────────────────────────── */
 const MOD = "alvoraa_portal.hr_api";
 const loadedPanels = new Set(["home"]);
-let calYear, calMonth;
 
 function api(fn, args, cb, ecb) {
   frappe.call({
@@ -2757,7 +2756,10 @@ function acApi(fn, args) {
 }
 
 var acState = {year: 0, month: 0, employee: null, data: null,
-               reasons: null, people: null, open: null};
+               reasons: null, people: null, open: null, team: false,
+               /* the picker: whether the server had more people than it sent,
+                  and whether the keyboard belongs back in the search box */
+               pmore: false, pfocus: false};
 
 window.acOpen = async function () {
   if (!acState.year) {
@@ -2776,14 +2778,52 @@ window.acNav = function (step) {
   acLoad();
 };
 
+/* The picker answers one question - whose days am I looking at - and
+   "Whole team" is one of its answers. `AC_TEAM` is not an employee id, so
+   acState.employee never holds it. */
+var AC_TEAM = "*team";
+
 window.acPick = function (employee) {
-  acState.employee = employee || null;
+  acState.team = employee === AC_TEAM;
+  acState.employee = acState.team ? null : (employee || null);
   acState.open = null;
+  acLoad();
+};
+
+/* A row in the team list opens that person's month, at that day. Clicking a
+   day you are worried about should land you on the day, not on a month you
+   then have to find it in. */
+window.acFromTeam = function (employee, date) {
+  acState.team = false;
+  acState.employee = employee;
+  acState.year = parseInt(date.slice(0, 4), 10);
+  acState.month = parseInt(date.slice(5, 7), 10);
+  acState.open = date;
   acLoad();
 };
 
 async function acLoad() {
   var body = document.getElementById("ac-body");
+  var team = document.getElementById("ac-team");
+
+  if (acState.team) {
+    /* The whole team's days instead of one person's month - the list that
+       was Team View's third tab until 17 Oct 2026, behind this page's own
+       picker. Nothing below belongs to it: one person's corrections and HR's
+       queue are both about one person. */
+    body.style.display = "none";
+    document.getElementById("ac-mine-wrap").style.display = "none";
+    document.getElementById("ac-review-wrap").style.display = "none";
+    team.style.display = "";
+    document.getElementById("ac-sub").textContent =
+      "Whole team · days that need a look";
+    acBar();
+    await trOpen();
+    return;
+  }
+
+  team.style.display = "none";
+  body.style.display = "";
   body.innerHTML = '<p class="ac-empty">Loading&hellip;</p>';
   try {
     var d = await acApi("month", {year: acState.year, month: acState.month,
@@ -2804,43 +2844,232 @@ var AC_MONTHS = ["January","February","March","April","May","June","July",
                  "August","September","October","November","December"];
 
 function acBar() {
-  var d = acState.data;
-  var html = '<button class="btn btn-outline" onclick="acNav(-1)">&lsaquo;</button>'
-    + '<select onchange="acJump(this.value)">'
-    + acMonthOptions().map(function (o) {
-        return '<option value="' + o.v + '"' + (o.on ? " selected" : "") + ">"
-          + gpEsc(o.l) + "</option>";
-      }).join("")
-    + "</select>"
-    + '<button class="btn btn-outline" onclick="acNav(1)">&rsaquo;</button>';
+  var d = acState.data || {};
+  var html = "";
+
+  /* The month buttons belong to one person's record. The team list has its
+     own From and To, so a month selector beside it would be a second answer
+     to the same question, and the two would disagree. */
+  if (!acState.team) {
+    html += '<button class="btn btn-outline" onclick="acNav(-1)">&lsaquo;</button>'
+      + '<select onchange="acJump(this.value)">'
+      + acMonthOptions().map(function (o) {
+          return '<option value="' + o.v + '"' + (o.on ? " selected" : "") + ">"
+            + gpEsc(o.l) + "</option>";
+        }).join("")
+      + "</select>"
+      + '<button class="btn btn-outline" onclick="acNav(1)">&rsaquo;</button>';
+  }
 
   /* The picker only appears for somebody who has people to look at. An
      empty dropdown is the clearest possible sign a screen was built for
-     somebody else. */
+     somebody else. Having people is also what makes "Whole team" worth
+     offering, so the two appear together.
+
+     It is a search box rather than a dropdown. HR at PP Jewellers has 403
+     active people in here, and a native <select> of 403 names is a scroll,
+     not a choice - Surbhi, 19 Oct 2026: "there should be a way to do a text
+     based search with the drop down". The search runs on the SERVER, through
+     the same `whose_months_i_can_open` that already decides who you may
+     open, so a manager is never sent a name from outside their own reporting
+     line, not even for the instant before a list is filtered. */
   if (acState.people && acState.people.length) {
-    html += '<select onchange="acPick(this.value)" style="min-width:180px">'
-      + '<option value="">' + gpEsc(d.is_self ? "Me" : "Choose a person") + "</option>"
-      + acState.people.map(function (p) {
-          return '<option value="' + gpEsc(p.name) + '"'
-            + (p.name === d.employee ? " selected" : "") + ">"
-            + gpEsc(p.employee_name) + (p.designation ? " · " + gpEsc(p.designation) : "")
-            + "</option>";
-        }).join("")
-      + "</select>";
+    html += '<label class="ac-pick-lbl" for="ac-pick-q">Whose record</label>'
+      + '<span class="ac-pick">'
+      + '<input id="ac-pick-q" class="ac-pick-q" type="text" role="combobox"'
+      + ' placeholder="Search by name or ID" autocomplete="off"'
+      + ' aria-expanded="false" aria-controls="ac-pick-list" aria-autocomplete="list"'
+      /* Opened by a click, by typing, or by the down arrow - deliberately
+         NOT by focus. Choosing somebody puts the keyboard back in this box,
+         and on focus that reopened the list it had just closed. */
+      + ' oninput="acPickType(this.value)" onclick="acPickShow()"'
+      + ' onkeydown="acPickKey(event)" onblur="acPickBlur()">'
+      + '<ul id="ac-pick-list" class="ac-pick-list" role="listbox"'
+      + ' aria-label="People whose record you can open" hidden></ul>'
+      + "</span>";
   }
 
   html += '<span class="sp ac-who">'
-    + (d.is_self ? "Your record" : "Viewing <b>" + gpEsc(d.employee_name) + "</b>")
+    + (acState.team ? "Whole team"
+                    : (d.is_self ? "Your record"
+                                 : "Viewing <b>" + gpEsc(d.employee_name) + "</b>"))
     + "</span>";
   document.getElementById("ac-bar").innerHTML = html;
 
+  /* Choosing somebody reloads the month, which rebuilds this bar and throws
+     the keyboard back to the top of the page. Put it back in the box it came
+     from, so a second search is one keystroke rather than a hunt. */
+  if (acState.pfocus) {
+    acState.pfocus = false;
+    var box = acPickBox();
+    if (box && box.focus) box.focus();
+  }
+
   if (acState.people === null) {
-    acApi("whose_months_i_can_open", {limit: 500}).then(function (people) {
+    acApi("whose_months_i_can_open", {limit: AC_PICK_LIMIT}).then(function (people) {
       acState.people = people || [];
+      acState.pmore = acState.people.length >= AC_PICK_LIMIT;
       if (acState.people.length) acBar();
     }).catch(function () { acState.people = []; });
   }
 }
+
+/* ── whose record: the person picker ────────────────────────────────
+   A text box with a listbox under it, searched on the server.
+
+   It follows the SHAPE of "Apply on behalf of" in the leave modal - same
+   debounce, same row of name, id and job - but not its code, for two
+   reasons that are about correctness rather than taste. That picker reads
+   `get_all_active_employees`, which throws for anybody who is not HR, and
+   this one has to work for a line manager. And it is a plain <div> of
+   clickable rows: no focus, no arrow keys, nothing for a screen reader. A
+   lot of this product's users are on a phone on a factory floor, and some
+   of them are on a keyboard only.
+
+   The keyboard, in full: arrows move the highlight, Enter takes it, Escape
+   closes the list and leaves what you typed alone, Tab moves on. The
+   highlighted row is marked by a ring as well as a shade, so the highlight
+   does not depend on seeing colour. */
+var AC_PICK_LIMIT = 25;
+var acPickTimer = null, acPickSeq = 0;
+/* The rows on offer right now, and which one is highlighted. The row's
+   INDEX is the handle used by the markup, so no name or id is ever written
+   into an inline handler. */
+var acPickRows = [], acPickAct = -1, acPickMore = false, acPickFailed = false;
+
+function acPickBox()  { return document.getElementById("ac-pick-q"); }
+function acPickList() { return document.getElementById("ac-pick-list"); }
+
+/* An empty box is not an empty list. Somebody with twelve reports must see
+   their twelve without typing a letter, so no query shows the first page the
+   server gives us, and above it the two answers that are not a person. Once
+   there is a query those two step aside, so Enter lands on a person rather
+   than on "Whole team". */
+function acPickBuild(people, more, searching) {
+  var d = acState.data || {};
+  var rows = [];
+  if (!searching) {
+    rows.push({value: AC_TEAM, label: "Whole team",
+               note: "Days that need a look, across everyone"});
+    rows.push({value: "", label: d.is_self ? "My own record" : "Choose a person"});
+  }
+  (people || []).forEach(function (p) {
+    rows.push({value: p.name, id: p.name, label: p.employee_name,
+               note: [p.designation, p.department].filter(Boolean).join(" · ")});
+  });
+  acPickRows = rows;
+  acPickMore = !!more;
+  acPickFailed = false;
+  acPickAct = rows.length ? 0 : -1;
+}
+
+function acPickPaint() {
+  var ul = acPickList(), box = acPickBox();
+  if (!ul || !box) return;
+  var html = acPickRows.map(function (r, i) {
+    var on = i === acPickAct;
+    return '<li id="ac-pick-o' + i + '" role="option" class="ac-pick-o'
+      + (on ? " on" : "") + '" aria-selected="' + (on ? "true" : "false") + '"'
+      + ' onmousedown="acPickChoose(' + i + ')">'
+      + '<span class="ac-pick-n">' + gpEsc(r.label) + "</span>"
+      + (r.id ? '<span class="ac-pick-id">' + gpEsc(r.id) + "</span>" : "")
+      + (r.note ? '<span class="ac-pick-s">' + gpEsc(r.note) + "</span>" : "")
+      + "</li>";
+  }).join("");
+  if (acPickFailed)
+    html = '<li class="ac-pick-none">Could not search just now. '
+      + "Check your connection and type again.</li>";
+  else if (!acPickRows.length)
+    html = '<li class="ac-pick-none">Nobody here by that name or employee ID.</li>';
+  else if (acPickMore)
+    html += '<li class="ac-pick-none">Showing the first ' + AC_PICK_LIMIT
+      + ". Type a name or an employee ID to find somebody else.</li>";
+  ul.innerHTML = html;
+  ul.hidden = false;
+  box.setAttribute("aria-expanded", "true");
+  box.setAttribute("aria-activedescendant",
+                   acPickAct >= 0 ? "ac-pick-o" + acPickAct : "");
+  var row = document.getElementById("ac-pick-o" + acPickAct);
+  if (row && row.scrollIntoView) row.scrollIntoView({block: "nearest"});
+}
+
+function acPickHide() {
+  var ul = acPickList(), box = acPickBox();
+  if (ul) ul.hidden = true;
+  if (box) {
+    box.setAttribute("aria-expanded", "false");
+    box.setAttribute("aria-activedescendant", "");
+  }
+}
+
+window.acPickShow = function () {
+  var q = ((acPickBox() || {}).value || "").trim();
+  if (!q) {
+    acPickBuild(acState.people, acState.pmore, false);
+    acPickPaint();
+  } else {
+    acPickType(q);
+  }
+};
+
+window.acPickType = function (q) {
+  clearTimeout(acPickTimer);
+  var term = String(q || "").trim();
+  var seq = ++acPickSeq;
+  if (!term) {
+    acPickBuild(acState.people, acState.pmore, false);
+    acPickPaint();
+    return;
+  }
+  acPickTimer = setTimeout(function () {
+    acApi("whose_months_i_can_open", {search: term, limit: AC_PICK_LIMIT})
+      .then(function (people) {
+        if (seq !== acPickSeq) return;   /* a slower answer to an older query */
+        acPickBuild(people, (people || []).length >= AC_PICK_LIMIT, true);
+        acPickPaint();
+      }).catch(function () {
+        if (seq !== acPickSeq) return;
+        acPickRows = []; acPickAct = -1; acPickMore = false; acPickFailed = true;
+        acPickPaint();
+      });
+  }, 250);
+};
+
+window.acPickKey = function (ev) {
+  var ul = acPickList(), open = !!ul && !ul.hidden, k = ev.key;
+  if (k === "ArrowDown" || k === "ArrowUp") {
+    ev.preventDefault();
+    if (!open) { acPickShow(); return; }
+    if (!acPickRows.length) return;
+    acPickAct += (k === "ArrowDown" ? 1 : -1);
+    if (acPickAct < 0) acPickAct = acPickRows.length - 1;
+    if (acPickAct >= acPickRows.length) acPickAct = 0;
+    acPickPaint();
+    return;
+  }
+  if (k === "Enter" && open && acPickAct >= 0) {
+    ev.preventDefault();
+    acPickChoose(acPickAct);
+    return;
+  }
+  if (k === "Escape" && open) { ev.preventDefault(); acPickHide(); return; }
+  if (k === "Tab") acPickHide();
+};
+
+/* A click lands after the box has already lost focus, so the list cannot
+   close the instant focus leaves. mousedown fires first, which is what makes
+   the short delay safe. */
+window.acPickBlur = function () { setTimeout(acPickHide, 120); };
+
+window.acPickChoose = function (i) {
+  var r = acPickRows[i];
+  if (!r) return;
+  var box = acPickBox();
+  if (box) box.value = "";
+  acPickHide();
+  acState.pfocus = true;
+  acPick(r.value);
+};
 
 window.acJump = function (value) {
   var bits = String(value).split("-");
@@ -2892,8 +3121,12 @@ function acPaint() {
     + "— there is nothing to be short of.</p>";
 
   document.getElementById("ac-body").innerHTML = html;
+  /* The heading is the constant word "Attendance", so this line is the only
+     thing that says WHOSE record is on screen. It leads with the person for
+     that reason. */
   document.getElementById("ac-sub").textContent =
-    AC_MONTHS[d.month - 1] + " " + d.year + (d.is_self ? "" : " · " + d.employee_name);
+    (d.is_self ? "Your record" : d.employee_name) + " · "
+    + AC_MONTHS[d.month - 1] + " " + d.year;
 }
 
 /* One row per day. Weekends and days still to come are drawn quietly
@@ -3067,13 +3300,59 @@ function acDetail(x) {
 
   if (x.request) {
     html += acReqCard(x.request, d.is_self);
+  } else if (d.can_request && acOutsideWindow(x.date, d)) {
+    /* The day is older than this tenant's filing window, so the server would
+       refuse it. Say so instead of offering a form that cannot work: an
+       explained absence is better than a button that dies when pressed. */
+    html += '<p class="ac-help">This day is outside the window a manager can '
+      + "file within, so it is HR's to correct. The oldest day you can raise "
+      + "here is <b>" + gpEsc(acNice(d.can_request_from)) + "</b>"
+      + (acWindowWords(d) ? ", counted in " + gpEsc(acWindowWords(d)) : "")
+      + ".</p>";
   } else if (d.can_request) {
     html += acForm(x);
+  } else if (d.is_self === false && d.on_behalf_enabled === false) {
+    /* The tenant has switched the on-behalf path off, so saying "their own
+       manager can ask" would be untrue - with the switch off, nobody but the
+       employee can. */
+    html += '<p class="ac-help">Your organisation does not let a manager ask '
+      + "for somebody else's day to be fixed. " + gpEsc(d.employee_name)
+      + " can ask about their own day, and HR can fix any day.</p>";
   } else {
+    /* Reading reaches the whole reporting line; asking stops at the direct
+       reports. So say whose job it is rather than leaving somebody looking
+       for a button that was never there for them. */
     html += '<p class="ac-help">Only ' + gpEsc(d.employee_name)
-      + " can ask for a correction on their own record.</p>";
+      + " or their own manager can ask HR to fix a day on this record.</p>";
   }
   return html + "</div></td></tr>";
+}
+
+/* Is this day older than the window a MANAGER may file within?
+
+   `can_request_from` is the server's own boundary, worked out with the same
+   call `raise_for_report` enforces with. Null means no window binds this
+   caller - their own month, or HR - and then nothing is hidden. */
+function acOutsideWindow(date, d) {
+  return !!(d && d.can_request_from && date && date < d.can_request_from);
+}
+
+function acWindowWords(d) {
+  /* The server sends the basis as a finished, translated sentence - "working
+     days on this person's own holiday list", or the calendar-day fallback
+     where no list could be read. Repeat it as written: picking the wording
+     here would eventually disagree with the refusal the server gives, and
+     "working days" where the count was calendar days is a small lie about
+     somebody's pay. */
+  return (d && d.can_request_basis) ? String(d.can_request_basis) : "";
+}
+
+function acNice(iso) {
+  if (!iso) return "";
+  var p = String(iso).split("-");
+  var m = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return (+p[2]) + " " + m[+p[1] - 1] + " " + p[0];
 }
 
 function acForm(x) {
@@ -3089,7 +3368,8 @@ function acForm(x) {
     + '<label class="form-label">Anything HR should know</label>'
     + '<textarea id="ac-explain" placeholder="Say briefly what happened."></textarea>'
     + '<div class="ac-acts">'
-    + '<button class="btn btn-primary" onclick="acSubmit(&quot;' + x.date + '&quot;)">Ask HR to correct this day</button>'
+    + '<button class="btn btn-primary" onclick="acSubmit(&quot;' + x.date
+    + '&quot;)">Ask HR to fix this day</button>'
     + '<button class="btn btn-outline" onclick="acToggle(&quot;' + x.date + '&quot;)">Cancel</button>'
     + "</div></div>";
 }
@@ -3104,13 +3384,57 @@ window.acReasonHelp = function () {
     : "Pick the one that matches. It decides what the day becomes if HR agrees.";
 };
 
+/* ONE REQUEST PER PRESS.
+
+   On 18 Oct 2026 pressing "Ask HR to fix this day" put two calls in the error
+   log 35ms apart: the real one, correctly refused, and a second with no body at
+   all, which the server could only answer with a Python error about missing
+   arguments - and that uglier message is the one that reached the screen, so a
+   correct refusal read as a crash.
+
+   Nothing in this file sent twice (one press makes one call, refusal path
+   included - pinned in portal_correction_test.js), so the second press was not
+   ours to see. This flag makes it impossible either way: while a request is in
+   flight, a second press does nothing. */
+var acSending = false;
+
 window.acSubmit = async function (date) {
   var reason = (document.getElementById("ac-reason") || {}).value;
   var explain = (document.getElementById("ac-explain") || {}).value;
   if (!reason) { toast("Please choose a reason.", "err"); return; }
+  if (acSending) return;
+
+  /* WHOSE DAY IS THIS? `raise_correction` raises for the CALLER and refuses
+     to take anybody else's name - deliberately, so a field naming somebody
+     else cannot rewrite their attendance. A manager's on-behalf request is a
+     different endpoint, `raise_for_report`, which checks the reporting line
+     and stamps who vouched for the day.
+
+     The button was widened to a report's day before this was: it appeared,
+     sent the caller's own endpoint, and came back 403 with the message
+     hidden behind a dialog. Both halves are fixed together. */
+  var other = (acState.data && acState.data.is_self === false)
+    ? (acState.employee || (acState.data && acState.data.employee))
+    : null;
+
+  /* NOTHING INCOMPLETE LEAVES THIS PAGE. `JSON.stringify` drops an undefined
+     value without a word, so a missing employee or day would travel as an
+     absent field and come back as a server error about arguments. Said here,
+     in words somebody can act on, instead. */
+  if (!date || (acState.data && acState.data.is_self === false && !other)) {
+    toast("This page has lost track of whose day this is. Reload it and try again.", "err");
+    return;
+  }
+
+  acSending = true;
   showLoad();
   try {
-    await acApi("raise_correction", {from_date: date, reason: reason, explanation: explain});
+    if (other) {
+      await acApi("raise_for_report", {
+        employee: other, from_date: date, reason: reason, explanation: explain});
+    } else {
+      await acApi("raise_correction", {from_date: date, reason: reason, explanation: explain});
+    }
     hideLoad();
     toast("Sent to HR.", "ok");
     acState.open = null;
@@ -3118,6 +3442,8 @@ window.acSubmit = async function (date) {
   } catch (e) {
     hideLoad();
     toast(e.message || "Could not send that.", "err");
+  } finally {
+    acSending = false;
   }
 };
 
@@ -3273,6 +3599,7 @@ function loadHome() {
     ht.dataset.name = (emp.employee_name || "").split(" ")[0];
 
     updateCheckinUI(data.checked_in, data.last_action);
+    paintDayMarks(data.marks);
     loadMyDocuments();
     loadHomePolicies();
   }, function() {
@@ -3446,6 +3773,324 @@ window.toggleHomeApprovals = function() {
   if (chip) chip.textContent = open ? "Tap to review" : "Tap to hide";
 };
 
+/* ── Today, against your own shift ────────────────────────────────────────
+   Surbhi, 17 Oct 2026: "Every employee should see what time are their
+   quarters, half day, according to the shift timing, compared to their
+   current arrival time. Also there has been any red, or green for that day."
+
+   ONE SOURCE, ONE PLACE. The check-in banner keeps a single summary line and
+   every figure lives in the widget below it. Two places showing the same
+   times drift apart the first time somebody edits one of them.
+
+   CLOCK TIMES, NOT RULES, AND NOTHING PROMISED. "Leave after 16:58" can be
+   acted on at 16:45; "65% of your shift" cannot. And every line reads as "if
+   you left now" - the day is judged when it is complete, by the engine, from
+   the punches.
+
+   THE LADDER COMES FROM THE SERVER. Its rungs are the rule set's own slab
+   rows, merged where the cost is equal. This file places "now" on them and
+   says nothing about what a band is worth. */
+
+/* The site's clock, not the device's. The server sends its own `now` with the
+   payload; we measure the gap once and apply it, so a phone an hour out still
+   lights the right rung (042 AC-53). */
+var dmDrift = 0;
+
+function dmMinsOfDay(d) {
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+function dmParse(hhmm) {
+  if (!hhmm) return null;
+  var p = String(hhmm).split(":");
+  if (p.length < 2) return null;
+  var h = parseInt(p[0], 10), m = parseInt(p[1], 10);
+  if (isNaN(h) || isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+function dmNow() {
+  return dmMinsOfDay(new Date()) + dmDrift;
+}
+
+/* A night shift's ladder runs past midnight, so a rung can read 01:30 while
+   the anchor reads 22:00. Unwrapped against the anchor, the comparison works
+   for both kinds of shift instead of only the day ones. */
+function dmUnwrap(mins, anchor) {
+  if (mins === null) return null;
+  return mins < anchor ? mins + 1440 : mins;
+}
+
+function dmClock(mins) {
+  var m = Math.round(mins) % 1440;
+  if (m < 0) m += 1440;
+  var h = Math.floor(m / 60), r = m % 60;
+  return (h < 10 ? "0" : "") + h + ":" + (r < 10 ? "0" : "") + r;
+}
+
+function dmSpan(mins) {
+  var m = Math.max(0, Math.round(mins));
+  var h = Math.floor(m / 60), r = m % 60;
+  if (!h) return r + "m";
+  return r ? h + "h " + r + "m" : h + "h";
+}
+
+function dmCost(q) {
+  if (!q) return "A full day";
+  if (q === 1) return "A quarter of a day off";
+  if (q === 2) return "Half a day off";
+  if (q === 3) return "Three quarters off";
+  return "The whole day off";
+}
+
+/* Where the day stands this minute: the rung reached, the one above it, and
+   what the two of them cost. Returns null before anybody has arrived, because
+   nothing has been worked yet. */
+function dmWhere(m) {
+  var lad = m && m.ladder;
+  if (!lad || !lad.steps || !lad.steps.length) return null;
+  var anchor = dmParse(lad.anchor);
+  var arrived = dmParse(m.arrived);
+  if (anchor === null) return null;
+
+  /* BEFORE THEY ARRIVE THERE IS NO POSITION ON THE LADDER, and saying there
+     is was a real bug: the unwrap reads a time earlier than the anchor as
+     tomorrow, so 10:14 counted as later than 19:28 and the top rung lit up
+     "you are here" for somebody who had not worked a minute. The rungs are
+     still worth showing - they are the shape of the day ahead - but nothing
+     is standing on one. */
+  if (arrived === null) {
+    return {now: dmNow(), worked: null, arrived: null, anchor: anchor,
+            at: null, next: null, lost: null,
+            extra: lad.extra_quarter ? 1 : 0, inRedWindow: false,
+            percent: null, notArrived: true};
+  }
+
+  var now = dmUnwrap(dmNow(), anchor);
+  var worked = Math.max(0, now - dmUnwrap(arrived, anchor));
+
+  /* Steps arrive best-first, so the first rung already reached is the best
+     one reached. */
+  var at = null, next = null;
+  for (var i = 0; i < lad.steps.length; i++) {
+    var t = dmUnwrap(dmParse(lad.steps[i].leave_after), anchor);
+    if (t !== null && now >= t) { at = lad.steps[i]; break; }
+    next = lad.steps[i];
+    next.when = t;
+  }
+  var extra = lad.extra_quarter ? 1 : 0;
+  var lost = at ? at.quarters + extra : 4 + extra;
+
+  var inRedWindow = false;
+  if (at && at.red_from && at.red_to) {
+    var rf = dmUnwrap(dmParse(at.red_from), anchor);
+    var rt = dmUnwrap(dmParse(at.red_to), anchor);
+    inRedWindow = now >= rf && now <= rt;
+  }
+
+  return {
+    now: now, worked: worked, arrived: arrived, anchor: anchor,
+    at: at, next: next, lost: lost, extra: extra,
+    inRedWindow: inRedWindow,
+    percent: (worked === null || !lad.shift_minutes)
+      ? null : Math.min(100, worked / lad.shift_minutes * 100)
+  };
+}
+
+/* ── the banner: ONE line ─────────────────────────────────────────────────
+   Not a strip of chips. The banner says where the day stands and points at
+   the next thing that changes it; the widget holds the rest. */
+function dayMarksLine(m) {
+  if (!m) return "";
+  var w = dmWhere(m);
+  if (!m.arrived) {
+    return m.on_time_until
+      ? '<span class="dm-dot ok"></span>On time until ' + esc(m.on_time_until)
+      : "";
+  }
+  if (!w) {
+    /* No ladder on this tenant: the shift's own half-day line is all there is
+       to say, and it is worth saying. */
+    return '<span class="dm-dot ok"></span>In at ' + esc(m.arrived)
+      + (m.half_day_before
+          ? ' &middot; half day if you leave before ' + esc(m.half_day_before)
+          : "");
+  }
+  var tone = w.lost ? (w.lost === 1 ? "warn" : "bad") : "ok";
+  var line = '<span class="dm-dot ' + tone + '"></span>'
+    + esc(dmCost(w.lost)) + " if you left now";
+  if (w.next && w.next.when !== null) {
+    line += ' &middot; next line ' + esc(dmClock(w.next.when));
+  }
+  return line;
+}
+
+/* ── the widget ───────────────────────────────────────────────────────────
+   Collapsed to the rung you are on and the one above it; the rest open on
+   request. Five rungs plus the marks is a long card on a handset, and the two
+   that matter are the one you are standing on and the next one up. */
+var dmLadderOpen = false;
+
+window.dmToggleLadder = function () {
+  dmLadderOpen = !dmLadderOpen;
+  paintDayMarks(window._dmMarks);
+};
+
+function dmWidget(m) {
+  if (!m) return "";
+  var w = dmWhere(m);
+  var head = '<div class="dw-head">'
+    + '<div class="dw-title">Your day</div>'
+    + '<div class="dw-shift">' + esc(m.shift.start) + "&ndash;" + esc(m.shift.end)
+    + (m.shift.name ? " &middot; " + esc(m.shift.name) : "") + "</div>"
+    + "</div>";
+
+  var facts = '<div class="dw-facts">'
+    + dmFact("In", m.arrived || "--:--",
+             m.arrived ? (m.red && m.red.late ? "late" : "on time") : "not yet")
+    + (w && w.worked !== null
+        ? dmFact("Worked", dmSpan(w.worked),
+                 w.percent === null ? "" : w.percent.toFixed(1) + "% of your shift")
+        : "")
+    + dmFact("Half day", m.half_day_before || "--:--", "if you leave before this")
+    + "</div>";
+
+  var verdict = "";
+  if (w && m.arrived) {
+    var tone = w.lost ? (w.lost === 1 ? "warn" : "bad") : "ok";
+    var why = "";
+    if (w.percent !== null) {
+      why = "You have worked " + dmSpan(w.worked) + " of a "
+        + dmSpan(m.ladder.shift_minutes) + " shift, which is "
+        + w.percent.toFixed(1) + "%.";
+    }
+    if (w.extra) {
+      why += " One of those quarters is the late window, not the hours.";
+    }
+    if (w.inRedWindow) {
+      why += " This stretch also carries a red mark.";
+    }
+    verdict = '<div class="dw-verdict ' + tone + '">'
+      + "<b>" + esc(dmCost(w.lost)) + " if you left now</b>"
+      + (why ? "<span>" + esc(why) + "</span>" : "") + "</div>";
+  }
+
+  var nextUp = "";
+  if (w && w.next && w.next.when !== null) {
+    nextUp = '<div class="dw-next"><b>' + esc(dmClock(w.next.when)) + "</b>"
+      + "<span>Stay " + esc(dmSpan(w.next.when - w.now))
+      + " more and you are down to "
+      + esc(dmCost(w.next.quarters + w.extra).toLowerCase()) + ".</span></div>";
+  }
+
+  return head + facts + verdict + nextUp + dmLadder(m, w) + dmMarks(m);
+}
+
+function dmFact(label, value, note) {
+  return '<div class="dw-fact"><span class="dw-f-l">' + esc(label) + "</span>"
+    + '<span class="dw-f-v">' + esc(value) + "</span>"
+    + '<span class="dw-f-n">' + esc(note || "") + "</span></div>";
+}
+
+function dmLadder(m, w) {
+  var lad = m.ladder;
+  if (!lad || !lad.steps || !lad.steps.length) return "";
+  var steps = lad.steps;
+  var shown = steps;
+  if (!dmLadderOpen && w) {
+    shown = steps.filter(function (s) {
+      return s === w.at || s === w.next;
+    });
+    if (!shown.length) shown = steps.slice(0, 2);
+  }
+
+  var rows = shown.map(function (s) {
+    var here = w && s === w.at;
+    var tone = s.quarters === 0 ? "ok" : (s.quarters === 1 ? "warn" : "bad");
+    return '<div class="dw-rung' + (here ? " here" : "") + '">'
+      + '<span class="dw-r-t">' + esc(s.leave_after) + "</span>"
+      + '<span class="dm-dot ' + tone + '"></span>'
+      + '<span class="dw-r-c">' + esc(dmCost(s.quarters + (w ? w.extra : 0)))
+      + (s.red_from
+          ? '<span class="dw-r-red">Leaving ' + esc(s.red_from) + "&ndash;"
+            + esc(s.red_to) + " also costs a red mark.</span>"
+          : "")
+      + "</span>"
+      + (here ? '<span class="dw-r-now">you are here</span>' : "")
+      + "</div>";
+  }).join("");
+
+  var note = (w && w.notArrived)
+    ? '<div class="dw-note">Measured from your shift start until you clock in.</div>'
+    : "";
+  return '<div class="dw-ladder">'
+    + '<div class="dw-sec">Leave after&hellip;</div>' + note + rows
+    + '<button type="button" class="dw-more" onclick="dmToggleLadder()">'
+    + (dmLadderOpen ? "Show less" : "Show all " + steps.length) + "</button>"
+    + "</div>";
+}
+
+function dmMarks(m) {
+  var out = [];
+  var g = m.green;
+  if (g && g.eligible) {
+    if (g.morning) {
+      if (g.morning.earned) out.push(["ok", "Morning green earned", ""]);
+      else if (g.morning.still_possible)
+        out.push(["ok", "Morning green", "Be in by " + g.morning.by + "."]);
+      else out.push(["none", "Morning green missed", "It needed " + g.morning.by + "."]);
+    }
+    if (g.night) {
+      if (g.night.earned) out.push(["ok", "Night green earned", ""]);
+      else if (g.night.still_possible)
+        out.push(["ok", "Night green", "Leave after " + g.night.after + "."]);
+      else out.push(["none", "Night green missed", "It needed " + g.night.after + "."]);
+    }
+  }
+  var r = m.red;
+  if (r && r.late) {
+    out.push(["bad", "Late by " + r.late_by_minutes + " min",
+              "On time meant " + r.on_time_until + "."
+              + (r.free_per_month
+                  ? " The first " + r.free_per_month + " a month are free."
+                  : "")]);
+  }
+  if (r && r.in_late_window && r.late_window) {
+    out.push(["bad", "Inside the late window",
+              "Arriving " + r.late_window.from + "–" + r.late_window.to
+              + " costs one extra quarter."]);
+  }
+  if (!out.length) return "";
+  return '<div class="dw-marks"><div class="dw-sec">Marks today</div>'
+    + out.map(function (o) {
+        return '<div class="dw-mark"><span class="dm-dot ' + o[0] + '"></span>'
+          + "<span><b>" + esc(o[1]) + "</b>"
+          + (o[2] ? "<span>" + esc(o[2]) + "</span>" : "") + "</span></div>";
+      }).join("")
+    + "</div>";
+}
+
+/* One payload, two places: the banner's line and the widget's detail. */
+function paintDayMarks(m) {
+  window._dmMarks = m;
+  if (m && m.now) {
+    var sent = dmParse(m.now);
+    if (sent !== null) {
+      var gap = sent - dmMinsOfDay(new Date());
+      /* Only a real gap is worth correcting; a minute either way is the
+         request in flight, not a wrong clock. */
+      dmDrift = Math.abs(gap) > 2 ? gap : 0;
+    }
+  }
+  var line = document.getElementById("ci-marks");
+  if (line) line.innerHTML = dayMarksLine(m);
+  var card = document.getElementById("day-widget");
+  if (card) {
+    var body = dmWidget(m);
+    card.innerHTML = body ? '<section class="dw">' + body + "</section>" : "";
+  }
+}
+
 function updateCheckinUI(checkedIn, lastAction) {
   const dot = document.getElementById("ci-dot");
   const txt = document.getElementById("ci-status-txt");
@@ -3560,6 +4205,7 @@ function ciSend(action, pos) {
       ciNeedsLocation = !!d.needs_location;
       updateCheckinUI(d.checked_in, d.last_action);
       renderTimeline(d.todays_checkins || []);
+      paintDayMarks(d.marks);
     }, function() { btn.disabled = false; });
   }, function(err) {
     btn.disabled = false;
@@ -3681,12 +4327,13 @@ function holNavMonth(delta) {
   _renderHolMonth();
 }
 
-/* ── ATTENDANCE ──────────────────────────────────── */
+/* ── LEAVE ───────────────────────────────────────── */
+/* This panel used to carry a month calendar and four status tiles as well.
+   They went on 17 Oct 2026: the Attendance page shows the same month with the
+   punches, the hours and the shift on it, so this was the poorer of two
+   answers to one question. `fetchCalendar` and `renderCalendar` went with
+   them, and `get_attendance_calendar` now has no caller in the portal. */
 function loadAttendance() {
-  const now = new Date();
-  calYear = now.getFullYear();
-  calMonth = now.getMonth() + 1;
-  fetchCalendar();
   loadMyLateDeductions();
 }
 
@@ -3740,97 +4387,6 @@ function loadTeamLateList() {
   }, function() {});
 }
 
-function calNav(dir) {
-  calMonth += dir;
-  if (calMonth > 12) { calMonth = 1; calYear++; }
-  if (calMonth < 1)  { calMonth = 12; calYear--; }
-  fetchCalendar();
-}
-
-var _calCache = {};
-function fetchCalendar() {
-  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-  document.getElementById("cal-label").textContent = months[calMonth-1] + " " + calYear;
-  document.getElementById("att-sub").textContent = months[calMonth-1] + " " + calYear + " attendance";
-
-  var cacheKey = calYear + "-" + calMonth;
-  if (_calCache[cacheKey]) { renderCalendar(_calCache[cacheKey]); return; }
-
-  api("get_attendance_calendar", {year: calYear, month: calMonth}, function(data) {
-    _calCache[cacheKey] = data;
-    renderCalendar(data);
-  }, function() { toast("Failed to load attendance", "err"); });
-}
-
-function renderCalendar(data) {
-  const gridEl = document.getElementById("cal-grid-main");
-  const dayNames = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-  // Headers and cells share one grid so columns always align
-  let html = dayNames.map(d => '<div class="cal-day-head" style="font-size:var(--fs-xs);font-weight:700;text-align:center;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;padding:4px 0">' + d + '</div>').join("");
-
-  const attMap = {};
-  (data.records || []).forEach(function(r) { attMap[r.attendance_date] = r; });
-
-  const leaveSet = new Set();
-  (data.leaves || []).forEach(function(l) {
-    let d = new Date(l.from_date);
-    const end = new Date(l.to_date);
-    while (d <= end) {
-      leaveSet.add(d.toISOString().slice(0,10));
-      d.setDate(d.getDate()+1);
-    }
-  });
-
-  const holidaySet = new Set((data.holidays || []).map(h => h.holiday_date));
-  const today = new Date().toISOString().slice(0,10);
-  const nowDate = new Date();
-
-  const firstDay = new Date(data.year, data.month-1, 1);
-  let startDow = firstDay.getDay(); // 0=Sun
-  startDow = startDow === 0 ? 6 : startDow - 1; // convert to Mon=0
-
-  for (let i = 0; i < startDow; i++) html += '<div class="cal-cell empty" style="background:transparent;border:none"></div>';
-
-  let present=0, absent=0, leaveCount=0, wfh=0;
-
-  for (let day = 1; day <= data.last_day; day++) {
-    const dateStr = data.year + "-" + String(data.month).padStart(2,"0") + "-" + String(day).padStart(2,"0");
-    const dow = (startDow + day - 1) % 7; // 0=Mon, 5=Sat, 6=Sun
-    const isWeekend = dow >= 5;
-    const isHoliday = holidaySet.has(dateStr);
-    const isToday = dateStr === today;
-    const isFuture = dateStr > today;
-    const att = attMap[dateStr];
-    const isLeave = leaveSet.has(dateStr);
-
-    let cls = "cal-cell";
-    let statusShort = "";
-    if (isToday) cls += " today";
-    if (isFuture) { cls += " future"; }
-    else if (isHoliday) { cls += " holiday"; statusShort = "HOL"; }
-    else if (att) {
-      if (att.status === "Present") { cls += " present"; statusShort = "P"; present++; }
-      else if (att.status === "Absent") { cls += " absent"; statusShort = "A"; absent++; }
-      else if (att.status === "Half Day") { cls += " half"; statusShort = "½"; }
-      else if (att.status === "Work From Home") { cls += " wfh"; statusShort = "WFH"; wfh++; }
-      else if (att.status === "On Leave") { cls += " leave"; statusShort = "L"; leaveCount++; }
-      else { cls += " present"; statusShort = "P"; present++; }
-    } else if (isLeave) { cls += " leave"; statusShort = "L"; leaveCount++; }
-    else if (isWeekend) { cls += " weekend"; }
-    else if (!isFuture) { cls += " absent"; statusShort = "A"; absent++; }
-
-    html += '<div class="' + cls + '" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:28px;border-radius:var(--r-sm);font-size:var(--fs-xs);font-weight:500">'
-          + '<span class="cn" style="font-size:var(--fs-xs);font-weight:600;line-height:1">' + day + '</span>'
-          + (statusShort ? '<span class="cs" style="font-size:var(--fs-xs);margin-top:1px;font-weight:500">' + statusShort + '</span>' : '')
-          + '</div>';
-  }
-
-  gridEl.innerHTML = html;
-  document.getElementById("att-present").textContent = present;
-  document.getElementById("att-absent").textContent = absent;
-  document.getElementById("att-leave").textContent = leaveCount;
-  document.getElementById("att-wfh").textContent = wfh;
-}
 
 /* ── LEAVES ──────────────────────────────────────── */
 var _leaveSummaryCache = null;
@@ -4507,7 +5063,7 @@ const _origSwitch = switchPanel;
 // (patched below — closeSidebar called inside switchPanel directly)
 
 /* ── Role-based visibility ───────────────────────── */
-window._roles = { is_manager: false, is_hr: false };
+window._roles = { is_manager: false, is_hr: false, positions: false };
 
 function loadPortalContext() {
   api("get_portal_context", {}, function(ctx) {
@@ -4515,8 +5071,11 @@ function loadPortalContext() {
     // kept for the leave modal "apply on behalf of" default
     window._me = ctx.employee || null;
     window._roles.is_hr      = !!ctx.is_hr;
+    window._roles.positions  = !!ctx.positions;
 
-    const showMgmt = ctx.is_manager || ctx.is_hr;
+    /* Attendance Insights counts towards the Management heading too, so the
+       item can never end up under a heading that is hidden. */
+    const showMgmt = ctx.is_manager || ctx.is_hr || ctx.att_insights || ctx.positions;
 
     // Sidebar management section
     const mgmtHdr = document.getElementById("mgmt-section-hdr");
@@ -4524,6 +5083,13 @@ function loadPortalContext() {
     const navAna  = document.getElementById("nav-analytics");
     if (mgmtHdr) mgmtHdr.style.display = showMgmt ? "block" : "none";
     if (navTeam) navTeam.style.display  = ctx.is_manager ? "flex" : "none";
+    /* Attendance Insights had NO gate: every employee was shown it with two
+       of its three views greyed out. The server says whether there is
+       anything behind it - a team, or the organisation view - and an absent
+       flag (an old cached context) reads as "no", which is the safe way
+       round. */
+    const navAttIns = document.getElementById("nav-att-insights");
+    if (navAttIns) navAttIns.style.display = ctx.att_insights ? "flex" : "none";
     // Role AND plan. Being HR says you may see Analytics; the plan says
     // whether this tenant bought it. Until wave 6 only the first was
     // checked, so every tenant got the panel.
@@ -4595,12 +5161,13 @@ function applyPlanNav() {
   if (navPolicies) navPolicies.style.display =
     f.plan_policy_library ? "flex" : "none";
 
-  // The register is a management screen, so it needs the position layer AND
-  // somebody with a reason to open it. A manager gets it read-only; whether
-  // they may change anything is a setting the server answers, not this line.
+  // The register needs the position layer AND the server's yes. Who may open
+  // it is a setting, HR Manager by default (Surbhi, 19 Oct 2026); everybody
+  // else has the Organisation page. An absent flag (an old cached context)
+  // reads as no.
   var navPositions = document.getElementById("nav-positions");
   if (navPositions) navPositions.style.display =
-    (f.plan_org_structure && (roles.is_hr || roles.is_manager)) ? "flex" : "none";
+    (f.plan_org_structure && roles.positions) ? "flex" : "none";
 
   var navOrgChart = document.getElementById("nav-org-chart");
   if (navOrgChart) navOrgChart.style.display =
@@ -6366,10 +6933,16 @@ function renderDrawerGoals(goals, empId) {
 let _teamMemberMap = {};   // empId → empName, populated from portal context
 
 function switchTeamTab(tab) {
-  document.getElementById("tv-attendance-panel").style.display = tab === "attendance" ? "" : "none";
-  document.getElementById("tv-notes-panel").style.display = tab === "notes" ? "" : "none";
-  document.getElementById("tvtab-attendance").classList.toggle("active", tab === "attendance");
-  document.getElementById("tvtab-notes").classList.toggle("active", tab === "notes");
+  /* Two tabs again. "Attendance Review" was the third until 17 Oct 2026,
+     when the team's day-by-day list moved to the Attendance page's own
+     picker - the same job, reached through one door instead of two. */
+  var tabs = ["attendance", "notes"];
+  tabs.forEach(function (t) {
+    var panel = document.getElementById("tv-" + t + "-panel");
+    if (panel) panel.style.display = tab === t ? "" : "none";
+    var btn = document.getElementById("tvtab-" + t);
+    if (btn) btn.classList.toggle("active", tab === t);
+  });
   if (tab === "notes") {
     populateTeamNoteEmpFilter();
     tnFillEmployeeSelect();
@@ -6377,6 +6950,369 @@ function switchTeamTab(tab) {
     loadTeamNotes();
   }
 }
+
+/* ── The team's days, worst first ────────────────────────────────────────
+   Surbhi, 17 Oct 2026: "we would need one page with filter for all the
+   reporting persons first", and "only attendance facts" - not pay
+   consequences. So nothing here shows money, and a test asserts it stays
+   that way.
+
+   REACHED FROM THE ATTENDANCE PAGE'S OWN PICKER, as "Whole team". It was a
+   third tab on Team View for one day. Checking one person's month and
+   checking the team's are the same job, and they were behind two different
+   doors - which is the duplication the 17 Oct consolidation removed.
+
+   THE SERVER DECIDES WHO MAY BE SEEN AND ACTED ON. `can_raise` comes back
+   per row, because acting stops at the direct reports while the whole line
+   may be viewed - so the button is simply absent where it would refuse.
+   This screen never works the reporting line out for itself. */
+var trState = {
+  from: null, to: null, employee: "", only: "", depth: "direct",
+  department: "", branch: "", group: "person", start: 0, size: 50,
+  data: null, open: null
+};
+
+/* The server's flags, in words, with how loudly to say them. Worst first,
+   the same order the server sorts by. */
+var TR_FLAGS = [
+  ["no_clock_out", "No clock-out", "bad"],
+  ["absent_but_punched", "Absent but badged in", "bad"],
+  ["absent", "Absent", "warn"],
+  ["short", "Short hours", "warn"],
+  ["ok", "Fine", "ok"]
+];
+
+/* The server refuses in words worth showing - "nobody reports to you", a
+   period longer than three months, "does not report directly to you". Note
+   `gpErr` is private to a closure further down this file, so it cannot be
+   used here: calling it would throw a ReferenceError at the exact moment
+   something had already gone wrong. */
+function trErr(e) {
+  return (e && e.message) ? e.message : "Could not load that.";
+}
+
+function trFlag(key) {
+  for (var i = 0; i < TR_FLAGS.length; i++) {
+    if (TR_FLAGS[i][0] === key) return TR_FLAGS[i];
+  }
+  return [key, key, "warn"];
+}
+
+function trDaysAgo(n) {
+  var d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+window.trOpen = async function () {
+  if (!trState.from) {
+    /* A fortnight. Long enough to catch last week's missing clock-out,
+       short enough that the first screen is not a wall. */
+    trState.to = trDaysAgo(0);
+    trState.from = trDaysAgo(13);
+  }
+  if (!acState.reasons) {
+    try { acState.reasons = await acApi("reasons"); } catch (e) { acState.reasons = []; }
+  }
+  trLoad();
+};
+
+window.trLoad = async function () {
+  var body = document.getElementById("tr-body");
+  if (body) body.innerHTML = '<p class="ac-empty">Loading&hellip;</p>';
+  try {
+    trState.data = await acApi("team_days", {
+      from_date: trState.from,
+      to_date: trState.to,
+      employee: trState.employee || null,
+      only: trState.only || null,
+      depth: trState.depth,
+      department: trState.department || null,
+      branch: trState.branch || null,
+      start: trState.start,
+      page_length: trState.size
+    });
+  } catch (e) {
+    /* The server refuses in words - "nobody reports to you", a period too
+       long - so show what it said rather than a generic failure. */
+    if (body) body.innerHTML = '<p class="ac-empty">' + gpEsc(trErr(e)) + "</p>";
+    trBar();
+    return;
+  }
+  trBar();
+  trChips();
+  trRows();
+  trPager();
+};
+
+/* ── the filters ──────────────────────────────────────────────────────── */
+
+function trPicks(values, chosen, blank) {
+  return '<option value="">' + gpEsc(blank) + "</option>"
+    + values.filter(Boolean).map(function (v) {
+        return '<option value="' + gpEsc(v) + '"'
+          + (String(v) === String(chosen) ? " selected" : "") + ">"
+          + gpEsc(v) + "</option>";
+      }).join("");
+}
+
+function trBar() {
+  var bar = document.getElementById("tr-bar");
+  if (!bar) return;
+  var d = trState.data || {};
+  var people = d.people || [];
+  var depts = [], branches = [];
+  people.forEach(function (p) {
+    if (p.department && depts.indexOf(p.department) < 0) depts.push(p.department);
+    if (p.branch && branches.indexOf(p.branch) < 0) branches.push(p.branch);
+  });
+  depts.sort();
+  branches.sort();
+
+  var html = '<label class="tr-f"><span>From</span>'
+    + '<input type="date" class="form-control" value="' + gpEsc(trState.from || "")
+    + '" onchange="trSet(&quot;from&quot;,this.value)"></label>'
+    + '<label class="tr-f"><span>To</span>'
+    + '<input type="date" class="form-control" value="' + gpEsc(trState.to || "")
+    + '" onchange="trSet(&quot;to&quot;,this.value)"></label>'
+    + '<label class="tr-f"><span>Person</span>'
+    + '<select class="form-control" onchange="trSet(&quot;employee&quot;,this.value)">'
+    + '<option value="">Everyone</option>'
+    + people.map(function (p) {
+        return '<option value="' + gpEsc(p.name) + '"'
+          + (p.name === trState.employee ? " selected" : "") + ">"
+          + gpEsc(p.employee_name || p.name) + "</option>";
+      }).join("")
+    + "</select></label>";
+
+  /* Offered only where there is a choice to make. One department is not a
+     filter, it is a control that does nothing. */
+  if (depts.length > 1) {
+    html += '<label class="tr-f"><span>Department</span>'
+      + '<select class="form-control" onchange="trSet(&quot;department&quot;,this.value)">'
+      + trPicks(depts, trState.department, "All") + "</select></label>";
+  }
+  if (branches.length > 1) {
+    html += '<label class="tr-f"><span>Branch</span>'
+      + '<select class="form-control" onchange="trSet(&quot;branch&quot;,this.value)">'
+      + trPicks(branches, trState.branch, "All") + "</select></label>";
+  }
+
+  html += '<label class="tr-f"><span>Group by</span>'
+    + '<select class="form-control" onchange="trSet(&quot;group&quot;,this.value)">'
+    + '<option value="person"' + (trState.group === "person" ? " selected" : "")
+    + ">Person</option>"
+    + '<option value="date"' + (trState.group === "date" ? " selected" : "")
+    + ">Date</option></select></label>";
+
+  /* HR already sees everybody, so depth changes nothing for them. */
+  if (!d.everybody) {
+    html += '<label class="tr-f"><span>Show</span>'
+      + '<select class="form-control" onchange="trSet(&quot;depth&quot;,this.value)">'
+      + '<option value="direct"' + (trState.depth === "direct" ? " selected" : "")
+      + ">My direct reports</option>"
+      + '<option value="all"' + (trState.depth === "all" ? " selected" : "")
+      + ">Everyone below me</option></select></label>";
+  }
+
+  bar.innerHTML = html;
+}
+
+window.trSet = function (key, value) {
+  trState[key] = value;
+  trState.open = null;
+  /* Grouping only rearranges what is already here, so it needs no round
+     trip. Everything else changes what is being asked for and starts again
+     at the first page - keeping the offset would land somebody on an empty
+     page three. */
+  if (key === "group") { trRows(); return; }
+  trState.start = 0;
+  trLoad();
+};
+
+/* ── the chips ────────────────────────────────────────────────────────── */
+
+function trChips() {
+  var el = document.getElementById("tr-chips");
+  if (!el) return;
+  var counts = (trState.data || {}).counts || {};
+  var html = '<span class="tr-chip' + (trState.only ? "" : " on")
+    + '" onclick="trSet(&quot;only&quot;,&quot;&quot;)">Everything</span>';
+  TR_FLAGS.forEach(function (f) {
+    var n = counts[f[0]] || 0;
+    if (!n) return;
+    html += '<span class="tr-chip ' + f[2] + (trState.only === f[0] ? " on" : "")
+      + '" onclick="trSet(&quot;only&quot;,&quot;' + f[0] + '&quot;)">'
+      + gpEsc(f[1]) + " <b>" + n + "</b></span>";
+  });
+  el.innerHTML = html;
+}
+
+/* ── the days ─────────────────────────────────────────────────────────── */
+
+function trRows() {
+  var body = document.getElementById("tr-body");
+  if (!body) return;
+  var d = trState.data || {};
+  if (d.nobody) {
+    body.innerHTML = '<p class="ac-empty">Nobody reports to you, so there is '
+      + "nothing to review here.</p>";
+    return;
+  }
+  var rows = d.rows || [];
+  if (!rows.length) {
+    body.innerHTML = '<p class="ac-empty">'
+      + (trState.only
+          ? "Nothing in this period needs that."
+          : "No attendance recorded for this period.")
+      + "</p>";
+    return;
+  }
+
+  var byPerson = trState.group === "person";
+  var groups = [], index = {};
+  rows.forEach(function (r) {
+    var key = byPerson ? r.employee : r.date;
+    if (!(key in index)) {
+      index[key] = groups.length;
+      groups.push({
+        label: byPerson ? (r.employee_name || r.employee) : fmtDate(r.date),
+        sub: byPerson
+          ? [r.designation, r.department, r.branch].filter(Boolean).join(" · ")
+          : "",
+        items: []
+      });
+    }
+    groups[index[key]].items.push(r);
+  });
+
+  body.innerHTML = groups.map(function (g) {
+    return '<div class="tr-group"><div class="tr-group-hdr">'
+      + '<span class="tr-group-name">' + gpEsc(g.label) + "</span>"
+      + (g.sub ? '<span class="tr-group-sub">' + gpEsc(g.sub) + "</span>" : "")
+      /* Grouped by person these are days; grouped by date they are people.
+         Saying "1 day" under a date heading reads as nonsense. */
+      + '<span class="tr-group-n">' + g.items.length + " "
+      + (byPerson ? (g.items.length === 1 ? "day" : "days")
+                  : (g.items.length === 1 ? "person" : "people")) + "</span></div>"
+      + g.items.map(function (r) { return trDay(r, byPerson); }).join("")
+      + "</div>";
+  }).join("");
+}
+
+function trDay(r, byPerson) {
+  var f = trFlag(r.flag);
+  var key = r.employee + "|" + r.date;
+  var who = byPerson ? fmtDate(r.date) : (r.employee_name || r.employee);
+  var bits = [];
+  if (r.shift) bits.push(r.shift);
+  bits.push(r.hours ? r.hours + "h" : "no hours");
+  bits.push(r.punches + (r.punches === 1 ? " punch" : " punches"));
+  if (r.late) bits.push("late in");
+  if (r.early) bits.push("left early");
+  var times = (r.in_time || "--:--") + " – " + (r.out_time || "--:--");
+
+  /* The name is a button, not a bolded label, because clicking it opens that
+     person's month at that day - so it has to be reachable by keyboard and
+     show its focus. */
+  return '<div class="tr-day"><span class="tr-dot ' + f[2] + '"></span>'
+    + '<div class="tr-day-main"><div class="tr-day-top">'
+    + '<button class="tr-open" onclick="acFromTeam(&quot;' + gpEsc(r.employee)
+    + '&quot;,&quot;' + r.date + '&quot;)">' + gpEsc(who) + "</button>"
+    + '<span class="tr-status">' + gpEsc(r.status || "") + "</span>"
+    + '<span class="tr-need ' + f[2] + '">' + gpEsc(f[1]) + "</span></div>"
+    + '<div class="tr-day-sub">' + gpEsc(times) + " · "
+    + gpEsc(bits.join(" · ")) + "</div>"
+    + (trState.open === key ? trAskForm(r) : "")
+    + "</div>"
+    /* No button where the server says this is not ours to raise. Acting
+       stops at the direct reports, and a button that refuses when pressed
+       is worse than no button. */
+    + (r.can_raise
+        ? '<button class="btn btn-outline btn-sm tr-ask" onclick="trAsk(&quot;'
+          + gpEsc(key) + '&quot;)">'
+          + (trState.open === key ? "Cancel" : "Ask HR to fix") + "</button>"
+        : "")
+    + "</div>";
+}
+
+window.trAsk = function (key) {
+  trState.open = trState.open === key ? null : key;
+  trRows();
+};
+
+function trAskForm(r) {
+  var opts = (acState.reasons || []).map(function (o) {
+    return '<option value="' + gpEsc(o.value) + '">' + gpEsc(o.value) + "</option>";
+  }).join("");
+  return '<div class="ac-form tr-form">'
+    + '<label class="form-label">What happened on this day?</label>'
+    + '<select id="tr-reason"><option value="">Choose a reason&hellip;</option>'
+    + opts + "</select>"
+    + '<label class="form-label">Anything HR should know</label>'
+    + '<textarea id="tr-explain" placeholder="Say briefly what happened."></textarea>'
+    + '<p class="ac-help">HR decides this. Your name goes on the request, so '
+    + "they know you are standing behind it.</p>"
+    + '<div class="ac-acts"><button class="btn btn-primary" onclick="trSubmit(&quot;'
+    + gpEsc(r.employee) + '&quot;,&quot;' + r.date + '&quot;)">Send to HR</button>'
+    + "</div></div>";
+}
+
+window.trSubmit = async function (employee, date) {
+  var reason = (document.getElementById("tr-reason") || {}).value;
+  var explain = (document.getElementById("tr-explain") || {}).value;
+  if (!reason) { toast("Please choose a reason.", "err"); return; }
+  /* One request per press, and nothing incomplete - the same two rules as
+     `acSubmit`, for the same reason. */
+  if (acSending) return;
+  if (!employee || !date) {
+    toast("This row has lost track of whose day this is. Reload the page and try again.", "err");
+    return;
+  }
+  acSending = true;
+  showLoad();
+  try {
+    await acApi("raise_for_report", {
+      employee: employee, from_date: date, reason: reason, explanation: explain
+    });
+    toast("Sent to HR. They will confirm or reject it.", "ok");
+    trState.open = null;
+    await trLoad();
+  } catch (e) {
+    toast(trErr(e), "err");
+  } finally {
+    acSending = false;
+    hideLoad();
+  }
+};
+
+/* ── the pager ────────────────────────────────────────────────────────── */
+
+function trPager() {
+  var el = document.getElementById("tr-pager");
+  if (!el) return;
+  var d = trState.data || {};
+  var total = d.total || 0;
+  var start = d.start || 0;
+  if (!total) { el.innerHTML = ""; return; }
+  var last = Math.min(start + (d.rows || []).length, total);
+  /* The total counts the whole period, not this page, so somebody can tell
+     whether they have finished. */
+  el.innerHTML = '<span class="tr-count">Showing ' + (start + 1) + "–" + last
+    + " of " + total + "</span>"
+    + '<button class="btn btn-outline btn-sm" ' + (start <= 0 ? "disabled" : "")
+    + ' onclick="trPage(-1)">Previous</button>'
+    + '<button class="btn btn-outline btn-sm" ' + (last >= total ? "disabled" : "")
+    + ' onclick="trPage(1)">Next</button>';
+}
+
+window.trPage = function (direction) {
+  var d = trState.data || {};
+  var size = d.page_length || trState.size;
+  trState.start = Math.max(0, (d.start || 0) + direction * size);
+  trState.open = null;
+  trLoad();
+};
 
 function populateTeamNoteEmpFilter() {
   const sel = document.getElementById("tn-emp");
@@ -14134,11 +15070,106 @@ window.pfRatingLabel = function(value, scale) {
           drT("Not available yet: your plan does not include {0}. Ask your Alvora account contact to add it.",
               [(sw.needs || []).join(", ")]);
       });
+      var win = document.getElementById("org-filing-window");
+      if (win) win.disabled = !canEdit;
+      var onBehalf = document.getElementById("org-on-behalf-on");
+      if (onBehalf) onBehalf.disabled = !canEdit;
+      orgLoadOnBehalf(canEdit);
+      orgLoadFilingWindow();
       if (card) card.style.display = "";
     }).catch(function() {
       /* Not HR for this site: the card simply is not there. */
       if (card) card.style.display = "none";
     });
+  };
+
+  /* ── May a manager ask on behalf, and how far back (slice 060, SEC-9a) ──
+     Reworked 18 Oct 2026 into a switch and its sub-setting.
+
+     NOTHING STORED MEANS ON. The capability already ships, so an unset tenant
+     must keep exactly what it has today; only a stored "0" switches it off.
+     The window box under it is disabled while the switch is off, because a
+     limit on something nobody may do reads as a contradiction. */
+  function orgOnBehalfApply(on, canEdit) {
+    var box = document.getElementById("org-on-behalf-on");
+    if (box) box.checked = !!on;
+    var win = document.getElementById("org-filing-window");
+    if (win) win.disabled = !canEdit || !on;
+    var field = document.getElementById("org-filing-window-field");
+    if (field) field.style.opacity = on ? "" : "0.55";
+  }
+
+  window.orgLoadOnBehalf = function(canEdit) {
+    if (!document.getElementById("org-on-behalf-on")) return;
+    window.gpFetch("alvoraa_portal.hr_api.get_org_setting", {key: "alvoraa_manager_on_behalf_enabled"})
+      .then(function(v) {
+        orgOnBehalfApply(String(v === null || v === undefined ? "" : v).trim() !== "0",
+                         canEdit !== false);
+      })
+      .catch(function() { /* Not HR: the card is hidden anyway. */ });
+  };
+
+  window.orgSaveOnBehalf = function(box) {
+    var on = !!box.checked;
+    box.disabled = true;
+    window.gpFetch("alvoraa_portal.hr_api.set_org_setting", {key: "alvoraa_manager_on_behalf_enabled", value: on ? "1" : "0"})
+      .then(function() {
+        pfSetHtml("org-attrules-msg", "<span style=\"color:var(--green)\">" +
+          gpEsc(on ? drT("Saved. A manager can ask for a day to be fixed for the people who report to them. HR still decides.")
+                   : drT("Saved. Only an employee can ask about their own day now. HR can still fix any day.")) +
+          "</span>");
+        orgOnBehalfApply(on, true);
+      })
+      .catch(function(e) {
+        box.checked = !on;
+        pfSetHtml("org-attrules-msg", "<span style=\"color:var(--danger,var(--red))\">" +
+          gpEsc((e && e.message) || drT("The setting could not be saved. Try again, or ask your administrator.")) + "</span>");
+      })
+      .finally(function() { box.disabled = false; });
+  };
+
+  /* The sub-setting. Working days, counted on the employee's own holiday list.
+     The server checks the same number again on the manager's path, so this box
+     is where HR sets it, not where it is enforced.
+
+     EMPTY MEANS NO LIMIT, and it is the default (Surbhi, 18 Oct 2026). Empty
+     and 0 are opposite answers here - 0 is today only - so the box is left
+     empty rather than filled in with a number nobody chose. */
+  window.orgLoadFilingWindow = function() {
+    var box = document.getElementById("org-filing-window");
+    if (!box) return;
+    window.gpFetch("alvoraa_portal.hr_api.get_org_setting", {key: "alvoraa_manager_filing_window_days"})
+      .then(function(v) {
+        var raw = (v === null || v === undefined) ? "" : String(v).trim();
+        var n = parseInt(raw, 10);
+        box.value = (raw === "" || isNaN(n)) ? "" : n;
+      })
+      .catch(function() { /* Not HR: the card is hidden anyway. */ });
+  };
+
+  window.orgSaveFilingWindow = function(box) {
+    var raw = String(box.value === null || box.value === undefined ? "" : box.value).trim();
+    var n = parseInt(raw, 10);
+    if (raw !== "" && (isNaN(n) || n < 0 || n > 30)) {
+      pfSetHtml("org-attrules-msg", "<span style=\"color:var(--danger,var(--red))\">" +
+        gpEsc(drT("Give a whole number of working days between 0 and 30, or leave it empty for no limit.")) + "</span>");
+      orgLoadFilingWindow();
+      return;
+    }
+    box.disabled = true;
+    window.gpFetch("alvoraa_portal.hr_api.set_org_setting", {key: "alvoraa_manager_filing_window_days", value: raw === "" ? "" : String(n)})
+      .then(function() {
+        pfSetHtml("org-attrules-msg", "<span style=\"color:var(--green)\">" +
+          gpEsc(raw === "" ? drT("Saved. There is no limit: a manager can ask about any past day.")
+                : n === 0 ? drT("Saved. A manager can now ask about today only; HR can still fix any day.")
+                          : drT("Saved. A manager can now ask about the last {0} working days; HR can still fix any day.", [n])) +
+          "</span>");
+      })
+      .catch(function(e) {
+        pfSetHtml("org-attrules-msg", "<span style=\"color:var(--danger,var(--red))\">" +
+          gpEsc((e && e.message) || drT("The setting could not be saved. Try again, or ask your administrator.")) + "</span>");
+      })
+      .finally(function() { box.disabled = false; orgLoadFilingWindow(); });
   };
 
   window.orgSaveAttendanceSwitch = function(key, box) {

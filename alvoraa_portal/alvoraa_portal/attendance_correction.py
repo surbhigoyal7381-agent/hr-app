@@ -27,6 +27,10 @@ NO ignore_permissions ANYWHERE IN THIS MODULE, deliberately. Every read is a
 `frappe.get_list` under the caller's own permissions AND narrowed to the
 employee it is about; every write goes through the document's own permission
 check. See `_me()` and `_may_review()`.
+
+A manager raising a correction for a report is permitted by the permission
+system rather than past it: `manager_scope` grants one User Permission per
+manager, per report, scoped to four doctypes and never to all of them.
 """
 
 import calendar as _calendar
@@ -317,13 +321,21 @@ def whose_months_i_can_open(search=None, limit=25):
 
 	Returns nobody rather than everybody when the caller reviews nothing, so an
 	ordinary employee's picker is empty instead of being a staff directory.
+
+	`search` matches the two things a person is known by - their name and their
+	employee ID - because HR knows half the company by ID and nobody knows 403
+	people by name. Frappe ANDs `or_filters` with `filters` as one bracketed
+	group, so the Active-and-in-my-line narrowing below still holds for every
+	row a search returns: a manager cannot type their way out of their own
+	reporting line.
 	"""
 	me = _employee_for(frappe.session.user)
+	term = str(search or "").strip()
+	named = ({"employee_name": ("like", "%" + term + "%"),
+	          "name": ("like", "%" + term + "%")} if term else None)
 	if _may_review():
-		filters = {"status": "Active"}
-		if search:
-			filters["employee_name"] = ("like", "%" + str(search).strip() + "%")
-		rows = frappe.get_list("Employee", filters=filters,
+		rows = frappe.get_list("Employee", filters={"status": "Active"},
+		                       or_filters=named,
 		                       fields=["name", "employee_name", "designation", "department"],
 		                       order_by="employee_name asc",
 		                       limit_page_length=cint(limit) or 25)
@@ -339,10 +351,8 @@ def whose_months_i_can_open(search=None, limit=25):
 		team = _reports_to(me.name, deep=True)
 		if not team:
 			return []
-		filters = {"name": ("in", team), "status": "Active"}
-		if search:
-			filters["employee_name"] = ("like", "%" + str(search).strip() + "%")
-		rows = frappe.get_all("Employee", filters=filters,
+		rows = frappe.get_all("Employee", filters={"name": ("in", team), "status": "Active"},
+		                      or_filters=named,
 		                      fields=["name", "employee_name", "designation", "department"],
 		                      order_by="employee_name asc",
 		                      limit_page_length=cint(limit) or 25)
@@ -387,6 +397,9 @@ def month(year=None, month=None, employee=None):
 	caller, and `_subject` refuses anybody they may not open.
 	"""
 	me, is_self = _subject(employee)
+	# Whoever is asking, when that is not the subject. Only `can_request`
+	# below needs it, so somebody's own month does not pay for the read.
+	asker = None if is_self else _employee_for(frappe.session.user)
 	today = getdate(nowdate())
 	year = cint(year) or today.year
 	month = cint(month) or today.month
@@ -495,6 +508,35 @@ def month(year=None, month=None, employee=None):
 		                 shift_cache, tolerance, today,
 		                 marks or punches.get(date, []), weekly_offs))
 
+	# DIRECT REPORTS, FOR EVERYBODY - HR INCLUDED (18 Oct 2026). `can_request`
+	# has always been "their own day, or a direct report's", and HR gets it only
+	# where they genuinely are somebody's manager. `team_days` disagreed: it
+	# handed HR the button on every row, so one HR user got no button here and a
+	# button on all of them there. Settled THIS way, not the other:
+	#
+	#   * the raiser should not be the decider. `decide` refuses a person
+	#     deciding their OWN record, not a person deciding what they themselves
+	#     raised, so the only thing keeping HR's two hats apart is not offering
+	#     the button;
+	#   * HR loses nothing. They already decide every request, and their own
+	#     route - the Attendance Request itself - is deliberately outside this
+	#     window, which is the way round for an old day;
+	#   * one rule instead of two. `team_days` now computes the same answer with
+	#     the same call, so the two screens cannot drift apart again.
+	can_request = is_self or bool(
+		asker and me.name in _reports_to(asker.name, deep=False))
+	# The tenant's switch. Never applied to somebody's own day: neither setting
+	# may narrow what a person asks about their own attendance.
+	if can_request and not is_self and not manager_on_behalf_on():
+		can_request = False
+
+	# Only a MANAGER filing for somebody else is bound by the window. Their own
+	# month is not - `raise_for_report` says the same, and this must not invent
+	# a limit the guard would not enforce. None, which blank now gives, means
+	# the screen hides nothing.
+	filing_from, filing_basis = None, None
+	if can_request and not is_self:
+		filing_from, filing_basis = manager_filing_from(me.name)
 	return {
 		"employee": me.name, "employee_name": me.employee_name,
 		"year": year, "month": month, "last_day": last,
@@ -504,11 +546,58 @@ def month(year=None, month=None, employee=None):
 		"totals": _totals(days),
 		"is_self": is_self,
 		"can_review": _may_review(),
-		# Only the person themselves may ask for a correction. A manager or HR
-		# looking at somebody else's month fixes it directly instead, and
-		# showing them a button that raises a request in that person's name
-		# would put words in their mouth.
-		"can_request": is_self,
+		# Who may ask HR to fix a day on this record: the person themselves, or
+		# their DIRECT manager.
+		#
+		# This was `is_self` alone, under a comment saying that a manager
+		# raising one in somebody's name would put words in their mouth.
+		# Surbhi settled the question the other way on 15 Oct 2026 - "let's get
+		# the manager request the changes and the HR to confirm or reject it" -
+		# and `raise_for_report` stamps "Raised by X on behalf of the employee"
+		# on what it creates, so HR reads a request that says who is vouching
+		# for the day instead of one that looks like the employee's own. The
+		# words are no longer in anybody's mouth, so the reason for the old
+		# answer has gone.
+		#
+		# DIRECT reports only, the same bound `raise_for_report` enforces
+		# (Surbhi, 17 Oct 2026: "direct reports only"). It is worked out with
+		# the same call for that reason: a flag that disagreed with the guard
+		# would show a button that refuses when pressed. READING still reaches
+		# the whole line, so a skip-level month opens as before - it is simply
+		# read-only, and the screen says whose job it is.
+		#
+		# HR is NOT given it. They decide corrections; a reviewer who could
+		# raise one as well would be deciding their own request, which SEC-9
+		# forbids and `decide` already refuses.
+		#
+		# `asker` is read only on the path that needs it, so an employee
+		# opening their own month still costs exactly the queries it did.
+		"can_request": can_request,
+		# THE OLDEST DAY THAT CALLER MAY FILE FOR, or None where no window
+		# binds them. Returned so the screen can stop OFFERING a day it would
+		# then refuse.
+		#
+		# `can_request` answers "may this person raise here at all", which is
+		# a question about the MONTH. The filing window is a question about
+		# the DAY, and the two were not the same: the form appeared on every
+		# day of a report's month and the server refused the old ones with a
+		# 417 - correctly, and invisibly, so it read as a dead button.
+		# Surbhi, 18 Oct 2026: "if that is the case manager shouldn't be
+		# allowed to raise request for that day, meaning the form shouldn't
+		# be visible to them."
+		#
+		# One value, not a flag per day: the window is a single boundary, so
+		# the screen compares each date against it. Worked out with the SAME
+		# call the guard uses, for the same reason `can_request` is - a
+		# boundary that disagreed with the guard would just move the dead
+		# button rather than remove it.
+		"can_request_from": filing_from,
+		"can_request_basis": filing_basis,
+		# Whether the TENANT allows the on-behalf path at all. Sent so the day
+		# detail can say "your organisation does not allow this" instead of
+		# "only this person or their manager can ask" - which would be untrue
+		# with the switch off, because then their manager cannot either.
+		"on_behalf_enabled": manager_on_behalf_on(),
 	}
 
 
@@ -887,33 +976,45 @@ def review_queue_filters(user=None):
 HR_WAIT_WORKING_DAYS = 2
 
 
-def hr_may_act_from(doc):
-	"""The date an HR caller may first decide somebody else's manager's request.
+def _working_days_away(employee, start, days, step):
+	"""Walk `days` working days from `start` - forward (step 1) or back (step -1).
 
-	Two WORKING days after the request was raised, counted on the requester's
-	own holiday list. Returns a date string.
+	ONE counter, two callers: the HR wait walks forward from the day a request
+	was raised, the manager's filing window walks back from today. A second
+	counter is how the two would come to disagree about what a working day is.
 
-	**When the employee has no holiday list at all** the count falls back to
-	calendar days and this function says so through `basis`, rather than
-	throwing or silently picking the company default. A store that has not been
-	set up yet should not make an approval unreachable, and it should not
-	pretend a weekend was counted either.
+	Working days are counted on the EMPLOYEE'S OWN holiday list, which in Frappe
+	carries the weekly offs as Holiday rows too - so a store that closes on
+	Tuesdays gets its own Tuesdays, and a weekend is never assumed to be
+	Saturday and Sunday.
+
+	**When the employee has no readable holiday list** the count falls back to
+	calendar days and says so through `basis`, rather than throwing or quietly
+	borrowing the company default. Walking back, that fallback is the TIGHTER
+	answer - skipping a day can only push the far end further away - so missing
+	configuration narrows the window rather than opening it.
+
+	Returns (date string, basis).
 	"""
-	raised = getdate(doc.get("creation") or nowdate())
-	window_end = frappe.utils.add_days(raised, 30)
+	start = getdate(start)
+	# Far enough that a run of holidays cannot leave the loop short, and a hard
+	# stop so a holiday list full of holidays cannot spin for ever.
+	span = days * 2 + 30
+	edge = frappe.utils.add_days(start, span * step)
+	first, last = sorted([str(start), str(getdate(edge))])
 	holidays = set()
 	basis = _("calendar days, because this person has no holiday list")
 	try:
 		# This app's own cached helper, so a screen that asks twice pays once.
 		# `raise_exception=False` inside it is what stops an unset store making
 		# a correction undecidable.
-		hlist = holiday_list_for(doc.employee, raised)
+		hlist = holiday_list_for(employee, start)
 		if hlist:
 			holidays = {
 				str(getdate(d)) for d in frappe.get_all(
 					"Holiday",
 					filters={"parent": hlist, "parenttype": "Holiday List",
-					         "holiday_date": ["between", [raised, window_end]]},
+					         "holiday_date": ["between", [first, last]]},
 					pluck="holiday_date",
 				)
 			}
@@ -925,15 +1026,138 @@ def hr_may_act_from(doc):
 		# goes into a log line.
 		frappe.log_error(
 			title="attendance_correction: holiday list unreadable",
-			message=f"request={doc.get('name')} while working out the HR wait window",
+			message=f"employee={employee} while counting a working-day window",
 		)
 
-	counted, day = 0, raised
-	while counted < HR_WAIT_WORKING_DAYS:
-		day = frappe.utils.add_days(day, 1)
+	counted, day, walked = 0, start, 0
+	while counted < days and walked < span:
+		day = frappe.utils.add_days(day, step)
+		walked += 1
 		if str(getdate(day)) not in holidays:
 			counted += 1
 	return str(getdate(day)), basis
+
+
+def hr_may_act_from(doc):
+	"""The date an HR caller may first decide somebody else's manager's request.
+
+	Two WORKING days after the request was raised, counted on the requester's
+	own holiday list. Returns (date string, basis).
+	"""
+	return _working_days_away(doc.employee, doc.get("creation") or nowdate(),
+	                          HR_WAIT_WORKING_DAYS, 1)
+
+
+# ── may a MANAGER file at all, and how far back (SEC-9a, SEC-10, SEC-11) ────
+#
+# Surbhi, 15 Oct 2026: "let's keep it a customizable window default to 48 hrs.
+# else HR will do the manual adjustments themselves in case of some genuine
+# case." Settled that day as two whole working days, per tenant.
+#
+# **REVERSED ON 18 OCT 2026, after she tested it live.** Her words:
+#
+# "it should be a setting per tenant in the organisation setting. First
+# setting: allow manager to approve request for attendance and leaves on behalf
+# of their reporting [staff]. with sub setting - how many working days is
+# allowed for manager to raise approval request, default to blank meaning no
+# limit. this will keep it flexible for an organisation to decide."
+#
+# So the switch answers "may a manager do this at all", and the window - which
+# shipped first, as the only control - becomes its sub-setting, with blank
+# meaning no limit.
+#
+# NAMED FOR THE CAPABILITY, NOT FOR ATTENDANCE. The switch covers attendance
+# corrections today and leave when that is built, which is what she asked for;
+# a key with "attendance" in it would need a second switch beside it and two
+# answers to one question.
+#
+# Stored as a Frappe default and read per request - the idiom
+# `alvoraa_attendance_late_grace_mins` already uses, so there is no migration
+# and no new DocType, and an existing tenant needs nobody to touch their site.
+#
+# WHO IT BINDS, AND WHO IT MUST NOT. The window is on the MANAGER's filing path
+# only. HR's own manual route is deliberately not bounded by it, because that
+# route is the way out when a day is older than the window - which is what
+# Surbhi's answer says. An employee raising their OWN day (`raise_correction`)
+# is not bounded by it either: narrowing what somebody may ask about their own
+# attendance was never asked for, and would take away something they have now.
+MANAGER_ON_BEHALF_KEY = "alvoraa_manager_on_behalf_enabled"
+MANAGER_FILING_WINDOW_KEY = "alvoraa_manager_filing_window_days"
+
+
+def manager_on_behalf_on():
+	"""May a manager raise a request for a direct report on this tenant?
+
+	**UNSET MEANS ON, deliberately.** This capability already ships and DTC's
+	managers use it, so a switch that failed closed would take it away from
+	every existing tenant the moment it was added, silently, with nobody having
+	chosen that. `org_features.org_switch` is the idiom next door and it fails
+	closed on purpose - right for a rule that deducts pay and starts off, wrong
+	for a capability people already have. Hence a reader of its own.
+
+	Anything other than "0" is on, so a value nobody can read cannot quietly
+	remove a working screen.
+	"""
+	return str(frappe.db.get_default(MANAGER_ON_BEHALF_KEY) or "").strip() != "0"
+
+
+def manager_filing_window_days():
+	"""How many working days back a manager may file for - or None for no limit.
+
+	**Blank is the default and it means NO LIMIT** (Surbhi, 18 Oct 2026). The
+	tenant decides; the product no longer imposes two days on an organisation
+	that never asked for a limit.
+
+	NOT read as `get_default(KEY) or DEFAULT`, which is the idiom next door and
+	the trap here: a stored "0" is falsy, so it would fall through the `or` and
+	become the unset answer - and blank and 0 are now at OPPOSITE ends of this
+	setting. Blank is no limit at all; 0 is the tightest window there is, today
+	only. They must never be confused for each other.
+	"""
+	raw = frappe.db.get_default(MANAGER_FILING_WINDOW_KEY)
+	if raw is None or str(raw).strip() == "":
+		return None
+	return max(0, cint(raw))
+
+
+def manager_filing_from(employee):
+	"""The oldest day a manager may file for about this person, or (None, None).
+
+	ONE derivation for the guard and for both screens. A boundary worked out
+	twice is a boundary that eventually disagrees with the refusal, and then
+	the screen offers a day the server throws on.
+	"""
+	days = manager_filing_window_days()
+	if days is None:
+		return None, None
+	earliest, basis = _working_days_away(employee, nowdate(), days, -1)
+	return str(earliest), basis
+
+
+def _refuse_outside_filing_window(employee, from_date):
+	"""Refuse a manager-filed day that is older than the tenant's window.
+
+	BLANK MEANS NO LIMIT, so there is nothing to check and any past day goes
+	through. 0 MEANS "TODAY ONLY". Walking back zero working days from today
+	lands on today, so the oldest filable day is today - the tightest setting on
+	offer, and the reading that cannot be arrived at by accident. If 0 meant "no
+	limit" the tightest-looking number would be the loosest behaviour, which is
+	how a control gets switched off by somebody trying to tighten it.
+	"""
+	days = manager_filing_window_days()
+	if days is None:
+		return
+	earliest, basis = _working_days_away(employee, nowdate(), days, -1)
+	if getdate(from_date) >= getdate(earliest):
+		return
+	if days == 0:
+		frappe.throw(_("Your organisation only lets a manager file for today. "
+		               "Ask HR to correct an earlier day."))
+	frappe.throw(
+		_("This day is more than {0} working days old, so it is outside the "
+		  "filing window - ask HR to correct it. The oldest day you can file "
+		  "for is {1}, counted in {2}.").format(
+			days, frappe.utils.formatdate(earliest), basis))
 
 
 def _manager_user_for(employee):
@@ -1146,3 +1370,369 @@ def decide(name, approve, note=None):
 	stamp["alvoraa_review_status"] = "Declined"
 	doc.db_set(stamp, update_modified=False)
 	return _shape(frappe.get_doc(REQUEST, name).as_dict())
+
+
+# ── a manager's whole team, one page ─────────────────────────────────────────
+#
+# Surbhi, 17 Oct 2026: "we would need one page with filter for all the
+# reporting persons first", and "only attendance facts".
+#
+# ATTENDANCE FACTS ONLY. No quarters, no marks, no money. A manager confirming
+# what happened on a Tuesday does not need to know what their team earns, and
+# putting it on the screen would hand every manager their reports' pay as a
+# side effect of a correction workflow.
+#
+# The day's SHAPE is what a manager needs: who has no clock-out, who is absent
+# on a day they badged in, who is simply absent. Those three are the whole job.
+
+# What a day needs, worst first. The order IS the value of the page: a manager
+# opening it should meet the days somebody must act on, not scroll to them.
+NEEDS = ("no_clock_out", "absent_but_punched", "absent", "short", "ok")
+
+
+def _flag(row, punches):
+	"""What is wrong with this day, in one word.
+
+	Judged from the attendance record and the punch count, NOT from the pay
+	engine - this screen reads the same whether or not a rule set is switched
+	on.
+	"""
+	status = (row.get("status") or "").strip()
+	if punches == 1:
+		# ATT-06. One punch is not a short day, it is an unfinished one, and it
+		# is the single commonest thing a manager is asked about.
+		return "no_clock_out"
+	if status == "Absent":
+		return "absent_but_punched" if punches else "absent"
+	if status == "Half Day":
+		return "short"
+	return "ok"
+
+
+def _punch_counts(people_ids, from_date, to_date):
+	"""How many times each person badged on each day.
+
+	One punch is the signal this page exists for, and it cannot be read off the
+	Attendance row: a day with one punch and a day with none both show no
+	out-time and nought hours, and they need opposite answers from a manager.
+	"""
+	counts = {}
+	if not people_ids:
+		return counts
+	for p in frappe.get_all(
+			"Employee Checkin",
+			filters={"employee": ("in", people_ids),
+			         "time": ("between", [str(from_date) + " 00:00:00",
+			                              str(to_date) + " 23:59:59"])},
+			fields=["employee", "time"], limit_page_length=0):
+		key = (p.employee, str(p.time)[:10])
+		counts[key] = counts.get(key, 0) + 1
+	return counts
+
+
+@frappe.whitelist()
+def team_days(from_date=None, to_date=None, employee=None, only=None,
+              depth="direct", department=None, branch=None,
+              start=0, page_length=50, limit=2000):
+	"""Every day across the caller's team, with what needs a look first.
+
+	`employee` narrows to one person. `only` keeps a single flag, for the
+	filter chips. `department` and `branch` narrow the people.
+
+	`depth` is "direct" or "all". Surbhi, 17 Oct 2026: a manager may only ACT
+	for a direct report, so the page opens on the people they can actually do
+	something about. "all" shows the whole line they are accountable for, which
+	is the same choice Attendance Insights already offers. HR sees everybody
+	either way, so it does nothing for them.
+
+	ONE PAGE AT A TIME. HR opens this across the whole company - 363 people on
+	DTC - so `start` and `page_length` return a slice, and `total` says how many
+	there were. The counts are deliberately for the WHOLE period and not the
+	page: a chip reading "4 need a look" has to mean four altogether, or a
+	manager stops at the end of page one believing they are done.
+
+	Paging bounds the payload, NOT the server's reading. The flags depend on
+	punch counts worked out after the query, so the window has to be read and
+	flagged before it can be sliced. What bounds the reading is the period: a
+	fortnight by default, three months at most.
+
+	PERMISSION IS DECIDED HERE, NOT LEFT TO A FILTER. A manager holds no
+	blanket read on Attendance, so a `get_list` would return an empty page that
+	looks broken rather than a refusal that explains itself - the same reason
+	`whose_months_i_can_open` reads with `get_all` once it has settled who the
+	caller may see. The team is settled first, every row is inside it, and the
+	read is explicit.
+	"""
+	me = _employee_for(frappe.session.user)
+	may_review = _may_review()
+	if may_review:
+		team = None                       # HR: anybody, narrowed below if asked
+	else:
+		if not me:
+			frappe.throw(_("Your user is not linked to an employee record, so "
+			               "there is nobody you can open."), frappe.PermissionError)
+		team = _reports_to(me.name, deep=(str(depth) == "all"))
+		if not team:
+			return {"people": [], "rows": [], "counts": {}, "nobody": True,
+			        "total": 0, "start": 0, "page_length": cint(page_length) or 50,
+			        "from_date": str(getdate(from_date or nowdate())),
+			        "to_date": str(getdate(to_date or nowdate()))}
+
+	if employee:
+		# One person: the same gate the month view uses, so a manager cannot
+		# reach outside their tree by naming somebody.
+		subject, _is_self = _subject(employee)
+		people_ids = [subject.name]
+	elif team is None:
+		people_ids = frappe.get_all("Employee", filters={"status": "Active"},
+		                            pluck="name", limit_page_length=0)
+	else:
+		people_ids = list(team)
+
+	today = getdate(nowdate())
+	to_date = getdate(to_date or today)
+	from_date = getdate(from_date or frappe.utils.add_days(to_date, -13))
+	if from_date > to_date:
+		frappe.throw(_("The last day cannot be before the first day."))
+	if (to_date - from_date).days > 92:
+		frappe.throw(_("Please choose a period of three months or less."))
+
+	# Narrowed on the PEOPLE rather than on their days, so a department filter
+	# empties the person picker too and the page stays self-consistent.
+	who_filters = {"name": ("in", people_ids or [""])}
+	if department:
+		who_filters["department"] = department
+	if branch:
+		who_filters["branch"] = branch
+	people = {p.name: p for p in frappe.get_all(
+		"Employee", filters=who_filters,
+		fields=["name", "employee_name", "designation", "department", "branch"],
+		order_by="employee_name asc", limit_page_length=0)}
+	if department or branch:
+		people_ids = list(people.keys())
+
+	rows = frappe.get_all(
+		"Attendance",
+		filters={"employee": ("in", people_ids or [""]), "docstatus": 1,
+		         "attendance_date": ("between", [str(from_date), str(to_date)])},
+		fields=["name", "employee", "attendance_date", "status", "working_hours",
+		        "shift", "in_time", "out_time", "late_entry", "early_exit"],
+		order_by="attendance_date desc", limit_page_length=0)
+
+	punch_count = _punch_counts(people_ids, from_date, to_date)
+
+	# Which rows this caller may actually ACT on, answered with the same two
+	# questions `month()` asks and the same two the guard enforces.
+	#
+	# WHAT CHANGED, 18 Oct 2026. This said `can_raise_all = bool(may_review)`,
+	# so HR got the button on every row while `month()` gave them none - the
+	# same user, two answers, found by pressing it live. Acting now stops at
+	# the DIRECT reports for everybody, HR included; the reasoning is on
+	# `can_request` in `month()`.
+	#
+	# An empty set when the tenant has switched the capability off, so a
+	# switched-off tenant sees no buttons rather than buttons that refuse.
+	direct_ids = set()
+	if me and manager_on_behalf_on():
+		direct_ids = set(_reports_to(me.name, deep=False))
+
+	# The window, per person, because it is counted on the EMPLOYEE'S OWN
+	# holiday list - a store that shuts on Tuesdays gets its own Tuesdays.
+	# Worked out only for the people this caller can act for and only when a
+	# window is set, so the common cases - no limit, or nobody to act for -
+	# cost nothing, and HR opening 363 people costs nothing either.
+	filing_from = {}
+	if direct_ids and manager_filing_window_days() is not None:
+		for emp in direct_ids.intersection(people_ids):
+			filing_from[emp] = manager_filing_from(emp)[0]
+
+	out, counts = [], {}
+	for r in rows:
+		who = people.get(r.employee)
+		if not who:
+			continue
+		n = punch_count.get((r.employee, str(r.attendance_date)), 0)
+		flag = _flag(r, n)
+		counts[flag] = counts.get(flag, 0) + 1
+		if only and flag != only:
+			continue
+		out.append({
+			"attendance": r.name,
+			"employee": r.employee,
+			"employee_name": who.employee_name,
+			"designation": who.designation,
+			"department": who.department,
+			"branch": who.branch,
+			"date": str(r.attendance_date),
+			"status": r.status,
+			"hours": flt(r.working_hours, 2),
+			"shift": r.shift,
+			"in_time": str(r.in_time)[11:16] if r.in_time else None,
+			"out_time": str(r.out_time)[11:16] if r.out_time else None,
+			"punches": n,
+			"flag": flag,
+			"late": bool(r.late_entry),
+			"early": bool(r.early_exit),
+			# The day as well as the person: a day older than the window
+			# would be refused, and a button that dies when pressed is worse
+			# than no button.
+			"can_raise": (r.employee in direct_ids
+			              and (r.employee not in filing_from
+			                   or str(r.attendance_date) >= filing_from[r.employee])),
+		})
+
+	order = {f: i for i, f in enumerate(NEEDS)}
+	out.sort(key=lambda d: (order.get(d["flag"], 99), d["date"], d["employee_name"]))
+
+	# The page. `limit` stays as the outer safety net it always was; a caller
+	# cannot ask for a page bigger than it.
+	total = len(out)
+	size = min(cint(page_length) or 50, cint(limit) or 2000)
+	begin = max(0, cint(start))
+	page = out[begin:begin + size]
+
+	return {
+		"from_date": str(from_date),
+		"to_date": str(to_date),
+		"people": sorted(people.values(), key=lambda p: p.employee_name or ""),
+		"rows": page,
+		"counts": counts,
+		"total": total,
+		"start": begin,
+		"page_length": size,
+		# HR sees everybody, so `depth` does nothing for them. Said here so the
+		# screen can leave out a control that would change nothing - an option
+		# that visibly does nothing reads as a broken page.
+		"everybody": bool(may_review),
+		"depth": "all" if str(depth) == "all" else "direct",
+	}
+
+
+@frappe.whitelist()
+def raise_for_report(employee=None, from_date=None, to_date=None, reason=None,
+                     explanation=None, half_day=0, half_day_date=None):
+	"""A manager asks HR to fix a day for somebody who reports to them.
+
+	Surbhi, 15 Oct 2026: "let's get the manager request the changes and the HR
+	to confirm or reject it." The manager raises; HR decides. This endpoint
+	does the first half and nothing more - it creates a request in the same
+	Waiting state an employee's own request starts in, and `decide` is
+	unchanged.
+
+	WHY THIS IS NOT A PARAMETER ON `raise_correction`. That endpoint says, in
+	its own docstring, that the employee is never taken from the request
+	because "a field that named somebody else would let anyone rewrite anyone's
+	attendance". That is right, and it stays right. The difference here is that
+	the named employee is CHECKED: `_subject` refuses anybody outside the
+	caller's reporting tree before a document is built.
+
+	WHO ASKED IS RECORDED, in the explanation, so HR reads a request that says
+	who is vouching for the day rather than one that appears to have come from
+	the employee themselves.
+	"""
+	# A CALL THAT ARRIVES WITH NOTHING GETS A SENTENCE, NOT A CRASH.
+	#
+	# On 18 Oct 2026 the ppj.dev error log held two entries 35ms apart: a
+	# correct refusal, and a second call with no body at all, which Frappe
+	# answered with "missing 2 required positional arguments". The second,
+	# uglier error is the one that reached the screen, so a correct refusal
+	# read as a crash.
+	#
+	# Checked BEFORE `_subject`, which would read a missing employee as "my own
+	# month" and send a bodyless call down the employee's own path. An empty
+	# request must do nothing at all.
+	if not employee or not from_date:
+		frappe.throw(_("That request was incomplete, so nothing was sent. "
+		               "Reload the page and try again."))
+
+	subject, is_self = _subject(employee)
+	if is_self:
+		# Their own day: the ordinary endpoint, with its ordinary rules.
+		return raise_correction(from_date, to_date, reason, explanation,
+		                        half_day, half_day_date)
+
+	# ── ACTING STOPS AT THE DIRECT REPORTS ───────────────────────────────────
+	#
+	# Surbhi, 17 Oct 2026, asked whether a manager may act for somebody two
+	# levels down: "direct reports only."
+	#
+	# `_subject` allows the whole line, because READING a month is a different
+	# question and managers already have that - narrowing it there would take
+	# away a screen they use today. Acting is narrowed here instead.
+	#
+	# It also closes a real gap. `manager_scope` grants the Frappe permission
+	# for DIRECT reports only, so a request for somebody further down passed
+	# this function and then failed on the document's own permission check -
+	# a confusing refusal, and only ever for skip-level reports, which is
+	# exactly the case nobody tries by hand. Now the refusal is here, in words
+	# that say what to do instead.
+	if not _may_review():
+		me_now = _employee_for(frappe.session.user)
+		direct = _reports_to(me_now.name, deep=False) if me_now else []
+		if subject.name not in direct:
+			frappe.throw(
+				_("{0} does not report directly to you, so this is their own "
+				  "manager's to raise. You can still open their attendance to "
+				  "see what happened.").format(subject.employee_name or subject.name),
+				frappe.PermissionError)
+
+	to_date = to_date or from_date
+	if getdate(to_date) < getdate(from_date):
+		frappe.throw(_("The last day cannot be before the first day."))
+	if getdate(from_date) > getdate(nowdate()):
+		frappe.throw(_("You cannot raise a correction for a day that has not "
+		               "happened yet."))
+
+	allowed = {r["value"] for r in reasons()}
+	if reason not in allowed:
+		frappe.throw(_("{0} is not one of the reasons on offer.").format(reason or ""))
+	if reason == "Other" and not (explanation or "").strip():
+		frappe.throw(_("Please say what happened, so HR can act on it."))
+
+	# The tenant's two settings (SEC-9a). Checked AFTER the shape of the
+	# request, so a manager who got the reason wrong is told about the reason,
+	# and the window is checked on `from_date` because that is the oldest day
+	# being asked about.
+	#
+	# The switch refuses in plain words that say what to do next. HR's own
+	# route is not this endpoint - it is the Attendance Request itself - so
+	# switching this off closes the manager's shortcut and nothing else.
+	if not manager_on_behalf_on():
+		frappe.throw(_("Your organisation does not let a manager ask for somebody "
+		               "else's attendance to be fixed. Ask HR to correct this day."),
+		             frappe.PermissionError)
+	_refuse_outside_filing_window(subject.name, from_date)
+
+	me = _employee_for(frappe.session.user)
+	note = (explanation or "").strip()
+	if me:
+		stamp = _("Raised by {0} on behalf of the employee.").format(
+			me.employee_name or me.name)
+		note = (note + "\n\n" + stamp).strip() if note else stamp
+
+	doc = frappe.get_doc({
+		"doctype": REQUEST,
+		"employee": subject.name,
+		"employee_name": subject.employee_name,
+		"company": subject.company,
+		"from_date": from_date,
+		"to_date": to_date,
+		"reason": reason,
+		"explanation": note,
+		"half_day": cint(half_day),
+		"half_day_date": half_day_date if cint(half_day) else None,
+		"alvoraa_review_status": "Waiting",
+	})
+	# No ignore_permissions. A manager raising this for a report is allowed by
+	# the permission system itself: `manager_scope` holds one User Permission
+	# per manager, per report, scoped to Attendance Request and three other
+	# doctypes. So Frappe permits the insert because the manager genuinely is
+	# permitted, and the decision lives in data somebody can list rather than
+	# in a line of Python nobody can audit.
+	#
+	# An earlier version called `insert(ignore_permissions=True)` after
+	# checking the reporting line here. It worked, and
+	# `NoQuietBypass.test_this_module_never_ignores_permissions` caught it -
+	# which is exactly what that test is for.
+	doc.insert()
+	return _shape(doc.as_dict())

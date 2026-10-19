@@ -3,13 +3,16 @@ import re
 import frappe
 from frappe import _
 
-from alvoraa_portal.attendance_analytics import LATE_GRACE_KEY
+from alvoraa_portal.attendance_analytics import LATE_GRACE_KEY, _may_see_organisation
+from alvoraa_portal.attendance_correction import (MANAGER_FILING_WINDOW_KEY,
+                                                 MANAGER_ON_BEHALF_KEY)
 from alvoraa_portal.goals_api import current_cycle_name, goal_average, in_cycle
 from alvoraa_portal.subscription import requires_feature
 import calendar as _calendar
 from frappe.utils import cint, flt, today, get_first_day, get_last_day, getdate, add_days, now
 from alvoraa_goals.permissions import get_effective_manager
 from hrms.alvoraa_hr_core.access import permitted_employee_filters
+from hrms.alvoraa_org_structure.register import may_view as _may_view_positions
 # A module import, not `from ... import`: the two switch KEYS are constants, and
 # scripts/check_app_integrity.py only recognises functions and classes across apps.
 import hrms.alvoraa_hr_core.features as org_features
@@ -286,9 +289,11 @@ def get_portal_context():
     is_hr = is_system_manager or bool({"HR Manager", "HR User"} & set(roles))
     is_manager = False
     manager_name = None
+    has_reports = False
 
     if emp:
-        is_manager = frappe.db.count("Employee", {"reports_to": emp.name, "status": "Active"}) > 0
+        has_reports = frappe.db.count("Employee", {"reports_to": emp.name, "status": "Active"}) > 0
+        is_manager = has_reports
         if not is_manager and is_hr:
             is_manager = frappe.db.count(
                 "Employee", {"reports_to": ("is", "not set"), "status": "Active",
@@ -315,6 +320,28 @@ def get_portal_context():
         # Read from site config, so it costs nothing and cannot drift from the
         # check /alvoraa-admin itself performs.
         "is_control_plane": bool(frappe.conf.get("alvoraa_control_plane")),
+        # Is there anything behind the Attendance Insights item?
+        #
+        # It had no gate at all, so every employee was shown it with two of its
+        # three views greyed out - a door advertised to people who may not open
+        # it, which is the same mistake the Tenant Admin link above made.
+        #
+        # The page itself answers this question in `attendance_analytics.views()`
+        # and enforces it in `_population()`. This is the SAME answer, from the
+        # same two sources, so the two cannot drift: a direct-report count, which
+        # is the count already taken two lines up for `is_manager`, and
+        # `_may_see_organisation()`, imported rather than re-written. So this
+        # costs no extra query - the role test reads Frappe's defaults cache,
+        # not the database.
+        #
+        # `is_manager` is not the test. It is wider - it is also true for HR when
+        # somebody has no manager set - and the team view needs real reports.
+        "att_insights": has_reports or _may_see_organisation(),
+        # May this person open the Positions page? The page's own endpoints
+        # refuse anybody this says no to (`register.may_view`), so the menu is
+        # the same answer, not a second copy of the rule. It reads two settings
+        # and the role list, all from Frappe's caches: no extra query.
+        "positions": _may_view_positions(),
         "manager_name": manager_name,
         "roles": roles,
     }
@@ -1710,12 +1737,42 @@ def get_checkin_status():
         ["status", "in_time", "out_time", "working_hours"],
         as_dict=True,
     )
+    # ── What today's shift is worth to this person (Surbhi, 17 Oct 2026) ────
+    #
+    # "show, according to their alloted shift whether the employee is eligible
+    # for green pay / red pay for that day, what is their half day according to
+    # their shift timing".
+    #
+    # Built from the SAME punches the status above is built from, so the banner
+    # and the marks beside it cannot disagree inside one page. None where there
+    # is nothing true to say - somebody with no shift, or a tenant with no
+    # payroll rule set - and the banner then draws without it.
+    marks = None
+    try:
+        from alvoraa_portal.day_marks import marks_today
+        from alvoraa_portal.home_api import _shift_today
+
+        # Read here rather than added to `_get_employee`: that query feeds a
+        # cached context used all over the portal, and this is the only caller
+        # that wants the shift.
+        shift = _shift_today(
+            emp.name,
+            frappe.db.get_value("Employee", emp.name, "default_shift"), td)
+        marks = marks_today(
+            emp.name, emp, shift,
+            [{"time": str(c.time), "log_type": c.log_type} for c in checkins],
+            td)
+    except Exception:
+        # The check-in button must never fail to draw because of a banner.
+        frappe.log_error(title="day_marks: could not work out today's marks")
+
     return {
         "employee": emp,
         "checked_in": checked_in,
         "last_action": last,
         "todays_checkins": checkins,
         "attendance": att,
+        "marks": marks,
         # Tells the page whether to ask the browser for a position before it
         # calls do_checkin. Sent with the status so the button knows before it
         # is ever pressed, rather than finding out from a failure.
@@ -2963,6 +3020,20 @@ def reject_kpi_progress(kpi_name, log_idx, comment=None):
 ALLOWED_ORG_SETTINGS = {
     "kra_link_mandatory": ("0", "1"),
     LATE_GRACE_KEY: range(0, 241),          # up to four hours; nothing sensible is longer
+    # Slice 060 SEC-9a/SEC-11, reworked 18 Oct 2026 into a switch and its
+    # sub-setting.
+    #
+    # The SWITCH: may a manager raise a request on behalf of their direct
+    # reports at all - attendance today, leave when that is built. It grants no
+    # visibility: a manager already reads their team's attendance, and this only
+    # says whether they may ask for a day to be fixed. **Unset means ON**, see
+    # `manager_on_behalf_on`.
+    MANAGER_ON_BEHALF_KEY: ("0", "1"),
+    # Its SUB-SETTING: how many WORKING days back that manager may reach. Up to
+    # 30 working days - about six calendar weeks, which already reaches a month
+    # whose pay has run; past that it is HR's own route, which this window never
+    # binds. Blank means no limit and is the default; 0 means today only.
+    MANAGER_FILING_WINDOW_KEY: range(0, 31),
     org_features.LATE_RULES_SWITCH: ("0", "1"),
     org_features.ATTENDANCE_SCORING_SWITCH: ("0", "1"),
 }
@@ -3025,7 +3096,14 @@ def set_org_setting(key, value):
         _refuse_org_setting("hr_api.set_org_setting")
     value = str(value) if value is not None else ""
     allowed = ALLOWED_ORG_SETTINGS[key]
-    if isinstance(allowed, range):
+    # BLANK IS A REAL ANSWER FOR THE FILING WINDOW, and it is its default: no
+    # limit (Surbhi, 18 Oct 2026). Stored as an empty string, which
+    # `manager_filing_window_days` reads as None and keeps apart from a stored
+    # "0" - the two now mean opposite things. No other numeric setting takes a
+    # blank, so this is spelt out for the one key rather than loosened for all.
+    if key == MANAGER_FILING_WINDOW_KEY and value == "":
+        pass
+    elif isinstance(allowed, range):
         # Whole minutes, no sign, no spaces, and inside the range. Anything else
         # is refused rather than coerced - a silently clamped threshold is worse
         # than an error, because nobody finds out what was actually saved.

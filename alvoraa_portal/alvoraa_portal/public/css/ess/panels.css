@@ -295,9 +295,14 @@
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ── Toast ───────────────────────────────────────── */
+/* ABOVE THE MODALS, which sit at 1200. At 300 every message raised while a
+   dialog was open rendered BEHIND its backdrop: the action failed, the error
+   was announced, and nobody could see it - so a refused confirmation looked
+   exactly like a dead button. Matches .gp-toast-wrap, which was already at
+   3000; the two toast stacks must not disagree about this. */
 .toast-wrap{
   position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
-  z-index:300;display:flex;flex-direction:column;align-items:center;gap:8px;
+  z-index:3000;display:flex;flex-direction:column;align-items:center;gap:8px;
   pointer-events:none;
 }
 .toast{
@@ -661,6 +666,98 @@ select.form-control{cursor:pointer;background-image:url("data:image/svg+xml,%3Cs
 .act-sbadge.open{background:var(--amber-lt,var(--amber-lt));color:var(--amber,var(--amber))}
 .act-sbadge.approved{background:var(--green-lt,var(--green-lt));color:var(--green,var(--green))}
 .act-sbadge.rejected{background:var(--red-lt,var(--red-lt));color:var(--red,var(--red))}
+
+/* ── Today against your own shift ─────────────────────────────────────────
+   Surbhi, 17 Oct 2026: show the quarters, the half-day line and the day's
+   marks, measured against the employee's own shift and their own arrival.
+
+   ONE SOURCE, ONE PLACE. The banner keeps a single summary line - `.day-marks`
+   below, on the dark hero - and every figure lives in this widget. Two places
+   showing the same times drift apart the first time somebody edits one.
+
+   CLOCK TIMES, NOT RULES. "Leave after 16:58" can be acted on at 16:45. "65%
+   of your shift" is arithmetic at the end of a ten-hour day. */
+
+/* The banner's one line, on a panel that is dark in BOTH themes - so it takes
+   the same translucent white as the status pill beside it rather than a theme
+   token whose light variant would vanish there. */
+.day-marks{display:flex;align-items:center;gap:7px;margin-top:11px;
+  font-size:var(--fs-sm);font-weight:600;line-height:1.4;
+  color:rgba(255,255,255,.88);flex-wrap:wrap}
+.dm-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.dm-dot.ok{background:var(--green)}
+.dm-dot.warn{background:var(--amber)}
+.dm-dot.bad{background:var(--red)}
+.dm-dot.none{background:var(--text3)}
+
+/* The widget. On the page surface, so ordinary tokens apply. */
+.dw{background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r);overflow:hidden}
+.dw-head{padding:13px 18px;border-bottom:1px solid var(--border);
+  background:var(--surface2)}
+.dw-title{font-size:var(--fs-md);font-weight:700;color:var(--text)}
+.dw-shift{font-size:var(--fs-xs);color:var(--text3);margin-top:2px}
+
+.dw-facts{display:flex;flex-wrap:wrap;gap:20px;padding:13px 18px;
+  border-bottom:1px solid var(--border)}
+.dw-fact{display:flex;flex-direction:column;min-width:0}
+.dw-f-l{font-size:var(--fs-xs);font-weight:700;color:var(--text3);
+  text-transform:uppercase;letter-spacing:.06em}
+.dw-f-v{font-size:var(--fs-lg);font-weight:700;color:var(--text);
+  font-variant-numeric:tabular-nums;line-height:1.2}
+.dw-f-n{font-size:var(--fs-xs);color:var(--text3)}
+
+/* The one sentence somebody reads first, so it carries the day's colour. */
+.dw-verdict{padding:12px 18px;border-bottom:1px solid var(--border);
+  display:flex;flex-direction:column;gap:3px}
+.dw-verdict b{font-size:var(--fs-md);line-height:1.3}
+.dw-verdict span{font-size:var(--fs-sm);color:var(--text2);line-height:1.5}
+.dw-verdict.ok{background:var(--green-lt)}
+.dw-verdict.ok b{color:var(--green)}
+.dw-verdict.warn{background:var(--amber-lt)}
+.dw-verdict.warn b{color:var(--amber)}
+.dw-verdict.bad{background:var(--red-lt)}
+.dw-verdict.bad b{color:var(--red)}
+
+/* The next cliff: the single most actionable line on the card. */
+.dw-next{display:flex;align-items:center;gap:11px;padding:11px 18px;
+  background:var(--primary-lt);border-bottom:1px solid var(--border)}
+.dw-next b{font-size:var(--fs-xl);font-weight:700;color:var(--primary);
+  font-variant-numeric:tabular-nums;letter-spacing:-.03em;line-height:1}
+.dw-next span{font-size:var(--fs-sm);color:var(--text);line-height:1.45}
+
+.dw-sec{font-size:var(--fs-xs);font-weight:700;color:var(--text3);
+  text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
+.dw-ladder{padding:13px 18px}
+.dw-rung{display:flex;align-items:flex-start;gap:10px;padding:7px 0;
+  border-top:1px solid var(--surface2)}
+.dw-rung:first-of-type{border-top:0}
+.dw-r-t{width:44px;flex-shrink:0;font-size:var(--fs-base);font-weight:700;
+  color:var(--text);font-variant-numeric:tabular-nums;padding-top:1px}
+.dw-rung .dm-dot{margin-top:6px}
+.dw-r-c{flex:1;min-width:0;font-size:var(--fs-base);color:var(--text);
+  line-height:1.35;display:flex;flex-direction:column;gap:2px}
+.dw-r-red{font-size:var(--fs-xs);color:var(--red);line-height:1.4}
+.dw-rung.here .dw-r-c{font-weight:700}
+.dw-r-now{flex-shrink:0;font-size:var(--fs-xs);font-weight:700;
+  color:var(--primary);background:var(--primary-lt);
+  border-radius:var(--r-full);padding:2px 9px;white-space:nowrap}
+.dw-more{font:inherit;font-size:var(--fs-xs);font-weight:700;
+  color:var(--primary);background:none;border:0;padding:7px 0 0;
+  cursor:pointer}
+
+.dw-marks{padding:0 18px 15px}
+.dw-mark{display:flex;align-items:flex-start;gap:9px;padding:4px 0}
+.dw-mark .dm-dot{margin-top:5px}
+.dw-mark>span{display:flex;flex-direction:column;gap:1px;min-width:0}
+.dw-mark b{font-size:var(--fs-base);font-weight:600;color:var(--text);
+  line-height:1.35}
+.dw-mark span{font-size:var(--fs-xs);color:var(--text3);line-height:1.45}
+
+@media(max-width:700px){
+  .dw-facts{gap:14px}
+  .dw-next b{font-size:var(--fs-lg)}
+}
 
 /* ── Home goals section ──────────────────────────── */
 .home-goals-section{margin-bottom:24px}
@@ -1766,6 +1863,34 @@ body.panel-fullscreen{overflow:hidden}
 .ac-who{font-size:var(--fs-sm);color:var(--text2)}
 .ac-who b{color:var(--text)}
 
+/* The person picker: a search box with a listbox under it, not a dropdown of
+   403 names (19 Oct 2026). The highlighted row carries a ring as well as a
+   shade, so the highlight does not depend on seeing colour, and both the box
+   and the row keep a visible focus ring. */
+/* The box takes the rest of the row, and the list is pinned to both its
+   edges. On a 320px phone an absolute list with its own width walks off the
+   right of the screen; anchored to the parent it cannot. */
+.ac-pick{position:relative;display:inline-block;flex:1 1 220px;max-width:340px}
+.ac-pick-lbl{font-size:var(--fs-xs);letter-spacing:.04em;text-transform:uppercase;
+  color:var(--text3);font-weight:700}
+.ac-pick-q{width:100%;min-width:0}
+.ac-pick-q:focus-visible{outline:2px solid var(--primary);outline-offset:1px}
+.ac-pick-list{position:absolute;top:calc(100% + 4px);left:0;right:0;min-width:240px;
+  margin:0;padding:0;list-style:none;background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--r-sm);box-shadow:var(--sh2);
+  max-height:264px;overflow-y:auto;z-index:1000}
+.ac-pick-list[hidden]{display:none}
+.ac-pick-o{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;
+  padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border)}
+.ac-pick-o:last-child{border-bottom:0}
+.ac-pick-o.on,.ac-pick-o:hover{background:var(--hover)}
+.ac-pick-o.on{outline:2px solid var(--primary);outline-offset:-2px}
+.ac-pick-n{font-size:var(--fs-sm);font-weight:700;color:var(--text)}
+.ac-pick-id{font-size:var(--fs-xs);color:var(--text3);margin-left:auto;
+  font-variant-numeric:tabular-nums}
+.ac-pick-s{font-size:var(--fs-xs);color:var(--text3);flex-basis:100%}
+.ac-pick-none{padding:8px 12px;font-size:var(--fs-sm);color:var(--text3)}
+
 .ac-tiles{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
 .ac-tile{border:1px solid var(--border);border-left:3px solid var(--border);
   border-radius:var(--r-sm);padding:9px 15px;min-width:112px;background:var(--surface)}
@@ -2030,3 +2155,78 @@ body.panel-fullscreen{overflow:hidden}
   .dr-actions .btn{width:100%;justify-content:center;white-space:normal}
   .dr-chip{margin-left:0}
 }
+
+/* ── The team's days (Attendance page, "Whole team") ──────────────────────
+   The team's days, worst first, with a way to ask HR to fix one. Built from
+   the same pieces as Attendance Insights' bar and the correction form, so
+   the two screens a manager moves between do not look like two products.
+
+   This was Team View's third tab until 17 Oct 2026. The markup moved to the
+   Attendance page; the styles did not have to move with it, and only this
+   heading needed correcting - it named a tab that no longer exists. */
+.tr-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:12px}
+.tr-f{display:flex;flex-direction:column;gap:3px}
+.tr-f>span{font-size:var(--fs-xs);color:var(--text3);font-weight:700;
+  letter-spacing:.04em;text-transform:uppercase}
+.tr-f .form-control{font:inherit;font-size:var(--fs-sm);padding:6px 10px;
+  border:1px solid var(--border);border-radius:var(--r-sm);
+  background:var(--surface);color:var(--text)}
+
+.tr-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.tr-chip{font-size:var(--fs-xs);font-weight:600;padding:4px 11px;
+  border-radius:var(--r-full);border:1px solid var(--border);
+  background:var(--surface);color:var(--text2);cursor:pointer}
+.tr-chip b{font-weight:700}
+.tr-chip.on{background:var(--primary);border-color:var(--primary);color:var(--surface)}
+.tr-chip.bad:not(.on){border-color:var(--red);color:var(--red)}
+.tr-chip.warn:not(.on){border-color:var(--amber);color:var(--amber)}
+.tr-chip.ok:not(.on){border-color:var(--green);color:var(--green)}
+
+.tr-group{border:1px solid var(--border);border-radius:var(--r-sm);
+  margin-bottom:10px;background:var(--surface);overflow:hidden}
+.tr-group-hdr{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;
+  padding:9px 14px;background:var(--surface2);border-bottom:1px solid var(--border)}
+.tr-group-name{font-size:var(--fs-base);font-weight:700;color:var(--text)}
+.tr-group-sub{font-size:var(--fs-xs);color:var(--text3)}
+.tr-group-n{margin-left:auto;font-size:var(--fs-xs);color:var(--text3);
+  font-variant-numeric:tabular-nums}
+
+.tr-day{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;
+  border-bottom:1px solid var(--border)}
+.tr-day:last-child{border-bottom:0}
+.tr-day-main{flex:1;min-width:0}
+.tr-day-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  font-size:var(--fs-sm);color:var(--text)}
+.tr-day-sub{font-size:var(--fs-xs);color:var(--text3);margin-top:3px}
+.tr-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:7px}
+.tr-dot.bad{background:var(--red)}
+.tr-dot.warn{background:var(--amber)}
+.tr-dot.ok{background:var(--green)}
+.tr-status{font-size:var(--fs-xs);color:var(--text3)}
+.tr-need{font-size:var(--fs-xs);font-weight:700;padding:2px 8px;
+  border-radius:var(--r-full)}
+.tr-need.bad{background:var(--red-lt);color:var(--red)}
+.tr-need.warn{background:var(--amber-lt);color:var(--amber)}
+.tr-need.ok{background:var(--green-lt);color:var(--green)}
+.tr-ask{flex-shrink:0;white-space:nowrap}
+.tr-form{max-width:460px}
+/* The person or date that opens that month. A real button, so it is reachable
+   by keyboard and shows its focus; underlined, so the affordance is not
+   carried by colour alone. */
+.tr-open{font:inherit;font-weight:700;color:var(--text);background:none;
+  border:0;padding:0;cursor:pointer;text-align:left;text-decoration:underline;
+  text-decoration-color:var(--border);text-underline-offset:3px}
+.tr-open:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+
+.tr-pager{display:flex;align-items:center;gap:8px;margin-top:12px}
+.tr-count{font-size:var(--fs-xs);color:var(--text3);margin-right:auto;
+  font-variant-numeric:tabular-nums}
+
+@media(max-width:700px){
+  .tr-bar{gap:8px}
+  .tr-f{flex:1 1 140px}
+  .tr-day{flex-wrap:wrap}
+  .tr-ask{width:100%}
+}
+.dw-note{font-size:var(--fs-xs);color:var(--text3);line-height:1.45;
+  margin:0 0 7px}

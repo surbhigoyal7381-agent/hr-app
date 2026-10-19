@@ -18,6 +18,8 @@ these tests exist to keep it that way: if anyone ever "tidies up" by feeding
 the screen's figure into pay, the rupee amounts below stop matching.
 """
 
+from unittest.mock import patch
+
 import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, getdate, nowdate
@@ -532,6 +534,16 @@ class ConfiguringTheGracePeriod(FrappeTestCase):
 	"""HR sets the number, and nothing else can be smuggled through the call."""
 
 	def setUp(self):
+		# `set_org_setting` COMMITS. Every test in this class calls it, so
+		# without this the user made below escapes Frappe's rollback and is
+		# left on the site for the next run to trip over. Stubbed for the
+		# whole class rather than per test, because all four write a setting
+		# and none of them needs the write to outlive the test - each one
+		# reads its value back inside the same transaction.
+		self._no_commit = patch("frappe.db.commit")
+		self._no_commit.start()
+		self.addCleanup(self._no_commit.stop)
+		
 		self.caller = frappe.session.user
 		frappe.set_user("Administrator")
 		email = "hrgrace.lm017@example.com"

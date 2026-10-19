@@ -61,11 +61,16 @@ DEFAULTS = {
 	# Who owns the shape of the organisation - who may create a seat, change how
 	# many it holds, or move it under a different one. HR by default, because
 	# that is the common case, but it genuinely differs: at the first customer
-	# the owners keep the structure themselves and HR does not touch it. Reading
-	# the list is deliberately wider than changing it, so a branch head can see
-	# the empty seats in their store without being able to restructure the
-	# company.
+	# the owners keep the structure themselves and HR does not touch it. Anybody
+	# named here may also open the Positions page, whatever the next key says.
 	"alvoraa_org_position_editor_roles": "HR Manager,System Manager",
+
+	# Who may open the Positions page at all. Surbhi, 19 Oct 2026: "not all
+	# should be able to see this page. for them the organisation page is
+	# there." HR Manager by default; everybody else uses the Organisation page.
+	# The editor roles above count as well (see `register.may_view`), so the
+	# two keys can never leave somebody able to change seats they cannot see.
+	"alvoraa_org_positions_view_roles": "HR Manager",
 
 	# Span of control. Past about nine, a manager cannot give anybody real
 	# attention - one-to-ones stop and appraisals become a form to fill in.
@@ -99,6 +104,7 @@ ACCESS_GRANTING = frozenset({
 	"alvoraa_org_reach_up",
 	"alvoraa_org_reach_down",
 	"alvoraa_org_position_editor_roles",
+	"alvoraa_org_positions_view_roles",
 })
 
 # Kept apart from the numbers so the Org Setup page can render a label and an
@@ -128,7 +134,10 @@ LABELS = {
 		"Off means a manager is bounded like everybody else."),
 	"alvoraa_org_position_editor_roles": ("Roles that may change the position structure",
 		"Comma separated. Who may add a seat, change how many it holds, or move "
-		"it. Seeing the list is wider than changing it."),
+		"it. These roles may also open the Positions page."),
+	"alvoraa_org_positions_view_roles": ("Roles that may open the Positions page",
+		"Comma separated. Everybody else uses the Organisation page. The roles "
+		"that may change positions can always open it too."),
 	"alvoraa_org_span_wide": ("Flag a manager with this many reports or more",
 		"Past about nine, one-to-ones stop happening. Usually a missing layer."),
 	"alvoraa_org_span_narrow": ("Flag a manager with this many reports",

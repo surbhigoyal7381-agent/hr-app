@@ -16,7 +16,11 @@
         <div class="page-head">
           <div>
             <h1 class="page-title">Attendance</h1>
-            <p class="page-sub" id="ac-sub">Your record</p>
+            <!-- Whose record is on screen. It is a live region because the picker
+                 beside it is a search box now: choosing somebody repaints the
+                 whole page, and a screen reader needs to be told whose month it
+                 landed on. -->
+            <p class="page-sub" id="ac-sub" role="status" aria-live="polite">Your record</p>
           </div>
         </div>
 

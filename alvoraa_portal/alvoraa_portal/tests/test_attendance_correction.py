@@ -682,6 +682,37 @@ class ReviewingSomebodyElse(CorrectionCase):
 		self.assertIn(report, names)
 		self.assertNotIn(outsider, names)
 
+	def test_the_picker_searches_on_name_and_on_employee_id(self):
+		"""Both, because HR knows half the company by ID and nobody knows 403
+		people by name. Surbhi, 19 Oct 2026, on the dropdown this replaces:
+		"there should be a way to do a text based search"."""
+		boss, boss_email = self.person("ACFindBoss")
+		report, _e = self.person("ACFindReport")
+		frappe.db.set_value("Employee", report, "reports_to", boss)
+		frappe.set_user(boss_email)
+		self.assertIn(report, [r["name"] for r in
+		                       ac.whose_months_i_can_open(search="ACFindReport")])
+		self.assertIn(report, [r["name"] for r in
+		                       ac.whose_months_i_can_open(search=report)])
+
+	def test_a_search_cannot_reach_outside_the_managers_line(self):
+		"""The term narrows the answer; it never widens it.
+
+		This is the whole reason the picker searches here rather than in the
+		browser. A manager who types a colleague's name must still get
+		nothing, or the control is a staff directory with a filter on it.
+		"""
+		boss, boss_email = self.person("ACScopeBoss")
+		report, _e = self.person("ACScopeReport")
+		outsider, _e2 = self.person("ACScopeOutsider")
+		frappe.db.set_value("Employee", report, "reports_to", boss)
+		frappe.set_user(boss_email)
+		names = [r["name"] for r in ac.whose_months_i_can_open(search="ACScope")]
+		self.assertIn(report, names)
+		self.assertNotIn(outsider, names)
+		self.assertEqual(
+			ac.whose_months_i_can_open(search="ACScopeOutsider"), [])
+
 
 class WhoMayAskFromSomebodyElsesMonth(CorrectionCase):
 	"""`can_request` is what puts the button on a day, so it has to agree with

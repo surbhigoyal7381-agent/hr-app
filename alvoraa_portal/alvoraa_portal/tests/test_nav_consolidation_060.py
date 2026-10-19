@@ -123,7 +123,14 @@ class TestTheTeamReviewMovedToTheAttendancePage(FrappeTestCase):
 			                   "%s is not inside the Attendance panel" % part)
 
 	def test_the_picker_offers_whole_team(self):
-		self.assertIn(">Whole team</option>", _page())
+		"""Still the first thing the picker offers, 19 Oct 2026 - but no longer
+		an <option>. The dropdown became a searchable listbox, because HR's
+		copy of it held 403 names. What matters has not changed: the words are
+		there, and `AC_TEAM` is still the value behind them."""
+		page = _page()
+		self.assertIn('label: "Whole team"', page)
+		self.assertIn('var AC_TEAM = "*team"', page)
+		self.assertIn("value: AC_TEAM", page)
 
 	def test_a_row_opens_that_persons_month(self):
 		page = _page()

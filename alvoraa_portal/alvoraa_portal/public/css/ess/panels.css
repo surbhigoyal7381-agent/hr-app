@@ -1863,6 +1863,34 @@ body.panel-fullscreen{overflow:hidden}
 .ac-who{font-size:var(--fs-sm);color:var(--text2)}
 .ac-who b{color:var(--text)}
 
+/* The person picker: a search box with a listbox under it, not a dropdown of
+   403 names (19 Oct 2026). The highlighted row carries a ring as well as a
+   shade, so the highlight does not depend on seeing colour, and both the box
+   and the row keep a visible focus ring. */
+/* The box takes the rest of the row, and the list is pinned to both its
+   edges. On a 320px phone an absolute list with its own width walks off the
+   right of the screen; anchored to the parent it cannot. */
+.ac-pick{position:relative;display:inline-block;flex:1 1 220px;max-width:340px}
+.ac-pick-lbl{font-size:var(--fs-xs);letter-spacing:.04em;text-transform:uppercase;
+  color:var(--text3);font-weight:700}
+.ac-pick-q{width:100%;min-width:0}
+.ac-pick-q:focus-visible{outline:2px solid var(--primary);outline-offset:1px}
+.ac-pick-list{position:absolute;top:calc(100% + 4px);left:0;right:0;min-width:240px;
+  margin:0;padding:0;list-style:none;background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--r-sm);box-shadow:var(--sh2);
+  max-height:264px;overflow-y:auto;z-index:1000}
+.ac-pick-list[hidden]{display:none}
+.ac-pick-o{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;
+  padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border)}
+.ac-pick-o:last-child{border-bottom:0}
+.ac-pick-o.on,.ac-pick-o:hover{background:var(--hover)}
+.ac-pick-o.on{outline:2px solid var(--primary);outline-offset:-2px}
+.ac-pick-n{font-size:var(--fs-sm);font-weight:700;color:var(--text)}
+.ac-pick-id{font-size:var(--fs-xs);color:var(--text3);margin-left:auto;
+  font-variant-numeric:tabular-nums}
+.ac-pick-s{font-size:var(--fs-xs);color:var(--text3);flex-basis:100%}
+.ac-pick-none{padding:8px 12px;font-size:var(--fs-sm);color:var(--text3)}
+
 .ac-tiles{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
 .ac-tile{border:1px solid var(--border);border-left:3px solid var(--border);
   border-radius:var(--r-sm);padding:9px 15px;min-width:112px;background:var(--surface)}

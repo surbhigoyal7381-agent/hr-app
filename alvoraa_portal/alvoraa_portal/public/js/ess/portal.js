@@ -2756,7 +2756,10 @@ function acApi(fn, args) {
 }
 
 var acState = {year: 0, month: 0, employee: null, data: null,
-               reasons: null, people: null, open: null, team: false};
+               reasons: null, people: null, open: null, team: false,
+               /* the picker: whether the server had more people than it sent,
+                  and whether the keyboard belongs back in the search box */
+               pmore: false, pfocus: false};
 
 window.acOpen = async function () {
   if (!acState.year) {
@@ -2861,21 +2864,29 @@ function acBar() {
   /* The picker only appears for somebody who has people to look at. An
      empty dropdown is the clearest possible sign a screen was built for
      somebody else. Having people is also what makes "Whole team" worth
-     offering, so the two appear together. */
+     offering, so the two appear together.
+
+     It is a search box rather than a dropdown. HR at PP Jewellers has 403
+     active people in here, and a native <select> of 403 names is a scroll,
+     not a choice - Surbhi, 19 Oct 2026: "there should be a way to do a text
+     based search with the drop down". The search runs on the SERVER, through
+     the same `whose_months_i_can_open` that already decides who you may
+     open, so a manager is never sent a name from outside their own reporting
+     line, not even for the instant before a list is filtered. */
   if (acState.people && acState.people.length) {
-    var own = !acState.team && !acState.employee;
-    html += '<select onchange="acPick(this.value)" style="min-width:180px">'
-      + '<option value="' + AC_TEAM + '"' + (acState.team ? " selected" : "")
-      + ">Whole team</option>"
-      + '<option value=""' + (own ? " selected" : "") + ">"
-      + gpEsc(d.is_self ? "Me" : "Choose a person") + "</option>"
-      + acState.people.map(function (p) {
-          return '<option value="' + gpEsc(p.name) + '"'
-            + (!acState.team && p.name === d.employee ? " selected" : "") + ">"
-            + gpEsc(p.employee_name) + (p.designation ? " · " + gpEsc(p.designation) : "")
-            + "</option>";
-        }).join("")
-      + "</select>";
+    html += '<label class="ac-pick-lbl" for="ac-pick-q">Whose record</label>'
+      + '<span class="ac-pick">'
+      + '<input id="ac-pick-q" class="ac-pick-q" type="text" role="combobox"'
+      + ' placeholder="Search by name or ID" autocomplete="off"'
+      + ' aria-expanded="false" aria-controls="ac-pick-list" aria-autocomplete="list"'
+      /* Opened by a click, by typing, or by the down arrow - deliberately
+         NOT by focus. Choosing somebody puts the keyboard back in this box,
+         and on focus that reopened the list it had just closed. */
+      + ' oninput="acPickType(this.value)" onclick="acPickShow()"'
+      + ' onkeydown="acPickKey(event)" onblur="acPickBlur()">'
+      + '<ul id="ac-pick-list" class="ac-pick-list" role="listbox"'
+      + ' aria-label="People whose record you can open" hidden></ul>'
+      + "</span>";
   }
 
   html += '<span class="sp ac-who">'
@@ -2885,13 +2896,180 @@ function acBar() {
     + "</span>";
   document.getElementById("ac-bar").innerHTML = html;
 
+  /* Choosing somebody reloads the month, which rebuilds this bar and throws
+     the keyboard back to the top of the page. Put it back in the box it came
+     from, so a second search is one keystroke rather than a hunt. */
+  if (acState.pfocus) {
+    acState.pfocus = false;
+    var box = acPickBox();
+    if (box && box.focus) box.focus();
+  }
+
   if (acState.people === null) {
-    acApi("whose_months_i_can_open", {limit: 500}).then(function (people) {
+    acApi("whose_months_i_can_open", {limit: AC_PICK_LIMIT}).then(function (people) {
       acState.people = people || [];
+      acState.pmore = acState.people.length >= AC_PICK_LIMIT;
       if (acState.people.length) acBar();
     }).catch(function () { acState.people = []; });
   }
 }
+
+/* ── whose record: the person picker ────────────────────────────────
+   A text box with a listbox under it, searched on the server.
+
+   It follows the SHAPE of "Apply on behalf of" in the leave modal - same
+   debounce, same row of name, id and job - but not its code, for two
+   reasons that are about correctness rather than taste. That picker reads
+   `get_all_active_employees`, which throws for anybody who is not HR, and
+   this one has to work for a line manager. And it is a plain <div> of
+   clickable rows: no focus, no arrow keys, nothing for a screen reader. A
+   lot of this product's users are on a phone on a factory floor, and some
+   of them are on a keyboard only.
+
+   The keyboard, in full: arrows move the highlight, Enter takes it, Escape
+   closes the list and leaves what you typed alone, Tab moves on. The
+   highlighted row is marked by a ring as well as a shade, so the highlight
+   does not depend on seeing colour. */
+var AC_PICK_LIMIT = 25;
+var acPickTimer = null, acPickSeq = 0;
+/* The rows on offer right now, and which one is highlighted. The row's
+   INDEX is the handle used by the markup, so no name or id is ever written
+   into an inline handler. */
+var acPickRows = [], acPickAct = -1, acPickMore = false, acPickFailed = false;
+
+function acPickBox()  { return document.getElementById("ac-pick-q"); }
+function acPickList() { return document.getElementById("ac-pick-list"); }
+
+/* An empty box is not an empty list. Somebody with twelve reports must see
+   their twelve without typing a letter, so no query shows the first page the
+   server gives us, and above it the two answers that are not a person. Once
+   there is a query those two step aside, so Enter lands on a person rather
+   than on "Whole team". */
+function acPickBuild(people, more, searching) {
+  var d = acState.data || {};
+  var rows = [];
+  if (!searching) {
+    rows.push({value: AC_TEAM, label: "Whole team",
+               note: "Days that need a look, across everyone"});
+    rows.push({value: "", label: d.is_self ? "My own record" : "Choose a person"});
+  }
+  (people || []).forEach(function (p) {
+    rows.push({value: p.name, id: p.name, label: p.employee_name,
+               note: [p.designation, p.department].filter(Boolean).join(" · ")});
+  });
+  acPickRows = rows;
+  acPickMore = !!more;
+  acPickFailed = false;
+  acPickAct = rows.length ? 0 : -1;
+}
+
+function acPickPaint() {
+  var ul = acPickList(), box = acPickBox();
+  if (!ul || !box) return;
+  var html = acPickRows.map(function (r, i) {
+    var on = i === acPickAct;
+    return '<li id="ac-pick-o' + i + '" role="option" class="ac-pick-o'
+      + (on ? " on" : "") + '" aria-selected="' + (on ? "true" : "false") + '"'
+      + ' onmousedown="acPickChoose(' + i + ')">'
+      + '<span class="ac-pick-n">' + gpEsc(r.label) + "</span>"
+      + (r.id ? '<span class="ac-pick-id">' + gpEsc(r.id) + "</span>" : "")
+      + (r.note ? '<span class="ac-pick-s">' + gpEsc(r.note) + "</span>" : "")
+      + "</li>";
+  }).join("");
+  if (acPickFailed)
+    html = '<li class="ac-pick-none">Could not search just now. '
+      + "Check your connection and type again.</li>";
+  else if (!acPickRows.length)
+    html = '<li class="ac-pick-none">Nobody here by that name or employee ID.</li>';
+  else if (acPickMore)
+    html += '<li class="ac-pick-none">Showing the first ' + AC_PICK_LIMIT
+      + ". Type a name or an employee ID to find somebody else.</li>";
+  ul.innerHTML = html;
+  ul.hidden = false;
+  box.setAttribute("aria-expanded", "true");
+  box.setAttribute("aria-activedescendant",
+                   acPickAct >= 0 ? "ac-pick-o" + acPickAct : "");
+  var row = document.getElementById("ac-pick-o" + acPickAct);
+  if (row && row.scrollIntoView) row.scrollIntoView({block: "nearest"});
+}
+
+function acPickHide() {
+  var ul = acPickList(), box = acPickBox();
+  if (ul) ul.hidden = true;
+  if (box) {
+    box.setAttribute("aria-expanded", "false");
+    box.setAttribute("aria-activedescendant", "");
+  }
+}
+
+window.acPickShow = function () {
+  var q = ((acPickBox() || {}).value || "").trim();
+  if (!q) {
+    acPickBuild(acState.people, acState.pmore, false);
+    acPickPaint();
+  } else {
+    acPickType(q);
+  }
+};
+
+window.acPickType = function (q) {
+  clearTimeout(acPickTimer);
+  var term = String(q || "").trim();
+  var seq = ++acPickSeq;
+  if (!term) {
+    acPickBuild(acState.people, acState.pmore, false);
+    acPickPaint();
+    return;
+  }
+  acPickTimer = setTimeout(function () {
+    acApi("whose_months_i_can_open", {search: term, limit: AC_PICK_LIMIT})
+      .then(function (people) {
+        if (seq !== acPickSeq) return;   /* a slower answer to an older query */
+        acPickBuild(people, (people || []).length >= AC_PICK_LIMIT, true);
+        acPickPaint();
+      }).catch(function () {
+        if (seq !== acPickSeq) return;
+        acPickRows = []; acPickAct = -1; acPickMore = false; acPickFailed = true;
+        acPickPaint();
+      });
+  }, 250);
+};
+
+window.acPickKey = function (ev) {
+  var ul = acPickList(), open = !!ul && !ul.hidden, k = ev.key;
+  if (k === "ArrowDown" || k === "ArrowUp") {
+    ev.preventDefault();
+    if (!open) { acPickShow(); return; }
+    if (!acPickRows.length) return;
+    acPickAct += (k === "ArrowDown" ? 1 : -1);
+    if (acPickAct < 0) acPickAct = acPickRows.length - 1;
+    if (acPickAct >= acPickRows.length) acPickAct = 0;
+    acPickPaint();
+    return;
+  }
+  if (k === "Enter" && open && acPickAct >= 0) {
+    ev.preventDefault();
+    acPickChoose(acPickAct);
+    return;
+  }
+  if (k === "Escape" && open) { ev.preventDefault(); acPickHide(); return; }
+  if (k === "Tab") acPickHide();
+};
+
+/* A click lands after the box has already lost focus, so the list cannot
+   close the instant focus leaves. mousedown fires first, which is what makes
+   the short delay safe. */
+window.acPickBlur = function () { setTimeout(acPickHide, 120); };
+
+window.acPickChoose = function (i) {
+  var r = acPickRows[i];
+  if (!r) return;
+  var box = acPickBox();
+  if (box) box.value = "";
+  acPickHide();
+  acState.pfocus = true;
+  acPick(r.value);
+};
 
 window.acJump = function (value) {
   var bits = String(value).split("-");

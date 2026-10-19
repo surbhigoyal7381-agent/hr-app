@@ -465,3 +465,100 @@ So I made both harmless rather than claiming a cause:
   it: the next time it happens, the browser's own network log, or an nginx access log for
   the same second, will say whether a redirect or a second press was behind it. Both are
   now harmless.
+
+---
+
+# The person picker on the Attendance page (19 Oct 2026)
+
+Surbhi, after opening the page as HR and finding a 403-entry dropdown: *"there should be
+a way to do a text based search with the drop down"*.
+
+## What changed, file by file
+
+| File | What | Rung on the ladder |
+|---|---|---|
+| `alvoraa_portal/attendance_correction.py` | `whose_months_i_can_open` now matches the search term against the employee **ID as well as the name**, with Frappe's `or_filters`. Nothing else about it moved. | New code, four lines inside an endpoint that already existed. The cheaper rungs were rejected because the endpoint simply did not match on ID, and HR knows half the company by ID. |
+| `public/js/ess/portal.js` | The `<select>` in `acBar()` becomes a text box with a `role="listbox"` under it: `acPickBuild` / `acPickPaint` / `acPickShow` / `acPickType` / `acPickKey` / `acPickBlur` / `acPickChoose`. Debounced 250 ms, searched on the server, 25 rows a page. | New code. There is no Frappe UI combobox on this page to configure; the portal is plain JS. |
+| `public/css/ess/panels.css` | `.ac-pick*` — the box, the list, the highlighted row, the focus rings. Existing tokens only. | Customisation of the existing `.ac-bar` block. |
+| `templates/.../parts/policies.html` | `#ac-sub` gains `role="status" aria-live="polite"`, so a screen reader is told whose month the page landed on. | One attribute on an element that was already there. |
+
+## The two decisions worth naming
+
+**Shape, not code, from "Apply on behalf of".** It reads the same — same debounce, same row
+of name, ID and job, same dropdown under the box — but it is its own code. Two reasons,
+both about correctness. The leave picker's data source is `get_all_active_employees`, which
+`frappe.throw`s for anybody who is not HR, and this control has to work for a line manager.
+And the leave picker is a plain `<div>` of clickable rows: no focus, no arrow keys, nothing
+for a screen reader. Sharing one component would have meant generalising the leave modal's
+picker — a new abstraction with two users, and a behaviour change to the leave screen that
+this slice was not asked to make. **When a third picker appears, extract one then.**
+
+**An empty box is not an empty list.** With nothing typed the list shows "Whole team"
+first, then "My own record" / "Choose a person", then the first 25 people the server will
+give this caller. So a manager with twelve reports sees twelve names and never has to guess
+what to type. Once there is a query those two fixed rows step aside, so Enter lands on a
+person rather than on "Whole team" — and clearing the box brings them back. For HR, where
+25 is a page of 403, the list ends with a plain line: *"Showing the first 25. Type a name
+or an employee ID to find somebody else."*
+
+## How the keyboard works
+
+Tab reaches the box, which has a visible focus ring. Down or Up opens the list and moves the
+highlight; it wraps at both ends. Enter takes the highlighted row. Escape closes the list and
+leaves what was typed alone. Tab moves on. The box is `role="combobox"` with
+`aria-expanded` and `aria-activedescendant`; the list is `role="listbox"` and each row is
+`role="option"` with `aria-selected`. The highlighted row carries an outline as well as a
+shade, so the highlight does not depend on seeing colour. After a choice the keyboard is put
+back in the box, because choosing somebody repaints the whole page. The list opens on click,
+on typing and on the down arrow — deliberately **not** on focus, or that focus restore would
+reopen the list it had just closed.
+
+## The seven dimensions, against the code as written
+
+| Dimension | Verdict | Why |
+|---|---|---|
+| Performance | **improves** | The page asked for 500 people on load and now asks for 25. Each search is one indexed `LIKE` on `Employee`, bounded to 25 rows, debounced 250 ms. |
+| Scalability | **improves** | Nothing on this screen grows with headcount any more. The 403-row payload was the only thing that did. |
+| Security | **neutral** | Same endpoint, same scoping, no `ignore_permissions` anywhere (the module's ceiling of 0 holds). `or_filters` is ANDed with the status-and-reporting-line filters as one bracketed group, so a term can only narrow the answer, never widen it — pinned by `test_a_search_cannot_reach_outside_the_managers_line`. |
+| Reliability | **improves** | A failed search says so in words and keeps the control usable. A slow answer to an old query is discarded by sequence number instead of overwriting a newer one. |
+| Maintainability | **neutral** | One `<select>` became about 110 lines of picker. Set against that, the inline `style=` on the old control is gone and the whole thing is tested. |
+| Data integrity | **neutral** | Read-only control. `acState.people` is the default page only; a search result is never merged into it. |
+| Compliance / privacy | **neutral** | No widening of visibility: the rows shown are exactly the rows the endpoint already returned to this caller, and the designation and department on each row were already in that payload. Nothing personal is logged. |
+
+## Personas
+
+* **CXO / HR** — the dropdown they could not use becomes a search box; 25 at a time with a
+  line saying so.
+* **HR Manager** — same.
+* **Line manager** — unchanged in scope, better in use: twelve reports listed with no typing,
+  and the search still cannot reach past their own line.
+* **Employee with no reports** — unchanged. The control does not appear at all, which is
+  what keeps the screen from being a staff directory.
+
+## Tests run, and what they said
+
+| Command | Result |
+|---|---|
+| `node scripts/run_dom_tests.js` | 10 run, 0 not run, **0 failed**; the correction suite went 13 → **32 passed, 0 failed** |
+| `bench --site test_site run-tests --app alvoraa_portal --module ...test_attendance_correction` | **98 OK** and **9 OK** (both batches) — includes the two new search tests |
+| `... --module ...test_portal_security_010` | **45 OK** and **5 OK** |
+| `... --module ...test_nav_consolidation_060` | **15 OK** (after updating one pin, below) |
+| `check_app_integrity.py` · `check_design_system.py` | 774 checks OK · the visual system holds |
+| `check_api_paths.py --max 0` · `check_portal_handlers.js` · `check_undefined_js.js` · `check_tag_balance.py` · `check_brand_spelling.py` · `check_tracked_keys.py` | all pass |
+
+`test_nav_consolidation_060.test_the_picker_offers_whole_team` pinned the literal
+`>Whole team</option>`. The option element is gone, so the pin now asserts the same fact
+about the control that exists: the row is built with that label and `AC_TEAM` is still the
+value behind it.
+
+## Known gaps and shortcuts
+
+* **The leave modal's picker is still mouse-only** — *declared, not fixed.* It is a different
+  screen and a different endpoint, and fixing it was not in this slice. Worth a ticket.
+* **`scripts/check_attendance_strip.js` was already broken before this work** —
+  *pre-existing, reported, not fixed.* It evals functions pulled out of `portal.js` by name
+  and now dies on `ReferenceError: acOutsideWindow is not defined`, a helper added by
+  commit `d1f0638a`. It is **not** in CI. Fixing it is a separate, small job.
+* **Nothing was verified in a real browser.** The proof here is 32 jsdom assertions plus
+  the checks above; the focus ring, the phone width and a real screen reader have not been
+  seen by a human on this change.

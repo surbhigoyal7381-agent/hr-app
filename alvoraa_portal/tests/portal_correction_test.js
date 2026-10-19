@@ -24,6 +24,21 @@ const bad = m => { fail++; console.log("  FAIL  " + m); };
 const ME = "HR-EMP-00003";
 const REPORT = "HR-EMP-00005";
 
+/* The people this caller may open - which is to say, exactly what the server
+   would hand back. `whose_months_i_can_open` scopes to the caller's own
+   reporting line, so these two are the whole universe for this manager. */
+const SCOPED = [
+  { name: REPORT, employee_name: "Neha Kumar", designation: "Executive",
+    department: "Sales" },
+  { name: "HR-EMP-00009", employee_name: "Vikas Rana", designation: "Fitter",
+    department: "Plant" },
+];
+/* Matches "neh" and is NOT in the line. The server never returns it, so it
+   must never appear on screen - which is only true while the SEARCH is the
+   server's job. A picker that filtered a list in the browser would have to be
+   handed a staff directory first, and this name is how we would find out. */
+const OUTSIDER = "Nehal Verma";
+
 const calls = [];
 function reply(url, body) {
   const m = /attendance_correction\.(\w+)|hr_api\.(\w+)/.exec(url) || [];
@@ -37,6 +52,25 @@ function reply(url, body) {
   if (fn === "get_portal_context")
     return { employee_id: ME, employee_name: "Rahul", is_manager: true,
              team: [], dashboard: {}, cycle: null };
+  if (fn === "whose_months_i_can_open") {
+    const term = String((JSON.parse(body || "{}") || {}).search || "").toLowerCase();
+    return SCOPED.filter(p => !term
+      || p.employee_name.toLowerCase().indexOf(term) >= 0
+      || p.name.toLowerCase().indexOf(term) >= 0);
+  }
+  if (fn === "month") {
+    const a = JSON.parse(body || "{}");
+    const who = a.employee || ME;
+    const hit = SCOPED.filter(p => p.name === who)[0];
+    return { employee: who, employee_name: hit ? hit.employee_name : "Rahul Sharma",
+             is_self: who === ME, can_request: who !== ME, can_review: false,
+             can_request_from: null, can_request_basis: null,
+             on_behalf_enabled: true, tolerance_mins: 15,
+             year: a.year, month: a.month, days: [],
+             totals: { present: 0, hours_worked: 0, short_days: 0,
+                       missing_punches: 0, late_days: 0, leave: 0 } };
+  }
+  if (fn === "team_days") return { people: [], rows: [], total: 0 };
   if (fn === "get_available_features") return {};
   if (fn === "get_checkin_status")
     return { no_employee: 0, employee: { name: ME, employee_name: "Rahul Sharma",
@@ -210,6 +244,124 @@ function putForm(reason) {
   /does not let a manager/.test(switchedOff)
     ? ok("with the setting off the page says so, in plain words")
     : bad("the switched-off page did not explain itself");
+
+  // ── Whose record: the person picker (19 Oct 2026) ──────────────────
+  // Surbhi, on a 403-entry dropdown: "there should be a way to do a text
+  // based search with the drop down". What is pinned here is the three things
+  // that make it safe as well as usable - the search happens on the server,
+  // "Whole team" survives, and the whole control works from the keyboard.
+  const key = (k) => {
+    const box = doc.getElementById("ac-pick-q");
+    const ev = new window.KeyboardEvent("keydown", { key: k, bubbles: true,
+                                                     cancelable: true });
+    box.dispatchEvent(ev);
+    return ev;
+  };
+  const rows = () => Array.from(doc.querySelectorAll("#ac-pick-list .ac-pick-o"))
+                          .map(li => li.textContent);
+
+  window.acState.people = null;        // as a fresh page would be
+  window.acState.employee = null;
+  window.acState.team = false;
+  await window.acOpen();
+  await settle(300);
+
+  const box = doc.getElementById("ac-pick-q");
+  box ? ok("the picker is a text box you can type in")
+      : bad("there is no search box on the attendance bar");
+  if (!box) {
+    console.log(`### correction DOM test: ${pass} passed, ${fail} failed`);
+    process.exit(1);
+  }
+  (box.getAttribute("role") === "combobox")
+    ? ok("it tells a screen reader it is a combobox")
+    : bad("the box has no combobox role");
+  (doc.querySelector('label[for="ac-pick-q"]') !== null)
+    ? ok("and it has a label")
+    : bad("the search box has no label");
+
+  // An empty box must not be an empty list: twelve reports should be there
+  // without typing a letter. A click is what opens it - focus deliberately
+  // does not, or choosing somebody would reopen the list it just closed.
+  box.focus();
+  box.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  const idle = rows();
+  (idle.length === 2 + SCOPED.length)
+    ? ok("an empty box lists everyone it can, with no typing")
+    : bad("an empty box listed " + idle.length + " rows: " + JSON.stringify(idle));
+  /Whole team/.test(idle[0] || "")
+    ? ok('"Whole team" is the first entry')
+    : bad('"Whole team" is not first: ' + JSON.stringify(idle));
+
+  // Typing narrows it, and the narrowing is the SERVER's.
+  calls.length = 0;
+  box.value = "neh";
+  window.acPickType("neh");
+  await settle(420);
+  const asked = calls.filter(c => c.fn === "whose_months_i_can_open");
+  const sentTerm = asked.length
+    ? (JSON.parse(asked[asked.length - 1].body || "{}").search || "") : "";
+  (sentTerm === "neh")
+    ? ok("the typed words are sent to whose_months_i_can_open")
+    : bad("the search was not sent to the server: " + JSON.stringify(calls));
+  const narrowed = rows();
+  (narrowed.length === 1 && /Neha Kumar/.test(narrowed[0]))
+    ? ok("typing narrows the list to the match")
+    : bad("typing did not narrow the list: " + JSON.stringify(narrowed));
+  !narrowed.some(t => t.indexOf(OUTSIDER) >= 0)
+    ? ok("somebody outside the manager's line never appears")
+    : bad("a name from outside the reporting line was shown: "
+          + JSON.stringify(narrowed));
+  /HR-EMP-00005/.test(narrowed[0] || "")
+    ? ok("the row shows the employee ID as well as the name")
+    : bad("the row does not show the employee ID: " + narrowed[0]);
+
+  // Arrow keys, Enter, Escape - and the highlight a screen reader reads.
+  const down = key("ArrowDown");
+  down.defaultPrevented
+    ? ok("ArrowDown moves the highlight instead of the cursor")
+    : bad("ArrowDown was not handled");
+  (box.getAttribute("aria-activedescendant") || "").indexOf("ac-pick-o") === 0
+    ? ok("the highlighted row is named in aria-activedescendant")
+    : bad("no aria-activedescendant: "
+          + box.getAttribute("aria-activedescendant"));
+  (doc.querySelectorAll('#ac-pick-list [aria-selected="true"]').length === 1)
+    ? ok("exactly one row is marked selected")
+    : bad("the selected row is not marked");
+
+  calls.length = 0;
+  const enter = key("Enter");
+  await settle(300);
+  enter.defaultPrevented
+    ? ok("Enter takes the highlighted row")
+    : bad("Enter was not handled");
+  (window.acState.employee === REPORT)
+    ? ok("and the page moves to that person's record")
+    : bad("Enter did not open the person: " + window.acState.employee);
+  (doc.getElementById("ac-pick-list").hidden === true)
+    ? ok("the list closes once a choice is made")
+    : bad("the list stayed open after a choice");
+  (doc.activeElement && doc.activeElement.id === "ac-pick-q")
+    ? ok("the keyboard stays in the search box after a choice")
+    : bad("the keyboard was thrown out of the box: "
+          + (doc.activeElement && doc.activeElement.id));
+
+  window.acPickShow();
+  const esc = key("Escape");
+  (esc.defaultPrevented && doc.getElementById("ac-pick-list").hidden === true)
+    ? ok("Escape closes the list")
+    : bad("Escape did not close the list");
+
+  // "Whole team" still switches to the cross-person list.
+  window.acPickShow();
+  window.acPickChoose(0);
+  await settle(300);
+  (window.acState.team === true)
+    ? ok('"Whole team" still switches to the whole-team list')
+    : bad('"Whole team" did not switch the page');
+  (doc.getElementById("ac-team").style.display !== "none")
+    ? ok("and the whole-team list is the thing on screen")
+    : bad("the whole-team list is still hidden");
 
   console.log(`### correction DOM test: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

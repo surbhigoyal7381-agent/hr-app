@@ -321,13 +321,21 @@ def whose_months_i_can_open(search=None, limit=25):
 
 	Returns nobody rather than everybody when the caller reviews nothing, so an
 	ordinary employee's picker is empty instead of being a staff directory.
+
+	`search` matches the two things a person is known by - their name and their
+	employee ID - because HR knows half the company by ID and nobody knows 403
+	people by name. Frappe ANDs `or_filters` with `filters` as one bracketed
+	group, so the Active-and-in-my-line narrowing below still holds for every
+	row a search returns: a manager cannot type their way out of their own
+	reporting line.
 	"""
 	me = _employee_for(frappe.session.user)
+	term = str(search or "").strip()
+	named = ({"employee_name": ("like", "%" + term + "%"),
+	          "name": ("like", "%" + term + "%")} if term else None)
 	if _may_review():
-		filters = {"status": "Active"}
-		if search:
-			filters["employee_name"] = ("like", "%" + str(search).strip() + "%")
-		rows = frappe.get_list("Employee", filters=filters,
+		rows = frappe.get_list("Employee", filters={"status": "Active"},
+		                       or_filters=named,
 		                       fields=["name", "employee_name", "designation", "department"],
 		                       order_by="employee_name asc",
 		                       limit_page_length=cint(limit) or 25)
@@ -343,10 +351,8 @@ def whose_months_i_can_open(search=None, limit=25):
 		team = _reports_to(me.name, deep=True)
 		if not team:
 			return []
-		filters = {"name": ("in", team), "status": "Active"}
-		if search:
-			filters["employee_name"] = ("like", "%" + str(search).strip() + "%")
-		rows = frappe.get_all("Employee", filters=filters,
+		rows = frappe.get_all("Employee", filters={"name": ("in", team), "status": "Active"},
+		                      or_filters=named,
 		                      fields=["name", "employee_name", "designation", "department"],
 		                      order_by="employee_name asc",
 		                      limit_page_length=cint(limit) or 25)

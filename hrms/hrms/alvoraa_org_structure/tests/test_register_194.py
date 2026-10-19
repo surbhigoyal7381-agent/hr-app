@@ -5,9 +5,9 @@ two different permissions on purpose - a branch head planning next month's cover
 needs to see the empty seats in their store, and letting them redraw the company
 is a different decision entirely.
 
-Who may change it is a SETTING, not a role fixed in code, because it genuinely
-differs by customer: at the first one the owners keep the structure themselves
-and HR does not touch it.
+Who may change it is Frappe's own permission on Alvoraa Position, set in Role
+Permissions Manager, because it genuinely differs by customer: at the first one
+the owners keep the structure themselves and HR does not touch it.
 """
 
 import frappe
@@ -16,26 +16,62 @@ from hrms.alvoraa_org_structure import register, settings
 from hrms.alvoraa_org_structure.tests.test_company_scope_194 import CompanyScopeCase
 from hrms.alvoraa_org_structure.tests.test_org_structure import _company
 
+ASSIGNMENT = "Alvoraa Position Assignment"
+
+
+def _forget_permissions():
+	"""Make Frappe re-read who may do what, as Role Permissions Manager does."""
+	for dt in (register.POSITION, ASSIGNMENT):
+		frappe.clear_cache(doctype=dt)
+	frappe.local.role_permissions = {}
+
 
 class RegisterCase(CompanyScopeCase):
 	def setUp(self):
 		super().setUp()
-		self._saved = {k: frappe.db.get_default(k) for k in settings.DEFAULTS}
+		self._perm_rows = []
 		# These tests are about scope and editing, and they run as an HR User.
-		# Who may open the page at all is pinned in TestWhoMayOpenThePage,
-		# which puts the shipped default back.
-		self.viewers("HR Manager,HR User")
+		# The shipped table gives HR User nothing, so they say exactly what the
+		# HR User may do here - the way an administrator would, in Role
+		# Permissions Manager. Who may open the page with NO extra rows is
+		# pinned in TestWhoMayOpenThePage.
+		self.rows(("HR User", "read"))
 
 	def tearDown(self):
-		for k, v in self._saved.items():
-			frappe.db.set_default(k, v if v is not None else "")
+		self.no_rows()
 		super().tearDown()
 
-	def editors(self, roles):
-		frappe.db.set_default(register.EDITOR_ROLES_KEY, roles)
+	def rows(self, *grants, doctype=None):
+		"""Replace the permission table with exactly these rows, as Custom
+		DocPerm - which Frappe then uses INSTEAD OF the shipped rows.
 
-	def viewers(self, roles):
-		frappe.db.set_default(register.VIEWER_ROLES_KEY, roles)
+		Each grant is (role, "read") or (role, "write"). Removed in tear-down
+		and committed, or they would leak into the next test run.
+		"""
+		self.no_rows(doctype)
+		for role, level in grants:
+			self._perm_rows.append(frappe.get_doc({
+				"doctype": "Custom DocPerm", "parent": doctype or register.POSITION,
+				"parenttype": "DocType", "parentfield": "permissions",
+				"role": role, "permlevel": 0, "read": 1,
+				"write": int(level == "write"), "create": int(level == "write"),
+			}).insert(ignore_permissions=True).name)
+		frappe.db.commit()
+		_forget_permissions()
+
+	def no_rows(self, doctype=None):
+		"""Back to the shipped table."""
+		for name in list(self._perm_rows):
+			parent = frappe.db.get_value("Custom DocPerm", name, "parent")
+			if doctype and parent != doctype:
+				continue
+			frappe.db.delete("Custom DocPerm", {"name": name})
+			self._perm_rows.remove(name)
+		frappe.db.commit()
+		_forget_permissions()
+
+	def editors(self, role):
+		self.rows((role, "write"))
 
 	def titles(self, result):
 		return sorted(r["title"] for r in result["rows"])
@@ -113,14 +149,14 @@ class TestWhoMayChangeIt(RegisterCase):
 		frappe.set_user(self.hr_user("reg194.hr5@example.com"))
 		self.assertFalse(register.position_table()["may_edit"])
 
-	def test_the_setting_decides_and_nothing_else(self):
+	def test_the_permission_row_decides_and_nothing_else(self):
 		self.pos("Counter Staff Here", seats=1)
 		self.editors("HR User")
 		frappe.set_user(self.hr_user("reg194.hr6@example.com"))
 		self.assertTrue(register.may_edit())
 
-	def test_somebody_the_setting_does_not_name_is_refused(self):
-		self.editors("Some Role Nobody Has")
+	def test_somebody_the_rows_do_not_name_is_refused(self):
+		self.editors("System Manager")      # and nothing for HR User
 		frappe.set_user(self.hr_user("reg194.hr7@example.com"))
 		with self.assertRaises(frappe.PermissionError):
 			register.save_position(position_title="Sneaked In", seats=1)
@@ -171,19 +207,19 @@ class TestWhoMayChangeIt(RegisterCase):
 
 
 class TestWhoMayOpenThePage(RegisterCase):
-	"""Surbhi, 19 Oct 2026: "positions page access should also be permission
-	based. not all should be able to see this page. for them the organisation
-	page is there." And: "set the positions page default to HR Manager".
+	"""Surbhi, 19 Oct 2026: "I want the position access to be provided through
+	the Frappe interface like other standard Frappe modules".
 
-	Until then the page followed the org chart's reach, which lets in anybody
-	with a direct report. Every endpoint behind the page now asks `may_view`.
+	So the page asks Frappe: Read on Alvoraa Position opens it, Write changes
+	it. An administrator sets that in Role Permissions Manager. The rows these
+	tests write are Custom DocPerm, which is exactly what that screen writes.
 	"""
+
+	OWNER_ROLE = "Org061 Structure Editor"
 
 	def setUp(self):
 		super().setUp()
-		# The shipped defaults: a blank setting reads as its default.
-		self.viewers("")
-		self.editors("")
+		self.no_rows()          # the shipped table, as on a tenant nobody customised
 		self.seat = self.pos("Counter Staff Here", seats=1).name
 
 	def user(self, email, roles=(), employee=None):
@@ -200,6 +236,9 @@ class TestWhoMayOpenThePage(RegisterCase):
 		frappe.db.commit()
 		return email
 
+	def hr_manager(self, email):
+		return self.user(email, roles=("HR Manager",), employee=self.person("Open061 HRM"))
+
 	def refused_everywhere(self, employee):
 		for call in (lambda: register.position_table(),
 		             lambda: register.where_does_this_person_sit(employee),
@@ -207,19 +246,91 @@ class TestWhoMayOpenThePage(RegisterCase):
 			with self.assertRaises(frappe.PermissionError):
 				call()
 
-	def test_the_default_is_hr_manager(self):
-		self.assertEqual(settings.DEFAULTS[register.VIEWER_ROLES_KEY], "HR Manager")
+	def test_the_shipped_rows_are_hr_manager_and_system_manager_only(self):
+		"""Pinned on the files, so the shipped table cannot quietly widen again.
+		Employee read and HR User write were in it until 19 Oct 2026, which
+		would have opened the page to every member of staff."""
+		import json
+		import os
 
-	def test_the_setting_is_one_only_a_system_manager_may_change(self):
-		"""It decides who sees the company's structure, so it is SEC-18."""
-		self.assertIn(register.VIEWER_ROLES_KEY, settings.ACCESS_GRANTING)
+		for dt in ("alvoraa_position", "alvoraa_position_assignment"):
+			path = os.path.join(os.path.dirname(register.__file__), "doctype", dt, dt + ".json")
+			with open(path) as f:
+				roles = sorted(p["role"] for p in json.load(f)["permissions"])
+			self.assertEqual(roles, ["HR Manager", "System Manager"], dt)
 
-	def test_an_hr_manager_sees_and_loads_the_register(self):
-		email = self.hr_user("open060.hrm@example.com")
-		self.user(email, roles=("HR Manager",))
-		frappe.set_user(email)
+	def test_the_role_list_settings_are_gone(self):
+		"""Retired for Frappe's own table. Two places to set one thing is how
+		DTC came to have its owners refused by one and allowed by the other."""
+		for key in ("alvoraa_org_positions_view_roles", "alvoraa_org_position_editor_roles"):
+			self.assertNotIn(key, settings.DEFAULTS)
+			self.assertNotIn(key, settings.LABELS)
+			self.assertNotIn(key, settings.ACCESS_GRANTING)
+
+	def test_an_hr_manager_row_gives_view_and_edit(self):
+		frappe.set_user(self.hr_manager("open061.hrm@example.com"))
 		self.assertTrue(register.may_view())
+		self.assertTrue(register.may_edit())
 		self.assertIn("Counter Staff Here", self.titles(register.position_table()))
+
+	def test_taking_the_hr_manager_row_away_takes_both(self):
+		"""Grace's rows: System Manager only."""
+		self.rows(("System Manager", "write"))
+		self.rows(("System Manager", "write"), doctype=ASSIGNMENT)
+		emp = self.person("Open061 Other")
+		frappe.set_user(self.hr_manager("open061.hrm2@example.com"))
+		self.assertFalse(register.may_view())
+		self.assertFalse(register.may_edit())
+		self.refused_everywhere(emp)
+		with self.assertRaises(frappe.PermissionError):
+			register.save_position(position_title="Sneaked In", seats=1)
+
+	def test_read_alone_opens_the_page_but_changes_nothing(self):
+		self.rows(("HR Manager", "read"))
+		frappe.set_user(self.hr_manager("open061.hrm3@example.com"))
+		self.assertTrue(register.may_view())
+		self.assertFalse(register.may_edit())
+		self.assertFalse(register.position_table()["may_edit"])
+		with self.assertRaises(frappe.PermissionError):
+			register.save_position(position_title="Sneaked In", seats=1)
+		with self.assertRaises(frappe.PermissionError):
+			register.assign_person(self.seat, self.person("Open061 Somebody"))
+
+	def test_dtc_shaped_rows_let_the_owners_in_and_keep_hr_out(self):
+		"""DTC's own rows, 15 Oct 2026: System Manager, and a role of their own
+		with read, write and create on Alvoraa Position. On the Assignment
+		doctype, System Manager ONLY. HR Manager has no row on either.
+
+		The owners can still put people in seats: one capability, governed by
+		Alvoraa Position. And they see their own company's seats, though they
+		hold no HR role."""
+		if not frappe.db.exists("Role", self.OWNER_ROLE):
+			frappe.get_doc({"doctype": "Role", "role_name": self.OWNER_ROLE,
+			                "desk_access": 1}).insert(ignore_permissions=True)
+			self._cleanup.insert(0, ("Role", self.OWNER_ROLE))
+		self.rows(("System Manager", "write"), (self.OWNER_ROLE, "write"))
+		self.rows(("System Manager", "write"), doctype=ASSIGNMENT)
+
+		owner = self.person("Open061 Owner")
+		report = self.person("Open061 Report")
+		frappe.db.set_value("Employee", report, "reports_to", owner)
+		hrm = self.hr_manager("open061.hrm4@example.com")
+		try:
+			frappe.set_user(self.user("open061.owner@example.com",
+			                          roles=(self.OWNER_ROLE,), employee=owner))
+			self.assertTrue(register.may_view())
+			self.assertTrue(register.may_edit())
+			self.assertIn("Counter Staff Here", self.titles(register.position_table()))
+			made = register.save_position(position_title="Open061 New Seat", seats=1)
+			got = register.assign_person(made["name"], report)
+			self.assertEqual(frappe.db.get_value(ASSIGNMENT, got["name"], "employee"), report)
+
+			frappe.set_user(hrm)
+			self.assertFalse(register.may_view())
+			self.refused_everywhere(report)
+		finally:
+			frappe.set_user("Administrator")
+			frappe.db.set_value("Employee", report, "reports_to", None)
 
 	def test_a_plain_employee_is_refused(self):
 		emp = self.person("Open060 Plain")
@@ -228,8 +339,9 @@ class TestWhoMayOpenThePage(RegisterCase):
 		self.refused_everywhere(emp)
 
 	def test_a_manager_with_direct_reports_is_refused(self):
-		"""THE CASE THAT CHANGED. Such a manager still sees the whole org
-		chart - `reach()` is untouched - but not this page."""
+		"""THE CASE THAT MATTERS. Such a manager still sees the whole org
+		chart - `reach()` is untouched - but not this page, because no
+		permission row names them."""
 		from hrms.alvoraa_org_structure.api import reach
 
 		frappe.db.set_default("alvoraa_org_managers_see_all", 1)
@@ -242,6 +354,8 @@ class TestWhoMayOpenThePage(RegisterCase):
 			self.assertTrue(reach()["unlimited"], "the chart must still be open to them")
 			self.assertFalse(register.may_view())
 			self.refused_everywhere(report)
+			with self.assertRaises(frappe.PermissionError):
+				register.assign_person(self.seat, report)
 		finally:
 			# The tear-down deletes people in the order they were made, and a
 			# manager cannot be deleted while somebody reports to them.
@@ -254,38 +368,27 @@ class TestWhoMayOpenThePage(RegisterCase):
 		with self.assertRaises(frappe.PermissionError):
 			register.position_table()
 
-	def test_a_role_added_to_the_setting_gains_access(self):
-		self.viewers("HR Manager,HR User")
-		frappe.set_user(self.hr_user("open060.hru2@example.com"))
-		self.assertTrue(register.may_view())
-		self.assertIn("Counter Staff Here", self.titles(register.position_table()))
-
-	def test_an_editor_may_always_view(self):
-		"""A role in the editor list but not the view list could otherwise
-		change seats it cannot see."""
-		self.viewers("HR Manager")
-		self.editors("HR User")
-		frappe.set_user(self.hr_user("open060.hru3@example.com"))
-		self.assertTrue(register.may_view())
-		self.assertTrue(register.position_table()["may_edit"])
-
-	def test_the_shipped_editor_default_can_view(self):
-		"""System Manager is a default editor and not in "HR Manager"."""
+	def test_a_system_manager_can_view_and_edit(self):
 		email = self.user("open060.sm@example.com", roles=("System Manager",))
 		frappe.set_user(email)
 		self.assertTrue(register.may_view())
+		self.assertTrue(register.may_edit())
 
-	def test_the_proposal_endpoints_follow_the_page(self):
-		"""Offered only on the Positions page. An HR Manager left out of
-		both lists may not use them either."""
+	def test_the_proposal_endpoints_follow_the_edit_rule(self):
+		"""They write seats, so Read alone is not enough, and the old fixed
+		HR Manager check is gone: whoever may change the structure may use
+		them."""
 		from hrms.alvoraa_org_structure import api
 
-		self.viewers("Some Role Nobody Has")
-		self.editors("Some Role Nobody Has")
-		email = self.hr_user("open060.hrm2@example.com")
-		self.user(email, roles=("HR Manager",))
-		frappe.set_user(email)
+		self.rows(("HR Manager", "read"))
+		frappe.set_user(self.hr_manager("open061.hrm5@example.com"))
 		with self.assertRaises(frappe.PermissionError):
 			api.propose_positions()
 		with self.assertRaises(frappe.PermissionError):
 			api.create_proposed_positions([])
+
+		frappe.set_user("Administrator")
+		self.rows(("HR Manager", "write"))
+		frappe.set_user("open061.hrm5@example.com")
+		self.assertIn("positions", api.propose_positions())
+		self.assertEqual(api.create_proposed_positions([])["positions_created"], 0)

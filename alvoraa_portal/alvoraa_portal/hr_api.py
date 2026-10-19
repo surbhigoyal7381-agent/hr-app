@@ -338,9 +338,11 @@ def get_portal_context():
         # somebody has no manager set - and the team view needs real reports.
         "att_insights": has_reports or _may_see_organisation(),
         # May this person open the Positions page? The page's own endpoints
-        # refuse anybody this says no to (`register.may_view`), so the menu is
-        # the same answer, not a second copy of the rule. It reads two settings
-        # and the role list, all from Frappe's caches: no extra query.
+        # refuse anybody this says no to (`register.may_view`, Frappe's Read on
+        # Alvoraa Position), so the menu is the same answer, not a second copy
+        # of the rule. Cached with the rest of this context for up to an hour:
+        # a change in Role Permissions Manager can leave the MENU behind for
+        # that long, but the page's endpoints ask Frappe on every call.
         "positions": _may_view_positions(),
         "manager_name": manager_name,
         "roles": roles,

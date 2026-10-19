@@ -8,16 +8,16 @@ in a tree you hunt.
 It is also where seats are created and re-parented, because that is awkward on
 a chart and obvious in a row.
 
-WHO MAY CHANGE IT IS A SETTING, not a hard-coded role. At the first customer the
-owners maintain the structure themselves and HR does not; at the next it will be
-the other way round. `alvoraa_org_position_editor_roles` decides, and like the
-other keys that hand out privilege it can only be changed by a System Manager,
-and leaves a record when it is.
+WHO MAY OPEN IT, AND WHO MAY CHANGE IT, IS FRAPPE'S OWN PERMISSION on the
+document type "Alvoraa Position" - set on Desk, Role Permissions Manager, like
+every other module (Surbhi, 19 Oct 2026). Read opens the page; Write changes
+seats and who sits in them. It ships as HR Manager and System Manager. At the
+first customer the owners keep the structure themselves through a role of their
+own; at the next it may be HR. Either way an administrator ticks the boxes, and
+nothing here needs to know which.
 
-WHO MAY OPEN IT AT ALL IS A SETTING TOO: `alvoraa_org_positions_view_roles`,
-HR Manager by default (Surbhi, 19 Oct 2026). Everybody else has the
-Organisation page. Until then any manager could read it, because reading
-followed the org chart's reach.
+Everybody else has the Organisation page. The org chart's `reach()` decides
+that page and does not decide this one.
 
 READING IS SCOPED THE SAME WAY AS EVERY OTHER HR READER (slice 030): the
 companies somebody may act for, and their branches if they are tied to a store.
@@ -29,8 +29,7 @@ from frappe.utils import add_days, flt, getdate, nowdate
 
 from hrms.alvoraa_org_structure import settings
 
-EDITOR_ROLES_KEY = "alvoraa_org_position_editor_roles"
-VIEWER_ROLES_KEY = "alvoraa_org_positions_view_roles"
+POSITION = "Alvoraa Position"
 
 
 def _scope():
@@ -38,40 +37,48 @@ def _scope():
 
 	Returns (companies, branches). `branches` is None for somebody who is not
 	tied to a store, which means "every branch" rather than "no branch".
+
+	Somebody given this page in Role Permissions Manager without an HR role -
+	the owners at the first customer - gets the same answer HR would: the
+	companies in their User Permissions, or else the company on their own
+	employee record. `permitted_companies` gives a non-HR role nothing, which
+	opened the page on an empty table and refused every save. Every caller of
+	this function has already passed `may_view` or `may_edit`.
 	"""
+	from frappe.core.doctype.user_permission.user_permission import get_user_permissions
+
 	from hrms.alvoraa_hr_core.access import permitted_branches, permitted_companies
 
-	return permitted_companies(), permitted_branches()
+	companies = permitted_companies()
+	if not companies:
+		companies = sorted({d.get("doc") for d in get_user_permissions().get("Company", [])
+		                    if d.get("doc")})
+	if not companies:
+		own = frappe.db.get_value("Employee", {"user_id": frappe.session.user,
+		                                       "status": "Active"}, "company")
+		companies = [own] if own else []
+	return companies, permitted_branches()
 
 
 def may_view():
-	"""Whether this person may open the Positions page at all.
-
-	The roles in `alvoraa_org_positions_view_roles`, HR Manager by default.
-	This used to be `reach()`, the org chart's rule, which lets in anybody with
-	a direct report. `reach()` still decides the chart; it no longer decides
-	this page.
-
-	ANYBODY WHO MAY EDIT MAY ALSO VIEW. Otherwise the two settings could
-	contradict each other: a role in the editor list but not in this one could
-	change seats it cannot see. With the shipped defaults that is exactly the
-	System Manager, so the editor roles count here too.
-
-	A blank setting reads as the default, so clearing it cannot lock HR out.
+	"""Whether this person may open the Positions page at all: Frappe's Read on
+	Alvoraa Position. One rule for every endpoint behind the page and the menu.
 	"""
-	allowed = {r.strip() for r in str(settings.get(VIEWER_ROLES_KEY)).split(",") if r.strip()}
-	return bool(allowed & set(frappe.get_roles())) or may_edit()
+	return bool(frappe.has_permission(POSITION, "read"))
 
 
 def may_edit():
-	"""Whether this person may create or change a seat.
+	"""Whether this person may change the structure: Frappe's Write on Alvoraa
+	Position.
 
-	Read from a setting rather than fixed in code, because who owns the shape of
-	the organisation differs by customer. At DTC it is the owners; elsewhere it
-	will be HR.
+	ONE CAPABILITY, SET IN ONE PLACE. It covers the seats AND who sits in them
+	(Alvoraa Position Assignment), so an administrator ticks one row and not
+	two. Asking each doctype separately would let somebody draw seats they could
+	not fill - which is what the first customer's own permission rows would have
+	done to its owners. Write rather than Create, because nearly every change
+	here is to a seat that already exists.
 	"""
-	allowed = {r.strip() for r in str(settings.get(EDITOR_ROLES_KEY)).split(",") if r.strip()}
-	return bool(allowed & set(frappe.get_roles()))
+	return bool(frappe.has_permission(POSITION, "write"))
 
 
 def _may_see_who_is_leaving():
@@ -570,10 +577,11 @@ def assign_person(position, employee, weight=100, assignment_type="Permanent",
 		"delegate_authority": 1 if frappe.utils.cint(delegate_authority) else 0,
 		"reason": reason or None,
 	})
-	# No ignore_permissions. The editor role holds create on this doctype, so
-	# this is a real check and not a formality - and if a tenant has not given
-	# it, the refusal is the correct answer rather than something to work past.
-	a.insert()
+	# The permission was checked above, by `_position_in_scope`: Write on
+	# Alvoraa Position, the one capability that governs the structure and who
+	# sits in it (see `may_edit`). Asking Frappe again about the Assignment
+	# doctype would refuse an owner a tenant had given the structure to.
+	a.insert(ignore_permissions=True)
 	return {"name": a.name, "position": doc.name, "moved": moved}
 
 

@@ -173,26 +173,25 @@ class TestThePhoneBarPointsAtTheRightPage(FrappeTestCase):
 
 
 class TestThePositionsItemFollowsTheServer(FrappeTestCase):
-	"""Surbhi, 19 Oct 2026: "positions page access should also be permission
-	based. not all should be able to see this page. for them the organisation
-	page is there." HR Manager by default.
+	"""Surbhi, 19 Oct 2026: "I want the position access to be provided through
+	the Frappe interface like other standard Frappe modules".
 
-	The menu showed Positions to every manager. The server now refuses them,
-	and the menu reads the server's answer rather than a copy of the rule.
+	The menu reads the server's answer - Frappe's Read on Alvoraa Position -
+	rather than a copy of the rule.
 	"""
 
-	VIEW_KEY = "alvoraa_org_positions_view_roles"
+	ROLE = "Nav061 Positions Reader"
 
 	def setUp(self):
-		self._saved = {k: frappe.db.get_default(k) for k in
-		               (self.VIEW_KEY, "alvoraa_org_position_editor_roles",
-		                "alvoraa_org_managers_see_all")}
-		for k in self._saved:
-			frappe.db.set_default(k, "")   # blank reads as the shipped default
+		self._saved = {"alvoraa_org_managers_see_all":
+		               frappe.db.get_default("alvoraa_org_managers_see_all")}
+		frappe.db.set_default("alvoraa_org_managers_see_all", "")
 		self._made = []
+		self._perm_rows = []
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
+		self._drop_rows()
 		for doctype, name in reversed(self._made):
 			try:
 				frappe.delete_doc(doctype, name, force=True, ignore_permissions=True)
@@ -201,6 +200,31 @@ class TestThePositionsItemFollowsTheServer(FrappeTestCase):
 		for k, v in self._saved.items():
 			frappe.db.set_default(k, v if v is not None else "")
 		frappe.db.commit()
+
+	def _drop_rows(self):
+		for name in self._perm_rows:
+			frappe.db.delete("Custom DocPerm", {"name": name})
+		self._perm_rows = []
+		frappe.db.commit()
+		frappe.clear_cache(doctype="Alvoraa Position")
+		frappe.local.role_permissions = {}
+
+	def _grant_read(self, role):
+		"""What Role Permissions Manager writes. Once any Custom DocPerm row
+		exists for a doctype, Frappe uses those rows and not the shipped ones."""
+		if not frappe.db.exists("Role", role):
+			# Kept, like the users ensure_user makes: a role still held by a
+			# user cannot be deleted, and it grants nothing once the row goes.
+			frappe.get_doc({"doctype": "Role", "role_name": role,
+			                "desk_access": 0}).insert(ignore_permissions=True)
+		self._perm_rows.append(frappe.get_doc({
+			"doctype": "Custom DocPerm", "parent": "Alvoraa Position",
+			"parenttype": "DocType", "parentfield": "permissions",
+			"role": role, "permlevel": 0, "read": 1,
+		}).insert(ignore_permissions=True).name)
+		frappe.db.commit()
+		frappe.clear_cache(doctype="Alvoraa Position")
+		frappe.local.role_permissions = {}
 
 	def _employee(self, name, user=None, reports_to=None):
 		doc = frappe.get_doc({
@@ -250,3 +274,18 @@ class TestThePositionsItemFollowsTheServer(FrappeTestCase):
 		user = ensure_user("nav060.hrm@example.com", roles=("Employee", "HR Manager"))
 		self._employee("Nav060 HRM", user=user)
 		self.assertIs(self._context_as(user)["positions"], True)
+
+	def test_the_flag_follows_a_row_added_and_taken_away(self):
+		"""A role an administrator ticks Read for in Role Permissions Manager
+		gets the menu item; untick it and the item goes."""
+		user = ensure_user("nav061.reader@example.com", roles=("Employee",))
+		self._employee("Nav061 Reader", user=user)
+		self._grant_read(self.ROLE)
+		u = frappe.get_doc("User", user)
+		u.flags.ignore_permissions = True
+		u.add_roles(self.ROLE)
+		self.assertIs(self._context_as(user)["positions"], True)
+
+		frappe.set_user("Administrator")
+		self._drop_rows()
+		self.assertIs(self._context_as(user)["positions"], False)

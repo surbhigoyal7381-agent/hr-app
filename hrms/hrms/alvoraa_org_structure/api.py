@@ -256,12 +256,13 @@ def propose_positions(company=None):
 	into an afternoon of correcting, which is the difference between a feature
 	that is bought and a feature that is used.
 	"""
-	frappe.only_for(["HR Manager", "System Manager"])
-	# Offered only on the Positions page, so it follows that page's setting too.
-	from hrms.alvoraa_org_structure.register import _refuse_view, may_view
+	# Offered only to somebody who may change the Positions page, and it is the
+	# first half of writing seats, so it asks the page's own edit rule: Frappe's
+	# Write on Alvoraa Position.
+	from hrms.alvoraa_org_structure.register import _refuse, may_edit
 
-	if not may_view():
-		_refuse_view("api.propose_positions")
+	if not may_edit():
+		_refuse("api.propose_positions")
 	filters = {"status": "Active"}
 	if company:
 		filters["company"] = company
@@ -339,11 +340,10 @@ def propose_positions(company=None):
 @frappe.whitelist()
 def create_proposed_positions(positions):
 	"""Write a reviewed proposal, and put the people in the seats."""
-	frappe.only_for(["HR Manager", "System Manager"])
-	from hrms.alvoraa_org_structure.register import _refuse_view, may_view
+	from hrms.alvoraa_org_structure.register import _refuse, may_edit
 
-	if not may_view():
-		_refuse_view("api.create_proposed_positions")
+	if not may_edit():
+		_refuse("api.create_proposed_positions")
 	positions = frappe.parse_json(positions) if isinstance(positions, str) else positions
 
 	# Parents before children, or the tree link points at nothing yet - and

@@ -312,6 +312,7 @@ window.posLoad = async function () {
   }
   POS.rows = (out && out.rows) || [];
   POS.may_edit = !!(out && out.may_edit);
+  POS.may_delete = !!(out && out.may_delete);
   POS.departments = (out && out.departments) || {};
   var add = document.getElementById("pos-add-btn");
   if (add) add.style.display = POS.may_edit ? "" : "none";
@@ -1699,6 +1700,10 @@ window.posOpenEditor = function (id) {
   // only appear once it does.
   var another = document.getElementById("pos-save-another");
   if (another) another.style.display = r ? "none" : "";
+  // Delete is the server's answer too (Frappe's Delete right), and only for
+  // a seat that exists. The server still refuses a seat with a past.
+  var del = document.getElementById("pos-delete-btn");
+  if (del) del.style.display = (r && POS.may_delete) ? "" : "none";
 
   // No seat count. Surbhi, 15 Oct 2026: "One dialog should only talk about
   // one position." Several of the same job are several seats, made with
@@ -1831,6 +1836,53 @@ window.posSave = async function (then) {
   posCloseEditor();
   posLoad();
 };
+
+/* Deleting a seat: an alert dialog naming the seat, focus on "Keep it",
+   Escape keeps it. A refusal (people, seats under it, history) comes back
+   from the server in plain words and is shown as a toast. */
+window.posAskDelete = function () {
+  var r = posSeat();
+  if (!r || !POS.may_delete) return;
+  document.getElementById("pos-delete-text").textContent =
+    "Delete “" + r.title + "”? This cannot be undone from this page. "
+    + "Only a seat nobody has ever held can be deleted; otherwise set its status to Closed.";
+  document.getElementById("pos-delete-go").disabled = false;
+  document.getElementById("pos-delete").classList.add("open");
+  document.getElementById("pos-delete-keep").focus();
+};
+
+window.posCloseDelete = function () {
+  document.getElementById("pos-delete").classList.remove("open");
+  var del = document.getElementById("pos-delete-btn");
+  if (del && del.offsetParent) del.focus();
+};
+
+window.posDelete = async function () {
+  var r = posSeat();
+  if (!r) return;
+  var go = document.getElementById("pos-delete-go");
+  go.disabled = true;           // a second tap sends nothing
+  try {
+    await gpFetch("hrms.alvoraa_org_structure.register.delete_position", { position: r.id });
+  } catch (e) {
+    go.disabled = false;
+    posCloseDelete();
+    toast((e && e.message) || "The seat could not be deleted. Try again.", "err");
+    return;
+  }
+  document.getElementById("pos-delete").classList.remove("open");
+  posCloseEditor();
+  toast("“" + r.title + "” was deleted.");
+  posLoad();
+};
+
+document.addEventListener("keydown", function (e) {
+  var dlg = document.getElementById("pos-delete");
+  if (dlg && dlg.classList.contains("open") && e.key === "Escape") {
+    e.preventDefault();
+    posCloseDelete();
+  }
+});
 
 /* ── moving around ─────────────────────────────────────────────────── */
 

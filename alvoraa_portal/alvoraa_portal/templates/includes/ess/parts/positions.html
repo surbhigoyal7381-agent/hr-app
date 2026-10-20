@@ -205,11 +205,25 @@
             </div>
           </div>
           <div class="gp-modal-footer">
+            <!-- Shown only for a saved seat, and only when the server says this
+                 person has Frappe's Delete right on positions (may_delete). -->
+            <button class="btn btn-danger" id="pos-delete-btn" style="display:none;margin-right:auto"
+                    onclick="posAskDelete()">Delete seat</button>
             <button class="btn btn-outline" onclick="posCloseEditor()">Close</button>
             <button class="btn btn-outline" id="pos-save-another"
                     onclick="posSave('another')">Save and add another</button>
             <button class="btn btn-primary" id="pos-save-btn"
                     onclick="posSave('close')">Save and close</button>
+          </div>
+        </div>
+      </div>
+      <div class="gp-backdrop" id="pos-delete">
+        <div class="gp-modal" role="alertdialog" aria-modal="true" aria-labelledby="pos-delete-title" aria-describedby="pos-delete-text" style="max-width:480px">
+          <div class="gp-modal-hdr"><h2 class="gp-modal-title" id="pos-delete-title">Delete this seat?</h2></div>
+          <div class="gp-modal-body"><p id="pos-delete-text" style="margin:0;line-height:1.5"></p></div>
+          <div class="gp-modal-footer">
+            <button type="button" class="btn btn-outline" id="pos-delete-keep" onclick="posCloseDelete()">Keep it</button>
+            <button type="button" class="btn btn-danger" id="pos-delete-go" onclick="posDelete()">Delete seat</button>
           </div>
         </div>
       </div>

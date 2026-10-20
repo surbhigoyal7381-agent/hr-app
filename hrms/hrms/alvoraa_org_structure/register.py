@@ -282,7 +282,7 @@ def position_table(branch=None, department=None, as_at=None):
 		order_by="branch asc, department asc, position_title asc",
 		limit_page_length=0)
 	if not seats:
-		return {"rows": [], "may_edit": may_edit(), "as_at": as_at}
+		return {"rows": [], "may_edit": may_edit(), "may_delete": may_delete(), "as_at": as_at}
 
 	names = [s.name for s in seats]
 	filled, people = {}, {}
@@ -419,7 +419,7 @@ def position_table(branch=None, department=None, as_at=None):
 				seen.add(d.name)
 			edge = [parents[e]["parent"] for e in edge if e in parents]
 
-	return {"rows": rows, "may_edit": may_edit(), "as_at": as_at,
+	return {"rows": rows, "may_edit": may_edit(), "may_delete": may_delete(), "as_at": as_at,
 	        "departments": parents}
 
 
@@ -472,6 +472,49 @@ def save_position(name=None, position_title=None, reports_to_position=None,
 	doc.flags.ignore_permissions = True
 	doc.save() if name else doc.insert()
 	return {"ok": True, "name": doc.name, "title": doc.position_title}
+
+
+def may_delete():
+	"""Frappe's own Delete right on Alvoraa Position, ticked on the same
+	screen as Read and Write. Separate from Write on purpose: deleting is the
+	one change here that cannot be undone from the page."""
+	return bool(frappe.has_permission(POSITION, "delete"))
+
+
+@frappe.whitelist(methods=["POST"])
+def delete_position(position):
+	"""Remove a seat that was made by mistake and never used.
+
+	ONLY A SEAT WITH NO PAST. Anybody ever assigned to it is part of the record
+	of who did what job, which a chart is asked about a year later - so that
+	seat is closed, not deleted. Each refusal says what to do instead.
+	"""
+	if not may_delete():
+		_refuse("register.delete_position", position)
+	doc = frappe.get_doc(POSITION, position)
+	companies, branches = _scope()
+	if doc.company not in companies or (
+			branches is not None and (doc.branch or "") not in branches):
+		_refuse("register.delete_position", position)
+
+	title = frappe.bold(doc.position_title or doc.name)
+	if doc._current_assignments():
+		frappe.throw(_("{0} still has people in it. Take them out of the seat, then "
+		               "set its status to Closed - a seat somebody held is kept, "
+		               "not deleted.").format(title))
+	if frappe.db.exists(POSITION, {"reports_to_position": doc.name}):
+		frappe.throw(_("{0} has other seats reporting to it. Move those seats "
+		               "under a different one first, then delete this one.").format(title))
+	if frappe.db.exists(ASSIGNMENT, {"position": doc.name}):
+		frappe.throw(_("{0} has had people in it, and that history is kept. Set its "
+		               "status to Closed instead of deleting it.").format(title))
+	try:
+		frappe.delete_doc(POSITION, doc.name)
+	except frappe.LinkExistsError:
+		frappe.throw(_("{0} is named on another record, such as a job opening or a "
+		               "dotted reporting line. Set its status to Closed instead of "
+		               "deleting it.").format(title))
+	return {"ok": True, "name": doc.name}
 
 
 # ── who is in a seat ─────────────────────────────────────────────────────────

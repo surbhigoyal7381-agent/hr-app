@@ -515,3 +515,77 @@ class TestEveryPermissionChangeLeavesARecord(RegisterCase):
 		finally:
 			frappe.flags.in_migrate = False
 		self.assertEqual(self.new_records(), [])
+
+
+class TestDeletingASeat(RegisterCase):
+	"""A seat made by mistake can be deleted from the page; a seat with a past
+	cannot. Frappe's own Delete right decides who may - HR Manager and System
+	Manager as shipped."""
+
+	def setUp(self):
+		super().setUp()
+		self.no_rows()          # the shipped table
+		self.seat = self.pos("Del061 Mistake", seats=1).name
+
+	def as_hr_manager(self, email):
+		email = self.hr_user(email)
+		u = frappe.get_doc("User", email)
+		u.flags.ignore_permissions = True
+		u.add_roles("HR Manager")
+		frappe.db.commit()
+		frappe.set_user(email)
+
+	def test_an_unused_seat_is_deleted(self):
+		self.as_hr_manager("del061.hrm@example.com")
+		self.assertTrue(register.position_table()["may_delete"])
+		register.delete_position(self.seat)
+		self.assertFalse(frappe.db.exists(register.POSITION, self.seat))
+		# Frappe keeps a restorable copy of anything deleted. Proven, then
+		# removed, so the test leaves nothing behind on test_site.
+		backup = {"deleted_doctype": register.POSITION, "deleted_name": self.seat}
+		self.assertTrue(frappe.db.exists("Deleted Document", backup))
+		frappe.db.delete("Deleted Document", backup)
+		frappe.db.commit()
+
+	def test_a_seat_with_people_in_it_is_refused(self):
+		self.assign(self.person("Del061 Holder"), self.seat, from_date="2026-01-01")
+		self.as_hr_manager("del061.hrm2@example.com")
+		with self.assertRaisesRegex(frappe.ValidationError, "still has people in it"):
+			register.delete_position(self.seat)
+		self.assertTrue(frappe.db.exists(register.POSITION, self.seat))
+
+	def test_a_seat_with_seats_under_it_is_refused(self):
+		self.pos("Del061 Under", parent=self.seat, seats=1)
+		self.as_hr_manager("del061.hrm3@example.com")
+		with self.assertRaisesRegex(frappe.ValidationError, "other seats reporting to it"):
+			register.delete_position(self.seat)
+
+	def test_a_seat_somebody_once_held_is_refused(self):
+		"""Its history is the record of who did the job. Close it instead."""
+		self.assign(self.person("Del061 Past"), self.seat,
+		            from_date="2026-01-01", to_date="2026-02-01")
+		self.as_hr_manager("del061.hrm4@example.com")
+		with self.assertRaisesRegex(frappe.ValidationError, "has had people in it.*Set its status to Closed"):
+			register.delete_position(self.seat)
+		self.assertTrue(frappe.db.exists(register.POSITION, self.seat))
+
+	def test_write_without_delete_is_refused(self):
+		"""DTC's owners have Read, Write and Create but no Delete."""
+		self.rows(("HR Manager", "write"))
+		self.as_hr_manager("del061.hrm5@example.com")
+		self.assertFalse(register.position_table()["may_delete"])
+		with self.assertRaises(frappe.PermissionError):
+			register.delete_position(self.seat)
+		self.assertTrue(frappe.db.exists(register.POSITION, self.seat))
+
+	def test_a_seat_in_another_store_is_refused(self):
+		here, there = self.branch("Scope194 Here"), self.branch("Scope194 There")
+		theirs = self.pos("Del061 There", seats=1, branch=there).name
+		email = self.hr_user("del061.store@example.com", branch=here)
+		u = frappe.get_doc("User", email)
+		u.flags.ignore_permissions = True
+		u.add_roles("HR Manager")
+		frappe.db.commit()
+		frappe.set_user(email)
+		with self.assertRaises(frappe.PermissionError):
+			register.delete_position(theirs)

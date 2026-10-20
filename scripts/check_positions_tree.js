@@ -519,11 +519,72 @@ function render(rows, values, collapsed, expanded) {
      "Ambala holds a manager and two people under him");
 }
 
-if (problems.length) {
-  console.error("positions tree: " + problems.length + " problem(s)");
-  problems.forEach((p) => console.error("  FAIL " + p));
-  process.exit(1);
+/* ── 20. deleting a seat ────────────────────────────────────────────────── */
+// The server decides (Frappe's Delete right, and no seat with a past); the
+// page only offers the button when told, names the seat before deleting, and
+// shows the server's own words when it refuses.
+async function deleteChecks() {
+  const src = fs.readFileSync(PORTAL, "utf8");
+  ok("the Delete button follows the server's may_delete",
+     /pos-delete-btn[\s\S]{0,120}\(r && POS\.may_delete\)/.test(src));
+
+  function deleteContext(mayDelete, answer) {
+    const ctx = makeContext({});
+    ctx.__els["pos-e-name"] = { id: "pos-e-name", value: "P-Cashier" };
+    const toasts = [];
+    const opened = new Set();
+    const cls = (id) => ({ add: () => opened.add(id), remove: () => opened.delete(id),
+                          contains: () => opened.has(id) });
+    for (const id of ["pos-delete", "pos-editor"])
+      ctx.__els[id] = { id, style: {}, classList: cls(id) };
+    for (const id of ["pos-delete-text", "pos-delete-go", "pos-delete-keep", "pos-delete-btn"])
+      ctx.__els[id] = { id, style: {}, textContent: "", disabled: false, focus() {} };
+    ctx.__els["toast-wrap"] = { appendChild: (t) => toasts.push(t) };
+    ctx.document.createElement = () => ({ className: "", textContent: "", remove() {} });
+    ctx.POS.rows = ROWS;
+    ctx.POS.may_delete = mayDelete;
+    ctx.posLoad = async () => {};
+    ctx.gpFetch = async () => { if (answer instanceof Error) throw answer; return answer; };
+    return { ctx, toasts, opened };
+  }
+
+  {
+    const t = deleteContext(false);
+    t.ctx.posAskDelete();
+    ok("without the Delete right nothing opens", !t.opened.has("pos-delete"));
+  }
+  {
+    const t = deleteContext(true, { ok: true });
+    t.ctx.posAskDelete();
+    ok("the confirm opens", t.opened.has("pos-delete"));
+    ok("and names the seat", t.ctx.__els["pos-delete-text"].textContent.includes("Cashier"));
+    t.opened.add("pos-editor");
+    await t.ctx.posDelete();
+    ok("a deleted seat closes both dialogs",
+       !t.opened.has("pos-delete") && !t.opened.has("pos-editor"));
+    ok("and says so", t.toasts.length === 1 && t.toasts[0].textContent.includes("was deleted"));
+  }
+  {
+    const said = "Cashier still has people in it. Take them out of the seat first.";
+    const t = deleteContext(true, new Error(said));
+    t.ctx.posAskDelete();
+    await t.ctx.posDelete();
+    ok("a refusal shows the server's own words",
+       t.toasts.length === 1 && t.toasts[0].textContent === said
+       && t.toasts[0].className.includes("err"));
+    ok("and the Delete button can be pressed again",
+       t.ctx.__els["pos-delete-go"].disabled === false);
+  }
 }
-console.log("positions tree: " + checks + " checks - every seat drawn, "
-            + "identical siblings grouped without losing anybody, filters "
-            + "grey, loops and deep chains survive");
+
+deleteChecks().then(() => {
+  if (problems.length) {
+    console.error("positions tree: " + problems.length + " problem(s)");
+    problems.forEach((p) => console.error("  FAIL " + p));
+    process.exit(1);
+  }
+  console.log("positions tree: " + checks + " checks - every seat drawn, "
+              + "identical siblings grouped without losing anybody, filters "
+              + "grey, loops and deep chains survive, a seat is deleted only "
+              + "when the server says so");
+});

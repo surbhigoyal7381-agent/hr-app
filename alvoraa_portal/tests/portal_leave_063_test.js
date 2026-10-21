@@ -173,6 +173,7 @@ const txt = id => (doc.getElementById(id) || {}).textContent || "";
   await settle(20);
   has(txt("la-title"), "Apply for leave", "R-28");
   has(txt("la-close-btn"), "Close", "R-33");
+  doc.querySelector("#la-modal .gp-modal.lp-modal") ? ok("R-75: the DTC form takes the phone sizes") : bad("R-75: no lp-modal class");
   const opts = [...doc.querySelectorAll("#la-leave-type option")].map(o => o.textContent).join("|");
   has(opts, "Paid Leaves - 2.5 days left", "R-30");
   has(opts, "Leave Without Pay - 3 of 5 used", "R-30");

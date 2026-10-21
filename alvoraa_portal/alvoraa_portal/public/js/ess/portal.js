@@ -5015,6 +5015,9 @@ function lpModalWords() {
     Object.keys(ids).forEach(function(k) { var el = document.getElementById(k); if (el) LP.orig[k] = el.textContent; });
   }
   var dtc = LP.dtc;
+  /* 16px field text and 44px targets on a phone (R-75), in this mode only. */
+  var shell = document.querySelector("#la-modal .gp-modal");
+  if (shell) shell.classList.toggle("lp-modal", !!dtc);
   var words = dtc ? {"la-title": drT("Apply for leave"), "la-lbl-type": drT("Leave type"), "la-lbl-from": drT("From"),
                      "la-lbl-to": drT("To"), "la-lbl-reason": drT("Reason (optional)"), "la-close-btn": drT("Close"),
                      "la-lbl-behalf": drT("Who is this leave for?")} : LP.orig;

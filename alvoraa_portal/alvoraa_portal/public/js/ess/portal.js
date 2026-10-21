@@ -1007,8 +1007,66 @@ window.posPaint = function () {
   }
 };
 
-/* Replaced by the phone outline in its own commit; the chart until then. */
-function posOutline() { return posChart(); }
+/* ── the phone: one level at a time ─────────────────────────────────────
+   No chart on a 390 px screen. The top of the organisation as rows; a row
+   with seats under it goes down a level and shows that seat's card; "Up one
+   level" comes back. A seat with nobody under it opens its sheet. */
+function posOutline() {
+  var nav = POS.nav, at = POS.trail.length ? POS.trail[POS.trail.length - 1] : null;
+  var h = '<div class="pos-outline">', ids;
+  if (!at) {
+    ids = nav.top;
+    h += '<p class="pos-asat">' + drT("Top of the organisation. Tap a row to see what is under it.") + "</p>";
+  } else {
+    ids = posKidsOf(at);
+    if (posIsSeat(at)) {
+      var here = nav.by[at];
+      h += '<div class="here"><div class="pos-h3" style="margin:0">' + posEsc(here.title) + "</div>"
+        + '<div class="su">' + posEsc((here.branch || drT("No branch")) + " · " + (here.department || drT("No department"))) + "</div>"
+        + '<div class="su">' + posRollWords(posRoll(at)) + "</div>"
+        + '<button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="posSeatSheet(\'' + posJs(at) + '\')">'
+        + drT("Who is in this seat") + "</button></div>";
+    } else {
+      h += '<div class="here"><div class="pos-h3" style="margin:0">' + posEsc(posTitle(nav, at)) + "</div>"
+        + '<div class="su">' + drT("{0} seats", [posRoll(at).seats]) + "</div></div>";
+    }
+    h += '<button type="button" class="btn btn-outline btn-sm" style="margin-bottom:10px" onclick="posTrailUp()">'
+      + drT("Up one level") + "</button>";
+  }
+  var any = posAnyFilter();
+  ids.forEach(function (id) {
+    var kids = posKidsOf(id).length;
+    if (!posIsSeat(id)) {
+      var ho = posRoll(id);
+      h += '<button type="button" class="pos-orow' + (ho.fill ? " amber" : "") + '" onclick="posDown(\'' + posJs(id)
+        + '\')"><span><span class="t1">' + posEsc(posTitle(nav, id)) + '</span><br><span class="t2">'
+        + drT("{0} seats · {1} people", [ho.seats, ho.people]) + (ho.fill ? " · " + drT("{0} to fill", [posNum(ho.fill)]) : "")
+        + '</span></span><span class="chev" aria-hidden="true">&rsaquo;</span></button>';
+      return;
+    }
+    var r = nav.by[id], o = posOpen(r), lv = posLeavingIn(r), extra = [];
+    var line = kids ? posRollWords(posRoll(id)) : posWho(r);
+    if (o) extra.push(drT("{0} to fill", [posNum(o)]));
+    if (lv) extra.push(drT("{0} leaving", [lv]));
+    h += '<button type="button" class="pos-orow' + (o || lv ? " amber" : "") + (any && !posMatches(r) ? " dim" : "")
+      + (POS.focus === id ? " focus" : "") + '" id="' + posBoxId(id) + '" onclick="' + (kids ? "posDown" : "posSeatSheet")
+      + "('" + posJs(id) + '\')"><span><span class="t1">' + posEsc(r.title) + '</span><br><span class="t2">'
+      + posEsc(r.branch || drT("No branch")) + " · " + line + (extra.length ? " · <strong>" + posEsc(extra.join(", ")) + "</strong>" : "")
+      + '</span></span><span class="chev" aria-hidden="true">' + (kids ? "&rsaquo;" : "") + "</span></button>";
+  });
+  if (!at && posShowNoMgr()) {
+    h += '<button type="button" class="pos-orow dashed amber" id="pos-nomgr-row" onclick="posNoMgrSheet()"><span><span class="t1">'
+      + drT("No reporting manager") + '</span><br><span class="t2">'
+      + drT("{0} people · not in any seat", [posNoMgrPeople().length]) + '</span></span><span class="chev" aria-hidden="true">&rsaquo;</span></button>';
+  }
+  return h + "</div>";
+}
+
+window.posDown = function (id) {
+  POS.trail.push(id); posPaint();
+  if (window.scrollTo) window.scrollTo(0, 0);
+};
+window.posTrailUp = function () { POS.trail.pop(); posPaint(); };
 
 function posPaintFocus() {
   var el = document.getElementById("pos-focusline");

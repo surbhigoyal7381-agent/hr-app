@@ -484,6 +484,28 @@ async function recordsChecks() {
   ok("a reader without HR scope never finds a person in no seat", !owner.__els["pos-hits"].innerHTML.includes("In no seat"));
 }
 
+/* ── 20. the phone: one level at a time (US-16, v9) ─────────────────────── */
+{
+  const ctx = load(dtc(), {}, { unseated: [{ employee: "U1", name: "P", job_role: "RSO", branch: "X",
+    joined: "2026-10-01", no_manager: true }], active_people: 9 }, { phone: true, width: 390 });
+  let html = body(ctx);
+  ok("no chart on a phone", !html.includes("pos-chartwrap") && html.includes("pos-outline"));
+  ok("it starts at the top with a hint", html.includes("Top of the organisation. Tap a row to see what is under it."));
+  ok("the top seat is a row with a way down", html.includes("posDown('own')") && html.includes("&rsaquo;</span></button>"));
+  ok("HR gets the dashed No reporting manager row", html.includes('class="pos-orow dashed amber" id="pos-nomgr-row"')
+     && html.includes("1 people · not in any seat"));
+  ctx.posDown("own");
+  html = body(ctx);
+  ok("going down shows the seat's card and its rows", html.includes('class="here"') && html.includes("Who is in this seat")
+     && html.includes("Up one level") && html.includes("posDown('tl0')") && html.includes("posSeatSheet('leaf0')"));
+  ok("no group on a phone - every seat is a row", !html.includes("pos-sibs"));
+  ctx.posTrailUp();
+  ok("Up one level goes back", body(ctx).includes("Top of the organisation."));
+  ctx.posPick("tl3s2");
+  ok("a Find pick on a phone opens the outline at the parent, row outlined",
+     ctx.POS.trail.join(">") === "own>tl3" && / focus"/.test(body(ctx)));
+}
+
 /* ── 18. deleting a seat (slice 061, kept) ──────────────────────────────── */
 async function deleteChecks() {
   const src = fs.readFileSync(PORTAL, "utf8");

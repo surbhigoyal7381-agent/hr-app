@@ -25,8 +25,8 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 
-const PORTAL = path.join("alvoraa_portal", "alvoraa_portal", "public", "js",
-                         "ess", "portal.js");
+const PORTAL = path.join(__dirname, "..", "alvoraa_portal", "alvoraa_portal", "public",
+                         "js", "ess", "portal.js");
 
 /* ── a DOM just real enough ──────────────────────────────────────────────────
    Only the handful of elements the Positions panel touches. Everything else

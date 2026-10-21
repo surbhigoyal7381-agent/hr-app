@@ -77,6 +77,10 @@ const RUN = [
   /* Slice 045, Wave 4: the two that needed a get_performance_tree payload. */
   { file: "portal_tree_test.js", args: [PAGE, TREE_FIXTURE] },
   { file: "portal_redesign_test.js", args: [PAGE, TREE_FIXTURE] },
+  /* Slice 064: the Positions window, group boxes, panels, Find and the
+     phone outline. The checks live in scripts/check_positions_tree.js;
+     this runs them in CI so a bad merge that drops one fails here. */
+  { file: "portal_positions_test.js" },
 ];
 
 /* **Empty, and it stays empty.** AC-62: an entry here needs a ticket and a
@@ -85,7 +89,7 @@ const SKIP = {};
 
 /* AC-64. A number, so a test that disappears is a failure rather than a
    shorter run nobody reads. Raise it deliberately when you add one. */
-const EXPECTED_BROWSER_TESTS = 11;
+const EXPECTED_BROWSER_TESTS = 12;   // 063 added portal_leave_063_test.js, 064 added portal_positions_test.js
 
 const onDisk = fs.readdirSync(DIR).filter((f) => f.endsWith("_test.js")).sort();
 const known = [...RUN.map((r) => r.file), ...Object.keys(SKIP)].sort();

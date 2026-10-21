@@ -31,6 +31,11 @@ from hrms.alvoraa_org_structure import settings
 
 POSITION = "Alvoraa Position"
 
+# The fixed first words of the reason the hire hook writes on an assignment
+# (slice 064). Ids only follow it, never a name. The page reads it to say
+# "hired for this seat".
+PLACED = "Placed on joining from Job Opening"
+
 
 def _scope():
 	"""The companies and branches this reader may act for.
@@ -278,7 +283,7 @@ def position_table(branch=None, department=None, as_at=None):
 		"Alvoraa Position", filters=filters,
 		fields=["name", "position_title", "status", "is_key_position", "seats",
 		        "reports_to_position", "branch", "department", "designation",
-		        "grade", "company", "effective_from", "effective_to"],
+		        "grade", "company", "effective_from", "effective_to", "creation"],
 		order_by="branch asc, department asc, position_title asc",
 		limit_page_length=0)
 	if not seats:
@@ -290,7 +295,7 @@ def position_table(branch=None, department=None, as_at=None):
 			"Alvoraa Position Assignment",
 			filters={"position": ("in", names), "from_date": ("<=", as_at)},
 			fields=["name", "position", "employee", "employee_name", "weight",
-			        "assignment_type", "to_date"],
+			        "assignment_type", "to_date", "from_date", "reason"],
 			limit_page_length=0):
 		if a.to_date and str(a.to_date) < str(as_at):
 			continue
@@ -303,7 +308,10 @@ def position_table(branch=None, department=None, as_at=None):
 			"employee": a.employee, "name": a.employee_name,
 			"weight": flt(a.weight),
 			"type": a.assignment_type or "Permanent",
-			"covering": (a.assignment_type or "Permanent") != "Permanent"})
+			"covering": (a.assignment_type or "Permanent") != "Permanent",
+			# Put in this seat by the hire hook (slice 064): the day they joined.
+			# Read from the assignment's own fixed reason; nothing is stored for it.
+			"hired_on": str(a.from_date) if (a.reason or "").startswith(PLACED) else None})
 
 	# Who is working their notice. Nothing new is stored for this: somebody is
 	# on notice when they are still Active and their last day is already known.
@@ -325,7 +333,8 @@ def position_table(branch=None, department=None, as_at=None):
 	# one-person seat names them exactly, so a count is not a weaker disclosure
 	# than a date - it is the same one, worded vaguely.
 	leaving = {}
-	if _may_see_who_is_leaving():
+	may_see_leaving = _may_see_who_is_leaving()
+	if may_see_leaving:
 		holders = {a["employee"] for rows_ in people.values() for a in rows_} 			if people else set()
 		mine = _my_reporting_line()
 		if holders:
@@ -359,6 +368,9 @@ def position_table(branch=None, department=None, as_at=None):
 		rows.append({
 			"id": s.name,
 			"title": s.position_title,
+			# The day the seat was made. "New seat" on the page is worked out
+			# from it and the company's first seat - no field is stored (064).
+			"created": str(s.creation)[:10],
 			"branch": s.branch or "",
 			"department": s.department or "",
 			"designation": s.designation or "",
@@ -419,8 +431,20 @@ def position_table(branch=None, department=None, as_at=None):
 				seen.add(d.name)
 			edge = [parents[e]["parent"] for e in edge if e in parents]
 
+	# The day each company's chart was first set up, so the seats made that day
+	# do not all read as "new". One grouped read over the reader's companies.
+	first = {d.company: str(d.first)[:10] for d in frappe.get_all(
+		POSITION, filters={"company": ("in", companies)},
+		fields=["company", {"MIN": "creation", "as": "first"}], group_by="company")}
+
 	return {"rows": rows, "may_edit": may_edit(), "may_delete": may_delete(), "as_at": as_at,
-	        "departments": parents}
+	        "departments": parents, "first_seat_created": first,
+	        # Whether the page may say "leaving" at all, so a reader who may not
+	        # see leavers gets no tile - never a "Nobody leaving" that is untrue.
+	        "may_see_leaving": bool(may_see_leaving),
+	        # "Set manager" opens the Employee record; offered only to somebody
+	        # who may change it (design X-6).
+	        "may_edit_employee": bool(frappe.has_permission("Employee", "write"))}
 
 
 @frappe.whitelist()

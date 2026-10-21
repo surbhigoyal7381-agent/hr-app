@@ -202,8 +202,10 @@ def table_view(as_at):
 	A fixed number of queries whatever the number of plans or people: the
 	plans (through the gate), the names of who set and confirmed them, and
 	which of those hold HR Manager.
+
+	The caller has already checked `is_reader()`; it is not asked twice.
 	"""
-	if str(as_at) != nowdate() or not is_reader():
+	if str(as_at) != nowdate():
 		return None
 	rows = frappe.get_list(
 		DOCTYPE, fields=["name", "assignment", "confirmed_on", "note", "owner", "creation", "modified_by"],

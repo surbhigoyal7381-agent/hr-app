@@ -244,3 +244,17 @@ Consequences to design for, not to argue with:
 - D9 means an approved-by-nobody absence must not escape the special-day double charge. D6 (block on special days) must therefore cover Leave Without Pay too.
 - D3 means the card shows credits held by pending requests, while the engine only counts approved leave. The card must label the figure as a projection.
 - D4 means the card and the form must say plainly what a half day costs.
+
+---
+
+## Changes by Surbhi, 21 Oct 2026 (later the same day) - these OVERRIDE D2 and D9 and the earlier open questions
+
+| Topic | Decision |
+|---|---|
+| Approval of leave without pay (reverses D9) | **HR approves it.** Leave without pay is NOT recorded without approval. "We thought it through and want to keep HR as approver." So the no-approval path, the self-approval exception (SEC-4) and the "recorded without approval" marker are NOT needed. |
+| Limit on leave without pay (replaces "no limit") | **Not more than 5.** Default until she says otherwise: 5 days per calendar month, counting pending and approved, a half day counts 0.5. OPEN: confirm the period (month or year?) and whether pending counts. |
+| Back-dating (refines D2) | **Current month only, never before.** So October days cannot be recorded on 1-5 Nov (U6 is NO). |
+| Cancelling | **Both HR and the employee can cancel** (replaces the default 'HR only'). The security agent must say how an employee can cancel their own leave safely (limit in hr_api.py is 69 and would become 70; the employee must not be able to cancel an approved Paid Leaves day through REST beyond what Frappe already allows). |
+| Notification | **When HR approves a leave, the notification goes to all higher-level managers in the hierarchy** (not only the direct manager). Default: the chain of Employee 'Reports To' up to the top, which is what DTC maintains and Frappe uses (the seat tree and the Reports To chain disagree at DTC today, see slice 064). Covers every leave type unless Surbhi narrows it. The notice never carries the employee's reason (PRIV-1). More people learning of an absence is a privacy point for the security agent. |
+| Q1 (no-approval only at DTC?) | Moot: nothing is no-approval now. Leave without pay in the Apply list stays for every tenant (D5), but it follows each tenant's normal approval. |
+| U1-U5, U7, U8 | Still ASSUMED ACCEPTED as the designer recommended, except where this table changes them. |

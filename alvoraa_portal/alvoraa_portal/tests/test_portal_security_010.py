@@ -811,6 +811,17 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		("alvoraa_portal", "field_app_housekeeping.py"): 3,
 		("alvoraa_portal", "field_app_records.py"): 0,
 		("alvoraa_portal", "alvoraa_portal/doctype/alvoraa_field_app_daily_count/alvoraa_field_app_daily_count.py"): 0,
+		# Slice 064 (SEC-7). register.py had 4 and no ceiling, so a fifth would
+		# have passed. hiring.py (new) holds the ONE bypass of the hire hook: the
+		# assignment insert, for an HR User who may hire but may not place people
+		# by hand; every assignment rule still runs. The opening is closed as the
+		# user, with none. The rest of the org-structure code is held at 0.
+		("hrms", "alvoraa_org_structure/register.py"): 4,
+		("hrms", "alvoraa_org_structure/hiring.py"): 1,
+		("hrms", "alvoraa_org_structure/metrics.py"): 0,
+		("hrms", "alvoraa_org_structure/doctype/alvoraa_position/alvoraa_position.py"): 0,
+		("hrms", "alvoraa_org_structure/doctype/alvoraa_position_assignment/alvoraa_position_assignment.py"): 0,
+		("alvoraa_portal", "org_job_link.py"): 0,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

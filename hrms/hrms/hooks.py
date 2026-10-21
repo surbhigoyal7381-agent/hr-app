@@ -260,6 +260,8 @@ doc_events = {
 		"after_insert": [
 			"hrms.overrides.employee_master.update_job_applicant_and_offer",
 			"hrms.alvoraa_employee_documents.employee_documents.fill_checklist",
+			# Slice 064: a hire from an opening linked to a seat is put in that seat.
+			"hrms.alvoraa_org_structure.hiring.place_hire",
 		],
 		"on_trash": "hrms.overrides.employee_master.update_employee_transfer",
 		"after_delete": "hrms.overrides.employee_master.publish_update",

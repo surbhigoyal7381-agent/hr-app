@@ -71,6 +71,9 @@ const RUN = [
      came back 403; nothing in the suite noticed, because the arguments
      were right and only the method was wrong. */
   { file: "portal_correction_test.js", args: [PAGE] },
+  /* Slice 063: the Paid Leaves card, the leave list, Cancel and the Apply
+     pop-up at a company whose pay rule set is on, against prototype v3. */
+  { file: "portal_leave_063_test.js", args: [PAGE] },
   /* Slice 045, Wave 4: the two that needed a get_performance_tree payload. */
   { file: "portal_tree_test.js", args: [PAGE, TREE_FIXTURE] },
   { file: "portal_redesign_test.js", args: [PAGE, TREE_FIXTURE] },
@@ -82,7 +85,7 @@ const SKIP = {};
 
 /* AC-64. A number, so a test that disappears is a failure rather than a
    shorter run nobody reads. Raise it deliberately when you add one. */
-const EXPECTED_BROWSER_TESTS = 10;
+const EXPECTED_BROWSER_TESTS = 11;
 
 const onDisk = fs.readdirSync(DIR).filter((f) => f.endsWith("_test.js")).sort();
 const known = [...RUN.map((r) => r.file), ...Object.keys(SKIP)].sort();

@@ -4444,21 +4444,43 @@ function loadTeamLateList() {
 var _leaveSummaryCache = null;
 function loadLeaves() {
   _leaveSummaryCache = null;
+  if (LP.dtc) lpRenderCard(null);   /* slice 063: the skeleton, once we know */
   api("get_leave_summary", {}, function(data) {
     _leaveSummaryCache = data;
-    renderLeaveRings(data.balances || []);
-    renderLeaveApps(data.applications || []);
+    LP.dtc = lpIsDtc(data);
+    if (LP.dtc) {
+      lpRenderCard(data.paid_leaves || {error: 1});
+      lpRenderApps(data.applications || []);
+    } else {
+      renderLeaveRings(data.balances || []);
+      renderLeaveApps(data.applications || []);
+    }
 
     // Update sidebar badge
     const pending = (data.applications || []).filter(a => a.status === "Open").length;
     const badge = document.getElementById("sb-leave-badge");
     if (pending > 0) { badge.textContent = pending; badge.style.display = "flex"; }
     else { badge.style.display = "none"; }
-  }, function() { toast("Failed to load leave data", "err"); });
+  }, function() {
+    if (LP.dtc) { lpRenderCard({error: 1}); return; }
+    toast("Failed to load leave data", "err");
+  });
 }
 
-function _populateLeaveTypeSelect(balances, everAllocated) {
+function _populateLeaveTypeSelect(balances, everAllocated, typesOffered) {
   var sel = document.getElementById("la-leave-type");
+  /* Slice 063: where the company's pay rule set is on, the list is the
+     server's own (Paid Leaves and Leave Without Pay, worded per the design). */
+  if (LP.dtc) { lpPopulateTypes(typesOffered || []); return; }
+  /* D5: every other tenant also gets Leave Without Pay, approved as usual. */
+  var lwpRow = (typesOffered || []).filter(function(t) { return t.lwp; })[0];
+  var hasLwp = lwpRow && (balances || []).some(function(b) { return b.leave_type === lwpRow.leave_type; });
+  var lwpOpt = (lwpRow && !hasLwp)
+    ? '<option value="' + gpEsc(lwpRow.leave_type) + '">' + gpEsc(lwpRow.leave_type) + '</option>' : "";
+  if ((!balances || !balances.length) && lwpOpt) {
+    sel.innerHTML = '<option value="">Select leave type…</option>' + lwpOpt;
+    return;
+  }
   if (!balances || !balances.length) {
     // Two different problems needing two different fixes. Saying "for this
     // period" to someone with NO allocation at all points them at dates, which
@@ -4473,7 +4495,7 @@ function _populateLeaveTypeSelect(balances, everAllocated) {
     balances.map(function(b) {
       return '<option value="' + gpEsc(b.leave_type) + '">' +
              gpEsc(b.leave_type) + ' (' + b.balance + ' day' + (b.balance === 1 ? '' : 's') + ' left)</option>';
-    }).join("");
+    }).join("") + lwpOpt;
 }
 
 var _laEmployeeCache = null;
@@ -4508,17 +4530,23 @@ function openLeaveModal() {
   }
 
   if (_leaveSummaryCache) {
-    _populateLeaveTypeSelect(_leaveSummaryCache.balances || [], _leaveSummaryCache.ever_allocated);
+    LP.dtc = lpIsDtc(_leaveSummaryCache);
+    _populateLeaveTypeSelect(_leaveSummaryCache.balances || [], _leaveSummaryCache.ever_allocated,
+                             _leaveSummaryCache.types_offered);
   } else {
     api("get_leave_summary", {}, function(data) {
       _leaveSummaryCache = data;
-      _populateLeaveTypeSelect(data.balances || [], data.ever_allocated);
+      LP.dtc = lpIsDtc(data);
+      lpModalWords();
+      _populateLeaveTypeSelect(data.balances || [], data.ever_allocated, data.types_offered);
     }, function() {
       sel.innerHTML = '<option value="">Could not load leave types</option>';
     });
   }
+  lpModalWords();
 
   pfOpenModal("la-modal");
+  if (LP.dtc) { var t = document.getElementById("la-title"); if (t) t.focus(); }
 }
 
 var _laEmpSearchTimer = null;
@@ -4551,6 +4579,8 @@ function _laFilterEmployees(q) {
   if (!matches.length) { dd.innerHTML = '<div style="padding:10px 14px;font-size:var(--fs-base);color:var(--text3)">No employees found</div>'; dd.style.display = ""; return; }
   dd.innerHTML = matches.map(function(e) {
     var sub = [e.department, e.designation].filter(Boolean).map(esc).join(" &middot; ");
+    /* Slice 063 (AC-93): HR files for staff who cannot, so say who they are. */
+    if (e.no_login) sub = (sub ? sub + " &middot; " : "") + esc(drT("no login"));
     return '<div style="padding:8px 14px;cursor:pointer;border-bottom:1px solid var(--border)" onmousedown="laSelectEmployee(\'' + esc(e.name) + '\',\'' + esc(e.employee_name) + '\',\'' + esc(e.department||'') + '\')">' +
       '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">' +
         '<strong style="font-size:var(--fs-base)">' + esc(e.employee_name) + '</strong>' +
@@ -4572,8 +4602,12 @@ function laSelectEmployee(id, name, dept) {
   // Reload leave types for this employee
   var leaveTypeSel = document.getElementById("la-leave-type");
   leaveTypeSel.innerHTML = '<option value="">Loading…</option>';
-  api("get_leave_summary", {employee_id: id}, function(data) {
-    _populateLeaveTypeSelect(data.balances || [], data.ever_allocated);
+  var isMe = !!(window._me && id === window._me.name);
+  LP.subject = isMe ? null : {name: id, label: name};
+  /* Slice 063: HR's own leave reads their own summary, so their own Paid
+     Leaves figures come with it (SEC-1 gives none for anyone else). */
+  api("get_leave_summary", isMe ? {} : {employee_id: id}, function(data) {
+    _populateLeaveTypeSelect(data.balances || [], data.ever_allocated, data.types_offered);
     laPreview();          // balance differs per employee
   }, function() {
     leaveTypeSel.innerHTML = '<option value="">Could not load leave types</option>';
@@ -4583,6 +4617,7 @@ function laSelectEmployee(id, name, dept) {
 function laToggleHalfDay() {
   var hd = document.getElementById("la-half-day").checked;
   document.getElementById("la-to-date-row").style.display = hd ? "none" : "";
+  if (LP.dtc) document.getElementById("la-lbl-from").textContent = hd ? drT("Date") : drT("From");
   if (hd) {
     var fd = document.getElementById("la-from-date").value;
     document.getElementById("la-to-date").value = fd;
@@ -4599,6 +4634,7 @@ var _laPreviewTimer = null;
 var _laBlocked = false;
 
 function laPreview() {
+  if (LP.dtc) return lpPreview();   /* slice 063 */
   var box = document.getElementById("la-preview");
   var btn = document.getElementById("la-submit-btn");
   var lt  = document.getElementById("la-leave-type").value;
@@ -4675,6 +4711,7 @@ function _laBlock(on) {
 
 
 function submitLeaveApp() {
+  if (LP.dtc) return lpSubmit();    /* slice 063 */
   pfClearErr("la-error");
   var lt  = document.getElementById("la-leave-type").value;
   var fd  = document.getElementById("la-from-date").value;
@@ -4746,6 +4783,511 @@ function renderLeaveApps(apps) {
   tb.innerHTML = apps.map(function(a) {
     return '<tr><td>' + esc(a.leave_type) + '</td><td class="num">' + fmtDate(a.from_date) + '</td><td class="num">' + fmtDate(a.to_date) + '</td><td class="num">' + a.total_leave_days + '</td><td>' + leaveStatusBadge(a.status, a.docstatus) + '</td></tr>';
   }).join("");
+}
+
+/* ── Slice 063: the Leave page where the company's pay rule set is on ──────
+   Own block, prefix lp. Drawn only when the server says so (the card or the
+   DTC fields in the Apply list); every other tenant keeps the rings and the
+   old table above. The server decides every figure, every refusal and who is
+   told - this file words what it is sent (prototype v3 is the contract). */
+var LP = {dtc: false, subject: null, preview: null, sending: false, orig: null};
+
+function lpIsDtc(d) {
+  return !!d && (d.paid_leaves !== undefined || (d.types_offered || []).some(function(t) {
+    return t.paid_leaves || t.lwp_limit !== undefined;
+  }));
+}
+function lpNum(n) { n = parseFloat(n || 0); return String(Math.round(n * 100) / 100); }
+function lpDays(n) { return n == 1 ? drT("{0} day", [lpNum(n)]) : drT("{0} days", [lpNum(n)]); }
+function lpDay(iso) {
+  return new Date(String(iso).slice(0, 10) + "T00:00:00").toLocaleDateString("en-GB", {weekday: "short", day: "numeric", month: "short"});
+}
+function lpShort(iso) {
+  return new Date(String(iso).slice(0, 10) + "T00:00:00").toLocaleDateString("en-GB", {day: "numeric", month: "short"});
+}
+function lpRange(a, b) { return (!b || String(a) === String(b)) ? lpDay(a) : drT("{0} to {1}", [lpDay(a), lpDay(b)]); }
+function lpMonthOf(iso) {
+  return new Date(String(iso).slice(0, 10) + "T00:00:00").toLocaleDateString("en-GB", {month: "long"});
+}
+function lpLine(kind, html, role) {
+  var ic = kind === "ok" ? "<i class=ic-check></i>" : (kind === "info" ? "i" : "!");
+  return '<div class="lp-line ' + kind + '"' + (role ? ' role="' + role + '"' : "") +
+    '><span class="ic" aria-hidden="true">' + ic + "</span><span>" + html + "</span></div>";
+}
+function lpFig(cls, label, v, note) {
+  return '<div class="lp-fig ' + cls + '"><div class="l">' + gpEsc(label) + '</div><div class="v">' + lpNum(v) +
+    " <small>" + gpEsc(parseFloat(v) === 1 ? drT("day") : drT("days")) + '</small></div><div class="n">' + gpEsc(note) + "</div></div>";
+}
+/* "you" only when it is true: HR applying for someone reads the person's name. */
+function lpY() {
+  if (!LP.subject) return {sub: drT("you"), Sub: drT("You"), pos: drT("your"), Pos: drT("Your"), have: drT("you have"), are: drT("you are"), need: drT("need")};
+  var f = String(LP.subject.label || "").split(" ")[0];
+  return {sub: f, Sub: f, pos: drT("{0}'s", [f]), Pos: drT("{0}'s", [f]), have: drT("{0} has", [f]), are: drT("{0} is", [f]), need: drT("needs")};
+}
+
+/* ── the card ── */
+function lpRenderCard(pl) {
+  var title = document.getElementById("lv-bal-title"), body = document.getElementById("leave-rings");
+  var sub = document.getElementById("att-sub");
+  if (!body || !title) return;
+  if (sub) sub.textContent = drT("Your Paid Leaves this month and your leave requests");
+  body.className = "";
+  var month = (pl && pl.month) || new Date().toLocaleDateString("en-GB", {month: "long"});
+  title.textContent = drT("Paid Leaves - {0}", [month]);
+  var card = document.getElementById("lv-bal-card");
+  if (!pl) {
+    if (card) card.setAttribute("aria-busy", "true");
+    body.innerHTML = '<div class="lp-skel" style="width:40%"></div><div class="lp-skel" style="height:64px"></div>' +
+      '<div class="lp-skel" style="width:80%"></div><span class="lp-muted">' + gpEsc(drT("Getting your Paid Leaves...")) + "</span>";
+    return;
+  }
+  if (card) card.removeAttribute("aria-busy");
+  if (pl.error) {
+    body.innerHTML = lpLine("warn", gpEsc(drT("Your Paid Leaves figures could not be shown just now. Your leave requests below are not affected, and you can still apply.")), "alert") +
+      '<div class="lp-acts"><button class="btn btn-outline" type="button" onclick="loadLeaves()">' + gpEsc(drT("Try again")) + "</button></div>";
+    return;
+  }
+  var lwpLine = '<p class="lp-muted" style="margin:0">' + gpEsc(drT("You can still ask for Leave Without Pay, up to {0} days a month. HR approves it. You have {1} of {0} days waiting or approved in {2}.",
+    [pl.lwp_limit, lpNum(pl.lwp_in_play), month])) + "</p>";
+  if (!pl.earns) {
+    var first = pl.category ? drT("{0} staff do not get monthly Paid Leaves.", [pl.category])
+      : pl["class"] ? drT("Your leave class ({0}) does not get monthly Paid Leaves.", [pl["class"]])
+      : drT("No leave class is set for you, so you do not get monthly Paid Leaves. Ask HR if this is wrong.");
+    body.innerHTML = '<p style="margin:0 0 8px;font-size:var(--fs-md)">' + gpEsc(first) + "</p>" + lwpLine;
+    return;
+  }
+  var under = pl.attended_so_far !== undefined, gate = pl.gate || 15;
+  var usedNote = (pl.used_dates || []).map(function(u) { return lpShort(u.date) + (u.half ? drT(" (half)") : ""); }).join(", ");
+  var html = '<p class="lp-cls">' + gpEsc(drT("Class {0} · {1} of Paid Leaves for {2}", [pl["class"], lpDays(pl.credited), month])) + "</p>";
+  html += '<div class="lp-figs">' +
+    lpFig("", drT("Paid Leaves this month"), pl.credited, drT("given on 1 {0}", [month.slice(0, 3)])) +
+    lpFig("", drT("Used"), pl.used, pl.used ? usedNote : drT("none yet")) +
+    lpFig("wait", drT("Waiting for approval"), pl.waiting, pl.waiting ? drT("set aside for now") : drT("none")) +
+    lpFig("out", drT("To be paid out"), pl.to_be_paid_out, under ? drT("once you reach {0} days", [gate]) : drT("with {0} salary", [month])) + "</div>";
+  if (under) {
+    html += lpLine("info", gpEsc(pl.attended_up_to
+      ? drT("These count once you have attended {0} days in {1}. You have attended {2} so far (up to {3}).", [gate, month, lpNum(pl.attended_so_far), lpShort(pl.attended_up_to)])
+      : drT("These count once you have attended {0} days in {1}. You have attended {2} so far.", [gate, month, lpNum(pl.attended_so_far)])));
+  }
+  if (pl.waiting) {
+    html += lpLine("info", gpEsc(drT("{0} is set aside for your {1} request until {2} approves or declines it. If it is declined or you cancel it, the day comes back.",
+      [lpDays(pl.waiting), lpShort(pl.waiting_from), pl.approver || drT("your approver")])));
+  }
+  html += '<p class="lp-muted" style="margin:10px 0 0">' + gpEsc(drT("Paid with your {0} salary. Nothing carries over.", [month])) + "</p>";
+  html += '<div class="lp-rule"><b>' + gpEsc(drT("How Paid Leaves work - class {0}", [pl["class"]])) + "</b><br>" +
+    gpEsc(drT("{0} of Paid Leaves on the 1st of every month. They count once you have attended {1} days that month; approved Paid Leaves days count toward the {1}. Days you do not use are paid with that month's salary. Nothing carries over.",
+      [lpDays(pl.credited), gate])) + "</div>";
+  body.innerHTML = html;
+}
+
+/* ── the list ── */
+function lpBadge(a) {
+  var who = a.approver_label || drT("your approver");
+  if (a.status === "Open" && a.docstatus === 0) return '<span class="badge badge-amber">' + gpEsc(drT("Waiting for {0}", [who])) + "</span>";
+  if (a.status === "Approved") return '<span class="badge badge-green">' + gpEsc(drT("Approved by {0}", [who])) + "</span>";
+  if (a.status === "Cancelled") return '<span class="badge badge-gray">' + gpEsc(drT("Cancelled")) + "</span>";
+  return '<span class="badge badge-red">' + gpEsc(drT("Declined")) + "</span>";
+}
+function lpExtra(a) {
+  var h = "", today = new Date().toISOString().slice(0, 10);
+  var approved = a.status === "Approved" && a.docstatus === 1;
+  if (approved && a.has_manager === false) h += '<div class="lp-told">' + gpEsc(drT("No manager is set above you, so only HR knows.")) + "</div>";
+  else if (approved && a.told_count) {
+    h += '<div class="lp-told">' + gpEsc(a.told_count === 1
+      ? drT("Your managers up to {0} have been told (1 person).", [a.told_top_name])
+      : drT("Your managers up to {0} have been told ({1} people).", [a.told_top_name, a.told_count])) + "</div>";
+  }
+  if (approved && a.missing_punch) {
+    var d = a.half_day_date || a.from_date;
+    h += lpLine("warn", "<b>" + gpEsc(drT("Your {0} for the other half of {1} is missing.", [drT(a.missing_punch), lpDay(d)])) + "</b> " +
+      gpEsc(a.special_day
+        ? drT("Until HR approves a correction, that half counts as absent and, as it is a special day, is charged double. Ask for the correction on Attendance and HR will approve it.")
+        : drT("Until HR approves a correction, that half counts as absent. Ask for the correction on Attendance and HR will approve it.")) +
+      '<br><button type="button" class="lp-link" onclick="lpAskCorrect(\'' + gpEsc(String(d).slice(0, 10)) + '\')">' +
+      gpEsc(drT("Ask HR to correct {0}", [lpShort(d)])) + "</button>");
+  }
+  if (a.can_cancel) {
+    h += '<div class="lp-acts"><button type="button" class="btn btn-outline btn-sm" onclick="lpAskCancel(\'' + gpEsc(a.name) + '\')">' +
+      gpEsc(a.status === "Open" ? drT("Cancel request") : drT("Cancel this leave")) + "</button></div>";
+  } else if (approved && String(a.from_date).slice(0, 10) <= today) {
+    h += '<div class="lp-told">' + gpEsc(drT("This day has started or passed. To change it, speak to HR.")) + "</div>";
+  }
+  return h;
+}
+function lpRenderApps(apps) {
+  LP.apps = apps;
+  var wrap = document.getElementById("lv-apps-wrap");
+  if (!wrap) return;
+  if (!apps.length) {
+    wrap.innerHTML = '<p class="lp-muted" style="padding:16px;margin:0">' + gpEsc(drT("No leave asked for yet. Use Apply Leave above.")) + "</p>";
+    return;
+  }
+  var label = function(a) { return gpEsc(a.leave_type) + (a.half_day ? gpEsc(drT(" (half day)")) : ""); };
+  var table = '<div class="lp-table"><table><thead><tr><th>' + gpEsc(drT("Type")) + "</th><th>" + gpEsc(drT("Dates")) + "</th><th>" +
+    gpEsc(drT("Days")) + "</th><th>" + gpEsc(drT("Status")) + "</th></tr></thead><tbody>" +
+    apps.map(function(a) {
+      return "<tr><td>" + label(a) + "</td><td>" + gpEsc(lpRange(a.from_date, a.to_date)) + '</td><td class="num">' + lpNum(a.total_leave_days) +
+        "</td><td>" + lpBadge(a) + lpExtra(a) + "</td></tr>";
+    }).join("") + "</tbody></table></div>";
+  var list = '<div class="lp-list">' + apps.map(function(a) {
+    return '<div class="it"><div class="t">' + label(a) + " · " + gpEsc(lpDays(a.total_leave_days)) + "</div><div>" +
+      gpEsc(lpRange(a.from_date, a.to_date)) + '</div><div style="margin-top:4px">' + lpBadge(a) + "</div>" + lpExtra(a) + "</div>";
+  }).join("") + "</div>";
+  wrap.innerHTML = table + list;
+}
+
+/* "Ask HR to correct" opens the Attendance page's own correction at that day. */
+window.lpAskCorrect = function(date) {
+  acState.team = false;
+  acState.employee = null;
+  acState.year = parseInt(date.slice(0, 4), 10);
+  acState.month = parseInt(date.slice(5, 7), 10);
+  acState.open = date;
+  switchPanel("att-record");
+};
+
+/* ── cancelling ── */
+function lpDialog(title, body, foot) {
+  var old = document.getElementById("lp-dlg");
+  if (old) old.remove();
+  var bd = document.createElement("div");
+  bd.className = "gp-backdrop open";
+  bd.id = "lp-dlg";
+  bd.innerHTML = '<div class="gp-modal lp-modal" style="max-width:460px" role="alertdialog" aria-modal="true" aria-labelledby="lp-dlg-title">' +
+    '<div class="gp-modal-hdr"><div class="gp-modal-title" id="lp-dlg-title" tabindex="-1">' + gpEsc(title) + "</div>" +
+    '<button class="gp-modal-close" type="button" aria-label="' + gpEsc(drT("Close")) + '" onclick="lpCloseDialog()">&times;</button></div>' +
+    '<div class="gp-modal-body">' + body + '</div><div class="gp-modal-footer">' + foot + "</div></div>";
+  bd.addEventListener("keydown", function(e) { if (e.key === "Escape") lpCloseDialog(); });
+  document.body.appendChild(bd);
+  document.getElementById("lp-dlg-title").focus();
+}
+window.lpCloseDialog = function() { var d = document.getElementById("lp-dlg"); if (d) d.remove(); };
+window.lpAskCancel = function(name) {
+  var a = (LP.apps || []).filter(function(x) { return x.name === name; })[0];
+  if (!a) return;
+  var open = a.status === "Open", lwp = a.approver_label === "HR";
+  var who = a.approver_label || drT("your approver");
+  var month = lpMonthOf(a.from_date), n = a.total_leave_days;
+  var body = '<p style="margin:0 0 8px"><b>' + gpEsc(a.leave_type + " · " + lpRange(a.from_date, a.to_date) + " · " + lpDays(n)) + "</b></p>";
+  if (open) {
+    body += "<p>" + gpEsc(drT("{0} will no longer see this request.", [who])) + "</p><p>" + gpEsc(lwp
+      ? drT("{0} goes back on your {1}-day Leave Without Pay limit for {2}.", [lpDays(n), 5, month])
+      : drT("The {0} set aside comes back to your Paid Leaves.", [lpDays(n)])) + "</p>";
+  } else {
+    body += "<p>" + gpEsc(n > 1 ? drT("You will be expected at work on these days.") : drT("You will be expected at work on this day.")) + "</p>" +
+      "<p>" + gpEsc(a.first_manager
+        ? drT("HR is told it is cancelled. Your managers are not sent a message about it, so if {0} is expecting you to be away, tell them yourself.", [a.first_manager])
+        : drT("HR is told it is cancelled. Your managers are not sent a message about it.")) + "</p>" +
+      "<p>" + gpEsc(lwp ? (n > 1 ? drT("You are paid for these days if you work them.") : drT("You are paid for this day if you work it."))
+                        : drT("The day comes back to your Paid Leaves.")) + "</p>";
+  }
+  lpDialog(open ? drT("Cancel this request?") : drT("Cancel this approved leave?"), body,
+    '<button class="btn btn-outline" type="button" onclick="lpCloseDialog()">' + gpEsc(open ? drT("Keep the request") : drT("Keep the leave")) + "</button>" +
+    '<button class="btn btn-primary" type="button" id="lp-dlg-yes" onclick="lpDoCancel(\'' + gpEsc(name) + '\')">' + gpEsc(open ? drT("Cancel request") : drT("Cancel leave")) + "</button>");
+};
+window.lpDoCancel = function(name) {
+  var a = (LP.apps || []).filter(function(x) { return x.name === name; })[0] || {};
+  var btn = document.getElementById("lp-dlg-yes");
+  if (btn) btn.disabled = true;
+  api("cancel_leave", {leave_id: name}, function(r) {
+    var open = r.was === "Open", who = a.approver_label || drT("your approver");
+    lpDialog(drT("Cancelled"), '<div class="lp-result" role="status"><h3>' + gpEsc(open ? drT("Request cancelled") : drT("Leave cancelled")) + "</h3><p>" +
+      gpEsc(lpRange(a.from_date, a.to_date)) + "</p><p>" + gpEsc(open
+        ? (r.told_n ? drT("{0} has been told.", [who]) : drT("Nobody else had to be told."))
+        : (r.told_n ? drT("HR has been told. You are expected at work.") : drT("You are expected at work."))) + "</p></div>",
+      '<button class="btn btn-primary" type="button" onclick="lpCloseDialog()">' + gpEsc(drT("Done")) + "</button>");
+    loadLeaves();
+  }, function(r) {
+    if (btn) btn.disabled = false;
+    var msg = drT("Not cancelled: the connection dropped. Try again.");
+    try { msg = JSON.parse(JSON.parse(r._server_messages)[0]).message; } catch (e) {}
+    var body = document.querySelector("#lp-dlg .gp-modal-body");
+    if (body) body.insertAdjacentHTML("afterbegin", lpLine("bad", gpEsc(msg), "alert"));
+  });
+};
+
+/* ── the Apply pop-up ── */
+function lpModalWords() {
+  var ids = {"la-title": null, "la-lbl-type": null, "la-lbl-from": null, "la-lbl-to": null, "la-lbl-reason": null,
+             "la-close-btn": null, "la-lbl-behalf": null};
+  if (!LP.orig) {
+    LP.orig = {};
+    Object.keys(ids).forEach(function(k) { var el = document.getElementById(k); if (el) LP.orig[k] = el.textContent; });
+  }
+  var dtc = LP.dtc;
+  var words = dtc ? {"la-title": drT("Apply for leave"), "la-lbl-type": drT("Leave type"), "la-lbl-from": drT("From"),
+                     "la-lbl-to": drT("To"), "la-lbl-reason": drT("Reason (optional)"), "la-close-btn": drT("Close"),
+                     "la-lbl-behalf": drT("Who is this leave for?")} : LP.orig;
+  Object.keys(words).forEach(function(k) { var el = document.getElementById(k); if (el && words[k] != null) el.textContent = words[k]; });
+  var rh = document.getElementById("la-reason-help"), bh = document.getElementById("la-behalf-help");
+  if (rh) { rh.style.display = dtc ? "" : "none"; rh.textContent = drT("Only the person who approves it and HR can read this. Managers are never sent it."); }
+  if (bh) { bh.style.display = dtc ? "" : "none"; bh.textContent = drT("For staff without a login. The types, figures and the 5-day limit follow the person you pick."); }
+  document.getElementById("la-type-help").style.display = "none";
+  document.getElementById("la-result").style.display = "none";
+  document.getElementById("la-form").style.display = "";
+  document.getElementById("la-close-btn").style.display = "";
+  var btn = document.getElementById("la-submit-btn");
+  btn.style.display = "";
+  btn.onclick = function() { submitLeaveApp(); };
+  if (dtc) {
+    btn.textContent = drT("Choose a leave type");
+    var first = new Date(); first.setDate(1);
+    var min = first.getFullYear() + "-" + String(first.getMonth() + 1).padStart(2, "0") + "-01";
+    document.getElementById("la-from-date").min = min;
+    document.getElementById("la-to-date").min = min;
+    LP.subject = null;
+    var me = window._me;
+    if (me && me.name && window._roles && window._roles.is_hr) {
+      document.getElementById("la-behalf-selected").textContent = drT("Myself ({0})", [me.employee_name || me.name]);
+    }
+  } else {
+    document.getElementById("la-from-date").removeAttribute("min");
+    document.getElementById("la-to-date").removeAttribute("min");
+  }
+}
+
+function lpPopulateTypes(types) {
+  LP.types = types;
+  var sel = document.getElementById("la-leave-type");
+  sel.innerHTML = '<option value="">' + gpEsc(drT("Choose...")) + "</option>" + types.map(function(t) {
+    var label = t.paid_leaves
+      ? (t.left !== undefined ? drT("{0} - {1} left", [t.leave_type, lpDays(t.left)]) : t.leave_type)
+      : (t.lwp_limit !== undefined ? drT("{0} - {1} of {2} used", [t.leave_type, lpNum(t.lwp_in_play), t.lwp_limit]) : t.leave_type);
+    return '<option value="' + gpEsc(t.leave_type) + '">' + gpEsc(label) + "</option>";
+  }).join("");
+  var help = document.getElementById("la-type-help");
+  var hasPaid = types.some(function(t) { return t.paid_leaves; });
+  help.style.display = hasPaid ? "none" : "";
+  help.textContent = LP.subject
+    ? drT("{0}'s work type does not get Paid Leaves, so only Leave Without Pay is offered.", [String(LP.subject.label).split(" ")[0]])
+    : drT("Your work type does not get Paid Leaves, so only Leave Without Pay is offered.");
+  lpPreview();
+}
+
+function lpTypeRow(lt) { return (LP.types || []).filter(function(t) { return t.leave_type === lt; })[0] || {}; }
+
+function lpSendWords(block, who) {
+  var btn = document.getElementById("la-submit-btn");
+  btn.style.display = block ? "none" : "";
+  btn.disabled = false;
+  var lt = document.getElementById("la-leave-type").value;
+  btn.textContent = !lt ? drT("Choose a leave type") : drT("Send to {0}", [who || drT("your approver")]);
+}
+
+function lpPreview() {
+  var box = document.getElementById("la-preview");
+  var lt = document.getElementById("la-leave-type").value;
+  var fd = document.getElementById("la-from-date").value;
+  var hd = document.getElementById("la-half-day").checked;
+  var td = hd ? fd : document.getElementById("la-to-date").value;
+  var row = lpTypeRow(lt), lwp = row.lwp_limit !== undefined;
+  LP.preview = null;
+  box.className = "";
+  box.style.cssText = "margin:2px 0 10px";
+  if (!lt || !fd || !td) { box.style.display = "none"; lpSendWords(false, lwp ? "HR" : null); return; }
+  if (td < fd) {
+    box.style.display = "";
+    box.innerHTML = lpLine("bad", gpEsc(drT("The end date is before the start date. Change one of them.")));
+    lpSendWords(true);
+    return;
+  }
+  clearTimeout(_laPreviewTimer);
+  _laPreviewTimer = setTimeout(function() {
+    api("preview_leave_request", {
+      leave_type: lt, from_date: fd, to_date: td, half_day: hd ? 1 : 0, half_day_date: hd ? fd : null,
+      on_behalf_of: LP.subject ? LP.subject.name : undefined,
+    }, function(r) {
+      LP.preview = r;
+      var v = lpVerdict(r, lt, fd, td, hd);
+      box.style.display = "";
+      box.innerHTML = lpLine(v.kind, v.html) + (v.switchable
+        ? '<button type="button" class="lp-link" onclick="lpSwitchToLwp()">' + gpEsc(drT("Ask for Leave Without Pay instead")) + "</button>" : "");
+      lpSendWords(v.block, v.who);
+    }, function() { box.style.display = "none"; lpSendWords(false); });
+  }, 300);
+}
+
+window.lpSwitchToLwp = function() {
+  var row = (LP.types || []).filter(function(t) { return t.lwp_limit !== undefined; })[0];
+  if (!row) return;
+  document.getElementById("la-leave-type").value = row.leave_type;
+  lpPreview();
+};
+
+function lpVerdict(r, lt, fd, td, hd) {
+  var y = lpY(), lwp = lpTypeRow(lt).lwp_limit !== undefined, n = parseFloat(r.days || 0);
+  var hr = r.hr_name ? drT("{0} (HR)", [r.hr_name]) : drT("HR");
+  var who = lwp ? "HR" : (r.approver_label || drT("your approver"));
+  var month = r.month, limit = r.lwp_limit || 5;
+  var block = function(html) { return {kind: "warn", block: true, html: html, who: who}; };
+  if (r.reason_code === "earlier_month") {
+    return block("<b>" + gpEsc(drT("Leave can only be asked for days in {0}.", [month])) + "</b> " +
+      gpEsc(drT("{0} is closed. If a {0} day needs changing, speak to {1}.", [r.prev_month, hr])));
+  }
+  if (r.reason_code === "no_approver") {
+    return block(gpEsc(drT("Your request could not be sent because nobody is set to approve your Paid Leaves. Ask HR to name someone, or ask for Leave Without Pay, which HR approves.")));
+  }
+  if (r.reason_code === "worked_day") return block(gpEsc(drT("{0} is already marked as a day you worked, so leave cannot be added for it.", [r.date])));
+  if (r.reason_code === "overlap") return block(gpEsc(drT("You already have leave on {0}. Change the dates.", [r.date])));
+  if (r.reason_code === "lwp_over") {
+    var used = r.lwp_in_play, left = r.lwp_left, wait = r.lwp_waiting || [];
+    var head = left <= 0
+      ? (LP.subject ? drT("{0} has used all {1} days of Leave Without Pay for {2}.", [y.Sub, limit, month])
+                    : drT("You have used all {0} days of Leave Without Pay for {1}.", [limit, month]))
+      : drT("Only {0} of Leave Without Pay left in {1}; these dates need {2}.", [lpDays(left), month, lpDays(n)]);
+    var next = wait.length
+      ? drT("A request that is still waiting counts too: {0}.", [wait.map(function(w) { return w.label + " (" + lpDays(w.days) + ")"; }).join(", ")]) + " " +
+        (LP.subject ? drT("If it is not approved yet, it can be cancelled to free its days, or approved by HR.")
+                    : drT("If it is not approved yet, you can cancel it from the list to free its days, or remind HR to approve it."))
+      : drT("All of them are approved. If {0} {1} more time off, speak to {2}.", [y.sub, y.need, hr]);
+    return block("<b>" + gpEsc(head) + "</b> " + gpEsc(drT("Up to {0} days a month, counting requests that are waiting or approved ({1} of {0} so far).", [limit, lpNum(used)])) + " " +
+      (left > 0 ? gpEsc(drT("Shorten the dates to {0}.", [lpDays(left)])) + " " : "") + gpEsc(next));
+  }
+  if (r.reason_code === "pl_short") {
+    var lwpRow = (LP.types || []).filter(function(t) { return t.lwp_limit !== undefined; })[0];
+    return {kind: "warn", block: true, who: who, switchable: !!(lwpRow && lwpRow.lwp_in_play < lwpRow.lwp_limit),
+      html: "<b>" + gpEsc(drT("{0} asked for, but {1} {2} of Paid Leaves left for {3}.", [lpDays(n), y.have, lpDays(r.pl_left), month])) + "</b> " +
+        gpEsc(drT("Days already used or waiting for approval are taken off the {0}. {1} can ask for Leave Without Pay instead ({2} of {3} used this month).",
+          [lpNum(r.credited), y.Sub, lpNum(r.lwp_in_play), limit]))};
+  }
+  var card = (!LP.subject && _leaveSummaryCache) ? (_leaveSummaryCache.paid_leaves || {}) : {};
+  var under = card.attended_so_far !== undefined, gate = card.gate || 15;
+  var earns = (LP.types || []).some(function(t) { return t.paid_leaves; });
+  var what = n === 0.5 ? drT("this half day") : (n === 1 ? drT("this day") : drT("these days"));
+  var html, lines = [];
+  if (lwp) {
+    html = "<b>" + gpEsc(drT("Asking for {0} of Leave Without Pay.", [lpDays(n)])) + "</b> " + gpEsc(
+      !earns ? drT("If approved, {0} not paid for {1}.", [y.are, what])
+      : under ? drT("If approved, {0} not paid for {1}; {2} Paid Leaves for {3} are still paid out once {4} reach {5} days.", [y.are, what, y.pos, month, y.sub, gate])
+      : drT("If approved, {0} not paid for {1}; {2} Paid Leaves for {3} are still paid out.", [y.are, what, y.pos, month]));
+    lines.push(gpEsc(drT("This will be {0} of {1} days of Leave Without Pay in {2}.", [lpNum(parseFloat(r.lwp_in_play || 0) + n), limit, month])));
+  } else {
+    html = "<b>" + gpEsc(drT("Asking for {0} of Paid Leaves.", [lpDays(n)])) + "</b> " + gpEsc(
+      (r.credited !== undefined
+        ? drT("Until {0} decides, {1} is set aside from {2} {3}.", [who, lpDays(n), y.pos, lpNum(r.credited)])
+        : drT("Until {0} decides, {1} is set aside from {2} Paid Leaves.", [who, lpDays(n), y.pos])) + " " +
+      (under ? drT("The leave is paid, and approved Paid Leaves days count toward {0} {1} days.", [y.pos, gate]) : drT("The leave is paid.")));
+  }
+  var special = r.special_day && (hd ? r.special_day.date === fd : true);
+  if (hd) {
+    html += "<br><b>" + gpEsc(drT("Half day:")) + "</b> " + gpEsc(
+      (lwp ? drT("it counts as 0.5 of the {0} days.", [limit]) : drT("it uses half a day of Paid Leaves.")) + " " +
+      drT("{0} must check in and check out for the other half; it is measured against half the shift. Arriving late or leaving early does not count against {1} that day, and there is no green mark on a half-day leave day.", [y.Sub, y.sub]) + " " +
+      (special ? drT("If a punch is missed, ask HR to approve an attendance correction; until then the other half counts as absent and, on this special day, is charged double.")
+               : drT("If a punch is missed, ask HR to approve an attendance correction; until then the other half counts as absent.")));
+  }
+  if (r.special_day) {
+    lines.push("<b>" + gpEsc(r.special_day.name
+      ? drT("{0} is a special day ({1}).", [r.special_day.label, r.special_day.name])
+      : drT("{0} is a special day.", [r.special_day.label])) + "</b> " +
+      gpEsc(drT("If this leave is approved, the day is not charged double. A day taken without approved leave is unpaid and charged double.")));
+  }
+  if (r.past_day) lines.push(gpEsc(drT("This includes a past day. Past days in {0} can be asked for until {1}.", [month, r.month_end])));
+  lines.push(gpEsc((lwp ? hr : who) + " " + drT("decides.") + " " + lpWillTell(r.chain_top)));
+  return {kind: (hd || r.special_day) ? "warn" : (lwp ? "info" : "ok"), block: false, who: who, html: html + "<br>" + lines.join("<br>")};
+}
+
+function lpWillTell(top) {
+  var y = lpY();
+  return top ? drT("Once it is approved, {0} managers up to {1} are told.", [y.pos, top])
+             : drT("Once it is approved, only HR knows; no manager is set above {0}.", [y.sub]);
+}
+
+function lpSubmit() {
+  pfClearErr("la-error");
+  var lt = document.getElementById("la-leave-type").value;
+  var fd = document.getElementById("la-from-date").value;
+  var hd = document.getElementById("la-half-day").checked;
+  var td = hd ? fd : document.getElementById("la-to-date").value;
+  var rsn = document.getElementById("la-reason").value.trim();
+  if (!lt) { pfShowErr("la-error", drT("Choose a leave type first.")); document.getElementById("la-leave-type").focus(); return; }
+  if (!fd) { pfShowErr("la-error", drT("Choose the date the leave starts.")); document.getElementById("la-from-date").focus(); return; }
+  if (LP.sending) return;
+  var r = LP.preview || {};
+  var btn = document.getElementById("la-submit-btn");
+  LP.sending = true;
+  btn.disabled = true;
+  btn.textContent = drT("Sending...");
+  api("apply_leave", {
+    leave_type: lt, from_date: fd, to_date: td || fd, half_day: hd ? 1 : 0, half_day_date: hd ? fd : null,
+    reason: rsn || null, on_behalf_of: LP.subject ? LP.subject.name : undefined,
+  }, function() {
+    LP.sending = false;
+    lpShowResult(r, lt, fd, td || fd, hd);
+    loadLeaves();
+  }, function(e) {
+    LP.sending = false;
+    btn.disabled = false;
+    lpSendWords(false, (lpTypeRow(lt).lwp_limit !== undefined) ? "HR" : r.approver_label);
+    var msg = drT("Not sent: the connection dropped. Nothing was saved. Your choices are still here - try again.");
+    try { if (e && e._server_messages) msg = JSON.parse(JSON.parse(e._server_messages)[0]).message; } catch (x) {}
+    pfShowErr("la-error", msg);
+  });
+}
+
+function lpShowResult(r, lt, fd, td, hd) {
+  var y = lpY(), lwp = lpTypeRow(lt).lwp_limit !== undefined, n = parseFloat(r.days || (hd ? 0.5 : 1));
+  var who = lwp ? "HR" : (r.approver_label || drT("your approver"));
+  var decider = lwp ? (r.hr_name ? drT("{0} (HR)", [r.hr_name]) : drT("HR")) : who;
+  var what = n === 0.5 ? drT("this half day") : (n === 1 ? drT("this day") : drT("these days"));
+  var html = "<h3>" + gpEsc(drT("Sent to {0}", [who])) + "</h3>" +
+    "<p><b>" + gpEsc(lt + " · " + lpRange(fd, td) + " · " + lpDays(n) + (hd ? drT(" (half day)") : "")) + "</b>" +
+    (LP.subject ? " · " + gpEsc(LP.subject.label) : "") + "</p>" +
+    "<p>" + gpEsc(drT("{0} will approve or decline it.", [decider]) + " " + (LP.subject
+      ? drT("{0} will be told the answer.", [y.Sub]) : drT("You will see the answer here, under Leave Applications."))) + "</p>" +
+    "<p>" + gpEsc(lpWillTell(r.chain_top)) + "</p>" +
+    (lwp ? "<p>" + gpEsc(drT("If approved, {0} not paid for {1}.", [y.are, what]) + " " +
+             drT("{0} of {1} days of Leave Without Pay are now waiting or approved in {2}.", [lpNum(parseFloat(r.lwp_in_play || 0) + n), r.lwp_limit || 5, r.month])) + "</p>"
+         : "<p>" + gpEsc(drT("{0} is set aside from {1} Paid Leaves until {2} decides.", [lpDays(n), y.pos, who])) + "</p>") +
+    (hd ? "<p>" + gpEsc(drT("Check in and check out for the other half as usual.")) + "</p>" : "") +
+    '<p class="lp-muted">' + gpEsc(drT("Changed your mind? It can be cancelled from the list.")) + "</p>";
+  var res = document.getElementById("la-result");
+  res.innerHTML = html;
+  res.style.display = "";
+  document.getElementById("la-form").style.display = "none";
+  document.getElementById("la-title").textContent = drT("Sent");
+  document.getElementById("la-close-btn").style.display = "none";
+  var btn = document.getElementById("la-submit-btn");
+  btn.disabled = false;
+  btn.style.display = "";
+  btn.textContent = drT("Done");
+  btn.onclick = function() { pfCloseModal("la-modal"); };
+  document.getElementById("la-title").focus();
+}
+
+document.addEventListener("keydown", function(e) {
+  if (e.key !== "Escape" || !LP.dtc) return;
+  var m = document.getElementById("la-modal");
+  if (m && m.classList.contains("open")) pfCloseModal("la-modal");
+});
+
+/* Slice 063: the extra lines on an approval row at a company whose pay rule
+   set is on (R-54..R-57, R-61), and the sentence after Approve or Decline. */
+function lpApprLines(a) {
+  if (a.chain_top === undefined) return "";
+  var first = String(a.employee_name || "").split(" ")[0], h = "";
+  if (a.lwp_limit !== undefined) {
+    h += "<br>" + gpEsc(drT("{0} of {1} Leave Without Pay days in {2}, counting this one",
+      [lpNum(a.lwp_in_play), a.lwp_limit, lpMonthOf(a.from_date)]));
+  }
+  if (a.special_day) h += "<br>" + gpEsc(drT("{0} is a special day. Approved, it is not charged double.", [a.special_day.label]));
+  h += "<br>" + gpEsc(a.chain_top
+    ? drT("Once it is approved, {0}'s managers up to {1} are told.", [first, a.chain_top])
+    : drT("Once it is approved, only HR knows; no manager is set above {0}.", [first]));
+  return h;
+}
+function lpDecisionWords(r) {
+  var told = r.employee_emailed ? drT("{0} has been told too.", [r.first])
+                                : drT("{0} has no email on record, so please tell them.", [r.first]);
+  if (r.told_n === undefined) {
+    return drT("Declined.") + " " + (r.employee_emailed ? drT("{0} has been told.", [r.first])
+      : drT("{0} has no email on record, so please tell them.", [r.first])) + " " + drT("Managers are not told about a declined request.");
+  }
+  var mgrs = r.told_n ? (r.told_n === 1
+      ? drT("{0}'s managers up to {1} have been told (1 person).", [r.first, r.told_top])
+      : drT("{0}'s managers up to {1} have been told ({2} people).", [r.first, r.told_top, r.told_n]))
+    : drT("No manager above {0} was sent a message.", [r.first]);
+  return drT("Approved · {0} · {1}.", [r.leave_type, r.dates]) + " " + mgrs + " " + told;
 }
 
 /* ── MY FINANCES sub-tab switcher ───────────────── */
@@ -5965,14 +6507,15 @@ function renderTeamData(d) {
     ? '<div class="empty-state"><div class="empty-state-text">No pending leave approvals.</div></div>'
     : pending.map(function(a) {
         const days = parseFloat(a.total_leave_days||0);
-        return '<div class="appr-card" id="appr-' + a.name + '"><div class="appr-info"><div class="appr-avatar">' + initials(a.employee_name) + '</div><div><div class="appr-name">' + esc(a.employee_name) + '</div><div class="appr-detail">' + esc(a.leave_type||"Leave") + ' &nbsp;·&nbsp; ' + fmtDate(a.from_date) + ' – ' + fmtDate(a.to_date) + ' &nbsp;·&nbsp; <strong>' + days + ' day' + (days !== 1 ? 's' : '') + '</strong>' + (a.description ? '<br>' + esc(a.description) : '') + '</div></div></div><div class="appr-actions"><button class="btn btn-green btn-sm" onclick="actionLeave(\'' + a.name + '\',\'approve\')"><i class=ic-check></i> Approve</button><button class="btn btn-danger btn-sm" onclick="actionLeave(\'' + a.name + '\',\'reject\')"><i class=ic-x></i> Reject</button></div></div>';
+        return '<div class="appr-card" id="appr-' + a.name + '"><div class="appr-info"><div class="appr-avatar">' + initials(a.employee_name) + '</div><div><div class="appr-name">' + esc(a.employee_name) + '</div><div class="appr-detail">' + esc(a.leave_type||"Leave") + (a.half_day ? esc(drT(" (half day)")) : '') + ' &nbsp;·&nbsp; ' + fmtDate(a.from_date) + ' – ' + fmtDate(a.to_date) + ' &nbsp;·&nbsp; <strong>' + days + ' day' + (days !== 1 ? 's' : '') + '</strong>' + (a.description ? '<br>' + esc(a.description) : '') + lpApprLines(a) + '</div></div></div><div class="appr-actions"><button class="btn btn-green btn-sm" onclick="actionLeave(\'' + a.name + '\',\'approve\')"><i class=ic-check></i> Approve</button><button class="btn btn-danger btn-sm" onclick="actionLeave(\'' + a.name + '\',\'reject\')"><i class=ic-x></i> Reject</button></div></div>';
       }).join("");
 
   // Month team leaves table
   document.getElementById("team-month-tbody").innerHTML = !monthLeav.length
-    ? '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:20px">No approved team leaves this month.</td></tr>'
+    ? '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:20px">No approved team leaves this month.</td></tr>'
     : monthLeav.map(function(l) {
-        return '<tr><td>' + esc(l.employee_name) + '</td><td>' + esc(l.leave_type) + '</td><td class="num">' + fmtDate(l.from_date) + '</td><td class="num">' + fmtDate(l.to_date) + '</td><td class="num">' + l.total_leave_days + '</td></tr>';
+        /* Slice 063 (S3): no leave type here; a half day reads 0.5. */
+        return '<tr><td>' + esc(l.employee_name) + '</td><td class="num">' + fmtDate(l.from_date) + '</td><td class="num">' + fmtDate(l.to_date) + '</td><td class="num">' + parseFloat(l.total_leave_days || 0) + '</td></tr>';
       }).join("");
 
   // Team comparison charts
@@ -6058,6 +6601,11 @@ function actionLeave(leaveId, action) {
     if (card) {
       card.classList.add(action === "approve" ? "approved" : "rejected");
       card.querySelector(".appr-actions").innerHTML = '<span class="badge ' + (action === "approve" ? "badge-green" : "badge-red") + '">' + (action === "approve" ? "Approved" : "Rejected") + '</span>';
+      /* Slice 063 (R-58, R-59): who has been told, from what really happened. */
+      if (r && r.first) {
+        var det = card.querySelector(".appr-detail");
+        if (det) det.insertAdjacentHTML("beforeend", '<div class="lp-told" role="status">' + gpEsc(lpDecisionWords(r)) + "</div>");
+      }
       card.style.opacity = "1"; card.style.pointerEvents = "";
     }
     // Refresh pending count chip

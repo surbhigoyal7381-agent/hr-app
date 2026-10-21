@@ -258,3 +258,16 @@ Consequences to design for, not to argue with:
 | Notification | **When HR approves a leave, the notification goes to all higher-level managers in the hierarchy** (not only the direct manager). Default: the chain of Employee 'Reports To' up to the top, which is what DTC maintains and Frappe uses (the seat tree and the Reports To chain disagree at DTC today, see slice 064). Covers every leave type unless Surbhi narrows it. The notice never carries the employee's reason (PRIV-1). More people learning of an absence is a privacy point for the security agent. |
 | Q1 (no-approval only at DTC?) | Moot: nothing is no-approval now. Leave without pay in the Apply list stays for every tenant (D5), but it follows each tenant's normal approval. |
 | U1-U5, U7, U8 | Still ASSUMED ACCEPTED as the designer recommended, except where this table changes them. |
+
+---
+
+## Surbhi's answers on the spec's open decisions, 21 Oct 2026
+
+**Everything in this slice is for DTC only** (all settings are DTC settings).
+
+| Decision | Answer |
+|---|---|
+| OD-1 limit / pending | A waiting request still counts against the limit. When someone is stopped by it, the screen shows a warning: **cancel the previous request if it is not approved yet, or remind HR to approve it.** (Period still not stated: default stays per calendar month. Whether 'remind HR' is wording or a Remind button is not stated: default wording only.) |
+| OD-2 who approves | **"Their reporting manager."** ⚠ This may conflict with her earlier "keep HR as approver" and with prototype v2's 'Send to HR / Waiting for HR / Approved by Ritika (HR)' wording (parity row X-7). To be clarified with her before the build. |
+| OD-3 notice scope | DTC only. |
+| OD-4 date rule and limit bind HR on the desk | Yes, on, for DTC. |

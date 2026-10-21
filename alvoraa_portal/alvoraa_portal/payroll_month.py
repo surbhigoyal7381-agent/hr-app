@@ -49,10 +49,14 @@ class MonthSummary:
 
 	# attendance
 	days_with_record: int = 0
-	days_worked: int = 0
-	days_held: int = 0
-	days_absent: int = 0
-	days_on_leave: int = 0
+	# Decimals since slice 063: a half-day leave day is half worked (or half
+	# absent, or half held) and half on leave.
+	days_worked: float = 0
+	days_held: float = 0
+	days_absent: float = 0
+	days_on_leave: float = 0
+	# Days worked plus approved Paid Leaves days: what the 15-day gate reads (E6).
+	days_for_gate: float = 0
 	total_quarters: int = 0
 
 	# leave
@@ -122,6 +126,16 @@ def summarise_month(
 	for v in verdicts:
 		m.total_quarters += v.total_quarters
 		m.day_credits += v.day_credit
+		if v.half_leave:
+			m.days_on_leave += 0.5
+			if v.held:
+				m.days_held += 0.5
+			elif v.absent:
+				m.days_absent += 0.5
+			else:
+				m.days_worked += 0.5
+				m.reds += v.reds
+			continue
 		if v.held:
 			m.days_held += 1
 			continue
@@ -141,23 +155,31 @@ def summarise_month(
 			"here; each is released as an Arrear once a manager confirms it."
 			.format(m.days_held))
 
-	# ── the leave gate, then the accrual, on days actually attended ──────────
+	# ── the leave gate, then the credit, on days attended ────────────────────
+	# E6 (Surbhi, 21 Oct 2026): approved Paid Leaves days count toward the gate,
+	# so taking your own leave properly never costs you all of it. They arrive
+	# as `approved_leave_days` - the caller counts them from the attendance
+	# (payroll_slip.month_summary). A caller that passes nothing gets the
+	# gate on days worked alone, as before.
+	m.days_for_gate = m.days_worked + max(0.0, float(approved_leave_days or 0))
 	if earns_leave_credits:
 		m.leave_credits_earned = leave_credits_for_month(
-			m.days_worked, period_days, credit_per_period, monthly_cap,
+			m.days_for_gate, period_days, credit_per_period, monthly_cap,
 			threshold_days=threshold_days, month_days=accrual_month_days)
-		if m.days_worked < threshold_days and period_days:
+		if m.days_for_gate < threshold_days and period_days:
 			m.notes.append(
-				"{0} days worked is under the {1}-day gate, so no leave credit. "
+				"{0} days attended is under the {1}-day gate, so no leave credit. "
 				"Paid for the days worked and nothing else."
-				.format(m.days_worked, threshold_days))
+				.format(m.days_for_gate, threshold_days))
 	else:
 		m.notes.append("This category earns no leave class.")
 
 	# ── LB-02: credits cover approved leave first, the surplus is cash ───────
 	# Leave days come from the attendance itself unless the caller overrides.
 	# Deriving it is the safer default: a figure passed in by hand can disagree
-	# with the records it is meant to describe.
+	# with the records it is meant to describe. Since slice 063 the caller
+	# passes approved Paid Leaves days only (U1): a Leave Without Pay day is not
+	# "used" from the credits, it is simply unpaid.
 	approved = (float(approved_leave_days) if approved_leave_days is not None
 	            else float(m.days_on_leave))
 	approved = max(0.0, approved)

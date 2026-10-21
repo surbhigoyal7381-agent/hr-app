@@ -282,3 +282,9 @@ Consequences to design for, not to argue with:
 - **D5 (half-day leave with no punches: other half absent, doubled on a special day): yes.**
 - **D1 and D2: not answered. She questioned the 30-day / 31-day credit example (see 01d); explained again. OPEN.**
 - Her challenges: 'isn't it 3.5 credits'; 'why does the 31st day add a credit'; 'how does a full leave day already work this way'. Answers given in the reply of 21 Oct: credits are whole blocks (A: 1 credit per full 7.5 days attended, so 29.5 days = 3 blocks = 3 credits; only class C earns half credits), attended days count only up to 30 (the 31st day adds nothing, it is spare inside the last block), and a full leave day is already not counted as attended (payroll_month.py: leave days `continue` before `days_worked += 1`).
+
+---
+
+## Surbhi's answer on the credit-at-start-of-month addendum (01e), 21 Oct 2026
+
+**E1: the 15-day minimum STILL APPLIES.** Her words: "if an employee comes less than 15 days then the salary would be based on per day salary." So under 15 days attended there is no credit and pay is per day worked. This also settles E4 (absent most of the month: no credit under 15 days) and, by the same rule, E2/E3 (joiners and leavers get no share and no credit under 15 days). With the minimum kept, giving the credit on the 1st is a SETTINGS change on the rule set (01e section 4), no engine code. E5-E8 not yet answered: defaults stay as the PM recommended (E5 no extra cost for unapplied absence except double on special days; E6 approved Paid Leaves days count toward the 15 - the one small code change; E7 half-day leave uses 0.5; E8 contract and zero classes unchanged).

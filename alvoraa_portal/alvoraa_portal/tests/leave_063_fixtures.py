@@ -225,6 +225,11 @@ def clear_leave(*employees):
 	"""Remove every Leave Application and the leave's attendance for these
 	people. The endpoints commit, so a rollback alone would not undo them."""
 	frappe.set_user("Administrator")
+	names = frappe.get_all("Leave Application", filters={"employee": ["in", list(employees) or [""]]},
+	                       pluck="name")
+	if names:
+		frappe.db.delete("Notification Log", {"document_type": "Leave Application",
+		                                      "document_name": ["in", names]})
 	for emp in employees:
 		for la in frappe.get_all("Leave Application", filters={"employee": emp},
 		                         fields=["name", "docstatus"]):
@@ -236,8 +241,6 @@ def clear_leave(*employees):
 		for table in ("Attendance", "Employee Checkin", "Attendance Request"):
 			for name in frappe.get_all(table, filters={"employee": emp}, pluck="name"):
 				frappe.db.delete(table, {"name": name})
-	frappe.db.delete("Notification Log", {"document_type": "Leave Application",
-	                                      "subject": ["like", "%L063%"]})
 	frappe.db.commit()
 
 

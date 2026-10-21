@@ -18,13 +18,13 @@ any site. Its writing steps refuse any site whose name ends in `alvoraa.co`: on
 production a System Manager makes the same changes **in the desk**, from the lists below
 (AC-105: no script on production).
 
-## 1 · What the rehearsal needs that does not exist yet
+## 1 · Data: synthetic, not a copy of production (Surbhi, 22 Oct 2026)
 
-| Need | Why | Who |
-|---|---|---|
-| A **local copy of DTC's data** (a fresh backup restored into a throwaway container and site, never `hrlocal-bench`'s shared sites) | Every pay check runs on real attendance and punches | DevOps, on Surbhi's word (downloading a production backup is a server step) |
-| The slice's code on that copy (this branch) | The engine changes are what is being rehearsed | Engineer |
-| Five named staff with half days in the month, and one who missed a punch on a half-day leave day | Items 1-6 and 9 | Engineer picks them from the copy; names stay outside the repo |
+The rehearsal runs on a **synthetic, DTC-shaped** dataset (07a section 3). No production backup is
+downloaded. `STEP=shape` reads the shape from DTC as counts only (read-only, on her word);
+`scripts/seed_rehearsal_063.py` builds the named cases Test-901..912 on a throwaway local site and
+checks each. Done on 22 Oct on the local test site: **30 of 30 pass** (04b section 9a). Wherever the
+table below says "local copy", read "the synthetic site".
 
 ## 2 · The order
 

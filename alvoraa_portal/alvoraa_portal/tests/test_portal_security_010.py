@@ -834,6 +834,10 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		("alvoraa_portal", "payroll_month.py"): 0,
 		("alvoraa_portal", "alvoraa_portal/report/salary_components_and_workings/salary_components_and_workings.py"): 0,
 		("alvoraa_portal", "alvoraa_portal/report/grooming_review_pending/grooming_review_pending.py"): 0,
+		# Slice 065 (SEC-7). Replacement plans: set, confirm and remove run as
+		# the HR Manager, the daily erase as the scheduler. No bypass anywhere.
+		("hrms", "alvoraa_org_structure/plans.py"): 0,
+		("hrms", "alvoraa_org_structure/doctype/replacement_plan/replacement_plan.py"): 0,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

@@ -351,7 +351,12 @@ function unseated() {
   const tiles = ctx.__els["pos-tiles"].innerHTML;
   ok("HR gets the two people tiles", tiles.includes("7 in no seat") && tiles.includes("2 no manager"));
   const html = body(ctx);
-  ok("the no-manager box sits beside the top, dashed and amber", html.includes('class="pos-box dashed amber" id="pos-nomgr-box"')
+  const css = fs.readFileSync(path.join(__dirname, "..", "alvoraa_portal", "alvoraa_portal", "public", "css", "ess", "panels.css"), "utf8");
+  ok("the no-manager box is pinned to the chart's top-right corner, outside the tree (v10)",
+     html.includes('class="pos-br pos-nomgr-slot"') && /\.pos-chart > \.pos-nomgr-slot\{position:absolute;top:0;right:0\}/.test(css));
+  ok("a group's columns follow the frame (v10)", /repeat\(var\(--cols\),208px\)/.test(css)
+     && /function posFitColumns/.test(fs.readFileSync(PORTAL, "utf8")));
+  ok("the no-manager box is dashed and amber", html.includes('class="pos-box dashed amber" id="pos-nomgr-box"')
      && html.includes("Not in any seat, and no manager on their record") && html.includes("Needs a manager"));
   ctx.posNoMgrSheet();
   let sh = layer(ctx);

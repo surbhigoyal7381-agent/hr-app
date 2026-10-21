@@ -788,6 +788,14 @@ function posKids(kids, depth, path, owner) {
   return h + "</div>";
 }
 
+/* A group shows as many columns as the chart frame holds, five at most (v10):
+   5 at a 1,128 px frame, 4 at 970, 3 at 820. */
+function posFitColumns() {
+  var cw = document.querySelector && document.querySelector("#pos-body .pos-chartwrap");
+  if (!cw || !cw.style || !cw.style.setProperty || !cw.clientWidth) return;
+  cw.style.setProperty("--cols", Math.max(1, Math.min(5, Math.floor((cw.clientWidth - 16) / 222))));
+}
+
 /* The line from an opened team lead to its "Under ..." strip: straight down
    when nothing in the group is below the lead, otherwise down a few pixels
    and along the gap between columns. Drawn after layout, because only the
@@ -823,7 +831,7 @@ function posNoMgrPeople() {
 /* "No reporting manager": beside the top, for HR scope only (X-2 interim). */
 function posNoMgrBox() {
   var n = posNoMgrPeople().length, s = (POS.nav.extra || []).length;
-  return '<div class="pos-br"><button type="button" class="pos-box dashed amber" id="pos-nomgr-box" aria-haspopup="dialog" onclick="posNoMgrSheet()">'
+  return '<div class="pos-br pos-nomgr-slot"><button type="button" class="pos-box dashed amber" id="pos-nomgr-box" aria-haspopup="dialog" onclick="posNoMgrSheet()">'
     + '<div class="ti">' + drT("No reporting manager") + '</div><div class="su">'
     + drT("Not in any seat, and no manager on their record") + '</div><div class="roll">'
     + (s ? drT(s === 1 ? "{0} people · {1} seat" : "{0} people · {1} seats", [n, s]) : drT("{0} people", [n])) + "</div>"
@@ -1000,7 +1008,7 @@ window.posPaint = function () {
   }
   if (POS.view === "list") body.innerHTML = posList();
   else if (phone) body.innerHTML = posOutline();
-  else { body.innerHTML = posChart(); posDrawLinks(); }
+  else { body.innerHTML = posChart(); posFitColumns(); posDrawLinks(); }
   if (POS.focus && !phone) {
     var el = document.getElementById(posBoxId(POS.focus));
     if (el && el.scrollIntoView) el.scrollIntoView({ block: "center", inline: "center" });
@@ -1145,7 +1153,7 @@ function posWire() {
     window.addEventListener("resize", function () {
       if (!POS.rows.length) return;
       if (posIsPhone() !== wasPhone) { wasPhone = posIsPhone(); posPaint(); }
-      else posDrawLinks();
+      else { posFitColumns(); posDrawLinks(); }
     });
   }
 }

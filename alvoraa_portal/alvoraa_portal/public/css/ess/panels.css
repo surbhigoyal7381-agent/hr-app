@@ -2104,7 +2104,7 @@ button.pos-tile:hover{box-shadow:var(--sh2)}
   min-height:28px;cursor:pointer;font:inherit}
 .pos-focusline{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--primary-lt);
   border-radius:var(--r-sm);padding:6px 12px;margin-bottom:10px}
-.pos-chartwrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);padding:16px 8px 28px}
+.pos-chartwrap{--cols:5;overflow-x:auto;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);padding:16px 8px 28px}
 .pos-chart{display:flex;justify-content:center;align-items:flex-start;gap:16px;min-width:max-content;margin:0 auto;position:relative}
 .pos-br{display:flex;flex-direction:column;align-items:center;position:relative}
 .pos-kids{display:flex;align-items:flex-start;padding-top:22px;position:relative}
@@ -2117,10 +2117,13 @@ button.pos-tile:hover{box-shadow:var(--sh2)}
 .pos-kids > .pos-br:only-child::after{display:none}
 .pos-sibwrap{position:relative;padding-top:22px;display:flex;flex-direction:column}
 .pos-sibwrap::before{content:"";position:absolute;top:0;left:50%;width:1px;height:22px;background:var(--border2)}
-.pos-sibs{border:1px solid var(--border2);border-radius:var(--r);padding:8px 8px 12px}
+.pos-sibs{border:1px solid var(--border2);border-radius:var(--r);padding:6px 6px 12px}
+/* "No reporting manager" is not part of the tree: pinned to the top-right
+   corner of the chart, with no line (v10). */
+.pos-chart > .pos-nomgr-slot{position:absolute;top:0;right:0}
 .pos-sibhead{text-align:center;font-size:var(--fs-sm);font-weight:700;color:var(--text2)}
 .pos-siblab{font-size:var(--fs-sm);color:var(--text2);margin:10px 4px 6px}
-.pos-sibgrid{display:grid;grid-template-columns:repeat(5,208px);gap:14px;justify-content:center}
+.pos-sibgrid{display:grid;grid-template-columns:repeat(var(--cols),208px);gap:14px;justify-content:center}
 .pos-strip{margin-top:26px;border-top:2px solid var(--primary);padding-top:6px;display:flex;flex-direction:column;align-items:center}
 .pos-striphead{font-size:var(--fs-sm);color:var(--text2)}
 svg.pos-links{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}

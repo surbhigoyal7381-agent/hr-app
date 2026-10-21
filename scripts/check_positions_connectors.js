@@ -95,7 +95,18 @@ function audit() {
     bad.push(`"${label(id)}" is linked to nobody (parent ${label(rp)})`);
   });
   const cw = app.querySelector(".pos-chartwrap");
+  // The no-manager box must not cover any seat or group (v10 pins it to a corner).
+  const nm = app.querySelector("#pos-nomgr-box");
+  if (nm) {
+    const r = nm.getBoundingClientRect();
+    [...boxes, ...app.querySelectorAll(".pos-sibs, .pos-strip")].forEach((o) => {
+      const q = o.getBoundingClientRect();
+      if (q.left < r.right && q.right > r.left && q.top < r.bottom && q.bottom > r.top) bad.push("the no-manager box covers " + (o.getAttribute("data-id") || o.className));
+    });
+  }
+  const grid = app.querySelector(".pos-sibgrid");
   return { segs: segs.length, boxes: boxes.length, bad, w: cw ? cw.scrollWidth : null, f: cw ? cw.clientWidth : null,
+           cols: grid ? getComputedStyle(grid).gridTemplateColumns.split(" ").length : null,
            page: document.documentElement.scrollWidth - innerWidth };
 }
 
@@ -103,7 +114,10 @@ function audit() {
   if (!USR || !PWD) { console.error("Set PROBE_USR and PROBE_PWD for a user on a THROWAWAY site."); process.exit(2); }
   const b = await chromium.launch();
   let total = 0;
-  for (const theme of ["light", "dark"]) for (const [dev, w, h] of [["desk", 1440, 900], ["phone", 390, 844]]) {
+  // Portal windows of 1440, 1280 and 1024 px give chart frames of about
+  // 1,128, 970 and 820 px (v10: 5, 4 and 3 group columns), plus a phone.
+  const sizes = [["desk", 1440, 900], ["desk", 1280, 900], ["desk", 1024, 900], ["phone", 390, 844]];
+  for (const theme of ["light", "dark"]) for (const [dev, w, h] of sizes) {
     const ctx = await b.newContext({ viewport: { width: w, height: h } });
     const p = await ctx.newPage();
     const errs = [];
@@ -122,7 +136,7 @@ function audit() {
       await p.waitForTimeout(150);
       const r = await p.evaluate(audit);
       states.push([name, r]);
-      if (SHOTS && theme === "light") await p.screenshot({ path: `${SHOTS}${dev}-${name.replace(/[^a-z0-9]+/gi, "-")}.png`, fullPage: true });
+      if (SHOTS && theme === "light") await p.screenshot({ path: `${SHOTS}${dev}${w}-${name.replace(/[^a-z0-9]+/gi, "-")}.png`, fullPage: true });
     };
     const leadOf = (title) => p.evaluate((t) => POS.rows.filter((r) => r.title === t)[0].id, title);
     const top = await p.evaluate(() => POS.nav.top[0]);
@@ -153,7 +167,7 @@ function audit() {
     }
     for (const [name, r] of states) {
       total += r.bad.length;
-      console.log(theme, dev, name.padEnd(38), `segments ${String(r.segs).padStart(3)} boxes ${String(r.boxes).padStart(3)} width ${r.w}/${r.f} page+${r.page}`,
+      console.log(theme, dev + w, name.padEnd(38), `cols ${r.cols} segments ${String(r.segs).padStart(3)} boxes ${String(r.boxes).padStart(3)} width ${r.w}/${r.f} page+${r.page}`,
                   r.bad.length ? `FAIL ${r.bad.length}: ${r.bad.slice(0, 3).join(" | ")}` : "ok");
     }
     if (errs.length) { console.log("SCRIPT ERRORS", errs); total++; }

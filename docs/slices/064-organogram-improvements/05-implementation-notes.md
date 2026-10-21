@@ -1,4 +1,4 @@
-# 064 · Implementation notes (22 Oct 2026)
+# 064 · Implementation notes (22 Oct 2026; v10 applied)
 
 **Status: built and checked locally, to the approved design prototype-v9. Nothing is pushed.**
 The full test suite has not been run (it runs once, at the end, before a push is asked for).
@@ -80,9 +80,10 @@ the same sequence on the real page (connector check).
 
 ## Known gaps
 
-- On the portal at 1440 px the chart frame is 1,128 px wide (the portal's sidebar), so the
-  "No reporting manager" box beside the top sits past the right edge and is reached by scrolling the
-  chart frame. In the prototype the frame is 1,384 px and it fits. Needs the designer.
+- Fixed by v10 (29e57a52): the "No reporting manager" box is pinned to the chart's top-right
+  corner and groups take 5 / 4 / 3 columns at 1,128 / ~1,000 / ~830 px frames. Connector check at
+  those widths and 390: 0 bad links. By branch / By department "Open every level" still runs wide
+  (v11 is being designed for it).
 - "Seats with no seat above them" (B-14) are listed in the No-reporting-manager sheet with "Open
   this seat"; v9 does not draw them.
 - The identical-seat grouping ("5 of these", K3) is gone: v9 does not draw it; the groups replace it.

@@ -1,0 +1,115 @@
+ prototype-v10.html => prototype-v11.html | 35 +++++++++++++++++++++++++-------
+ 1 file changed, 28 insertions(+), 7 deletions(-)
+
+diff --git a/prototype-v10.html b/prototype-v11.html
+index 456701f4..b377de57 100644
+--- a/prototype-v10.html
++++ b/prototype-v11.html
+@@ -88,6 +88,8 @@ button.tile:hover{box-shadow:var(--sh2)}
+ .sibwrap::before{content:"";position:absolute;top:0;left:50%;width:1px;height:22px;background:var(--border2)}
+ .sibs{border:1px solid var(--border2);border-radius:var(--r);padding:6px 6px 12px}
+ .chart>.nomgr-slot{position:absolute;top:0;right:0}
++.hview{display:flex;flex-direction:column}
++.hrow{display:grid;grid-template-columns:repeat(var(--hcols,6),208px);gap:14px;justify-content:center}
+ .sibhead{text-align:center;font-size:var(--fs-sm);font-weight:700;color:var(--text2)}
+ .siblab{font-size:var(--fs-sm);color:var(--text2);margin:10px 4px 6px}
+ .sibgrid{display:grid;grid-template-columns:repeat(var(--cols,5),208px);gap:14px;justify-content:center}
+@@ -417,12 +419,20 @@ function chipsFor(r) {
+ function kidsHTML(kids, t, depth, path, owner) {
+   var parents = kids.filter(function (k) { return (t.kids[k.id] || []).length; });
+   var leaves = kids.filter(function (k) { return !(t.kids[k.id] || []).length; });
+-  if (kids.length <= WRAP_N) return '<div class="kids">' + parents.concat(leaves).map(function (k) { return seatBox(k, t, depth, path); }).join("") + "</div>";
++  if (kids.length <= Math.min(WRAP_N, frameCols())) {
++    /* v11: in a small family too, an opened child's family sits in a strip below the row, not inside its column. */
++    var rk = "c:" + owner, wide = parents;
++    var rch = ST.copen[rk] !== undefined ? ST.copen[rk] : ((wide.filter(function (k) { return isOpen(k.id, depth, path); })[0] || {}).id || null);
++    if (!wide.some(function (k) { return k.id === rch; })) rch = null;
++    return '<div class="kids">' + parents.concat(leaves).map(function (k) { return wide.indexOf(k) > -1 ? seatBox(k, t, depth, path, rk, rch === k.id) : seatBox(k, t, depth, path); }).join("") + "</div>"
++      + (rch ? '<div class="strip" id="s-' + rch + '" data-parent="' + rch + '"><div class="striphead">Under <strong>' + esc(BYID[rch].title + " · " + shortB(BYID[rch].branch)) + "</strong></div>" + kidsHTML(t.kids[rch], t, depth + 1, path, rch) + "</div>" : "");
++  }
+   /* v9: many children sit in ONE labelled group joined to their manager by ONE line; no lines
+      inside it. Seats with nobody under them first, team leads last, so an opened lead's family
+      (drawn below the whole group, under "Under ...") is reached by its own line without crossing a box. */
+   var key = "c:" + owner, name = ownerTitle(owner);
+   var chosen = ST.copen[key] !== undefined ? ST.copen[key] : ((parents.filter(function (k) { return isOpen(k.id, depth, path); })[0] || {}).id || null);
++  if (!parents.some(function (k) { return k.id === chosen; })) chosen = null;
+   var h = '<div class="sibwrap"><div class="sibs" id="' + key + '" data-parent="' + owner + '"><div class="sibhead">' + kids.length + " seats report to " + esc(name) + "</div>";
+   if (leaves.length) h += '<div class="siblab">Nobody under them · ' + leaves.length + '</div><div class="sibgrid">' + leaves.map(function (k) { return seatBox(k, t, depth, path, key, false); }).join("") + "</div>";
+   if (parents.length) h += '<div class="siblab">Lead a team · ' + parents.length + '</div><div class="sibgrid">' + parents.map(function (k) { return seatBox(k, t, depth, path, key, chosen === k.id); }).join("") + "</div>";
+@@ -432,6 +442,8 @@ function kidsHTML(kids, t, depth, path, owner) {
+   return h + "</div>";
+ }
+ var WRAP_N = 5;
++/* How many 208 px boxes the chart frame holds (the frame is the page area minus its padding). */
++function frameCols() { var a = document.getElementById("app"); return Math.max(1, Math.floor((a.clientWidth - 56 - 2 - 16) / 222)); }
+ function ownerTitle(o) { return o.indexOf("h:") === 0 ? (ST.view === "branch" ? shortB(o.slice(2)) : (o.slice(2) || "No department")) : BYID[o].title; }
+ /* The line from an opened team lead to its "Under ..." strip: straight down if nothing is below
+    the lead in the group, otherwise along the gap between columns. Drawn after layout. */
+@@ -444,7 +456,7 @@ function drawLinks() {
+     if (!box) return;
+     var br = box.parentNode.getBoundingClientRect(), s = st.getBoundingClientRect();
+     var x = br.left + br.width / 2 - c.left, y = br.bottom - c.top, y2 = s.top - c.top, gx = br.right + 7 - c.left;
+-    var below = [].some.call(box.closest(".sibs").querySelectorAll(".sibgrid > .br"), function (o) {
++    var below = [].some.call(box.closest(".sibs, .hrow, .kids").querySelectorAll(".sibgrid > .br, .hrow > .br, .kids > .br"), function (o) {
+       var q = o.getBoundingClientRect(); return q.top > br.bottom - 1 && q.left < br.right && q.right > br.left; });
+     d += '<path data-from="' + id + '" d="' + (below ? "M" + x + " " + y + " L" + x + " " + (y + 7) + " L" + gx + " " + (y + 7) + " L" + gx + " " + y2 : "M" + x + " " + y + " L" + x + " " + y2) + '"/>';
+   });
+@@ -476,18 +488,17 @@ function stackHTML(leaves, belowRow) {
+     + (fill ? " · " + fill + " to fill" : "") + '</div><div class="grid">' + rows + "</div></div></div>";
+ }
+ function holderBox(h, path) {
+-  var opened = isOpen(h.id, 1, path); // branches and departments start closed, with their counts (as today)
++  var opened = ST.hchosen === h.id; // v11: one branch or department open at a time, drawn in a strip below the row
+   var seats = h.rows.length, people = h.rows.reduce(function (a, r) { return a + r.filled; }, 0);
+   var fill = h.rows.reduce(function (a, r) { return a + open(r); }, 0);
+   var lv = h.rows.reduce(function (a, r) { return a + leavingIn(r); }, 0);
+   var x = "";
+   if (ST.view === "branch" && h.id === "h:PITS") x = '<span class="chip info">Second branch record for Pitampura</span>';
+-  var hb = '<div class="br"><button type="button" class="box' + (fill || lv ? " amber" : "") + '" data-act="fold" data-id="' + esc(h.id) + '" aria-expanded="' + opened + '">'
++  var hb = '<div class="br"><button type="button" class="box' + (fill || lv ? " amber" : "") + (opened ? " opened" : "") + '" data-act="hfold" id="b-' + esc(h.id) + '" data-id="' + esc(h.id) + '" aria-expanded="' + opened + '">'
+     + '<div class="ti">' + esc(h.title) + '</div><div class="su">' + h.sub + '</div>'
+     + '<div class="roll">' + seats + " seats · " + people + " people" + (fill ? " · " + fill + " to fill" : "") + (lv ? " · " + lv + " leaving" : "") + "</div>"
+     + (x ? '<div class="chips">' + x + "</div>" : "")
+     + '<div class="su noprint">' + (opened ? "Select to fold" : "Select to open") + "</div></button>";
+-  if (opened) hb += kidsHTML(h.roots, h.t, 1, path, h.id);
+   return hb + "</div>";
+ }
+ function noMgrBox() {
+@@ -498,9 +509,17 @@ function noMgrBox() {
+ }
+ function chartHTML() {
+   var path = onPath(), items = topItems();
++  if (items[0] && items[0].kind === "holder") ST.hchosen = ST.hopen !== undefined ? ST.hopen : ((items.filter(function (h) { return isOpen(h.id, 1, path); })[0] || {}).id || null);
+   var html = items.map(function (it) {
+     return it.kind === "holder" ? holderBox(it, path) : seatBox(it.r, it.t, 0, path);
+   }).join("");
++  /* v11: the closed branches or departments wrap into rows (top-level boxes have no lines between them),
++     and the opened one's family sits below the whole row under "Under <name>", reached by its own line. */
++  if (items[0] && items[0].kind === "holder") {
++    var hc = items.filter(function (h) { return h.id === ST.hchosen; })[0];
++    html = '<div class="hview"><div class="hrow">' + html + "</div>"
++      + (hc ? '<div class="strip" id="s-' + esc(hc.id) + '" data-parent="' + esc(hc.id) + '"><div class="striphead">Under <strong>' + esc(hc.title) + "</strong></div>" + kidsHTML(hc.roots, hc.t, 1, path, hc.id) + "</div>" : "") + "</div>";
++  }
+   if (ST.view === "reporting" && !P().scope) html += noMgrBox();
+   return '<div class="printhead">DTC · Positions · as at 21 Oct 2026 · Confidential, for management · Sample names</div>'
+     + '<div class="chartwrap"><div class="chart">' + html + "</div></div>";
+@@ -643,7 +662,8 @@ function render() {
+   app.innerHTML = h;
+   wireInputs();
+   var cw = document.querySelector(".chartwrap");
+-  if (cw) cw.style.setProperty("--cols", Math.max(1, Math.min(5, Math.floor((cw.clientWidth - 16) / 222))));
++  if (cw) cw.style.setProperty("--cols", Math.min(5, frameCols()));
++  if (cw) cw.style.setProperty("--hcols", frameCols());
+   drawLinks();
+   if (ST.focus && !ST.phone) {
+     var el = document.getElementById("b-" + ST.focus);
+@@ -771,7 +791,8 @@ document.addEventListener("click", function (e) {
+   var b = e.target.closest("[data-act]");
+   if (!b) { if (!e.target.closest(".find")) { var h = document.getElementById("hits"); if (h) h.innerHTML = ""; } return; }
+   var a = b.dataset.act, id = b.dataset.id;
+-  if (a === "view") { ST.view = b.dataset.v; ST.trail = []; ST.open = {}; render(); }
++  if (a === "view") { ST.view = b.dataset.v; ST.trail = []; ST.open = {}; ST.hopen = undefined; ST.copen = {}; render(); }
++  else if (a === "hfold") { ST.hopen = ST.hchosen === id ? null : id; render(); }
+   else if (a === "cfold") { ST.copen[b.dataset.k] = b.getAttribute("aria-expanded") === "true" ? null : id; render(); }
+   else if (a === "fold") {
+     var path = onPath(); var depth = id.indexOf("h:") === 0 ? 1 : (ST.view === "reporting" && BYID[id] && !BYID[id].parent ? 0 : 1);

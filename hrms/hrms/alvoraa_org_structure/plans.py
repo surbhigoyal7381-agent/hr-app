@@ -243,6 +243,163 @@ def refuse_careless_grant(doc, method=None):
 		)
 
 
+# ── set, confirm, remove, and the one erase (SEC-5, PRIV-2, PRIV-4) ──────────
+
+
+def _changed():
+	return _("Someone else changed this plan a moment ago. Here is the latest.")
+
+
+def _log(reason, name):
+	"""One security-log line per set, confirm, remove and erase, in the shape
+	of every other refusal and change. The plan's random name and a reason
+	word only: never the note, the person, the seat or the assignment, because
+	these lines outlive the plan (PRIV-4)."""
+	import json
+
+	try:
+		frappe.logger("security").warning(json.dumps({
+			"event": "replacement_plan",
+			"at": str(frappe.utils.now_datetime()),
+			"user": frappe.session.user,
+			"doctype": DOCTYPE,
+			"name": name,
+			"reason": reason,
+		}))
+	except Exception:
+		pass
+
+
+def erase(name, reason):
+	"""THE ONLY WAY A PLAN IS DELETED. Leaves nothing behind in the database.
+
+	- `delete_permanently`: no copy in Deleted Document, which Frappe
+	  otherwise keeps for ever, note included.
+	- the flag: the record's `on_trash` refuses every delete without it.
+	- `delete_dynamic_links` now, in this transaction: Frappe only queues it
+	  for after the commit, which in production depends on a worker.
+	- the record sets `no_feed_on_delete`, so no "Deleted" comment either.
+	Tags, files and the global-search row go inside `delete_doc` itself.
+
+	Runs as whoever calls it, with that person's own Delete right: the HR
+	Manager who removes a plan, or the scheduler (Administrator).
+	"""
+	from frappe.model.delete_doc import delete_dynamic_links
+
+	frappe.delete_doc(DOCTYPE, name, delete_permanently=True, flags={ERASE_FLAG: True})
+	delete_dynamic_links(DOCTYPE, name)
+	_log(reason, name)
+
+
+def _visible(plan):
+	"""Whether the caller can see this plan now, through the gate. A plan
+	that lapsed, or whose person left, is not visible - so the answer to a
+	stale screen is "here is the latest", not an error that confirms it."""
+	return bool(frappe.get_list(DOCTYPE, filters={"name": str(plan or "")}, pluck="name"))
+
+
+@frappe.whitelist(methods=["POST"])
+def set_plan(assignment, note=None):
+	"""Plan a replacement for the person in one seat assignment.
+
+	POST only, so the note never sits in a URL or an access log. Runs as the
+	user; the record's own rules and the gate decide (SEC-5)."""
+	assignment = str(assignment or "").strip()
+	note = str(note or "").strip() or None
+	if not is_reader() or not frappe.has_permission(DOCTYPE, "create"):
+		_refuse(_("Only HR Managers can plan a replacement."), "plans.set_plan")
+	if note and len(note) > NOTE_MAX:
+		frappe.throw(_("The note can be at most {0} characters. Shorten it and save again.").format(NOTE_MAX))
+	check_assignment(assignment)
+
+	# A plan that lapsed today may still be waiting for the daily erase. One
+	# plan per assignment is a unique index, so it goes first.
+	for row in _due(assignment):
+		erase(row.name, row.reason)
+
+	try:
+		doc = frappe.get_doc({"doctype": DOCTYPE, "assignment": assignment, "note": note}).insert()
+	except (frappe.UniqueValidationError, frappe.DuplicateEntryError):
+		# Two HR Managers saved at the same moment; the first one won.
+		frappe.throw(_changed())
+	_log("set", doc.name)
+	return {"name": doc.name, "confirmed_on": str(doc.confirmed_on),
+	        "lapses_on": str(add_days(doc.confirmed_on, LIFE_DAYS))}
+
+
+@frappe.whitelist(methods=["POST"])
+def confirm_plan(plan):
+	"""Keep a live plan for 90 days from today. No dialog; refused once the
+	plan has lapsed or its person has left."""
+	if not _visible(plan):
+		frappe.throw(_changed())
+	if not frappe.has_permission(DOCTYPE, "write", doc=plan):
+		_refuse(_("Only HR Managers can confirm a plan."), "plans.confirm_plan")
+	doc = frappe.get_doc(DOCTYPE, plan)
+	doc.confirmed_on = nowdate()
+	doc.save()
+	_log("confirmed", doc.name)
+	return {"name": doc.name, "confirmed_on": str(doc.confirmed_on),
+	        "lapses_on": str(add_days(doc.confirmed_on, LIFE_DAYS))}
+
+
+@frappe.whitelist(methods=["POST"])
+def remove_plan(plan):
+	"""Remove a plan: erased at once, nothing kept in the system."""
+	if not _visible(plan):
+		frappe.throw(_changed())
+	if not frappe.has_permission(DOCTYPE, "delete", doc=plan):
+		_refuse(_("Only HR Managers can remove a plan."), "plans.remove_plan")
+	erase(plan, "removed")
+	return {"ok": True}
+
+
+# ── what is due for erasing (PRIV-3) ─────────────────────────────────────────
+
+
+def _why_due(row, today):
+	"""The reason word a plan must go, or None while it is live. The same
+	rule as `_condition(live=True)`, read the other way round."""
+	if not row.a or (row.from_date and str(row.from_date) > today) or (
+			row.to_date and str(row.to_date) < today):
+		return "left seat"
+	if row.emp_status != "Active":
+		return "left company"
+	if row.seat_status == "Closed":
+		return "seat closed"
+	if str(row.confirmed_on) < str(add_days(today, -LIFE_DAYS)):
+		return "lapsed"
+	return None
+
+
+def _due(assignment=None):
+	"""Every plan that must be erased, with its reason, in ONE query.
+
+	This and the erase are the only reads of the plan table that do not go
+	through the gate: they must find plans nobody may see any more. Names,
+	dates and statuses only - never the note, so no error here can carry it.
+	"""
+	rp = frappe.qb.DocType(DOCTYPE)
+	a = frappe.qb.DocType(register.ASSIGNMENT)
+	p = frappe.qb.DocType(register.POSITION)
+	e = frappe.qb.DocType("Employee")
+	q = (frappe.qb.from_(rp)
+	     .left_join(a).on(a.name == rp.assignment)
+	     .left_join(p).on(p.name == a.position)
+	     .left_join(e).on(e.name == a.employee)
+	     .select(rp.name, rp.confirmed_on, a.name.as_("a"), a.from_date, a.to_date,
+	             e.status.as_("emp_status"), e.relieving_date, p.status.as_("seat_status")))
+	if assignment:
+		q = q.where(rp.assignment == assignment)
+	today = nowdate()
+	out = []
+	for row in q.run(as_dict=True):
+		row.reason = _why_due(row, today)
+		if row.reason:
+			out.append(row)
+	return out
+
+
 def check_assignment(assignment):
 	"""The seat assignment a plan may be set or kept on: started, not ended,
 	its person Active, its seat not Closed and inside the caller's scope, and

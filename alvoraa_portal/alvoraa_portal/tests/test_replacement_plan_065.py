@@ -479,3 +479,191 @@ class TestCarelessGrants(Plan065Case):
 		trail = " ".join(frappe.get_all("Version", filters={"ref_doctype": "DocType", "docname": PLAN},
 		                                pluck="data"))
 		self.assertIn(OWNERS, trail)
+
+
+# ── US-2, US-4, US-5, US-17 · set, confirm, remove; the one erase (SEC-5, PRIV-2) ──
+
+
+def _traces(name, tag=None):
+	"""Every table a plan could leave a trace in: the 12 the spec names, plus
+	the tag list itself (the 13th; tags are refused, so it never holds a
+	plan's tag)."""
+	return {
+		"Replacement Plan": frappe.db.count(PLAN, {"name": name}),
+		"Deleted Document": frappe.db.count("Deleted Document", {"deleted_doctype": PLAN, "deleted_name": name}),
+		"Version": frappe.db.count("Version", {"ref_doctype": PLAN, "docname": name}),
+		"Comment": frappe.db.count("Comment", {"reference_doctype": PLAN, "reference_name": name}),
+		"DocShare": frappe.db.count("DocShare", {"share_doctype": PLAN, "share_name": name}),
+		"ToDo": frappe.db.count("ToDo", {"reference_type": PLAN, "reference_name": name}),
+		"View Log": frappe.db.count("View Log", {"reference_doctype": PLAN, "reference_name": name}),
+		"Document Follow": frappe.db.count("Document Follow", {"ref_doctype": PLAN, "ref_docname": name}),
+		"Notification Log": frappe.db.count("Notification Log", {"document_type": PLAN, "document_name": name}),
+		"Tag Link": frappe.db.count("Tag Link", {"document_type": PLAN, "document_name": name}),
+		"File": frappe.db.count("File", {"attached_to_doctype": PLAN, "attached_to_name": name}),
+		"__global_search": frappe.db.sql("select count(*) from `__global_search` where doctype=%s and name=%s",
+		                                 (PLAN, name))[0][0],
+		"Tag": frappe.db.count("Tag", {"name": tag}) if tag else 0,
+	}
+
+
+class TestSetConfirmRemove(Plan065Case):
+	def setUp(self):
+		super().setUp()
+		self.owners_see(True)
+
+	def call(self, user, fn, *args):
+		frappe.set_user(user)
+		try:
+			return fn(*args)
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_ac10_the_three_calls_take_post_only(self):
+		for fn in (plans.set_plan, plans.confirm_plan, plans.remove_plan):
+			self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func.get(fn), ["POST"], fn.__name__)
+
+	def test_ac7_set_and_ac3_no_history_anywhere(self):
+		got = self.call(self.hrA, plans.set_plan, self.a_sunil, "Notice likely in December")
+		self.assertEqual(got["confirmed_on"], nowdate())
+		self.assertEqual(got["lapses_on"], str(add_days(nowdate(), 90)))
+		self.assertEqual(frappe.db.get_value(PLAN, got["name"], "owner"), self.hrA)
+		self.call(self.hrA2, plans.confirm_plan, got["name"])
+		t = _traces(got["name"])
+		self.assertEqual((t["Version"], t["View Log"], t["__global_search"]), (0, 0, 0))
+
+	def test_ac9_two_hr_managers_saving_at_once_make_one_plan(self):
+		self.call(self.hrA, plans.set_plan, self.a_sunil, None)
+		with self.assertRaises(frappe.ValidationError) as caught:
+			self.call(self.hrA2, plans.set_plan, self.a_sunil, None)
+		self.assertIn("Someone else changed this plan", str(caught.exception))
+		self.assertEqual(frappe.db.count(PLAN, {"assignment": self.a_sunil}), 1)
+
+	def test_ac11_a_lapsed_plan_waiting_for_the_job_is_replaced_cleanly(self):
+		old = self.make_plan(self.a_aarti)
+		self.age(old, 91)
+		new = self.call(self.hrA, plans.set_plan, self.a_aarti, None)["name"]
+		self.assertEqual(frappe.get_all(PLAN, filters={"assignment": self.a_aarti}, pluck="name"), [new])
+		self.assertEqual(str(frappe.db.get_value(PLAN, new, "confirmed_on")), nowdate())
+		self.assertEqual(set(_traces(old).values()), {0})
+
+	def test_ac18_confirm_moves_the_end_to_ninety_days_from_today(self):
+		p = self.make_plan(self.a_ritu)
+		self.age(p, 20)
+		got = self.call(self.hrA2, plans.confirm_plan, p)
+		self.assertEqual(got["lapses_on"], str(add_days(nowdate(), 90)))
+		self.assertEqual(frappe.db.get_value(PLAN, p, "modified_by"), self.hrA2)
+
+	def test_ac20_confirm_after_the_plan_lapsed_is_refused(self):
+		p = self.make_plan(self.a_aarti)
+		self.age(p, 91)
+		with self.assertRaises(frappe.ValidationError) as caught:
+			self.call(self.hrA, plans.confirm_plan, p)
+		self.assertIn("Someone else changed this plan", str(caught.exception))
+		self.assertEqual(str(frappe.db.get_value(PLAN, p, "confirmed_on")), str(add_days(nowdate(), -91)))
+
+	def test_ac23_remove_leaves_nothing_in_any_of_the_13_places(self):
+		"""Side records are seeded through Frappe's own paths with the refusal
+		switched off, and Frappe's after-commit cleanup job switched off too,
+		so the test cannot lean on a worker (PRIV-2)."""
+		from frappe.desk.doctype.tag.tag import add_tag
+		from frappe.desk.form import assign_to
+		from frappe.desk.form.utils import add_comment
+
+		p = self.make_plan(self.a_ritu, "Contract ends 31 Dec.")
+		with patch("hrms.alvoraa_org_structure.plans.refuse_side_record"):
+			frappe.set_user(self.hrA)
+			add_comment(PLAN, p, "a comment", self.hrA, self.hrA)
+			add_tag("tag065", PLAN, p)
+			frappe.get_doc({"doctype": "File", "file_name": "n065.txt", "content": "x", "is_private": 1,
+			                "attached_to_doctype": PLAN, "attached_to_name": p}).insert()
+			frappe.set_user("Administrator")
+			# Nobody may share a plan, and assigning shares it, so both as
+			# Administrator: the gate refuses "share" to everybody else.
+			frappe.share.add(PLAN, p, self.own, read=1)
+			assign_to.add({"doctype": PLAN, "name": p, "assign_to": [self.hrA2]})
+			for dt, row in (("Version", {"ref_doctype": PLAN, "docname": p, "data": "{}"}),
+			                ("View Log", {"reference_doctype": PLAN, "reference_name": p, "viewed_by": self.hrA}),
+			                ("Document Follow", {"ref_doctype": PLAN, "ref_docname": p, "user": self.hrA}),
+			                ("Notification Log", {"document_type": PLAN, "document_name": p, "for_user": self.hrA,
+			                                      "subject": "x"})):
+				frappe.get_doc({"doctype": dt, **row}).db_insert()
+			frappe.db.sql("insert into `__global_search` (doctype, name, content) values (%s, %s, 'x')", (PLAN, p))
+		seeded = _traces(p)
+		self.assertTrue(all(seeded[k] for k in seeded if k not in ("Deleted Document", "Tag")), seeded)
+
+		with patch("frappe.enqueue"):
+			self.call(self.hrA, plans.remove_plan, p)
+		self.assertEqual(set(_traces(p).values()), {0}, _traces(p))
+		frappe.db.delete("Tag", {"name": "tag065"})
+
+	def test_ac23_the_test_can_fail_an_ordinary_delete_leaves_a_copy(self):
+		"""Proves the trace check sees a Deleted Document copy: the same
+		delete without `delete_permanently` leaves one."""
+		p = self.make_plan(self.a_ritu)
+		frappe.delete_doc(PLAN, p, flags={plans.ERASE_FLAG: True})
+		self.assertEqual(_traces(p)["Deleted Document"], 1)
+		frappe.db.delete("Deleted Document", {"deleted_doctype": PLAN})
+
+	def test_ac24_rest_delete_is_refused(self):
+		p = self.make_plan(self.a_ritu)
+		frappe.set_user(self.hrA)
+		with self.assertRaises(frappe.ValidationError):
+			frappe.client.delete(PLAN, p)
+		frappe.set_user("Administrator")
+		self.assertTrue(frappe.db.exists(PLAN, p))
+
+	def test_ac26_ac41_the_opening_carries_nothing_and_outlives_the_plan(self):
+		p = self.make_plan(self.a_ritu, "Contract ends 31 Dec.")
+		frappe.set_user(self.hrA)
+		opening = register.post_job(self.cashier.name, vacancies=1, publish=0)["name"]
+		frappe.set_user("Administrator")
+		before = frappe.get_doc("Job Opening", opening).as_dict()
+		text = json.dumps(list(before.values()), default=str).lower()
+		for bad in ("ritu", self.ritu.lower(), "contract ends", p.lower()):
+			self.assertNotIn(bad, text)
+		words = " ".join(str(before.get(f) or "") for f in ("job_title", "route", "description")).lower()
+		self.assertNotIn("replac", words)
+		self.assertNotIn("planned", words)
+		self.assertEqual(before.publish, 0)
+		self.call(self.hrA, plans.remove_plan, p)
+		after = frappe.get_doc("Job Opening", opening).as_dict()
+		self.assertEqual({k: v for k, v in before.items() if k != "modified"},
+		                 {k: v for k, v in after.items() if k != "modified"})
+		frappe.delete_doc("Job Opening", opening, force=True, ignore_permissions=True, delete_permanently=True)
+
+	def test_ac66_owners_and_the_system_manager_only_read(self):
+		p = self.make_plan(self.a_ritu)
+		for user in (self.own, self.sys):
+			with self.assertRaises(frappe.PermissionError, msg=user):
+				self.call(user, plans.set_plan, self.a_sunil, None)
+			with self.assertRaises(frappe.PermissionError, msg=user):
+				self.call(user, plans.confirm_plan, p)
+			with self.assertRaises(frappe.PermissionError, msg=user):
+				self.call(user, plans.remove_plan, p)
+			frappe.set_user(user)
+			with self.assertRaises(frappe.PermissionError, msg=user):
+				frappe.client.insert({"doctype": PLAN, "assignment": self.a_sunil})
+			with self.assertRaises(frappe.PermissionError, msg=user):
+				frappe.client.delete(PLAN, p)
+			frappe.set_user("Administrator")
+		self.assertTrue(frappe.db.exists(PLAN, p))
+		self.assertFalse(frappe.db.exists(PLAN, {"assignment": self.a_sunil}))
+
+	def test_ac51_log_lines_name_nobody(self):
+		lines = []
+
+		class Capture:
+			def warning(self, message):
+				lines.append(json.loads(message))
+
+		with patch("frappe.logger", return_value=Capture()):
+			p = self.call(self.hrA, plans.set_plan, self.a_ritu, "Contract ends 31 Dec.")["name"]
+			self.call(self.hrA, plans.confirm_plan, p)
+			self.call(self.hrA, plans.remove_plan, p)
+		mine = [line for line in lines if line.get("event") == "replacement_plan"]
+		self.assertEqual([line["reason"] for line in mine], ["set", "confirmed", "removed"])
+		for line in mine:
+			self.assertEqual(set(line), {"event", "at", "user", "doctype", "name", "reason"})
+		text = json.dumps(lines).lower()
+		for bad in ("ritu", self.ritu.lower(), self.a_ritu.lower(), self.cashier.name.lower(), "contract"):
+			self.assertNotIn(bad, text)

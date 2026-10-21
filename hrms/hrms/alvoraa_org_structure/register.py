@@ -437,7 +437,7 @@ def position_table(branch=None, department=None, as_at=None):
 		POSITION, filters={"company": ("in", companies)},
 		fields=["company", {"MIN": "creation", "as": "first"}], group_by="company")}
 
-	return {"rows": rows, "may_edit": may_edit(), "may_delete": may_delete(), "as_at": as_at,
+	out = {"rows": rows, "may_edit": may_edit(), "may_delete": may_delete(), "as_at": as_at,
 	        "departments": parents, "first_seat_created": first,
 	        # Whether the page may say "leaving" at all, so a reader who may not
 	        # see leavers gets no tile - never a "Nobody leaving" that is untrue.
@@ -445,6 +445,63 @@ def position_table(branch=None, department=None, as_at=None):
 	        # "Set manager" opens the Employee record; offered only to somebody
 	        # who may change it (design X-6).
 	        "may_edit_employee": bool(frappe.has_permission("Employee", "write"))}
+
+	# The people who are on no chart at all: Active, in no seat. A list of
+	# named people, so it goes ONLY to somebody who may see them as HR, and
+	# the key is ABSENT otherwise - the page then shows no tile, never a "0"
+	# that would be untrue (SEC-2). Not stored anywhere; worked out per load.
+	from hrms.alvoraa_hr_core.access import NO_EMPLOYEES, permitted_employee_filters
+
+	people = permitted_employee_filters()
+	if people != NO_EMPLOYEES:
+		out["unseated"], out["active_people"] = _unseated(people, as_at)
+	return out
+
+
+# The ONLY fields a person in the "in no seat" list carries (PRIV-1). Named one
+# by one, never a whole row, so a field added to Employee later cannot leak.
+UNSEATED_KEYS = ("employee", "name", "job_role", "branch", "joined", "no_manager")
+
+
+def _unseated(people, as_at):
+	"""Active employees within `people` (HR's own scope, as Frappe filters)
+	who hold no seat on `as_at`, and how many Active people that scope holds.
+
+	Two statements whatever the headcount. The scope and the "no seat" test
+	stay inside the database - a NOT EXISTS against current assignments - so
+	no list of seated ids is read into Python and sent back (nfr-budget §2).
+	`no_manager` is a yes/no; the manager's name is never sent.
+	"""
+	from pypika.terms import ExistsCriterion
+
+	emp = frappe.qb.DocType("Employee")
+	seat = frappe.qb.DocType(ASSIGNMENT)
+	held = (frappe.qb.from_(seat).select(seat.name)
+	        .where(seat.employee == emp.name)
+	        .where(seat.from_date <= as_at)
+	        .where(seat.to_date.isnull() | (seat.to_date >= as_at)))
+	q = (frappe.qb.from_(emp)
+	     .select(emp.name, emp.employee_name, emp.designation, emp.branch,
+	             emp.date_of_joining, emp.reports_to)
+	     .where(emp.status == "Active")
+	     .where(ExistsCriterion(held).negate())
+	     .orderby(emp.branch).orderby(emp.employee_name))
+	for field, (op, value) in people.items():
+		# permitted_employee_filters returns exactly these two shapes. Anything
+		# else is refused rather than guessed at: a filter dropped here would
+		# widen the list (fails closed).
+		if op == "in":
+			q = q.where(emp[field].isin(list(value)))
+		elif op == "!=":
+			q = q.where(emp[field] != value)
+		else:
+			frappe.throw(_("The list of people in no seat could not be scoped."))
+	rows = [{"employee": e.name, "name": e.employee_name, "job_role": e.designation or "",
+	         "branch": e.branch or "", "joined": str(e.date_of_joining or ""),
+	         "no_manager": not e.reports_to}
+	        for e in q.run(as_dict=True)]
+	active = frappe.db.count("Employee", {**people, "status": "Active"})
+	return rows, active
 
 
 @frappe.whitelist()

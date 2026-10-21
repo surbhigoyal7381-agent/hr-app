@@ -40,6 +40,14 @@ def insert_plan(assignment, note=None):
 	return frappe.get_doc({"doctype": PLAN, "assignment": assignment, "note": note}).insert().name
 
 
+def _wipe_plans():
+	"""Test hygiene only: every plan, and any copy a half-finished test left
+	behind, which would otherwise trip every later self-check on this site."""
+	frappe.db.delete(PLAN)
+	for doctype, field in plans.TRACE_TABLES:
+		frappe.db.delete(doctype, {field: PLAN})
+
+
 # The readers, made once for the whole file: creating a user with roles is
 # the slow part of every fixture here, and none of these tests changes one.
 # (email, role, branch key, has an Employee record)
@@ -111,6 +119,7 @@ class Plan065Case(Positions064Case):
 	def setUp(self):
 		super().setUp()
 		frappe.set_user("Administrator")
+		_wipe_plans()
 		for key, (email, *_rest) in READERS.items():
 			setattr(self, key, email)
 		# Who may open Positions here, as an administrator would set it.
@@ -137,7 +146,7 @@ class Plan065Case(Positions064Case):
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
-		frappe.db.delete(PLAN)
+		_wipe_plans()
 		frappe.db.delete("Custom DocPerm", {"parent": PLAN})
 		frappe.db.delete("Version", {"ref_doctype": "DocType", "docname": PLAN})
 		frappe.clear_cache(doctype=PLAN)
@@ -667,3 +676,105 @@ class TestSetConfirmRemove(Plan065Case):
 		text = json.dumps(lines).lower()
 		for bad in ("ritu", self.ritu.lower(), self.a_ritu.lower(), self.cashier.name.lower(), "contract"):
 			self.assertNotIn(bad, text)
+
+
+# ── US-10, US-19, US-21 · plans end by themselves; restore step (PRIV-3, PRIV-6) ──
+
+
+class TestTheDailyErase(Plan065Case):
+	def setUp(self):
+		super().setUp()
+		frappe.db.delete("Error Log", {"method": ("in", (plans.ERASE_FAILED, plans.CHECK_FAILED))})
+		x1, x2 = self.person("Extra1065"), self.person("Extra2065")
+		self.a_x1 = self.assign(x1, self.cashier.name).name
+		self.a_x2 = self.assign(x2, self.cashier.name).name
+		gone = self.person("Gone065")
+		self.a_gone = self.assign(gone, self.rso.name).name
+		frappe.db.commit()
+		mk = self.make_plan
+		self.p = {
+			"a_91_days": mk(self.a_ritu), "b_89_days": mk(self.a_sunil), "c_confirmed_yesterday": mk(self.a_x1),
+			"d_ended": mk(self.a_x2), "e_left": mk(self.a_noida), "f_closed": mk(self.a_aarti),
+			"g_deleted": mk(self.a_gone),
+		}
+		self.age(self.p["a_91_days"], 91)
+		self.age(self.p["b_89_days"], 89)
+		self.age(self.p["c_confirmed_yesterday"], 1)
+		frappe.db.set_value("Alvoraa Position Assignment", self.a_x2, "to_date", add_days(nowdate(), -1))
+		frappe.db.set_value("Employee", self.noida_person, {"status": "Left", "relieving_date": add_days(nowdate(), -1)})
+		frappe.db.set_value("Alvoraa Position", self.recruiter.name, "status", "Closed")
+		frappe.db.delete("Alvoraa Position Assignment", {"name": self.a_gone})
+		frappe.db.commit()
+		self.due = {k for k in self.p if k[0] in "adefg"}
+
+	def errors(self, title):
+		return frappe.get_all("Error Log", filters={"method": title}, fields=["error"])
+
+	def test_ac46_due_plans_are_erased_and_live_ones_kept(self):
+		lines = []
+
+		class Capture:
+			def warning(self, message):
+				lines.append(json.loads(message))
+
+		with patch("frappe.enqueue"), patch("frappe.logger", return_value=Capture()):
+			plans.erase_due_plans()
+		for key, name in self.p.items():
+			if key in self.due:
+				self.assertEqual(set(_traces(name).values()), {0}, key)
+			else:
+				self.assertTrue(frappe.db.exists(PLAN, name), key)
+		reasons = sorted(line["reason"] for line in lines if line.get("event") == "replacement_plan")
+		self.assertEqual(reasons, ["lapsed", "left company", "left seat", "left seat", "seat closed"])
+		self.assertFalse(self.errors(plans.CHECK_FAILED))
+
+	def test_ac47_one_failure_does_not_stop_the_rest_and_logs_the_plan_name_only(self):
+		bad = self.p["a_91_days"]
+		real = plans.erase
+
+		def erase(name, reason):
+			if name == bad:
+				raise RuntimeError("Ritu065 note text")
+			return real(name, reason)
+
+		with patch("hrms.alvoraa_org_structure.plans.erase", side_effect=erase):
+			plans.erase_due_plans()
+		for key in self.due - {"a_91_days"}:
+			self.assertFalse(frappe.db.exists(PLAN, self.p[key]), key)
+		self.assertTrue(frappe.db.exists(PLAN, bad))
+		failed = self.errors(plans.ERASE_FAILED)
+		self.assertEqual([e.error for e in failed], [f"Plan {bad}"])
+		# The plan still due after the run raises the self-check alert too.
+		self.assertEqual(len(self.errors(plans.CHECK_FAILED)), 1)
+
+	def test_ac48_a_stray_copy_raises_the_self_check_with_counts_only(self):
+		frappe.get_doc({"doctype": "Comment", "comment_type": "Comment", "reference_doctype": PLAN,
+		                "reference_name": "orphan065", "content": "Ritu065"}).db_insert()
+		plans.erase_due_plans()
+		alerts = self.errors(plans.CHECK_FAILED)
+		self.assertEqual(len(alerts), 1)
+		self.assertEqual(json.loads(alerts[0].error), {"Comment": 1})
+		frappe.db.delete("Comment", {"reference_doctype": PLAN})
+
+	def test_ac49_one_daily_line_and_never_the_long_cover_alert(self):
+		events = frappe.get_hooks("scheduler_events")
+		self.assertIn("hrms.alvoraa_org_structure.plans.erase_due_plans", events.get("daily", []))
+		every = json.dumps(events)
+		self.assertNotIn("alert_on_long_cover", every)
+
+	def test_ac50_the_release_check_counts_zero_after_the_job(self):
+		plans.erase_due_plans()
+		self.assertEqual(set(plans.self_check().values()), {0})
+
+	def test_ac50_the_release_check_sees_an_overdue_plan(self):
+		"""The positive control: a plan 93 days past its confirmation, which
+		the job has not erased, is counted."""
+		self.age(self.p["b_89_days"], 93)
+		self.assertGreaterEqual(plans.self_check()["plans past their end"], 1)
+
+	def test_ac71_erase_all_after_a_restore(self):
+		with patch("frappe.enqueue"):
+			got = plans.erase_all_plans()
+		self.assertEqual(got, {"erased": len(self.p), "left": 0})
+		for name in self.p.values():
+			self.assertEqual(set(_traces(name).values()), {0})

@@ -374,6 +374,8 @@ scheduler_events = {
 		# ── PMS ──────────────────────────────────────────────────────────────
 		"hrms.pms.pms_notifications.send_overdue_stage_alerts",
 		"hrms.pms.pms_notifications.send_checkin_nudges",
+		# Slice 065, PRIV-3: erase replacement plans that lapsed or whose person left.
+		"hrms.alvoraa_org_structure.plans.erase_due_plans",
 	],
 	"daily_long": [
 		"hrms.hr.doctype.leave_ledger_entry.leave_ledger_entry.process_expired_allocation",

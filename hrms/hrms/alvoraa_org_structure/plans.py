@@ -400,6 +400,108 @@ def _due(assignment=None):
 	return out
 
 
+# ── the daily erase, its self-check, and the restore step (PRIV-3, PRIV-6) ───
+
+# Titles only reach the control plane's health pull (`health.py`), so they
+# carry no name, id or count of people.
+ERASE_FAILED = "Replacement plan erase failed"
+CHECK_FAILED = "Replacement plan self-check failed"
+
+# Where a plan could leave a copy, by the field naming the document's type.
+TRACE_TABLES = (
+	("Version", "ref_doctype"), ("Comment", "reference_doctype"), ("DocShare", "share_doctype"),
+	("ToDo", "reference_type"), ("Document Follow", "ref_doctype"), ("Tag Link", "document_type"),
+	("File", "attached_to_doctype"), ("View Log", "reference_doctype"),
+	("Notification Log", "document_type"), ("Deleted Document", "deleted_doctype"),
+)
+# Desk-made things that would read plans or send them somewhere (question 6).
+READER_TABLES = (
+	("Notification", "document_type"), ("Webhook", "webhook_doctype"),
+	("Assignment Rule", "document_type"), ("Report", "ref_doctype"),
+	("Server Script", "reference_doctype"),
+)
+
+
+def _erase_each(rows):
+	"""Erase each plan inside its own savepoint, so one failure never stops
+	the rest. A failure is logged by the plan's random name only, with an
+	explicit message - otherwise Frappe stores the traceback with its local
+	variables, which would include the note."""
+	erased = 0
+	for row in rows:
+		point = "rp_erase_" + frappe.generate_hash(length=10)
+		frappe.db.savepoint(point)
+		try:
+			erase(row.name, row.reason)
+			frappe.db.release_savepoint(point)
+			erased += 1
+		except Exception:
+			frappe.db.rollback(save_point=point)
+			frappe.log_error(title=ERASE_FAILED, message=f"Plan {row.name}")
+	return erased
+
+
+def erase_due_plans():
+	"""DAILY (hooks.py). Erase every plan that has lapsed, or whose person left
+	the seat or the company, or whose seat closed. They are already hidden on
+	every door; this makes "hidden" into "gone" within a day (PRIV-3).
+
+	Runs as the scheduler's user, Administrator, so it needs no bypass.
+	Nothing may escape this function: a failed scheduled job keeps its
+	traceback with local variables in the Scheduled Job Log."""
+	try:
+		_erase_each(_due())
+		self_check(strict=True)
+	except Exception:
+		frappe.log_error(title=ERASE_FAILED, message="The daily erase stopped before it finished.")
+
+
+def self_check(strict=False):
+	"""Count what should not exist, and raise one titled alert if any count is
+	not zero. This is how a stopped job or a stray copy gets noticed.
+
+	strict (after the daily erase): every plan still due counts.
+	not strict (the release check, any time of day): a due plan counts only
+	when its end is known to be more than 2 days ago - the job runs once a day.
+
+	Returns the counts, so the release check can print them:
+	    bench --site <site> execute hrms.alvoraa_org_structure.plans.self_check
+	"""
+	today = nowdate()
+	two_days_ago = str(add_days(today, -2))
+	due = _due()
+	if not strict:
+		due = [r for r in due if min(
+			[str(d) for d in (add_days(r.confirmed_on, LIFE_DAYS) if r.confirmed_on else None,
+			                  r.to_date, r.relieving_date if r.emp_status != "Active" else None) if d]
+			or [today]) < two_days_ago]
+	counts = {"plans past their end": len(due)}
+	for doctype, field in TRACE_TABLES + READER_TABLES:
+		counts[doctype] = frappe.db.count(doctype, {field: DOCTYPE})
+	reports = frappe.get_all("Report", filters={"ref_doctype": DOCTYPE}, pluck="name")
+	counts["Auto Email Report"] = frappe.db.count("Auto Email Report", {"report": ("in", reports)}) if reports else 0
+	problems = {k: v for k, v in counts.items() if v}
+	if problems:
+		import json
+
+		frappe.log_error(title=CHECK_FAILED, message=json.dumps(problems, sort_keys=True))
+	return counts
+
+
+def erase_all_plans():
+	"""AFTER A RESTORE FROM BACKUP, and BEFORE ROLLING THIS SLICE BACK. Not
+	whitelisted; run by an operator:
+	    bench --site <site> execute hrms.alvoraa_org_structure.plans.erase_all_plans
+	A restore brings back plans HR had removed, and nothing records that they
+	were removed. Plans are short notes: losing them is cheap, resurrecting one
+	is not (PRIV-6). HR then sets again any plan still needed."""
+	rows = [frappe._dict(name=n, reason="erased after restore")
+	        for n in frappe.get_all(DOCTYPE, pluck="name")]
+	erased = _erase_each(rows)
+	frappe.db.commit()
+	return {"erased": erased, "left": frappe.db.count(DOCTYPE)}
+
+
 def check_assignment(assignment):
 	"""The seat assignment a plan may be set or kept on: started, not ended,
 	its person Active, its seat not Closed and inside the caller's scope, and

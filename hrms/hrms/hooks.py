@@ -321,6 +321,11 @@ doc_events = {
 		"on_update": "hrms.alvoraa_org_structure.register.record_permission_change",
 		"on_trash": "hrms.alvoraa_org_structure.register.record_permission_change",
 	},
+	# Slice 064, SEC-8: only somebody who may place people in a seat may point a
+	# job opening at it, because a hire from that opening is placed in the seat.
+	"Job Opening": {
+		"validate": "hrms.alvoraa_org_structure.hiring.guard_seat_link",
+	},
 }
 
 # Scheduled Tasks

@@ -11,6 +11,10 @@ Run inside a bench container, with the site named in SITE, by piping this file:
 
 STEP is one of:
 
+  shape       READ ONLY. The numbers the synthetic rehearsal copies (07a section
+              3.1): staff by class and category, shift lengths, how many rows
+              carry a shift, punches per day, attendance status counts. Any
+              count under 5 prints as "<5"; no names, ids or per-person pay.
   checks      READ ONLY. RC-7 to RC-11 and the rule set's current values, as
               counts - no names. Safe on any site.
   cost        READ ONLY. The month's paid days and Basic under the OLD rule set
@@ -69,6 +73,37 @@ def show(rs):
 		say("  class", r.leave_class, ":", r.period_days, "/", r.credit_per_period, "/", r.monthly_credits)
 
 
+def _n(x):
+	return "<5" if 0 < x < 5 else str(x)
+
+
+def shape():
+	"""Counts only, for the synthetic seed (07a 3.1). Nothing personal."""
+	rs = rule_set()
+	cf, gf = rs.leave_class_field, rs.category_field
+	active = {"status": "Active", "company": COMPANY}
+	say("active staff:", _n(frappe.db.count("Employee", active)))
+	for field in [f for f in (cf, gf) if f]:
+		for r in frappe.db.sql("select `%s` v, count(*) n from `tabEmployee` where status='Active' "
+		                       "and company=%%s group by `%s`" % (field, field), COMPANY, as_dict=True):
+			say("  by %s:" % field, r.v or "(empty)", _n(r.n))
+	for r in frappe.db.sql("select round(time_to_sec(timediff(end_time, start_time))/3600) h, count(*) n "
+	                       "from `tabShift Type` group by h", as_dict=True):
+		say("  shift length hours:", r.h, "shift types:", _n(r.n))
+	say("attendance rows:", frappe.db.count("Attendance", {"company": COMPANY, "docstatus": 1}),
+	    "| carrying a shift:", frappe.db.count("Attendance", {"company": COMPANY, "docstatus": 1,
+	                                                          "shift": ["is", "set"]}),
+	    "| shift assignments:", frappe.db.count("Shift Assignment", {"company": COMPANY, "docstatus": 1}))
+	for r in frappe.db.sql("select status, count(*) n from `tabAttendance` where company=%s and docstatus=1 "
+	                       "group by status", COMPANY, as_dict=True):
+		say("  attendance status:", r.status, _n(r.n))
+	for r in frappe.db.sql("""select least(c, 5) punches, count(*) days from (
+	        select ec.employee, date(ec.time) d, count(*) c from `tabEmployee Checkin` ec
+	        join `tabEmployee` e on e.name = ec.employee where e.company=%s
+	        group by ec.employee, date(ec.time)) x group by least(c, 5)""", COMPANY, as_dict=True):
+		say("  days with %s%s punch(es):" % (r.punches, "+" if r.punches == 5 else ""), _n(r.days))
+
+
 def checks():
 	rs = rule_set()
 	show(rs)
@@ -125,7 +160,7 @@ def _with(rs, values):
 	copy.name = rs.name
 	copy.accrual_month_days = values["accrual_month_days"]
 	for r in copy.leave_classes:
-		v = values["classes"].get((r.leave_class or "").strip())
+		v = values["classes"].get((r.leave_class or "").strip().split("-")[-1])
 		if v:
 			r.period_days, r.credit_per_period, r.monthly_credits = v
 	return copy
@@ -207,6 +242,8 @@ def main():
 	try:
 		if STEP == "checks":
 			checks()
+		elif STEP == "shape":
+			shape()
 		elif STEP == "cost":
 			cost()
 		elif STEP == "settings":

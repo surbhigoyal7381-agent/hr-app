@@ -305,3 +305,11 @@ Consequences to design for, not to argue with:
 | D2 | Yes: a half-day leave counts as 0.5 attended. |
 | D4 | **No green mark on a half-day leave day.** |
 | Process | She will REVIEW after everything is fixed, together with the new Positions page UX, and then say whether to push to dev. Build locally; nothing is pushed. |
+
+---
+
+## OD-1 answered by Surbhi, 21 Oct 2026: the missed punch on a half-day leave day
+
+Her words: "just by half day attendance regularization, if feasible, no attendance punches required." So the remedy is a **fourth option (iv)**, replacing (i)-(iii): HR approves a regularisation (an Attendance Request) for the other half of a half-day-leave day, and that alone makes the other half count as worked. NO punch is needed or added.
+
+Feasibility, from the code (engineer to confirm in 04-impact-and-strategy.md): the engine judges a day ONLY from Employee Checkin punches (`payroll_rules_apply.judge`; status is read only for Absent and On Leave), and Frappe's Attendance Request writes nothing on a date that already carries a half-day leave (security found this). So it is feasible only with a SMALL ENGINE CHANGE: when the day is a half-day leave and an approved Attendance Request covers that date for that employee, the other half counts as fully worked (no quarters lost, no absence). Read the approved request directly in the engine; no change to how Frappe writes Attendance. Security must assess it (HR approval replaces punch evidence; it applies to half-day-leave days only; who raises vs who approves stays split as in 060). The rehearsal must prove it (AC-117/118, rehearsal item 9).

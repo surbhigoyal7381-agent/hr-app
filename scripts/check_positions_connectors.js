@@ -130,6 +130,9 @@ function audit() {
     await run("reporting default");
     if (dev === "desk") {
       const del = await leadOf("Manager"), bo = await leadOf("Back Office"), hoo = await leadOf("Head of Operations");
+      // A lead with another lead below it in the group: its line must go round, not through.
+      const adm = await leadOf("Admin");
+      await p.evaluate(([t, id]) => posGroupFold("c:" + t, id, false), [top, adm]); await run("reporting Admin opened");
       await p.evaluate(([t, id]) => posGroupFold("c:" + t, id, false), [top, del]); await run("reporting Delhi opened");
       await p.evaluate(([t, id]) => posGroupFold("c:" + t, id, false), [top, bo]); await run("reporting Back Office opened");
       await p.evaluate(([t, id]) => posGroupFold("c:" + t, id, false), [top, hoo]); await run("reporting Head of Operations opened");

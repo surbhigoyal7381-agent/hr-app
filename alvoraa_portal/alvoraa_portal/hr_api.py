@@ -991,6 +991,20 @@ def _can_action_leave(name, doc=None):
     if is_own_record(doc.employee):
         return False
 
+    # Slice 063 (SEC-3 rev. 3), only where the company's pay rule set is on:
+    # Leave Without Pay is decided by HR - any HR Manager or HR User whose
+    # scope (companies AND branches) holds the person. Nobody else, not even a
+    # named approver. Paid Leaves and every other type keep the named-approver
+    # rule below.
+    from alvoraa_portal.leave_rules import is_lwp
+    from alvoraa_portal.payroll_rules_apply import rule_set_for
+    if is_lwp(doc.leave_type) and rule_set_for(doc.company):
+        if not ({"HR Manager", "HR User"} & set(frappe.get_roles())):
+            return False
+        in_scope = frappe.db.exists(
+            "Employee", dict(permitted_employee_filters(), name=doc.employee))
+        return bool(in_scope and frappe.has_permission("Leave Application", "submit", doc=doc))
+
     if frappe.session.user != _leave_approver_for(doc):
         return False
 
@@ -1015,10 +1029,23 @@ def action_leave(leave_id, action):
     from hrms.alvoraa_hr_core.access import refuse_own_decision
     refuse_own_decision(doc.employee, "Leave Application", doc.name, "hr_api.action_leave")
 
+    # Slice 063 (AC-55): withdrawn while the approver had it open. Nothing is
+    # written, and the answer says what happened.
+    if doc.docstatus == 2 or doc.status == "Cancelled":
+        frappe.throw(_("{0} cancelled this request.").format(
+            (doc.employee_name or doc.employee).split(" ")[0]))
+
     # The same rule the button uses. No role bypass: holding HR Manager does not
     # make somebody the approver, and Frappe HR does not treat it as though it
     # does.
     if not _can_action_leave(None, doc=doc):
+        from alvoraa_portal.leave_rules import is_lwp
+        from alvoraa_portal.payroll_rules_apply import rule_set_for
+        if is_lwp(doc.leave_type) and rule_set_for(doc.company):
+            frappe.throw(
+                _("Leave Without Pay for {0} is decided by HR who look after them.").format(
+                    doc.employee_name or doc.employee),
+                frappe.PermissionError)
         approver = _leave_approver_for(doc)
         if not approver:
             frappe.throw(
@@ -1044,7 +1071,11 @@ def action_leave(leave_id, action):
         frappe.throw(f"Unknown action: {action}")
 
     frappe.db.commit()
-    return {"status": doc.status, "name": doc.name}
+    out = {"status": doc.status, "name": doc.name}
+    # Slice 063: the Inbox says who has been told, from what really happened.
+    from alvoraa_portal.leave_rules import decision_facts
+    out.update(decision_facts(doc))
+    return out
 
 
 @frappe.whitelist()
@@ -2196,18 +2227,20 @@ def get_all_active_employees():
     roles = frappe.get_roles()
     if not ({"HR Manager", "HR User", "System Manager"} & set(roles)):
         frappe.throw("Not permitted.", frappe.PermissionError)
-    # Only the companies this HR user looks after (slice 010, SEC-13).
-    from hrms.alvoraa_hr_core.access import permitted_companies
-    companies = permitted_companies()
-    if not companies:
-        return {"employees": []}
+    # Only the people this HR user looks after: their companies (slice 010,
+    # SEC-13) and, since slice 063 (SEC-7), their branches too - the same rule
+    # apply_leave now enforces, so the picker never offers someone it refuses.
     employees = frappe.get_all(
         "Employee",
-        filters={"status": "Active", "company": ["in", companies]},
-        fields=["name", "employee_name", "department", "designation"],
+        filters=dict(permitted_employee_filters(), status="Active"),
+        fields=["name", "employee_name", "department", "designation", "user_id"],
         order_by="employee_name asc",
         ignore_permissions=True,
     )
+    # "· no login" in the picker (063 AC-93): HR files for staff who cannot.
+    # A yes/no only; the login itself is not sent.
+    for e in employees:
+        e["no_login"] = 0 if e.pop("user_id") else 1
     return {"employees": employees}
 
 
@@ -2263,11 +2296,31 @@ def get_leave_summary(employee_id=None):
         "Leave Application",
         filters={"employee": emp.name},
         fields=["name", "leave_type", "from_date", "to_date", "status",
-                "total_leave_days", "description", "docstatus"],
+                "total_leave_days", "description", "docstatus", "half_day",
+                "half_day_date", "leave_approver"],
         order_by="creation desc",
         limit=10,
         ignore_permissions=True,
     )
+
+    # Slice 063, only where the company's pay rule set is on (SEC-15). The
+    # Paid Leaves card is for the caller's OWN record only - never for someone
+    # HR passes in (SEC-1c). "Paid Leaves" is shown by the card, not as a
+    # ledger ring, so its negative ledger figure never reaches a screen.
+    from alvoraa_portal import leave_rules
+    own = not (employee_id and is_hr)
+    extra = {"types_offered": leave_rules.types_offered(
+        emp, own, [b["leave_type"] for b in balances])}
+    if leave_rules.rule_set_for(emp.company):
+        balances = [b for b in balances if b["leave_type"] != leave_rules.PAID_LEAVES]
+        leave_rules.annotate_applications(emp, applications)
+        if own:
+            extra["paid_leaves"] = leave_rules.paid_leaves_card(emp)
+    else:
+        # Every other tenant: the rows exactly as before.
+        for a in applications:
+            for k in ("leave_approver", "half_day_date", "half_day"):
+                a.pop(k, None)
 
     # Tell the caller WHY the list is empty. "No leave types allocated for this
     # period" reads as a date problem, and sent a tester hunting through fiscal
@@ -2281,8 +2334,10 @@ def get_leave_summary(employee_id=None):
     # record - salary, PAN and bank details included - to any HR User (PRIV-6).
     employee = {"name": emp.name, "employee_name": emp.employee_name,
                 "company": emp.company, "department": emp.department}
-    return {"balances": balances, "applications": applications, "employee": employee,
-            "ever_allocated": ever_allocated}
+    out = {"balances": balances, "applications": applications, "employee": employee,
+           "ever_allocated": ever_allocated}
+    out.update(extra)
+    return out
 
 
 @frappe.whitelist()
@@ -2379,15 +2434,17 @@ def apply_expense_claim(expense_type, expense_date, amount, description=None):
 
 @frappe.whitelist()
 def apply_leave(leave_type, from_date, to_date, half_day=0, half_day_date=None, reason=None, on_behalf_of=None):
-    roles = frappe.get_roles()
-    is_hr = bool({"HR Manager", "HR User", "System Manager"} & set(roles))
+    emp = _leave_subject(on_behalf_of, "hr_api.apply_leave")
 
-    if on_behalf_of and is_hr:
-        emp = _hr_target_employee(on_behalf_of, "hr_api.apply_leave")
-    else:
-        emp = _get_employee()
-    if not emp:
-        frappe.throw("No employee record is linked to your account.")
+    # Slice 063 (SEC-2): the server refuses what the Apply list would not offer.
+    from alvoraa_portal import leave_rules
+    leave_rules.refuse_type_not_offered(emp, leave_type, "hr_api.apply_leave")
+    # Slice 063 (SEC-12, AC-35): at DTC a Paid Leaves request goes to the named
+    # leave approver, so the field is filled here - the desk form's script does
+    # it there, and nothing on the server does it for the portal.
+    approver = None
+    if leave_type == leave_rules.PAID_LEAVES and leave_rules.rule_set_for(emp.company):
+        approver = leave_rules.paid_leaves_approver(emp)
 
     doc = frappe.get_doc({
         "doctype": "Leave Application",
@@ -2400,10 +2457,34 @@ def apply_leave(leave_type, from_date, to_date, half_day=0, half_day_date=None, 
         "description": reason or "",
         "status": "Open",
         "company": emp.company,
+        "leave_approver": approver,
     })
     doc.insert(ignore_permissions=True)
     frappe.db.commit()
     return {"name": doc.name}
+
+
+def _leave_subject(on_behalf_of, endpoint):
+    """Whose leave this is: the caller's own, or - for HR only - someone in
+    their companies AND branches. Slice 063 (SEC-7): a non-HR caller passing
+    `on_behalf_of` is refused instead of silently filed for themselves, which
+    put a leave on the wrong record. Every tenant."""
+    from hrms.alvoraa_hr_core.access import refuse
+
+    is_hr = bool({"HR Manager", "HR User", "System Manager"} & set(frappe.get_roles()))
+    if on_behalf_of and not is_hr:
+        refuse(_("You can only apply for leave for yourself."), "063-SEC-7", endpoint,
+               "Employee", on_behalf_of)
+    if on_behalf_of:
+        emp = _hr_target_employee(on_behalf_of, endpoint)
+        if not frappe.db.exists("Employee", dict(permitted_employee_filters(), name=emp.name)):
+            refuse(_("You can only file leave for employees in the branches you look after."),
+                   "063-SEC-7", endpoint, "Employee", on_behalf_of)
+    else:
+        emp = _get_employee()
+    if not emp:
+        frappe.throw(_("No employee record is linked to your account."))
+    return emp
 
 
 @frappe.whitelist()
@@ -2426,21 +2507,24 @@ def preview_leave_request(leave_type, from_date, to_date, half_day=0, half_day_d
         is_lwp,
     )
 
-    roles = frappe.get_roles()
-    is_hr = bool({"HR Manager", "HR User", "System Manager"} & set(roles))
-
     # same rule as apply_leave: only HR may act for someone else
-    if on_behalf_of and is_hr:
-        emp = _hr_target_employee(on_behalf_of, "hr_api.preview_leave_request")
-    else:
-        emp = _get_employee()
-    if not emp:
-        frappe.throw("No employee record is linked to your account.")
+    emp = _leave_subject(on_behalf_of, "hr_api.preview_leave_request")
 
     days = get_number_of_leave_days(
         emp.name, leave_type, from_date, to_date,
         int(half_day or 0), half_day_date if int(half_day or 0) else None,
     )
+
+    # Slice 063: at a company whose pay rule set is on, the preview carries
+    # the facts its sentences need - the server's own answer, never a guess.
+    from alvoraa_portal import leave_rules
+    if leave_rules.rule_set_for(emp.company):
+        facts = leave_rules.preview_facts(
+            emp, leave_type, from_date, to_date, int(half_day or 0), half_day_date, days,
+            own=not on_behalf_of)
+        facts.update({"days": days, "balance": None, "unlimited": True,
+                      "allow_negative": True, "employee_name": emp.employee_name})
+        return facts
 
     # Leave Without Pay is not drawn from an allocation, so it has no balance to check
     if is_lwp(leave_type):
@@ -2464,6 +2548,62 @@ def preview_leave_request(leave_type, from_date, to_date, half_day=0, half_day_d
         "allow_negative": bool(frappe.db.get_value("Leave Type", leave_type, "allow_negative")),
         "employee_name": emp.employee_name,
     }
+
+
+@frappe.whitelist()
+def cancel_leave(leave_id):
+    """Withdraw a waiting request, or cancel an approved leave before it starts.
+
+    Slice 063 (SEC-8), only where the company's pay rule set is on. Every rule
+    is checked here, on the server, before anything is written:
+
+    1. The leave is the caller's own Active Employee record - checked in code,
+       not left to User Permissions (some logins have none) - or the caller is
+       HR and the person is inside their companies AND branches.
+    2. Waiting (Open, draft): Frappe's own `discard`, AS THE CALLER. It needs
+       write, which the Employee role has. No bypass.
+    3. Approved and starting tomorrow or later, by the employee: `cancel` with
+       ONE bypass, set on this one document after rules 1 and 3 have passed.
+       The Employee role has no cancel, and giving it one would let REST cancel
+       past approved days too. This is the use the SEC-16 ceiling (70) names.
+    4. Approved and started, or anything else: refused, with the reason. HR
+       cancels started leave on the desk, as today.
+    """
+    from hrms.alvoraa_hr_core.access import refuse
+    from alvoraa_portal import leave_rules
+
+    doc = frappe.get_doc("Leave Application", leave_id)
+    me = _get_employee()
+    own = bool(me and me.name == doc.employee)
+    is_hr = bool({"HR Manager", "HR User"} & set(frappe.get_roles()))
+    hr_in_scope = (not own) and is_hr and bool(frappe.db.exists(
+        "Employee", dict(permitted_employee_filters(), name=doc.employee)))
+    if not (own or hr_in_scope):
+        refuse(_("You can only cancel your own leave."), "063-SEC-8", "hr_api.cancel_leave",
+               "Leave Application", doc.name)
+    if not leave_rules.rule_set_for(doc.company):
+        refuse(_("Leave cannot be cancelled here. Ask HR."), "063-SEC-8",
+               "hr_api.cancel_leave", "Leave Application", doc.name)
+
+    if doc.docstatus == 0 and doc.status == "Open":
+        doc.discard()
+        told = leave_rules.notify_withdrawn(doc)
+        frappe.db.commit()
+        return {"status": "Cancelled", "was": "Open", "told_n": len(told)}
+
+    if (own and doc.docstatus == 1 and doc.status == "Approved"
+            and getdate(doc.from_date) > getdate(today())):
+        doc.flags.ignore_permissions = True  # SEC-8: the one bypass, rules 1 and 3 passed
+        doc.cancel()
+        told = leave_rules.notify_cancelled(doc)
+        frappe.db.commit()
+        return {"status": "Cancelled", "was": "Approved", "told_n": len(told)}
+
+    if doc.docstatus == 1 and doc.status == "Approved":
+        frappe.throw(_("This leave has started, so only HR can cancel it."),
+                     title=_("Leave not cancelled"))
+    frappe.throw(_("This request is no longer waiting or approved, so there is nothing to "
+                   "cancel."), title=_("Leave not cancelled"))
 
 
 # ── Self-service form submissions ──────────────────────────────────────────────

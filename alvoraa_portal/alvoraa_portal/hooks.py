@@ -132,6 +132,9 @@ doc_events = {
         "on_cancel": "alvoraa_portal.attendance_correction.on_cancel",
         # Nobody approves their own correction - desk, REST or import (slice 010, SEC-9)
         "before_submit": "hrms.alvoraa_hr_core.access.refuse_own_submit",
+        # Slice 063, OD-1 remedy (iv): a half-day correction can reach a
+        # half-day leave day at a company with an enabled pay rule set.
+        "before_insert": "alvoraa_portal.leave_rules.prepare_half_day_correction",
     },
 
     # ── Portal context cache invalidation ─────────────────────────────────
@@ -195,7 +198,13 @@ doc_events = {
     "Leave Type": {
         "after_insert": "alvoraa_portal.hr_api.invalidate_features_cache",
         "on_update":    "alvoraa_portal.hr_api.invalidate_features_cache",
-        "on_trash":     "alvoraa_portal.hr_api.invalidate_features_cache",
+        "on_trash":     ["alvoraa_portal.hr_api.invalidate_features_cache",
+                         # Slice 063 (D1): "Paid Leaves" cannot be deleted.
+                         "alvoraa_portal.leave_rules.lock_paid_leaves"],
+        # Slice 063 (D1): "Paid Leaves" is created once with the right flags,
+        # then locked - only where a company's pay rule set is switched on.
+        "validate":     "alvoraa_portal.leave_rules.lock_paid_leaves",
+        "before_rename": "alvoraa_portal.leave_rules.lock_paid_leaves",
     },
     # Vendor Order: is_submittable removed; on_update covers all lifecycle events
     "Vendor Order": {
@@ -251,6 +260,11 @@ doc_events = {
     # even where HR Settings allows self-approval (slice 010, SEC-9).
     "Leave Application": {
         "before_submit": "hrms.alvoraa_hr_core.access.refuse_own_submit",
+        # Slice 063, DTC only (an enabled pay rule set): current month only and
+        # Leave Without Pay up to 5 a month, at filing and at approval, on
+        # every door (SEC-6, SEC-13). Then the managers up the chain are told.
+        "validate":      "alvoraa_portal.leave_rules.validate_leave_application",
+        "on_submit":     "alvoraa_portal.leave_rules.notify_chain_on_approval",
     },
     # ── The field app's switches on HR Settings (slice 013 step 2) ────────
     # Turning the app off or removing a designation needs a reason in the same

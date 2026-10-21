@@ -737,7 +737,13 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# 77 until slice 012 G1 moved HR Analytics' two name lists to get_list.
 		# 75 -> 69 on 17 Oct 2026: three of the six were only mentioned in
 		# comments, so the ceiling had been carrying prose as headroom.
-		("alvoraa_portal", "hr_api.py"): 69,
+		# 69 -> 70 in slice 063 (SEC-8, decided by Surbhi 21 Oct 2026):
+		# `cancel_leave` cancels an employee's OWN approved leave before it
+		# starts. The Employee role has no cancel; the bypass is set on that one
+		# document after the own-record and future-date checks.
+		("alvoraa_portal", "hr_api.py"): 70,
+		# Slice 063 (new file): DTC's leave rules read and notify; none needed.
+		("alvoraa_portal", "leave_rules.py"): 0,
 		# Slice 012 (OPS-75): new files start at zero, so "no new ignore_permissions"
 		# is proven for them too, not only for files already listed.
 		("alvoraa_portal", "org_figures.py"): 0,

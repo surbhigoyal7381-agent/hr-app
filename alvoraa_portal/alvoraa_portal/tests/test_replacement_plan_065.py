@@ -13,6 +13,7 @@ Kept in alvoraa_portal's tests, beside 064's, because these run in CI.
 """
 
 import json
+import os
 from unittest.mock import patch
 
 import frappe
@@ -883,3 +884,60 @@ class TestTheChartReply(Plan065Case):
 		print(f"\nposition_table statements with plans: {counts}")
 		self.assertEqual(counts[("one", self.hrA)], counts[("four", self.hrA)])
 		self.assertEqual(counts[("one", self.head)], counts[("four", self.head)])
+
+
+# ── US-18 · plans are read in one place only (SEC-7, PRIV-5) ──────────────────
+
+
+def _offenders():
+	"""Every Python, JS or JSON file in our three apps that names the plan
+	doctype, outside the places allowed to: its own module and folder,
+	register.py (one call, one name), hooks.py, and tests."""
+	allowed = (
+		os.path.join("alvoraa_org_structure", "plans.py"),
+		os.path.join("alvoraa_org_structure", "register.py"),
+		os.path.join("alvoraa_org_structure", "doctype", "replacement_plan") + os.sep,
+		os.path.join("hrms", "hooks.py"),
+	)
+	found = []
+	for app in ("hrms", "alvoraa_portal", "alvoraa_goals"):
+		root = frappe.get_app_path(app)
+		for folder, dirs, files in os.walk(root):
+			dirs[:] = [d for d in dirs if d not in ("node_modules", "__pycache__", "tests", "dist")]
+			for f in files:
+				if not f.endswith((".py", ".js", ".json")):
+					continue
+				path = os.path.join(folder, f)
+				if any(a in path for a in allowed):
+					continue
+				with open(path, encoding="utf-8", errors="ignore") as fh:
+					if PLAN in fh.read():
+						found.append(os.path.relpath(path, root))
+	return found
+
+
+class TestReadInOnePlace(Plan065Case):
+	def test_ac67_nothing_else_names_the_plan_doctype(self):
+		self.assertEqual(_offenders(), [])
+
+	def test_ac67_the_check_catches_a_new_reader(self):
+		"""The positive control: a fixture file naming the doctype dropped into
+		alvoraa_portal is caught."""
+		path = os.path.join(frappe.get_app_path("alvoraa_portal"), "zz_plan_reader_065.json")
+		with open(path, "w", encoding="utf-8") as fh:
+			fh.write(json.dumps([{"doctype": "Report", "ref_doctype": PLAN}]))
+		try:
+			self.assertEqual(_offenders(), ["zz_plan_reader_065.json"])
+		finally:
+			os.remove(path)
+
+	def test_ac68_setting_confirming_and_removing_sends_nothing(self):
+		mail, bell = frappe.db.count("Email Queue"), frappe.db.count("Notification Log")
+		frappe.set_user(self.hrA)
+		p = plans.set_plan(self.a_ritu, "Contract ends 31 Dec.")["name"]
+		plans.confirm_plan(p)
+		plans.remove_plan(p)
+		frappe.set_user("Administrator")
+		self.assertEqual((frappe.db.count("Email Queue"), frappe.db.count("Notification Log")), (mail, bell))
+		for doctype, field in plans.READER_TABLES:
+			self.assertFalse(frappe.db.count(doctype, {field: PLAN}), doctype)

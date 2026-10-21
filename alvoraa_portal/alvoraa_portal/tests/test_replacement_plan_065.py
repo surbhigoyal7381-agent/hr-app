@@ -778,3 +778,108 @@ class TestTheDailyErase(Plan065Case):
 		self.assertEqual(got, {"erased": len(self.p), "left": 0})
 		for name in self.p.values():
 			self.assertEqual(set(_traces(name).values()), {0})
+
+
+# ── US-13, US-3, US-16 · the Positions reply (SEC-4) ──────────────────────────
+
+
+class TestTheChartReply(Plan065Case):
+	def setUp(self):
+		super().setUp()
+		self.owners_see(True)
+
+	def reply(self, user, **kw):
+		frappe.set_user(user)
+		register.position_table(**kw)  # warm the caches, as a second page load would be
+		out = register.position_table(**kw)
+		frappe.set_user("Administrator")
+		return out
+
+	def person_row(self, out, assignment):
+		return next(p for r in out["rows"] for p in r["people"] if p["assignment"] == assignment)
+
+	def seat_row(self, out, seat):
+		return next(r for r in out["rows"] if r["id"] == seat)
+
+	def test_ac57_non_readers_get_the_same_bytes_with_and_without_plans(self):
+		"""Including a full one-person seat with a replacement opening, whose
+		link a non-reader no longer receives (SEC-4.3)."""
+		frappe.set_user(self.hrA)
+		opening = register.post_job(self.recruiter.name, vacancies=1, publish=0)["name"]
+		frappe.set_user("Administrator")
+		self.owners_see(False)
+		self.make_plan(self.a_ritu, "Contract ends 31 Dec.")
+		self.make_plan(self.a_noida)
+		self.make_plan(self.a_aarti)
+		with_plans = {u: frappe.as_json(self.reply(u)) for u in (self.head, self.own)}
+		frappe.db.delete(PLAN)
+		for user, before in with_plans.items():
+			self.assertEqual(before, frappe.as_json(self.reply(user)), user)
+			self.assertNotIn("plan", before.lower().replace("planned_vacancies", ""))
+		self.assertIsNone(self.seat_row(self.reply(self.head), self.recruiter.name)["opening"])
+		self.assertEqual(self.seat_row(self.reply(self.hrA), self.recruiter.name)["opening"], opening)
+		frappe.delete_doc("Job Opening", opening, force=True, ignore_permissions=True, delete_permanently=True)
+
+	def test_ac58_readers_get_the_head_key_and_exactly_the_named_plan_keys(self):
+		out = self.reply(self.hrA)
+		self.assertEqual(out["plans"], {"may_set": True, "owners_see": True})  # even with no plan
+		self.make_plan(self.a_ritu, "Contract ends 31 Dec.")
+		out = self.reply(self.hrA)
+		self.assertEqual(tuple(self.person_row(out, self.a_ritu)["plan"]), plans.PLAN_KEYS)
+		self.assertNotIn("plan", self.person_row(out, self.a_sunil))
+		for user in (self.own, self.sys):
+			self.assertEqual(self.reply(user)["plans"]["may_set"], False, user)
+		self.owners_see(False)
+		self.assertEqual(self.reply(self.hrA)["plans"]["owners_see"], False)
+
+	def test_ac12_ac13_who_set_and_confirmed_it(self):
+		p = self.make_plan(self.a_ritu, "Contract ends 31 Dec.")
+		plan = self.person_row(self.reply(self.hrA), self.a_ritu)["plan"]
+		self.assertEqual((plan["set_by"], plan["confirmed_by"], plan["note"]),
+		                 ("you", None, "Contract ends 31 Dec."))
+		self.assertEqual(plan["lapses_on"], str(add_days(nowdate(), 90)))
+		# Confirmed later by somebody else: set a day back, confirm today.
+		frappe.db.set_value(PLAN, p, {"creation": add_days(nowdate(), -5), "confirmed_on": add_days(nowdate(), -5)},
+		                    update_modified=False)
+		frappe.set_user(self.hrA2)
+		plans.confirm_plan(p)
+		frappe.set_user("Administrator")
+		plan = self.person_row(self.reply(self.hrA), self.a_ritu)["plan"]
+		hr_a2 = frappe.db.get_value("User", self.hrA2, "full_name")
+		self.assertEqual((plan["set_by"], plan["confirmed_by"]), ("you", f"{hr_a2} (HR Manager)"))
+		self.assertNotIn("@", json.dumps(plan))
+
+	def test_ac59_only_for_today(self):
+		self.make_plan(self.a_ritu)
+		for as_at in (add_days(nowdate(), 1), add_days(nowdate(), -30)):
+			out = self.reply(self.hrA, as_at=str(as_at))
+			self.assertNotIn("plans", out)
+			self.assertNotIn('"plan"', frappe.as_json(out))
+
+	def test_ac64_ac65_the_subjects_own_row_is_the_same_with_and_without_their_plan(self):
+		self.make_plan(self.a_ritu)
+		before = self.person_row(self.reply(self.hrSubj), self.a_subj)
+		self.make_plan(self.a_subj)
+		out = self.reply(self.hrSubj)
+		self.assertEqual(self.person_row(out, self.a_subj), before)
+		self.assertIn("plan", self.person_row(out, self.a_ritu))
+
+	def test_the_query_count_is_the_same_for_one_plan_or_four(self):
+		from alvoraa_portal.tests.leader_fixtures_012 import QueryCounter
+
+		self.make_plan(self.a_ritu)
+		counts = {}
+		for label in ("one", "four"):
+			if label == "four":
+				for a in (self.a_sunil, self.a_noida, self.a_aarti):
+					self.make_plan(a, "a note")
+			for user in (self.hrA, self.head):
+				frappe.set_user(user)
+				register.position_table()
+				with QueryCounter() as c:
+					register.position_table()
+				counts[(label, user)] = c.count
+				frappe.set_user("Administrator")
+		print(f"\nposition_table statements with plans: {counts}")
+		self.assertEqual(counts[("one", self.hrA)], counts[("four", self.hrA)])
+		self.assertEqual(counts[("one", self.head)], counts[("four", self.head)])

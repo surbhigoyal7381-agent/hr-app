@@ -186,6 +186,66 @@ def has_permission(doc, ptype=None, user=None):
 	return bool(frappe.db.sql(f"select name from {TABLE} where name = %s and {cond}", doc.name))
 
 
+# ── the Positions reply (SEC-4) ──────────────────────────────────────────────
+
+# Exactly what a plan carries to the page. Named one by one, so a field added
+# to the record later cannot leak (SEC-4; `confirmed_by` is Y-2's stopgap).
+PLAN_KEYS = ("name", "set_on", "set_by", "confirmed_by", "confirmed_on", "lapses_on", "note")
+
+
+def table_view(as_at):
+	"""What `register.position_table` adds for a plan reader looking at today,
+	or None for everybody else - who then gets no key at all, so their reply is
+	the same whether plans exist or not.
+
+	Returns {"head": {may_set, owners_see}, "by_assignment": {assignment: plan}}.
+	A fixed number of queries whatever the number of plans or people: the
+	plans (through the gate), the names of who set and confirmed them, and
+	which of those hold HR Manager.
+	"""
+	if str(as_at) != nowdate() or not is_reader():
+		return None
+	rows = frappe.get_list(
+		DOCTYPE, fields=["name", "assignment", "confirmed_on", "note", "owner", "creation", "modified_by"],
+		limit_page_length=0, order_by="creation asc")
+	for r in rows:
+		r.set_on = str(frappe.utils.getdate(r.creation))
+		# Only a confirm changes a plan after it is saved (the note and the
+		# seat are set once), so the last writer is who confirmed it last.
+		r.confirmer = r.modified_by if str(r.confirmed_on) > r.set_on else None
+	users = {u for r in rows for u in (r.owner, r.confirmer) if u}
+	names, hr = {}, set()
+	if users:
+		names = dict(frappe.get_all("User", filters={"name": ("in", list(users))},
+		                            fields=["name", "full_name"], as_list=True))
+		hr = set(frappe.get_all("Has Role", filters={"parenttype": "User", "role": "HR Manager",
+		                                             "parent": ("in", list(users))}, pluck="parent"))
+	me = frappe.session.user
+
+	def who(user):
+		if not user:
+			return None
+		if user == me:
+			return _("you")
+		full = names.get(user) or _("someone who has left")
+		return _("{0} (HR Manager)").format(full) if user in hr else full
+
+	by_assignment = {}
+	for r in rows:
+		by_assignment[r.assignment] = {
+			"name": r.name, "set_on": r.set_on, "set_by": who(r.owner),
+			"confirmed_by": who(r.confirmer), "confirmed_on": str(r.confirmed_on),
+			"lapses_on": str(add_days(r.confirmed_on, LIFE_DAYS)), "note": r.note or None,
+		}
+	head = {
+		"may_set": bool(frappe.has_permission(DOCTYPE, "create")),
+		# Whether some role besides HR and the administrator reads plans: it
+		# decides "Only HR and owners see this" against "Only HR sees this".
+		"owners_see": bool(_read_roles() - BROAD_ROLES - {"HR Manager", "System Manager"}),
+	}
+	return {"head": head, "by_assignment": by_assignment}
+
+
 # ── no side doors (SEC-3, SEC-2) ─────────────────────────────────────────────
 
 # The records Frappe can hang on any document, and the field on each that

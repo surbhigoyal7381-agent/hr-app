@@ -288,3 +288,20 @@ Consequences to design for, not to argue with:
 ## Surbhi's answer on the credit-at-start-of-month addendum (01e), 21 Oct 2026
 
 **E1: the 15-day minimum STILL APPLIES.** Her words: "if an employee comes less than 15 days then the salary would be based on per day salary." So under 15 days attended there is no credit and pay is per day worked. This also settles E4 (absent most of the month: no credit under 15 days) and, by the same rule, E2/E3 (joiners and leavers get no share and no credit under 15 days). With the minimum kept, giving the credit on the 1st is a SETTINGS change on the rule set (01e section 4), no engine code. E5-E8 not yet answered: defaults stay as the PM recommended (E5 no extra cost for unapplied absence except double on special days; E6 approved Paid Leaves days count toward the 15 - the one small code change; E7 half-day leave uses 0.5; E8 contract and zero classes unchanged).
+
+---
+
+## Surbhi's FINAL answers before the rework, 21 Oct 2026 (these override anything above that disagrees)
+
+| Topic | Decision |
+|---|---|
+| Who approves leave without pay | **HR** (not the reporting manager). The reporting-manager chain is TOLD on approval. Mechanism default (security's recommendation ii): for leave without pay only, any HR user whose scope covers the employee may approve; self-approval stays refused. Engineer to confirm in the strategy. |
+| Special days | **Leave is ALLOWED if approved** (no block). An approved leave on a special day is not doubled; an absence nobody got approved is unpaid and doubled. The earlier D6 'block leave on special days', the Leave Block List and SEC-5 are DROPPED. |
+| Limit on leave without pay | **5 days in a calendar month**, pending + approved count, a half day is 0.5. When stopped: warn to cancel the earlier request if not yet approved, or remind HR to approve it. |
+| E5 to E8 | All YES as the PM recommended: (E5) an absence nobody applied for costs no more than a Paid Leaves day, except doubled on special days; (E6) approved Paid Leaves days count toward the 15-day minimum (the one small engine change); (E7) a half-day leave uses 0.5; (E8) Contract staff and zero-credit classes unchanged. |
+| Credits | Given on the 1st, 15-day minimum stays, settings change on the DTC rule set (01e section 4), rehearsed on a local copy before switch-on. |
+| Half-day D1 | The other half is measured by **punches**. |
+| Half-day rule (her words) | A half-day leave counts as a half day **if the other half's punches are marked. If the person missed to punch, they must apply for HR to approve the regularisation** (the existing attendance correction flow). Until regularised the other half is absent (doubled on a special day). |
+| D2 | Yes: a half-day leave counts as 0.5 attended. |
+| D4 | **No green mark on a half-day leave day.** |
+| Process | She will REVIEW after everything is fixed, together with the new Positions page UX, and then say whether to push to dev. Build locally; nothing is pushed. |

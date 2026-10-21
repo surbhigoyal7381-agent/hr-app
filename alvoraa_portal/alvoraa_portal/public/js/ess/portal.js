@@ -1291,8 +1291,72 @@ function posTwinBranch(key) {
   return posTwinOf(key, POS.unseated.map(function (p) { return p.branch; }));
 }
 
-/* Find: in its own commit. */
-function posFindClear() {}
+/* ── Find: a seat or a person, in the rows already on the page ─────────────
+   NOTHING IS SENT TO THE SERVER (SEC-3). The typed text never leaves the
+   browser - no request, no URL, no log - and what it can find is exactly
+   what the server already allowed this reader to see. */
+var POS_FIND_MAX = 12;
+
+window.posFindInput = function () {
+  var input = document.getElementById("pos-find");
+  var box = document.getElementById("pos-hits");
+  if (!input || !box) return;
+  var q = String(input.value || "").trim().toLowerCase();
+  POS.hits = [];
+  if (q.length < 2) { box.innerHTML = ""; return; }
+  POS.rows.forEach(function (r) {
+    if (String(r.title).toLowerCase().indexOf(q) > -1) {
+      POS.hits.push({ seat: r.id, a: r.title,
+        b: (r.branch || drT("No branch")) + " · " + drT("{0} of {1} filled", [posNum(r.filled), posNum(r.seats)]) });
+    }
+    r.people.forEach(function (p) {
+      if (String(p.name).toLowerCase().indexOf(q) > -1) {
+        POS.hits.push({ seat: r.id, who: p.name, a: p.name, b: r.title + (r.branch ? " · " + r.branch : "") });
+      }
+    });
+  });
+  // People in no seat, for a reader who got that list (HR scope only).
+  (POS.unseated || []).forEach(function (p) {
+    if (String(p.name).toLowerCase().indexOf(q) > -1) {
+      POS.hits.push({ unseated: true, a: p.name,
+        b: drT("In no seat yet") + " · " + (p.job_role || drT("No job role")) + " · " + (p.branch || drT("No branch")) });
+    }
+  });
+  var scoped = POS.nav && (POS.nav.scopedTop || POS.nav.top.length > 1);
+  var shown = POS.hits.slice(0, POS_FIND_MAX);
+  box.innerHTML = '<div class="pos-hits" role="listbox" aria-label="' + drT("Matches") + '">'
+    + (shown.length
+      ? shown.map(function (h, i) {
+          return '<button type="button" class="pos-hit" role="option" onclick="posFindPick(' + i + ')"><div>'
+            + posEsc(h.a) + '</div><div class="t">' + posEsc(h.b) + "</div></button>";
+        }).join("")
+        + (POS.hits.length > POS_FIND_MAX
+          ? '<div class="none">' + drT("{0} more. Type more of the name.", [POS.hits.length - POS_FIND_MAX]) + "</div>" : "")
+      : '<div class="none">' + (scoped ? drT("No seat or person called that in your part of the organisation.")
+                                       : drT("No seat or person called that.")) + "</div>")
+    + "</div>";
+};
+
+window.posFindKey = function (e) {
+  if (e && e.key === "Escape") posFindClear(false);
+};
+
+function posFindClear(keepText) {
+  var box = document.getElementById("pos-hits");
+  if (box) box.innerHTML = "";
+  if (!keepText) {
+    var input = document.getElementById("pos-find");
+    if (input) input.value = "";
+  }
+}
+
+window.posFindPick = function (i) {
+  var h = POS.hits[i];
+  posFindClear(false);
+  if (!h) return;
+  if (h.unseated) { posUnseatedSheet(); return; }
+  posPick(h.seat, h.who || "");
+};
 
 /* ── who is in a seat, and the two ways to fill it ─────────────────────
  *

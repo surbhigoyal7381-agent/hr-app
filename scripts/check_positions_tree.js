@@ -448,6 +448,42 @@ async function recordsChecks() {
   ok("every view switch after any open state draws without an error", !bad.length, bad.join(" | "));
 }
 
+/* ── 19. Find, in the browser only (US-7, SEC-3) ───────────────────────── */
+{
+  const ctx = load(deep(), {}, { unseated: [{ employee: "U1", name: "Pitampura person", job_role: "RSO",
+    branch: "DTC Pitampura", joined: "2026-10-01", no_manager: true }], active_people: 9 });
+  let calls = 0;
+  ctx.gpFetch = async () => { calls++; return {}; };
+  ctx.fetch = () => { calls++; return new Promise(() => {}); };
+  const type = (q) => { ctx.__els["pos-find"].value = q; ctx.posFindInput(); return ctx.__els["pos-hits"].innerHTML; };
+  ok("one letter shows nothing", type("S") === "");
+  let hits = type("Section");
+  ok("a seat is found with its fill", hits.includes("Section Lead") && hits.includes("Sector 34 · 1 of 1 filled"));
+  hits = type("Holder of Ring");
+  ok("a person is found with their seat", hits.includes("Holder of Ring") && hits.includes("Ring · Sector 34"));
+  hits = type("staff");
+  ok("past twelve it says how many more", /\d+ more\. Type more of the name\./.test(hits));
+  ok("HR's Find finds a person in no seat", type("Pitampura").includes("In no seat yet · RSO · DTC Pitampura"));
+  ok("nothing found says so", type("zzq").includes("No seat or person called that."));
+  ok("typing never calls the server", calls === 0, calls + " call(s)");
+  ctx.posFindKey({ key: "Escape" });
+  ok("Escape empties the field and the list", ctx.__els["pos-find"].value === "" && ctx.__els["pos-hits"].innerHTML === "");
+  ctx.posSetView("list");
+  type("Holder of Section Lead");
+  ctx.posFindPick(0);
+  const html = body(ctx);
+  ok("a pick from the List switches to Reporting lines", ctx.POS.view === "reporting");
+  ok("the path to the pick opens and it is outlined",
+     html.includes('data-parent="hoo"') && /class="pos-box[^"]* focus"[^>]*data-id="sl"/.test(html));
+  ok("the focus line names who and where", ctx.__els["pos-focusline"].innerHTML.includes("Holder of Section Lead")
+     && ctx.__els["pos-focusline"].innerHTML.includes("in Section Lead · Sector 34"));
+  ctx.posUnfocus();
+  ok("Clear removes the outline", !/ focus"/.test(body(ctx)));
+  const owner = load(dtc(), {}, { may_edit: false });
+  owner.__els["pos-find"].value = "Pitampura"; owner.posFindInput();
+  ok("a reader without HR scope never finds a person in no seat", !owner.__els["pos-hits"].innerHTML.includes("In no seat"));
+}
+
 /* ── 18. deleting a seat (slice 061, kept) ──────────────────────────────── */
 async function deleteChecks() {
   const src = fs.readFileSync(PORTAL, "utf8");

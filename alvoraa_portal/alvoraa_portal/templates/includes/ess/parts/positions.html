@@ -27,6 +27,14 @@
               <button type="button" data-v="list" aria-pressed="false" onclick="posSetView('list')">List</button>
             </div>
           </div>
+          <!-- Find searches what is already on the page; nothing is sent (SEC-3). -->
+          <div class="pos-fld pos-find">
+            <label class="gp-label" for="pos-find">Find a person or a seat</label>
+            <input id="pos-find" type="search" autocomplete="off"
+                   placeholder="Type a name or a seat, e.g. RSO"
+                   oninput="posFindInput()" onkeydown="posFindKey(event)">
+            <div id="pos-hits"></div>
+          </div>
           <div class="pos-fld" id="pos-all-wrap">
             <div class="gp-label">&nbsp;</div>
             <button type="button" class="btn btn-outline btn-sm" id="pos-all-btn" onclick="posToggleAll()">Open every level</button>

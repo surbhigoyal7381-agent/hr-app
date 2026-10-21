@@ -2228,5 +2228,3 @@ body.panel-fullscreen{overflow:hidden}
   .tr-day{flex-wrap:wrap}
   .tr-ask{width:100%}
 }
-.dw-note{font-size:var(--fs-xs);color:var(--text3);line-height:1.45;
-  margin:0 0 7px}

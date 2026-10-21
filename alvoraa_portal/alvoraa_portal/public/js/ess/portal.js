@@ -3988,8 +3988,11 @@ window.dmToggleLadder = function () {
   paintDayMarks(window._dmMarks);
 };
 
+/* The card is for a day that has started. Before the first check-in, from the
+   device or from this page, there is nothing to measure and no rung to stand
+   on; the one-line banner above already says when "on time" ends. */
 function dmWidget(m) {
-  if (!m) return "";
+  if (!m || !m.arrived) return "";
   var w = dmWhere(m);
   var head = '<div class="dw-head">'
     + '<div class="dw-title">Your day</div>'
@@ -3999,7 +4002,7 @@ function dmWidget(m) {
 
   var facts = '<div class="dw-facts">'
     + dmFact("In", m.arrived || "--:--",
-             m.arrived ? (m.red && m.red.late ? "late" : "on time") : "not yet")
+             m.red && m.red.late ? "late" : "on time")
     + (w && w.worked !== null
         ? dmFact("Worked", dmSpan(w.worked),
                  w.percent === null ? "" : w.percent.toFixed(1) + "% of your shift")
@@ -4072,11 +4075,8 @@ function dmLadder(m, w) {
       + "</div>";
   }).join("");
 
-  var note = (w && w.notArrived)
-    ? '<div class="dw-note">Measured from your shift start until you clock in.</div>'
-    : "";
   return '<div class="dw-ladder">'
-    + '<div class="dw-sec">Leave after&hellip;</div>' + note + rows
+    + '<div class="dw-sec">Leave after&hellip;</div>' + rows
     + '<button type="button" class="dw-more" onclick="dmToggleLadder()">'
     + (dmLadderOpen ? "Show less" : "Show all " + steps.length) + "</button>"
     + "</div>";

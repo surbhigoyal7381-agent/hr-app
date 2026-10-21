@@ -219,10 +219,11 @@ def _columns():
 		c("employment_type", "Type", 90, "Data"),
 
 		c("days_with_record", "Days recorded", 110, "Int"),
-		c("days_worked", "Worked", 80, "Int"),
-		c("days_on_leave", "On leave", 85, "Int"),
-		c("days_absent", "Absent", 80, "Int"),
-		c("days_held", "Held", 70, "Int"),
+		# Float since slice 063: a half-day leave is half worked, half on leave.
+		c("days_worked", "Worked", 80, "Float"),
+		c("days_on_leave", "On leave", 85, "Float"),
+		c("days_absent", "Absent", 80, "Float"),
+		c("days_held", "Held", 70, "Float"),
 
 		c("quarters", "Quarters off", 100, "Int"),
 		c("quarter_days", "= days", 80),

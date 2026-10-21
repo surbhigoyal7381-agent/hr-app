@@ -40,7 +40,13 @@ import frappe
 from frappe.utils import add_days, date_diff, flt, getdate
 
 from alvoraa_portal.payroll_month import summarise_month
-from alvoraa_portal.payroll_rules_apply import judge, prepare, rule_set_for
+from alvoraa_portal.payroll_rules_apply import (
+	LEAVE_FIELDS,
+	PAID_LEAVES,
+	judge,
+	prepare,
+	rule_set_for,
+)
 
 RED_COMPONENT = "Red Value"
 GREEN_COMPONENT = "Green Value"
@@ -61,9 +67,22 @@ def month_summary(employee, company, from_date, to_date, rule_set=None, ctx=None
 		"Attendance",
 		filters={"docstatus": 1, "employee": employee,
 		         "attendance_date": ("between", [from_date, to_date])},
-		fields=["name", "employee", "attendance_date", "status", "shift", "company"],
+		fields=["name", "employee", "attendance_date", "status", "shift", "company"]
+		+ list(LEAVE_FIELDS),
 		order_by="attendance_date asc", limit_page_length=0)
 	verdicts = [judge(r, ctx) for r in rows]
+
+	# Approved Paid Leaves days, from the same rows (slice 063). They are what
+	# the credits are "used" for (U1 - a Leave Without Pay day is simply
+	# unpaid) and they count toward the 15-day gate (E6). A half-day leave is
+	# 0.5. Read here, once, so the slip, the desk report and the Leave page card
+	# all get the same figure from the one call they share.
+	paid_leave_days = sum(
+		1.0 if r.status == "On Leave" else 0.5
+		for r in rows
+		if r.get("leave_type") == PAID_LEAVES
+		and (r.status == "On Leave"
+		     or (r.status == "Half Day" and r.get("leave_application"))))
 
 	emp = frappe.db.get_value(
 		"Employee", employee,
@@ -96,6 +115,7 @@ def month_summary(employee, company, from_date, to_date, rule_set=None, ctx=None
 		verdicts,
 		basic=basic,
 		month_days=month_days,
+		approved_leave_days=paid_leave_days,
 		earns_leave_credits=(cat.earns_leave_credits if cat else True),
 		period_days=(cls.period_days if cls else 0),
 		credit_per_period=(cls.credit_per_period if cls else 0),

@@ -55,6 +55,15 @@ VERDICT_FIELDS = (
 	"alvoraa_evaluated_on",
 )
 
+# The Attendance fields `judge` needs to tell a half-day LEAVE from a short
+# shift, and to see an approved half-day correction (slice 063). Every reader
+# that hands rows to `judge` asks for these, so none can drift.
+LEAVE_FIELDS = ("leave_type", "leave_application", "attendance_request")
+
+# The leave type whose days are drawn from the month's credits (slice 063, D1).
+# Found by its exact name, created by hand at DTC only.
+PAID_LEAVES = "Paid Leaves"
+
 
 def rule_set_for(company):
 	"""The enabled rule set for a company, or None.
@@ -379,6 +388,20 @@ def judge(attendance, ctx):
 
 	first_in, last_out, count = _punches(attendance.employee, date)
 
+	# Slice 063. A half-day LEAVE is Frappe's "Half Day" with a leave
+	# application behind it. A "Half Day" with nothing behind it is a short
+	# shift marked by Frappe itself, and keeps today's treatment (01d).
+	half_day_leave = (attendance.status == "Half Day"
+	                  and bool(attendance.get("leave_application")))
+	# OD-1 remedy (iv): HR approved a half-day correction for the other half.
+	# Frappe links the request to the day only when it is submitted; the
+	# docstatus is read to be sure it still stands. Asked only on the rare day
+	# that needs it - a half-day leave with a punch missing.
+	regularised = bool(
+		half_day_leave and count < 2 and attendance.get("attendance_request")
+		and frappe.db.get_value("Attendance Request",
+		                        attendance.get("attendance_request"), "docstatus") == 1)
+
 	# ATT-06: a confirmation supplies the time the employee left. Only a
 	# CONFIRMED record counts - a time typed in and not yet confirmed is a
 	# proposal, and the day stays held until somebody stands behind it.
@@ -404,6 +427,8 @@ def judge(attendance, ctx):
 		late_window_from=ctx["window_from"],
 		late_window_to=ctx["window_to"],
 		late_window_extra_quarters=ctx["window_quarters"],
+		half_day_leave=half_day_leave,
+		other_half_regularised=regularised,
 		**flags)
 
 
@@ -439,7 +464,8 @@ def evaluate_attendance(attendance_name):
 	"""
 	att = frappe.db.get_value(
 		"Attendance", attendance_name,
-		["name", "employee", "attendance_date", "status", "shift", "company"],
+		["name", "employee", "attendance_date", "status", "shift", "company"]
+		+ list(LEAVE_FIELDS),
 		as_dict=True)
 	if not att:
 		return None

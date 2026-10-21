@@ -114,8 +114,47 @@ def _pending_leave_for_approver(user, emp_id):
             row["is_own_report"] = own
         return rows
 
-    return (_read(LEAVE_ROW_FIELDS + LEAVE_WHY_FIELDS, True)
-            + _read(LEAVE_ROW_FIELDS, False))
+    named = _read(LEAVE_ROW_FIELDS + LEAVE_WHY_FIELDS, True) + _read(LEAVE_ROW_FIELDS, False)
+    _add_dtc_facts(named)
+    return named + _hr_lwp_rows(user, emp_id)
+
+
+def _add_dtc_facts(rows):
+    """Slice 063 (AC-53): a row at a company whose pay rule set is on also
+    says who will be told, the half day and the special day. One read for the
+    page; the facts themselves are per row only where the rule set is on."""
+    if not rows:
+        return
+    from alvoraa_portal.inbox_api import _dtc_companies, _dtc_row_facts
+    dtc = set(_dtc_companies())
+    if not dtc:
+        return
+    extra = {r.name: r for r in frappe.get_all(
+        "Leave Application", filters={"name": ["in", [r["name"] for r in rows]]},
+        fields=["name", "employee", "company", "half_day", "leave_type", "from_date", "to_date"])}
+    for r in rows:
+        x = extra.get(r["name"])
+        if x and x.company in dtc:
+            r.update(_dtc_row_facts(x))
+
+
+def _hr_lwp_rows(user, emp_id):
+    """Slice 063 (SEC-3): Leave Without Pay that this HR caller decides, at a
+    company whose pay rule set is on. Never the reason (045 AC-76): the type is
+    the queue itself, so it is the one "why" field shown. Nothing for anyone
+    else, and nothing on any other tenant."""
+    from alvoraa_portal.inbox_api import _dtc_row_facts, hr_lwp_filters
+    filters = hr_lwp_filters(user, emp_id)
+    if not filters:
+        return []
+    rows = frappe.get_list("Leave Application", filters=filters,
+                           fields=list(LEAVE_ROW_FIELDS) + ["leave_type", "company", "half_day"],
+                           order_by="creation asc", limit_page_length=50)
+    for r in rows:
+        r["is_own_report"] = False
+        r.update(_dtc_row_facts(r))
+        r.pop("company", None)
+    return rows
 
 
 # ── Cache invalidation helpers (called by doc_events hooks in hooks.py) ──────
@@ -427,7 +466,7 @@ def get_employee_dashboard():
                 "from_date", "to_date", "total_leave_days", "description"],
         order_by="creation asc",
         ignore_permissions=True,
-    )
+    ) + _hr_lwp_rows(user, emp.name)
 
     holidays, holiday_note = _own_upcoming_holidays(emp.name, td)
 

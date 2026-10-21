@@ -396,24 +396,35 @@ def _with_hr_lwp(who, filters):
 	dtc = _dtc_companies()
 	if not dtc:
 		return filters
-	from hrms.alvoraa_hr_core.access import permitted_branches, permitted_companies
-
 	lwp = frappe.get_all("Leave Type", filters={"is_lwp": 1}, pluck="name") or [""]
 	named = [["leave_approver", "=", who.user], "and", ["status", "=", "Open"], "and",
 	         ["docstatus", "=", 0], "and", ["employee", "!=", who.employee], "and",
 	         [["leave_type", "not in", lwp], "or", ["company", "not in", dtc]]]
-	if not ({"HR Manager", "HR User"} & set(frappe.get_roles(who.user))):
-		return named
-	companies = [c for c in permitted_companies(who.user) if c in dtc]
+	hr = hr_lwp_filters(who.user, who.employee, dtc, lwp)
+	return [named, "or", hr] if hr else named
+
+
+def hr_lwp_filters(user, employee, dtc=None, lwp=None):
+	"""Open Leave Without Pay this HR caller decides (slice 063, SEC-3): at a
+	company whose pay rule set is on, inside their companies AND branches, never
+	their own. None for anyone who decides none. The Team page's pending list
+	asks the same question through this one function."""
+	if not ({"HR Manager", "HR User"} & set(frappe.get_roles(user))):
+		return None
+	from hrms.alvoraa_hr_core.access import permitted_branches, permitted_companies
+
+	dtc = _dtc_companies() if dtc is None else dtc
+	companies = [c for c in permitted_companies(user) if c in dtc]
 	if not companies:
-		return named
+		return None
+	lwp = lwp or frappe.get_all("Leave Type", filters={"is_lwp": 1}, pluck="name") or [""]
 	hr = [["leave_type", "in", lwp], "and", ["company", "in", companies], "and",
 	      ["status", "=", "Open"], "and", ["docstatus", "=", 0], "and",
-	      ["employee", "!=", who.employee]]
-	branches = permitted_branches(who.user)
+	      ["employee", "!=", employee or ""]]
+	branches = permitted_branches(user)
 	if branches is not None:
 		hr += ["and", ["employee.branch", "in", branches]]
-	return [named, "or", hr]
+	return hr
 
 
 def _dtc_row_facts(r):

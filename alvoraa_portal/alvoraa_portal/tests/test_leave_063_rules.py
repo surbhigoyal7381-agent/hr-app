@@ -443,11 +443,13 @@ class TestHalfDayCorrection(Rules063Case):
 		from alvoraa_portal import attendance_correction
 
 		frappe.set_user(fx.user("Priya"))
-		req = attendance_correction.raise_correction(d, d, "Forgot to Punch Out", None, 1, d)
+		# The Attendance page's ordinary one-day form: no half-day tick.
+		req = attendance_correction.raise_correction(d, d, "Forgot to Punch Out")
 		frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.get_value("Attendance", att, "half_day_status"), "Absent")
 		doc = frappe.get_doc("Attendance Request", req["name"])
 		self.assertEqual(doc.shift, fx.SHIFT)
+		self.assertEqual((doc.half_day, str(doc.half_day_date)), (1, d))
 		doc.submit()
 		row = frappe.db.get_value("Attendance", att, ["half_day_status", "attendance_request"],
 		                          as_dict=True)

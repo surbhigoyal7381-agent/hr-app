@@ -417,13 +417,17 @@ def prepare_half_day_correction(doc, method=None):
 	and DTC has no Shift Assignments, so without it Frappe would not find the row
 	and would make a second attendance for the same day (proved, 21 Oct).
 
+	The employee asks from the Attendance page's ordinary one-day form, which
+	has no half-day tick; on such a day the request is made a half-day one
+	here, because the other half is the only thing it can correct.
+
 	If the request then fails for any other reason, the whole save rolls back
 	and the row is as it was.
 	"""
-	if not cint(doc.half_day) or not doc.half_day_date:
+	if not doc.from_date or getdate(doc.from_date) != getdate(doc.to_date or doc.from_date):
 		return
-	day = getdate(doc.half_day_date)
-	if getdate(doc.from_date) != day or getdate(doc.to_date) != day:
+	day = getdate(doc.from_date)
+	if cint(doc.half_day) and doc.half_day_date and getdate(doc.half_day_date) != day:
 		return
 	if day >= getdate(nowdate()):
 		return
@@ -441,6 +445,10 @@ def prepare_half_day_correction(doc, method=None):
 
 	if _punches(doc.employee, day)[2] >= 2:
 		return
+	doc.half_day = 1
+	# The same value as from_date, not a converted date: Frappe compares the
+	# two as they are, and a string against a date is never equal.
+	doc.half_day_date = doc.from_date
 	if att.shift:
 		doc.shift = att.shift
 	if att.half_day_status != "Absent":
@@ -564,6 +572,9 @@ def _card(emp, rs):
 	})
 
 	gate = cint(rs.leave_threshold_days)
+	# The rule itself, for the rule box (AC-3) - a number from the rule set,
+	# not a fact about the person.
+	out["gate"] = gate
 	summary = month_summary(emp.name, emp.company, start, end, rule_set=rs,
 	                        ctx=prepare(rs, start, end, employee=emp.name))
 	attended = flt(summary.days_for_gate) if summary else 0.0
@@ -572,7 +583,7 @@ def _card(emp, rs):
 		                                             "attendance_date": ["between", [start, today]]},
 		                      pluck="attendance_date", order_by="attendance_date desc", limit=1)
 		up_to = last[0] if last else None
-		out.update({"attended_so_far": attended, "gate": gate,
+		out.update({"attended_so_far": attended,
 		            "attended_up_to": str(up_to) if up_to else None})
 	return out
 
@@ -583,7 +594,7 @@ def annotate_applications(emp, rows):
 	once for all of them; the notices are read in one query."""
 	today = getdate(nowdate())
 	told = told_for([r.name for r in rows if r.status == "Approved" and r.docstatus == 1])
-	chain = chain_of(emp.name) if told else []
+	chain = chain_of(emp.name) if rows else []
 	names = {}
 	for r in rows:
 		lwp = is_lwp(r.leave_type)
@@ -604,6 +615,10 @@ def annotate_applications(emp, rows):
 			mine = [m for m in chain if m.user_id in users]
 			r["told_count"] = len(users)
 			r["told_top_name"] = mine[-1].employee_name if mine else None
+			# "No manager is set above you" only when it is true.
+			r["has_manager"] = bool(chain)
+			# Named in the cancel confirm: "if {first} is expecting you ..." (R-51).
+			r["first_manager"] = chain[0].employee_name if chain else None
 		if approved and r.half_day and r.half_day_date and getdate(r.half_day_date) < today:
 			att = frappe.db.get_value(
 				"Attendance", {"employee": emp.name, "attendance_date": r.half_day_date,

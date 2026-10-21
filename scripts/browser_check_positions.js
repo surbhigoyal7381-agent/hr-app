@@ -1,197 +1,107 @@
-/* Does the Positions screen actually draw in a real browser?
+/* Does the Positions screen actually work in a real browser? (slice 064, v9)
  *
- * Everything else about this screen is checked without one: the markup
- * balances, the handlers resolve, the tree renders in a VM, the endpoints have
- * tests. None of that can see a screen that LOOKS wrong, and this screen was
- * rebuilt once for exactly that reason - an indented table that read as a list
- * passed every check it had.
+ * The node check (check_positions_tree.js) proves what the page draws; the
+ * connector check (check_positions_connectors.js) proves the lines are
+ * honest. This one drives the screen the way a person would and writes
+ * screenshots somebody can look at.
  *
- * So this opens it, drives it, and writes screenshots somebody can look at.
+ * NOT part of CI. It needs a running site, a login and a browser. Run it on
+ * a THROWAWAY site, never a real one:
  *
- * NOT part of CI. It needs a running site, a real login and a browser, so it
- * is a hands-on check to run in YOUR OWN container - never the shared bench -
- * after a change to this screen.
+ *   BASE=http://127.0.0.1:8064 PROBE_USR=... PROBE_PWD=... \
+ *     PLAYWRIGHT=<path to playwright> node scripts/browser_check_positions.js
  *
- *   apt-get install -y chromium                   # as root, once
- *   mkdir -p /tmp/browser && cd /tmp/browser
- *   npm init -y && npm install puppeteer-core
- *   bench --site <throwaway site> serve --port 8000 &
- *   PROBE_USR=... PROBE_PWD=... node scripts/browser_check_positions.js
- *
- * It prints a line per check, saves PNGs to /tmp/shots, and exits non-zero if
+ * It prints a line per check, saves PNGs to $SHOTS, and exits non-zero if
  * any check fails.
  */
-
-const fs = require("fs");
-const puppeteer = require(process.env.PUPPETEER ||
-  "/tmp/browser/node_modules/puppeteer-core");
+const { chromium } = require(process.env.PLAYWRIGHT || "playwright");
 
 const BASE = process.env.BASE || "http://127.0.0.1:8000";
-const USR = process.env.PROBE_USR;
-const PWD = process.env.PROBE_PWD;
-const SHOTS = process.env.SHOTS || "/tmp/shots";
-const CHROME = process.env.CHROME || "/usr/bin/chromium";
+const USR = process.env.PROBE_USR, PWD = process.env.PROBE_PWD;
+const SHOTS = process.env.SHOTS || "/tmp/shots/";
 
 let pass = 0, fail = 0;
-const ok = (cond, msg, detail) =>
-  cond ? (pass++, console.log("  PASS  " + msg))
-       : (fail++, console.log("  FAIL  " + msg
-            + (detail ? "  (" + detail + ")" : "")));
+const ok = (cond, msg, detail) => cond ? (pass++, console.log("  PASS  " + msg))
+  : (fail++, console.log("  FAIL  " + msg + (detail ? "  (" + detail + ")" : "")));
 
-async function shot(page, name) {
-  fs.mkdirSync(SHOTS, { recursive: true });
-  const at = SHOTS + "/" + name + ".png";
-  await page.screenshot({ path: at, fullPage: true });
-  console.log("  shot  " + at);
-}
-
-async function main() {
-  if (!USR || !PWD) {
-    console.error("Set PROBE_USR and PROBE_PWD for a user on the site you are "
-                  + "serving. Use a THROWAWAY site, never a real one.");
-    process.exit(2);
-  }
-  const browser = await puppeteer.launch({
-    executablePath: CHROME,
-    args: ["--no-sandbox", "--disable-dev-shm-usage"],
-  });
-  const page = await browser.newPage();
-  await page.setViewport({ width: 1280, height: 1000 });
-
-  const errors = [];
+(async () => {
+  if (!USR || !PWD) { console.error("Set PROBE_USR and PROBE_PWD for a user on a THROWAWAY site."); process.exit(2); }
+  const b = await chromium.launch();
+  const page = await (await b.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+  const errors = [], requests = [];
   page.on("pageerror", (e) => errors.push(String(e)));
-
-  // ── sign in ───────────────────────────────────────────────────────────────
-  // The branded login, not Frappe's own - /login redirects here, and the
-  // field ids are ours.
-  await page.goto(BASE + "/alvoraa-login", { waitUntil: "networkidle2" });
-  await page.type("#kx-email", USR);
-  await page.type("#kx-password", PWD);
-  await Promise.all([
-    page.waitForNavigation({ waitUntil: "networkidle2" }).catch(() => {}),
-    page.click("#kx-login-form button[type=submit]"),
-  ]);
-  await new Promise((r) => setTimeout(r, 2000));
-
-  // ── the portal, then the Positions panel ──────────────────────────────────
-  await page.goto(BASE + "/hrms-employee", { waitUntil: "networkidle2" });
-  await new Promise((r) => setTimeout(r, 2500));
-
-  const hasPanel = await page.evaluate(() =>
-    !!document.getElementById("panel-positions"));
-  ok(hasPanel, "the Positions panel is on the page");
-  if (!hasPanel) { await shot(page, "00-no-panel"); await browser.close();
-                   process.exit(1); }
-
+  page.on("request", (r) => requests.push(r.url()));
+  await page.goto(BASE + "/alvoraa-login", { waitUntil: "networkidle" });
+  await page.fill("#kx-email", USR); await page.fill("#kx-password", PWD);
+  await Promise.all([page.waitForNavigation({ waitUntil: "networkidle" }).catch(() => {}),
+                     page.click("#kx-login-form button[type=submit]")]);
+  await page.goto(BASE + "/hrms-employee", { waitUntil: "networkidle" });
   await page.evaluate(() => switchPanel("positions"));
-  await new Promise((r) => setTimeout(r, 2500));
+  await page.waitForFunction(() => window.POS && POS.rows && POS.rows.length > 0, null, { timeout: 30000 });
+  await page.waitForTimeout(800);
 
-  // ── the list, which is the default ────────────────────────────────────────
-  const list = await page.evaluate(() => ({
-    rows: document.querySelectorAll("#pos-body table tbody tr").length,
-    count: (document.getElementById("pos-count") || {}).textContent || "",
-    body: (document.getElementById("pos-body") || {}).innerHTML || "",
+  const home = await page.evaluate(() => ({
+    pressed: (document.querySelector('#pos-view button[aria-pressed="true"]') || {}).textContent,
+    boxes: document.querySelectorAll("#pos-body .pos-box").length,
+    groups: document.querySelectorAll("#pos-body .pos-sibs").length,
+    width: Math.round((document.querySelector("#pos-body .pos-box") || { getBoundingClientRect: () => ({ width: 0 }) }).getBoundingClientRect().width),
+    page: document.documentElement.scrollWidth - innerWidth,
   }));
-  ok(list.rows > 0, "the list draws rows", "got " + list.rows);
-  ok(/seat/.test(list.count), "the count says something", list.count);
-  ok(!/Loading/.test(list.body), "it is not still loading");
-  await shot(page, "01-list");
+  ok(home.pressed === "Reporting lines", "the page opens on Reporting lines", home.pressed);
+  ok(home.boxes > 1 && home.groups >= 1, "the chart draws boxes and a group", home.boxes + " boxes");
+  ok(home.width > 150, "a box has real width on screen", home.width + "px");
+  ok(home.page <= 0, "the page itself never scrolls sideways", home.page + "px");
+  await page.screenshot({ path: SHOTS + "positions-home.png", fullPage: true });
 
-  // ── the structure view, which is the thing that was wrong before ──────────
-  await page.evaluate(() => {
-    document.getElementById("pos-f-view").value = "tree";
-    posPaint();
-  });
-  await new Promise((r) => setTimeout(r, 1200));
+  // A team opens below its group, with its own line.
+  await page.click("#pos-body .pos-sibs .pos-fold");
+  await page.waitForTimeout(400);
+  const opened = await page.evaluate(() => ({
+    strip: document.querySelectorAll("#pos-body .pos-strip").length,
+    line: document.querySelectorAll("#pos-body svg.pos-links path").length,
+  }));
+  ok(opened.strip === 1 && opened.line === 1, "opening a team draws its strip and one line", JSON.stringify(opened));
+  await page.screenshot({ path: SHOTS + "positions-team-open.png", fullPage: true });
 
-  const tree = await page.evaluate(() => {
-    const body = document.getElementById("pos-body");
-    const box = document.querySelector("#pos-body .oc-box");
-    return {
-      boxes: document.querySelectorAll("#pos-body .oc-box").length,
-      kids: document.querySelectorAll("#pos-body .oc-kids").length,
-      isTable: !!document.querySelector("#pos-body table"),
-      // The thing a VM cannot tell you: does a box have real width on screen?
-      boxWidth: box ? Math.round(box.getBoundingClientRect().width) : 0,
-      wide: body ? body.scrollWidth > body.clientWidth : false,
-    };
-  });
-  ok(tree.boxes > 1, "the structure view draws boxes", "got " + tree.boxes);
-  ok(tree.kids > 0, "with connectors between them", "got " + tree.kids);
-  ok(!tree.isTable, "and it is NOT a table");
-  ok(tree.boxWidth > 120, "a box has real width on screen",
-     tree.boxWidth + "px");
-  await shot(page, "02-structure");
+  // The seat sheet: a dialog, focus on its heading, Escape closes it.
+  await page.click("#pos-body .pos-box[data-id]");
+  await page.waitForTimeout(300);
+  const sheet = await page.evaluate(() => ({
+    dialog: !!document.querySelector('#pos-layer [role="dialog"]'),
+    focus: document.activeElement && document.activeElement.id,
+  }));
+  ok(sheet.dialog && sheet.focus === "pos-sh-t", "a box opens the seat sheet with focus on its heading", JSON.stringify(sheet));
+  await page.screenshot({ path: SHOTS + "positions-seat-sheet.png" });
+  await page.keyboard.press("Escape");
+  ok(await page.evaluate(() => !document.querySelector('#pos-layer [role="dialog"]')), "Escape closes it");
 
-  // ── grouping: five identical seats should be one box ──────────────────────
-  const grouped = await page.evaluate(() =>
-    (document.getElementById("pos-body").innerHTML.match(/of these/g) || []).length);
-  ok(grouped > 0, "identical seats are grouped into one box",
-     "found " + grouped + " group box(es)");
+  // Find makes no request while typing.
+  const before = requests.length;
+  await page.fill("#pos-find", "Sta");
+  await page.waitForTimeout(400);
+  ok(requests.length === before, "typing in Find sends nothing to the server", (requests.length - before) + " requests");
+  ok(await page.evaluate(() => document.querySelectorAll("#pos-hits .pos-hit").length > 0), "Find lists matches");
+  await page.keyboard.press("Escape");
 
-  // ── the other two spines ─────────────────────────────────────────────────
-  for (const how of ["branch", "department"]) {
-    await page.evaluate((h) => {
-      document.getElementById("pos-f-arrange").value = h;
-      posPaint();
-    }, how);
-    await new Promise((r) => setTimeout(r, 900));
-    const got = await page.evaluate(() => ({
-      boxes: document.querySelectorAll("#pos-body .oc-box").length,
-      body: document.getElementById("pos-body").innerHTML,
-    }));
-    ok(got.boxes > 1, "arranged by " + how + ", the chart still draws",
-       "got " + got.boxes + " boxes");
-    ok(!/undefined|NaN/.test(got.body),
-       "arranged by " + how + ", nothing reads undefined");
-    await shot(page, "05-by-" + how);
+  for (const v of ["branch", "department", "list"]) {
+    await page.evaluate((vv) => posSetView(vv), v);
+    await page.waitForTimeout(400);
+    const html = await page.evaluate(() => document.getElementById("pos-body").innerHTML);
+    ok(html.length > 100 && !/undefined|NaN/.test(html), "the " + v + " view draws, nothing reads undefined");
+    await page.screenshot({ path: SHOTS + "positions-" + v + ".png", fullPage: true });
   }
-  await page.evaluate(() => {
-    document.getElementById("pos-f-arrange").value = "reporting";
-    posPaint();
-  });
-  await new Promise((r) => setTimeout(r, 700));
 
-  // ── the seat dialog ───────────────────────────────────────────────────────
-  await page.evaluate(() => {
-    const id = POS.rows.filter((r) => r.people.length)[0].id;
-    posOpenEditor(id);
-  });
-  await new Promise((r) => setTimeout(r, 900));
-  const dlg = await page.evaluate(() => {
-    const el = document.getElementById("pos-editor");
-    const r = el ? el.getBoundingClientRect() : null;
-    return {
-      open: !!(el && el.classList.contains("open")),
-      visible: !!(r && r.width > 100 && r.height > 100),
-      people: (document.getElementById("pos-people") || {}).innerHTML || "",
-      offscreen: r ? (r.top < -50 || r.left < -50) : true,
-    };
-  });
-  ok(dlg.open, "clicking a seat opens the dialog");
-  ok(dlg.visible, "and the dialog has real size on screen");
-  ok(!dlg.offscreen, "and it is not off the edge of the window");
-  ok(!/Nobody is in this seat/.test(dlg.people),
-     "a filled seat lists its people");
-  await shot(page, "03-seat-dialog");
+  // An editor's "Change this seat" still opens today's dialog.
+  await page.evaluate(() => { posSetView("reporting"); posSeatSheet(POS.rows[0].id); });
+  const canEdit = await page.evaluate(() => POS.may_edit);
+  if (canEdit) {
+    await page.click("text=Change this seat");
+    await page.waitForTimeout(500);
+    ok(await page.evaluate(() => document.getElementById("pos-editor").classList.contains("open")), "Change this seat opens today's dialog");
+  }
 
-  // ── the person picker ─────────────────────────────────────────────────────
-  await page.evaluate(() => posPickPerson());
-  await new Promise((r) => setTimeout(r, 1800));
-  const pick = await page.evaluate(() => ({
-    open: document.getElementById("pos-person").classList.contains("open"),
-    list: (document.getElementById("pos-p-list") || {}).textContent || "",
-  }));
-  ok(pick.open, "the person picker opens");
-  ok(!/Looking/.test(pick.list), "and it finishes looking");
-  await shot(page, "04-person-picker");
-
-  ok(errors.length === 0, "no JavaScript errors on the page",
-     errors.slice(0, 2).join(" | "));
-
-  await browser.close();
+  ok(errors.length === 0, "no JavaScript errors on the page", errors.slice(0, 2).join(" | "));
+  await b.close();
   console.log("\n  " + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);
-}
-
-main().catch((e) => { console.error(e); process.exit(1); });
+})();

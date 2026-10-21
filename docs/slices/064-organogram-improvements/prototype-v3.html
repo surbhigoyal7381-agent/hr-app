@@ -1,0 +1,980 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Organogram Prototype</title>
+<!--
+  Slice 064 prototype v3, hrms-ux-designer, 21 Oct 2026. v3: a chart that cannot outgrow the screen (a three-row window that slides, with a breadcrumb), and replacement plans as an HR-only filter instead of a count.
+  Every person's name is invented (Sample). The SHAPE follows DTC on 21 Oct 2026:
+  90 seats, 364 places, 445 active people, 363 of them in a seat, 19 with no
+  reporting manager, one top seat with 22 seats under it, three rows deep.
+  Not production code. Tokens copied from design_system.html.
+-->
+<style>
+:root{--bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;--text:#2D2622;--text2:#5A544E;--text3:#736D65;--primary:#5B4B8A;--primary-h:#4A3D73;--primary-lt:#EDEAF4;--green:#1B7F5A;--green-lt:#E8F4EF;--red:#B3261E;--red-lt:#FBEAE8;--amber:#9A6510;--amber-lt:#FBF1E0;--sh1:0 1px 2px rgba(0,0,0,.05);--sh2:0 4px 12px rgba(0,0,0,.10);--sh3:0 12px 32px rgba(0,0,0,.16);--font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;--r:10px;--r-sm:6px;--fs-sm:12px;--fs-base:13px;--fs-md:15px;--fs-lg:18px;--fs-xl:24px}
+[data-theme=dark]{--bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;--text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;--primary:#A99AD4;--primary-h:#BBAEE0;--primary-lt:#2A2438;--green:#5DBF97;--green-lt:#12332A;--red:#F08A82;--red-lt:#3A1C1A;--amber:#E0A94A;--amber-lt:#33280F;--sh1:0 1px 2px rgba(0,0,0,.30);--sh2:0 4px 12px rgba(0,0,0,.45);--sh3:0 12px 32px rgba(0,0,0,.60)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:var(--fs-base);line-height:1.45}
+button{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+
+/* review scaffolding: wraps, never sticky (ux-learnings checklist) */
+.demo{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:10px 16px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:var(--fs-sm)}
+.demo b{font-weight:700}
+.demo label{display:flex;gap:6px;align-items:center}
+.demo select{font:inherit;padding:4px 6px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text);min-height:32px}
+.sample{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.02em;background:var(--amber-lt);color:var(--amber);padding:1px 8px;border-radius:999px}
+
+.app{max-width:1440px;margin:0 auto;padding:24px 28px 60px}
+.app.is-phone{max-width:390px;padding:14px 12px 60px;border-left:1px solid var(--border);border-right:1px solid var(--border);min-height:100vh;background:var(--bg)}
+.head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+h1{font-size:var(--fs-xl);margin:0}
+.sub{color:var(--text3);margin-top:2px}
+.asat{color:var(--text3);font-size:var(--fs-sm);margin:0 0 10px}
+.btn{border:1px solid var(--border2);background:var(--surface);border-radius:var(--r-sm);padding:6px 12px;min-height:32px;cursor:pointer}
+.btn:hover{background:var(--surface2)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+[data-theme=dark] .btn.primary{color:#1A1815}
+.btn.link{border:0;background:none;color:var(--primary);padding:4px 2px;text-decoration:underline;min-height:28px}
+.is-phone .btn{min-height:44px}
+.is-phone .btn.link{min-height:44px}
+
+/* tiles: the questions, answered first */
+.tiles{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.tile{border:1px solid var(--border);border-left:3px solid var(--border);border-radius:var(--r);padding:8px 14px;min-width:132px;background:var(--surface);text-align:left}
+button.tile{cursor:pointer}
+button.tile:hover{box-shadow:var(--sh2)}
+.tile .n{font-size:var(--fs-lg);font-weight:700}
+.tile .l{font-size:var(--fs-sm);color:var(--text2)}
+.tile.amber{border-left-color:var(--amber)}
+.tile.info{border-left-color:var(--primary)}
+.is-phone .tiles{display:grid;grid-template-columns:1fr 1fr}
+.is-phone .tile{min-width:0;min-height:44px}
+
+/* toolbar: View is one always-visible control, outside the filters */
+.toolbar{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end;margin-bottom:10px}
+.fld .lab{font-size:var(--fs-sm);color:var(--text2);font-weight:600;margin-bottom:4px}
+.seg{display:inline-flex;border:1px solid var(--border2);border-radius:var(--r-sm);overflow:hidden;background:var(--surface)}
+.seg button{border:0;border-right:1px solid var(--border2);background:none;padding:6px 12px;min-height:32px;cursor:pointer}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed=true]{background:var(--primary-lt);color:var(--primary);font-weight:700}
+.is-phone .seg{display:grid;grid-template-columns:1fr 1fr;width:100%}
+.is-phone .seg button{min-height:44px;border-bottom:1px solid var(--border2)}
+.is-phone .fld{width:100%}
+.find{position:relative}
+.find input{font:inherit;font-size:16px;padding:6px 10px;min-height:32px;width:280px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text)}
+.is-phone .find input{width:100%;min-height:44px}
+.hits{position:absolute;top:calc(100% + 4px);left:0;width:340px;max-height:320px;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh3);z-index:30}
+.is-phone .hits{width:100%}
+.hit{display:block;width:100%;text-align:left;border:0;background:none;padding:8px 12px;cursor:pointer;min-height:40px}
+.hit:hover,.hit:focus{background:var(--surface2)}
+.hit .t{color:var(--text3);font-size:var(--fs-sm)}
+.hits .none{padding:10px 12px;color:var(--text2)}
+
+.filters{border:1px solid var(--border);border-radius:var(--r);background:var(--surface);margin-bottom:12px}
+.filters summary{padding:8px 12px;cursor:pointer;font-weight:600;min-height:32px}
+.is-phone .filters summary{min-height:44px;display:flex;align-items:center}
+.filters .in{display:flex;flex-wrap:wrap;gap:10px;padding:0 12px 12px}
+.filters select{font:inherit;font-size:16px;padding:4px 8px;min-height:32px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text)}
+.is-phone .filters select{min-height:44px;width:100%}
+.is-phone .filters .fld{width:100%}
+.focusline{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--primary-lt);border-radius:var(--r-sm);padding:6px 12px;margin-bottom:10px}
+
+/* the chart: same boxes and connectors as ocRender */
+.chartwrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);padding:16px 8px 28px}
+.chart{display:flex;justify-content:center;align-items:flex-start;gap:16px;min-width:max-content;margin:0 auto}
+.br{display:flex;flex-direction:column;align-items:center;position:relative}
+.kids{display:flex;align-items:flex-start;padding-top:22px;position:relative}
+.kids::before{content:"";position:absolute;top:0;left:50%;width:1px;height:11px;background:var(--border2)}
+.kids>.br{padding:0 7px}
+.kids>.br::before{content:"";position:absolute;top:-11px;left:50%;width:1px;height:11px;background:var(--border2)}
+.kids>.br::after{content:"";position:absolute;top:-11px;left:0;right:0;height:1px;background:var(--border2)}
+.kids>.br:first-child::after{left:50%}
+.kids>.br:last-child::after{right:50%}
+.kids>.br:only-child::after{display:none}
+.box{display:block;width:208px;text-align:left;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--border2);border-radius:var(--r);padding:9px 11px;cursor:pointer;box-shadow:var(--sh1)}
+.box:hover{box-shadow:var(--sh2)}
+.box.root{border-color:var(--primary);border-left-color:var(--primary)}
+.box.amber{border-left-color:var(--amber)}
+/* v2 colour code. Each tone = a left bar + a tint + a word; never colour alone.
+   --blue/--blue-lt are NOT in design_system.html: they are built from its --box-blue
+   tint plus a text blue checked for 4.5:1 (decision Q12 in 02-design.md). */
+:root{--blue:#1F5F99;--blue-lt:#E6EFF8}
+[data-theme=dark]{--blue:#8DBDEB;--blue-lt:#1F3348}
+.box.t-new,.srow.t-new,.orow.t-new{border-left-color:var(--blue);background:var(--blue-lt)}
+.box.t-fill,.srow.t-fill,.orow.t-fill{border-left-color:var(--amber);background:var(--amber-lt)}
+tr.t-new td:first-child{box-shadow:inset 3px 0 0 var(--blue)}
+tr.t-fill td:first-child{box-shadow:inset 3px 0 0 var(--amber)}
+/* Private tone only on screen. In print the box falls back to its public tone (new / to fill / none). */
+@media screen{
+  .box.t-plan,.srow.t-plan,.orow.t-plan{border-left-color:var(--red);background:var(--red-lt)}
+  tr.t-plan td:first-child{box-shadow:inset 3px 0 0 var(--red)}
+}
+.box.t-new,.box.t-fill,.box.t-plan{border-left-width:4px}
+.chip.new{background:var(--blue-lt);color:var(--blue);border:1px solid var(--blue)}
+.chip.plan{background:var(--red-lt);color:var(--red)}
+.flag{color:var(--red);vertical-align:-2px;flex:none}
+.planword{color:var(--red);font-weight:700;white-space:nowrap}
+.needs{font-weight:600}
+/* --text3 on a tint measured 4.39:1; tinted items use --text2 for secondary text */
+.app .t-new .su,.app .t-fill .su,.app .t-plan .su,.app .t-new .t2,.app .t-fill .t2,.app .t-plan .t2{color:var(--text2)}
+.tile.new{border-left-color:var(--blue)}
+.tile.plan{border-left-color:var(--red)}
+.note.new{background:var(--blue-lt)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center;font-size:var(--fs-sm);color:var(--text2);margin:0 0 10px}
+.legend span{display:inline-flex;gap:6px;align-items:center}
+.sw{display:inline-block;width:14px;height:14px;border-radius:3px;border-left:4px solid}
+.sw-new{background:var(--blue-lt);border-color:var(--blue)}
+.sw-fill{background:var(--amber-lt);border-color:var(--amber)}
+.sw-plan{background:var(--red-lt);border-color:var(--red)}
+.box.dashed{border-style:dashed;background:transparent}
+.box.dim{opacity:.45}
+.box.focus{outline:3px solid var(--primary);outline-offset:3px}
+.box .ti{font-weight:700;font-size:var(--fs-md);line-height:1.25}
+.box .su{color:var(--text3);font-size:var(--fs-sm)}
+.box .who{margin-top:5px;font-size:var(--fs-sm);color:var(--text2)}
+.box .roll{margin-top:6px;font-size:var(--fs-sm);color:var(--text);font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.chip{display:inline-block;font-size:12px;font-weight:600;padding:1px 8px;border-radius:999px;background:var(--surface2);color:var(--text2);line-height:1.6}
+.chip.amber{background:var(--amber-lt);color:var(--amber)}
+.chip.green{background:var(--green-lt);color:var(--green)}
+.chip.info{background:var(--primary-lt);color:var(--primary)}
+.fold{margin-top:6px;border:1px solid var(--border2);background:var(--surface);border-radius:999px;padding:2px 10px;font-size:var(--fs-sm);cursor:pointer;min-height:28px;max-width:236px}
+.fold:hover{background:var(--surface2)}
+/* v3: the window */
+.crumb{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;background:var(--bg);padding:8px 0;margin-bottom:6px;border-bottom:1px solid var(--border)}
+.crumb .lab{font-size:var(--fs-sm);color:var(--text2);font-weight:600}
+.crumbacts{display:inline-flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+.chart3{display:flex;flex-direction:column;align-items:center}
+.r1{display:flex;gap:16px;justify-content:center;align-items:flex-start}
+.kids.toprow{padding-top:0}
+.kids.toprow::before,.kids.toprow>.br::before,.kids.toprow>.br::after{display:none}
+.wrapfam{width:100%;margin-top:22px;position:relative;border:1px solid var(--border);border-radius:var(--r);padding:8px}
+.wrapfam::before{content:"";position:absolute;top:-23px;left:50%;width:1px;height:22px;background:var(--border2)}
+.wrapfam.toprow{margin-top:0}
+.wrapfam.toprow::before{display:none}
+.wrapfam .sh{font-size:var(--fs-sm);color:var(--text2);font-weight:600;padding:2px 4px 8px}
+.wgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(222px,1fr));gap:12px;justify-items:center}
+.drawer{width:100%;margin-top:18px;border:2px solid var(--primary);border-radius:var(--r);padding:0 8px 16px;background:var(--surface)}
+.drawer .dh{display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 4px;border-bottom:1px solid var(--border);margin-bottom:6px}
+.drawer .kids{justify-content:center}
+.box.opened{outline:2px solid var(--primary);outline-offset:2px}
+.filters .in{padding:12px}
+.filters .fld.private .lab{display:inline-flex;gap:4px;align-items:center}
+.stackwrap.wide{width:100%}
+.stackwrap.wide .stack{width:100%}
+.stackwrap.wide .grid{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
+.stackwrap{padding-top:18px;position:relative;display:flex;justify-content:center}
+.stackwrap::before{content:"";position:absolute;top:0;left:50%;width:1px;height:18px;background:var(--border2)}
+.stackwrap.below::before{border-left:1px dashed var(--border2);background:none}
+.orow.dim{opacity:.45}
+.orow.focus{outline:3px solid var(--primary);outline-offset:1px}
+.stack{width:468px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:8px;box-shadow:var(--sh1)}
+.stack .sh{font-size:var(--fs-sm);color:var(--text2);font-weight:600;padding:2px 4px 6px}
+.stack .grid{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.srow{display:block;width:100%;text-align:left;border:1px solid var(--border);border-left:3px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);padding:5px 8px;cursor:pointer;min-height:36px}
+.srow:hover{background:var(--surface2)}
+.srow.amber{border-left-color:var(--amber)}
+.srow.dim{opacity:.45}
+.srow.focus{outline:3px solid var(--primary);outline-offset:1px}
+.srow .t1{font-weight:600}
+.srow .t2{font-size:var(--fs-sm);color:var(--text3)}
+
+/* list */
+table{border-collapse:collapse;width:100%;background:var(--surface)}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+th{font-size:var(--fs-sm);color:var(--text2);position:sticky;top:0;background:var(--surface2)}
+td.num,th.num{text-align:right}
+.listwrap{border:1px solid var(--border);border-radius:var(--r);overflow:auto;max-height:640px}
+
+/* phone outline: one level at a time */
+.outline .here{background:var(--surface);border:1px solid var(--primary);border-radius:var(--r);padding:12px;margin-bottom:10px}
+.orow{display:flex;justify-content:space-between;gap:10px;align-items:center;width:100%;text-align:left;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--border2);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:6px;min-height:56px;cursor:pointer}
+.orow.amber{border-left-color:var(--amber)}
+.orow.dashed{border-style:dashed}
+.orow .t1{font-weight:700;font-size:var(--fs-md)}
+.orow .t2{font-size:var(--fs-sm);color:var(--text2)}
+.orow .chev{font-size:var(--fs-lg);color:var(--text3)}
+
+/* sheet */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:40}
+.sheet{position:fixed;top:0;right:0;bottom:0;width:460px;max-width:100%;background:var(--surface);z-index:41;box-shadow:var(--sh3);display:flex;flex-direction:column}
+.sheet.phone{left:50%;transform:translateX(-50%);width:390px;top:auto;max-height:88vh;border-radius:14px 14px 0 0}
+.sheet .sh-h{display:flex;justify-content:space-between;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border)}
+.sheet h2{font-size:var(--fs-lg);margin:0}
+.sheet .sh-b{padding:14px 16px;overflow:auto}
+.sheet .sh-f{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.prow{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border)}
+.note{background:var(--surface2);border-radius:var(--r-sm);padding:10px 12px;margin:10px 0}
+.note.amber{background:var(--amber-lt)}
+.note.info{background:var(--primary-lt)}
+.note.ok{background:var(--green-lt)}
+.note h3{font-size:var(--fs-base);margin:0 0 4px}
+.note ul{margin:6px 0 0;padding-left:18px}
+.facts{display:flex;gap:16px;flex-wrap:wrap;margin:6px 0 10px}
+.facts b{font-size:var(--fs-lg)}
+.skel{background:linear-gradient(90deg,var(--surface2),var(--border),var(--surface2));background-size:200% 100%;animation:sk 1.2s infinite;border-radius:var(--r);height:64px}
+@keyframes sk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.skel{animation:none}}
+.err{border:1px solid var(--border);border-left:3px solid var(--red);background:var(--surface);border-radius:var(--r);padding:16px}
+.printhead{display:none}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:var(--r-sm);z-index:60}
+@media print{
+  .legend .btn,.demo,.toolbar,.filters,.scrim,.sheet,.fold,.private,.focusline,.toast,.noprint{display:none!important}
+  .printhead{display:block;margin-bottom:8px;font-size:12px}
+  .chartwrap{overflow:visible;border:0}
+  .box.dim{opacity:1}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<div class="demo" id="demo" aria-label="Prototype controls, not part of the product">
+  <b>Prototype v3 controls</b>
+  <label>Person <select id="d-persona">
+    <option value="hr">HR Manager</option>
+    <option value="cxo">Owner (CXO)</option>
+    <option value="head">Store head, Delhi</option>
+  </select></label>
+  <label>Device <select id="d-device"><option value="desk">Desktop 1440</option><option value="phone">Phone 390</option></select></label>
+  <label>Theme <select id="d-theme"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+  <label>Shape <select id="d-shape"><option value="">DTC as it is</option><option value="deep">DTC + a deep sample branch (8 levels)</option></select></label>
+  <label>State <select id="d-state"><option value="ok">Loaded</option><option value="loading">Loading</option><option value="error">Could not load</option></select></label>
+  <span class="sample">Sample</span> <span>Every name is invented, and so are the leaving date, the new hire, the two replacement plans and the new Pitampura seat. The new CFO seat is real (made 16 Oct). Switch Person between HR Manager and Owner to compare. The shape follows DTC on 21 Oct 2026: 90 seats, 445 people. "Print this view" is shown for you to judge; it is a "later" item.</span>
+</div>
+
+<main class="app" id="app"></main>
+<div id="layer"></div>
+
+<script>
+"use strict";
+/* ---------- data: DTC's shape, invented names ---------- */
+var BRN = {CH34:"Chandigarh Sector 34", CH22:"Chandigarh Sector 22", DEL:"Delhi", NOI:"Noida", AMB:"Ambala", PITS:"DTC - PITAMPURA", PIT:"Pitampura"};
+var ROWS = [], SEQ = 0;
+function S(id, title, br, dept, seats, filled, parent) {
+  ROWS.push({id: id || ("s" + (++SEQ)), title: title, branch: br, dept: dept, seats: seats,
+             filled: filled == null ? seats : filled, parent: parent, people: []});
+}
+S("own", "Owner", "CH34", "Management", 1, 1, null);
+S("amb", "Admin", "AMB", "Admin", 1, 1, "own");
+S("bo", "Back Office", "CH34", "Back Office", 36, 36, "own");
+S("fm22", "FM", "CH22", "Management", 3, 3, "own");
+S("del", "Manager", "DEL", "Management", 1, 1, "own");
+S("noi", "S-RE Manager", "NOI", "Management", 1, 1, "own");
+S("cfo", "Chief Finance Officer", "CH34", "Management", 1, 1, "own");
+function many(parent, br, list) {
+  list.forEach(function (a) { S(null, a[0], a[4] || br, a[1], a[2], a[3], parent); });
+}
+many("own", "CH34", [["CRM","Sales",6,6,"CH22"],["Data Analyst","Back Office",1],["EA","Admin",1],["FSE","Sales",2,2,"CH22"],["HR Head","HR",1],["HR Recruiter","HR",1],["Insta Team","Marketing",1],["Liaisoner","Back Office",1],["MIS","Back Office",2],["MIS Executive","Back Office",1],["Network Engineer","IT",1],["Office Executive","Back Office",6],["Payrol Executive","Payroll",1],["Payroll","HR",1],["Process Coordinator","Back Office",2],["Reconcile","Accounts",2]]);
+many("amb", "AMB", [["Bangle","Sales",5],["Cashier","Sales",3],["Chain + MS","Sales",4],["Earring","Sales",4],["FSE","Sales",7],["Floor Manager","Management",2],["Greeter","Sales",2,1],["Housekeeping","Back Office",8],["Karigar","Production",2],["Kitty + PDT","Sales",4],["Necklace","Sales",5],["RSO","Sales",1],["Ring","Sales",4],["Sales Representative","Sales",2]]);
+many("bo", "CH34", [["Accountant","Accounts",5],["Backoffice Executive","Back Office",1],["Driver","Back Office",6],["Housekeeping","Back Office",13],["Mali","Back Office",1],["Merchandiser","Sales",1],["Pantry","Admin",1],["S-CK Operation","Back Office",1],["S-CK Repair","Back Office",1],["Tagging","Back Office",4]]);
+many("fm22", "CH22", [["Bangle","Sales",9],["Cashier","Back Office",1],["Cashier","Sales",9],["Chain","Sales",5],["Earring","Sales",5],["Greeter","Sales",3],["Karigar","Production",3],["Pantry","Admin",2],["RSO","Sales",6],["Ring","Sales",11],["Runner","Sales",3],["Set","Sales",11],["Unspecified","",1,1,"CH34"]]);
+many("del", "DEL", [["Admin","Admin",1],["Bangle","Sales",4],["Cashier","Accounts",1,1,"PITS"],["Cashier","Sales",4],["Chain + MS + PDT","Sales",8],["Earring + Ring","Sales",10],["FM","Management",2],["FSE","Back Office",1],["FSE","Sales",1],["Governor","Management",2],["Housekeeping","Back Office",9],["Karigar","Production",1],["RSO","Back Office",2,2,"PITS"],["RSO","Back Office",3],["RSO","Sales",10,10,"PITS"],["RSO","Sales",4],["SI","Back Office",1,1,"PITS"],["SR. RSO","Back Office",1],["Set","Sales",10]]);
+many("noi", "NOI", [["Admin","Admin",1],["CRM","Sales",1],["Cashier","Sales",3],["FSE","Sales",1],["Floor Manager","Management",1],["Governor","Management",2],["Housekeeping","Back Office",12],["Karigar","Production",1],["RSO","Sales",31],["Sales Representative","Sales",1],["Section Incharge","Management",5]]);
+
+var FIRST = ["Aarti","Rohit","Simran","Gurpreet","Neha","Vikas","Pooja","Harpreet","Anil","Kiran","Manpreet","Sunil","Ritu","Deepak","Jaspreet","Meena","Rajesh","Sonia","Amit","Navneet","Priya","Sandeep","Komal","Ravi","Shalini","Tarun","Babita","Mohit","Seema","Arjun","Lovepreet","Nisha"];
+var LAST = ["Sharma","Verma","Singh","Kaur","Gupta","Arora","Bansal","Malhotra","Sethi","Chopra","Mehta","Kapoor","Saini","Rana","Bhatia","Grover","Ahuja","Khanna","Gill","Sood","Dhillon"];
+var NI = 0;
+function nm() { var i = NI++; return FIRST[i % FIRST.length] + " " + LAST[(i * 7 + Math.floor(i / 21)) % LAST.length]; }
+var BYID = {};
+ROWS.forEach(function (r) {
+  BYID[r.id] = r;
+  for (var i = 0; i < r.filled; i++) r.people.push({name: nm()});
+});
+function find(title, br) { return ROWS.filter(function (r) { return r.title === title && r.branch === br; })[0]; }
+/* Sample states the task asked for */
+find("Accountant", "CH34").people[0].hire = "14 Oct";          // filled by a recent hire
+find("Floor Manager", "NOI").people[0].leaving = "30 Nov";     // working their notice
+find("RSO", "NOI").people[4].plan = {on: "18 Oct", until: "16 Jan 2027", why: "Has said they may leave"};
+find("HR Recruiter", "CH34").people[0].plan = {on: "20 Oct", until: "18 Jan 2027", why: "Contract ends soon"};  // Sample: a one-person seat, so the flag sits on a visible name
+/* NEW SEAT: made in the last 30 days, and after the day the chart was first set up.
+   Fact: at DTC 89 seats were made by the set-up on 14 Oct and the CFO seat on 16 Oct;
+   effective_from is empty on all 90. So only the CFO seat is new today. */
+BYID.cfo.isNew = "16 Oct";
+S("pitfm", "Floor Manager", "PITS", "Management", 1, 0, "del");    // Sample: a new seat with nobody in it yet
+BYID.pitfm = ROWS[ROWS.length - 1]; BYID.pitfm.isNew = "19 Oct";
+BYID.cfo.mismatch = [["Back Office · Chandigarh Sector 34",6],["Office Executive",4],["Reconcile",2],["Payrol Executive",1],["Payroll",1],["Data Analyst",1],["Network Engineer",1],["MIS",1],["Accountant",1]];
+BYID.bo.mixed = [["the Back Office head, who is in this seat too",28],["the Chief Finance Officer",6],["the Owner",2]];
+
+/* Shape control: a synthetic deep and wide branch (Sample) to test the worst case.
+   Owner > Head of Operations > Regional Manager > 10 Area Managers (a wide level of team leads)
+   > Store Manager > Floor Supervisor > Section Lead > 6 seats: 8 levels, 30 extra seats. */
+if (location.hash === "#deep") {
+  S("hoo","Head of Operations","CH34","Management",1,1,"own"); S("rm","Regional Manager North","CH34","Management",1,1,"hoo");
+  for (var di = 1; di <= 10; di++) { S("am"+di,"Area Manager "+di,"CH34","Management",1,1,"rm"); S("sm"+di,"Store Manager "+di,"CH34","Management",1,1,"am"+di); }
+  S("fs","Floor Supervisor","CH34","Management",1,1,"sm1"); S("sl","Section Lead","CH34","Management",1,1,"fs");
+  ["Ring","Chain","Bangle","Set","Earring","Cashier"].forEach(function (t) { S(null,t,"CH34","Sales",3,3,"sl"); });
+  ROWS.forEach(function (r) { BYID[r.id] = r; if (!r.people.length) for (var i = 0; i < r.filled; i++) r.people.push({name: nm()}); });
+  find("Area Manager 7", "CH34").people[0].plan = {on: "19 Oct", until: "17 Jan 2027", why: ""};
+}
+
+/* 82 active people in no seat; 19 of them with no reporting manager */
+var UNSEATED = [];
+(function () {
+  var titles = [], brs = [];
+  [["RSO",38],["FSE",23],["Cashier",6],["Greeter",4],["Back Office",4],["SI",2],["CRM",2],["Runner",1],["Karigar",1],["Admin",1]].forEach(function (t) { for (var i = 0; i < t[1]; i++) titles.push(t[0]); });
+  [["PIT",35],["NOI",20],["DEL",9],["CH22",9],["CH34",5],["AMB",4]].forEach(function (b) { for (var i = 0; i < b[1]; i++) brs.push(b[0]); });
+  var noMgr = {RSO:5, FSE:5, "Back Office":4, CRM:2, SI:1, Admin:1, Greeter:1};
+  var days = ["2 Sep","9 Sep","15 Sep","22 Sep","29 Sep","6 Oct","13 Oct"];
+  titles.forEach(function (t, i) {
+    var p = {name: nm(), title: t, branch: brs[(i * 17) % brs.length], joined: days[i % days.length]};
+    if (noMgr[t]) { noMgr[t]--; p.noMgr = true; }
+    UNSEATED.push(p);
+  });
+})();
+var NOMGR = UNSEATED.filter(function (p) { return p.noMgr; });
+
+/* ---------- personas: what each may see (recommendation, see 02-design.md section 6) ---------- */
+var PERSONAS = {
+  /* plan and leaving: HR Manager only (PM D8; coordinator's instruction for v2).
+     For anyone else a planned person is drawn exactly like everybody else: no flag,
+     no colour, no key entry, no count, no filter option. */
+  hr:   {label: "HR Manager", edit: true,  plan: true,  leaving: true,  records: true, scope: null},
+  cxo:  {label: "Owner (CXO)", edit: false, plan: false, leaving: false, records: true, scope: null},
+  head: {label: "Store head, Delhi", edit: false, plan: false, leaving: false, records: false, scope: "del"}
+};
+/* A small red flag, drawn as an icon with a spoken name, never colour alone. */
+function flag() {
+  return '<svg class="flag private" viewBox="0 0 12 14" width="12" height="14" role="img" aria-label="Replacement planned"><path d="M2 1v12" stroke="currentColor" stroke-width="1.6"/><path d="M2.6 1.6h7.6l-1.8 2.7 1.8 2.7H2.6z" fill="currentColor"/></svg>';
+}
+function showPrivate() { return P().plan && !ST.hidePrivate; }
+function pname(p) { return (p.plan && showPrivate() ? flag() + " " : "") + esc(p.name); }
+/* One tone per seat. Replacement plan (HR only) > new seat > existing vacancy.
+   A new seat that is empty is NEW, with its "to fill" said in words. */
+/* Classes: the public tone always, plus the private one on top for HR (screen only). */
+function toneCls(r) {
+  var pub = r.isNew ? "new" : (open(r) ? "fill" : "");
+  return (pub ? " t-" + pub : "") + (tone(r) === "plan" ? " t-plan" : "");
+}
+function tone(r) {
+  if (showPrivate() && r.people.some(function (p) { return p.plan; })) return "plan";
+  if (r.isNew) return "new";
+  if (open(r)) return "fill";
+  return "";
+}
+
+/* ---------- state ---------- */
+var ST;
+function reset() {
+  ST = {persona: val("d-persona"), phone: val("d-device") === "phone", state: val("d-state"),
+        view: "reporting", all: false, open: {}, focus: null, q: "", fBranch: "", fShow: "",
+        trail: [], sheet: null, key: true, hidePrivate: false, R: undefined, O: null, fPlan: ""};
+}
+function val(id) { return document.getElementById(id).value; }
+function P() { return PERSONAS[ST.persona]; }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+
+/* rows this reader may see */
+function visible() {
+  var sc = P().scope;
+  if (!sc) return ROWS;
+  var out = [], stack = [sc];
+  while (stack.length) {
+    var id = stack.pop(); out.push(BYID[id]);
+    ROWS.forEach(function (r) { if (r.parent === id) stack.push(r.id); });
+  }
+  return out;
+}
+function tree(rows) {
+  var by = {}, kids = {}, roots = [];
+  rows.forEach(function (r) { by[r.id] = r; });
+  rows.forEach(function (r) {
+    if (r.parent && by[r.parent]) (kids[r.parent] = kids[r.parent] || []).push(r); else roots.push(r);
+  });
+  var cmp = function (a, b) { return a.title < b.title ? -1 : a.title > b.title ? 1 : 0; };
+  roots.sort(cmp); Object.keys(kids).forEach(function (k) { kids[k].sort(cmp); });
+  return {by: by, kids: kids, roots: roots};
+}
+function open(r) { return r.filled < r.seats ? r.seats - r.filled : 0; }
+function leavingIn(r) { return P().leaving ? r.people.filter(function (p) { return p.leaving; }).length : 0; }
+function planned(r) { return showPrivate() ? r.people.filter(function (p) { return p.plan; }).length : 0; }
+/* roll-up under a seat: seats, people, places to fill (and how many of them are new), leaving, plans */
+function roll(r, t) {
+  var o = {seats: 0, people: 0, fill: 0, fillNew: 0, isNew: 0, leaving: 0, plan: 0};
+  (t.kids[r.id] || []).forEach(function (c) {
+    var x = roll(c, t);
+    o.seats += 1 + x.seats; o.people += c.filled + x.people;
+    o.fill += open(c) + x.fill; o.fillNew += (c.isNew ? open(c) : 0) + x.fillNew;
+    o.isNew += (c.isNew ? 1 : 0) + x.isNew;
+    o.leaving += leavingIn(c) + x.leaving; o.plan += planned(c) + x.plan;
+  });
+  return o;
+}
+/* Line 1 is the size; line 2 is what needs somebody, in words. */
+function rollWords(o) {
+  var w = [o.seats + " seat" + (o.seats === 1 ? "" : "s") + " below", o.people + " people"];
+  return w.join(" · ");
+}
+function matches(r) {
+  if (ST.fBranch && r.branch !== ST.fBranch) return false;
+  if (ST.fPlan && !planned(r)) return false;
+  if (ST.fShow === "fill") return open(r) > 0;
+  if (ST.fShow === "new") return !!r.isNew;
+  if (ST.fShow === "leaving") return leavingIn(r) > 0;
+  return true;
+}
+function anyFilter() { return !!(ST.fBranch || ST.fShow || (ST.fPlan && showPrivate())); }
+function shortB(b) { return BRN[b] || b; }
+
+/* ---------- arrangements: one spine per view ---------- */
+/* Returns top-level items: {kind:"seat", r, t} or {kind:"holder", id, title, sub, t, roots} */
+function topItems() {
+  var rows = visible();
+  if (inHolderView()) {
+    var key = ST.view === "branch" ? "branch" : "dept", groups = {};
+    rows.forEach(function (r) { var k = r[key] || ""; (groups[k] = groups[k] || []).push(r); });
+    return Object.keys(groups).sort(function (a, b) { return !a ? 1 : !b ? -1 : a < b ? -1 : 1; }).map(function (k) {
+      var t = tree(groups[k]);
+      return {kind: "holder", id: "h:" + k, title: k ? (key === "branch" ? shortB(k) : k) : (key === "branch" ? "No branch" : "No department"),
+              sub: key === "branch" ? "Branch" : "Department", t: t, roots: t.roots, rows: groups[k]};
+    });
+  }
+  var t = tree(rows);
+  /* The real top: the parentless seat with the most seats under it (PM D4). */
+  var top = t.roots.slice().sort(function (a, b) { return roll(b, t).seats - roll(a, t).seats; })[0];
+  return [{kind: "seat", r: top, t: t}];
+}
+function inHolderView() { return ST.view === "branch" || ST.view === "dept"; }
+function holderKey(r) { return ST.view === "branch" ? r.branch : r.dept; }
+
+/* ---------- v3: ONE navigation model for every view ----------
+   A node is a seat id, or "h:<key>" for a branch or department group.
+   NAV is built once per paint, so every lookup below is a map read. */
+var NAV;
+function buildNav() {
+  NAV = {parent: {}, kids: {"": []}, holder: {}};
+  var vis = visible(), on = {};
+  vis.forEach(function (r) { on[r.id] = 1; });
+  if (inHolderView()) {
+    topItems().forEach(function (h) { NAV.kids[""].push(h.id); NAV.holder[h.id] = h; NAV.parent[h.id] = null; NAV.kids[h.id] = []; });
+    vis.forEach(function (r) {
+      var p = r.parent && on[r.parent] && holderKey(BYID[r.parent]) === holderKey(r) ? r.parent : "h:" + (holderKey(r) || "");
+      NAV.parent[r.id] = p; (NAV.kids[p] = NAV.kids[p] || []).push(r.id);
+    });
+  } else {
+    var top = topItems()[0].r.id;
+    vis.forEach(function (r) {
+      var p = r.parent && on[r.parent] ? r.parent : null;
+      NAV.parent[r.id] = p;
+      if (p) (NAV.kids[p] = NAV.kids[p] || []).push(r.id);
+      else NAV.kids[""].push(r.id);
+    });
+    NAV.home = top;
+  }
+  Object.keys(NAV.kids).forEach(function (k) {
+    if (k === "") return;
+    NAV.kids[k].sort(function (a, b) { var x = title(a), y = title(b); return x < y ? -1 : x > y ? 1 : 0; });
+  });
+}
+function kidsOf(id) { return NAV.kids[id == null ? "" : id] || []; }
+function title(id) { return id.indexOf("h:") === 0 ? NAV.holder[id].title : BYID[id].title; }
+function label(id) { return id.indexOf("h:") === 0 ? NAV.holder[id].title : BYID[id].title + " · " + shortB(BYID[id].branch); }
+/* Roll-up under any node, in one walk. */
+function rollNode(id) {
+  var o = {seats: 0, people: 0, fill: 0, fillNew: 0, isNew: 0, leaving: 0, match: 0};
+  kidsOf(id).forEach(function (c) {
+    var r = BYID[c], x = rollNode(c);
+    o.seats += 1 + x.seats; o.people += r.filled + x.people;
+    o.fill += open(r) + x.fill; o.fillNew += (r.isNew ? open(r) : 0) + x.fillNew; o.isNew += (r.isNew ? 1 : 0) + x.isNew;
+    o.leaving += leavingIn(r) + x.leaving; o.match += (anyFilter() && matches(r) ? 1 : 0) + x.match;
+  });
+  return o;
+}
+/* The window: a root (row 1), its family (row 2), and at most ONE opened family (row 3).
+   Deeper than that, the window slides down; it never grows. */
+function homeWindow() { ST.R = inHolderView() ? null : NAV.home; ST.O = null; }
+function goTo(id) {
+  if (!inHolderView() && id === NAV.home) { homeWindow(); return; }
+  var p = NAV.parent[id];
+  if (p == null && !inHolderView()) { ST.R = id; ST.O = null; return; }
+  ST.R = p; ST.O = id;
+}
+/* Find: put the target in sight with its parent and grandparent around it. */
+function reveal(id) {
+  if (!inHolderView() && id === NAV.home) { homeWindow(); return; }
+  var p = NAV.parent[id];
+  if (p == null) { ST.R = null; ST.O = inHolderView() ? id : null; return; }
+  if (!inHolderView() && p === NAV.home) { ST.R = p; ST.O = null; return; }
+  var g = NAV.parent[p];
+  if (g == null && !inHolderView()) { ST.R = p; ST.O = null; return; }
+  ST.R = g; ST.O = p;
+}
+function upOne() {
+  if (ST.R == null) { ST.O = null; return; }
+  var p = NAV.parent[ST.R];
+  if (p == null && !inHolderView()) { ST.O = null; return; }
+  ST.O = ST.R; ST.R = p;
+}
+function atHome() { return inHolderView() ? (ST.R == null && !ST.O) : (ST.R === NAV.home && !ST.O); }
+
+/* ---------- desktop chart ---------- */
+var STACK_MIN = 5, BOX_SLOT = 222;
+function fitCount() { return Math.max(2, Math.floor((Math.min(window.innerWidth, 1440) - 80) / BOX_SLOT)); }
+function seatBox(id, where) {
+  if (id.indexOf("h:") === 0) return holderBox(NAV.holder[id], where);
+  var r = BYID[id], kids = kidsOf(id), ro = kids.length ? rollNode(id) : null;
+  var cls = "box" + (where === "root" && ST.R === NAV.home && !inHolderView() ? " root" : "") + toneCls(r)
+          + (anyFilter() && !matches(r) && !(ro && ro.match) ? " dim" : "") + (ST.focus === id ? " focus" : "") + (ST.O === id ? " opened" : "");
+  var sub = [shortB(r.branch), r.dept || "No department"].join(" · ");
+  if (P().scope === id) sub += " · reports above your view";
+  var chips = chipsFor(r) + (ro && ro.match ? '<span class="chip info">' + ro.match + " matching below</span>" : "");
+  return '<button type="button" class="' + cls + '" data-act="seat" data-id="' + id + '" id="b-' + id + '">'
+    + '<div class="ti">' + esc(r.title) + '</div><div class="su">' + esc(sub) + '</div>'
+    + '<div class="who">' + whoLine(r) + '</div>'
+    + (ro ? '<div class="roll">' + rollWords(ro) + needsLine(ro) + '</div>' : "")
+    + (chips ? '<div class="chips">' + chips + '</div>' : "")
+    + '</button>';
+}
+/* Multi-person seat: a person with a replacement plan is named first, flag before the name (HR only). */
+function whoLine(r) {
+  if (!r.people.length) return "Nobody in this seat";
+  var ppl = r.people.slice().sort(function (a, b) { return (showPrivate() && b.plan ? 1 : 0) - (showPrivate() && a.plan ? 1 : 0); });
+  if (r.seats > 1) return r.filled + " of " + r.seats + " filled · " + pname(ppl[0]) + (ppl.length > 1 ? " +" + (ppl.length - 1) : "");
+  return pname(ppl[0]);
+}
+/* "Below:" so the line can never be read as being about this box itself. */
+function needsLine(o) {
+  var w = [];
+  if (o.fill) w.push(o.fill + " to fill" + (o.fillNew ? " (" + o.fillNew + " new)" : ""));
+  if (o.isNew && o.isNew > o.fillNew) w.push((o.isNew - o.fillNew) + " new seat" + (o.isNew - o.fillNew === 1 ? "" : "s") + " filled");
+  if (o.leaving) w.push(o.leaving + " leaving");
+  return w.length ? '<br><span class="needs">Below: ' + esc(w.join(" · ")) + "</span>" : "";
+}
+function navBtn(id, where) {
+  var n = kidsOf(id).length;
+  if (!n || where === "root") return "";
+  if (where === "drawer") return '<button type="button" class="fold noprint" data-act="slide" data-id="' + esc(id) + '">Show the ' + n + " below</button>";
+  var opened = ST.O === id;
+  return '<button type="button" class="fold noprint" data-act="openrow" data-id="' + esc(id) + '" aria-expanded="' + opened + '" aria-controls="drawer">'
+    + (opened ? "Fold the " + n + " below" : "Show the " + n + " below") + "</button>";
+}
+function chipsFor(r) {
+  var c = "", o = open(r), lv = leavingIn(r);
+  if (r.isNew) c += '<span class="chip new">New seat · ' + r.isNew + "</span>";
+  if (o) c += '<span class="chip ' + (r.isNew ? "new" : "amber") + '">' + o + " to fill</span>";
+  if (lv) c += '<span class="chip amber">' + lv + " leaving</span>";
+  if (r.people.some(function (p) { return p.hire; })) c += '<span class="chip green">New hire placed</span>';
+  if (P().records && r.mismatch) c += '<span class="chip info">18 report here on their records</span>';
+  if (P().records && r.mixed) c += '<span class="chip info">Holds people of 3 managers</span>';
+  return c;
+}
+/* A family: seats that lead teams in a row (wrapped into rows when they do not fit),
+   then the seats with nobody under them as one compact card. */
+function familyHTML(ids, parentId, where) {
+  var parents = ids.filter(function (k) { return kidsOf(k).length; });
+  var leaves = ids.filter(function (k) { return !kidsOf(k).length; });
+  var rowIds = leaves.length >= STACK_MIN ? parents : parents.concat(leaves);
+  var boxes = rowIds.map(function (k) { return '<div class="br">' + seatBox(k, where) + navBtn(k, where) + "</div>"; }).join("");
+  var row = "";
+  if (rowIds.length && rowIds.length <= fitCount()) row = '<div class="kids' + (parentId == null ? " toprow" : "") + '">' + boxes + "</div>";
+  else if (rowIds.length) row = '<div class="wrapfam' + (parentId == null ? " toprow" : "") + '"><div class="sh">' + rowIds.length + " " + (parentId == null ? "groups" : "seats lead teams under " + esc(title(parentId))) + '. Shown in rows so they fit the screen.</div><div class="wgrid">' + boxes + "</div></div>";
+  var stack = leaves.length >= STACK_MIN ? stackHTML(leaves.map(function (k) { return BYID[k]; }), parentId, rowIds.length > 0) : "";
+  return row + stack;
+}
+function stackHTML(leaves, parentId, belowRow) {
+  var fill = leaves.reduce(function (a, r) { return a + open(r); }, 0);
+  var people = leaves.reduce(function (a, r) { return a + r.filled; }, 0);
+  var rows = leaves.map(function (r) {
+    var o = open(r), lv = leavingIn(r);
+    var extra = [];
+    if (r.isNew) extra.push("new seat");
+    if (o) extra.push(o + " to fill");
+    if (lv) extra.push(lv + " leaving");
+    if (r.people.some(function (p) { return p.hire; })) extra.push("new hire placed");
+    if (P().records && r.mismatch) extra.push("18 report here on records");
+    return '<button type="button" class="srow' + toneCls(r) + (anyFilter() && !matches(r) ? " dim" : "") + (ST.focus === r.id ? " focus" : "")
+      + '" data-act="seat" data-id="' + r.id + '" id="b-' + r.id + '"><div class="t1">' + esc(r.title)
+      + '</div><div class="t2">' + esc(shortB(r.branch)) + " · " + whoLine(r)
+      + (extra.length ? ' · <strong>' + esc(extra.join(", ")) + "</strong>" : "") + "</div></button>";
+  }).join("");
+  /* A long card spreads across the frame instead of growing tall (Sales: 54 seats). */
+  return '<div class="stackwrap' + (belowRow ? " below" : "") + (leaves.length > 12 ? " wide" : "") + '"><div class="stack"><div class="sh">' + (belowRow && parentId ? "Also under " + esc(title(parentId)) + ": " : "")
+    + leaves.length + " seats with nobody under them · " + people + " people"
+    + (fill ? " · " + fill + " to fill" : "") + '</div><div class="grid">' + rows + "</div></div></div>";
+}
+function holderBox(h, where) {
+  var o = rollNode(h.id);
+  var x = (ST.view === "branch" && h.id === "h:PITS") ? '<span class="chip info">Second branch record for Pitampura</span>' : "";
+  if (o.match) x += '<span class="chip info">' + o.match + " matching below</span>";
+  var act = where === "drawer" ? "slide" : (where === "root" ? "noop" : "openrow");
+  return '<button type="button" class="box' + (ST.O === h.id ? " opened" : "") + (anyFilter() && !o.match ? " dim" : "") + '" data-act="' + act + '" data-id="' + esc(h.id) + '">'
+    + '<div class="ti">' + esc(h.title) + '</div><div class="su">' + h.sub + '</div>'
+    + '<div class="roll">' + rollWords(o) + needsLine(o) + "</div>"
+    + (x ? '<div class="chips">' + x + "</div>" : "") + "</button>";
+}
+function noMgrBox() {
+  return '<div class="br"><button type="button" class="box dashed amber" data-act="nomgr">'
+    + '<div class="ti">No reporting manager</div><div class="su">Not in any seat, and no manager on their record</div>'
+    + '<div class="roll">' + NOMGR.length + " people</div>"
+    + '<div class="chips"><span class="chip amber">Needs a manager</span></div></button></div>';
+}
+/* Where you are: sticky, with a way back at every step. */
+function crumbHTML() {
+  var path = [], at = ST.R;
+  while (at != null) { path.unshift(at); at = NAV.parent[at]; }
+  var top = inHolderView() ? (ST.view === "branch" ? "All branches" : "All departments") : null;
+  var parts = [];
+  if (top) parts.push(ST.R == null && !ST.O ? "<strong>" + top + "</strong>" : '<button type="button" class="btn link" data-act="home">' + top + "</button>");
+  path.forEach(function (id) { parts.push(id === ST.R && !ST.O ? "<strong>" + esc(label(id)) + "</strong>" : '<button type="button" class="btn link" data-act="goto" data-id="' + esc(id) + '">' + esc(label(id)) + "</button>"); });
+  if (ST.O) parts.push("<strong>" + esc(label(ST.O)) + "</strong>");
+  return '<nav class="crumb noprint" aria-label="Where you are in the chart"><span class="lab">You are here:</span> ' + parts.join(' <span aria-hidden="true">&rsaquo;</span> ')
+    + (atHome() ? "" : ' <span class="crumbacts"><button type="button" class="btn" data-act="upone">Up one level</button><button type="button" class="btn" data-act="home">Back to the top</button></span>') + "</nav>";
+}
+function chartHTML() {
+  var body;
+  if (ST.R == null) {
+    body = familyHTML(kidsOf(null), null, "row2");
+  } else {
+    body = '<div class="r1"><div class="br">' + seatBox(ST.R, "root") + "</div>" + (ST.R === NAV.home && !inHolderView() && !P().scope ? noMgrBox() : "") + "</div>"
+      + familyHTML(kidsOf(ST.R), ST.R, "row2");
+  }
+  if (ST.O) {
+    body += '<section class="drawer" id="drawer" aria-label="Under ' + esc(label(ST.O)) + '"><div class="dh"><span>Under <strong>' + esc(label(ST.O)) + "</strong> · " + rollWords(rollNode(ST.O))
+      + '</span><button type="button" class="btn noprint" data-act="openrow" data-id="' + esc(ST.O) + '">Fold</button></div>'
+      + familyHTML(kidsOf(ST.O), ST.O, "drawer") + "</section>";
+  }
+  return '<div class="printhead">DTC · Positions · as at 21 Oct 2026 · Confidential, for management · Sample names · Showing: ' + esc(ST.R ? label(ST.R) : "the top") + "</div>"
+    + crumbHTML() + '<div class="chartwrap"><div class="chart3">' + body + "</div></div>";
+}
+
+/* ---------- list ---------- */
+function listHTML() {
+  var rows = visible().filter(matches);
+  if (!rows.length) return emptyFilter();
+  var head = "<tr><th>Seat</th><th>Reports to</th><th>Branch</th><th>Department</th><th>Who is in it</th><th class=num>Filled</th><th class=num>To fill</th>" + (P().edit ? "<th></th>" : "") + "</tr>";
+  var body = rows.map(function (r) {
+    /* Flagged people first, so a plan in a 31-person seat is not hidden behind "and 29 more" (HR only). */
+    var ppl = r.people.slice().sort(function (a, b) { return (showPrivate() && b.plan ? 1 : 0) - (showPrivate() && a.plan ? 1 : 0); });
+    var who = ppl.slice(0, 2).map(function (p) { return pname(p) + (p.leaving && P().leaving ? ' <span class="chip amber">leaving ' + p.leaving + "</span>" : "") + (p.hire ? ' <span class="chip green">new hire</span>' : ""); }).join("<br>")
+      + (r.people.length > 2 ? "<br>and " + (r.people.length - 2) + " more" : "") + (r.people.length ? "" : "Nobody in this seat");
+    return '<tr class="' + toneCls(r) + '"><td><strong>' + esc(r.title) + "</strong>" + (r.isNew ? ' <span class="chip new">New seat · ' + r.isNew + "</span>" : "") + "</td><td>" + esc(r.parent && BYID[r.parent] ? BYID[r.parent].title : "Top of the chart") + "</td><td>" + esc(shortB(r.branch)) + "</td><td>" + esc(r.dept || "None") + "</td><td>" + who + "</td><td class=num>" + r.filled + " of " + r.seats + "</td><td class=num>" + (open(r) ? "<strong>" + open(r) + "</strong>" : "None") + "</td>"
+      + (P().edit ? '<td><button type="button" class="btn" data-act="seat" data-id="' + r.id + '">Open</button></td>' : "") + "</tr>";
+  }).join("");
+  return '<div class="listwrap"><table><caption class="asat" style="text-align:left;padding:8px 10px">' + rows.length + " of " + visible().length + " seats</caption><thead>" + head + "</thead><tbody>" + body + "</tbody></table></div>";
+}
+function emptyFilter() {
+  return '<div class="err" style="border-left-color:var(--border2)"><strong>No seat matches those filters.</strong><p>Try another branch, or show every seat.</p><button type="button" class="btn" data-act="clear">Show every seat</button></div>';
+}
+
+/* ---------- phone outline: one level at a time, same NAV model, with a breadcrumb ---------- */
+function outlineHTML() {
+  var at = ST.trail[ST.trail.length - 1] || null, h = '<div class="outline">';
+  var top = inHolderView() ? (ST.view === "branch" ? "All branches" : "All departments") : "Top";
+  var crumbs = [at ? '<button type="button" class="btn link" data-act="trail" data-n="0">' + top + "</button>" : "<strong>" + top + "</strong>"];
+  ST.trail.forEach(function (id, i) {
+    crumbs.push(i === ST.trail.length - 1 ? "<strong>" + esc(title(id)) + "</strong>" : '<button type="button" class="btn link" data-act="trail" data-n="' + (i + 1) + '">' + esc(title(id)) + "</button>");
+  });
+  h += '<nav class="crumb" aria-label="Where you are in the chart"><span class="lab">You are here:</span> ' + crumbs.join(' <span aria-hidden="true">&rsaquo;</span> ') + "</nav>";
+  if (!at) {
+    h += '<p class="asat">Tap a row to see what is under it.</p>';
+  } else {
+    var o = rollNode(at);
+    h += '<div class="here"><div style="font-weight:700;font-size:var(--fs-md)">' + esc(title(at)) + "</div>"
+      + (at.indexOf("h:") === 0 ? "" : '<div class="t2">' + esc(shortB(BYID[at].branch) + " · " + (BYID[at].dept || "No department")) + "</div>")
+      + '<div class="t2">' + rollWords(o) + needsLine(o) + "</div>"
+      + (at.indexOf("h:") === 0 ? "" : '<button type="button" class="btn" style="margin-top:8px" data-act="seat" data-id="' + at + '">Who is in this seat</button>') + "</div>"
+      + '<button type="button" class="btn" data-act="up" style="margin-bottom:10px">Up one level</button>';
+  }
+  kidsOf(at).forEach(function (id) {
+    var kids = kidsOf(id).length;
+    if (id.indexOf("h:") === 0) {
+      var ho = rollNode(id);
+      h += '<button type="button" class="orow' + (anyFilter() && !ho.match ? " dim" : "") + '" data-act="down" data-id="' + esc(id) + '"><span><span class="t1">' + esc(title(id)) + '</span><br><span class="t2">' + rollWords(ho) + needsLine(ho) + (ho.match ? " · <strong>" + ho.match + " matching</strong>" : "") + '</span></span><span class="chev" aria-hidden="true">&rsaquo;</span></button>';
+      return;
+    }
+    var r = BYID[id], o = open(r), ro = kids ? rollNode(id) : null;
+    var extra = [];
+    if (r.isNew) extra.push("new seat");
+    if (o) extra.push(o + " to fill");
+    if (leavingIn(r)) extra.push(leavingIn(r) + " leaving");
+    if (ro && ro.match) extra.push(ro.match + " matching below");
+    h += '<button type="button" class="orow' + toneCls(r) + (anyFilter() && !matches(r) && !(ro && ro.match) ? " dim" : "") + (ST.focus === id ? " focus" : "") + '" data-act="' + (kids ? "down" : "seat") + '" data-id="' + id + '"><span><span class="t1">' + esc(r.title) + '</span><br><span class="t2">' + esc(shortB(r.branch)) + " · " + (ro ? rollWords(ro) : whoLine(r)) + (extra.length ? " · <strong>" + esc(extra.join(", ")) + "</strong>" : "")
+      + (ro ? needsLine(ro) : "") + '</span></span><span class="chev" aria-hidden="true">' + (kids ? "&rsaquo;" : "") + "</span></button>";
+  });
+  if (!at && !inHolderView() && !P().scope) h += '<button type="button" class="orow dashed amber" data-act="nomgr"><span><span class="t1">No reporting manager</span><br><span class="t2">' + NOMGR.length + ' people · not in any seat</span></span><span class="chev" aria-hidden="true">&rsaquo;</span></button>';
+  return h + "</div>";
+}
+
+/* ---------- tiles ---------- */
+function tilesHTML() {
+  /* The Replacement plans filter only greys the chart. The tiles ignore it, so no tile
+     ever becomes a count of planned replacements ("3 seats" would read as 3 plans). */
+  var keep = ST.fPlan; ST.fPlan = "";
+  var rows = visible().filter(matches);
+  ST.fPlan = keep;
+  var people = rows.reduce(function (a, r) { return a + r.filled; }, 0);
+  var fill = rows.reduce(function (a, r) { return a + open(r); }, 0);
+  var lv = rows.reduce(function (a, r) { return a + leavingIn(r); }, 0);
+  var pl = rows.reduce(function (a, r) { return a + planned(r); }, 0);
+  var t = [];
+  function tile(n, l, tone, act) {
+    return act ? '<button type="button" class="tile ' + (tone || "") + '" data-act="' + act + '"><div class="n">' + n + '</div><div class="l">' + l + "</div></button>"
+               : '<div class="tile"><div class="n">' + n + '</div><div class="l">' + l + "</div></div>";
+  }
+  var nw = rows.filter(function (r) { return r.isNew; }).length;
+  var fillOld = rows.reduce(function (a, r) { return a + (r.isNew ? 0 : open(r)); }, 0);
+  t.push(tile(rows.length + " seats", people + " people in them"));
+  t.push(tile(fill ? fill + " to fill" : "None to fill", fill ? (fillOld + " in existing seats, " + (fill - fillOld) + " in new") : "Every seat is filled", fill ? "amber" : "", fill ? "show-fill" : null));
+  t.push(tile(nw ? nw + " new seat" + (nw === 1 ? "" : "s") : "No new seats", "Made in the last 30 days", nw ? "new" : "", nw ? "show-new" : null));
+  /* Leaving is HR-only in v2: for anyone else the tile is absent, never "Nobody leaving" (that would be untrue). */
+  if (P().leaving) t.push(tile(lv ? lv + " leaving" : "Nobody leaving", "in the next 60 days", lv ? "amber" : "", lv ? "show-leaving" : null));
+  if (!P().scope) {
+    t.push(tile(UNSEATED.length + " in no seat", "Not on this chart yet", "amber", "unseated"));
+    t.push(tile(NOMGR.length + " no manager", "No reporting manager", "amber", "nomgr"));
+  }
+  return '<div class="tiles">' + t.join("") + "</div>";
+}
+
+/* ---------- page ---------- */
+function render() {
+  var app = document.getElementById("app");
+  app.className = "app" + (ST.phone ? " is-phone" : "");
+  document.documentElement.setAttribute("data-theme", val("d-theme"));
+  var h = '<div class="head"><div><h1>Positions</h1><div class="sub">'
+    + (P().scope ? "Your part of the organisation: Manager · Delhi and the seats under it." : "Every seat in the organisation, who is in it, and which are empty.")
+    + "</div></div>" + (P().edit ? '<button type="button" class="btn primary" data-act="toast" data-msg="Opens today\'s Add a seat dialog. Unchanged in this slice.">+ Add a seat</button>' : "") + "</div>";
+  if (ST.state === "loading") {
+    app.innerHTML = h + '<p class="asat" role="status">Loading the seats&hellip;</p><div class="tiles">' + '<div class="skel" style="width:140px"></div>'.repeat(4) + '</div><div class="skel" style="height:260px"></div>';
+    return;
+  }
+  if (ST.state === "error") {
+    app.innerHTML = h + '<div class="err" role="alert"><strong>We could not load the seats.</strong><p>Check your connection, then try again. Nothing you changed is lost.</p><button type="button" class="btn" data-act="retry">Try again</button></div>';
+    return;
+  }
+  buildNav();
+  if (ST.R === undefined) homeWindow();
+  h += '<p class="asat">Figures as at 21 Oct 2026, 09:40. Names are Sample.</p>' + tilesHTML();
+
+  /* View: one control, always shown, never among the filters */
+  var views = [["reporting", "Reporting lines"], ["branch", "By branch"], ["dept", "By department"], ["list", "List"]];
+  h += '<div class="toolbar"><div class="fld"><div class="lab" id="lab-view">View</div><div class="seg" role="group" aria-labelledby="lab-view">'
+    + views.map(function (v) { return '<button type="button" data-act="view" data-v="' + v[0] + '" aria-pressed="' + (ST.view === v[0]) + '">' + v[1] + "</button>"; }).join("")
+    + "</div></div>";
+  h += '<div class="fld find"><label class="lab" for="q">Find a person or a seat</label><input id="q" type="search" autocomplete="off" placeholder="Type a name or a seat, e.g. RSO" value="' + esc(ST.q) + '"><div id="hits"></div></div>';
+  if (!ST.phone) h += '<div class="fld"><div class="lab">&nbsp;</div><button type="button" class="btn" data-act="print">Print this view</button></div>';
+  h += "</div>";
+
+  /* filters: one visible bar. Filters GREY what does not match (Surbhi, 15 Oct); boxes say how many matches sit below them. */
+  var brs = {}; visible().forEach(function (r) { brs[r.branch] = 1; });
+  h += '<div class="filters" role="group" aria-label="Filters"><div class="in">'
+    + '<div class="fld"><label class="lab" for="f-br">Branch</label><select id="f-br"><option value="">All branches</option>'
+    + Object.keys(brs).sort().map(function (b) { return '<option value="' + b + '"' + (ST.fBranch === b ? " selected" : "") + ">" + esc(shortB(b)) + "</option>"; }).join("") + "</select></div>"
+    + '<div class="fld"><label class="lab" for="f-show">Show</label><select id="f-show"><option value="">Every seat</option><option value="fill"' + (ST.fShow === "fill" ? " selected" : "") + '>Only seats with places to fill</option><option value="new"' + (ST.fShow === "new" ? " selected" : "") + '>Only new seats</option>'
+    + (P().leaving ? '<option value="leaving"' + (ST.fShow === "leaving" ? " selected" : "") + '>Only seats where somebody is leaving</option>' : "") + "</select></div>"
+    /* HR Manager only. For anyone else the control does not exist: not hidden, not greyed. */
+    + (showPrivate() ? '<div class="fld private"><label class="lab" for="f-plan">' + flag() + ' Replacement plans</label><select id="f-plan"><option value="">Show every seat</option><option value="1"' + (ST.fPlan ? " selected" : "") + ">Only seats with a replacement planned</option></select></div>" : "")
+    + (anyFilter() ? '<div class="fld"><div class="lab">&nbsp;</div><button type="button" class="btn" data-act="clear">Reset view</button></div>' : "")
+    + (anyFilter() ? '<p class="asat" style="flex-basis:100%;margin:0">Seats that do not match are greyed. A box says how many matching seats are below it.</p>' : "")
+    + "</div></div>";
+
+  /* One-line key. The private entry exists only for the HR Manager; for anyone else
+     there is nothing to explain, so nothing hints that such a mark exists. */
+  {
+    h += '<div class="legend noprint-key" aria-label="Colour key">'
+      + (ST.key
+        ? '<span><i class="sw sw-new" aria-hidden="true"></i>New seat (made in the last 30 days)</span>'
+          + '<span><i class="sw sw-fill" aria-hidden="true"></i>To fill (existing seat)</span>'
+          + (showPrivate() ? '<span class="private"><i class="sw sw-plan" aria-hidden="true"></i>' + flag() + " Replacement planned for this person · only HR Managers see this</span>" : "")
+          + '<button type="button" class="btn link" data-act="key">Hide the key</button>'
+        : '<button type="button" class="btn link" data-act="key">Show the colour key</button>')
+      + (P().plan ? '<button type="button" class="btn link" data-act="hidepriv">' + (ST.hidePrivate ? "Show replacement plans" : "Hide replacement plans (before you share your screen)") + "</button>" : "")
+      + "</div>";
+  }
+
+  if (ST.focus) {
+    var f = BYID[ST.focus];
+    h += '<div class="focusline" role="status">Showing <strong>' + esc(ST.focusLabel || f.title) + "</strong>&nbsp;in " + esc(f.title + " · " + shortB(f.branch)) + '. <button type="button" class="btn link" data-act="unfocus">Clear</button></div>';
+  }
+
+  if (ST.view === "list") h += listHTML();
+  else if (ST.phone) h += outlineHTML();
+  else h += chartHTML();
+  app.innerHTML = h;
+  wireInputs();
+  if (ST.focus && !ST.phone) {
+    var el = document.getElementById("b-" + ST.focus);
+    if (el) el.scrollIntoView({block: "center", inline: "center"});
+  }
+}
+function wireInputs() {
+  var q = document.getElementById("q");
+  q.addEventListener("input", function () { ST.q = q.value; paintHits(); });
+  q.addEventListener("keydown", function (e) { if (e.key === "Escape") { ST.q = ""; q.value = ""; paintHits(); } });
+  document.getElementById("f-br").addEventListener("change", function (e) { ST.fBranch = e.target.value; ST.trail = []; render(); });
+  document.getElementById("f-show").addEventListener("change", function (e) { ST.fShow = e.target.value; ST.trail = []; render(); });
+  var fp = document.getElementById("f-plan");
+  if (fp) fp.addEventListener("change", function (e) { ST.fPlan = e.target.value; ST.trail = []; render(); });
+}
+function paintHits() {
+  var box = document.getElementById("hits"), q = ST.q.trim().toLowerCase();
+  if (q.length < 2) { box.innerHTML = ""; return; }
+  var out = [];
+  visible().forEach(function (r) {
+    if (r.title.toLowerCase().indexOf(q) > -1) out.push({id: r.id, a: r.title, b: shortB(r.branch) + " · " + r.filled + " of " + r.seats + " filled"});
+    r.people.forEach(function (p) { if (p.name.toLowerCase().indexOf(q) > -1) out.push({id: r.id, who: p.name, a: p.name, b: r.title + " · " + shortB(r.branch)}); });
+  });
+  if (!P().scope) UNSEATED.forEach(function (p) { if (p.name.toLowerCase().indexOf(q) > -1) out.push({unseated: true, a: p.name, b: "In no seat yet · " + p.title + " · " + shortB(p.branch)}); });
+  var shown = out.slice(0, 12);
+  box.innerHTML = '<div class="hits" role="listbox" aria-label="Matches">' + (shown.length ? shown.map(function (x) {
+    return '<button type="button" class="hit" role="option" data-act="' + (x.unseated ? "unseated" : "pick") + '" data-id="' + (x.id || "") + '" data-who="' + esc(x.who || "") + '"><div>' + esc(x.a) + '</div><div class="t">' + esc(x.b) + "</div></button>";
+  }).join("") + (out.length > 12 ? '<div class="none">' + (out.length - 12) + " more. Type more of the name.</div>" : "")
+  : '<div class="none">No seat or person called that' + (P().scope ? " in your part of the organisation" : "") + ".</div>") + "</div>";
+}
+
+/* ---------- sheets ---------- */
+function sheet(title, body, foot) {
+  var L = document.getElementById("layer");
+  L.innerHTML = '<div class="scrim" data-act="close"></div><div class="sheet' + (ST.phone ? " phone" : "") + '" role="dialog" aria-modal="true" aria-labelledby="sh-t">'
+    + '<div class="sh-h"><h2 id="sh-t" tabindex="-1">' + title + '</h2><button type="button" class="btn" data-act="close" aria-label="Close">Close</button></div>'
+    + '<div class="sh-b">' + body + "</div>" + (foot ? '<div class="sh-f">' + foot + "</div>" : "") + "</div>";
+  document.getElementById("sh-t").focus();
+}
+function closeSheet() { document.getElementById("layer").innerHTML = ""; ST.sheet = null; }
+function seatSheet(id, flash) {
+  var r = BYID[id]; ST.sheet = {kind: "seat", id: id};
+  var parent = r.parent && BYID[r.parent] ? BYID[r.parent].title + " · " + shortB(BYID[r.parent].branch) : "nobody (top of the chart)";
+  var b = '<div class="sub">' + esc(shortB(r.branch) + " · " + (r.dept || "No department")) + " · reports to " + esc(parent) + "</div>"
+    + '<div class="facts"><div><b>' + r.filled + " of " + r.seats + '</b><div class="sub">filled</div></div><div><b>' + (open(r) || "None") + '</b><div class="sub">to fill</div></div></div>';
+  if (r.isNew) b += '<div class="note new"><span class="chip new">New seat · ' + r.isNew + "</span> Made in the last 30 days, after the chart was first set up." + (open(r) ? " Its place to fill is a new job, not a replacement." : "") + "</div>";
+  if (flash) b += '<div class="note ok" role="status">' + flash + "</div>";
+  if (P().records && r.mismatch) {
+    b += '<div class="note info"><h3>18 people report to this person on their employee records</h3>Their seats sit under other seats on this chart, so nobody shows under this box:<ul>'
+      + r.mismatch.map(function (m) { return "<li>" + esc(m[0]) + ": " + m[1] + "</li>"; }).join("") + "</ul>"
+      + (P().edit ? '<p style="margin:8px 0 0">To fix it, open each seat and set <strong>Reports to</strong> to this seat. A seat shared with another manager\'s people needs splitting first.</p>' : '<p style="margin:8px 0 0">HR can move these seats under this one.</p>') + "</div>";
+  }
+  if (P().records && r.mixed) {
+    b += '<div class="note info"><h3>This seat holds the people of 3 managers</h3><ul>' + r.mixed.map(function (m) { return "<li>" + m[1] + " report to " + esc(m[0]) + "</li>"; }).join("")
+      + "</ul>That is why it reads like one person with 35 others in their seat." + (P().edit ? " Give the head a seat of their own, then move each group under its own manager." : "") + "</div>";
+  }
+  b += '<h3 style="margin:14px 0 4px;font-size:var(--fs-base)">Who is in it</h3>';
+  if (!r.people.length) b += '<p class="sub">Nobody is in this seat.</p>';
+  b += '<div style="max-height:340px;overflow:auto">' + r.people.map(function (p, i) {
+    var c = "";
+    if (p.hire) c += ' <span class="chip green">Joined ' + p.hire + ", hired for this seat</span>";
+    if (p.leaving && P().leaving) c += ' <span class="chip amber">Leaving ' + p.leaving + "</span>";
+    if (p.plan && showPrivate()) c += ' <span class="chip plan private">Replacement planned until ' + p.plan.until + "</span>";
+    var act = "";
+    if (showPrivate()) act = p.plan ? '<button type="button" class="btn link private" data-act="unplan" data-id="' + id + '" data-i="' + i + '">Remove the plan</button>'
+                               : '<button type="button" class="btn link private" data-act="plan" data-id="' + id + '" data-i="' + i + '">Plan a replacement</button>';
+    return '<div class="prow"><div>' + pname(p) + c + "</div>" + act + "</div>";
+  }).join("") + "</div>";
+  var f = "";
+  if (P().edit) {
+    if (open(r)) f += '<button type="button" class="btn" data-act="toast" data-msg="Makes a job opening, not advertised, as Advertise it does today.">Advertise it</button>';
+    f += '<button type="button" class="btn" data-act="toast" data-msg="Opens today\'s seat dialog. Unchanged in this slice.">Change this seat</button>';
+  }
+  if (!ST.phone && ST.view !== "list") f += '<button type="button" class="btn" data-act="pick" data-id="' + id + '">Show it on the chart</button>';
+  sheet(esc(r.title), b, f);
+}
+function planSheet(id, i) {
+  var p = BYID[id].people[i], first = p.name.split(" ")[0];
+  ST.sheet = {kind: "plan", id: id, i: i};
+  var b = '<p>A private note so HR can start finding cover before a seat empties. It is not a score, and nothing works it out for you.</p>'
+    + '<div class="note info"><ul style="margin:0">'
+    + "<li>Only people with the HR Manager role see it.</li>"
+    + "<li>" + esc(first) + " does not see it on any screen, and neither does their manager.</li>"
+    + "<li>It is never used in reviews, ratings or pay.</li>"
+    + "<li>It ends by itself after 90 days unless HR renews it. It is erased when " + esc(first) + " leaves this seat.</li></ul></div>"
+    + '<div class="fld" style="margin-top:10px"><label class="lab" for="why">Why (optional)</label><select id="why" style="font-size:16px;min-height:40px;width:100%"><option value="">Do not record a reason</option><option>Has said they may leave</option><option>Contract ends soon</option><option>Long leave expected</option></select>'
+    + '<div class="sub" style="margin-top:4px">A short list on purpose: no free text about a person\'s private life.</div></div>';
+  sheet("Plan a replacement for " + esc(p.name) + "?", b,
+    '<button type="button" class="btn" data-act="back" data-id="' + id + '">Cancel</button><button type="button" class="btn primary" data-act="plansave" data-id="' + id + '" data-i="' + i + '">Save the plan</button>');
+}
+function offerSheet(id, i) {
+  var p = BYID[id].people[i];
+  ST.sheet = {kind: "offer", id: id, i: i};
+  sheet("Start hiring now?", '<div class="note ok" role="status">Saved. A replacement is planned for ' + esc(p.name) + " until 19 Jan 2027.</div>"
+    + "<p>We can make a job opening for " + esc(BYID[id].title + " · " + shortB(BYID[id].branch)) + " now. It is <strong>not advertised</strong>: it stays with HR until somebody publishes it.</p>"
+    + '<div class="note amber"><h3>Before you do</h3>Anyone who can read job openings will see this one. If ' + esc(p.name.split(" ")[0]) + " might hear of it, wait.</div>",
+    '<button type="button" class="btn" data-act="back" data-id="' + id + '">Not now</button><button type="button" class="btn primary" data-act="opening" data-id="' + id + '">Make an opening, not advertised</button>');
+}
+function noMgrSheet() {
+  ST.sheet = {kind: "nomgr"};
+  var b = "<p>These people have no reporting manager on their employee record, and no seat. Until they have one, nobody approves their leave, and they appear nowhere on this chart.</p>"
+    + '<table><thead><tr><th>Name</th><th>Job role</th><th>Branch</th><th>Joined</th>' + (P().edit ? "<th></th>" : "") + "</tr></thead><tbody>"
+    + NOMGR.map(function (p) { return "<tr><td>" + esc(p.name) + "</td><td>" + esc(p.title) + "</td><td>" + esc(shortB(p.branch)) + "</td><td>" + p.joined + "</td>" + (P().edit ? '<td><button type="button" class="btn link" data-act="toast" data-msg="Opens their employee record at Reports To. Already there in Frappe HR.">Set manager</button></td>' : "") + "</tr>"; }).join("")
+    + "</tbody></table>";
+  sheet("No reporting manager · " + NOMGR.length + " people", b, "");
+}
+function unseatedSheet() {
+  ST.sheet = {kind: "unseated"};
+  var by = {};
+  UNSEATED.forEach(function (p) { (by[p.branch] = by[p.branch] || []).push(p); });
+  var b = "<p>" + UNSEATED.length + " of 445 active people hold no seat, so they are not on this chart and not in the counts above. Most joined in the last two months.</p>";
+  Object.keys(by).sort().forEach(function (br) {
+    var list = by[br];
+    b += '<h3 style="margin:14px 0 4px;font-size:var(--fs-base)">' + esc(shortB(br)) + " · " + list.length + "</h3>";
+    if (br === "PIT") b += '<div class="note amber">There is no seat at Pitampura. The Pitampura seats use a second branch record, "DTC - PITAMPURA". HR should merge the two branch records, or move these people.</div>';
+    var titles = {};
+    list.forEach(function (p) { titles[p.title] = (titles[p.title] || 0) + 1; });
+    b += "<ul>" + Object.keys(titles).map(function (t) {
+      var seat = ROWS.filter(function (r) { return r.title === t && r.branch === br; })[0];
+      return "<li>" + titles[t] + " " + esc(t) + (seat ? ' · matching seat: <button type="button" class="btn link" data-act="pick" data-id="' + seat.id + '">' + esc(seat.title + " · " + shortB(seat.branch)) + "</button> (" + seat.filled + " of " + seat.seats + ")" : " · no matching seat") + "</li>";
+    }).join("") + "</ul>";
+  });
+  sheet("In no seat · " + UNSEATED.length + " people", b, "");
+}
+
+/* ---------- events ---------- */
+document.addEventListener("click", function (e) {
+  var b = e.target.closest("[data-act]");
+  if (!b) { if (!e.target.closest(".find")) { var h = document.getElementById("hits"); if (h) h.innerHTML = ""; } return; }
+  var a = b.dataset.act, id = b.dataset.id;
+  if (a === "view") { ST.view = b.dataset.v; ST.trail = []; ST.R = undefined; ST.O = null; render(); }
+  /* the window: open one family at a time; deeper than that, slide down */
+  else if (a === "openrow") { ST.O = ST.O === id ? null : id; render(); }
+  else if (a === "slide") { ST.R = ST.O; ST.O = id; render(); scrollChartTop(); }
+  else if (a === "goto") { goTo(id); render(); }
+  else if (a === "home") { homeWindow(); render(); }
+  else if (a === "upone") { upOne(); render(); }
+  else if (a === "trail") { ST.trail = ST.trail.slice(0, +b.dataset.n); render(); }
+  else if (a === "noop") { }
+  else if (a === "seat") { seatSheet(id); }
+  else if (a === "pick") {
+    closeSheet(); ST.focus = id; ST.focusLabel = b.dataset.who || ""; ST.q = "";
+    if (ST.view === "list") ST.view = "reporting";
+    buildNav();
+    if (ST.phone) { var tr = [], at = NAV.parent[id]; while (at != null) { tr.unshift(at); at = NAV.parent[at]; } ST.trail = tr; }
+    else reveal(id);
+    render();
+  }
+  else if (a === "unfocus") { ST.focus = null; render(); }
+  else if (a === "down") { ST.trail.push(id); render(); window.scrollTo(0, 0); }
+  else if (a === "up") { ST.trail.pop(); render(); }
+  else if (a === "nomgr") { noMgrSheet(); }
+  else if (a === "unseated") { unseatedSheet(); }
+  else if (a === "show-fill") { ST.fShow = "fill"; render(); }
+  else if (a === "show-leaving") { ST.fShow = "leaving"; render(); }
+  else if (a === "show-new") { ST.fShow = "new"; render(); }
+  else if (a === "key") { ST.key = !ST.key; render(); }
+  else if (a === "hidepriv") { ST.hidePrivate = !ST.hidePrivate; ST.fPlan = ""; render(); }
+  else if (a === "clear") { ST.fBranch = ""; ST.fShow = ""; ST.fPlan = ""; render(); }
+  else if (a === "print") { window.print(); }
+  else if (a === "retry") { document.getElementById("d-state").value = "ok"; ST.state = "ok"; render(); }
+  else if (a === "close") { closeSheet(); }
+  else if (a === "plan") { planSheet(id, +b.dataset.i); }
+  else if (a === "back") { seatSheet(id); }
+  else if (a === "plansave") {
+    var p = BYID[id].people[+b.dataset.i];
+    p.plan = {on: "21 Oct", until: "19 Jan 2027", why: document.getElementById("why").value};
+    render(); offerSheet(id, +b.dataset.i);
+  }
+  else if (a === "unplan") { delete BYID[id].people[+b.dataset.i].plan; render(); seatSheet(id, "Plan removed. It is erased, not hidden."); }
+  else if (a === "opening") { seatSheet(id, 'Opening made: HR-OPN-2026-0007 <span class="sample">Sample</span>, not advertised. <a href="#" onclick="return false">Open it</a>'); }
+  else if (a === "toast") { toast(b.dataset.msg); }
+});
+document.addEventListener("keydown", function (e) { if (e.key === "Escape" && ST.sheet) closeSheet(); });
+function scrollChartTop() { var c = document.querySelector(".crumb"); if (c) c.scrollIntoView({block: "start"}); }
+function toast(m) {
+  var t = document.createElement("div"); t.className = "toast"; t.setAttribute("role", "status"); t.textContent = m;
+  document.body.appendChild(t); setTimeout(function () { t.remove(); }, 2600);
+}
+["d-persona", "d-device", "d-state"].forEach(function (id) { document.getElementById(id).addEventListener("change", function () { closeSheet(); reset(); render(); }); });
+document.getElementById("d-theme").addEventListener("change", render);
+document.getElementById("d-shape").value = location.hash === "#deep" ? "deep" : "";
+document.getElementById("d-shape").addEventListener("change", function (e) { location.hash = e.target.value ? "#deep" : ""; location.reload(); });
+reset(); render();
+</script>
+</body>
+</html>

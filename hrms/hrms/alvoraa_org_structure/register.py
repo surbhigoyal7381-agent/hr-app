@@ -283,7 +283,7 @@ def position_table(branch=None, department=None, as_at=None):
 		"Alvoraa Position", filters=filters,
 		fields=["name", "position_title", "status", "is_key_position", "seats",
 		        "reports_to_position", "branch", "department", "designation",
-		        "grade", "company", "effective_from", "effective_to", "creation"],
+		        "grade", "company", "effective_from", "effective_to"],
 		order_by="branch asc, department asc, position_title asc",
 		limit_page_length=0)
 	if not seats:
@@ -368,9 +368,6 @@ def position_table(branch=None, department=None, as_at=None):
 		rows.append({
 			"id": s.name,
 			"title": s.position_title,
-			# The day the seat was made. "New seat" on the page is worked out
-			# from it and the company's first seat - no field is stored (064).
-			"created": str(s.creation)[:10],
 			"branch": s.branch or "",
 			"department": s.department or "",
 			"designation": s.designation or "",
@@ -431,14 +428,8 @@ def position_table(branch=None, department=None, as_at=None):
 				seen.add(d.name)
 			edge = [parents[e]["parent"] for e in edge if e in parents]
 
-	# The day each company's chart was first set up, so the seats made that day
-	# do not all read as "new". One grouped read over the reader's companies.
-	first = {d.company: str(d.first)[:10] for d in frappe.get_all(
-		POSITION, filters={"company": ("in", companies)},
-		fields=["company", {"MIN": "creation", "as": "first"}], group_by="company")}
-
 	out = {"rows": rows, "may_edit": may_edit(), "may_delete": may_delete(), "as_at": as_at,
-	        "departments": parents, "first_seat_created": first,
+	        "departments": parents,
 	        # Whether the page may say "leaving" at all, so a reader who may not
 	        # see leavers gets no tile - never a "Nobody leaving" that is untrue.
 	        "may_see_leaving": bool(may_see_leaving),

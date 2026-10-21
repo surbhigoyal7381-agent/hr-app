@@ -41,21 +41,7 @@ class Positions064Case(RegisterCase):
 		super().tearDown()
 
 
-class TestNewSeatsAndNewHires(Positions064Case):
-	def test_every_seat_carries_the_day_it_was_made(self):
-		seat = self.pos("Counter Staff 064", seats=1)
-		frappe.set_user(self.hr_user("hr.created064@example.com"))
-		row = next(r for r in register.position_table()["rows"] if r["id"] == seat.name)
-		self.assertEqual(row["created"], str(seat.creation)[:10])
-
-	def test_the_first_seat_of_the_company_is_sent_so_set_up_day_is_not_new(self):
-		seat = self.pos("First 064", seats=1)
-		first = frappe.db.sql("select min(creation) from `tabAlvoraa Position` where company=%s",
-		                      seat.company)[0][0]
-		frappe.set_user(self.hr_user("hr.first064@example.com"))
-		out = register.position_table()
-		self.assertEqual(out["first_seat_created"][seat.company], str(first)[:10])
-
+class TestNewHires(Positions064Case):
 	def test_a_person_placed_by_the_hire_hook_is_marked_hired(self):
 		seat = self.pos("Store Manager 064", seats=2)
 		placed, by_hand = self.person("Placed064"), self.person("ByHand064")

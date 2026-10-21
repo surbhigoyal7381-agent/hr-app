@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Leave Credit Prototype</title>
+<!--
+  Slice 063 prototype v1, 21 Oct 2026. hrms-ux-designer.
+  ALL names and numbers here are invented (Sample). No tenant data.
+  Tokens copied from alvoraa_portal/templates/includes/design_system.html (light + dark).
+  Phone rules live under the .phone wrapper here; in the product they are the
+  portal's existing @media rules. This file is not product code.
+-->
+<style>
+:root,[data-theme="light"]{--bg:#F8F6F3;--surface:#FFFFFF;--surface2:#F0EDE8;--border:#E4E0D9;--border2:#C9C3B9;--text:#2D2622;--text2:#5A544E;--text3:#736D65;--primary:#5B4B8A;--primary-h:#4A3D73;--primary-d:#3D3461;--primary-lt:#EDEAF4;--green:#1B7F5A;--green-lt:#E8F4EF;--red:#B3261E;--red-lt:#FBEAE8;--amber:#9A6510;--amber-lt:#FBF1E0;--sh1:0 1px 2px rgba(0,0,0,.05);--sh2:0 4px 12px rgba(0,0,0,.10);--sh3:0 12px 32px rgba(0,0,0,.16)}
+[data-theme="dark"]{--bg:#1A1815;--surface:#221E1B;--surface2:#2C2724;--border:#332F2B;--border2:#464039;--text:#F0EDE8;--text2:#C4BEB6;--text3:#A8A199;--primary:#A99AD4;--primary-h:#BBAEE0;--primary-d:#7A6BA8;--primary-lt:#2A2438;--green:#5DBF97;--green-lt:#12332A;--red:#F08A82;--red-lt:#3A1C1A;--amber:#E0A94A;--amber-lt:#33280F;--sh1:0 1px 2px rgba(0,0,0,.30);--sh2:0 4px 12px rgba(0,0,0,.45);--sh3:0 12px 32px rgba(0,0,0,.60)}
+:root{--font:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;--r:10px;--r-sm:6px;--r-full:999px;--fs-sm:12px;--fs-base:13px;--fs-md:15px;--fs-lg:18px;--fs-xl:24px;--fs-2xl:32px}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);background:var(--bg);color:var(--text);font-size:var(--fs-base);line-height:1.45}
+button,select,input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+
+/* ── review scaffolding (wraps, never sticky) ── */
+.review{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:10px 14px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:var(--fs-sm)}
+.review label{display:flex;gap:6px;align-items:center;font-weight:600;color:var(--text2)}
+.review select,.review button{min-height:32px;padding:4px 8px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);font-size:var(--fs-sm)}
+.review .hint{flex-basis:100%;color:var(--text3)}
+.sample{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.02em;padding:1px 6px;border-radius:var(--r-full);background:var(--amber-lt);color:var(--amber);border:1px solid currentColor;vertical-align:middle}
+
+/* ── stage ── */
+.stage{margin:16px auto;background:var(--bg);border:1px solid var(--border);box-shadow:var(--sh2);position:relative;overflow:hidden}
+.stage.desk{width:1440px;max-width:calc(100vw - 24px);min-height:900px}
+.stage.phone{width:390px;min-height:844px;border-radius:18px}
+.app{display:flex;min-height:inherit}
+.side{width:220px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);padding:14px 10px}
+.side .brand{font-weight:800;color:var(--primary);font-size:var(--fs-md);padding:6px 10px 14px}
+.side a{display:flex;align-items:center;gap:10px;min-height:36px;padding:6px 10px;border-radius:var(--r-sm);color:var(--text2);text-decoration:none;font-size:var(--fs-base)}
+.side a.on{background:var(--primary-lt);color:var(--primary);font-weight:700}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.top{display:flex;align-items:center;gap:10px;height:56px;padding:0 20px;background:var(--surface);border-bottom:1px solid var(--border)}
+.top .ttl{font-weight:700;font-size:var(--fs-md)}
+.top .who{margin-left:auto;color:var(--text3);font-size:var(--fs-sm)}
+.content{padding:20px 24px 90px;max-width:1080px}
+.page-header{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.page-title{font-size:var(--fs-xl);font-weight:800}
+.page-sub{color:var(--text3);font-size:var(--fs-base)}
+.btn{min-height:36px;padding:8px 14px;border-radius:var(--r-sm);border:1px solid var(--border2);background:var(--surface);cursor:pointer;font-weight:600}
+.btn-primary{background:var(--primary);border-color:var(--primary);color:#fff}
+[data-theme="dark"] .btn-primary{color:#1A1815}
+.btn-green{background:var(--green);border-color:var(--green);color:#fff}
+[data-theme="dark"] .btn-green{color:#1A1815}
+.btn-link{border:0;background:none;color:var(--primary);text-decoration:underline;padding:0;min-height:24px;cursor:pointer;font-weight:600}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh1);margin-bottom:20px}
+.card-header{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--border)}
+.card-title{font-weight:700;font-size:var(--fs-md)}
+.card-body{padding:14px 16px}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:var(--r-full);font-size:var(--fs-sm);font-weight:600;background:var(--surface2);color:var(--text2);border:1px solid var(--border)}
+.chip.proj{margin-left:auto}
+.cls{color:var(--text2);margin:0 0 12px}
+.figs{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
+.fig{border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;background:var(--surface)}
+.fig .l{font-size:var(--fs-sm);color:var(--text2);font-weight:600}
+.fig .v{font-size:var(--fs-2xl);font-weight:800;line-height:1.1;margin:4px 0 2px}
+.fig .v small{font-size:var(--fs-base);font-weight:600;color:var(--text2)}
+.fig .n{font-size:var(--fs-sm);color:var(--text3)}
+.fig.wait{border-style:dashed}
+.fig.out{background:var(--green-lt);border-color:var(--green)}
+.fig.out .v{color:var(--green)}
+.line{display:flex;gap:8px;align-items:flex-start;padding:9px 12px;border-radius:var(--r-sm);margin:8px 0;font-size:var(--fs-base)}
+.line .ic{flex-shrink:0;font-weight:800;width:18px;text-align:center}
+.line.info{background:var(--primary-lt);color:var(--text)}
+.line.warn{background:var(--amber-lt);color:var(--text)}
+.line.warn .ic{color:var(--amber)}
+.line.bad{background:var(--red-lt);color:var(--text)}
+.line.bad .ic{color:var(--red)}
+.line.ok{background:var(--green-lt);color:var(--text)}
+.line.ok .ic{color:var(--green)}
+.rule{border-top:1px solid var(--border);margin-top:12px;padding-top:12px;color:var(--text2)}
+.rule b{color:var(--text)}
+.muted{color:var(--text3)}
+.skel{background:linear-gradient(90deg,var(--surface2),var(--border),var(--surface2));background-size:200% 100%;animation:sk 1.2s infinite;border-radius:var(--r-sm);height:16px;margin:8px 0}
+@keyframes sk{to{background-position:-200% 0}}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);font-size:var(--fs-base)}
+th{font-size:var(--fs-sm);color:var(--text2);font-weight:700}
+.badge{display:inline-block;padding:2px 8px;border-radius:var(--r-full);font-size:var(--fs-sm);font-weight:700;border:1px solid currentColor}
+.b-green{color:var(--green);background:var(--green-lt)}
+.b-amber{color:var(--amber);background:var(--amber-lt)}
+.b-gray{color:var(--text2);background:var(--surface2)}
+.b-red{color:var(--red);background:var(--red-lt)}
+.bottom{display:none}
+
+/* ── modal ── */
+.backdrop{position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:20}
+.modal{background:var(--surface);border-radius:var(--r);width:500px;max-width:calc(100% - 24px);max-height:calc(100% - 40px);display:flex;flex-direction:column;box-shadow:var(--sh3)}
+.m-hdr{display:flex;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border)}
+.m-title{font-weight:800;font-size:var(--fs-lg)}
+.m-close{margin-left:auto;min-width:40px;min-height:40px;border:0;background:none;font-size:22px;cursor:pointer;color:var(--text2)}
+.m-body{padding:14px 16px;overflow:auto}
+.m-foot{display:flex;gap:10px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--border)}
+.field{margin-bottom:12px}
+.field>label,.lbl{display:block;font-weight:700;font-size:var(--fs-base);margin-bottom:4px}
+.input{width:100%;min-height:38px;padding:7px 10px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);font-size:var(--fs-base)}
+.help{font-size:var(--fs-sm);color:var(--text3);margin-top:4px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.check{display:flex;gap:10px;align-items:center;min-height:36px;cursor:pointer;font-weight:600}
+.check input{width:20px;height:20px;accent-color:var(--primary)}
+.result h3{margin:4px 0 8px;font-size:var(--fs-lg)}
+.result p{margin:6px 0}
+
+/* ── manager pieces ── */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:10px 12px}
+.stat .v{font-size:var(--fs-xl);font-weight:800}
+.stat .l{font-size:var(--fs-sm);color:var(--text2)}
+.appr{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;padding:12px 16px}
+.appr .who{font-weight:700}
+.appr .acts{margin-left:auto;display:flex;gap:8px}
+.mail{border:1px dashed var(--border2);border-radius:var(--r);padding:14px 16px;background:var(--surface)}
+.mail .meta{font-size:var(--fs-sm);color:var(--text3);margin-bottom:6px}
+.sec{font-weight:800;font-size:var(--fs-sm);letter-spacing:.04em;text-transform:uppercase;color:var(--text2);margin:20px 0 8px}
+
+/* ── phone: the portal's own @media rules, copied under .phone ── */
+.phone .side{display:none}
+.phone .top{padding:0 14px}
+.phone .content{padding:14px 14px 96px}
+.phone .page-title{font-size:22px}
+.phone .figs{grid-template-columns:1fr 1fr}
+.phone .stats{grid-template-columns:1fr 1fr}
+.phone .btn,.phone .input,.phone select.input{min-height:44px;font-size:16px}
+.phone .btn-link{min-height:44px;display:inline-flex;align-items:center}
+.phone .line,.phone .fig .n,.phone .help,.phone .rule{font-size:14px}
+.phone .fig .l{font-size:13px}
+.phone .card-title{font-size:16px}
+.phone .backdrop{align-items:flex-end}
+.phone .modal{width:100%;max-width:100%;border-radius:16px 16px 0 0;max-height:92%}
+.phone .m-foot .btn{flex:1}
+.phone .m-close{min-width:44px;min-height:44px}
+.phone .row2{grid-template-columns:1fr 1fr}
+.phone .check{min-height:44px;font-size:16px}
+.phone .apps-table{display:none}
+.phone .apps-list{display:block}
+.apps-list{display:none}
+.apps-list .it{padding:12px 16px;border-bottom:1px solid var(--border)}
+.apps-list .it .t{font-weight:700}
+.phone .appr .acts{margin-left:0;width:100%}
+.phone .appr .acts .btn{flex:1}
+.phone .bottom{display:flex;position:absolute;left:0;right:0;bottom:0;height:68px;background:var(--surface);border-top:1px solid var(--border)}
+.bottom a{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;color:var(--text2);text-decoration:none;min-height:44px}
+.bottom a.on{color:var(--primary);font-weight:800}
+.bottom .dot{width:22px;height:4px;border-radius:2px;background:currentColor;opacity:.25}
+.bottom a.on .dot{opacity:1}
+.phone .mgr-table{display:none}
+</style>
+</head>
+<body>
+
+<div class="review" role="region" aria-label="Review controls (not part of the product)">
+  <label>Person
+    <select id="rv-person">
+      <option value="priya">Priya - class A, 20 days attended, 1 request waiting</option>
+      <option value="rohit">Rohit - class A, 10 days attended (under 15)</option>
+      <option value="manoj">Manoj - Contract, earns no Paid Leaves</option>
+      <option value="ritika">Ritika - HR Manager, applies for others</option>
+      <option value="sunil">Sunil - store manager, is told about leave</option>
+    </select></label>
+  <label>Device
+    <select id="rv-device"><option value="phone">Phone 390</option><option value="desk">Desktop 1440</option></select></label>
+  <label>Language
+    <select id="rv-lang"><option value="en">English</option><option value="hi">हिन्दी (machine draft)</option></select></label>
+  <label>Theme
+    <select id="rv-theme"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+  <label>Card state
+    <select id="rv-state"><option value="ok">Loaded</option><option value="loading">Loading</option><option value="error">Could not load</option></select></label>
+  <label><input type="checkbox" id="rv-fail"> Next send fails (no signal)</label>
+  <span>Try in Apply Leave:
+    <button type="button" data-try="half">Half day, Mon 26 Oct</button>
+    <button type="button" data-try="special">Sun 25 Oct (special day)</button>
+    <button type="button" data-try="past">Past day, Mon 12 Oct</button>
+    <button type="button" data-try="sept">A September day</button>
+  </span>
+  <span class="hint">Prototype for review. Today is shown as Fri 23 Oct 2026; attendance is in up to Thu 22 Oct. <span class="sample">Sample</span> Every name and number is invented. Hindi is a machine draft for native review.</span>
+</div>
+
+<div id="stage" class="stage phone"><div class="app" id="app"></div></div>
+
+<script>
+"use strict";
+/* ───────────── sample data (all invented) ───────────── */
+var TODAY = "2026-10-23", DATA_UPTO = "22 Oct", MONTH = "October", MONTH_END = "31 Oct";
+var SPECIAL = {"2026-10-25": {en: "Festive sale", hi: "त्योहार सेल"}};
+var CLASSES = {
+  A: {cap: 4, per: "7.5", gain: 1},
+  B: {cap: 3, per: "10", gain: 1},
+  C: {cap: 2, per: "7.5", gain: 0.5}
+};
+var PEOPLE = {
+  priya: {name: "Priya Sharma", first: "Priya", role: "Sales Associate", cls: "A", attended: 20, earned: 2, used: 1, usedOn: "6 Oct",
+          notCounted: "14 Oct", approver: "Sunil Mehra", approverFirst: "Sunil",
+          apps: [{t: "Paid Leaves", f: "2026-10-27", to: "2026-10-27", d: 1, s: "open"},
+                 {t: "Paid Leaves", f: "2026-10-06", to: "2026-10-06", d: 1, s: "approved"}]},
+  rohit: {name: "Rohit Verma", first: "Rohit", role: "Stock Assistant", cls: "A", attended: 10, earned: 0, used: 0,
+          approver: "Sunil Mehra", approverFirst: "Sunil",
+          apps: [{t: "Leave Without Pay", f: "2026-10-12", to: "2026-10-16", d: 5, s: "recorded"}]},
+  manoj: {name: "Manoj Singh", first: "Manoj", role: "Security Guard", cls: null, zeroWhy: "contract", attended: 19,
+          approver: "Sunil Mehra", approverFirst: "Sunil", apps: []},
+  ritika: {name: "Ritika", first: "Ritika", role: "HR Manager", cls: "B", attended: 20, earned: 2, used: 0, hr: true,
+           approver: "Kavita Arora", approverFirst: "Kavita", apps: []}
+};
+/* A half day uses no Paid Leaves (the engine measures it by punches), so it never sets a day aside. */
+function waiting(p) { return p.apps.filter(function (a) { return a.t === "Paid Leaves" && a.s === "open" && !a.h; })
+                        .reduce(function (s, a) { return s + a.d; }, 0); }
+function avail(p) { return Math.max(0, (p.earned || 0) - (p.used || 0) - waiting(p)); }
+
+/* ───────────── review state ───────────── */
+var R = {person: "priya", device: "phone", lang: "en", theme: "light", state: "ok", fail: false};
+function T(en, hi) { return R.lang === "hi" && hi ? hi : en; }
+function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]; }); }
+function plural(n, en1, enN, hi) { return R.lang === "hi" ? n + " " + hi : n + " " + (n === 1 ? en1 : enN); }
+function dayWord(n) { return plural(n, "day", "days", "दिन"); }
+var MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+var DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+function d(s) { var p = s.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+function fmt(s) { var x = d(s); return DOW[x.getDay()] + " " + x.getDate() + " " + MON[x.getMonth()]; }
+function fmtRange(a, b) { return a === b ? fmt(a) : fmt(a) + " to " + fmt(b); }
+function between(a, b) { var out = [], x = d(a), e = d(b); while (x <= e) { out.push(x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0")); x.setDate(x.getDate() + 1); } return out; }
+
+/* ───────────── chrome ───────────── */
+function chrome(title, body, active) {
+  var me = R.person === "sunil" ? "Sunil Mehra" : PEOPLE[R.person].name;
+  var navs = R.person === "sunil" || R.person === "ritika"
+    ? [["Home", "Home"], ["Leave", "Leave"], ["Attendance", "Time"], ["Team View", "Team"], ["Pay", "Pay"]]
+    : [["Home", "Home"], ["Leave", "Leave"], ["Attendance", "Time"], ["Pay", "Pay"], ["More", "More"]];
+  return '<nav class="side" aria-label="Main"><div class="brand">Alvoraa</div>' +
+    navs.map(function (n) { return '<a href="#" class="' + (n[0] === active ? "on" : "") + '"' + (n[0] === active ? ' aria-current="page"' : "") + '>' + n[0] + '</a>'; }).join("") +
+    '</nav><div class="main"><header class="top"><span class="ttl">' + esc(title) + '</span><span class="who">' + esc(me) + ' <span class="sample">Sample</span></span></header>' +
+    '<main class="content" id="content">' + body + '</main>' +
+    '<nav class="bottom" aria-label="Main">' + navs.map(function (n) { return '<a href="#" class="' + (n[0] === active ? "on" : "") + '"><span class="dot"></span>' + n[1] + '</a>'; }).join("") + '</nav></div>';
+}
+
+/* ───────────── the Paid Leaves card ───────────── */
+function ruleText(p) {
+  var c = CLASSES[p.cls];
+  return '<div class="rule"><b>' + T("How you earn Paid Leaves - class ", "Paid Leaves कैसे मिलती हैं - क्लास ") + p.cls + '</b><br>' +
+    T("Once you have attended 15 days in a month, you earn " + (c.gain === 1 ? "1 day" : "half a day") + " of Paid Leaves for every " + c.per + " days you attend, up to " + c.cap + " days a month. Leave days do not count as attended. Nothing carries over: days you do not use are paid out with that month's salary.",
+      "महीने में 15 दिन हाज़िरी पूरी होने के बाद, हर " + c.per + " दिन की हाज़िरी पर " + (c.gain === 1 ? "1 दिन" : "आधा दिन") + " की Paid Leaves मिलती है, महीने में ज़्यादा से ज़्यादा " + c.cap + " दिन। छुट्टी के दिन हाज़िरी में नहीं गिने जाते। कुछ भी अगले महीने नहीं जाता: जो दिन इस्तेमाल नहीं हुए, उनका पैसा उसी महीने की सैलरी में मिलता है।") +
+    '</div>';
+}
+function card(p) {
+  var head = '<div class="card-header"><span class="card-title" id="pl-title">' + T("Paid Leaves - " + MONTH, "Paid Leaves - अक्टूबर") + '</span>';
+  if (R.state === "loading") {
+    return '<section class="card" aria-labelledby="pl-title" aria-busy="true">' + head + '</div><div class="card-body"><div class="skel" style="width:40%"></div><div class="skel" style="height:64px"></div><div class="skel" style="width:80%"></div><span class="muted">' + T("Working out your days so far...", "आपके अब तक के दिन गिने जा रहे हैं...") + '</span></div></section>';
+  }
+  if (R.state === "error") {
+    return '<section class="card" aria-labelledby="pl-title">' + head + '</div><div class="card-body"><div class="line warn" role="alert"><span class="ic" aria-hidden="true">!</span><span>' +
+      T("Your Paid Leaves figures could not be worked out just now. Your leave requests below are not affected, and you can still apply.", "आपकी Paid Leaves की गिनती अभी नहीं हो सकी। नीचे आपकी छुट्टी की अर्ज़ियों पर कोई असर नहीं है, और आप अब भी अर्ज़ी दे सकते हैं।") +
+      '</span></div><button class="btn" type="button" onclick="R.state=\'ok\';render()">' + T("Try again", "फिर से कोशिश करें") + '</button></div></section>';
+  }
+  if (!p.cls) {
+    return '<section class="card" aria-labelledby="pl-title">' + head + '</div><div class="card-body"><p style="margin:0 0 8px;font-size:15px">' +
+      T("Contract staff do not earn monthly Paid Leaves.", "कॉन्ट्रैक्ट स्टाफ़ को हर महीने Paid Leaves नहीं मिलती।") + '</p><p class="muted" style="margin:0">' +
+      T("You can still apply for Leave Without Pay. There is no limit, no approval is needed, and your manager is told.", "आप फिर भी Leave Without Pay के लिए अर्ज़ी दे सकते हैं। इसकी कोई सीमा नहीं है, मंज़ूरी नहीं चाहिए, और आपके मैनेजर को बता दिया जाता है।") +
+      '</p></div></section>';
+  }
+  var c = CLASSES[p.cls], w = waiting(p), out = avail(p);
+  var body = '<p class="cls">' + T("Class " + p.cls + " · up to " + c.cap + " days a month · " + p.attended + " days attended up to " + DATA_UPTO,
+                                   "क्लास " + p.cls + " · महीने में ज़्यादा से ज़्यादा " + c.cap + " दिन · " + DATA_UPTO + " तक " + p.attended + " दिन हाज़िरी") + '</p>';
+  body += '<div class="figs">' +
+    fig("", T("Earned so far", "अब तक मिली"), p.earned, p.earned ? T("from " + p.attended + " days attended", p.attended + " दिन की हाज़िरी से") : T(p.attended + " of the 15 days needed", "ज़रूरी 15 में से " + p.attended + " दिन")) +
+    fig("", T("Used for leave", "छुट्टी में ली"), p.used, p.used ? p.usedOn : T("none yet", "अभी कोई नहीं")) +
+    fig("wait", T("Waiting for approval", "मंज़ूरी बाकी"), w, w ? T("set aside for now", "अभी अलग रखी") : T("none", "कोई नहीं")) +
+    fig("out", T("To be paid out", "पैसे में मिलेगी"), out, T("with " + MONTH + " salary", "अक्टूबर की सैलरी में")) +
+    '</div>';
+  if (!p.earned) {
+    body += '<div class="line info"><span class="ic" aria-hidden="true">i</span><span>' +
+      T("You start earning Paid Leaves once you have attended 15 days in " + MONTH + ". You have attended " + p.attended + " so far.",
+        "अक्टूबर में 15 दिन हाज़िरी पूरी होने पर Paid Leaves मिलनी शुरू होती है। अब तक आपकी " + p.attended + " दिन की हाज़िरी है।") + '</span></div>';
+  }
+  if (w) {
+    var req = p.apps.filter(function (a) { return a.t === "Paid Leaves" && a.s === "open"; })[0];
+    body += '<div class="line info"><span class="ic" aria-hidden="true">i</span><span>' +
+      T(dayWord(w) + " is set aside for your " + fmt(req.f).replace(/^\w+ /, "") + " request until " + p.approver + " approves or declines it. If it is declined, the day comes back.",
+        fmt(req.f).replace(/^\w+ /, "") + " की आपकी अर्ज़ी के लिए " + dayWord(w) + " तब तक अलग रखा गया है जब तक " + p.approver + " उसे मंज़ूर या नामंज़ूर नहीं करते। नामंज़ूर होने पर वह दिन वापस मिल जाता है।") + '</span></div>';
+  }
+  if (p.notCounted) {
+    body += '<div class="line warn"><span class="ic" aria-hidden="true">!</span><span>' +
+      T(p.notCounted + " is not counted yet because the check-out is missing. ", p.notCounted + " अभी नहीं गिना गया क्योंकि चेक-आउट दर्ज नहीं है। ") +
+      '<button type="button" class="btn-link">' + T("Fix it on Attendance", "Attendance पर ठीक करें") + '</button></span></div>';
+  }
+  body += '<p class="muted" style="margin:10px 0 0">' + T("These are figures so far. They change as you attend more days, until " + MONTH_END + ".",
+                                                         "ये अब तक के आँकड़े हैं। " + MONTH_END + " तक जैसे-जैसे आपकी हाज़िरी बढ़ेगी, ये बदलेंगे।") + '</p>';
+  body += ruleText(p);
+  return '<section class="card" aria-labelledby="pl-title">' + head + '<span class="chip proj">' + T("So far · up to " + DATA_UPTO, DATA_UPTO + " तक") + '</span></div><div class="card-body">' + body + '</div></section>';
+}
+function fig(cls, label, v, note) {
+  return '<div class="fig ' + cls + '"><div class="l">' + label + '</div><div class="v">' + v + ' <small>' + T(v === 1 ? "day" : "days", "दिन") + '</small></div><div class="n">' + esc(note) + '</div></div>';
+}
+
+/* ───────────── applications list ───────────── */
+function statusBadge(a, p) {
+  if (a.s === "recorded") return '<span class="badge b-gray">' + T("Recorded", "दर्ज") + '</span>';
+  if (a.s === "open") return '<span class="badge b-amber">' + T("Waiting for " + p.approverFirst, p.approverFirst + " की मंज़ूरी बाकी") + '</span>';
+  if (a.s === "approved") return '<span class="badge b-green">' + T("Approved", "मंज़ूर") + '</span>';
+  return '<span class="badge b-red">' + T("Declined", "नामंज़ूर") + '</span>';
+}
+function apps(p) {
+  var rows = p.apps;
+  var empty = '<p class="muted" style="padding:16px;margin:0">' + T("No leave applied for yet. Use Apply Leave above.", "अभी तक कोई छुट्टी नहीं ली। ऊपर Apply Leave दबाएँ।") + '</p>';
+  var tbl = '<div class="apps-table"><table><thead><tr><th>' + T("Type", "प्रकार") + '</th><th>' + T("Dates", "तारीख") + '</th><th>' + T("Days", "दिन") + '</th><th>' + T("Status", "स्थिति") + '</th></tr></thead><tbody>' +
+    rows.map(function (a) { return '<tr><td>' + a.t + '</td><td>' + fmtRange(a.f, a.to) + '</td><td>' + a.d + '</td><td>' + statusBadge(a, p) + '</td></tr>'; }).join("") + '</tbody></table></div>';
+  var list = '<div class="apps-list">' + rows.map(function (a) { return '<div class="it"><div class="t">' + a.t + ' · ' + dayWord(a.d) + '</div><div>' + fmtRange(a.f, a.to) + '</div><div style="margin-top:4px">' + statusBadge(a, p) + '</div></div>'; }).join("") + '</div>';
+  return '<section class="card" aria-labelledby="la-title"><div class="card-header"><span class="card-title" id="la-title">' + T("Leave Applications", "छुट्टी की अर्ज़ियाँ") + '</span></div>' + (rows.length ? tbl + list : empty) + '</section>';
+}
+
+/* ───────────── Leave page ───────────── */
+function leavePage(p) {
+  return chrome("Leave",
+    '<div class="page-header"><div><div class="page-title">' + T("Leave", "छुट्टी") + '</div><div class="page-sub">' + T("Your Paid Leaves this month and your leave requests", "इस महीने की आपकी Paid Leaves और छुट्टी की अर्ज़ियाँ") + '</div></div>' +
+    '<button class="btn btn-primary" style="margin-left:auto" type="button" id="open-apply">+ ' + T("Apply Leave", "छुट्टी की अर्ज़ी") + '</button></div>' +
+    card(p) + apps(p), "Leave");
+}
+
+/* ───────────── manager (Sunil) ───────────── */
+function managerPage() {
+  var e = '<div class="page-header"><div><div class="page-title">Team View</div><div class="page-sub">3 direct reports</div></div></div>' +
+    '<div class="stats"><div class="stat"><div class="v">3</div><div class="l">Direct Reports</div></div><div class="stat"><div class="v">2</div><div class="l">Present Today</div></div><div class="stat"><div class="v">0</div><div class="l">On Leave</div></div><div class="stat"><div class="v">1</div><div class="l">Pending Approvals</div></div></div>' +
+    '<div class="sec">Pending Leave Approvals</div>' +
+    '<section class="card"><div class="appr"><div><div class="who">Priya Sharma</div><div>Paid Leaves · Tue 27 Oct · <b>1 day</b></div>' +
+    '<div class="muted">1 other person in this team is away on those days</div></div>' +
+    '<div class="acts"><button class="btn btn-green" type="button">Approve</button><button class="btn" type="button">Decline</button></div></div></section>' +
+    '<div class="sec">Team Leaves This Month</div>' +
+    '<section class="card"><div class="mgr-table"><table><thead><tr><th>Employee</th><th>Leave Type</th><th>From</th><th>To</th><th>Days</th></tr></thead><tbody>' +
+    '<tr><td>Rohit Verma</td><td>Leave Without Pay <span class="badge b-gray">Recorded, no approval needed</span></td><td>Mon 12 Oct</td><td>Fri 16 Oct</td><td>5</td></tr>' +
+    '<tr><td>Manoj Singh</td><td>Leave Without Pay <span class="badge b-gray">Recorded, no approval needed</span></td><td>Tue 27 Oct</td><td>Tue 27 Oct</td><td>1</td></tr>' +
+    '<tr><td>Priya Sharma</td><td>Paid Leaves</td><td>Tue 6 Oct</td><td>Tue 6 Oct</td><td>1</td></tr></tbody></table></div>' +
+    '<div class="apps-list" style="display:' + (R.device === "phone" ? "block" : "none") + '">' +
+    '<div class="it"><div class="t">Rohit Verma · 5 days</div><div>Mon 12 Oct to Fri 16 Oct</div><div>Leave Without Pay · <span class="badge b-gray">Recorded, no approval needed</span></div></div>' +
+    '<div class="it"><div class="t">Manoj Singh · 1 day</div><div>Tue 27 Oct</div><div>Leave Without Pay · <span class="badge b-gray">Recorded, no approval needed</span></div></div>' +
+    '<div class="it"><div class="t">Priya Sharma · 1 day</div><div>Tue 6 Oct</div><div>Paid Leaves</div></div></div></section>' +
+    '<div class="sec">What Sunil receives when Manoj records leave without pay</div>' +
+    '<div class="mail" role="note" aria-label="Email and desk notification preview"><div class="meta">Email and desk bell · to the leave approver · sent at once</div>' +
+    '<p style="margin:0 0 6px"><b>Manoj Singh will be away on Tue 27 Oct</b></p>' +
+    '<p style="margin:0 0 6px">Manoj Singh has recorded 1 day of leave without pay for Tue 27 Oct. This kind of leave does not need your approval, so there is nothing for you to do.</p>' +
+    '<p style="margin:0 0 6px">1 other person in your team is away on those days.</p>' +
+    '<p style="margin:0" class="muted">You can see your team\'s leave on the Team View page. If this looks wrong, speak to Manoj or to HR.</p></div>' +
+    '<p class="muted" style="margin-top:12px">No new page, tab or Inbox item. The recorded leave appears in the two places above that already exist; the notice is sent once, by email and the desk bell. The reason Manoj typed is never sent.</p>';
+  return chrome("Team View", e, "Team View");
+}
+
+/* ───────────── Apply Leave ───────────── */
+var F = null; // form state
+function subjectOf() { return F && F.behalf ? PEOPLE[F.behalf] : PEOPLE[R.person]; }
+function openApply(prefill) {
+  var p = PEOPLE[R.person];
+  F = {behalf: p.hr ? "" : null, type: "", from: "", to: "", half: false, reason: "", done: null, err: ""};
+  if (prefill) Object.assign(F, prefill);
+  drawModal();
+}
+function typesFor(s) { return s.cls ? ["Paid Leaves", "Leave Without Pay"] : ["Leave Without Pay"]; }
+function verdict() {
+  var s = subjectOf(), you = !F.behalf, nm = s.first;
+  if (!F.type || !F.from || (!F.half && !F.to)) return null;
+  var to = F.half ? F.from : F.to;
+  if (to < F.from) return {k: "bad", block: true, html: T("The end date is before the start date. Change one of them.", "आख़िरी तारीख शुरू की तारीख से पहले है। एक तारीख बदलें।")};
+  if (F.from < "2026-10-01") return {k: "bad", block: true, html: T("September's salary has already been worked out, so leave for a September day cannot be added here. Choose a day from 1 October. If September needs changing, ask HR.",
+                                                                   "सितंबर की सैलरी बन चुकी है, इसलिए सितंबर के किसी दिन की छुट्टी यहाँ नहीं जोड़ी जा सकती। 1 अक्टूबर या उसके बाद का दिन चुनें। सितंबर में बदलाव के लिए HR से बात करें।")};
+  var days = between(F.from, to), sp = days.filter(function (x) { return SPECIAL[x]; });
+  if (sp.length) {
+    var x = sp[0], lbl = SPECIAL[x][R.lang] || SPECIAL[x].en;
+    var many = days.length > 1;
+    return {k: "warn", block: true, special: true, html: '<b>' + T(fmt(x) + " is a special day (" + lbl + ").", fmt(x) + " एक ख़ास दिन है (" + lbl + ")।") + '</b> ' +
+      T("No leave can be taken on special days at DTC, including leave without pay. ", "DTC में ख़ास दिनों पर कोई छुट्टी नहीं ली जा सकती, Leave Without Pay भी नहीं। ") +
+      (many ? T("Change your dates to leave it out, or apply for the days before and after it separately. ", "तारीखें बदलकर इस दिन को हटा दें, या इसके पहले और बाद के दिनों के लिए अलग-अलग अर्ज़ी दें। ") : "") +
+      T("If " + (you ? "you cannot come in" : nm + " cannot come in") + ", please speak to " + s.approver + ".", "अगर " + (you ? "आप नहीं आ सकते" : nm + " नहीं आ सकते") + ", तो " + s.approver + " से बात करें।")};
+  }
+  var n = F.half ? 0.5 : days.length, lines = [];
+  if (F.from < TODAY) lines.push(T("This includes a past day. That is allowed until " + MONTH + "'s salary is worked out.", "इसमें बीता हुआ दिन है। अक्टूबर की सैलरी बनने तक इसकी अनुमति है।"));
+  if (F.half) {
+    return {k: "warn", block: false, html: '<b>' + T("A half day is counted as a short working day, not as leave.", "आधा दिन छुट्टी नहीं, कम घंटों वाला काम का दिन गिना जाता है।") + '</b><br>' +
+      T((you ? "You must" : nm + " must") + " still check in and check out that day. No Paid Leaves are used. The hours missed are cut from pay in quarters of a day, as on any short day, and leaving or arriving inside certain times can also bring a red mark. With no check-in at all, the day is not counted until HR looks at it.",
+        "उस दिन चेक-इन और चेक-आउट करना ज़रूरी है। कोई Paid Leaves इस्तेमाल नहीं होती। जो घंटे छूटेंगे, उनका पैसा किसी भी छोटे दिन की तरह चौथाई-दिन के हिसाब से कटेगा, और कुछ समय पर जाने या आने से रेड मार्क भी लग सकता है। अगर चेक-इन ही नहीं हुआ, तो HR के देखने तक वह दिन नहीं गिना जाएगा।") +
+      "<br>" + (F.type === "Paid Leaves" ? T(s.approver + " needs to approve it.", s.approver + " की मंज़ूरी चाहिए।") : T("No approval is needed. " + s.approver + " will be told.", "मंज़ूरी नहीं चाहिए। " + s.approver + " को बता दिया जाएगा।")) +
+      (lines.length ? " " + lines.join(" ") : "")};
+  }
+  if (F.type === "Paid Leaves") {
+    var a = avail(s);
+    if (n > a) {
+      return {k: "warn", block: true, switchable: true, html: '<b>' + T(dayWord(n) + " asked for, but " + (you ? "you have " : nm + " has ") + dayWord(a) + " of Paid Leaves available now.", dayWord(n) + " माँगे गए, पर अभी " + dayWord(a) + " की Paid Leaves उपलब्ध है।") + '</b> ' +
+        (s.earned ? T("Days already used or waiting for approval are taken off what has been earned.", "जो दिन इस्तेमाल हो चुके या मंज़ूरी के इंतज़ार में हैं, वे मिली हुई छुट्टी से घटा दिए जाते हैं।")
+                  : T("Paid Leaves start after 15 days attended; " + (you ? "you have" : nm + " has") + " " + s.attended + " so far.", "15 दिन की हाज़िरी के बाद Paid Leaves मिलती है; अब तक " + s.attended + " दिन हुए हैं।")) +
+        " " + T("You can record Leave Without Pay instead, or apply for Paid Leaves once more days are earned.", "आप इसकी जगह Leave Without Pay दर्ज कर सकते हैं, या ज़्यादा दिन मिलने के बाद Paid Leaves की अर्ज़ी दें।")};
+    }
+    lines.unshift(T("Asking for " + dayWord(n) + " of Paid Leaves. " + s.approver + " needs to approve it. Until then, " + dayWord(n) + " is set aside from what " + (you ? "you have" : nm + " has") + " earned. These days are paid.",
+                    dayWord(n) + " की Paid Leaves की अर्ज़ी। " + s.approver + " की मंज़ूरी चाहिए। तब तक " + dayWord(n) + " अलग रखा जाएगा। इन दिनों का पैसा मिलेगा।"));
+    return {k: "ok", block: false, html: lines.join("<br>")};
+  }
+  lines.unshift('<b>' + T("Recording " + dayWord(n) + " of Leave Without Pay.", dayWord(n) + " की Leave Without Pay दर्ज होगी।") + '</b> ' +
+    T("No approval is needed. " + s.approver + " will be told. " + (you ? "You are" : nm + " is") + " not paid for " + (n === 1 ? "this day" : "these days") + (s.cls ? "; any Paid Leaves earned this month are still paid out." : "."),
+      "मंज़ूरी नहीं चाहिए। " + s.approver + " को बता दिया जाएगा। इन दिनों का पैसा नहीं मिलेगा" + (s.cls ? "; इस महीने मिली Paid Leaves का पैसा फिर भी मिलेगा।" : "।")));
+  return {k: "info", block: false, html: lines.join("<br>")};
+}
+function drawModal() {
+  var host = document.getElementById("stage"), old = document.getElementById("bd");
+  if (old) old.remove();
+  if (!F) return;
+  var s = subjectOf(), p = PEOPLE[R.person], body, foot;
+  if (F.done) {
+    body = '<div class="result" role="status">' + F.done + '</div>';
+    foot = '<button class="btn btn-primary" type="button" id="m-done">' + T("Done", "ठीक है") + '</button>';
+  } else {
+    var v = verdict();
+    body = (F.err ? '<div class="line bad" role="alert"><span class="ic" aria-hidden="true">!</span><span>' + F.err + '</span></div>' : "");
+    if (p.hr) {
+      body += '<div class="field"><label for="f-behalf">' + T("Who is this leave for?", "यह छुट्टी किसके लिए है?") + '</label><select class="input" id="f-behalf">' +
+        '<option value="">' + T("Myself", "मेरे लिए") + ' (Ritika)</option><option value="manoj"' + (F.behalf === "manoj" ? " selected" : "") + '>Manoj Singh · Security Guard · Contract</option>' +
+        '<option value="rohit"' + (F.behalf === "rohit" ? " selected" : "") + '>Rohit Verma · Stock Assistant</option><option value="priya"' + (F.behalf === "priya" ? " selected" : "") + '>Priya Sharma · Sales Associate</option></select>' +
+        '<div class="help">' + T("For staff without a login. The leave types follow the person you pick.", "जिनका लॉगिन नहीं है, उनके लिए। छुट्टी के प्रकार चुने गए व्यक्ति के हिसाब से बदलते हैं।") + '</div></div>';
+    }
+    var ts = typesFor(s);
+    body += '<div class="field"><label for="f-type">' + T("Leave type", "छुट्टी का प्रकार") + '</label><select class="input" id="f-type"><option value="">' + T("Choose...", "चुनें...") + '</option>' +
+      ts.map(function (t) {
+        var note = t === "Paid Leaves" ? T(dayWord(avail(s)) + " available now", "अभी " + dayWord(avail(s)) + " उपलब्ध") : T("no approval needed", "मंज़ूरी नहीं चाहिए");
+        return '<option value="' + t + '"' + (F.type === t ? " selected" : "") + '>' + t + ' - ' + note + '</option>';
+      }).join("") + '</select>' +
+      (!s.cls ? '<div class="help">' + T((F.behalf ? s.first + "'s" : "Your") + " work type does not earn Paid Leaves, so only Leave Without Pay is offered.", "इस काम के प्रकार में Paid Leaves नहीं मिलती, इसलिए सिर्फ़ Leave Without Pay है।") + '</div>' : "") + '</div>';
+    body += '<div class="row2"><div class="field"><label for="f-from">' + T(F.half ? "Date" : "From", F.half ? "तारीख" : "से") + '</label><input class="input" type="date" id="f-from" value="' + F.from + '"></div>' +
+      (F.half ? '<div></div>' : '<div class="field"><label for="f-to">' + T("To", "तक") + '</label><input class="input" type="date" id="f-to" value="' + F.to + '"></div>') + '</div>';
+    body += '<label class="check"><input type="checkbox" id="f-half"' + (F.half ? " checked" : "") + '> ' + T("Half day", "आधा दिन") + '</label>';
+    if (v) {
+      body += '<div class="line ' + v.k + '" role="status" aria-live="polite"><span class="ic" aria-hidden="true">' + (v.k === "ok" ? "✓" : v.k === "info" ? "i" : "!") + '</span><span>' + v.html +
+        (v.switchable ? '<br><button type="button" class="btn-link" id="f-switch">' + T("Use Leave Without Pay instead", "इसकी जगह Leave Without Pay लें") + '</button>' : "") +
+        (v.special ? '<br><button type="button" class="btn-link" id="f-redate">' + T("Change the dates", "तारीखें बदलें") + '</button>' : "") + '</span></div>';
+    }
+    body += '<div class="field"><label for="f-reason">' + T("Reason (optional)", "कारण (ज़रूरी नहीं)") + '</label><textarea class="input" id="f-reason" rows="2">' + esc(F.reason) + '</textarea><div class="help">' +
+      T("Only " + s.approver + " and HR can read this.", "इसे सिर्फ़ " + s.approver + " और HR पढ़ सकते हैं।") + '</div></div>';
+    var label = !F.type ? T("Choose a leave type", "छुट्टी का प्रकार चुनें")
+      : F.type === "Paid Leaves" ? T("Send to " + s.approver, s.approver + " को भेजें")
+      : F.behalf ? T("Record for " + s.name, s.name + " के लिए दर्ज करें") : T("Record leave without pay", "Leave Without Pay दर्ज करें");
+    foot = '<button class="btn" type="button" id="m-cancel">' + T("Cancel", "रद्द करें") + '</button>' +
+      ((v && v.block) ? "" : '<button class="btn btn-primary" type="button" id="m-send">' + label + '</button>');
+  }
+  var bd = document.createElement("div");
+  bd.className = "backdrop"; bd.id = "bd";
+  bd.innerHTML = '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-title"><div class="m-hdr"><span class="m-title" id="m-title" tabindex="-1">' +
+    (F.done ? T("Done", "हो गया") : T("Apply for leave", "छुट्टी की अर्ज़ी")) + '</span><button class="m-close" type="button" id="m-x" aria-label="' + T("Close", "बंद करें") + '">&times;</button></div>' +
+    '<div class="m-body">' + body + '</div><div class="m-foot">' + foot + '</div></div>';
+  host.appendChild(bd);
+  wireModal();
+}
+function wireModal() {
+  function on(id, ev, fn) { var el = document.getElementById(id); if (el) el.addEventListener(ev, fn); }
+  function close() { F = null; drawModal(); render(); }
+  on("m-x", "click", close); on("m-cancel", "click", close); on("m-done", "click", close);
+  on("f-behalf", "change", function (e) { F.behalf = e.target.value; F.type = ""; drawModal(); });
+  on("f-type", "change", function (e) { F.type = e.target.value; drawModal(); focus("f-type"); });
+  on("f-from", "change", function (e) { F.from = e.target.value; if (!F.to || F.to < F.from) F.to = F.from; drawModal(); focus("f-from"); });
+  on("f-to", "change", function (e) { F.to = e.target.value; drawModal(); focus("f-to"); });
+  on("f-half", "change", function (e) { F.half = e.target.checked; if (F.half) F.to = F.from; drawModal(); focus("f-half"); });
+  on("f-reason", "input", function (e) { F.reason = e.target.value; });
+  on("f-switch", "click", function () { F.type = "Leave Without Pay"; drawModal(); focus("f-type"); });
+  on("f-redate", "click", function () { focus("f-from"); });
+  on("m-send", "click", send);
+  document.getElementById("bd").addEventListener("keydown", function (e) { if (e.key === "Escape") close(); });
+  var t = document.getElementById("m-title"); if (t && !document.activeElement.closest(".modal")) t.focus();
+}
+function focus(id) { var el = document.getElementById(id); if (el) el.focus(); }
+function send() {
+  var s = subjectOf();
+  if (!F.type) { F.err = T("Choose a leave type first.", "पहले छुट्टी का प्रकार चुनें।"); drawModal(); focus("f-type"); return; }
+  if (!F.from) { F.err = T("Choose the date the leave starts.", "छुट्टी शुरू होने की तारीख चुनें।"); drawModal(); focus("f-from"); return; }
+  var btn = document.getElementById("m-send"); btn.disabled = true; btn.textContent = T("Sending...", "भेजा जा रहा है...");
+  setTimeout(function () {
+    if (R.fail) {
+      R.fail = false; document.getElementById("rv-fail").checked = false;
+      F.err = T("Not sent: the connection dropped. Nothing was recorded. Your choices are still here - try again.", "नहीं भेजा गया: कनेक्शन टूट गया। कुछ दर्ज नहीं हुआ। आपकी भरी जानकारी यहीं है - फिर से कोशिश करें।");
+      drawModal(); return;
+    }
+    var to = F.half ? F.from : F.to, n = F.half ? 0.5 : between(F.from, to).length, you = !F.behalf;
+    var lwp = F.type === "Leave Without Pay";
+    s.apps.unshift({t: F.type, f: F.from, to: to, d: n, h: F.half, s: lwp ? "recorded" : "open"});
+    if (lwp) {
+      F.done = '<h3>' + T("Leave without pay recorded" + (you ? "" : " for " + s.name), "Leave Without Pay दर्ज हो गई") + '</h3>' +
+        '<p><b>' + fmtRange(F.from, to) + ' · ' + dayWord(n) + (F.half ? T(" (half day)", " (आधा दिन)") : "") + '</b></p>' +
+        '<p>' + T(s.approver + " has been told. No approval is needed.", s.approver + " को बता दिया गया है। मंज़ूरी की ज़रूरत नहीं है।") + '</p>' +
+        '<p>' + (F.half ? T("It counts as a short working day: check in and out as usual. The hours missed are cut from pay.", "यह कम घंटों वाला काम का दिन गिना जाएगा: हमेशा की तरह चेक-इन और चेक-आउट करें। छूटे घंटों का पैसा कटेगा।")
+                        : T((you ? "You are" : s.first + " is") + " not paid for " + (n === 1 ? "this day" : "these days") + ". " + MONTH + "'s salary is reduced for " + (n === 1 ? "it" : "them") + ".", "इन दिनों का पैसा नहीं मिलेगा। अक्टूबर की सैलरी में इतने दिन का पैसा कम होगा।")) + '</p>';
+    } else {
+      F.done = '<h3>' + T("Sent to " + s.approver, s.approver + " को भेजा गया") + '</h3>' +
+        '<p><b>Paid Leaves · ' + fmtRange(F.from, to) + ' · ' + dayWord(n) + '</b></p>' +
+        '<p>' + T(F.half ? "A half day uses no Paid Leaves; it counts as a short working day." : dayWord(n) + " is set aside from what " + (you ? "you have" : s.first + " has") + " earned until " + s.approverFirst + " decides. If it is declined, the day comes back.",
+                  F.half ? "आधे दिन में कोई Paid Leaves नहीं लगती।" : s.approverFirst + " के फ़ैसले तक " + dayWord(n) + " अलग रखा गया है। नामंज़ूर होने पर वह दिन वापस मिल जाएगा।") + '</p>';
+    }
+    F.err = ""; drawModal();
+  }, 700);
+}
+
+/* ───────────── render ───────────── */
+function render() {
+  document.documentElement.setAttribute("data-theme", R.theme);
+  document.documentElement.setAttribute("lang", R.lang);
+  var st = document.getElementById("stage");
+  st.className = "stage " + R.device;
+  document.getElementById("app").innerHTML = R.person === "sunil" ? managerPage() : leavePage(PEOPLE[R.person]);
+  var b = document.getElementById("open-apply");
+  if (b) b.addEventListener("click", function () { openApply(); });
+  if (F) drawModal();
+}
+["person", "device", "lang", "theme", "state"].forEach(function (k) {
+  document.getElementById("rv-" + k).addEventListener("change", function (e) { R[k] = e.target.value; if (k === "person") F = null; render(); });
+});
+document.getElementById("rv-fail").addEventListener("change", function (e) { R.fail = e.target.checked; });
+document.querySelectorAll("[data-try]").forEach(function (b) {
+  b.addEventListener("click", function () {
+    if (R.person === "sunil") { R.person = "rohit"; document.getElementById("rv-person").value = "rohit"; render(); }
+    var k = b.getAttribute("data-try"), lwp = "Leave Without Pay";
+    var pre = k === "half" ? {type: lwp, from: "2026-10-26", to: "2026-10-26", half: true}
+      : k === "special" ? {type: lwp, from: "2026-10-24", to: "2026-10-26"}
+      : k === "past" ? {type: lwp, from: "2026-10-12", to: "2026-10-12"}
+      : {type: lwp, from: "2026-09-28", to: "2026-09-28"};
+    openApply(pre);
+  });
+});
+render();
+</script>
+</body>
+</html>

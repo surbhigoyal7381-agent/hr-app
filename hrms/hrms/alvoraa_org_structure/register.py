@@ -86,7 +86,9 @@ def may_edit():
 	return bool(frappe.has_permission(POSITION, "write"))
 
 
-AUDITED = (POSITION, "Alvoraa Position Assignment")
+# Slice 065: who may read replacement plans is a tenant's choice too (the
+# owners' Read row), and gets the same readable record.
+AUDITED = (POSITION, "Alvoraa Position Assignment", "Replacement Plan")
 
 
 def record_permission_change(doc, method=None):

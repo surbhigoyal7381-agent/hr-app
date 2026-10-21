@@ -326,12 +326,21 @@ doc_events = {
 	"Custom DocPerm": {
 		"on_update": "hrms.alvoraa_org_structure.register.record_permission_change",
 		"on_trash": "hrms.alvoraa_org_structure.register.record_permission_change",
+		# Slice 065, SEC-2: no broad role and no print/export/... on plans.
+		"validate": "hrms.alvoraa_org_structure.plans.refuse_careless_grant",
 	},
 	# Slice 064, SEC-8: only somebody who may place people in a seat may point a
 	# job opening at it, because a hire from that opening is placed in the seat.
 	"Job Opening": {
 		"validate": "hrms.alvoraa_org_structure.hiring.guard_seat_link",
 	},
+	# Slice 065, SEC-3: no comment, assignment, share, tag or file on a
+	# replacement plan. One comparison per save; reads nothing.
+	"Comment": {"validate": "hrms.alvoraa_org_structure.plans.refuse_side_record"},
+	"ToDo": {"validate": "hrms.alvoraa_org_structure.plans.refuse_side_record"},
+	"DocShare": {"validate": "hrms.alvoraa_org_structure.plans.refuse_side_record"},
+	"Tag Link": {"validate": "hrms.alvoraa_org_structure.plans.refuse_side_record"},
+	"File": {"validate": "hrms.alvoraa_org_structure.plans.refuse_side_record"},
 }
 
 # Scheduled Tasks

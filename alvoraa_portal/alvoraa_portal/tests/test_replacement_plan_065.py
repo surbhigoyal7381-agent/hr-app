@@ -388,3 +388,94 @@ class TestOneGate(Plan065Case):
 		self.assertSees(self.hrA, {self.p4})
 		self.age(self.p4, 90)  # day 90 is still shown
 		self.assertSees(self.hrA, {self.p4})
+
+
+# ── US-14 · no side doors (SEC-3) ─────────────────────────────────────────────
+
+
+class TestNoSideDoors(Plan065Case):
+	def setUp(self):
+		super().setUp()
+		self.owners_see(True)
+		self.p1 = self.make_plan(self.a_ritu, "Contract ends 31 Dec.")
+		frappe.db.commit()
+		self.mail_before = frappe.db.count("Email Queue")
+
+	def counts(self):
+		return {
+			"Comment": frappe.db.count("Comment", {"reference_doctype": PLAN}),
+			"ToDo": frappe.db.count("ToDo", {"reference_type": PLAN}),
+			"DocShare": frappe.db.count("DocShare", {"share_doctype": PLAN}),
+			"Tag Link": frappe.db.count("Tag Link", {"document_type": PLAN}),
+			"Tag": frappe.db.count("Tag", {"name": "Ritu resigning 065"}),
+			"File": frappe.db.count("File", {"attached_to_doctype": PLAN}),
+			"Document Follow": frappe.db.count("Document Follow", {"ref_doctype": PLAN}),
+			"Email Queue": frappe.db.count("Email Queue") - self.mail_before,
+		}
+
+	def test_ac62_comment_assign_share_tag_file_and_follow_are_all_refused(self):
+		from frappe.desk.doctype.tag.tag import add_tag
+		from frappe.desk.form import assign_to
+		from frappe.desk.form.document_follow import follow_document
+		from frappe.desk.form.utils import add_comment
+
+		for user in (self.hrA, self.own):
+			frappe.set_user(user)
+			attempts = {
+				"comment": lambda: add_comment(PLAN, self.p1, "@head fyi", user, user),
+				"assign": lambda: assign_to.add({"doctype": PLAN, "name": self.p1, "assign_to": [self.head]}),
+				"share": lambda: frappe.share.add(PLAN, self.p1, self.head, read=1),
+				"tag": lambda: add_tag("Ritu resigning 065", PLAN, self.p1),
+				"file": lambda: frappe.get_doc({"doctype": "File", "file_name": "note065.txt", "content": "x",
+				                                "attached_to_doctype": PLAN, "attached_to_name": self.p1,
+				                                "is_private": 1}).insert(),
+			}
+			for what, attempt in attempts.items():
+				with self.assertRaises((frappe.ValidationError, frappe.PermissionError), msg=f"{user} {what}"):
+					attempt()
+				frappe.db.rollback()
+			self.assertFalse(follow_document(PLAN, self.p1))
+		frappe.set_user("Administrator")
+		self.assertEqual(set(self.counts().values()), {0}, self.counts())
+
+	def test_a_normal_comment_still_saves(self):
+		"""The hook sits on every comment, share, tag and upload in the
+		system. It must refuse plans and nothing else."""
+		frappe.set_user("Administrator")
+		c = frappe.get_doc({"doctype": "Comment", "comment_type": "Comment", "reference_doctype": "Employee",
+		                    "reference_name": self.ritu, "content": "hello 065"}).insert(ignore_permissions=True)
+		self.assertTrue(frappe.db.exists("Comment", c.name))
+		frappe.delete_doc("Comment", c.name, ignore_permissions=True, delete_permanently=True)
+
+
+# ── US-15 · careless grants refused, chosen ones recorded (SEC-2) ─────────────
+
+
+class TestCarelessGrants(Plan065Case):
+	def test_ac63_broad_roles_and_print_export_ticks_are_refused(self):
+		from frappe.core.page.permission_manager import permission_manager as pm
+
+		frappe.set_user(self.sys)
+		for role in ("Employee", "All", "Guest", "Desk User"):
+			with self.assertRaises(frappe.ValidationError, msg=role):
+				pm.add(PLAN, role, 0)
+			frappe.db.rollback()
+			self.assertFalse(frappe.db.exists("Custom DocPerm", {"parent": PLAN, "role": role}))
+		for right in ("export", "print", "email", "share", "report", "import"):
+			with self.assertRaises(frappe.ValidationError, msg=right):
+				pm.update(PLAN, "HR Manager", 0, right, 1)
+			frappe.db.rollback()
+
+	def test_ac63_owners_read_is_allowed_and_recorded(self):
+		from frappe.core.page.permission_manager import permission_manager as pm
+
+		frappe.set_user(self.sys)
+		pm.add(PLAN, OWNERS, 0)
+		frappe.set_user("Administrator")
+		row = frappe.db.get_value("Custom DocPerm", {"parent": PLAN, "role": OWNERS},
+		                          ["read", "export", "print", "email", "share", "report"], as_dict=True)
+		# Frappe ticks print/email/export/share/report on a new row; they are unticked.
+		self.assertEqual(row, {"read": 1, "export": 0, "print": 0, "email": 0, "share": 0, "report": 0})
+		trail = " ".join(frappe.get_all("Version", filters={"ref_doctype": "DocType", "docname": PLAN},
+		                                pluck="data"))
+		self.assertIn(OWNERS, trail)

@@ -186,6 +186,63 @@ def has_permission(doc, ptype=None, user=None):
 	return bool(frappe.db.sql(f"select name from {TABLE} where name = %s and {cond}", doc.name))
 
 
+# ── no side doors (SEC-3, SEC-2) ─────────────────────────────────────────────
+
+# The records Frappe can hang on any document, and the field on each that
+# names the document's type. Each one on a plan would be a copy (a comment and
+# its @mention email; an assignment, which also shares the record and beats
+# the permission hook; a share; a tag, whose name outlives the plan; a file).
+SIDE_RECORDS = {
+	"Comment": "reference_doctype",
+	"ToDo": "reference_type",
+	"DocShare": "share_doctype",
+	"Tag Link": "document_type",
+	"File": "attached_to_doctype",
+}
+
+
+def refuse_side_record(doc, method=None):
+	"""`validate` on Comment, ToDo, DocShare, Tag Link and File. One
+	comparison; reads nothing. Following a plan needs no rule: Frappe refuses
+	to follow a record that keeps no change history."""
+	field = SIDE_RECORDS.get(doc.doctype)
+	if field and doc.get(field) == DOCTYPE:
+		frappe.throw(
+			_("A replacement plan cannot have comments, assignments, shares, tags or files: each "
+			  "would be a copy that stays after the plan is erased. Talk to HR directly instead.")
+		)
+
+
+def refuse_careless_grant(doc, method=None):
+	"""`validate` on Custom DocPerm - what Role Permissions Manager saves. For
+	plans only, refuses any right for a broad role, and print, email, export,
+	share, report or import for any role (SEC-2). Read, write, create and
+	delete for other roles stay the tenant's choice, and are recorded as a
+	Version by `register.record_permission_change`."""
+	if doc.parent != DOCTYPE:
+		return
+	ticked = [df.fieldname for df in frappe.get_meta("Custom DocPerm").fields
+	          if df.fieldtype == "Check" and doc.get(df.fieldname)]
+	if doc.role in BROAD_ROLES and ticked:
+		frappe.throw(
+			_("Replacement plans cannot be given to the {0} role: that would show them to every "
+			  "login. Give Read to the owners' own role instead.").format(doc.role)
+		)
+	never = sorted(NEVER & set(ticked))
+	if never and doc.is_new():
+		# Frappe ticks print, email, export, share and report on every new row
+		# it adds, so adding the owners' role would always be refused. Untick
+		# them instead: nobody chose them.
+		for right in never:
+			doc.set(right, 0)
+		return
+	if never:
+		frappe.throw(
+			_("Replacement plans cannot be printed, emailed, exported, shared, reported on or "
+			  "imported, so these rights cannot be ticked: {0}.").format(", ".join(never))
+		)
+
+
 def check_assignment(assignment):
 	"""The seat assignment a plan may be set or kept on: started, not ended,
 	its person Active, its seat not Closed and inside the caller's scope, and

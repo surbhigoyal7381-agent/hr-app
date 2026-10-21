@@ -1,4 +1,4 @@
-# 064 · Implementation notes (22 Oct 2026; v10 applied)
+# 064 · Implementation notes (22 Oct 2026; v10 and v11 applied)
 
 **Status: built and checked locally, to the approved design prototype-v9. Nothing is pushed.**
 The full test suite has not been run (it runs once, at the end, before a push is asked for).
@@ -77,6 +77,37 @@ The approved prototype fails on "open Delhi, By branch, Open every level": it ke
 open-team choice. The product clears it on every view change, and a group only ever opens one of
 its OWN leads. Tests: that exact sequence and every view switch after every open state (node), and
 the same sequence on the real page (connector check).
+
+
+## v11 (2b691c65, a2819790)
+
+By branch and By department wrap into rows that fit the frame (5 / 4 / 3 per row at 1,128 /
+1,006 / 830 px), one opens at a time below the whole row under "Under <name>" with its own line;
+the rule repeats inside strips; a small family's opened child goes to a strip below the row;
+switching view clears every open choice and stale choices are ignored. On this panel no text is
+under 12 px and no target under 24 px (44 on a phone).
+
+Connector and layout check on the real page (DTC-shaped seed, 120 seats, departments added):
+1440 / 1280 / 1024 windows (frames 1,128 / 1,006 / 830) and a 390 phone, light and dark, every
+branch and department opened in turn with up to four teams inside each: 180 states, 0 false or
+missing links, 0 layout failures, and the chart never wider than its frame in any view.
+
+Differences from v11, on purpose: the real frames are 1,006 and 830 px where the prototype says 970
+and 820 (same column counts); nested departments (today's tree) open inside the strip by their own
+box, one at a time, as the branches do; the panel's label and small-button sizes were raised to meet
+the 12 px / 24 px rule.
+
+## Full suite, once (22 Oct 2026, own site test064)
+
+- `alvoraa_goals`: 18 OK.
+- `alvoraa_portal`: three batches - 16 OK; 952 with 3 errors; 2,049 OK. The 3 errors are
+  `test_leave_year` (TestLeaveYearStart): its Fiscal Year overlaps ERPNext's `_Test Fiscal Year 2025`
+  on this site, which carries ERPNext's test records. Not from 064; CI avoids it with a separate site.
+- `hrms.alvoraa_org_structure` modules: all OK except the pre-existing
+  `test_register_194.test_dtc_shaped_rows_let_the_owners_in_and_keep_hr_out`.
+- DOM suite (`run_dom_tests.js`): 11 run, 0 failed. Node Positions check: 122 checks.
+- Not run: the hrms payroll doctype tests CI runs on its own site, and `check_contrast_rendered.py`
+  (no Python Playwright here).
 
 ## Known gaps
 

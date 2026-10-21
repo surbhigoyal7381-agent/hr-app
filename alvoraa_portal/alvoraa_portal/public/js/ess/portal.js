@@ -1839,7 +1839,10 @@ window.posSave = async function (then) {
 
 /* Deleting a seat: an alert dialog naming the seat, focus on "Keep it",
    Escape keeps it. A refusal (people, seats under it, history) comes back
-   from the server in plain words and is shown as a toast. */
+   from the server in plain words and is shown INSIDE the dialog, where it
+   stays until it is dismissed. It was a toast first: a one-line pill that
+   cannot wrap and lasts three seconds, which a 150-character sentence ran
+   off the screen of, so a refusal looked like a dead button. */
 window.posAskDelete = function () {
   var r = posSeat();
   if (!r || !POS.may_delete) return;
@@ -1847,6 +1850,11 @@ window.posAskDelete = function () {
     "Delete “" + r.title + "”? This cannot be undone from this page. "
     + "Only a seat nobody has ever held can be deleted; otherwise set its status to Closed.";
   document.getElementById("pos-delete-go").disabled = false;
+  document.getElementById("pos-delete-go").hidden = false;
+  var why = document.getElementById("pos-delete-err");
+  why.hidden = true;
+  why.textContent = "";
+  document.getElementById("pos-delete-keep").textContent = "Keep it";
   document.getElementById("pos-delete").classList.add("open");
   document.getElementById("pos-delete-keep").focus();
 };
@@ -1866,8 +1874,12 @@ window.posDelete = async function () {
     await gpFetch("hrms.alvoraa_org_structure.register.delete_position", { position: r.id });
   } catch (e) {
     go.disabled = false;
-    posCloseDelete();
-    toast((e && e.message) || "The seat could not be deleted. Try again.", "err");
+    go.hidden = true;           // nothing to retry until something changes
+    var why = document.getElementById("pos-delete-err");
+    why.textContent = (e && e.message) || "The seat could not be deleted. Try again.";
+    why.hidden = false;
+    document.getElementById("pos-delete-keep").textContent = "Close";
+    document.getElementById("pos-delete-keep").focus();
     return;
   }
   document.getElementById("pos-delete").classList.remove("open");

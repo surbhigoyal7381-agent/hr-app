@@ -537,8 +537,8 @@ async function deleteChecks() {
                           contains: () => opened.has(id) });
     for (const id of ["pos-delete", "pos-editor"])
       ctx.__els[id] = { id, style: {}, classList: cls(id) };
-    for (const id of ["pos-delete-text", "pos-delete-go", "pos-delete-keep", "pos-delete-btn"])
-      ctx.__els[id] = { id, style: {}, textContent: "", disabled: false, focus() {} };
+    for (const id of ["pos-delete-text", "pos-delete-go", "pos-delete-keep", "pos-delete-btn", "pos-delete-err"])
+      ctx.__els[id] = { id, style: {}, textContent: "", disabled: false, hidden: false, focus() {} };
     ctx.__els["toast-wrap"] = { appendChild: (t) => toasts.push(t) };
     ctx.document.createElement = () => ({ className: "", textContent: "", remove() {} });
     ctx.POS.rows = ROWS;
@@ -569,11 +569,20 @@ async function deleteChecks() {
     const t = deleteContext(true, new Error(said));
     t.ctx.posAskDelete();
     await t.ctx.posDelete();
-    ok("a refusal shows the server's own words",
-       t.toasts.length === 1 && t.toasts[0].textContent === said
-       && t.toasts[0].className.includes("err"));
-    ok("and the Delete button can be pressed again",
-       t.ctx.__els["pos-delete-go"].disabled === false);
+    const why = t.ctx.__els["pos-delete-err"];
+    ok("a refusal shows the server's own words inside the dialog",
+       why.textContent === said && why.hidden === false);
+    ok("the dialog stays open so the reason can be read", t.opened.has("pos-delete"));
+    ok("it does not rely on a toast that vanishes", t.toasts.length === 0);
+    ok("there is no Delete button left to press for a refused seat",
+       t.ctx.__els["pos-delete-go"].hidden === true);
+    ok("and the way out is called Close",
+       t.ctx.__els["pos-delete-keep"].textContent === "Close");
+    t.ctx.posAskDelete();
+    ok("asking again starts clean: reason hidden, Delete back",
+       t.ctx.__els["pos-delete-err"].hidden === true
+       && t.ctx.__els["pos-delete-go"].hidden === false
+       && t.ctx.__els["pos-delete-keep"].textContent === "Keep it");
   }
 }
 

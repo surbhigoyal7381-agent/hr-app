@@ -229,6 +229,8 @@
   font-size:var(--fs-base);font-weight:600;cursor:pointer;border:none;
   transition:all var(--t);white-space:nowrap;
 }
+/* `display` on .btn would otherwise beat the hidden attribute. */
+.btn[hidden]{display:none}
 .btn-primary{
   background:var(--primary);color:var(--surface);
   box-shadow:var(--sh2);

@@ -220,7 +220,8 @@
       <div class="gp-backdrop" id="pos-delete">
         <div class="gp-modal" role="alertdialog" aria-modal="true" aria-labelledby="pos-delete-title" aria-describedby="pos-delete-text" style="max-width:480px">
           <div class="gp-modal-hdr"><h2 class="gp-modal-title" id="pos-delete-title">Delete this seat?</h2></div>
-          <div class="gp-modal-body"><p id="pos-delete-text" style="margin:0;line-height:1.5"></p></div>
+          <div class="gp-modal-body"><p id="pos-delete-text" style="margin:0;line-height:1.5"></p>
+            <p id="pos-delete-err" role="alert" hidden style="margin:14px 0 0;color:var(--red);font-weight:600;line-height:1.5"></p></div>
           <div class="gp-modal-footer">
             <button type="button" class="btn btn-outline" id="pos-delete-keep" onclick="posCloseDelete()">Keep it</button>
             <button type="button" class="btn btn-danger" id="pos-delete-go" onclick="posDelete()">Delete seat</button>

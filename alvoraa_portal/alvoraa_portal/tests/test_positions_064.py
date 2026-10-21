@@ -210,3 +210,115 @@ class TestTheQueryCountDoesNotGrow(Positions064Case):
 			register.position_table()
 		print(f"\nposition_table statements: {small.count} at 20 people, {big.count} at 200")
 		self.assertEqual(small.count, big.count)
+
+
+class TestRecordsCheck(Positions064Case):
+	"""SEC-5: the rewritten reporting_mismatches - scoped, flat, HR only."""
+
+	def setUp(self):
+		super().setUp()
+		import hrms.alvoraa_org_structure.api as api
+
+		self.api = api
+		self.delhi, self.noida = self.branch("Delhi 064"), self.branch("Noida 064")
+		top = self.pos("Top 064", branch=self.delhi)
+		kid = self.pos("Kid 064", parent=top.name, seats=2, branch=self.delhi)
+		other = self.pos("Other 064", parent=top.name, branch=self.delhi)
+		pool = self.pos("Pool 064", parent=top.name, seats=3, branch=self.delhi)
+		far = self.pos("Far 064", parent=top.name, branch=self.noida)
+		self.m1, self.m2 = self.person("M1x064"), self.person("M2x064")
+		self.e1, self.e2 = self.person("E1x064"), self.person("E2x064")
+		self.p = [self.person(f"P{i}x064") for i in range(3)]
+		self.far = self.person("Farx064")
+		self.assign(self.m1, top.name)
+		self.assign(self.m2, other.name)
+		self.assign(self.e1, kid.name)
+		self.assign(self.e2, kid.name)
+		for e in self.p:
+			self.assign(e, pool.name)
+		self.assign(self.far, far.name)
+		self.links = {self.e1: self.m2, self.e2: self.m1, self.p[0]: self.m1, self.p[1]: self.m2,
+		              self.p[2]: self.m2, self.far: self.m2}
+		for e, m in self.links.items():
+			frappe.db.set_value("Employee", e, "reports_to", m)
+		self.kid, self.pool, self.other = kid.name, pool.name, other.name
+		frappe.db.commit()
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		for e in self.links:
+			frappe.db.set_value("Employee", e, "reports_to", None)
+		super().tearDown()
+
+	def test_hr_sees_a_person_whose_record_names_another_manager(self):
+		frappe.set_user(self.hr_user("hr.rec064@example.com"))
+		out = self.api.reporting_mismatches()
+		got = {m["employee"]: m for m in out["mismatches"]}
+		self.assertIn(self.e1, got)
+		self.assertEqual(got[self.e1]["chart_says"], self.m1)
+		self.assertEqual(got[self.e1]["reports_to_says"], self.m2)
+		self.assertNotIn(self.e2, got)
+		self.assertEqual(set(got[self.e1]), {"employee", "employee_name", "position", "parent_position",
+		                                     "chart_says", "chart_says_name", "reports_to_says",
+		                                     "reports_to_says_name"})
+
+	def test_a_seat_holding_people_of_two_managers_is_reported_as_mixed(self):
+		frappe.set_user(self.hr_user("hr.mixed064@example.com"))
+		mixed = [m for m in self.api.reporting_mismatches()["mixed"] if m["position"] == self.pool]
+		self.assertEqual({m["manager"]: m["count"] for m in mixed}, {self.m1: 1, self.m2: 2})
+		self.assertEqual(next(m for m in mixed if m["manager"] == self.m2)["manager_position"], self.other)
+
+	def test_store_hr_sees_only_their_branch(self):
+		frappe.set_user(self.hr_user("hr.recnoida064@example.com", branch=self.noida))
+		out = self.api.reporting_mismatches()
+		self.assertNotIn(self.e1, {m["employee"] for m in out["mismatches"]})
+
+	def test_a_reader_without_hr_scope_gets_nothing(self):
+		frappe.set_user(self.plain_reader("plain.rec064@example.com"))
+		self.assertEqual(self.api.reporting_mismatches(), {})
+
+	def test_another_company_is_never_read(self):
+		second = _second_company()
+		frappe.set_user("Administrator")
+		top = self.pos("Top B 064", company=second)
+		kid = self.pos("Kid B 064", parent=top.name, company=second)
+		a, b, c = [frappe.get_doc({"doctype": "Employee", "first_name": n, "company": second,
+		                           "date_of_birth": "1990-01-01", "date_of_joining": "2020-01-01",
+		                           "gender": frappe.db.get_value("Gender", {}, "name"), "status": "Active"}
+		                          ).insert(ignore_permissions=True).name for n in ("BA064", "BB064", "BC064")]
+		self._people.extend([c, b, a])
+		self.assign(a, top.name)
+		self.assign(b, kid.name)
+		frappe.db.set_value("Employee", b, "reports_to", c)
+		self.links[b] = c
+		frappe.db.commit()
+		frappe.set_user(self.hr_user("hr.recco064@example.com"))
+		self.assertNotIn(b, {m["employee"] for m in self.api.reporting_mismatches()["mismatches"]})
+
+	def test_the_statement_count_is_flat_and_the_call_is_fast(self):
+		import time
+
+		from alvoraa_portal.tests.leader_fixtures_012 import QueryCounter
+
+		frappe.set_user(self.hr_user("hr.recflat064@example.com"))
+		self.api.reporting_mismatches()
+		with QueryCounter() as small:
+			self.api.reporting_mismatches()
+		frappe.set_user("Administrator")
+		big = self.pos("Big 064", parent=self.kid, seats=400)
+		for i in range(190):
+			e = self.person(f"Many{i}x064")
+			self.assign(e, big.name)
+			frappe.db.set_value("Employee", e, "reports_to", self.m2)
+			self.links[e] = self.m2
+		frappe.db.commit()
+		frappe.set_user("hr.recflat064@example.com")
+		self.api.reporting_mismatches()
+		started = time.monotonic()
+		with QueryCounter() as large:
+			out = self.api.reporting_mismatches()
+		ms = (time.monotonic() - started) * 1000
+		print(f"\nreporting_mismatches statements: {small.count} at ~10 assignments, "
+		      f"{large.count} at ~200; {ms:.0f} ms; {len(out['mismatches'])} mismatches")
+		self.assertEqual(small.count, large.count)
+		self.assertLess(ms, 500)

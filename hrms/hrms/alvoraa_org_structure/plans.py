@@ -21,9 +21,20 @@ the note. Log lines carry the plan's random name only (PRIV-4).
 
 import frappe
 from frappe import _
-from frappe.utils import nowdate
+from frappe.utils import add_days, cint, nowdate
+
+import hrms.alvoraa_org_structure.register as register
 
 DOCTYPE = "Replacement Plan"
+TABLE = "`tabReplacement Plan`"
+
+# Read that arrives only through one of these roles counts as no Read. A
+# careless tick for "Employee" would otherwise give every login every plan
+# (SEC-1 point 1; SEC-2 refuses the tick itself).
+BROAD_ROLES = frozenset({"All", "Guest", "Desk User", "Employee", "Employee Self Service"})
+
+# Never allowed on a plan, for anybody: each one makes a copy we cannot erase.
+NEVER = frozenset({"print", "email", "export", "share", "report", "import"})
 
 # A plan lasts this long from its last confirmation (Surbhi, 21 Oct 2026).
 LIFE_DAYS = 90
@@ -52,13 +63,134 @@ def _my_employees(user=None):
 	return {r.name for r in rows}, any(r.status == "Active" for r in rows)
 
 
+# ── the gate (SEC-1) ──────────────────────────────────────────────────────────
+
+
+def _read_roles():
+	"""Roles holding Read on plans, from the cached meta, which carries the
+	tenant's own rows when it has any. No query."""
+	return {p.role for p in frappe.get_meta(DOCTYPE).permissions if p.read and not cint(p.permlevel)}
+
+
+def is_reader(user=None):
+	"""Whether this person may see any plan at all. All must hold:
+
+	1. Read on plans through a role that is not a broad one;
+	2. they can open Positions (`may_view`);
+	3. if their login is linked to an Employee, that Employee is Active - a
+	   leaver whose login still works sees nothing, whatever their roles.
+
+	Which plans they then see is `_condition`'s business.
+	"""
+	user = user or frappe.session.user
+	if user == "Administrator":
+		return True
+	if user != frappe.session.user:
+		# `may_view` and `_scope` answer for the session's user only. Asked
+		# about somebody else, fail closed rather than answer for the wrong one.
+		return False
+	if not (_read_roles() - BROAD_ROLES) & set(frappe.get_roles(user)):
+		return False
+	if not register.may_view():
+		return False
+	ids, active = _my_employees(user)
+	return active or not ids
+
+
+def _in(column, values):
+	return "{0} in ({1})".format(column, ", ".join(frappe.db.escape(v) for v in sorted(values)))
+
+
+def _condition(live=True, scoped=True):
+	"""The ONE definition of which plans a reader sees, as a SQL condition on
+	the plan table. Used for every list (the query hook) and for one record
+	(`has_permission`), so the two cannot disagree.
+
+	Scoped: the plan's seat is in the reader's companies (and branches, for a
+	store-tied reader), worked out through the assignment's seat, and the plan
+	is not about the reader. Live: the person is in the seat today and Active,
+	the seat is not Closed, and the plan was confirmed within LIFE_DAYS - so a
+	lapsed plan or a leaver's plan is hidden at once, whether or not the daily
+	erase has run (PRIV-3). The scope stays inside the database: a sub-query,
+	never a list of seat ids read into Python.
+	"""
+	today = nowdate()
+	where = [f"a.name = {TABLE}.assignment"]
+	if scoped:
+		companies, branches = register._scope()
+		if not companies:
+			return "1=0"
+		where.append(_in("p.company", companies))
+		if branches is not None:
+			where.append(_in("p.branch", branches))
+		mine = _my_employees()[0]
+		if mine:
+			where.append("not " + _in("a.employee", mine))
+	join_employee = ""
+	if live:
+		join_employee = " join `tabEmployee` e on e.name = a.employee"
+		where += [
+			"a.from_date <= {0}".format(frappe.db.escape(today)),
+			"(a.to_date is null or a.to_date >= {0})".format(frappe.db.escape(today)),
+			"e.status = 'Active'",
+			"p.status != 'Closed'",
+		]
+	cond = (
+		"exists (select 1 from `tabAlvoraa Position Assignment` a"
+		" join `tabAlvoraa Position` p on p.name = a.position" + join_employee
+		+ " where " + " and ".join(where) + ")"
+	)
+	if live:
+		cond += " and {0}.confirmed_on >= {1}".format(
+			TABLE, frappe.db.escape(str(add_days(today, -LIFE_DAYS))))
+	return "(" + cond + ")"
+
+
+def query_conditions(user=None, doctype=None):
+	"""`permission_query_conditions`: every list, count, report view, link
+	search and REST list of plans. Never "" for a reader - an empty condition
+	means everybody. `1=0` for anyone outside the gate, which does not depend
+	on the data, so a count is 0 whether plans exist or not."""
+	user = user or frappe.session.user
+	if user == "Administrator":
+		return _condition(scoped=False)
+	if not is_reader(user):
+		return "1=0"
+	return _condition()
+
+
+def has_permission(doc, ptype=None, user=None):
+	"""`has_permission`: one plan, opened by name, saved, deleted - and
+	refused outright for print, email, export, share, report and import.
+
+	Delete is the one right that does not need the plan to be live: an HR
+	Manager setting a new plan on somebody whose old plan lapsed today must be
+	able to erase the old one first (Surbhi, 22 Oct, question 4). It still
+	needs the seat in scope and never the reader's own. Reading a hidden plan
+	this way is impossible: the erase reads nothing back.
+
+	Frappe only lets this hook refuse; it cannot grant what the role table
+	did not (owners and the System Manager have Read only).
+	"""
+	user = user or frappe.session.user
+	ptype = ptype or "read"
+	if ptype in NEVER:
+		return False
+	if user == "Administrator":
+		return True
+	if not is_reader(user):
+		return False
+	if ptype == "create" or doc.is_new():
+		return True  # the record's own rules decide the rest (check_assignment)
+	cond = _condition(live=ptype != "delete")
+	return bool(frappe.db.sql(f"select name from {TABLE} where name = %s and {cond}", doc.name))
+
+
 def check_assignment(assignment):
 	"""The seat assignment a plan may be set or kept on: started, not ended,
 	its person Active, its seat not Closed and inside the caller's scope, and
 	not the caller's own (SEC-5; decision 9)."""
-	from hrms.alvoraa_org_structure import register
-
-	a = frappe.db.get_value(
+	a =frappe.db.get_value(
 		register.ASSIGNMENT, assignment, ["employee", "position", "from_date", "to_date"], as_dict=True
 	)
 	if not a:

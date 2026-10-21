@@ -52,6 +52,8 @@ READERS = {
 	"sys": ("sys.065@example.com", "System Manager", None, False),
 	"head": ("head.065@example.com", "Projects User", "delhi", True),
 	"emp": ("emp.065@example.com", "Employee", None, True),
+	"hrLeft": ("hrleft.065@example.com", "HR Manager", None, True),
+	"hrB": ("hrb.065@example.com", "HR Manager", None, True),
 }
 BRANCHES = {"delhi": "Delhi 065", "noida": "Noida 065"}
 
@@ -65,6 +67,7 @@ class Plan065Case(Positions064Case):
 		super().setUpClass()
 		frappe.set_user("Administrator")
 		_role(OWNERS)
+		cls.company_b = _second_company()
 		for b in BRANCHES.values():
 			if not frappe.db.exists("Branch", b):
 				frappe.get_doc({"doctype": "Branch", "branch": b}).insert(ignore_permissions=True)
@@ -75,7 +78,10 @@ class Plan065Case(Positions064Case):
 			if has_employee and not frappe.db.exists("Employee", {"user_id": email}):
 				frappe.get_doc({
 					"doctype": "Employee", "first_name": email.split(".")[0].title() + "065",
-					"company": _company(), "date_of_birth": "1990-01-01", "date_of_joining": "2020-01-01",
+					# HR for the second company works for it. ERPNext then gives the
+					# login a Company User Permission of its own, which is its scope.
+					"company": cls.company_b if email == READERS["hrB"][0] else _company(),
+					"date_of_birth": "1990-01-01", "date_of_joining": "2020-01-01",
 					"gender": _gender(), "status": "Active", "user_id": email,
 				}).insert(ignore_permissions=True)
 			user = frappe.get_doc("User", email)
@@ -85,6 +91,9 @@ class Plan065Case(Positions064Case):
 				frappe.get_doc({"doctype": "User Permission", "user": email, "allow": "Branch",
 				                "for_value": BRANCHES[branch], "apply_to_all_doctypes": 0,
 				                "applicable_for": "Employee"}).insert(ignore_permissions=True)
+		# A leaver whose login still works, holding HR Manager (lesson 3).
+		frappe.db.set_value("Employee", {"user_id": READERS["hrLeft"][0]},
+		                    {"status": "Left", "relieving_date": add_days(nowdate(), -3)})
 		frappe.db.commit()
 
 	@classmethod
@@ -269,3 +278,113 @@ class TestTheRecord(Plan065Case):
 				insert_plan(assignment)
 		frappe.set_user("Administrator")
 		self.assertFalse(frappe.db.count(PLAN))
+
+
+# ── US-12, US-16 · one gate on every door (SEC-1) ─────────────────────────────
+
+
+def _doors(user, names):
+	"""What `user` gets for plans through each door: desk/REST list, count,
+	one record by name (permission check and REST read), and link search."""
+	from frappe.api.v1 import read_doc
+	from frappe.desk.search import search_link
+
+	frappe.set_user(user)
+	got = {}
+	try:
+		got["list"] = {r["name"] for r in frappe.client.get_list(PLAN, fields=["name"], limit_page_length=0)}
+		got["count"] = frappe.client.get_count(PLAN)
+		got["search"] = {r["value"] for r in search_link(PLAN, "", page_length=50)}
+	except frappe.PermissionError:
+		got["list"], got["count"], got["search"] = set(), 0, set()
+	got["one"] = {n for n in names if frappe.has_permission(PLAN, "read", doc=n)}
+	rest = set()
+	for n in names:
+		try:
+			read_doc(PLAN, n)
+			rest.add(n)
+		except frappe.PermissionError:
+			pass
+	got["rest"] = rest
+	frappe.set_user("Administrator")
+	return got
+
+
+class TestOneGate(Plan065Case):
+	def setUp(self):
+		super().setUp()
+		self.owners_see(True)
+		seat_b = self.pos("Cashier B 065", seats=1, company=self.company_b)
+		emp_b = frappe.get_doc({"doctype": "Employee", "first_name": "OtherCo065", "company": self.company_b,
+		                        "date_of_birth": "1990-01-01", "date_of_joining": "2020-01-01",
+		                        "gender": _gender(), "status": "Active"}).insert(ignore_permissions=True)
+		self._people.append(emp_b.name)
+		self.a_b = self.assign(emp_b.name, seat_b.name).name
+		frappe.db.commit()
+		self.p1 = self.make_plan(self.a_ritu, "Contract ends 31 Dec.")
+		self.p2 = self.make_plan(self.a_noida)
+		self.p3 = self.make_plan(self.a_aarti, as_user=self.hrA2)
+		self.p4 = self.make_plan(self.a_subj)
+		self.p5 = self.make_plan(self.a_b, as_user=self.hrB)
+		self.all = {self.p1, self.p2, self.p3, self.p4, self.p5}
+		frappe.db.commit()
+
+	def assertSees(self, user, expected):
+		got = _doors(user, self.all)
+		for door in ("list", "search", "one", "rest"):
+			self.assertEqual(got[door], expected, f"{user} through {door}")
+		self.assertEqual(got["count"], len(expected), f"{user} count")
+
+	def test_ac52_readers_get_their_company_and_nobody_else_gets_anything(self):
+		company_a = {self.p1, self.p2, self.p3, self.p4}
+		for user in (self.hrA, self.own):
+			self.assertSees(user, company_a)
+		# The System Manager stands in for the CXO, whose scope is every
+		# company (`permitted_companies`). AC-52 wrote company A only because
+		# DTC has one company; 01c's rule is "within _scope()".
+		self.assertSees(self.sys, self.all)
+		for user in (self.head, self.emp):
+			self.assertSees(user, set())
+
+	def test_ac53_a_broad_role_given_read_on_the_table_still_sees_nothing(self):
+		"""Written straight to the table, skipping the refusal at the screen."""
+		d = frappe.get_doc({"doctype": "Custom DocPerm", "parent": PLAN, "parenttype": "DocType",
+		                    "parentfield": "permissions", "role": "Employee", "permlevel": 0, "read": 1})
+		d.db_insert()
+		frappe.clear_cache(doctype=PLAN)
+		frappe.local.role_permissions = {}
+		self.assertSees(self.emp, set())
+
+	def test_ac54_leaver_branch_and_company(self):
+		self.assertSees(self.hrLeft, set())
+		self.assertSees(self.hrD, {self.p1, self.p3, self.p4})  # Delhi seats only
+		self.assertSees(self.hrB, {self.p5})
+
+	def test_ac55_print_export_email_share_refused_even_for_hr(self):
+		frappe.set_user(self.hrA)
+		for ptype in ("print", "export", "email", "share", "report", "import"):
+			self.assertFalse(frappe.has_permission(PLAN, ptype, doc=self.p1), ptype)
+
+	def test_ac56_owners_see_nothing_when_the_option_is_off(self):
+		self.owners_see(False)
+		self.assertSees(self.own, set())
+
+	def test_ac64_the_subject_never_sees_their_own_plan(self):
+		self.assertSees(self.hrSubj, {self.p1, self.p2, self.p3})
+
+	def test_linked_documents_never_mention_a_plan(self):
+		"""Frappe's "Links" count reads with no permission check; a Link field
+		would tell the subject "1 hidden" (question 1, check B-5)."""
+		from frappe.desk.form.linked_with import get as linked
+
+		frappe.set_user(self.hrSubj)
+		self.assertNotIn(PLAN, linked("Alvoraa Position Assignment", self.a_subj))
+
+	def test_ac46_a_lapsed_plan_or_a_leavers_plan_is_hidden_before_any_job_runs(self):
+		self.age(self.p1, 91)
+		frappe.db.set_value("Employee", self.noida_person, {"status": "Left", "relieving_date": add_days(nowdate(), -1)})
+		frappe.db.set_value("Alvoraa Position Assignment", self.a_aarti, "to_date", add_days(nowdate(), -1))
+		frappe.db.commit()
+		self.assertSees(self.hrA, {self.p4})
+		self.age(self.p4, 90)  # day 90 is still shown
+		self.assertSees(self.hrA, {self.p4})

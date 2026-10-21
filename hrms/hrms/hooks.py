@@ -165,6 +165,8 @@ permission_query_conditions = {
 	# ALV-117: Frappe HR ships this doctype with read AND export for every
 	# Employee and no row filter at all. Lists, reports and exports.
 	"Employee Performance Feedback": "hrms.alvoraa_hr_core.feedback_access.feedback_query_conditions",
+	# Slice 065, SEC-1: one gate for every list, count and REST read of plans.
+	"Replacement Plan": "hrms.alvoraa_org_structure.plans.query_conditions",
 }
 
 has_permission = {
@@ -178,6 +180,8 @@ has_permission = {
 	# lists, this guards one record at its own URL, and when it is printed,
 	# emailed, shared or written to.
 	"Employee Performance Feedback": "hrms.alvoraa_hr_core.feedback_access.has_feedback_permission",
+	# Slice 065, SEC-1: the other half - one plan, and no print/email/export/share.
+	"Replacement Plan": "hrms.alvoraa_org_structure.plans.has_permission",
 }
 
 # DocType Class

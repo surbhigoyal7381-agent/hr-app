@@ -271,3 +271,14 @@ Consequences to design for, not to argue with:
 | OD-2 who approves | **"Their reporting manager."** ⚠ This may conflict with her earlier "keep HR as approver" and with prototype v2's 'Send to HR / Waiting for HR / Approved by Ritika (HR)' wording (parity row X-7). To be clarified with her before the build. |
 | OD-3 notice scope | DTC only. |
 | OD-4 date rule and limit bind HR on the desk | Yes, on, for DTC. |
+
+---
+
+## Surbhi's answers on the half-day addendum (01d), 21 Oct 2026
+
+- **Special days (her words):** if the leave is approved there is no double deduction. If it is not approved and the employee still took the day, it counts as unpaid (an absence) and the double deduction applies. ⚠ This may conflict with the earlier D6 (leave blocked on special days): her words read as if leave on a special day is ALLOWED when approved. To be clarified.
+- **D3 (ignore late/early/late window on a half-day leave): agree.**
+- **D4 (green mark on a half-day leave day): she did not understand the question; explained again with an example. OPEN.**
+- **D5 (half-day leave with no punches: other half absent, doubled on a special day): yes.**
+- **D1 and D2: not answered. She questioned the 30-day / 31-day credit example (see 01d); explained again. OPEN.**
+- Her challenges: 'isn't it 3.5 credits'; 'why does the 31st day add a credit'; 'how does a full leave day already work this way'. Answers given in the reply of 21 Oct: credits are whole blocks (A: 1 credit per full 7.5 days attended, so 29.5 days = 3 blocks = 3 credits; only class C earns half credits), attended days count only up to 30 (the 31st day adds nothing, it is spare inside the last block), and a full leave day is already not counted as attended (payroll_month.py: leave days `continue` before `days_worked += 1`).

@@ -1,93 +1,70 @@
       <!-- ── Positions Panel ─────────────────────────── -->
       <div id="panel-positions" class="panel">
-        <div class="pf-toolbar" style="margin-bottom:24px">
+        <div class="pf-toolbar" style="margin-bottom:12px">
           <div>
             <div class="pf-h">Positions</div>
-            <div class="pf-sub">Every seat in the organisation, who is in it, and which are empty.</div>
+            <div class="pf-sub" id="pos-sub">Every seat in the organisation, who is in it, and which are empty.</div>
           </div>
-          <!-- "Set up the chart" used to live here as well, and a screenshot
-               showed it beside the same offer in the empty state - two buttons
-               for one action, one of them far from where the eye is. The empty
-               state keeps it; the toolbar does not. -->
+          <!-- "Set up the chart" lives in the empty state only: two buttons for
+               one action, one of them far from where the eye is, was worse. -->
           <button class="btn btn-primary btn-sm" id="pos-add-btn"
                   onclick="posOpenEditor(null)" style="display:none">+ Add a seat</button>
         </div>
+        <p class="pos-asat" id="pos-asat"></p>
 
-        <!-- The three questions this screen is opened with, answered before
-             the filters rather than in grey text beside them. -->
+        <!-- The questions this screen is opened with, answered first (slice 064). -->
         <div id="pos-tiles"></div>
 
-        <div class="pf-card" style="margin-bottom:16px">
-          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
-            <div>
-              <div class="gp-label">Branch</div>
-              <select class="gp-input" id="pos-f-branch" style="height:32px;padding:4px 8px;width:auto"
-                      onchange="posPaint()"><option value="">All branches</option></select>
+        <!-- View is ONE control, always shown, outside the filters (bug 1:
+             "Arrange by" used to appear only after View was changed). -->
+        <div class="pos-toolbar">
+          <div class="pos-fld">
+            <div class="gp-label" id="pos-view-lab">View</div>
+            <div class="pos-seg" id="pos-view" role="group" aria-labelledby="pos-view-lab">
+              <button type="button" data-v="reporting" aria-pressed="true" onclick="posSetView('reporting')">Reporting lines</button>
+              <button type="button" data-v="branch" aria-pressed="false" onclick="posSetView('branch')">By branch</button>
+              <button type="button" data-v="department" aria-pressed="false" onclick="posSetView('department')">By department</button>
+              <button type="button" data-v="list" aria-pressed="false" onclick="posSetView('list')">List</button>
             </div>
-            <div>
-              <div class="gp-label">Department</div>
-              <select class="gp-input" id="pos-f-dept" style="height:32px;padding:4px 8px;width:auto"
-                      onchange="posPaint()"><option value="">All departments</option></select>
-            </div>
-            <div>
-              <div class="gp-label">Job role</div>
-              <select class="gp-input" id="pos-f-role" style="height:32px;padding:4px 8px;width:auto"
-                      onchange="posPaint()"><option value="">All job roles</option></select>
-            </div>
-            <div>
-              <div class="gp-label">Show</div>
-              <select class="gp-input" id="pos-f-open" style="height:32px;padding:4px 8px;width:auto"
-                      onchange="posPaint()">
-                <option value="">Every seat</option>
-                <option value="open">Only seats with a vacancy</option>
-                <option value="key">Only key seats</option>
-                <option value="leaving">Only seats where somebody is leaving</option>
-              </select>
-            </div>
-            <!-- The way back. There was none: `posClearFilters` existed but
-                 was only reachable from the "nothing matches" empty state, so
-                 a filter that narrowed the view without emptying it left the
-                 reader stuck (Surbhi, 16 Oct 2026). Shown only when something
-                 is actually set, so it is never a dead control. -->
-            <div id="pos-reset-wrap" style="display:none">
-              <div class="gp-label">&nbsp;</div>
-              <button class="btn btn-outline" id="pos-reset-btn"
-                      style="height:32px;padding:4px 12px"
-                      onclick="posClearFilters()">Reset view</button>
-            </div>
-
-            <!-- The chart is one representation of three relationships, and
-                 the reader chooses which. Only shown with the structure view,
-                 because a list has no spine to change. -->
-            <div id="pos-arrange-wrap" style="display:none">
-              <div class="gp-label">Arrange by</div>
-              <select class="gp-input" id="pos-f-arrange" style="height:32px;padding:4px 8px;width:auto"
-                      onchange="posPaint()">
-                <option value="reporting">Who reports to whom</option>
-                <option value="branch">Branch</option>
-                <option value="department">Department</option>
-              </select>
-            </div>
-            <div>
-              <div class="gp-label">View</div>
-              <select class="gp-input" id="pos-f-view" style="height:32px;padding:4px 8px;width:auto"
-                      onchange="posPaint()">
-                <option value="list">As a list</option>
-                <option value="tree">As a structure</option>
-              </select>
-            </div>
-            <div style="margin-left:auto">
-              <div class="pf-card-meta" id="pos-filter-note" style="display:none">
-                In this view the filters grey out what does not match, so the
-                shape of the organisation stays whole.
-              </div>
-            </div>
+          </div>
+          <div class="pos-fld" id="pos-all-wrap">
+            <div class="gp-label">&nbsp;</div>
+            <button type="button" class="btn btn-outline btn-sm" id="pos-all-btn" onclick="posToggleAll()">Open every level</button>
           </div>
         </div>
 
-        <div class="pf-card">
-          <div id="pos-body"><div class="empty-state"><div class="empty-state-text">Loading…</div></div></div>
-        </div>
+        <!-- Folded by default: the chart is the point. On the chart, seats that
+             do not match are greyed and the path to every match opens. -->
+        <details class="pos-filters" id="pos-filters">
+          <summary>Filters<span id="pos-filters-on"></span></summary>
+          <div class="pos-filters-in">
+            <div class="pos-fld">
+              <label class="gp-label" for="pos-f-branch">Branch</label>
+              <select class="gp-input" id="pos-f-branch" onchange="posFilterChanged()"><option value="">All branches</option></select>
+            </div>
+            <div class="pos-fld">
+              <label class="gp-label" for="pos-f-dept">Department</label>
+              <select class="gp-input" id="pos-f-dept" onchange="posFilterChanged()"><option value="">All departments</option></select>
+            </div>
+            <div class="pos-fld">
+              <label class="gp-label" for="pos-f-role">Job role</label>
+              <select class="gp-input" id="pos-f-role" onchange="posFilterChanged()"><option value="">All job roles</option></select>
+            </div>
+            <div class="pos-fld">
+              <label class="gp-label" for="pos-f-open">Show</label>
+              <select class="gp-input" id="pos-f-open" onchange="posFilterChanged()"><option value="">Every seat</option></select>
+            </div>
+            <div class="pos-fld" id="pos-reset-wrap" style="display:none">
+              <div class="gp-label">&nbsp;</div>
+              <button type="button" class="btn btn-outline btn-sm" id="pos-reset-btn" onclick="posClearFilters()">Reset view</button>
+            </div>
+            <p class="pos-asat" style="flex-basis:100%;margin:0">On the chart, seats that do not match are greyed, and the path to every match opens.</p>
+          </div>
+        </details>
+        <div class="pos-focusline" id="pos-focusline" role="status" style="display:none"></div>
+
+        <div id="pos-body"><p class="pos-asat" role="status">Loading the seats…</p></div>
+        <div id="pos-layer"></div>
       </div>
 
       <!-- One dialog, one seat.

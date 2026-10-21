@@ -264,7 +264,8 @@ function ocRender(n, isRoot, opts) {
    from the roles in the browser: the endpoint refuses either way. */
 
 var POS = { rows: [], may_edit: false, may_delete: false, departments: {},
-            view: "reporting", all: false, open: {}, copen: {}, focus: null, focusWho: "",
+            view: "reporting", all: false, open: {}, copen: {}, hopen: undefined, cols: 5,
+            focus: null, focusWho: "",
             trail: [], hits: [], sheet: null, ret: null, retEl: null,
             unseated: null, active_people: 0, today: "", loadedAt: "",
             may_see_leaving: false, may_edit_employee: false, records: null, nav: null };
@@ -358,7 +359,7 @@ window.posLoad = async function () {
   POS.records = null;
   var now = new Date();
   POS.loadedAt = ("0" + now.getHours()).slice(-2) + ":" + ("0" + now.getMinutes()).slice(-2);
-  POS.open = {}; POS.copen = {}; POS.trail = [];
+  POS.open = {}; POS.copen = {}; POS.hopen = undefined; POS.trail = [];
   var add = document.getElementById("pos-add-btn");
   if (add) add.style.display = POS.may_edit ? "" : "none";
   posWire();
@@ -447,26 +448,27 @@ window.posClearFilters = function () {
     var el = document.getElementById(id);
     if (el) el.value = "";
   });
-  POS.open = {}; POS.copen = {}; POS.all = false; POS.trail = [];
+  POS.open = {}; POS.copen = {}; POS.hopen = undefined; POS.all = false; POS.trail = [];
   posPaint();
 };
 
 window.posFilterChanged = function () {
   // A filter greys what does not match and opens the path to every match.
-  POS.open = {}; POS.copen = {}; POS.trail = [];
+  POS.open = {}; POS.copen = {}; POS.hopen = undefined; POS.trail = [];
   posPaint();
 };
 
 window.posSetView = function (v) {
   POS.view = v;
-  POS.open = {}; POS.copen = {}; POS.trail = [];
+  // A new view forgets every open choice of the old one (v11).
+  POS.open = {}; POS.copen = {}; POS.hopen = undefined; POS.trail = [];
   posCloseSheet(true);
   posPaint();
 };
 
 /* "Open every level" / "Fold back to two levels". */
 window.posToggleAll = function () {
-  POS.all = !POS.all; POS.open = {}; POS.copen = {};
+  POS.all = !POS.all; POS.open = {}; POS.copen = {}; POS.hopen = undefined;
   posPaint();
 };
 
@@ -729,12 +731,12 @@ function posFoldBtn(id, n, opened, depth, gkey) {
    its counts; selecting it opens or folds it. */
 function posHolderBox(id, depth, path, gkey, chosen) {
   var nav = POS.nav, hd = nav.holder[id], kids = posKidsOf(id), o = posRoll(id);
-  var opened = gkey ? chosen : posIsOpen(id, Math.max(depth, 1), path);
+  var opened = !!chosen;
   var twin = POS.view === "branch" ? posTwinBranch(hd.key) : null;
   var call = gkey ? "posGroupFold('" + posJs(gkey) + "','" + posJs(id) + "'," + (opened ? "true" : "false") + ")"
-                  : "posFold('" + posJs(id) + "'," + Math.max(depth, 1) + ")";
+                  : "posHolderFold('" + posJs(id) + "')";
   var h = '<div class="pos-br"><button type="button" class="pos-box' + (o.fill || o.leaving ? " amber" : "")
-    + (gkey && chosen ? " opened" : "") + '" id="' + posBoxId(id) + '" data-id="' + posEsc(id) + '" aria-expanded="'
+    + (opened ? " opened" : "") + '" id="' + posBoxId(id) + '" data-id="' + posEsc(id) + '" aria-expanded="'
     + (opened ? "true" : "false") + '" onclick="' + call + '"><div class="ti">' + posEsc(hd.title)
     + '</div><div class="su">' + posEsc(hd.sub) + "</div>"
     + (hd.head ? '<div class="who">' + posEsc(hd.head) + "</div>" : "")
@@ -743,9 +745,14 @@ function posHolderBox(id, depth, path, gkey, chosen) {
     + (o.leaving ? " · " + drT("{0} leaving", [o.leaving]) : "") + "</div>"
     + (twin ? '<div class="pos-chips"><span class="pos-chip info">' + posEsc(drT("Second branch record for {0}", [twin])) + "</span></div>" : "")
     + '<div class="su">' + drT(opened ? "Select to fold" : "Select to open") + "</div></button>";
-  if (opened && !gkey) h += posKids(kids, depth + 1, path, id);
   return h + "</div>";
 }
+
+/* The top row of branches or departments: one opens at a time. */
+window.posHolderFold = function (id) {
+  POS.hopen = POS.hopen === id ? null : id;
+  posPaint();
+};
 
 /* A family. Five or fewer on the horizontal line, as always. More than five
    in ONE labelled group joined by ONE line, with no lines inside it: seats
@@ -756,18 +763,16 @@ function posKids(kids, depth, path, owner) {
   var nav = POS.nav;
   var parents = kids.filter(function (k) { return !posIsSeat(k) || posKidsOf(k).length; });
   var leaves = kids.filter(function (k) { return posIsSeat(k) && !posKidsOf(k).length; });
-  if (kids.length <= POS_WRAP_N) {
-    return '<div class="pos-kids">' + parents.concat(leaves).map(function (k) {
-      return posSeatBox(k, depth, path);
-    }).join("") + "</div>";
-  }
   var key = "c:" + owner;
-  // The open team is only ever one of THIS group's leads. A choice left over
-  // from another view would draw somebody else's family here - the crash the
-  // approved prototype had (open Delhi, By branch, Open every level).
-  var chosen = POS.copen[key] !== undefined && (POS.copen[key] === null || parents.indexOf(POS.copen[key]) > -1)
-    ? POS.copen[key]
-    : ((parents.filter(function (k) { return posIsOpen(k, depth, path); })[0]) || null);
+  if (kids.length <= Math.min(POS_WRAP_N, POS.cols)) {
+    // v11: in a small family too, an opened child's family sits in a strip
+    // below the row, not inside its column, so rows never run off the frame.
+    var rch = posChosen(key, parents, depth, path);
+    return '<div class="pos-kids">' + parents.concat(leaves).map(function (k) {
+      return parents.indexOf(k) > -1 ? posSeatBox(k, depth, path, key, rch === k) : posSeatBox(k, depth, path);
+    }).join("") + "</div>" + posStrip(rch, depth, path);
+  }
+  var chosen = posChosen(key, parents, depth, path);
   var h = '<div class="pos-sibwrap"><div class="pos-sibs" id="pos-c-' + posBoxId(owner).slice(4) + '" data-parent="'
     + posEsc(owner) + '"><div class="pos-sibhead">'
     + posEsc(drT("{0} seats report to {1}", [kids.length, posTitle(nav, owner)])) + "</div>";
@@ -780,20 +785,35 @@ function posKids(kids, depth, path, owner) {
       + parents.map(function (k) { return posSeatBox(k, depth, path, key, chosen === k); }).join("") + "</div>";
   }
   h += "</div>";
-  if (chosen) {
-    h += '<div class="pos-strip" data-parent="' + posEsc(chosen) + '"><div class="pos-striphead">'
-      + drT("Under") + " <strong>" + posEsc(posLabel(nav, chosen)) + "</strong></div>"
-      + posKids(posKidsOf(chosen), depth + 1, path, chosen) + "</div>";
-  }
-  return h + "</div>";
+  return h + posStrip(chosen, depth, path) + "</div>";
 }
 
-/* A group shows as many columns as the chart frame holds, five at most (v10):
-   5 at a 1,128 px frame, 4 at 970, 3 at 820. */
-function posFitColumns() {
-  var cw = document.querySelector && document.querySelector("#pos-body .pos-chartwrap");
-  if (!cw || !cw.style || !cw.style.setProperty || !cw.clientWidth) return;
-  cw.style.setProperty("--cols", Math.max(1, Math.min(5, Math.floor((cw.clientWidth - 16) / 222))));
+/* Which of a row's or group's leads is open. The open team is only ever one
+   of THIS row's or group's own leads: a choice left over from another view
+   would draw somebody else's family here - the crash the approved prototype
+   had (open Delhi, By branch, Open every level). */
+function posChosen(key, parents, depth, path) {
+  var c = POS.copen[key];
+  if (c !== undefined && (c === null || parents.indexOf(c) > -1)) return c;
+  return parents.filter(function (k) { return posIsOpen(k, depth, path); })[0] || null;
+}
+
+/* An opened lead's family: below the whole row or group, under a full-width
+   "Under <name>" strip reached by its own line. */
+function posStrip(id, depth, path) {
+  if (!id) return "";
+  return '<div class="pos-strip" data-parent="' + posEsc(id) + '"><div class="pos-striphead">'
+    + drT("Under") + " <strong>" + posEsc(posLabel(POS.nav, id)) + "</strong></div>"
+    + posKids(posKidsOf(id), depth + 1, path, id) + "</div>";
+}
+
+/* How many 208 px boxes the chart frame holds: 5 at a 1,128 px frame, 4 at
+   1,006, 3 at 830 (v10, v11). Read from the panel before drawing, because it
+   decides the layout itself - a family wider than this becomes a group. */
+function posFrameCols() {
+  var body = document.getElementById("pos-body");
+  var w = (body && body.clientWidth) || 1440;
+  return Math.max(1, Math.floor((w - 2 - 16) / 222));
 }
 
 /* The line from an opened team lead to its "Under ..." strip: straight down
@@ -810,7 +830,8 @@ function posDrawLinks() {
     if (!box) return;
     var br = box.parentNode.getBoundingClientRect(), s = st.getBoundingClientRect();
     var x = br.left + br.width / 2 - c.left, y = br.bottom - c.top, y2 = s.top - c.top, gx = br.right + 7 - c.left;
-    var below = Array.prototype.some.call(box.closest(".pos-sibs").querySelectorAll(".pos-sibgrid > .pos-br"), function (o) {
+    var row = box.closest(".pos-sibs, .pos-hrow, .pos-kids");
+    var below = row && Array.prototype.some.call(row.querySelectorAll(".pos-sibgrid > .pos-br, .pos-hrow > .pos-br, .pos-kids > .pos-br"), function (o) {
       var q = o.getBoundingClientRect();
       return q.top > br.bottom - 1 && q.left < br.right && q.right > br.left;
     });
@@ -843,8 +864,21 @@ function posShowNoMgr() {
 }
 
 function posChart() {
-  var path = posOnPath(), nav = POS.nav;
-  var html = nav.top.map(function (id) { return posSeatBox(id, 0, path); }).join("");
+  var path = posOnPath(), nav = POS.nav, frame = posFrameCols();
+  POS.cols = Math.min(POS_WRAP_N, frame);
+  var html;
+  if (posHolderView()) {
+    // v11: the branches or departments wrap into rows that fit the frame, with
+    // no lines between them, and the opened one's family sits below the whole
+    // row under "Under <name>", reached by its own line.
+    var hc = POS.hopen !== undefined && (POS.hopen === null || nav.top.indexOf(POS.hopen) > -1)
+      ? POS.hopen : (nav.top.filter(function (h) { return posIsOpen(h, 1, path); })[0] || null);
+    html = '<div class="pos-hview"><div class="pos-hrow">' + nav.top.map(function (id) {
+      return posHolderBox(id, 0, path, null, hc === id);
+    }).join("") + "</div>" + posStrip(hc, 0, path) + "</div>";
+  } else {
+    html = nav.top.map(function (id) { return posSeatBox(id, 0, path); }).join("");
+  }
   if (posShowNoMgr()) html += posNoMgrBox();
   var notes = "";
   // Anything a reporting loop kept off the chart, and a chain cut for depth.
@@ -869,7 +903,8 @@ function posChart() {
         + stranded.map(function (r) { return "<li>" + posEsc(r.title) + "</li>"; }).join("") + "</ul></div>";
     }
   }
-  return '<div class="pos-chartwrap"><div class="pos-chart">' + html + "</div></div>" + notes;
+  return '<div class="pos-chartwrap" style="--cols:' + POS.cols + ";--hcols:" + frame + '"><div class="pos-chart">'
+    + html + "</div></div>" + notes;
 }
 
 /* ── the list ─────────────────────────────────────────────────────────── */
@@ -1008,7 +1043,7 @@ window.posPaint = function () {
   }
   if (POS.view === "list") body.innerHTML = posList();
   else if (phone) body.innerHTML = posOutline();
-  else { body.innerHTML = posChart(); posFitColumns(); posDrawLinks(); }
+  else { body.innerHTML = posChart(); posDrawLinks(); }
   if (POS.focus && !phone) {
     var el = document.getElementById(posBoxId(POS.focus));
     if (el && el.scrollIntoView) el.scrollIntoView({ block: "center", inline: "center" });
@@ -1094,7 +1129,7 @@ window.posPick = function (id, who) {
   posCloseSheet(true);
   POS.focus = id; POS.focusWho = who || "";
   if (POS.view === "list") POS.view = "reporting";
-  POS.open = {}; POS.copen = {};
+  POS.open = {}; POS.copen = {}; POS.hopen = undefined;
   if (posIsPhone()) {
     POS.nav = posNav();
     var tr = [], at = POS.nav.parent[id], hops = 0;
@@ -1149,11 +1184,14 @@ function posWire() {
   // The lines between a lead and its "Under ..." strip follow the layout;
   // and the chart and the phone outline swap at the phone width.
   if (window.addEventListener) {
-    var wasPhone = posIsPhone();
+    var wasPhone = posIsPhone(), wasCols = 0;
     window.addEventListener("resize", function () {
       if (!POS.rows.length) return;
-      if (posIsPhone() !== wasPhone) { wasPhone = posIsPhone(); posPaint(); }
-      else { posFitColumns(); posDrawLinks(); }
+      // The layout depends on the phone width and on how many boxes the frame
+      // holds, so either change redraws; anything else only moves the lines.
+      if (posIsPhone() !== wasPhone || posFrameCols() !== wasCols) {
+        wasPhone = posIsPhone(); wasCols = posFrameCols(); posPaint();
+      } else posDrawLinks();
     });
   }
 }

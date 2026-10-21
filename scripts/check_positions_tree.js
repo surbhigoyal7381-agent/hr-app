@@ -355,7 +355,7 @@ function unseated() {
   ok("the no-manager box is pinned to the chart's top-right corner, outside the tree (v10)",
      html.includes('class="pos-br pos-nomgr-slot"') && /\.pos-chart > \.pos-nomgr-slot\{position:absolute;top:0;right:0\}/.test(css));
   ok("a group's columns follow the frame (v10)", /repeat\(var\(--cols\),208px\)/.test(css)
-     && /function posFitColumns/.test(fs.readFileSync(PORTAL, "utf8")));
+     && html.includes('class="pos-chartwrap" style="--cols:5;--hcols:6"'));
   ok("the no-manager box is dashed and amber", html.includes('class="pos-box dashed amber" id="pos-nomgr-box"')
      && html.includes("Not in any seat, and no manager on their record") && html.includes("Needs a manager"));
   ctx.posNoMgrSheet();
@@ -509,6 +509,75 @@ async function recordsChecks() {
   ctx.posPick("tl3s2");
   ok("a Find pick on a phone opens the outline at the parent, row outlined",
      ctx.POS.trail.join(">") === "own>tl3" && / focus"/.test(body(ctx)));
+}
+
+/* ── 21. v11: branches and departments in rows; one opens below the row ──── */
+{
+  const rows = dtc();
+  const ctx = load(rows);
+  ctx.posSetView("branch");
+  let html = body(ctx);
+  ok("the branches sit in one row of boxes with no lines between them",
+     html.includes('<div class="pos-hview"><div class="pos-hrow">') && !/pos-hrow">[\s\S]*pos-kids[\s\S]*<\/div><\/div>$/.test(html.split("pos-strip")[0]));
+  ok("none is open at first", !html.includes("pos-strip") && count(html, "Select to open") === 5);
+  ctx.posHolderFold("h:Delhi");
+  html = body(ctx);
+  ok("an opened branch's family sits below the whole row under its strip",
+     html.includes('class="pos-strip" data-parent="h:Delhi"') && html.includes("Under <strong>Delhi</strong>")
+     && html.indexOf('data-parent="h:Delhi"') > html.indexOf("</div></div>", html.indexOf("pos-hrow")));
+  ok("the opened branch says so", /pos-box[^"]* opened" id="pos-h-\d+" data-id="h:Delhi"/.test(html) && html.includes("Select to fold"));
+  ctx.posHolderFold("h:Noida");
+  html = body(ctx);
+  ok("one branch at a time", count(html, 'class="pos-strip"') === 1 && html.includes('data-parent="h:Noida"'));
+  ctx.posHolderFold("h:Noida");
+  ok("selecting it again folds it", !body(ctx).includes("pos-strip"));
+  // Inside the strip the same rule repeats: a team lead with a family opens below its own row.
+  ctx.posHolderFold("h:Delhi");
+  ctx.posGroupFold("c:h:Delhi", "tl3", false);
+  html = body(ctx);
+  ok("inside a branch, an opened lead's family is in a strip of its own",
+     html.includes('data-parent="h:Delhi"') && html.includes('class="pos-strip" data-parent="tl3"'));
+  // Stale and switched choices.
+  const stale = load(rows);
+  stale.posSetView("branch");
+  stale.POS.hopen = "h:Nowhere"; stale.POS.copen = { "c:h:Delhi": "own" };
+  let err = null;
+  let staleHtml = "";
+  try { stale.posPaint(); staleHtml = body(stale); stale.posHolderFold("h:Delhi"); } catch (e) { err = e; }
+  ok("a stale branch choice is ignored, without an error", !err && staleHtml && !staleHtml.includes('data-parent="h:Nowhere"'),
+     err && err.message);
+  ok("a stale team choice inside a branch is ignored", !body(stale).includes('data-parent="own"'));
+  stale.posSetView("department");
+  ok("switching view forgets the open branch", stale.POS.hopen === undefined);
+  const seq = load(deep());
+  try {
+    seq.posSetView("branch"); seq.posHolderFold("h:Sector 34"); seq.posSetView("reporting"); seq.posToggleAll();
+    seq.posSetView("department"); seq.posToggleAll(); seq.posSetView("branch"); seq.posToggleAll();
+  } catch (e) { err = e; }
+  ok("open a branch, switch views, open every level: no error", !err, err && err.message);
+}
+
+/* ── 22. v11: how many boxes fit decides the layout ───────────────────────── */
+{
+  const rows = [seat("b", "Boss", "")];
+  for (let i = 0; i < 4; i++) rows.push(seat("x" + i, "Leaf " + i, "b"));
+  rows.push(seat("lead", "Lead", "b")); rows.push(seat("lk", "Lead kid", "lead"));
+  // 5 children: a row at a 1,128 frame (5 fit), a group at an 830 frame (3 fit).
+  const wide = load(rows, {}, {}, { width: 1130 });
+  ok("at a 1,128 px frame five children stay on the line", body(wide).includes('class="pos-kids"') && !body(wide).includes("pos-sibs")
+     && body(wide).includes('style="--cols:5;--hcols:5"'));
+  const mid = load(rows, {}, {}, { width: 1008 });
+  ok("at a 1,006 px frame four columns", body(mid).includes('style="--cols:4;--hcols:4"'));
+  const narrow = load(rows, {}, {}, { width: 832 });
+  ok("at an 830 px frame they become a group of three columns", body(narrow).includes("5 seats report to Boss")
+     && body(narrow).includes('style="--cols:3;--hcols:3"'));
+  // A small family's opened child goes to a strip below the row, not into its column.
+  const small = load(rows, {}, {}, { width: 1130 });
+  small.posGroupFold("c:b", "lead", false);
+  const html = body(small);
+  ok("a small family's opened child is drawn below the row in a strip",
+     html.includes('class="pos-strip" data-parent="lead"') && html.indexOf('data-parent="lead"') > html.indexOf('data-id="x3"')
+     && /pos-box[^"]* opened" id="[^"]*" data-id="lead"/.test(html));
 }
 
 /* ── 18. deleting a seat (slice 061, kept) ──────────────────────────────── */

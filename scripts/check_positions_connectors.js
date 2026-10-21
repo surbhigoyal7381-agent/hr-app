@@ -84,7 +84,9 @@ function audit() {
       const gp = g.getAttribute("data-parent");
       const own = s.owner && app.querySelector('.pos-box[data-id="' + CSS.escape(s.owner) + '"]');
       if (g.classList.contains("pos-sibs") && s.owner !== gp && !(own && g.contains(own))) bad.push(`${s.what} from ${s.owner} touches the group of ${gp}`);
-      if (g.classList.contains("pos-strip") && s.kind === "svg" && gp !== s.owner) bad.push(`link from ${s.owner} lands on the strip of ${gp}`);
+      // Allowed: the link into the owner's own strip, or a link leaving the owner's box inside an
+      // enclosing strip (v11) - the same rule as for groups.
+      if (g.classList.contains("pos-strip") && s.kind === "svg" && gp !== s.owner && !(own && g.contains(own))) bad.push(`link from ${s.owner} lands on the strip of ${gp}`);
     });
   });
   boxes.forEach((b) => {
@@ -110,10 +112,33 @@ function audit() {
            page: document.documentElement.scrollWidth - innerWidth };
 }
 
+/* Layout, as the designer's check11.js measures it: page and frame overflow, the
+   no-manager box and the top seat visible without scrolling, overlaps, small text
+   and small targets - within the Positions panel only. */
+function layout(dev) {
+  const app = document.getElementById("panel-positions"), cw = app.querySelector(".pos-chartwrap");
+  const lim = dev === "phone" ? 44 : 24;
+  const small = [...app.querySelectorAll("*")].filter((e) => e.children.length === 0 && e.textContent.trim()
+    && e.getClientRects().length && !e.closest("#pos-editor,#pos-person,#pos-setup,#pos-delete")
+    && parseFloat(getComputedStyle(e).fontSize) < 12).length;
+  const tiny = [...app.querySelectorAll("button,select,input,summary")].filter((e) => e.getClientRects().length
+    && !e.closest("#pos-editor,#pos-person,#pos-setup,#pos-delete") && e.getBoundingClientRect().height < lim)
+    .map((e) => (e.id || e.textContent.trim().slice(0, 20)));
+  const rects = [...app.querySelectorAll(".pos-box,.pos-orow")].map((e) => e.getBoundingClientRect()).filter((r) => r.width);
+  let ov = 0;
+  for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {
+    const a = rects[i], c = rects[j];
+    if (a.left < c.right - 1 && c.left < a.right - 1 && a.top < c.bottom - 1 && c.top < a.bottom - 1) ov++;
+  }
+  const vis = (el) => { if (!cw || !el) return null; const f = cw.getBoundingClientRect(), r = el.getBoundingClientRect(); return r.left >= f.left && r.right <= f.right; };
+  return { frame: cw ? cw.clientWidth : null, chart: cw ? cw.scrollWidth : null, page: document.documentElement.scrollWidth - innerWidth,
+           small, tiny, ov, nmVisible: vis(app.querySelector("#pos-nomgr-box")), rootVisible: vis(app.querySelector(".pos-box.root")) };
+}
+
 (async () => {
   if (!USR || !PWD) { console.error("Set PROBE_USR and PROBE_PWD for a user on a THROWAWAY site."); process.exit(2); }
   const b = await chromium.launch();
-  let total = 0;
+  let total = 0, layoutFails = 0;
   // Portal windows of 1440, 1280 and 1024 px give chart frames of about
   // 1,128, 970 and 820 px (v10: 5, 4 and 3 group columns), plus a phone.
   const sizes = [["desk", 1440, 900], ["desk", 1280, 900], ["desk", 1024, 900], ["phone", 390, 844]];
@@ -135,6 +160,7 @@ function audit() {
     const run = async (name) => {
       await p.waitForTimeout(150);
       const r = await p.evaluate(audit);
+      r.l = await p.evaluate(layout, dev);
       states.push([name, r]);
       if (SHOTS && theme === "light") await p.screenshot({ path: `${SHOTS}${dev}${w}-${name.replace(/[^a-z0-9]+/gi, "-")}.png`, fullPage: true });
     };
@@ -160,6 +186,27 @@ function audit() {
     } else {
       await p.evaluate((id) => posDown(id), top); await run("phone drilled to the top");
     }
+    // v11: every branch and every department opened in turn, and up to four teams inside each.
+    if (dev === "desk") for (const v of ["branch", "department"]) {
+      await p.evaluate((vv) => posSetView(vv), v);
+      const hs = await p.evaluate(() => POS.nav.top.slice());
+      for (const hid of hs) {
+        await p.evaluate((id) => posHolderFold(id), hid);
+        await run(v + " open " + hid);
+        // Teams inside: a lead's fold, or a sub-department's own box.
+        const inner = await p.evaluate(() => [
+          ...[...document.querySelectorAll("#pos-body .pos-strip .pos-fold[aria-expanded=false]")]
+            .map((e) => (e.closest(".pos-br").querySelector(".pos-box") || {}).getAttribute("data-id")),
+          ...[...document.querySelectorAll('#pos-body .pos-strip .pos-box[aria-expanded=false][data-id^="h:"]')]
+            .map((e) => e.getAttribute("data-id"))].filter(Boolean));
+        for (const id of inner.slice(0, 4)) {
+          const el = (await p.$(`#pos-body .pos-strip .pos-br:has(> .pos-box[data-id="${id}"]) > .pos-fold[aria-expanded=false]`))
+            || (await p.$(`#pos-body .pos-strip .pos-box[aria-expanded=false][data-id="${id}"]`));
+          if (el) { await el.click(); await run(v + " open " + hid + " > " + id); }
+        }
+        await p.evaluate((id) => posHolderFold(id), hid);   // fold it again
+      }
+    }
     for (const v of ["branch", "department", "list", "reporting"]) {
       await p.evaluate((vv) => posSetView(vv), v);
       await run(v + " default");
@@ -167,13 +214,20 @@ function audit() {
     }
     for (const [name, r] of states) {
       total += r.bad.length;
-      console.log(theme, dev + w, name.padEnd(38), `cols ${r.cols} segments ${String(r.segs).padStart(3)} boxes ${String(r.boxes).padStart(3)} width ${r.w}/${r.f} page+${r.page}`,
-                  r.bad.length ? `FAIL ${r.bad.length}: ${r.bad.slice(0, 3).join(" | ")}` : "ok");
+      const l = r.l, lf = [];
+      if (l.page > 0) lf.push("page scrolls " + l.page);
+      if (l.small) lf.push("small text " + l.small);
+      if (l.tiny.length) lf.push("small targets " + l.tiny.slice(0, 3).join("/"));
+      if (l.ov) lf.push("overlaps " + l.ov);
+      if (/reporting default/.test(name) && dev === "desk" && (l.chart > l.frame || l.nmVisible === false || l.rootVisible === false)) lf.push("default does not fit");
+      layoutFails += lf.length;
+      console.log(theme, dev + w, name.padEnd(40), `frame ${l.frame} chart ${l.chart} cols ${r.cols} segs ${String(r.segs).padStart(3)} boxes ${String(r.boxes).padStart(3)}`,
+                  r.bad.length ? `LINKS FAIL ${r.bad.length}: ${r.bad.slice(0, 3).join(" | ")}` : "links ok", lf.length ? "LAYOUT " + lf.join(", ") : "");
     }
     if (errs.length) { console.log("SCRIPT ERRORS", errs); total++; }
     await ctx.close();
   }
-  console.log("TOTAL FALSE OR MISSING LINKS", total);
+  console.log("TOTAL FALSE OR MISSING LINKS", total, "| LAYOUT FAILURES", layoutFails);
   await b.close();
-  process.exit(total ? 1 : 0);
+  process.exit(total || layoutFails ? 1 : 0);
 })();

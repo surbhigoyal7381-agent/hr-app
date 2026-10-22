@@ -1,0 +1,154 @@
+# 065 · Implementation notes: server side (22 Oct 2026)
+
+**The server side is built and committed on `slice/065-plan-a-replacement`, local only.**
+Nothing is pushed, nothing touched a server. The screens are not started: they wait for
+Surbhi's sign-off on the Positions chart and the 065 prototype v3.
+
+Branch: cut from `slice/064-organogram`, then rebased (new commits only) onto `origin/dev`
+`747a4293`, which carries 063 (leave) and 064 (Positions v11). What came in: 064's screen and
+docs commits (v10, v11, notes, demo guide) and 063's leave work. The only overlap with 065's
+files was `test_portal_security_010.py` CEILINGS (063 raised `hr_api.py` to 70 and added
+`leave_rules.py` at 0); both rows are still there after the rebase.
+
+**Plan change (Surbhi, after this build):** the Positions chart goes back to the old hierarchy
+design with the new dialogs and trays. 065's server side does not depend on the chart's
+drawing; its screens will be redone on the old design later.
+
+## What was built, file by file
+
+| File | What | Rung, and why not cheaper |
+|---|---|---|
+| `doctype/replacement_plan/` (new) | 3 fields: `assignment` (**Data**, unique, set once), `confirmed_on`, `note` (set once). Hash name; change history, views, seen, import, rename off. Shipped rights: HR Manager RWCD, System Manager R. Controller: `no_feed_on_delete`, rules in `validate`, `on_trash` refuses any delete except the erase | New DocType - nothing in Frappe HR holds a private note on a seat; a field on the assignment keeps Version history for ever |
+| `plans.py` (new) | The gate (`is_reader`, `_condition`, the two permission hooks), side-door and careless-grant refusals, `set_plan` / `confirm_plan` / `remove_plan` (POST only), `erase`, `_due`, the daily `erase_due_plans`, `self_check`, `erase_all_plans`, `table_view` | New code in our own app |
+| `register.py` | `position_table`: one call into `plans.py`; `opening` empty on a full seat for non-readers; `AUDITED` gains the doctype | Extend the existing endpoint |
+| `hooks.py` | Permission pair (2 lines), `validate` on Comment / ToDo / DocShare / Tag Link / File, `validate` on Custom DocPerm, one `daily` line. All appended | Hooks, the cheapest Frappe extension point |
+| `test_portal_security_010.py` | CEILINGS: `plans.py` 0, the controller 0 | - |
+| `test_replacement_plan_065.py` (new) | 49 tests | - |
+| `scripts/check_positions_tree.js` | 064's "no plan anywhere" check renamed and proved to be the non-reader case (not deleted) | - |
+| `DEPLOYMENT_RUNBOOK.md` | §5.12: erase after any restore; rollback order (erase all, then roll back, then stop the daily job); release check. §7 step 5 points to it | - |
+
+## Stories and ACs (server side)
+
+| Story | ACs proved here | Not here |
+|---|---|---|
+| US-1 record | AC-1 (Data, not Link - Surbhi Q1), AC-2, AC-4 | - |
+| US-2 set | AC-6 (server), AC-7 (server), AC-9, AC-10, AC-11 | AC-5, AC-8, AC-74: screens |
+| US-3 block | AC-12, AC-13 (the reply's `set_by` / `confirmed_by` text) | AC-14..17: screens |
+| US-4 confirm | AC-18, AC-20 | AC-19: screen |
+| US-5 remove | AC-23 (13 places), AC-24, AC-26 | AC-21, 22, 25: screens |
+| US-9 request (server half) | AC-41 (opening carries nothing) | AC-38..40, 42..45: screens |
+| US-10 lapse | AC-46, 47, 48, 50 | - |
+| US-11 log lines | AC-51 (shape and content) | **see bad news 1** |
+| US-12 gate | AC-52, 53, 54, 55, 56 | - |
+| US-13 reply | AC-57, 58, 59 | AC-60, 61: browser checks with the screens |
+| US-14 side doors | AC-62 (+ tags and files) | - |
+| US-15 grants | AC-63 | - |
+| US-16 subject | AC-64, 65 | - |
+| US-17 read only | AC-66 | AC-44: screen |
+| US-18 one place | AC-67, 68 | - |
+| US-19 job | AC-49 (and B-4 below) | AC-69: release note |
+| US-21 restore | AC-71 (`erase_all_plans`; runbook) | - |
+| US-20, US-22 | release steps | wait for Surbhi's word |
+
+## Bad news, and choices made
+
+1. **Security-log lines are not written on a production server - mine or anyone's.**
+   `frappe.logger()` sets level ERROR unless the process is the development server
+   (`frappe/utils/logger.py:12`). Every `.warning(...)` security line in the product
+   (`access.log_refusal` SEC-17, `settings._log_access_change` SEC-18, and 065's PRIV-4
+   lines) is dropped there. Found in bench check B-4: the real worker erased the plan, and
+   `logs/security.log` stayed empty. AC-51's test captures the logger, so it proves the
+   line's shape, not that it reaches the file. **Not fixed here - it changes logging for the
+   whole product and needs a decision** (options: `logging` level in site config, or write
+   security lines at a level that always passes).
+2. **AC-52, System Manager:** the spec says company A only; the System Manager is the CXO
+   and `permitted_companies` gives every company. 01c's rule is "within `_scope()`". Built
+   and tested as every company.
+3. **New permission rows:** Frappe ticks print, email, export, share and report on every new
+   Custom DocPerm row. For plans they are **unticked** on a new row (refusing would block the
+   owners' Read for ever); ticking one on an existing row is refused.
+4. **Assigning is refused twice over:** the ToDo hook refuses it, and the gate refuses "share",
+   which "Assign to" needs. AC-23's test seeds both as Administrator.
+5. **Statement count:** the estimate was +4 to +6; measured +5 with no plans and +7 with plans.
+   Flat in people and plans, so inside the budget. Wall-clock time not measured (rule 5).
+6. **Error Log titles** are fixed sentences; messages hold a plan's random name or counts.
+   `frappe.log_error` also calls Sentry's `capture_exception`; Sentry is not configured at DTC.
+
+## Bench checks (own container `hrlocal-065`, site `test065`; never production)
+
+| # | Check | Result |
+|---|---|---|
+| B-1 | comment (@mention), assign, share, tag, file on a plan; follow | All refused, 0 rows anywhere, follow returns False (AC-62) |
+| B-2 | ordinary delete vs the erase | Ordinary delete refused; with the refusal bypassed, a non-permanent delete leaves 1 Deleted Document row (the test can fail); the erase leaves 0 |
+| B-3 | 13 places after remove, background job switched off | All 13 at 0 |
+| B-4 | the scheduler's user | Real worker ran `erase_due_plans`: `user='Administrator'`, Scheduled Job Log Complete, plan gone, no Deleted Document, no Error Log |
+| B-5 | `linked_with.get` as the subject | No plan in the answer (Data field) |
+| B-6 | Comment `validate` fires on `add_comment`'s insert | Yes (B-1) |
+| B-7 | one savepoint per plan on MariaDB | One forced failure: the other 4 due plans erased; one Error Log, `Plan <name>` only |
+| B-8 | statements and bytes | Below |
+
+**Every guard was broken once on purpose:** gate returning "" → 5 failures; side-door hook
+off → 1; erase without `delete_dynamic_links` → 1; full-seat opening sent to everyone → 1.
+Each restored and green.
+
+### B-8: `position_table`, 90 seats, synthetic people in a rolled-back transaction
+
+| Reader | 064 (no 065) | 065, no plans | 065, 50 plans | Bytes 1,002 people: 064 → 065 with 50 plans |
+|---|---|---|---|---|
+| HR Manager | 6 | 11 | 13 | 195,190 → 205,634 |
+| System Manager | 8 | 14 | 16 | 219,909 → 231,054 |
+| Store head (non-reader) | 7 | 7 | 7 | 186,445 → 186,445 (identical) |
+
+Same counts at 150 and at 1,002 people. Store head's reply is byte for byte the 064 reply.
+
+## Tests run
+
+- `test_replacement_plan_065`: 49 tests, OK (each class run as it was written; full file in
+  the one full run below).
+- `test_positions_064` 17 OK, `test_register_fill_194` 62 OK (2 skipped) after step 6.
+- `test_register_194`: 38 run, 1 error - `test_dtc_shaped_rows_let_the_owners_in_and_keep_hr_out`,
+  pre-existing (fails the same with 064's own `hooks.py` and `register.py`; 064's notes list
+  it too).
+- `node scripts/check_positions_tree.js`: 123 checks.
+- `scripts/check_app_integrity.py`: OK before every commit.
+- **One full run, on the rebased code (own site `test065`, user-creation throttle lifted to
+  1000 as CI does): not finished.** The machine's Docker stopped twice (session restarts),
+  the second time during the last `alvoraa_portal` batch. What completed:
+  - `alvoraa_goals`: 18 OK.
+  - `alvoraa_portal` batch 1: 16 OK. Batch 2: 952 run, 3 errors + 1 failure - the 3 are
+    `test_leave_year` (Fiscal Year overlap on this site, the same 3 064 saw) and the 1 is
+    `test_shift_types_043.test_my_own_default_shift_is_always_offered` (shift code, not
+    065's; not checked against the leave engineer's list of 11).
+  - Batch 3 (about 1,060 tests): not completed on the rebased code.
+  - An earlier full run on the pre-rebase base finished: batch 3 had 519 errors, almost all
+    `Throttled` (user creation limit) and their cascade (`TooManyWritesError`); 33 of the
+    69 failing modules were rerun with the throttle lifted and all 33 passed before Docker
+    stopped. `hrms.alvoraa_org_structure` modules: all OK except the pre-existing
+    `test_register_194...dtc_shaped...` and two lock-wait timeouts in `test_org_structure`
+    (pass on their own).
+
+## What waits for the screens
+
+Commits 9-10 of the plan: flag, red edge, planned-first order, Show options, the line under
+Filters, hide, print, the plan block and three dialogs, "Request a replacement" with the
+warning, phone buttons; AC-5, 8, 14-17, 19, 21, 22, 25, 27-40, 42-45, 60, 61, 73, 74; the
+Surbhi wording ("Only HR, owners and the system administrator see this"; "Backups expire
+after 14 days. A replacement plan that has been erased from the system can still sit in a
+backup until that backup expires.") - that text lives on the screens, so it is not in the
+server code yet.
+
+## Known gaps
+
+| Gap | Label |
+|---|---|
+| Security-log lines dropped outside the dev server (bad news 1) | **dangerous debt for the whole product** - escalated, not fixed here |
+| Release check counts a plan due because of a status change (left company without a relieving date, closed seat, deleted assignment) only through the job's own strict check, not the 2-day release check | acceptable simplification - the daily job's strict self-check counts every one |
+| `register.py` still holds one occurrence-test exception (the doctype name in `AUDITED`) | intentional trade-off - allowed by SEC-7 |
+| Findings N-1 (linked documents hidden count on other guarded doctypes) and N-2 (`add_tag` has no permission check) | separate tickets, not fixed here |
+
+## Subtract pass
+
+Removed: the second `is_reader()` call in `table_view` (saved one statement); a refusal of
+print/export ticks on new permission rows (replaced by unticking - it would have blocked the
+owners' row); a planned `BACKUP_DAYS` constant (only the screens use the number). Nothing else
+found to delete.

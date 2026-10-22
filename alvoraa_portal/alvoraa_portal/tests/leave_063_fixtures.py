@@ -70,7 +70,16 @@ def _gender():
 	return g or _insert({"doctype": "Gender", "gender": "Other"}).name
 
 
-def ensure_user(email, roles, first):
+def ensure_user(email, roles, first, employee=None):
+	"""The login with exactly these roles.
+
+	`employee` is linked BEFORE the roles are saved. ERPNext's User validate
+	(validate_employee_role) silently drops the Employee role from a user no
+	Employee points at, so on a fresh site - where the user is new - Priya
+	used to end up with no roles at all and every permission-checked call she
+	made failed (CI run 39714021470). A second run passed only because the
+	link already existed by then.
+	"""
 	if frappe.db.exists("User", email):
 		u = frappe.get_doc("User", email)
 	else:
@@ -78,6 +87,8 @@ def ensure_user(email, roles, first):
 		                    "send_welcome_email": 0, "enabled": 1})
 		u.flags.ignore_permissions = True
 		u.insert(ignore_permissions=True)
+	if employee:
+		frappe.db.set_value("Employee", employee, "user_id", email)
 	u.enabled = 1
 	u.set("roles", [])
 	for r in roles:
@@ -102,8 +113,7 @@ def ensure_employee(first, company=COMPANY, grade=None, category=None, branch=No
 	else:
 		frappe.db.set_value("Employee", name, values)
 	if login_roles is not None:
-		email = ensure_user(user(first), login_roles, first)
-		frappe.db.set_value("Employee", name, "user_id", email)
+		email = ensure_user(user(first), login_roles, first, employee=name)
 		# Staff get a User Permission on their own record, as DTC's 7 staff
 		# logins do; HR do not (DTC's 3 HR logins have none, SEC-8 note).
 		own = {"user": email, "allow": "Employee", "for_value": name}
@@ -211,6 +221,19 @@ def _rule_set(company, enabled):
 	doc.flags.ignore_permissions = True
 	doc.insert()
 	return doc.name
+
+
+def leave_world(people):
+	"""Undo what this module switched on, so DTC's rules cannot reach a later
+	test module: the people's leave, and the two L063 rule sets. The companies
+	stay; with no rule set they are ordinary companies. ensure_world() puts the
+	rule sets back for the next module that needs them."""
+	clear_leave(*people)
+	for name in frappe.get_all("Alvoraa Payroll Rule Set",
+	                           filters={"company": ["in", [COMPANY, OFF_COMPANY]]}, pluck="name"):
+		frappe.delete_doc("Alvoraa Payroll Rule Set", name, force=True, ignore_permissions=True)
+	frappe.clear_cache(doctype="Alvoraa Payroll Rule Set")
+	frappe.db.commit()
 
 
 def set_special_day(day, description="Festive sale"):

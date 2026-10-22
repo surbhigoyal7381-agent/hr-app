@@ -14,6 +14,10 @@ from alvoraa_portal.tests import leave_063_fixtures as fx
 from alvoraa_portal.tests.test_leave_063_rules import LWP, Rules063Case
 
 
+def tearDownModule():
+	fx.leave_world(P.values())
+
+
 def setUpModule():
 	global P
 	P = fx.ensure_world()

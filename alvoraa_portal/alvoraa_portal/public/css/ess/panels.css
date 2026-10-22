@@ -2068,110 +2068,17 @@ body.panel-fullscreen{overflow:hidden}
   font:inherit;font-size:var(--fs-xs);padding:4px 9px;color:var(--text);cursor:pointer}
 .oc-up:hover{border-color:var(--accent,var(--green));color:var(--accent,var(--green))}
 
-/* ── Positions (slice 064, approved design prototype-v9) ─────────────────
-   Its own block and prefix. A family of five or fewer hangs on the
-   horizontal line; a bigger one is ONE labelled group joined by ONE line,
-   with no lines inside it, and an opened team lead's family sits below the
-   whole group under a full-width "Under ..." strip with its own line (an
-   SVG drawn after layout). Colour is never alone: an amber bar always comes
-   with a worded chip. Text is never under 12 px; targets are 24 px on
-   desktop and 44 px on a phone. */
-.pos-asat{color:var(--text3);font-size:var(--fs-sm);margin:0 0 10px}
-.pos-tiles{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
-.pos-tile{border:1px solid var(--border);border-left:3px solid var(--border);border-radius:var(--r);
-  padding:8px 14px;min-width:132px;background:var(--surface);text-align:left;font:inherit;color:var(--text)}
-button.pos-tile{cursor:pointer}
-button.pos-tile:hover{box-shadow:var(--sh2)}
-.pos-tile .n{font-size:var(--fs-lg);font-weight:700}
-.pos-tile .l{font-size:var(--fs-sm);color:var(--text2)}
-.pos-tile.amber{border-left-color:var(--amber)}
-.pos-toolbar{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end;margin-bottom:10px}
-.pos-seg{display:inline-flex;border:1px solid var(--border2);border-radius:var(--r-sm);overflow:hidden;background:var(--surface)}
-.pos-seg button{border:0;border-right:1px solid var(--border2);background:none;padding:6px 12px;min-height:32px;
-  cursor:pointer;font:inherit;color:var(--text)}
-.pos-seg button:last-child{border-right:0}
-.pos-seg button[aria-pressed="true"]{background:var(--primary-lt);color:var(--primary);font-weight:700}
-.pos-find{position:relative}
-.pos-find input{font:inherit;font-size:16px;padding:6px 10px;min-height:32px;width:280px;
-  border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);color:var(--text)}
-.pos-hits{position:absolute;top:calc(100% + 4px);left:0;width:340px;max-height:320px;overflow:auto;
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh3);z-index:30}
-.pos-hit{display:block;width:100%;text-align:left;border:0;background:none;padding:8px 12px;cursor:pointer;
-  min-height:40px;font:inherit;color:var(--text)}
-.pos-hit:hover,.pos-hit:focus{background:var(--surface2)}
-.pos-hit .t{color:var(--text3);font-size:var(--fs-sm)}
-.pos-hits .none{padding:10px 12px;color:var(--text2)}
-.pos-filters{border:1px solid var(--border);border-radius:var(--r);background:var(--surface);margin-bottom:12px}
-.pos-filters summary{padding:8px 12px;cursor:pointer;font-weight:600;min-height:32px}
-.pos-filters-in{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;padding:0 12px 12px}
-.pos-filters select{height:32px;padding:4px 8px;width:auto}
+/* ── Positions trays (slice 064) ─────────────────────────────────────────
+   The chart is the original one (Surbhi, 22 Oct 2026). These rules are only
+   the seat tray, the two people trays and their notes. Colour is never alone:
+   every amber or green chip is worded. On a phone the tray rises from the
+   bottom with 44 px targets. Printing leaves the trays out. */
 .pos-link{border:0;background:none;color:var(--primary);padding:4px 2px;text-decoration:underline;
   min-height:28px;cursor:pointer;font:inherit}
-.pos-focusline{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--primary-lt);
-  border-radius:var(--r-sm);padding:6px 12px;margin-bottom:10px}
-.pos-chartwrap{--cols:5;--hcols:5;overflow-x:auto;border:1px solid var(--border);border-radius:var(--r);background:var(--surface);padding:16px 8px 28px}
-.pos-chart{display:flex;justify-content:center;align-items:flex-start;gap:16px;min-width:max-content;margin:0 auto;position:relative}
-.pos-br{display:flex;flex-direction:column;align-items:center;position:relative}
-.pos-kids{display:flex;align-items:flex-start;padding-top:22px;position:relative}
-.pos-kids::before{content:"";position:absolute;top:0;left:50%;width:1px;height:11px;background:var(--border2)}
-.pos-kids > .pos-br{padding:0 7px}
-.pos-kids > .pos-br::before{content:"";position:absolute;top:-11px;left:50%;width:1px;height:11px;background:var(--border2)}
-.pos-kids > .pos-br::after{content:"";position:absolute;top:-11px;left:0;right:0;height:1px;background:var(--border2)}
-.pos-kids > .pos-br:first-child::after{left:50%}
-.pos-kids > .pos-br:last-child::after{right:50%}
-.pos-kids > .pos-br:only-child::after{display:none}
-.pos-sibwrap{position:relative;padding-top:22px;display:flex;flex-direction:column}
-.pos-sibwrap::before{content:"";position:absolute;top:0;left:50%;width:1px;height:22px;background:var(--border2)}
-.pos-sibs{border:1px solid var(--border2);border-radius:var(--r);padding:6px 6px 12px}
-/* "No reporting manager" is not part of the tree: pinned to the top-right
-   corner of the chart, with no line (v10). */
-.pos-chart > .pos-nomgr-slot{position:absolute;top:0;right:0}
-/* v11: branches or departments in rows that fit the frame, no lines between them. */
-.pos-hview{display:flex;flex-direction:column}
-.pos-hrow{display:grid;grid-template-columns:repeat(var(--hcols),208px);gap:14px;justify-content:center}
-.pos-sibhead{text-align:center;font-size:var(--fs-sm);font-weight:700;color:var(--text2)}
-.pos-siblab{font-size:var(--fs-sm);color:var(--text2);margin:10px 4px 6px}
-.pos-sibgrid{display:grid;grid-template-columns:repeat(var(--cols),208px);gap:14px;justify-content:center}
-.pos-strip{margin-top:26px;border-top:2px solid var(--primary);padding-top:6px;display:flex;flex-direction:column;align-items:center}
-.pos-striphead{font-size:var(--fs-sm);color:var(--text2)}
-svg.pos-links{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
-svg.pos-links path{fill:none;stroke:var(--primary);stroke-width:1.5}
-.pos-box{display:block;width:208px;text-align:left;background:var(--surface);border:1px solid var(--border);
-  border-left:3px solid var(--border2);border-radius:var(--r);padding:9px 11px;cursor:pointer;box-shadow:var(--sh1);
-  font:inherit;color:var(--text)}
-.pos-box:hover{box-shadow:var(--sh2)}
-.pos-box.root{border-color:var(--primary);border-left-color:var(--primary)}
-.pos-box.amber{border-left-color:var(--amber)}
-.pos-box.dashed{border-style:dashed;background:transparent}
-.pos-box.dim{opacity:.45}
-.pos-box.focus{outline:3px solid var(--primary);outline-offset:3px}
-.pos-box.opened{outline:2px solid var(--primary);outline-offset:2px}
-.pos-box .ti{font-weight:700;font-size:var(--fs-md);line-height:1.25}
-.pos-box .su{color:var(--text3);font-size:var(--fs-sm)}
-.pos-box .who{margin-top:5px;font-size:var(--fs-sm);color:var(--text2)}
-.pos-box .roll{margin-top:6px;font-size:var(--fs-sm);font-weight:600}
-.pos-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
 .pos-chip{display:inline-block;font-size:12px;font-weight:600;padding:1px 8px;border-radius:var(--r-full);
   background:var(--surface2);color:var(--text2);line-height:1.6}
 .pos-chip.amber{background:var(--amber-lt);color:var(--amber)}
 .pos-chip.green{background:var(--green-lt);color:var(--green)}
-.pos-chip.info{background:var(--primary-lt);color:var(--primary)}
-.pos-fold{margin-top:6px;border:1px solid var(--border2);background:var(--surface);border-radius:var(--r-full);
-  padding:2px 10px;font:inherit;font-size:var(--fs-sm);cursor:pointer;min-height:28px;max-width:236px;color:var(--text)}
-.pos-fold:hover{background:var(--surface2)}
-.pos-listwrap{border:1px solid var(--border);border-radius:var(--r);overflow:auto;max-height:640px}
-.pos-listwrap th{position:sticky;top:0;background:var(--surface2);font-size:var(--fs-sm)}
-/* No text under 12 px and no target under 24 px on this panel (the shared
-   label and small button run a little under both). */
-#panel-positions .gp-label{font-size:var(--fs-sm)}
-#panel-positions .btn-sm{min-height:28px}
-.pos-listwrap td.num,.pos-listwrap th.num{text-align:right}
-.pos-listwrap caption{text-align:left;padding:8px 10px}
-.pos-err{border:1px solid var(--border);border-left:3px solid var(--red);background:var(--surface);border-radius:var(--r);padding:16px}
-.pos-err.plain{border-left-color:var(--border2)}
-.pos-skel{background:var(--surface2);animation:pos-sk 1.2s infinite alternate;border-radius:var(--r);height:64px}
-@keyframes pos-sk{from{opacity:1}to{opacity:.55}}
-@media (prefers-reduced-motion:reduce){.pos-skel{animation:none}}
 .pos-scrim{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:1149}
 .pos-sheet{position:fixed;top:0;right:0;bottom:0;width:460px;max-width:100%;background:var(--surface);z-index:1150;
   box-shadow:var(--sh3);display:flex;flex-direction:column;color:var(--text)}
@@ -2196,35 +2103,13 @@ svg.pos-links path{fill:none;stroke:var(--primary);stroke-width:1.5}
 .pos-note p{margin:8px 0 0}
 .pos-sheet-err{color:var(--red);font-weight:600;margin:12px 0 0}
 .pos-sheet-err[hidden]{display:none}
-.pos-outline .here{background:var(--surface);border:1px solid var(--primary);border-radius:var(--r);padding:12px;margin-bottom:10px}
-.pos-orow{display:flex;justify-content:space-between;gap:10px;align-items:center;width:100%;text-align:left;
-  background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--border2);border-radius:var(--r-sm);
-  padding:10px 12px;margin-bottom:6px;min-height:56px;cursor:pointer;font:inherit;color:var(--text)}
-.pos-orow.amber{border-left-color:var(--amber)}
-.pos-orow.dashed{border-style:dashed}
-.pos-orow.dim{opacity:.45}
-.pos-orow.focus{outline:3px solid var(--primary);outline-offset:1px}
-.pos-orow .t1{font-weight:700;font-size:var(--fs-md)}
-.pos-orow .t2{font-size:var(--fs-sm);color:var(--text2)}
-.pos-orow .chev{font-size:var(--fs-lg);color:var(--text3)}
 @media print{
-  .pos-toolbar,.pos-filters,.pos-scrim,.pos-sheet,.pos-fold,.pos-focusline{display:none!important}
-  .pos-chartwrap{overflow:visible;border:0}
-  .pos-box.dim{opacity:1}
+  .pos-scrim,.pos-sheet{display:none!important}
 }
 @media (max-width:640px){
-  .pos-tiles{display:grid;grid-template-columns:1fr 1fr}
-  .pos-tile{min-width:0;min-height:44px}
-  .pos-toolbar .pos-fld,.pos-filters-in .pos-fld{width:100%}
-  .pos-seg{display:grid;grid-template-columns:1fr 1fr;width:100%}
-  .pos-seg button{min-height:44px;border-bottom:1px solid var(--border2)}
-  .pos-find input{width:100%;min-height:44px}
-  .pos-hits{width:100%}
-  .pos-filters summary{min-height:44px;display:flex;align-items:center}
-  .pos-filters select{min-height:44px;width:100%}
-  .pos-link,.pos-outline .btn{min-height:44px}
+  .pos-link{min-height:44px}
   .pos-sheet{left:0;right:0;top:auto;width:100%;max-height:88vh;border-radius:var(--r) var(--r) 0 0}
-  .pos-sheet .btn,#panel-positions .btn{min-height:44px}
+  .pos-sheet .btn{min-height:44px}
 }
 
 /* ── Colour coding ─────────────────────────────────────────────────

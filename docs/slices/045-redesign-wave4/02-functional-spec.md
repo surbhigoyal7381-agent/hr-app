@@ -1325,6 +1325,12 @@ engineer would otherwise guess at.
   them nobody to chase. The sentence carries the manager's **name** and the date, and
   nothing else off that row; where the record genuinely holds no name it says so and says
   who to ask instead.
+  **Amended 22 Oct 2026 (slice 066, approved by Surbhi):** *given* a correction **raised by
+  the employee's own manager** on their behalf (`raise_for_report`), *then* HR may decide it
+  **at once** and the two-working-day wait does not apply. The manager cannot decide a
+  request they raised themselves, so the wait would be waiting for nobody. A correction the
+  employee raised still waits for the manager as above. Found on DTC production, where an
+  HR user was offered Approve inside the wait and refused with a 403.
 - **AC-82 · an HR override is stored as an HR decision, and the test fails if the record
   cannot tell.** *Given* Priya approves a covered person's attendance correction after the
   manager did not act, *then*:

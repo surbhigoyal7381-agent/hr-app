@@ -114,3 +114,33 @@ class TestWhoeverRaisedItDoesNotDecideIt(_Corrections):
 		doc = self._raised_by(self.covered_only[0], self.kamal_user)
 		self.as_user(self.priya_user)
 		self.assertIs(self._row(doc.name)["can_decide"], True)
+
+
+class TestAManagersOwnRaiseIsNotWaitedOn(_Corrections):
+	"""Fix A. Surbhi, 22 Oct 2026, amending 045 AC-81: when the employee's
+	own manager raised the correction, HR decides at once."""
+
+	_row = TestTheRowSaysWhatDecideWillSay._row
+	_raised_by = TestWhoeverRaisedItDoesNotDecideIt._raised_by
+
+	def test_hr_may_decide_a_managers_raise_straight_away(self):
+		"""The DTC case: Sandeep raised it for Rahul today."""
+		doc = self._raised_by(self.rahul, self.sandeep_user)
+		self.as_user(self.priya_user)
+		row = self._row(doc.name)
+		self.assertIs(row["can_decide"], True)
+		self.assertIsNone(row["not_yet"])
+		with may_review_granted():
+			ac.decide(doc.name, 1)
+		frappe.set_user("Administrator")
+		stored = frappe.db.get_value(ac.REQUEST, doc.name,
+		                             ["docstatus", "alvoraa_decided_as"], as_dict=True)
+		self.assertEqual(1, stored.docstatus)
+		self.assertEqual("HR", stored.alvoraa_decided_as)
+
+	def test_the_employees_own_raise_still_waits_for_the_manager(self):
+		doc = self._raised_by(self.rahul, self.rahul_user)
+		self.as_user(self.priya_user)
+		row = self._row(doc.name)
+		self.assertIs(row["can_decide"], False)
+		self.assertIn("still with", row["not_yet"])

@@ -1337,6 +1337,13 @@ def not_yours_yet(doc, capacity):
 	mgr_user = _manager_user_for(doc.employee)
 	if not mgr_user:
 		return None
+	# **A request the manager raised is not waited on.** Surbhi, 22 Oct 2026,
+	# amending 045 AC-81: when the employee's own manager raised it (through
+	# `raise_for_report`, which inserts as the manager), HR may decide at
+	# once. The wait gives the manager first refusal, and the manager cannot
+	# decide what they raised themselves - so HR would be waiting for nobody.
+	if doc.get("owner") == mgr_user:
+		return None
 	may_act_from, basis = hr_may_act_from(doc)
 	if getdate(nowdate()) >= getdate(may_act_from):
 		return None

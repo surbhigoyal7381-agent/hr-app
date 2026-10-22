@@ -120,3 +120,36 @@ the 12 px / 24 px rule.
 - The identical-seat grouping ("5 of these", K3) is gone: v9 does not draw it; the groups replace it.
 - AC-66 (3) no joining date and (8) already holds a seat: guarded in code, cannot be built as tests.
 - A placement does not follow a joining date changed later (OD-7).
+
+## 22 Oct 2026: the original chart comes back, the trays stay
+
+**Surbhi's decision:** keep the chart that is live on main; discard the v9/v10/v11 chart;
+keep the new dialogs and trays. Branch `slice/064-old-chart`, from origin/dev 42317fbe.
+
+**Brought back from main (a473c191), unchanged:** the Positions page header, the three tiles
+(Seats, To fill, Leaving in 60 days), the filter card (Branch, Department, Job role, Show, Reset
+view, Arrange by, View: list or structure), the list view, and the chart: `oc-*` boxes with
+initials and names, connectors, fold buttons with counts, identical seats grouped
+("5 of these"), "+N more in this seat", branch and department arrangements.
+
+**Kept from slice 064:**
+- the seat tray (who is in it, filled/to fill, records notes, Change this seat, Advertise it /
+  Job opening link), opened by clicking a seat on the chart, for every reader;
+- the "No reporting manager" and "In no seat" trays, opened by two new tiles shown only to a
+  reader the server sent the people lists to (SEC-2);
+- the delete-seat dialog with the refusal shown inside it, and the Delete seat button in the
+  seat dialog (server's `may_delete`);
+- the seat dialog, person picker and setup dialog (these are main's, unchanged);
+- all server work, the tray fix in panels.css, and the darker amber token (it keeps the amber
+  chips in the trays readable).
+
+**Removed:** the v9/v10/v11 chart (labelled groups, "Under" strips, SVG links, the corner
+no-manager box), the View button bar, Find, the folded Filters panel, the new tiles row, the
+new list view, the phone outline, the focus line, "Show it on the chart", the records chips on
+boxes, the "as at" line, the skeleton and the new error box, and their CSS.
+`scripts/check_positions_connectors.js` is deleted: it checked the lines of the discarded chart.
+
+**Small adaptations, to wire the kept trays to the old page:** the tray finds seats in
+`POS.rows` instead of the new chart's model; "matching seat" in the In-no-seat tray opens that
+seat's tray instead of "showing it on the chart"; "Seats with no seat above them" is worked out
+from the old tree (every parentless seat except the one with most seats under it).

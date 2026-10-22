@@ -1,9 +1,9 @@
-/* Does the Positions screen actually work in a real browser? (slice 064, v9)
+/* Does the Positions screen actually work in a real browser?
  *
- * The node check (check_positions_tree.js) proves what the page draws; the
- * connector check (check_positions_connectors.js) proves the lines are
- * honest. This one drives the screen the way a person would and writes
- * screenshots somebody can look at.
+ * The original chart (the one live on main, kept by Surbhi on 22 Oct 2026)
+ * with the trays and dialogs slice 064 added: clicking a seat opens its
+ * tray, the tray offers Change, the two people tiles open their trays, and
+ * the seat dialog, the person picker and the delete dialog still open.
  *
  * NOT part of CI. It needs a running site, a login and a browser. Run it on
  * a THROWAWAY site, never a real one:
@@ -12,13 +12,14 @@
  *     PLAYWRIGHT=<path to playwright> node scripts/browser_check_positions.js
  *
  * It prints a line per check, saves PNGs to $SHOTS, and exits non-zero if
- * any check fails.
+ * any check fails. Nothing is saved or deleted: the delete dialog is opened
+ * and closed with "Keep it".
  */
 const { chromium } = require(process.env.PLAYWRIGHT || "playwright");
 
 const BASE = process.env.BASE || "http://127.0.0.1:8000";
 const USR = process.env.PROBE_USR, PWD = process.env.PROBE_PWD;
-const SHOTS = process.env.SHOTS || "/tmp/shots/";
+const SHOTS = process.env.SHOTS || "";
 
 let pass = 0, fail = 0;
 const ok = (cond, msg, detail) => cond ? (pass++, console.log("  PASS  " + msg))
@@ -27,81 +28,137 @@ const ok = (cond, msg, detail) => cond ? (pass++, console.log("  PASS  " + msg))
 (async () => {
   if (!USR || !PWD) { console.error("Set PROBE_USR and PROBE_PWD for a user on a THROWAWAY site."); process.exit(2); }
   const b = await chromium.launch();
-  const page = await (await b.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
-  const errors = [], requests = [];
+  const page = await (await b.newContext({ viewport: { width: 1280, height: 1000 } })).newPage();
+  const shot = async (n) => { if (SHOTS) await page.screenshot({ path: SHOTS + n + ".png", fullPage: true }); };
+  const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
-  page.on("request", (r) => requests.push(r.url()));
   await page.goto(BASE + "/alvoraa-login", { waitUntil: "networkidle" });
   await page.fill("#kx-email", USR); await page.fill("#kx-password", PWD);
   await Promise.all([page.waitForNavigation({ waitUntil: "networkidle" }).catch(() => {}),
                      page.click("#kx-login-form button[type=submit]")]);
   await page.goto(BASE + "/hrms-employee", { waitUntil: "networkidle" });
+  ok(await page.evaluate(() => !!document.getElementById("panel-positions")), "the Positions panel is on the page");
   await page.evaluate(() => switchPanel("positions"));
   await page.waitForFunction(() => window.POS && POS.rows && POS.rows.length > 0, null, { timeout: 30000 });
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(600);
 
-  const home = await page.evaluate(() => ({
-    pressed: (document.querySelector('#pos-view button[aria-pressed="true"]') || {}).textContent,
-    boxes: document.querySelectorAll("#pos-body .pos-box").length,
-    groups: document.querySelectorAll("#pos-body .pos-sibs").length,
-    width: Math.round((document.querySelector("#pos-body .pos-box") || { getBoundingClientRect: () => ({ width: 0 }) }).getBoundingClientRect().width),
-    page: document.documentElement.scrollWidth - innerWidth,
+  // ── the list, which is the default ────────────────────────────────────────
+  const list = await page.evaluate(() => ({
+    rows: document.querySelectorAll("#pos-body table tbody tr").length,
+    body: document.getElementById("pos-body").innerHTML,
   }));
-  ok(home.pressed === "Reporting lines", "the page opens on Reporting lines", home.pressed);
-  ok(home.boxes > 1 && home.groups >= 1, "the chart draws boxes and a group", home.boxes + " boxes");
-  ok(home.width > 150, "a box has real width on screen", home.width + "px");
-  ok(home.page <= 0, "the page itself never scrolls sideways", home.page + "px");
-  await page.screenshot({ path: SHOTS + "positions-home.png", fullPage: true });
+  ok(list.rows > 0, "the list draws rows", "got " + list.rows);
+  ok(!/Loading|undefined|NaN/.test(list.body), "it has loaded and nothing reads undefined");
+  await shot("01-list");
 
-  // A team opens below its group, with its own line.
-  await page.click("#pos-body .pos-sibs .pos-fold");
-  await page.waitForTimeout(400);
-  const opened = await page.evaluate(() => ({
-    strip: document.querySelectorAll("#pos-body .pos-strip").length,
-    line: document.querySelectorAll("#pos-body svg.pos-links path").length,
-  }));
-  ok(opened.strip === 1 && opened.line === 1, "opening a team draws its strip and one line", JSON.stringify(opened));
-  await page.screenshot({ path: SHOTS + "positions-team-open.png", fullPage: true });
-
-  // The seat sheet: a dialog, focus on its heading, Escape closes it.
-  await page.click("#pos-body .pos-box[data-id]");
-  await page.waitForTimeout(300);
-  const sheet = await page.evaluate(() => ({
-    dialog: !!document.querySelector('#pos-layer [role="dialog"]'),
-    focus: document.activeElement && document.activeElement.id,
-  }));
-  ok(sheet.dialog && sheet.focus === "pos-sh-t", "a box opens the seat sheet with focus on its heading", JSON.stringify(sheet));
-  await page.screenshot({ path: SHOTS + "positions-seat-sheet.png" });
-  await page.keyboard.press("Escape");
-  ok(await page.evaluate(() => !document.querySelector('#pos-layer [role="dialog"]')), "Escape closes it");
-
-  // Find makes no request while typing.
-  const before = requests.length;
-  await page.fill("#pos-find", "Sta");
-  await page.waitForTimeout(400);
-  ok(requests.length === before, "typing in Find sends nothing to the server", (requests.length - before) + " requests");
-  ok(await page.evaluate(() => document.querySelectorAll("#pos-hits .pos-hit").length > 0), "Find lists matches");
-  await page.keyboard.press("Escape");
-
-  for (const v of ["branch", "department", "list"]) {
-    await page.evaluate((vv) => posSetView(vv), v);
-    await page.waitForTimeout(400);
-    const html = await page.evaluate(() => document.getElementById("pos-body").innerHTML);
-    ok(html.length > 100 && !/undefined|NaN/.test(html), "the " + v + " view draws, nothing reads undefined");
-    await page.screenshot({ path: SHOTS + "positions-" + v + ".png", fullPage: true });
-  }
-
-  // An editor's "Change this seat" still opens today's dialog.
-  await page.evaluate(() => { posSetView("reporting"); posSeatSheet(POS.rows[0].id); });
-  const canEdit = await page.evaluate(() => POS.may_edit);
-  if (canEdit) {
-    await page.click("text=Change this seat");
+  // ── the structure view, the original chart ────────────────────────────────
+  await page.selectOption("#pos-f-view", "tree");
+  await page.waitForTimeout(600);
+  const tree = await page.evaluate(() => {
+    const box = document.querySelector("#pos-body .oc-box");
+    return {
+      boxes: document.querySelectorAll("#pos-body .oc-box").length,
+      kids: document.querySelectorAll("#pos-body .oc-kids").length,
+      isTable: !!document.querySelector("#pos-body table"),
+      boxWidth: box ? Math.round(box.getBoundingClientRect().width) : 0,
+      newChart: !!document.querySelector(".pos-chartwrap, .pos-box, .pos-sibs, .pos-strip"),
+    };
+  });
+  ok(tree.boxes > 1, "the structure view draws the original boxes", "got " + tree.boxes);
+  ok(tree.kids > 0, "with connectors between them", "got " + tree.kids);
+  ok(!tree.isTable, "and it is not a table");
+  ok(tree.boxWidth > 120, "a box has real width on screen", tree.boxWidth + "px");
+  ok(!tree.newChart, "none of the discarded chart is drawn");
+  await shot("02-structure");
+  for (const how of ["branch", "department"]) {
+    await page.selectOption("#pos-f-arrange", how);
     await page.waitForTimeout(500);
-    ok(await page.evaluate(() => document.getElementById("pos-editor").classList.contains("open")), "Change this seat opens today's dialog");
+    const got = await page.evaluate(() => ({ boxes: document.querySelectorAll("#pos-body .oc-box").length,
+                                             body: document.getElementById("pos-body").innerHTML }));
+    // One box is right for a reader with one branch, or departments under one top.
+    ok(got.boxes >= 1 && !/undefined|NaN/.test(got.body), "arranged by " + how + ", the chart draws");
+  }
+  await page.selectOption("#pos-f-arrange", "reporting");
+  await page.waitForTimeout(500);
+
+  // ── clicking a seat opens its tray ────────────────────────────────────────
+  const target = await page.evaluate(() => {
+    const seat = POS.rows.filter((r) => r.people.length)[0];
+    const btn = [...document.querySelectorAll("#pos-body [onclick]")]
+      .find((e) => (e.getAttribute("onclick") || "").indexOf("posSeatSheet('" + seat.id + "')") === 0);
+    if (btn) btn.setAttribute("data-probe", "1");
+    return { id: seat.id, found: !!btn };
+  });
+  ok(target.found, "a seat box on the chart opens the seat tray");
+  if (target.found) await page.click("[data-probe='1']"); else await page.evaluate((id) => posSeatSheet(id), target.id);
+  await page.waitForTimeout(300);
+  const tray = await page.evaluate(() => {
+    const s = document.querySelector(".pos-sheet"), r = s ? s.getBoundingClientRect() : null;
+    return { open: !!s, right: r ? Math.round(r.right) : 0, top: r ? Math.round(r.top) : -1,
+             vw: document.documentElement.clientWidth, text: s ? s.textContent : "",
+             focus: document.activeElement && document.activeElement.id };
+  });
+  ok(tray.open, "the tray opens");
+  ok(Math.abs(tray.right - tray.vw) <= 1 && tray.top === 0, "against the window's right edge, from the top",
+     "right " + tray.right + " of " + tray.vw + ", top " + tray.top);
+  ok(/Who is in it/.test(tray.text), "it says who is in the seat");
+  ok(tray.focus === "pos-sh-t", "focus moves to its heading");
+  await shot("03-seat-tray");
+  const mayEdit = await page.evaluate(() => POS.may_edit);
+  if (mayEdit) {
+    await page.click(".pos-sheet button:has-text('Change this seat')");
+    await page.waitForTimeout(500);
+    const dlg = await page.evaluate(() => {
+      const el = document.getElementById("pos-editor");
+      const r = el.querySelector(".gp-modal").getBoundingClientRect();
+      return { open: el.classList.contains("open"), visible: r.width > 100 && r.height > 100,
+               tray: !!document.querySelector(".pos-sheet"),
+               people: (document.getElementById("pos-people") || {}).innerHTML || "" };
+    });
+    ok(dlg.open && dlg.visible, "Change this seat opens the seat dialog");
+    ok(!dlg.tray, "and the tray closes behind it");
+    ok(!/Nobody is in this seat/.test(dlg.people), "a filled seat lists its people");
+    await shot("04-seat-dialog");
+    await page.evaluate(() => posPickPerson());
+    await page.waitForTimeout(1500);
+    const pick = await page.evaluate(() => ({ open: document.getElementById("pos-person").classList.contains("open"),
+                                              list: document.getElementById("pos-p-list").textContent }));
+    ok(pick.open && !/Looking/.test(pick.list), "the person picker opens and finishes looking");
+    await page.evaluate(() => posPickClose());
+    if (await page.evaluate(() => POS.may_delete)) {
+      await page.click("#pos-delete-btn");
+      const del = await page.evaluate(() => ({ open: document.getElementById("pos-delete").classList.contains("open"),
+                                               focus: document.activeElement && document.activeElement.id }));
+      ok(del.open && del.focus === "pos-delete-keep", "Delete seat asks first, with focus on Keep it");
+      await page.keyboard.press("Escape");
+      ok(!(await page.evaluate(() => document.getElementById("pos-delete").classList.contains("open"))), "Escape keeps the seat");
+    }
+    await page.evaluate(() => posCloseEditor());
+  } else {
+    ok(!/Change this seat/.test(tray.text), "a reader's tray has no Change");
+    await page.keyboard.press("Escape");
+  }
+  ok(!(await page.evaluate(() => !!document.querySelector(".pos-sheet"))), "no tray is left open");
+
+  // ── the people tiles, for HR only ─────────────────────────────────────────
+  const hr = await page.evaluate(() => POS.unseated !== null);
+  const tiles = await page.evaluate(() => document.getElementById("pos-tiles").innerHTML);
+  ok(hr === /IN NO SEAT/.test(tiles), hr ? "HR see the In no seat tile" : "a reader without HR scope sees no people tiles");
+  if (hr) {
+    for (const [fn, title] of [["posUnseatedSheet()", "In no seat"], ["posNoMgrSheet()", "No reporting manager"]]) {
+      const has = await page.evaluate((f) => !!document.querySelector("#pos-tiles [onclick='" + f + "']"), fn);
+      if (!has) { ok(true, title + " tile has nothing to open (zero)"); continue; }
+      await page.click("#pos-tiles [onclick='" + fn + "']");
+      await page.waitForTimeout(300);
+      const t = await page.evaluate(() => (document.querySelector(".pos-sheet h2") || {}).textContent || "");
+      ok(t.indexOf(title) === 0, "the " + title + " tile opens its tray", t);
+      await shot("05-" + title.replace(/ /g, "-"));
+      await page.keyboard.press("Escape");
+    }
   }
 
   ok(errors.length === 0, "no JavaScript errors on the page", errors.slice(0, 2).join(" | "));
   await b.close();
   console.log("\n  " + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);
-})();
+})().catch((e) => { console.error(e); process.exit(1); });

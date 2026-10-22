@@ -77,8 +77,8 @@ const RUN = [
   /* Slice 045, Wave 4: the two that needed a get_performance_tree payload. */
   { file: "portal_tree_test.js", args: [PAGE, TREE_FIXTURE] },
   { file: "portal_redesign_test.js", args: [PAGE, TREE_FIXTURE] },
-  /* Slice 064: the Positions window, group boxes, panels, Find and the
-     phone outline. The checks live in scripts/check_positions_tree.js;
+  /* Slice 064: the Positions chart, the delete dialog and the seat and
+     people trays. The checks live in scripts/check_positions_tree.js;
      this runs them in CI so a bad merge that drops one fails here. */
   { file: "portal_positions_test.js" },
 ];

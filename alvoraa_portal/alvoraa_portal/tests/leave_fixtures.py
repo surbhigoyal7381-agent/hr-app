@@ -134,6 +134,33 @@ def reset_leave_applications(employee):
 	frappe.db.commit()
 
 
+# These tests prove Frappe HR's own leave behaviour - balances, half days,
+# holidays - for a tenant WITHOUT DTC's pay rules. `ensure_employee` puts a new
+# person in whichever company Frappe lists first, which on a fresh site is the
+# company the last test module happened to create. Since slice 063, a company
+# with a pay rule set (enabled or switched off) has leave rules of its own, so
+# landing there is not this test's world. CI run 39714021470: five of these
+# failed with "Leave can only be asked for days in October" for exactly that
+# reason. The person is moved to a company with no rule set instead.
+PLAIN_LEAVE_COMPANY = "Alvoraa Leave Test Co"
+
+
+def _plain_company():
+	if not frappe.db.exists("Company", PLAIN_LEAVE_COMPANY):
+		doc = frappe.get_doc({"doctype": "Company", "company_name": PLAIN_LEAVE_COMPANY,
+		                      "abbr": "ALTC", "default_currency": "INR", "country": "India"})
+		doc.flags.ignore_permissions = True
+		doc.insert(ignore_permissions=True)
+	return PLAIN_LEAVE_COMPANY
+
+
+def _keep_out_of_pay_rule_companies(employee):
+	company = frappe.db.get_value("Employee", employee, "company")
+	if frappe.db.exists("Alvoraa Payroll Rule Set", {"company": company}):
+		frappe.db.set_value("Employee", employee, "company", _plain_company())
+		frappe.db.commit()
+
+
 def ensure_employee_with_leave(first_name, leave_type, days=10, last_name="Employee"):
 	"""An employee holding `days` of `leave_type`, ready to apply for leave.
 
@@ -141,6 +168,7 @@ def ensure_employee_with_leave(first_name, leave_type, days=10, last_name="Emplo
 	unsubmitted allocation grants no balance at all.
 	"""
 	emp = ensure_employee(first_name, last_name)
+	_keep_out_of_pay_rule_companies(emp)
 
 	# This hrms version resolves holidays through a submitted "Holiday List
 	# Assignment", NOT the old Employee.holiday_list field. Setting that field

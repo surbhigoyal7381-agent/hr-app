@@ -1304,6 +1304,15 @@ def not_yours_yet(doc, capacity):
 	`capacity` is `decided_as(doc)` for the caller; passed in because both
 	callers already have it.
 	"""
+	# **Whoever raised it does not decide it.** The note on `month()` says
+	# the raiser should not be the decider, but `decide` only ever refused a
+	# person deciding their OWN record. A manager who also holds an HR role
+	# could raise a correction for their report and then approve it, which
+	# is one person vouching for a day and accepting their own word for it.
+	# The raiser is the document's owner: `raise_for_report` and
+	# `raise_correction` both insert as the caller.
+	if doc.get("owner") and doc.get("owner") == frappe.session.user:
+		return _("You raised this request, so someone else decides it.")
 	# **The wait applies only where there is a manager who could act.**
 	#
 	# 045 AC-81, the no-manager clause. The two working days exist to give
@@ -1354,7 +1363,7 @@ def _with_decide_flag(rows):
 	"""
 	seen = {}
 	for r in rows:
-		key = (r.get("employee"), str(r.get("creation") or "")[:10])
+		key = (r.get("employee"), str(r.get("creation") or "")[:10], r.get("owner"))
 		if key not in seen:
 			doc = frappe._dict(r)
 			seen[key] = not_yours_yet(doc, decided_as(doc))
@@ -1380,13 +1389,18 @@ def to_review(limit=50):
 		frappe.throw(_("You do not review attendance corrections."), frappe.PermissionError)
 	filters, _is_hr = review_queue_filters()
 	rows = frappe.get_list(
-		REQUEST, filters=filters, fields=request_fields(),
+		REQUEST, filters=filters, fields=request_fields() + ["owner"],
 		order_by="creation asc", limit_page_length=cint(limit) or 50)
 	# The state filter is in the query now, so nothing should fall out here.
 	# The line stays as a second lock: `_state` is the screen's own definition
 	# of waiting, and if the two ever disagree the screen must win.
-	return _with_decide_flag(
+	rows = _with_decide_flag(
 		[r for r in (_shape(x) for x in rows) if r["state"] == "waiting"])
+	# Read only to decide who raised it. The raiser's login is not part of
+	# the row, so it is not sent.
+	for r in rows:
+		r.pop("owner", None)
+	return rows
 
 
 @frappe.whitelist()

@@ -688,7 +688,7 @@ def _part_attendance_fixes(who):
 		rows = frappe.get_list(
 			REQUEST, filters=filters,
 			fields=["name", "employee", "employee_name", "from_date", "to_date",
-			        "reason", "half_day", "creation"],
+			        "reason", "half_day", "creation", "owner"],
 			order_by="creation asc", limit_page_length=limit or 0)
 		out = []
 		for r in _with_decide_flag(rows):

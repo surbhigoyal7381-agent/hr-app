@@ -81,3 +81,36 @@ class TestTheRowSaysWhatDecideWillSay(_Corrections):
 		# Only the two new keys were added; nothing about the person leaked.
 		self.assertNotIn("employee", rows[0])
 		self.assertNotIn("creation", rows[0])
+
+
+class TestWhoeverRaisedItDoesNotDecideIt(_Corrections):
+	"""Kamal holds HR Manager and manages Kamal-both. Before this he could
+	raise a correction for her and approve it himself."""
+
+	_row = TestTheRowSaysWhatDecideWillSay._row
+
+	def _raised_by(self, employee, user, **kw):
+		doc = self._request(employee, **kw)
+		frappe.db.set_value(ac.REQUEST, doc.name, "owner", user, update_modified=False)
+		frappe.db.commit()
+		return frappe.get_doc(ac.REQUEST, doc.name)
+
+	def test_the_raiser_gets_no_buttons_and_is_refused(self):
+		doc = self._raised_by(self.kamal_both, self.kamal_user)
+		self.as_user(self.kamal_user)
+		row = self._row(doc.name)
+		self.assertIs(row["can_decide"], False)
+		self.assertEqual(row["not_yet"], "You raised this request, so someone else decides it.")
+		self.assertNotIn("owner", row, "the raiser's login is not sent to the screen")
+		with may_review_granted(), self.assertRaises(frappe.PermissionError) as caught:
+			ac.decide(doc.name, 1)
+		self.assertEqual(row["not_yet"], str(caught.exception))
+		frappe.set_user("Administrator")
+		self.assertEqual(0, frappe.db.get_value(ac.REQUEST, doc.name, "docstatus"),
+		                 "a refused decision still went through")
+
+	def test_somebody_else_may_decide_what_the_raiser_raised(self):
+		"""The rule binds the raiser only. Priya is HR and did not raise it."""
+		doc = self._raised_by(self.covered_only[0], self.kamal_user)
+		self.as_user(self.priya_user)
+		self.assertIs(self._row(doc.name)["can_decide"], True)

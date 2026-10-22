@@ -1292,6 +1292,77 @@ def _decided_as_is_storable():
 		return False
 
 
+def not_yours_yet(doc, capacity):
+	"""Why this caller may not decide this request today, in words, or None.
+
+	ONE ANSWER FOR `decide` AND FOR EVERY ROW THAT OFFERS THE BUTTONS. DTC,
+	22 Oct 2026: HR pressed Approve on a request inside the wait below, and
+	the server refused with a 403. The refusal was right; offering the button
+	was not. So the row now asks this same function and draws the sentence
+	instead of the buttons - the screen holds no copy of the rule.
+
+	`capacity` is `decided_as(doc)` for the caller; passed in because both
+	callers already have it.
+	"""
+	# **The wait applies only where there is a manager who could act.**
+	#
+	# 045 AC-81, the no-manager clause. The two working days exist to give
+	# the employee's own manager first refusal. Somebody with no
+	# `reports_to`, or whose `reports_to` has no login, has nobody to give
+	# it to - so there is nothing to wait for, and HR decides straight
+	# away, which is what HR does today. Most people in a shop have no
+	# manager recorded; without this clause the window stops a working flow
+	# for all of them and tells them to wait for a person the product
+	# cannot name.
+	#
+	# **This restores what HR does today. It is not a new policy.** The
+	# answer behind the window was "HR sees from day one, acts from day
+	# three", and it was about waiting for a MANAGER. It was never about
+	# waiting for nobody.
+	#
+	# `_manager_user_for` is the same derivation `decided_as` uses, so the
+	# two cannot drift: whoever counts as the manager for the capacity is
+	# exactly whoever the wait is for.
+	if capacity != "HR":
+		return None
+	mgr_user = _manager_user_for(doc.employee)
+	if not mgr_user:
+		return None
+	may_act_from, basis = hr_may_act_from(doc)
+	if getdate(nowdate()) >= getdate(may_act_from):
+		return None
+	mgr = _manager_name_for(doc.employee)
+	# Says what happened, why, and what to do next - never "not allowed".
+	# **And it names the person.** Where the record holds no name at all it
+	# says plainly who to go to, instead of an anonymous "their manager".
+	if mgr:
+		return _("This is still with {0} until {1}. You can decide it as HR "
+		         "from then, counted as two {2}.").format(
+			mgr, frappe.utils.formatdate(may_act_from), basis)
+	return _("This is still with the manager on this person's record until "
+	         "{0} - the record has no name for them. You can decide it as HR "
+	         "from then, counted as two {1}. To act sooner, ask HR to check "
+	         "who this person reports to.").format(
+		frappe.utils.formatdate(may_act_from), basis)
+
+
+def _with_decide_flag(rows):
+	"""Add `can_decide` and `not_yet` to each waiting row, from `not_yours_yet`.
+
+	Asked once per person and day raised, not once per row: everything the
+	answer depends on is the employee, the day it was raised and the caller.
+	"""
+	seen = {}
+	for r in rows:
+		key = (r.get("employee"), str(r.get("creation") or "")[:10])
+		if key not in seen:
+			doc = frappe._dict(r)
+			seen[key] = not_yours_yet(doc, decided_as(doc))
+		r["not_yet"] = seen[key]
+		r["can_decide"] = not seen[key]
+	return rows
+
+
 @frappe.whitelist()
 def to_review(limit=50):
 	"""What is waiting on this caller to decide.
@@ -1314,7 +1385,8 @@ def to_review(limit=50):
 	# The state filter is in the query now, so nothing should fall out here.
 	# The line stays as a second lock: `_state` is the screen's own definition
 	# of waiting, and if the two ever disagree the screen must win.
-	return [r for r in (_shape(x) for x in rows) if r["state"] == "waiting"]
+	return _with_decide_flag(
+		[r for r in (_shape(x) for x in rows) if r["state"] == "waiting"])
 
 
 @frappe.whitelist()
@@ -1344,50 +1416,9 @@ def decide(name, approve, note=None):
 	# body can influence it - `decide()` takes no `decided_as` argument, and
 	# adding one later would be a change somebody has to make on purpose.
 	capacity = decided_as(doc)
-	# **The wait applies only where there is a manager who could act.**
-	#
-	# 045 AC-81, the no-manager clause. The two working days exist to give
-	# the employee's own manager first refusal. Somebody with no
-	# `reports_to`, or whose `reports_to` has no login, has nobody to give
-	# it to - so there is nothing to wait for, and HR decides straight
-	# away, which is what HR does today. Most people in a shop have no
-	# manager recorded; without this clause the window stops a working flow
-	# for all of them and tells them to wait for a person the product
-	# cannot name.
-	#
-	# **This restores what HR does today. It is not a new policy.** The
-	# answer behind the window was "HR sees from day one, acts from day
-	# three", and it was about waiting for a MANAGER. It was never about
-	# waiting for nobody.
-	#
-	# `_manager_user_for` is the same derivation `decided_as` uses, so the
-	# two cannot drift: whoever counts as the manager for the capacity is
-	# exactly whoever the wait is for.
-	mgr_user = _manager_user_for(doc.employee) if capacity == "HR" else None
-	if capacity == "HR" and mgr_user:
-		may_act_from, basis = hr_may_act_from(doc)
-		if frappe.utils.getdate(frappe.utils.nowdate()) < frappe.utils.getdate(may_act_from):
-			mgr = _manager_name_for(doc.employee)
-			# Says what happened, why, and what to do next - never "not
-			# allowed". The date is the one the row shows, so the screen and
-			# the refusal agree. **And it names the person.** Where the
-			# record holds no name at all it says plainly who to go to,
-			# instead of leaving the reader with an anonymous "their manager".
-			if mgr:
-				frappe.throw(
-					_("This is still with {0} until {1}. You can decide it as HR "
-					  "from then, counted as two {2}.").format(
-						mgr,
-						frappe.utils.formatdate(may_act_from),
-						basis),
-					frappe.PermissionError)
-			frappe.throw(
-				_("This is still with the manager on this person's record until "
-				  "{0} - the record has no name for them. You can decide it as HR "
-				  "from then, counted as two {1}. To act sooner, ask HR to check "
-				  "who this person reports to.").format(
-					frappe.utils.formatdate(may_act_from), basis),
-				frappe.PermissionError)
+	not_yet = not_yours_yet(doc, capacity)
+	if not_yet:
+		frappe.throw(not_yet, frappe.PermissionError)
 
 	stamp = {"alvoraa_review_note": (note or "").strip() or None,
 	         "alvoraa_reviewed_by": frappe.session.user,

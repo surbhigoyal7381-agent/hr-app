@@ -4188,10 +4188,18 @@ async function acReviewQueue() {
         + '<div class="m">' + gpEsc(r.from_date)
         + (r.to_date !== r.from_date ? " to " + gpEsc(r.to_date) : "") + "</div>"
         + (r.explanation ? '<div class="note">' + gpEsc(r.explanation) + "</div>" : "")
+        /* Approve and Decline only when the server says this caller may
+           decide it today (`can_decide`, from the same function `decide`
+           asks). Otherwise its own sentence says who has it and until when -
+           a button that is certain to be refused is not offered (DTC,
+           22 Oct 2026). */
+        + (r.can_decide === false && r.not_yet
+            ? '<div class="note">' + gpEsc(r.not_yet) + "</div>" : "")
         + '<div class="ac-acts">'
         + '<button class="btn btn-outline" onclick="acPick(&quot;' + gpEsc(r.employee) + '&quot;)">See their month</button>'
-        + '<button class="btn btn-primary" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,1)">Approve</button>'
-        + '<button class="btn btn-outline" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,0)">Decline</button>'
+        + (r.can_decide === false ? "" :
+            '<button class="btn btn-primary" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,1)">Approve</button>'
+          + '<button class="btn btn-outline" onclick="acDecide(&quot;' + gpEsc(r.name) + '&quot;,0)">Decline</button>')
         + "</div></div>";
     }).join("");
   } catch (e) { wrap.style.display = "none"; }

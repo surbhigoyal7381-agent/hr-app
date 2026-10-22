@@ -188,9 +188,13 @@
     if (row.context) { sub += '<span class="nf-row-sub">' + esc(row.context) + "</span>"; }
     if (row.says) { sub += '<span class="nf-row-sub">' + esc(row.says) + "</span>"; }
     if (row.note) { sub += '<span class="nf-row-sub">' + esc(row.note) + "</span>"; }
+    /* Who has it and until when, in the server's words, when this caller may
+       not decide it today. The buttons are then not drawn: the server would
+       refuse them (`attendance_correction.not_yours_yet`). */
+    if (row.not_yet) { sub += '<span class="nf-row-sub">' + esc(row.not_yet) + "</span>"; }
 
     var buttons = "";
-    if (ACTIONS[part.key]) {
+    if (ACTIONS[part.key] && row.can_decide !== false) {
       buttons = '<span class="nf-row-acts">'
         + '<button type="button" class="nf-btn nf-btn-small nf-decide" data-yes="1"'
         + ' data-name="' + esc(row.name) + '">' + esc(SAY.approve) + "</button>"

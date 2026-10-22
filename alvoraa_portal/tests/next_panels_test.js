@@ -497,6 +497,29 @@ async function run() {
   is(screens(dom).querySelectorAll(".nf-row").length, 1,
      "and the row stays on screen, because nothing was decided");
 
+  /* 066, DTC 22 Oct 2026. HR pressed Approve on a correction still inside
+     the manager's two working days and got a 403. The server now says per row
+     whether the caller may decide it TODAY (`can_decide`) and, if not, its own
+     sentence (`not_yet`). The row draws the sentence and no buttons. */
+  const WAIT = "This is still with Vaneet Garg until 24-10-2026. You can decide it as HR from then.";
+  const waiting = (canDecide) => makeInbox({
+    total: 1, approvals_total: 1,
+    parts: [{ key: "attendance_fixes", route: "#time/fix", count: 1, shown: 1,
+              cap: 50, capped: false, label: "1 attendance fix to decide",
+              rows: [{ name: "ATR-11", employee_name: "Meera", from_date: "2026-10-20",
+                       to_date: "2026-10-20", reason: null, context: null,
+                       action: "attendance_fix", can_decide: canDecide,
+                       not_yet: canDecide ? null : WAIT }] }],
+  });
+  dom = await openInbox(waiting(false));
+  is(screens(dom).querySelectorAll(".nf-decide").length, 0,
+     "a row the server says may not be decided today has no Approve or Decline");
+  is(text(dom).indexOf("still with Vaneet Garg until 24-10-2026") !== -1, true,
+     "and it says who has it and until when, in the server's words");
+  dom = await openInbox(waiting(true));
+  is(screens(dom).querySelectorAll(".nf-decide").length, 2,
+     "the same row, decidable, has both buttons back");
+
 
 
   /* ── 042 AC-61, review F7: the own work anniversary is DRAWN ───────────── */

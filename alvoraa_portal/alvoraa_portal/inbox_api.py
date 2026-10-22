@@ -120,8 +120,11 @@ ROW_KEYS = (
 	# number's provenance and any note about the person.
 	("goal_updates", ("name", "kind", "employee_name", "subject", "logged_on",
 	                  "value", "action")),
+	# `can_decide` / `not_yet`: whether the caller may decide it TODAY, and
+	# if not, the server's own sentence saying who has it and until when
+	# (`attendance_correction.not_yours_yet`). The buttons follow the flag.
 	("attendance_fixes", ("name", "employee_name", "from_date", "to_date",
-	                      "reason", "context", "action")),
+	                      "reason", "context", "action", "can_decide", "not_yet")),
 	("shift_requests", ("name", "employee_name", "from_date", "to_date",
 	                    "shift_type", "action")),
 	# A policy is a document, not a person. No employee field at all.
@@ -674,7 +677,7 @@ def _part_attendance_fixes(who):
 	while the screen shows 50 and says so.
 	"""
 	from alvoraa_portal.attendance_correction import (
-		REQUEST, _may_review, review_queue_filters,
+		REQUEST, _may_review, _with_decide_flag, review_queue_filters,
 	)
 
 	available = bool(who.employee) and bool(_may_review())
@@ -684,11 +687,11 @@ def _part_attendance_fixes(who):
 	def rows_fn(filters, limit):
 		rows = frappe.get_list(
 			REQUEST, filters=filters,
-			fields=["name", "employee_name", "from_date", "to_date", "reason",
-			        "half_day"],
+			fields=["name", "employee", "employee_name", "from_date", "to_date",
+			        "reason", "half_day", "creation"],
 			order_by="creation asc", limit_page_length=limit or 0)
 		out = []
-		for r in rows:
+		for r in _with_decide_flag(rows):
 			out.append({
 				"name": r.name,
 				"employee_name": r.employee_name,
@@ -700,6 +703,8 @@ def _part_attendance_fixes(who):
 				# reason for an absence. It is the thing being decided.
 				"context": _("Half day") if r.half_day else None,
 				"action": "attendance_fix",
+				"can_decide": r.can_decide,
+				"not_yet": r.not_yet,
 			})
 		return out
 

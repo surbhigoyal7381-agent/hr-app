@@ -40,6 +40,7 @@ const SCOPED = [
 const OUTSIDER = "Nehal Verma";
 
 const calls = [];
+const REVIEW_ROWS = [];
 function reply(url, body) {
   const m = /attendance_correction\.(\w+)|hr_api\.(\w+)/.exec(url) || [];
   const fn = m[1] || m[2] || "";
@@ -71,6 +72,7 @@ function reply(url, body) {
                        missing_punches: 0, late_days: 0, leave: 0 } };
   }
   if (fn === "team_days") return { people: [], rows: [], total: 0 };
+  if (fn === "to_review") return REVIEW_ROWS;
   if (fn === "get_available_features") return {};
   if (fn === "get_checkin_status")
     return { no_employee: 0, employee: { name: ME, employee_name: "Rahul Sharma",
@@ -362,6 +364,35 @@ function putForm(reason) {
   (doc.getElementById("ac-team").style.display !== "none")
     ? ok("and the whole-team list is the thing on screen")
     : bad("the whole-team list is still hidden");
+
+  // ── HR's review rows follow the server's can_decide (066) ─────────────
+  // DTC, 22 Oct 2026: Approve was offered on a request still inside the
+  // manager's two working days, and the server refused it with a 403.
+  const WAIT = "This is still with Vaneet Garg until 24-10-2026. You can decide it as HR from then.";
+  REVIEW_ROWS.push(
+    { name: "ATR-1", employee: REPORT, employee_name: "Neha Kumar", reason: "On Duty",
+      from_date: "2026-10-20", to_date: "2026-10-20", can_decide: true, not_yet: null },
+    { name: "ATR-2", employee: "HR-EMP-00009", employee_name: "Vikas Rana",
+      reason: "On Duty", from_date: "2026-10-21", to_date: "2026-10-21",
+      can_decide: false, not_yet: WAIT });
+  await window.acReviewQueue();
+  const cards = [...doc.querySelectorAll("#ac-review .ac-req")];
+  const decideIn = (el) => [...el.querySelectorAll("button")]
+    .filter(b => /acDecide/.test(b.getAttribute("onclick") || "")).length;
+  (cards.length === 2) ? ok("both waiting requests are listed")
+                       : bad("expected two review rows, got " + cards.length);
+  (cards[0] && decideIn(cards[0]) === 2)
+    ? ok("a request HR may decide today has Approve and Decline")
+    : bad("the decidable row lost its buttons");
+  (cards[1] && decideIn(cards[1]) === 0)
+    ? ok("a request HR may not decide yet has no Approve or Decline")
+    : bad("a button the server will refuse is still offered");
+  (cards[1] && cards[1].textContent.indexOf("still with Vaneet Garg until 24-10-2026") >= 0)
+    ? ok("and it says who has it and until when")
+    : bad("the waiting row does not say why");
+  (cards[1] && /See their month/.test(cards[1].textContent))
+    ? ok("the waiting row can still open the month")
+    : bad("the waiting row lost 'See their month'");
 
   console.log(`### correction DOM test: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

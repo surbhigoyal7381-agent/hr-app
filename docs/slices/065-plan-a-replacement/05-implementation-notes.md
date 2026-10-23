@@ -53,6 +53,10 @@ drawing; its screens will be redone on the old design later.
 ## Bad news, and choices made
 
 1. **Security-log lines are not written on a production server - mine or anyone's.**
+   Surbhi (23 Oct): fix it as its own small change, not in 065. Ticket text below. **Until it
+   lands, 065's PRIV-4 lines are dropped on dev and production, as every other security line
+   is**; they use the same `frappe.logger("security").warning(...)` call as the rest, so the
+   fix will cover them with no change in 065.
    `frappe.logger()` sets level ERROR unless the process is the development server
    (`frappe/utils/logger.py:12`). Every `.warning(...)` security line in the product
    (`access.log_refusal` SEC-17, `settings._log_access_change` SEC-18, and 065's PRIV-4
@@ -61,10 +65,10 @@ drawing; its screens will be redone on the old design later.
    line's shape, not that it reaches the file. **Not fixed here - it changes logging for the
    whole product and needs a decision** (options: `logging` level in site config, or write
    security lines at a level that always passes).
-2. **AC-52, System Manager:** the spec says company A only; the System Manager is the CXO
+2. **AC-52, System Manager (Surbhi, 23 Oct: yes, every company):** the spec says company A only; the System Manager is the CXO
    and `permitted_companies` gives every company. 01c's rule is "within `_scope()`". Built
    and tested as every company.
-3. **New permission rows:** Frappe ticks print, email, export, share and report on every new
+3. **New permission rows (Surbhi, 23 Oct: yes):** Frappe ticks print, email, export, share and report on every new
    Custom DocPerm row. For plans they are **unticked** on a new row (refusing would block the
    owners' Read for ever); ticking one on an existing row is refused.
 4. **Assigning is refused twice over:** the ToDo hook refuses it, and the gate refuses "share",
@@ -112,20 +116,26 @@ Same counts at 150 and at 1,002 people. Store head's reply is byte for byte the 
 - `node scripts/check_positions_tree.js`: 123 checks.
 - `scripts/check_app_integrity.py`: OK before every commit.
 - **One full run, on the rebased code (own site `test065`, user-creation throttle lifted to
-  1000 as CI does): not finished.** The machine's Docker stopped twice (session restarts),
-  the second time during the last `alvoraa_portal` batch. What completed:
-  - `alvoraa_goals`: 18 OK.
-  - `alvoraa_portal` batch 1: 16 OK. Batch 2: 952 run, 3 errors + 1 failure - the 3 are
-    `test_leave_year` (Fiscal Year overlap on this site, the same 3 064 saw) and the 1 is
-    `test_shift_types_043.test_my_own_default_shift_is_always_offered` (shift code, not
-    065's; not checked against the leave engineer's list of 11).
-  - Batch 3 (about 1,060 tests): not completed on the rebased code.
-  - An earlier full run on the pre-rebase base finished: batch 3 had 519 errors, almost all
-    `Throttled` (user creation limit) and their cascade (`TooManyWritesError`); 33 of the
-    69 failing modules were rerun with the throttle lifted and all 33 passed before Docker
-    stopped. `hrms.alvoraa_org_structure` modules: all OK except the pre-existing
-    `test_register_194...dtc_shaped...` and two lock-wait timeouts in `test_org_structure`
-    (pass on their own).
+  1000 as CI does).** Docker stopped once during batch 3; the 51 modules that had not run
+  were then run one at a time, so every module ran once on this code.
+
+  | Part | Result |
+  |---|---|
+  | `alvoraa_goals` | 18 OK |
+  | `alvoraa_portal` batch 1 | 16 OK |
+  | `alvoraa_portal` batch 2 | 952 run: 3 errors, 1 failure (below) |
+  | `alvoraa_portal` batch 3 | the modules that ran before the stop: 0 failures; the other 51 run one by one: 49 OK, 2 with one error each (below) |
+  | `hrms.alvoraa_org_structure` (7 modules, earlier run on the same 065 code) | all OK except the pre-existing `test_register_194...dtc_shaped...` |
+  | `test_replacement_plan_065` | 49 OK |
+
+  The five non-OK results, and whose they are:
+
+  | Test | Cause | 065? |
+  |---|---|---|
+  | `test_leave_year` x3 | This site carries ERPNext's `_Test Fiscal Year 2025`; the test's year overlaps it. 064's run saw the same 3 | No |
+  | `test_shift_types_043.test_my_own_default_shift_is_always_offered` | Fails alone too, and fails the same with origin/dev's own `hooks.py` and `register.py` (065 switched off). Not one of the leave engineer's named failures as far as I can tell; possibly one of the 3 unnamed | No |
+  | `test_hiring_064` x1 | `tabError Log is marked as crashed` - the Docker stop damaged that (non-InnoDB) table in my own test database. Repaired with `REPAIR TABLE` on my database only; the module then passed | No |
+  | `test_leave_063_card_cancel` x1 | Failed once in the run (`Document.discard` permission); passes on rerun with 065's code and with origin/dev's - order-dependent | No |
 
 ## What waits for the screens
 
@@ -152,3 +162,25 @@ Removed: the second `is_reader()` call in `table_view` (saved one statement); a 
 print/export ticks on new permission rows (replaced by unticking - it would have blocked the
 owners' row); a planned `BACKUP_DAYS` constant (only the screens use the number). Nothing else
 found to delete.
+
+## Ticket text: security-log lines are dropped outside the development server
+
+**Summary:** Security-log lines are never written on dev or production.
+
+**What happens:** `frappe.logger()` sets the logger level to ERROR unless the process is
+Frappe's development server (`frappe/utils/logger.py:12`, `default_log_level`). Our security
+lines are written with `.warning(...)`, so on gunicorn and the workers they are dropped:
+`access.log_refusal` (SEC-17, every refusal), `settings._log_access_change` (SEC-18, every
+access setting change), and slice 065's replacement-plan lines (PRIV-4). `logs/security.log`
+stays empty. Seen on 22 Oct 2026 in slice 065's bench check B-4: a real worker erased a plan,
+and no line was written.
+
+**Why it matters:** the product's answer to "who was refused, who changed access, who erased
+what" (and the CERT-In log duty) rests on these lines. Today there are none.
+
+**Smallest fix to decide:** either raise the `security` logger alone to WARNING where it is
+built (Frappe's own `frappe.utils.logger.set_log_level` exists, but it changes every logger in
+the process), or write security lines at a level that always passes. Then a test that writes one line through a
+logger built the way production builds it and finds it in the file.
+
+**Not in this ticket:** what the lines contain (already ids only).

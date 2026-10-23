@@ -242,8 +242,12 @@ class TestTheCapacityIsDerivedNotDeclared(_Corrections):
 		# `get_effective_manager` must not be used here - a test failing
 		# because the code was documented. I made the same mistake in the
 		# leave-privacy checks; this is the second time, so it is written down.
+		# 068: the lookup itself lives in `_manager_of`, and `_load_managers`
+		# reads the same field in bulk for the bell. Both are read here too.
 		src = (inspect.getsource(ac.decided_as)
-		       + inspect.getsource(ac._manager_user_for))
+		       + inspect.getsource(ac._manager_user_for)
+		       + inspect.getsource(ac._manager_of)
+		       + inspect.getsource(ac._load_managers))
 		code = "\n".join(l for l in src.split("\n") if not l.strip().startswith("#"))
 		code = re.sub(r'"""(.|\n)*?"""', "", code)
 		self.assertNotIn("get_effective_manager", code)

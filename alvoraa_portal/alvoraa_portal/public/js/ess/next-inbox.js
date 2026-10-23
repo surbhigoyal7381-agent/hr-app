@@ -188,11 +188,10 @@
     if (row.context) { sub += '<span class="nf-row-sub">' + esc(row.context) + "</span>"; }
     if (row.says) { sub += '<span class="nf-row-sub">' + esc(row.says) + "</span>"; }
     if (row.note) { sub += '<span class="nf-row-sub">' + esc(row.note) + "</span>"; }
-    /* Who has it and until when, in the server's words, when this caller may
-       not decide it today. The buttons are then not drawn: the server would
-       refuse them (`attendance_correction.not_yours_yet`). */
-    if (row.not_yet) { sub += '<span class="nf-row-sub">' + esc(row.not_yet) + "</span>"; }
 
+    /* The server lists only corrections this caller may decide today
+       (`can_decide`). The guard stays so a row it ever marks otherwise gets no
+       button the server would refuse. */
     var buttons = "";
     if (ACTIONS[part.key] && row.can_decide !== false) {
       buttons = '<span class="nf-row-acts">'

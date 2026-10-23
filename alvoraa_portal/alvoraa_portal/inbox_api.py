@@ -120,11 +120,11 @@ ROW_KEYS = (
 	# number's provenance and any note about the person.
 	("goal_updates", ("name", "kind", "employee_name", "subject", "logged_on",
 	                  "value", "action")),
-	# `can_decide` / `not_yet`: whether the caller may decide it TODAY, and
-	# if not, the server's own sentence saying who has it and until when
-	# (`attendance_correction.not_yours_yet`). The buttons follow the flag.
+	# `can_decide`: whether the caller may decide it TODAY
+	# (`attendance_correction.not_yours_yet`). Only those rows are listed and
+	# counted, so it is always true; the buttons still follow it.
 	("attendance_fixes", ("name", "employee_name", "from_date", "to_date",
-	                      "reason", "context", "action", "can_decide", "not_yet")),
+	                      "reason", "context", "action", "can_decide")),
 	("shift_requests", ("name", "employee_name", "from_date", "to_date",
 	                    "shift_type", "action")),
 	# A policy is a document, not a person. No employee field at all.
@@ -675,6 +675,13 @@ def _part_attendance_fixes(who):
 	**The count is not capped, and the screen is.** `to_review` reads 50 rows.
 	This counts every waiting row in the caller's scope, so the bell can say 60
 	while the screen shows 50 and says so.
+
+	**Only what the caller can press today** (Surbhi, 23 Oct 2026). A
+	correction still with a manager who can decide, or one the caller raised,
+	is neither counted nor listed here: the bell said "2 to decide" when there
+	were 0 to press. The Attendance page still lists those, with the sentence
+	saying whose they are. Count and list are worked out from the same rows,
+	so they cannot disagree.
 	"""
 	from alvoraa_portal.attendance_correction import (
 		REQUEST, _may_review, _with_decide_flag, review_queue_filters,
@@ -684,14 +691,20 @@ def _part_attendance_fixes(who):
 	filters, is_hr_scope = (review_queue_filters(who.user) if available
 	                        else (no_rows(), False))
 
-	def rows_fn(filters, limit):
+	def decidable(filters, limit):
 		rows = frappe.get_list(
 			REQUEST, filters=filters,
 			fields=["name", "employee", "employee_name", "from_date", "to_date",
 			        "reason", "half_day", "creation", "owner"],
-			order_by="creation asc", limit_page_length=limit or 0)
+			order_by="creation asc", limit_page_length=0)
+		# For the caller the part was built for, not whoever happens to be
+		# signed in when the count is read.
+		rows = [r for r in _with_decide_flag(rows, who.user) if r.can_decide]
+		return rows[:limit] if limit else rows
+
+	def rows_fn(filters, limit):
 		out = []
-		for r in _with_decide_flag(rows):
+		for r in decidable(filters, limit):
 			out.append({
 				"name": r.name,
 				"employee_name": r.employee_name,
@@ -704,7 +717,6 @@ def _part_attendance_fixes(who):
 				"context": _("Half day") if r.half_day else None,
 				"action": "attendance_fix",
 				"can_decide": r.can_decide,
-				"not_yet": r.not_yet,
 			})
 		return out
 
@@ -714,7 +726,7 @@ def _part_attendance_fixes(who):
 		       "HR: permitted_employees() minus self; a non-HR reviewer: their "
 		       "whole queue, unchanged (W1D-14). D-2 not built"),
 		filters=filters,
-		count_fn=_count_rows(REQUEST),
+		count_fn=lambda f: len(decidable(f, None)),
 		rows_fn=rows_fn,
 		cap=CORRECTIONS_CAP,
 		available=available,

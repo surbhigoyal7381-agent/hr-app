@@ -40,7 +40,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, get_datetime, getdate, nowdate
 
-from alvoraa_portal.call_cache import holiday_list_for
+from alvoraa_portal.call_cache import close_cache, holiday_list_for, is_open, once, open_cache
 from alvoraa_portal.attendance_analytics import (
 	DEFAULT_TOLERANCE_MINS,
 	TOLERANCE_KEY,
@@ -1215,8 +1215,7 @@ def _manager_user_for(employee):
 	"""
 	if not employee:
 		return None
-	mgr = frappe.db.get_value("Employee", employee, "reports_to")
-	return frappe.db.get_value("Employee", mgr, "user_id") if mgr else None
+	return _manager_of(employee)[0]
 
 
 def _manager_name_for(employee):
@@ -1231,14 +1230,55 @@ def _manager_name_for(employee):
 	Only the manager's NAME comes back. No contact detail, no id, nothing else
 	off that row: a refusal needs one word, not a record.
 	"""
-	mgr = frappe.db.get_value("Employee", employee, "reports_to")
-	if not mgr:
-		return None
-	row = frappe.db.get_value("Employee", mgr, ["employee_name", "user_id"],
-	                          as_dict=True) or {}
-	return (row.get("employee_name")
-	        or frappe.db.get_value("User", row.get("user_id"), "full_name")
-	        or None)
+	return _manager_of(employee)[1]
+
+
+def _manager_of(employee):
+	"""(login, name) of this employee's `reports_to`, or (None, None).
+
+	Asked once per call when a call memo is open (`_load_managers` fills it for
+	a whole list at once), and fresh every time otherwise.
+	"""
+	def read():
+		mgr = frappe.db.get_value("Employee", employee, "reports_to")
+		if not mgr:
+			return (None, None)
+		row = frappe.db.get_value("Employee", mgr, ["employee_name", "user_id"],
+		                          as_dict=True) or {}
+		return (row.get("user_id"),
+		        row.get("employee_name")
+		        or frappe.db.get_value("User", row.get("user_id"), "full_name")
+		        or None)
+
+	return once(("ac_manager", employee), read)
+
+
+def _load_managers(employees):
+	"""Fill the call memo with every listed employee's manager in two queries.
+
+	The bell counts the whole queue on every page load, and asking per row
+	would make that grow with the number of people. Only `_manager_of`'s own
+	answers are stored, so nothing here can disagree with it. A manager with no
+	`employee_name` is left for `_manager_of` to read, so its fallback to the
+	login's full name still applies.
+	"""
+	employees = [e for e in set(employees) if e]
+	if not employees or not is_open():
+		return
+	reports = dict(frappe.get_all("Employee", filters={"name": ("in", employees)},
+	                              fields=["name", "reports_to"], as_list=True))
+	mgr_ids = sorted({m for m in reports.values() if m})
+	mgrs = {m.name: m for m in frappe.get_all(
+		"Employee", filters={"name": ("in", mgr_ids)},
+		fields=["name", "user_id", "employee_name"])} if mgr_ids else {}
+	for e in employees:
+		m = mgrs.get(reports.get(e))
+		if m is None and reports.get(e):
+			continue        # their manager's record is unreadable here; ask later
+		if m is not None and not m.employee_name:
+			continue
+		answer = (m.user_id, m.employee_name) if m else (None, None)
+		once(("ac_manager", e), lambda answer=answer: answer)
 
 
 def decided_as(doc, user=None):
@@ -1270,7 +1310,8 @@ def decided_as(doc, user=None):
 	# product has never had a word for it.
 	from hrms.alvoraa_hr_core.access import permitted_companies
 
-	return "HR" if permitted_companies(user) else None
+	return "HR" if once(("ac_permitted_companies", user),
+	                    lambda: permitted_companies(user)) else None
 
 
 def _decided_as_is_storable():
@@ -1292,7 +1333,7 @@ def _decided_as_is_storable():
 		return False
 
 
-def not_yours_yet(doc, capacity):
+def not_yours_yet(doc, capacity, user=None):
 	"""Why this caller may not decide this request today, in words, or None.
 
 	ONE ANSWER FOR `decide` AND FOR EVERY ROW THAT OFFERS THE BUTTONS. DTC,
@@ -1311,7 +1352,8 @@ def not_yours_yet(doc, capacity):
 	# is one person vouching for a day and accepting their own word for it.
 	# The raiser is the document's owner: `raise_for_report` and
 	# `raise_correction` both insert as the caller.
-	if doc.get("owner") and doc.get("owner") == frappe.session.user:
+	user = user or frappe.session.user
+	if doc.get("owner") and doc.get("owner") == user:
 		return _("You raised this request, so someone else decides it.")
 	# **The wait applies only where there is a manager who could act.**
 	#
@@ -1371,20 +1413,30 @@ def not_yours_yet(doc, capacity):
 		frappe.utils.formatdate(may_act_from), basis)
 
 
-def _with_decide_flag(rows):
+def _with_decide_flag(rows, user=None):
 	"""Add `can_decide` and `not_yet` to each waiting row, from `not_yours_yet`.
 
-	Asked once per person and day raised, not once per row: everything the
-	answer depends on is the employee, the day it was raised and the caller.
+	Asked once per person, day raised and raiser, not once per row. The
+	managers behind the whole list are read in two queries into a memo that
+	lives for this call only, so the bell can count the whole queue without
+	growing with the number of people.
 	"""
-	seen = {}
-	for r in rows:
-		key = (r.get("employee"), str(r.get("creation") or "")[:10], r.get("owner"))
-		if key not in seen:
-			doc = frappe._dict(r)
-			seen[key] = not_yours_yet(doc, decided_as(doc))
-		r["not_yet"] = seen[key]
-		r["can_decide"] = not seen[key]
+	mine = not is_open()
+	if mine:
+		open_cache()
+	try:
+		_load_managers(r.get("employee") for r in rows)
+		seen = {}
+		for r in rows:
+			key = (r.get("employee"), str(r.get("creation") or "")[:10], r.get("owner"))
+			if key not in seen:
+				doc = frappe._dict(r)
+				seen[key] = not_yours_yet(doc, decided_as(doc, user), user)
+			r["not_yet"] = seen[key]
+			r["can_decide"] = not seen[key]
+	finally:
+		if mine:
+			close_cache()
 	return rows
 
 

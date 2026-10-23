@@ -34,10 +34,11 @@ manager, per report, scoped to four doctypes and never to all of them.
 """
 
 import calendar as _calendar
+from datetime import datetime, time, timedelta
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, getdate, nowdate
+from frappe.utils import cint, flt, get_datetime, getdate, nowdate
 
 from alvoraa_portal.call_cache import holiday_list_for
 from alvoraa_portal.attendance_analytics import (
@@ -51,6 +52,17 @@ from alvoraa_portal.attendance_analytics import (
 )
 
 REQUEST = "Attendance Request"
+
+# Who files punches for the biometric machines (ALV-210): DTC's hand-made
+# `biometric.sync@...` account and the product's own `attendance.sync@<site>`
+# (slice 041). Administrator runs the imports. Anybody else filed it by hand.
+MACHINE_OWNERS = ("biometric.sync@", "attendance.sync@")
+
+# ALV-211. Surbhi's rule: every client's shift accepts punches 3 hours before
+# it starts and 3 hours after it ends. Frappe's 1-hour default left a late
+# out-punch unlinked, the day counted 0 hours and was marked Absent (DTC, 535
+# days).
+SHIFT_WINDOW_MINS = 180
 
 # The reasons an employee can give, in the order they are offered.
 #
@@ -101,6 +113,16 @@ def _becomes(reason):
 
 
 # ── setup: widen the field's own option list ─────────────────────────────────
+
+def default_shift_window(doc, method=None):
+	"""Shift Type before_insert (ALV-211): Frappe's 60-minute default, or an
+	empty field, becomes SHIFT_WINDOW_MINS. Any other figure somebody typed is
+	kept."""
+	for field in ("begin_check_in_before_shift_start_time",
+	              "allow_check_out_after_shift_end_time"):
+		if doc.get(field) in (None, "") or cint(doc.get(field)) == 60:
+			doc.set(field, SHIFT_WINDOW_MINS)
+
 
 def install_reasons():
 	"""Put our reasons on the Attendance Request field.
@@ -437,15 +459,25 @@ def month(year=None, month=None, employee=None):
 	# one attendance day. Only punches with no link fall back to their own date.
 	punches = {}
 	by_attendance = {}
+	# ALV-210. A punch HR typed in carries the person's own badge number as its
+	# "device" (HR-EMP-00171 on 14 Oct showed "830"), which reads as a machine
+	# nobody owns. Such a punch, or one filed by somebody other than the
+	# machines and the person themselves, says "added by HR" instead.
+	own = frappe.db.get_value("Employee", me.name,
+	                          ["attendance_device_id", "user_id"], as_dict=True) or {}
 	for c in frappe.get_list(
 			"Employee Checkin",
 			filters={"employee": me.name,
 			         "time": ("between", [start + " 00:00:00",
 			                              frappe.utils.add_days(end, 1) + " 23:59:59"])},
-			fields=["name", "log_type", "time", "attendance", "device_id"],
+			fields=["name", "log_type", "time", "attendance", "device_id", "owner"],
 			order_by="time asc", limit_page_length=0):
+		by_hand = ((c.device_id and c.device_id == own.get("attendance_device_id"))
+		           or (c.owner not in ("Administrator", own.get("user_id"))
+		               and not (c.owner or "").startswith(MACHINE_OWNERS)))
 		mark = {"log_type": c.log_type, "at": str(c.time)[11:16],
-		        "where": c.device_id, "on": str(c.time)[:10]}
+		        "where": _("added by HR") if by_hand else c.device_id,
+		        "on": str(c.time)[:10]}
 		if c.attendance:
 			by_attendance.setdefault(c.attendance, []).append(mark)
 		else:
@@ -681,9 +713,21 @@ def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, t
 	# An odd number of punches means one never registered. That is the single
 	# commonest cause of a short day and the reason this screen exists, so it
 	# is named rather than left for the employee to infer from the total.
-	ins = len([m for m in marks if m["log_type"] == "IN"])
-	outs = len([m for m in marks if m["log_type"] == "OUT"])
-	out["missing_punch"] = bool(marks) and ins != outs
+	#
+	# ALV-210. DTC's biometric sync sends no In/Out at all, so every punch read
+	# as "Out" and a clean in-and-out day was called a missing punch. Where any
+	# punch of the day has no label, the day is read in order - first In, next
+	# Out - the same way the shift itself pairs them ("Alternating entries"),
+	# and a missing punch is simply an odd count.
+	if any(not m["log_type"] for m in marks):
+		marks = [dict(m, log_type="IN" if i % 2 == 0 else "OUT")
+		         for i, m in enumerate(marks)]
+		out["punches"] = marks
+		out["missing_punch"] = len(marks) % 2 == 1
+	else:
+		ins = len([m for m in marks if m["log_type"] == "IN"])
+		outs = len([m for m in marks if m["log_type"] == "OUT"])
+		out["missing_punch"] = bool(marks) and ins != outs
 	if not marks and att.in_time and not att.out_time:
 		out["missing_punch"] = True
 
@@ -1387,47 +1431,69 @@ def decide(name, approve, note=None):
 
 # What a day needs, worst first. The order IS the value of the page: a manager
 # opening it should meet the days somebody must act on, not scroll to them.
-NEEDS = ("no_clock_out", "absent_but_punched", "absent", "short", "ok")
+#
+# ALV-211 split "absent but badged in" in two, because they need different
+# answers. "absent_not_counted": a punch fell outside the shift's window (or
+# was never linked to a shift), so the system did not count it - a setup
+# fault. "absent_short": every punch counted and the hours were still under
+# the shift's absent threshold - a real short day.
+NEEDS = ("no_clock_out", "absent_not_counted", "absent_short", "absent", "short", "ok")
 
 
-def _flag(row, punches):
+def _flag(row, punches, shift):
 	"""What is wrong with this day, in one word.
 
-	Judged from the attendance record and the punch count, NOT from the pay
-	engine - this screen reads the same whether or not a rule set is switched
-	on.
+	Judged from the attendance record, the day's punches and the shift row,
+	NOT from the pay engine - this screen reads the same whether or not a rule
+	set is switched on.
 	"""
 	status = (row.get("status") or "").strip()
-	if punches == 1:
+	if len(punches) == 1:
 		# ATT-06. One punch is not a short day, it is an unfinished one, and it
 		# is the single commonest thing a manager is asked about.
 		return "no_clock_out"
 	if status == "Absent":
-		return "absent_but_punched" if punches else "absent"
+		if not punches:
+			return "absent"
+		if any(not p.shift_start for p in punches):
+			return "absent_not_counted"
+		if shift and shift.start_time is not None and shift.end_time is not None:
+			# The shift's own window: from its start less the early allowance to
+			# its end plus the late one. A night shift ends the next day.
+			day = datetime.combine(getdate(row.get("attendance_date")), time())
+			opens = day + shift.start_time - timedelta(
+				minutes=cint(shift.begin_check_in_before_shift_start_time))
+			closes = day + shift.end_time + timedelta(
+				minutes=cint(shift.allow_check_out_after_shift_end_time))
+			if shift.end_time <= shift.start_time:
+				closes += timedelta(days=1)
+			if any(not opens <= get_datetime(p.time) <= closes for p in punches):
+				return "absent_not_counted"
+		return "absent_short"
 	if status == "Half Day":
 		return "short"
 	return "ok"
 
 
-def _punch_counts(people_ids, from_date, to_date):
-	"""How many times each person badged on each day.
+def _punches_by_day(people_ids, from_date, to_date):
+	"""Each person's punches on each day, in one read.
 
 	One punch is the signal this page exists for, and it cannot be read off the
 	Attendance row: a day with one punch and a day with none both show no
 	out-time and nought hours, and they need opposite answers from a manager.
+	`shift_start` says whether Frappe linked the punch to a shift at all.
 	"""
-	counts = {}
+	days = {}
 	if not people_ids:
-		return counts
+		return days
 	for p in frappe.get_all(
 			"Employee Checkin",
 			filters={"employee": ("in", people_ids),
 			         "time": ("between", [str(from_date) + " 00:00:00",
 			                              str(to_date) + " 23:59:59"])},
-			fields=["employee", "time"], limit_page_length=0):
-		key = (p.employee, str(p.time)[:10])
-		counts[key] = counts.get(key, 0) + 1
-	return counts
+			fields=["employee", "time", "shift_start"], limit_page_length=0):
+		days.setdefault((p.employee, str(p.time)[:10]), []).append(p)
+	return days
 
 
 @frappe.whitelist()
@@ -1519,7 +1585,16 @@ def team_days(from_date=None, to_date=None, employee=None, only=None,
 		        "shift", "in_time", "out_time", "late_entry", "early_exit"],
 		order_by="attendance_date desc", limit_page_length=0)
 
-	punch_count = _punch_counts(people_ids, from_date, to_date)
+	punches_on = _punches_by_day(people_ids, from_date, to_date)
+	# Every shift on these rows, read once - never once per row.
+	shifts = {s.name: s for s in frappe.get_all(
+		"Shift Type",
+		filters={"name": ("in", list({r.shift for r in rows if r.shift}) or [""])},
+		fields=["name", "start_time", "end_time",
+		        "begin_check_in_before_shift_start_time",
+		        "allow_check_out_after_shift_end_time",
+		        "working_hours_threshold_for_absent"],
+		limit_page_length=0)}
 
 	# Which rows this caller may actually ACT on, answered with the same two
 	# questions `month()` asks and the same two the guard enforces.
@@ -1551,8 +1626,10 @@ def team_days(from_date=None, to_date=None, employee=None, only=None,
 		who = people.get(r.employee)
 		if not who:
 			continue
-		n = punch_count.get((r.employee, str(r.attendance_date)), 0)
-		flag = _flag(r, n)
+		day_punches = punches_on.get((r.employee, str(r.attendance_date)), [])
+		n = len(day_punches)
+		shift = shifts.get(r.shift)
+		flag = _flag(r, day_punches, shift)
 		counts[flag] = counts.get(flag, 0) + 1
 		if only and flag != only:
 			continue
@@ -1571,6 +1648,11 @@ def team_days(from_date=None, to_date=None, employee=None, only=None,
 			"out_time": str(r.out_time)[11:16] if r.out_time else None,
 			"punches": n,
 			"flag": flag,
+			# The hours below which the shift marks a day Absent, so the
+			# screen can say "under 2 hours worked". None when the shift sets
+			# none.
+			"absent_under": (flt(shift.working_hours_threshold_for_absent) or None
+			                 if flag == "absent_short" and shift else None),
 			"late": bool(r.late_entry),
 			"early": bool(r.early_exit),
 			# The day as well as the person: a day older than the window

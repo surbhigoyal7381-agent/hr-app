@@ -7915,7 +7915,8 @@ var trState = {
    the same order the server sorts by. */
 var TR_FLAGS = [
   ["no_clock_out", "No clock-out", "bad"],
-  ["absent_but_punched", "Absent but badged in", "bad"],
+  ["absent_not_counted", "Absent: check-out not counted", "bad"],
+  ["absent_short", "Absent: too few hours", "bad"],
   ["absent", "Absent", "warn"],
   ["short", "Short hours", "warn"],
   ["ok", "Fine", "ok"]
@@ -8141,6 +8142,10 @@ function trRows() {
 
 function trDay(r, byPerson) {
   var f = trFlag(r.flag);
+  /* ALV-211: the shift's own absent threshold, when it sets one. */
+  if (r.flag === "absent_short" && r.absent_under) {
+    f = [f[0], "Absent: under " + r.absent_under + " hours worked", f[2]];
+  }
   var key = r.employee + "|" + r.date;
   var who = byPerson ? fmtDate(r.date) : (r.employee_name || r.employee);
   var bits = [];

@@ -191,6 +191,8 @@ doc_events = {
     # ── Global features cache invalidation ───────────────────────────────
     # Clear portal_features_global when HR configuration changes
     "Shift Type": {
+        # ALV-211: a new shift accepts punches 3 h before and 3 h after.
+        "before_insert": "alvoraa_portal.attendance_correction.default_shift_window",
         "after_insert": "alvoraa_portal.hr_api.invalidate_features_cache",
         "on_update":    "alvoraa_portal.hr_api.invalidate_features_cache",
         "on_trash":     "alvoraa_portal.hr_api.invalidate_features_cache",

@@ -151,7 +151,7 @@ SHIFT_COMMON = {
     "start_time": "09:30:00", "end_time": "18:30:00", "enable_auto_attendance": 1,
     "determine_check_in_and_check_out": "Strictly based on Log Type in Employee Checkin",
     "working_hours_calculation_based_on": "First Check-in and Last Check-out",
-    "begin_check_in_before_shift_start_time": 90, "allow_check_out_after_shift_end_time": 240,
+    "begin_check_in_before_shift_start_time": 180, "allow_check_out_after_shift_end_time": 180,
     "working_hours_threshold_for_half_day": 4.5, "working_hours_threshold_for_absent": 2.0,
     "enable_late_entry_marking": 1, "late_entry_grace_period": 15,
     "enable_early_exit_marking": 1, "early_exit_grace_period": 15,

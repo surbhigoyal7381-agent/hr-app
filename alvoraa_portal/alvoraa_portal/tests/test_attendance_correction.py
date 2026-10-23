@@ -66,6 +66,36 @@ def _holiday_list(company):
 	return HOLIDAYS
 
 
+class ANewShiftsWindow(FrappeTestCase):
+	"""ALV-211: every new shift accepts punches 3 hours either side, unless
+	somebody typed a different figure."""
+
+	def make(self, name, **values):
+		if frappe.db.exists("Shift Type", name):
+			frappe.delete_doc("Shift Type", name, force=True)
+		return frappe.get_doc(dict(doctype="Shift Type", name=name,
+		                           start_time="09:00:00", end_time="18:00:00",
+		                           **values)).insert(ignore_permissions=True)
+
+	def test_frappes_default_becomes_three_hours(self):
+		s = self.make("AC Window Default")
+		self.assertEqual(s.begin_check_in_before_shift_start_time, 180)
+		self.assertEqual(s.allow_check_out_after_shift_end_time, 180)
+
+	def test_a_typed_figure_is_kept(self):
+		s = self.make("AC Window Typed", begin_check_in_before_shift_start_time=90,
+		              allow_check_out_after_shift_end_time=240)
+		self.assertEqual(s.begin_check_in_before_shift_start_time, 90)
+		self.assertEqual(s.allow_check_out_after_shift_end_time, 240)
+
+	def test_it_is_wired_to_insert_only(self):
+		"""An existing shift someone later set to 60 is theirs to keep."""
+		s = self.make("AC Window Saved")
+		s.allow_check_out_after_shift_end_time = 60
+		s.save(ignore_permissions=True)
+		self.assertEqual(s.allow_check_out_after_shift_end_time, 60)
+
+
 class TheReasonsWeOffer(FrappeTestCase):
 	def test_every_reason_the_portal_offers_can_be_saved(self):
 		"""The bug this slice starts from.
@@ -213,7 +243,7 @@ class CorrectionCase(FrappeTestCase):
 				u.add_roles(r)
 		e = frappe.get_doc({
 			"doctype": "Employee", "first_name": first, "company": self.company,
-			"date_of_birth": "1990-01-01", "date_of_joining": "2015-01-01",
+			"date_of_birth": "1970-01-01", "date_of_joining": "2000-01-01",
 			"gender": frappe.db.get_value("Gender", {}, "name") or "Male",
 			"status": "Active", "default_shift": SHIFT, "user_id": email,
 			"holiday_list": self.holidays,
@@ -367,6 +397,53 @@ class TheShapeOfADay(CorrectionCase):
 		self.punch(p, self.d(3) + " 18:00:00", "OUT", att)
 		frappe.set_user(email)
 		self.assertFalse(self.my_day(email, 3)["missing_punch"])
+
+	def test_alv210_unlabelled_punches_read_in_then_out_by_order(self):
+		"""DTC's machines send no In/Out. HR-EMP-00171, 14 Oct: "Out 11:19,
+		Out 21:33, Missing punch" on a clean day."""
+		p, email = self.person("ACNoLabel")
+		att = self.day(p, self.d(3), 10.2)
+		self.punch(p, self.d(3) + " 21:33:00", None, att, "M2")
+		self.punch(p, self.d(3) + " 11:19:00", None, att, "M1")
+		frappe.set_user(email)
+		day = self.my_day(email, 3)
+		self.assertEqual([m["log_type"] for m in day["punches"]], ["IN", "OUT"])
+		self.assertFalse(day["missing_punch"])
+
+	def test_alv210_an_odd_count_of_unlabelled_punches_is_a_missing_punch(self):
+		p, email = self.person("ACNoLabelOdd")
+		att = self.day(p, self.d(3), 4.0)
+		for t in ("09:00:00", "13:00:00", "13:45:00"):
+			self.punch(p, self.d(3) + " " + t, None, att)
+		frappe.set_user(email)
+		self.assertTrue(self.my_day(email, 3)["missing_punch"])
+
+	def test_alv210_a_day_mixing_labels_is_read_by_order(self):
+		"""Two OUTs, one labelled and one not, are still in then out."""
+		p, email = self.person("ACMixed")
+		att = self.day(p, self.d(3), 9.0)
+		self.punch(p, self.d(3) + " 09:00:00", "OUT", att)
+		self.punch(p, self.d(3) + " 18:00:00", None, att)
+		frappe.set_user(email)
+		day = self.my_day(email, 3)
+		self.assertEqual([m["log_type"] for m in day["punches"]], ["IN", "OUT"])
+		self.assertFalse(day["missing_punch"])
+
+	def test_alv210_a_punch_hr_typed_in_says_so(self):
+		"""HR's punch carries the person's own badge number ("830") as its
+		device, or was filed by an HR login. Either reads "added by HR"; a
+		machine's punch keeps its device."""
+		p, email = self.person("ACByHand")
+		frappe.db.set_value("Employee", p, "attendance_device_id", "830")
+		att = self.day(p, self.d(3), 9.0)
+		self.punch(p, self.d(3) + " 09:00:00", "IN", att, "DTCCHD34F1")
+		self.punch(p, self.d(3) + " 13:00:00", "OUT", att, "830")
+		late = self.punch(p, self.d(3) + " 18:00:00", "IN", att, "Gate 9")
+		frappe.db.set_value("Employee Checkin", late, "owner",
+		                    "somebody.in.hr@example.com", update_modified=False)
+		frappe.set_user(email)
+		where = [m["where"] for m in self.my_day(email, 3)["punches"]]
+		self.assertEqual(where, ["DTCCHD34F1", "added by HR", "added by HR"])
 
 	def test_an_in_with_no_out_is_called_out_even_with_no_punch_rows(self):
 		"""Not every tenant runs Employee Checkin. The attendance row alone
@@ -930,16 +1007,86 @@ class AManagersWholeTeamOnOnePage(CorrectionCase):
 		self.assertEqual(row["punches"], 1)
 
 	def test_absent_with_punches_is_told_apart_from_absent(self):
-		"""Two people marked Absent, one of whom badged in twice. They need
-		opposite answers, and on the attendance row alone they look alike."""
+		"""Two people marked Absent, one of whom badged in twice inside the
+		shift. They need opposite answers, and on the attendance row alone they
+		look alike. ALV-211: both punches counted, so the day is short."""
 		day = self.d(3)
 		self.day(self.a, day, 0, status="Absent")
 		self.day(self.b, day, 0, status="Absent")
 		self.punch(self.b, day + " 09:02:00", "IN")
-		self.punch(self.b, day + " 18:05:00", "OUT")
+		self.punch(self.b, day + " 10:05:00", "OUT")
 		rows = {r["employee"]: r for r in self.team()["rows"] if r["date"] == day}
 		self.assertEqual(rows[self.a]["flag"], "absent")
-		self.assertEqual(rows[self.b]["flag"], "absent_but_punched")
+		self.assertEqual(rows[self.b]["flag"], "absent_short")
+
+	def night(self):
+		"""A 22:00-06:00 shift with a 3-hour window each side and a 2-hour
+		absent threshold: its window runs 19:00 to 09:00 the next day."""
+		name = "AC Test Night"
+		if not frappe.db.exists("Shift Type", name):
+			frappe.get_doc({"doctype": "Shift Type", "name": name,
+			                "start_time": "22:00:00", "end_time": "06:00:00",
+			                "begin_check_in_before_shift_start_time": 180,
+			                "allow_check_out_after_shift_end_time": 180,
+			                "working_hours_threshold_for_absent": 2}
+			               ).insert(ignore_permissions=True)
+		return name
+
+	def absent_night(self, *times):
+		"""An Absent night-shift day for `b`, with punches at `times` that
+		Frappe linked to a shift."""
+		day = self.d(3)
+		att = self.day(self.b, day, 0, status="Absent")
+		frappe.db.set_value("Attendance", att, "shift", self.night())
+		for t in times:
+			c = self.punch(self.b, day + " " + t, None)
+			frappe.db.set_value("Employee Checkin", c, "shift_start", day + " 22:00:00")
+		return [r for r in self.team()["rows"]
+		        if r["employee"] == self.b and r["date"] == day][0]
+
+	def test_alv211_a_punch_never_linked_to_a_shift_is_not_counted(self):
+		"""ALV-211. Frappe could not fit the punch to a shift, so it never
+		counted - a setup fault, not a short day."""
+		day = self.d(3)
+		self.day(self.b, day, 0, status="Absent")
+		self.punch(self.b, day + " 09:02:00", "IN")
+		late = self.punch(self.b, day + " 10:05:00", "OUT")
+		frappe.db.set_value("Employee Checkin", late, "shift_start", None)
+		row = [r for r in self.team()["rows"]
+		       if r["employee"] == self.b and r["date"] == day][0]
+		self.assertEqual(row["flag"], "absent_not_counted")
+
+	def test_alv211_a_punch_outside_the_shift_window_is_not_counted(self):
+		"""12:00 is after a night shift's 09:00 close and before its 19:00
+		opening."""
+		self.assertEqual(self.absent_night("12:00:00", "23:00:00")["flag"],
+		                 "absent_not_counted")
+
+	def test_alv211_a_night_shift_window_runs_into_the_next_day(self):
+		"""Read as one calendar day, 22:00-06:00 plus three hours closes at
+		09:00 that morning and 23:00 would fall outside it."""
+		row = self.absent_night("22:05:00", "23:30:00")
+		self.assertEqual(row["flag"], "absent_short")
+
+	def test_alv211_the_short_day_carries_the_shifts_own_threshold(self):
+		"""The screen says "under 2 hours worked" from the shift itself."""
+		self.assertEqual(self.absent_night("22:05:00", "23:30:00")["absent_under"], 2.0)
+
+	def test_alv211_no_threshold_sends_no_number(self):
+		"""Without one the screen says "too few hours", not a made-up figure."""
+		frappe.db.set_value("Shift Type", SHIFT, "working_hours_threshold_for_absent", 0)
+		day = self.d(3)
+		self.day(self.b, day, 0, status="Absent")
+		self.punch(self.b, day + " 09:02:00", "IN")
+		self.punch(self.b, day + " 10:05:00", "OUT")
+		row = [r for r in self.team()["rows"]
+		       if r["employee"] == self.b and r["date"] == day][0]
+		self.assertEqual(row["flag"], "absent_short")
+		self.assertIsNone(row["absent_under"])
+
+	def test_alv211_the_two_absent_flags_come_first_after_no_clock_out(self):
+		self.assertEqual(ac.NEEDS, ("no_clock_out", "absent_not_counted",
+		                            "absent_short", "absent", "short", "ok"))
 
 	def test_the_days_needing_a_look_come_first(self):
 		"""The ordering IS the value of the page. A manager should meet the

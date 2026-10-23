@@ -5918,6 +5918,14 @@ function loadSalary() {
     /* A component payroll typed in by hand has no week behind it. Saying so is
        the whole answer. Drawing an empty week instead would read as "we think
        you were late on no days and took your money anyway". */
+    /* 067. A red line the pay rules worked out from the month's attendance.
+       It was not typed in by hand, so the sentence above would be false. */
+    if (why && why.from_attendance) {
+      body.innerHTML = whyHead() +
+        '<div style="padding:8px 2px 0;color:var(--text2)">' +
+        'Worked out from your attendance this month. Ask HR for the day-by-day workings.</div>';
+      return;
+    }
     if (why && why.hand_entered) {
       body.innerHTML = whyHead() +
         '<div style="padding:8px 2px 0;color:var(--text2)">' +

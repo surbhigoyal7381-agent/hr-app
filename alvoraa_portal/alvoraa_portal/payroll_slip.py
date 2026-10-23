@@ -24,19 +24,26 @@ TWO ROUTES IN, chosen for different reasons.
   question, carries a link back to what produced it, and is how Frappe itself
   expects a per-employee per-month figure to arrive.
 
+  The slip's own save writes them (slice 067, ALV-208), in the same transaction
+  as the slip, just before the calculation is re-run. So a late attendance fix,
+  a reprocess or a re-run Payroll Entry changes paid days and marks together,
+  the moment the draft slip is saved again. One record per person, line and
+  month: an unchanged figure writes nothing, a changed one cancels the old
+  record and makes a new one amended from it, so the trail of every change
+  stays. A paid (submitted) slip is never touched.
+
 WHY THE HOOK RE-RUNS THE CALCULATION.
 
 Frappe's `validate` does three things in order: work out the working days,
 attach the structure, then calculate net pay. A `validate` doc_event runs after
 all of it, so by the time we see the slip the pay has already been worked out
 from Frappe's own payment_days. Setting ours and calling `calculate_net_pay()`
-again is what makes it take.
-
-NOT YET PROVEN ON A SITE. The pure parts of this are tested; the hook itself
-needs a bench run before anybody trusts a payslip it produced.
+again is what makes it take. Frappe also works out the year-to-date figures in
+its validate, from ITS net pay, so those are worked out again afterwards too.
 """
 
 import frappe
+from frappe import _
 from frappe.utils import add_days, date_diff, flt, getdate
 
 from alvoraa_portal.payroll_month import summarise_month
@@ -50,6 +57,19 @@ from alvoraa_portal.payroll_rules_apply import (
 
 RED_COMPONENT = "Red Value"
 GREEN_COMPONENT = "Green Value"
+
+# The pay lines the engine owns, and the month-summary figure each one carries.
+# Slice 066 (grooming) adds ("Grooming Red Value", "grooming_deduction") here.
+ENGINE_LINES = (
+	(RED_COMPONENT, "red_deduction"),
+	(GREEN_COMPONENT, "green_earning"),
+)
+
+# How the engine knows its own Additional Salary records: a standard field
+# pointing at the rule set. Frappe HR only acts on ref_doctype for Gratuity and
+# Leave Encashment, so this is safe, and a record HR typed by hand (no
+# reference) is never touched.
+ENGINE_REF = "Alvoraa Payroll Rule Set"
 
 
 def month_summary(employee, company, from_date, to_date, rule_set=None, ctx=None):
@@ -128,47 +148,58 @@ def month_summary(employee, company, from_date, to_date, rule_set=None, ctx=None
 	)
 
 
-def _set_additional_salary(employee, company, component, amount, payroll_date,
-                           note=None):
-	"""One Additional Salary per employee, component and month - replaced, not added.
+def _set_additional_salary(slip, component, amount, payroll_date, rule_set):
+	"""One engine-made Additional Salary per person, line and month. Replaced, never added.
 
 	Replaced matters more than it looks. A reprocess re-runs the same period,
-	and a second record would stack on the first: two clicks, twice the red
-	deduction. Finding the existing draft and overwriting it is what makes the
-	whole chain safe to run again.
+	and a second record would stack on the first: two saves, twice the red
+	deduction. So:
+
+	  the same amount already there   -> nothing is written (safe to save twice)
+	  a different amount             -> the old record is cancelled and a new
+	                                    one is made, amended from it, so the
+	                                    change leaves a trail
+	  nothing owed any more          -> the old record is cancelled
+
+	Only records the engine made are looked at (ENGINE_REF). A line HR typed by
+	hand is not the engine's to change.
 	"""
-	existing = frappe.db.get_value("Additional Salary", {
-		"employee": employee, "salary_component": component,
-		"payroll_date": payroll_date, "docstatus": ("<", 2),
-	}, "name")
+	amount = flt(amount, 2)
+	existing = frappe.get_all(
+		"Additional Salary",
+		filters={"employee": slip.employee, "salary_component": component,
+		         "payroll_date": ("between", [slip.start_date, slip.end_date]),
+		         "docstatus": 1, "ref_doctype": ENGINE_REF},
+		fields=["name", "amount", "payroll_date"],
+		order_by="creation desc")
 
-	if not flt(amount):
-		# Nothing owed this month. Remove a stale record rather than leave a
-		# zero one lying about looking like a decision.
-		if existing and frappe.db.get_value("Additional Salary", existing,
-		                                    "docstatus") == 0:
-			frappe.delete_doc("Additional Salary", existing, ignore_permissions=True)
-		return None
-
-	if existing:
-		doc = frappe.get_doc("Additional Salary", existing)
-		if doc.docstatus == 1:
-			# Submitted. Changing it is a decision, not a recalculation.
-			return doc.name
-		doc.amount = flt(amount)
+	keep, old = None, None
+	for row in existing:
+		if (keep is None and amount and flt(row.amount, 2) == amount
+				and getdate(row.payroll_date) == getdate(payroll_date)):
+			keep = row.name
+			continue
+		doc = frappe.get_doc("Additional Salary", row.name)
 		doc.flags.ignore_permissions = True
-		doc.save()
-		return doc.name
+		doc.cancel()
+		old = old or row.name
+
+	if keep or not amount:
+		return keep
 
 	doc = frappe.get_doc({
 		"doctype": "Additional Salary",
-		"employee": employee,
-		"company": company,
+		"employee": slip.employee,
+		"company": slip.company,
+		"currency": slip.currency,
 		"salary_component": component,
-		"amount": flt(amount),
+		"type": frappe.db.get_value("Salary Component", component, "type"),
+		"amount": amount,
 		"payroll_date": payroll_date,
 		"overwrite_salary_structure_amount": 1,
-		"type": frappe.db.get_value("Salary Component", component, "type"),
+		"ref_doctype": ENGINE_REF,
+		"ref_docname": rule_set.name,
+		"amended_from": old,
 	})
 	doc.flags.ignore_permissions = True
 	doc.insert()
@@ -176,19 +207,50 @@ def _set_additional_salary(employee, company, component, amount, payroll_date,
 	return doc.name
 
 
-def push_marks_to_additional_salary(employee, company, from_date, to_date,
-                                    summary=None):
-	"""Put this month's red and green money where the slip will find it."""
-	summary = summary or month_summary(employee, company, from_date, to_date)
-	if not summary:
-		return {}
-	payroll_date = getdate(to_date)
-	return {
-		"red": _set_additional_salary(employee, company, RED_COMPONENT,
-		                              summary.red_deduction, payroll_date),
-		"green": _set_additional_salary(employee, company, GREEN_COMPONENT,
-		                                summary.green_earning, payroll_date),
-	}
+def push_marks_to_additional_salary(slip, summary, rule_set):
+	"""Put this month's engine lines (red, green) where the slip will find them.
+
+	Dated on the slip's last day, or on the relieving date when that comes
+	first: Frappe refuses a payroll date after somebody has left.
+	"""
+	payroll_date = getdate(slip.end_date)
+	relieving = frappe.db.get_value("Employee", slip.employee, "relieving_date")
+	if relieving and getdate(relieving) < payroll_date:
+		payroll_date = getdate(relieving)
+	return {component: _set_additional_salary(slip, component, getattr(summary, figure),
+	                                          payroll_date, rule_set)
+	        for component, figure in ENGINE_LINES}
+
+
+def _apply_engine_lines(doc, summary, rule_set):
+	"""Write the lines, or write none of them.
+
+	A savepoint, because a failure half way (the old red cancelled, the new one
+	refused) would leave the slip with no red line at all and say nothing. The
+	slip is still saved with its paid days, as before, but with a comment HR
+	can see, and the Error Log names the slip only.
+	"""
+	frappe.db.savepoint("alvoraa_engine_lines")
+	try:
+		live = push_marks_to_additional_salary(doc, summary, rule_set)
+	except Exception:
+		frappe.db.rollback(save_point="alvoraa_engine_lines")
+		frappe.log_error(
+			title="Red and green lines not applied to {0}".format(doc.name or "a slip"),
+			message=frappe.get_traceback())
+		_note(doc, _(
+			"The red and green lines could not be updated on this slip, so they "
+			"may be missing or out of date. Paid days are correct. See the Error "
+			"Log, fix the cause, then save this slip again."))
+		return
+
+	# Frappe keeps a slip row that points at an Additional Salary even after
+	# that record is cancelled, so the old figure would stay beside the new one.
+	# Drop every engine-line row that is not the live record's.
+	for table in ("earnings", "deductions"):
+		doc.set(table, [r for r in doc.get(table)
+		                if r.salary_component not in live or not r.additional_salary
+		                or r.additional_salary == live[r.salary_component]])
 
 
 def on_salary_slip_validate(doc, method=None):
@@ -218,14 +280,37 @@ def on_salary_slip_validate(doc, method=None):
 		doc.total_working_days = date_diff(doc.end_date, doc.start_date) + 1
 		doc.payment_days = flt(summary.paid_days, 2)
 		doc.absent_days = summary.days_absent
+		# Before the calculation, so it picks the lines up in this same save.
+		_apply_engine_lines(doc, summary, rule_set)
 		doc.calculate_net_pay()
+		# Frappe worked these out in its own validate, from ITS net pay. The
+		# portal shows year_to_date straight off the slip.
+		doc.compute_year_to_date()
+		doc.compute_month_to_date()
+		doc.compute_component_wise_year_to_date()
 
 		if summary.days_held:
-			doc.add_comment("Comment", _held_note(summary))
+			_note(doc, _held_note(summary))
 	except Exception:
 		frappe.log_error(
 			title="Payroll rules could not price {0}".format(doc.name or "a slip"),
 			message=frappe.get_traceback())
+
+
+def _note(doc, text):
+	"""Keep a note for HR until the slip is saved (see post_slip_notes)."""
+	doc.flags.alvoraa_notes = (doc.flags.alvoraa_notes or []) + [text]
+
+
+def post_slip_notes(doc, method=None):
+	"""doc_events on_update. Post the notes the validate hook kept.
+
+	During validate a NEW slip is not in the database, and a comment pointing
+	at it is refused ("Could not find Reference Name"). So notes wait here.
+	"""
+	for text in doc.flags.alvoraa_notes or []:
+		doc.add_comment("Comment", text)
+	doc.flags.alvoraa_notes = None
 
 
 def _held_note(summary):

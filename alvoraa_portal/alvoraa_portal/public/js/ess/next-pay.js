@@ -58,6 +58,7 @@
       noPayslips: __("No payslips have been issued to you yet."),
       cardFailed: __("This could not load."),
       handEntered: __("This was entered by hand, so there are no days behind it."),
+      fromAttendance: __("Worked out from your attendance this month. Ask HR for the day-by-day workings."),
       week: __("The week this covers"),
       counted: __("Counted"),
       free: __("Free"),
@@ -225,6 +226,11 @@
   function openWhy(link, ctx, opener) {
     var esc = ctx.esc, SAY = words(ctx);
     ctx.api(WHY, { additional_salary: link }).then(function (why) {
+      /* 067. A red line the pay rules worked out from attendance: not by hand. */
+      if (why && why.from_attendance) {
+        return ctx.openSheet(SAY.whyTitle,
+          '<p class="nf-sheet-lead">' + esc(SAY.fromAttendance) + "</p>", null, opener);
+      }
       if (why && why.hand_entered) {
         /* AC-29. The sentence, and NO WEEK. An empty week would read as "the
            system thinks you were late on no days and took your money

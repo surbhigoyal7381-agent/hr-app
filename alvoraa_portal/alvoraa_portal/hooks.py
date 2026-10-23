@@ -109,6 +109,10 @@ doc_events = {
     # be paid.
     "Salary Slip": {
         "validate": "alvoraa_portal.payroll_slip.on_salary_slip_validate",
+        # Slice 067: the notes the validate hook leaves for HR (held days, red
+        # and green lines not applied). A new slip is not in the database yet
+        # during validate, so a comment on it is refused; it is posted here.
+        "on_update": "alvoraa_portal.payroll_slip.post_slip_notes",
     },
     "Attendance": {
         "on_submit": "alvoraa_portal.payroll_rules_apply.on_attendance_submit",

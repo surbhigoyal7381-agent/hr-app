@@ -365,7 +365,7 @@ function putForm(reason) {
     ? ok("and the whole-team list is the thing on screen")
     : bad("the whole-team list is still hidden");
 
-  // ── HR's review rows follow the server's can_decide (066) ─────────────
+  // ── HR's review rows follow the server's can_decide (068) ─────────────
   // DTC, 22 Oct 2026: Approve was offered on a request still inside the
   // manager's two working days, and the server refused it with a 403.
   const WAIT = "This is still with Vaneet Garg until 24-10-2026. You can decide it as HR from then.";

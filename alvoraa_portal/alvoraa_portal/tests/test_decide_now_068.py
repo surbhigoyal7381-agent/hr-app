@@ -1,4 +1,4 @@
-"""066: Approve and Decline are offered only to somebody who may decide TODAY.
+"""068: Approve and Decline are offered only to somebody who may decide TODAY.
 
 DTC, 22 Oct 2026. An HR user pressed Approve on an attendance correction a
 manager had raised for their own report the day before. `decide` refused it
@@ -30,8 +30,9 @@ class TestTheRowSaysWhatDecideWillSay(_Corrections):
 		return rows[0]
 
 	def test_hr_inside_the_wait_gets_no_buttons_and_the_same_sentence(self):
-		"""The DTC case: raised today for somebody whose manager has a login."""
-		doc = self._request(self.rahul)
+		"""Raised today for somebody whose manager can decide (Kamal holds HR
+		Manager), so HR waits two working days."""
+		doc = self._request(self.kamal_both)
 		self.as_user(self.priya_user)
 		row = self._row(doc.name)
 		self.assertIs(row["can_decide"], False)
@@ -42,7 +43,7 @@ class TestTheRowSaysWhatDecideWillSay(_Corrections):
 		self.assertEqual(row["not_yet"], str(caught.exception))
 
 	def test_hr_after_the_wait_gets_the_buttons(self):
-		doc = self._request(self.rahul, raised_on=f"{add_days(nowdate(), -12)} 09:00:00")
+		doc = self._request(self.kamal_both, raised_on=f"{add_days(nowdate(), -12)} 09:00:00")
 		self.as_user(self.priya_user)
 		row = self._row(doc.name)
 		self.assertIs(row["can_decide"], True)
@@ -67,10 +68,20 @@ class TestTheRowSaysWhatDecideWillSay(_Corrections):
 		with self.assertRaises(frappe.PermissionError):
 			ac.to_review()
 
+	def test_a_manager_who_cannot_decide_is_not_waited_for(self):
+		"""Surbhi, 23 Oct 2026. The DTC case: Sandeep holds only Employee, so
+		he can never decide, and HR decides Rahul's request today."""
+		self.assertFalse(frappe.has_permission(ac.REQUEST, "submit", user=self.sandeep_user))
+		doc = self._request(self.rahul)
+		self.as_user(self.priya_user)
+		row = self._row(doc.name)
+		self.assertIs(row["can_decide"], True)
+		self.assertIsNone(row["not_yet"])
+
 	def test_the_inbox_rows_carry_the_same_flag(self):
 		from alvoraa_portal import inbox_api
 
-		doc = self._request(self.rahul)
+		doc = self._request(self.kamal_both)
 		self.as_user(self.priya_user)
 		with may_review_granted():
 			part, _hr = inbox_api._part_attendance_fixes(inbox_api._Who(self.priya_user))
@@ -124,8 +135,9 @@ class TestAManagersOwnRaiseIsNotWaitedOn(_Corrections):
 	_raised_by = TestWhoeverRaisedItDoesNotDecideIt._raised_by
 
 	def test_hr_may_decide_a_managers_raise_straight_away(self):
-		"""The DTC case: Sandeep raised it for Rahul today."""
-		doc = self._raised_by(self.rahul, self.sandeep_user)
+		"""Kamal can decide, but he raised it for Kamal-both himself, and the
+		raiser never decides - so HR does, today."""
+		doc = self._raised_by(self.kamal_both, self.kamal_user)
 		self.as_user(self.priya_user)
 		row = self._row(doc.name)
 		self.assertIs(row["can_decide"], True)
@@ -138,8 +150,10 @@ class TestAManagersOwnRaiseIsNotWaitedOn(_Corrections):
 		self.assertEqual(1, stored.docstatus)
 		self.assertEqual("HR", stored.alvoraa_decided_as)
 
-	def test_the_employees_own_raise_still_waits_for_the_manager(self):
-		doc = self._raised_by(self.rahul, self.rahul_user)
+	def test_a_raise_by_somebody_else_still_waits_for_a_manager_who_can_decide(self):
+		"""Kamal can decide; the request was raised by somebody else (here the
+		fixture's Administrator), so HR still waits for him."""
+		doc = self._request(self.kamal_both)
 		self.as_user(self.priya_user)
 		row = self._row(doc.name)
 		self.assertIs(row["can_decide"], False)

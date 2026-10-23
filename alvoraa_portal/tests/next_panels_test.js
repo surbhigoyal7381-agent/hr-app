@@ -497,7 +497,7 @@ async function run() {
   is(screens(dom).querySelectorAll(".nf-row").length, 1,
      "and the row stays on screen, because nothing was decided");
 
-  /* 066, DTC 22 Oct 2026. HR pressed Approve on a correction still inside
+  /* 068, DTC 22 Oct 2026. HR pressed Approve on a correction still inside
      the manager's two working days and got a 403. The server now says per row
      whether the caller may decide it TODAY (`can_decide`) and, if not, its own
      sentence (`not_yet`). The row draws the sentence and no buttons. */

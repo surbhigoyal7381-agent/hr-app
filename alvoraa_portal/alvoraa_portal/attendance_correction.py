@@ -1344,6 +1344,15 @@ def not_yours_yet(doc, capacity):
 	# decide what they raised themselves - so HR would be waiting for nobody.
 	if doc.get("owner") == mgr_user:
 		return None
+	# **And only when that manager can decide at all.** Surbhi, 23 Oct 2026:
+	# approving is submitting, and on standard permissions only HR User, HR
+	# Manager and System Manager may submit an Attendance Request. A manager
+	# with just the Employee role - most line managers, Vaneet at DTC
+	# included - can never decide, so HR waiting two days for them was
+	# waiting for nobody. The wait gives first refusal only to a manager the
+	# permission system lets decide.
+	if not frappe.has_permission(REQUEST, "submit", user=mgr_user):
+		return None
 	may_act_from, basis = hr_may_act_from(doc)
 	if getdate(nowdate()) >= getdate(may_act_from):
 		return None

@@ -2190,23 +2190,24 @@ body.panel-fullscreen{overflow:hidden}
    narrow-screen block changes are restated here, so measuring on a phone
    gives the same paper as on a laptop. Off screen while it is measured;
    shown only by the wall chart's own print. */
+:root{--paper:#fff;--paper-ink:#2D2622;--paper-ink2:#4A443F;--paper-line:#8F8880;--paper-rule:#D8D3CC;--paper-accent:#5B4B8A}   /* the paper's colours: light in every theme */
 #pos-wall-print{position:absolute;left:-100000px;top:0;width:max-content;visibility:hidden}
-.pos-wall{--surface:#fff;--border:#8F8880;--text:#2D2622;--text3:#4A443F;--accent:#5B4B8A;--bg:#fff;
-  background:#fff;color:#2D2622;display:inline-block;width:max-content;padding:8px;font-size:13px;line-height:1.25;
+.pos-wall{--surface:var(--paper);--border:var(--paper-line);--text:var(--paper-ink);--text3:var(--paper-ink2);--accent:var(--paper-accent);--bg:var(--paper);
+  background:var(--paper);color:var(--paper-ink);display:inline-block;width:max-content;padding:8px;font-size:13px;line-height:1.25;
   font-family:var(--font,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif);
   -webkit-print-color-adjust:exact;print-color-adjust:exact}
 .pos-wall,.pos-wall *{box-sizing:border-box}
 .pos-wall .oc-box-hd{display:block}
 .pos-wall .oc-box{cursor:default;box-shadow:none;border-left-width:1px;padding:7px 9px;min-width:0;max-width:none;
-  background:#fff;transition:none}
-.pos-wall .oc-node.root > .oc-box{border:2px solid #5B4B8A}
-.pos-wall .oc-box-hd .ti{font-size:14px;color:#2D2622}
-.pos-wall .oc-box .sub{font-size:11px;line-height:1.3;color:#4A443F}
+  background:var(--paper);transition:none}
+.pos-wall .oc-node.root > .oc-box{border:2px solid var(--paper-accent)}
+.pos-wall .oc-box-hd .ti{font-size:14px;color:var(--paper-ink)}
+.pos-wall .oc-box .sub{font-size:11px;line-height:1.3;color:var(--paper-ink2)}
 .pos-wall .nm{margin-top:4px;font-size:13px;line-height:1.25;column-gap:14px}
 .pos-wall .nm div{break-inside:avoid}
-.pos-wall .vac{margin-top:4px;font-style:italic;color:#4A443F}
+.pos-wall .vac{margin-top:4px;font-style:italic;color:var(--paper-ink2)}
 .pos-wall .opn{margin-top:4px;font-weight:700}
-.pos-wall .below{margin-top:4px;padding-top:4px;border-top:1px solid #D8D3CC;font-size:11px;color:#4A443F}
+.pos-wall .below{margin-top:4px;padding-top:4px;border-top:1px solid var(--paper-rule);font-size:11px;color:var(--paper-ink2)}
 .pos-wall .oc-fam{padding:0 20px;align-items:flex-start}
 .pos-wall .oc-hang.under{margin-left:-20px}
 .pos-wall .oc-hang-item{padding:8px 0 0 24px}
@@ -2215,7 +2216,7 @@ body.panel-fullscreen{overflow:hidden}
 /* the wrap: a long column becomes columns side by side, joined by a bar */
 .pos-wall .oc-hang-item::after{top:25px}
 .pos-wall .oc-hang-item > .oc-node{align-items:flex-start}   /* a wide box in the column must not move the tick off the others */
-.pos-wall .oc-hang-item.ce::before,.pos-wall .oc-hang-item:last-child::before{height:26px}
+.pos-wall .oc-hang-item.ce::before{height:26px}
 .pos-wall .oc-hang.wrap{display:grid;grid-auto-flow:column;column-gap:20px}
 .pos-wall .oc-hang.wrap::after{display:none}
 .pos-wall .pos-wall-bar{position:absolute;height:1px;background:var(--border)}
@@ -2223,7 +2224,7 @@ body.panel-fullscreen{overflow:hidden}
 .pos-wall .pos-wall-grid{display:grid;grid-auto-flow:column;gap:12px 16px;align-items:start}
 /* The sheets, while the wall chart prints: only they are shown. 7 mm for the
    HR copy's banner, the chart clipped to its share, 9 pt footer. */
-.pos-wall-sheet{position:relative;overflow:hidden;background:#fff;color:#2D2622;break-after:page;
+.pos-wall-sheet{position:relative;overflow:hidden;background:var(--paper);color:var(--paper-ink);break-after:page;
   font-family:var(--font,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif)}
 .pos-wall-sheet:last-child{break-after:auto}
 .pos-wall-banner{height:7mm;font-size:10pt;font-weight:700;line-height:7mm}
@@ -2234,7 +2235,7 @@ body.panel-fullscreen{overflow:hidden}
   body.pos-wall-printing > :not(#pos-wall-print){display:none !important}
   /* loose text in <body> is not an element, so it is hidden this way, and the
      paper starts at the top of the first sheet whatever sits above it */
-  body.pos-wall-printing{margin:0 !important;padding:0 !important;background:#fff !important;visibility:hidden}
+  body.pos-wall-printing{margin:0 !important;padding:0 !important;background:var(--paper) !important;visibility:hidden}
   body.pos-wall-printing #pos-wall-print{position:absolute;left:0;top:0;visibility:visible;width:auto}
 }
 /* The button and the panel. Native inputs; the paper choice is a row of

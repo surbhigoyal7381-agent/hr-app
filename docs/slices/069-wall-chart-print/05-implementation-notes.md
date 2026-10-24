@@ -244,3 +244,24 @@ the global A4 rule still forces landscape on other prints (D10).
   "only for HR (the payload carries `unseated`) and when the server sent `may_see_leaving: true`"; bad
   news 3 is then closed.
 
+## 13 · Review fixes of 25 Oct 2026 (06-review.md: M1, m1, m2, m3)
+
+Surbhi: "never printed" covers every Positions view. D-4, D-5, D-6 stand (her yes). PD-1 still waits.
+
+| Finding | Fix | Test (each broken on purpose and seen to fail) |
+|---|---|---|
+| **M1** Ctrl+P on "As a list" printed leaving dates, key seat, Frozen, covering and % (not new; the old tests covered only the chart) | The list's five flag notes carry `pos-flag`, the Notice period column `pos-leave-col`; the Positions print rule hides `#pos-body .pos-flag` and `#pos-body .pos-leave-col`. Names, titles, branch and department still print | `check_positions_tree.js` (CI): CSS selectors, and the list's printable markup holds no leaving date, key seat, Frozen, covering or %. Browser: list view in print media, 90 rows, none of those words |
+| **m1** The hidden drawing stayed in the page and added a blank page to other panels' prints | `posWallLayout` keeps the drawing as markup only and removes the holder after measuring; `posWallPrint` draws it again | `check_wall_chart.js`: no holder after measuring |
+| **m2** No `afterprint` + HR left Positions with the panel open = the next panel's Ctrl+P printed the HR copy | A `beforeprint` listener (in `posWire`) runs the wall chart's clean-up when the page is marked for the wall chart but Positions is not the active panel | `check_wall_chart.js`: on Positions the mark stays; from another panel, mark, page size, paper and title are gone before printing |
+| **m3** Portrait A4, several sheets, HR copy: "Sheet k of n" cut off | Footer order is now HR tag, then "Sheet k of n (row r, column c)", then the rest; the footer may wrap to two lines inside its 7 mm | CI: footer order on every sheet. Browser: portrait A4 HR copy, 6 sheets, 0 footers cut |
+
+**Change to spec wording (lead session's file, not edited):** AC-46 says the footer "adds" the sheet label
+at the end. It now comes first, after the HR tag. AC-63 still holds: the footer starts "HR use only -
+not for display ·".
+
+**Not covered, for Surbhi:** the list view still prints its **Open** column (a vacancy count per seat).
+Spec §7 bans the word "open" on the chart; it does not say whether a count column in the list counts.
+Left printing; one more selector hides it if she says so.
+
+Runs after these fixes: CI DOM suite and static checks below; browser check 35 passed.
+

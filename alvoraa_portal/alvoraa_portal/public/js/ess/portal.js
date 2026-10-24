@@ -584,7 +584,7 @@ function posPaintList() {
   if (!rows.length) { body.innerHTML = posNothing(); return; }
 
   var head = "<tr><th>Position</th><th>Reports to</th><th>Branch</th>"
-    + "<th>Department</th><th>Who is in it</th><th>Notice period</th>"
+    + '<th>Department</th><th>Who is in it</th><th class="pos-leave-col">Notice period</th>'
     + '<th style="text-align:right">Seats</th>'
     + '<th style="text-align:right">Open</th>'
     + (POS.may_edit ? "<th></th>" : "") + "</tr>";
@@ -629,11 +629,12 @@ function posCells(r, lead, tail) {
   var who = r.people.length
     ? shown.map(function (p) {
         return posEsc(p.name)
-          + (p.weight < 100 ? ' <span class="pf-card-meta">' + posNum(p.weight) + "%</span>" : "")
-          + (p.covering ? ' <span class="pf-card-meta">covering</span>' : "")
+          // pos-flag: never printed (slice 069, SEC-3 - every Positions view)
+          + (p.weight < 100 ? ' <span class="pf-card-meta pos-flag">' + posNum(p.weight) + "%</span>" : "")
+          + (p.covering ? ' <span class="pf-card-meta pos-flag">covering</span>' : "")
           // "Who is leaving" was invisible in the view this screen opens on,
           // so one of the three questions it exists for had no answer here.
-          + (p.leaving ? ' <span class="pf-card-meta">leaving '
+          + (p.leaving ? ' <span class="pf-card-meta pos-flag">leaving '
              + posEsc(posDay(p.leaving)) + "</span>" : "");
       }).join("<br>")
       + (rest > 0
@@ -648,8 +649,8 @@ function posCells(r, lead, tail) {
     ? '<strong>' + posNum(r.open) + "</strong>"
     : '<span class="pf-card-meta">&mdash;</span>';
   return "<td>" + (lead || "") + posEsc(r.title)
-      + (r.key ? ' <span class="pf-card-meta">key seat</span>' : "")
-      + (r.status !== "Active" ? ' <span class="pf-card-meta">' + posEsc(r.status) + "</span>" : "")
+      + (r.key ? ' <span class="pf-card-meta pos-flag">key seat</span>' : "")
+      + (r.status !== "Active" ? ' <span class="pf-card-meta pos-flag">' + posEsc(r.status) + "</span>" : "")
       + (tail || "")
     + "</td>"
     + "<td>" + (r.reports_to_title
@@ -658,7 +659,7 @@ function posCells(r, lead, tail) {
     + "<td>" + posEsc(r.branch) + "</td>"
     + "<td>" + posEsc(r.department) + "</td>"
     + "<td>" + who + "</td>"
-    + "<td>" + (r.leaving_on
+    + '<td class="pos-leave-col">' + (r.leaving_on
         ? "<strong>" + posEsc(posDay(r.leaving_on)) + "</strong>"
         : '<span class="pf-card-meta">&mdash;</span>') + "</td>"
     + '<td style="text-align:right">' + posNum(r.seats) + "</td>"
@@ -2334,6 +2335,12 @@ function posWire() {
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && POS.sheet) posCloseSheet();
   });
+  // Slice 069 (review m2): a browser that never fired afterprint must not
+  // leave the wall chart - possibly an HR copy - as the next panel's print.
+  window.addEventListener("beforeprint", function () {
+    var pn = document.getElementById("panel-positions");
+    if (document.body.classList.contains("pos-wall-printing") && !(pn && pn.classList.contains("active"))) posWallCleanup();
+  });
 }
 
 /* ── the wall chart: the seat chart as a PDF (slice 069) ─────────────────
@@ -2592,8 +2599,11 @@ function posWallLayout(copy) {
   });
   host.innerHTML = posWallHtml(copy, best.K, best.KU);
   posWallBars(host);
-  var rc = host.firstChild.getBoundingClientRect();
-  return { html: host.innerHTML, w: Math.max(1, Math.ceil(rc.width)), h: Math.max(1, Math.ceil(rc.height)),
+  var rc = host.firstChild.getBoundingClientRect(), html = host.innerHTML;
+  // Kept as markup only: a drawing left in the page would add pages to any
+  // other print (review m1). posWallPrint draws it again.
+  host.parentNode.removeChild(host);
+  return { html: html, w: Math.max(1, Math.ceil(rc.width)), h: Math.max(1, Math.ceil(rc.height)),
            K: best.K, KU: best.KU, ms: Date.now() - t0 };
 }
 
@@ -2878,7 +2888,6 @@ window.posWallPrint = function () {
               drT("as at {0}", [posDay(asat) + " " + String(asat).slice(0, 4)]),
               drT("{0} people in seats", [posWallCount(t, w.levels).people])].join(" · ");
   var hrTag = drT("HR use only - not for display");
-  if (w.hr) foot = hrTag + " · " + foot;
   var n = P.cols * P.rows, html = "";
   for (var r = 0; r < P.rows; r++) {
     for (var col = 0; col < P.cols; col++) {
@@ -2889,8 +2898,11 @@ window.posWallPrint = function () {
         + '<div class="pos-wall-clip" style="height:' + P.ph.toFixed(2) + 'px">'
         + '<div class="pos-wall-at" style="left:' + ox.toFixed(2) + "px;top:" + oy.toFixed(2) + "px;transform:scale(" + P.scale.toFixed(5) + ')">'
         + L.html + "</div></div>"
-        + '<div class="pos-wall-foot">' + posEsc(foot + (n > 1 ? " · " + drT("Sheet {0} of {1} (row {2}, column {3})",
-            [r * P.cols + col + 1, n, r + 1, col + 1]) : "")) + "</div></div>";
+        // The HR tag, then where the sheet goes, first: a long footer wraps or
+        // is cut at its END, never on the label (review m3).
+        + '<div class="pos-wall-foot">' + posEsc((w.hr ? hrTag + " · " : "")
+          + (n > 1 ? drT("Sheet {0} of {1} (row {2}, column {3})", [r * P.cols + col + 1, n, r + 1, col + 1]) + " · " : "")
+          + foot) + "</div></div>";
     }
   }
   posWallHolder().innerHTML = html;

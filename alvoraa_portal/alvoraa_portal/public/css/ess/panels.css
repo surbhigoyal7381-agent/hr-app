@@ -2173,8 +2173,9 @@ body.panel-fullscreen{overflow:hidden}
   body:has(#panel-positions.active) footer,
   #pos-tiles,#panel-positions .pf-toolbar,#panel-positions > .pf-card:has(#pos-f-branch),.pos-ztools,#pos-layer,
   .gp-backdrop,#panel-positions .oc-toggle,#panel-positions .oc-more,
-  /* Slice 069 (SEC-3): Ctrl+P never prints flags, leaving tags or the HR box */
-  #panel-positions .oc-flag,#panel-positions .oc-tag,.pos-nomgr-row,.noprint,.private,[data-private]{display:none !important}
+  /* Slice 069 (SEC-3): Ctrl+P never prints flags, leaving tags or the HR box -
+     in the chart, or in the list (its flag notes and the Notice period column) */
+  #panel-positions .oc-flag,#panel-positions .oc-tag,.pos-nomgr-row,#pos-body .pos-flag,#pos-body .pos-leave-col,.noprint,.private,[data-private]{display:none !important}
   body:has(#panel-positions.active) .main-content{margin:0 !important;padding:0 !important}
   body:has(#panel-positions.active) main.container{padding:0 !important;max-width:none !important}
   .pos-printhead{display:block !important;font-size:11px;margin:0 0 8px}
@@ -2230,7 +2231,7 @@ body.panel-fullscreen{overflow:hidden}
 .pos-wall-banner{height:7mm;font-size:10pt;font-weight:700;line-height:7mm}
 .pos-wall-clip{position:relative;overflow:hidden}
 .pos-wall-at{position:absolute;transform-origin:0 0}
-.pos-wall-foot{height:7mm;display:flex;align-items:flex-end;font-size:9pt;white-space:nowrap;overflow:hidden}
+.pos-wall-foot{height:7mm;display:flex;align-items:flex-end;font-size:9pt;line-height:1.2;overflow:hidden}
 @media print{
   body.pos-wall-printing > :not(#pos-wall-print){display:none !important}
   /* loose text in <body> is not an element, so it is hidden this way, and the

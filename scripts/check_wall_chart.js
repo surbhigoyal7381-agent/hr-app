@@ -223,6 +223,7 @@ function neverPrinted(label, p) {
     await ready();
   };
   btn.focus(); btn.click(); await ready();
+  ok("m1: after measuring, no drawing is left in the page", !doc.getElementById("pos-wall-print") && !!window.POS.wall.L.html);
   const sheet = layer().querySelector(".pos-sheet");
   ok("AC-6: a dialog, labelled by its heading", sheet && sheet.getAttribute("role") === "dialog" && sheet.getAttribute("aria-modal") === "true"
      && doc.getElementById(sheet.getAttribute("aria-labelledby")).textContent === "Download wall chart (PDF)");
@@ -404,8 +405,9 @@ function neverPrinted(label, p) {
   s = await printWith([["pos-wall-levels", "3"], ["pos-wall-paper-A3", true], ["pos-wall-sheets-several", true], ["pos-wall-hr", true]], { w: 3344, h: 2118 });
   const P3 = window.posWallPlan({ w: 3344, h: 2118 }, "A3", "several", true);
   ok("AC-45: n sheets, c across, r down", s && s.sheets.length === P3.cols * P3.rows && P3.cols === 3 && P3.rows >= 3, s && s.sheets.length + " " + P3.cols + "x" + P3.rows);
-  ok("AC-46: each footer says where the sheet goes", s && s.sheets.every((sh, i) =>
-     sh.foot.endsWith(" · Sheet " + (i + 1) + " of " + s.sheets.length + " (row " + (Math.floor(i / P3.cols) + 1) + ", column " + (i % P3.cols + 1) + ")")),
+  ok("AC-46 / m3: each footer says where the sheet goes, right after the HR tag", s && s.sheets.every((sh, i) =>
+     sh.foot.indexOf("HR use only - not for display · Sheet " + (i + 1) + " of " + s.sheets.length + " (row " + (Math.floor(i / P3.cols) + 1)
+       + ", column " + (i % P3.cols + 1) + ") · Sample Fashions") === 0),
      s && s.sheets[4] && s.sheets[4].foot);
   const offs = s ? s.sheets.map((sh) => sh.at.match(/left:(-?[\d.]+)px;top:(-?[\d.]+)px/).slice(1).map(Number)) : [];
   ok("AC-46: side by side the sheets cover the chart with no gap and no overlap", offs.length && offs.every(([x, y], i) =>
@@ -419,6 +421,21 @@ function neverPrinted(label, p) {
   ok("AC-47: several sheets that fit on one at 10 pt print as one", s && s.sheets.length === 1 && !s.sheets[0].foot.includes("Sheet 1"));
   ok("AC-47: and the panel says so", panelText().includes("It fits on one sheet at this size, so it prints as one. Readable"));
   window.dispatchEvent(new window.Event("afterprint")); window.posCloseSheet();
+
+  /* review m2: afterprint never came, and HR left Positions with the panel
+     open - the next panel's print is not the wall chart */
+  s = await printWith([["pos-wall-hr", true]], { w: 3344, h: 2118 });
+  const pn = doc.getElementById("panel-positions"), wasActive = pn.classList.contains("active");
+  pn.classList.add("active");
+  window.dispatchEvent(new window.Event("beforeprint"));
+  ok("m2: on Positions, its own print keeps the wall chart", doc.body.classList.contains("pos-wall-printing"));
+  pn.classList.remove("active");
+  window.dispatchEvent(new window.Event("beforeprint"));
+  ok("m2: from another panel, the wall chart, its page size and its title are gone before printing",
+     !doc.body.classList.contains("pos-wall-printing") && !doc.getElementById("pos-wall-page")
+     && !doc.getElementById("pos-wall-print") && doc.title === "Alvoraa portal", doc.title);
+  if (wasActive) pn.classList.add("active");
+  window.posCloseSheet();
 
   /* printing while the size is still being worked out waits for it (AC-35) */
   window.POS.wall = null; btn.click(); await ready();

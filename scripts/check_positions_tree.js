@@ -320,6 +320,21 @@ const ALL_OPEN = { "P-Sector34": true, "P-Ambala": true };
   const head = (pr.__els["pos-body"].innerHTML.match(/<div class="pos-printhead">[\s\S]*?<\/div>/) || [""])[0];
   ok("print header (069 AC-3a): never who printed it",
      head && !/PRINTER-SNTL|ROLE-SNTL|printed by/.test(head), head);
+  // Review M1: "never printed" covers the list view too. Every flag note and
+  // the Notice period column carry a class the print rule hides.
+  ok("print (069 M1): the list's flag notes and Notice period column never print",
+     ["#pos-body .pos-flag", "#pos-body .pos-leave-col"].every((x) => css.includes(x)));
+  const li = makeContext({ "pos-f-view": "list" });
+  li.POS.rows = [seat("P-L1", "Cashier", "", { key: true, status: "Frozen", leaving_on: "2026-11-30",
+    people: [{ employee: "E", name: "Lata Leaver", weight: 50, covering: true, leaving: "2026-11-30" }] })];
+  li.POS.collapsed = {}; li.POS.expanded = {};
+  li.posPaint();
+  const listHtml = li.__els["pos-body"].innerHTML;
+  const printed = listHtml.replace(/<span class="pf-card-meta pos-flag">[^<]*<\/span>/g, "")
+    .replace(/<t[dh] class="pos-leave-col">[\s\S]*?<\/t[dh]>/g, "");
+  ok("list view: flags and leaving dates are drawn on screen", /key seat/.test(listHtml) && /leaving/.test(listHtml));
+  ok("list view: what is left for print has no leaving date, key seat, Frozen, covering or %",
+     !/leaving|key seat|Frozen|covering|50%|30 Nov/.test(printed) && /Lata Leaver/.test(printed), printed.slice(0, 300));
   ok("print header keeps the view, the date and the filter words",
      /Positions/.test(head) && /seats as at/.test(head) && /No filter/.test(head) && / on /.test(head));
   ok("print: trays, dialogs, tiles, filters and fold buttons are left out",

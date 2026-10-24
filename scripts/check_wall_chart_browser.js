@@ -164,7 +164,8 @@ function paperAudit() {
     await load(payload);
     const a = await page.evaluate((lv) => {
       const start = typeof lv === "string" ? POS.rows.find((r) => r.title === lv).id : "top";
-      posWallLayout(posWallCopy(start, typeof lv === "string" ? 99 : lv, true, false));
+      // The layout keeps only markup (review m1); draw it back to audit it.
+      const html = posWallLayout(posWallCopy(start, typeof lv === "string" ? 99 : lv, true, false)).html; posWallHolder().innerHTML = html;
       return null;
     }, lv);
     const r = await page.evaluate(paperAudit);
@@ -177,7 +178,7 @@ function paperAudit() {
   await load(F.dtc90());
   const dark = await page.evaluate(() => {
     document.documentElement.setAttribute("data-theme", "dark");
-    posWallLayout(posWallCopy("top", 2, true, false));
+    const html = posWallLayout(posWallCopy("top", 2, true, false)).html; posWallHolder().innerHTML = html;
     const w = document.querySelector("#pos-wall-print .pos-wall"), cs = getComputedStyle(w);
     const root = getComputedStyle(w.querySelector(".oc-node.root > .oc-box"));
     const box = getComputedStyle(w.querySelector(".oc-box"));
@@ -320,6 +321,38 @@ function paperAudit() {
   must("AC-3: Ctrl+P prints the chart's seats and names", pr.titles > 20 && pr.names > 20);
   must("AC-3: and no flag, tag, HR box or private mark (there were some on screen)", pr.banned === 0 && ctrlP.flags > 0 && ctrlP.tags > 0 && ctrlP.nomgr > 0);
   must("AC-3a: the print header names nobody", !/PRINTER-SNTL|ROLE-SNTL|printed by/.test(pr.head) && /Positions/.test(pr.head) && /seats as at/.test(pr.head) && / on /.test(pr.head), pr.head);
+
+  /* ── review M1: Ctrl+P on "As a list" ──────────────────────────────── */
+  const listPr = await page.evaluate(async () => {
+    document.getElementById("pos-f-view").value = "list"; posPaint();
+    return document.querySelectorAll("#pos-body tbody tr").length;
+  });
+  await page.emulateMedia({ media: "print" });
+  const listText = await page.evaluate(() => document.getElementById("pos-body").innerText);
+  await page.emulateMedia({ media: "screen" });
+  await page.evaluate(() => { document.getElementById("pos-f-view").value = "tree"; posPaint(); });
+  const leaks = ["leaving", "key seat", "Frozen", "covering", "50%", "30 Nov", "1 Jan"].filter((w) => listText.includes(w));
+  must(`M1: Ctrl+P on the list view (${listPr} rows): no leaving date, key seat, Frozen, covering or %`, listPr > 80 && !leaks.length
+       && listText.includes("Owner and Managing Director"), leaks.join(", "));
+
+  /* ── review m3: portrait A4, several sheets, HR copy: the footer fits ── */
+  await load(F.dtc90());
+  const foot = await page.evaluate(async () => {
+    POS.wall = null; posWallOpen();
+    while (!POS.wall.L) await new Promise((r) => setTimeout(r, 20));
+    posWallSet("hr", true);
+    while (!POS.wall.L) await new Promise((r) => setTimeout(r, 20));
+    posWallSet("paper", "A4"); posWallSet("sheets", "several");
+    POS.wall.L = Object.assign({}, POS.wall.L, { w: 700, h: 5000 });   // taller than wide: portrait
+    posWallPrint();
+    const feet = [...document.querySelectorAll("#pos-wall-print .pos-wall-foot")];
+    const out = { sheets: feet.length, cut: feet.filter((f) => f.scrollHeight > f.clientHeight + 1 || f.scrollWidth > f.clientWidth + 1).length,
+                  first: feet[0] && feet[0].textContent, style: document.getElementById("pos-wall-page").textContent };
+    window.dispatchEvent(new Event("afterprint")); posCloseSheet();
+    return out;
+  });
+  must(`m3: portrait A4, ${foot.sheets} HR sheets: no footer is cut (${foot.cut} cut); "${foot.first}"`,
+       foot.cut === 0 && /^HR use only - not for display · Sheet 1 of/.test(foot.first) && /210mm 297mm/.test(foot.style), foot.style);
 
   /* ── the phone (AC-5) ───────────────────────────────────────────────── */
   await page.setViewportSize({ width: 390, height: 844 });

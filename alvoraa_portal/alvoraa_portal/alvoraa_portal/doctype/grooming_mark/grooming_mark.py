@@ -25,7 +25,8 @@ from frappe.utils import getdate, now_datetime, nowdate
 from hrms.alvoraa_hr_core.access import is_own_record, refuse
 import alvoraa_portal.grooming as grooming
 
-AFTER_SUBMIT = ("asked_on", "kept_by", "kept_on", "removal_reason")
+AFTER_SUBMIT = ("asked_on", "kept_by", "kept_on", "removal_reason", "raised_on", "raised_by",
+                "raised_reason")
 
 
 class GroomingMark(Document):
@@ -46,7 +47,10 @@ class GroomingMark(Document):
 			self.set(field, None)
 
 	def on_submit(self):
-		grooming.notify_marked(self)
+		raised = grooming.raised_by(self)
+		grooming.notify_marked(self, raised)
+		if raised:
+			grooming.notify_flag(self, raised)
 
 	def before_update_after_submit(self):
 		old = self.get_doc_before_save()
@@ -80,6 +84,20 @@ class GroomingMark(Document):
 			self.kept_on = now_datetime()
 			self._action_taken = "kept"
 			return
+		if changed <= set(grooming.RAISE_FIELDS):
+			# "Raise it with HR": the subject's current manager, on the mark that
+			# reached this month's limit, once a month, one fixed reason. It adds
+			# no fine and changes nothing else on the mark.
+			v = grooming.may_raise(self.employee)
+			if not v.ok or v.mark != self.name:
+				refuse(v.message or _("This grooming red is not the one to raise."), v.code or "RAISE4",
+				       where, self.doctype, self.name)
+			if self.raised_reason not in grooming.RAISE_REASONS:
+				frappe.throw(_("Choose a reason first."))
+			self.raised_by = frappe.session.user
+			self.raised_on = now_datetime()
+			self._action_taken = "raised"
+			return
 		refuse(_("That change is not allowed on a grooming red."), "SEC-5", where,
 		       self.doctype, self.name)
 
@@ -89,6 +107,8 @@ class GroomingMark(Document):
 			grooming.notify_asked(self)
 		elif action == "kept":
 			grooming.notify_kept(self)
+		elif action == "raised":
+			grooming.notify_raised(self)
 
 	def before_cancel(self):
 		"""SEC-5: the marker's own same-day undo, or HR in scope until the slip."""

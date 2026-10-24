@@ -80,6 +80,12 @@ class MonthSummary:
 	red_deduction: float = 0.0
 	green_earning: float = 0.0
 
+	# grooming reds (slice 066): days marked, the money, and whether the legal
+	# limit cut it
+	grooming_days: int = 0
+	grooming_deduction: float = 0.0
+	grooming_capped: bool = False
+
 	incentive: float = 0.0
 	gross: float = 0.0
 	other_deductions: float = 0.0
@@ -109,6 +115,7 @@ def summarise_month(
 	earns_marks=True,
 	free_reds=0,
 	mark_rate=0.0,
+	grooming_days=0,
 	# things that arrive from outside the attendance system
 	incentive=0.0,
 	other_deductions=0.0,
@@ -210,8 +217,24 @@ def summarise_month(
 	m.red_deduction = m.deductible_reds * m.mark_rate
 	m.green_earning = m.greens * m.mark_rate
 
+	# ── grooming reds (slice 066): every marked day at the grade's rate, no
+	# free allowance, and never above 3% of the month's earned Basic - the
+	# back-stop behind the stop at marking (SEC-10, D2). Pending counsel on
+	# what "wages payable" is; the earned Basic is the smaller figure, so it
+	# errs toward the employee.
+	m.grooming_days = int(grooming_days or 0) if earns_marks else 0
+	full = m.grooming_days * m.mark_rate
+	limit = round(0.03 * m.earning_basic, 2)
+	m.grooming_deduction = min(full, limit)
+	m.grooming_capped = full > limit
+	if m.grooming_capped:
+		m.notes.append("{0} grooming reds at ₹{1:,.0f}, capped at ₹{2:,.0f} by the legal "
+		               "limit.".format(m.grooming_days, m.mark_rate, limit))
+	elif m.grooming_days:
+		m.notes.append("{0} grooming reds at ₹{1:,.0f}.".format(m.grooming_days, m.mark_rate))
+
 	m.incentive = float(incentive or 0)
 	m.other_deductions = float(other_deductions or 0)
 	m.gross = m.earning_basic + m.green_earning + m.incentive
-	m.net = m.gross - m.red_deduction - m.other_deductions
+	m.net = m.gross - m.red_deduction - m.grooming_deduction - m.other_deductions
 	return m

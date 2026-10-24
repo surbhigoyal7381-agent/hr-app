@@ -8937,10 +8937,25 @@ function gmRow(r, i) {
     return h + "</div>";
   }
   /* Contract staff read as a quiet line; every other refusal is a message. */
-  return h + (r.why_code === "R4"
-    ? '<div class="gm-sub gm-full">' + gpEsc(r.why_not) + "</div>"
-    : '<div class="gm-msg">' + gpEsc(r.why_not || "") + "</div>") + "</div>";
+  if (r.why_code === "R4") return h + '<div class="gm-sub gm-full">' + gpEsc(r.why_not) + "</div></div>";
+  h += '<div class="gm-msg' + (r.why_code === "R12" ? " warn" : "") + '">' + gpEsc(r.why_not || "") + "</div>";
+  /* At the limit: "Raise it with HR" (brief, Decisions (3)). It asks HR for a
+     conversation and never adds a mark or a fine. */
+  if (r.raise && r.raise.can) {
+    h += '<button class="btn btn-outline gm-btn" onclick="gmOpenRaise(' + i + ')" aria-label="Raise '
+      + gpEsc(r.employee_name) + '\u2019s grooming with HR">Raise it with HR</button>';
+  } else if (r.raise && r.raise.raised_on) {
+    h += '<div class="gm-sub gm-full">Raised with HR on ' + gpEsc(r.raise.raised_on) + "."
+      + (r.raise.reviewed_on ? " HR recorded a review on " + gpEsc(r.raise.reviewed_on) + "." : "")
+      + "</div>";
+  }
+  return h + "</div>";
 }
+
+window.gmOpenRaise = function (i) {
+  var r = gmState.today.rows[i];
+  gmOpen({kind: "raise", employee: r.employee, name: r.employee_name, first: r.first, from: "today"});
+};
 
 window.gmOpenToday = function (i) {
   var r = gmState.today.rows[i];
@@ -9001,7 +9016,7 @@ function gmBox(x) {
   if (!m) {
     if (g.viewer === "hr") {
       if (day.can_mark) {
-        if (!g.has_manager) h += "<p>" + first + " has no reporting manager in Alvoraa, so only HR can mark "
+        if (!g.has_manager) h += "<p>" + first + " has no reporting manager in Alvora, so only HR can mark "
           + first + "’s days.</p>";
         h += "<p>No grooming red on this day.</p>";
         return h + '<div class="gm-acts"><button class="btn btn-outline gm-btn" onclick="gmOpenDay(&quot;'
@@ -9078,24 +9093,38 @@ function gmReview() {
     var month = gpEsc(r.month);
     if (r.state === "pending") {
       h += '<h2 id="gm-rv-' + i + '">Grooming review pending' + (r.carried ? " (" + month + ")" : "") + "</h2>";
+      if (r.why === "raised") {
+        if (g.viewer === "self") {
+          h += "<p>" + gpEsc(r.raise_by) + ", your manager, has asked HR to talk to you about grooming. This adds no fine.</p>";
+        } else if (g.viewer === "hr") {
+          h += "<p>" + gpEsc(r.raise_by) + " raised it again on " + gpEsc(r.raise_on) + ": " + gpEsc(r.raise_reason || "")
+            + ".</p><p>Talk to " + first + " about dress, agree an action, then record it here.</p>"
+            + '<div class="gm-acts"><button class="btn btn-primary gm-btn" onclick="gmOpenReview(' + i
+            + ')" aria-label="Record the grooming review for ' + gpEsc(g.name) + '">Record the review</button></div>';
+        } else {
+          h += "<p>" + (r.raise_by_me ? "You" : gpEsc(r.raise_by)) + " raised it with HR on " + gpEsc(r.raise_on)
+            + ". HR will talk to " + first + ". You do not need to do anything.</p>";
+        }
+        return h + "</section>";
+      }
       if (g.viewer === "self") {
-        h += (r.why === "4th"
-          ? "<p>You have " + r.live + " grooming reds in " + month + ", so HR will talk to you about it.</p>"
+        h += (r.why === "max"
+          ? "<p>You have " + r.live + " grooming reds in " + month + ", the most allowed in a month, so HR will talk to you about it.</p>"
           : "<p>You have " + r.live + " grooming red" + (r.live === 1 ? "" : "s") + " in " + month + " ("
             + gpEsc(r.amount) + "). One more would pass the legal limit of " + gpEsc(r.limit)
             + " (3% of your wages), so no more can be marked this month. HR will talk to you about it.</p>")
           + "<p>The review does not change your fines.</p>";
       } else if (g.viewer === "hr") {
-        h += "<p>Raised on " + gpEsc(r.raised_on) + ": " + first + (r.why === "4th"
-          ? " reached 4 grooming reds in " + month + "."
+        h += "<p>Raised on " + gpEsc(r.raised_on) + ": " + first + (r.why === "max"
+          ? " reached 3 grooming reds in " + month + ", the most allowed in a month."
           : " reached the legal limit for grooming reds in " + month + " (" + r.live + " mark"
             + (r.live === 1 ? "" : "s") + "; limit " + gpEsc(r.limit) + " = 3% of Basic " + gpEsc(r.base) + ").")
           + "</p><p>Talk to " + first + " about dress, agree an action, then record it here.</p>"
           + '<div class="gm-acts"><button class="btn btn-primary gm-btn" onclick="gmOpenReview(' + i
           + ')" aria-label="Record the grooming review for ' + gpEsc(g.name) + '">Record the review</button></div>';
       } else {
-        h += "<p>" + first + (r.why === "4th"
-          ? " has " + r.live + " grooming reds in " + month
+        h += "<p>" + first + (r.why === "max"
+          ? " has had " + r.live + " grooming reds in " + month + ", the most allowed"
           : " has reached the most grooming reds the law allows in " + month)
           + ", so HR will talk to " + first + " about it. You do not need to do anything.</p>";
       }
@@ -9247,6 +9276,18 @@ function gmPaintSheet(keepFocus) {
       + " The person who marked it will see it is gone. A record of the mark and of its removal is kept.</div>";
     go = "Remove it";
     no = "Keep the mark";
+  } else if (s.kind === "raise") {
+    h += '<h2 id="gm-sh-t" tabindex="-1">Raise ' + gpEsc(s.name) + "\u2019s grooming with HR?</h2>"
+      + '<p class="gm-help" id="gm-sh-help">Choose the one reason that fits. You cannot add your own words.</p>'
+      + '<div role="radiogroup" aria-labelledby="gm-sh-t" aria-describedby="gm-sh-help">'
+      + ((gmState.today && gmState.today.raise_reasons) || GM_REASONS.slice(0, 4)).map(function (r) {
+          var on = s.chosen === r;
+          return '<label class="gm-opt' + (on ? " sel" : "") + '"><input type="radio" name="gm-x" value="'
+            + gpEsc(r) + '"' + (on ? " checked" : "") + ' onchange="gmPick(this.value)"> ' + gpEsc(r) + "</label>";
+        }).join("") + "</div>"
+      + '<div class="gm-info">HR will be told and will talk to ' + first + ". " + first
+      + " will be told you raised it. This adds no fine and no grooming red.</div>";
+    go = "Raise it with HR";
   } else if (s.kind === "keep") {
     h += '<h2 id="gm-sh-t" tabindex="-1">Keep the grooming red?</h2><div class="gm-info">' + first
       + " will be told that HR has checked it and the mark stays. " + gpEsc(s.rate || "") + " still comes off "
@@ -9290,7 +9331,7 @@ window.gmOther = function (v) { gmState.sheet.other = v; };
 window.gmConfirm = async function () {
   var s = gmState.sheet;
   if (!s || s.busy) return;
-  if ((s.kind === "mark" || s.kind === "remove") && !s.chosen) {
+  if ((s.kind === "mark" || s.kind === "remove" || s.kind === "raise") && !s.chosen) {
     s.error = s.kind === "mark" ? "Choose a reason first." : "Choose why you are removing it.";
     gmPaintSheet(true);
     var r = document.querySelector('.gm-sheet input[type="radio"]');
@@ -9327,6 +9368,7 @@ window.gmConfirm = async function () {
             other_reason: s.chosen === "Other" ? (s.other || "") : null};
   } else if (s.kind === "remove") { call = "remove"; args = {name: s.mark, reason: s.chosen}; }
   else if (s.kind === "keep") { call = "keep"; args = {name: s.mark}; }
+  else if (s.kind === "raise") { call = "raise_with_hr"; args = {employee: s.employee, reason: s.chosen}; }
   else if (s.kind === "ask") { call = "ask"; args = {name: s.mark}; }
   else { call = "record_review"; args = {employee: s.employee, month: s.month, note: s.text}; }
   try {

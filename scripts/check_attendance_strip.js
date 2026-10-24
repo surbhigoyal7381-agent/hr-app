@@ -35,7 +35,10 @@ const want = ["AC_MONTHS", "acState", "acMinutes", "acMins", "acSay", "acPairs",
                  were added to portal.js without being added here, so this
                  script died on "acOutsideWindow is not defined" - and, not
                  being part of CI, nobody noticed. */
-              "acOutsideWindow", "acWindowWords", "acNice"];
+              "acOutsideWindow", "acWindowWords", "acNice",
+              /* Slice 066: the grooming red's tag and day box, which acRow and
+                 acDetail now call. With no `grooming` key they add nothing. */
+              "gmState", "gmData", "gmName", "gmTag", "gmRateWords", "gmBox"];
 /* Extracted by counting braces, not by looking for the next blank line.
    Several of these functions have a blank line inside them, and the blank-line
    version cut them in half - which showed up as a syntax error rather than as

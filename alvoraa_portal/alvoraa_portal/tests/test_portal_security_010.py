@@ -826,6 +826,14 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		# made, submitted, cancelled and updated as the signed-in user.
 		("alvoraa_portal", "grooming.py"): 0,
 		("alvoraa_portal", "alvoraa_portal/doctype/grooming_mark/grooming_mark.py"): 0,
+		# Slice 066 steps 8-11: the review record and the pay files. payroll_slip.py
+		# had 2 (its engine-line writes) and no ceiling, so a third could have
+		# slipped in unseen (01c SEC-12). It stays at 2.
+		("alvoraa_portal", "alvoraa_portal/doctype/grooming_review/grooming_review.py"): 0,
+		("alvoraa_portal", "payroll_slip.py"): 2,
+		("alvoraa_portal", "payroll_month.py"): 0,
+		("alvoraa_portal", "alvoraa_portal/report/salary_components_and_workings/salary_components_and_workings.py"): 0,
+		("alvoraa_portal", "alvoraa_portal/report/grooming_review_pending/grooming_review_pending.py"): 0,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

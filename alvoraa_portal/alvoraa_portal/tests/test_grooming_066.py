@@ -730,7 +730,8 @@ class TestNoFreeText(Case):
 		meta = frappe.get_meta(grooming.MARK)
 		self.assertEqual({f.fieldname for f in meta.fields if f.fieldtype != "Column Break"},
 		                 {"employee", "employee_name", "mark_date", "reason", "other_reason", "marked_as",
-		                  "told_in_person", "asked_on", "kept_by", "kept_on", "removal_reason"})
+		                  "told_in_person", "asked_on", "kept_by", "kept_on", "removal_reason",
+		                  "raised_on", "raised_by", "raised_reason"})
 		self.assertEqual((meta.autoname, meta.allow_import, meta.allow_rename, meta.track_views,
 		                  meta.track_changes, meta.is_submittable), ("hash", 0, 0, 0, 1, 1))
 		self.assertFalse([f for f in meta.fields if f.in_global_search])

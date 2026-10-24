@@ -931,14 +931,16 @@ def _part_my_requests(who):
 
 
 def _part_grooming(who):
-	"""Slice 066: grooming reds waiting on HR - an ask not yet answered - for the
-	people in this caller's HR scope.
+	"""Slice 066: grooming reds waiting on HR - an ask not yet answered, and a
+	"Grooming review pending" flag - for the people in this caller's HR scope.
 
 	HR only (`grooming.hr_scope`, the same rule that lets them keep or remove a
 	mark). The asks are read with `get_list`, so the mark's own read gate
-	applies. Never the caller's own record.
+	applies; the flags come from `grooming.pending_reviews`, the same definition
+	the pending-review report uses. Never the caller's own record.
 	"""
 	import alvoraa_portal.grooming as grooming
+	from frappe.utils import add_months, get_first_day, getdate, nowdate
 
 	available = bool(_has_doctype(grooming.MARK)) and bool(grooming._hr_sql(who.user))
 	filters = ({"asked_on": ["is", "set"], "kept_on": ["is", "not set"], "docstatus": 1,
@@ -957,12 +959,18 @@ def _part_grooming(who):
 				out.append({"name": a.name, "employee_name": a.employee_name,
 				            "from_date": str(a.mark_date),
 				            "says": _("Asked HR to look at a grooming red"), "action": "grooming"})
+		this = getdate(get_first_day(nowdate()))
+		for month in (getdate(add_months(this, -1)), this):
+			for r in grooming.pending_reviews(who.user, month):
+				out.append({"name": r.employee, "employee_name": r.employee_name,
+				            "from_date": str(month),
+				            "says": _("Grooming review pending"), "action": "grooming"})
 		return out[:limit] if limit else out
 
 	return Part(
 		"grooming", "#time",
 		scope="HR only: marks in grooming.hr_scope for this caller (get_list, the mark's own "
-		      "read gate), minus their own",
+		      "read gate), minus their own; pending reviews from grooming.pending_reviews",
 		filters=filters,
 		count_fn=lambda f: len(collect(f, None)),
 		rows_fn=collect,

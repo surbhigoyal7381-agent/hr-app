@@ -113,6 +113,9 @@ doc_events = {
         # and green lines not applied). A new slip is not in the database yet
         # during validate, so a comment on it is refused; it is posted here.
         "on_update": "alvoraa_portal.payroll_slip.post_slip_notes",
+        # Slice 066 (SEC-9, D2): a slip is not submitted with a stale grooming
+        # line or one above the legal limit. Does nothing without a rule set.
+        "before_submit": "alvoraa_portal.payroll_slip.check_grooming_before_submit",
     },
     "Attendance": {
         "on_submit": "alvoraa_portal.payroll_rules_apply.on_attendance_submit",
@@ -357,6 +360,7 @@ permission_query_conditions = {
     # Slice 066 (SEC-4): the records' own read gate, NOT manager_scope's User
     # Permissions - those cannot say "today", and leave a new doctype open.
     "Grooming Mark": "alvoraa_portal.grooming.mark_query_conditions",
+    "Grooming Review": "alvoraa_portal.grooming.review_query_conditions",
 }
 
 has_permission = {
@@ -366,6 +370,7 @@ has_permission = {
     "Alvoraa Notice Acknowledgement": "alvoraa_portal.field_app_access.acknowledgement_has_permission",
     # Slice 066 (SEC-4): one gate per record, the same rules as the list above.
     "Grooming Mark": "alvoraa_portal.grooming.mark_has_permission",
+    "Grooming Review": "alvoraa_portal.grooming.review_has_permission",
 }
 
 scheduler_events = {

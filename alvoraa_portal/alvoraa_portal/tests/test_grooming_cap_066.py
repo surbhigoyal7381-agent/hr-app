@@ -1,0 +1,441 @@
+"""Slice 066, steps 8-11: the legal limit, the slip line, the review flag and
+the private review note. PROVISIONAL - waiting for Surbhi's answer on how the
+cap works (24 Oct 2026: "after 3 marks it stops for everyone"), which may
+replace the 3%-of-wages stop and the 4th-mark flag these tests pin.
+
+Answered the same day: at most 3 marks per person per month for everyone, the
+flag at the 3rd, and the 3% check kept as a backstop. These tests pin that.
+
+Uses the world and helpers of test_grooming_066 (same people, same fixture).
+"""
+
+import json
+import os
+from unittest.mock import patch
+
+import frappe
+from frappe.utils import add_days
+
+import alvoraa_portal.attendance_correction as ac
+import alvoraa_portal.grooming as grooming
+import alvoraa_portal.inbox_api as inbox_api
+import alvoraa_portal.payroll_slip as payroll_slip
+from alvoraa_portal.payroll_month import MonthSummary, summarise_month
+from alvoraa_portal.tests import test_grooming_066 as world
+from alvoraa_portal.tests.test_grooming_066 import (
+	COMPANY, DAY2, M_END, M_START, NOTE, P, PLAIN, TODAY, YESTERDAY, _bells, _list, _mark,
+	_raw_mark, _rest_mark, as_user, user,
+)
+
+setUpModule = world.setUpModule
+tearDownModule = world.tearDownModule
+
+
+class Case(world.Case):
+	def setUp(self):
+		frappe.db.delete(grooming.REVIEW, {"employee": ("in", list(P.values()))})
+		frappe.db.delete("Comment", {"reference_doctype": grooming.REVIEW})
+		super().setUp()
+
+	def tearDown(self):
+		frappe.db.delete(grooming.REVIEW, {"employee": ("in", list(P.values()))})
+		super().tearDown()
+
+
+# ── US-10, SEC-10: the 3-mark stop, and the 3% backstop behind it ─────────────
+
+class TestLegalLimit(Case):
+	def test_three_marks_a_month_is_the_most_for_everyone(self):
+		if TODAY.day < 4:
+			self.skipTest("too early in the month")
+		# Kiran: Junior Rs 100, Basic 15,000 (3% = 450). Three marks fit the law;
+		# the 3-mark rule stops the 4th.
+		third = [_raw_mark(P["Kiran"], add_days(M_START, i)) for i in range(3)][-1]
+		with as_user("Ravi"):
+			v = grooming.may_mark(P["Kiran"], TODAY)
+		self.assertEqual((v.code, v.message), (
+			"R12", "Kiran has had 3 grooming reds this month, the most allowed. HR has been told and "
+			       "will talk to Kiran. If it carries on, you can raise it with HR."))
+		self.assertNotIn("₹", v.message)
+		self.refused(_rest_mark, "Ravi", "Kiran", told_in_person=1)
+		with as_user("Ritika"):
+			self.assertEqual(grooming.may_mark(P["Kiran"], TODAY).message,
+			                 "Kiran has had 3 grooming reds this month, the most allowed, so no "
+			                 "more can be marked.")
+			self.refused(_rest_mark, "Ritika", "Kiran", told_in_person=1)
+		frappe.db.set_value(grooming.MARK, third, "docstatus", 2)
+		with as_user("Ravi"):
+			self.assertTrue(grooming.may_mark(P["Kiran"], TODAY).ok)
+
+	def test_the_three_percent_backstop_stops_a_senior_earlier(self):
+		if YESTERDAY < M_START:
+			self.skipTest("first day of the month")
+		# Rahul: Senior Rs 200, Basic 18,000 (3% = 540): a 3rd mark would be 600.
+		_raw_mark(P["Rahul"], YESTERDAY)
+		_raw_mark(P["Rahul"], DAY2 if DAY2 >= M_START else YESTERDAY)
+		with as_user("Ravi"):
+			v = grooming.may_mark(P["Rahul"], TODAY)
+		if DAY2 < M_START:
+			self.skipTest("too early in the month")
+		self.assertEqual(v.message, "Rahul has reached the most grooming reds the law allows this "
+		                            "month, so this one cannot be marked. HR has been told and will "
+		                            "talk to Rahul. If it carries on, you can raise it with HR.")
+		with as_user("Ritika"):
+			self.assertTrue(grooming.may_mark(P["Rahul"], TODAY).message.endswith(
+				"(limit ₹540 = 3% of Basic ₹18,000)"))
+
+	def test_ac49_no_salary_assignment_means_no_mark(self):
+		with as_user("Ravi"):
+			self.assertEqual(grooming.may_mark(P["Nobase"], TODAY).code, "R12")
+
+
+# ── US-11, SEC-9, SEC-10: the slip ───────────────────────────────────────────
+
+class TestSlip(Case):
+	def test_ac50_capped_figure_and_the_why(self):
+		from alvoraa_portal.payroll_rules import DayVerdict
+		days = [DayVerdict() for _ in range(30)]          # 30 ordinary days, each paid in full
+		s = summarise_month(days, basic=10000, month_days=30, grooming_days=4, mark_rate=100,
+		                    earns_leave_credits=False)
+		self.assertEqual((s.grooming_deduction, s.grooming_capped), (300.0, True))
+		self.assertIn("4 grooming reds at ₹100, capped at ₹300 by the legal limit.", s.notes)
+		s = summarise_month(days, basic=12000, month_days=30, grooming_days=3, mark_rate=100,
+		                    earns_leave_credits=False)
+		self.assertEqual((s.grooming_deduction, s.grooming_capped), (300.0, False))
+		self.assertIn("3 grooming reds at ₹100.", s.notes)
+		self.assertAlmostEqual(s.net, s.gross - 300)
+		s = summarise_month(days, basic=12000, month_days=30, grooming_days=3, mark_rate=100,
+		                    earns_marks=False, earns_leave_credits=False)
+		self.assertEqual(s.grooming_deduction, 0)
+
+	def test_ac53_sec2c_distinct_days_and_no_charge_on_a_full_day_leave(self):
+		if DAY2 < M_START:
+			self.skipTest("too early in the month")
+		_raw_mark(P["Kiran"], DAY2)
+		_raw_mark(P["Kiran"], DAY2, owner_first="Ritika", marked_as="HR")     # same date twice
+		_raw_mark(P["Kiran"], YESTERDAY)
+		frappe.get_doc({"doctype": "Attendance", "employee": P["Kiran"], "company": COMPANY,
+		                "attendance_date": YESTERDAY, "status": "On Leave", "docstatus": 1,
+		                "name": frappe.generate_hash(length=10)}).db_insert()
+		s = payroll_slip.month_summary(P["Kiran"], COMPANY, M_START, M_END)
+		self.assertEqual(s.grooming_days, 1)
+
+	def test_ac53_a_contract_person_with_marks_is_charged_nothing(self):
+		_raw_mark(P["Geeta"], TODAY)
+		s = payroll_slip.month_summary(P["Geeta"], COMPANY, M_START, M_END)
+		self.assertEqual(s.grooming_deduction, 0)
+
+	def test_ac50_ac51_one_engine_line_replaced_never_added(self):
+		self.assertEqual(payroll_slip.ENGINE_LINES[-1], ("Grooming Red Value", "grooming_deduction"))
+		self.assertEqual([c for c, _f in payroll_slip.ENGINE_LINES[:2]],
+		                 [payroll_slip.RED_COMPONENT, payroll_slip.GREEN_COMPONENT])
+
+		def slip(amount, doc=None):
+			summary = MonthSummary(paid_days=30, grooming_deduction=amount)
+			with patch.object(payroll_slip, "month_summary", return_value=summary):
+				if doc is None:
+					doc = frappe.get_doc({"doctype": "Salary Slip", "employee": P["Kiran"],
+					                      "company": COMPANY, "start_date": M_START,
+					                      "end_date": M_END, "posting_date": M_END,
+					                      "payroll_frequency": "Monthly", "currency": "INR"})
+					doc.flags.ignore_permissions = True
+					doc.insert()
+				else:
+					doc.reload()
+					doc.flags.ignore_permissions = True
+					doc.save()
+			return doc
+
+		def lines(docstatus=None):
+			f = {"employee": P["Kiran"], "salary_component": "Grooming Red Value"}
+			if docstatus is not None:
+				f["docstatus"] = docstatus
+			return frappe.get_all("Additional Salary", filters=f, fields=["amount", "docstatus",
+			                                                              "amended_from"],
+			                      order_by="creation asc")
+
+		doc = slip(300)
+		self.assertEqual([r.amount for r in doc.deductions
+		                  if r.salary_component == "Grooming Red Value"], [300])
+		slip(300, doc)
+		self.assertEqual(len(lines(1)), 1)
+		slip(400, doc)
+		rows = lines()
+		self.assertEqual([r.docstatus for r in rows], [2, 1])
+		self.assertTrue(rows[1].amended_from)
+
+		# AC-52: the submit check re-prices and refuses a stale slip.
+		doc.reload()
+		with patch.object(payroll_slip, "month_summary",
+		                  return_value=MonthSummary(grooming_deduction=500)):
+			self.assertRaises(frappe.ValidationError, payroll_slip.check_grooming_before_submit, doc)
+		with patch.object(payroll_slip, "month_summary",
+		                  return_value=MonthSummary(grooming_deduction=400)):
+			payroll_slip.check_grooming_before_submit(doc)
+
+	def test_ac52_the_submit_check_does_nothing_without_a_rule_set(self):
+		doc = frappe._dict(company=PLAIN, employee=P["Pia"], start_date=M_START, end_date=M_END,
+		                   deductions=[])
+		with patch.object(payroll_slip, "month_summary") as priced:
+			payroll_slip.check_grooming_before_submit(doc)
+		priced.assert_not_called()
+
+	def test_ac54_the_workings_report_has_the_two_columns(self):
+		from alvoraa_portal.alvoraa_portal.report.salary_components_and_workings import (
+			salary_components_and_workings as report)
+		_raw_mark(P["Kiran"], TODAY)
+		cols, rows = report.execute({"company": COMPANY, "from_date": str(M_START),
+		                             "to_date": str(M_END), "employee": P["Kiran"]})[:2]
+		keys = [c["fieldname"] for c in cols]
+		self.assertEqual(keys[keys.index("red_deduction") + 1:keys.index("red_deduction") + 3],
+		                 ["grooming_days", "grooming_deduction"])
+		row = [r for r in rows if r["employee"] == P["Kiran"]]
+		if row:
+			self.assertEqual(row[0]["grooming_days"], 1)
+
+
+# ── US-14: the review flag ───────────────────────────────────────────────────
+
+class TestReviewFlag(Case):
+	def _flag(self, first, subject):
+		with as_user(first):
+			return ac.month(TODAY.year, TODAY.month, P[subject]).get("grooming", {}).get("review")
+
+	def test_ac55_y1_a_senior_on_18000_is_flagged_at_the_mark_that_reaches_the_limit(self):
+		if YESTERDAY < M_START:
+			self.skipTest("first day of the month")
+		_raw_mark(P["Rahul"], YESTERDAY)
+		self.assertEqual(self._flag("Ritika", "Rahul"), [])
+		name = _mark("Ravi", "Rahul")                    # the 2nd: 3 x 200 > 540
+		review = self._flag("Ritika", "Rahul")[0]
+		self.assertEqual((review["state"], review["why"], review["limit"], review["base"]),
+		                 ("pending", "limit", "₹540", "₹18,000"))
+		for first in ("Rahul", "Ravi"):
+			self.assertEqual(self._flag(first, "Rahul")[0]["state"], "pending")
+		self.assertNotIn("base", self._flag("Rahul", "Rahul")[0])
+		self.assertNotIn("limit", self._flag("Ravi", "Rahul")[0])
+		self.assertIsNone(self._flag("Sunil", "Rahul"))
+		bells = _bells(name)
+		self.assertIn("You have reached this month's legal limit for grooming reds, so HR will "
+		              "talk to you about it.", [b for b in bells if b.for_user == user("Rahul")][0].subject)
+		hr = [b.subject for b in bells if b.for_user == user("Hari")]
+		self.assertEqual(hr, ["Grooming review pending for Rahul G066: the legal limit for grooming "
+		                      "reds in %s is reached." % grooming._month_name(TODAY)])
+
+	def test_ac55_ac56_a_junior_on_15000_is_flagged_at_the_third_and_removal_lowers_it(self):
+		if TODAY.day < 4:
+			self.skipTest("too early in the month")
+		days = [add_days(M_START, i) for i in range(3)]
+		names = [_raw_mark(P["Kiran"], d, at="%s 10:0%d:00" % (d, i)) for i, d in enumerate(days)]
+		with as_user("Ritika"):
+			fl = grooming.flag_for(P["Kiran"], M_START, 100, 15000)
+		self.assertEqual((fl.state, fl.why, fl.count), ("pending", "max", 3))
+		frappe.db.set_value(grooming.MARK, names[-1], "docstatus", 2)
+		self.assertIsNone(grooming.flag_for(P["Kiran"], M_START, 100, 15000))
+
+	def test_ac60_once_cleared_it_never_returns_that_month(self):
+		if TODAY.day < 5:
+			self.skipTest("too early in the month")
+		for i in range(3):
+			_raw_mark(P["Kiran"], add_days(M_START, i), at="%s 10:0%d:00" % (add_days(M_START, i), i))
+		with as_user("Ritika"):
+			grooming.record_review(P["Kiran"], str(M_START), NOTE)
+		_raw_mark(P["Kiran"], add_days(M_START, 3))    # a 4th, written straight to the table
+		self.assertEqual(grooming.flag_for(P["Kiran"], M_START, 100, 15000).state, "cleared")
+
+	def test_ac58_the_word_integrity_is_nowhere_in_the_slice(self):
+		root = os.path.dirname(grooming.__file__)
+		files = [grooming.__file__,
+		         os.path.join(root, "alvoraa_portal", "doctype", "grooming_mark", "grooming_mark.py"),
+		         os.path.join(root, "alvoraa_portal", "doctype", "grooming_review", "grooming_review.py")]
+		for f in files:
+			self.assertNotIn("integrity", open(f, encoding="utf-8").read().lower(), f)
+		js = open(os.path.join(root, "public", "js", "ess", "portal.js"), encoding="utf-8").read()
+		block = js[js.index("/* ── Slice 066: the grooming red"):js.index("/* ── The team's days, worst first")]
+		self.assertNotIn("integrity", block.lower())
+
+
+# ── US-15, D5, D6: the private review note ───────────────────────────────────
+
+class TestReviewNote(Case):
+	def setUp(self):
+		super().setUp()
+		if YESTERDAY < M_START:
+			self.skipTest("first day of the month")
+		_raw_mark(P["Rahul"], YESTERDAY)
+		_raw_mark(P["Rahul"], TODAY, at="%s 11:00:00" % TODAY)
+
+	def test_ac61_ac62_hr_records_it_and_the_flag_clears_for_everyone_marks_unchanged(self):
+		with as_user("Ritika"):
+			grooming.record_review(P["Rahul"], str(M_START), NOTE)
+		for first in ("Rahul", "Ravi"):
+			r = TestReviewFlag._flag(self, first, "Rahul")[0]
+			self.assertEqual(r["state"], "cleared")
+			self.assertNotIn("note", r)                       # "Action agreed on {date}" only
+			self.assertEqual(r["on"], grooming._day(TODAY))
+		r = TestReviewFlag._flag(self, "Ritika", "Rahul")[0]
+		self.assertEqual(r["note"], NOTE)
+		self.assertEqual(frappe.db.count(grooming.MARK, {"employee": P["Rahul"], "docstatus": 1}), 2)
+
+	def test_ac64_the_note_reaches_nobody_but_hr(self):
+		with as_user("Ritika"):
+			name = grooming.record_review(P["Rahul"], str(M_START), NOTE)["name"]
+		from frappe.desk.form.load import getdoc
+		for first in ("Rahul", "Ravi", "Om", "Olga", "Neha"):
+			with self.subTest(first=first), as_user(first):
+				self.assertEqual(_list(grooming.REVIEW), [])
+				self.assertRaises(frappe.PermissionError, frappe.client.get, grooming.REVIEW, name)
+				frappe.local.response = frappe._dict()
+				try:
+					getdoc("Employee", P["Rahul"])
+				except frappe.PermissionError:
+					pass
+				self.assertNotIn("uniform rule", json.dumps(frappe.local.response, default=str, ensure_ascii=False))
+		with as_user("Ritika"):
+			self.assertEqual(frappe.get_list(grooming.REVIEW, pluck="name"), [name])
+
+	def test_ac63_it_cannot_be_changed_or_deleted_or_commented(self):
+		with as_user("Ritika"):
+			name = grooming.record_review(P["Rahul"], str(M_START), NOTE)["name"]
+			self.refused(frappe.client.set_value, grooming.REVIEW, name, "review_note", "changed")
+			self.refused(frappe.client.delete, grooming.REVIEW, name)
+		self.refused(frappe.get_doc(grooming.REVIEW, name).add_comment, "Comment", "x")
+		self.assertEqual(frappe.db.get_value(grooming.REVIEW, name, "review_note"), NOTE)
+		self.assertEqual(frappe.db.count("Version", {"ref_doctype": grooming.REVIEW}), 0)
+
+	def test_ac65_who_may_not_record_and_when(self):
+		for first in ("Ravi", "Om", "Rahul", "Olga"):
+			with self.subTest(first=first), as_user(first):
+				self.refused(grooming.record_review, P["Rahul"], str(M_START), NOTE)
+		with as_user("Ritika"):
+			self.refused(grooming.record_review, P["Rahul"], str(M_START), "   ")
+			self.refused(grooming.record_review, P["Kiran"], str(M_START), NOTE)   # no flag
+
+
+class TestPendingReport(Case):
+	def test_y4_the_pending_report_and_the_inbox(self):
+		if YESTERDAY < M_START:
+			self.skipTest("first day of the month")
+		_raw_mark(P["Rahul"], YESTERDAY)
+		asked = _mark("Ravi", "Rahul")
+		with as_user("Rahul"):
+			grooming.ask(asked)
+		from alvoraa_portal.alvoraa_portal.report.grooming_review_pending import (
+			grooming_review_pending as pending)
+		self.assertEqual(frappe.db.get_value("Report", "Grooming Review Pending", "report_type"),
+		                 "Script Report")
+		with as_user("Ritika"):
+			_cols, rows, _msg = pending.execute({"month": str(M_START)})
+			self.assertEqual([(r["employee"], r["why"]) for r in rows],
+			                 [(P["Rahul"], "Legal limit reached")])
+			box = inbox_api.get_inbox()
+		part = [p for p in box["parts"] if p["key"] == "grooming"][0]
+		self.assertEqual(sorted(r["says"] for r in part["rows"]),
+		                 ["Asked HR to look at a grooming red", "Grooming review pending"])
+		self.assertNotIn("uniform", json.dumps(part, ensure_ascii=False).lower())
+		for first in ("Ravi", "Olga"):
+			with as_user(first):
+				self.assertEqual(pending.execute({"month": str(M_START)})[1], [])
+
+
+# ── Raise it with HR (brief, Decisions 24 Oct 2026 (3), option A) ────────────
+
+class TestRaiseWithHR(Case):
+	def _at_limit(self, subject="Kiran", owner="Ravi", n=3):
+		if TODAY.day < n + 1:
+			self.skipTest("too early in the month")
+		return [_raw_mark(P[subject], add_days(M_START, i), owner_first=owner,
+		                  marked_as="HR" if owner == "Ritika" else "Manager",
+		                  at="%s 10:0%d:00" % (add_days(M_START, i), i)) for i in range(n)]
+
+	def _raise(self, first, subject, reason="Not in uniform"):
+		with as_user(first):
+			return grooming.raise_with_hr(P[subject], reason)["name"]
+
+	def test_the_manager_raises_once_on_the_mark_that_reached_the_limit(self):
+		names = self._at_limit()
+		self.refused(self._raise, "Ravi", "Kiran", "Other")          # fixed reasons only
+		self.assertEqual(self._raise("Ravi", "Kiran"), names[-1])
+		doc = frappe.get_doc(grooming.MARK, names[-1])
+		self.assertEqual((doc.raised_by, doc.raised_reason, doc.docstatus),
+		                 (user("Ravi"), "Not in uniform", 1))
+		self.assertTrue(doc.raised_on)
+		self.refused(self._raise, "Ravi", "Kiran")                    # one a month
+		fl = grooming.flag_for(P["Kiran"], M_START, 100, 15000)
+		self.assertEqual((fl.state, fl.why), ("pending", "raised"))
+		hr = [b.subject for b in _bells(names[-1]) if b.for_user == user("Hari")]
+		self.assertEqual(hr, ["Grooming review pending for Kiran G066: Ravi G066 raised it again on "
+		                      "%s." % grooming._day(TODAY)])
+
+	def test_nobody_else_raises_and_nothing_before_the_limit(self):
+		self._at_limit(n=2)                                           # Junior on 15,000: not yet
+		self.refused(self._raise, "Ravi", "Kiran")
+		_raw_mark(P["Kiran"], add_days(M_START, 2))
+		for first in ("Neha", "Sunil", "Ritika", "Deepa"):
+			with self.subTest(first=first):
+				self.refused(self._raise, first, "Kiran")
+
+	def test_the_employee_is_told_who_raised_it_and_that_it_adds_no_fine(self):
+		if YESTERDAY < M_START or DAY2 < M_START:
+			self.skipTest("too early in the month")
+		_raw_mark(P["Rahul"], DAY2)
+		name = _raw_mark(P["Rahul"], YESTERDAY)                      # Senior on 18,000: the limit
+		self._raise("Ravi", "Rahul")
+		mine = [b.subject for b in _bells(name) if b.for_user == user("Rahul")]
+		self.assertEqual(mine, ["Ravi G066, your manager, has asked HR to talk to you about "
+		                        "grooming. This adds no fine."])
+
+	def test_the_manager_can_raise_on_hrs_mark_but_still_cannot_read_it(self):
+		names = self._at_limit(owner="Ritika")
+		self._raise("Ravi", "Kiran")
+		with as_user("Ravi"):
+			self.assertRaises(frappe.PermissionError, frappe.client.get, grooming.MARK, names[-1])
+			self.refused(frappe.client.set_value, grooming.MARK, names[-1], "asked_on", str(TODAY))
+			self.refused(frappe.client.cancel, grooming.MARK, names[-1])
+
+	def test_hr_records_the_talk_and_still_nobody_adds_a_fourth(self):
+		self._at_limit()
+		with as_user("Ritika"):
+			grooming.record_review(P["Kiran"], str(M_START), NOTE)
+		self.assertEqual(grooming.flag_for(P["Kiran"], M_START, 100, 15000).state, "cleared")
+		self._raise("Ravi", "Kiran")
+		self.assertEqual(grooming.flag_for(P["Kiran"], M_START, 100, 15000).why, "raised")
+		with as_user("Ritika"):
+			_cols, rows, _m = __import__(
+				"alvoraa_portal.alvoraa_portal.report.grooming_review_pending.grooming_review_pending",
+				fromlist=["execute"]).execute({"month": str(M_START)})
+			self.assertEqual([r["employee"] for r in rows], [P["Kiran"]])
+			grooming.record_review(P["Kiran"], str(M_START), NOTE)
+			self.assertEqual(grooming.may_mark(P["Kiran"], TODAY).code, "R12")
+		self.assertEqual(grooming.flag_for(P["Kiran"], M_START, 100, 15000).state, "cleared")
+		self.assertEqual(frappe.db.count(grooming.REVIEW, {"employee": P["Kiran"]}), 2)
+
+	def test_the_today_card_offers_the_raise_then_says_when(self):
+		self._at_limit()
+		with as_user("Ravi"):
+			row = [r for r in grooming.today()["rows"] if r["employee"] == P["Kiran"]][0]
+		self.assertEqual((row["why_code"], row["raise"]), ("R12", {"can": True}))
+		self._raise("Ravi", "Kiran")
+		with as_user("Ravi"):
+			row = [r for r in grooming.today()["rows"] if r["employee"] == P["Kiran"]][0]
+		self.assertEqual(row["raise"]["raised_on"], grooming._day(TODAY))
+		self.assertNotIn("\u20b9", json.dumps(row, ensure_ascii=False))
+
+
+class TestAskedHoldsTheSlip(Case):
+	def _slip(self):
+		return frappe._dict(company=COMPANY, employee=P["Rahul"], employee_name="Rahul G066",
+		                    start_date=M_START, end_date=M_END, deductions=[])
+
+	def test_an_open_ask_holds_the_slip_and_a_raise_does_not(self):
+		name = _mark("Ravi", "Rahul")
+		with as_user("Rahul"):
+			grooming.ask(name)
+		with patch.object(payroll_slip, "month_summary", return_value=MonthSummary()):
+			with self.assertRaises(frappe.ValidationError) as caught:
+				payroll_slip.check_grooming_before_submit(self._slip())
+			self.assertIn("Rahul asked HR to look at the grooming red on", str(caught.exception))
+			with as_user("Ritika"):
+				grooming.keep(name)
+			payroll_slip.check_grooming_before_submit(self._slip())
+

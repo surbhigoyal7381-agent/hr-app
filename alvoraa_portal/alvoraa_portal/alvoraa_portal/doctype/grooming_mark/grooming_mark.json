@@ -18,7 +18,10 @@
   "asked_on",
   "kept_by",
   "kept_on",
-  "removal_reason"
+  "removal_reason",
+  "raised_on",
+  "raised_by",
+  "raised_reason"
  ],
  "fields": [
   {
@@ -112,12 +115,35 @@
    "label": "Why removed",
    "options": "\nMarked by mistake\nMarked on the wrong person\nThe employee showed it was wrong",
    "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "raised_on",
+   "fieldtype": "Datetime",
+   "label": "Raised with HR on",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "raised_by",
+   "fieldtype": "Link",
+   "label": "Raised with HR by",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "raised_reason",
+   "fieldtype": "Select",
+   "label": "Raised with HR because",
+   "options": "\nNot in uniform\nUniform incomplete\nNo name badge\nWrong footwear",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 0,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-10-24 21:00:00.000000",
+ "modified": "2026-10-24 23:00:00.000000",
  "modified_by": "Administrator",
  "module": "Alvoraa Portal",
  "name": "Grooming Mark",

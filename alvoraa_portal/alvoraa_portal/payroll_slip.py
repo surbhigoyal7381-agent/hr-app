@@ -57,12 +57,14 @@ from alvoraa_portal.payroll_rules_apply import (
 
 RED_COMPONENT = "Red Value"
 GREEN_COMPONENT = "Green Value"
+GROOMING_COMPONENT = "Grooming Red Value"
 
 # The pay lines the engine owns, and the month-summary figure each one carries.
-# Slice 066 (grooming) adds ("Grooming Red Value", "grooming_deduction") here.
 ENGINE_LINES = (
 	(RED_COMPONENT, "red_deduction"),
 	(GREEN_COMPONENT, "green_earning"),
+	# Slice 066: the month's grooming reds, one line whatever the number of marks.
+	(GROOMING_COMPONENT, "grooming_deduction"),
 )
 
 # How the engine knows its own Additional Salary records: a standard field
@@ -131,6 +133,17 @@ def month_summary(employee, company, from_date, to_date, rule_set=None, ctx=None
 	# GBL-02: the divisor is the real length of the period, not a fixed 30.
 	month_days = date_diff(to_date, from_date) + 1
 
+	# Slice 066 (SEC-2, SEC-9): grooming reds are charged by DISTINCT day, so two
+	# marks on one date are one day, and never on a day the attendance says was a
+	# full-day leave or absence (a leave approved after the mark). Half Day is
+	# charged. Only the slip's own employee is read.
+	not_charged = {str(r.attendance_date) for r in rows if r.status in ("On Leave", "Absent")}
+	grooming_days = len({str(d) for d in frappe.get_all(
+		"Grooming Mark",
+		filters={"employee": employee, "docstatus": 1,
+		         "mark_date": ("between", [from_date, to_date])},
+		pluck="mark_date")} - not_charged)
+
 	return summarise_month(
 		verdicts,
 		basic=basic,
@@ -145,6 +158,7 @@ def month_summary(employee, company, from_date, to_date, rule_set=None, ctx=None
 		earns_marks=(cat.earns_marks if cat else True),
 		free_reds=int(rule_set.free_reds_per_month or 0),
 		mark_rate=(rate.amount_per_mark if rate else 0),
+		grooming_days=grooming_days,
 	)
 
 
@@ -239,7 +253,7 @@ def _apply_engine_lines(doc, summary, rule_set):
 			title="Red and green lines not applied to {0}".format(doc.name or "a slip"),
 			message=frappe.get_traceback())
 		_note(doc, _(
-			"The red and green lines could not be updated on this slip, so they "
+			"The red and green lines and the grooming line could not be updated on this slip, so they "
 			"may be missing or out of date. Paid days are correct. See the Error "
 			"Log, fix the cause, then save this slip again."))
 		return
@@ -295,6 +309,37 @@ def on_salary_slip_validate(doc, method=None):
 		frappe.log_error(
 			title="Payroll rules could not price {0}".format(doc.name or "a slip"),
 			message=frappe.get_traceback())
+
+
+def check_grooming_before_submit(doc, method=None):
+	"""doc_events before_submit (slice 066, SEC-9 and D2). Fails closed.
+
+	The validate hook prices a slip only while it is a draft. A mark made or
+	removed after the last save would otherwise be submitted at the old figure.
+	So the month is priced again - the same `month_summary`, one definition of
+	the price - and the submit is refused if the slip's grooming line differs.
+	Payroll Entry submits slips one by one and carries on past a refused one.
+	"""
+	rule_set = rule_set_for(doc.company)
+	if not rule_set:
+		return
+	# A fine deducted with the person's question unread is the show-cause risk
+	# (brief, Decisions (3)). A manager's raise adds no money and holds nothing.
+	asked = frappe.get_all("Grooming Mark", filters={
+		"employee": doc.employee, "docstatus": 1, "asked_on": ("is", "set"),
+		"kept_on": ("is", "not set"), "mark_date": ("between", [doc.start_date, doc.end_date])},
+		fields=["mark_date"], order_by="mark_date asc", limit_page_length=1)
+	if asked:
+		first = (doc.employee_name or "").split(" ")[0] or doc.employee
+		frappe.throw(_("{0} asked HR to look at the grooming red on {1}. Keep or remove it "
+		               "first.").format(first, getdate(asked[0].mark_date).strftime("%-d %b")))
+	summary = month_summary(doc.employee, doc.company, doc.start_date, doc.end_date, rule_set)
+	if summary is None:
+		return
+	on_slip = sum(flt(r.amount) for r in doc.get("deductions") or []
+	              if r.salary_component == GROOMING_COMPONENT)
+	if flt(on_slip, 2) != flt(summary.grooming_deduction, 2):
+		frappe.throw(_("Grooming marks changed since this slip was saved. Save it again."))
 
 
 def _note(doc, text):

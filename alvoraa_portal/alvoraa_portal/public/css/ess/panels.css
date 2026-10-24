@@ -2232,8 +2232,10 @@ body.panel-fullscreen{overflow:hidden}
 .pos-wall-foot{height:7mm;display:flex;align-items:flex-end;font-size:9pt;white-space:nowrap;overflow:hidden}
 @media print{
   body.pos-wall-printing > :not(#pos-wall-print){display:none !important}
-  body.pos-wall-printing{margin:0 !important;padding:0 !important;background:#fff !important}
-  body.pos-wall-printing #pos-wall-print{position:static;visibility:visible;width:auto}
+  /* loose text in <body> is not an element, so it is hidden this way, and the
+     paper starts at the top of the first sheet whatever sits above it */
+  body.pos-wall-printing{margin:0 !important;padding:0 !important;background:#fff !important;visibility:hidden}
+  body.pos-wall-printing #pos-wall-print{position:absolute;left:0;top:0;visibility:visible;width:auto}
 }
 /* The button and the panel. Native inputs; the paper choice is a row of
    radio chips. On a phone: full-width toolbar buttons, 44 px targets. */

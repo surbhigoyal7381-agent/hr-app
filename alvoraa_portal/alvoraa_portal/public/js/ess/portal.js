@@ -2874,14 +2874,16 @@ window.posWallPrint = function () {
         + '<div class="pos-wall-clip" style="height:' + P.ph.toFixed(2) + 'px">'
         + '<div class="pos-wall-at" style="left:' + ox.toFixed(2) + "px;top:" + oy.toFixed(2) + "px;transform:scale(" + P.scale.toFixed(5) + ')">'
         + L.html + "</div></div>"
-        + '<div class="pos-wall-foot">' + posEsc(foot) + "</div></div>";
+        + '<div class="pos-wall-foot">' + posEsc(foot + (n > 1 ? " · " + drT("Sheet {0} of {1} (row {2}, column {3})",
+            [r * P.cols + col + 1, n, r + 1, col + 1]) : "")) + "</div></div>";
     }
   }
   posWallHolder().innerHTML = html;
   var st = document.createElement("style");
   st.id = "pos-wall-page";
   st.textContent = "@page{size:" + P.wmm + "mm " + P.hmm + "mm;margin:10mm}";
-  document.head.appendChild(st);   // after the portal's A4 rule, so it wins for this print only
+  // Last in the page, so it comes after the portal's A4 rule wherever that sits, and wins for this print only.
+  document.body.appendChild(st);
   w.title = document.title;
   document.title = (w.hr ? drT("HR copy - ") : "")
     + drT("Wall chart - {0} - {1} - {2} - {3}", [co, levels, w.paper, String(asat).slice(0, 10)]);

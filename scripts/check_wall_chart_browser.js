@@ -94,7 +94,7 @@ function paperAudit() {
   });
   // A real origin, so the page's localStorage works as it does on a site.
   await page.route("http://wall.test/**", (r) => r.request().url() === "http://wall.test/hrms-employee"
-    ? r.fulfill({ contentType: "text/html", body: html }) : r.fulfill({ status: 404, body: "" }));
+    ? r.fulfill({ contentType: "text/html; charset=utf-8", body: html }) : r.fulfill({ status: 404, body: "" }));
   await page.goto("http://wall.test/hrms-employee", { waitUntil: "load" });
   await page.waitForTimeout(300);
   const load = (p) => page.evaluate((p) => {
@@ -186,6 +186,155 @@ function paperAudit() {
   });
   must("AC-23: dark theme, the paper is white with #2D2622 text", dark.bg === "rgb(255, 255, 255)" && dark.color === "rgb(45, 38, 34)" && dark.boxBg === "rgb(255, 255, 255)", JSON.stringify(dark));
   must("AC-23: the starting box has a 2 px #5B4B8A border", dark.rootBorder === "2px rgb(91, 75, 138)", dark.rootBorder);
+
+  /* ── the panel at DTC's size: warning words and timings (AC-33, AC-35) ── */
+  await load(F.dtc90());
+  await page.evaluate(() => { window.print = () => { window.__printed = (window.__printed || 0) + 1; }; POS.wall = null; posWallOpen(); });
+  const waitL = () => page.waitForFunction(() => POS.wall && POS.wall.L, null, { timeout: 30000 });
+  await waitL();
+  await page.evaluate(() => { posWallSet("levels", "3"); });
+  await waitL();
+  const warn = await page.evaluate(() => document.querySelector(".pos-wall-result").innerText.replace(/\s+/g, " "));
+  log("  All on A3, result box: " + warn);
+  must("AC-33: the warning names the paper that reaches 8 pt and the sheets", /Warning: that is too small to read on a wall\./.test(warn)
+       && /Use A1 \(names at 9 pt\)/.test(warn) && /Use 9 A3 sheets/.test(warn), warn);
+  const timing = await page.evaluate(async () => {
+    const frame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+    const out = {};
+    const med = (a) => a.slice().sort((x, y) => x - y)[Math.floor(a.length / 2)];
+    const changes = { paper: ["A2", "A1", "A0", "A4", "A3"], sheets: ["several", "one", "several", "one", "several"],
+                      start: [], levels: ["2", "3", "2", "3", "2"], vacant: [false, true, false, true, false], hr: [true, false, true, false, true] };
+    const t = posKids(POS.rows);
+    changes.start = ["top"].concat(t.kids[t.roots[0].id].filter((r) => (t.kids[r.id] || []).length).slice(0, 4).map((r) => r.id));
+    for (const k of Object.keys(changes)) {
+      const words = [], done = [];
+      for (const v of changes[k]) {
+        POS.wall.fast = true;
+        const t0 = performance.now();
+        posWallSet(k, v);
+        words.push(performance.now() - t0);
+        while (!POS.wall.L) await frame();
+        done.push(performance.now() - t0);
+        await frame();
+      }
+      out[k] = { first: Math.round(med(words)), final: Math.round(med(done)) };
+    }
+    return out;
+  });
+  log("  AC-35 median of 5 changes, ms until the panel's words change / until the final line: "
+      + Object.keys(timing).map((k) => `${k} ${timing[k].first}/${timing[k].final}`).join(", "));
+  await page.evaluate(() => { posWallSet("start", "top"); });
+  await waitL();
+  await page.evaluate(() => { posWallSet("levels", "3"); });
+  await waitL();
+  must("AC-35: every change shows its line within 300 ms", Object.values(timing).every((x) => x.first <= 300 && x.final <= 300), JSON.stringify(timing));
+
+  /* ── the PDF: page size in mm, page count (AC-37, AC-42 in Chromium, AC-45) ── */
+  const pdfBox = (buf) => {
+    const s = buf.toString("latin1");
+    const m = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/.exec(s);
+    return { w: Math.round(+m[1] * 25.4 / 72), h: Math.round(+m[2] * 25.4 / 72), pages: (s.match(/\/Type\s*\/Page[^s]/g) || []).length };
+  };
+  const PAPER = { A4: [210, 297], A3: [297, 420], A2: [420, 594], A1: [594, 841], A0: [841, 1189] };
+  for (const paper of Object.keys(PAPER)) {
+    for (const portrait of [false, true]) {
+      await page.evaluate(([paper, portrait]) => {
+        posWallSet("sheets", "one"); posWallSet("paper", paper);
+        if (portrait) POS.wall.L = Object.assign({}, POS.wall.L, { w: 500, h: 2000 });
+        posWallPrint();
+      }, [paper, portrait]);
+      const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true });
+      const b = pdfBox(pdf);
+      const want = portrait ? PAPER[paper] : [PAPER[paper][1], PAPER[paper][0]];
+      must(`PDF ${paper} ${portrait ? "portrait" : "landscape"}: ${b.w} x ${b.h} mm, ${b.pages} page`,
+           Math.abs(b.w - want[0]) <= 1 && Math.abs(b.h - want[1]) <= 1 && b.pages === 1, `wanted ${want.join(" x ")}`);
+      if (OUT && paper === "A1" && !portrait) fs.writeFileSync(path.join(OUT, "wall-A1.pdf"), pdf);
+      await page.evaluate(() => { window.dispatchEvent(new Event("afterprint")); POS.wall.key = ""; posWallSet("levels", "3"); });
+      await waitL();
+    }
+  }
+  /* several sheets: All on A3 */
+  await page.evaluate(() => { posWallSet("paper", "A3"); posWallSet("sheets", "several"); posWallSet("hr", true); });
+  await waitL();
+  const tiles = await page.evaluate(() => { const P = posWallPlan(POS.wall.L, "A3", "several", true); posWallPrint(); return P.cols * P.rows; });
+  /* while it prints: only the wall chart (AC-40) */
+  await page.emulateMedia({ media: "print" });
+  const only = await page.evaluate(() => ({
+    others: [...document.querySelectorAll("body > :not(#pos-wall-print)")].filter((e) => e.getClientRects().length).length,
+    sheets: [...document.querySelectorAll("#pos-wall-print .pos-wall-sheet")].filter((e) => e.getClientRects().length).length }));
+  await page.emulateMedia({ media: "screen" });
+  must(`AC-40: in print only the ${only.sheets} sheets show, nothing else`, only.others === 0 && only.sheets === tiles, JSON.stringify(only));
+  const onScreen = await page.evaluate(() => getComputedStyle(document.getElementById("pos-wall-print")).visibility);
+  must("AC-40: on screen the wall chart is never visible", onScreen === "hidden", onScreen);
+  const sev = pdfBox(await page.pdf({ preferCSSPageSize: true, printBackground: true }));
+  must(`AC-45/46: All on A3, several sheets: ${sev.pages} PDF pages for ${tiles} sheets, ${sev.w} x ${sev.h} mm`, sev.pages === tiles && sev.w === 420 && sev.h === 297);
+  if (OUT) fs.writeFileSync(path.join(OUT, "wall-A3-sheets-hr.pdf"), await page.pdf({ preferCSSPageSize: true, printBackground: true }));
+  await page.evaluate(() => { window.dispatchEvent(new Event("afterprint")); posCloseSheet(); });
+  const after = pdfBox(await page.pdf({ preferCSSPageSize: true, printBackground: true }));
+  must(`SEC-4: afterwards the portal's own A4 landscape rule is back (${after.w} x ${after.h} mm), as a payslip needs`, after.w === 297 && after.h === 210);
+
+  /* ── 10x: several sheets (R-4) ──────────────────────────────────────── */
+  await load(F.scaled(10));
+  const big = await page.evaluate(async () => {
+    POS.wall = null; posWallOpen();
+    while (!POS.wall.L) await new Promise((r) => setTimeout(r, 20));
+    posWallSet("levels", String(posWallLevels(posKids(POS.rows)).slice(-1)[0][0]));
+    while (!POS.wall.L) await new Promise((r) => setTimeout(r, 20));
+    posWallSet("paper", "A4"); posWallSet("sheets", "several");
+    const P = posWallPlan(POS.wall.L, "A4", "several", false);
+    const t0 = performance.now();
+    posWallPrint();
+    const build = performance.now() - t0;
+    const t1 = performance.now();
+    document.getElementById("pos-wall-print").getBoundingClientRect();
+    const boxes = document.querySelectorAll("#pos-wall-print .oc-box").length;
+    return { seats: POS.rows.length, sheets: P.cols * P.rows, across: P.cols, down: P.rows, build: Math.round(build), layout: Math.round(performance.now() - t1), boxes, htmlMB: (document.getElementById("pos-wall-print").innerHTML.length / 1e6).toFixed(1) };
+  });
+  const t2 = Date.now();
+  const bigPdf = pdfBox(await page.pdf({ preferCSSPageSize: true, printBackground: true }));
+  log(`  R-4, 10x (${big.seats} seats) on A4, several sheets: ${big.sheets} sheets (${big.across} x ${big.down}), ${big.boxes} boxes in the print page (${big.htmlMB} MB of markup); building it ${big.build} ms, laying it out ${big.layout} ms; Chromium's PDF of it ${Date.now() - t2} ms, ${bigPdf.pages} pages`);
+  await page.evaluate(() => { window.dispatchEvent(new Event("afterprint")); posCloseSheet(); });
+
+  /* ── Ctrl+P on the screen chart (AC-3, AC-3a) ───────────────────────── */
+  const sent = F.dtc90({ sentinel: true });
+  sent.unseated = [{ name: "Nomgr Person", branch: "Noida", no_manager: true }];
+  // Opening the panel runs the page's own load, so position_table answers with the fixture.
+  await page.evaluate((p) => { window.gpFetch = (m) => Promise.resolve(/position_table/.test(m) ? p : {}); switchPanel("positions"); }, sent);
+  await page.waitForFunction(() => POS.rows.length > 0 && POS.unseated);
+  const ctrlP = await page.evaluate(() => {
+    const sb = document.getElementById("sb-name"); if (sb) sb.textContent = "PRINTER-SNTL";
+    const sd = document.getElementById("sb-desig"); if (sd) sd.textContent = "ROLE-SNTL";
+    document.getElementById("pos-f-view").value = "tree";
+    POS.expanded = {}; POS.rows.forEach((r) => { POS.expanded[r.id] = true; }); posPaint();
+    return { flags: document.querySelectorAll("#pos-body .oc-flag").length, tags: document.querySelectorAll("#pos-body .oc-tag").length,
+             nomgr: document.querySelectorAll("#pos-body .pos-nomgr-row").length };
+  });
+  await page.emulateMedia({ media: "print" });
+  const pr = await page.evaluate(() => {
+    const vis = (s) => [...document.querySelectorAll(s)].filter((e) => e.getClientRects().length).length;
+    return { titles: vis("#pos-body .oc-box .ti"), names: vis("#pos-body .oc-who"), banned: vis("#pos-body .oc-flag, #pos-body .oc-tag, .pos-nomgr-row, .private, [data-private]"),
+             head: (document.querySelector("#pos-body .pos-printhead") || {}).innerText || "" };
+  });
+  await page.emulateMedia({ media: "screen" });
+  log(`  Ctrl+P: on screen ${ctrlP.flags} flags, ${ctrlP.tags} tags, ${ctrlP.nomgr} HR box; in print ${pr.titles} seat titles, ${pr.names} name lines, ${pr.banned} of those visible; header "${pr.head.replace(/\s+/g, " ")}"`);
+  must("AC-3: Ctrl+P prints the chart's seats and names", pr.titles > 20 && pr.names > 20);
+  must("AC-3: and no flag, tag, HR box or private mark (there were some on screen)", pr.banned === 0 && ctrlP.flags > 0 && ctrlP.tags > 0 && ctrlP.nomgr > 0);
+  must("AC-3a: the print header names nobody", !/PRINTER-SNTL|ROLE-SNTL|printed by/.test(pr.head) && /Positions/.test(pr.head) && /seats as at/.test(pr.head) && / on /.test(pr.head), pr.head);
+
+  /* ── the phone (AC-5) ───────────────────────────────────────────────── */
+  await page.setViewportSize({ width: 390, height: 844 });
+  await load(F.dtc90());
+  const phone = await page.evaluate(() => {
+    const b = document.getElementById("pos-wall-btn"); b.style.display = "";
+    const bar = b.parentElement.getBoundingClientRect(), r = b.getBoundingClientRect();
+    POS.wall = null; posWallOpen();
+    const chip = document.querySelector(".pos-wall-chip span").getBoundingClientRect();
+    const sheet = document.querySelector(".pos-sheet").getBoundingClientRect();
+    posCloseSheet();
+    return { w: Math.round(r.width), bar: Math.round(bar.width), h: Math.round(r.height), chip: Math.round(chip.height), sheetTop: Math.round(sheet.top), sheetW: Math.round(sheet.width) };
+  });
+  must(`AC-5: on a phone the button spans the toolbar (${phone.w} of ${phone.bar} px) and is ${phone.h} px tall`, phone.w === phone.bar && phone.h >= 44);
+  must(`AC-6: on a phone the panel is a bottom sheet (${phone.sheetW} px wide, top at ${phone.sheetTop}) with 44 px paper chips (${phone.chip})`, phone.sheetW === 390 && phone.sheetTop > 0 && phone.chip >= 44);
 
   must("no script errors", !errs.length, errs.slice(0, 3).join(" | "));
   await browser.close();

@@ -320,7 +320,7 @@ function neverPrinted(label, p) {
   window.print = () => {
     prints++;
     const st = doc.getElementById("pos-wall-page");
-    seen = { title: doc.title, style: st ? st.textContent : null, last: doc.head.lastElementChild === st,
+    seen = { title: doc.title, style: st ? st.textContent : null, last: doc.body.lastElementChild === st,
              styles: doc.querySelectorAll("#pos-wall-page").length, printing: doc.body.classList.contains("pos-wall-printing"),
              sheets: [...doc.querySelectorAll("#pos-wall-print .pos-wall-sheet")].map((s) => ({
                banner: (s.querySelector(".pos-wall-banner") || {}).textContent || "", foot: s.querySelector(".pos-wall-foot").textContent,
@@ -367,6 +367,26 @@ function neverPrinted(label, p) {
   ok("AC-60: the banner at the top of the sheet", s && s.sheets[0].banner === "HR use only - not for display");
   ok("AC-60: and at the start of its footer", s && s.sheets[0].foot.indexOf("HR use only - not for display · Sample Fashions") === 0, s && s.sheets[0].foot);
   window.posCloseSheet();
+  /* ── several sheets (AC-45 to AC-47, AC-63) ─────────────────────────── */
+  s = await printWith([["pos-wall-levels", "3"], ["pos-wall-paper-A3", true], ["pos-wall-sheets-several", true], ["pos-wall-hr", true]], { w: 3344, h: 2118 });
+  const P3 = window.posWallPlan({ w: 3344, h: 2118 }, "A3", "several", true);
+  ok("AC-45: n sheets, c across, r down", s && s.sheets.length === P3.cols * P3.rows && P3.cols === 3 && P3.rows >= 3, s && s.sheets.length + " " + P3.cols + "x" + P3.rows);
+  ok("AC-46: each footer says where the sheet goes", s && s.sheets.every((sh, i) =>
+     sh.foot.endsWith(" · Sheet " + (i + 1) + " of " + s.sheets.length + " (row " + (Math.floor(i / P3.cols) + 1) + ", column " + (i % P3.cols + 1) + ")")),
+     s && s.sheets[4] && s.sheets[4].foot);
+  const offs = s ? s.sheets.map((sh) => sh.at.match(/left:(-?[\d.]+)px;top:(-?[\d.]+)px/).slice(1).map(Number)) : [];
+  ok("AC-46: side by side the sheets cover the chart with no gap and no overlap", offs.length && offs.every(([x, y], i) =>
+     Math.abs(x + (i % P3.cols) * P3.pw) < 0.01 && Math.abs(y + Math.floor(i / P3.cols) * P3.ph) < 0.01)
+     && P3.cols * P3.pw >= 3344 * P3.scale && (P3.cols - 1) * P3.pw < 3344 * P3.scale
+     && P3.rows * P3.ph >= 2118 * P3.scale && (P3.rows - 1) * P3.ph < 2118 * P3.scale);
+  ok("AC-63: every HR copy sheet: the banner, and the footer starts with it", s && s.sheets.every((sh) =>
+     sh.banner === "HR use only - not for display" && sh.foot.indexOf("HR use only - not for display ·") === 0));
+  window.dispatchEvent(new window.Event("afterprint")); window.posCloseSheet();
+  s = await printWith([["pos-wall-sheets-several", true]], { w: 1128, h: 608 });
+  ok("AC-47: several sheets that fit on one at 10 pt print as one", s && s.sheets.length === 1 && !s.sheets[0].foot.includes("Sheet 1"));
+  ok("AC-47: and the panel says so", panelText().includes("It fits on one sheet at this size, so it prints as one. Readable"));
+  window.dispatchEvent(new window.Event("afterprint")); window.posCloseSheet();
+
   /* printing while the size is still being worked out waits for it (AC-35) */
   window.POS.wall = null; btn.click(); await ready();
   await set("pos-wall-paper-A2", true);

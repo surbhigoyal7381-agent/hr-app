@@ -2508,6 +2508,8 @@ body.panel-fullscreen{overflow:hidden}
 .gm-count{font-size:var(--fs-sm);color:var(--text2);padding:10px 0 2px;
   border-top:1px solid var(--border);margin-top:4px}
 .gm-tile small{font-size:var(--fs-md);font-weight:700}
+/* AC-71: no text under 12 px on the new states (the portal's tags are 11). */
+.ac-tag.gm-tag,.gm-tile .l{font-size:var(--fs-sm)}
 .gm-box{margin-top:12px;border:1px solid var(--border);border-left:3px solid var(--border2);
   border-radius:var(--r-sm);padding:10px 12px;background:var(--surface);
   white-space:normal}
@@ -2525,7 +2527,7 @@ body.panel-fullscreen{overflow:hidden}
   border-radius:var(--r-sm);white-space:pre-wrap;color:var(--text)}
 .gm-bd{align-items:center}
 .gm-sheet{max-width:460px;padding:18px;color:var(--text)}
-.gm-sheet h2{margin:0 0 6px;font-size:var(--fs-lg)}
+.gm-sheet h2{margin:0 0 6px;font-size:var(--fs-lg);color:var(--text)}
 .gm-sheet h2:focus{outline:none}
 .gm-opt{display:flex;align-items:center;gap:10px;min-height:48px;padding:6px 10px;
   border:1px solid var(--border);border-radius:var(--r-sm);margin:6px 0;cursor:pointer;

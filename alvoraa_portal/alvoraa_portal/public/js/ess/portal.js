@@ -8937,7 +8937,7 @@ function gmRow(r, i) {
       line = "Marked by " + gpEsc(m.by) + (m.marked_as === "HR" ? " (HR)" : "") + " at "
         + gpEsc(m.at) + ". Only HR can remove it.";
     }
-    h += '<div><span class="ac-tag warn">Grooming red</span> ' + gpEsc(m.reason) + "</div>";
+    h += '<div><span class="ac-tag warn gm-tag">Grooming red</span> ' + gpEsc(m.reason) + "</div>";
     if (m.mine && !m.locked) {
       h += '<button class="btn btn-outline gm-btn" onclick="gmUndo(' + i + ')" aria-label="Undo the grooming red for '
         + gpEsc(r.employee_name) + '">Undo</button>';
@@ -9001,7 +9001,7 @@ function gmData() { return (acState.data || {}).grooming || null; }
 function gmTag(x) {
   var g = gmData();
   return (g && g.days[x.date] && g.days[x.date].mark)
-    ? '<span class="ac-tag warn">Grooming red</span>' : "";
+    ? '<span class="ac-tag warn gm-tag">Grooming red</span>' : "";
 }
 
 function gmTile() {
@@ -9045,7 +9045,7 @@ function gmBox(x) {
     return "";
   }
 
-  h += '<p><span class="ac-tag warn">Grooming red</span> ' + gpEsc(m.reason) + ".</p>";
+  h += '<p><span class="ac-tag warn gm-tag">Grooming red</span> ' + gpEsc(m.reason) + ".</p>";
   if (g.viewer === "self") {
     h += "<p>Marked by " + gpEsc(m.by) + (m.marked_as === "HR" ? " (HR)" : ", your manager,")
       + " on " + gpEsc(m.on) + " at " + gpEsc(m.at) + ".</p>";

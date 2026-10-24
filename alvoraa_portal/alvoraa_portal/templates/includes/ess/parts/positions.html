@@ -9,8 +9,13 @@
                showed it beside the same offer in the empty state - two buttons
                for one action, one of them far from where the eye is. The empty
                state keeps it; the toolbar does not. -->
-          <button class="btn btn-primary btn-sm" id="pos-add-btn"
-                  onclick="posOpenEditor(null)" style="display:none">+ Add a seat</button>
+          <div class="tb-acts">
+            <!-- Slice 069: shown by posLoad only when there are seats. -->
+            <button type="button" class="btn btn-outline btn-sm" id="pos-wall-btn"
+                    onclick="posWallOpen()" style="display:none">Download wall chart (PDF)</button>
+            <button class="btn btn-primary btn-sm" id="pos-add-btn"
+                    onclick="posOpenEditor(null)" style="display:none">+ Add a seat</button>
+          </div>
         </div>
 
         <!-- The three questions this screen is opened with, answered before

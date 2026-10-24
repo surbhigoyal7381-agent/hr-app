@@ -184,6 +184,131 @@ function neverPrinted(label, p) {
      window.posWallHtml(window.posWallCopy("top", 99, true, false), 99, 99) === g.html);
   window.POS.ungrouped = {}; window.POS.collapsed = {}; window.POS.zoom = 1;
 
+  /* ── the button (AC-4, SEC-2) ───────────────────────────────────────── */
+  const btn = doc.getElementById("pos-wall-btn");
+  ok("AC-4: the button sits before + Add a seat", btn && btn.nextElementSibling && btn.nextElementSibling.id === "pos-add-btn"
+     && btn.textContent.trim() === "Download wall chart (PDF)" && btn.classList.contains("btn-outline"));
+  const realGp = window.gpFetch;
+  const posLoadWith = async (reply) => {
+    window.gpFetch = (m) => /position_table/.test(m) ? reply() : Promise.resolve({});
+    await window.posLoad(); await settle(20);
+  };
+  await posLoadWith(() => Promise.resolve(F.dtc90()));
+  ok("AC-4: rows give the button", btn.style.display === "");
+  await posLoadWith(() => Promise.resolve(Object.assign(F.dtc90(), { rows: [] })));
+  ok("AC-4: no rows, no button", btn.style.display === "none");
+  await posLoadWith(() => Promise.resolve(F.dtc90()));
+  await posLoadWith(() => Promise.reject(new Error("refused")));
+  ok("AC-4: a failed load hides the button", btn.style.display === "none");
+
+  /* ── the panel: nothing leaves the page (AC-8, SEC-1) ───────────────── */
+  await posLoadWith(() => Promise.resolve(F.dtc90()));
+  const called = [];
+  const trap = (name) => function () { called.push(name); throw new Error(name + " called by the wall chart"); };
+  window.gpFetch = trap("gpFetch"); window.frappe.call = trap("frappe.call"); window.fetch = trap("fetch");
+  window.open = trap("window.open"); window.URL.createObjectURL = trap("URL.createObjectURL");
+  // On the prototype: assigning localStorage.setItem only stores an item called "setItem".
+  const realSetItem = window.Storage.prototype.setItem;
+  window.Storage.prototype.setItem = trap("localStorage / sessionStorage setItem");
+  const layer = () => doc.getElementById("pos-layer");
+  const panelText = () => layer().textContent;
+  const val = (id) => (doc.getElementById(id) || {}).value;
+  const optTexts = (id) => [...doc.getElementById(id).options].map((o) => o.textContent);
+  const ready = async () => { for (let i = 0; i < 40 && !window.POS.wall.L; i++) await settle(10); };
+  const set = async (id, v) => {
+    const el = doc.getElementById(id);
+    el.focus();
+    if (el.type === "checkbox" || el.type === "radio") { el.checked = v === undefined ? !el.checked : v; } else el.value = v;
+    el.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await ready();
+  };
+  btn.focus(); btn.click(); await ready();
+  const sheet = layer().querySelector(".pos-sheet");
+  ok("AC-6: a dialog, labelled by its heading", sheet && sheet.getAttribute("role") === "dialog" && sheet.getAttribute("aria-modal") === "true"
+     && doc.getElementById(sheet.getAttribute("aria-labelledby")).textContent === "Download wall chart (PDF)");
+  ok("AC-6: focus on the heading", doc.activeElement && doc.activeElement.id === "pos-sh-t");
+  /* AC-9 */
+  ok("AC-9: Start from the top", optTexts("pos-wall-start")[0] === "The top: Owner and Managing Director" && val("pos-wall-start") === "top");
+  ok("AC-9: Levels 2", doc.getElementById("pos-wall-levels").selectedOptions[0].textContent === "2 levels: the top and the 22 seats under it");
+  ok("AC-9: A3 with its size", doc.getElementById("pos-wall-paper-A3").checked && panelText().includes("A3 is 297 × 420 mm."));
+  ok("AC-9: one sheet, Show Vacant ticked, HR copy not", doc.getElementById("pos-wall-sheets-one").checked
+     && doc.getElementById("pos-wall-vacant").checked && !doc.getElementById("pos-wall-hr").checked);
+  ok("AC-10: six places to start", optTexts("pos-wall-start").length === 6 && optTexts("pos-wall-start")[1] === "— Admin Head",
+     optTexts("pos-wall-start").join(" | "));
+  ok("AC-11: two level options, the second All", optTexts("pos-wall-levels").length === 2
+     && optTexts("pos-wall-levels")[1] === "All 3 levels: every seat (90 seats, 363 people)", optTexts("pos-wall-levels").join(" | "));
+  ok("AC-11: never 'head of department'", !/head of department/i.test(panelText()));
+  ok("AC-15: intro and privacy line", panelText().includes("A chart of seats and names for a wall, sized for the paper you choose.")
+     && panelText().includes("Only seat names, job titles, departments and people's names print. Flags, leaving dates and HR notes never do."));
+  ok("AC-17: names the branches, never 'whole company'",
+     panelText().includes("Covers 6 branches: Ambala, Delhi, Gurgaon, Head Office, Noida, Pitampura.") && !/whole company/.test(panelText()));
+  ok("AC-14: the people in no seat, with the link", panelText().includes("82 active people are not in any seat, so they are not on the chart. Placing them in a seat first is recommended, not required.")
+     && layer().innerHTML.includes("posWallUnseated()"));
+  const result = layer().querySelector(".pos-wall-result");
+  ok("AC-34: the result is a polite live region", result && result.getAttribute("role") === "status" && result.getAttribute("aria-live") === "polite");
+  ok("AC-31: seats and people for the choice", panelText().includes("23 seats · 21 people"));
+  ok("AC-13: no filter, no filter note", !panelText().includes("does not apply here"));
+  /* AC-11: a start with one level under it offers only All; Levels resets */
+  await set("pos-wall-levels", "3");
+  await set("pos-wall-start", bo.id);
+  ok("AC-11: Back Office Manager offers only All", optTexts("pos-wall-levels").length === 1
+     && optTexts("pos-wall-levels")[0] === "All 2 levels: every seat (11 seats, 72 people)", optTexts("pos-wall-levels").join(" | "));
+  await set("pos-wall-start", "top");
+  ok("AC-11: changing Start from resets Levels to its first option", val("pos-wall-levels") === "2");
+  /* change everything (AC-8) */
+  await set("pos-wall-levels", "3"); await set("pos-wall-paper-A1", true); await set("pos-wall-sheets-several", true);
+  await set("pos-wall-vacant", false); await set("pos-wall-hr", true);
+  ok("AC-62: HR copy on - the office note and its privacy line", panelText().includes("Print in the office, not at a print shop.")
+     && panelText().includes("This HR copy also prints leaving dates and job openings. Replacement plans and HR notes never print."));
+  ok("AC-12: the size follows the paper", panelText().includes("A1 is 594 × 841 mm."));
+  ok("focus stays on the control that was changed", doc.activeElement && doc.activeElement.id === "pos-wall-hr", doc.activeElement && doc.activeElement.id);
+  window.posWallPrint(); await settle(20);
+  ok("AC-8 / SEC-1: no server call, no new window, no blob, no storage write", called.length === 0, called.join(", "));
+  /* AC-7 and AC-16, AC-58 */
+  doc.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  ok("AC-7: Escape closes the panel", !layer().innerHTML);
+  ok("AC-7: focus returns to the button", doc.activeElement === btn);
+  ok("cleanup: the paper is gone when the panel closes", !doc.getElementById("pos-wall-print"));
+  btn.click(); await ready();
+  ok("AC-16: choices kept on the same visit", val("pos-wall-levels") === "3" && doc.getElementById("pos-wall-paper-A1").checked
+     && doc.getElementById("pos-wall-sheets-several").checked && !doc.getElementById("pos-wall-vacant").checked);
+  ok("AC-58: HR copy is unticked every time the panel opens", !doc.getElementById("pos-wall-hr").checked && !panelText().includes("Print in the office"));
+  layer().querySelector(".pos-scrim").click();
+  ok("AC-7: the dimmed background closes it too", !layer().innerHTML && doc.activeElement === btn);
+  window.POS.wall = null;
+  /* AC-13 filter notes */
+  const fb = doc.getElementById("pos-f-branch"), fr = doc.getElementById("pos-f-role");
+  fb.innerHTML = '<option value="">All</option><option value="Noida">Noida</option>'; fb.value = "Noida";
+  btn.click(); await ready();
+  ok("AC-13: one filter", panelText().includes("Your Branch filter does not apply here. The wall chart uses only the choices below."));
+  ok("AC-13: counts are all 90 seats", optTexts("pos-wall-levels")[1].includes("90 seats"));
+  window.posCloseSheet();
+  fr.innerHTML = '<option value="">All</option><option value="RSO">RSO</option>'; fr.value = "RSO";
+  btn.click(); await ready();
+  ok("AC-13: two filters", panelText().includes("Your Branch and Job role filters do not apply here. The wall chart uses only the choices below."));
+  window.posCloseSheet(); fb.value = ""; fr.value = "";
+  /* AC-14 variants, D-5 */
+  window.POS.unseated = null; btn.click(); await ready();
+  ok("AC-14: no list sent - only people in a seat, no link", panelText().includes("Only people placed in a seat are on the chart.") && !layer().innerHTML.includes("posWallUnseated"));
+  window.posCloseSheet(); window.POS.unseated = []; btn.click(); await ready();
+  ok("D-5: nobody unseated - no people note", !panelText().includes("not in any seat") && !panelText().includes("Only people placed"));
+  window.posCloseSheet(); window.POS.wall = null;
+  /* AC-65: no tick without leaving dates */
+  load(F.noLeave(false)); btn.click(); await ready();
+  ok("AC-65: no HR copy checkbox in the DOM", !doc.getElementById("pos-wall-hr") && !panelText().includes("HR copy"));
+  window.posCloseSheet(); window.POS.wall = null;
+  /* AC-48: the Owner */
+  load(F.owner()); btn.click(); await ready();
+  ok("AC-48: scope note", panelText().includes("You can see 1 branch, Pitampura, so the chart covers Pitampura only. Its seats report to managers in other branches, so they print side by side with no lines above them."));
+  ok("AC-48: one start, one level", optTexts("pos-wall-start").join("|") === "The top of what you can see (8 seats)"
+     && optTexts("pos-wall-levels").join("|") === "All: 1 level, 8 seats side by side", optTexts("pos-wall-levels").join("|"));
+  ok("AC-14: branch-limited people note", panelText().includes("35 active Pitampura people are not in any seat"));
+  const own = paper(window.posWallCopy("top", 1, true, false));
+  ok("AC-49: 8 boxes, his 34 people and nothing else", own.el.querySelectorAll(".oc-box").length === 8 && names(own) === 34
+     && !!own.el.querySelector(".pos-wall-grid"));
+  window.posCloseSheet(); window.POS.wall = null;
+  window.gpFetch = realGp; window.Storage.prototype.setItem = realSetItem;
+
   if (problems.length) {
     console.error("wall chart: " + problems.length + " problem(s) in " + checks + " checks");
     problems.forEach((p) => console.error("  FAIL " + p));

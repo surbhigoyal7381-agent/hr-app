@@ -317,6 +317,9 @@ window.posLoad = async function () {
   var body = document.getElementById("pos-body");
   if (!body) return;
   body.innerHTML = '<div class="empty-state"><div class="empty-state-text">Loading&hellip;</div></div>';
+  // Slice 069: no wall chart until this load has given seats (AC-4).
+  var wallBtn = document.getElementById("pos-wall-btn");
+  if (wallBtn) wallBtn.style.display = "none";
   /* Deliberately unfiltered. The structure view greys out what does not match
      instead of dropping it, so it needs every seat this person may see - and
      one fetch then serves both views, with the dropdowns only repainting.
@@ -344,6 +347,7 @@ window.posLoad = async function () {
   POS.records = null;
   var add = document.getElementById("pos-add-btn");
   if (add) add.style.display = POS.may_edit ? "" : "none";
+  if (wallBtn) wallBtn.style.display = POS.rows.length ? "" : "none";
   // The offer to build a chart lives in the empty state, where somebody is
   // already looking, and nowhere else.
   posWire();
@@ -2311,6 +2315,7 @@ function posSheet(title, body, foot) {
 }
 
 window.posCloseSheet = function (noFocus) {
+  if (POS.sheet && POS.sheet.kind === "wall") posWallCleanup();   // slice 069: phones may never fire afterprint
   var L = document.getElementById("pos-layer");
   var had = L && L.innerHTML;
   if (L) L.innerHTML = "";
@@ -2602,6 +2607,234 @@ function posWallPlan(L, paper, sheets, hr) {
   out.cols = Math.ceil(L.w * out.scale / pw); out.rows = Math.ceil(L.h * out.scale / ph);
   return out;
 }
+
+/* ── the panel (prototype-v1, in the Positions tray) ─────────────────────
+   Choices live in POS.wall for this page visit only - never in browser
+   storage (SEC-1). The HR copy tick starts off every time the panel opens
+   (AC-58), and exists only when the server sent leaving dates (AC-65). */
+
+/* Levels under a seat, counting the seat. */
+function posWallDepth(id, t, d) {
+  d = d || 1;
+  if (d >= POS_MAX_DEPTH) return d;
+  return (t.kids[id] || []).reduce(function (m, k) { return Math.max(m, posWallDepth(k.id, t, d + 1)); }, d);
+}
+
+function posWallTops(t) {
+  var s = POS.wall.start;
+  return s === "top" ? t.roots : (t.byId[s] ? [t.byId[s]] : []);
+}
+
+/* Seats and people in the chosen start and levels, as the paper counts
+   them: every name line (a person in two seats counts twice). */
+function posWallCount(t, levels) {
+  var s = 0, p = 0;
+  (function walk(list, d) {
+    list.forEach(function (r) {
+      s += 1; p += r.people.length;
+      if (d < levels && d < POS_MAX_DEPTH) walk(t.kids[r.id] || [], d + 1);
+    });
+  })(posWallTops(t), 1);
+  return { seats: s, people: p };
+}
+
+function posWallStarts(t) {
+  var out = [["top", t.roots.length === 1 ? drT("The top: {0}", [t.roots[0].title])
+                                          : drT("The top of what you can see ({0} seats)", [t.roots.length])]];
+  (function walk(list, d) {
+    list.forEach(function (r) {
+      var kids = t.kids[r.id] || [];
+      if (kids.length && !(d === 0 && t.roots.length === 1)) out.push([r.id, new Array(d + 1).join("— ") + r.title]);
+      if (d + 1 < POS_MAX_DEPTH) walk(kids, d + 1);
+    });
+  })(t.roots, 0);
+  return out;
+}
+
+function posWallLevels(t) {
+  var tops = posWallTops(t);
+  var d = tops.reduce(function (m, r) { return Math.max(m, posWallDepth(r.id, t)); }, 1);
+  if (d === 1 && tops.length > 1) return [[1, drT("All: 1 level, {0} seats side by side", [tops.length])]];
+  var under = tops.reduce(function (n, r) { return n + (t.kids[r.id] || []).length; }, 0), out = [];
+  for (var i = 2; i < d; i++) {
+    out.push([i, i === 2
+      ? drT("2 levels: {0} and the {1} seats under it", [POS.wall.start === "top" ? drT("the top") : tops[0].title, under])
+      : drT("{0} levels", [i])]);
+  }
+  var all = posWallCount(t, d);
+  out.push([d, drT("All {0} levels: every seat ({1} seats, {2} people)", [d, all.seats, all.people])]);
+  return out;
+}
+
+function posWallReads(pt) {
+  return pt < 8 ? drT("Too small to read.") : pt < 10 ? drT("Readable close up.")
+    : pt < 14 ? drT("Readable at arm's length.") : drT("Readable from about a metre away.");
+}
+
+window.posWallOpen = function () {
+  if (!POS.rows.length) return;
+  var w = POS.wall = POS.wall || { start: "top", levels: 0, paper: "A3", sheets: "one", vacant: true };
+  w.hr = false; w.L = null; w.key = "";
+  if (w.start !== "top" && !posById(w.start)) w.start = "top";
+  posSheet(posEsc(drT("Download wall chart (PDF)")), "",
+    '<div class="pos-wall-go"><button type="button" class="btn btn-primary" id="pos-wall-go" onclick="posWallPrint()">'
+    + posEsc(drT("Open print preview")) + '</button><div class="pos-wall-hint">'
+    + drT("Your browser opens its print window. Choose <b>Save as PDF</b> as the printer, then Save.") + "</div></div>");
+  POS.sheet = { kind: "wall" };
+  posWallChange();
+};
+
+window.posWallSet = function (k, v) {
+  var w = POS.wall;
+  if (!w) return;
+  w[k] = k === "levels" ? parseInt(v, 10) : (k === "vacant" || k === "hr" ? !!v : v);
+  if (k === "start") w.levels = 0;   // Levels goes back to its first option
+  posWallChange();
+};
+
+/* Paper and Sheets only re-do the sums; anything that changes what is drawn
+   draws again (two drawings). When the last drawing was slow, the panel
+   says "Working out the size…" first and draws on the next frame. */
+function posWallChange() {
+  var w = POS.wall, lv = posWallLevels(posKids(POS.rows));
+  if (!lv.some(function (o) { return o[0] === w.levels; })) w.levels = lv[0][0];
+  var key = [w.start, w.levels, w.vacant, w.hr].join("|");
+  if (key === w.key && w.L) { posWallPaint(); return; }
+  w.key = key; w.L = null;
+  var run = function () {
+    if (POS.wall !== w || w.key !== key || !POS.sheet || POS.sheet.kind !== "wall") return;
+    w.L = posWallLayout(posWallCopy(w.start, w.levels, w.vacant, w.hr));
+    w.fast = w.L.ms < 150;
+    posWallPaint();
+    if (w.printNext) { w.printNext = false; posWallPrint(); }
+  };
+  if (w.fast) { run(); return; }
+  posWallPaint();
+  setTimeout(run, 30);
+}
+
+function posWallPaint() {
+  var b = document.querySelector("#pos-layer .sh-b"), w = POS.wall;
+  if (!b || !w) return;
+  var keep = document.activeElement && b.contains(document.activeElement) ? document.activeElement.id : null;
+  var t = posKids(POS.rows), c = posWallCount(t, w.levels);
+  var branches = [];
+  POS.rows.forEach(function (r) { if (r.branch && branches.indexOf(r.branch) < 0) branches.push(r.branch); });
+  branches.sort();
+
+  var scope = branches.length === 1
+    ? drT("You can see 1 branch, {0}, so the chart covers {0} only.", [branches[0]])
+    : (branches.length ? drT("Covers {0} branches: {1}.", [branches.length, branches.join(", ")]) : "");
+  if (t.roots.some(function (r) { return r.reports_to; })) {
+    scope += (scope ? " " : "") + drT("Its seats report to managers in other branches, so they print side by side with no lines above them.");
+  }
+  var fl = [["pos-f-branch", "Branch"], ["pos-f-dept", "Department"], ["pos-f-role", "Job role"], ["pos-f-open", "Show"]]
+    .filter(function (f) { return posVal(f[0]); }).map(function (f) { return drT(f[1]); });
+  var filt = !fl.length ? "" : (fl.length === 1 ? drT("Your {0} filter does not apply here.", [fl[0]])
+      : drT("Your {0} filters do not apply here.", [fl.slice(0, -1).join(", ") + " " + drT("and") + " " + fl[fl.length - 1]]))
+    + " " + drT("The wall chart uses only the choices below.");
+
+  var big, sub = "", cls = "pos-wall-result", acts = "";
+  if (!w.L) {
+    big = drT("Working out the size…");
+  } else {
+    var P = posWallPlan(w.L, w.paper, w.sheets, w.hr), orient = P.land ? drT("landscape") : drT("portrait");
+    big = P.cols * P.rows > 1
+      ? drT("{0} {1} · {2} sheets ({3} across, {4} down) · names at 10 pt", [w.paper, orient, P.cols * P.rows, P.cols, P.rows])
+      : drT("{0} {1} · one sheet · names at {2} pt", [w.paper, orient, Math.floor(P.pt)]);
+    sub = posEsc(P.fitsOne ? drT("It fits on one sheet at this size, so it prints as one.") + " " + posWallReads(P.pt) : posWallReads(P.pt));
+    if (P.pt < 8) {
+      cls += " warn";
+      var up = null;
+      for (var i = POS_WALL_ORDER.indexOf(w.paper) + 1; i < POS_WALL_ORDER.length && !up; i++) {
+        if (posWallPlan(w.L, POS_WALL_ORDER[i], "one", w.hr).pt >= 8) up = POS_WALL_ORDER[i];
+      }
+      var sev = posWallPlan(w.L, w.paper, "several", w.hr);
+      sub = "<b>" + posEsc(drT("Warning:")) + "</b> " + posEsc(drT("that is too small to read on a wall."));
+      acts = '<div class="acts">'
+        + (up ? '<button type="button" class="btn btn-outline btn-sm" id="pos-wall-up" onclick="posWallSet(\'paper\',\'' + up + '\')">'
+          + posEsc(drT("Use {0} (names at {1} pt)", [up, Math.floor(posWallPlan(w.L, up, "one", w.hr).pt)])) + "</button>" : "")
+        + '<button type="button" class="btn btn-outline btn-sm" id="pos-wall-tile" onclick="posWallSet(\'sheets\',\'several\')">'
+        + posEsc(drT("Use {0} {1} sheets", [sev.cols * sev.rows, w.paper])) + "</button></div>";
+    }
+  }
+
+  var people = "";
+  if (POS.unseated === null) {
+    people = '<div class="pos-note"><p>' + posEsc(drT("Only people placed in a seat are on the chart.")) + "</p></div>";
+  } else if (POS.unseated.length) {
+    people = '<div class="pos-note"><p>' + posEsc(branches.length === 1
+        ? drT("{0} active {1} people are not in any seat, so they are not on the chart. Placing them in a seat first is recommended, not required.", [POS.unseated.length, branches[0]])
+        : drT("{0} active people are not in any seat, so they are not on the chart. Placing them in a seat first is recommended, not required.", [POS.unseated.length]))
+      + '</p><p><button type="button" class="pos-link" onclick="posWallUnseated()">' + posEsc(drT("See who is not in a seat")) + "</button></p></div>";
+  }
+
+  var opt = function (pairs, chosen) {
+    return pairs.map(function (o) {
+      return '<option value="' + posEsc(o[0]) + '"' + (o[0] === chosen ? " selected" : "") + ">" + posEsc(o[1]) + "</option>";
+    }).join("");
+  };
+  var dims = POS_WALL_PAPER[w.paper];
+  b.innerHTML = '<p class="su" style="margin:0">' + posEsc(drT("A chart of seats and names for a wall, sized for the paper you choose.")) + "</p>"
+    + (scope || filt ? '<div class="pos-note info">' + (scope ? "<p>" + posEsc(scope) + "</p>" : "") + (filt ? "<p>" + posEsc(filt) + "</p>" : "") + "</div>" : "")
+    + '<div class="pos-wall-field"><label class="gp-label" for="pos-wall-start">' + posEsc(drT("Start from")) + "</label>"
+    + '<select class="gp-input" id="pos-wall-start" onchange="posWallSet(\'start\',this.value)">' + opt(posWallStarts(t), w.start) + "</select></div>"
+    + '<div class="pos-wall-field"><label class="gp-label" for="pos-wall-levels">' + posEsc(drT("Levels")) + "</label>"
+    + '<select class="gp-input" id="pos-wall-levels" onchange="posWallSet(\'levels\',this.value)">' + opt(posWallLevels(t), w.levels) + "</select></div>"
+    + '<fieldset class="pos-wall-field"><legend class="gp-label">' + posEsc(drT("Paper")) + '</legend><div class="pos-wall-chips">'
+    + POS_WALL_ORDER.map(function (p) {
+        return '<label class="pos-wall-chip"><input type="radio" name="pos-wall-paper" id="pos-wall-paper-' + p + '" value="' + p + '"'
+          + (p === w.paper ? " checked" : "") + ' onchange="posWallSet(\'paper\',this.value)"><span>' + p + "</span></label>";
+      }).join("")
+    + '</div><div class="pos-wall-hint">' + posEsc(drT("{0} is {1} × {2} mm.", [w.paper, dims[0], dims[1]])) + "</div></fieldset>"
+    + '<fieldset class="pos-wall-field"><legend class="gp-label">' + posEsc(drT("Sheets")) + "</legend>"
+    + [["one", "One sheet, scaled to fit", "For a print shop. The usual choice from A2 up."],
+       ["several", "Several sheets, names at 10 pt", "For an office printer. Each sheet says where it goes."]].map(function (s) {
+        return '<label class="pos-wall-radio"><input type="radio" name="pos-wall-sheets" id="pos-wall-sheets-' + s[0] + '" value="' + s[0] + '"'
+          + (w.sheets === s[0] ? " checked" : "") + ' onchange="posWallSet(\'sheets\',this.value)"><span>' + posEsc(drT(s[1]))
+          + "<small>" + posEsc(drT(s[2])) + "</small></span></label>";
+      }).join("") + "</fieldset>"
+    + '<fieldset class="pos-wall-field"><legend class="gp-label">' + posEsc(drT("On the paper")) + "</legend>"
+    + '<label class="pos-wall-radio"><input type="checkbox" id="pos-wall-vacant"' + (w.vacant ? " checked" : "")
+    + ' onchange="posWallSet(\'vacant\',this.checked)"><span>' + posEsc(drT("Show Vacant")) + "</span></label>"
+    + (POS.may_see_leaving ? '<label class="pos-wall-radio"><input type="checkbox" id="pos-wall-hr"' + (w.hr ? " checked" : "")
+      + ' onchange="posWallSet(\'hr\',this.checked)"><span>' + posEsc(drT("HR copy: show replacements")) + "</span></label>" : "")
+    + "</fieldset>"
+    + (w.hr ? '<div class="pos-note amber"><p>' + posEsc(drT("Print in the office, not at a print shop.")) + "</p></div>" : "")
+    + '<div class="' + cls + '" role="status" aria-live="polite"><div class="big">' + posEsc(big) + "</div>"
+    + (sub ? '<div style="margin-top:4px">' + sub + "</div>" : "")
+    + '<div class="pos-wall-hint">' + posEsc(drT("{0} seats · {1} people", [c.seats, c.people])) + "</div>" + acts + "</div>"
+    + people
+    + '<p class="su">' + posEsc(w.hr
+        ? drT("This HR copy also prints leaving dates and job openings. Replacement plans and HR notes never print.")
+        : drT("Only seat names, job titles, departments and people's names print. Flags, leaving dates and HR notes never do.")) + "</p>";
+  if (keep) {
+    // A fix button that has done its job is gone; the paper it chose takes the focus.
+    var el = document.getElementById(keep) || document.getElementById("pos-wall-paper-" + w.paper);
+    if (el && el.focus) el.focus();
+  }
+}
+
+/* "See who is not in a seat": the existing tray, in place of the panel.
+   Closing it still returns focus to the wall chart button. */
+window.posWallUnseated = function () {
+  posWallCleanup();
+  posUnseatedSheet();
+};
+
+/* Forget the drawing and take the paper away. */
+function posWallCleanup() {
+  var h = document.getElementById("pos-wall-print");
+  if (h && h.parentNode) h.parentNode.removeChild(h);
+  if (POS.wall) { POS.wall.L = null; POS.wall.key = ""; POS.wall.printNext = false; }
+}
+
+/* Step 5 sets the page size and title; until then the print is refused. */
+window.posWallPrint = function () {
+  var w = POS.wall;
+  if (!w) return;
+  if (!w.L) { w.printNext = true; return; }
+};
 
 window.posSeatSheet = function (id, flash) {
   var r = posById(id);

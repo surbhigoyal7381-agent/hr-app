@@ -2221,6 +2221,35 @@ body.panel-fullscreen{overflow:hidden}
 .pos-wall .pos-wall-bar{position:absolute;height:1px;background:var(--border)}
 .pos-wall .pos-wall-tops{display:flex;gap:40px;align-items:flex-start}
 .pos-wall .pos-wall-grid{display:grid;grid-auto-flow:column;gap:12px 16px;align-items:start}
+/* The button and the panel. Native inputs; the paper choice is a row of
+   radio chips. On a phone: full-width toolbar buttons, 44 px targets. */
+#panel-positions .tb-acts{display:flex;gap:8px;flex-wrap:wrap}
+.pos-wall-field{margin:14px 0 0;border:0;padding:0;min-width:0}
+.pos-wall-field > .gp-label{margin-bottom:6px}
+.pos-wall-field select{min-height:36px}
+.pos-wall-chips{display:flex;flex-wrap:wrap;gap:6px}
+.pos-wall-chip{position:relative}
+.pos-wall-chip input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.pos-wall-chip span{display:inline-flex;align-items:center;justify-content:center;min-width:52px;min-height:36px;padding:0 12px;
+  border:1.5px solid var(--border2);border-radius:var(--r-sm);font-weight:600;background:var(--surface);color:var(--text)}
+.pos-wall-chip input:checked + span{border-color:var(--primary);background:var(--primary-lt);color:var(--primary)}
+.pos-wall-chip input:focus-visible + span{outline:3px solid var(--primary);outline-offset:2px}
+.pos-wall-radio{display:flex;gap:10px;align-items:flex-start;padding:8px 0;min-height:36px;cursor:pointer}
+.pos-wall-radio input{width:18px;height:18px;margin:1px 0 0;accent-color:var(--primary);flex:none}
+.pos-wall-radio small{display:block;color:var(--text3);font-size:var(--fs-sm)}
+.pos-wall-hint{color:var(--text3);font-size:var(--fs-sm);margin-top:4px}
+.pos-wall-result{border:1.5px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-top:16px;background:var(--surface2)}
+.pos-wall-result .big{font-size:var(--fs-md);font-weight:700}
+.pos-wall-result.warn{border-color:var(--amber);background:var(--amber-lt)}
+.pos-wall-result .acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.pos-wall-go{display:flex;flex-direction:column;gap:6px;width:100%}
+@media (max-width:640px){
+  #panel-positions .tb-acts{width:100%;flex-direction:column}
+  #panel-positions .tb-acts .btn{width:100%;min-height:44px}
+  .pos-wall-field select{min-height:44px;font-size:16px}
+  .pos-wall-chip span{min-height:44px;min-width:56px}
+  .pos-wall-radio{min-height:44px}
+}
 
 /* ── Colour coding ─────────────────────────────────────────────────
    Three tones, kept deliberately pale. Written as low-alpha colour over

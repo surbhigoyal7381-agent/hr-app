@@ -12,6 +12,7 @@
  *   owner()              F-OWNER: the 8 Pitampura seats, managers outside
  *   group()              F-GROUP: identical Cashier seats (D-6)
  *   noLeave()            F-NOLEAVE: may_see_leaving false, leaving null
+ *   manager()            sent leaving dates for their reports, but not HR
  *   scaled(n)            F-DTC90 repeated n times under one top (10x check)
  */
 const FIRST = ["Aarav", "Priya", "Rohit", "Neha", "Vikram", "Ananya", "Karan", "Sneha", "Arjun", "Pooja", "Rahul", "Kavya", "Sanjay", "Meera", "Aditya", "Divya", "Manish", "Ritu", "Nikhil", "Simran", "Deepak", "Isha", "Amit", "Nisha", "Varun", "Tanvi", "Suresh", "Anjali", "Gaurav", "Shreya", "Harish", "Payal", "Mohit", "Jyoti", "Rakesh", "Komal", "Vivek", "Swati", "Ajay", "Bhavna"];
@@ -117,6 +118,17 @@ function noLeave(forceLeaving) {
   return d;
 }
 
+/* A manager who is sent leaving dates for their own reports (may_see_leaving
+   true) but is not HR: the server sends no "in no seat" list (the key is
+   absent), which is how the page knows. Surbhi, 25 Oct 2026: the HR copy is
+   for HR only, so this reader never gets the tick. */
+function manager() {
+  const d = dtc90();
+  delete d.unseated; delete d.active_people;
+  d.may_edit = false; d.may_delete = false;
+  return d;
+}
+
 /* n copies of DTC's 89 seats under one top: 10x is 891 seats. */
 function scaled(n) {
   const one = dtc90();
@@ -133,4 +145,4 @@ function scaled(n) {
   return Object.assign({}, one, { rows });
 }
 
-module.exports = { dtc90, owner, group, noLeave, scaled };
+module.exports = { dtc90, owner, group, noLeave, manager, scaled };

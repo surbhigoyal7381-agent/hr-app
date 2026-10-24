@@ -2360,12 +2360,21 @@ function posWallBelow(id, t) {
   return { seats: s, people: p };
 }
 
+/* The HR copy is for HR only (Surbhi, 25 Oct 2026). HR is the page's existing
+   signal: the "in no seat" list reaches only HR Manager, HR User and System
+   Manager (permitted_employee_filters), never a plain manager - even one who
+   is sent leaving dates for their own reports. And the leaving dates must
+   have been sent at all. */
+function posWallMayHr() {
+  return POS.unseated !== null && !!POS.may_see_leaving;
+}
+
 /* The allowed copy. `start` is "top" or a seat id; `levels` counts the start
    as level 1. Identical seats merge as on screen (D-6), whatever the screen
-   has ungrouped. The HR copy keys exist only when `hr` is on AND the server
-   sent this reader leaving dates. */
+   has ungrouped. The HR copy keys exist only when `hr` is on AND the reader
+   is HR (posWallMayHr). */
 function posWallCopy(start, levels, vacant, hr) {
-  hr = !!(hr && POS.may_see_leaving);
+  hr = !!(hr && posWallMayHr());
   var t = posKids(POS.rows);
   var tops = start === "top" ? t.roots : (t.byId[start] ? [t.byId[start]] : []);
   function seat(members, depth) {
@@ -2611,7 +2620,7 @@ function posWallPlan(L, paper, sheets, hr) {
 /* ── the panel (prototype-v1, in the Positions tray) ─────────────────────
    Choices live in POS.wall for this page visit only - never in browser
    storage (SEC-1). The HR copy tick starts off every time the panel opens
-   (AC-58), and exists only when the server sent leaving dates (AC-65). */
+   (AC-58), and exists only for HR (posWallMayHr, AC-65). */
 
 /* Levels under a seat, counting the seat. */
 function posWallDepth(id, t, d) {
@@ -2743,6 +2752,12 @@ function posWallPaint() {
       ? drT("{0} {1} · {2} sheets ({3} across, {4} down) · names at 10 pt", [w.paper, orient, P.cols * P.rows, P.cols, P.rows])
       : drT("{0} {1} · one sheet · names at {2} pt", [w.paper, orient, Math.floor(P.pt)]);
     sub = posEsc(P.fitsOne ? drT("It fits on one sheet at this size, so it prints as one.") + " " + posWallReads(P.pt) : posWallReads(P.pt));
+    // A soft warning, not a block (Surbhi, 25 Oct 2026): at 10x DTC, 130 A4
+    // sheets took the browser about two minutes to turn into a PDF.
+    if (P.cols * P.rows > 20) {
+      cls += " warn";
+      sub += '<div style="margin-top:6px">' + posEsc(drT("This will make about {0} sheets and may take a minute. Choose a larger paper size to use fewer sheets.", [P.cols * P.rows])) + "</div>";
+    }
     if (P.pt < 8) {
       cls += " warn";
       var up = null;
@@ -2797,7 +2812,7 @@ function posWallPaint() {
     + '<fieldset class="pos-wall-field"><legend class="gp-label">' + posEsc(drT("On the paper")) + "</legend>"
     + '<label class="pos-wall-radio"><input type="checkbox" id="pos-wall-vacant"' + (w.vacant ? " checked" : "")
     + ' onchange="posWallSet(\'vacant\',this.checked)"><span>' + posEsc(drT("Show Vacant")) + "</span></label>"
-    + (POS.may_see_leaving ? '<label class="pos-wall-radio"><input type="checkbox" id="pos-wall-hr"' + (w.hr ? " checked" : "")
+    + (posWallMayHr() ? '<label class="pos-wall-radio"><input type="checkbox" id="pos-wall-hr"' + (w.hr ? " checked" : "")
       + ' onchange="posWallSet(\'hr\',this.checked)"><span>' + posEsc(drT("HR copy: show replacements")) + "</span></label>" : "")
     + "</fieldset>"
     + (w.hr ? '<div class="pos-note amber"><p>' + posEsc(drT("Print in the office, not at a print shop.")) + "</p></div>" : "")

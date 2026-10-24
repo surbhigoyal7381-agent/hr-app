@@ -301,6 +301,39 @@ function neverPrinted(label, p) {
   load(F.noLeave(false)); btn.click(); await ready();
   ok("AC-65: no HR copy checkbox in the DOM", !doc.getElementById("pos-wall-hr") && !panelText().includes("HR copy"));
   window.posCloseSheet(); window.POS.wall = null;
+  /* AC-65 (Surbhi, 25 Oct 2026): the HR copy is for HR only. A manager who
+     is sent leaving dates for their own reports never gets the tick; HR does,
+     and it is off every time the panel opens. */
+  load(F.manager()); btn.click(); await ready();
+  ok("HR only: a manager who sees leaving dates gets no HR copy tick", window.POS.may_see_leaving
+     && window.POS.unseated === null && !doc.getElementById("pos-wall-hr") && !panelText().includes("HR copy"));
+  const mgr = paper(window.posWallCopy("top", 99, true, true));
+  ok("HR only: and asking for it anyway prints no leaving date", !mgr.text.includes("leaving") && !mgr.text.includes("Job opening"));
+  ok("HR only: the manager's copy holds no HR keys", !keysOk(window.posWallCopy("top", 99, true, true), false));
+  window.posCloseSheet(); window.POS.wall = null;
+  load(F.dtc90());
+  for (const round of [1, 2, 3]) {
+    btn.click(); await ready();
+    const tick = doc.getElementById("pos-wall-hr");
+    ok("HR only: an HR user gets the tick, unticked on opening " + round, tick && !tick.checked);
+    if (tick) await set("pos-wall-hr", true);
+    window.posCloseSheet();
+  }
+  window.POS.wall = null;
+  /* the soft warning over 20 sheets */
+  btn.click(); await ready();
+  await set("pos-wall-sheets-several", true); await set("pos-wall-paper-A4", true);
+  window.POS.wall.L = { html: "", w: 33440, h: 2118 };
+  window.posWallPaint();
+  const many = window.posWallPlan(window.POS.wall.L, "A4", "several", false);
+  ok("over 20 sheets: a soft warning with the number", many.cols * many.rows > 20 && panelText().includes(
+     "This will make about " + many.cols * many.rows + " sheets and may take a minute. Choose a larger paper size to use fewer sheets."));
+  ok("over 20 sheets: not a block - Open print preview is still there", !!doc.getElementById("pos-wall-go") && !doc.getElementById("pos-wall-go").disabled);
+  window.POS.wall.L = { html: "", w: 3344, h: 2118 };
+  window.posWallPaint();
+  ok("20 sheets or fewer: no such warning", !panelText().includes("may take a minute"));
+  window.posCloseSheet(); window.POS.wall = null;
+
   /* AC-48: the Owner */
   load(F.owner()); btn.click(); await ready();
   ok("AC-48: scope note", panelText().includes("You can see 1 branch, Pitampura, so the chart covers Pitampura only. Its seats report to managers in other branches, so they print side by side with no lines above them."));

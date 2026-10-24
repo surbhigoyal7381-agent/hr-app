@@ -21,9 +21,12 @@ status: built LOCALLY. Not pushed, not deployed, not merged into dev. No bench, 
 3. **One difference from prototype-v1 needs Surbhi's yes (§4, PD-1):** in a wrapped column, boxes sit at
    the column's left edge. The prototype centred them, which left the tick short of every box narrower
    than the widest one in its column (the line check found 3 boxes "joined to nobody").
-4. **HR copy tick is built HR-only in the sense the spec gives it** (shown only when the server sends
-   `may_see_leaving`). Surbhi has not yet answered the lead session's "HR only" question; if she wants
-   it narrower than `may_see_leaving`, that is a server-side change and a new decision.
+4. **HR copy tick: HR only (Surbhi, 25 Oct 2026; changed in the last commit).** It used to follow
+   the server's `may_see_leaving`, which a manager also gets for their own reports. It now needs **HR
+   and** leaving dates sent. HR is the page's existing signal, so no server change was needed: the "in
+   no seat" list (`unseated`) reaches only HR Manager, HR User, System Manager and Administrator
+   (`permitted_employee_filters`, `access.py:194-215`). A plain manager is refused, so the key is absent
+   for them. The page already uses `POS.unseated !== null` as "HR only" for the HR box and tiles.
 5. `portal.js` grew by **578 lines**, not the strategy's estimate of about 350. Most of it is the panel
    (words for every state) and the layout sums.
 6. The Python suite was **not run**: no Python changed, and AC-51's 064 refusal test needs a site. I did
@@ -197,7 +200,7 @@ committed here.
 |---|---|
 | No limit on several sheets at 10× (bad news 1) | **Intentional trade-off**, waiting on Surbhi (Q-D) |
 | iPhone, Firefox, manual Chrome/Edge window, AC-51 not run | **Temporary debt** — removed by the manual checks before release |
-| HR copy tick gate is `may_see_leaving`, not a role | **Intentional trade-off** (spec, 01c bad news 3); Surbhi's "HR only" answer outstanding |
+| HR copy tick gate = HR (the `unseated` key is present) AND `may_see_leaving`. A store HR person limited to a branch counts as HR | **Intentional trade-off**, per Surbhi 25 Oct 2026. If the HR scope rules in `access.py` ever let a non-HR role through, the tick follows them |
 | The scope note's "Its seats report to managers in other branches" also shows for HR when a top seat's manager is a Closed seat (AC-25) | **Acceptable simplification** — the spec's state rule; rare |
 | HR across two companies: names joined with ", " in footer and file name | **Acceptable simplification** (spec assumption) |
 | Banner height fixed at 7 mm, not measured | **Acceptable simplification** |
@@ -212,3 +215,32 @@ any limit on sheets, any memory of layouts across panel opens, any Python.
 
 Noticed, not touched (Surbhi's to decide): filter selects on Positions are 32 px tall on a phone (WC9);
 the global A4 rule still forces landscape on other prints (D10).
+
+## 12 · Changes of 25 Oct 2026 (Surbhi, via the coordinator)
+
+1. **HR copy for HR only.** `posWallMayHr()` = `POS.unseated !== null && POS.may_see_leaving`. Used
+   by the tick and by `posWallCopy`, so asking for the HR copy without it still prints the wall copy.
+   Tests (CI): a manager sent leaving dates for their own reports (`F.manager()`: `may_see_leaving`
+   true, no `unseated`) gets no tick, and their copy holds no HR keys and prints no leaving date; an
+   HR user gets the tick, unticked on each of three openings. Broken on purpose (gate back to
+   `may_see_leaving` alone): 3 failures.
+2. **Soft warning over 20 sheets.** When "Several sheets" would make more than 20 sheets, the result
+   box turns amber and adds: *"This will make about {N} sheets and may take a minute. Choose a larger
+   paper size to use fewer sheets."* Open print preview still works. DTC's own worst case (All on A4)
+   is 16 sheets, so DTC never sees it today; 10× on A4 (130 sheets) does.
+3. **PD-1 kept**, waiting for Surbhi's yes.
+
+**Spec and 01c wording to change (I did not edit them: they are the lead session's untracked files in
+`dev-integration-2026-10-24`):**
+- Spec §7 matrix, "HR copy tick" column, and §0 personas: "Yes, if `may_see_leaving`" -> "Yes, for HR
+  (HR Manager, HR User, System Manager) when leaving dates are sent". Owner: "Only if he holds an HR
+  role".
+- AC-58: "Given `may_see_leaving: true`" -> "Given an HR reader (the payload carries `unseated`) and
+  `may_see_leaving: true`".
+- AC-65 / US-14: add "A manager sent leaving dates for their own reports, with no `unseated` key, gets
+  no HR copy tick and no HR words on paper."
+- New AC under US-8: the 20-sheet soft warning, wording above.
+- 01c PRIV-4 first bullet: "exists in the DOM only when the server sent `may_see_leaving: true`" ->
+  "only for HR (the payload carries `unseated`) and when the server sent `may_see_leaving: true`"; bad
+  news 3 is then closed.
+

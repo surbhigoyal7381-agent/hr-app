@@ -230,9 +230,21 @@ function ocRender(n, isRoot, opts) {
   opts = opts || OC_DEFAULT_OPTS;
   var kids = "";
   if (n.children && n.children.length) {
-    kids = '<div class="oc-kids">'
-      + n.children.map(function (c) { return ocRender(c, false, opts); }).join("")
-      + "</div>";
+    // Positions (slice 064, I3): three or more seats with nobody under them
+    // hang in one column under their manager - under the team leads when
+    // there are any, on a line down the family's left edge, with a tick into
+    // each box. One or two stay in the row.
+    var row = n.children, hang = [];
+    if (opts.hang) {
+      hang = row.filter(function (c) { return !c.child_count && !c._holder; });
+      if (hang.length >= 3) row = row.filter(function (c) { return hang.indexOf(c) < 0; }); else hang = [];
+    }
+    var items = hang.map(function (c) { return '<div class="oc-hang-item">' + ocNodeCard(c, false, opts) + "</div>"; }).join("");
+    kids = (hang.length && row.length)
+      ? '<div class="oc-fam"><div class="oc-kids">' + row.map(function (c) { return ocRender(c, false, opts); }).join("")
+        + '</div><div class="oc-hang under">' + items + "</div></div>"
+      : '<div class="oc-kids">' + row.map(function (c) { return ocRender(c, false, opts); }).join("")
+        + (hang.length ? '<div class="oc-branch oc-hang-slot"><div class="oc-hang">' + items + "</div></div>" : "") + "</div>";
   } else if (n.has_more) {
     // Without this the last row reads as the bottom of the organisation.
     kids = '<div class="oc-kids"><button class="oc-more" onclick="'
@@ -254,7 +266,9 @@ var POS = { rows: [], may_edit: false, collapsed: {}, expanded: {},
             onPath: {}, ungrouped: {},
             // Slice 064, for the trays and the delete dialog.
             may_delete: false, today: "", may_see_leaving: false, may_edit_employee: false,
-            unseated: null, active_people: 0, records: null, sheet: null, ret: null, retEl: null };
+            unseated: null, active_people: 0, records: null, sheet: null, ret: null, retEl: null,
+            // Slice 064 v2: what is drawn open, and the zoom (never stored).
+            shown: {}, zoom: 1 };
 
 /* A reporting line deeper than this is bad data, not a tall company. The
    doctype refuses a seat that reports into its own chain, twice over - a
@@ -276,7 +290,10 @@ var POS_MAX_DEPTH = 40;
 // Two levels is the organisation at a glance - the top, and what sits under
 // it - with everything below one click away and counted on the fold, so
 // nothing is hidden without saying how much.
-var POS_OPEN_DEPTH = 2;
+// ONE since slice 064 (I2, approved 23 Oct 2026): the top seat and one layer
+// below it. At DTC two levels put every one of 91 boxes on screen, 18,176 px
+// wide, with the top off to the right.
+var POS_OPEN_DEPTH = 1;
 
 function posEsc(s) { return ocEsc(s); }
 
@@ -450,9 +467,9 @@ window.posShowOnly = function (what) {
 function posNothing() {
   if (POS.rows.length) {
     return '<div class="empty-state"><div class="empty-state-text">'
-      + "<strong>No seat matches those filters</strong></div>"
+      + "<strong>Nothing matches.</strong></div>"
       + '<button class="btn btn-outline btn-sm" style="margin-top:12px"'
-      + ' onclick="posClearFilters()">Clear the filters</button></div>';
+      + ' onclick="posClearFilter()">Clear the filter</button></div>';
   }
   if (!POS.may_edit) {
     // A branch head cannot fix this and should not be given a button that
@@ -541,9 +558,16 @@ window.posPaint = function () {
   // A list has no spine to rearrange, so the control only belongs with the
   // structure view.
   var arr = document.getElementById("pos-arrange-wrap");
-  if (arr) arr.style.display = tree ? "" : "none";
+  if (arr) arr.style.display = "";       // always shown since slice 064 (I1)
   posPaintReset();
-  if (tree) { posPaintTree(); } else { posPaintList(); }
+  var va = posVal("pos-f-view") + "|" + posArrange(), recentre = POS._va !== va;
+  POS._va = va;
+  if (tree) {
+    posPaintTree(); posApplyZoom();
+    if (POS._findId) { var fid = POS._findId; POS._findId = null; posFindFocus(fid); }
+    else if (POS._focusNext) { POS._focusNext = false; posFocusFirst(); }
+    else if (recentre) posCentreTop();
+  } else { posPaintList(); }
 };
 
 function posPaintList() {
@@ -717,13 +741,18 @@ function posNode(r, t, depth) {
   var shut = POS.collapsed[r.id]
     || (depth >= POS_OPEN_DEPTH
         && !POS.expanded[r.id] && !POS.onPath[r.id]);
+  // What is drawn open, so one press on a closed box opens it (I2).
+  POS.shown[r.id] = !shut;
   var sub = [r.branch, r.department].filter(Boolean).join(" · ");
   // "open" alone does not describe a twenty-five person seat.
   if (r.seats > 1) {
     sub = (sub ? sub + " · " : "")
       + posNum(r.filled) + " of " + posNum(r.seats) + " filled";
   }
-  if (!t.byId[r.reports_to] && r.reports_to) {
+  // Asked of every seat this reader may see, not of the seats drawn: a
+  // manager left out by a filter, or sitting in another branch, is not
+  // "above your view" (slice 064 v2).
+  if (r.reports_to && !posById(r.reports_to)) {
     sub = sub ? sub + " · reports above your view" : "reports above your view";
   }
 
@@ -900,7 +929,9 @@ function posHolderNode(id, title, subtitle, children, head) {
   //
   // This is not the same decision as "open to start", which Surbhi made
   // about the REPORTING tree and which stands - that spine is unchanged.
-  var shut = !POS.expanded[id];
+  // With a filter on, the path to every match is open (OP-4).
+  var shut = posAnyFilter() ? !!POS.collapsed[id] : !POS.expanded[id];
+  POS.shown[id] = !shut;
   var flags = [];
   if (open >= 0.5) {
     flags.push({ severity: "medium", label: posNum(open) + " to fill",
@@ -1031,9 +1062,11 @@ function posByDepartment(rows) {
 window.posToggle = function (id) {
   // Which of the two to write depends on what the default would be, so a
   // deliberate choice always beats the default whichever way it goes.
-  if (POS.collapsed[id]) { delete POS.collapsed[id]; POS.expanded[id] = true; }
-  else if (POS.expanded[id]) { delete POS.expanded[id]; }
-  else { POS.collapsed[id] = true; POS.expanded[id] = false; }
+  // Asked of what is DRAWN, not of what was chosen before. The old rule
+  // assumed every box starts open, so the first press on a closed branch or
+  // department did nothing (live bug, found 22 Oct 2026).
+  if (POS.shown[id]) { POS.collapsed[id] = true; delete POS.expanded[id]; }
+  else { delete POS.collapsed[id]; POS.expanded[id] = true; }
   posPaint();
 };
 
@@ -1041,7 +1074,12 @@ function posPaintTree() {
   var body = document.getElementById("pos-body");
   if (!body) return;
 
-  var t = posKids();
+  // A filter keeps only the matches and the seats above them (within the
+  // branch or department in those views). The rest is left out, not greyed.
+  POS.shown = {};
+  var rows = posAnyFilter() ? posKeepRows(posArrange()) : POS.rows;
+  if (posAnyFilter() && !rows.length) { posPaintTiles(POS.rows.filter(posMatches)); body.innerHTML = posNothing(); return; }
+  var t = posKids(rows);
   var matched = POS.rows.filter(posMatches).length;
 
   posPaintTiles(POS.rows.filter(posMatches));
@@ -1071,15 +1109,16 @@ function posPaintTree() {
 
   var how = posArrange();
   var nodes = how === "branch"
-    ? posByBranch(POS.rows)
+    ? posByBranch(rows)
     : (how === "department"
-        ? posByDepartment(POS.rows)
+        ? posByDepartment(rows)
         : t.roots.map(function (r) { return posNode(r, t, 0); }));
 
   var by = {};
   POS.rows.forEach(function (r) { by[r.id] = r; });
   var opts = {
     toggle: "posToggle",
+    hang: true,
     // For somebody who may edit, clicking the box opens the seat - folding it
     // away has its own button with its own count, so the click is free for
     // what they came to do.
@@ -1136,7 +1175,7 @@ function posPaintTree() {
   // Only meaningful on the reporting spine. Arranged by branch or department
   // every seat has a place by definition, so the question does not arise.
   var stranded = how === "reporting"
-    ? POS.rows.filter(function (r) { return !reach.seen[r.id]; })
+    ? rows.filter(function (r) { return !reach.seen[r.id]; })
     : [];
   if (stranded.length) {
     html += '<div class="pf-card" style="margin-top:16px"><strong>'
@@ -1156,9 +1195,259 @@ function posPaintTree() {
       + ' onclick="posRegroup()">Group them again</button></div>'
     : "";
 
-  body.innerHTML = back + '<div style="overflow-x:auto"><div class="oc-tree">'
-    + html + "</div></div>";
+  // "No reporting manager" on the chart (I4): dashed, above it on the right,
+  // with no line. HR only, as the tile is. It opens the existing tray.
+  var nm = (how === "reporting" && POS.unseated !== null) ? posNoMgrPeople().length + posExtraRoots().length : 0;
+  var nmBox = nm ? '<div class="pos-nomgr-row"><button type="button" class="oc-box pos-nomgr" onclick="posNoMgrSheet()">'
+      + '<div class="oc-box-hd"><span class="ti">No reporting manager</span></div>'
+      + '<div class="sub">Not in any seat, and no manager on their record</div>'
+      + '<div class="oc-flags"><span class="oc-flag medium">' + nm + " people</span></div></button></div>" : "";
+  var nMatch = posAnyFilter() ? POS.rows.filter(posMatches).length : 0;
+  var tools = '<div class="pos-ztools noprint" role="group" aria-label="Zoom and print">'
+    + '<button type="button" class="btn btn-outline btn-sm" onclick="posZoom(-1)" aria-label="Zoom out" title="Zoom out (-)">&minus;</button>'
+    + '<span class="pos-zpct" aria-live="polite">' + Math.round((POS.zoom || 1) * 100) + "%</span>"
+    + '<button type="button" class="btn btn-outline btn-sm" onclick="posZoom(1)" aria-label="Zoom in" title="Zoom in (+)">+</button>'
+    + '<button type="button" class="btn btn-outline btn-sm" onclick="posZoom(0)">Reset</button>'
+    + '<button type="button" class="btn btn-outline btn-sm" onclick="posZoomFit()">Fit to width</button>'
+    + '<button type="button" class="btn btn-outline btn-sm" onclick="window.print()">Print</button>'
+    + (posAnyFilter() ? '<span class="pos-fline"><span id="pos-fline-txt" role="status">' + nMatch + " matching</span>"
+      + ' <button type="button" class="btn btn-outline btn-sm" onclick="posClearFilter()">Clear filter</button></span>' : "")
+    + "</div>";
+  body.innerHTML = posPrintHead(how) + tools + back + nmBox + '<div style="overflow-x:auto"><div class="oc-tree"><div class="oc-zoom" style="zoom:' + (POS.zoom || 1) + '">'
+    + html + "</div></div></div>";
 }
+
+/* Open a view centred on the chart (the top seat sits over the middle of its
+   family), not on its left edge (slice 064, I2). */
+function posCentreTop() {
+  var tr = document.querySelector("#pos-body .oc-tree");
+  if (tr) tr.scrollLeft = (tr.scrollWidth - tr.clientWidth) / 2;
+}
+
+/* ── zoom, print, filters that pick their view, and Find (slice 064) ──────
+   Built to prototype-old-v2, approved 23 Oct 2026. */
+
+/* ZOOM uses CSS zoom on ONE wrapper inside the chart's scroll box. It scales
+   the layout itself, so the scroll width, centring and every line scale
+   together. Nothing fixed (trays, dialogs) lives inside it, so they cannot
+   be misplaced the way a transform misplaced them on 22 Oct. Not remembered
+   between visits: every visit starts at 100 % (Q10). */
+var POS_ZMIN = 0.4, POS_ZMAX = 2;
+function posZoomEl() { return document.querySelector("#pos-body .oc-zoom"); }
+function posApplyZoom() {
+  var el = posZoomEl(), z = POS.zoom || 1;
+  if (!el) return;
+  el.style.zoom = z;
+  var pct = document.querySelector("#pos-body .pos-zpct");
+  if (pct) pct.textContent = Math.round(z * 100) + "%";
+  // Print: one page wide (A4 landscape, about 1,040 px across), as many
+  // pages down as it needs (Q8).
+  var natural = el.getBoundingClientRect().width / z;
+  document.getElementById("pos-body").style.setProperty("--pz", Math.min(z, 1040 / Math.max(1, natural)));
+}
+window.posZoom = function (dir) {
+  var tr = document.querySelector("#pos-body .oc-tree");
+  if (!tr) return;
+  var mid = (tr.scrollLeft + tr.clientWidth / 2) / Math.max(1, tr.scrollWidth);
+  var z = POS.zoom || 1;
+  POS.zoom = dir === 0 ? 1 : Math.round(Math.min(POS_ZMAX, Math.max(POS_ZMIN, z + dir * 0.1)) * 10) / 10;
+  posApplyZoom();
+  tr.scrollLeft = mid * tr.scrollWidth - tr.clientWidth / 2;
+};
+window.posZoomFit = function () {
+  var tr = document.querySelector("#pos-body .oc-tree"), el = posZoomEl();
+  if (!tr || !el) return;
+  var natural = el.getBoundingClientRect().width / (POS.zoom || 1);
+  POS.zoom = Math.max(POS_ZMIN, Math.min(1, Math.floor((tr.clientWidth - 8) / natural * 100) / 100));
+  posApplyZoom();
+  posCentreTop();
+};
+// + - 0, except while typing in a field or when a tray or dialog is open.
+document.addEventListener("keydown", function (e) {
+  var pn = document.getElementById("panel-positions");
+  if (!pn || !pn.classList.contains("active") || !e.target || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)
+      || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (posVal("pos-f-view") !== "tree") return;
+  if (document.querySelector("#pos-layer *") || document.querySelector(".gp-backdrop.open, .gp-backdrop.show")) return;
+  if (e.key === "+" || e.key === "=") { posZoom(1); e.preventDefault(); }
+  else if (e.key === "-") { posZoom(-1); e.preventDefault(); }
+  else if (e.key === "0") { posZoom(0); e.preventDefault(); }
+});
+
+/* PRINT: what is on screen now - the view, the folds, the filter, the zoom -
+   one page wide. The header is only visible in print. Anything marked
+   private (.private or [data-private], slice 065) never prints. */
+function posFilterWords() {
+  var w = [];
+  [["pos-f-branch", "Branch"], ["pos-f-dept", "Department"], ["pos-f-role", "Job role"], ["pos-f-open", "Show"]].forEach(function (f) {
+    var el = document.getElementById(f[0]);
+    if (el && el.value && el.options && el.selectedIndex >= 0) w.push(f[1] + ": " + el.options[el.selectedIndex].text);
+  });
+  return w.length ? w.join("; ") : "No filter";
+}
+function posPrintHead(how) {
+  var view = how === "branch" ? "By branch" : (how === "department" ? "By department" : "Reporting lines");
+  var co = (POS.rows[0] || {}).company || "";
+  var nm = ((document.getElementById("sb-name") || {}).textContent || "").trim();
+  var role = ((document.getElementById("sb-desig") || {}).textContent || "").trim();
+  var who = nm + (role ? " (" + role + ")" : "");
+  var now = new Date(), today = now.getFullYear() + "-" + ("0" + (now.getMonth() + 1)).slice(-2) + "-" + ("0" + now.getDate()).slice(-2);
+  var asat = POS.today || today;
+  function day(iso) { return posDay(iso) + " " + String(iso).slice(0, 4); }
+  return '<div class="pos-printhead"><strong>Positions &middot; ' + posEsc(view) + "</strong> &middot; " + posEsc(co)
+    + " &middot; seats as at " + posEsc(day(asat)) + "<br>Filter: " + posEsc(posFilterWords())
+    + (who ? " &middot; printed by " + posEsc(who) : "") + " on " + posEsc(day(today)) + "</div>";
+}
+
+/* FILTERS: Branch -> By branch, Department -> By department, Job role ->
+   Reporting lines, Show -> the current arrangement (Q7). Only the matches
+   and the seats above them are drawn (the ones above faded), the path is
+   open, and the first match gets the focus. "Clear filter" brings back the
+   view and the folds that were there before. This replaces the 15 Oct rule
+   "filters grey the rest" for these four filters (Surbhi, 23 Oct 2026). */
+window.posFilterChanged = function (arr) {
+  if (!POS._saved) POS._saved = { view: posVal("pos-f-view"), arrange: posArrange(), collapsed: POS.collapsed, expanded: POS.expanded };
+  if (!posAnyFilter()) { posClearFilter(); return; }
+  document.getElementById("pos-f-view").value = "tree";
+  if (arr) document.getElementById("pos-f-arrange").value = arr;
+  POS.collapsed = {}; POS.expanded = {};
+  POS._focusNext = true;
+  posPaint();
+};
+window.posClearFilter = function () {
+  ["pos-f-branch", "pos-f-dept", "pos-f-role", "pos-f-open"].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ""; });
+  var sv = POS._saved; POS._saved = null;
+  if (sv) {
+    document.getElementById("pos-f-view").value = sv.view;
+    document.getElementById("pos-f-arrange").value = sv.arrange;
+    POS.collapsed = sv.collapsed; POS.expanded = sv.expanded;
+  }
+  posPaint();
+};
+/* The matches and every seat above them, up to the top - within the branch
+   or department in those views. */
+function posKeepRows(how) {
+  var by = {}, keep = {};
+  POS.rows.forEach(function (r) { by[r.id] = r; });
+  POS.rows.forEach(function (r) {
+    if (!posMatches(r)) return;
+    var at = r, hops = 0;
+    while (at && hops < POS_MAX_DEPTH) {
+      keep[at.id] = 1;
+      var p = by[at.reports_to];
+      if (!p || (how === "branch" && p.branch !== r.branch) || (how === "department" && p.department !== r.department)) break;
+      at = p; hops += 1;
+    }
+  });
+  return POS.rows.filter(function (r) { return keep[r.id]; });
+}
+/* Outline the first of these boxes in reading order, centre it and give it
+   the keyboard focus. Returns how many boxes were found. */
+function posMarkFirst(hit) {
+  var tr = document.querySelector("#pos-body .oc-tree");
+  if (!tr) return 0;
+  var boxes = [].slice.call(tr.querySelectorAll(".oc-box")).filter(function (b) {
+    var m = (b.getAttribute("onclick") || "").match(/\('([^']+)'\)/);
+    return m && hit[m[1]];
+  });
+  boxes.sort(function (a, b) {
+    var p = a.getBoundingClientRect(), q = b.getBoundingClientRect();
+    return Math.abs(p.top - q.top) > 4 ? p.top - q.top : p.left - q.left;
+  });
+  if (!boxes.length) return 0;
+  boxes[0].classList.add("pos-first");
+  boxes[0].scrollIntoView({ block: "center", inline: "center" });
+  boxes[0].focus({ preventScroll: true });
+  return boxes.length;
+}
+function posFocusFirst() {
+  var hit = {};
+  POS.rows.filter(posMatches).forEach(function (r) { hit[r.id] = 1; hit["grp:" + posGroupKey(r)] = 1; });
+  var found = posMarkFirst(hit);
+  var n = POS.rows.filter(posMatches).length, txt = document.getElementById("pos-fline-txt");
+  if (txt) txt.textContent = n + " matching" + (found ? ", showing the first" : "");
+}
+
+/* FIND (I5): a seat or a person, among the seats already on the page.
+   NOTHING IS SENT TO THE SERVER (SEC-3): what it can find is exactly what
+   the server already allowed this reader to see. Choosing a result opens the
+   path to the seat in the current arrangement and outlines its box. */
+var POS_FIND_MAX = 12;
+window.posFind = function (q) {
+  var res = document.getElementById("pos-find-res");
+  if (!res) return;
+  q = String(q || "").trim().toLowerCase();
+  if (q.length < 2) { res.classList.remove("open"); res.innerHTML = ""; return; }
+  var hits = [];
+  POS.rows.forEach(function (r) {
+    if (hits.length < POS_FIND_MAX && String(r.title || "").toLowerCase().indexOf(q) >= 0) {
+      hits.push({ id: r.id, main: r.title, sub: [r.branch, r.department].filter(Boolean).join(" · ") });
+    }
+    r.people.forEach(function (p) {
+      if (hits.length < POS_FIND_MAX && String(p.name || "").toLowerCase().indexOf(q) >= 0) {
+        hits.push({ id: r.id, main: p.name, sub: r.title + (r.branch ? " · " + r.branch : "") });
+      }
+    });
+  });
+  res.innerHTML = hits.length
+    ? hits.map(function (h) {
+        return '<button type="button" class="oc-hit pos-hit" onclick="posFindPick(\'' + posJs(h.id) + '\')">'
+          + "<div><div>" + posEsc(h.main) + '</div><div class="t">' + posEsc(h.sub) + "</div></div></button>";
+      }).join("")
+    : '<div class="oc-hit"><span class="t">Nothing by that name among the seats you can see</span></div>';
+  res.classList.add("open");
+};
+window.posFindKey = function (e) {
+  if (e.key === "Enter") {
+    var first = document.querySelector("#pos-find-res .pos-hit");
+    if (first) { e.preventDefault(); first.click(); }
+  } else if (e.key === "Escape") {
+    e.target.value = ""; posFind("");
+  }
+};
+window.posFindPick = function (id) {
+  var r = posById(id);
+  var res = document.getElementById("pos-find-res"), box = document.getElementById("pos-find");
+  if (res) { res.classList.remove("open"); res.innerHTML = ""; }
+  if (box) box.value = "";
+  if (!r) return;
+  // Find looks across every seat you may see, so a filter that hides the
+  // answer is cleared first.
+  if (posAnyFilter()) {
+    ["pos-f-branch", "pos-f-dept", "pos-f-role", "pos-f-open"].forEach(function (k) { var el = document.getElementById(k); if (el) el.value = ""; });
+    POS._saved = null;
+  }
+  document.getElementById("pos-f-view").value = "tree";
+  var how = posArrange(), by = {};
+  POS.rows.forEach(function (x) { by[x.id] = x; });
+  function open(k) { delete POS.collapsed[k]; POS.expanded[k] = true; }
+  var at = by[r.reports_to], hops = 0;
+  while (at && hops < POS_MAX_DEPTH) {
+    if ((how === "branch" && at.branch !== r.branch) || (how === "department" && at.department !== r.department)) break;
+    open(at.id); at = by[at.reports_to]; hops += 1;
+  }
+  if (how === "branch") open("br:" + (r.branch || ""));
+  if (how === "department") {
+    var d = r.department || "", meta = POS.departments || {}, h = 0;
+    open("dp:" + d);
+    while (d && (meta[d] || {}).parent && h < 12) { d = meta[d].parent; open("dp:" + d); h += 1; }
+  }
+  POS._findId = id;
+  posPaint();
+};
+function posFindFocus(id) {
+  var r = posById(id), hit = {};
+  if (!r) return;
+  hit[r.id] = 1; hit["grp:" + posGroupKey(r)] = 1;
+  posMarkFirst(hit);
+}
+document.addEventListener("click", function (e) {
+  var wrap = document.querySelector(".pos-find");
+  if (wrap && e.target && !wrap.contains(e.target)) {
+    var res = document.getElementById("pos-find-res");
+    if (res) res.classList.remove("open");
+  }
+});
 
 window.posRegroup = function () {
   POS.ungrouped = {};

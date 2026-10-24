@@ -22,22 +22,22 @@
             <div>
               <div class="gp-label">Branch</div>
               <select class="gp-input" id="pos-f-branch" style="height:32px;padding:4px 8px;width:auto"
-                      onchange="posPaint()"><option value="">All branches</option></select>
+                      onchange="posFilterChanged('branch')"><option value="">All branches</option></select>
             </div>
             <div>
               <div class="gp-label">Department</div>
               <select class="gp-input" id="pos-f-dept" style="height:32px;padding:4px 8px;width:auto"
-                      onchange="posPaint()"><option value="">All departments</option></select>
+                      onchange="posFilterChanged('department')"><option value="">All departments</option></select>
             </div>
             <div>
               <div class="gp-label">Job role</div>
               <select class="gp-input" id="pos-f-role" style="height:32px;padding:4px 8px;width:auto"
-                      onchange="posPaint()"><option value="">All job roles</option></select>
+                      onchange="posFilterChanged('reporting')"><option value="">All job roles</option></select>
             </div>
             <div>
               <div class="gp-label">Show</div>
               <select class="gp-input" id="pos-f-open" style="height:32px;padding:4px 8px;width:auto"
-                      onchange="posPaint()">
+                      onchange="posFilterChanged('')">
                 <option value="">Every seat</option>
                 <option value="open">Only seats with a vacancy</option>
                 <option value="key">Only key seats</option>
@@ -57,12 +57,12 @@
             </div>
 
             <!-- The chart is one representation of three relationships, and
-                 the reader chooses which. Only shown with the structure view,
-                 because a list has no spine to change. -->
-            <div id="pos-arrange-wrap" style="display:none">
+                 the reader chooses which. Always shown (slice 064, I1): picking
+                 an arrangement while on the list moves to the chart. -->
+            <div id="pos-arrange-wrap">
               <div class="gp-label">Arrange by</div>
               <select class="gp-input" id="pos-f-arrange" style="height:32px;padding:4px 8px;width:auto"
-                      onchange="posPaint()">
+                      onchange="document.getElementById('pos-f-view').value='tree';posPaint()">
                 <option value="reporting">Who reports to whom</option>
                 <option value="branch">Branch</option>
                 <option value="department">Department</option>
@@ -73,13 +73,22 @@
               <select class="gp-input" id="pos-f-view" style="height:32px;padding:4px 8px;width:auto"
                       onchange="posPaint()">
                 <option value="list">As a list</option>
-                <option value="tree">As a structure</option>
+                <option value="tree" selected>As a structure</option>
               </select>
+            </div>
+            <!-- Find (slice 064, I5). Searches the seats already on the page;
+                 nothing is sent to the server (SEC-3). -->
+            <div class="oc-search-wrap pos-find">
+              <label class="gp-label" for="pos-find">Find a person or a seat</label>
+              <input id="pos-find" class="oc-search" type="search" autocomplete="off"
+                     placeholder="Type a name" style="height:32px;padding:4px 8px"
+                     oninput="posFind(this.value)" onkeydown="posFindKey(event)">
+              <div id="pos-find-res" class="oc-results"></div>
             </div>
             <div style="margin-left:auto">
               <div class="pf-card-meta" id="pos-filter-note" style="display:none">
-                In this view the filters grey out what does not match, so the
-                shape of the organisation stays whole.
+                A filter shows only the matching seats, with the seats above
+                them faded.
               </div>
             </div>
           </div>

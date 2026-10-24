@@ -2112,6 +2112,60 @@ body.panel-fullscreen{overflow:hidden}
   .pos-sheet .btn{min-height:44px}
 }
 
+/* ── Positions chart improvements (slice 064, prototype-old-v2, 23 Oct 2026) ──
+   The hanging column (I3, Q2), the No reporting manager box (I4), zoom,
+   the match line, the first-match outline and print. The boxes and lines are
+   the live ones; these only add. */
+.oc-hang{position:relative;display:flex;flex-direction:column}
+.oc-hang::after{content:"";position:absolute;top:0;left:10px;right:50%;height:1px;background:var(--border)}
+.oc-hang-item{position:relative;padding:8px 0 0 24px}
+.oc-hang-item::before{content:"";position:absolute;top:0;left:10px;width:1px;height:100%;background:var(--border)}
+.oc-hang-item:last-child::before{height:calc(50% + 4px)}
+.oc-hang-item::after{content:"";position:absolute;top:calc(50% + 4px);left:10px;width:14px;height:1px;background:var(--border)}
+.pos-nomgr-row{display:flex;justify-content:flex-end;margin:0 0 8px}
+.pos-nomgr{border-style:dashed;max-width:260px}
+.oc-fam{position:relative;display:flex;flex-direction:column;align-items:flex-start;padding:0 20px}
+.oc-fam > .oc-kids::after{content:"";position:absolute;left:-10px;top:0;bottom:0;width:1px;background:var(--border)}
+.oc-fam > .oc-kids > .oc-branch:first-child::after{left:-10px}
+.oc-fam > .oc-kids > .oc-branch:only-child::after{display:block;left:-10px;right:50%}
+.oc-hang.under{margin-left:-20px;padding-top:14px}
+.oc-hang.under::after{display:none}
+.oc-hang.under::before{content:"";position:absolute;top:0;left:10px;width:1px;height:14px;background:var(--border)}
+.oc-zoom{display:flex;flex:none;margin-inline:auto}
+.oc-zoom > .oc-branch{margin-inline:auto}
+.pos-ztools{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin:0 0 10px}
+.pos-zpct{min-width:44px;text-align:center;font-weight:600}
+.pos-fline{margin-left:auto;display:inline-flex;gap:8px;align-items:center;font-weight:600}
+.pos-ztools .btn{min-height:30px}
+.oc-box.pos-first{outline:3px solid var(--primary);outline-offset:3px}
+.pos-hit{display:flex;width:100%;text-align:left;border:0;background:none;font:inherit;color:inherit;cursor:pointer}
+.pos-printhead{display:none}
+#pos-body{--pz:1}
+@media (max-width:640px){
+  .pos-ztools .btn{min-height:44px;min-width:44px}
+  .oc-fam{padding:0;align-items:stretch}
+  .oc-hang.under{margin-left:0}
+  .oc-hang-item{padding:10px 0 0}
+  .oc-fam > .oc-kids::after,.oc-fam > .oc-kids > .oc-branch::after,.oc-hang::before,.oc-hang::after,.oc-hang-item::before,.oc-hang-item::after{display:none !important}
+  .oc-zoom{flex-direction:column;align-items:stretch;flex:1 1 auto}
+}
+/* Print what is on screen: A4 landscape, one page wide, pages down (Q8).
+   The portal frame is left out only while Positions is the open panel. */
+@page{size:A4 landscape;margin:10mm}
+@media print{
+  body:has(#panel-positions.active) nav.navbar,body:has(#panel-positions.active) .sidebar,
+  body:has(#panel-positions.active) .sidebar-overlay,body:has(#panel-positions.active) .bottom-nav,
+  body:has(#panel-positions.active) footer,
+  #pos-tiles,#panel-positions .pf-toolbar,#panel-positions > .pf-card:has(#pos-f-branch),.pos-ztools,#pos-layer,
+  .gp-backdrop,#panel-positions .oc-toggle,#panel-positions .oc-more,.noprint,.private,[data-private]{display:none !important}
+  body:has(#panel-positions.active) .main-content{margin:0 !important;padding:0 !important}
+  body:has(#panel-positions.active) main.container{padding:0 !important;max-width:none !important}
+  .pos-printhead{display:block !important;font-size:11px;margin:0 0 8px}
+  #pos-body .oc-tree{overflow:visible !important}
+  #pos-body .oc-zoom{zoom:var(--pz,1) !important}
+  .oc-box.pos-first{outline:none}
+}
+
 /* ── Colour coding ─────────────────────────────────────────────────
    Three tones, kept deliberately pale. Written as low-alpha colour over
    whatever surface is behind it, so the same rules read correctly in dark

@@ -2183,6 +2183,45 @@ body.panel-fullscreen{overflow:hidden}
   .oc-box.pos-first{outline:none}
 }
 
+/* ── Wall chart paper (slice 069, prototype-v1) ──────────────────────────
+   The screen chart's markup and lines, with print-only sizes: 7/9 px box
+   padding, 200 px boxes, names at 13 px. Always light - a wall chart is
+   printed on white whatever the screen theme. The chart rules a phone's
+   narrow-screen block changes are restated here, so measuring on a phone
+   gives the same paper as on a laptop. Off screen while it is measured;
+   shown only by the wall chart's own print. */
+#pos-wall-print{position:absolute;left:-100000px;top:0;width:max-content;visibility:hidden}
+.pos-wall{--surface:#fff;--border:#8F8880;--text:#2D2622;--text3:#4A443F;--accent:#5B4B8A;--bg:#fff;
+  background:#fff;color:#2D2622;display:inline-block;width:max-content;padding:8px;font-size:13px;line-height:1.25;
+  font-family:var(--font,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif);
+  -webkit-print-color-adjust:exact;print-color-adjust:exact}
+.pos-wall,.pos-wall *{box-sizing:border-box}
+.pos-wall .oc-box-hd{display:block}
+.pos-wall .oc-box{cursor:default;box-shadow:none;border-left-width:1px;padding:7px 9px;min-width:0;max-width:none;
+  background:#fff;transition:none}
+.pos-wall .oc-node.root > .oc-box{border:2px solid #5B4B8A}
+.pos-wall .oc-box-hd .ti{font-size:14px;color:#2D2622}
+.pos-wall .oc-box .sub{font-size:11px;line-height:1.3;color:#4A443F}
+.pos-wall .nm{margin-top:4px;font-size:13px;line-height:1.25;column-gap:14px}
+.pos-wall .nm div{break-inside:avoid}
+.pos-wall .vac{margin-top:4px;font-style:italic;color:#4A443F}
+.pos-wall .opn{margin-top:4px;font-weight:700}
+.pos-wall .below{margin-top:4px;padding-top:4px;border-top:1px solid #D8D3CC;font-size:11px;color:#4A443F}
+.pos-wall .oc-fam{padding:0 20px;align-items:flex-start}
+.pos-wall .oc-hang.under{margin-left:-20px}
+.pos-wall .oc-hang-item{padding:8px 0 0 24px}
+.pos-wall .oc-fam > .oc-kids::after,.pos-wall .oc-fam > .oc-kids > .oc-branch::after,.pos-wall .oc-hang.under::before,
+.pos-wall .oc-hang:not(.under):not(.wrap)::after,.pos-wall .oc-hang-item::before,.pos-wall .oc-hang-item::after{display:block !important}
+/* the wrap: a long column becomes columns side by side, joined by a bar */
+.pos-wall .oc-hang-item::after{top:25px}
+.pos-wall .oc-hang-item > .oc-node{align-items:flex-start}   /* a wide box in the column must not move the tick off the others */
+.pos-wall .oc-hang-item.ce::before,.pos-wall .oc-hang-item:last-child::before{height:26px}
+.pos-wall .oc-hang.wrap{display:grid;grid-auto-flow:column;column-gap:20px}
+.pos-wall .oc-hang.wrap::after{display:none}
+.pos-wall .pos-wall-bar{position:absolute;height:1px;background:var(--border)}
+.pos-wall .pos-wall-tops{display:flex;gap:40px;align-items:flex-start}
+.pos-wall .pos-wall-grid{display:grid;grid-auto-flow:column;gap:12px 16px;align-items:start}
+
 /* ── Colour coding ─────────────────────────────────────────────────
    Three tones, kept deliberately pale. Written as low-alpha colour over
    whatever surface is behind it, so the same rules read correctly in dark

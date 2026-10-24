@@ -2460,13 +2460,147 @@ function posWallHtml(copy, K, KU, boxes) {
   if (copy.length === 1) {
     inner = posWallBranch(copy[0], true, K, KU, boxes);
   } else if (!copy.some(function (c) { return c.kids.length; })) {
-    inner = '<div class="pos-wall-grid" style="grid-template-rows:repeat(' + K + ',auto)">'
+    inner = '<div class="pos-wall-grid" style="grid-template-rows:repeat(' + Math.min(K, copy.length) + ',auto)">'
       + copy.map(function (c) { return posWallCard(c, false, boxes); }).join("") + "</div>";
   } else {
     inner = '<div class="pos-wall-tops">'
       + copy.map(function (c) { return posWallBranch(c, false, K, KU, boxes); }).join("") + "</div>";
   }
   return '<div class="pos-wall">' + inner + "</div>";
+}
+
+/* ── the layout: two drawings, whatever the size (300 ms, AC-35) ─────────
+   Trying every wrap for real cost the prototype about a second at DTC's
+   size. Here the chart is drawn ONCE to measure each box, every wrap is
+   worked out from those sizes with the same numbers the CSS uses, and the
+   best is drawn ONCE more and measured for real. The name size the panel
+   quotes comes from that real measurement, so a slip in the sums makes the
+   layout a little less tight, never the number untrue. */
+var POS_WALL_KS = [4, 6, 8, 10, 12, 14, 16];
+
+function posWallHolder() {
+  var h = document.getElementById("pos-wall-print");
+  if (!h) {
+    h = document.createElement("div");
+    h.id = "pos-wall-print";
+    h.setAttribute("aria-hidden", "true");
+    document.body.appendChild(h);
+  }
+  return h;
+}
+
+/* A hanging column, wrapped into columns of K: as wide as its columns plus
+   20 px between them, as tall as its rows. Each item adds 24 left, 8 above. */
+function posWallHangSize(list, K, size) {
+  var cols = [], rows = [], wrap = list.length > K;
+  list.forEach(function (c, i) {
+    var b = size.get(c), col = wrap ? Math.floor(i / K) : 0, r = wrap ? i % K : i;
+    cols[col] = Math.max(cols[col] || 0, 24 + b.w);
+    rows[r] = Math.max(rows[r] || 0, 8 + b.h);
+  });
+  var sum = function (a) { return a.reduce(function (x, y) { return x + y; }, 0); };
+  return { w: sum(cols) + 20 * (cols.length - 1), h: sum(rows) };
+}
+
+/* A seat and what hangs under it: a row of leads 18 px apart, 22 above; the
+   family 20 each side with its column 20 to the left and 14 above. */
+function posWallSize(c, K, KU, size) {
+  var box = size.get(c);
+  if (!c.kids.length) return { w: box.w, h: box.h };
+  var hang = c.kids.filter(function (k) { return !k.kids.length && !k.below; });
+  var row = hang.length < 3 ? c.kids : c.kids.filter(function (k) { return hang.indexOf(k) < 0; });
+  if (hang.length < 3) hang = [];
+  var rw = 0, rh = 0;
+  row.forEach(function (k, i) {
+    var s = posWallSize(k, K, KU, size);
+    rw += s.w + (i ? 18 : 0); rh = Math.max(rh, s.h);
+  });
+  var kw = rw, kh = 22 + rh;
+  if (hang.length && row.length) {
+    var u = posWallHangSize(hang, KU, size);
+    kw = 40 + Math.max(rw, u.w - 20); kh = 22 + rh + 14 + u.h;
+  } else if (hang.length) {
+    var hs = posWallHangSize(hang, K, size);
+    kw = hs.w; kh = 22 + hs.h;
+  }
+  return { w: Math.max(box.w, kw), h: box.h + kh };
+}
+
+function posWallChartSize(copy, K, KU, size) {
+  var w = 0, h = 0;
+  if (copy.length === 1) {
+    var s = posWallSize(copy[0], K, KU, size); w = s.w; h = s.h;
+  } else if (!copy.some(function (c) { return c.kids.length; })) {
+    // A grid of K rows filled down the columns, 16 px between columns, 12 between rows.
+    var rows = Math.min(K, copy.length), cw = [], rh = [];
+    copy.forEach(function (c, i) {
+      var b = size.get(c), col = Math.floor(i / rows), r = i % rows;
+      cw[col] = Math.max(cw[col] || 0, b.w); rh[r] = Math.max(rh[r] || 0, b.h);
+    });
+    cw.forEach(function (x, i) { w += x + (i ? 16 : 0); });
+    rh.forEach(function (x, i) { h += x + (i ? 12 : 0); });
+  } else {
+    copy.forEach(function (c, i) { var s = posWallSize(c, K, KU, size); w += s.w + (i ? 40 : 0); h = Math.max(h, s.h); });
+  }
+  return { w: w + 16, h: h + 16 };
+}
+
+/* The bar joining wrapped columns: from the first column's line to the last
+   one's, and at least to the middle, where the manager's line comes down. */
+function posWallBars(host) {
+  [].forEach.call(host.querySelectorAll(".oc-hang.wrap"), function (h) {
+    var last = 0, under = h.classList.contains("under");
+    [].forEach.call(h.children, function (it) {
+      if (it.classList.contains("oc-hang-item")) last = Math.max(last, it.offsetLeft);
+    });
+    var bar = h.querySelector(".pos-wall-bar"), right = Math.max(last + 10, under ? 10 : h.offsetWidth / 2);
+    bar.style.left = "10px"; bar.style.top = under ? "14px" : "0"; bar.style.width = (right - 9) + "px";
+  });
+}
+
+/* Measure, choose, draw. The chosen wrap fills an A-series sheet best; every
+   A size has the same shape, so one layout serves every paper. */
+function posWallLayout(copy) {
+  var t0 = Date.now(), host = posWallHolder(), boxes = [];
+  host.innerHTML = posWallHtml(copy, 1e9, 1e9, boxes);
+  var size = new Map(), els = host.querySelectorAll(".oc-box");
+  boxes.forEach(function (c, i) {
+    var r = els[i].getBoundingClientRect();
+    size.set(c, { w: r.width, h: r.height });
+  });
+  var best = null;
+  POS_WALL_KS.forEach(function (K) {
+    for (var KU = 2; KU <= Math.min(K, 5); KU++) {
+      var s = posWallChartSize(copy, K, KU, size);
+      var fit = Math.max(Math.min(Math.SQRT2 / s.w, 1 / s.h), Math.min(1 / s.w, Math.SQRT2 / s.h));
+      if (!best || fit > best.fit * 1.0001) best = { K: K, KU: KU, fit: fit };
+    }
+  });
+  host.innerHTML = posWallHtml(copy, best.K, best.KU);
+  posWallBars(host);
+  var rc = host.firstChild.getBoundingClientRect();
+  return { html: host.innerHTML, w: Math.max(1, Math.ceil(rc.width)), h: Math.max(1, Math.ceil(rc.height)),
+           K: best.K, KU: best.KU, ms: Date.now() - t0 };
+}
+
+/* Paper sizes in mm. 10 mm margins, 8 mm for the footer, 7 mm for the HR
+   copy's banner; 96 px to the inch; names are 13 px, 9.75 pt at full size. */
+var POS_WALL_PAPER = { A4: [210, 297], A3: [297, 420], A2: [420, 594], A1: [594, 841], A0: [841, 1189] };
+var POS_WALL_ORDER = ["A4", "A3", "A2", "A1", "A0"];
+var POS_WALL_MM = 96 / 25.4, POS_WALL_FOOT_MM = 8, POS_WALL_BANNER_MM = 7;
+
+function posWallPlan(L, paper, sheets, hr) {
+  var p = POS_WALL_PAPER[paper], land = L.w >= L.h;
+  var wmm = land ? p[1] : p[0], hmm = land ? p[0] : p[1];
+  var pw = (wmm - 20) * POS_WALL_MM;
+  var ph = (hmm - 20 - POS_WALL_FOOT_MM - (hr ? POS_WALL_BANNER_MM : 0)) * POS_WALL_MM;
+  var one = Math.min(pw / L.w, ph / L.h);
+  var out = { paper: paper, land: land, wmm: wmm, hmm: hmm, pw: pw, ph: ph,
+              scale: one, pt: 9.75 * one, cols: 1, rows: 1, fitsOne: sheets !== "one" };
+  if (sheets === "one" || out.pt >= 10) return out;
+  out.scale = 10 / 9.75; out.pt = 10; out.fitsOne = false;
+  out.cols = Math.ceil(L.w * out.scale / pw); out.rows = Math.ceil(L.h * out.scale / ph);
+  return out;
 }
 
 window.posSeatSheet = function (id, flash) {

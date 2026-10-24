@@ -433,6 +433,70 @@ def remove_plan(plan):
 	return {"ok": True}
 
 
+@frappe.whitelist(methods=["POST"])
+def record_outcome(plan, outcome):
+	"""After a Performance plan's improvement period: HR Managers only.
+
+	`improved` erases the plan (it needs Delete, and logs `removed`, never the
+	outcome). `not_improved` keeps the plan, lets hiring start and counts as a
+	confirm (OD-11); it needs Write. The row is locked, so two HR Managers
+	pressing at once queue: the second gets "here is the latest"."""
+	if outcome not in ("improved", "not_improved"):
+		frappe.throw(_("Choose Improved or Not improved."))
+	if not _visible(plan):
+		frappe.throw(_changed())
+	right = "delete" if outcome == "improved" else "write"
+	if not frappe.has_permission(DOCTYPE, right, doc=plan):
+		_refuse(_("Only HR Managers can record the outcome."), "plans.record_outcome")
+	doc = frappe.get_doc(DOCTYPE, plan, for_update=True)
+	if doc.not_improved_on:
+		frappe.throw(_changed())
+	today = nowdate()
+	if doc.reason != "Performance" or str(doc.improvement_ends_on) > today:
+		frappe.throw(_("The outcome can be recorded from the day the improvement period ends."))
+	if outcome == "improved":
+		erase(doc.name, "removed")
+		return {"ok": True}
+	doc.flags[OUTCOME_FLAG] = True
+	doc.not_improved_on = today
+	doc.not_improved_by = frappe.session.user
+	doc.confirmed_on = today
+	doc.save()
+	_log("outcome recorded", doc.name)
+	return {"name": doc.name, "confirmed_on": today, "lapses_on": str(add_days(today, LIFE_DAYS))}
+
+
+def hiring_on_hold(position, seats):
+	"""Whether a plan reader must not start hiring for this seat today: it is
+	full, someone in it has a Performance plan with no "Not improved", and
+	nobody in it has a plan on which hiring is allowed or a leaving date the
+	reader receives (OD-12). Called only for plan readers, by the Job Opening
+	seat-link check - which `post_job` goes through too.
+
+	Plans are read through the gate, so a caller is held back only by plans
+	they may already see. The subject's own plan does not count for them."""
+	today = nowdate()
+	held = [a for a in frappe.get_all(
+		register.ASSIGNMENT, filters={"position": position, "from_date": ("<=", today)},
+		fields=["name", "employee", "weight", "to_date"], limit_page_length=0)
+		if not a.to_date or str(a.to_date) >= today]
+	if not held or sum(flt(a.weight) for a in held) / 100.0 < flt(seats) - 0.005:
+		return False
+	live = frappe.get_list(DOCTYPE, filters={"assignment": ("in", [a.name for a in held])},
+	                       fields=["reason", "not_improved_on"], limit_page_length=0)
+	on_hold = [p.reason == "Performance" and not p.not_improved_on for p in live]
+	if not any(on_hold) or not all(on_hold):
+		return False
+	if register._may_see_who_is_leaving():
+		mine = register._my_reporting_line()
+		for e in frappe.get_all("Employee", filters={
+				"name": ("in", [a.employee for a in held]), "status": "Active",
+				"relieving_date": (">=", today)}, pluck="name"):
+			if mine is None or e in mine:
+				return False
+	return True
+
+
 # ── what is due for erasing (PRIV-3) ─────────────────────────────────────────
 
 

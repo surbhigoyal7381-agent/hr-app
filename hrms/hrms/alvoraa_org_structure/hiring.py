@@ -37,7 +37,7 @@ def guard_seat_link(doc, method=None):
 	if not new or new == old:
 		return
 
-	seat = frappe.db.get_value(register.POSITION, new, ["company", "branch"], as_dict=True)
+	seat = frappe.db.get_value(register.POSITION, new, ["company", "branch", "seats"], as_dict=True)
 	if not seat:
 		return  # Frappe's own link check refuses a seat that does not exist
 	companies, branches = register._scope()
@@ -59,6 +59,16 @@ def guard_seat_link(doc, method=None):
 			JOB_OPENING,
 			doc.name,
 		)
+
+	# Slice 065, option A: no new opening on a seat held for an improvement
+	# period - from `post_job` or the desk form alike. Plan readers only: a
+	# refusal to anyone else would tell them a plan exists. An opening with
+	# no seat link is not checked (a stated limit).
+	import hrms.alvoraa_org_structure.plans as plans
+
+	if plans.is_reader() and plans.hiring_on_hold(new, seat.seats):
+		frappe.throw(_("Hiring for this seat is on hold until the improvement period ends and HR "
+		               "records the outcome."))
 
 
 # ── a hire placed in their seat on the day they join (US-18, SEC-6/7/9/10) ──

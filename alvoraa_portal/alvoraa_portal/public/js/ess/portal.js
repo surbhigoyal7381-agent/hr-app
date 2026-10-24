@@ -812,7 +812,9 @@ function posGroupKey(r) {
   return [r.title, r.branch || "", r.department || ""].join("\u0000");
 }
 
-function posGroupSiblings(kids, t) {
+// `all` (slice 069): group every identical set, ignoring what somebody opened
+// with "Show the N" on screen - the wall chart follows the data, not the view.
+function posGroupSiblings(kids, t, all) {
   var groups = {}, order = [], out = [];
   kids.forEach(function (r) {
     // A seat with reports under it is never folded in with another.
@@ -823,7 +825,7 @@ function posGroupSiblings(kids, t) {
   });
   order.forEach(function (k) {
     var members = groups[k];
-    if (members.length < 2 || POS.ungrouped[k]) {
+    if (members.length < 2 || (!all && POS.ungrouped[k])) {
       members.forEach(function (r) { out.push({ solo: r }); });
     } else {
       out.push({ group: k, members: members });
@@ -2327,6 +2329,144 @@ function posWire() {
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && POS.sheet) posCloseSheet();
   });
+}
+
+/* ── the wall chart: the seat chart as a PDF (slice 069) ─────────────────
+   Drawn in the browser from the rows already on the page; no server call.
+
+   THE PAPER NEVER SEES A ROW (PRIV-1). posWallCopy builds a separate tree
+   holding only what may print - title, designation, branch, department,
+   names, "Vacant", the counts below - and, on the HR copy only, leaving
+   dates and how many job openings. An employee ID, a grade, a plan or a
+   leaving date on a wall copy cannot reach paper, because the drawing is
+   never handed anything that holds one. check_wall_chart.js proves it.
+
+   The paper has its own small card: the screen's ocNodeCard always draws
+   avatars, flags and fold buttons. The markup and CSS classes are the
+   screen chart's, so the boxes and lines are the same drawing. */
+
+/* Seats and people under one seat, all the way down. */
+function posWallBelow(id, t) {
+  var s = 0, p = 0;
+  (function walk(at, d) {
+    if (d >= POS_MAX_DEPTH) return;
+    (t.kids[at] || []).forEach(function (k) { s += 1; p += k.people.length; walk(k.id, d + 1); });
+  })(id, 0);
+  return { seats: s, people: p };
+}
+
+/* The allowed copy. `start` is "top" or a seat id; `levels` counts the start
+   as level 1. Identical seats merge as on screen (D-6), whatever the screen
+   has ungrouped. The HR copy keys exist only when `hr` is on AND the server
+   sent this reader leaving dates. */
+function posWallCopy(start, levels, vacant, hr) {
+  hr = !!(hr && POS.may_see_leaving);
+  var t = posKids(POS.rows);
+  var tops = start === "top" ? t.roots : (t.byId[start] ? [t.byId[start]] : []);
+  function seat(members, depth) {
+    var r = members[0], names = [], opening = 0;
+    members.forEach(function (m) {
+      m.people.forEach(function (p) {
+        var n = { name: p.name };
+        if (hr && p.leaving) n.leaving = posDay(p.leaving);
+        names.push(n);
+      });
+      if (m.opening) opening += 1;
+    });
+    var kids = members.length === 1 ? (t.kids[r.id] || []) : [];
+    var last = depth >= levels || depth >= POS_MAX_DEPTH;
+    var c = {
+      title: r.title,
+      designation: r.designation && r.designation !== r.title ? r.designation : "",
+      branch: r.branch || "",
+      department: r.department || "",
+      names: names,
+      vacant: !!vacant && !names.length,
+      below: last && kids.length ? posWallBelow(r.id, t) : null,
+      kids: last ? [] : posGroupSiblings(kids, t, true).map(function (g) {
+        return seat(g.group ? g.members : [g.solo], depth + 1);
+      }),
+    };
+    if (hr) c.opening = opening;
+    return c;
+  }
+  return tops.map(function (r) { return seat([r], 1); });
+}
+
+/* One box on paper. Every name, in up to four columns of ten; the box is
+   200 px plus 140 for each extra column. `boxes` collects the copies in the
+   order their boxes appear, for measuring. */
+function posWallCard(c, root, boxes) {
+  var n = c.names.length, cols = Math.min(4, Math.max(1, Math.ceil(n / 10)));
+  if (boxes) boxes.push(c);
+  var where = root ? "" : [c.branch, c.department].filter(Boolean).join(" · ");
+  var below = "";
+  if (c.below) {
+    below = (c.below.seats === 1 ? drT("1 seat") : drT("{0} seats", [c.below.seats])) + " &middot; "
+      + (c.below.people === 1 ? drT("1 person below") : drT("{0} people below", [c.below.people]));
+  }
+  return '<div class="oc-node' + (root ? " root" : "") + '"><div class="oc-box" style="width:'
+    + (200 + (cols - 1) * 140) + 'px">'
+    + '<div class="oc-box-hd"><span class="ti">' + posEsc(c.title) + "</span></div>"
+    + (c.designation ? '<div class="sub">' + posEsc(c.designation) + "</div>" : "")
+    + (where ? '<div class="sub">' + posEsc(where) + "</div>" : "")
+    + (n ? '<div class="nm" style="columns:' + cols + '">' + c.names.map(function (p) {
+        return "<div>" + posEsc(p.name)
+          + (p.leaving ? " &middot; " + posEsc(drT("leaving {0}", [p.leaving])) : "") + "</div>";
+      }).join("") + "</div>" : "")
+    + (c.vacant ? '<div class="vac">' + posEsc(drT("Vacant")) + "</div>" : "")
+    + (c.opening ? '<div class="opn">' + posEsc(c.opening === 1 ? drT("Job opening raised")
+        : drT("{0} job openings raised", [c.opening])) + "</div>" : "")
+    + (below ? '<div class="below">' + below + "</div>" : "")
+    + "</div></div>";
+}
+
+/* Three or more seats with nobody under them: a column, as on screen. Longer
+   than K, it wraps into columns side by side joined by a bar, so the chart
+   takes the paper's shape. */
+function posWallHang(list, K, under, boxes) {
+  var wrap = list.length > K;
+  var items = list.map(function (c, i) {
+    var end = i % K === K - 1 || i === list.length - 1;
+    return '<div class="oc-hang-item' + (end ? " ce" : "") + '">' + posWallCard(c, false, boxes) + "</div>";
+  }).join("");
+  return '<div class="oc-hang' + (under ? " under" : "") + (wrap ? " wrap" : "") + '"'
+    + (wrap ? ' style="grid-template-rows:repeat(' + K + ',auto)"' : "") + ">"
+    + items + (wrap ? '<i class="pos-wall-bar"></i>' : "") + "</div>";
+}
+
+/* A seat and what is drawn under it. K rows per wrapped column; KU for a
+   column hanging under a row of team leads, which can spread across them. */
+function posWallBranch(c, root, K, KU, boxes) {
+  var card = posWallCard(c, root, boxes), kids = "";
+  if (c.kids.length) {
+    var hang = c.kids.filter(function (k) { return !k.kids.length && !k.below; });
+    var row = hang.length < 3 ? c.kids : c.kids.filter(function (k) { return hang.indexOf(k) < 0; });
+    if (hang.length < 3) hang = [];
+    var rowHtml = row.map(function (k) { return posWallBranch(k, false, K, KU, boxes); }).join("");
+    kids = hang.length && row.length
+      ? '<div class="oc-fam"><div class="oc-kids">' + rowHtml + "</div>" + posWallHang(hang, KU, true, boxes) + "</div>"
+      : '<div class="oc-kids">' + rowHtml
+        + (hang.length ? '<div class="oc-branch oc-hang-slot">' + posWallHang(hang, K, false, boxes) + "</div>" : "")
+        + "</div>";
+  }
+  return '<div class="oc-branch">' + card + kids + "</div>";
+}
+
+/* The whole paper. One top: its tree. Several tops: side by side, each with
+   its own seats (D-3) - or, when none has seats under it, a grid of K rows. */
+function posWallHtml(copy, K, KU, boxes) {
+  var inner;
+  if (copy.length === 1) {
+    inner = posWallBranch(copy[0], true, K, KU, boxes);
+  } else if (!copy.some(function (c) { return c.kids.length; })) {
+    inner = '<div class="pos-wall-grid" style="grid-template-rows:repeat(' + K + ',auto)">'
+      + copy.map(function (c) { return posWallCard(c, false, boxes); }).join("") + "</div>";
+  } else {
+    inner = '<div class="pos-wall-tops">'
+      + copy.map(function (c) { return posWallBranch(c, false, K, KU, boxes); }).join("") + "</div>";
+  }
+  return '<div class="pos-wall">' + inner + "</div>";
 }
 
 window.posSeatSheet = function (id, flash) {

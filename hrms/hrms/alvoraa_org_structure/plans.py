@@ -21,7 +21,7 @@ the note. Log lines carry the plan's random name only (PRIV-4).
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, cint, nowdate
+from frappe.utils import add_days, cint, flt, nowdate
 
 import hrms.alvoraa_org_structure.register as register
 
@@ -45,6 +45,10 @@ NOTE_MAX = 200
 # Set on the document by the erase function only. Any delete without it is
 # refused, because Frappe's ordinary delete keeps a copy in Deleted Document.
 ERASE_FLAG = "replacement_plan_erase"
+
+# Set on the document by `record_outcome` only. The record refuses any other
+# change to the two "Not improved" fields (option A, SEC-5).
+OUTCOME_FLAG = "replacement_plan_outcome"
 
 
 def _refuse(message, endpoint):
@@ -190,7 +194,8 @@ def has_permission(doc, ptype=None, user=None):
 
 # Exactly what a plan carries to the page. Named one by one, so a field added
 # to the record later cannot leak (SEC-4; `confirmed_by` is Y-2's stopgap).
-PLAN_KEYS = ("name", "set_on", "set_by", "confirmed_by", "confirmed_on", "lapses_on", "note")
+PLAN_KEYS = ("name", "set_on", "set_by", "confirmed_by", "confirmed_on", "lapses_on", "note",
+             "reason", "improvement_ends_on", "not_improved_on", "not_improved_by")
 
 
 def table_view(as_at):
@@ -208,14 +213,15 @@ def table_view(as_at):
 	if str(as_at) != nowdate():
 		return None
 	rows = frappe.get_list(
-		DOCTYPE, fields=["name", "assignment", "confirmed_on", "note", "owner", "creation", "modified_by"],
+		DOCTYPE, fields=["name", "assignment", "confirmed_on", "note", "owner", "creation", "modified_by",
+		                 "reason", "improvement_ends_on", "not_improved_on", "not_improved_by"],
 		limit_page_length=0, order_by="creation asc")
 	for r in rows:
 		r.set_on = str(frappe.utils.getdate(r.creation))
 		# Only a confirm changes a plan after it is saved (the note and the
 		# seat are set once), so the last writer is who confirmed it last.
 		r.confirmer = r.modified_by if str(r.confirmed_on) > r.set_on else None
-	users = {u for r in rows for u in (r.owner, r.confirmer) if u}
+	users = {u for r in rows for u in (r.owner, r.confirmer, r.not_improved_by) if u}
 	names, hr = {}, set()
 	if users:
 		names = dict(frappe.get_all("User", filters={"name": ("in", list(users))},
@@ -238,6 +244,10 @@ def table_view(as_at):
 			"name": r.name, "set_on": r.set_on, "set_by": who(r.owner),
 			"confirmed_by": who(r.confirmer), "confirmed_on": str(r.confirmed_on),
 			"lapses_on": str(add_days(r.confirmed_on, LIFE_DAYS)), "note": r.note or None,
+			"reason": r.reason or None,
+			"improvement_ends_on": str(r.improvement_ends_on) if r.improvement_ends_on else None,
+			"not_improved_on": str(r.not_improved_on) if r.not_improved_on else None,
+			"not_improved_by": who(r.not_improved_by),
 		}
 	head = {
 		"may_set": bool(frappe.has_permission(DOCTYPE, "create")),
@@ -361,17 +371,23 @@ def _visible(plan):
 
 
 @frappe.whitelist(methods=["POST"])
-def set_plan(assignment, note=None):
+def set_plan(assignment, note=None, reason=None, improvement_ends_on=None, told=0):
 	"""Plan a replacement for the person in one seat assignment.
 
 	POST only, so the note never sits in a URL or an access log. Runs as the
-	user; the record's own rules and the gate decide (SEC-5)."""
+	user; the record's own rules and the gate decide (SEC-5). The record
+	checks the reason and the improvement period; `told` is checked here
+	and stored nowhere (OD-10)."""
 	assignment = str(assignment or "").strip()
 	note = str(note or "").strip() or None
+	reason = str(reason or "").strip() or None
 	if not is_reader() or not frappe.has_permission(DOCTYPE, "create"):
 		_refuse(_("Only HR Managers can plan a replacement."), "plans.set_plan")
 	if note and len(note) > NOTE_MAX:
 		frappe.throw(_("The note can be at most {0} characters. Shorten it and save again.").format(NOTE_MAX))
+	if reason == "Performance" and not cint(told):
+		frappe.throw(_("Tick that you have told the person about the improvement period and given "
+		               "written goals, then save again."))
 	check_assignment(assignment)
 
 	# A plan that lapsed today may still be waiting for the daily erase. One
@@ -380,7 +396,8 @@ def set_plan(assignment, note=None):
 		erase(row.name, row.reason)
 
 	try:
-		doc = frappe.get_doc({"doctype": DOCTYPE, "assignment": assignment, "note": note}).insert()
+		doc = frappe.get_doc({"doctype": DOCTYPE, "assignment": assignment, "note": note, "reason": reason,
+		                      "improvement_ends_on": improvement_ends_on or None}).insert()
 	except (frappe.UniqueValidationError, frappe.DuplicateEntryError):
 		# Two HR Managers saved at the same moment; the first one won.
 		frappe.throw(_changed())

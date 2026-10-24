@@ -184,3 +184,155 @@ the process), or write security lines at a level that always passes. Then a test
 logger built the way production builds it and finds it in the file.
 
 **Not in this ticket:** what the lines contain (already ids only).
+
+---
+
+# Option A: reason, improvement period, outcome, hiring hold (24-25 Oct 2026)
+
+**The server side is built and committed on `slice/065-option-a`, local only.** Nothing is pushed,
+and no server was touched. Screens are not built; they wait, as agreed. Surbhi approved this
+through the coordinator: Addendum 1 in `04`, the four stated limits, one extra check on Job Opening,
+and prototype v4 (V-1 to V-13, with V-8 reading "The improvement period has ended."). V-8 is screen
+copy, so no server code uses it.
+
+## Branch and what came in
+
+`slice/065-option-a` was cut from `slice/065-plan-a-replacement` (7c1cb9d5). It was then **rebased
+onto `origin/dev` eb33129b**, which was 15 commits ahead of the old 065 base. What came in:
+
+- attendance corrections (who may decide, and the bell count);
+- ALV-208 payslip lines (slice 067);
+- the return to the old Positions chart, with the new trays (slice 064);
+- slice 063 test fixes.
+
+**One conflict: `scripts/check_positions_tree.js`.** Dev rewrote this file for the old chart and
+removed check 15 ("nothing of slice 065") completely. The 065 commit had only reworded that check.
+I kept dev's version, so the 065 commit `1a9c5de3` became empty and was dropped.
+
+**So the JS check that a non-reader's page shows no plan word is gone.** The server half still
+covers the reply: `test_ac57` (with P6 and P7 now in its data) proves the reply carries no plan key
+and no reason word. The page check should come back with 065's screens. The original
+`slice/065-plan-a-replacement` branch is untouched.
+
+## What was built, file by file
+
+| File | What | Rung |
+|---|---|---|
+| `replacement_plan.json` | Four fields after `note`: `reason` (Select, required, set once), `improvement_ends_on` (Date, Performance only, set once), `not_improved_on` (Date, read only), `not_improved_by` (Data, read only) | 5, already approved |
+| `replacement_plan.py` | On create: Performance needs an end date 30 to 60 days out (both ends allowed); other reasons must have none; the outcome fields must be empty. On update: the outcome fields may change only with `OUTCOME_FLAG`, only from empty, only for Performance on or after the end date, and only to today and the session user | 4 |
+| `plans.py` | `set_plan(assignment, note, reason, improvement_ends_on, told)`. `PLAN_KEYS` and `table_view` carry the four keys, in the same query; `not_improved_by` joins the existing name lookup. New `record_outcome(plan, outcome)`. New `hiring_on_hold(position, seats)` | 4 |
+| `hiring.py` `guard_seat_link` | The hold check: plan readers only, run when an opening is pointed at a seat | 4, no new hook line |
+| `test_replacement_plan_065.py` | 10 tests changed, 19 new | - |
+
+**Not touched:** `register.py`, `hooks.py`, `DEPLOYMENT_RUNBOOK.md`, `erase`, `_due`, the daily
+job, `self_check`, the gate, CEILINGS.
+
+## Two places this differs from Addendum 1
+
+1. **The hold is in the Job Opening check, not in `post_job`. The behaviour is the same.**
+   - `post_job` makes its opening with the seat link set. So the existing
+     `hiring.guard_seat_link` (`validate` on Job Opening, from slice 064) already runs for it.
+   - One check in that place covers `post_job`, the desk form and REST together. A second copy in
+     `post_job` would only run the same three reads twice.
+   - The seat-link field is installed on every site that has HR
+     (`alvoraa_portal.org_job_link.after_migrate`).
+   - Tests call `post_job` directly (AC-80, 83, 84, 87, test (o)). So a later change to the guard
+     cannot drop the hold without a test failing.
+   - **This is the "one extra check on Job Opening" Surbhi approved. It replaces the 3-line
+     `post_job` check instead of being added to it.**
+2. **The hold applies only to a FULL seat.**
+   - Spec §7.2 says so: "when the seat is full and the only reason to hire is…".
+   - The Addendum's three conditions left this out.
+   - A seat with room is being advertised for the room, not to replace anyone
+     (`test_a_seat_with_room_is_never_held`).
+
+## A Frappe trap found while building
+
+Frappe gives a Select field with no default **its first option** on every new record
+(`frappe/model/create_new.py`, `get_static_default_value`). With "Performance" first, a REST insert
+with no reason would have quietly become a Performance plan. The options now start with a blank
+line, so a missing reason stays missing and Frappe refuses it. The test
+`test_ac1_seven_fields_and_no_history` keeps it that way.
+
+Frappe 16.33 does **not** enforce `mandatory_depends_on` on the server; it only checks it in the
+desk form. So the controller checks the end date itself.
+
+## ACs (server half)
+
+| AC | How | Test |
+|---|---|---|
+| 76 | Required Select with a blank first option; Frappe refuses an empty or unknown reason | `test_ac76_…` (set_plan and REST insert) |
+| 77 | `reason` in the plan object for readers; non-readers get no plan key and no reason word | `test_ac77_…`, `test_ac12_ac13_…`, `test_ac57_…` |
+| 78 | `set_only_once` on both fields | `test_ac78_…` (set_value and `frappe.client.save`) |
+| 79 | Range check in the controller, on the site date | `test_ac79_…` (29, 61 and no date refused; 30 and 60 saved; a date with another reason refused) |
+| 80, 83 | Hold in `guard_seat_link` | `test_ac80_ac83_…` (hrA, own on, sys; still held on the end date) |
+| 81 | `told` checked in `set_plan`, never stored | `test_ac81_…` |
+| 84 a, b, c | Readers only; any hiring-allowed plan in the seat lets hiring start; so does a leaving date the reader may see | `test_ac84a/b/c_…` |
+| 83, 88 | The outcome waits for the end date; every refusal | `test_ac83_ac88_…`, `test_ac88_…` |
+| 86 | `improved` → `erase(…, "removed")` | `test_ac86_…` (13 places empty, one `removed` line) |
+| 87 | `not_improved` → both fields, `confirmed_on` today, `modified_by` | `test_ac87_…` (then `post_job` works) |
+| 89 | Row lock; "already recorded" and "not visible" both answer "Someone else changed…" | `test_ac89_…` |
+| 90 | Lapse unchanged | `test_ac90_…` |
+| 91 | No link field; no PMS, Appraisal, Goal, KPI or Employee change; empK and head replies unchanged | `test_ac91_…` |
+| 92 | One `outcome recorded` line, with no reason value | `test_ac51_…` |
+| SEC-5 (o) | The hold reads plans through `get_list`, so the subject's own plan does not count | `test_sec5_o_…` (another HR Manager is held on the same seat; the subject is not) |
+| Desk form | A Job Opening with the seat link is refused for a plan reader; without the link it saves | `test_the_desk_job_opening_form_is_held_too` |
+
+The screen halves (AC-76, 79, 80, 82, 85, 89: dialog and copy) wait for the screens.
+
+## The four stated limits, as built
+
+1. An opening saved with the seat link left empty is not held.
+2. Non-readers (HR Users, and owners when plans are off) are never held. Refusing them would tell
+   them a plan exists.
+3. When a Performance plan lapses at day 90 with no outcome, the hold ends with it.
+4. Removing a Performance plan and setting one with another reason skips the period.
+
+## The seven dimensions, against the code written
+
+| Dimension | Verdict | Why |
+|---|---|---|
+| Performance | neutral | `position_table` for an HR Manager: 13 statements with one plan or with four, the same as before (`test_the_query_count_…`). A plan reader saving a seat-linked Job Opening: up to 3 small reads, plus 2 when a leaving date may count. Non-readers: none |
+| Security | neutral | Bypass counts stay 0, 0 and 4 (`plans.py`, `replacement_plan.py`, `register.py`); `hiring.py` stays at 1. `record_outcome` is POST only and runs as the user, with Write or Delete. The outcome fields cannot be forged: Frappe drops the flag from requests, and breaking the check made its test fail |
+| Reliability | neutral | Row lock on the outcome; a lost race gets "here is the latest". The leaving-date unlock fails closed when the reader may not see leavers |
+| Scalability | neutral | The hold reads one seat's rows |
+| Maintainability | degrades slightly | About 110 lines across three files; one new call, and one new helper with one caller |
+| Data integrity | neutral | Nothing is stored for "on hold"; it is worked out from the plan's own fields |
+| Compliance / privacy | degrades, by design | A Performance reason is a judgement about a person. Same audience, same erase, same 90-day life. Never in a log line (AC-92 test), never sent to a non-reader (AC-57, AC-91) |
+
+## Commands and real results
+
+- `bench --site test065 execute frappe.reload_doc` for the plan doctype only. Run in my own
+  container `hrlocal-065a`, on the throwaway test site `test065`. It added the four columns.
+- `test_replacement_plan_065`: **68 tests, OK** (1755 s). Two fixture faults were fixed on the way:
+  - AC-84 (c)'s leaving date leaked into later tests;
+  - owners had no Create on Job Opening in the fixture. A DocPerm row is now added beside the
+    shipped rows, and removed afterwards.
+- Each guard broken on purpose. Its test failed, then passed again once the guard was restored:
+  - the hold check removed (AC-80);
+  - the hold run for non-readers too (AC-84 a);
+  - `get_all` instead of `get_list` (test (o));
+  - the outcome flag ignored (AC-88). The first version of that test did not fail. I added the
+    REST case that sets both fields, which only the flag can stop;
+  - the `told` check removed (AC-81);
+  - the full-seat rule removed.
+- `scripts/check_app_integrity.py`: 800 checks, OK.
+- `ruff`: nothing on the new lines. There are 7 older format-string findings in `plans.py`, lines
+  105-148, left alone.
+
+## Subtract pass (this addendum)
+
+**Removed:**
+
+- the 3-line check in `post_job` (the Job Opening check covers it);
+- a code check of the reason value (Frappe's required Select already refuses a wrong one);
+- a `REASONS` constant (nothing read it).
+
+**Kept:** the full-seat rule (spec §7.2), the both-fields flag check, the row lock.
+
+## Known gaps
+
+- **Acceptable simplification:** dev's rewrite removed the JS check "no plan word for a
+  non-reader". It comes back with the screens.
+- **Intentional trade-off:** the four stated limits above.
+- **Temporary debt:** the server messages use the spec's proposed copy until the screens settle it.

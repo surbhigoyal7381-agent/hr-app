@@ -129,9 +129,13 @@ function render(rows, values, collapsed, expanded) {
   };
 }
 
+// Since slice 064 v2 the chart opens on the top seat and one layer (I2).
+// Checks about the whole tree open the two middle seats first.
+const ALL_OPEN = { "P-Sector34": true, "P-Ambala": true };
+
 /* ── 1. every seat is drawn, exactly once ───────────────────────────────── */
 {
-  const out = render(ROWS);
+  const out = render(ROWS, {}, {}, ALL_OPEN);
   ROWS.forEach((r) => {
     // Counted by the card's own title span, which renders exactly once per
     // card. Counting the id double-counts now that an editor's card carries
@@ -145,7 +149,7 @@ function render(rows, values, collapsed, expanded) {
 
 /* ── 2. it is drawn as the organisation chart, not as a table ───────────── */
 {
-  const out = render(ROWS);
+  const out = render(ROWS, {}, {}, ALL_OPEN);
   // The point of the rewrite. An indented table read as a list with arrows on
   // it; these are the chart's own classes, so the two screens cannot drift
   // into drawing a hierarchy two different ways.
@@ -173,22 +177,146 @@ function render(rows, values, collapsed, expanded) {
      out.html.split("reports above your view").length - 1 === 1);
 }
 
-/* ── 4. a filter greys, it does not hide ────────────────────────────────── */
+/* ── 4. a filter shows the matches and the seats above them, faded ──────── */
+// Surbhi, 23 Oct 2026 (OP-4): this REPLACES the 15 Oct rule "a filter greys,
+// it does not hide". Only the matches and every seat above them are drawn;
+// the ones above are faded; the path to each match is open.
 {
-  const out = render(ROWS, { "pos-f-branch": "Ambala" });
-  // A filter must not make a MATCH disappear. Seats it does not match are
-  // greyed where they are drawn and folded where they are deep - folded is
-  // not hidden, because the card that holds them says how many it has.
-  ROWS.forEach((r) => {
-    ok("a filter hides nothing", out.html.includes(">" + r.title),
-       r.title + " disappeared when filtering to Ambala");
+  const out = render(ROWS, { "pos-f-open": "open" });
+  ok("a match is drawn, even below the first layer (its path is open)", out.html.includes(">Cashier<"));
+  ok("and every seat above it, up to the top",
+     out.html.includes(">Store Manager<") && out.html.includes(">Director<"));
+  ["Counter Staff", "Store Manager Ambala", "Housekeeping", "Area Manager"].forEach((t) => {
+    ok("a seat that is not a match and has none below it is left out",
+       !out.html.includes(">" + t + "<"), t + " is still drawn");
   });
-  ok("non-matching seats are greyed", out.html.includes("opacity:.45"));
+  const fadedBefore = (name) => {
+    const at = out.html.indexOf(">" + name + "<");
+    const node = out.html.lastIndexOf('<div class="oc-node', at);
+    return out.html.slice(node, at).includes("opacity:.45");
+  };
+  ok("the seats above the match are faded", fadedBefore("Director") && fadedBefore("Store Manager"));
+  ok("the match itself is not faded", !fadedBefore("Cashier"));
+  ok("a line says how many match, with Clear filter",
+     out.html.includes("1 matching") && out.html.includes("posClearFilter()"));
   // The count used to be grey text counting the WHOLE company whatever the
   // filter said. It is three tiles now, computed over the filtered rows.
   ok("the tiles are drawn", /oc-stat|pf-card/.test(out.tiles),
      "tiles read: " + out.tiles.slice(0, 80));
-  ok("the greying is explained on screen", out.note !== "none");
+  ok("the filter rule is explained on screen", out.note !== "none");
+  const br = render(ROWS, { "pos-f-arrange": "branch" }, {}, { "br:Ambala": true });
+  ok("a manager in another branch, or filtered out, is not \"above your view\"",
+     out.html.split("reports above your view").length - 1 === 0
+     && br.html.split("reports above your view").length - 1 === 0);
+  const none = render(ROWS, { "pos-f-role": "Nobody Has This" });
+  ok("no match says so, with the way back",
+     none.html.includes("Nothing matches.") && none.html.includes("Clear the filter"));
+}
+
+/* ── 4b. a filter picks its view, and Clear filter puts the old one back ── */
+{
+  for (const [sel, val, arr, want] of [["pos-f-branch", "Ambala", "branch", "branch"],
+                                       ["pos-f-dept", "Sales", "department", "department"],
+                                       ["pos-f-role", "Clerk", "reporting", "reporting"],
+                                       ["pos-f-open", "open", "", "department"]]) {
+    const ctx = makeContext({ "pos-f-view": "list", "pos-f-arrange": "department" });
+    ctx.POS.rows = ROWS.map((r) => Object.assign({}, r, { designation: r.id === "P-Cashier" ? "Clerk" : "" }));
+    ctx.POS.collapsed = { "P-Ambala": true };
+    ctx.POS.expanded = {};
+    ctx.__els[sel].value = val;
+    ctx.posFilterChanged(arr);
+    ok(sel + " moves the list to the chart", ctx.__els["pos-f-view"].value === "tree");
+    ok(sel + " arranges " + want, ctx.__els["pos-f-arrange"].value === want,
+       "got " + ctx.__els["pos-f-arrange"].value);
+    ctx.posClearFilter();
+    ok(sel + ": Clear filter empties the filter", ctx.__els[sel].value === "");
+    ok(sel + ": and puts back the view, the arrangement and the folds",
+       ctx.__els["pos-f-view"].value === "list" && ctx.__els["pos-f-arrange"].value === "department"
+       && ctx.POS.collapsed["P-Ambala"] === true);
+  }
+}
+
+/* ── 4c. it opens on the top seat and one layer; one press opens a box ──── */
+{
+  const out = render(ROWS);
+  ok("the first layer is drawn", out.html.includes(">Store Manager<"));
+  ok("the layer below it is folded", !out.html.includes(">Cashier<"));
+  const ctx = makeContext({ "pos-f-view": "tree", "pos-f-arrange": "branch" });
+  ctx.POS.rows = ROWS; ctx.POS.collapsed = {}; ctx.POS.expanded = {};
+  ctx.posPaint();
+  ok("a branch starts closed", !ctx.__els["pos-body"].innerHTML.includes(">Housekeeping<"));
+  ctx.posToggle("br:Ambala");
+  ok("ONE press opens a closed branch (the live bug: it took two)",
+     ctx.__els["pos-body"].innerHTML.includes(">Store Manager Ambala<"));
+  ctx.posToggle("br:Ambala");
+  ok("and the next press closes it", !ctx.__els["pos-body"].innerHTML.includes(">Store Manager Ambala<"));
+  const c2 = makeContext({ "pos-f-view": "tree" });
+  c2.POS.rows = ROWS; c2.POS.collapsed = {}; c2.POS.expanded = {};
+  c2.posPaint();
+  c2.posToggle("P-Sector34");
+  ok("one press opens a folded seat", c2.__els["pos-body"].innerHTML.includes(">Cashier<"));
+  c2.posToggle("P-Director");
+  ok("one press closes an open seat", !c2.__els["pos-body"].innerHTML.includes(">Store Manager<"));
+}
+
+/* ── 4d. three or more seats with nobody under them hang in one column ──── */
+{
+  const fam = [seat("P-M", "Manager", ""), seat("P-L", "Lead", "P-M")];
+  ["A", "B", "C"].forEach((x) => fam.push(seat("P-" + x, "Seat " + x, "P-M")));
+  fam.push(seat("P-LR", "Lead Report", "P-L"));
+  const out = render(fam);
+  ok("the childless seats hang under the leads",
+     out.html.includes('class="oc-fam"') && out.html.includes('class="oc-hang under"'));
+  ok("each of them in its own hanging item", out.html.split('class="oc-hang-item"').length - 1 === 3);
+  ok("the lead stays in the row", out.html.indexOf(">Lead<") < out.html.indexOf('class="oc-hang under"'));
+  const two = render([seat("P-M", "Manager", ""), seat("P-A", "Seat A", "P-M"), seat("P-B", "Seat B", "P-M")]);
+  ok("one or two stay in the row", !two.html.includes("oc-hang"));
+  const flat = render([seat("P-M", "Manager", "")].concat(["A", "B", "C"].map((x) => seat("P-" + x, "Seat " + x, "P-M"))));
+  ok("with no leads the column hangs straight under the manager",
+     flat.html.includes("oc-hang-slot") && !flat.html.includes("oc-fam"));
+}
+
+/* ── 4e. the Organisation chart is not changed by any of this ───────────── */
+{
+  const ctx = makeContext({});
+  const n = { id: "E1", title: "Boss", people: [],
+              children: ["A", "B", "C"].map((x) => ({ id: x, title: x, people: [], children: [] })) };
+  ok("without the Positions option a family stays one row", !ctx.ocRender(n, true).includes("oc-hang"));
+}
+
+/* ── 4f. zoom, the tools, print, No reporting manager ───────────────────── */
+{
+  const out = render(ROWS);
+  ok("the chart sits in ONE zoom wrapper inside its scroll box",
+     out.html.split('class="oc-zoom"').length - 1 === 1
+     && out.html.indexOf('class="oc-tree"') < out.html.indexOf('class="oc-zoom"'));
+  ok("it opens at 100 %", out.html.includes('style="zoom:1"') && out.html.includes(">100%<"));
+  ["posZoom(-1)", "posZoom(1)", "posZoom(0)", "posZoomFit()", "window.print()"].forEach((f) =>
+    ok("the tools offer " + f, out.html.includes(f)));
+  ok("the tools are left out of print", out.html.includes('class="pos-ztools noprint"'));
+  ok("a print-only header says what is printed",
+     out.html.includes('class="pos-printhead"') && out.html.includes("Reporting lines") && out.html.includes("No filter"));
+  const ctx = makeContext({ "pos-f-view": "tree" });
+  ctx.POS.rows = ROWS; ctx.POS.collapsed = {}; ctx.POS.expanded = {};
+  ctx.posZoom(1);   // no chart in this DOM: must not throw
+  ok("zoom limits are 40 % and 200 %", ctx.POS_ZMIN === 0.4 && ctx.POS_ZMAX === 2);
+  const src = fs.readFileSync(PORTAL, "utf8");
+  ok("zoom is never stored", !/localStorage[^\n]*zoom|zoom[^\n]*localStorage/i.test(src));
+  const css = fs.readFileSync(path.join(__dirname, "..", "alvoraa_portal", "alvoraa_portal", "public",
+                                        "css", "ess", "panels.css"), "utf8");
+  ok("print: A4 landscape", /@page\{size:A4 landscape/.test(css));
+  ok("print: anything private never prints", /\.private,\[data-private\]\{display:none !important\}/.test(css));
+  ok("print: trays, dialogs, tiles, filters and fold buttons are left out",
+     ["#pos-tiles", "#pos-layer", ".gp-backdrop", "#panel-positions .oc-toggle", ".pos-ztools"].every((x) => css.includes(x)));
+  const hr = makeContext({ "pos-f-view": "tree" });
+  hr.POS.rows = ROWS.concat([seat("P-Loose2", "Loose", "")]);
+  hr.POS.unseated = [{ no_manager: true }];
+  hr.POS.collapsed = {}; hr.POS.expanded = {};
+  hr.posPaint();
+  const h = hr.__els["pos-body"].innerHTML;
+  ok("HR see the No reporting manager box on the chart, opening its tray",
+     h.includes("pos-nomgr") && h.includes("posNoMgrSheet()") && h.includes("2 people"));
+  ok("nobody else does", !out.html.includes("pos-nomgr"));
 }
 
 /* ── 5. a closed branch says what it is covering up ─────────────────────── */
@@ -261,7 +389,7 @@ function render(rows, values, collapsed, expanded) {
 
 /* ── 10. an editor's click opens the seat tray ──────────────────────────── */
 {
-  const out = render(ROWS);
+  const out = render(ROWS, {}, {}, ALL_OPEN);
   ok("an editor's click opens the seat tray (Change is inside it)",
      out.html.includes("posSeatSheet('P-Cashier')") || out.html.includes("posSeatSheet(&#39;P-Cashier&#39;)"),
      out.html.match(/onclick="[^"]*P-Cashier[^"]*"/) && out.html.match(/onclick="[^"]*P-Cashier[^"]*"/)[0]);
@@ -317,23 +445,23 @@ function render(rows, values, collapsed, expanded) {
     seat("P-S2", "Supervisor", "P-Top"),
     seat("P-Under", "Their Report", "P-S1"),
   ];
-  const out = render(risky);
+  const out = render(risky, {}, {}, { "P-S1": true });
   ok("the one with a team is drawn on its own",
      out.html.split('<span class="ti">Supervisor</span>').length - 1 === 2,
      "both Supervisors must be separate cards");
   ok("and its report is still under it", out.html.includes(">Their Report<"));
 }
 
-/* ── 13. a group a filter does not touch is greyed, not emptied ─────────── */
+/* ── 13. a group a filter does not touch is left out (OP-4) ─────────────── */
 {
   const mixed = [
-    seat("P-Boss2", "Store Manager", ""),
+    seat("P-Boss2", "Store Manager", "", { branch: "Noida" }),
     seat("P-A1", "Clerk", "P-Boss2", { branch: "Ambala" }),
     seat("P-A2", "Clerk", "P-Boss2", { branch: "Ambala" }),
   ];
   const out = render(mixed, { "pos-f-branch": "Noida" });
-  ok("a group matching nothing is greyed", out.html.includes("opacity:.45"));
-  ok("but it is still drawn", out.html.includes(">Clerk<"));
+  ok("a group matching nothing is left out", !out.html.includes(">Clerk<"));
+  ok("the match is drawn", out.html.includes(">Store Manager<"));
 }
 
 /* ── 14. the three filters narrow each other ────────────────────────────── */
@@ -437,7 +565,7 @@ function render(rows, values, collapsed, expanded) {
 
   const opened = render(mixed,
     { "pos-f-view": "tree", "pos-f-arrange": "branch" },
-    {}, { "br:Ambala": true });
+    {}, { "br:Ambala": true, "P-Top5": true });
   ok("opening a branch shows its seats",
      opened.html.includes(">Cashier<"));
   // A branch is not a seat, so it must not offer to be edited.
@@ -496,7 +624,7 @@ function render(rows, values, collapsed, expanded) {
   ];
   const out = render(inside,
     { "pos-f-view": "tree", "pos-f-arrange": "branch" },
-    {}, { "br:Ambala": true });
+    {}, { "br:Ambala": true, "P-SM": true });
 
   ok("the branch is a top-level box", out.html.includes(">Ambala<"));
   ok("its manager is inside it", out.html.includes(">Store Manager<"));
@@ -681,7 +809,7 @@ deleteChecks().then(() => {
   }
   console.log("positions tree: " + checks + " checks - every seat drawn, "
               + "identical siblings grouped without losing anybody, filters "
-              + "grey, loops and deep chains survive, a seat is deleted only "
+              + "show matches with the seats above faded, loops and deep chains survive, a seat is deleted only "
               + "when the server says so, a seat opens its tray, the people "
               + "trays only for HR");
 });

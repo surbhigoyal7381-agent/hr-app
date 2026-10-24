@@ -42,7 +42,23 @@ const ok = (cond, msg, detail) => cond ? (pass++, console.log("  PASS  " + msg))
   await page.waitForFunction(() => window.POS && POS.rows && POS.rows.length > 0, null, { timeout: 30000 });
   await page.waitForTimeout(600);
 
-  // ── the list, which is the default ────────────────────────────────────────
+  // ── it opens on the chart, with Arrange by shown (I1) ─────────────────────
+  const opening = await page.evaluate(() => ({
+    view: document.getElementById("pos-f-view").value,
+    arrange: getComputedStyle(document.getElementById("pos-arrange-wrap")).display !== "none",
+    boxes: document.querySelectorAll("#pos-body .oc-box").length,
+    zoom: (document.querySelector(".pos-zpct") || {}).textContent,
+  }));
+  ok(opening.view === "tree" && opening.boxes > 1, "the page opens on the chart");
+  ok(opening.arrange, "Arrange by is shown");
+  ok(opening.zoom === "100%", "at 100 %", opening.zoom);
+  await shot("00-opening");
+
+  // ── the list ──────────────────────────────────────────────────────────────
+  await page.selectOption("#pos-f-view", "list");
+  await page.waitForTimeout(500);
+  ok(await page.evaluate(() => getComputedStyle(document.getElementById("pos-arrange-wrap")).display !== "none"),
+     "Arrange by stays shown on the list");
   const list = await page.evaluate(() => ({
     rows: document.querySelectorAll("#pos-body table tbody tr").length,
     body: document.getElementById("pos-body").innerHTML,
@@ -53,6 +69,7 @@ const ok = (cond, msg, detail) => cond ? (pass++, console.log("  PASS  " + msg))
 
   // ── the structure view, the original chart ────────────────────────────────
   await page.selectOption("#pos-f-view", "tree");
+  await page.evaluate(() => { POS.collapsed = {}; POS.expanded = {}; POS.ungrouped = {}; posPaint(); });
   await page.waitForTimeout(600);
   const tree = await page.evaluate(() => {
     const box = document.querySelector("#pos-body .oc-box");
@@ -80,6 +97,57 @@ const ok = (cond, msg, detail) => cond ? (pass++, console.log("  PASS  " + msg))
   }
   await page.selectOption("#pos-f-arrange", "reporting");
   await page.waitForTimeout(500);
+
+  // ── one press opens a closed box (the live bug: it took two) ──────────────
+  await page.selectOption("#pos-f-arrange", "branch");
+  await page.waitForTimeout(400);
+  const before = await page.evaluate(() => document.querySelectorAll("#pos-body .oc-box").length);
+  await page.click("#pos-body .oc-toggle[aria-expanded=false]");
+  await page.waitForTimeout(300);
+  const after = await page.evaluate(() => document.querySelectorAll("#pos-body .oc-box").length);
+  ok(after > before, "one press opens a closed branch", before + " -> " + after);
+  await page.selectOption("#pos-f-arrange", "reporting");
+  await page.waitForTimeout(400);
+
+  // ── a filter picks its view and focuses the first match ───────────────────
+  const branch = await page.evaluate(() => (document.getElementById("pos-f-branch").options[1] || {}).value || "");
+  if (branch) {
+    await page.selectOption("#pos-f-branch", branch);
+    await page.waitForTimeout(500);
+    const f = await page.evaluate(() => ({
+      arrange: document.getElementById("pos-f-arrange").value,
+      line: (document.getElementById("pos-fline-txt") || {}).textContent || "",
+      focused: !!(document.activeElement && document.activeElement.classList.contains("pos-first")),
+    }));
+    ok(f.arrange === "branch", "a Branch filter switches to By branch");
+    ok(/matching, showing the first/.test(f.line), "and says how many match", f.line);
+    ok(f.focused, "the first match has the keyboard focus");
+    await shot("02b-filter");
+    await page.click('#pos-body button:has-text("Clear filter")');
+    await page.waitForTimeout(400);
+    ok(await page.evaluate(() => document.getElementById("pos-f-arrange").value === "reporting"
+                                 && !document.getElementById("pos-f-branch").value),
+       "Clear filter puts back the arrangement");
+  }
+
+  // ── zoom by keys, and Find ────────────────────────────────────────────────
+  await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+  await page.keyboard.press("+");
+  ok(await page.evaluate(() => document.querySelector(".pos-zpct").textContent) === "110%", "the + key zooms in");
+  await page.keyboard.press("0");
+  ok(await page.evaluate(() => document.querySelector(".pos-zpct").textContent) === "100%", "0 resets");
+  const who = await page.evaluate(() => { const r = POS.rows.filter((x) => x.people.length).slice(-1)[0]; return { name: r.people[0].name, id: r.id }; });
+  await page.fill("#pos-find", who.name.slice(0, 5));
+  await page.waitForTimeout(200);
+  ok(await page.evaluate(() => document.querySelectorAll("#pos-find-res .pos-hit").length > 0), "Find lists people and seats");
+  await page.evaluate((id) => posFindPick(id), who.id);
+  await page.waitForTimeout(400);
+  const found = await page.evaluate((id) => {
+    const b = document.querySelector("#pos-body .oc-box.pos-first");
+    return !!b && document.activeElement === b;
+  }, who.id);
+  ok(found, "choosing a result opens the path and outlines the box, with focus");
+  await shot("02c-find");
 
   // ── clicking a seat opens its tray ────────────────────────────────────────
   const target = await page.evaluate(() => {

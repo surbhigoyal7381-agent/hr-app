@@ -919,3 +919,66 @@ class TestPurposeFence(FrappeTestCase):
 		                                                if "/alvoraa_portal/" in p else p)]
 		self.assertEqual(strays, [])
 		self.assertTrue(found)
+
+
+# ── Security verification, 25 Oct 2026 (06b): B1, B2, B3, M2 ────────────────
+
+class TestSecurityVerificationFixes(Case):
+	def test_b1_an_empty_save_neither_reads_nor_stamps_a_mark(self):
+		if YESTERDAY < M_START:
+			self.skipTest("first day of the month")
+		hr_mark = _raw_mark(P["Rahul"], YESTERDAY, owner_first="Ritika", marked_as="HR",
+		                    reason="Other", other_reason="PROBE-TEXT")
+		before = frappe.db.get_value(grooming.MARK, hr_mark, "modified_by")
+		with as_user("Ravi"):                           # manager; may not read yesterday's HR mark
+			self.refused(frappe.client.set_value, grooming.MARK, hr_mark, {})
+			self.refused(frappe.client.save, frappe.get_doc(grooming.MARK, hr_mark).as_dict())
+		self.assertEqual(frappe.db.get_value(grooming.MARK, hr_mark, "modified_by"), before)
+		own = _mark("Ravi", "Rahul")
+		with as_user("Rahul"):                          # even a reader: an empty save is refused
+			self.refused(frappe.client.set_value, grooming.MARK, own, {})
+
+	def test_b2_no_file_and_no_tag_on_a_mark(self):
+		from frappe.desk.doctype.tag.tag import add_tag
+		name = _mark("Ravi", "Rahul")
+		for first in ("Ravi", "Ritika"):
+			frappe.db.savepoint("g066_tag")             # add_tag makes the site-wide Tag first
+			with self.subTest(first=first), as_user(first):
+				with self.assertRaises(frappe.PermissionError) as caught:
+					add_tag("probe beard", grooming.MARK, name)
+				self.assertIn("tagged", str(caught.exception))
+			frappe.db.rollback(save_point="g066_tag")
+		frappe.db.savepoint("g066_file")
+		with as_user("Ritika"):
+			with self.assertRaises(frappe.PermissionError) as caught:
+				frappe.get_doc({"doctype": "File", "file_name": "g066-probe.txt", "content": "x",
+				                "is_private": 1, "attached_to_doctype": grooming.MARK,
+				                "attached_to_name": name}).insert()
+			self.assertIn("files attached", str(caught.exception))
+		frappe.db.rollback(save_point="g066_file")
+		self.assertEqual(frappe.db.count("File", {"attached_to_doctype": grooming.MARK}), 0)
+		self.assertEqual(frappe.db.count("Tag Link", {"document_type": grooming.MARK}), 0)
+
+	def test_b3_one_word_list_for_the_fixed_reasons_and_the_typed_ones(self):
+		for r in grooming.REASONS:                      # the same list pins the fixed reasons
+			self.assertFalse(grooming.about_the_person(r), r)
+		for words in ("Beard not trimmed", "Hair too long", "Moustache untidy",
+		              "Jewellery not allowed", "Head covering wrong colour", "Dupatta missing",
+		              "Tattoo showing", "Smells bad", "Limping, wrong shoes", "Turban untidy",
+		              "Sick looking", "Bindi too big", "Wife called", "Too fat for the shirt"):
+			with self.subTest(words=words):
+				self.refused(_mark, "Ravi", "Rahul", reason="Other", other=words)
+		for words in ("Torn shirt sleeve", "Paint stains on trousers", "Face mask missing",
+		              "Apron missing", "Shirt not tucked in"):
+			self.assertFalse(grooming.about_the_person(words), words)
+
+	def test_m2_a_marker_who_has_left_reads_nothing(self):
+		name = _mark("Ravi", "Rahul")
+		frappe.db.set_value("Employee", P["Ravi"], "status", "Left")
+		try:
+			with as_user("Ravi"):
+				self.assertEqual(_list(grooming.MARK), [])
+				self.assertRaises(frappe.PermissionError, frappe.client.get, grooming.MARK, name)
+		finally:
+			frappe.db.set_value("Employee", P["Ravi"], "status", "Active")
+

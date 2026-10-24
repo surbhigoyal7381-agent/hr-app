@@ -31,6 +31,11 @@ AFTER_SUBMIT = ("asked_on", "kept_by", "kept_on", "removal_reason", "raised_on",
 
 class GroomingMark(Document):
 	def validate(self):
+		# Two markers at the same moment (the manager today, HR on a past day)
+		# would both count 2 live marks and both pass the 3-mark stop. Locking
+		# the person's Employee row until this transaction ends makes the second
+		# wait and then count 3 (security verification M1).
+		frappe.db.get_value("Employee", self.employee, "name", for_update=True)
 		if self.reason not in grooming.REASONS:
 			refuse(_("Choose one of the reasons on the list."), "SEC-11", "Grooming Mark save",
 			       self.doctype, self.name)
@@ -55,9 +60,12 @@ class GroomingMark(Document):
 	def before_update_after_submit(self):
 		old = self.get_doc_before_save()
 		changed = {f for f in AFTER_SUBMIT if (old.get(f) or None) != (self.get(f) or None)}
-		if not changed:
-			return
 		where = "Grooming Mark update"
+		if not changed:
+			# An empty save has no purpose here, and Frappe's REST save returns the
+			# whole record and stamps modified_by (security verification B1).
+			refuse(_("Nothing on this grooming red can be changed that way."), "SEC-4", where,
+			       self.doctype, self.name)
 		if "removal_reason" in changed:
 			refuse(_("A grooming red's removal reason is set only when it is removed."),
 			       "SEC-5", where, self.doctype, self.name)
@@ -85,6 +93,9 @@ class GroomingMark(Document):
 			self._action_taken = "kept"
 			return
 		if changed <= set(grooming.RAISE_FIELDS):
+			if not self.flags.get(grooming.RAISE_FLAG):
+				refuse(_("Use \u201cRaise it with HR\u201d to raise this."), "RAISE5", where,
+				       self.doctype, self.name)
 			# "Raise it with HR": the subject's current manager, on the mark that
 			# reached this month's limit, once a month, one fixed reason. It adds
 			# no fine and changes nothing else on the mark.

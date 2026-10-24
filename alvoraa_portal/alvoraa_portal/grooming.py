@@ -54,10 +54,48 @@ REASONS = ("Not in uniform", "Uniform incomplete", "No name badge", "Wrong footw
 OTHER = "Other"
 OTHER_MAX = 100
 OTHER_HINT = "Clothing or grooming only. Nothing about health or family."
-NOT_ABOUT_CLOTHES = ("health", "sick", "illness", "disease", "pregnan", "period",
-                     "medical", "family", "husband", "wife", "child", "religio", "caste",
-                     "turban", "hijab", "burqa", "veil", "tilak", "bindi", "sindoor", "kara",
-                     "skin", "weight", "fat", "body")
+#
+# THE ONE LIST (security verification B3, 25 Oct 2026). Used by the "Other"
+# check below AND by the test that pins the fixed reasons, so the two cannot
+# drift. An entry ending in "*" matches any word starting with it; the rest
+# match whole words only ("thin" must not refuse "thing"). It covers religion
+# and religious dress, hair and body, jewellery and marks on the skin, smell,
+# health and disability, family, caste and gender, and money. It is a floor,
+# not a control: free text about how a person looks cannot be made safe by a
+# word list. COUNSEL TO REVIEW the list and the free text itself (01c Q-C3).
+NOT_ABOUT_CLOTHES = (
+	# religion, caste, gender
+	"religio*", "caste*", "gender*", "sex*", "woman", "women", "lady", "ladies", "transgender*",
+	"hindu*", "muslim*", "sikh*", "christian*", "jain*", "god*", "puja", "namaz", "prayer*",
+	# religious dress and marks
+	"turban*", "pagdi*", "pagri*", "patka*", "hijab*", "burqa*", "burka*", "niqab*", "veil*",
+	"dupatta*", "head", "headscarf*", "head-scarf*", "topi*", "tilak*", "bindi*",
+	"sindoor*", "kara", "kada", "mangalsutra*", "rudraksh*", "cross", "janeu*", "tika",
+	# hair and body
+	"hair*", "beard*", "moustache*", "mustache*", "shav*", "unshaven", "bald*", "skin*",
+	"complexion*", "colou?red", "weight*", "fat", "fatty", "obese*", "thin",
+	"skinny", "body*", "height", "teeth", "nail*", "makeup",
+	"make-up", "lipstick*",
+	# jewellery, piercings, tattoos, henna
+	"jewel*", "jewellery", "jewelry", "ring", "rings", "bangle*", "earring*", "nose*",
+	"pierc*", "tattoo*", "mehendi*", "mehndi*", "henna*",
+	# smell and hygiene of the person
+	"smell*", "odou?r*", "stink*", "sweat*", "hygien*", "bath*", "dirty", "unclean*",
+	# health, disability, pregnancy
+	"health*", "sick*", "ill", "illness*", "disease*", "medical*", "medicine*", "injur*",
+	"pain", "painful", "disab*", "handicap*", "limp*", "lame", "blind*", "deaf*", "pregnan*", "period*",
+	"menstru*",
+	# family and money
+	"family", "families", "husband*", "wife", "wives", "child*", "kid*", "mother*", "father*",
+	"poor", "afford*", "cheap", "money",
+)
+_NOT_ABOUT_CLOTHES_RE = re.compile(r"\b(?:" + "|".join(
+	w[:-1] + r"\w*" if w.endswith("*") else w + r"\b" for w in NOT_ABOUT_CLOTHES) + ")")
+
+
+def about_the_person(text):
+	"""True when the text names something about the person, not their clothes."""
+	return bool(_NOT_ABOUT_CLOTHES_RE.search(str(text or "").lower()))
 
 
 def clean_other(text):
@@ -67,7 +105,7 @@ def clean_other(text):
 		frappe.throw(_("Write your reason in a few words."))
 	if len(text) > OTHER_MAX:
 		frappe.throw(_("Keep your reason to {0} characters.").format(OTHER_MAX))
-	if re.search(r"\b(" + "|".join(NOT_ABOUT_CLOTHES) + ")", text.lower()):
+	if about_the_person(text):
 		frappe.throw(_("Keep the reason to clothing or grooming. Nothing about health, family, "
 		               "religion or the person's body."))
 	return text
@@ -440,9 +478,12 @@ def may_read(doc, user=None):
 	"""Subject, marker, current direct manager on the day, or HR in scope.
 	Anybody else: no."""
 	user = user or frappe.session.user
-	if doc.get("owner") == user:
-		return True
 	me = _active_employee(user)
+	# The marker reads their own marks only while they are an Active employee:
+	# ERPNext keeps a leaver's login enabled (security verification M2). HR who
+	# are not on the payroll still read through hr_scope below.
+	if me and doc.get("owner") == user:
+		return True
 	if me and doc.employee == me:
 		return True
 	if me and getdate(doc.mark_date) == getdate(nowdate()) and frappe.db.get_value(
@@ -465,12 +506,18 @@ def mark_has_permission(doc, ptype=None, user=None):
 		return True
 	# "Raise it with HR" writes three fields on the mark that reached the limit,
 	# which the manager may not be able to read (HR made it on another day).
-	# Write only - never read or cancel - and the controller refuses any change
-	# but the raise from them.
-	if ptype in ("write", "submit"):
+	# Only `raise_with_hr` sets this flag - it lives on the document object in
+	# memory, so no REST, client or form call can set it - and that endpoint
+	# returns the mark's name and nothing else. Every other door, including an
+	# empty save through set_value or PUT, meets the read gate above
+	# (security verification B1).
+	if ptype in ("write", "submit") and doc.flags.get(RAISE_FLAG):
 		me = _active_employee(user or frappe.session.user)
 		return bool(me and frappe.db.get_value("Employee", doc.employee, "reports_to") == me)
 	return False
+
+
+RAISE_FLAG = "grooming_raise_with_hr"
 
 
 def mark_query_conditions(user=None):
@@ -480,9 +527,10 @@ def mark_query_conditions(user=None):
 	if user == "Administrator":
 		return ""
 	esc = frappe.db.escape
-	conds = ["`tabGrooming Mark`.owner = {0}".format(esc(user))]
 	me = _active_employee(user)
+	conds = ["1=0"]
 	if me:
+		conds.append("`tabGrooming Mark`.owner = {0}".format(esc(user)))
 		conds.append("`tabGrooming Mark`.employee = {0}".format(esc(me)))
 		conds.append("(`tabGrooming Mark`.mark_date = {0} and `tabGrooming Mark`.employee in "
 		             "(select name from `tabEmployee` where reports_to = {1}))".format(
@@ -531,17 +579,20 @@ def review_query_conditions(user=None):
 
 
 def refuse_side_record(doc, method=None):
-	"""doc_events validate on Comment, ToDo and DocShare (SEC-8): no comment,
-	assignment or share on a mark or a review, on any door.
+	"""doc_events validate on Comment, ToDo, DocShare, File and Tag Link (SEC-8):
+	no comment, assignment, share, attachment or tag on a mark or a review, on
+	any door. Files and tags added 25 Oct 2026 (security verification B2): a
+	file can be public and a tag is free text the whole site sees.
 
 	Frappe's assign_to will create a ToDo - and share the record - even for
 	somebody who cannot read it (seen on the bench, 24 Oct 2026), so DocPerm
 	alone does not stop it. One name comparison for every other row.
 	"""
-	ref = doc.get("reference_doctype") or doc.get("reference_type") or doc.get("share_doctype")
-	if ref in (MARK, REVIEW):
-		frappe.throw(_("A grooming red or a grooming review cannot be commented on, assigned "
-		               "or shared."), frappe.PermissionError)
+	ref = {"Comment": "reference_doctype", "ToDo": "reference_type", "DocShare": "share_doctype",
+	       "File": "attached_to_doctype", "Tag Link": "document_type"}.get(doc.doctype)
+	if ref and doc.get(ref) in (MARK, REVIEW):
+		frappe.throw(_("A grooming red or a grooming review cannot be commented on, assigned, "
+		               "shared, tagged or have files attached."), frappe.PermissionError)
 
 
 # ── the review flag (US-14) ──────────────────────────────────────────────────
@@ -731,6 +782,7 @@ def raise_with_hr(employee, reason):
 	if not v.ok:
 		access.refuse(v.message, v.code, "raise_with_hr", MARK, None)
 	doc = frappe.get_doc(MARK, v.mark)
+	doc.flags[RAISE_FLAG] = True
 	doc.raised_reason = reason
 	doc.raised_by = frappe.session.user
 	doc.raised_on = now_datetime()

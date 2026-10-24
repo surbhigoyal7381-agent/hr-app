@@ -344,6 +344,13 @@ doc_events = {
     "DocShare": {
         "validate": "alvoraa_portal.grooming.refuse_side_record",
     },
+    # Slice 066, 25 Oct (security verification B2): no file, no tag on a mark.
+    "File": {
+        "validate": "alvoraa_portal.grooming.refuse_side_record",
+    },
+    "Tag Link": {
+        "validate": "alvoraa_portal.grooming.refuse_side_record",
+    },
 }
 
 # ── Row-level security ───────────────────────────────────────────────────────

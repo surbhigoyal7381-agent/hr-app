@@ -46,6 +46,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, date_diff, flt, getdate
 
+import alvoraa_portal.grooming as grooming
 from alvoraa_portal.payroll_month import summarise_month
 from alvoraa_portal.payroll_rules_apply import (
 	LEAVE_FIELDS,
@@ -138,11 +139,11 @@ def month_summary(employee, company, from_date, to_date, rule_set=None, ctx=None
 	# full-day leave or absence (a leave approved after the mark). Half Day is
 	# charged. Only the slip's own employee is read.
 	not_charged = {str(r.attendance_date) for r in rows if r.status in ("On Leave", "Absent")}
-	grooming_days = len({str(d) for d in frappe.get_all(
+	grooming_days = min(len({str(d) for d in frappe.get_all(
 		"Grooming Mark",
 		filters={"employee": employee, "docstatus": 1,
 		         "mark_date": ("between", [from_date, to_date])},
-		pluck="mark_date")} - not_charged)
+		pluck="mark_date")} - not_charged), grooming.MONTH_MAX)
 
 	return summarise_month(
 		verdicts,

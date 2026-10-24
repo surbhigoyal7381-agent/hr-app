@@ -444,3 +444,27 @@ class TestAskedHoldsTheSlip(Case):
 				grooming.keep(name)
 			payroll_slip.check_grooming_before_submit(self._slip())
 
+
+class TestSecurityVerificationCap(Case):
+	def test_m1_the_slip_never_charges_more_than_three_days(self):
+		if TODAY.day < 5:
+			self.skipTest("too early in the month")
+		for i in range(4):                              # a race left four on the table
+			_raw_mark(P["Kiran"], add_days(M_START, i))
+		self.assertEqual(payroll_slip.month_summary(P["Kiran"], COMPANY, M_START, M_END)
+		                 .grooming_days, grooming.MONTH_MAX)
+
+	def test_b1_a_raise_sent_straight_through_rest_is_refused(self):
+		if TODAY.day < 4:
+			self.skipTest("too early in the month")
+		names = [_raw_mark(P["Kiran"], add_days(M_START, i), owner_first="Ritika", marked_as="HR",
+		                   at="%s 10:0%d:00" % (add_days(M_START, i), i)) for i in range(3)]
+		with as_user("Ravi"):
+			self.refused(frappe.client.set_value, grooming.MARK, names[-1],
+			             {"raised_reason": "Not in uniform"})
+			self.refused(frappe.client.set_value, grooming.MARK, names[-1], {})
+		self.assertFalse(frappe.db.get_value(grooming.MARK, names[-1], "raised_on"))
+		self.assertEqual(frappe.db.get_value(grooming.MARK, names[-1], "modified_by"), user("Ritika"))
+		with as_user("Ravi"):                           # the endpoint still works, and says only the name
+			self.assertEqual(grooming.raise_with_hr(P["Kiran"], "Not in uniform"), {"name": names[-1]})
+

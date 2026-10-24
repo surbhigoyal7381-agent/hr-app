@@ -5420,12 +5420,23 @@ function renderLeaveRings(balances) {
 
 function renderLeaveApps(apps) {
   const tb = document.getElementById("leave-apps-tbody");
+  const cards = document.getElementById("leave-apps-cards");   /* ALV-213: shown under 640 px */
   if (!apps.length) {
     tb.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:24px">No leave applications found.</td></tr>';
+    if (cards) cards.innerHTML = '<p class="empty-state-text" style="padding:24px 16px;margin:0;text-align:center">No leave applications found.</p>';
     return;
   }
   tb.innerHTML = apps.map(function(a) {
     return '<tr><td>' + esc(a.leave_type) + '</td><td class="num">' + fmtDate(a.from_date) + '</td><td class="num">' + fmtDate(a.to_date) + '</td><td class="num">' + a.total_leave_days + '</td><td>' + leaveStatusBadge(a.status, a.docstatus) + '</td></tr>';
+  }).join("");
+  if (cards) cards.innerHTML = apps.map(function(a) {
+    var from = String(a.from_date).slice(0, 10), to = String(a.to_date || a.from_date).slice(0, 10);
+    var dates = from === to ? fmtDate(from)
+      : (from.slice(0, 4) === to.slice(0, 4)
+          ? new Date(from).toLocaleDateString("en-IN", {day: "2-digit", month: "short"})
+          : fmtDate(from)) + " – " + fmtDate(to);
+    return '<div class="lv-card"><div class="lv-top"><span class="lv-type">' + esc(a.leave_type) + '</span>' +
+      leaveStatusBadge(a.status, a.docstatus) + '</div><div class="lv-meta">' + dates + ' · ' + esc(lpDays(a.total_leave_days)) + '</div></div>';
   }).join("");
 }
 
@@ -11846,6 +11857,29 @@ window.pfRatingLabel = function(value, scale) {
     var panel = document.getElementById("notif-panel");
     if (panel && panel.classList.contains("open") && !panel.contains(e.target) && !e.target.closest("#mob-notif-btn")) {
       panel.classList.remove("open");
+    }
+  });
+
+  /* ALV-213: the phone header's account menu (My Account, Log out). */
+  function setAcctMenu(open) {
+    var m = document.getElementById("mob-acct-menu"), b = document.getElementById("mob-avatar");
+    if (!m || !b) return;
+    m.classList.toggle("open", open);
+    b.setAttribute("aria-expanded", String(open));
+  }
+  window.toggleAcctMenu = function(e) {
+    if (e) e.stopPropagation();
+    var m = document.getElementById("mob-acct-menu");
+    setAcctMenu(!(m && m.classList.contains("open")));
+  };
+  document.addEventListener("click", function(e) {
+    if (!e.target.closest("#mob-acct-menu")) setAcctMenu(false);
+  });
+  document.addEventListener("keydown", function(e) {
+    var m = document.getElementById("mob-acct-menu");
+    if (e.key === "Escape" && m && m.classList.contains("open")) {
+      setAcctMenu(false);
+      document.getElementById("mob-avatar").focus();
     }
   });
 

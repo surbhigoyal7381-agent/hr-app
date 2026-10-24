@@ -138,7 +138,11 @@
         </div>
         <div id="notif-panel-body"><div class="notif-empty">Loading…</div></div>
       </div>
-      <div class="mob-avatar" id="mob-avatar" title="Profile">?</div>
+      <button type="button" class="mob-avatar" id="mob-avatar" aria-haspopup="true" aria-expanded="false" aria-controls="mob-acct-menu" aria-label="{{ _('Your account') }}" onclick="toggleAcctMenu(event)">?</button>
+      <div class="mob-acct-menu" id="mob-acct-menu" role="menu">
+        <a role="menuitem" href="/me">{{ _("My Account") }}</a>
+        <a role="menuitem" href="/logout">{{ _("Log out") }}</a>
+      </div>
     </header>
 
     <!-- Panels -->

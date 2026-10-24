@@ -343,6 +343,13 @@
 .ci-type{font-size:var(--fs-sm);font-weight:700;color:var(--text);width:40px;flex-shrink:0}
 .ci-time{font-size:var(--fs-base);color:var(--text2);font-variant-numeric:tabular-nums}
 
+/* ── Leave applications as cards (ALV-213, shown under 640 px) ── */
+.lv-cards{display:none}
+.lv-card{padding:14px 16px;border-bottom:1px solid var(--border)}
+.lv-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.lv-type{font-weight:700;font-size:var(--fs-md)}
+.lv-meta{color:var(--text2);margin-top:4px}
+
 /* ── Responsive ──────────────────────────────────── */
 @media(max-width:900px){
   .g3{grid-template-columns:1fr 1fr}
@@ -357,14 +364,19 @@
     z-index:200;top:0;height:100vh;
   }
   .sidebar.open{transform:translateX(0)}
-  .mob-header{display:flex}
-  .main-content{margin-left:0;padding:16px;padding-bottom:calc(var(--bottom-h)+20px)}
+  .mob-header{display:flex;top:0}
+  /* ALV-213: one top bar on a phone. The portal header carries the account
+     menu, so Frappe's own navbar (42 px) is hidden here, and so is the empty
+     28 px header strip web.html draws above the page (this page has no header). */
+  nav.navbar,.page-header-wrapper{display:none}
+  .emp-app{margin-top:0}
+  .main-content,body.sb-collapsed .main-content{margin-left:0;padding:16px;padding-bottom:calc(var(--bottom-h) + 20px)}
   .bottom-nav{display:block}
   .checkin-hero{flex-direction:column;gap:20px;padding:22px 22px}
   .checkin-right{width:100%;flex-direction:row;justify-content:space-between;align-items:center}
   .g2,.g3{grid-template-columns:1fr}
   .quick-actions{grid-template-columns:repeat(3,1fr)}
-  .toast-wrap{bottom:calc(var(--bottom-h)+16px)}
+  .toast-wrap{bottom:calc(var(--bottom-h) + 16px)}
   .page-title{font-size:var(--fs-lg)}
   .cal-grid{gap:2px}
   .cal-cell{font-size:var(--fs-xs)}.cal-cell .cn{font-size:var(--fs-sm)}.cal-cell .cs{display:none}
@@ -381,8 +393,11 @@
   /* Employee detail drawer: 4-col stats → 2-col */
   .ed-stat-row{grid-template-columns:repeat(2,1fr)}
   /* Finance tabs bar: allow horizontal scroll so all tabs stay on one line */
-  .fin-tabs-bar{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-shrink:0}
+  .fin-tabs-bar{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-shrink:0;max-width:100%}
   .fin-tabs-bar::-webkit-scrollbar{display:none}
+  /* ALV-213: leave applications as cards, the table stays for wider screens */
+  #lv-apps-wrap > table{display:none}
+  .lv-cards{display:block}
   /* Performance cycle selector: don't enforce wide min-width */
   .pf-cycle-select{min-width:0;width:100%}
   /* Scorecard stat strip: wrap into 2-per-row on small phones */

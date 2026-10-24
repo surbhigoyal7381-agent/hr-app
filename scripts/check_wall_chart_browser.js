@@ -8,6 +8,11 @@
  *
  *   PLAYWRIGHT=<path to playwright> node scripts/check_wall_chart_browser.js [OUT_DIR]
  *
+ * The repository pins no Playwright. Use one whose browser is installed:
+ * a newer Playwright than its downloaded Chromium stops at launch ("Executable
+ * doesn't exist"). Run on 25 Oct 2026 with Playwright 1.59.1 + Chromium.
+ * The 10x step takes several minutes on its own.
+ *
  * It reports, and fails on:
  *   sizes    name size at DTC's shape on A3 / A1 / A0, HR copy off and on
  *            (the AC-32 kill line: All on A1 must reach 8 pt)

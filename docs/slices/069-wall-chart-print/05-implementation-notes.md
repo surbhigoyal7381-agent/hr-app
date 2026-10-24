@@ -265,3 +265,19 @@ Left printing; one more selector hides it if she says so.
 
 Runs after these fixes: CI DOM suite and static checks below; browser check 35 passed.
 
+## 14 · Security verification fixes of 25 Oct 2026 (06b: F1, F2, F3)
+
+| Finding | State |
+|---|---|
+| **F1 (P1)** list view prints Notice period, key seat, Frozen, %, covering | Fixed in `bf13049e` (same as review M1, §13) |
+| **F2 (P2)** Ctrl+P with Show = "Only seats where somebody is leaving" prints who is leaving | **Fixed.** The `beforeprint` listener clears that filter before Ctrl+P on Positions; the chart prints, and stays on screen, without it. The wall chart never read the filters. **My call, for Surbhi to confirm:** "Only key seats" is cleared the same way, because "key seat" is also on the never-printed list and a key-seat-filtered print is a list of key seats. Other filters (vacancy, branch, department, job role) are left as they are |
+| **F3 (P3)** afterprint never fires | Fixed in `bf13049e` (same as review m2) |
+
+**Tests (CI, `check_wall_chart.js`):** Show = leaving and Show = key, from the chart view and from the
+list view: after `beforeprint` the filter is empty and the full chart is drawn; Show = vacancy is left
+alone. Removing the clearing makes all 4 checks fail.
+
+**Browser check re-run in full**, Playwright 1.59.1 with Chromium: 35 of 35 passed, including the 10x
+step. The repository pins no Playwright; the script header now says to use one whose browser is
+installed (1.61.1 on this machine wants a Chromium build that is not downloaded, and stops at launch).
+

@@ -2339,7 +2339,20 @@ function posWire() {
   // leave the wall chart - possibly an HR copy - as the next panel's print.
   window.addEventListener("beforeprint", function () {
     var pn = document.getElementById("panel-positions");
-    if (document.body.classList.contains("pos-wall-printing") && !(pn && pn.classList.contains("active"))) posWallCleanup();
+    var onPositions = !!(pn && pn.classList.contains("active"));
+    if (document.body.classList.contains("pos-wall-printing")) {
+      if (!onPositions) posWallCleanup();
+      return;
+    }
+    // Security F2: a page filtered to "somebody is leaving" (or "key seats")
+    // IS a list of leavers (or of key seats), which never goes on paper. Ctrl+P
+    // on Positions clears that one filter first; the print, and the screen
+    // after it, are the chart without it.
+    var show = document.getElementById("pos-f-open");
+    if (onPositions && show && (show.value === "leaving" || show.value === "key")) {
+      show.value = "";
+      posFilterChanged("");
+    }
   });
 }
 

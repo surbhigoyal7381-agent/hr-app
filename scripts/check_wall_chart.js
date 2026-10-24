@@ -43,6 +43,7 @@ const dom = new JSDOM(readPortalSource(), {
   },
 });
 const { window } = dom, doc = window.document;
+window.Element.prototype.scrollIntoView = function () {};   // jsdom has none; the filters call it
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* Load a payload into POS as posLoad would have. */
@@ -436,6 +437,30 @@ function neverPrinted(label, p) {
      && !doc.getElementById("pos-wall-print") && doc.title === "Alvoraa portal", doc.title);
   if (wasActive) pn.classList.add("active");
   window.posCloseSheet();
+
+  /* security F2: Ctrl+P with Show = "somebody is leaving" (or "key seats")
+     prints the chart without that filter */
+  {
+    const show = doc.getElementById("pos-f-open"), view = doc.getElementById("pos-f-view");
+    const pnl = doc.getElementById("panel-positions"), was = pnl.classList.contains("active");
+    pnl.classList.add("active");
+    for (const v of ["leaving", "key"]) {
+      for (const how of ["tree", "list"]) {
+        view.value = how; show.value = v; window.posFilterChanged("");
+        if (how === "list") { view.value = "list"; window.posPaint(); }
+        const before = doc.getElementById("pos-body").innerHTML.length;
+        window.dispatchEvent(new window.Event("beforeprint"));
+        const body = doc.getElementById("pos-body").innerHTML;
+        ok("F2: Ctrl+P clears Show = " + v + " (" + how + " view first)", show.value === "" && before > 0
+           && !/Show: Only/.test(body) && body.includes("Owner and Managing Director") && body.includes("IT Head"));
+      }
+    }
+    show.value = "open"; window.posFilterChanged("");
+    window.dispatchEvent(new window.Event("beforeprint"));
+    ok("F2: other filters are left as they are", show.value === "open");
+    window.posClearFilter();
+    if (!was) pnl.classList.remove("active");
+  }
 
   /* printing while the size is still being worked out waits for it (AC-35) */
   window.POS.wall = null; btn.click(); await ready();

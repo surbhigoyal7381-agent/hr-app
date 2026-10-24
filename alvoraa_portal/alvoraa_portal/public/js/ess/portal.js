@@ -2822,18 +2822,72 @@ window.posWallUnseated = function () {
   posUnseatedSheet();
 };
 
-/* Forget the drawing and take the paper away. */
-function posWallCleanup() {
+/* After the print window closes: the page size, the title and the paper go,
+   so the next Ctrl+P or payslip prints as before (SEC-4). The layout is
+   kept, because the panel is still open. */
+function posWallAfterPrint() {
+  var st = document.getElementById("pos-wall-page");
+  if (st && st.parentNode) st.parentNode.removeChild(st);
+  document.body.classList.remove("pos-wall-printing");
+  if (POS.wall && POS.wall.title != null) { document.title = POS.wall.title; POS.wall.title = null; }
   var h = document.getElementById("pos-wall-print");
   if (h && h.parentNode) h.parentNode.removeChild(h);
+}
+
+/* Closing the panel: the same, and the drawing is forgotten. */
+function posWallCleanup() {
+  posWallAfterPrint();
   if (POS.wall) { POS.wall.L = null; POS.wall.key = ""; POS.wall.printNext = false; }
 }
 
-/* Step 5 sets the page size and title; until then the print is refused. */
+/* Open print preview: the sheets, a page size in millimetres (Edge ignores
+   "A1"), the file name, then the browser's own print window. Each sheet is
+   a clipped copy of the chart, moved to its row and column. */
 window.posWallPrint = function () {
   var w = POS.wall;
   if (!w) return;
-  if (!w.L) { w.printNext = true; return; }
+  if (!w.L) { w.printNext = true; return; }   // prints once the size is worked out (AC-35)
+  posWallAfterPrint();
+  var t = posKids(POS.rows), L = w.L, P = posWallPlan(L, w.paper, w.sheets, w.hr);
+  var lv = posWallLevels(t), all = w.levels === lv[lv.length - 1][0];
+  var levels = all ? drT("all levels") : drT("{0} levels", [w.levels]);
+  var companies = [], branches = [];
+  POS.rows.forEach(function (r) {
+    if (r.company && companies.indexOf(r.company) < 0) companies.push(r.company);
+    if (r.branch && branches.indexOf(r.branch) < 0) branches.push(r.branch);
+  });
+  companies.sort();
+  var co = companies.join(", "), asat = POS.today || posToday();
+  var foot = [co, branches.length === 1 ? drT("{0} branch", [branches[0]]) : drT("{0} branches", [branches.length]),
+              levels + " " + (w.start === "top" ? drT("from the top") : drT("from {0}", [posWallTops(t)[0].title])),
+              drT("as at {0}", [posDay(asat) + " " + String(asat).slice(0, 4)]),
+              drT("{0} people in seats", [posWallCount(t, w.levels).people])].join(" · ");
+  var hrTag = drT("HR use only - not for display");
+  if (w.hr) foot = hrTag + " · " + foot;
+  var n = P.cols * P.rows, html = "";
+  for (var r = 0; r < P.rows; r++) {
+    for (var col = 0; col < P.cols; col++) {
+      var ox = n === 1 ? (P.pw - L.w * P.scale) / 2 : -col * P.pw;
+      var oy = n === 1 ? (P.ph - L.h * P.scale) / 2 : -r * P.ph;
+      html += '<div class="pos-wall-sheet" style="width:' + (P.wmm - 20) + "mm;height:" + (P.hmm - 21) + 'mm">'
+        + (w.hr ? '<div class="pos-wall-banner">' + posEsc(hrTag) + "</div>" : "")
+        + '<div class="pos-wall-clip" style="height:' + P.ph.toFixed(2) + 'px">'
+        + '<div class="pos-wall-at" style="left:' + ox.toFixed(2) + "px;top:" + oy.toFixed(2) + "px;transform:scale(" + P.scale.toFixed(5) + ')">'
+        + L.html + "</div></div>"
+        + '<div class="pos-wall-foot">' + posEsc(foot) + "</div></div>";
+    }
+  }
+  posWallHolder().innerHTML = html;
+  var st = document.createElement("style");
+  st.id = "pos-wall-page";
+  st.textContent = "@page{size:" + P.wmm + "mm " + P.hmm + "mm;margin:10mm}";
+  document.head.appendChild(st);   // after the portal's A4 rule, so it wins for this print only
+  w.title = document.title;
+  document.title = (w.hr ? drT("HR copy - ") : "")
+    + drT("Wall chart - {0} - {1} - {2} - {3}", [co, levels, w.paper, String(asat).slice(0, 10)]);
+  document.body.classList.add("pos-wall-printing");
+  window.addEventListener("afterprint", posWallAfterPrint, { once: true });
+  window.print();
 };
 
 window.posSeatSheet = function (id, flash) {

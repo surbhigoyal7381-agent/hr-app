@@ -2221,6 +2221,20 @@ body.panel-fullscreen{overflow:hidden}
 .pos-wall .pos-wall-bar{position:absolute;height:1px;background:var(--border)}
 .pos-wall .pos-wall-tops{display:flex;gap:40px;align-items:flex-start}
 .pos-wall .pos-wall-grid{display:grid;grid-auto-flow:column;gap:12px 16px;align-items:start}
+/* The sheets, while the wall chart prints: only they are shown. 7 mm for the
+   HR copy's banner, the chart clipped to its share, 9 pt footer. */
+.pos-wall-sheet{position:relative;overflow:hidden;background:#fff;color:#2D2622;break-after:page;
+  font-family:var(--font,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif)}
+.pos-wall-sheet:last-child{break-after:auto}
+.pos-wall-banner{height:7mm;font-size:10pt;font-weight:700;line-height:7mm}
+.pos-wall-clip{position:relative;overflow:hidden}
+.pos-wall-at{position:absolute;transform-origin:0 0}
+.pos-wall-foot{height:7mm;display:flex;align-items:flex-end;font-size:9pt;white-space:nowrap;overflow:hidden}
+@media print{
+  body.pos-wall-printing > :not(#pos-wall-print){display:none !important}
+  body.pos-wall-printing{margin:0 !important;padding:0 !important;background:#fff !important}
+  body.pos-wall-printing #pos-wall-print{position:static;visibility:visible;width:auto}
+}
 /* The button and the panel. Native inputs; the paper choice is a row of
    radio chips. On a phone: full-width toolbar buttons, 44 px targets. */
 #panel-positions .tb-acts{display:flex;gap:8px;flex-wrap:wrap}

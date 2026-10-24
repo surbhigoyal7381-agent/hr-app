@@ -262,8 +262,12 @@ function neverPrinted(label, p) {
      && panelText().includes("This HR copy also prints leaving dates and job openings. Replacement plans and HR notes never print."));
   ok("AC-12: the size follows the paper", panelText().includes("A1 is 594 × 841 mm."));
   ok("focus stays on the control that was changed", doc.activeElement && doc.activeElement.id === "pos-wall-hr", doc.activeElement && doc.activeElement.id);
+  let printed = 0;
+  window.print = () => { printed++; };
   window.posWallPrint(); await settle(20);
   ok("AC-8 / SEC-1: no server call, no new window, no blob, no storage write", called.length === 0, called.join(", "));
+  ok("AC-8: window.print called once", printed === 1);
+  window.dispatchEvent(new window.Event("afterprint"));
   /* AC-7 and AC-16, AC-58 */
   doc.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   ok("AC-7: Escape closes the panel", !layer().innerHTML);
@@ -308,6 +312,79 @@ function neverPrinted(label, p) {
      && !!own.el.querySelector(".pos-wall-grid"));
   window.posCloseSheet(); window.POS.wall = null;
   window.gpFetch = realGp; window.Storage.prototype.setItem = realSetItem;
+
+  /* ── Open print preview (AC-37 to AC-41, AC-60, AC-61, SEC-4, PRIV-2) ── */
+  load(F.dtc90());
+  doc.title = "Alvoraa portal";
+  let seen = null, prints = 0;
+  window.print = () => {
+    prints++;
+    const st = doc.getElementById("pos-wall-page");
+    seen = { title: doc.title, style: st ? st.textContent : null, last: doc.head.lastElementChild === st,
+             styles: doc.querySelectorAll("#pos-wall-page").length, printing: doc.body.classList.contains("pos-wall-printing"),
+             sheets: [...doc.querySelectorAll("#pos-wall-print .pos-wall-sheet")].map((s) => ({
+               banner: (s.querySelector(".pos-wall-banner") || {}).textContent || "", foot: s.querySelector(".pos-wall-foot").textContent,
+               at: s.querySelector(".pos-wall-at").getAttribute("style") })),
+             text: (doc.getElementById("pos-wall-print") || {}).textContent || "" };
+  };
+  const printWith = async (choices, L) => {
+    window.POS.wall = null;
+    btn.click(); await ready();
+    for (const [id, v] of choices) await set(id, v);
+    if (L) window.POS.wall.L = Object.assign({ html: '<div class="pos-wall"></div>' }, L);
+    seen = null; prints = 0;
+    window.posWallPrint();
+    return seen;
+  };
+  const allNames = F.dtc90().rows.flatMap((r) => r.people.map((p) => p.name));
+  let s = await printWith([["pos-wall-levels", "3"], ["pos-wall-paper-A1", true]], { w: 3344, h: 2118 });
+  ok("AC-37: one style, after the portal's rule, in millimetres", s && s.styles === 1 && s.last && /size:\s*\d+mm \d+mm/.test(s.style) && !/A[0-4]/.test(s.style), s && s.style);
+  ok("AC-37: A1 landscape is 841mm 594mm", s && s.style === "@page{size:841mm 594mm;margin:10mm}", s && s.style);
+  ok("AC-37: window.print called once", prints === 1);
+  ok("AC-38: the file name", s && s.title === "Wall chart - Sample Fashions Pvt Ltd - all levels - A1 - 2026-10-24", s && s.title);
+  ok("AC-38: it matches the pattern and names nobody", s && /^Wall chart - .+ - (\d+ levels|all levels) - A[0-4] - \d{4}-\d{2}-\d{2}$/.test(s.title)
+     && !allNames.some((n) => s.title.includes(n)) && !s.title.includes("PRINTER-SNTL") && !s.title.includes("Owner"));
+  ok("AC-41: the footer", s && s.sheets.length === 1 && s.sheets[0].foot
+     === "Sample Fashions Pvt Ltd · 6 branches · all levels from the top · as at 24 Oct 2026 · 363 people in seats", s && s.sheets[0] && s.sheets[0].foot);
+  ok("AC-41 / D5: nobody's name on the paper's words", s && !/printed by|PRINTER-SNTL/.test(s.text));
+  ok("AC-60: wall copy - no banner, no HR words", s && !s.sheets[0].banner && !s.text.includes("HR use only"));
+  ok("AC-40: printing marks the page so only the wall chart prints", s && s.printing);
+  window.dispatchEvent(new window.Event("afterprint"));
+  ok("AC-39: after printing, the page size is gone", !doc.getElementById("pos-wall-page"));
+  ok("AC-39: the title is back", doc.title === "Alvoraa portal", doc.title);
+  ok("AC-39: Ctrl+P is the screen chart again", !doc.body.classList.contains("pos-wall-printing") && !doc.getElementById("pos-wall-print"));
+  ok("AC-44: the panel is still open", !!layer().querySelector(".pos-sheet") && panelText().includes("names at"));
+  window.posCloseSheet();
+  s = await printWith([["pos-wall-paper-A0", true]], { w: 1000, h: 1500 });
+  ok("AC-37: A0 portrait is 841mm 1189mm", s && s.style === "@page{size:841mm 1189mm;margin:10mm}", s && s.style);
+  ok("AC-38: 2 levels in the name", s && s.title === "Wall chart - Sample Fashions Pvt Ltd - 2 levels - A0 - 2026-10-24", s && s.title);
+  window.posCloseSheet();
+  ok("AC-39: closing without the print window firing afterprint still cleans up",
+     !doc.getElementById("pos-wall-page") && doc.title === "Alvoraa portal" && !doc.body.classList.contains("pos-wall-printing"));
+  s = await printWith([["pos-wall-levels", "3"], ["pos-wall-paper-A3", true], ["pos-wall-hr", true]], { w: 3344, h: 2138 });
+  ok("AC-61: the HR copy's file name", s && s.title === "HR copy - Wall chart - Sample Fashions Pvt Ltd - all levels - A3 - 2026-10-24"
+     && /^HR copy - Wall chart - .+ - (\d+ levels|all levels) - A[0-4] - \d{4}-\d{2}-\d{2}$/.test(s.title), s && s.title);
+  ok("AC-60: the banner at the top of the sheet", s && s.sheets[0].banner === "HR use only - not for display");
+  ok("AC-60: and at the start of its footer", s && s.sheets[0].foot.indexOf("HR use only - not for display · Sample Fashions") === 0, s && s.sheets[0].foot);
+  window.posCloseSheet();
+  /* printing while the size is still being worked out waits for it (AC-35) */
+  window.POS.wall = null; btn.click(); await ready();
+  await set("pos-wall-paper-A2", true);
+  window.POS.wall.fast = false;   // as if the last drawing had been slow
+  doc.getElementById("pos-wall-start").value = bo.id; window.posWallSet("start", bo.id);
+  prints = 0; window.posWallPrint();
+  ok("AC-35: Open print preview while working waits", prints === 0 && !window.POS.wall.L);
+  await settle(80);
+  ok("AC-35: and prints once the size is ready", prints === 1);
+  window.dispatchEvent(new window.Event("afterprint")); window.posCloseSheet(); window.POS.wall = null;
+
+  /* ── AC-2: one window.print() in the Positions code, the wall chart's ── */
+  const src = require("fs").readFileSync(require("path").join(__dirname, "..", "alvoraa_portal", "alvoraa_portal", "public", "js", "ess", "portal.js"), "utf8");
+  const posCode = src.slice(src.indexOf("window.posLoad = "), src.indexOf("function ocPaint"));
+  const fnStart = posCode.indexOf("window.posWallPrint = function");
+  const fnBody = posCode.slice(fnStart, posCode.indexOf("\n};", fnStart));
+  ok("AC-2: no onclick=\"window.print()\" in the Positions code", !/onclick="window\.print\(\)"/.test(posCode));
+  ok("AC-2: exactly one window.print(), inside the wall chart's print", (posCode.match(/window\.print\(\)/g) || []).length === 1 && fnBody.includes("window.print()"));
 
   if (problems.length) {
     console.error("wall chart: " + problems.length + " problem(s) in " + checks + " checks");

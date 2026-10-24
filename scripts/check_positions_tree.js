@@ -291,8 +291,12 @@ const ALL_OPEN = { "P-Sector34": true, "P-Ambala": true };
      out.html.split('class="oc-zoom"').length - 1 === 1
      && out.html.indexOf('class="oc-tree"') < out.html.indexOf('class="oc-zoom"'));
   ok("it opens at 100 %", out.html.includes('style="zoom:1"') && out.html.includes(">100%<"));
-  ["posZoom(-1)", "posZoom(1)", "posZoom(0)", "posZoomFit()", "window.print()"].forEach((f) =>
+  ["posZoom(-1)", "posZoom(1)", "posZoom(0)", "posZoomFit()"].forEach((f) =>
     ok("the tools offer " + f, out.html.includes(f)));
+  // Slice 069 (D-2, SEC-3): the old Print button is gone - it printed flags,
+  // leaving dates and the HR box. The wall chart panel is the way to print.
+  ok("the zoom row has no Print button", !out.html.includes("window.print()") && !/>Print</.test(out.html));
+  ok("the zoom row is labelled Zoom", out.html.includes('role="group" aria-label="Zoom"'));
   ok("the tools are left out of print", out.html.includes('class="pos-ztools noprint"'));
   ok("a print-only header says what is printed",
      out.html.includes('class="pos-printhead"') && out.html.includes("Reporting lines") && out.html.includes("No filter"));
@@ -306,6 +310,18 @@ const ALL_OPEN = { "P-Sector34": true, "P-Ambala": true };
                                         "css", "ess", "panels.css"), "utf8");
   ok("print: A4 landscape", /@page\{size:A4 landscape/.test(css));
   ok("print: anything private never prints", /\.private,\[data-private\]\{display:none !important\}/.test(css));
+  ok("print (069 SEC-3): flags, tags and the HR box never print",
+     ["#panel-positions .oc-flag", "#panel-positions .oc-tag", ".pos-nomgr-row,"].every((x) => css.includes(x)));
+  const pr = makeContext({ "pos-f-view": "tree" });
+  pr.__els["sb-name"] = { textContent: "PRINTER-SNTL" };
+  pr.__els["sb-desig"] = { textContent: "ROLE-SNTL" };
+  pr.POS.rows = ROWS; pr.POS.collapsed = {}; pr.POS.expanded = {};
+  pr.posPaint();
+  const head = (pr.__els["pos-body"].innerHTML.match(/<div class="pos-printhead">[\s\S]*?<\/div>/) || [""])[0];
+  ok("print header (069 AC-3a): never who printed it",
+     head && !/PRINTER-SNTL|ROLE-SNTL|printed by/.test(head), head);
+  ok("print header keeps the view, the date and the filter words",
+     /Positions/.test(head) && /seats as at/.test(head) && /No filter/.test(head) && / on /.test(head));
   ok("print: trays, dialogs, tiles, filters and fold buttons are left out",
      ["#pos-tiles", "#pos-layer", ".gp-backdrop", "#panel-positions .oc-toggle", ".pos-ztools"].every((x) => css.includes(x)));
   const hr = makeContext({ "pos-f-view": "tree" });

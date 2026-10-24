@@ -1203,13 +1203,14 @@ function posPaintTree() {
       + '<div class="sub">Not in any seat, and no manager on their record</div>'
       + '<div class="oc-flags"><span class="oc-flag medium">' + nm + " people</span></div></button></div>" : "";
   var nMatch = posAnyFilter() ? POS.rows.filter(posMatches).length : 0;
-  var tools = '<div class="pos-ztools noprint" role="group" aria-label="Zoom and print">'
+  // No Print button since slice 069 (D-2): it printed flags, leaving dates and
+  // the HR box. "Download wall chart (PDF)" is the way to print.
+  var tools = '<div class="pos-ztools noprint" role="group" aria-label="Zoom">'
     + '<button type="button" class="btn btn-outline btn-sm" onclick="posZoom(-1)" aria-label="Zoom out" title="Zoom out (-)">&minus;</button>'
     + '<span class="pos-zpct" aria-live="polite">' + Math.round((POS.zoom || 1) * 100) + "%</span>"
     + '<button type="button" class="btn btn-outline btn-sm" onclick="posZoom(1)" aria-label="Zoom in" title="Zoom in (+)">+</button>'
     + '<button type="button" class="btn btn-outline btn-sm" onclick="posZoom(0)">Reset</button>'
     + '<button type="button" class="btn btn-outline btn-sm" onclick="posZoomFit()">Fit to width</button>'
-    + '<button type="button" class="btn btn-outline btn-sm" onclick="window.print()">Print</button>'
     + (posAnyFilter() ? '<span class="pos-fline"><span id="pos-fline-txt" role="status">' + nMatch + " matching</span>"
       + ' <button type="button" class="btn btn-outline btn-sm" onclick="posClearFilter()">Clear filter</button></span>' : "")
     + "</div>";
@@ -1288,15 +1289,13 @@ function posFilterWords() {
 function posPrintHead(how) {
   var view = how === "branch" ? "By branch" : (how === "department" ? "By department" : "Reporting lines");
   var co = (POS.rows[0] || {}).company || "";
-  var nm = ((document.getElementById("sb-name") || {}).textContent || "").trim();
-  var role = ((document.getElementById("sb-desig") || {}).textContent || "").trim();
-  var who = nm + (role ? " (" + role + ")" : "");
+  // Never who printed it (slice 069, D5): a name on paper outlives the reason.
   var now = new Date(), today = now.getFullYear() + "-" + ("0" + (now.getMonth() + 1)).slice(-2) + "-" + ("0" + now.getDate()).slice(-2);
   var asat = POS.today || today;
   function day(iso) { return posDay(iso) + " " + String(iso).slice(0, 4); }
   return '<div class="pos-printhead"><strong>Positions &middot; ' + posEsc(view) + "</strong> &middot; " + posEsc(co)
     + " &middot; seats as at " + posEsc(day(asat)) + "<br>Filter: " + posEsc(posFilterWords())
-    + (who ? " &middot; printed by " + posEsc(who) : "") + " on " + posEsc(day(today)) + "</div>";
+    + " on " + posEsc(day(today)) + "</div>";
 }
 
 /* FILTERS: Branch -> By branch, Department -> By department, Job role ->

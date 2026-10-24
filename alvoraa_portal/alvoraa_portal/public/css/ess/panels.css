@@ -2172,7 +2172,9 @@ body.panel-fullscreen{overflow:hidden}
   body:has(#panel-positions.active) .sidebar-overlay,body:has(#panel-positions.active) .bottom-nav,
   body:has(#panel-positions.active) footer,
   #pos-tiles,#panel-positions .pf-toolbar,#panel-positions > .pf-card:has(#pos-f-branch),.pos-ztools,#pos-layer,
-  .gp-backdrop,#panel-positions .oc-toggle,#panel-positions .oc-more,.noprint,.private,[data-private]{display:none !important}
+  .gp-backdrop,#panel-positions .oc-toggle,#panel-positions .oc-more,
+  /* Slice 069 (SEC-3): Ctrl+P never prints flags, leaving tags or the HR box */
+  #panel-positions .oc-flag,#panel-positions .oc-tag,.pos-nomgr-row,.noprint,.private,[data-private]{display:none !important}
   body:has(#panel-positions.active) .main-content{margin:0 !important;padding:0 !important}
   body:has(#panel-positions.active) main.container{padding:0 !important;max-width:none !important}
   .pos-printhead{display:block !important;font-size:11px;margin:0 0 8px}

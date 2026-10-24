@@ -822,6 +822,10 @@ class TestSec16IgnorePermissionsCeiling(FrappeTestCase):
 		("hrms", "alvoraa_org_structure/doctype/alvoraa_position/alvoraa_position.py"): 0,
 		("hrms", "alvoraa_org_structure/doctype/alvoraa_position_assignment/alvoraa_position_assignment.py"): 0,
 		("alvoraa_portal", "org_job_link.py"): 0,
+		# Slice 066 (SEC-12): the grooming red adds no bypass anywhere. The mark is
+		# made, submitted, cancelled and updated as the signed-in user.
+		("alvoraa_portal", "grooming.py"): 0,
+		("alvoraa_portal", "alvoraa_portal/doctype/grooming_mark/grooming_mark.py"): 0,
 	}
 
 	def test_sec16_ignore_permissions_does_not_grow(self):

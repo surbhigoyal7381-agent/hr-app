@@ -41,6 +41,7 @@ from frappe import _
 from frappe.utils import cint, flt, get_datetime, getdate, nowdate
 
 from alvoraa_portal.call_cache import close_cache, holiday_list_for, is_open, once, open_cache
+from alvoraa_portal.grooming import month_lines
 from alvoraa_portal.attendance_analytics import (
 	DEFAULT_TOLERANCE_MINS,
 	TOLERANCE_KEY,
@@ -569,7 +570,7 @@ def month(year=None, month=None, employee=None):
 	filing_from, filing_basis = None, None
 	if can_request and not is_self:
 		filing_from, filing_basis = manager_filing_from(me.name)
-	return {
+	out = {
 		"employee": me.name, "employee_name": me.employee_name,
 		"year": year, "month": month, "last_day": last,
 		"tolerance_mins": tolerance,
@@ -631,6 +632,12 @@ def month(year=None, month=None, employee=None):
 		# with the switch off, because then their manager cannot either.
 		"on_behalf_enabled": manager_on_behalf_on(),
 	}
+	# Slice 066: the grooming red on this month, only for a viewer its own read
+	# gate lets in. Anybody else gets no `grooming` key at all, not an empty one.
+	grooming = month_lines(me.name, start, end)
+	if grooming is not None:
+		out["grooming"] = grooming
+	return out
 
 
 def _day(date, att, holidays, leave_days, claimed, me, shift_cache, tolerance, today,

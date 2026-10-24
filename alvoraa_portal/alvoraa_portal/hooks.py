@@ -326,6 +326,21 @@ doc_events = {
     "WhatsApp Message": {
         "after_insert": "alvoraa_portal.ai_leads.whatsapp.on_whatsapp_message",
     },
+    # Slice 066: nobody submits a grooming red on themselves, on any door.
+    "Grooming Mark": {
+        "before_submit": "hrms.alvoraa_hr_core.access.refuse_own_submit",
+    },
+    # Slice 066 (SEC-8): no comment, assignment or share on a grooming red or a
+    # grooming review. One doctype-name comparison for every other row.
+    "Comment": {
+        "validate": "alvoraa_portal.grooming.refuse_side_record",
+    },
+    "ToDo": {
+        "validate": "alvoraa_portal.grooming.refuse_side_record",
+    },
+    "DocShare": {
+        "validate": "alvoraa_portal.grooming.refuse_side_record",
+    },
 }
 
 # ── Row-level security ───────────────────────────────────────────────────────
@@ -339,6 +354,9 @@ permission_query_conditions = {
     # only Employee too, so they are scoped the same way.
     "Alvoraa App Invite": "alvoraa_portal.field_app_access.invite_query_conditions",
     "Alvoraa Notice Acknowledgement": "alvoraa_portal.field_app_access.acknowledgement_query_conditions",
+    # Slice 066 (SEC-4): the records' own read gate, NOT manager_scope's User
+    # Permissions - those cannot say "today", and leave a new doctype open.
+    "Grooming Mark": "alvoraa_portal.grooming.mark_query_conditions",
 }
 
 has_permission = {
@@ -346,6 +364,8 @@ has_permission = {
     "Alvoraa Field Device": "alvoraa_portal.field_app_access.device_has_permission",
     "Alvoraa App Invite": "alvoraa_portal.field_app_access.invite_has_permission",
     "Alvoraa Notice Acknowledgement": "alvoraa_portal.field_app_access.acknowledgement_has_permission",
+    # Slice 066 (SEC-4): one gate per record, the same rules as the list above.
+    "Grooming Mark": "alvoraa_portal.grooming.mark_has_permission",
 }
 
 scheduler_events = {

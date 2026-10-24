@@ -9233,7 +9233,9 @@ function gmPaintSheet(keepFocus) {
   }
   if (!s) { host.innerHTML = ""; return; }
   var first = gmName(s.first);
-  var h = '<div class="gm-scrim" onclick="if(event.target===this)gmClose()"><div class="gm-sheet" role="dialog"'
+  /* The portal's own dialog shell (.gp-backdrop.open + .gp-modal), as the
+     leave sheet builds it; .gm-* only adds the phone bottom sheet. */
+  var h = '<div class="gp-backdrop open gm-bd" onclick="if(event.target===this)gmClose()"><div class="gp-modal gm-sheet" role="dialog"'
     + ' aria-modal="true" aria-labelledby="gm-sh-t" onkeydown="if(event.key===&quot;Escape&quot;)gmClose()">';
   var go, no = "Cancel";
   if (s.kind === "mark") {

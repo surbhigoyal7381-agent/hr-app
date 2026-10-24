@@ -35,10 +35,11 @@ def _role(name):
 		)
 
 
-def insert_plan(assignment, note=None):
+def insert_plan(assignment, note=None, reason="Personal reasons", ends=None):
 	"""Straight through the record, as the desk or REST would - so the rules
 	are proved to live in the record, not only in the portal's calls."""
-	return frappe.get_doc({"doctype": PLAN, "assignment": assignment, "note": note}).insert().name
+	return frappe.get_doc({"doctype": PLAN, "assignment": assignment, "note": note, "reason": reason,
+	                       "improvement_ends_on": ends}).insert().name
 
 
 def _wipe_plans():
@@ -182,10 +183,21 @@ class Plan065Case(Positions064Case):
 		frappe.local.role_permissions = {}
 		frappe.db.commit()
 
-	def make_plan(self, assignment, note=None, as_user=None):
+	def make_plan(self, assignment, note=None, as_user=None, reason="Personal reasons", ends=None):
 		frappe.set_user(as_user or self.hrA)
-		name = insert_plan(assignment, note)
+		name = insert_plan(assignment, note, reason, ends)
 		frappe.set_user("Administrator")
+		return name
+
+	def performance_plan(self, assignment, ended_days_ago=None, as_user=None):
+		"""P6 (on hold, ends in 60 days) or, with `ended_days_ago`, P7 (end date
+		passed, no outcome). Made as on the day it was set, then moved back."""
+		name = self.make_plan(assignment, as_user=as_user, reason="Performance",
+		                      ends=add_days(nowdate(), 60))
+		if ended_days_ago is not None:
+			frappe.db.set_value(PLAN, name, "improvement_ends_on", add_days(nowdate(), -ended_days_ago),
+			                    update_modified=False)
+		frappe.db.commit()
 		return name
 
 	def age(self, plan, days):
@@ -197,10 +209,18 @@ class Plan065Case(Positions064Case):
 
 
 class TestTheRecord(Plan065Case):
-	def test_ac1_three_fields_and_no_history(self):
+	def test_ac1_seven_fields_and_no_history(self):
 		meta = frappe.get_meta(PLAN)
 		own = [(f.fieldname, f.fieldtype) for f in meta.fields]
-		self.assertEqual(own, [("assignment", "Data"), ("confirmed_on", "Date"), ("note", "Small Text")])
+		self.assertEqual(own, [("assignment", "Data"), ("confirmed_on", "Date"), ("note", "Small Text"),
+		                       ("reason", "Select"), ("improvement_ends_on", "Date"),
+		                       ("not_improved_on", "Date"), ("not_improved_by", "Data")])
+		reason = meta.get_field("reason")
+		self.assertTrue(reason.reqd and reason.set_only_once)
+		# Blank first, or Frappe would give every plan "Performance" by default.
+		self.assertEqual(reason.options.split("\n"),
+		                 ["", "Performance", "Personal reasons", "Other business reason"])
+		self.assertTrue(meta.get_field("improvement_ends_on").set_only_once)
 		a = meta.get_field("assignment")
 		self.assertTrue(a.reqd and a.unique and a.set_only_once)
 		self.assertTrue(meta.get_field("note").set_only_once)
@@ -253,6 +273,23 @@ class TestTheRecord(Plan065Case):
 		frappe.set_user(self.hrA)
 		with self.assertRaises(frappe.ValidationError):
 			frappe.client.set_value(PLAN, name, "note", "second")
+
+	def test_ac78_reason_and_end_date_cannot_be_changed(self):
+		p1 = self.make_plan(self.a_sunil, reason="Other business reason")
+		p6 = self.performance_plan(self.a_ritu)
+		ends = str(frappe.db.get_value(PLAN, p6, "improvement_ends_on"))
+		frappe.set_user(self.hrA)
+		for name, field, value in ((p1, "reason", "Performance"),
+		                           (p6, "improvement_ends_on", str(add_days(nowdate(), 45)))):
+			with self.assertRaises(frappe.ValidationError, msg=field):
+				frappe.client.set_value(PLAN, name, field, value)
+			doc = frappe.client.get(PLAN, name)
+			doc[field] = value
+			with self.assertRaises(frappe.ValidationError, msg=field):
+				frappe.client.save(doc)  # what REST PUT does
+		frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value(PLAN, p1, "reason"), "Other business reason")
+		self.assertEqual(str(frappe.db.get_value(PLAN, p6, "improvement_ends_on")), ends)
 
 	def test_ac24_an_ordinary_delete_is_refused_and_leaves_no_copy(self):
 		name = self.make_plan(self.a_sunil)
@@ -529,11 +566,11 @@ class TestSetConfirmRemove(Plan065Case):
 			frappe.set_user("Administrator")
 
 	def test_ac10_the_three_calls_take_post_only(self):
-		for fn in (plans.set_plan, plans.confirm_plan, plans.remove_plan):
+		for fn in (plans.set_plan, plans.confirm_plan, plans.remove_plan, plans.record_outcome):
 			self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func.get(fn), ["POST"], fn.__name__)
 
 	def test_ac7_set_and_ac3_no_history_anywhere(self):
-		got = self.call(self.hrA, plans.set_plan, self.a_sunil, "Notice likely in December")
+		got = self.call(self.hrA, plans.set_plan, self.a_sunil, "Notice likely in December", "Personal reasons")
 		self.assertEqual(got["confirmed_on"], nowdate())
 		self.assertEqual(got["lapses_on"], str(add_days(nowdate(), 90)))
 		self.assertEqual(frappe.db.get_value(PLAN, got["name"], "owner"), self.hrA)
@@ -542,16 +579,16 @@ class TestSetConfirmRemove(Plan065Case):
 		self.assertEqual((t["Version"], t["View Log"], t["__global_search"]), (0, 0, 0))
 
 	def test_ac9_two_hr_managers_saving_at_once_make_one_plan(self):
-		self.call(self.hrA, plans.set_plan, self.a_sunil, None)
+		self.call(self.hrA, plans.set_plan, self.a_sunil, None, "Personal reasons")
 		with self.assertRaises(frappe.ValidationError) as caught:
-			self.call(self.hrA2, plans.set_plan, self.a_sunil, None)
+			self.call(self.hrA2, plans.set_plan, self.a_sunil, None, "Personal reasons")
 		self.assertIn("Someone else changed this plan", str(caught.exception))
 		self.assertEqual(frappe.db.count(PLAN, {"assignment": self.a_sunil}), 1)
 
 	def test_ac11_a_lapsed_plan_waiting_for_the_job_is_replaced_cleanly(self):
 		old = self.make_plan(self.a_aarti)
 		self.age(old, 91)
-		new = self.call(self.hrA, plans.set_plan, self.a_aarti, None)["name"]
+		new = self.call(self.hrA, plans.set_plan, self.a_aarti, None, "Personal reasons")["name"]
 		self.assertEqual(frappe.get_all(PLAN, filters={"assignment": self.a_aarti}, pluck="name"), [new])
 		self.assertEqual(str(frappe.db.get_value(PLAN, new, "confirmed_on")), nowdate())
 		self.assertEqual(set(_traces(old).values()), {0})
@@ -623,13 +660,14 @@ class TestSetConfirmRemove(Plan065Case):
 		self.assertTrue(frappe.db.exists(PLAN, p))
 
 	def test_ac26_ac41_the_opening_carries_nothing_and_outlives_the_plan(self):
-		p = self.make_plan(self.a_ritu, "Contract ends 31 Dec.")
+		p = self.make_plan(self.a_ritu, "Contract ends 31 Dec.", reason="Other business reason")
 		frappe.set_user(self.hrA)
 		opening = register.post_job(self.cashier.name, vacancies=1, publish=0)["name"]
 		frappe.set_user("Administrator")
 		before = frappe.get_doc("Job Opening", opening).as_dict()
 		text = json.dumps(list(before.values()), default=str).lower()
-		for bad in ("ritu", self.ritu.lower(), "contract ends", p.lower()):
+		for bad in ("ritu", self.ritu.lower(), "contract ends", p.lower(), "other business reason",
+		            "improvement"):
 			self.assertNotIn(bad, text)
 		words = " ".join(str(before.get(f) or "") for f in ("job_title", "route", "description")).lower()
 		self.assertNotIn("replac", words)
@@ -645,7 +683,7 @@ class TestSetConfirmRemove(Plan065Case):
 		p = self.make_plan(self.a_ritu)
 		for user in (self.own, self.sys):
 			with self.assertRaises(frappe.PermissionError, msg=user):
-				self.call(user, plans.set_plan, self.a_sunil, None)
+				self.call(user, plans.set_plan, self.a_sunil, None, "Personal reasons")
 			with self.assertRaises(frappe.PermissionError, msg=user):
 				self.call(user, plans.confirm_plan, p)
 			with self.assertRaises(frappe.PermissionError, msg=user):
@@ -667,15 +705,20 @@ class TestSetConfirmRemove(Plan065Case):
 				lines.append(json.loads(message))
 
 		with patch("frappe.logger", return_value=Capture()):
-			p = self.call(self.hrA, plans.set_plan, self.a_ritu, "Contract ends 31 Dec.")["name"]
+			p = self.call(self.hrA, plans.set_plan, self.a_ritu, "Contract ends 31 Dec.", "Personal reasons")["name"]
 			self.call(self.hrA, plans.confirm_plan, p)
 			self.call(self.hrA, plans.remove_plan, p)
+			# AC-92: "Not improved" is one line, and no line carries the reason.
+			p7 = self.performance_plan(self.a_sunil, ended_days_ago=0)
+			self.call(self.hrA, plans.record_outcome, p7, "not_improved")
 		mine = [line for line in lines if line.get("event") == "replacement_plan"]
-		self.assertEqual([line["reason"] for line in mine], ["set", "confirmed", "removed"])
+		self.assertEqual([line["reason"] for line in mine], ["set", "confirmed", "removed", "outcome recorded"])
+		self.assertEqual(mine[-1]["name"], p7)
 		for line in mine:
 			self.assertEqual(set(line), {"event", "at", "user", "doctype", "name", "reason"})
 		text = json.dumps(lines).lower()
-		for bad in ("ritu", self.ritu.lower(), self.a_ritu.lower(), self.cashier.name.lower(), "contract"):
+		for bad in ("ritu", self.ritu.lower(), self.a_ritu.lower(), self.cashier.name.lower(), "contract",
+		            "sunil", self.sunil.lower(), "performance", "personal reasons"):
 			self.assertNotIn(bad, text)
 
 
@@ -812,11 +855,15 @@ class TestTheChartReply(Plan065Case):
 		self.make_plan(self.a_ritu, "Contract ends 31 Dec.")
 		self.make_plan(self.a_noida)
 		self.make_plan(self.a_aarti)
+		self.performance_plan(self.a_sunil)                   # P6, on hold
+		self.performance_plan(self.a_subj, ended_days_ago=3)  # P7, outcome due
 		with_plans = {u: frappe.as_json(self.reply(u)) for u in (self.head, self.own)}
 		frappe.db.delete(PLAN)
 		for user, before in with_plans.items():
 			self.assertEqual(before, frappe.as_json(self.reply(user)), user)
 			self.assertNotIn("plan", before.lower().replace("planned_vacancies", ""))
+			for word in ("Performance", "Personal reasons", "Other business reason", "improvement", "on hold"):
+				self.assertNotIn(word, before, user)
 		self.assertIsNone(self.seat_row(self.reply(self.head), self.recruiter.name)["opening"])
 		self.assertEqual(self.seat_row(self.reply(self.hrA), self.recruiter.name)["opening"], opening)
 		frappe.delete_doc("Job Opening", opening, force=True, ignore_permissions=True, delete_permanently=True)
@@ -826,7 +873,10 @@ class TestTheChartReply(Plan065Case):
 		self.assertEqual(out["plans"], {"may_set": True, "owners_see": True})  # even with no plan
 		self.make_plan(self.a_ritu, "Contract ends 31 Dec.")
 		out = self.reply(self.hrA)
-		self.assertEqual(tuple(self.person_row(out, self.a_ritu)["plan"]), plans.PLAN_KEYS)
+		# The literal list, not PLAN_KEYS, so a key added later cannot slip in.
+		self.assertEqual(tuple(self.person_row(out, self.a_ritu)["plan"]), (
+			"name", "set_on", "set_by", "confirmed_by", "confirmed_on", "lapses_on", "note",
+			"reason", "improvement_ends_on", "not_improved_on", "not_improved_by"))
 		self.assertNotIn("plan", self.person_row(out, self.a_sunil))
 		for user in (self.own, self.sys):
 			self.assertEqual(self.reply(user)["plans"]["may_set"], False, user)
@@ -834,10 +884,12 @@ class TestTheChartReply(Plan065Case):
 		self.assertEqual(self.reply(self.hrA)["plans"]["owners_see"], False)
 
 	def test_ac12_ac13_who_set_and_confirmed_it(self):
-		p = self.make_plan(self.a_ritu, "Contract ends 31 Dec.")
+		p = self.make_plan(self.a_ritu, "Contract ends 31 Dec.", reason="Other business reason")
 		plan = self.person_row(self.reply(self.hrA), self.a_ritu)["plan"]
-		self.assertEqual((plan["set_by"], plan["confirmed_by"], plan["note"]),
-		                 ("you", None, "Contract ends 31 Dec."))
+		self.assertEqual((plan["set_by"], plan["confirmed_by"], plan["note"], plan["reason"]),
+		                 ("you", None, "Contract ends 31 Dec.", "Other business reason"))
+		self.assertEqual((plan["improvement_ends_on"], plan["not_improved_on"], plan["not_improved_by"]),
+		                 (None, None, None))
 		self.assertEqual(plan["lapses_on"], str(add_days(nowdate(), 90)))
 		# Confirmed later by somebody else: set a day back, confirm today.
 		frappe.db.set_value(PLAN, p, {"creation": add_days(nowdate(), -5), "confirmed_on": add_days(nowdate(), -5)},
@@ -848,6 +900,16 @@ class TestTheChartReply(Plan065Case):
 		plan = self.person_row(self.reply(self.hrA), self.a_ritu)["plan"]
 		hr_a2 = frappe.db.get_value("User", self.hrA2, "full_name")
 		self.assertEqual((plan["set_by"], plan["confirmed_by"]), ("you", f"{hr_a2} (HR Manager)"))
+		self.assertNotIn("@", json.dumps(plan))
+		# Who recorded "Not improved", written the same way.
+		p7 = self.performance_plan(self.a_sunil, ended_days_ago=1)
+		frappe.set_user(self.hrA2)
+		plans.record_outcome(p7, "not_improved")
+		frappe.set_user("Administrator")
+		plan = self.person_row(self.reply(self.hrA), self.a_sunil)["plan"]
+		self.assertEqual((plan["reason"], plan["not_improved_on"], plan["not_improved_by"]),
+		                 ("Performance", nowdate(), f"{hr_a2} (HR Manager)"))
+		self.assertEqual(self.person_row(self.reply(self.hrA2), self.a_sunil)["plan"]["not_improved_by"], "you")
 		self.assertNotIn("@", json.dumps(plan))
 
 	def test_ac59_only_for_today(self):
@@ -934,10 +996,327 @@ class TestReadInOnePlace(Plan065Case):
 	def test_ac68_setting_confirming_and_removing_sends_nothing(self):
 		mail, bell = frappe.db.count("Email Queue"), frappe.db.count("Notification Log")
 		frappe.set_user(self.hrA)
-		p = plans.set_plan(self.a_ritu, "Contract ends 31 Dec.")["name"]
+		p = plans.set_plan(self.a_ritu, "Contract ends 31 Dec.", "Personal reasons")["name"]
 		plans.confirm_plan(p)
 		plans.remove_plan(p)
 		frappe.set_user("Administrator")
 		self.assertEqual((frappe.db.count("Email Queue"), frappe.db.count("Notification Log")), (mail, bell))
 		for doctype, field in plans.READER_TABLES:
 			self.assertFalse(frappe.db.count(doctype, {field: PLAN}), doctype)
+
+
+# ── Option A · reason, improvement period, outcome, hiring hold (US-23..US-26) ──
+
+
+class TestOptionA(Plan065Case):
+	"""Spec v3 §22 and SEC-5 Rev 3. P6: a Performance plan on hold. P7: one
+	whose improvement period has ended with no outcome."""
+
+	def setUp(self):
+		super().setUp()
+		self.owners_see(True)
+		# The System Manager may edit seats here, so AC-80 can show the hold
+		# refusing them - not the seat permission.
+		self.rows(("HR Manager", "write"), ("System Manager", "write"), (OWNERS, "write"),
+		          ("Projects User", "read"))
+		self.store = self.pos("Store Executive 065", seats=1, branch=self.noida,
+		                      designation=self._role_name())
+		self.karan = self._emp_of(self.emp)  # empK: his own login has the Employee role only
+		self.a_karan = self.assign(self.karan, self.store.name).name
+		# Owners who may make a job opening, so AC-80 and AC-84 (a) test the
+		# hold and not Job Opening's own permission. Added beside the shipped
+		# rows, not instead of them.
+		d = frappe.get_doc({"doctype": "DocPerm", "parent": "Job Opening", "parenttype": "DocType",
+		                    "parentfield": "permissions", "role": OWNERS, "permlevel": 0, "read": 1,
+		                    "write": 1, "create": 1, "idx": 99})
+		d.db_insert()
+		frappe.clear_cache(doctype="Job Opening")
+		frappe.db.commit()
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		for name in frappe.get_all("Job Opening", filters={
+				register.POSITION_LINK: ("in", [self.store.name, self.cashier.name, self.hr_head.name])},
+				pluck="name"):
+			frappe.delete_doc("Job Opening", name, force=True, ignore_permissions=True, delete_permanently=True)
+		frappe.db.delete("DocPerm", {"parent": "Job Opening", "role": OWNERS})
+		# empK's Employee lives for the whole file; AC-84 (c) gives it a leaving date.
+		frappe.db.set_value("Employee", self.karan, "relieving_date", None)
+		frappe.clear_cache(doctype="Job Opening")
+		frappe.db.commit()
+		super().tearDown()
+
+	def as_user(self, user, fn, *args, **kw):
+		frappe.set_user(user)
+		try:
+			return fn(*args, **kw)
+		finally:
+			frappe.set_user("Administrator")
+
+	def openings(self, seat):
+		return frappe.db.count("Job Opening", {register.POSITION_LINK: seat})
+
+	def assertHeld(self, user, seat):
+		with self.assertRaises(frappe.ValidationError, msg=user) as caught:
+			self.as_user(user, register.post_job, seat, vacancies=1, publish=0)
+		self.assertIn("Hiring for this seat is on hold", str(caught.exception))
+		frappe.db.rollback()
+		self.assertEqual(self.openings(seat), 0, user)
+
+	# US-23 · reason
+
+	def test_ac76_a_reason_is_required_and_must_be_one_of_three(self):
+		for reason in (None, "", "Attitude"):
+			with self.assertRaises(frappe.ValidationError, msg=repr(reason)):
+				self.as_user(self.hrA, plans.set_plan, self.a_sunil, None, reason)
+			frappe.set_user(self.hrA)
+			with self.assertRaises(frappe.ValidationError, msg=repr(reason)):
+				frappe.client.insert({"doctype": PLAN, "assignment": self.a_sunil, "reason": reason})
+			frappe.set_user("Administrator")
+		self.assertFalse(frappe.db.count(PLAN))
+
+	def test_ac77_readers_get_the_reason(self):
+		self.make_plan(self.a_ritu, reason="Other business reason")
+		for user in (self.hrA, self.own, self.sys):
+			out = self.as_user(user, register.position_table)
+			plan = next(p for r in out["rows"] for p in r["people"] if p["assignment"] == self.a_ritu)["plan"]
+			self.assertEqual(plan["reason"], "Other business reason", user)
+
+	# US-24 · improvement period and hold
+
+	def test_ac79_the_end_date_is_30_to_60_days_out_and_performance_only(self):
+		for days in (29, 61, None):
+			ends = add_days(nowdate(), days) if days else None
+			with self.assertRaises(frappe.ValidationError, msg=days):
+				self.as_user(self.hrA, plans.set_plan, self.a_sunil, None, "Performance", ends, 1)
+		with self.assertRaises(frappe.ValidationError):
+			self.as_user(self.hrA, plans.set_plan, self.a_sunil, None, "Personal reasons",
+			             add_days(nowdate(), 40))
+		self.assertFalse(frappe.db.count(PLAN))
+		for days in (30, 60):
+			ends = str(add_days(nowdate(), days))
+			name = self.as_user(self.hrA, plans.set_plan, self.a_sunil, None, "Performance", ends, 1)["name"]
+			self.assertEqual(str(frappe.db.get_value(PLAN, name, "improvement_ends_on")), ends)
+			_wipe_plans()
+
+	def test_ac81_performance_needs_the_told_tick(self):
+		ends = add_days(nowdate(), 45)
+		for told in (0, None, "0"):
+			with self.assertRaises(frappe.ValidationError, msg=repr(told)):
+				self.as_user(self.hrA, plans.set_plan, self.a_sunil, None, "Performance", ends, told)
+		self.assertFalse(frappe.db.count(PLAN))
+		self.as_user(self.hrA, plans.set_plan, self.a_sunil, None, "Performance", ends, 1)
+		self.assertEqual(frappe.db.count(PLAN), 1)
+		self.assertNotIn("told", frappe.get_meta(PLAN).get_valid_columns())
+
+	def test_ac80_ac83_post_job_is_held_for_plan_readers_until_the_outcome(self):
+		p6 = self.performance_plan(self.a_karan)
+		for user in (self.hrA, self.own, self.sys):
+			self.assertHeld(user, self.store.name)
+		# AC-83: still held on the end date itself, while no outcome is recorded.
+		frappe.db.set_value(PLAN, p6, "improvement_ends_on", nowdate(), update_modified=False)
+		frappe.db.commit()
+		self.assertHeld(self.hrA, self.store.name)
+
+	def test_the_desk_job_opening_form_is_held_too(self):
+		"""Surbhi's one extra check: a Job Opening made on the desk or by REST
+		and pointed at the held seat is refused for a plan reader. One with no
+		seat link is not checked - a stated limit."""
+		self.performance_plan(self.a_karan)
+		frappe.set_user(self.hrA)
+		row = {"doctype": "Job Opening", "job_title": "Store Executive 065", "designation": self._role_name(),
+		       "company": self.store.company, "status": "Open", "publish": 0,
+		       "route": "jobs/test065/held-" + frappe.generate_hash(length=6)}
+		with self.assertRaises(frappe.ValidationError) as caught:
+			frappe.client.insert({**row, register.POSITION_LINK: self.store.name})
+		self.assertIn("Hiring for this seat is on hold", str(caught.exception))
+		frappe.db.rollback()
+		self.assertEqual(self.openings(self.store.name), 0)
+		unlinked = frappe.client.insert(row)["name"]
+		frappe.set_user("Administrator")
+		frappe.delete_doc("Job Opening", unlinked, force=True, ignore_permissions=True, delete_permanently=True)
+
+	def test_ac84a_a_non_reader_is_never_held_and_sees_the_same_with_and_without_p6(self):
+		self.owners_see(False)
+		without = self.as_user(self.own, register.post_job, self.store.name)
+		without["name"] = None
+		frappe.set_user("Administrator")
+		for name in frappe.get_all("Job Opening", filters={register.POSITION_LINK: self.store.name}, pluck="name"):
+			frappe.delete_doc("Job Opening", name, force=True, ignore_permissions=True, delete_permanently=True)
+		before = frappe.as_json(self.as_user(self.own, register.position_table))
+		self.performance_plan(self.a_karan)
+		self.assertEqual(frappe.as_json(self.as_user(self.own, register.position_table)), before)
+		with_p6 = self.as_user(self.own, register.post_job, self.store.name)
+		with_p6["name"] = None
+		self.assertEqual(with_p6, without)
+
+	def test_ac84b_a_hiring_allowed_plan_beside_it_lets_hiring_start(self):
+		self.performance_plan(self.a_ritu)
+		self.make_plan(self.a_sunil, reason="Personal reasons")
+		# The cashier seat holds four; fill the other two so it is full.
+		for n in ("Fill1065", "Fill2065"):
+			self.assign(self.person(n), self.cashier.name)
+		frappe.db.commit()
+		self.assertTrue(self.as_user(self.hrA, register.post_job, self.cashier.name)["name"])
+
+	def test_ac84c_a_leaving_date_lets_hiring_start(self):
+		self.performance_plan(self.a_karan)
+		self.assertHeld(self.hrA, self.store.name)
+		frappe.db.set_value("Employee", self.karan, "relieving_date", add_days(nowdate(), 20))
+		frappe.db.commit()
+		self.assertTrue(self.as_user(self.hrA, register.post_job, self.store.name)["name"])
+
+	def test_a_seat_with_room_is_never_held(self):
+		"""Spec §7.2: the hold is for a FULL seat. Advertising spare room is
+		not replacing anybody."""
+		self.performance_plan(self.a_ritu)  # the cashier seat holds four, two are in it
+		self.assertTrue(self.as_user(self.hrA, register.post_job, self.cashier.name)["name"])
+
+	def test_sec5_o_the_subject_is_treated_as_if_there_were_no_plan(self):
+		"""SEC-5 test (o): an HR Manager whose own plan is on hold learns
+		nothing from post_job or the desk form - while another HR Manager is
+		held on the same seat, which proves the plan is really there."""
+		self.performance_plan(self.a_subj)
+		self.assertHeld(self.hrA, self.hr_head.name)
+		self.assertTrue(self.as_user(self.hrSubj, register.post_job, self.hr_head.name)["name"])
+
+	# US-25 · recording the outcome
+
+	def test_ac83_ac88_the_outcome_waits_for_the_end_date(self):
+		p6 = self.performance_plan(self.a_karan)
+		frappe.db.set_value(PLAN, p6, "improvement_ends_on", add_days(nowdate(), 1), update_modified=False)
+		frappe.db.commit()
+		for outcome in ("improved", "not_improved"):
+			with self.assertRaises(frappe.ValidationError, msg=outcome):
+				self.as_user(self.hrA, plans.record_outcome, p6, outcome)
+		self.assertFalse(frappe.db.get_value(PLAN, p6, "not_improved_on"))
+
+	def test_ac86_improved_erases_the_plan_and_logs_removed(self):
+		lines = []
+
+		class Capture:
+			def warning(self, message):
+				lines.append(json.loads(message))
+
+		p7 = self.performance_plan(self.a_karan, ended_days_ago=0)
+		with patch("frappe.enqueue"), patch("frappe.logger", return_value=Capture()):
+			self.as_user(self.hrA, plans.record_outcome, p7, "improved")
+		self.assertEqual(set(_traces(p7).values()), {0}, _traces(p7))
+		self.assertEqual([line["reason"] for line in lines if line.get("event") == "replacement_plan"], ["removed"])
+		self.assertNotIn("improved", json.dumps(lines))
+
+	def test_ac87_not_improved_records_who_and_when_and_unlocks_hiring(self):
+		p7 = self.performance_plan(self.a_karan, ended_days_ago=5)
+		self.age(p7, 50)
+		self.assertHeld(self.hrA, self.store.name)
+		got = self.as_user(self.hrA2, plans.record_outcome, p7, "not_improved")
+		row = frappe.db.get_value(PLAN, p7, ["not_improved_on", "not_improved_by", "confirmed_on", "modified_by"],
+		                          as_dict=True)
+		self.assertEqual({k: str(v) for k, v in row.items()},
+		                 {"not_improved_on": nowdate(), "not_improved_by": self.hrA2, "confirmed_on": nowdate(),
+		                  "modified_by": self.hrA2})
+		self.assertEqual(got["lapses_on"], str(add_days(nowdate(), 90)))
+		self.assertTrue(self.as_user(self.hrA, register.post_job, self.store.name)["name"])
+
+	def test_ac88_every_refusal_changes_nothing(self):
+		p1 = self.make_plan(self.a_ritu, reason="Other business reason")
+		p7 = self.performance_plan(self.a_karan, ended_days_ago=1)
+		subj = self.performance_plan(self.a_subj, ended_days_ago=1)
+		cases = [
+			(self.hrA, p1, "not_improved", frappe.ValidationError),       # not Performance
+			(self.hrA, p7, "maybe", frappe.ValidationError),              # unknown outcome
+			(self.own, p7, "not_improved", frappe.PermissionError),       # owners only read
+			(self.own, p7, "improved", frappe.PermissionError),
+			(self.sys, p7, "not_improved", frappe.PermissionError),       # so does the System Manager
+			(self.sys, p7, "improved", frappe.PermissionError),
+			(self.hrSubj, subj, "not_improved", frappe.ValidationError),  # their own plan: "someone else changed"
+			(self.head, p7, "not_improved", frappe.PermissionError),      # no Read on plans at all
+		]
+		for user, plan, outcome, error in cases:
+			with self.assertRaises(error, msg=f"{user} {outcome}"):
+				self.as_user(user, plans.record_outcome, plan, outcome)
+			frappe.db.rollback()
+		for plan in (p1, p7, subj):
+			self.assertTrue(frappe.db.exists(PLAN, plan))
+			self.assertFalse(frappe.db.get_value(PLAN, plan, "not_improved_on"))
+		# The two outcome fields cannot be written any other way.
+		frappe.set_user(self.hrA)
+		for field, value in (("not_improved_on", nowdate()), ("not_improved_by", self.hrA)):
+			with self.assertRaises(frappe.ValidationError, msg=field):
+				frappe.client.set_value(PLAN, p7, field, value)
+			doc = frappe.client.get(PLAN, p7)
+			doc[field] = value
+			doc["flags"] = {plans.OUTCOME_FLAG: True}  # Frappe drops it; the record refuses
+			with self.assertRaises(frappe.ValidationError, msg=field):
+				frappe.client.save(doc)
+		# Both fields, exactly as record_outcome would write them: only the
+		# flag (which a request cannot carry) tells the two apart.
+		doc = frappe.client.get(PLAN, p7)
+		doc.update({"not_improved_on": nowdate(), "not_improved_by": self.hrA,
+		            "flags": {plans.OUTCOME_FLAG: True}})
+		with self.assertRaises(frappe.ValidationError):
+			frappe.client.save(doc)
+		frappe.set_user("Administrator")
+		self.assertFalse(frappe.db.get_value(PLAN, p7, "not_improved_on"))
+
+	def test_ac89_a_second_outcome_or_a_lapsed_plan_gets_here_is_the_latest(self):
+		p7 = self.performance_plan(self.a_karan, ended_days_ago=1)
+		self.as_user(self.hrA, plans.record_outcome, p7, "not_improved")
+		for outcome in ("improved", "not_improved"):
+			with self.assertRaises(frappe.ValidationError) as caught:
+				self.as_user(self.hrA2, plans.record_outcome, p7, outcome)
+			self.assertIn("Someone else changed this plan", str(caught.exception))
+		self.assertTrue(frappe.db.exists(PLAN, p7))
+		lapsed = self.performance_plan(self.a_ritu, ended_days_ago=40)
+		self.age(lapsed, 91)
+		with self.assertRaises(frappe.ValidationError) as caught:
+			self.as_user(self.hrA, plans.record_outcome, lapsed, "improved")
+		self.assertIn("Someone else changed this plan", str(caught.exception))
+		self.assertTrue(frappe.db.exists(PLAN, lapsed))
+
+	# US-10 addition, US-26
+
+	def test_ac90_the_reason_never_keeps_a_plan_past_ninety_days(self):
+		h = self.performance_plan(self.a_karan)
+		self.age(h, 91)
+		i = self.performance_plan(self.a_ritu, ended_days_ago=10)
+		self.age(i, 85)
+		frappe.set_user(self.hrA)
+		seen = set(frappe.get_list(PLAN, pluck="name"))
+		frappe.set_user("Administrator")
+		self.assertEqual(seen, {i})
+		with patch("frappe.enqueue"):
+			plans.erase_due_plans()
+		self.assertFalse(frappe.db.exists(PLAN, h))
+		self.assertTrue(frappe.db.exists(PLAN, i))
+		self.assertFalse(frappe.get_meta(PLAN).get_link_fields() + frappe.get_meta(PLAN).get_dynamic_link_fields())
+
+	def test_ac91_nothing_reaches_pms_pay_or_the_person(self):
+		watched = [d for d in ("PMS Talent Flag", "Appraisal", "Goal", "KPI", "Employee")
+		           if frappe.db.exists("DocType", d)]
+
+		def state():
+			return {d: (frappe.db.count(d), str(frappe.db.sql(f"select max(modified) from `tab{d}`")[0][0]))
+			        for d in watched}
+
+		def replies():
+			out = {}
+			for user in (self.emp, self.head):
+				try:
+					out[user] = frappe.as_json(self.as_user(user, register.position_table))
+				except frappe.PermissionError:
+					out[user] = "refused"
+			return out
+
+		before_state, before = state(), replies()
+		p6 = self.performance_plan(self.a_karan)
+		p7 = self.performance_plan(self.a_ritu, ended_days_ago=1)
+		self.as_user(self.hrA, plans.record_outcome, p7, "not_improved")
+		self.assertEqual(replies(), before)
+		for text in before.values():
+			self.assertNotIn("improvement period", text.lower())
+			self.assertNotIn("on hold", text.lower())
+		with patch("frappe.enqueue"):
+			for p in (p6, p7):
+				self.as_user(self.hrA, plans.remove_plan, p)
+		self.assertEqual(state(), before_state)

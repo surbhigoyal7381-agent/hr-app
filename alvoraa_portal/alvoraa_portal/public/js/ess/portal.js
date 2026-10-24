@@ -4400,10 +4400,10 @@ function acPaint() {
     {n: tt.late_days, l: "Late arrivals", warn: tt.late_days > 0},
     {n: tt.leave, l: "On leave"}
   ];
-  var html = '<div class="ac-tiles">' + tiles.map(function (x) {
+  var html = gmReview() + '<div class="ac-tiles">' + tiles.map(function (x) {
     return '<div class="ac-tile' + (x.warn ? " warn" : "") + '">'
       + '<div class="n">' + gpEsc(x.n) + '</div><div class="l">' + gpEsc(x.l) + "</div></div>";
-  }).join("") + "</div>";
+  }).join("") + gmTile() + "</div>";
 
   html += '<div class="tbl-wrap"><table class="ac-tbl"><thead><tr>'
     + '<th>Day</th><th class="t">The day</th><th>In</th><th>Out</th>'
@@ -4446,6 +4446,7 @@ function acRow(x) {
     + gpEsc(x.status) + "</span>";
 
   if (x.missing_punch) label += '<span class="ac-tag warn">Missing punch</span>';
+  label += gmTag(x);
   if (x.request) label += '<span class="ac-tag' + (x.request.state === "approved" ? " ok" : "")
     + '">' + gpEsc(acSay(x.request.state)) + "</span>";
 
@@ -4597,6 +4598,7 @@ function acDetail(x) {
       + "commonest reason a day looks short, and it is what the correction "
       + "below is for.</p>";
   }
+  html += gmBox(x);
 
   if (x.request) {
     html += acReqCard(x.request, d.is_self);
@@ -8829,6 +8831,542 @@ function switchTeamTab(tab) {
   }
 }
 
+/* ── Slice 066: the grooming red ─────────────────────────────────────────
+   A manager marks a direct report on the day; HR marks or removes any open
+   day; the person sees who, why and what it costs, and can ask HR to look.
+
+   THE SERVER DECIDES EVERY BUTTON. `can_mark`, `can_undo`, `can_remove`,
+   `can_ask`, `can_keep` and the refusal sentence all come from
+   `alvoraa_portal.grooming`, worked out with the same `may_mark` the record
+   itself enforces - so a button here can never be one the server refuses.
+   Nothing in this block works out a rule, and a manager is never sent a
+   rupee figure. Words follow prototype v2 (approved 24 Oct 2026). */
+var GM = "alvoraa_portal.grooming.";
+var GM_REMOVE = ["Marked by mistake", "Marked on the wrong person",
+                 "The employee showed it was wrong"];
+var gmState = {today: null, flash: {}, sheet: null, last: null, dayFlash: {},
+               reviewFlash: null};
+
+/* A network failure is a TypeError from fetch; anything else is the server
+   refusing, in a sentence worth showing as it is. */
+function gmIsNet(e) { return !e || e.name === "TypeError"; }
+
+function gmName(first) { return gpEsc(first || ""); }
+
+/* ── the Today card on Whole team ───────────────────────────────────── */
+
+window.gmToday = async function () {
+  var el = document.getElementById("gm-today");
+  if (!el) return;
+  el.innerHTML = gmCard(null, '<div class="gm-skel"></div><div class="gm-skel"></div>'
+    + '<div class="gm-skel"></div><p class="gm-muted" role="status">Loading today’s people…</p>');
+  try {
+    gmState.today = await gpFetch(GM + "today", {});
+  } catch (e) {
+    el.innerHTML = "";
+    return;
+  }
+  gmPaintToday();
+};
+
+function gmCard(day, inner) {
+  return '<section class="gm-card" aria-labelledby="gm-today-h"><div class="gm-card-h">'
+    + '<h2 class="gm-card-t" id="gm-today-h">Today' + (day ? " · " + gpEsc(day) : "")
+    + ' · Grooming red</h2><span class="gm-card-s">Your direct reports who have clocked in</span></div>'
+    + '<div class="gm-card-b"><p class="gm-help">Off unless you mark it. Mark someone only if they '
+    + "are not groomed well today. They are told at once, with your name and the reason.</p>"
+    + inner + "</div></section>";
+}
+
+function gmPaintToday() {
+  var el = document.getElementById("gm-today");
+  var d = gmState.today;
+  if (!el) return;
+  if (!d || !d.show) { el.innerHTML = ""; return; }
+  var inner = "";
+  if (!d.rows.length) {
+    inner += '<p class="gm-help">None of your people have clocked in yet today. They appear '
+      + "here after their first punch.</p>";
+  } else {
+    inner += d.rows.map(gmRow).join("");
+    if (d.not_in && d.not_in.length) {
+      var more = d.not_in.length - 1;
+      inner += '<p class="gm-muted">' + gpEsc(d.not_in[0])
+        + (more > 0 ? " and " + more + " other" + (more > 1 ? "s" : "") : "")
+        + " have not clocked in today, so they cannot be marked yet.</p>";
+    }
+  }
+  inner += '<div class="gm-count">You have marked ' + d.count + " grooming red"
+    + (d.count === 1 ? "" : "s") + " this month.</div>";
+  el.innerHTML = gmCard(d.day, inner);
+}
+
+function gmRow(r, i) {
+  var h = '<div class="gm-row" id="gm-row-' + i + '"><div class="gm-who"><div class="gm-nm">'
+    + gpEsc(r.employee_name) + '</div><div class="gm-sub">'
+    + (r.designation ? gpEsc(r.designation) + " · " : "") + "Clocked in " + gpEsc(r.in_at)
+    + (r.half_day ? " · Half-day leave this afternoon" : "") + "</div></div>";
+  var first = gmName(r.first);
+  var m = r.mark;
+  if (m) {
+    var line;
+    if (m.mine && m.locked) {
+      line = "Marked by you yesterday at " + gpEsc(m.at) + ". The undo closed at midnight. "
+        + "To remove it now, ask HR.";
+    } else if (m.mine) {
+      line = "Marked by you at " + gpEsc(m.at) + ". " + (m.has_login
+        ? first + " has been told."
+        : first + " has no login and will not get a notice. You confirmed you told them in person today.")
+        + " You can undo this until midnight.";
+    } else {
+      line = "Marked by " + gpEsc(m.by) + (m.marked_as === "HR" ? " (HR)" : "") + " at "
+        + gpEsc(m.at) + ". Only HR can remove it.";
+    }
+    h += '<div><span class="ac-tag warn">Grooming red</span> ' + gpEsc(m.reason) + "</div>";
+    if (m.mine && !m.locked) {
+      h += '<button class="btn btn-outline gm-btn" onclick="gmUndo(' + i + ')" aria-label="Undo the grooming red for '
+        + gpEsc(r.employee_name) + '">Undo</button>';
+    }
+    h += '<div class="gm-msg ' + (m.has_login === false && m.mine ? "warn" : "ok") + '">' + line + "</div>";
+    return h + "</div>";
+  }
+  if (r.can_mark) {
+    h += '<button class="btn btn-outline gm-btn" onclick="gmOpenToday(' + i + ')" aria-label="Mark a grooming red for '
+      + gpEsc(r.employee_name) + '">Grooming red</button>';
+    if (gmState.flash[r.employee]) h += '<div class="gm-msg">' + gpEsc(gmState.flash[r.employee]) + "</div>";
+    return h + "</div>";
+  }
+  /* Contract staff read as a quiet line; every other refusal is a message. */
+  return h + (r.why_code === "R4"
+    ? '<div class="gm-sub gm-full">' + gpEsc(r.why_not) + "</div>"
+    : '<div class="gm-msg">' + gpEsc(r.why_not || "") + "</div>") + "</div>";
+}
+
+window.gmOpenToday = function (i) {
+  var r = gmState.today.rows[i];
+  gmOpen({kind: "mark", employee: r.employee, name: r.employee_name, first: r.first,
+          tick: r.needs_told_tick, hr: false, day: "today", from: "today"});
+};
+
+window.gmUndo = async function (i) {
+  var r = gmState.today.rows[i];
+  try {
+    await gpFetch(GM + "undo", {name: r.mark.name});
+    gmState.flash[r.employee] = "Grooming red removed. " + r.first
+      + (r.mark.has_login ? " has been told." : " has no login, so tell them it was removed.");
+    await gmToday();
+    var b = document.querySelector("#gm-row-" + i + " button");
+    if (b) b.focus();
+  } catch (e) {
+    if (gmIsNet(e)) { alert("Could not undo the grooming red. Nothing changed. Check your connection and try again."); return; }
+    /* Past midnight the server says no: the undo window has closed. */
+    r.mark.locked = true;
+    gmPaintToday();
+  }
+};
+
+/* ── the month: tag, tile, box and the review line ─────────────────── */
+
+function gmData() { return (acState.data || {}).grooming || null; }
+
+function gmTag(x) {
+  var g = gmData();
+  return (g && g.days[x.date] && g.days[x.date].mark)
+    ? '<span class="ac-tag warn">Grooming red</span>' : "";
+}
+
+function gmTile() {
+  var g = gmData();
+  if (!g || !g.tile) return "";
+  var t = g.tile;
+  return '<div class="ac-tile warn gm-tile"><div class="n">' + t.n + ' <small>· '
+    + gpEsc(t.amount) + (t.capped ? ", the legal limit" : "") + '</small></div><div class="l">'
+    + "Grooming red · off " + gpEsc(t.month) + " pay</div></div>";
+}
+
+function gmRateWords(g) {
+  return g.grade ? " (the " + gpEsc(g.grade) + " rate)" : "";
+}
+
+function gmBox(x) {
+  var g = gmData();
+  if (!g) return "";
+  var day = g.days[x.date] || {};
+  var m = day.mark;
+  var first = gmName(g.first);
+  var flash = gmState.dayFlash[x.date]
+    ? '<p role="status">' + gpEsc(gmState.dayFlash[x.date]) + "</p>" : "";
+  var h = '<div class="gm-box' + (m ? " on" : "") + '"><h3>Grooming red</h3>' + flash;
+
+  if (!m) {
+    if (g.viewer === "hr") {
+      if (day.can_mark) {
+        if (!g.has_manager) h += "<p>" + first + " has no reporting manager in Alvoraa, so only HR can mark "
+          + first + "’s days.</p>";
+        h += "<p>No grooming red on this day.</p>";
+        return h + '<div class="gm-acts"><button class="btn btn-outline gm-btn" onclick="gmOpenDay(&quot;'
+          + x.date + '&quot;)" aria-label="Mark a grooming red for ' + gpEsc(g.name) + '">Mark grooming red</button></div></div>';
+      }
+      if (!day.why_not) return flash ? h + "</div>" : "";
+      if (day.why_code === "R7" || day.why_code === "R12" || day.why_code === "R10")
+        h += "<p>No grooming red on this day.</p>";
+      return h + "<p>" + gpEsc(day.why_not) + "</p></div>";
+    }
+    if (day.removed || flash) return h + "<p>No grooming red on this day.</p></div>";
+    return "";
+  }
+
+  h += '<p><span class="ac-tag warn">Grooming red</span> ' + gpEsc(m.reason) + ".</p>";
+  if (g.viewer === "self") {
+    h += "<p>Marked by " + gpEsc(m.by) + (m.marked_as === "HR" ? " (HR)" : ", your manager,")
+      + " on " + gpEsc(m.on) + " at " + gpEsc(m.at) + ".</p>";
+    if (g.tile && g.tile.capped) {
+      h += "<p>A grooming red costs " + gpEsc(g.rate_words) + " a day" + gmRateWords(g) + ". You have "
+        + g.tile.n + " this month, which would be " + gpEsc(g.tile.would_be) + ". The law limits fines "
+        + "to 3% of your wages, so <b>" + gpEsc(g.tile.amount) + "</b> comes off your "
+        + gpEsc(g.tile.month) + " pay.</p>";
+    } else {
+      h += "<p>This takes <b>" + gpEsc(g.rate_words) + "</b> off your " + gpEsc((g.tile || {}).month || "")
+        + " pay" + gmRateWords(g) + ".</p>";
+    }
+    if (m.kept_by) h += "<p>HR (" + gpEsc(m.kept_by) + ") checked this on " + gpEsc(m.kept_on) + " and kept it.</p>";
+    else if (m.asked_on) h += '<p role="status">You asked HR to look at this on ' + gpEsc(m.asked_on)
+      + ". HR will decide, and you will be told on the bell.</p>";
+    if (m.can_ask) h += '<div class="gm-acts"><button class="btn btn-outline gm-btn" onclick="gmOpenAsk(&quot;'
+      + x.date + '&quot;)">Ask HR to look at this</button></div>';
+    return h + "</div>";
+  }
+  if (g.viewer === "hr") {
+    h += "<p>Marked by " + (m.by_me ? "you" : gpEsc(m.by)) + " (" + (m.marked_as === "HR" ? "HR" : "manager")
+      + ") on " + gpEsc(m.on) + " at " + gpEsc(m.at) + ".</p>";
+    if (m.asked_on && !m.kept_by) h += '<p class="gm-msg warn">' + first + " asked HR to look at this on "
+      + gpEsc(m.asked_on) + ".</p>";
+    if (m.kept_by) h += "<p>" + (m.kept_by_me ? "You" : gpEsc(m.kept_by)) + " checked it on " + gpEsc(m.kept_on)
+      + " and kept it. " + first + " has been told.</p>";
+    var acts = "";
+    if (m.can_remove) acts += '<button class="btn btn-outline gm-btn" onclick="gmOpenRemove(&quot;' + x.date
+      + '&quot;)">Remove this mark</button>';
+    if (m.can_keep) acts += '<button class="btn btn-outline gm-btn" onclick="gmOpenKeep(&quot;' + x.date
+      + '&quot;)">Keep it and tell ' + first + "</button>";
+    if (!m.can_remove && g.closed_month) h += "<p>" + first + "’s pay slip for " + gpEsc(g.closed_month)
+      + " is submitted, so grooming reds for " + gpEsc(g.closed_month) + " are closed. They cannot be added or removed now.</p>";
+    return h + (acts ? '<div class="gm-acts">' + acts + "</div>" : "") + "</div>";
+  }
+  /* A manager, or somebody who marked: their own marks, and today's. Never money. */
+  if (m.by_me) {
+    h += "<p>Marked by you on " + gpEsc(m.on) + " at " + gpEsc(m.at) + ". " + (g.has_login
+      ? first + " has been told."
+      : first + " has no login and will not get a notice. You confirmed you told them in person.")
+      + (m.can_undo ? " You can undo this until midnight." : "") + "</p>";
+    if (m.can_undo) h += '<div class="gm-acts"><button class="btn btn-outline gm-btn" onclick="gmUndoDay(&quot;'
+      + x.date + '&quot;)">Undo</button></div>';
+  } else {
+    h += "<p>Marked by " + gpEsc(m.by) + (m.marked_as === "HR" ? " (HR)" : "") + " at " + gpEsc(m.at)
+      + ". Only HR can remove it.</p>";
+  }
+  return h + "</div>";
+}
+
+/* The review line, at the top of the month (US-14, US-15). */
+function gmReview() {
+  var g = gmData();
+  if (!g || !g.review || !g.review.length) return "";
+  var first = gmName(g.first);
+  return g.review.map(function (r, i) {
+    var h = '<section class="gm-flag" aria-labelledby="gm-rv-' + i + '">';
+    if (gmState.reviewFlash && !r.carried) h += '<p role="status"><b>' + gpEsc(gmState.reviewFlash) + "</b></p>";
+    var month = gpEsc(r.month);
+    if (r.state === "pending") {
+      h += '<h2 id="gm-rv-' + i + '">Grooming review pending' + (r.carried ? " (" + month + ")" : "") + "</h2>";
+      if (g.viewer === "self") {
+        h += (r.why === "4th"
+          ? "<p>You have " + r.live + " grooming reds in " + month + ", so HR will talk to you about it.</p>"
+          : "<p>You have " + r.live + " grooming red" + (r.live === 1 ? "" : "s") + " in " + month + " ("
+            + gpEsc(r.amount) + "). One more would pass the legal limit of " + gpEsc(r.limit)
+            + " (3% of your wages), so no more can be marked this month. HR will talk to you about it.</p>")
+          + "<p>The review does not change your fines.</p>";
+      } else if (g.viewer === "hr") {
+        h += "<p>Raised on " + gpEsc(r.raised_on) + ": " + first + (r.why === "4th"
+          ? " reached 4 grooming reds in " + month + "."
+          : " reached the legal limit for grooming reds in " + month + " (" + r.live + " mark"
+            + (r.live === 1 ? "" : "s") + "; limit " + gpEsc(r.limit) + " = 3% of Basic " + gpEsc(r.base) + ").")
+          + "</p><p>Talk to " + first + " about dress, agree an action, then record it here.</p>"
+          + '<div class="gm-acts"><button class="btn btn-primary gm-btn" onclick="gmOpenReview(' + i
+          + ')" aria-label="Record the grooming review for ' + gpEsc(g.name) + '">Record the review</button></div>';
+      } else {
+        h += "<p>" + first + (r.why === "4th"
+          ? " has " + r.live + " grooming reds in " + month
+          : " has reached the most grooming reds the law allows in " + month)
+          + ", so HR will talk to " + first + " about it. You do not need to do anything.</p>";
+      }
+      return h + "</section>";
+    }
+    if (g.viewer !== "hr") {
+      return h + '<h2 id="gm-rv-' + i + '">Grooming review</h2><p>Action agreed on ' + gpEsc(r.on) + ".</p></section>";
+    }
+    h += '<h2 id="gm-rv-' + i + '">Grooming review recorded</h2><p>'
+      + (r.by_me ? "Recorded by you" : "Recorded by " + gpEsc(r.by) + " (HR)") + " on " + gpEsc(r.on) + ".</p>"
+      + "<blockquote>" + gpEsc(r.note || "") + "</blockquote>"
+      + "<p>The grooming reds this month still stand. The review will not be raised again for "
+      + first + " in " + month + ".</p>"
+      + '<p class="gm-muted">This note cannot be changed or deleted. Only HR can read it. ' + first
+      + " and " + first + "’s manager see only “Action agreed on " + gpEsc(r.on) + "”.</p>";
+    return h + "</section>";
+  }).join("");
+}
+
+window.gmOpenDay = function (date) {
+  var g = gmData();
+  gmOpen({kind: "mark", employee: acState.data.employee, name: g.name, first: g.first,
+          tick: (g.days[date] || {}).needs_told_tick, hr: true, date: date,
+          day: "on " + gmDayWords(date), from: "month"});
+};
+window.gmOpenRemove = function (date) {
+  var g = gmData();
+  gmOpen({kind: "remove", mark: g.days[date].mark.name, first: g.first, login: g.has_login,
+          date: date, from: "month"});
+};
+window.gmOpenKeep = function (date) {
+  var g = gmData();
+  gmOpen({kind: "keep", mark: g.days[date].mark.name, first: g.first, date: date,
+          rate: g.rate_words, month: (g.tile || {}).month || g.month_name, from: "month"});
+};
+window.gmOpenAsk = function (date) {
+  gmOpen({kind: "ask", mark: gmData().days[date].mark.name, date: date, from: "month"});
+};
+window.gmOpenReview = function (i) {
+  var g = gmData(), r = g.review[i];
+  gmOpen({kind: "review", employee: acState.data.employee, name: g.name, first: g.first,
+          month: r.month_start, from: "month"});
+};
+
+window.gmUndoDay = async function (date) {
+  var g = gmData();
+  try {
+    await gpFetch(GM + "undo", {name: g.days[date].mark.name});
+    gmState.dayFlash[date] = "Grooming red removed. " + g.first
+      + (g.has_login ? " has been told." : " has no login, so tell them it was removed.");
+  } catch (e) {
+    alert(gmIsNet(e) ? "Could not undo the grooming red. Nothing changed. Check your connection and try again."
+                     : (e.message || "Could not undo the grooming red."));
+  }
+  await gmReloadMonth();
+};
+
+/* "Wed 21 Oct", from the day's own date - never the browser's time zone. */
+function gmDayWords(iso) {
+  var p = String(iso).split("-");
+  var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+  var days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  var mons = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return days[d.getUTCDay()] + " " + (+p[2]) + " " + mons[+p[1] - 1];
+}
+
+async function gmReloadMonth() {
+  try {
+    acState.data = await acApi("month", {year: acState.year, month: acState.month,
+                                         employee: acState.employee});
+  } catch (e) { /* the page keeps what it had; the next load corrects it */ }
+  acPaint();
+  /* Said once, where the action was taken; the next repaint is quiet. */
+  gmState.dayFlash = {};
+  gmState.reviewFlash = null;
+}
+
+/* ── the sheets: bottom sheet on a phone, dialog on a desk ───────────── */
+
+function gmTodayIso() {
+  var d = new Date();
+  return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+}
+
+function gmOpen(sheet) {
+  gmState.flash = {};
+  gmState.last = document.activeElement;
+  gmState.sheet = sheet;
+  gmPaintSheet(false);
+}
+
+window.gmClose = function () {
+  gmState.sheet = null;
+  var host = document.getElementById("gm-sheet-host");
+  if (host) host.innerHTML = "";
+  if (gmState.last && document.body.contains(gmState.last)) gmState.last.focus();
+};
+
+function gmPaintSheet(keepFocus) {
+  var s = gmState.sheet;
+  var host = document.getElementById("gm-sheet-host");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "gm-sheet-host";
+    document.body.appendChild(host);
+  }
+  if (!s) { host.innerHTML = ""; return; }
+  var first = gmName(s.first);
+  var h = '<div class="gm-scrim" onclick="if(event.target===this)gmClose()"><div class="gm-sheet" role="dialog"'
+    + ' aria-modal="true" aria-labelledby="gm-sh-t" onkeydown="if(event.key===&quot;Escape&quot;)gmClose()">';
+  var go, no = "Cancel";
+  if (s.kind === "mark") {
+    h += '<h2 id="gm-sh-t" tabindex="-1">Grooming red for ' + gpEsc(s.name) + " " + gpEsc(s.day) + "?</h2>"
+      + '<p class="gm-help" id="gm-sh-help">Choose the one reason that fits. You cannot add your own words.</p>'
+      + '<div role="radiogroup" aria-labelledby="gm-sh-t" aria-describedby="gm-sh-help">'
+      + (gmState.today && gmState.today.reasons || GM_REASONS).map(function (r) {
+          var on = s.chosen === r;
+          return '<label class="gm-opt' + (on ? " sel" : "") + '"><input type="radio" name="gm-r" value="'
+            + gpEsc(r) + '"' + (on ? " checked" : "") + ' onchange="gmPick(this.value)"> ' + gpEsc(r) + "</label>";
+        }).join("") + "</div>";
+    if (s.chosen === "Other") {
+      h += '<label class="gm-fld" for="gm-other">Your reason</label>'
+        + '<p class="gm-help" id="gm-other-help">Clothing or grooming only. Nothing about health or family.</p>'
+        + '<input type="text" id="gm-other" class="gm-other" maxlength="' + GM_OTHER_MAX + '"'
+        + ' aria-describedby="gm-other-help" value="' + gpEsc(s.other || "") + '"'
+        + ' oninput="gmOther(this.value)">';
+    }
+    if (s.tick) {
+      h += '<div class="gm-info">' + first + (s.hr
+          ? " has no login and will not get a notice from the app. Tell " + first + " in person, with the reason, before you mark it."
+          : " has no login and will not get a notice from the app. Tell them today, and tell them they can speak to HR.")
+        + "</div>"
+        + '<label class="gm-opt' + (s.told ? " sel" : "") + '"><input type="checkbox"' + (s.told ? " checked" : "")
+        + ' onchange="gmTold(this.checked)"> I have told ' + first + (s.hr ? " in person" : " in person today") + "</label>";
+    } else {
+      h += '<div class="gm-info">' + first + " will be told now, with your name and this reason."
+        + (s.hr ? " You are marking as HR." : " You can undo this until midnight.") + "</div>";
+    }
+    go = "Mark grooming red";
+  } else if (s.kind === "remove") {
+    h += '<h2 id="gm-sh-t" tabindex="-1">Remove this grooming red?</h2><p class="gm-help" id="gm-sh-help">'
+      + 'Why are you removing it?</p><div role="radiogroup" aria-labelledby="gm-sh-help">'
+      + GM_REMOVE.map(function (r) {
+          var on = s.chosen === r;
+          return '<label class="gm-opt' + (on ? " sel" : "") + '"><input type="radio" name="gm-w" value="'
+            + gpEsc(r) + '"' + (on ? " checked" : "") + ' onchange="gmPick(this.value)"> ' + gpEsc(r) + "</label>";
+        }).join("") + '</div><div class="gm-info">' + first
+      + (s.login ? " will be told it was removed, by you, and why." : " has no login, so tell them it was removed, by you, and why.")
+      + " The person who marked it will see it is gone. A record of the mark and of its removal is kept.</div>";
+    go = "Remove it";
+    no = "Keep the mark";
+  } else if (s.kind === "keep") {
+    h += '<h2 id="gm-sh-t" tabindex="-1">Keep the grooming red?</h2><div class="gm-info">' + first
+      + " will be told that HR has checked it and the mark stays. " + gpEsc(s.rate || "") + " still comes off "
+      + first + "’s " + gpEsc(s.month || "") + " pay.</div>";
+    go = "Keep it and tell " + (s.first || "");
+  } else if (s.kind === "ask") {
+    h += '<h2 id="gm-sh-t" tabindex="-1">Ask HR to look at this grooming red?</h2><div class="gm-info">'
+      + "HR will see your request and decide. You will be told on the bell. Until then the mark stays.</div>";
+    go = "Send to HR";
+  } else if (s.kind === "review") {
+    h += '<h2 id="gm-sh-t" tabindex="-1">Record the grooming review for ' + gpEsc(s.name) + "</h2>"
+      + '<label class="gm-fld" for="gm-rv-text">What you talked about and the action plan</label>'
+      + '<p class="gm-help" id="gm-rv-help">Keep it to dress and the action you agreed. Do not write about '
+      + "health, family, religion or anything else personal.</p>"
+      + '<textarea id="gm-rv-text" aria-describedby="gm-rv-help gm-rv-info" oninput="gmText(this.value)">'
+      + gpEsc(s.text || "") + "</textarea>"
+      + '<div class="gm-info" id="gm-rv-info">Only HR can read this. ' + first + " and " + first
+      + "’s manager see only “Action agreed on " + gpEsc(gmDayWords(gmTodayIso())) + "”. You cannot change or delete it after "
+      + "saving. It clears the review. It does not remove any grooming red or change any fine.</div>";
+    go = "Save and clear";
+  }
+  if (s.error) h += '<p class="gm-err" role="alert">' + gpEsc(s.error) + "</p>";
+  if (s.failed) go = "Try again";
+  h += '<div class="gm-acts"><button class="btn btn-primary gm-btn" onclick="gmConfirm()"' + (s.busy ? " disabled" : "")
+    + ">" + (s.busy ? "Saving…" : gpEsc(go)) + '</button><button class="btn btn-outline gm-btn" onclick="gmClose()">'
+    + gpEsc(no) + "</button></div></div></div>";
+  host.innerHTML = h;
+  if (!keepFocus) { var t = document.getElementById("gm-sh-t"); if (t) t.focus(); }
+}
+
+var GM_REASONS = ["Not in uniform", "Uniform incomplete", "No name badge", "Wrong footwear", "Other"];
+/* "Other" (Surbhi, 24 Oct 2026): a short reason the marker types. The server
+   checks the length and the words again; this only saves a round trip. */
+var GM_OTHER_MAX = 100;
+
+window.gmPick = function (v) { gmState.sheet.chosen = v; gmState.sheet.error = null; gmPaintSheet(true); };
+window.gmTold = function (v) { gmState.sheet.told = v; gmState.sheet.error = null; gmPaintSheet(true); };
+window.gmText = function (v) { gmState.sheet.text = v; };
+window.gmOther = function (v) { gmState.sheet.other = v; };
+
+window.gmConfirm = async function () {
+  var s = gmState.sheet;
+  if (!s || s.busy) return;
+  if ((s.kind === "mark" || s.kind === "remove") && !s.chosen) {
+    s.error = s.kind === "mark" ? "Choose a reason first." : "Choose why you are removing it.";
+    gmPaintSheet(true);
+    var r = document.querySelector('.gm-sheet input[type="radio"]');
+    if (r) r.focus();
+    return;
+  }
+  if (s.kind === "mark" && s.chosen === "Other" && !(s.other || "").trim()) {
+    s.error = "Write your reason in a few words.";
+    gmPaintSheet(true);
+    var o = document.getElementById("gm-other");
+    if (o) o.focus();
+    return;
+  }
+  if (s.kind === "review" && !(s.text || "").trim()) {
+    s.error = "Write what you talked about and the action plan first.";
+    gmPaintSheet(true);
+    var ta = document.getElementById("gm-rv-text");
+    if (ta) ta.focus();
+    return;
+  }
+  if (s.kind === "mark" && s.tick && !s.told) {
+    s.error = "Tick the box to confirm you told " + s.first + " in person.";
+    gmPaintSheet(true);
+    var c = document.querySelector('.gm-sheet input[type="checkbox"]');
+    if (c) c.focus();
+    return;
+  }
+  s.busy = true; s.error = null;
+  gmPaintSheet(true);
+  var call, args;
+  if (s.kind === "mark") {
+    call = "mark";
+    args = {employee: s.employee, reason: s.chosen, told_in_person: s.told ? 1 : 0, date: s.date || null,
+            other_reason: s.chosen === "Other" ? (s.other || "") : null};
+  } else if (s.kind === "remove") { call = "remove"; args = {name: s.mark, reason: s.chosen}; }
+  else if (s.kind === "keep") { call = "keep"; args = {name: s.mark}; }
+  else if (s.kind === "ask") { call = "ask"; args = {name: s.mark}; }
+  else { call = "record_review"; args = {employee: s.employee, month: s.month, note: s.text}; }
+  try {
+    await gpFetch(GM + call, args);
+  } catch (e) {
+    s.busy = false;
+    if (gmIsNet(e)) {
+      s.failed = true;
+      s.error = s.kind === "mark"
+        ? "Could not save the grooming red. Nothing was saved. Check your connection and try again."
+        : s.kind === "remove"
+          ? "Could not remove the mark. Nothing changed. Check your connection and try again."
+          : "Could not save that. Nothing changed. Check your connection and try again.";
+    } else {
+      s.error = e.message;
+    }
+    gmPaintSheet(true);
+    return;
+  }
+  gmState.sheet = null;
+  gmPaintSheet(true);
+  if (s.from === "today") {
+    await gmToday();
+  } else {
+    if (s.kind === "mark") {
+      gmState.dayFlash[s.date] = s.tick
+        ? "Saved. " + s.first + " has no login and will not get a notice. You confirmed you told them in person."
+        : "Saved. " + s.first + " has been told, with your name and the reason.";
+    } else if (s.kind === "remove") {
+      gmState.dayFlash[s.date] = s.login
+        ? "Removed. " + s.first + " has been told it was removed, by you: " + s.chosen + "."
+        : "Removed. " + s.first + " has no login, so tell them it was removed, by you: " + s.chosen + ".";
+    } else if (s.kind === "review") {
+      gmState.reviewFlash = "Review recorded. The grooming reds this month still stand.";
+    }
+    await gmReloadMonth();
+  }
+  if (gmState.last && document.body.contains(gmState.last)) gmState.last.focus();
+};
+
 /* ── The team's days, worst first ────────────────────────────────────────
    Surbhi, 17 Oct 2026: "we would need one page with filter for all the
    reporting persons first", and "only attendance facts" - not pay
@@ -8893,6 +9431,7 @@ window.trOpen = async function () {
   if (!acState.reasons) {
     try { acState.reasons = await acApi("reasons"); } catch (e) { acState.reasons = []; }
   }
+  gmToday();
   trLoad();
 };
 

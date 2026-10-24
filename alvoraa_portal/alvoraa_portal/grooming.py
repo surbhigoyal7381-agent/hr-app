@@ -55,39 +55,34 @@ OTHER = "Other"
 OTHER_MAX = 100
 OTHER_HINT = "Clothing or grooming only. Nothing about health or family."
 #
-# THE ONE LIST (security verification B3, 25 Oct 2026). Used by the "Other"
-# check below AND by the test that pins the fixed reasons, so the two cannot
-# drift. An entry ending in "*" matches any word starting with it; the rest
-# match whole words only ("thin" must not refuse "thing"). It covers religion
-# and religious dress, hair and body, jewellery and marks on the skin, smell,
-# health and disability, family, caste and gender, and money. It is a floor,
-# not a control: free text about how a person looks cannot be made safe by a
-# word list. COUNSEL TO REVIEW the list and the free text itself (01c Q-C3).
+# THE ONE LIST (architect review M-4, 25 Oct 2026). Used by the "Other" check
+# below AND by the test that pins the fixed reasons, so the two cannot drift.
+# It refuses words that put SENSITIVE INFORMATION about a person on a fine -
+# religion and the marks of a religion, caste, race, health, disability,
+# pregnancy, family, gender and sexuality. It does NOT refuse clothing or
+# grooming words (dirty, head, hair, beard, jewellery): a grooming red is about
+# how someone came to work, and Surbhi accepted the free text for that.
+# An entry ending in "*" matches any word starting with it; the rest match
+# whole words only. It is a floor, not a control. COUNSEL TO REVIEW the list.
 NOT_ABOUT_CLOTHES = (
-	# religion, caste, gender
-	"religio*", "caste*", "gender*", "sex*", "woman", "women", "lady", "ladies", "transgender*",
-	"hindu*", "muslim*", "sikh*", "christian*", "jain*", "god*", "puja", "namaz", "prayer*",
-	# religious dress and marks
-	"turban*", "pagdi*", "pagri*", "patka*", "hijab*", "burqa*", "burka*", "niqab*", "veil*",
-	"dupatta*", "head", "headscarf*", "head-scarf*", "topi*", "tilak*", "bindi*",
-	"sindoor*", "kara", "kada", "mangalsutra*", "rudraksh*", "cross", "janeu*", "tika",
-	# hair and body
-	"hair*", "beard*", "moustache*", "mustache*", "shav*", "unshaven", "bald*", "skin*",
-	"complexion*", "colou?red", "weight*", "fat", "fatty", "obese*", "thin",
-	"skinny", "body*", "height", "teeth", "nail*", "makeup",
-	"make-up", "lipstick*",
-	# jewellery, piercings, tattoos, henna
-	"jewel*", "jewellery", "jewelry", "ring", "rings", "bangle*", "earring*", "nose*",
-	"pierc*", "tattoo*", "mehendi*", "mehndi*", "henna*",
-	# smell and hygiene of the person
-	"smell*", "odou?r*", "stink*", "sweat*", "hygien*", "bath*", "dirty", "unclean*",
+	# religion, and items that name a religion
+	"religio*", "hindu*", "muslim*", "islam*", "sikh*", "christian*", "jain*", "buddhis*",
+	"parsi*", "jew", "jews", "jewish", "god", "gods", "puja", "namaz", "prayer*",
+	"temple*", "mosque*", "church*", "gurdwara*", "fasting", "roza", "ramzan*",
+	"ramadan*", "navratri*", "turban*", "pagdi*", "pagri*", "patka*", "hijab*", "burqa*",
+	"burka*", "niqab*", "tilak*", "bindi*", "sindoor*", "kara", "kada", "mangalsutra*",
+	"rudraksh*", "janeu*",
+	# caste, race, region
+	"caste*", "dalit*", "brahmin*", "race", "racial*", "ethnic*", "tribe*", "tribal*",
 	# health, disability, pregnancy
-	"health*", "sick*", "ill", "illness*", "disease*", "medical*", "medicine*", "injur*",
-	"pain", "painful", "disab*", "handicap*", "limp*", "lame", "blind*", "deaf*", "pregnan*", "period*",
-	"menstru*",
-	# family and money
-	"family", "families", "husband*", "wife", "wives", "child*", "kid*", "mother*", "father*",
-	"poor", "afford*", "cheap", "money",
+	"health*", "sick*", "illness*", "disease*", "medical*", "medicine*", "doctor*",
+	"hospital*", "injur*", "disab*", "handicap*", "blind*", "deaf*", "pregnan*",
+	"period", "periods", "menstru*", "mental*", "depress*", "diabet*", "allerg*",
+	# family and relationships
+	"family", "families", "husband*", "wife", "wives", "child*", "kids", "mother*",
+	"father*", "marri*", "divorc*", "widow*",
+	# gender and sexuality
+	"gender*", "sex", "sexual*", "transgender*", "gay", "lesbian*",
 )
 _NOT_ABOUT_CLOTHES_RE = re.compile(r"\b(?:" + "|".join(
 	w[:-1] + r"\w*" if w.endswith("*") else w + r"\b" for w in NOT_ABOUT_CLOTHES) + ")")
@@ -719,7 +714,8 @@ def pending_reviews(user, month_start):
 		          and managers.get(s.reports_to) == m.raised_by]
 		if raised and not any(c > raised[0].raised_on for c in reviews.get(emp, [])):
 			out.append(frappe._dict(employee=emp, employee_name=s.employee_name, count=live,
-			                        raised_on=raised[0].raised_on, why="raised", live=live))
+			                        raised_on=raised[0].raised_on, why="raised", live=live,
+			                        raised_by=_person(raised[0].raised_by)))
 			continue
 		if reviews.get(emp):
 			continue
@@ -757,19 +753,33 @@ def may_raise(employee, user=None):
 		return _no("RAISE1", _("Only the person's current manager can raise this with HR."))
 	if not rule_set_for(s.company):
 		return _no("R1", _("Grooming reds are not switched on for this company."))
-	marks = frappe.get_all(MARK, filters={"employee": employee, "docstatus": 1,
+	# Removed marks too: a raise written on a mark HR later removed still
+	# counts as this month's one raise (architect review M-2, AC-83).
+	marks = frappe.get_all(MARK, filters={"employee": employee, "docstatus": ("in", [1, 2]),
 	                                      "mark_date": ("between", [start, end])},
-	                       fields=["name", "mark_date", "creation", "raised_on"])
+	                       fields=["name", "mark_date", "creation", "raised_on", "docstatus"])
 	first = _first(s)
-	if any(m.raised_on for m in marks):
+	code, limit_mark = _raise_verdict(marks, _rate_now(employee), _base(employee, end))
+	if code == "RAISE2":
 		return _no("RAISE2", _("{0}'s grooming has already been raised with HR this "
 		                       "month.").format(first))
-	point = _raise_point(_live_dated(marks), _rate_now(employee), _base(employee, end))
-	if not point:
+	if code:
 		return _no("RAISE3", _("{0} has not reached the limit this month, so there is nothing to "
 		                       "raise.").format(first))
-	limit_mark = next(m.name for m in marks if m.creation == point[1])
 	return frappe._dict(ok=True, code=None, message=None, mark=limit_mark, first=first)
+
+
+def _raise_verdict(marks, rate, base):
+	"""The one rule for a raise, on one person's marks this month (live and
+	removed): ("RAISE2", None) once raised, ("RAISE3", None) before the limit,
+	else (None, the live mark that reached the limit)."""
+	if any(m.raised_on for m in marks):
+		return "RAISE2", None
+	live = [m for m in marks if m.docstatus == 1]
+	point = _raise_point(_live_dated(live), rate, base)
+	if not point:
+		return "RAISE3", None
+	return None, next(m.name for m in live if m.creation == point[1])
 
 
 @frappe.whitelist(methods=["POST"])
@@ -1081,7 +1091,7 @@ def today():
 	m_start, _m_end = _month_bounds(day)
 	count = frappe.db.count(MARK, {"owner": user, "docstatus": 1,
 	                               "mark_date": ("between", [m_start, day])})
-	rows, not_in = [], []
+	rows, not_in, at_limit = [], [], []
 	for t in team:
 		s = f.subjects.get(t.name)
 		if not s or not f.rule_sets.get(s.company):
@@ -1103,9 +1113,12 @@ def today():
 			row["why_not"] = None if v.ok else v.message
 			row["why_code"] = v.code
 			if v.code == "R12" and not hr_only(v):
-				row["raise"] = _raise_state(t.name)
+				at_limit.append(row)
 			row["needs_told_tick"] = bool(v.ok and not v.has_login)
 		rows.append(row)
+	states = _raise_states(f, [r["employee"] for r in at_limit])
+	for r in at_limit:
+		r["raise"] = states.get(r["employee"], {"can": False})
 	return {"show": True, "day": _day(day), "rows": rows, "not_in": not_in, "count": count,
 	        "reasons": list(REASONS), "other_max": OTHER_MAX, "other_hint": _(OTHER_HINT),
 	        "raise_reasons": list(RAISE_REASONS)}
@@ -1115,19 +1128,37 @@ def hr_only(v):
 	return v.get("capacity") == "HR"
 
 
-def _raise_state(employee):
-	"""For a report at the limit: may the manager raise it, or when they did
-	and when HR answered. Asked only for rows at the limit."""
-	v = may_raise(employee)
-	if v.ok:
-		return {"can": True}
-	if v.code != "RAISE2":
-		return {"can": False}
-	day = getdate(nowdate())
-	start, end = _month_bounds(day)
-	fl = flag_for(employee, start, _rate_now(employee), _base(employee, end)) or {}
-	return {"can": False, "raised_on": _day(fl.get("raise_on")) if fl.get("raise_on") else None,
-	        "reviewed_on": _day(fl.review.creation) if fl.get("state") == "cleared" else None}
+def _raise_states(f, employees):
+	"""For the Today card's rows at the limit, all at once (architect review
+	m-6: it was ~8 queries per row): may the manager raise it, or when they did
+	and when HR answered. Two queries whatever the number of rows; rate and
+	Basic come from the facts already read. The caller is these people's
+	manager (they are the Today card's direct reports)."""
+	if not employees:
+		return {}
+	start, end = _month_bounds(getdate(nowdate()))
+	marks = frappe.get_all(MARK, filters={"employee": ("in", employees), "docstatus": ("in", [1, 2]),
+	                                      "mark_date": ("between", [start, end])},
+	                       fields=["name", "employee", "mark_date", "creation", "raised_on",
+	                               "docstatus"])
+	reviews = frappe.get_all(REVIEW, filters={"employee": ("in", employees), "review_month": start},
+	                         fields=["employee", "creation"])
+	out = {}
+	for e in employees:
+		s = f.subjects[e]
+		mine = [m for m in marks if m.employee == e]
+		code, _mark = _raise_verdict(mine, _rate(f.rule_sets[s.company], s)[0], _base_on(f, e, end))
+		if not code:
+			out[e] = {"can": True}
+			continue
+		if code != "RAISE2":
+			out[e] = {"can": False}
+			continue
+		raised = min(m.raised_on for m in mine if m.raised_on)
+		after = sorted(r.creation for r in reviews if r.employee == e and r.creation > raised)
+		out[e] = {"can": False, "raised_on": _day(raised),
+		          "reviewed_on": _day(after[0]) if after else None}
+	return out
 
 
 def month_lines(employee, start, end):

@@ -452,7 +452,7 @@ class TestOtherReason(Case):
 		self.refused(_mark, "Ravi", "Rahul", reason="Other", other="  ")
 		self.refused(_mark, "Ravi", "Rahul", reason="Other", other="x" * 101)
 		for words in ("He looks sick today", "Family trouble", "Religion", "Wearing a hijab",
-		              "Too much weight"):
+		              "Pregnant, no belt"):
 			with self.subTest(words=words):
 				self.refused(_mark, "Ravi", "Rahul", reason="Other", other=words)
 		name = _mark("Ravi", "Rahul", reason="Other", other="  Torn   shirt sleeve ")
@@ -959,18 +959,32 @@ class TestSecurityVerificationFixes(Case):
 		self.assertEqual(frappe.db.count("File", {"attached_to_doctype": grooming.MARK}), 0)
 		self.assertEqual(frappe.db.count("Tag Link", {"document_type": grooming.MARK}), 0)
 
-	def test_b3_one_word_list_for_the_fixed_reasons_and_the_typed_ones(self):
+	def test_m4_one_list_refuses_sensitive_information_and_allows_grooming_words(self):
+		"""Architect review M-4: refuse religion, caste, health, family, gender and
+		the like; allow clothing and grooming words. One list for the fixed
+		reasons and the typed ones."""
 		for r in grooming.REASONS:                      # the same list pins the fixed reasons
 			self.assertFalse(grooming.about_the_person(r), r)
-		for words in ("Beard not trimmed", "Hair too long", "Moustache untidy",
-		              "Jewellery not allowed", "Head covering wrong colour", "Dupatta missing",
-		              "Tattoo showing", "Smells bad", "Limping, wrong shoes", "Turban untidy",
-		              "Sick looking", "Bindi too big", "Wife called", "Too fat for the shirt"):
-			with self.subTest(words=words):
+		for words in ("Turban untidy", "Hijab not in company colour", "Sikh kara showing",
+		              "Religious thread on wrist", "Caste mark", "Sick looking",
+		              "Medical boot on one foot", "Pregnant, no belt", "Wife called",
+		              "Gender", "Disabled, wrong shoes", "Fasting so tired"):
+			with self.subTest(refused=words):
 				self.refused(_mark, "Ravi", "Rahul", reason="Other", other=words)
-		for words in ("Torn shirt sleeve", "Paint stains on trousers", "Face mask missing",
-		              "Apron missing", "Shirt not tucked in"):
-			self.assertFalse(grooming.about_the_person(words), words)
+		for words in ("Beard not trimmed", "Hair too long", "Dirty shirt",
+		              "Jewellery not allowed", "Head covering wrong colour", "Torn shirt sleeve",
+		              "Paint stains on trousers", "Face mask missing", "Shirt not tucked in"):
+			with self.subTest(allowed=words):
+				self.assertFalse(grooming.about_the_person(words), words)
+		self.assertTrue(_mark("Ravi", "Rahul", reason="Other", other="Beard not trimmed"))
+
+	def test_m2_the_raise_sheet_asks_for_a_reason_not_why_it_is_removed(self):
+		"""Architect review m-2. Read from the screen code: only the remove sheet
+		asks "why"; the mark and raise sheets say "Choose a reason first."."""
+		js = open(os.path.join(os.path.dirname(grooming.__file__), "public", "js", "ess",
+		                       "portal.js"), encoding="utf-8").read()
+		self.assertIn('s.error = s.kind === "remove" ? "Choose why you are removing it." : '
+		              '"Choose a reason first.";', js)
 
 	def test_m2_a_marker_who_has_left_reads_nothing(self):
 		name = _mark("Ravi", "Rahul")

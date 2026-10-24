@@ -9377,7 +9377,8 @@ window.gmConfirm = async function () {
   var s = gmState.sheet;
   if (!s || s.busy) return;
   if ((s.kind === "mark" || s.kind === "remove" || s.kind === "raise") && !s.chosen) {
-    s.error = s.kind === "mark" ? "Choose a reason first." : "Choose why you are removing it.";
+    /* Only the remove sheet asks "why"; the mark and raise sheets ask for a reason. */
+    s.error = s.kind === "remove" ? "Choose why you are removing it." : "Choose a reason first.";
     gmPaintSheet(true);
     var r = document.querySelector('.gm-sheet input[type="radio"]');
     if (r) r.focus();

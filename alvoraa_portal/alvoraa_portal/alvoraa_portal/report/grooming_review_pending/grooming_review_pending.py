@@ -28,9 +28,17 @@ def execute(filters=None):
 		{"fieldname": "live", "label": _("Grooming reds this month"), "fieldtype": "Int",
 		 "width": 170},
 	]
-	rows = [{"employee": r.employee, "employee_name": r.employee_name,
-	         "why": _("3 grooming reds") if r.why == "max" else _("Legal limit reached"),
+	rows = [{"employee": r.employee, "employee_name": r.employee_name, "why": _why(r),
 	         "raised_on": getdate(r.raised_on), "live": r.live}
 	        for r in grooming.pending_reviews(frappe.session.user, month)]
 	message = None if rows else _("No grooming review is pending.")
 	return columns, rows, message
+
+
+def _why(r):
+	"""Why the flag is up, in the words HR acts on (architect review m-1)."""
+	if r.why == "raised":
+		return _("Raised again by {0}").format(r.raised_by)
+	if r.why == "max":
+		return _("3 grooming reds, the most allowed")
+	return _("Legal limit reached")

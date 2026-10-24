@@ -468,3 +468,92 @@ class TestSecurityVerificationCap(Case):
 		with as_user("Ravi"):                           # the endpoint still works, and says only the name
 			self.assertEqual(grooming.raise_with_hr(P["Kiran"], "Not in uniform"), {"name": names[-1]})
 
+
+# ── Architect review, 25 Oct 2026 (06-review): M-1, M-2, m-1, m-6 ───────────
+
+class TestArchitectReviewFixes(Case):
+	def test_m2_one_raise_a_month_even_after_the_mark_it_was_on_is_removed(self):
+		if TODAY.day < 5:
+			self.skipTest("too early in the month")
+		names = [_raw_mark(P["Kiran"], add_days(M_START, i), at="%s 10:0%d:00" % (add_days(M_START, i), i))
+		         for i in range(3)]
+		with as_user("Ravi"):
+			self.assertEqual(grooming.raise_with_hr(P["Kiran"], "Not in uniform"), {"name": names[-1]})
+		frappe.db.set_value(grooming.MARK, names[-1], "docstatus", 2)   # HR removed it
+		_raw_mark(P["Kiran"], add_days(M_START, 3), at="%s 10:09:00" % add_days(M_START, 3))
+		with as_user("Ravi"):
+			self.assertEqual(grooming.may_raise(P["Kiran"]).code, "RAISE2")
+			self.refused(grooming.raise_with_hr, P["Kiran"], "Not in uniform")
+
+	def test_m1_pending_report_says_why_in_the_right_words(self):
+		if TODAY.day < 4:
+			self.skipTest("too early in the month")
+		from alvoraa_portal.alvoraa_portal.report.grooming_review_pending import (
+			grooming_review_pending as pending)
+		for i in range(3):
+			_raw_mark(P["Kiran"], add_days(M_START, i), at="%s 10:0%d:00" % (add_days(M_START, i), i))
+		with as_user("Ritika"):
+			self.assertEqual([r["why"] for r in pending.execute({"month": str(M_START)})[1]],
+			                 ["3 grooming reds, the most allowed"])
+			grooming.record_review(P["Kiran"], str(M_START), NOTE)
+		with as_user("Ravi"):
+			grooming.raise_with_hr(P["Kiran"], "Not in uniform")
+		with as_user("Ritika"):
+			self.assertEqual([r["why"] for r in pending.execute({"month": str(M_START)})[1]],
+			                 ["Raised again by Ravi G066"])
+
+	def test_m6_the_today_card_is_flat_with_people_at_the_limit(self):
+		if TODAY.day < 4:
+			self.skipTest("too early in the month")
+
+		def count():
+			n = [0]
+			real = frappe.db.sql
+
+			def wrap(*a, **k):
+				n[0] += 1
+				return real(*a, **k)
+			with as_user("Ravi"), patch.object(frappe.db, "sql", wrap):
+				grooming.today()
+			return n[0]
+		for i in range(3):
+			_raw_mark(P["Kiran"], add_days(M_START, i), at="%s 10:0%d:00" % (add_days(M_START, i), i))
+		count()
+		one = count()
+		for who in ("Aman", "Pooja"):
+			for i in range(3):
+				_raw_mark(P[who], add_days(M_START, i), at="%s 11:0%d:00" % (add_days(M_START, i), i))
+		count()
+		self.assertEqual(count(), one)
+		with as_user("Ravi"):
+			rows = {r["employee"]: r for r in grooming.today()["rows"]}
+		self.assertEqual(rows[P["Aman"]]["raise"], {"can": True})
+
+	def test_m1_a_scaled_grooming_line_does_not_hold_the_slip_for_ever(self):
+		"""Architect review M-1. With "depends on payment days" on, Frappe HR
+		scales the engine's line on a slip with unpaid days. The submit check
+		compares the engine's record with the marks, so a scaled line passes and
+		a real change still refuses."""
+		frappe.db.set_value("Salary Component", payroll_slip.GROOMING_COMPONENT,
+		                    "depends_on_payment_days", 1)
+		try:
+			summary = MonthSummary(paid_days=15, grooming_deduction=300)
+			with patch.object(payroll_slip, "month_summary", return_value=summary):
+				doc = frappe.get_doc({"doctype": "Salary Slip", "employee": P["Kiran"],
+				                      "company": COMPANY, "start_date": M_START, "end_date": M_END,
+				                      "posting_date": M_END, "payroll_frequency": "Monthly",
+				                      "currency": "INR"})
+				doc.flags.ignore_permissions = True
+				doc.insert()
+				row = [r.amount for r in doc.deductions
+				       if r.salary_component == payroll_slip.GROOMING_COMPONENT]
+				self.assertTrue(row and row[0] < 300, row)        # Frappe scaled it
+				payroll_slip.check_grooming_before_submit(doc)     # and it is not refused
+			with patch.object(payroll_slip, "month_summary",
+			                  return_value=MonthSummary(paid_days=15, grooming_deduction=400)):
+				self.assertRaises(frappe.ValidationError,
+				                  payroll_slip.check_grooming_before_submit, doc)
+		finally:
+			frappe.db.set_value("Salary Component", payroll_slip.GROOMING_COMPONENT,
+			                    "depends_on_payment_days", 0)
+

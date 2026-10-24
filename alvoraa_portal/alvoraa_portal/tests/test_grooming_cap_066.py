@@ -268,20 +268,21 @@ class TestReviewNote(Case):
 	def test_ac61_ac62_hr_records_it_and_the_flag_clears_for_everyone_marks_unchanged(self):
 		with as_user("Ritika"):
 			grooming.record_review(P["Rahul"], str(M_START), NOTE)
-		for first in ("Rahul", "Ravi"):
-			r = TestReviewFlag._flag(self, first, "Rahul")[0]
-			self.assertEqual(r["state"], "cleared")
-			self.assertNotIn("note", r)                       # "Action agreed on {date}" only
-			self.assertEqual(r["on"], grooming._day(TODAY))
+		r = TestReviewFlag._flag(self, "Rahul", "Rahul")[0]
+		self.assertEqual(r["state"], "cleared")
+		self.assertNotIn("note", r)                           # "Action agreed on {date}" only
+		self.assertEqual(r["on"], grooming._day(TODAY))
+		r = TestReviewFlag._flag(self, "Ravi", "Rahul")[0]    # the direct manager reads it (v2)
+		self.assertEqual((r["state"], r["note"], r["by"]), ("cleared", NOTE, "Ritika G066"))
 		r = TestReviewFlag._flag(self, "Ritika", "Rahul")[0]
 		self.assertEqual(r["note"], NOTE)
 		self.assertEqual(frappe.db.count(grooming.MARK, {"employee": P["Rahul"], "docstatus": 1}), 2)
 
-	def test_ac64_the_note_reaches_nobody_but_hr(self):
+	def test_ac64_the_note_reaches_nobody_but_hr_and_the_direct_manager(self):
 		with as_user("Ritika"):
 			name = grooming.record_review(P["Rahul"], str(M_START), NOTE)["name"]
 		from frappe.desk.form.load import getdoc
-		for first in ("Rahul", "Ravi", "Om", "Olga", "Neha"):
+		for first in ("Rahul", "Om", "Olga", "Neha", "Sunil", "Deepa"):
 			with self.subTest(first=first), as_user(first):
 				self.assertEqual(_list(grooming.REVIEW), [])
 				self.assertRaises(frappe.PermissionError, frappe.client.get, grooming.REVIEW, name)
@@ -291,8 +292,12 @@ class TestReviewNote(Case):
 				except frappe.PermissionError:
 					pass
 				self.assertNotIn("uniform rule", json.dumps(frappe.local.response, default=str, ensure_ascii=False))
-		with as_user("Ritika"):
-			self.assertEqual(frappe.get_list(grooming.REVIEW, pluck="name"), [name])
+		for first in ("Ritika", "Ravi"):
+			with as_user(first):
+				self.assertEqual(frappe.get_list(grooming.REVIEW, pluck="name"), [name])
+				self.assertEqual(frappe.client.get(grooming.REVIEW, name)["review_note"], NOTE)
+		with as_user("Ravi"):                                  # read only, never write
+			self.refused(frappe.client.set_value, grooming.REVIEW, name, "review_note", "x")
 
 	def test_ac63_it_cannot_be_changed_or_deleted_or_commented(self):
 		with as_user("Ritika"):

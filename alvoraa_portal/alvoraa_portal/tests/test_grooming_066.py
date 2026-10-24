@@ -669,6 +669,16 @@ class TestNotices(Case):
 		                 "day and tap “Ask HR to look at this”."
 		                 % (grooming._day(TODAY), grooming._month_name(TODAY)))
 
+	def test_ac34_a_bell_opens_the_day_own_month_for_the_person_theirs_for_hr(self):
+		name = _mark("Ravi", "Rahul")
+		link = frappe.get_all("Notification Log", filters={"document_name": name}, pluck="link")
+		self.assertEqual(link, ["/hrms-employee?grooming=%s" % TODAY])
+		with as_user("Rahul"):
+			grooming.ask(name)
+		hr = frappe.get_all("Notification Log", filters={"document_name": name,
+		                                                 "for_user": user("Ritika")}, pluck="link")
+		self.assertEqual(hr, ["/hrms-employee?grooming=%s&who=%s" % (TODAY, P["Rahul"])])
+
 	def test_ac33a_a_disabled_login_gets_nothing(self):
 		frappe.db.set_value("User", user("Rahul"), "enabled", 0)
 		try:

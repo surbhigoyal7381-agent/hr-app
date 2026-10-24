@@ -494,12 +494,17 @@ def mark_query_conditions(user=None):
 
 
 def review_has_permission(doc, ptype=None, user=None):
-	"""Only HR in scope, never the subject. Create is the controller's."""
+	"""HR in scope, and the person's current Active direct manager (Surbhi,
+	24 Oct 2026: shown to the manager, as prototype v2 draws it). Never the
+	subject. Create is the controller's; nobody has write or delete."""
 	if ptype == "create":
 		return True
 	user = user or frappe.session.user
-	if _active_employee(user) == doc.employee:
+	me = _active_employee(user)
+	if me == doc.employee:
 		return False
+	if me and frappe.db.get_value("Employee", doc.employee, "reports_to") == me:
+		return True
 	return doc.employee in hr_scope(user, [doc.employee])
 
 
@@ -507,13 +512,21 @@ def review_query_conditions(user=None):
 	user = user or frappe.session.user
 	if user == "Administrator":
 		return ""
-	hr = _hr_sql(user)
-	if not hr:
-		return "1=0"
-	cond = "`tabGrooming Review`." + hr if hr != "1=1" else hr
+	esc = frappe.db.escape
 	me = _active_employee(user)
+	conds = []
+	hr = _hr_sql(user)
+	if hr:
+		conds.append("`tabGrooming Review`." + hr if hr != "1=1" else hr)
 	if me:
-		cond = "({0} and `tabGrooming Review`.employee != {1})".format(cond, frappe.db.escape(me))
+		# The current direct manager reads the review of their own reports.
+		conds.append("`tabGrooming Review`.employee in (select name from `tabEmployee` where "
+		             "reports_to = {0})".format(esc(me)))
+	if not conds:
+		return "1=0"
+	cond = "(" + " or ".join(conds) + ")"
+	if me:
+		cond = "({0} and `tabGrooming Review`.employee != {1})".format(cond, esc(me))
 	return cond
 
 
@@ -727,9 +740,12 @@ def raise_with_hr(employee, reason):
 
 # ── notices (US-7, PRIV-2) ───────────────────────────────────────────────────
 
-def _notify(doc, users, text):
+def _notify(doc, users, text, for_hr=False):
 	"""One desk bell each, built in code (not an editable Notification record).
-	Never blocks the mark: a failure is logged with the mark's name only."""
+	Never blocks the mark: a failure is logged with the mark's name only.
+
+	The bell's `link` opens the portal's Attendance month at that day (AC-34):
+	the person's own month, or for HR the person's. Ids only, no words."""
 	try:
 		emails = frappe.get_all("User", filters={"name": ("in", list(users) or [""]), "enabled": 1},
 		                        pluck="email")
@@ -740,6 +756,8 @@ def _notify(doc, users, text):
 		make_notification_logs(frappe._dict({
 			"type": "Alert", "document_type": MARK, "document_name": doc.name,
 			"subject": text, "email_content": text, "from_user": frappe.session.user,
+			"link": "/hrms-employee?grooming={0}{1}".format(
+				getdate(doc.mark_date), "&who=" + doc.employee if for_hr else ""),
 		}), emails)
 	except Exception:
 		frappe.log_error(title="Grooming notice not sent for {0}".format(doc.name),
@@ -823,7 +841,7 @@ def notify_asked(doc):
 	# N5 never carries the reason: HR reads it on the day.
 	text = _("{0} asked HR to look at a grooming red on {1}.").format(
 		doc.employee_name or doc.employee, _day(doc.mark_date))
-	_notify(doc, _hr_users_for(doc.employee), text)
+	_notify(doc, _hr_users_for(doc.employee), text, for_hr=True)
 
 
 def notify_raised(doc):
@@ -834,7 +852,7 @@ def notify_raised(doc):
 	if user:
 		_notify(doc, [user], _("{0}, your manager, has asked HR to talk to you about grooming. "
 		                       "This adds no fine.").format(name))
-	_notify(doc, _hr_users_for(doc.employee),
+	_notify(doc, _hr_users_for(doc.employee), for_hr=True, text=
 	        _("Grooming review pending for {0}: {1} raised it again on {2}.").format(
 		        doc.employee_name or doc.employee, name, _day(doc.raised_on)))
 
@@ -848,7 +866,7 @@ def notify_flag(doc, why):
 	else:
 		text = _("Grooming review pending for {0}: the legal limit for grooming reds in {1} is "
 		         "reached.").format(who, month)
-	_notify(doc, _hr_users_for(doc.employee), text)
+	_notify(doc, _hr_users_for(doc.employee), text, for_hr=True)
 
 
 def _rate_now(employee):
@@ -1160,7 +1178,7 @@ def month_lines(employee, start, end):
 	# The flag for this month, and - on the current month only - last month's
 	# if it is still waiting (AC-59). Older ones stop showing (Question 6).
 	flags = []
-	this_flag = flag_for(employee, start, rate, _base(employee, end), with_note=is_hr)
+	this_flag = flag_for(employee, start, rate, _base(employee, end), with_note=is_hr or is_manager)
 	if this_flag:
 		flags.append((this_flag, False))
 	if start == getdate(get_first_day(day)):
@@ -1186,15 +1204,16 @@ def _slip_line(employee, start, end):
 
 
 def _review_payload(fl, carried, is_self, is_manager, is_hr, user, first):
-	"""What each reader of the flag may see (spec 7.6, D6): the subject and the
-	manager a state and a date; HR the figures, the note and the button."""
+	"""What each reader of the flag may see (spec 7.6, D6): the subject a state
+	and a date; the direct manager the note too (prototype v2); HR the figures,
+	the note and the button."""
 	if not (is_self or is_manager or is_hr or user in fl.owners):
 		return None
 	out = {"state": fl.state, "month": _month_name(fl.month), "month_start": str(fl.month),
 	       "carried": carried, "live": fl.live}
 	if fl.state == "cleared":
 		out["on"] = _day(fl.review.creation)
-		if is_hr:
+		if is_hr or is_manager:
 			out["note"] = fl.review.review_note
 			out["by"] = _person(fl.review.owner)
 			out["by_me"] = fl.review.owner == user

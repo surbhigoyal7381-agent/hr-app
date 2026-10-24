@@ -7,11 +7,12 @@ Its own record, because nothing else in the product is private enough: a
 manager note is an Info comment the desk shows to anyone who can open the
 Employee, the subject included (slice 066, strategy bad news 1).
 
-  - HR in scope reads it, and nobody else - not the subject, not the manager,
-    not a System Manager without an HR role (its own permission hooks).
+  - HR in scope and the person's current direct manager read it, and nobody
+    else - not the subject, not a System Manager without an HR role (its own
+    permission hooks). Surbhi, 24 Oct 2026: as prototype v2 draws it.
   - Insert-only. Nobody has write or delete, so it cannot be changed after it
     is saved; `track_changes` is off so no Version row ever holds the text.
-  - Everybody else who sees the flag gets only "Action agreed on {date}",
+  - The subject (and a marker who is not the manager) gets only "Action agreed on {date}",
     read from `creation` - the note is never selected on that path.
 
 Saving it changes no mark and no fine.

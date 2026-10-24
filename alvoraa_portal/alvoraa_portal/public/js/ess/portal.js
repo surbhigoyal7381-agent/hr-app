@@ -8847,6 +8847,21 @@ var GM_REMOVE = ["Marked by mistake", "Marked on the wrong person",
 var gmState = {today: null, flash: {}, sheet: null, last: null, dayFlash: {},
                reviewFlash: null};
 
+/* AC-34: a grooming bell links to /hrms-employee?grooming=YYYY-MM-DD (and
+   &who=EMPLOYEE for HR). The page opens that Attendance month at that day.
+   The server's month() still decides whose month may be opened. */
+window.addEventListener("load", function () {
+  var day = /[?&]grooming=(\d{4}-\d{2}-\d{2})/.exec(location.search);
+  if (!day || typeof switchPanel !== "function") return;
+  var who = /[?&]who=([A-Za-z0-9._-]+)/.exec(location.search);
+  acState.team = false;
+  acState.employee = who ? who[1] : null;
+  acState.year = parseInt(day[1].slice(0, 4), 10);
+  acState.month = parseInt(day[1].slice(5, 7), 10);
+  acState.open = day[1];
+  switchPanel("att-record");
+});
+
 /* A network failure is a TypeError from fetch; anything else is the server
    refusing, in a sentence worth showing as it is. */
 function gmIsNet(e) { return !e || e.name === "TypeError"; }
@@ -8942,11 +8957,10 @@ function gmRow(r, i) {
   /* At the limit: "Raise it with HR" (brief, Decisions (3)). It asks HR for a
      conversation and never adds a mark or a fine. */
   if (r.raise && r.raise.can) {
-    h += '<button class="btn btn-outline gm-btn" onclick="gmOpenRaise(' + i + ')" aria-label="Raise '
-      + gpEsc(r.employee_name) + '\u2019s grooming with HR">Raise it with HR</button>';
+    h += '<button class="btn btn-outline gm-btn" onclick="gmOpenRaise(' + i + ')" aria-label="'
+      + gpEsc(GM_RAISE_WORDS.buttonSpoken(r.employee_name)) + '">' + gpEsc(GM_RAISE_WORDS.button) + "</button>";
   } else if (r.raise && r.raise.raised_on) {
-    h += '<div class="gm-sub gm-full">Raised with HR on ' + gpEsc(r.raise.raised_on) + "."
-      + (r.raise.reviewed_on ? " HR recorded a review on " + gpEsc(r.raise.reviewed_on) + "." : "")
+    h += '<div class="gm-sub gm-full">' + gpEsc(GM_RAISE_WORDS.raisedOn(r.raise.raised_on, r.raise.reviewed_on))
       + "</div>";
   }
   return h + "</div>";
@@ -9095,15 +9109,14 @@ function gmReview() {
       h += '<h2 id="gm-rv-' + i + '">Grooming review pending' + (r.carried ? " (" + month + ")" : "") + "</h2>";
       if (r.why === "raised") {
         if (g.viewer === "self") {
-          h += "<p>" + gpEsc(r.raise_by) + ", your manager, has asked HR to talk to you about grooming. This adds no fine.</p>";
+          h += "<p>" + gpEsc(GM_RAISE_WORDS.employeeLine(r.raise_by)) + "</p>";
         } else if (g.viewer === "hr") {
-          h += "<p>" + gpEsc(r.raise_by) + " raised it again on " + gpEsc(r.raise_on) + ": " + gpEsc(r.raise_reason || "")
-            + ".</p><p>Talk to " + first + " about dress, agree an action, then record it here.</p>"
+          h += "<p>" + gpEsc(GM_RAISE_WORDS.hrLine(r.raise_by, r.raise_on, r.raise_reason))
+            + "</p><p>Talk to " + first + " about dress, agree an action, then record it here.</p>"
             + '<div class="gm-acts"><button class="btn btn-primary gm-btn" onclick="gmOpenReview(' + i
             + ')" aria-label="Record the grooming review for ' + gpEsc(g.name) + '">Record the review</button></div>';
         } else {
-          h += "<p>" + (r.raise_by_me ? "You" : gpEsc(r.raise_by)) + " raised it with HR on " + gpEsc(r.raise_on)
-            + ". HR will talk to " + first + ". You do not need to do anything.</p>";
+          h += "<p>" + gpEsc(GM_RAISE_WORDS.managerLine(r.raise_by_me ? "You" : r.raise_by, r.raise_on, g.first)) + "</p>";
         }
         return h + "</section>";
       }
@@ -9130,6 +9143,13 @@ function gmReview() {
       }
       return h + "</section>";
     }
+    if (g.viewer === "manager" && r.note) {
+      /* Prototype v2: the direct manager reads HR's note; the person does not. */
+      return h + '<h2 id="gm-rv-' + i + '">Grooming review recorded</h2><p>Recorded by ' + gpEsc(r.by)
+        + " (HR) on " + gpEsc(r.on) + ".</p><blockquote>" + gpEsc(r.note) + "</blockquote>"
+        + '<p class="gm-muted">Only HR and you, as ' + first + "’s manager, can read this. " + first
+        + " sees only “Action agreed on " + gpEsc(r.on) + "”.</p></section>";
+    }
     if (g.viewer !== "hr") {
       return h + '<h2 id="gm-rv-' + i + '">Grooming review</h2><p>Action agreed on ' + gpEsc(r.on) + ".</p></section>";
     }
@@ -9138,8 +9158,8 @@ function gmReview() {
       + "<blockquote>" + gpEsc(r.note || "") + "</blockquote>"
       + "<p>The grooming reds this month still stand. The review will not be raised again for "
       + first + " in " + month + ".</p>"
-      + '<p class="gm-muted">This note cannot be changed or deleted. Only HR can read it. ' + first
-      + " and " + first + "’s manager see only “Action agreed on " + gpEsc(r.on) + "”.</p>";
+      + '<p class="gm-muted">This note cannot be changed or deleted. Only HR and ' + first
+      + "’s manager can read it. " + first + " sees only “Action agreed on " + gpEsc(r.on) + "”.</p>";
     return h + "</section>";
   }).join("");
 }
@@ -9279,17 +9299,16 @@ function gmPaintSheet(keepFocus) {
     go = "Remove it";
     no = "Keep the mark";
   } else if (s.kind === "raise") {
-    h += '<h2 id="gm-sh-t" tabindex="-1">Raise ' + gpEsc(s.name) + "\u2019s grooming with HR?</h2>"
-      + '<p class="gm-help" id="gm-sh-help">Choose the one reason that fits. You cannot add your own words.</p>'
+    h += '<h2 id="gm-sh-t" tabindex="-1">' + gpEsc(GM_RAISE_WORDS.sheetTitle(s.name)) + "</h2>"
+      + '<p class="gm-help" id="gm-sh-help">' + gpEsc(GM_RAISE_WORDS.sheetHelp) + "</p>"
       + '<div role="radiogroup" aria-labelledby="gm-sh-t" aria-describedby="gm-sh-help">'
       + ((gmState.today && gmState.today.raise_reasons) || GM_REASONS.slice(0, 4)).map(function (r) {
           var on = s.chosen === r;
           return '<label class="gm-opt' + (on ? " sel" : "") + '"><input type="radio" name="gm-x" value="'
             + gpEsc(r) + '"' + (on ? " checked" : "") + ' onchange="gmPick(this.value)"> ' + gpEsc(r) + "</label>";
         }).join("") + "</div>"
-      + '<div class="gm-info">HR will be told and will talk to ' + first + ". " + first
-      + " will be told you raised it. This adds no fine and no grooming red.</div>";
-    go = "Raise it with HR";
+      + '<div class="gm-info">' + gpEsc(GM_RAISE_WORDS.sheetInfo(s.first)) + "</div>";
+    go = GM_RAISE_WORDS.button;
   } else if (s.kind === "keep") {
     h += '<h2 id="gm-sh-t" tabindex="-1">Keep the grooming red?</h2><div class="gm-info">' + first
       + " will be told that HR has checked it and the mark stays. " + gpEsc(s.rate || "") + " still comes off "
@@ -9306,8 +9325,8 @@ function gmPaintSheet(keepFocus) {
       + "health, family, religion or anything else personal.</p>"
       + '<textarea id="gm-rv-text" aria-describedby="gm-rv-help gm-rv-info" oninput="gmText(this.value)">'
       + gpEsc(s.text || "") + "</textarea>"
-      + '<div class="gm-info" id="gm-rv-info">Only HR can read this. ' + first + " and " + first
-      + "’s manager see only “Action agreed on " + gpEsc(gmDayWords(gmTodayIso())) + "”. You cannot change or delete it after "
+      + '<div class="gm-info" id="gm-rv-info">Only HR and ' + first + "’s manager can read this. " + first
+      + " sees only “Action agreed on " + gpEsc(gmDayWords(gmTodayIso())) + "”. You cannot change or delete it after "
       + "saving. It clears the review. It does not remove any grooming red or change any fine.</div>";
     go = "Save and clear";
   }
@@ -9321,6 +9340,30 @@ function gmPaintSheet(keepFocus) {
 }
 
 var GM_REASONS = ["Not in uniform", "Uniform incomplete", "No name badge", "Wrong footwear", "Other"];
+
+/* "Raise it with HR": every word in one place, so prototype v3 changes one
+   table. The brief gave the warning, the employee's line, HR's line and
+   "Raised with HR on..."; the sheet's heading, help and info are the
+   engineer's until v3 is drawn. (The server's own copies - the warning and
+   the bells - are in grooming.py.) */
+var GM_RAISE_WORDS = {
+  button: "Raise it with HR",
+  buttonSpoken: function (name) { return "Raise " + name + "’s grooming with HR"; },
+  sheetTitle: function (name) { return "Raise " + name + "’s grooming with HR?"; },
+  sheetHelp: "Choose the one reason that fits. You cannot add your own words.",
+  sheetInfo: function (first) {
+    return "HR will be told and will talk to " + first + ". " + first
+      + " will be told you raised it. This adds no fine and no grooming red.";
+  },
+  raisedOn: function (on, reviewed) {
+    return "Raised with HR on " + on + "." + (reviewed ? " HR recorded a review on " + reviewed + "." : "");
+  },
+  employeeLine: function (by) { return by + ", your manager, has asked HR to talk to you about grooming. This adds no fine."; },
+  hrLine: function (by, on, reason) { return by + " raised it again on " + on + ": " + (reason || "") + "."; },
+  managerLine: function (who, on, first) {
+    return who + " raised it with HR on " + on + ". HR will talk to " + first + ". You do not need to do anything.";
+  }
+};
 /* "Other" (Surbhi, 24 Oct 2026): a short reason the marker types. The server
    checks the length and the words again; this only saves a round trip. */
 var GM_OTHER_MAX = 100;

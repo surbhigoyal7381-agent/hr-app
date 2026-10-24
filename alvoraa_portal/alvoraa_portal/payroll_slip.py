@@ -337,9 +337,22 @@ def check_grooming_before_submit(doc, method=None):
 	summary = month_summary(doc.employee, doc.company, doc.start_date, doc.end_date, rule_set)
 	if summary is None:
 		return
-	on_slip = sum(flt(r.amount) for r in doc.get("deductions") or []
-	              if r.salary_component == GROOMING_COMPONENT)
-	if flt(on_slip, 2) != flt(summary.grooming_deduction, 2):
+	# Compare the ENGINE'S RECORD with the marks, not the slip row (architect
+	# review M-1). Frappe HR scales an Additional Salary row by payment days when
+	# the component "depends on payment days", and rounds it when the component
+	# rounds - so the row can rightly differ from the marks' price, and comparing
+	# the row would refuse the slip for ever. What must agree is the engine-made
+	# Additional Salary (the price of the marks) and the slip must carry that
+	# record's row.
+	engine = frappe.get_all("Additional Salary", filters={
+		"employee": doc.employee, "salary_component": GROOMING_COMPONENT, "docstatus": 1,
+		"ref_doctype": ENGINE_REF, "payroll_date": ("between", [doc.start_date, doc.end_date])},
+		fields=["name", "amount"])
+	priced = sum(flt(a.amount) for a in engine)
+	carried = {r.additional_salary for r in doc.get("deductions") or []
+	           if r.salary_component == GROOMING_COMPONENT}
+	if (flt(priced, 2) != flt(summary.grooming_deduction, 2)
+			or any(a.name not in carried for a in engine)):
 		frappe.throw(_("Grooming marks changed since this slip was saved. Save it again."))
 
 

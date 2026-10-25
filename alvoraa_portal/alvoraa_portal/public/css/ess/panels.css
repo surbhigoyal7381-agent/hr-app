@@ -2241,6 +2241,9 @@ body.panel-fullscreen{overflow:hidden}
 .pos-wall .nm div{break-inside:avoid}
 .pos-wall .vac{margin-top:4px;font-style:italic;color:var(--paper-ink2)}
 .pos-wall .opn{margin-top:4px;font-weight:700}
+/* Slice 070: a copy prints dashed, with its "Same seat as under ..." line */
+.pos-wall .oc-box.copy{border-style:dashed}
+.pos-wall .oc-same{font-size:11px;color:var(--paper-ink2);margin-top:4px;padding-top:4px;border-top:1px solid var(--paper-rule);display:block}
 .pos-wall .below{margin-top:4px;padding-top:4px;border-top:1px solid var(--paper-rule);font-size:11px;color:var(--paper-ink2)}
 .pos-wall .oc-fam{padding:0 20px;align-items:flex-start}
 .pos-wall .oc-hang.under{margin-left:-20px}

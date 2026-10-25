@@ -1202,11 +1202,14 @@ function posElsewhere(copies) {
 }
 
 /* A copy as the chart's card wants it: an end box, dashed, with its line. */
-function posCopyNode(c, pl) {
+function posCopyLine(c, pl) {
   var r = c.seat, n = c.people.length, all = r.people.length;
-  var line = pl.hidden[r.id]
+  return pl.hidden[r.id]
     ? drT("Set up under {0}", [posParentWords(r)]) + (all > n ? " · " + drT("{0} in all", [all]) : "")
     : drT("Same seat as under {0}", [posParentWords(r)]) + " · " + drT("{0} in all", [all]);
+}
+function posCopyNode(c, pl) {
+  var r = c.seat, n = c.people.length, line = posCopyLine(c, pl);
   return {
     id: c.id, title: r.title,
     subtitle: [r.branch, n === 1 ? drT("1 person") : drT("{0} people", [n])].filter(Boolean).join(" · "),
@@ -2822,14 +2825,25 @@ function posWire() {
    avatars, flags and fold buttons. The markup and CSS classes are the
    screen chart's, so the boxes and lines are the same drawing. */
 
-/* Seats and people under one seat, all the way down. */
+/* Slice 070: the paper prints what Reporting lines draws with every fold
+   open, so it walks the same placed model - posPlace over every seat, no
+   filter. Worked out once per tree. */
+function posWallPl(t) { return t.pl || (t.pl = posPlace(t, false)); }
+function posWallKids(id, t) {
+  var pl = posWallPl(t);
+  return (t.kids[id] || []).filter(function (k) { return !pl.hidden[k.id]; });
+}
+
+/* Seats and people under one seat, all the way down: each seat record and
+   each person once, never the seat's own (AC-59). */
 function posWallBelow(id, t) {
-  var s = 0, p = 0;
+  var pl = posWallPl(t), seats = {}, p = 0;
   (function walk(at, d) {
     if (d >= POS_MAX_DEPTH) return;
-    (t.kids[at] || []).forEach(function (k) { s += 1; p += k.people.length; walk(k.id, d + 1); });
+    posWallKids(at, t).forEach(function (k) { seats[k.id] = 1; p += pl.home[k.id].length; walk(k.id, d + 1); });
+    (pl.under[at] || []).forEach(function (c) { if (c.seat.id !== id) seats[c.seat.id] = 1; p += c.people.length; });
   })(id, 0);
-  return { seats: s, people: p };
+  return { seats: Object.keys(seats).length, people: p };
 }
 
 /* The HR copy is for HR only (Surbhi, 25 Oct 2026). HR is the page's existing
@@ -2847,32 +2861,56 @@ function posWallMayHr() {
    is HR (posWallMayHr). */
 function posWallCopy(start, levels, vacant, hr) {
   hr = !!(hr && posWallMayHr());
-  var t = posKids(POS.rows);
-  var tops = start === "top" ? t.roots : (t.byId[start] ? [t.byId[start]] : []);
-  function seat(members, depth) {
-    var r = members[0], names = [], opening = 0;
-    members.forEach(function (m) {
-      m.people.forEach(function (p) {
-        var n = { name: p.name };
-        if (hr && p.leaving) n.leaving = posDay(p.leaving);
-        names.push(n);
-      });
-      if (m.opening) opening += 1;
+  var t = posKids(POS.rows), pl = posWallPl(t);
+  var tops = posWallTops(t, start);
+  var named = function (people) {
+    return people.map(function (p) {
+      var n = { name: p.name };
+      if (hr && p.leaving) n.leaving = posDay(p.leaving);
+      return n;
     });
-    var kids = members.length === 1 ? (t.kids[r.id] || []) : [];
-    var last = depth >= levels || depth >= POS_MAX_DEPTH;
+  };
+  function card(r, names, extra) {
     var c = {
       title: r.title,
       designation: r.designation && r.designation !== r.title ? r.designation : "",
       branch: r.branch || "",
       department: r.department || "",
-      names: names,
-      vacant: !!vacant && !names.length,
-      below: last && kids.length ? posWallBelow(r.id, t) : null,
-      kids: last ? [] : posGroupSiblings(kids, t, true).map(function (g) {
-        return seat(g.group ? g.members : [g.solo], depth + 1);
-      }),
+      names: names, vacant: false, below: null, kids: [],
+      // Slice 070 (PRIV-2): a copy's dashed border and its two possible lines -
+      // seat titles and counts only.
+      copy: false, same: "", more: "",
     };
+    return Object.assign(c, extra);
+  }
+  function seat(members, depth) {
+    var r = members[0], home = [], opening = 0, everyone = 0, open = 0;
+    members.forEach(function (m) {
+      home = home.concat(pl.home[m.id]);
+      everyone += m.people.length;
+      open += posOpen(m);
+      if (m.opening) opening += 1;
+    });
+    var one = members.length === 1;
+    var kids = one ? posWallKids(r.id, t) : [], copies = one ? (pl.under[r.id] || []) : [];
+    var mine = one ? pl.copies[r.id] : [];
+    var last = depth >= levels || depth >= POS_MAX_DEPTH;
+    var c = card(r, named(home), {
+      // "Vacant" only when the whole seat is empty; a partly filled seat says
+      // how many are open (P-27). Both follow the Show Vacant tick.
+      vacant: !vacant ? false : (!everyone ? drT("Vacant") : (open ? drT("{0} open", [posNum(open)]) : false)),
+      below: last && (kids.length || copies.length) ? posWallBelow(r.id, t) : null,
+      kids: last ? [] : posGroupSiblings(kids, t, true, pl).map(function (g) {
+        return seat(g.group ? g.members : [g.solo], depth + 1);
+      }).concat(copies.map(function (cp) {
+        var k = card(cp.seat, named(cp.people), { copy: true, same: posCopyLine(cp, pl) });
+        if (hr) k.opening = 0;
+        return k;
+      })),
+      more: !mine.length ? "" : home.length
+        ? drT("{0} more shown under {1}", [everyone - home.length, posElsewhere(mine)])
+        : drT("None here: all {0} under {1}", [everyone, posElsewhere(mine)]),
+    });
     if (hr) c.opening = opening;
     return c;
   }
@@ -2891,7 +2929,7 @@ function posWallCard(c, root, boxes) {
     below = (c.below.seats === 1 ? drT("1 seat") : drT("{0} seats", [c.below.seats])) + " &middot; "
       + (c.below.people === 1 ? drT("1 person below") : drT("{0} people below", [c.below.people]));
   }
-  return '<div class="oc-node' + (root ? " root" : "") + '"><div class="oc-box" style="width:'
+  return '<div class="oc-node' + (root ? " root" : "") + '"><div class="oc-box' + (c.copy ? " copy" : "") + '" style="width:'
     + (200 + (cols - 1) * 140) + 'px">'
     + '<div class="oc-box-hd"><span class="ti">' + posEsc(c.title) + "</span></div>"
     + (c.designation ? '<div class="sub">' + posEsc(c.designation) + "</div>" : "")
@@ -2900,7 +2938,8 @@ function posWallCard(c, root, boxes) {
         return "<div>" + posEsc(p.name)
           + (p.leaving ? " &middot; " + posEsc(drT("leaving {0}", [p.leaving])) : "") + "</div>";
       }).join("") + "</div>" : "")
-    + (c.vacant ? '<div class="vac">' + posEsc(drT("Vacant")) + "</div>" : "")
+    + (c.vacant ? '<div class="vac">' + posEsc(c.vacant) + "</div>" : "")
+    + (c.same || c.more ? '<div class="oc-same">' + posEsc(c.same || c.more) + "</div>" : "")
     + (c.opening ? '<div class="opn">' + posEsc(c.opening === 1 ? drT("Job opening raised")
         : drT("{0} job openings raised", [c.opening])) + "</div>" : "")
     + (below ? '<div class="below">' + below + "</div>" : "")
@@ -3098,48 +3137,59 @@ function posWallPlan(L, paper, sheets, hr) {
    (AC-58), and exists only for HR (posWallMayHr, AC-65). */
 
 /* Levels under a seat, counting the seat. */
+/* Levels under a seat, counting the seat. A copy is one level below its
+   manager's seat and ends there. */
 function posWallDepth(id, t, d) {
   d = d || 1;
   if (d >= POS_MAX_DEPTH) return d;
-  return (t.kids[id] || []).reduce(function (m, k) { return Math.max(m, posWallDepth(k.id, t, d + 1)); }, d);
+  var copies = (posWallPl(t).under[id] || []).length ? d + 1 : d;
+  return posWallKids(id, t).reduce(function (m, k) { return Math.max(m, posWallDepth(k.id, t, d + 1)); }, copies);
 }
 
-function posWallTops(t) {
-  var s = POS.wall.start;
-  return s === "top" ? t.roots : (t.byId[s] ? [t.byId[s]] : []);
+/* The boxes the paper starts from. A top seat whose own box is not drawn is
+   not one (its people print in copies elsewhere). */
+function posWallTops(t, start) {
+  var s = start || POS.wall.start, pl = posWallPl(t);
+  return s === "top" ? t.roots.filter(function (r) { return !pl.hidden[r.id]; }) : (t.byId[s] ? [t.byId[s]] : []);
 }
 
 /* Seats and people in the chosen start and levels, as the paper counts
-   them: every name line (a person in two seats counts twice). */
+   them: each seat record once however many boxes it has (slice 070), and
+   every name line (a person in two seats counts twice). */
 function posWallCount(t, levels) {
-  var s = 0, p = 0;
+  var pl = posWallPl(t), seats = {}, p = 0;
   (function walk(list, d) {
     list.forEach(function (r) {
-      s += 1; p += r.people.length;
-      if (d < levels && d < POS_MAX_DEPTH) walk(t.kids[r.id] || [], d + 1);
+      seats[r.id] = 1; p += pl.home[r.id].length;
+      if (d < levels && d < POS_MAX_DEPTH) {
+        walk(posWallKids(r.id, t), d + 1);
+        (pl.under[r.id] || []).forEach(function (c) { seats[c.seat.id] = 1; p += c.people.length; });
+      }
     });
   })(posWallTops(t), 1);
-  return { seats: s, people: p };
+  return { seats: Object.keys(seats).length, people: p };
 }
 
 function posWallStarts(t) {
-  var out = [["top", t.roots.length === 1 ? drT("The top: {0}", [t.roots[0].title])
-                                          : drT("The top of what you can see ({0} seats)", [t.roots.length])]];
+  var pl = posWallPl(t), roots = posWallTops(t, "top");
+  var out = [["top", roots.length === 1 ? drT("The top: {0}", [roots[0].title])
+                                        : drT("The top of what you can see ({0} seats)", [roots.length])]];
   (function walk(list, d) {
     list.forEach(function (r) {
-      var kids = t.kids[r.id] || [];
-      if (kids.length && !(d === 0 && t.roots.length === 1)) out.push([r.id, new Array(d + 1).join("— ") + r.title]);
+      var kids = posWallKids(r.id, t);
+      // A seat with only copies under it is a place to start too (AC-60).
+      if ((kids.length || (pl.under[r.id] || []).length) && !(d === 0 && roots.length === 1)) out.push([r.id, new Array(d + 1).join("— ") + r.title]);
       if (d + 1 < POS_MAX_DEPTH) walk(kids, d + 1);
     });
-  })(t.roots, 0);
+  })(roots, 0);
   return out;
 }
 
 function posWallLevels(t) {
-  var tops = posWallTops(t);
+  var tops = posWallTops(t), pl = posWallPl(t);
   var d = tops.reduce(function (m, r) { return Math.max(m, posWallDepth(r.id, t)); }, 1);
   if (d === 1 && tops.length > 1) return [[1, drT("All: 1 level, {0} seats side by side", [tops.length])]];
-  var under = tops.reduce(function (n, r) { return n + (t.kids[r.id] || []).length; }, 0), out = [];
+  var under = tops.reduce(function (n, r) { return n + posWallKids(r.id, t).length + (pl.under[r.id] || []).length; }, 0), out = [];
   for (var i = 2; i < d; i++) {
     out.push([i, i === 2
       ? drT("2 levels: {0} and the {1} seats under it", [POS.wall.start === "top" ? drT("the top") : tops[0].title, under])
@@ -3351,7 +3401,8 @@ window.posWallPrint = function () {
   var foot = [co, branches.length === 1 ? drT("{0} branch", [branches[0]]) : drT("{0} branches", [branches.length]),
               levels + " " + (w.start === "top" ? drT("from the top") : drT("from {0}", [posWallTops(t)[0].title])),
               drT("as at {0}", [posDay(asat) + " " + String(asat).slice(0, 4)]),
-              drT("{0} people in seats", [posWallCount(t, w.levels).people])].join(" · ");
+              // Slice 070 (AC-56): seat records and people, each once, however many boxes.
+              drT("{0} seats · {1} people in seats", [posWallCount(t, w.levels).seats, posWallCount(t, w.levels).people])].join(" · ");
   var hrTag = drT("HR use only - not for display");
   var n = P.cols * P.rows, html = "";
   for (var r = 0; r < P.rows; r++) {

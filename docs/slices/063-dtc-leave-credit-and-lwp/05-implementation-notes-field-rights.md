@@ -124,7 +124,17 @@ level-1 fields - only who may read/write them, never their values. Nothing perso
 
 origin/dev moved from 6aaf9ffd by 12 commits of slice 069 (wall-chart print: `portal.js`,
 `panels.css`, `positions.html`, scripts, docs). None touch my files. Rebased on it before
-handing off (see commands).
+the full suite.
+
+While the full suite ran, 20 commits of slice 066 (grooming red marks, up to f207e82c)
+arrived. They add blocks to `hooks.py` (Salary Slip `before_submit`, Grooming Mark, Comment,
+ToDo, DocShare, File, Tag Link, two permission hooks) - different blocks from mine. Rebased
+again, cleanly. Checked: no second `"Data Import"`, `"Employee"` or
+`override_whitelisted_methods` key (a duplicate dict key would silently replace one side);
+all 14 grooming lines are still in `hooks.py`; the file parses; my 14 tests pass on the
+rebased code; integrity check OK. **Not re-run on the rebased code: the full suite, and
+066's own tests** - they need its two new doctypes, which means a `bench migrate` on my
+site, and that command is on the approval list.
 
 ## Commands run and what they said
 

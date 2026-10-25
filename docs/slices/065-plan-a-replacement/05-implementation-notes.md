@@ -316,6 +316,22 @@ The screen halves (AC-76, 79, 80, 82, 85, 89: dialog and copy) wait for the scre
     REST case that sets both fields, which only the flag can stop;
   - the `told` check removed (AC-81);
   - the full-seat rule removed.
+- Neighbours: `test_positions_064` 17 OK; `test_hiring_064` 26 OK; `test_portal_security_010` 45 + 5
+  OK; `test_register_fill_194` 62 OK (2 skipped).
+- **One full run** (own site `test065`, 24-25 Oct, about 4.5 hours):
+  - `alvoraa_portal`: 16 OK, then 957 tests (1 failure, 3 errors), then 2236 tests (4 errors).
+    - The non-OK tests: `test_leave_year` x3 and `test_shift_types_043…default_shift` (the
+      same as the earlier 065 run, not 065).
+    - `test_attendance_correction` x2: passes alone (108 OK), so it depends on test order.
+    - `test_field_app_step2_013` x2: fails alone too, with "Choose a reason. It is kept in the
+      change history." from slice 013's `field_app_settings.py`, which 065 does not touch.
+  - `hrms`: 95 tests (3 failures, 1 error), then 809 tests (18 failures, 256 errors).
+    - Almost all are Frappe HR's own leave, attendance and shift tests. This site was never set
+      up for them, and the earlier 065 run did not run them.
+    - `test_register_194` run alone: only the known `dtc_shaped…` error. Its `delete_position`
+      failures in the full run depend on test order.
+  - **None of the failure tracebacks pass through `plans.py`, `hiring.py` or the plan doctype**
+    (grep of both logs).
 - `scripts/check_app_integrity.py`: 800 checks, OK.
 - `ruff`: nothing on the new lines. There are 7 older format-string findings in `plans.py`, lines
   105-148, left alone.

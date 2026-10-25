@@ -509,8 +509,13 @@ window.posLoad = async function () {
   try {
     out = await gpFetch("hrms.alvoraa_org_structure.register.position_table", {});
   } catch (e) {
-    body.innerHTML = '<div class="empty-state"><div class="empty-state-text">'
-      + posEsc(e && e.message ? e.message : e) + "</div></div>";
+    // Slice 070 (design §5.6): what happened and what to do, never the
+    // server's own message.
+    body.innerHTML = '<div class="empty-state" role="alert"><div class="empty-state-text"><strong>'
+      + posEsc(drT("The chart did not load.")) + "</strong> "
+      + posEsc(drT("Nothing has changed in your seats or your people. Check your connection, then try again. If it keeps happening, tell your administrator: code POS-LOAD."))
+      + '</div><button type="button" class="btn btn-outline btn-sm" style="margin-top:12px" onclick="posLoad()">'
+      + posEsc(drT("Try again")) + "</button></div>";
     return;
   }
   POS.rows = (out && out.rows) || [];

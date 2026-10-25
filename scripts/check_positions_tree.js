@@ -1501,6 +1501,21 @@ async function seats070() {
     ofBO[0].dispatchEvent(new W.MouseEvent("mouseover", { bubbles: true }));
     ok("070 AC-43: nothing happens on touch", !body().querySelectorAll(".oc-box.rel").length);
   }
+
+  /* 22h. the error state (AC-63) */
+  {
+    let calls = 0;
+    W.gpFetch = () => { calls++; return Promise.reject(new Error("Traceback SERVER-SNTL")); };
+    await W.posLoad();
+    const alert = body().querySelector('[role="alert"]');
+    const said = alert ? alert.textContent.replace(/\s+/g, " ").trim() : "";
+    ok("070 AC-63: a failed load says what to do, with the code", said === "The chart did not load. Nothing has changed in your seats or your people. "
+       + "Check your connection, then try again. If it keeps happening, tell your administrator: code POS-LOAD.Try again", said);
+    ok("070 AC-63: never the server's own message", !body().innerHTML.includes("SERVER-SNTL"));
+    alert.querySelector("button").click();
+    await new Promise((r) => setTimeout(r, 20));
+    ok("070 AC-63: Try again loads again", calls === 2);
+  }
 }
 
 deleteChecks().then(unChecks).then(seats070).then(() => {

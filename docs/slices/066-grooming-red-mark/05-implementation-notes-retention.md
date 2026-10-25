@@ -174,8 +174,11 @@ so I judged the modules above enough; the full suite belongs to the run before a
 
 ## 9 · What else moved while I worked
 
-`origin/dev` was at f207e82c when I branched and when I last fetched. Nothing came in. No
-conflicts. The work board row is under `066-retention`.
+`origin/dev` was at f207e82c when I branched. At the end it was at 57d1a157: nine ALV-217
+commits (slice 070, phone readability) came in - portal.js, frame.css, the portal parts,
+the 070 docs and two scripts. None touches `grooming*.py`, `hooks.py` or
+my test. I have not rebased; the branch still sits on f207e82c. Rebase before it goes to
+dev, then run the four modules again. The work board row is under `066-retention`.
 
 ## 10 · Gaps and shortcuts
 

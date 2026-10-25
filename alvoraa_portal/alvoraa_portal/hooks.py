@@ -431,6 +431,10 @@ scheduler_events = {
         # names in them. Separate from the photo purge above on purpose - the
         # two answer different questions and one failing must not stop the other.
         "alvoraa_portal.field_app_housekeeping.daily",
+        # Slice 066 retention: erases a leaver's grooming marks and reviews 6
+        # months after the relieving date. OFF until the site config holds
+        # grooming_erase_enabled = 1 - see the note above erase_due.
+        "alvoraa_portal.grooming.erase_due",
     ],
     "monthly": [
         "alvoraa_portal.scheduled_jobs.generate_monthly_scorecards",

@@ -34,6 +34,7 @@ import re
 import frappe
 from frappe import _
 from frappe.utils import add_months, cint, flt, get_first_day, get_last_day, getdate, now_datetime, nowdate
+from frappe.utils.caching import request_cache
 
 import hrms.alvoraa_hr_core.access as access
 from alvoraa_portal.payroll_rules_apply import rule_set_for
@@ -135,6 +136,27 @@ LIMIT_SHARE = 0.03
 COMPONENT = "Grooming Red Value"
 
 
+@request_cache
+def is_on():
+	"""Grooming's own switch (pre-push review P-1; Surbhi, 25 Oct 2026, option 2).
+
+	On only while the "Grooming Red Value" Salary Component exists and its
+	Disabled box is clear. Missing or disabled means off: no screens, no new
+	marks, no changes to old ones, no slip line, no notices, no flag. Old marks
+	are kept and stay readable. The payroll rule set prices the marks but never
+	switches grooming on by itself. One read per request.
+	"""
+	disabled = frappe.db.get_value("Salary Component", COMPONENT, "disabled")
+	return disabled is not None and not cint(disabled)
+
+
+def refuse_if_off(doc, where):
+	"""Old marks and reviews stay as they are while grooming is off."""
+	if not is_on():
+		access.refuse(_("Grooming reds are switched off, so nothing on them can be changed now."),
+		              "R1", where, doc.doctype, doc.name)
+
+
 # ── small things ─────────────────────────────────────────────────────────────
 
 def _day(d):
@@ -224,7 +246,10 @@ SUBJECT_FIELDS = ["name", "employee_name", "first_name", "status", "date_of_join
 def _subjects(employees):
 	rows = frappe.get_all("Employee", filters={"name": ("in", list(employees) or [""])},
 	                      fields=SUBJECT_FIELDS)
-	rule_sets = {c: rule_set_for(c) for c in {r.company for r in rows}}
+	# With grooming off no company has a rule set here, so every rule (R1), the
+	# Today card, the month, the flag and the pending report all say "off".
+	on = is_on()
+	rule_sets = {c: rule_set_for(c) if on else None for c in {r.company for r in rows}}
 	return {r.name: r for r in _with_rule_fields(rows, rule_sets)}, rule_sets
 
 
@@ -760,7 +785,7 @@ def may_raise(employee, user=None):
 	                                               "status", "reports_to", "company"], as_dict=True)
 	if not s or not me or s.reports_to != me or s.status != "Active":
 		return _no("RAISE1", _("Only the person's current manager can raise this with HR."))
-	if not rule_set_for(s.company):
+	if not is_on() or not rule_set_for(s.company):
 		return _no("R1", _("Grooming reds are not switched on for this company."))
 	# Removed marks too: a raise written on a mark HR later removed still
 	# counts as this month's one raise (architect review M-2, AC-83).
@@ -1304,7 +1329,7 @@ def month_lines(employee, start, end):
 	"""The `grooming` key of the Attendance month, or None.
 
 	None - no key at all - for anybody the read gate refuses, for a company
-	with the rule set off, and for Contract staff looking at their own month
+	with grooming or its rule set off, and for Contract staff looking at their own month
 	(AC-40). A manager never gets a rupee figure (AC-30).
 	"""
 	user = frappe.session.user

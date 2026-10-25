@@ -33,6 +33,7 @@ class GroomingReview(Document):
 		if not self.is_new():
 			refuse(_("A grooming review cannot be changed after it is saved."), "D5", where,
 			       self.doctype, self.name)
+		grooming.refuse_if_off(self, where)
 		if is_own_record(self.employee) or self.employee not in grooming.hr_scope(
 				frappe.session.user, [self.employee]):
 			refuse(_("Only HR can record a grooming review."), "D5", where, self.doctype, self.name)

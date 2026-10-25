@@ -11,6 +11,7 @@ Uses the world and helpers of test_grooming_066 (same people, same fixture).
 
 import json
 import os
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import frappe
@@ -661,4 +662,102 @@ class TestPrototypeV3Limit(Case):
 			grooming.record_review(P["Kiran"], str(M_START), NOTE)
 			second = ac.month(TODAY.year, TODAY.month, P["Kiran"])["grooming"]["review"][-1]
 		self.assertEqual((second["state"], second["after_raise"]), ("cleared", True))
+
+
+# ── Grooming's own switch (pre-push review P-1; Surbhi, 25 Oct 2026, option 2) ─
+
+@contextmanager
+def grooming_off(missing=False):
+	"""Grooming switched off: the component disabled, or not there at all."""
+	frappe.local.request_cache.clear()
+	try:
+		if missing:
+			with patch.object(grooming, "COMPONENT", "No Such Component G066"):
+				yield
+		else:
+			frappe.db.set_value("Salary Component", grooming.COMPONENT, "disabled", 1)
+			yield
+	finally:
+		frappe.db.set_value("Salary Component", grooming.COMPONENT, "disabled", 0)
+		frappe.local.request_cache.clear()
+
+
+class TestGroomingSwitch(Case):
+	def test_on_only_while_the_component_exists_and_is_enabled(self):
+		self.assertTrue(grooming.is_on())
+		# The company's payroll rule set stays enabled throughout: it never
+		# switches grooming on by itself.
+		self.assertTrue(payroll_slip.rule_set_for(COMPANY))
+		with grooming_off():
+			self.assertFalse(grooming.is_on())
+		with grooming_off(missing=True):
+			self.assertFalse(grooming.is_on())
+		self.assertTrue(grooming.is_on())
+
+	def test_the_switch_is_read_once_per_request(self):
+		self.assertTrue(grooming.is_on())
+		frappe.db.set_value("Salary Component", grooming.COMPONENT, "disabled", 1)
+		try:
+			self.assertTrue(grooming.is_on())             # the same request: no second read
+			frappe.local.request_cache.clear()            # the next request reads it again
+			self.assertFalse(grooming.is_on())
+		finally:
+			frappe.db.set_value("Salary Component", grooming.COMPONENT, "disabled", 0)
+			frappe.local.request_cache.clear()
+
+	def test_off_no_screens_no_marks_no_payload_keys(self):
+		_raw_mark(P["Rahul"], TODAY)
+		for missing in (False, True):
+			with grooming_off(missing):
+				with as_user("Ravi"):
+					self.assertEqual(grooming.today(), {"show": False})
+					self.assertEqual(grooming.may_mark(P["Aman"], TODAY).code, "R1")
+				self.refused(_mark, "Ravi", "Aman", told=1)
+				self.refused(_rest_mark, "Ritika", "Aman", told_in_person=1)
+				with as_user("Rahul"):
+					self.assertNotIn("grooming", ac.month(TODAY.year, TODAY.month))
+				with as_user("Ritika"):
+					self.assertNotIn("grooming", ac.month(TODAY.year, TODAY.month, P["Rahul"]))
+		self.assertEqual(frappe.db.count(grooming.MARK, {"employee": P["Aman"]}), 0)
+
+	def test_off_old_marks_are_kept_readable_and_frozen_with_no_notices(self):
+		asked = _mark("Ravi", "Rahul")
+		with as_user("Rahul"):
+			grooming.ask(asked)
+		other = _raw_mark(P["Kiran"], TODAY)
+		bells = len(_bells())
+		with grooming_off():
+			with as_user("Rahul"):
+				frappe.get_doc(grooming.MARK, asked).check_permission("read")
+			with as_user("Ritika"):
+				self.assertIn(asked, _list(grooming.MARK))
+			with as_user("Ritika"):
+				self.refused(grooming.keep, asked)
+				self.refused(grooming.remove, other, grooming.REMOVAL_REASONS[1])
+				self.refused(grooming.record_review, P["Kiran"], str(M_START), NOTE)
+			with as_user("Ravi"):
+				self.refused(grooming.undo, asked)
+				self.assertEqual(grooming.may_raise(P["Kiran"]).code, "R1")
+		self.assertEqual(frappe.db.count(grooming.MARK, {"name": ("in", [asked, other]),
+		                                                 "docstatus": 1}), 2)
+		self.assertEqual(len(_bells()), bells)
+
+	def test_off_no_slip_line_no_flag_and_an_open_ask_holds_no_slip(self):
+		if TODAY.day < 4:
+			self.skipTest("too early in the month")
+		for i in range(3):
+			_raw_mark(P["Kiran"], add_days(M_START, i))
+		name = _mark("Ravi", "Rahul")
+		with as_user("Rahul"):
+			grooming.ask(name)
+		slip = frappe._dict(company=COMPANY, employee=P["Rahul"], employee_name="Rahul G066",
+		                    start_date=M_START, end_date=M_END, deductions=[])
+		with grooming_off():
+			self.assertEqual(payroll_slip.month_summary(P["Kiran"], COMPANY, M_START, M_END)
+			                 .grooming_days, 0)
+			payroll_slip.check_grooming_before_submit(slip)        # not held
+			self.assertEqual(grooming.pending_reviews(user("Ritika"), M_START), [])
+		self.assertEqual(payroll_slip.month_summary(P["Kiran"], COMPANY, M_START, M_END)
+		                 .grooming_days, 3)
+		self.assertRaises(frappe.ValidationError, payroll_slip.check_grooming_before_submit, slip)
 

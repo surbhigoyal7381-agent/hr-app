@@ -65,6 +65,7 @@ class GroomingMark(Document):
 		old = self.get_doc_before_save()
 		changed = {f for f in AFTER_SUBMIT if (old.get(f) or None) != (self.get(f) or None)}
 		where = "Grooming Mark update"
+		grooming.refuse_if_off(self, where)
 		if not changed:
 			# An empty save has no purpose here, and Frappe's REST save returns the
 			# whole record and stamps modified_by (security verification B1).
@@ -128,6 +129,7 @@ class GroomingMark(Document):
 	def before_cancel(self):
 		"""SEC-5: the marker's own same-day undo, or HR in scope until the slip."""
 		where = "Grooming Mark cancel"
+		grooming.refuse_if_off(self, where)
 		user = frappe.session.user
 		if is_own_record(self.employee):
 			refuse(_("You cannot remove a grooming red on yourself."), "SEC-5", where,

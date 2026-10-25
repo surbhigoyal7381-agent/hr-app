@@ -138,12 +138,13 @@ def month_summary(employee, company, from_date, to_date, rule_set=None, ctx=None
 	# marks on one date are one day, and never on a day the attendance says was a
 	# full-day leave or absence (a leave approved after the mark). Half Day is
 	# charged. Only the slip's own employee is read.
+	# With grooming switched off (grooming.is_on) there is no grooming line.
 	not_charged = {str(r.attendance_date) for r in rows if r.status in ("On Leave", "Absent")}
 	grooming_days = min(len({str(d) for d in frappe.get_all(
 		"Grooming Mark",
 		filters={"employee": employee, "docstatus": 1,
 		         "mark_date": ("between", [from_date, to_date])},
-		pluck="mark_date")} - not_charged), grooming.MONTH_MAX)
+		pluck="mark_date")} - not_charged), grooming.MONTH_MAX) if grooming.is_on() else 0
 
 	return summarise_month(
 		verdicts,
@@ -322,7 +323,8 @@ def check_grooming_before_submit(doc, method=None):
 	Payroll Entry submits slips one by one and carries on past a refused one.
 	"""
 	rule_set = rule_set_for(doc.company)
-	if not rule_set:
+	if not rule_set or not grooming.is_on():
+		# Off: no grooming line is priced, so an open "Ask HR" holds nothing.
 		return
 	# A fine deducted with the person's question unread is the show-cause risk
 	# (brief, Decisions (3)). A manager's raise adds no money and holds nothing.

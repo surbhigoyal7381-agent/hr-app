@@ -302,6 +302,9 @@ def _bells(name=None):
 class Case(FrappeTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
+		# grooming.is_on() is read once per request; a test run is one long
+		# "request", so start each test from the switch as it really is.
+		frappe.local.request_cache.clear()
 		_wipe()
 
 	def tearDown(self):
